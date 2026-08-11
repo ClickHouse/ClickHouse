@@ -27,6 +27,9 @@ namespace ErrorCodes
     DECLARE(Milliseconds, dead_session_check_period_ms, 500, "How often leader will check sessions to consider them dead and remove", 0) \
     DECLARE(Milliseconds, ttl_gc_period_ms, 250, "How often leader scans TTL nodes and enqueues TryRemove for expired nodes", 0) \
     DECLARE(NonZeroUInt64, ttl_gc_batch_size, 256, "The size of the batch of nodes to be removed by the garbage collector", 0) \
+    DECLARE(Milliseconds, container_gc_period_ms, 60000, "How often leader scans container nodes and enqueues TryRemove for childless ones", 0) \
+    DECLARE(NonZeroUInt64, container_gc_batch_size, 256, "The size of the batch of container nodes to be removed by the garbage collector", 0) \
+    DECLARE(Milliseconds, container_gc_max_never_used_interval_ms, 0, "How long an empty container node that never had any children is kept before GC deletes it. 0 = disabled (default, container is kept indefinitely).", 0) \
     DECLARE(Milliseconds, heart_beat_interval_ms, 500, "Heartbeat interval between quorum nodes", 0) \
     DECLARE(Milliseconds, election_timeout_lower_bound_ms, 1000, "Lower bound of election timer (avoid too often leader elections)", 0) \
     DECLARE(Milliseconds, election_timeout_upper_bound_ms, 2000, "Upper bound of election timer (avoid too often leader elections)", 0) \
@@ -44,7 +47,7 @@ namespace ErrorCodes
     DECLARE(UInt64, stale_log_gap, 10000, "When node became stale and should receive snapshots from leader", 0) \
     DECLARE(UInt64, fresh_log_gap, 200, "When node became fresh", 0) \
     DECLARE(UInt64, max_request_queue_size, 100000, "Maximum number of request that can be in queue for processing", 0) \
-    DECLARE(UInt64, max_requests_batch_size, 100, "Max size of batch of requests that can be sent to RAFT", HOT_RELOAD) \
+    DECLARE(NonZeroUInt64, max_requests_batch_size, 100, "Max size of batch of requests that can be sent to RAFT", HOT_RELOAD) \
     DECLARE(UInt64, max_requests_batch_bytes_size, 100*1024, "Max size in bytes of batch of requests that can be sent to RAFT", HOT_RELOAD) \
     DECLARE(UInt64, max_read_batch_size, 100000, "Max size of batch of consecutive read requests that can be executed at once, possibly in parallel", HOT_RELOAD) \
     DECLARE(UInt64, max_read_batch_bytes_size, 10000000, "Max size in bytes of batch of consecutive read requests that can be executed at once, possibly in parallel", HOT_RELOAD) \
@@ -52,9 +55,10 @@ namespace ErrorCodes
     DECLARE(UInt64, parallel_read_chunk_size, 16, "Number of read requests each worker picks up atomically when parallel reads are enabled.", HOT_RELOAD) \
     DECLARE(UInt64, parallel_read_min_batch, 128, "Minimum batch size to trigger parallel read processing. Smaller batches are processed sequentially.", HOT_RELOAD) \
     DECLARE(UInt64, max_request_size, 0, "Max request size (in bytes). Zero means unlimited.", HOT_RELOAD) \
-    DECLARE(UInt64, max_requests_append_size, 100, "Max size of batch of requests that can be sent to replica in append request", 0) \
+    DECLARE(NonZeroUInt64, max_requests_append_size, 100, "Max size of batch of requests that can be sent to replica in append request", 0) \
     DECLARE(UInt64, max_requests_append_bytes_size, 10*1024*1024, "Max size in bytes of batch of requests that can be sent to replica in append request", 0) \
     DECLARE(UInt64, max_flush_batch_size, 1000, "Max size of batch of requests that can be flushed together", 0) \
+    DECLARE(UInt64, min_time_between_fsyncs_ms, 5, "Min time between changelog flushes (fsyncs if force_sync is enabled), counted from the start of the previous flush. Flush requests that arrive earlier are delayed to batch more appends into one flush", 0) \
     DECLARE(UInt64, max_requests_quick_batch_size, 100, "Obsolete setting, does nothing." , SettingsTierType::OBSOLETE) \
     DECLARE(Bool, quorum_reads, false, "Execute read requests as writes through whole RAFT consensus with similar speed", HOT_RELOAD) \
     DECLARE(Bool, force_sync, true, "Call fsync on each change in RAFT changelog", 0) \
@@ -67,12 +71,25 @@ namespace ErrorCodes
     DECLARE(UInt64, raft_limits_reconnect_limit, 50, "If connection to a peer is silent longer than this limit * (multiplied by heartbeat interval), we re-establish the connection.", 0) \
     DECLARE(UInt64, raft_limits_response_limit, 20, "Total wait time for a response is calculated by multiplying response_limit with heart_beat_interval_ms", 0) \
     DECLARE(Bool, async_replication, true, "Enable async replication. All write and read guarantees are preserved while better performance is achieved.", 0) \
-    DECLARE(Bool, experimental_use_rocksdb, false, "Use rocksdb as backend storage", 0) \
-    DECLARE(UInt64, rocksdb_load_batch_size, 1000, "Size of write batch used during snapshot loading", 0) \
+    DECLARE(UInt64, committed_memtable_size, 64 * 1024 * 1024, "LSMT: rotate the memtable when it exceeds this many bytes.", HOT_RELOAD) \
+    DECLARE(UInt64, uncommitted_memtable_size, 16 * 1024 * 1024, "LSMT: rotate the uncommitted-state memtable when it exceeds this many bytes.", HOT_RELOAD) \
+    DECLARE(UInt64, memtable_block_size, 32 * 1024, "LSMT: target size of memtable blocks, in bytes.", HOT_RELOAD) \
+    DECLARE(UInt64, file_block_size, 32 * 1024, "LSMT: target size of blocks in files, in bytes.", HOT_RELOAD) \
+    DECLARE(UInt64, sorted_file_uncompressed_size, 32 * 1024 * 1024, "LSMT: target uncompressed size of a single file within a sorted run, in bytes.", HOT_RELOAD) \
+    DECLARE(UInt64, flush_threads, 2, "LSMT: number of background threads flushing memtables to files.", 0) \
+    DECLARE(UInt64, merge_threads, 3, "LSMT: number of background threads merging files.", 0) \
+    DECLARE(UInt64, min_files_to_merge, 3, "LSMT: background merge will merge at least this many sorted runs at once.", HOT_RELOAD) \
+    DECLARE(UInt64, max_files_to_merge, 20, "LSMT: background merge will merge at most this many sorted runs at once.", HOT_RELOAD) \
+    DECLARE(Float, max_size_ratio, 0.7f, "LSMT: background merge will merge a range of sorted runs if the ratio [bytes in the lowest-numbered selected sorted run] / [bytes in all selected sorted runs] is less than this. Smaller values reduce write amplification, bigger values reduce the number of sorted runs.", HOT_RELOAD) \
+    DECLARE(UInt64, unflushed_memtables_soft_limit, 4, "LSMT: throttle writes if there are at least this many memtables waiting for flush.", HOT_RELOAD) \
+    DECLARE(UInt64, sorted_runs_soft_limit, 100, "LSMT: throttle writes if there are at least this many active sorted runs, implying merges are not keeping up or are misconfigured.", HOT_RELOAD) \
+    DECLARE(UInt64, write_throttling_min_delay_us, 10000, "LSMT: when write throttling kicks in, this is the smallest delay added to a write, in microseconds. The delay grows exponentially (by write_throttling_factor) the further background work falls behind, up to write_throttling_max_delay_ms.", HOT_RELOAD) \
+    DECLARE(UInt64, write_throttling_max_delay_us, 1000000, "LSMT: the maximum delay added to a write by write throttling, in microseconds.", HOT_RELOAD) \
+    DECLARE(Float, write_throttling_factor, 32.0f, "LSMT: write throttling delay is multiplied by this factor if soft limit is exceeded by 2x. Should be greater than 1. Delay = write_throttling_min_delay_us * pow(write_throttling_factor, value / soft_limit - 1).", HOT_RELOAD) \
     DECLARE(UInt64, latest_logs_cache_size_threshold, 1_GiB, "Maximum total size of in-memory cache of latest log entries.", 0) \
-    DECLARE(UInt64, latest_logs_cache_entry_count_threshold, 200'000, "Maximum number of entries in in-memory cache of latest log entries.", 0) \
-    DECLARE(UInt64, commit_logs_cache_size_threshold, 500_MiB, "Maximum total size of in-memory cache of log entries needed next for commit.", 0) \
-    DECLARE(UInt64, commit_logs_cache_entry_count_threshold, 100'000, "Maximum number of entries in in-memory cache of log entries needed next for commit.", 0) \
+    DECLARE(UInt64, latest_logs_cache_entry_count_threshold, 200'000, "Deprecated, has no effect. The latest logs cache is bounded by latest_logs_cache_size_threshold alone.", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, commit_logs_cache_size_threshold, 500_MiB, "Deprecated. Used as the value of log_readahead_commit_window_bytes if that setting is not itself set.", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, commit_logs_cache_entry_count_threshold, 100'000, "Deprecated, has no effect. Use log_readahead_commit_window_bytes instead.", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, disk_move_retries_wait_ms, 1000, "How long to wait between retries after a failure which happened while a file was being moved between disks.", 0) \
     DECLARE(UInt64, disk_move_retries_during_init, 100, "The amount of retries after a failure which happened while a file was being moved between disks during initialization.", 0) \
     DECLARE(UInt64, log_slow_total_threshold_ms, 5000, "Requests for which the total latency is larger than this settings will be logged", 0) \
@@ -81,14 +98,15 @@ namespace ErrorCodes
     DECLARE(Bool, use_xid_64, false, "Enable 64-bit XID. It is disabled by default because of backward compatibility", 0) \
     DECLARE(Bool, check_node_acl_on_remove, false, "When trying to remove a node, check ACLs from both the node itself and the parent node. If disabled, default behaviour will be used where only ACL from the parent node is checked", 0) \
     DECLARE(UInt64, snapshot_transfer_chunk_size, 0, "Chunk size in bytes for snapshot transfer between Keeper nodes. Larger values reduce round-trips but increase per-message memory usage. 0 means disabled: the whole snapshot is sent as a single NuRaft object (compatibility behaviour).", 0) \
-    DECLARE(UInt64, write_snapshot_version, 6, "Snapshot format version to write (supported: 8 and above). Increase only after all nodes in the cluster are upgraded to a version that supports the new format", 0) \
+    DECLARE(UInt64, write_snapshot_version, 6, "Snapshot format version to write. Increase only after all nodes in the cluster are upgraded to a version that supports the new format", HOT_RELOAD) \
     DECLARE(Bool, nuraft_test_mode, false, "Nuraft test mode. not enabled for production use", 0) \
     DECLARE(Bool, use_new_dispatcher, true, "Use new request dispatcher implementation (KeeperRequestDispatcher)", 0) \
     DECLARE(UInt64, max_in_flight_request_batches, 20, "Maximum number of request batches in flight in the new dispatcher pipeline", 0) \
     DECLARE(UInt64, max_request_queue_bytes_size, 100 * 1024 * 1024, "Maximum total bytes in the request queue before blocking new requests", 0) \
     DECLARE(UInt64, max_response_queue_bytes_size, 100 * 1024 * 1024, "Maximum total bytes across all response queues; the dispatch thread throttles at half this limit", 0) \
     DECLARE(Bool, optimize_read_order, true, "Reorder read requests within a batch to group them together for parallel execution, without changing ordering guarantees within each session", 0) \
-    DECLARE(UInt64, dispatch_busy_wait_sleep_us, 100, "Sleep duration in microseconds for busy-wait loops in the dispatch and response threads", 0) \
+    DECLARE(UInt64, dispatch_busy_wait_sleep_us, 100, "Dispatch and response threads periodically poll to check for work to do, sleeping between checks if idle (as opposed to waiting on something like a futex). The sleep duration is dispatch_busy_wait_sleep_us if there was recent activity, gradually backing off to dispatch_busy_wait_long_sleep_us when idle. Reducing these settings reduces request latency by about the same amount but increases cpu usage when the server is idle.", 0) \
+    DECLARE(UInt64, dispatch_busy_wait_long_sleep_us, 10000, "See dispatch_busy_wait_sleep_us", 0) \
     DECLARE(Milliseconds, stream_suspect_retry_delay_ms, 1000, "Delay before reconnecting to the leader after a stream breaks while the new stream is suspected to be unhealthy", 0) \
     DECLARE(Milliseconds, stream_in_flight_drain_timeout_ms, 5000, "Maximum time to wait for in-flight requests to drain after a stream break (e.g. leader change) before dropping them", 0) \
     DECLARE(Bool, nuraft_use_bg_thread_for_snapshot_io, false, "Use a background thread for NuRaft snapshot IO instead of reading snapshot objects synchronously from Raft worker threads.", 0) \
@@ -98,6 +116,14 @@ namespace ErrorCodes
     DECLARE(UInt64, nuraft_max_bytes_in_flight_in_stream, 32 * 1024 * 1024, "Maximum bytes of in-flight data per follower when streaming mode is enabled. Acts as a data volume throttle. Only effective when nuraft_streaming_mode is true.", 0) \
     DECLARE(UInt64, nuraft_max_uncommitted_log_entries, 100000, "Maximum number of uncommitted NuRaft log entries on the leader before rejecting new client requests. 0 disables the limit.", 0) \
     DECLARE(UInt64, nuraft_append_entries_backward_probe_throttle_threshold, 5, "Number of consecutive backward log-match probes after which NuRaft limits append entries payloads to one log entry. 0 disables the throttle.", 0) \
+    DECLARE(Bool, log_readahead_enabled, true, "Enable per-peer decoded read-ahead for changelog catch-up reads.", 0) \
+    DECLARE(NonZeroUInt64, log_readahead_window_bytes, 64_MiB, "Maximum bytes of decoded entries buffered per peer reader. Should be at least as large as a typical append-entries batch.", 0) \
+    DECLARE(NonZeroUInt64, log_readahead_max_peer_readers, 8, "Maximum number of concurrent per-peer read-ahead readers.", 0) \
+    DECLARE(NonZeroUInt64, log_readahead_eviction_timeout_ms, 30000, "Idle timeout in milliseconds after which an inactive per-peer reader, or the commit reader, is evicted. Worst case is approximately twice this value due to the scan gate interval.", 0) \
+    DECLARE(UInt64, log_readahead_pool_threads, 0, "Number of threads in the dedicated read-ahead thread pool. 0 = derive from max_peer_readers.", 0) \
+    DECLARE(UInt64, log_readahead_serve_wait_timeout_ms, 200, "Maximum time in milliseconds to wait for the background fill before falling back to a direct read.", 0) \
+    DECLARE(NonZeroUInt64, log_readahead_chunk_size, 16, "Number of log entries decoded per chunk under file_mutex in the read-ahead fill task. Smaller values improve responsiveness to rewinds at the cost of more lock overhead.", 0) \
+    DECLARE(UInt64, log_readahead_commit_window_bytes, 500_MiB, "Maximum total size of decoded log entries buffered ahead of the commit thread. 0 disables commit read-ahead (commit reads entries from disk one by one).", 0) \
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS, COORDINATION_SETTINGS_SUPPORTED_TYPES)
 
@@ -132,6 +158,12 @@ void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const 
     /// if max_requests_append_size was not changed
     if (!(*this)[CoordinationSetting::max_requests_append_size].changed)
         (*this)[CoordinationSetting::max_requests_append_size] = (*this)[CoordinationSetting::max_requests_batch_size];
+
+    /// commit_logs_cache_size_threshold is OBSOLETE; map it onto log_readahead_commit_window_bytes
+    /// if the new setting was not itself explicitly set.
+    if ((*this)[CoordinationSetting::commit_logs_cache_size_threshold].changed
+        && !(*this)[CoordinationSetting::log_readahead_commit_window_bytes].changed)
+        (*this)[CoordinationSetting::log_readahead_commit_window_bytes] = (*this)[CoordinationSetting::commit_logs_cache_size_threshold];
 }
 
 CoordinationSettings::CoordinationSettings() : impl(std::make_unique<CoordinationSettingsImpl>())

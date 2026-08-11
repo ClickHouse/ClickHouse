@@ -31,6 +31,27 @@ const FormatSettings & getFormatSettings()
     return settings;
 }
 
+template <typename Container, typename Compare>
+void sortAndKeepTop(Container & container, size_t limit, Compare compare)
+{
+    if (container.size() <= limit)
+    {
+        std::sort(container.begin(), container.end(), compare);
+        return;
+    }
+
+    if (limit == 0)
+    {
+        container.clear();
+        return;
+    }
+
+    auto nth = container.begin() + limit;
+    std::nth_element(container.begin(), nth, container.end(), compare);
+    container.resize(limit);
+    std::sort(container.begin(), container.end(), compare);
+}
+
 const SerializationPtr & getDynamicSerialization()
 {
     static thread_local const SerializationPtr dynamic_serialization = DataTypeDynamic().getDefaultSerialization();
@@ -374,6 +395,56 @@ bool ColumnObject::isDefaultAt(size_t n) const
         return false;
 
     return true;
+}
+
+UInt64 ColumnObject::getNumberOfDefaultRows() const
+{
+    /// Avoid the O(rows * paths) per-row virtual `isDefaultAt` calls of the IColumnHelper
+    /// default: query each subcolumn's non-default rows once and union them in a bitmap.
+    const size_t num_rows = size();
+    if (num_rows == 0)
+        return 0;
+
+    PaddedPODArray<UInt8> non_default_anywhere;
+    non_default_anywhere.resize_fill(num_rows);  /// zero-initialised via memset
+    size_t num_non_default = 0;
+
+    auto add_non_defaults_of = [&](const IColumn & column)
+    {
+        if (num_non_default == num_rows)
+            return;
+
+        const size_t num_defaults_in_column = column.getNumberOfDefaultRows();
+        if (num_defaults_in_column == num_rows)
+            return;
+        if (num_defaults_in_column == 0)
+        {
+            std::memset(non_default_anywhere.data(), 1, num_rows);
+            num_non_default = num_rows;
+            return;
+        }
+
+        IColumn::Offsets non_default_indices;
+        column.getIndicesOfNonDefaultRows(non_default_indices, /*from=*/0, /*limit=*/0);
+        for (UInt64 idx : non_default_indices)
+        {
+            if (!non_default_anywhere[idx])
+            {
+                non_default_anywhere[idx] = 1;
+                ++num_non_default;
+            }
+        }
+    };
+
+    for (const auto & [path, column] : typed_paths)
+        add_non_defaults_of(*column);
+
+    for (const auto & [path, column] : dynamic_paths_ptrs)
+        add_non_defaults_of(*column);
+
+    add_non_defaults_of(*shared_data);
+
+    return num_rows - num_non_default;
 }
 
 std::string_view ColumnObject::getDataAt(size_t) const
@@ -1487,28 +1558,31 @@ void ColumnObject::protect()
 
 void ColumnObject::forEachMutableSubcolumn(DB::IColumn::MutableColumnCallback callback)
 {
-    for (auto & [_, column] : typed_paths)
-        callback(column);
-    for (auto & [path, column] : dynamic_paths)
+    for (const auto & path : sorted_typed_paths)
+        callback(typed_paths.find(path)->second);
+    for (const auto & path : sorted_dynamic_paths)
     {
-        callback(column);
-        dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(column.get());
+        auto it = dynamic_paths.find(path);
+        callback(it->second);
+        dynamic_paths_ptrs[it->first] = assert_cast<ColumnDynamic *>(it->second.get());
     }
     callback(shared_data);
 }
 
 void ColumnObject::forEachMutableSubcolumnRecursively(DB::IColumn::RecursiveMutableColumnCallback callback)
 {
-    for (auto & [_, column] : typed_paths)
+    for (const auto & path : sorted_typed_paths)
     {
+        auto & column = typed_paths.find(path)->second;
         callback(*column);
         column->forEachMutableSubcolumnRecursively(callback);
     }
-    for (auto & [path, column] : dynamic_paths)
+    for (const auto & path : sorted_dynamic_paths)
     {
-        callback(*column);
-        column->forEachMutableSubcolumnRecursively(callback);
-        dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(column.get());
+        auto it = dynamic_paths.find(path);
+        callback(*it->second);
+        it->second->forEachMutableSubcolumnRecursively(callback);
+        dynamic_paths_ptrs[it->first] = assert_cast<ColumnDynamic *>(it->second.get());
     }
     callback(*shared_data);
     shared_data->forEachMutableSubcolumnRecursively(callback);
@@ -1516,23 +1590,25 @@ void ColumnObject::forEachMutableSubcolumnRecursively(DB::IColumn::RecursiveMuta
 
 void ColumnObject::forEachSubcolumn(DB::IColumn::ColumnCallback callback) const
 {
-    for (const auto & [_, column] : typed_paths)
-        callback(column);
-    for (const auto & [path, column] : dynamic_paths)
-        callback(column);
+    for (const auto & path : sorted_typed_paths)
+        callback(typed_paths.find(path)->second);
+    for (const auto & path : sorted_dynamic_paths)
+        callback(dynamic_paths.find(path)->second);
 
     callback(shared_data);
 }
 
 void ColumnObject::forEachSubcolumnRecursively(DB::IColumn::RecursiveColumnCallback callback) const
 {
-    for (const auto & [_, column] : typed_paths)
+    for (const auto & path : sorted_typed_paths)
     {
+        const auto & column = typed_paths.find(path)->second;
         callback(*column);
         column->forEachSubcolumnRecursively(callback);
     }
-    for (const auto & [path, column] : dynamic_paths)
+    for (const auto & path : sorted_dynamic_paths)
     {
+        const auto & column = dynamic_paths.find(path)->second;
         callback(*column);
         column->forEachSubcolumnRecursively(callback);
     }
@@ -1700,12 +1776,16 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
         }
 
         /// If sizes are equal, sort by path names in ascending order (for easier testing purposes).
-        std::sort(paths_with_sizes.begin(), paths_with_sizes.end(), [](const auto & left, const auto & right){ return std::tie(left.first, right.second) < std::tie(right.first, left.second); });
+        const auto compare_paths = [](const auto & left, const auto & right)
+        {
+            return std::tie(left.first, right.second) < std::tie(right.first, left.second);
+        };
 
         /// Fill dynamic_paths with first paths in sorted list until we reach the limit.
         size_t paths_to_add = max_dynamic_paths - dynamic_paths.size();
-        for (size_t i = 0; i != paths_to_add; ++i)
-            addNewDynamicPath(paths_with_sizes[i].second);
+        sortAndKeepTop(paths_with_sizes, paths_to_add, compare_paths);
+        for (const auto & [_, path] : paths_with_sizes)
+            addNewDynamicPath(path);
     }
     /// Otherwise keep all paths.
     else
@@ -1763,7 +1843,7 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
         /// For this reason we first call ColumnDynamic::reserve with resulting size to preallocate memory for
         /// discriminators and offsets and ColumnDynamic::prepareVariantsForSquashing to preallocate memory
         /// for all variants inside Dynamic.
-        dynamic_paths_ptrs[path]->reserve(total_size);
+        dynamic_paths_ptrs[path]->reserve(total_size * factor);
         dynamic_paths_ptrs[path]->prepareVariantsForSquashing(source_dynamic_columns, factor);
     }
 }
@@ -1859,17 +1939,18 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
             paths_with_sizes.emplace_back(size, path);
 
         /// If sizes are equal, sort by path names in ascending order (for easier testing purposes).
-        std::sort(paths_with_sizes.begin(), paths_with_sizes.end(), [](const auto & left, const auto & right){ return std::tuple(right.first, left.second) < std::tuple(left.first, right.second); });
+        const auto compare_paths = [](const auto & left, const auto & right)
+        {
+            return std::tuple(right.first, left.second) < std::tuple(left.first, right.second);
+        };
+        sortAndKeepTop(paths_with_sizes, max_dynamic_paths, compare_paths);
 
         /// Fill dynamic_paths with first max_dynamic_paths paths in sorted list.
-        for (const auto & [size, path] : paths_with_sizes)
+        for (const auto & [_, path] : paths_with_sizes)
         {
-            if (dynamic_paths.size() < max_dynamic_paths)
-            {
-                auto it = dynamic_paths.emplace(path, ColumnDynamic::create(max_dynamic_types)).first;
-                dynamic_paths_ptrs.emplace(path, assert_cast<ColumnDynamic *>(it->second.get()));
-                sorted_dynamic_paths.insert(it->first);
-            }
+            auto it = dynamic_paths.emplace(path, ColumnDynamic::create(max_dynamic_types)).first;
+            dynamic_paths_ptrs.emplace(path, assert_cast<ColumnDynamic *>(it->second.get()));
+            sorted_dynamic_paths.insert(it->first);
         }
     }
     /// Use all dynamic paths from all source columns.
@@ -2013,9 +2094,9 @@ void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<
         candidates_with_sizes.reserve(shared_data_candidates.size());
         for (const auto & [path, size] : shared_data_candidates)
             candidates_with_sizes.emplace_back(size, path);
-        std::sort(candidates_with_sizes.begin(), candidates_with_sizes.end(), std::greater());
-        for (size_t i = 0; i < Statistics::MAX_SHARED_DATA_STATISTICS_SIZE; ++i)
-            new_statistics.shared_data_paths_statistics.emplace(candidates_with_sizes[i].second, candidates_with_sizes[i].first);
+        sortAndKeepTop(candidates_with_sizes, Statistics::MAX_SHARED_DATA_STATISTICS_SIZE, std::greater<>());
+        for (const auto & [size, path] : candidates_with_sizes)
+            new_statistics.shared_data_paths_statistics.emplace(path, size);
     }
 
     statistics = std::make_shared<const Statistics>(std::move(new_statistics));
@@ -2113,13 +2194,14 @@ void ColumnObject::fillPathColumnFromSharedData(IColumn & path_column, std::stri
     }
 }
 
-ColumnObject::SortedPathsIterator::SortedPathsIterator(const ColumnObject & column_object_, size_t row_)
+ColumnObject::SortedPathsIterator::SortedPathsIterator(const ColumnObject & column_object_, size_t row_, bool skip_typed_nulls_)
     : column_object(column_object_)
     , typed_paths_it(column_object.sorted_typed_paths.begin())
     , typed_paths_end(column_object.sorted_typed_paths.end())
     , dynamic_paths_it(column_object.sorted_dynamic_paths.begin())
     , dynamic_paths_end(column_object.sorted_dynamic_paths.end())
     , row(row_)
+    , skip_typed_nulls(skip_typed_nulls_)
 {
     std::tie(shared_data_paths, shared_data_values) = column_object.getSharedDataPathsAndValues();
     const auto & shared_data_offsets = column_object.getSharedDataOffsets();
@@ -2173,6 +2255,11 @@ void ColumnObject::SortedPathsIterator::setCurrentPath()
     /// Null in dynamic path is considered as absence of this path.
     while (dynamic_paths_it != dynamic_paths_end && column_object.dynamic_paths.find(*dynamic_paths_it)->second->isNullAt(row))
         ++dynamic_paths_it;
+
+    /// If requested, skip typed paths whose value is null (treat them as absent).
+    if (skip_typed_nulls)
+        while (typed_paths_it != typed_paths_end && column_object.typed_paths.find(*typed_paths_it)->second->isNullAt(row))
+            ++typed_paths_it;
 
     std::array<std::pair<PathType, std::optional<std::string_view>>, 3> paths{
         std::pair{PathType::TYPED, typed_paths_it == typed_paths_end ? std::nullopt : std::optional<std::string_view>(*typed_paths_it)},
@@ -2239,6 +2326,39 @@ ColumnObject::SortedPathsIterator::PathInfo ColumnObject::SortedPathsIterator::g
     path_info.path = getCurrentPath();
     std::tie(path_info.column, path_info.row) = getCurrentPathColumnAndRow();
     return path_info;
+}
+
+void ColumnObject::SortedPathsIterator::serializeCurrentValueBinary(
+    const UnorderedMapWithMemoryTracking<String, SerializationPtr> & typed_path_serializations,
+    WriteBuffer & buf) const
+{
+    if (current_path_type == PathType::SHARED_DATA)
+    {
+        auto value_data = shared_data_values->getDataAt(shared_data_it);
+        buf.write(value_data.data(), value_data.size());
+        return;
+    }
+
+    if (current_path_type == PathType::DYNAMIC)
+    {
+        const auto & dynamic_col = assert_cast<const ColumnDynamic &>(
+            *column_object.dynamic_paths.find(*dynamic_paths_it)->second);
+        getDynamicSerialization()->serializeBinary(dynamic_col, row, buf, getFormatSettings());
+        return;
+    }
+
+    chassert(current_path_type == PathType::TYPED);
+    const IColumn & col = *column_object.typed_paths.find(*typed_paths_it)->second;
+    auto ser_it = typed_path_serializations.find(String(*typed_paths_it));
+    if (ser_it == typed_path_serializations.end())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "No serialization found for typed path '{}' in serializeCurrentValueBinary",
+            *typed_paths_it);
+
+    /// Write the value bare — no type tag — so the blob can be deserialized
+    /// directly with the same serialization.
+    ser_it->second->serializeBinary(col, row, buf, getFormatSettings());
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

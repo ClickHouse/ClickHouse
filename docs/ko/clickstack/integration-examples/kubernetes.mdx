@@ -1,0 +1,475 @@
+---
+slug: /use-cases/observability/clickstack/integrations/kubernetes
+description: 'ClickStack용 Kubernetes 통합 - ClickHouse Observability Stack'
+title: 'Kubernetes'
+doc_type: 'guide'
+keywords: ['clickstack', 'kubernetes', '로그', '관측성', '컨테이너 모니터링']
+---
+
+ClickStack는 OpenTelemetry(OTel) collector를 사용하여 Kubernetes 클러스터에서 로그, 메트릭, Kubernetes 이벤트를 수집한 뒤 ClickStack로 전달합니다. 네이티브 OTel 로그 포맷을 지원하므로 추가적인 벤더별 구성은 필요하지 않습니다.
+
+이 가이드에서는 다음 항목을 통합합니다:
+
+* **로그**
+* **인프라 메트릭**
+
+<Note>
+  애플리케이션 수준의 메트릭 또는 APM/트레이스를 전송하려면 애플리케이션에도 해당 언어 통합을 추가해야 합니다.
+</Note>
+
+이 가이드는 [게이트웨이로 ClickStack OTel collector를 배포](/ko/clickstack/ingesting-data/collector)하고 수집 API key로 보호되었다고 가정합니다.
+
+<div id="creating-the-otel-helm-chart-config-files">
+  ## OTel Helm 차트 구성 파일 만들기
+</div>
+
+각 노드와 클러스터 자체에서 로그와 메트릭을 모두 수집하려면 별도의 OpenTelemetry collector 2개를 배포해야 합니다. 하나는 각 노드의 로그와 메트릭을 수집하기 위해 데몬셋으로 배포하고, 다른 하나는 클러스터 자체의 로그와 메트릭을 수집하기 위해 배포로 배포합니다.
+
+<div id="create-api-key-secret">
+  ### API Key 시크릿 생성
+</div>
+
+HyperDX의 [수집 API Key](/ko/clickstack/ingesting-data/opentelemetry#sending-otel-data)를 사용해 새로운 Kubernetes 시크릿을 생성합니다. 이 시크릿은 아래에서 설치할 구성 요소가 ClickStack OTel collector로 데이터를 안전하게 수집하는 데 사용됩니다:
+
+```shell
+kubectl create secret generic hyperdx-secret \
+--from-literal=HYPERDX_API_KEY=<ingestion_api_key> \
+```
+
+또한 ClickStack OTel collector의 위치를 지정하는 ConfigMap을 생성합니다:
+
+```shell
+kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=<OTEL_COLLECTOR_ENDPOINT>
+# 예: kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=http://my-hyperdx-hdx-oss-v2-otel-collector:4318
+```
+
+<div id="creating-the-daemonset-configuration">
+  ### 데몬셋 구성 만들기
+</div>
+
+데몬셋은 클러스터의 각 노드에서 로그와 메트릭을 수집하지만 Kubernetes 이벤트나 클러스터 전반의 메트릭은 수집하지 않습니다.
+
+데몬셋 매니페스트를 다운로드하세요:
+
+```shell
+curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_daemonset.yaml
+```
+
+<Tabs>
+  <Tab title="관리형 ClickStack">
+    <Accordion title="k8s_daemonset.yaml">
+      ```yaml
+      # daemonset.yaml
+      mode: daemonset
+
+      # kubeletstats CPU/메모리 사용률 메트릭을 사용하려면 필요합니다
+      clusterRole:
+        create: true
+        rules:
+          - apiGroups:
+              - ''
+            resources:
+              - nodes/proxy
+            verbs:
+              - get
+
+      presets:
+        logsCollection:
+          enabled: true
+        hostMetrics:
+          enabled: true
+        # Kubernetes 메타데이터를 추가하도록 Kubernetes Processor를 구성합니다.
+        # 모든 파이프라인에 k8sattributes processor를 추가하고 클러스터 역할에 필요한 규칙을 추가합니다.
+        # 자세한 내용: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
+        kubernetesAttributes:
+          enabled: true
+          # 활성화하면 processor가 연결된 파드의 모든 레이블을 추출해 resource 속성으로 추가합니다.
+          # 레이블의 정확한 이름이 키가 됩니다.
+          extractAllPodLabels: true
+          # 활성화하면 processor가 연결된 파드의 모든 어노테이션을 추출해 resource 속성으로 추가합니다.
+          # 어노테이션의 정확한 이름이 키가 됩니다.
+          extractAllPodAnnotations: true
+        # collector가 큐블릿의 API 서버에서 노드, 파드, 컨테이너 메트릭을 수집하도록 구성합니다.
+        # 메트릭 파이프라인에 kubeletstats 수신기를 추가하고 클러스터 역할에 필요한 규칙을 추가합니다.
+        # 자세한 내용: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
+        kubeletMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        receivers:
+          # 추가 큐블릿 메트릭을 구성합니다
+          kubeletstats:
+            collection_interval: 20s
+            auth_type: 'serviceAccount'
+            endpoint: '${env:K8S_NODE_NAME}:10250'
+            insecure_skip_verify: true
+            metrics:
+              k8s.pod.cpu_limit_utilization:
+                enabled: true
+              k8s.pod.cpu_request_utilization:
+                enabled: true
+              k8s.pod.memory_limit_utilization:
+                enabled: true
+              k8s.pod.memory_request_utilization:
+                enabled: true
+              k8s.pod.uptime:
+                enabled: true
+              k8s.node.uptime:
+                enabled: true
+              k8s.container.cpu_limit_utilization:
+                enabled: true
+              k8s.container.cpu_request_utilization:
+                enabled: true
+              k8s.container.memory_limit_utilization:
+                enabled: true
+              k8s.container.memory_request_utilization:
+                enabled: true
+              container.uptime:
+                enabled: true
+
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    <Accordion title="k8s_daemonset.yaml">
+      ```yaml
+      # daemonset.yaml
+      mode: daemonset
+
+      # kubeletstats CPU/메모리 사용률 메트릭을 사용하려면 필요합니다
+      clusterRole:
+        create: true
+        rules:
+          - apiGroups:
+              - ''
+            resources:
+              - nodes/proxy
+            verbs:
+              - get
+
+      presets:
+        logsCollection:
+          enabled: true
+        hostMetrics:
+          enabled: true
+        # Kubernetes 프로세서가 Kubernetes 메타데이터를 추가하도록 구성합니다.
+        # 모든 파이프라인에 k8sattributes 프로세서를 추가하고 클러스터 역할에 필요한 규칙도 추가합니다.
+        # 자세한 내용: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
+        kubernetesAttributes:
+          enabled: true
+          # 활성화하면 프로세서가 연결된 파드의 모든 레이블을 추출해 리소스 속성으로 추가합니다.
+          # 레이블의 정확한 이름이 키가 됩니다.
+          extractAllPodLabels: true
+          # 활성화하면 프로세서가 연결된 파드의 모든 어노테이션을 추출해 리소스 속성으로 추가합니다.
+          # 어노테이션의 정확한 이름이 키가 됩니다.
+          extractAllPodAnnotations: true
+        # collector가 큐블릿의 API 서버에서 노드, 파드, 컨테이너 메트릭을 수집하도록 구성합니다.
+        # 메트릭 파이프라인에 kubeletstats 수신기를 추가하고 클러스터 역할에 필요한 규칙도 추가합니다.
+        # 자세한 내용: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
+        kubeletMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: HYPERDX_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hyperdx-secret
+              key: HYPERDX_API_KEY
+              optional: true
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        receivers:
+          # 추가 큐블릿 메트릭을 구성합니다
+          kubeletstats:
+            collection_interval: 20s
+            auth_type: 'serviceAccount'
+            endpoint: '${env:K8S_NODE_NAME}:10250'
+            insecure_skip_verify: true
+            metrics:
+              k8s.pod.cpu_limit_utilization:
+                enabled: true
+              k8s.pod.cpu_request_utilization:
+                enabled: true
+              k8s.pod.memory_limit_utilization:
+                enabled: true
+              k8s.pod.memory_request_utilization:
+                enabled: true
+              k8s.pod.uptime:
+                enabled: true
+              k8s.node.uptime:
+                enabled: true
+              k8s.container.cpu_limit_utilization:
+                enabled: true
+              k8s.container.cpu_request_utilization:
+                enabled: true
+              k8s.container.memory_limit_utilization:
+                enabled: true
+              k8s.container.memory_request_utilization:
+                enabled: true
+              container.uptime:
+                enabled: true
+
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            headers:
+              authorization: "${env:HYPERDX_API_KEY}"
+            compression: gzip
+
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+  </Tab>
+</Tabs>
+
+<div id="creating-the-deployment-configuration">
+  ### 배포 구성 만들기
+</div>
+
+Kubernetes 이벤트와 클러스터 전반의 메트릭을 수집하려면 별도의 OpenTelemetry collector를 배포 형태로 배포해야 합니다.
+
+배포 매니페스트를 다운로드하세요:
+
+```shell
+curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_deployment.yaml
+```
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    <Accordion title="k8s_deployment.yaml">
+      ```yaml
+      # deployment.yaml
+      mode: deployment
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.123.0
+       
+      # 이 collector는 하나만 필요합니다. 둘 이상이면 중복 데이터가 생성됩니다.
+      replicaCount: 1
+       
+      presets:
+        kubernetesAttributes:
+          enabled: true
+          # 활성화하면 프로세서가 연결된 파드의 모든 레이블을 추출해 리소스 속성으로 추가합니다.
+          # 레이블의 정확한 이름이 키가 됩니다.
+          extractAllPodLabels: true
+          # 활성화하면 프로세서가 연결된 파드의 모든 어노테이션을 추출해 리소스 속성으로 추가합니다.
+          # 어노테이션의 정확한 이름이 키가 됩니다.
+          extractAllPodAnnotations: true
+        # collector가 Kubernetes 이벤트를 수집하도록 구성합니다.
+        # logs 파이프라인에 k8sobject receiver를 추가하고 기본적으로 Kubernetes 이벤트를 수집합니다.
+        # 자세한 정보: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
+        kubernetesEvents:
+          enabled: true
+        # Kubernetes Cluster Receiver가 클러스터 수준 메트릭을 수집하도록 구성합니다.
+        # metrics 파이프라인에 k8s_cluster receiver를 추가하고 ClusterRole에 필요한 규칙을 추가합니다.
+        # 자세한 정보: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
+        clusterMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    <Accordion title="k8s_deployment.yaml">
+      ```yaml
+      # deployment.yaml
+      mode: deployment
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.123.0
+       
+      # 이 collector는 하나만 필요합니다. 둘 이상이면 중복 데이터가 생성됩니다.
+      replicaCount: 1
+       
+      presets:
+        kubernetesAttributes:
+          enabled: true
+          # 활성화하면 프로세서가 연결된 파드의 모든 레이블을 추출해 리소스 속성으로 추가합니다.
+          # 레이블의 정확한 이름이 키가 됩니다.
+          extractAllPodLabels: true
+          # 활성화하면 프로세서가 연결된 파드의 모든 어노테이션을 추출해 리소스 속성으로 추가합니다.
+          # 어노테이션의 정확한 이름이 키가 됩니다.
+          extractAllPodAnnotations: true
+        # collector가 Kubernetes 이벤트를 수집하도록 구성합니다.
+        # logs 파이프라인에 k8sobject receiver를 추가하고 기본적으로 Kubernetes 이벤트를 수집합니다.
+        # 자세한 정보: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
+        kubernetesEvents:
+          enabled: true
+        # Kubernetes Cluster Receiver가 클러스터 수준 메트릭을 수집하도록 구성합니다.
+        # metrics 파이프라인에 k8s_cluster receiver를 추가하고 ClusterRole에 필요한 규칙을 추가합니다.
+        # 자세한 정보: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
+        clusterMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: HYPERDX_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hyperdx-secret
+              key: HYPERDX_API_KEY
+              optional: true
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+            headers:
+              authorization: "${env:HYPERDX_API_KEY}"
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+  </Tab>
+</Tabs>
+
+<div id="deploying-the-otel-collector">
+  ## OpenTelemetry collector 배포
+</div>
+
+이제 [OpenTelemetry Helm 차트](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector)를 사용해 Kubernetes 클러스터에 OpenTelemetry collector를 배포할 수 있습니다.
+
+OpenTelemetry Helm 리포지토리를 추가하세요:
+
+```shell
+helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts # OTel Helm 저장소 추가
+```
+
+위 구성을 사용해 차트를 설치합니다:
+
+```shell copy
+helm install my-opentelemetry-collector-deployment open-telemetry/opentelemetry-collector -f k8s_deployment.yaml
+helm install my-opentelemetry-collector-daemonset open-telemetry/opentelemetry-collector -f k8s_daemonset.yaml
+```
+
+이제 Kubernetes 클러스터의 메트릭, 로그, Kubernetes 이벤트가 HyperDX에 표시되어야 합니다.
+
+<div id="forwarding-resouce-tags-to-pods">
+  ## 리소스 태그를 파드로 전달하기 (권장)
+</div>
+
+애플리케이션 수준의 로그, 메트릭, 트레이스를 Kubernetes 메타데이터와
+(예: 파드 이름, 네임스페이스 등) 연관시키려면 `OTEL_RESOURCE_ATTRIBUTES`
+환경 변수를 사용해 Kubernetes 메타데이터를 애플리케이션으로 전달해야 합니다.
+
+다음은 환경 변수를 사용해 Kubernetes 메타데이터를
+애플리케이션으로 전달하는 배포 예시입니다:
+
+```yaml
+# my_app_deployment.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      labels:
+        app: app
+        # Kubernetes Attribute Processor와 함께 사용하면 파드의 로그 및 메트릭이
+        # 서비스 이름과 연결됩니다.
+        service.name: <MY_APP_NAME>
+    spec:
+      containers:
+        - name: app-container
+          image: my-image
+          env:
+            # ... 기타 환경 변수
+            # 다운워드 API에서 K8s 메타데이터를 수집하여 앱에 전달
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: DEPLOYMENT_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['deployment']
+            # OTEL_RESOURCE_ATTRIBUTES를 통해 K8s 메타데이터를 앱에 전달
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME),k8s.deployment.name=$(DEPLOYMENT_NAME)
+```

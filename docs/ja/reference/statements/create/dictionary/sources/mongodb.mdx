@@ -1,0 +1,78 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/mongodb
+title: 'MongoDB Dictionary ソース'
+sidebarTitle: 'MongoDB'
+description: 'ClickHouse で MongoDB を Dictionary ソースとして設定します。'
+doc_type: 'reference'
+---
+
+設定例:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(MONGODB(
+        host 'localhost'
+        port 27017
+        user ''
+        password ''
+        db 'test'
+        collection 'dictionary_source'
+        options 'ssl=true'
+    ))
+    ```
+
+    または URI を使用する場合:
+
+    ```sql
+    SOURCE(MONGODB(
+        uri 'mongodb://localhost:27017/clickhouse'
+        collection 'dictionary_source'
+    ))
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <source>
+        <mongodb>
+            <host>localhost</host>
+            <port>27017</port>
+            <user></user>
+            <password></password>
+            <db>test</db>
+            <collection>dictionary_source</collection>
+            <options>ssl=true</options>
+        </mongodb>
+    </source>
+    ```
+
+    または URI を使用する場合:
+
+    ```xml
+    <source>
+        <mongodb>
+            <uri>mongodb://localhost:27017/test?ssl=true</uri>
+            <collection>dictionary_source</collection>
+        </mongodb>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+設定フィールド:
+
+| 設定           | 説明                                             |
+| ------------ | ---------------------------------------------- |
+| `host`       | MongoDB のホスト。                                  |
+| `port`       | MongoDB サーバーのポート。                              |
+| `user`       | MongoDB ユーザー名。                                 |
+| `password`   | MongoDB ユーザーのパスワード。                            |
+| `db`         | データベース名。                                       |
+| `collection` | コレクション名。                                       |
+| `options`    | MongoDB 接続文字列のオプション。任意です。                      |
+| `uri`        | 接続を確立するための URI (host/port/db を個別に指定する代わりに使用) 。 |
+
+[エンジンの詳細](/ja/reference/engines/table-engines/integrations/mongodb)

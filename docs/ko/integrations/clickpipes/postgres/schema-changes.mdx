@@ -1,0 +1,22 @@
+---
+title: '스키마 변경 전파 지원'
+slug: /integrations/clickpipes/postgres/schema-changes
+description: '소스 테이블에서 ClickPipes가 감지할 수 있는 스키마 변경 유형을 설명하는 페이지'
+doc_type: 'reference'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'data ingestion', 'real-time sync']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+ClickPipes for Postgres는 소스 테이블의 스키마 변경을 감지할 수 있으며, 경우에 따라 이러한 변경 사항을 대상 테이블에 자동으로 전파할 수 있습니다. 각 DDL 작업이 처리되는 방식은 아래에 설명되어 있습니다.
+
+[//]: # "TODO 이 페이지에 rename, 데이터 타입 변경, truncate 동작과 호환되지 않는 스키마 변경 처리 방법에 대한 안내를 추가합니다."
+
+| 스키마 변경 유형                                                  | 동작                                                                                                     |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 새 컬럼 추가 (`ALTER TABLE ADD COLUMN ...`)                     | 테이블에 삽입/업데이트/삭제가 발생하면 자동으로 전파됩니다. 새 컬럼은 스키마 변경 이후 복제된 모든 행에 채워집니다                                      |
+| 기본값이 있는 새 컬럼 추가 (`ALTER TABLE ADD COLUMN ... DEFAULT ...`) | 테이블에 삽입/업데이트/삭제가 발생하면 자동으로 전파됩니다. 새 컬럼은 스키마 변경 이후 복제된 모든 행에 채워지지만, 기존 행에는 전체 테이블 갱신 없이는 기본값이 반영되지 않습니다 |
+| 기존 컬럼 삭제 (`ALTER TABLE DROP COLUMN ...`)                   | 감지되지만 **전파되지는** 않습니다. 삭제된 컬럼은 스키마 변경 이후 복제된 모든 행에서 `NULL`로 채워집니다                                       |
+
+컬럼 추가는 배치 동기화가 끝날 때 전파되며, 이는 동기화 인터벌에 도달하거나 pull 배치 크기에 도달한 후에 발생할 수 있습니다. 동기화 제어에 대한 자세한 내용은 [여기](/ko/integrations/clickpipes/postgres/controlling-sync)를 참조하십시오.

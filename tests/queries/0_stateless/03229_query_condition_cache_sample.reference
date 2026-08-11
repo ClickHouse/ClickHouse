@@ -1,0 +1,10 @@
+--- WHERE on non-primary-key column
+A SAMPLEing query must NOT write to the query condition cache.
+0
+A non-SAMPLEing query must returns the entire table content.
+600000
+--- WHERE on primary key column
+A SAMPLEing query must NOT write to the query condition cache.
+0
+A non-SAMPLEing query must returns the entire table content.
+6

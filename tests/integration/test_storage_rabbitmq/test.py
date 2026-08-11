@@ -618,7 +618,11 @@ def test_rabbitmq_big_message(rabbitmq_cluster, db, unique):
     for message in messages:
         channel.basic_publish(exchange=f"{unique}_big", routing_key="", body=message)
 
-    check_expected_result_polling(batch_messages * rabbitmq_messages, f"SELECT count() FROM {db}.view")
+    # 1M rows (5x any other polling test here) over many small parts: the default
+    # 60s budget is too tight under sanitizer builds + contended CI runners.
+    check_expected_result_polling(
+        batch_messages * rabbitmq_messages, f"SELECT count() FROM {db}.view", timeout=180
+    )
     connection.close()
 
 
@@ -768,11 +772,9 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster, db, unique):
     deadline = time.monotonic() + 180
     expected = messages_num * threads_num * NUM_MV
     while time.monotonic() < deadline:
-        result = 0
-        for mv_id in range(NUM_MV):
-            result += int(
-                instance.query(f"SELECT count() FROM {db}.combo_{mv_id}")
-            )
+        # Every instance.query() spawns a clickhouse-client, so poll all NUM_MV targets at once.
+        # The anchor keeps the combo_N_mv views out: reading a view counts its combo_N target again.
+        result = int(instance.query(f"SELECT count() FROM merge({db!r}, '^combo_[0-9]+$')"))
         if int(result) == expected:
             break
         logging.debug(f"Result: {result} / {expected}")

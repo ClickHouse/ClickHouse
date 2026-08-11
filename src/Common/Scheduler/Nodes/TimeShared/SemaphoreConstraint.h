@@ -21,13 +21,7 @@ class SemaphoreConstraint final : public ISchedulerConstraint
     static constexpr Int64 default_max_requests = std::numeric_limits<Int64>::max();
     static constexpr Int64 default_max_cost = std::numeric_limits<Int64>::max();
 public:
-    explicit SemaphoreConstraint(EventQueue & event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
-        : ISchedulerConstraint(event_queue_, config, config_prefix)
-        , max_requests(config.getInt64(config_prefix + ".max_requests", default_max_requests))
-        , max_cost(config.getInt64(config_prefix + ".max_cost", config.getInt64(config_prefix + ".max_bytes", default_max_cost)))
-    {}
-
-    SemaphoreConstraint(EventQueue & event_queue_, const SchedulerNodeInfo & info_, Int64 max_requests_, Int64 max_cost_)
+    explicit SemaphoreConstraint(EventQueue & event_queue_, const SchedulerNodeInfo & info_ = {}, Int64 max_requests_ = default_max_requests, Int64 max_cost_ = default_max_cost)
         : ISchedulerConstraint(event_queue_, info_)
         , max_requests(max_requests_)
         , max_cost(max_cost_)
@@ -41,15 +35,6 @@ public:
     }
 
     std::string_view getTypeName() const override { return "inflight_limit"; }
-
-    bool equals(ISchedulerNode * other) override
-    {
-        if (!ISchedulerNode::equals(other))
-            return false;
-        if (auto * o = dynamic_cast<SemaphoreConstraint *>(other))
-            return max_requests == o->max_requests && max_cost == o->max_cost;
-        return false;
-    }
 
     void attachChild(const std::shared_ptr<ISchedulerNode> & child_) override
     {

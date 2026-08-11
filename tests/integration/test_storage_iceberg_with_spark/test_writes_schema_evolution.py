@@ -30,12 +30,12 @@ def test_writes_schema_evolution(started_cluster_iceberg_with_spark, format_vers
     assert '`y` Nullable(Float64)' in instance.query(f"SHOW CREATE TABLE {TABLE_NAME}")
 
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES (124, 4.56);", settings={"allow_insert_into_iceberg": 1})
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '123\t\\N\n124\t4.5600000000000005\n'
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '123\t\\N\n124\t4.56\n'
 
     instance.query(f"ALTER TABLE {TABLE_NAME} DROP COLUMN x;", settings={"allow_insert_into_iceberg": 1})
     assert '`x` Nullable(Int64)' not in instance.query(f"SHOW CREATE TABLE {TABLE_NAME}")
 
-    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '4.5600000000000005\n\\N\n'
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == '4.56\n\\N\n'
 
     if storage_type == "azure":
         return

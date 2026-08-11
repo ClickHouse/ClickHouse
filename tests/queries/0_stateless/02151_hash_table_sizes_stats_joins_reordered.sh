@@ -30,6 +30,7 @@ opts=(
     # enable it: random settings can otherwise pick `query_plan_optimize_join_order_limit=0`
     # which keeps the original left-deep tree and yields prealloc=0 even with the fix.
     --query_plan_optimize_join_order_limit=64
+    --query_plan_optimize_join_order_randomize=0
 )
 
 # Use unique table names to avoid colliding with other tests sharing the test database.

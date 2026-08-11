@@ -1,0 +1,128 @@
+---
+description: 'クエリの複雑さを制限する設定。'
+sidebarTitle: 'クエリの複雑さの制限'
+slug: /operations/settings/query-complexity
+title: 'クエリの複雑さの制限'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 概要
+</div>
+
+ClickHouse では、[設定](/ja/concepts/features/configuration/settings/overview)の一部として、
+クエリの複雑さに制限を設けることができます。これにより、
+リソースを大量に消費する可能性のあるクエリから保護し、より安全で予測可能な
+実行を実現できます。特に、ユーザーインターフェイスを使用する場合に有効です。
+
+これらの制限のほとんどは `SELECT` クエリにのみ適用され、分散
+クエリ処理では、各サーバーに個別に適用されます。
+
+ClickHouse では通常、各行ごとに制限を確認するのではなく、データパーツが
+完全に処理された後でのみ制限を確認します。このため、
+パーツの処理中に制限を超過してしまう
+可能性があります。
+
+<div id="overflow_mode_setting">
+  ## `overflow_mode` 設定
+</div>
+
+ほとんどの制限には `overflow_mode` 設定もあり、制限を超えたときにどうなるかを定義します。指定できる値は次の 2 つです:
+
+* `throw`: 例外をスローします (デフォルト) 。
+* `break`: クエリの実行を停止し、部分的な結果を返します。これは、
+  入力データが尽きた場合と同じです。
+
+<div id="group_by_overflow_mode_settings">
+  ## `group_by_overflow_mode` の設定
+</div>
+
+`group_by_overflow_mode` 設定には、
+値 `any` もあります。
+
+* `any` : セットに入ったキーについては集約を継続しますが、
+  セットに新しいキーは追加しません。
+
+<div id="relevant-settings">
+  ## 設定一覧
+</div>
+
+以下の設定は、クエリの複雑さに関する制限を適用するために使用されます。
+
+<Note>
+  「何らかの最大量」に対する制限には、`0` を指定できます。
+  これは「無制限」を意味します。
+</Note>
+
+| 設定                                                                                                                            | 概要                                                                                               |
+| ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| [`max_memory_usage`](/ja/reference/settings/session-settings#max_memory_usage)                                                   | 単一サーバーでクエリを実行する際に使用できる RAM の最大量。                                                                 |
+| [`max_memory_usage_for_user`](/ja/reference/settings/session-settings#max_memory_usage_for_user)                                 | 単一サーバーでユーザーのクエリ実行に使用できる RAM の最大量。                                                                |
+| [`max_rows_to_read`](/ja/reference/settings/session-settings#max_rows_to_read)                                                   | クエリ実行時にテーブルから読み取れる行数の上限。                                                                         |
+| [`max_bytes_to_read`](/ja/reference/settings/session-settings#max_bytes_to_read)                                                 | クエリ実行時にテーブルから読み取れるバイト数 (非圧縮データ) の上限。                                                             |
+| [`read_overflow_mode_leaf`](/ja/reference/settings/session-settings#read_overflow_mode_leaf)                                     | 読み取りデータ量がリーフノードの制限のいずれかを超えた場合の動作を設定します。                                                          |
+| [`max_rows_to_read_leaf`](/ja/reference/settings/session-settings#max_rows_to_read_leaf)                                         | 分散クエリ実行時に、リーフノード上のローカルテーブルから読み取れる行数の上限。                                                          |
+| [`max_bytes_to_read_leaf`](/ja/reference/settings/session-settings#max_bytes_to_read_leaf)                                       | 分散クエリ実行時に、リーフノード上のローカルテーブルから読み取れるバイト数 (非圧縮データ) の上限。                                              |
+| [`read_overflow_mode_leaf`](/ja/reference/settings/session-settings#read_overflow_mode_leaf)                                     | 読み取りデータ量がリーフノードの制限のいずれかを超えた場合の動作を設定します。                                                          |
+| [`max_rows_to_group_by`](/ja/reference/settings/session-settings#max_rows_to_group_by)                                           | 集約で受け取る一意なキー数の上限。                                                                                |
+| [`group_by_overflow_mode`](/ja/reference/settings/session-settings#group_by_overflow_mode)                                       | 集約の一意なキー数が制限を超えた場合の動作を設定します。                                                                     |
+| [`max_bytes_before_external_group_by`](/ja/reference/settings/session-settings#max_bytes_before_external_group_by)               | 外部メモリでの `GROUP BY` 句の実行を有効または無効にします。                                                             |
+| [`max_bytes_ratio_before_external_group_by`](/ja/reference/settings/session-settings#max_bytes_ratio_before_external_group_by)   | `GROUP BY` に使用できる利用可能メモリの比率。この値に達すると、集約に外部メモリが使用されます。                                            |
+| [`max_bytes_before_external_sort`](/ja/reference/settings/session-settings#max_bytes_before_external_sort)                       | 外部メモリでの `ORDER BY` 句の実行を有効または無効にします。                                                             |
+| [`max_bytes_ratio_before_external_sort`](/ja/reference/settings/session-settings#max_bytes_ratio_before_external_sort)           | `ORDER BY` に使用できる利用可能メモリの比率。この値に達すると、外部ソートが使用されます。                                               |
+| [`max_rows_to_sort`](/ja/reference/settings/session-settings#max_rows_to_sort)                                                   | ソート前の行数の上限。ソート時のメモリ消費を抑えられます。                                                                    |
+| [`max_bytes_to_sort`](/ja/reference/settings/session-settings#max_rows_to_sort)                                                  | ソート前のバイト数の上限。                                                                                    |
+| [`sort_overflow_mode`](/ja/reference/settings/session-settings#sort_overflow_mode)                                               | ソート前に受信した行数が制限のいずれかを超えた場合の動作を設定します。                                                              |
+| [`max_result_rows`](/ja/reference/settings/session-settings#max_result_rows)                                                     | 結果の行数を制限します。                                                                                     |
+| [`max_result_bytes`](/ja/reference/settings/session-settings#max_result_bytes)                                                   | 結果サイズをバイト単位 (非圧縮) で制限します。                                                                        |
+| [`result_overflow_mode`](/ja/reference/settings/session-settings#result_overflow_mode)                                           | 結果のデータ量が制限のいずれかを超えた場合の動作を設定します。                                                                  |
+| [`max_execution_time`](/ja/reference/settings/session-settings#max_execution_time)                                               | クエリ実行時間の上限 (秒) 。                                                                                 |
+| [`timeout_overflow_mode`](/ja/reference/settings/session-settings#timeout_overflow_mode)                                         | クエリの実行時間が `max_execution_time` を超えた場合、または推定実行時間が `max_estimated_execution_time` を超えた場合の動作を設定します。 |
+| [`max_execution_time_leaf`](/ja/reference/settings/session-settings#max_execution_time_leaf)                                     | 意味的には `max_execution_time` と似ていますが、分散クエリまたはリモートクエリのリーフノードにのみ適用されます。                              |
+| [`timeout_overflow_mode_leaf`](/ja/reference/settings/session-settings#timeout_overflow_mode_leaf)                               | リーフノードでのクエリ実行時間が `max_execution_time_leaf` を超えた場合の動作を設定します。                                      |
+| [`min_execution_speed`](/ja/reference/settings/session-settings#min_execution_speed)                                             | 1 秒あたりの最小実行行数。                                                                                   |
+| [`min_execution_speed_bytes`](/ja/reference/settings/session-settings#min_execution_speed_bytes)                                 | 1 秒あたりの最小実行バイト数。                                                                                 |
+| [`max_execution_speed`](/ja/reference/settings/session-settings#max_execution_speed)                                             | 1 秒あたりの最大実行行数。                                                                                   |
+| [`max_execution_speed_bytes`](/ja/reference/settings/session-settings#max_execution_speed_bytes)                                 | 1 秒あたりの最大実行バイト数。                                                                                 |
+| [`timeout_before_checking_execution_speed`](/ja/reference/settings/session-settings#timeout_before_checking_execution_speed)     | 指定した秒数の経過後、実行速度が遅すぎないこと (`min_execution_speed` 以上であること) を確認します。                                  |
+| [`max_estimated_execution_time`](/ja/reference/settings/session-settings#max_estimated_execution_time)                           | クエリの推定実行時間の上限 (秒) 。                                                                              |
+| [`max_columns_to_read`](/ja/reference/settings/session-settings#max_columns_to_read)                                             | 1つのクエリでテーブルから読み取ることができるカラムの最大数。                                                                  |
+| [`max_temporary_columns`](/ja/reference/settings/session-settings#max_temporary_columns)                                         | クエリ実行時に、定数カラムを含めて同時に RAM 上に保持する必要がある一時カラムの最大数。                                                   |
+| [`max_temporary_non_const_columns`](/ja/reference/settings/session-settings#max_temporary_non_const_columns)                     | クエリ実行時に、定数カラムを含めずに同時に RAM 上に保持する必要がある一時カラムの最大数。                                                  |
+| [`max_subquery_depth`](/ja/reference/settings/session-settings#max_subquery_depth)                                               | クエリ内のネストされたサブクエリ数が指定値を超えた場合の動作を設定します。                                                            |
+| [`max_ast_depth`](/ja/reference/settings/session-settings#max_ast_depth)                                                         | クエリ構文木の最大ネスト深度。                                                                                  |
+| [`max_ast_elements`](/ja/reference/settings/session-settings#max_ast_elements)                                                   | クエリ構文木内の要素数の最大値。                                                                                 |
+| [`max_rows_in_set`](/ja/reference/settings/session-settings#max_rows_in_set)                                                     | サブクエリから作成される IN 句のデータセットの最大行数。                                                                   |
+| [`max_bytes_in_set`](/ja/reference/settings/session-settings#max_bytes_in_set)                                                   | サブクエリから作成される IN 句の集合で使用されるバイト数 (非圧縮データ) の最大値。                                                    |
+| [`set_overflow_mode`](/ja/reference/settings/session-settings#max_bytes_in_set)                                                  | データ量がいずれかの制限を超えた場合の動作を設定します。                                                                     |
+| [`max_rows_in_distinct`](/ja/reference/settings/session-settings#max_rows_in_distinct)                                           | DISTINCT 使用時の重複しない行の最大数。                                                                         |
+| [`max_bytes_in_distinct`](/ja/reference/settings/session-settings#max_bytes_in_distinct)                                         | DISTINCT 使用時にハッシュテーブルが使用する、メモリ内の state の最大サイズ (非圧縮バイト単位) 。                                       |
+| [`distinct_overflow_mode`](/ja/reference/settings/session-settings#distinct_overflow_mode)                                       | データ量がいずれかの制限を超えた場合の動作を設定します。                                                                     |
+| [`max_rows_to_transfer`](/ja/reference/settings/session-settings#max_rows_to_transfer)                                           | GLOBAL IN/JOIN の実行時に、リモートサーバーに渡すか一時テーブルに保存できる最大サイズ (行数) 。                                        |
+| [`max_bytes_to_transfer`](/ja/reference/settings/session-settings#max_bytes_to_transfer)                                         | GLOBAL IN/JOIN の実行時に、リモートサーバーに渡すか一時テーブルに保存できる最大バイト数 (非圧縮データ) 。                                   |
+| [`transfer_overflow_mode`](/ja/reference/settings/session-settings#transfer_overflow_mode)                                       | データ量がいずれかの制限を超えた場合の動作を設定します。                                                                     |
+| [`max_rows_in_join`](/ja/reference/settings/session-settings#max_rows_in_join)                                                   | テーブルの JOIN 時に使用されるハッシュテーブル内の行数を制限します。                                                            |
+| [`max_bytes_in_join`](/ja/reference/settings/session-settings#max_bytes_in_join)                                                 | テーブルの JOIN 時に使用されるハッシュテーブルの最大サイズ (バイト数) 。                                                        |
+| [`join_overflow_mode`](/ja/reference/settings/session-settings#join_overflow_mode)                                               | 以下の JOIN 制限のいずれかに達したときに ClickHouse が実行する動作を定義します。                                                |
+| [`max_partitions_per_insert_block`](/ja/reference/settings/session-settings#max_partitions_per_insert_block)                     | 1つの挿入ブロック内のパーティション数の上限を設定し、ブロックに含まれるパーティションが多すぎる場合は例外がスローされます。                                   |
+| [`throw_on_max_partitions_per_insert_block`](/ja/reference/settings/session-settings#throw_on_max_partitions_per_insert_block)   | `max_partitions_per_insert_block` に達したときの動作を制御できます。                                              |
+| [`max_temporary_data_on_disk_size_for_user`](/ja/reference/settings/session-settings#throw_on_max_partitions_per_insert_block)   | 同時実行中のそのユーザーのすべてのクエリについて、ディスク上の一時ファイルが消費できるデータ量の最大値 (バイト単位) 。                                    |
+| [`max_temporary_data_on_disk_size_for_query`](/ja/reference/settings/session-settings#max_temporary_data_on_disk_size_for_query) | 同時実行中のすべてのクエリについて、ディスク上の一時ファイルが消費できるデータ量の最大値 (バイト単位) 。                                           |
+| [`max_sessions_for_user`](/ja/reference/settings/session-settings#max_sessions_for_user)                                         | 認証済みユーザーごとの ClickHouse サーバーへの同時セッション数の最大値。                                                       |
+| [`max_partitions_to_read`](/ja/reference/settings/session-settings#max_partitions_to_read)                                       | 1つのクエリでアクセスできるパーティション数の上限を設定します。                                                                 |
+
+<div id="obsolete-settings">
+  ## 廃止された設定
+</div>
+
+<Note>
+  以下の設定は廃止されています。
+</Note>
+
+<div id="max-pipeline-depth">
+  ### max_pipeline_depth
+</div>
+
+パイプラインの最大深度。各データブロックがクエリ処理中に通過する
+変換の数に対応します。単一サーバーの範囲内でカウントされます。
+パイプラインの深度がこれを超えると、例外がスローされます。

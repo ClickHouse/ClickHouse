@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemKeeperCluster.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include "config.h"
 
@@ -67,5 +68,9 @@ void StorageSystemKeeperCluster::fillData(MutableColumns & res_columns, ContextP
 }
 
 }
+
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemKeeperCluster) }
 
 #endif

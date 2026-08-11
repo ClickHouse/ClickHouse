@@ -38,11 +38,13 @@ namespace DB::Parquet
 
 SchemaConverter::SchemaConverter(
     const parq::FileMetaData & file_metadata_, const ReadOptions & options_,
-    const Block * sample_block_)
+    const Block * sample_block_, std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns)
     : file_metadata(file_metadata_), options(options_), sample_block(sample_block_)
     , levels {LevelInfo {.def = 0, .rep = 0, .is_array = true}}
 {
-    if (options.format.parquet.allow_geoparquet_parser)
+    if (precomputed_geo_columns.has_value())
+        geo_columns = std::move(*precomputed_geo_columns);
+    else if (options.format.parquet.allow_geoparquet_parser)
     {
         for (const auto & kv : file_metadata.key_value_metadata)
         {
@@ -116,6 +118,7 @@ void SchemaConverter::prepareForReading()
         missing_output.output_type = missing_output.input_type;
         missing_output.is_missing_column = true;
     }
+
 }
 
 NamesAndTypesList SchemaConverter::inferSchema()
@@ -152,7 +155,21 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
     }
     auto it = map.find(element.field_id);
     if (it == map.end())
+    {
+        /// Iceberg reserves field ids greater than 2147483447 (Integer.MAX_VALUE - 200) for metadata
+        /// columns, e.g. the v3 row-lineage fields _row_id (2147483540) and
+        /// _last_updated_sequence_number (2147483539). Spec-compliant Iceberg writers physically
+        /// write these into data files, but they are not part of the table schema. Per the Iceberg
+        /// spec (https://iceberg.apache.org/spec/#reserved-field-ids), readers must ignore
+        /// reserved-range field ids they don't recognize rather than failing. Such a column is
+        /// never requested, so returning its physical name lets the existing "unrequested column"
+        /// path skip it.
+        static constexpr Int64 iceberg_max_user_field_id = 2147483447; /// Integer.MAX_VALUE - 200; ids above this are reserved
+        if (element.field_id > iceberg_max_user_field_id)
+            return element.name;
+
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parquet file has column {} with field_id {} that is not in datalake metadata", element.name, element.field_id);
+    }
 
     /// At top level (empty path), return the full mapped name. For nested
     /// elements, strip the parent path prefix to get the child name.
@@ -420,6 +437,10 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
     primitive.name = node.name;
     primitive.levels = levels;
     primitive.output_nullable = output_nullable || (output_nullable_if_not_json && !typeid_cast<const DataTypeObject *>(inferred_type.get()));
+    /// Leaf of a physically-nullable struct read as Nullable(Tuple(...)): its def-level null map is
+    /// the group null map. Keep that null map (don't throw on the group-null rows) and fill defaults
+    /// there; the group null map wraps the ColumnTuple in Reader::formOutputColumn.
+    primitive.group_nullable = nullable_tuple_group_depth > 0;
     primitive.decoder = std::move(decoder);
     primitive.decoded_type = decoded_type;
     for (const auto & level : levels)
@@ -605,6 +626,41 @@ bool SchemaConverter::processSubtreeArrayInner(TraversalNode & node)
     return true;
 }
 
+/// Whether the subtree rooted at `schema[root_idx]` (a group) contains only REQUIRED, non-repeated
+/// elements below the root. If so, none of its descendants add a definition level, so every leaf's
+/// definition-level null map is exactly the root group's null map. This lets us reconstruct the
+/// group null map from any leaf and read a physically nullable struct (OPTIONAL group) as
+/// Nullable(Tuple(...)) losslessly. Returns false for any OPTIONAL/REPEATED descendant.
+static bool tupleSubtreeIsAllRequired(const std::vector<parq::SchemaElement> & schema, size_t root_idx)
+{
+    /// schema is a flattened pre-order tree; num_children counts direct children, laid out
+    /// contiguously in pre-order. Walk the root's subtree with an explicit stack of
+    /// remaining-children counters for the groups we descended into.
+    if (root_idx >= schema.size())
+        return false;
+    std::vector<size_t> stack;
+    stack.push_back(size_t(schema.at(root_idx).num_children));
+    size_t idx = root_idx + 1;
+    while (!stack.empty())
+    {
+        if (stack.back() == 0)
+        {
+            stack.pop_back();
+            continue;
+        }
+        if (idx >= schema.size())
+            return false; // malformed schema; caller handles elsewhere
+        stack.back() -= 1;
+        const parq::SchemaElement & elem = schema.at(idx);
+        if (elem.repetition_type != parq::FieldRepetitionType::REQUIRED)
+            return false;
+        idx += 1;
+        if (elem.__isset.num_children && elem.num_children > 0)
+            stack.push_back(size_t(elem.num_children));
+    }
+    return true;
+}
+
 void SchemaConverter::processSubtreeTuple(TraversalNode & node)
 {
     /// Tuple (possibly a Map key_value tuple):
@@ -612,6 +668,47 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     ///     <recurse> `name1`
     ///     <recurse> `name2`
     ///     ...
+
+    /// The requested type may wrap the tuple in Nullable (e.g. `Nullable(Tuple(...))` is a legal
+    /// type). Unwrap it, match elements against the inner Tuple, and restore the wrapper below.
+    ///
+    /// Two eligible cases, both requiring no optional/nullable STRUCT-group ancestor. Only Nullable
+    /// levels nested below the innermost array count: a Nullable level at or before it is the
+    /// optional wrapper of a LIST/MAP, whose nulls are normalized to empty collections by
+    /// processRepDefLevelsForArray and never reach the inner tuple null-map.
+    ///  1. REQUIRED group: always defined, so the outer Nullable is always-non-null. Restored via
+    ///     outer_type_hint (needs_cast) as an all-non-null wrapper.
+    ///  2. OPTIONAL group with an all-REQUIRED, non-array subtree: physically nullable struct. No
+    ///     descendant adds a definition level, so every leaf's def-level null map equals the group
+    ///     null map. We mark the leaves and the output so the assembled ColumnTuple is wrapped in
+    ///     ColumnNullable using that reconstructed null map (see OutputColumnInfo::nullable_group).
+    /// Otherwise keep the hint wrapped and let the check below reject it with TYPE_MISMATCH rather
+    /// than lose nulls. For an OPTIONAL group, processSubtree has already pushed this group's own
+    /// (non-array) level as levels.back(); exclude it when scanning for an ancestor.
+    size_t innermost_array_idx = 0;
+    for (size_t i = 0; i < levels.size(); ++i)
+        if (levels[i].is_array)
+            innermost_array_idx = i;
+    const bool group_is_optional = node.element->repetition_type == parq::FieldRepetitionType::OPTIONAL;
+    const size_t ancestor_end = levels.size() - (group_is_optional ? 1 : 0);
+    bool has_optional_ancestor = false;
+    for (size_t i = innermost_array_idx + 1; i < ancestor_end; ++i)
+        has_optional_ancestor |= !levels[i].is_array;
+    bool nullable_group = false;
+    if (node.type_hint && node.type_hint->isNullable() && !has_optional_ancestor)
+    {
+        if (node.element->repetition_type == parq::FieldRepetitionType::REQUIRED)
+            node.type_hint = assert_cast<const DataTypeNullable &>(*node.type_hint).getNestedType();
+        else if (group_is_optional && tupleSubtreeIsAllRequired(file_metadata.schema, schema_idx - 1))
+        {
+            node.type_hint = assert_cast<const DataTypeNullable &>(*node.type_hint).getNestedType();
+            nullable_group = true;
+        }
+    }
+
+    /// Mark leaves recursed below as belonging to a physically-nullable group (case 2 above).
+    nullable_tuple_group_depth += nullable_group ? 1 : 0;
+    SCOPE_EXIT({ nullable_tuple_group_depth -= nullable_group ? 1 : 0; });
 
     const DataTypeTuple * tuple_type_hint = typeid_cast<const DataTypeTuple *>(node.type_hint.get());
     if (node.type_hint && !tuple_type_hint && !typeid_cast<const DataTypeObject *>(node.type_hint.get()))
@@ -755,6 +852,22 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
         output_type = std::make_shared<DataTypeTuple>(types, names);
     }
 
+    /// Physically-nullable struct (OPTIONAL group, case 2 above): the assembled ColumnTuple must be
+    /// wrapped in ColumnNullable using the group null map. Make input_type Nullable(Tuple(...)) so
+    /// the outer restore in processSubtree sees no type change (needs_cast stays off); the wrapping
+    /// is done in Reader::formOutputColumn keyed by OutputColumnInfo::nullable_group.
+    /// The group null map is reconstructed from a physical leaf's definition levels, so at least one
+    /// leaf must actually be read. With allow_missing_columns, every requested element can be a
+    /// synthetic default (no physical leaf); then the null map is unrecoverable, so reject rather
+    /// than fabricate an all-non-null map that silently drops the struct nulls.
+    if (nullable_group && primitive_start == primitive_columns.size())
+        throw Exception(ErrorCodes::TYPE_MISMATCH,
+            "Requested type of column {} doesn't match parquet schema: physically nullable Tuple has no "
+            "physical elements to read (all requested elements are missing), so its null map cannot be "
+            "reconstructed; requested type is {}", node.getNameForLogging(), node.type_hint->getName());
+    if (nullable_group)
+        output_type = makeNullable(output_type);
+
     node.output_idx = output_columns.size();
     OutputColumnInfo & output = output_columns.emplace_back();
     output.name = node.name;
@@ -763,6 +876,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     output.input_type = std::move(output_type);
     output.output_type = output.input_type;
     output.nested_columns = elements;
+    output.nullable_group = nullable_group;
 }
 
 void SchemaConverter::processPrimitiveColumn(
@@ -910,15 +1024,15 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type of GeoParquet column: {}", thriftToString(type));
 
         out_inferred_type = getGeoDataType(geo_metadata->type);
-        out_decoder.string_converter = std::make_shared<GeoConverter>(*geo_metadata);
+        out_decoder.string_converter = std::make_shared<GeoConverter>(*geo_metadata, options.format.precise_float_parsing);
         return;
     }
 
     if (type_hint && type_hint->getName() == "Geometry" && type == parq::Type::BYTE_ARRAY)
     {
-        GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed};
+        GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed, std::nullopt};
         out_inferred_type = getGeoDataType(GeoType::Mixed);
-        out_decoder.string_converter = std::make_shared<GeoConverter>(iceberg_geo);
+        out_decoder.string_converter = std::make_shared<GeoConverter>(iceberg_geo, options.format.precise_float_parsing);
         return;
     }
 
@@ -1103,6 +1217,9 @@ void SchemaConverter::processPrimitiveColumn(
         UInt32 scale = logical.__isset.DECIMAL ? logical.DECIMAL.scale : element.scale;
         precision = std::max(precision, scale);
 
+        /// Precision of the Decimal type exactly as wide as one decoded value. Legal parquet can
+        /// make it exceed `precision` (e.g. INT64 with precision 9), so it, not `precision`,
+        /// determines the width of the column we decode into.
         UInt32 max_precision = 0;
         if (type == parq::Type::INT32 || type == parq::Type::INT64)
         {
@@ -1171,8 +1288,15 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet decimal type precision or scale is too big ({} digits) for physical type {}", precision, thriftToString(type));
 
         out_inferred_type = createDecimal<DataTypeDecimal>(precision, scale);
-        size_t output_size = out_inferred_type->getSizeOfValueInMemory();
-        out_decoder.allow_stats = is_output_type_decimal(output_size, scale);
+
+        /// Decode into a column as wide as the converter writes; castColumn then narrows it to the
+        /// declared precision, throwing DECIMAL_OVERFLOW for values that don't fit.
+        auto decoded_type = createDecimal<DataTypeDecimal>(max_precision, scale);
+        size_t decoded_size = decoded_type->getSizeOfValueInMemory();
+        if (decoded_size != out_inferred_type->getSizeOfValueInMemory())
+            out_decoded_type = std::move(decoded_type);
+
+        out_decoder.allow_stats = is_output_type_decimal(decoded_size, scale);
 
         return;
     }

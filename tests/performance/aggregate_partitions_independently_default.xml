@@ -1,0 +1,53 @@
+<test>
+    <!--
+        This test measures the effect of enabling `allow_aggregate_partitions_independently` by
+        default. Unlike `aggregation_by_partitions.xml`, it deliberately does NOT set (or force)
+        the setting, so each server build uses its own compiled-in default: the old default (0)
+        disables the optimization and aggregates with a global merge, while the new default (1)
+        lets the runtime heuristics route each partition through a separate aggregation pipeline
+        and skip the merge.
+
+        The layout is favorable for the heuristics: the partition key is a function of the
+        `GROUP BY` key, the partitions are numerous and roughly equal in size (uniform `sipHash64`
+        distribution), and the partition count stays within
+        `max_number_of_partitions_for_independent_aggregation` (128 by default).
+
+        `max_threads` is pinned so the comparison is deterministic across machines: the heuristic
+        disables the optimization when the partition count is below `max_threads / 2`, so with
+        `max_threads = 32` both the 32- and 64-partition tables (>= 16) keep the optimization
+        enabled regardless of the host's core count.
+    -->
+    <settings>
+        <max_threads>32</max_threads>
+        <max_memory_usage>0</max_memory_usage>
+        <max_partitions_per_insert_block>256</max_partitions_per_insert_block>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>size</name>
+            <values>
+                <value>10000000</value>
+                <value>50000000</value>
+            </values>
+        </substitution>
+
+        <substitution>
+            <name>partitions</name>
+            <values>
+                <value>32</value>
+                <value>64</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>create table t_apart_default_{size}_{partitions}(a UInt64) engine=MergeTree order by a partition by sipHash64(a) % {partitions}</create_query>
+
+    <fill_query>insert into t_apart_default_{size}_{partitions} select * from numbers_mt({size})</fill_query>
+
+    <fill_query>optimize table t_apart_default_{size}_{partitions} final</fill_query>
+
+    <query>select a from t_apart_default_{size}_{partitions} group by a format Null</query>
+
+    <drop_query>drop table t_apart_default_{size}_{partitions}</drop_query>
+</test>

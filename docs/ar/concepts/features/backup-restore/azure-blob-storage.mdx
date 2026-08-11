@@ -1,0 +1,40 @@
+---
+description: 'يوضح النسخ الاحتياطي/الاستعادة إلى نقطة نهاية Azure Blob Storage أو منها'
+sidebarTitle: 'AzureBlobStorage'
+slug: /operations/backup/azure
+title: 'النسخ الاحتياطي/الاستعادة إلى Azure Blob Storage أو منه'
+doc_type: 'guide'
+---
+
+import Syntax from '/snippets/ar/_syntax.mdx';
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+<Syntax />
+
+<div id="configuring-backuprestore-to-use-an-azureblobstorage-endpoint">
+  ## تهيئة نسخ احتياطي / استعادة لاستخدام نقطة نهاية AzureBlobStorage
+</div>
+
+لكتابة النسخ الاحتياطية إلى حاوية AzureBlobStorage، تحتاج إلى المعلومات التالية:
+
+* سلسلة الاتصال / URL الخاصة بنقطة نهاية AzureBlobStorage،
+* الحاوية،
+* المسار،
+* اسم الحساب (إذا تم تحديد URL)
+* مفتاح الحساب (إذا تم تحديد URL)
+
+سيتم تحديد وجهة النسخة الاحتياطية على النحو التالي:
+
+```sql
+AzureBlobStorage('<connection string>/<url>', '<container>', '<path>', '<account name>', '<account key>')
+```
+
+```sql
+BACKUP TABLE data TO AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;',
+    'testcontainer', 'data_backup');
+RESTORE TABLE data AS data_restored FROM AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;',
+    'testcontainer', 'data_backup');
+```

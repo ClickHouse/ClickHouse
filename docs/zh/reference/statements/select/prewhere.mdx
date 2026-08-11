@@ -1,0 +1,76 @@
+---
+description: 'PREWHERE 子句文档'
+sidebarTitle: 'PREWHERE'
+slug: /sql-reference/statements/select/prewhere
+title: 'PREWHERE 子句'
+doc_type: 'reference'
+---
+
+Prewhere 是一种用于更高效执行过滤的优化机制。即使未显式指定 `PREWHERE` 子句，它默认也是启用的。其工作方式是自动将 [WHERE](/zh/reference/statements/select/where) 条件中的一部分移到 prewhere 阶段。`PREWHERE` 子句的作用仅在于控制这一优化：如果你认为自己比默认行为更清楚如何处理，就可以手动干预。
+
+启用 prewhere 优化后，系统起初只会读取执行 prewhere 表达式所需的列。随后，再读取执行查询其余部分所需的其他列，但仅限于那些至少有某些行使 prewhere 表达式为 `true` 的块。如果有大量块中 prewhere 表达式对所有行都为 `false`，并且 prewhere 所需的列少于查询其他部分所需的列，那么这通常可以在查询执行时显著减少从磁盘读取的数据量。
+
+<div id="controlling-prewhere-manually">
+  ## 手动控制 PREWHERE
+</div>
+
+该子句与 `WHERE` 子句含义相同。区别在于从表中读取哪些数据。对于查询中只有少数列会用到、但能显著过滤数据的过滤条件，可以手动将其放到 `PREWHERE` 中，从而减少需要读取的数据量。
+
+一个查询可以同时指定 `PREWHERE` 和 `WHERE`。在这种情况下，`PREWHERE` 会先于 `WHERE` 执行。
+
+如果 [optimize&#95;move&#95;to&#95;prewhere](/zh/reference/settings/session-settings#optimize_move_to_prewhere) 设置为 0，则会禁用将表达式的一部分从 `WHERE` 自动移到 `PREWHERE` 的启发式规则。
+
+如果查询带有 [FINAL](/zh/reference/statements/select/from#final-modifier) modifier，`PREWHERE` 优化并不总是正确的。只有当 [optimize&#95;move&#95;to&#95;prewhere](/zh/reference/settings/session-settings#optimize_move_to_prewhere) 和 [optimize&#95;move&#95;to&#95;prewhere&#95;if&#95;final](/zh/reference/settings/session-settings#optimize_move_to_prewhere_if_final) 这两个设置都启用时，才会启用该优化。
+
+<Note>
+  `PREWHERE` 部分会在 `FINAL` 之前执行，因此，如果对不在表的 `ORDER BY` 部分中的字段使用 `PREWHERE`，`FROM ... FINAL` 查询的结果可能会出现偏差。
+</Note>
+
+<div id="limitations">
+  ## 限制
+</div>
+
+`PREWHERE` 仅受 [*MergeTree](/zh/reference/engines/table-engines/mergetree-family/index) 家族的表支持。
+
+<div id="example">
+  ## 示例
+</div>
+
+```sql
+CREATE TABLE mydata
+(
+    `A` Int64,
+    `B` Int8,
+    `C` String
+)
+ENGINE = MergeTree
+ORDER BY A AS
+SELECT
+    number,
+    0,
+    if(number between 1000 and 2000, 'x', toString(number))
+FROM numbers(10000000);
+
+SELECT count()
+FROM mydata
+WHERE (B = 0) AND (C = 'x');
+
+1 row in set. Elapsed: 0.074 sec. Processed 10.00 million rows, 168.89 MB (134.98 million rows/s., 2.28 GB/s.)
+
+-- 启用追踪以查看哪些谓词被移至 PREWHERE
+set send_logs_level='debug';
+
+MergeTreeWhereOptimizer: condition "B = 0" moved to PREWHERE  
+-- ClickHouse 自动将 `B = 0` 移至 PREWHERE，但这没有意义，因为 B 始终为 0。
+
+-- 手动将另一个谓词 `C = 'x'` 移至 PREWHERE 
+
+SELECT count()
+FROM mydata
+PREWHERE C = 'x'
+WHERE B = 0;
+
+1 row in set. Elapsed: 0.069 sec. Processed 10.00 million rows, 158.89 MB (144.90 million rows/s., 2.30 GB/s.)
+
+-- 手动指定 `PREWHERE` 的查询处理的数据量略少：158.89 MB VS 168.89 MB
+```

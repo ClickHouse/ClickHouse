@@ -1,0 +1,51 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/ssd-cache
+title: 'ssd_cache Dictionary のレイアウトタイプ'
+sidebarTitle: 'ssd_cache'
+description: 'メモリ内の索引とともに辞書データを SSD に保存する: ssd_cache または complex_key_ssd_cache タイプ'
+doc_type: 'reference'
+---
+
+<div id="ssd_cache">
+  ## ssd_cache
+</div>
+
+`cache` と似ていますが、データは SSD に保存され、索引は RAM に格納されます。更新キューに関連する cache Dictionary の設定は、すべて SSD cache Dictionary にも適用できます。
+
+Dictionaryキーの型は [UInt64](/ja/reference/data-types/int-uint) です。
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
+        PATH '/var/lib/clickhouse/user_files/test_dict'))
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <layout>
+        <ssd_cache>
+            <!-- バイト単位の基本読み取りブロックのサイズ。SSD のページサイズと同じにすることを推奨します。 -->
+            <block_size>4096</block_size>
+            <!-- バイト単位の cache ファイルの最大サイズ。 -->
+            <file_size>16777216</file_size>
+            <!-- SSD から要素を読み取るための、RAM バッファのサイズ（バイト単位）。 -->
+            <read_buffer_size>131072</read_buffer_size>
+            <!-- SSD に flush する前に要素を集約するための、RAM バッファのサイズ（バイト単位）。 -->
+            <write_buffer_size>1048576</write_buffer_size>
+            <!-- cache ファイルの保存先 path。 -->
+            <path>/var/lib/clickhouse/user_files/test_dict</path>
+        </ssd_cache>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="complex_key_ssd_cache">
+  ## complex_key_ssd_cache
+</div>
+
+このストレージタイプは、複合[キー](/ja/reference/statements/create/dictionary/attributes#composite-key)で使用します。`ssd_cache` と似ています。

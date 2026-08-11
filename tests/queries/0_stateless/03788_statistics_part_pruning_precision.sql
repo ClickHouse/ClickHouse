@@ -1,5 +1,6 @@
 -- This test validates that Field-based MinMax statistics can precisely prune parts
 -- for large integers (beyond 2^53), high-precision Decimals, and Float64 values.
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS test_stats_exceeds;
 
@@ -14,7 +15,7 @@ CREATE TABLE test_stats_exceeds (
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMMDD(dt)
 ORDER BY tuple()
-SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', auto_statistics_types = 'minmax';
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', auto_statistics_types = 'basic';
 
 SET use_statistics_for_part_pruning = 1;
 SET enable_analyzer = 1;

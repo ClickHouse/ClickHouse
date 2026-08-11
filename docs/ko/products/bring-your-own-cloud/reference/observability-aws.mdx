@@ -1,0 +1,229 @@
+---
+title: 'BYOC 관측성'
+slug: /cloud/reference/byoc/observability
+sidebarTitle: '관측성'
+keywords: ['BYOC', '클라우드', 'Bring Your Own Cloud', '관측성', '모니터링', 'Prometheus', 'Grafana']
+description: '기본 제공 대시보드와 Prometheus 메트릭을 사용하여 BYOC ClickHouse 배포를 모니터링하고 관측성을 확보합니다'
+doc_type: '참고'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+BYOC 배포에는 포괄적인 관측성 기능이 포함되어 있어, 전용 Prometheus 모니터링 스택과 ClickHouse 서버에서 직접 제공되는 메트릭 엔드포인트를 통해 ClickHouse 서비스를 모니터링할 수 있습니다. 모든 관측성 데이터는 클라우드 계정 내에 유지되므로 모니터링 인프라를 완전히 제어할 수 있습니다.
+
+<div id="prometheus-monitoring">
+  ## Prometheus 모니터링 방식
+</div>
+
+BYOC는 Prometheus를 사용해 메트릭을 수집하고 시각화하는 두 가지 주요 방법을 제공합니다.
+
+1. **기본 제공 Prometheus 스택에 연결**: BYOC Kubernetes 클러스터 내부에서 실행되는 중앙 집중식 사전 설치 Prometheus 인스턴스에 연결합니다.
+2. **ClickHouse 메트릭 직접 스크레이프**: 자체 Prometheus 배포가 각 ClickHouse 서비스에서 노출하는 `/metrics_all` 엔드포인트를 스크레이프하도록 설정합니다.
+
+<div id="monitoring-approaches-comparison">
+  ### 모니터링 방법 비교
+</div>
+
+| Capability     | 기본 제공 Prometheus 스택                                               | ClickHouse 서비스에서 직접 스크레이프                                 |
+| -------------- | -------------------------------------------------------------- | --------------------------------------------------------- |
+| **메트릭 범위**     | ClickHouse, Kubernetes 및 지원 서비스를 포함한 메트릭을 통합하여 클러스터 전체를 볼 수 있음 | 개별 ClickHouse 서버의 메트릭만 제공                                 |
+| **설정 과정**      | 프라이빗 네트워크 액세스를 설정해야 함(예: private load balancer 사용)             | Prometheus가 퍼블릭 또는 프라이빗 ClickHouse 엔드포인트를 스크레이프하도록 간단히 구성 |
+| **연결 방식**      | VPC/네트워크 내의 private load balancer를 통해 연결                       | 데이터베이스에 접근할 때 사용하는 것과 동일한 엔드포인트 사용                        |
+| **인증**         | 필요 없음(프라이빗 네트워크로 제한됨)                                          | ClickHouse 서비스 자격 증명 사용                                   |
+| **네트워크 요구 사항** | private load balancer 및 적절한 네트워크 연결 필요                         | ClickHouse 엔드포인트에 접근할 수 있는 모든 네트워크에서 사용 가능                |
+| **가장 적합한 용도**  | 인프라와 서비스를 아우르는 통합 모니터링                                         | 서비스별 모니터링 및 통합                                            |
+| **통합 방법**      | 외부 Prometheus에서 페더레이션을 구성해 클러스터 메트릭을 수집                   | ClickHouse 메트릭 엔드포인트를 Prometheus 구성에 직접 추가                |
+
+**권장 사항**: 대부분의 사용 사례에서는 기본 제공 Prometheus 스택과 통합하는 방식을 권장합니다. 이 방식은 ClickHouse 서버 메트릭만 제공하는 것이 아니라, BYOC 배포의 모든 구성 요소(ClickHouse 서비스, Kubernetes 클러스터, 지원 서비스)에서 포괄적인 메트릭을 제공하기 때문입니다. 
+
+<div id="builtin-prometheus-stack">
+  ## 기본 제공 BYOC Prometheus 스택
+</div>
+
+ClickHouse BYOC는 Kubernetes 클러스터 내에 Prometheus, Grafana, AlertManager와 선택적으로 메트릭을 장기 저장하기 위한 Thanos를 포함한 전체 Prometheus 모니터링 스택을 배포합니다. 이 스택은 다음 대상으로부터 메트릭을 수집합니다:
+
+* ClickHouse 서버와 ClickHouse Keeper
+* Kubernetes 클러스터 및 시스템 구성 요소
+* 기반 인프라의 노드
+
+<div id="accessing-prometheus-stack">
+  ### Prometheus Stack에 액세스하기
+</div>
+
+기본 제공 Prometheus 스택에 연결하려면 다음 단계를 따르십시오.
+
+1. BYOC 환경에서 private load balancer를 활성화하려면 **ClickHouse 지원팀**에 문의하십시오.
+2. **Prometheus 엔드포인트 URL**을 ClickHouse 지원팀에 요청하십시오.
+3. **Prometheus 엔드포인트에 대한 프라이빗 네트워크 연결**을 확인하십시오. 일반적으로 VPC peering 또는 기타 프라이빗 네트워크 구성을 통해 확인합니다.
+
+엔드포인트 포맷은 연결 방식에 따라 다릅니다.
+
+| 연결 방식             | 엔드포인트 포맷                                                                       |
+| ----------------- | ------------------------------------------------------------------------------ |
+| VPC / VPC peering | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
+| PrivateLink       | `https://prometheus.vpce.<subdomain>.<region>.<cloud>.clickhouse-byoc.com`     |
+
+<Note>
+  Prometheus 스택 URL은 프라이빗 네트워크 연결을 통해서만 액세스할 수 있으며 인증이 필요하지 않습니다. 액세스는 VPC peering 또는 기타 프라이빗 연결 옵션을 통해 BYOC VPC에 도달할 수 있는 네트워크로 제한됩니다.
+</Note>
+
+<div id="prometheus-stack-integration">
+  ### 모니터링 도구와 통합하기
+</div>
+
+모니터링 환경에서 BYOC Prometheus 스택을 여러 방식으로 활용할 수 있습니다:
+
+**옵션 1: Prometheus API 쿼리**
+
+* 선호하는 모니터링 플랫폼 또는 사용자 지정 대시보드에서 Prometheus API 엔드포인트에 직접 액세스합니다.
+* PromQL 쿼리를 사용하여 필요한 메트릭을 추출, 집계, 시각화합니다.
+* 맞춤형 대시보드 또는 알림 파이프라인을 구축하는 데 적합합니다.
+
+Prometheus 쿼리 엔드포인트 `/query`:
+
+```text
+https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com/query
+```
+
+**옵션 2: 자체 Prometheus로 메트릭 페더레이션**
+
+* 외부 Prometheus 인스턴스가 ClickHouse BYOC Prometheus 스택의 메트릭을 페더레이션 방식으로 가져오도록 구성하세요.
+* 이렇게 하면 여러 환경이나 클러스터의 메트릭 수집을 한곳으로 통합하고 중앙에서 관리할 수 있습니다.
+* 예시 Prometheus 페더레이션 구성:
+
+```yaml
+scrape_configs:
+  - job_name: 'federate-clickhouse-byoc'
+    scrape_interval: 15s
+    honor_labels: true
+    metrics_path: '/federate'
+    params:
+      'match[]':
+        - '{job="clickhouse"}'
+        - '{job="kubernetes"}'
+    static_configs:
+      - targets:
+        - 'prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com'
+```
+
+<div id="direct-prometheus-integration">
+  ## ClickHouse 서비스 Prometheus 통합
+</div>
+
+ClickHouse 서비스는 Prometheus와 호환되는 메트릭 endpoint를 노출하며, 자체 Prometheus instance를 사용해 이를 직접 스크레이프할 수 있습니다. 이 방식은 ClickHouse 전용 메트릭을 제공하지만 Kubernetes 또는 관련 서비스 메트릭은 포함하지 않습니다.
+
+<div id="metrics-endpoint">
+  ### 메트릭 엔드포인트에 액세스하기
+</div>
+
+메트릭 엔드포인트는 ClickHouse 서비스 엔드포인트의 `/metrics_all` 경로에서 사용할 수 있습니다:
+
+```bash
+curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443/metrics_all
+```
+
+**응답 예시:**
+
+```bash
+# HELP ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes system 데이터베이스의 `s3disk` 디스크에 저장된 바이트 수
+# TYPE ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes gauge
+ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes{hostname="c-jet-ax-16-server-43d5baj-0"} 62660929
+# HELP ClickHouse_CustomMetric_NumberOfBrokenDetachedParts 손상된 분리된 파트 수
+# TYPE ClickHouse_CustomMetric_NumberOfBrokenDetachedParts gauge
+ClickHouse_CustomMetric_NumberOfBrokenDetachedParts{hostname="c-jet-ax-16-server-43d5baj-0"} 0
+# HELP ClickHouse_CustomMetric_TotalNumberOfErrors 마지막 재시작 이후 서버에서 발생한 총 오류 수
+# TYPE ClickHouse_CustomMetric_TotalNumberOfErrors gauge
+ClickHouse_CustomMetric_TotalNumberOfErrors{hostname="c-jet-ax-16-server-43d5baj-0"} 9
+```
+
+<div id="authentication">
+  ### 인증
+</div>
+
+메트릭 endpoint는 ClickHouse 자격 증명을 사용한 인증이 필요합니다. `default` 사용자를 사용하거나, 메트릭 scraping 전용으로 최소 권한만 가진 사용자를 별도로 생성하는 것을 권장합니다.
+
+**필수 권한:**
+
+* 서비스에 연결하기 위한 `REMOTE` 권한
+* 관련 시스템 테이블에 대한 `SELECT` 권한
+
+**예시 사용자 설정:**
+
+```sql
+CREATE USER scrapping_user IDENTIFIED BY 'secure_password';
+GRANT REMOTE ON *.* TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_dictionary_custom_metrics_tables TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_dictionary_database_replicated_recovery_time TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_dictionary_failed_mutations TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_dictionary_group TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_dictionary_shared_catalog_recovery_time TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_dictionary_table_read_only_duration_seconds TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_view_error_metrics TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_view_histograms TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_view_metrics_and_events TO scrapping_user;
+GRANT SELECT(description, metric, value) ON system.asynchronous_metrics TO scrapping_user;
+GRANT SELECT ON system.custom_metrics TO scrapping_user;
+GRANT SELECT(name, value) ON system.errors TO scrapping_user;
+GRANT SELECT(description, event, value) ON system.events TO scrapping_user;
+GRANT SELECT(description, labels, metric, value) ON system.histogram_metrics TO scrapping_user;
+GRANT SELECT(description, metric, value) ON system.metrics TO scrapping_user;
+```
+
+<div id="configuring-prometheus">
+  ### Prometheus 구성하기
+</div>
+
+Prometheus 인스턴스가 ClickHouse 메트릭 엔드포인트를 스크레이프하도록 구성하십시오:
+
+```yaml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "clickhouse"
+    static_configs:
+      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443"]
+    scheme: https
+    metrics_path: "/metrics_all"
+    basic_auth:
+      username: <username>
+      password: <password>
+    honor_labels: true
+```
+
+다음을 대체하십시오:
+
+* `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443`를 실제 서비스 endpoint로 대체하십시오
+* `<username>` 및 `<password>`를 스크래핑에 사용할 사용자 자격 증명으로 대체하십시오
+
+<div id="clickhouse-mixin">
+  ## ClickHouse Mixin
+</div>
+
+즉시 사용할 수 있는 대시보드 모음을 원하는 팀을 위해 ClickHouse는 Prometheus **ClickHouse Mixin**을 제공합니다. 이는 ClickHouse 클러스터 모니터링을 위해 특별히 설계된 사전 구축된 Grafana 대시보드입니다.
+
+<div id="setup-grafana-mixin">
+  ### Grafana 설정 및 ClickHouse Mix-in 가져오기
+</div>
+
+Prometheus 인스턴스가 ClickHouse 모니터링 스택에 통합되면, 다음 단계에 따라 Grafana에서 메트릭을 시각화할 수 있습니다.
+
+1. **Grafana에서 Prometheus를 데이터 소스로 추가**
+   Grafana 사이드바에서 &quot;Data sources&quot;로 이동한 다음 &quot;Add data source&quot;를 클릭하고 &quot;Prometheus&quot;를 선택하십시오. 연결에 필요한 Prometheus 인스턴스 URL과 자격 증명을 입력하십시오.
+
+<Image img="/images/cloud/reference/byoc-mixin-1.webp" size="lg" alt="BYOC Mixin 1" background="black" />
+
+<Image img="/images/cloud/reference/byoc-mixin-2.webp" size="lg" alt="BYOC Mixin 2" background="black" />
+
+<Image img="/images/cloud/reference/byoc-mixin-3.webp" size="lg" alt="BYOC Mixin 3" background="black" />
+
+2. **ClickHouse 대시보드 가져오기**
+   Grafana에서 대시보드 영역으로 이동한 다음 &quot;Import&quot;를 선택하십시오. 대시보드 JSON 파일을 업로드하거나 파일 내용을 직접 붙여넣을 수 있습니다. JSON 파일은 ClickHouse mixin 리포지토리에서 가져올 수 있습니다.
+   [ClickHouse Mix-in Dashboard JSON](https://github.com/ClickHouse/clickhouse-mixin/blob/main/dashboard_byoc.json)
+
+<Image img="/images/cloud/reference/byoc-mixin-4.webp" size="lg" alt="BYOC Mixin 4" background="black" />
+
+3. **메트릭 살펴보기**
+   대시보드를 가져와 Prometheus 데이터 소스로 구성하면 ClickHouse Cloud 서비스의 실시간 메트릭을 확인할 수 있습니다.
+
+<Image img="/images/cloud/reference/byoc-mixin-5.webp" size="lg" alt="BYOC Mixin 5" background="black" />

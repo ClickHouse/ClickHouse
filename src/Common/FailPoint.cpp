@@ -38,8 +38,13 @@ static struct InitFiu
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
+    REGULAR(smt_dedup_conflict_part_name_missing) \
+    REGULAR(merge_tree_sink_on_start_random_sleep) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
+    PAUSEABLE_ONCE(remote_query_executor_receive_packet_pause) \
+    PAUSEABLE_ONCE(remote_query_executor_finish_drain_pause) \
+    ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(stripe_log_sink_write_fallpoint) \
     ONCE(smt_commit_merge_mutate_zk_fail_after_op) \
@@ -58,19 +63,24 @@ static struct InitFiu
     ONCE(smt_insert_fake_hardware_error) \
     ONCE(smt_sleep_after_hardware_in_insert) \
     ONCE(smt_throw_keeper_exception_after_successful_insert) \
+    REGULAR(smt_backup_keeper_session_expired_always) \
     ONCE(smt_lightweight_snapshot_fail) \
     ONCE(smt_lightweight_snapshot_table_path_session_expired) \
     ONCE(smt_lightweight_update_sleep_after_block_allocation) \
     ONCE(smt_merge_task_sleep_in_prepare) \
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
     ONCE(rmt_merge_task_sleep_in_prepare) \
+    ONCE(merge_tree_refresh_parts_throw_once) \
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(s3_send_request_throw_expired_token) \
+    REGULAR(s3_read_inject_etag_mismatch) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
     ONCE(object_storage_queue_fail_commit_after_success) \
+    ONCE(object_storage_queue_skip_one_file_in_batch) \
     ONCE(object_storage_queue_cancel_in_generate) \
     ONCE(object_storage_queue_sleep_in_generate) \
+    ONCE(object_storage_queue_fail_tags_fetch) \
     ONCE(distributed_cache_fail_continue_request) \
     ONCE(distributed_cache_fail_continue_read_request) \
     ONCE(distributed_cache_fail_choose_server) \
@@ -80,58 +90,88 @@ static struct InitFiu
     ONCE(distributed_cache_server_fail_show_request) \
     ONCE(distributed_cache_server_fail_show_streaming) \
     REGULAR(distributed_cache_fail_request_in_the_middle_of_request_always) \
+    REGULAR(distributed_cache_cancel_query_in_response_wait) \
+    REGULAR(distributed_cache_assume_gap_buffered_on_seek) \
+    REGULAR(distributed_cache_simulate_undrained_leftovers) \
+    REGULAR(distributed_cache_wait_gap_buffered_on_seek) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     PAUSEABLE(file_cache_pause_before_do_eviction) \
+    PAUSEABLE(file_segment_pause_before_write) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
+    REGULAR(cache_filesystem_failure_non_errno) \
     REGULAR(file_segment_range_writer_partial_write_then_network_error) \
     REGULAR(distributed_cache_simulate_writer_not_keeping_up) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
     ONCE(distributed_cache_simulate_stale_connection) \
+    REGULAR(distributed_cache_write_fail_object_storage) \
     REGULAR(write_through_cache_fail) \
     REGULAR(object_storage_queue_fail_commit) \
     REGULAR(object_storage_queue_fail_after_insert) \
+    REGULAR(object_storage_queue_fail_delete) \
     REGULAR(object_storage_queue_fail_startup) \
     REGULAR(smt_dont_merge_first_part) \
     REGULAR(smt_mutate_only_second_part) \
     REGULAR(smt_sleep_in_schedule_data_processing_job) \
     REGULAR(cache_warmer_stall) \
     REGULAR(file_cache_dynamic_resize_fail_to_evict) \
+    REGULAR(file_cache_background_eviction_push_fail) \
     REGULAR(file_cache_slru_downgrade_fail_before_finalize) \
     REGULAR(file_cache_modify_size_limits_fail) \
     REGULAR(check_table_query_delay_for_part) \
+    ONCE(check_table_inject_retryable_zk_error) \
+    REGULAR(database_catalog_throw_on_table_shutdown) \
+    REGULAR(database_catalog_throw_on_table_prepare_shutdown) \
+    REGULAR(database_replicated_throw_on_stop_replication) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
     REGULAR(taskstats_counters_reset_throw) \
     REGULAR(shared_set_sleep_during_update) \
     REGULAR(smt_outdated_parts_exception_response) \
     REGULAR(object_storage_queue_fail_in_the_middle_of_file) \
+    PAUSEABLE_ONCE(object_storage_queue_pause_after_commit) \
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
     ONCE(replicated_merge_tree_restore_attach_retry) \
     PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
     PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
     PAUSEABLE_ONCE(smt_wait_next_mutation) \
     PAUSEABLE_ONCE(delta_lake_metadata_iterate_pause) \
+    PAUSEABLE_ONCE(delta_lake_write_commit_pause) \
     PAUSEABLE_ONCE(query_metric_log_pause_before_finish) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
+    PAUSEABLE_ONCE(kafka2_remove_zk_before_get_children) \
+    PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
+    PAUSEABLE_ONCE(keeper_map_delete_pause_before_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(terminate_with_exception) \
     ONCE(terminate_with_std_exception) \
     ONCE(libcxx_hardening_out_of_bounds_assertion) \
+    ONCE(trigger_sanitizer_error) \
     ONCE(receive_timeout_on_table_status_response) \
+    ONCE(unexpected_packet_in_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
     REGULAR(delta_kernel_force_credentials_fingerprint_drift) \
     ONCE(delta_kernel_force_stale_token_error) \
     REGULAR(object_storage_force_refresh_callback_success) \
+    REGULAR(refresh_mv_skip_attach_feature_flag_check) \
+    REGULAR(refresh_mv_force_scheduling_feature_flags_missing) \
+    REGULAR(refresh_mv_force_coordination_version_conflict) \
+    REGULAR(refresh_mv_force_coordination_running_znode_lost) \
+    PAUSEABLE(refresh_mv_pause_before_exchange) \
+    PAUSEABLE(refresh_mv_pause_after_interrupt_check) \
+    REGULAR(refresh_mv_skip_execution) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
     ONCE(space_saving_copy_arena_throw) \
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(keeper_fault_on_watch_request) \
+    REGULAR(keeper_shutdown_delay_before_queue_check) \
     REGULAR(lazy_pipe_fds_fail_close) \
+    REGULAR(claim_inject_stale_part_dir) \
     PAUSEABLE(infinite_sleep) \
+    PAUSEABLE(async_insert_flush_pause_in_executor) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
     REGULAR(replicated_merge_tree_all_replicas_stale) \
     REGULAR(zero_copy_lock_zk_fail_before_op) \
@@ -142,6 +182,7 @@ static struct InitFiu
     REGULAR(zero_copy_unlock_zk_fail_after_op) \
     REGULAR(plain_rewritable_object_storage_azure_not_found_on_init) \
     PAUSEABLE(storage_merge_tree_background_clear_old_parts_pause) \
+    PAUSEABLE(storage_merge_create_children_plans_pause) \
     PAUSEABLE_ONCE(storage_shared_merge_tree_mutate_pause_before_wait) \
     PAUSEABLE(database_replicated_startup_pause) \
     ONCE(keeper_leader_sets_invalid_digest) \
@@ -151,6 +192,8 @@ static struct InitFiu
     REGULAR(database_replicated_delay_recovery) \
     REGULAR(database_replicated_delay_entry_execution) \
     PAUSEABLE(database_replicated_stop_entry_execution) \
+    PAUSEABLE_ONCE(database_replicated_pause_after_reading_log_pointer) \
+    PAUSEABLE_ONCE(database_replicated_pause_after_snapshot_identity_check) \
     REGULAR(remove_merge_tree_part_delay) \
     REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
     REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move) \
@@ -161,12 +204,15 @@ static struct InitFiu
     ONCE(write_file_operation_fail_on_read) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
+    REGULAR(iceberg_slow_manifest_read) \
     REGULAR(storage_cluster_read_sleep) \
     ONCE(backup_add_empty_memory_table) \
+    ONCE(backup_fail_before_writing_metadata) \
     PAUSEABLE_ONCE(backup_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_on_start) \
     PAUSEABLE(sc_state_application_pause) \
     PAUSEABLE(sc_state_application_pause_after_fetch) \
+    PAUSEABLE(sc_state_fetch_pause_before_version_check) \
     REGULAR(sc_intentions_commit_fail) \
     REGULAR(sleep_in_logs_flush) \
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
@@ -174,10 +220,16 @@ static struct InitFiu
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
     PAUSEABLE(merge_task_projection_stage_pause) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
+    PAUSEABLE(rmt_mutate_task_pause_after_zero_copy_lock) \
+    PAUSEABLE(merge_tree_background_task_marked_for_deletion) \
     PAUSEABLE(rmt_merge_selecting_task_pause_when_scheduled) \
     PAUSEABLE(mt_merge_selecting_task_pause_when_scheduled) \
     REGULAR(mt_select_parts_to_mutate_no_free_threads) \
     REGULAR(mt_select_parts_to_mutate_max_part_size) \
+    ONCE(mt_alter_throw_in_start_mutation) \
+    ONCE(mt_alter_throw_after_mutation_registered) \
+    ONCE(mt_throw_after_mutation_commit) \
+    ONCE(mt_alter_throw_in_durable_rollback) \
     REGULAR(rmt_merge_selecting_task_no_free_threads) \
     REGULAR(rmt_merge_selecting_task_max_part_size) \
     REGULAR(merge_tree_load_statistics_throw) \
@@ -188,6 +240,10 @@ static struct InitFiu
     ONCE(shared_set_full_update_fails_when_initializing) \
     PAUSEABLE(after_snapshot_clean_pause) \
     ONCE(parallel_replicas_reading_response_timeout) \
+    ONCE(prepared_sets_build_ordered_set_inplace_fail) \
+    REGULAR(parallel_replicas_force_local_replica_inactive) \
+    REGULAR(parallel_replicas_skip_aggregate_projection_on_follower) \
+    ONCE(parallel_replicas_insert_select_drop_active_replica) \
     ONCE(database_iceberg_gcs) \
     REGULAR(rmt_delay_execute_drop_range) \
     REGULAR(rmt_delay_commit_part) \
@@ -199,9 +255,20 @@ static struct InitFiu
     REGULAR(database_replicated_force_metadata_digest_check) \
     ONCE(oom_canary_force_oom_evidence) \
     PAUSEABLE(truncate_database_tables_pause) \
+    PAUSEABLE(database_materialized_postgresql_pause_before_table_drop) \
     REGULAR(datalake_try_get_table_return_nullptr) \
+    REGULAR(datalake_try_get_table_throw) \
+    REGULAR(datalake_get_tables_throw) \
+    REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
+    PAUSEABLE_ONCE(create_or_replace_before_rename) \
+    REGULAR(atomic_populate_fail_before_subscription) \
+    PAUSEABLE(atomic_populate_pause_before_subscription) \
+    PAUSEABLE(atomic_populate_pause_after_view_publication) \
+    PAUSEABLE(atomic_populate_pause_before_source_guard) \
+    PAUSEABLE(database_catalog_drop_finally_before_id_erase) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
+    ONCE(mt_skip_scheduling_merge_once) \
     REGULAR(patch_parts_reverse_column_order) \
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \
@@ -211,8 +278,27 @@ static struct InitFiu
     ONCE(thread_group_switcher_post_attach_failure) \
     PAUSEABLE(transaction_after_commit_pause) \
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
+    PAUSEABLE_ONCE(iceberg_compaction_merge_pause_in_step) \
     REGULAR(tcp_handler_fail_connection_setup) \
-    REGULAR(distributed_plan_status_check_reenqueue_fault)
+    REGULAR(distributed_plan_status_check_reenqueue_fault) \
+    PAUSEABLE(keeper_changelog_read_plan_resolved) \
+    PAUSEABLE(keeper_changelog_removed_from_disk_set) \
+    PAUSEABLE(keeper_changelog_readahead_fill_wedge) \
+    PAUSEABLE(keeper_changelog_readahead_serve_wait) \
+    PAUSEABLE(keeper_changelog_readahead_park_armed) \
+    PAUSEABLE(keeper_changelog_readahead_pre_drain) \
+    REGULAR(keeper_changelog_readahead_fill_exception) \
+    REGULAR(distributed_plan_record_failure_while_starting_tasks) \
+    ONCE(zk_send_thread_request_window_throw) \
+    ONCE(zk_send_thread_operations_insert_throw) \
+    REGULAR(replicated_database_status_finished_node_missing) \
+    PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap) \
+    PAUSEABLE_ONCE(limit_by_sorted_stream_transform_pause) \
+    PAUSEABLE_ONCE(limit_by_transform_pause) \
+    PAUSEABLE_ONCE(limit_by_sorted_stream_transform_after_loop_pause) \
+    PAUSEABLE_ONCE(limit_by_transform_after_loop_pause) \
+    PAUSEABLE_ONCE(limit_by_sorted_stream_transform_mid_loop_pause) \
+    PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause)
 
 namespace FailPoints
 {
@@ -288,8 +374,24 @@ void FailPointInjection::enableFailPoint(const String & fail_point_name)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
 }
 
+static bool isRegisteredFailPoint(const String & fail_point_name)
+{
+#define M(NAME)                              \
+    if (fail_point_name == FailPoints::NAME) \
+        return true;
+    APPLY_FOR_FAILPOINTS(M, M, M, M)
+#undef M
+
+    return false;
+}
+
 void FailPointInjection::disableFailPoint(const String & fail_point_name)
 {
+    /// Registration is deliberately the only check: disabling a registered fail point that is
+    /// not currently enabled must stay a silent no-op, because callers do idempotent cleanup.
+    if (!isRegisteredFailPoint(fail_point_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
+
     std::lock_guard lock(mu);
     if (auto iter = fail_point_wait_channels.find(fail_point_name); iter != fail_point_wait_channels.end())
     {
@@ -305,6 +407,11 @@ void FailPointInjection::disableFailPoint(const String & fail_point_name)
 
 void FailPointInjection::notifyFailPoint(const String & fail_point_name)
 {
+    /// Reported separately from the missing channel below, so a typo is not described as a
+    /// registered fail point that nothing is waiting on.
+    if (!isRegisteredFailPoint(fail_point_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
+
     std::lock_guard lock(mu);
     if (auto iter = fail_point_wait_channels.find(fail_point_name); iter != fail_point_wait_channels.end())
     {
@@ -340,6 +447,12 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
 
 void FailPointInjection::waitForPause(const String & fail_point_name)
 {
+    /// A mistyped name would otherwise return at once and silently drop the synchronisation the
+    /// caller asked for, turning a deterministic test into a race. A registered fail point with no
+    /// channel still returns, because it is simply not paused.
+    if (!isRegisteredFailPoint(fail_point_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
+
     std::unique_lock lock(mu);
     auto iter = fail_point_wait_channels.find(fail_point_name);
     if (iter == fail_point_wait_channels.end())
@@ -355,6 +468,10 @@ void FailPointInjection::waitForPause(const String & fail_point_name)
 
 void FailPointInjection::waitForResume(const String & fail_point_name)
 {
+    /// Same as `waitForPause`: an unknown name must not look like an already finished wait.
+    if (!isRegisteredFailPoint(fail_point_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
+
     std::unique_lock lock(mu);
     auto iter = fail_point_wait_channels.find(fail_point_name);
     if (iter == fail_point_wait_channels.end())
@@ -396,7 +513,19 @@ std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints
 
 #else // USE_LIBFIU
 
+/// These are hooks in regular code paths, so they must be no-ops rather than throw.
+/// In particular, `disableFailPoint` is called unconditionally during quorum cleanup
+/// in `StorageReplicatedMergeTree` and `ReplicatedMergeTreeRestartingThread`.
+
 void FailPointInjection::pauseFailPoint(const String &)
+{
+}
+
+void FailPointInjection::notifyPauseAndWaitForResume(const String &)
+{
+}
+
+void FailPointInjection::disableFailPoint(const String &)
 {
 }
 
@@ -405,43 +534,33 @@ bool FailPointInjection::hasAnyFailPointBeenRegistered()
     return false;
 }
 
+/// The rest are only reachable through SYSTEM ... FAILPOINT queries (whose interpreter
+/// already throws in builds without libfiu), and pretending to succeed would leave the
+/// caller waiting for a fail point that can never fire.
+
+[[noreturn]] static void throwDisabled()
+{
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Fail points are disabled because ClickHouse was built without libfiu");
+}
+
 void FailPointInjection::enableFailPoint(const String &)
 {
-}
-
-void FailPointInjection::enablePauseFailPoint(const String &, UInt64)
-{
-}
-
-void FailPointInjection::disableFailPoint(const String &)
-{
+    throwDisabled();
 }
 
 void FailPointInjection::notifyFailPoint(const String &)
 {
-}
-
-void FailPointInjection::wait(const String &)
-{
+    throwDisabled();
 }
 
 void FailPointInjection::waitForPause(const String &)
 {
+    throwDisabled();
 }
 
 void FailPointInjection::waitForResume(const String &)
 {
-}
-
-void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfiguration & config)
-{
-    String root_key = "fail_points_active";
-
-    Poco::Util::AbstractConfiguration::Keys fail_point_names;
-    config.keys(root_key, fail_point_names);
-
-    if (!fail_point_names.empty())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FIU is not enabled");
+    throwDisabled();
 }
 
 std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints()

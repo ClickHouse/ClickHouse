@@ -1,0 +1,249 @@
+---
+title: '基本操作 - 時系列'
+sidebarTitle: '基本操作'
+description: 'ClickHouseにおける基本的な時系列操作。'
+slug: /use-cases/time-series/basic-operations
+keywords: ['時系列', '基本操作', 'データインジェスト', 'クエリ', 'フィルタリング', 'グループ化', '集約']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+ClickHouseには時系列データを扱うためのさまざまな方法があり、異なる時間範囲にまたがるデータポイントを集約、グループ化、分析できます。
+このセクションでは、時間ベースのデータを扱う際によく使われる基本的な操作を説明します。
+
+代表的な操作としては、データを時間インターバルごとにグループ化すること、時系列データの欠損を扱うこと、期間間の変化を計算することなどがあります。
+これらの操作は、標準的なSQL構文とClickHouseの組み込み時間関数を組み合わせることで実行できます。
+
+Wikistat (Wikipediaのページビュー・データ) データセットを使って、ClickHouseの時系列クエリ機能を見ていきましょう。
+
+```sql
+CREATE TABLE wikistat
+(
+    `time` DateTime,
+    `project` String,
+    `subproject` String,
+    `path` String,
+    `hits` UInt64
+)
+ENGINE = MergeTree
+ORDER BY (time);
+```
+
+では、このテーブルに10億件のレコードを挿入してみましょう:
+
+```sql
+INSERT INTO wikistat 
+SELECT *
+FROM s3('https://ClickHouse-public-datasets.s3.amazonaws.com/wikistat/partitioned/wikistat*.native.zst') 
+LIMIT 1e9;
+```
+
+<div id="time-series-aggregating-time-bucket">
+  ## 時間バケットで集計する
+</div>
+
+最も一般的なのは、一定期間ごとにデータを集計することです。たとえば、各日の `hits` の合計を取得する場合です。
+
+```sql
+SELECT
+    toDate(time) AS date,
+    sum(hits) AS hits
+FROM wikistat
+GROUP BY ALL
+ORDER BY date ASC
+LIMIT 5;
+```
+
+```text
+┌───────date─┬─────hits─┐
+│ 2015-05-01 │ 25524369 │
+│ 2015-05-02 │ 25608105 │
+│ 2015-05-03 │ 28567101 │
+│ 2015-05-04 │ 29229944 │
+│ 2015-05-05 │ 29383573 │
+└────────────┴──────────┘
+```
+
+ここでは、指定した時刻を日付型に変換する[`toDate()`](/ja/reference/functions/regular-functions/type-conversion-functions#toDate)関数を使用しています。別の方法として、1時間単位でまとめ、特定の日付でフィルタすることもできます。
+
+```sql
+SELECT
+    toStartOfHour(time) AS hour,
+    sum(hits) AS hits    
+FROM wikistat
+WHERE date(time) = '2015-07-01'
+GROUP BY ALL
+ORDER BY hour ASC
+LIMIT 5;
+```
+
+```text
+┌────────────────hour─┬───hits─┐
+│ 2015-07-01 00:00:00 │ 656676 │
+│ 2015-07-01 01:00:00 │ 768837 │
+│ 2015-07-01 02:00:00 │ 862311 │
+│ 2015-07-01 03:00:00 │ 829261 │
+│ 2015-07-01 04:00:00 │ 749365 │
+└─────────────────────┴────────┘
+```
+
+ここで使用している[`toStartOfHour()`](/ja/reference/functions/regular-functions/date-time-functions#toStartOfHour)関数は、指定した時刻をその時間帯の先頭時刻に変換します。
+年、四半期、月、日単位でグループ化することもできます。
+
+<div id="time-series-custom-grouping-intervals">
+  ## 任意のグループ化インターバル
+</div>
+
+[`toStartOfInterval()`](/ja/reference/functions/regular-functions/date-time-functions#toStartOfInterval) 関数を使うと、5 分ごとなど、任意のインターバルでグループ化することもできます。
+
+たとえば、4 時間ごとのインターバルでグループ化したいとします。
+グループ化の間隔は [`INTERVAL`](/ja/reference/data-types/special-data-types/interval) 句で指定できます。
+
+```sql
+SELECT
+    toStartOfInterval(time, INTERVAL 4 HOUR) AS interval,
+    sum(hits) AS hits
+FROM wikistat
+WHERE date(time) = '2015-07-01'
+GROUP BY ALL
+ORDER BY interval ASC
+LIMIT 6;
+```
+
+または、[`toIntervalHour()`](/ja/reference/functions/regular-functions/type-conversion-functions#toIntervalHour) 関数を使用できます
+
+```sql
+SELECT
+    toStartOfInterval(time, toIntervalHour(4)) AS interval,
+    sum(hits) AS hits
+FROM wikistat
+WHERE date(time) = '2015-07-01'
+GROUP BY ALL
+ORDER BY interval ASC
+LIMIT 6;
+```
+
+どちらの場合でも、次の結果が得られます。
+
+```text
+┌────────────interval─┬────hits─┐
+│ 2015-07-01 00:00:00 │ 3117085 │
+│ 2015-07-01 04:00:00 │ 2928396 │
+│ 2015-07-01 08:00:00 │ 2679775 │
+│ 2015-07-01 12:00:00 │ 2461324 │
+│ 2015-07-01 16:00:00 │ 2823199 │
+│ 2015-07-01 20:00:00 │ 2984758 │
+└─────────────────────┴─────────┘
+```
+
+<div id="time-series-filling-empty-groups">
+  ## 空のグループを補完する
+</div>
+
+多くの場合、欠損した時間帯を含むスパースなデータを扱います。その結果、空のバケットが生じます。次の例では、データを1時間単位でグループ化します。これにより、一部の時間帯の値が欠けた、次のような統計が出力されます。
+
+```sql
+SELECT
+    toStartOfHour(time) AS hour,
+    sum(hits)
+FROM wikistat
+WHERE (project = 'ast') AND (subproject = 'm') AND (date(time) = '2015-07-01')
+GROUP BY ALL
+ORDER BY hour ASC;
+```
+
+```text
+┌────────────────hour─┬─sum(hits)─┐
+│ 2015-07-01 00:00:00 │         3 │ <- 欠損値
+│ 2015-07-01 02:00:00 │         1 │ <- 欠損値
+│ 2015-07-01 04:00:00 │         1 │
+│ 2015-07-01 05:00:00 │         2 │
+│ 2015-07-01 06:00:00 │         1 │
+│ 2015-07-01 07:00:00 │         1 │
+│ 2015-07-01 08:00:00 │         3 │
+│ 2015-07-01 09:00:00 │         2 │ <- 欠損値
+│ 2015-07-01 12:00:00 │         2 │
+│ 2015-07-01 13:00:00 │         4 │
+│ 2015-07-01 14:00:00 │         2 │
+│ 2015-07-01 15:00:00 │         2 │
+│ 2015-07-01 16:00:00 │         2 │
+│ 2015-07-01 17:00:00 │         1 │
+│ 2015-07-01 18:00:00 │         5 │
+│ 2015-07-01 19:00:00 │         5 │
+│ 2015-07-01 20:00:00 │         4 │
+│ 2015-07-01 21:00:00 │         4 │
+│ 2015-07-01 22:00:00 │         2 │
+│ 2015-07-01 23:00:00 │         2 │
+└─────────────────────┴───────────┘
+```
+
+ClickHouse には、これに対処するための [`WITH FILL`](/ja/guides/use-cases/real-time-analytics/time-series/time-series-filling-gaps#with-fill) 修飾子があります。これにより、空いている時間帯がすべて 0 で補完され、時間の経過に伴う分布をより把握しやすくなります。
+
+```sql
+SELECT
+    toStartOfHour(time) AS hour,
+    sum(hits)
+FROM wikistat
+WHERE (project = 'ast') AND (subproject = 'm') AND (date(time) = '2015-07-01')
+GROUP BY ALL
+ORDER BY hour ASC WITH FILL STEP toIntervalHour(1);
+```
+
+```text
+┌────────────────hour─┬─sum(hits)─┐
+│ 2015-07-01 00:00:00 │         3 │
+│ 2015-07-01 01:00:00 │         0 │ <- 新しい値
+│ 2015-07-01 02:00:00 │         1 │
+│ 2015-07-01 03:00:00 │         0 │ <- 新しい値
+│ 2015-07-01 04:00:00 │         1 │
+│ 2015-07-01 05:00:00 │         2 │
+│ 2015-07-01 06:00:00 │         1 │
+│ 2015-07-01 07:00:00 │         1 │
+│ 2015-07-01 08:00:00 │         3 │
+│ 2015-07-01 09:00:00 │         2 │
+│ 2015-07-01 10:00:00 │         0 │ <- 新しい値
+│ 2015-07-01 11:00:00 │         0 │ <- 新しい値
+│ 2015-07-01 12:00:00 │         2 │
+│ 2015-07-01 13:00:00 │         4 │
+│ 2015-07-01 14:00:00 │         2 │
+│ 2015-07-01 15:00:00 │         2 │
+│ 2015-07-01 16:00:00 │         2 │
+│ 2015-07-01 17:00:00 │         1 │
+│ 2015-07-01 18:00:00 │         5 │
+│ 2015-07-01 19:00:00 │         5 │
+│ 2015-07-01 20:00:00 │         4 │
+│ 2015-07-01 21:00:00 │         4 │
+│ 2015-07-01 22:00:00 │         2 │
+│ 2015-07-01 23:00:00 │         2 │
+└─────────────────────┴───────────┘
+```
+
+<div id="time-series-rolling-time-windows">
+  ## ローリング時間ウィンドウ
+</div>
+
+日や時間の始まりのようなインターバルの開始時点ではなく、一定幅の時間ウィンドウを扱いたい場合があります。
+たとえば、日単位ではなく、午後6時を基準にした24時間単位のウィンドウごとの合計 hits を把握したいとします。
+
+参照時刻と各レコードの時刻との差を計算するには、[`date_diff()`](/ja/reference/functions/regular-functions/date-time-functions#timeDiff) 関数を使用できます。
+この場合、`day` カラムは日数の差 (例: 1日前、2日前 など) を表します。
+
+```sql
+SELECT    
+    dateDiff('day', toDateTime('2015-05-01 18:00:00'), time) AS day,
+    sum(hits),
+FROM wikistat
+GROUP BY ALL
+ORDER BY day ASC
+LIMIT 5;
+```
+
+```text
+┌─day─┬─sum(hits)─┐
+│   0 │  25524369 │
+│   1 │  25608105 │
+│   2 │  28567101 │
+│   3 │  29229944 │
+│   4 │  29383573 │
+└─────┴───────────┘
+```

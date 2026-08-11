@@ -4,6 +4,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -15,6 +16,7 @@
 #include <Core/Settings.h>
 #include <Access/Common/AccessFlags.h>
 #include <Common/assert_cast.h>
+#include <Common/Exception.h>
 
 
 namespace DB
@@ -83,6 +85,24 @@ public:
     {
     }
 
+    ~AliasSink() override
+    {
+        /// On cancellation without an exception (e.g. timeout_overflow_mode='break') neither
+        /// onFinish() nor onException() runs, leaving the nested executor started but unfinished.
+        /// Cancel it so ~PushingPipelineExecutor's finished-or-unwinding invariant holds.
+        if (executor)
+        {
+            try
+            {
+                executor->cancel();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("AliasSink");
+            }
+        }
+    }
+
     String getName() const override { return "AliasSink"; }
 
     void onStart() override
@@ -96,6 +116,13 @@ public:
         auto insert_context = Context::createCopy(getContext());
         insert_context->makeQueryContext();
         addInterpreterContext(insert_context);
+
+        /// This sink is one branch of the outer query's `max_insert_threads` fan-out (or its only
+        /// stream). Keep the nested INSERT single-stream: with the outer fan-out already in place,
+        /// letting every branch fan out again would multiply the number of real sink branches (part
+        /// writers, squashing and compression buffers) up to `max_insert_threads^2`, exceeding the
+        /// budget the user allowed for this INSERT.
+        insert_context->setSetting("max_insert_threads", 1);
 
         /// Thread the outer async-insert flag into the nested target pipeline so INSERT through
         /// Alias matches a direct insert: async batches select async dedup settings and skip the
@@ -127,6 +154,16 @@ public:
 
         Chunk non_materialized_chunk(non_materialized_block.getColumns(), non_materialized_block.rows());
         non_materialized_chunk.setChunkInfos(chunk.getChunkInfos().clone());
+
+        /// The nested INSERT re-anchors the deduplication info to its own chunks (its squashing and
+        /// `AddDeduplicationInfoTransform` call `updateOriginalBlock`). When this sink is fed by a
+        /// dependent materialized view whose inner query changed the number of rows, those chunks
+        /// no longer match the rows the info's offsets describe, and computing a data hash after
+        /// that re-anchoring would read out of the block's bounds. Cache the hashes now, while the
+        /// info is still consistent.
+        if (auto deduplication_info = non_materialized_chunk.getChunkInfos().get<DeduplicationInfo>())
+            deduplication_info->cacheDataHashes(data_hash_cache);
+
         executor->push(std::move(non_materialized_chunk));
     }
 
@@ -154,6 +191,9 @@ private:
     bool async_insert;
     BlockIO block_io;
     std::unique_ptr<PushingPipelineExecutor> executor;
+    /// Memoizes the deduplication data hashes across the sibling chunks of one source block, so a
+    /// row-count-changing view fanned out into many chunks does not re-hash the source per chunk.
+    DeduplicationInfo::DataHashCache data_hash_cache;
 };
 
 void StorageAlias::read(

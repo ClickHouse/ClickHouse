@@ -1,0 +1,23 @@
+---
+description: 'Documentation de la clause ALL'
+sidebarTitle: 'ALL'
+slug: /sql-reference/statements/select/all
+title: 'Clause ALL'
+doc_type: 'reference'
+---
+
+S&#39;il existe plusieurs lignes correspondantes dans une table, `ALL` les renvoie toutes. `SELECT ALL` est identique à `SELECT` sans `DISTINCT`. Si `ALL` et `DISTINCT` sont tous deux spécifiés, une exception est levée.
+
+`ALL` peut être spécifié dans des fonctions d&#39;agrégation, bien que cela n&#39;ait en pratique aucun effet sur le résultat de la requête.
+
+Par exemple :
+
+```sql
+SELECT sum(ALL number) FROM numbers(10);
+```
+
+Équivaut à :
+
+```sql
+SELECT sum(number) FROM numbers(10);
+```

@@ -1,0 +1,251 @@
+---
+description: '查询级别设置'
+sidebarTitle: '查询级别的会话设置'
+slug: /operations/settings/query-level
+title: '查询级别的会话设置'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 概述
+</div>
+
+可以通过多种方式使用特定设置来运行语句。
+设置按层配置，后面的每一层都会覆盖前一层中该设置的值。
+
+<div id="order-of-priority">
+  ## 优先级顺序
+</div>
+
+定义设置时的优先级顺序如下：
+
+1. 直接将设置应用到用户，或在 SETTINGS PROFILE 中应用
+
+   * SQL (推荐)
+   * 向 `/etc/clickhouse-server/users.d` 添加一个或多个 XML 或 YAML 文件
+
+2. 会话设置
+
+   * 在 ClickHouse Cloud SQL 控制台或以交互模式运行的
+     `clickhouse client` 中发送 `SET setting=value`。同样，你也可以在 HTTP 协议中使用 ClickHouse
+     会话。为此，需要指定
+     `session_id` HTTP 参数。
+
+3. 查询设置
+
+   * 以非交互模式启动 `clickhouse client` 时，设置启动
+     参数 `--setting=value`。
+   * 使用 HTTP API 时，传递 CGI 参数 (`URL?setting_1=value&setting_2=value...`) 。
+   * 在 SELECT 查询的
+     [SETTINGS](/zh/reference/statements/select/index#settings-in-select-query)
+     子句中定义设置。该设置值仅应用于该查询，
+     并会在查询执行后重置为默认值或之前的值。
+
+<div id="converting-a-setting-to-its-default-value">
+  ## 将设置恢复为默认值
+</div>
+
+如果您更改了某项设置，并希望将其恢复为默认值，请将其值设为 `DEFAULT`。语法如下：
+
+```sql
+SET setting_name = DEFAULT
+```
+
+例如，`async_insert` 的默认值为 `0`。假设你将其改为 `1`：
+
+```sql
+SET async_insert = 1;
+
+SELECT value FROM system.settings where name='async_insert';
+```
+
+响应如下：
+
+```response
+┌─value──┐
+│ 1      │
+└────────┘
+```
+
+以下命令会将其值设回 0：
+
+```sql
+SET async_insert = DEFAULT;
+
+SELECT value FROM system.settings where name='async_insert';
+```
+
+该设置现已恢复默认值：
+
+```response
+┌─value───┐
+│ 0       │
+└─────────┘
+```
+
+<div id="custom_settings">
+  ## 自定义设置
+</div>
+
+除了常见的[设置](/zh/reference/settings/session-settings)外，用户还可以定义自定义设置。
+自定义设置允许你传递**会话特定的参数**，这些参数可在查询、策略或函数中引用。在以下场景中，这会非常有用：
+
+* 根据用户身份或所属组织过滤数据
+* 根据上下文应用不同的业务逻辑
+* 在同一会话的多次查询之间保留有状态信息
+
+自定义设置名称必须以你所定义列表中的某个预定义前缀开头。
+前缀列表可通过 [`custom_settings_prefixes`](/zh/reference/settings/server-settings/settings#custom_settings_prefixes) server setting 指定，该设置定义在你的服务器配置文件中。
+
+在下面的示例中，`SQL_` 被选为自定义前缀：
+
+```xml
+<custom_settings_prefixes>SQL_</custom_settings_prefixes>
+```
+
+<Note>
+  在 ClickHouse Cloud 中，无法指定自定义前缀。
+  所有自定义用户设置均以 `SQL_` 作为前缀。
+</Note>
+
+如需定义自定义设置，请使用 `SET` 命令：
+
+```sql
+SET SQL_a = 123;
+```
+
+要获取自定义设置的当前值，请使用 `getSetting()` 函数：
+
+```sql
+SELECT getSetting('SQL_a');
+```
+
+<div id="examples">
+  ## 示例
+</div>
+
+这些示例都会将 `async_insert` 设置的值设为 `1`，并展示如何在运行中的系统中查看这些设置。
+
+<div id="using-sql-to-apply-a-setting-to-a-user-directly">
+  ### 使用 SQL 直接为用户应用设置
+</div>
+
+这会创建用户 `ingester`，并为其设置 `async_inset = 1`：
+
+```sql highlight={3}
+CREATE USER ingester
+IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3'
+SETTINGS async_insert = 1
+```
+
+<div id="examine-the-settings-profile-and-assignment">
+  #### 查看 SETTINGS PROFILE 及其分配情况
+</div>
+
+```sql
+SHOW ACCESS
+```
+
+```response highlight={3}
+┌─ACCESS─────────────────────────────────────────────────────────────────────────────┐
+│ ...                                                                                │
+│ CREATE USER ingester IDENTIFIED WITH sha256_password SETTINGS async_insert = true  │
+│ ...                                                                                │
+└────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="using-sql-to-create-a-settings-profile-and-assign-to-a-user">
+  ### 使用 SQL 创建 SETTINGS PROFILE 并将其分配给用户
+</div>
+
+这会创建 `log_ingest` profile，并将 `async_inset` 设置为 1：
+
+```sql
+CREATE
+SETTINGS PROFILE log_ingest SETTINGS async_insert = 1
+```
+
+这会创建用户 `ingester`，并为其分配设置 profile `log_ingest`：
+
+```sql highlight={3}
+CREATE USER ingester
+IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3'
+SETTINGS PROFILE log_ingest
+```
+
+<div id="using-xml-to-create-a-settings-profile-and-user">
+  ### 通过 XML 创建设置 profile 和用户
+</div>
+
+```xml title=/etc/clickhouse-server/users.d/users.xml highlight={2-6,11}
+<clickhouse>
+    <profiles>
+        <log_ingest>
+            <async_insert>1</async_insert>
+        </log_ingest>
+    </profiles>
+
+    <users>
+        <ingester>
+            <password_sha256_hex>7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3</password_sha256_hex>
+            <profile>log_ingest</profile>
+        </ingester>
+        <default replace="true">
+            <password_sha256_hex>7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3</password_sha256_hex>
+            <access_management>1</access_management>
+            <named_collection_control>1</named_collection_control>
+        </default>
+    </users>
+</clickhouse>
+```
+
+<div id="examine-the-settings-profile-and-assignment">
+  #### 查看 SETTINGS PROFILE 及其分配情况
+</div>
+
+```sql
+SHOW ACCESS
+```
+
+```response highlight={3,5}
+┌─ACCESS─────────────────────────────────────────────────────────────────────────────┐
+│ CREATE USER default IDENTIFIED WITH sha256_password                                │
+│ CREATE USER ingester IDENTIFIED WITH sha256_password SETTINGS PROFILE log_ingest   │
+│ CREATE SETTINGS PROFILE default                                                    │
+│ CREATE SETTINGS PROFILE log_ingest SETTINGS async_insert = true                    │
+│ CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1                             │
+│ ...                                                                                │
+└────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="assign-a-setting-to-a-session">
+  ### 为会话指定设置
+</div>
+
+```sql
+SET async_insert =1;
+SELECT value FROM system.settings where name='async_insert';
+```
+
+```response
+┌─value──┐
+│ 1      │
+└────────┘
+```
+
+<div id="assign-a-setting-during-a-query">
+  ### 在查询中指定设置
+</div>
+
+```sql highlight={2}
+INSERT INTO YourTable
+SETTINGS async_insert=1
+VALUES (...)
+```
+
+<div id="see-also">
+  ## 另请参阅
+</div>
+
+* 查看[设置](/zh/reference/settings/session-settings)页面，了解 ClickHouse 各项设置的说明。
+* [全局服务器设置](/zh/reference/settings/server-settings/settings)

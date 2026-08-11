@@ -1,0 +1,36 @@
+---
+description: '쿼리를 수행할 때 ClickHouse는 다양한 캐시를 사용합니다.'
+sidebarTitle: '캐시'
+slug: /operations/caches
+title: '캐시 유형'
+keywords: ['캐시']
+doc_type: '참고'
+---
+
+ClickHouse는 쿼리를 수행할 때 쿼리 속도를 높이고
+디스크 읽기 및 쓰기 필요를 줄이기 위해 다양한 캐시를 사용합니다.
+
+주요 캐시 유형은 다음과 같습니다.
+
+* `mark_cache` — [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 계열의 테이블 엔진에서 사용하는 [마크](/ko/resources/develop-contribute/introduction/architecture#merge-tree) 캐시입니다.
+* `uncompressed_cache` — [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 계열의 테이블 엔진에서 사용하는 비압축 데이터 캐시입니다.
+* 운영 체제의 페이지 캐시(실제 데이터가 저장된 파일에 간접적으로 사용됨).
+
+그 밖에도 다양한 캐시 유형이 있습니다.
+
+* DNS 캐시.
+* [Regexp](/ko/reference/formats/Regexp) 캐시.
+* 컴파일된 표현식 캐시.
+* [벡터 유사도 인덱스](/ko/reference/engines/table-engines/mergetree-family/annindexes) 캐시.
+* [텍스트 인덱스](/ko/reference/engines/table-engines/mergetree-family/textindexes#caching) 캐시.
+* [Avro 포맷](/ko/reference/formats/Avro/Avro) 스키마 캐시.
+* [딕셔너리](/ko/reference/statements/create/dictionary) 데이터 캐시.
+* 스키마 추론 캐시.
+* S3, Azure, Local 및 기타 디스크에 대한 [파일 시스템 캐시](/ko/concepts/features/configuration/server-config/storing-data).
+* [사용자 공간 페이지 캐시](/ko/concepts/features/performance/caches/userspace-page-cache)
+* [쿼리 캐시](/ko/concepts/features/performance/caches/query-cache).
+* [쿼리 조건 캐시](/ko/concepts/features/performance/caches/query-condition-cache).
+* 포맷 스키마 캐시.
+
+성능 튜닝, 문제 해결 또는 데이터 일관성 유지를 위해 캐시 중 하나를 비우려는 경우,
+[`SYSTEM CLEAR ... CACHE`](/ko/reference/statements/system) SQL 문을 사용할 수 있습니다.

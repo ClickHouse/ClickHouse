@@ -1,0 +1,1437 @@
+---
+slug: /integrations/s3
+sidebarTitle: 'دمج S3 مع ClickHouse'
+title: 'دمج S3 مع ClickHouse'
+description: 'صفحة توضّح كيفية دمج S3 مع ClickHouse'
+keywords: ['Amazon S3', 'تخزين الكائنات', 'التخزين السحابي', 'بحيرة البيانات', 'دمج S3']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+---
+
+import BucketDetails from '/snippets/ar/_S3_authentication_and_bucket.mdx';
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يمكنك إدراج البيانات من S3 إلى ClickHouse، كما يمكنك استخدام S3 أيضًا كوجهة للتصدير، مما يتيح التفاعل مع معماريات &quot;بحيرة البيانات&quot;. علاوة على ذلك، يمكن أن يوفّر S3 طبقات تخزين &quot;باردة&quot; ويساعد في فصل التخزين عن موارد المعالجة. في الأقسام التالية، نستخدم مجموعة بيانات سيارات الأجرة في مدينة نيويورك لشرح عملية نقل البيانات بين S3 وClickHouse، بالإضافة إلى تحديد معلمات التكوين الرئيسية وتقديم إرشادات لتحسين الأداء.
+
+<div id="s3-table-functions">
+  ## دوال الجداول S3
+</div>
+
+تتيح لك دالة الجدول `s3` قراءة الملفات وكتابتها من وإلى وحدات تخزين متوافقة مع S3. والصيغة العامة لهذا التركيب هي:
+
+```sql
+s3(path, [aws_access_key_id, aws_secret_access_key,] [format, [structure, [compression]]])
+```
+
+حيث:
+
+* path — ‏Bucket URL يتضمّن مسار الملف. يدعم هذا محارف البدل التالية في وضع القراءة فقط: `*`، `?`، `{abc,def}` و `{N..M}`، حيث إن `N` و `M` أرقام، و`'abc'` و`'def'` سلاسل نصية. لمزيد من المعلومات، راجع الوثائق حول [استخدام محارف البدل في المسار](/ar/reference/engines/table-engines/integrations/s3#wildcards-in-path).
+* format — ‏[التنسيق](/ar/reference/formats/index#formats-overview) الخاص بالملف.
+* structure — بنية الجدول. التنسيق: `'column1_name column1_type, column2_name column2_type, ...'`.
+* compression — هذه المعلمة اختيارية. القيم المدعومة: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. بشكل افتراضي، يُكتشف الضغط تلقائيًا من امتداد الملف.
+
+يتيح استخدام محارف البدل في تعبير المسار الإشارة إلى عدة ملفات، ويفسح المجال للمعالجة المتوازية.
+
+<div id="preparation">
+  ### التحضير
+</div>
+
+قبل إنشاء الجدول في ClickHouse، قد ترغب في إلقاء نظرة عن كثب على البيانات في حاوية S3. يمكنك فعل ذلك مباشرةً من ClickHouse باستخدام تعليمة `DESCRIBE`:
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames');
+```
+
+يجب أن يوضّح لك ناتج عبارة `DESCRIBE TABLE` كيف يستنتج ClickHouse هذه البيانات تلقائيًا كما تظهر في حاوية S3. لاحظ أنه يتعرّف أيضًا تلقائيًا على تنسيق الضغط gzip ويفك ضغطه:
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames') SETTINGS describe_compact_output=1
+```
+
+```response
+┌─name──────────────────┬─type───────────────┐
+│ trip_id               │ Nullable(Int64)    │
+│ vendor_id             │ Nullable(Int64)    │
+│ pickup_date           │ Nullable(Date)     │
+│ pickup_datetime       │ Nullable(DateTime) │
+│ dropoff_date          │ Nullable(Date)     │
+│ dropoff_datetime      │ Nullable(DateTime) │
+│ store_and_fwd_flag    │ Nullable(Int64)    │
+│ rate_code_id          │ Nullable(Int64)    │
+│ pickup_longitude      │ Nullable(Float64)  │
+│ pickup_latitude       │ Nullable(Float64)  │
+│ dropoff_longitude     │ Nullable(Float64)  │
+│ dropoff_latitude      │ Nullable(Float64)  │
+│ passenger_count       │ Nullable(Int64)    │
+│ trip_distance         │ Nullable(String)   │
+│ fare_amount           │ Nullable(String)   │
+│ extra                 │ Nullable(String)   │
+│ mta_tax               │ Nullable(String)   │
+│ tip_amount            │ Nullable(String)   │
+│ tolls_amount          │ Nullable(Float64)  │
+│ ehail_fee             │ Nullable(Int64)    │
+│ improvement_surcharge │ Nullable(String)   │
+│ total_amount          │ Nullable(String)   │
+│ payment_type          │ Nullable(String)   │
+│ trip_type             │ Nullable(Int64)    │
+│ pickup                │ Nullable(String)   │
+│ dropoff               │ Nullable(String)   │
+│ cab_type              │ Nullable(String)   │
+│ pickup_nyct2010_gid   │ Nullable(Int64)    │
+│ pickup_ctlabel        │ Nullable(Float64)  │
+│ pickup_borocode       │ Nullable(Int64)    │
+│ pickup_ct2010         │ Nullable(String)   │
+│ pickup_boroct2010     │ Nullable(String)   │
+│ pickup_cdeligibil     │ Nullable(String)   │
+│ pickup_ntacode        │ Nullable(String)   │
+│ pickup_ntaname        │ Nullable(String)   │
+│ pickup_puma           │ Nullable(Int64)    │
+│ dropoff_nyct2010_gid  │ Nullable(Int64)    │
+│ dropoff_ctlabel       │ Nullable(Float64)  │
+│ dropoff_borocode      │ Nullable(Int64)    │
+│ dropoff_ct2010        │ Nullable(String)   │
+│ dropoff_boroct2010    │ Nullable(String)   │
+│ dropoff_cdeligibil    │ Nullable(String)   │
+│ dropoff_ntacode       │ Nullable(String)   │
+│ dropoff_ntaname       │ Nullable(String)   │
+│ dropoff_puma          │ Nullable(Int64)    │
+└───────────────────────┴────────────────────┘
+```
+
+للتفاعل مع مجموعة البيانات المستندة إلى S3، نُعِدّ جدول `MergeTree` قياسيًا ليكون وجهتنا. تُنشئ التعليمة أدناه جدولًا باسم `trips` في قاعدة البيانات default. لاحظ أننا اخترنا تعديل بعض أنواع البيانات هذه كما استُنتج أعلاه، ولا سيما عدم استخدام مُعدِّل نوع البيانات [`Nullable()`](/ar/reference/data-types/nullable)، إذ قد يؤدي ذلك إلى تخزين بعض البيانات الإضافية غير الضرورية وإلى بعض العبء الإضافي على الأداء:
+
+```sql
+CREATE TABLE trips
+(
+    `trip_id` UInt32,
+    `vendor_id` Enum8('1' = 1, '2' = 2, '3' = 3, '4' = 4, 'CMT' = 5, 'VTS' = 6, 'DDS' = 7, 'B02512' = 10, 'B02598' = 11, 'B02617' = 12, 'B02682' = 13, 'B02764' = 14, '' = 15),
+    `pickup_date` Date,
+    `pickup_datetime` DateTime,
+    `dropoff_date` Date,
+    `dropoff_datetime` DateTime,
+    `store_and_fwd_flag` UInt8,
+    `rate_code_id` UInt8,
+    `pickup_longitude` Float64,
+    `pickup_latitude` Float64,
+    `dropoff_longitude` Float64,
+    `dropoff_latitude` Float64,
+    `passenger_count` UInt8,
+    `trip_distance` Float64,
+    `fare_amount` Float32,
+    `extra` Float32,
+    `mta_tax` Float32,
+    `tip_amount` Float32,
+    `tolls_amount` Float32,
+    `ehail_fee` Float32,
+    `improvement_surcharge` Float32,
+    `total_amount` Float32,
+    `payment_type` Enum8('UNK' = 0, 'CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4),
+    `trip_type` UInt8,
+    `pickup` FixedString(25),
+    `dropoff` FixedString(25),
+    `cab_type` Enum8('yellow' = 1, 'green' = 2, 'uber' = 3),
+    `pickup_nyct2010_gid` Int8,
+    `pickup_ctlabel` Float32,
+    `pickup_borocode` Int8,
+    `pickup_ct2010` String,
+    `pickup_boroct2010` String,
+    `pickup_cdeligibil` String,
+    `pickup_ntacode` FixedString(4),
+    `pickup_ntaname` String,
+    `pickup_puma` UInt16,
+    `dropoff_nyct2010_gid` UInt8,
+    `dropoff_ctlabel` Float32,
+    `dropoff_borocode` UInt8,
+    `dropoff_ct2010` String,
+    `dropoff_boroct2010` String,
+    `dropoff_cdeligibil` String,
+    `dropoff_ntacode` FixedString(4),
+    `dropoff_ntaname` String,
+    `dropoff_puma` UInt16
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(pickup_date)
+ORDER BY pickup_datetime
+```
+
+لاحظ استخدام [التقسيم](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key) في الحقل `pickup_date`. عادةً ما يُستخدم مفتاح التقسيم لإدارة البيانات، لكننا سنستخدم هذا المفتاح لاحقًا لموازاة عمليات الكتابة إلى S3.
+
+يمثل كل سجل في مجموعة بيانات سيارات الأجرة لدينا رحلةَ سيارة أجرة. وهذه البيانات منزوعة الهوية، وتتكون من 20 مليون سجل مخزّنًا بشكل مضغوط في حاوية S3 ‏https://datasets-documentation.s3.eu-west-3.amazonaws.com/ ضمن المجلد **nyc-taxi**. البيانات بتنسيق TSV، وبمعدل يقارب مليون صف لكل ملف.
+
+<div id="reading-data-from-s3">
+  ### قراءة البيانات من S3
+</div>
+
+يمكننا تنفيذ استعلام على بيانات S3 كمصدر من دون الحاجة إلى تخزينها بشكل دائم في ClickHouse. في الاستعلام التالي، نأخذ عينة من 10 صفوف. لاحظ عدم وجود بيانات اعتماد هنا لأن الحاوية متاحة للعامة:
+
+```sql
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames')
+LIMIT 10;
+```
+
+لاحظ أننا لا نحتاج إلى إدراج الأعمدة، لأن تنسيق `TabSeparatedWithNames` يتضمن أسماء الأعمدة في الصف الأول. أما التنسيقات الأخرى، مثل `CSV` أو `TSV`، فستُرجع لهذا الاستعلام أعمدة مُنشأة تلقائيًا، مثل `c1` و`c2` و`c3` وما إلى ذلك.
+
+كما تدعم الاستعلامات [الأعمدة الافتراضية](/ar/reference/functions/table-functions/s3#virtual-columns)، مثل `_path` و`_file`، والتي توفّر معلومات عن مسار الحاوية واسم الملف، على التوالي. على سبيل المثال:
+
+```sql
+SELECT  _path, _file, trip_id
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_0.gz', 'TabSeparatedWithNames')
+LIMIT 5;
+```
+
+```response
+┌─_path──────────────────────────────────────┬─_file──────┬────trip_id─┐
+│ datasets-documentation/nyc-taxi/trips_0.gz │ trips_0.gz │ 1199999902 │
+│ datasets-documentation/nyc-taxi/trips_0.gz │ trips_0.gz │ 1199999919 │
+│ datasets-documentation/nyc-taxi/trips_0.gz │ trips_0.gz │ 1199999944 │
+│ datasets-documentation/nyc-taxi/trips_0.gz │ trips_0.gz │ 1199999969 │
+│ datasets-documentation/nyc-taxi/trips_0.gz │ trips_0.gz │ 1199999990 │
+└────────────────────────────────────────────┴────────────┴────────────┘
+```
+
+تحقّق من عدد الصفوف في مجموعة البيانات النموذجية هذه. لاحظ استخدام محارف البدل لتوسيع الملفات، لذا نأخذ الملفات العشرين كلها في الاعتبار. سيستغرق هذا الاستعلام نحو 10 ثوانٍ، وذلك حسب عدد الأنوية في مثيل ClickHouse:
+
+```sql
+SELECT count() AS count
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames');
+```
+
+```response
+┌────count─┐
+│ 20000000 │
+└──────────┘
+```
+
+مع أن قراءة البيانات مباشرةً من S3 مفيدة لأخذ عينات من البيانات وتنفيذ استعلامات استكشافية مخصّصة، فإنها ليست شيئًا سترغب في فعله بانتظام. وعندما يحين وقت العمل الجاد، استورد البيانات إلى جدول من نوع `MergeTree` في ClickHouse.
+
+<div id="using-clickhouse-local">
+  ### استخدام clickhouse-local
+</div>
+
+يتيح لك برنامج `clickhouse-local` إجراء معالجة سريعة للملفات المحلية دون الحاجة إلى نشر ClickHouse server وتهيئته. ويمكن تنفيذ أي استعلامات تستخدم دالة الجدول `s3` باستخدام هذه الأداة. على سبيل المثال:
+
+```sql
+clickhouse-local --query "SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames') LIMIT 10"
+```
+
+<div id="inserting-data-from-s3">
+  ### إدراج البيانات من S3
+</div>
+
+للاستفادة من الإمكانات الكاملة لـ ClickHouse، ننتقل بعد ذلك إلى قراءة البيانات وإدراجها في مثيلنا.
+نستخدم الدالة `s3` مع تعليمة `INSERT` بسيطة لتحقيق ذلك. لاحظ أنه لا يلزمنا سرد الأعمدة، لأن الجدول المستهدف يوفّر البنية المطلوبة. ويتطلب ذلك أن تظهر الأعمدة بالترتيب المحدد في عبارة DDL الخاصة بالجدول، إذ تُطابَق الأعمدة وفقًا لمواضعها في عبارة `SELECT`. وقد يستغرق إدراج جميع الصفوف البالغ عددها 10m بضع دقائق، وذلك بحسب مثيل ClickHouse. في ما يلي، نُدرج 1M صف لضمان استجابة سريعة. عدّل عبارة `LIMIT` أو اختيار الأعمدة لاستيراد مجموعات فرعية حسب الحاجة:
+
+```sql
+INSERT INTO trips
+   SELECT *
+   FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames')
+   LIMIT 1000000;
+```
+
+<div id="remote-insert-using-clickhouse-local">
+  ### الإدراج عن بُعد باستخدام ClickHouse Local
+</div>
+
+إذا كانت سياسات أمان الشبكة تمنع عنقود ClickHouse لديك من إجراء اتصالات صادرة، فقد تتمكن من إدراج بيانات S3 باستخدام `clickhouse-local`. في المثال أدناه، نقرأ من حاوية S3 ونُدرج البيانات في ClickHouse باستخدام الدالة `remote`:
+
+```sql
+clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'default.trips', 'username', 'password') (*) SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames') LIMIT 10"
+```
+
+<Note>
+  لتنفيذ ذلك عبر اتصال SSL آمن، استخدم الدالة `remoteSecure`.
+</Note>
+
+<div id="exporting-data">
+  ### تصدير البيانات
+</div>
+
+يمكنك الكتابة إلى ملفات في S3 باستخدام دالة الجدول `s3`. ويتطلب ذلك الأذونات المناسبة. نمرّر بيانات الاعتماد اللازمة مع الطلب، ولكن راجع صفحة [إدارة بيانات الاعتماد](#managing-credentials) للاطلاع على مزيد من الخيارات.
+
+في المثال البسيط أدناه، نستخدم دالة الجدول كوجهة بدلًا من مصدر. هنا نرسل 10,000 صفًا من جدول `trips` إلى حاوية، مع تحديد ضغط `lz4` ونوع الإخراج `CSV`:
+
+```sql
+INSERT INTO FUNCTION
+   s3(
+       'https://datasets-documentation.s3.eu-west-3.amazonaws.com/csv/trips.csv.lz4',
+       's3_key',
+       's3_secret',
+       'CSV'
+    )
+SELECT *
+FROM trips
+LIMIT 10000;
+```
+
+لاحظ هنا كيف يُستنتج تنسيق الملف من الامتداد. كما أننا لا نحتاج إلى تحديد الأعمدة في الدالة `s3`، إذ يمكن استنتاجها من `SELECT`.
+
+<div id="splitting-large-files">
+  ### تقسيم الملفات الكبيرة
+</div>
+
+من غير المحتمل أن ترغب في تصدير بياناتك في ملف واحد. تحقق معظم الأدوات، بما في ذلك ClickHouse، إنتاجية أعلى عند القراءة من عدة ملفات والكتابة إليها بسبب إمكانية المعالجة المتوازية. يمكننا تنفيذ أمر `INSERT` عدة مرات مع استهداف مجموعة فرعية من البيانات. ويوفّر ClickHouse طريقة لتقسيم الملفات تلقائيًا باستخدام مفتاح `PARTITION`.
+
+في المثال أدناه، ننشئ عشرة ملفات باستخدام باقي القسمة للدالة `rand()`. لاحظ كيف يُشار إلى partition ID الناتج في اسم الملف. وينتج عن ذلك عشرة ملفات ذات لاحقة رقمية، مثل `trips_0.csv.lz4` و`trips_1.csv.lz4` وما إلى ذلك...:
+
+```sql
+INSERT INTO FUNCTION
+   s3(
+       'https://datasets-documentation.s3.eu-west-3.amazonaws.com/csv/trips_{_partition_id}.csv.lz4',
+       's3_key',
+       's3_secret',
+       'CSV'
+    )
+    PARTITION BY rand() % 10
+SELECT *
+FROM trips
+LIMIT 100000;
+```
+
+بدلًا من ذلك، يمكننا الإشارة إلى حقل في البيانات. بالنسبة إلى مجموعة البيانات هذه، يُعدّ `payment_type` مفتاح تقسيم طبيعيًا بكاردينالية قدرها 5.
+
+```sql
+INSERT INTO FUNCTION
+   s3(
+       'https://datasets-documentation.s3.eu-west-3.amazonaws.com/csv/trips_{_partition_id}.csv.lz4',
+       's3_key',
+       's3_secret',
+       'CSV'
+    )
+    PARTITION BY payment_type
+SELECT *
+FROM trips
+LIMIT 100000;
+```
+
+<div id="utilizing-clusters">
+  ### استخدام العناقيد
+</div>
+
+تقتصر جميع الدوال المذكورة أعلاه على التنفيذ على عقدة واحدة. تتوسع سرعات القراءة خطيًا مع عدد أنوية CPU إلى أن تتشبع الموارد الأخرى (وعادةً الشبكة)، مما يتيح للمستخدمين التوسع رأسيًا. ومع ذلك، لهذا النهج حدوده. فمع أنه يمكنك تخفيف بعض الضغط على الموارد عبر الإدراج في جدول موزع عند تنفيذ استعلام `INSERT INTO SELECT`، فإن هذا يترك عقدةً واحدةً فقط تتولى قراءة البيانات وتحليلها ومعالجتها. ولمواجهة هذا التحدي وإتاحة توسيع عمليات القراءة أفقيًا، لدينا الدالة [s3Cluster](/ar/reference/functions/table-functions/s3Cluster).
+
+تنشئ العقدة التي تستقبل الاستعلام، والمعروفة باسم العقدة البادئة، اتصالًا بكل عقدة في العنقود. ويُحلَّل نمط glob الذي يحدد الملفات المطلوب قراءتها إلى مجموعة من الملفات. ثم توزع العقدة البادئة الملفات على عقد العنقود، التي تعمل بوصفها عُقدًا عاملة. وتطلب هذه العقد العاملة بدورها ملفات لمعالجتها كلما انتهت من عمليات القراءة. وتضمن هذه العملية قدرتنا على توسيع عمليات القراءة أفقيًا.
+
+تأخذ الدالة `s3Cluster` الصيغة نفسها الخاصة بمتغيرات العقدة الواحدة، باستثناء أنه يلزم تحديد عنقود مستهدف للإشارة إلى العقد العاملة:
+
+```sql
+s3Cluster(cluster_name, source, [access_key_id, secret_access_key,] format, structure)
+```
+
+* `cluster_name` — اسم عنقود يُستخدم لبناء مجموعة من العناوين ومعلمات الاتصال بالخوادم البعيدة والمحلية.
+* `source` — عنوان URL لملف أو لمجموعة من الملفات. يدعم محارف البدل التالية في وضع القراءة فقط: `*`, `?`, `{'abc','def'}` و `{N..M}`، حيث إن N و M — أرقام، و abc و def — سلاسل نصية. لمزيد من المعلومات، راجع [Wildcards In Path](/ar/reference/engines/table-engines/integrations/s3#wildcards-in-path).
+* `access_key_id` و `secret_access_key` — مفاتيح تحدد بيانات الاعتماد المطلوب استخدامها مع نقطة النهاية المحددة. اختيارية.
+* `format` — [التنسيق](/ar/reference/formats/index#formats-overview) الخاص بالملف.
+* `structure` — بنية الجدول. بالتنسيق &#39;column1&#95;name column1&#95;type, column2&#95;name column2&#95;type, ...&#39;.
+
+كما هو الحال مع أي من دوال `s3`، تكون بيانات الاعتماد اختيارية إذا كانت الـ حاوية غير آمنة أو إذا كنت تُعرّف الأمان عبر البيئة، مثل IAM roles. لكن بخلاف دالة s3، يجب تحديد البنية في الطلب اعتبارًا من الإصدار 22.3.1، أي إن المخطط لا يُستنتج.
+
+في معظم الحالات، ستُستخدم هذه الدالة كجزء من `INSERT INTO SELECT`. وفي هذه الحالة، غالبًا ما ستُدرج البيانات في جدول موزّع. نوضح أدناه مثالًا بسيطًا تكون فيه trips&#95;all جدولًا موزّعًا. ومع أن هذا الجدول يستخدم عنقود events، فإن اتساق العُقد المستخدمة في عمليات القراءة والكتابة ليس شرطًا:
+
+```sql
+INSERT INTO default.trips_all
+   SELECT *
+   FROM s3Cluster(
+       'events',
+       'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz',
+       'TabSeparatedWithNames'
+    )
+```
+
+ستُجرى عمليات الإدراج على العقدة المُبادِرة. وهذا يعني أنه في حين ستتم عمليات القراءة على كل عقدة، فستُوجَّه الصفوف الناتجة إلى العقدة المُبادِرة لتوزيعها. في السيناريوهات ذات معدل النقل المرتفع، قد يُشكّل ذلك عنق زجاجة. ولمعالجة ذلك، اضبط المعلمة [parallel&#95;distributed&#95;insert&#95;select](/ar/reference/settings/session-settings#parallel_distributed_insert_select) للدالة `s3cluster`.
+
+<div id="s3-table-engines">
+  ## محركات جداول S3
+</div>
+
+في حين تتيح دوال `s3` إجراء استعلامات مخصّصة على البيانات المخزّنة في S3، فإن صياغتها مطوّلة. ويجنّبك محرك جداول `S3` الحاجة إلى تحديد URL الخاصة بـ الحاوية وبيانات الاعتماد مرارًا وتكرارًا. ولمعالجة ذلك، يوفّر ClickHouse محرك جداول S3.
+
+```sql
+CREATE TABLE s3_engine_table (name String, value UInt32)
+    ENGINE = S3(path, [aws_access_key_id, aws_secret_access_key,] format, [compression])
+    [SETTINGS ...]
+```
+
+* `path` — ‏حاوية URL مع مسار للملف. يدعم محارف البدل التالية في وضع القراءة فقط: `*` و `?` و `{abc,def}` و `{N..M}`، حيث إن N و M — أرقام، و &#39;abc&#39; و &#39;def&#39; — سلاسل نصية. لمزيد من المعلومات، راجع [هنا](/ar/reference/engines/table-engines/integrations/s3#wildcards-in-path).
+* `format` — [تنسيق](/ar/reference/formats/index#formats-overview) الملف.
+* `aws_access_key_id`, `aws_secret_access_key` - بيانات اعتماد طويلة الأمد لمستخدم حساب AWS. يمكنك استخدامها لمصادقة طلباتك. هذه المعلمة اختيارية. إذا لم تُحدَّد بيانات الاعتماد، فستُستخدم قيم ملف الإعدادات. لمزيد من المعلومات، راجع [إدارة بيانات الاعتماد](#managing-credentials).
+* `compression` — نوع الضغط. القيم المدعومة: none, gzip/gz, brotli/br, xz/LZMA, zstd/zst. هذه المعلمة اختيارية. وبشكل افتراضي، سيُكتشَف نوع الضغط تلقائيًا استنادًا إلى امتداد الملف.
+
+<div id="reading-data">
+  ### قراءة البيانات
+</div>
+
+في المثال التالي، ننشئ جدولًا باسم `trips_raw` باستخدام أول عشرة ملفات TSV الموجودة في الحاوية `https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/`. يحتوي كل ملف منها على مليون صف:
+
+```sql
+CREATE TABLE trips_raw
+(
+   `trip_id`               UInt32,
+   `vendor_id`             Enum8('1' = 1, '2' = 2, '3' = 3, '4' = 4, 'CMT' = 5, 'VTS' = 6, 'DDS' = 7, 'B02512' = 10, 'B02598' = 11, 'B02617' = 12, 'B02682' = 13, 'B02764' = 14, '' = 15),
+   `pickup_date`           Date,
+   `pickup_datetime`       DateTime,
+   `dropoff_date`          Date,
+   `dropoff_datetime`      DateTime,
+   `store_and_fwd_flag`    UInt8,
+   `rate_code_id`          UInt8,
+   `pickup_longitude`      Float64,
+   `pickup_latitude`       Float64,
+   `dropoff_longitude`     Float64,
+   `dropoff_latitude`      Float64,
+   `passenger_count`       UInt8,
+   `trip_distance`         Float64,
+   `fare_amount`           Float32,
+   `extra`                 Float32,
+   `mta_tax`               Float32,
+   `tip_amount`            Float32,
+   `tolls_amount`          Float32,
+   `ehail_fee`             Float32,
+   `improvement_surcharge` Float32,
+   `total_amount`          Float32,
+   `payment_type_`         Enum8('UNK' = 0, 'CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4),
+   `trip_type`             UInt8,
+   `pickup`                FixedString(25),
+   `dropoff`               FixedString(25),
+   `cab_type`              Enum8('yellow' = 1, 'green' = 2, 'uber' = 3),
+   `pickup_nyct2010_gid`   Int8,
+   `pickup_ctlabel`        Float32,
+   `pickup_borocode`       Int8,
+   `pickup_ct2010`         String,
+   `pickup_boroct2010`     FixedString(7),
+   `pickup_cdeligibil`     String,
+   `pickup_ntacode`        FixedString(4),
+   `pickup_ntaname`        String,
+   `pickup_puma`           UInt16,
+   `dropoff_nyct2010_gid`  UInt8,
+   `dropoff_ctlabel`       Float32,
+   `dropoff_borocode`      UInt8,
+   `dropoff_ct2010`        String,
+   `dropoff_boroct2010`    FixedString(7),
+   `dropoff_cdeligibil`    String,
+   `dropoff_ntacode`       FixedString(4),
+   `dropoff_ntaname`       String,
+   `dropoff_puma`          UInt16
+) ENGINE = S3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..9}.gz', 'TabSeparatedWithNames', 'gzip');
+```
+
+لاحظ استخدام النمط `{0..9}` لقصره على الملفات العشرة الأولى. وبمجرد إنشائه، يمكننا الاستعلام عن هذا الجدول مثل أي جدول آخر:
+
+```sql
+SELECT DISTINCT(pickup_ntaname)
+FROM trips_raw
+LIMIT 10;
+```
+
+```response
+┌─pickup_ntaname───────────────────────────────────┐
+│ Lenox Hill-Roosevelt Island                      │
+│ Airport                                          │
+│ SoHo-TriBeCa-Civic Center-Little Italy           │
+│ West Village                                     │
+│ Chinatown                                        │
+│ Hudson Yards-Chelsea-Flatiron-Union Square       │
+│ Turtle Bay-East Midtown                          │
+│ Upper West Side                                  │
+│ Murray Hill-Kips Bay                             │
+│ DUMBO-Vinegar Hill-Downtown Brooklyn-Boerum Hill │
+└──────────────────────────────────────────────────┘
+```
+
+<div id="inserting-data">
+  ### إدراج البيانات
+</div>
+
+يدعم محرك الجدول `S3` عمليات القراءة المتوازية. ولا تُدعَم عمليات الكتابة إلا إذا كان تعريف الجدول لا يحتوي على أنماط glob. لذلك، لن يسمح الجدول أعلاه بعمليات الكتابة.
+
+لتوضيح الكتابة، أنشئ جدولًا يشير إلى حاوية S3 قابلة للكتابة:
+
+```sql
+CREATE TABLE trips_dest
+(
+   `trip_id`               UInt32,
+   `pickup_date`           Date,
+   `pickup_datetime`       DateTime,
+   `dropoff_datetime`      DateTime,
+   `tip_amount`            Float32,
+   `total_amount`          Float32
+) ENGINE = S3('<bucket path>/trips.bin', 'Native');
+```
+
+```sql
+INSERT INTO trips_dest
+   SELECT
+      trip_id,
+      pickup_date,
+      pickup_datetime,
+      dropoff_datetime,
+      tip_amount,
+      total_amount
+   FROM trips
+   LIMIT 10;
+```
+
+```sql
+SELECT * FROM trips_dest LIMIT 5;
+```
+
+```response
+┌────trip_id─┬─pickup_date─┬─────pickup_datetime─┬────dropoff_datetime─┬─tip_amount─┬─total_amount─┐
+│ 1200018648 │  2015-07-01 │ 2015-07-01 00:00:16 │ 2015-07-01 00:02:57 │          0 │          7.3 │
+│ 1201452450 │  2015-07-01 │ 2015-07-01 00:00:20 │ 2015-07-01 00:11:07 │       1.96 │        11.76 │
+│ 1202368372 │  2015-07-01 │ 2015-07-01 00:00:40 │ 2015-07-01 00:05:46 │          0 │          7.3 │
+│ 1200831168 │  2015-07-01 │ 2015-07-01 00:01:06 │ 2015-07-01 00:09:23 │          2 │         12.3 │
+│ 1201362116 │  2015-07-01 │ 2015-07-01 00:01:07 │ 2015-07-01 00:03:31 │          0 │          5.3 │
+└────────────┴─────────────┴─────────────────────┴─────────────────────┴────────────┴──────────────┘
+```
+
+لاحظ أنه لا يمكن insert الصفوف إلا في ملفات جديدة. لا توجد دورات merge أو عمليات split للملفات. بمجرد كتابة ملف، ستفشل عمليات insert اللاحقة. أمام المستخدمين خياران هنا:
+
+* حدّد الإعداد `s3_create_new_file_on_insert=1`. سيؤدي ذلك إلى إنشاء ملفات جديدة مع كل عملية insert. ستُضاف لاحقة رقمية إلى نهاية كل ملف، وستزداد تدريجيًا مع كل insert operation. بالنسبة إلى المثال أعلاه، ستؤدي عملية insert لاحقة إلى إنشاء ملف trips&#95;1.bin.
+* حدّد الإعداد `s3_truncate_on_insert=1`. سيؤدي ذلك إلى truncate الملف، أي إنه بعد اكتمال العملية لن يحتوي إلا على الصفوف المُدرجة حديثًا.
+
+تكون القيمة الافتراضية لكلا هذين الإعدادين 0، ما يفرض على المستخدم تعيين أحدهما. وسيكون لـ `s3_truncate_on_insert` أولوية إذا جرى تعيين كليهما.
+
+بعض الملاحظات حول محرك الجدول `S3`:
+
+* بخلاف جدول تقليدي من عائلة `MergeTree`، فإن dropping جدول `S3` لن يحذف البيانات الأساسية.
+* يمكن العثور على الإعدادات الكاملة لهذا النوع من الجداول [هنا](/ar/reference/engines/table-engines/integrations/s3#settings).
+* انتبه إلى القيود التالية عند استخدام هذا المحرك:
+  * استعلامات ALTER غير مدعومة
+  * عمليات SAMPLE غير مدعومة
+  * لا يوجد مفهوم للفهارس، مثل primary أو skip.
+
+<div id="managing-credentials">
+  ## إدارة بيانات الاعتماد
+</div>
+
+في الأمثلة السابقة، مرّرنا بيانات الاعتماد في الدالة `s3` أو في تعريف جدول `S3`. ومع أن هذا قد يكون مقبولًا للاستخدام العرضي، فإن المستخدمين في بيئات production يحتاجون إلى آليات authentication أقل صراحة. ولمعالجة ذلك، يوفّر ClickHouse عدة خيارات:
+
+* حدِّد تفاصيل الاتصال في **config.xml** أو في ملف تهيئة مكافئ ضمن **conf.d**. ويظهر أدناه محتوى ملف Example، بافتراض التثبيت باستخدام حزمة debian.
+
+  ```xml
+  ubuntu@single-node-clickhouse:/etc/clickhouse-server/config.d$ cat s3.xml
+  <clickhouse>
+      <s3>
+          <endpoint-name>
+              <endpoint>https://dalem-files.s3.amazonaws.com/test/</endpoint>
+              <access_key_id>key</access_key_id>
+              <secret_access_key>secret</secret_access_key>
+              {/* <use_environment_credentials>false</use_environment_credentials> */}
+              {/* <header>Authorization: Bearer SOME-TOKEN</header> */}
+          </endpoint-name>
+      </s3>
+  </clickhouse>
+  ```
+
+  ستُستخدم بيانات الاعتماد هذه لأي طلبات يكون فيها endpoint أعلاه مطابقًا تمامًا كبادئة لـ URL المطلوب. ولاحظ أيضًا في هذا المثال إمكانية تعريف header للتفويض كبديل عن مفتاح الوصول والمفتاح السري. ويمكن العثور على قائمة كاملة بالإعدادات المدعومة [هنا](/ar/reference/engines/table-engines/integrations/s3#settings).
+
+* يوضّح المثال أعلاه توفّر مُعامِل التهيئة `use_environment_credentials`. ويمكن أيضًا ضبط مُعامِل التهيئة هذا على المستوى العام ضمن `s3`:
+
+  ```xml
+  <clickhouse>
+      <s3>
+      <use_environment_credentials>true</use_environment_credentials>
+      </s3>
+  </clickhouse>
+  ```
+
+  يفعّل هذا الإعداد محاولة استرداد بيانات اعتماد S3 من البيئة، مما يتيح الوصول عبر IAM roles. وعلى وجه التحديد، يُتَّبع ترتيب الاسترداد التالي:
+
+  * البحث عن متغيرات البيئة `AWS_ACCESS_KEY_ID` و`AWS_SECRET_ACCESS_KEY` و`AWS_SESSION_TOKEN`
+  * إجراء تحقق في **$HOME/.aws**
+  * بيانات اعتماد مؤقتة يتم الحصول عليها عبر خدمة AWS Security Token Service، أي عبر واجهة برمجة تطبيقات [`AssumeRole`](https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html)
+  * التحقق من بيانات الاعتماد في متغيرات بيئة ECS: `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` أو `AWS_CONTAINER_CREDENTIALS_FULL_URI` و`AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN`.
+  * الحصول على بيانات الاعتماد عبر [بيانات metadata الخاصة بمثيل Amazon EC2](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-metadata.html)، ما لم تكن القيمة [AWS&#95;EC2&#95;METADATA&#95;DISABLED](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html#envvars-list-AWS_EC2_METADATA_DISABLED) مضبوطة على true.
+  * يمكن أيضًا ضبط هذه الإعدادات نفسها لنقطة endpoint محددة، باستخدام قاعدة مطابقة البادئة نفسها.
+
+<div id="s3-optimizing-performance">
+  ## تحسين الأداء
+</div>
+
+للتعرّف على كيفية تحسين عمليات القراءة والإدراج باستخدام دالة S3، راجع [دليل الأداء المخصّص](/ar/integrations/connectors/data-ingestion/AWS/performance).
+
+<div id="s3-storage-tuning">
+  ### ضبط تخزين S3
+</div>
+
+داخليًا، تستخدم MergeTree في ClickHouse تنسيقَي تخزين أساسيين: [`Wide` and `Compact`](/ar/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage). وبينما يستخدم التنفيذ الحالي السلوك الافتراضي في ClickHouse (ويُتحكَّم فيه عبر الإعدادات `min_bytes_for_wide_part` و`min_rows_for_wide_part`)، نتوقع أن يختلف هذا السلوك مع S3 في الإصدارات المستقبلية، مثل اعتماد قيمة افتراضية أكبر لـ `min_bytes_for_wide_part` بما يشجع أكثر على استخدام التنسيق `Compact`، وبالتالي تقليل عدد الملفات. وقد ترغب الآن في ضبط هذه الإعدادات عند استخدام تخزين S3 فقط.
+
+<div id="s3-backed-mergetree">
+  ## MergeTree المعتمد على S3
+</div>
+
+تتيح لنا دوال `s3` ومحرك الجدول المرتبط بها الاستعلام عن البيانات في S3 باستخدام صياغة ClickHouse المألوفة. ومع ذلك، فهي محدودة من حيث ميزات إدارة البيانات وأداء الاستعلامات. فلا يوجد دعم للفهارس الأساسية أو `no-cache`، كما يجب على المستخدم إدارة عمليات إدراج الملفات.
+
+يدرك ClickHouse أن S3 يمثّل حل تخزين جذابًا، خاصةً عندما تكون سرعة الاستعلام على البيانات &quot;الأبرد&quot; أقل أهمية، وعندما يسعى المستخدمون إلى فصل التخزين عن الحوسبة. وللمساعدة في تحقيق ذلك، يتوفر دعم لاستخدام S3 كوحدة تخزين لمحرك MergeTree. ويتيح لك هذا الاستفادة من مزايا قابلية التوسع والتكلفة التي يوفرها S3، إلى جانب أداء الإدراج والاستعلام الذي يقدمه محرك MergeTree.
+
+<div id="storage-tiers">
+  ### طبقات التخزين
+</div>
+
+تتيح وحدات التخزين في ClickHouse فصل الأقراص المادية عن محرك جداول MergeTree. ويمكن أن تتكوّن أي وحدة تخزين واحدة من مجموعة مرتبة من الأقراص. وبينما يتيح ذلك أساسًا استخدام عدة أجهزة كتلية لتخزين البيانات، فإن هذا التجريد يتيح أيضًا استخدام أنواع أخرى من التخزين، بما في ذلك S3. ويمكن نقل أجزاء بيانات ClickHouse بين وحدات التخزين وفقًا لسياسات التخزين ومعدلات الامتلاء، مما يرسّخ مفهوم طبقات التخزين.
+
+تُتيح طبقات التخزين اعتماد معماريات التخزين الساخن-البارد، حيث لا تتطلب أحدث البيانات، التي تكون عادةً الأكثر ورودًا في الاستعلامات، سوى مساحة صغيرة على وسائط تخزين عالية الأداء، مثل أقراص NVMe SSD. ومع تقادم البيانات، تصبح متطلبات اتفاقية مستوى الخدمة لزمن الاستعلام أقل صرامة، كما ينخفض تكرار الاستعلامات عليها. ويمكن تخزين هذا الذيل الطويل من البيانات على وسائط تخزين أبطأ وأقل أداءً، مثل HDD، أو على تخزين الكائنات مثل S3.
+
+<div id="creating-a-disk">
+  ### إنشاء قرص
+</div>
+
+لاستخدام حاوية S3 كقرص، يجب أولاً التصريح بها ضمن ملف إعدادات ClickHouse. يمكن إما توسيع `config.xml` أو، وهو الخيار المفضّل، إنشاء ملف جديد ضمن `conf.d`. يرد أدناه مثال على تعريف قرص S3:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        ...
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>https://sample-bucket.s3.us-east-2.amazonaws.com/tables/</endpoint>
+                <access_key_id>your_access_key_id</access_key_id>
+                <secret_access_key>your_secret_access_key</secret_access_key>
+                <region></region>
+                <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
+            </s3>
+            <s3_cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/var/lib/clickhouse/disks/s3_cache/</path>
+                <max_size>10Gi</max_size>
+            </s3_cache>
+        </disks>
+        ...
+    </storage_configuration>
+</clickhouse>
+
+```
+
+يمكن العثور على قائمة كاملة بالإعدادات ذات الصلة بتعريف هذا القرص [هنا](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3). لاحظ أنه يمكن إدارة بيانات الاعتماد هنا باستخدام الأساليب نفسها الموضحة في [إدارة بيانات الاعتماد](#managing-credentials)، أي يمكن تعيين use&#95;environment&#95;credentials إلى true في كتلة الإعدادات أعلاه لاستخدام IAM roles.
+
+<div id="creating-a-storage-policy">
+  ### إنشاء سياسة تخزين
+</div>
+
+بعد تهيئته، يمكن استخدام هذا &quot;القرص&quot; من خلال وحدة تخزين مُعرَّفة ضمن سياسة. في المثال أدناه، نفترض أن S3 هو وسيلة التخزين الوحيدة لدينا. يتجاهل هذا السيناريو معماريات التخزين الساخن-البارد الأكثر تعقيدًا، حيث يمكن نقل البيانات استنادًا إلى قيم TTL ومعدلات الامتلاء.
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+            ...
+            </s3>
+            <s3_cache>
+            ...
+            </s3_cache>
+        </disks>
+        <policies>
+            <s3_main>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3_main>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+<div id="creating-a-table">
+  ### إنشاء جدول
+</div>
+
+بافتراض أنك أعددت القرص لاستخدام حاوية S3 مع صلاحية الكتابة، ينبغي أن تتمكن من إنشاء جدول كما في المثال أدناه. وللاختصار، نستخدم مجموعة فرعية من أعمدة سيارات الأجرة في نيويورك ونرسل البيانات مباشرةً إلى الجدول المستند إلى S3:
+
+```sql
+CREATE TABLE trips_s3
+(
+   `trip_id` UInt32,
+   `pickup_date` Date,
+   `pickup_datetime` DateTime,
+   `dropoff_datetime` DateTime,
+   `pickup_longitude` Float64,
+   `pickup_latitude` Float64,
+   `dropoff_longitude` Float64,
+   `dropoff_latitude` Float64,
+   `passenger_count` UInt8,
+   `trip_distance` Float64,
+   `tip_amount` Float32,
+   `total_amount` Float32,
+   `payment_type` Enum8('UNK' = 0, 'CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4)
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(pickup_date)
+ORDER BY pickup_datetime
+SETTINGS storage_policy='s3_main'
+```
+
+```sql
+INSERT INTO trips_s3 SELECT trip_id, pickup_date, pickup_datetime, dropoff_datetime, pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude, passenger_count, trip_distance, tip_amount, total_amount, payment_type FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames') LIMIT 1000000;
+```
+
+اعتمادًا على العتاد، قد يستغرق تنفيذ عملية الإدخال الأخيرة هذه لـ 1m صفًا بضع دقائق. يمكنك التحقق من التقدم عبر جدول system.processes. لا تتردد في تعديل عدد الصفوف حتى الحد الأقصى البالغ 10m واستكشاف بعض الاستعلامات النموذجية.
+
+```sql
+SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amount FROM trips_s3 GROUP BY passenger_count;
+```
+
+<div id="modifying-a-table">
+  ### تعديل جدول
+</div>
+
+قد تحتاج أحيانًا إلى تعديل سياسة التخزين لجدول معيّن. ورغم أن ذلك ممكن، فإنه ينطوي على بعض القيود. يجب أن تتضمن السياسة الهدف الجديدة جميع الأقراص ووحدات التخزين الموجودة في السياسة السابقة، أي إن البيانات لن تُنقل لمواكبة هذا التغيير في السياسة. وعند التحقق من هذه القيود، سيجري التعرف على وحدات التخزين والأقراص بأسمائها، وأي محاولة لمخالفتها ستؤدي إلى ظهور خطأ. ومع ذلك، وبافتراض أنك تستخدم الأمثلة السابقة، فإن التغييرات التالية صالحة.
+
+```xml
+<policies>
+   <s3_main>
+       <volumes>
+           <main>
+               <disk>s3</disk>
+           </main>
+       </volumes>
+   </s3_main>
+   <s3_tiered>
+       <volumes>
+           <hot>
+               <disk>default</disk>
+           </hot>
+           <main>
+               <disk>s3</disk>
+           </main>
+       </volumes>
+       <move_factor>0.2</move_factor>
+   </s3_tiered>
+</policies>
+```
+
+```sql
+ALTER TABLE trips_s3 MODIFY SETTING storage_policy='s3_tiered'
+```
+
+هنا نعيد استخدام وحدة التخزين الرئيسية في سياسة `s3_tiered` الجديدة، ونضيف وحدة تخزين ساخنة جديدة. ويستخدم ذلك القرص الافتراضي، الذي يتألف من قرص واحد فقط مُهيّأ عبر المعلَمة `<path>`. لاحظ أن أسماء وحدات التخزين والأقراص لا تتغير. ستبقى عمليات الإدراج الجديدة في جدولنا على القرص الافتراضي حتى يصل إلى القيمة move&#95;factor * disk&#95;size، وعندها ستُنقل البيانات إلى S3.
+
+<div id="handling-replication">
+  ### التعامل مع النسخ المتماثل
+</div>
+
+يمكن تنفيذ النسخ المتماثل مع أقراص S3 باستخدام محرك الجدول `ReplicatedMergeTree`. راجع دليل [نسخ شظية واحدة عبر منطقتين من AWS باستخدام تخزين الكائنات في S3](#s3-multi-region) للاطّلاع على التفاصيل.
+
+<div id="read--writes">
+  ### القراءة والكتابة
+</div>
+
+تتناول الملاحظات التالية كيفية تنفيذ تفاعلات S3 مع ClickHouse. ورغم أنها معلوماتية في الغالب، فقد تساعد القرّاء عند [تحسين الأداء](#s3-optimizing-performance):
+
+* افتراضيًا، يساوي الحد الأقصى لعدد خيوط معالجة الاستعلام التي يمكن لأي مرحلة من مراحل مسار معالجة الاستعلام استخدامها عددَ الأنوية. بعض المراحل أكثر قابليةً للتوازي من غيرها، لذا تمثل هذه القيمة حدًا أعلى. وقد تُنفَّذ عدة مراحل من الاستعلام في الوقت نفسه لأن البيانات تُبث من القرص. لذلك قد يتجاوز العدد الفعلي للخيوط المستخدمة في الاستعلام هذا الحد. يمكن تعديل ذلك عبر الإعداد [max&#95;threads](/ar/reference/settings/session-settings#max_threads).
+* تكون عمليات القراءة من S3 غير متزامنة افتراضيًا. ويُحدَّد هذا السلوك بواسطة الإعداد `remote_filesystem_read_method`، المضبوط افتراضيًا على القيمة `threadpool`. عند خدمة طلب ما، يقرأ ClickHouse الحبيبات ضمن شرائط. وقد يحتوي كل شريط على العديد من الأعمدة. ويقرأ أحد الخيوط الأعمدة الخاصة بحبيباته واحدًا تلو الآخر. وبدلًا من تنفيذ ذلك بشكل متزامن، يُجرى جلب مسبق لجميع الأعمدة قبل انتظار البيانات. ويوفر ذلك تحسينات كبيرة في الأداء مقارنةً بالانتظار المتزامن لكل عمود. لن تحتاج إلى تغيير هذا الإعداد في معظم الحالات - راجع [تحسين الأداء](#s3-optimizing-performance).
+* تُنفَّذ عمليات الكتابة بالتوازي، بحد أقصى يبلغ 100 خيط متزامن لكتابة الملفات. يتحكم `max_insert_delayed_streams_for_parallel_write`، الذي تبلغ قيمته الافتراضية 1000، في عدد كائنات S3 المكتوبة بالتوازي. وبما أن كل ملف تتم كتابته يتطلب مخزنًا مؤقتًا (~1MB)، فإن ذلك يحد فعليًا من استهلاك الذاكرة لعملية INSERT. وقد يكون من المناسب خفض هذه القيمة عندما تكون ذاكرة الخادم محدودة.
+
+<div id="configuring-s3-for-clickhouse-use">
+  ## استخدم تخزين الكائنات في S3 كقرص لـ ClickHouse
+</div>
+
+إذا كنت بحاجة إلى إرشادات تفصيلية خطوة بخطوة لإنشاء حاويات S3 ودور IAM، فيُرجى الرجوع إلى [&quot;كيفية إنشاء مستخدم AWS IAM وحاوية S3&quot;](/ar/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket)
+
+<div id="configure-clickhouse-to-use-the-s3-bucket-as-a-disk">
+  ### اضبط ClickHouse لاستخدام حاوية S3 كقرص
+</div>
+
+يعتمد المثال التالي على حزمة Deb لنظام Linux مُثبّتة كخدمة، مع أدلة ClickHouse الافتراضية.
+
+1. أنشئ ملفًا جديدًا في دليل `config.d` الخاص بـ ClickHouse لتخزين تهيئة التخزين.
+
+```bash
+vim /etc/clickhouse-server/config.d/storage_config.xml
+```
+
+2. أضِف ما يلي ضمن تهيئة التخزين، مع استبدال مسار الـ حاوية ومفتاح الوصول والمفاتيح السرية المذكورة في الخطوات السابقة
+
+```xml
+<clickhouse>
+  <storage_configuration>
+    <disks>
+      <s3_disk>
+        <type>s3</type>
+        <endpoint>https://mars-doc-test.s3.amazonaws.com/clickhouse3/</endpoint>
+        <access_key_id>ABC123</access_key_id>
+        <secret_access_key>Abc+123</secret_access_key>
+        <metadata_path>/var/lib/clickhouse/disks/s3_disk/</metadata_path>
+      </s3_disk>
+      <s3_cache>
+        <type>cache</type>
+        <disk>s3_disk</disk>
+        <path>/var/lib/clickhouse/disks/s3_cache/</path>
+        <max_size>10Gi</max_size>
+      </s3_cache>
+    </disks>
+    <policies>
+      <s3_main>
+        <volumes>
+          <main>
+            <disk>s3_disk</disk>
+          </main>
+        </volumes>
+      </s3_main>
+    </policies>
+  </storage_configuration>
+</clickhouse>
+```
+
+<Note>
+  إن الوسمين `s3_disk` و`s3_cache` داخل الوسم `<disks>` هما مُسميان اختياريان. يمكن تعيينهما إلى قيم أخرى، ولكن يجب استخدام المُسمّى نفسه في علامة التبويب `<disk>` ضمن علامة التبويب `<policies>` للإشارة إلى القرص.
+  كما أن الوسم `<S3_main>` اختياري أيضًا، وهو اسم السياسة التي ستُستخدم كمُعرّف لوجهة التخزين عند إنشاء الموارد في ClickHouse.
+
+  الإعداد الموضّح أعلاه مخصّص لإصدار ClickHouse 22.8 أو أحدث. وإذا كنت تستخدم إصدارًا أقدم، فيرجى مراجعة وثائق [تخزين البيانات](/ar/concepts/features/configuration/server-config/storing-data#using-local-cache).
+
+  لمزيد من المعلومات حول استخدام S3:
+  دليل التكاملات: [S3 Backed MergeTree](#s3-backed-mergetree)
+</Note>
+
+3. حدّث مالك الملف إلى المستخدم والمجموعة `clickhouse`
+
+```bash
+chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
+```
+
+4. أعد تشغيل مثيل ClickHouse حتى تدخل التغييرات حيّز التنفيذ.
+
+```bash
+service clickhouse-server restart
+```
+
+<div id="testing">
+  ### الاختبار
+</div>
+
+1. اتصل باستخدام `ClickHouse client`، كما في المثال التالي
+
+```bash
+clickhouse-client --user default --password ClickHouse123!
+```
+
+2. أنشئ جدولًا وحدِّد سياسة تخزين S3 الجديدة
+
+```sql
+CREATE TABLE s3_table1
+           (
+               `id` UInt64,
+               `column1` String
+           )
+           ENGINE = MergeTree
+           ORDER BY id
+           SETTINGS storage_policy = 's3_main';
+```
+
+3. تأكّد من أن الجدول أُنشئ باستخدام السياسة الصحيحة
+
+```sql
+SHOW CREATE TABLE s3_table1;
+```
+
+```response
+┌─statement────────────────────────────────────────────────────
+│ CREATE TABLE default.s3_table1
+(
+    `id` UInt64,
+    `column1` String
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS storage_policy = 's3_main', index_granularity = 8192
+└──────────────────────────────────────────────────────────────
+```
+
+4. أدرِج صفوفًا تجريبية في الجدول
+
+```sql
+INSERT INTO s3_table1
+           (id, column1)
+           VALUES
+           (1, 'abc'),
+           (2, 'xyz');
+```
+
+```response
+INSERT INTO s3_table1 (id, column1) FORMAT Values
+
+Query id: 0265dd92-3890-4d56-9d12-71d4038b85d5
+
+Ok.
+
+2 rows in set. Elapsed: 0.337 sec.
+```
+
+5. اعرض الصفوف
+
+```sql
+SELECT * FROM s3_table1;
+```
+
+```response
+┌─id─┬─column1─┐
+│  1 │ abc     │
+│  2 │ xyz     │
+└────┴─────────┘
+
+2 rows in set. Elapsed: 0.284 sec.
+```
+
+6. في وحدة تحكم AWS، انتقل إلى الحاويات وحدد الحاوية الجديدة والمجلد.
+   ينبغي أن ترى شيئًا مشابهًا لما يلي:
+
+<Image img="/images/integrations/data-ingestion/s3/s3-j.webp" size="lg" border alt="عرض حاوية S3 في وحدة تحكم AWS يوضح ملفات بيانات ClickHouse المخزنة في S3" />
+
+<div id="s3-multi-region">
+  ## تكرار شظية واحدة عبر منطقتين في AWS باستخدام تخزين الكائنات في S3
+</div>
+
+<Tip>
+  يُستخدم تخزين الكائنات افتراضيًا في ClickHouse Cloud، لذلك لا تحتاج إلى اتباع هذا الإجراء إذا كنت تستخدم ClickHouse Cloud.
+</Tip>
+
+<div id="plan-the-deployment">
+  ### خطّط لعملية النشر
+</div>
+
+يعتمد هذا الدليل العملي على نشر عقدتَي ClickHouse Server وثلاث عقد ClickHouse Keeper على AWS EC2. ويُستخدَم S3 كمخزن بيانات لخوادم ClickHouse. وتُستخدَم منطقتا AWS، مع ClickHouse Server وحاوية S3 في كل منطقة، لدعم التعافي من الكوارث.
+
+تكون جداول ClickHouse مكرّرة عبر الخادمين، وبالتالي عبر المنطقتين.
+
+<div id="install-software">
+  ### تثبيت البرامج
+</div>
+
+<div id="clickhouse-server-nodes">
+  #### عُقد خادم ClickHouse
+</div>
+
+راجع [تعليمات التثبيت](/ar/get-started/setup/install) عند تنفيذ خطوات النشر على عُقد خادم ClickHouse.
+
+<div id="deploy-clickhouse">
+  #### نشر ClickHouse
+</div>
+
+انشر ClickHouse على مضيفين؛ وفي التكوينات النموذجية يُسمَّيان `chnode1` و`chnode2`.
+
+ضع `chnode1` في منطقة AWS واحدة، و`chnode2` في منطقة أخرى.
+
+<div id="deploy-clickhouse-keeper">
+  #### نشر ClickHouse Keeper
+</div>
+
+قم بنشر ClickHouse Keeper على ثلاثة مضيفات. وفي تهيئات الأمثلة، تحمل هذه المضيفات الأسماء `keepernode1` و`keepernode2` و`keepernode3`. يمكن نشر `keepernode1` في نفس المنطقة التي يوجد فيها `chnode1`، و`keepernode2` مع `chnode2`، و`keepernode3` في أي من المنطقتين، ولكن في منطقة توافر تختلف عن عقدة ClickHouse في تلك المنطقة.
+
+راجِع [إرشادات التثبيت](/ar/get-started/setup/install) عند تنفيذ خطوات النشر على عقد ClickHouse Keeper.
+
+<div id="create-s3-buckets">
+  ### إنشاء حاويات S3
+</div>
+
+أنشئ حاويتين في S3، واحدة في كل منطقة وضعت فيها `chnode1` و`chnode2`.
+
+إذا كنت بحاجة إلى إرشادات خطوة بخطوة لإنشاء الحاويات ودور IAM، فوسّع **إنشاء حاويات S3 ودور IAM** واتبع التعليمات:
+
+<BucketDetails />
+
+ستُوضَع ملفات التكوين بعد ذلك في `/etc/clickhouse-server/config.d/`. وفيما يلي ملف تكوين نموذجي لإحدى الحاويتين، أما الأخرى فهي مشابهة له مع اختلاف الأسطر الثلاثة المميزة:
+
+```xml title="/etc/clickhouse-server/config.d/storage_config.xml" highlight={6-8}
+<clickhouse>
+  <storage_configuration>
+     <disks>
+        <s3_disk>
+           <type>s3</type>
+           <endpoint>https://docs-clickhouse-s3.s3.us-east-2.amazonaws.com/clickhouses3/</endpoint>
+           <access_key_id>ABCDEFGHIJKLMNOPQRST</access_key_id>
+           <secret_access_key>Tjdm4kf5snfkj303nfljnev79wkjn2l3knr81007</secret_access_key>
+           <metadata_path>/var/lib/clickhouse/disks/s3_disk/</metadata_path>
+        </s3_disk>
+
+        <s3_cache>
+           <type>cache</type>
+           <disk>s3_disk</disk>
+           <path>/var/lib/clickhouse/disks/s3_cache/</path>
+           <max_size>10Gi</max_size>
+        </s3_cache>
+     </disks>
+        <policies>
+            <s3_main>
+                <volumes>
+                    <main>
+                        <disk>s3_disk</disk>
+                    </main>
+                </volumes>
+            </s3_main>
+    </policies>
+   </storage_configuration>
+</clickhouse>
+```
+
+<Note>
+  ستطلب منك العديد من الخطوات في هذا الدليل وضع ملف تهيئة في `/etc/clickhouse-server/config.d/`. هذا هو الموقع الافتراضي على أنظمة Linux لملفات تجاوز التهيئة. عند وضع هذه الملفات في ذلك الدليل، سيستخدم ClickHouse محتواها لتجاوز التهيئة الافتراضية. ومن خلال وضع هذه الملفات في دليل التجاوز، ستتجنب فقدان تهيئتك أثناء الترقية.
+</Note>
+
+<div id="configure-clickhouse-keeper">
+  ### تهيئة ClickHouse Keeper
+</div>
+
+عند تشغيل ClickHouse Keeper في وضع مستقل (منفصلًا عن خادم ClickHouse)، تكون التهيئة عبارة عن ملف XML واحد.  في هذا الدليل العملي، يكون الملف هو `/etc/clickhouse-keeper/keeper_config.xml`.  تستخدم خوادم Keeper الثلاثة ملف التهيئة نفسه مع اختلاف إعداد واحد فقط؛ `<server_id>`.
+
+يشير `server_id` إلى المعرّف الذي سيُخصَّص للمضيف الذي يُستخدَم عليه ملف التهيئة.  في المثال أدناه، قيمة `server_id` هي `3`، وإذا نظرت إلى أسفل الملف في قسم `<raft_configuration>`، فسترى أن الخادم 3 يحمل اسم المضيف `keepernode3`.  وبهذه الطريقة تعرف عملية ClickHouse Keeper الخوادم الأخرى التي يجب الاتصال بها عند اختيار العقدة القائدة وفي سائر الأنشطة الأخرى.
+
+```xml title="/etc/clickhouse-keeper/keeper_config.xml" highlight={12,33-37}
+<clickhouse>
+    <logger>
+        <level>trace</level>
+        <log>/var/log/clickhouse-keeper/clickhouse-keeper.log</log>
+        <errorlog>/var/log/clickhouse-keeper/clickhouse-keeper.err.log</errorlog>
+        <size>1000M</size>
+        <count>3</count>
+    </logger>
+    <listen_host>0.0.0.0</listen_host>
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>3</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+
+        <coordination_settings>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <session_timeout_ms>30000</session_timeout_ms>
+            <raft_logs_level>warning</raft_logs_level>
+        </coordination_settings>
+
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>keepernode1</hostname>
+                <port>9234</port>
+            </server>
+            <server>
+                <id>2</id>
+                <hostname>keepernode2</hostname>
+                <port>9234</port>
+            </server>
+            <server>
+                <id>3</id>
+                <hostname>keepernode3</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>
+```
+
+انسخ ملف إعداد ClickHouse Keeper إلى مكانه الصحيح (مع تذكّر تعيين `<server_id>`):
+
+```bash
+sudo -u clickhouse \
+  cp keeper.xml /etc/clickhouse-keeper/keeper.xml
+```
+
+<div id="configure-clickhouse-server">
+  ### إعداد خادم ClickHouse
+</div>
+
+<div id="define-a-cluster">
+  #### تحديد عنقود
+</div>
+
+تُحدَّد عناقيد ClickHouse في قسم `<remote_servers>` من ملف التكوين. في هذا المثال، يُحدَّد عنقود واحد، `cluster_1S_2R`، ويتكوّن من جزء بيانات واحد ونسختين متماثلتين. وتقع النسختان المتماثلتان على المضيفين `chnode1` و`chnode2`.
+
+```xml title="/etc/clickhouse-server/config.d/remote-servers.xml"
+<clickhouse>
+    <remote_servers replace="true">
+        <cluster_1S_2R>
+            <shard>
+                <replica>
+                    <host>chnode1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>chnode2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster_1S_2R>
+    </remote_servers>
+</clickhouse>
+```
+
+عند العمل مع العناقيد، من المفيد تعريف وحدات ماكرو تُدرِج إعدادات العنقود، والشريحة، والنسخة المتماثلة في استعلامات DDL. يتيح لك هذا المثال تحديد استخدام محرك الجدول Replicated من دون الحاجة إلى توفير تفاصيل `shard` و`replica`. وعندما تنشئ جدولًا، يمكنك رؤية كيفية استخدام وحدات الماكرو `shard` و`replica` من خلال الاستعلام عن `system.tables`.
+
+```xml title="/etc/clickhouse-server/config.d/macros.xml"
+<clickhouse>
+    <distributed_ddl>
+            <path>/clickhouse/task_queue/ddl</path>
+    </distributed_ddl>
+    <macros>
+        <cluster>cluster_1S_2R</cluster>
+        <shard>1</shard>
+        <replica>replica_1</replica>
+    </macros>
+</clickhouse>
+```
+
+<Note>
+  تعريفات الماكرو أعلاه خاصة بـ `chnode1`، وعلى `chnode2` اضبط `replica` على `replica_2`.
+</Note>
+
+<div id="disable-zero-copy-replication">
+  #### تعطيل zero-copy replication
+</div>
+
+في إصدارات ClickHouse 22.7 وما دون، يكون الإعداد `allow_remote_fs_zero_copy_replication` مضبوطًا على `true` افتراضيًا لأقراص S3 وHDFS. يجب ضبط هذا الإعداد على `false` في سيناريو التعافي من الكوارث هذا، وفي الإصدار 22.8 وما بعده يكون مضبوطًا على `false` افتراضيًا.
+
+يجب أن تكون قيمة هذا الإعداد `false` لسببين: 1) هذه الميزة ليست جاهزة لبيئات الإنتاج؛ 2) في سيناريو التعافي من الكوارث، يجب تخزين كلٍّ من البيانات والبيانات الوصفية في عدة مناطق. اضبط `allow_remote_fs_zero_copy_replication` على `false`.
+
+```xml title="/etc/clickhouse-server/config.d/remote-servers.xml"
+<clickhouse>
+   <merge_tree>
+        <allow_remote_fs_zero_copy_replication>false</allow_remote_fs_zero_copy_replication>
+   </merge_tree>
+</clickhouse>
+```
+
+يتولى ClickHouse Keeper تنسيق النسخ المتماثل للبيانات عبر عقد ClickHouse.  ولإعلام ClickHouse بعُقد ClickHouse Keeper، أضف ملف تهيئة إلى كل عقدة من عقد ClickHouse.
+
+```xml title="/etc/clickhouse-server/config.d/use_keeper.xml"
+<clickhouse>
+    <zookeeper>
+        <node index="1">
+            <host>keepernode1</host>
+            <port>9181</port>
+        </node>
+        <node index="2">
+            <host>keepernode2</host>
+            <port>9181</port>
+        </node>
+        <node index="3">
+            <host>keepernode3</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+</clickhouse>
+```
+
+<div id="configure-networking">
+  ### تهيئة الشبكة
+</div>
+
+راجِع قائمة [منافذ الشبكة](/ar/concepts/features/security/network-ports) عند تهيئة إعدادات الأمان في AWS، بحيث تتمكن خوادمك من التواصل مع بعضها البعض، وتتمكن أنت أيضًا من التواصل معها.
+
+يجب أن تستمع الخوادم الثلاثة جميعها لاتصالات الشبكة حتى تتمكن من التواصل فيما بينها ومع S3. بشكل افتراضي، يستمع ClickHouse فقط على عنوان الاسترجاع المحلي (loopback)، لذا يجب تغيير ذلك. يُضبط هذا في `/etc/clickhouse-server/config.d/`. فيما يلي مثال يهيئ ClickHouse وClickHouse Keeper للاستماع على جميع واجهات IPv4. راجع الوثائق أو ملف الإعدادات الافتراضي `/etc/clickhouse/config.xml` لمزيد من المعلومات.
+
+```xml title="/etc/clickhouse-server/config.d/networking.xml"
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+</clickhouse>
+```
+
+<div id="start-the-servers">
+  ### شغِّل الخوادم
+</div>
+
+<div id="run-clickhouse-keeper">
+  #### تشغيل ClickHouse Keeper
+</div>
+
+على كل خادم Keeper، شغّل الأوامر المناسبة لنظام التشغيل لديك، على سبيل المثال:
+
+```bash
+sudo systemctl enable clickhouse-keeper
+sudo systemctl start clickhouse-keeper
+sudo systemctl status clickhouse-keeper
+```
+
+<div id="check-clickhouse-keeper-status">
+  #### تحقّق من حالة ClickHouse Keeper
+</div>
+
+أرسل أوامر إلى ClickHouse Keeper باستخدام `netcat`. على سبيل المثال، يُرجع `mntr` حالة عنقود ClickHouse Keeper. وإذا شغّلت الأمر على كل عقدة من عقد Keeper، فسترى أن إحداها هي القائد، وأن العقدتين الأخريين تابعتان:
+
+```bash
+echo mntr | nc localhost 9181
+```
+
+```response highlight={7-9,18-19}
+zk_version      v22.7.2.15-stable-f843089624e8dd3ff7927b8a125cf3a7a769c069
+zk_avg_latency  0
+zk_max_latency  11
+zk_min_latency  0
+zk_packets_received     1783
+zk_packets_sent 1783
+zk_num_alive_connections        2
+zk_outstanding_requests 0
+zk_server_state leader
+zk_znode_count  135
+zk_watch_count  8
+zk_ephemerals_count     3
+zk_approximate_data_size        42533
+zk_key_arena_size       28672
+zk_latest_snapshot_size 0
+zk_open_file_descriptor_count   182
+zk_max_file_descriptor_count    18446744073709551615
+zk_followers    2
+zk_synced_followers     2
+```
+
+<div id="run-clickhouse-server">
+  #### شغّل خادم ClickHouse
+</div>
+
+على كل خادم ClickHouse، نفِّذ ما يلي
+
+```bash
+sudo service clickhouse-server start
+```
+
+<div id="verify-clickhouse-server">
+  #### تحقّق من خادم ClickHouse
+</div>
+
+عند إضافة [إعدادات العنقود](#define-a-cluster)، جرى تعريف shard واحدة مكرّرة عبر عقدتَي ClickHouse. في خطوة التحقّق هذه، ستتأكد من أن العنقود قد أُنشئ عند بدء تشغيل ClickHouse، ثم ستنشئ جدولًا مكرّرًا باستخدام ذلك العنقود.
+
+* تحقّق من وجود العنقود:
+  ```sql
+  show clusters
+  ```
+  ```response
+  ┌─cluster───────┐
+  │ cluster_1S_2R │
+  └───────────────┘
+
+  1 row in set. Elapsed: 0.009 sec. `
+  ```
+
+* أنشئ جدولًا في العنقود باستخدام محرك الجداول `ReplicatedMergeTree`:
+  ```sql
+  create table trips on cluster 'cluster_1S_2R' (
+   `trip_id` UInt32,
+   `pickup_date` Date,
+   `pickup_datetime` DateTime,
+   `dropoff_datetime` DateTime,
+   `pickup_longitude` Float64,
+   `pickup_latitude` Float64,
+   `dropoff_longitude` Float64,
+   `dropoff_latitude` Float64,
+   `passenger_count` UInt8,
+   `trip_distance` Float64,
+   `tip_amount` Float32,
+   `total_amount` Float32,
+   `payment_type` Enum8('UNK' = 0, 'CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4))
+  ENGINE = ReplicatedMergeTree
+  PARTITION BY toYYYYMM(pickup_date)
+  ORDER BY pickup_datetime
+  SETTINGS storage_policy='s3_main'
+  ```
+  ```response
+  ┌─host────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+  │ chnode1 │ 9000 │      0 │       │                   1 │                0 │
+  │ chnode2 │ 9000 │      0 │       │                   0 │                0 │
+  └─────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+  ```
+
+* تعرّف على كيفية استخدام الـ ماكرو التي عُرّفت سابقًا
+
+  سبق [تعريف](#define-a-cluster) الـ ماكرو `shard` و`replica`، ويمكنك في السطر المميز أدناه رؤية المواضع التي تُستبدل فيها القيم على كل عقدة ClickHouse. بالإضافة إلى ذلك، تُستخدم القيمة `uuid`؛ ولا يجري تعريف `uuid` ضمن الـ ماكرو لأنها تُولَّد من النظام.
+
+  ```sql
+  SELECT create_table_query
+  FROM system.tables
+  WHERE name = 'trips'
+  FORMAT Vertical
+  ```
+
+  ```response highlight={6}
+  Query id: 4d326b66-0402-4c14-9c2f-212bedd282c0
+
+  Row 1:
+  ──────
+  create_table_query: CREATE TABLE default.trips (`trip_id` UInt32, `pickup_date` Date, `pickup_datetime` DateTime, `dropoff_datetime` DateTime, `pickup_longitude` Float64, `pickup_latitude` Float64, `dropoff_longitude` Float64, `dropoff_latitude` Float64, `passenger_count` UInt8, `trip_distance` Float64, `tip_amount` Float32, `total_amount` Float32, `payment_type` Enum8('UNK' = 0, 'CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4))
+  ENGINE = ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+  PARTITION BY toYYYYMM(pickup_date) ORDER BY pickup_datetime SETTINGS storage_policy = 's3_main'
+
+  1 row in set. Elapsed: 0.012 sec.
+  ```
+
+<Note>
+  يمكنك تخصيص مسار ZooKeeper `'clickhouse/tables/{uuid}/{shard}` الظاهر أعلاه من خلال ضبط `default_replica_path` و`default_replica_name`. تتوفر الوثائق [هنا](/ar/reference/settings/server-settings/settings#default_replica_path).
+</Note>
+
+<div id="testing-1">
+  ### التحقق
+</div>
+
+ستتحقق هذه الاختبارات من أن البيانات تُكرَّر بين الخادمين، وأنها مخزَّنة في حاويات S3 وليس على القرص المحلي.
+
+* أضف بيانات من مجموعة بيانات سيارات الأجرة لمدينة نيويورك:
+  ```sql
+  INSERT INTO trips
+  SELECT trip_id,
+         pickup_date,
+         pickup_datetime,
+         dropoff_datetime,
+         pickup_longitude,
+         pickup_latitude,
+         dropoff_longitude,
+         dropoff_latitude,
+         passenger_count,
+         trip_distance,
+         tip_amount,
+         total_amount,
+         payment_type
+     FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames') LIMIT 1000000;
+  ```
+* تحقّق من أن البيانات مخزَّنة في S3.
+
+  يوضّح هذا الاستعلام حجم البيانات على القرص، والسياسة المستخدمة لتحديد القرص المستخدم.
+
+  ```sql
+  SELECT
+      engine,
+      data_paths,
+      metadata_path,
+      storage_policy,
+      formatReadableSize(total_bytes)
+  FROM system.tables
+  WHERE name = 'trips'
+  FORMAT Vertical
+  ```
+
+  ```response
+  Query id: af7a3d1b-7730-49e0-9314-cc51c4cf053c
+
+  Row 1:
+  ──────
+  engine:                          ReplicatedMergeTree
+  data_paths:                      ['/var/lib/clickhouse/disks/s3_disk/store/551/551a859d-ec2d-4512-9554-3a4e60782853/']
+  metadata_path:                   /var/lib/clickhouse/store/e18/e18d3538-4c43-43d9-b083-4d8e0f390cf7/trips.sql
+  storage_policy:                  s3_main
+  formatReadableSize(total_bytes): 36.42 MiB
+
+  1 row in set. Elapsed: 0.009 sec.
+  ```
+
+  تحقّق من حجم البيانات على القرص المحلي. كما ترى أعلاه، يبلغ الحجم على القرص لملايين الصفوف المخزَّنة 36.42 MiB. يفترض أن تكون هذه البيانات على S3، لا على القرص المحلي. كما يبيّن لنا الاستعلام أعلاه أيضًا مكان تخزين البيانات والبيانات الوصفية على القرص المحلي. تحقّق من البيانات المحلية:
+
+  ```response
+  root@chnode1:~# du -sh /var/lib/clickhouse/disks/s3_disk/store/551
+  536K  /var/lib/clickhouse/disks/s3_disk/store/551
+  ```
+
+  تحقّق من بيانات S3 في كل حاوية S3 (لا تظهر القيم الإجمالية، لكن كلتا الحاويتين تحتويان على نحو 36 MiB من البيانات المخزَّنة بعد عمليات الإدراج):
+
+<Image img="/images/integrations/data-ingestion/s3/bucket1.webp" size="lg" border alt="حجم البيانات في حاوية S3 الأولى مع إظهار مقاييس استخدام التخزين" />
+
+<Image img="/images/integrations/data-ingestion/s3/bucket2.webp" size="lg" border alt="حجم البيانات في حاوية S3 الثانية مع إظهار مقاييس استخدام التخزين" />
+
+<div id="s3express">
+  ## S3Express
+</div>
+
+‏[S3Express](https://aws.amazon.com/s3/storage-classes/express-one-zone/) هي فئة تخزين جديدة عالية الأداء ضمن منطقة توافر واحدة في Amazon S3.
+
+يمكنك الرجوع إلى هذه [التدوينة](https://aws.amazon.com/blogs/storage/clickhouse-cloud-amazon-s3-express-one-zone-making-a-blazing-fast-analytical-database-even-faster/) للاطّلاع على تجربتنا في اختبار S3Express مع ClickHouse.
+
+<Note>
+  يخزّن S3Express البيانات داخل منطقة توافر واحدة (AZ). وهذا يعني أن البيانات لن تكون متاحة في حال تعطل منطقة التوافر.
+</Note>
+
+<div id="s3-disk">
+  ### قرص S3
+</div>
+
+يتطلب إنشاء جدول بتخزين يستند إلى حاوية من نوع S3Express الخطوات التالية:
+
+1. أنشئ حاوية من النوع `Directory`
+2. طبّق سياسة حاوية المناسبة لمنح مستخدم S3 الخاص بك جميع الأذونات المطلوبة (على سبيل المثال: `"Action": "s3express:*"` للسماح بوصول غير مقيّد)
+3. عند تهيئة سياسة التخزين، يُرجى توفير المعلَمة `region`
+
+تهيئة التخزين مماثلة لما هي عليه في S3 العادي، وقد تبدو مثل التالي:
+
+```sql
+<storage_configuration>
+    <disks>
+        <s3_express>
+            <type>s3</type>
+            <endpoint>https://my-test-bucket--eun1-az1--x-s3.s3express-eun1-az1.eu-north-1.amazonaws.com/store/</endpoint>
+            <region>eu-north-1</region>
+            <access_key_id>...</access_key_id>
+            <secret_access_key>...</secret_access_key>
+        </s3_express>
+    </disks>
+    <policies>
+        <s3_express>
+            <volumes>
+                <main>
+                    <disk>s3_express</disk>
+                </main>
+            </volumes>
+        </s3_express>
+    </policies>
+</storage_configuration>
+```
+
+ثم أنشئ جدولًا في وحدة التخزين الجديدة:
+
+```sql
+CREATE TABLE t
+(
+    a UInt64,
+    s String
+)
+ENGINE = MergeTree
+ORDER BY a
+SETTINGS storage_policy = 's3_express';
+```
+
+<div id="s3-storage">
+  ### تخزين S3
+</div>
+
+يدعم أيضًا تخزين S3، ولكن فقط للمسارات من نوع `Object URL`. مثال:
+
+```sql
+SELECT * FROM s3('https://test-bucket--eun1-az1--x-s3.s3express-eun1-az1.eu-north-1.amazonaws.com/file.csv', ...)
+```
+
+ويتطلب ذلك أيضًا تحديد منطقة الـ حاوية في ملف الإعدادات:
+
+```xml
+<s3>
+    <perf-bucket-url>
+        <endpoint>https://test-bucket--eun1-az1--x-s3.s3express-eun1-az1.eu-north-1.amazonaws.com</endpoint>
+        <region>eu-north-1</region>
+    </perf-bucket-url>
+</s3>
+```
+
+<div id="backups">
+  ### النسخ الاحتياطية
+</div>
+
+يمكن تخزين نسخة احتياطية على القرص الذي أنشأناه أعلاه:
+
+```sql
+BACKUP TABLE t TO Disk('s3_express', 't.zip')
+```
+
+```response
+┌─id───────────────────────────────────┬─status─────────┐
+│ c61f65ac-0d76-4390-8317-504a30ba7595 │ BACKUP_CREATED │
+└──────────────────────────────────────┴────────────────┘
+```
+
+```sql
+RESTORE TABLE t AS t_restored FROM Disk('s3_express', 't.zip')
+```
+
+```response
+┌─id───────────────────────────────────┬─status───┐
+│ 4870e829-8d76-4171-ae59-cffaf58dea04 │ RESTORED │
+└──────────────────────────────────────┴──────────┘
+```
