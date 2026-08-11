@@ -300,6 +300,12 @@ const IPostingListCodec & PostingsSerialization::resolveCodec(UInt64 header)
 
 PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality)
 {
+    /// Raw posting lists are never compressed, so the flags are mutually exclusive.
+    if ((header & RawPostings) && (header & IsCompressed))
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Posting list header marks the data as both raw and compressed");
+    }
+
     /// Small posting lists are stored as raw VarUInt-encoded row ids.
     if (header & RawPostings)
     {
