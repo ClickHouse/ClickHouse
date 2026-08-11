@@ -127,7 +127,7 @@ rewrite: Nullable(K) key
 rewrite: Nullable(K) key, opt off
 1
 rewrite: LC(Nullable(K)) key - plan
-SELECT count() AS `count()`\nFROM default.data_str_lc_nullable AS __table1\nWHERE _CAST(in(__table1.id, (\n    SELECT id AS id\n    FROM dictionary(\'dict_string\')\n    WHERE equals(name, \'abc\')\n)), \'LowCardinality(Nullable(UInt8))\')\nSETTINGS optimize_inverse_dictionary_lookup = 1
+SELECT count() AS `count()`\nFROM default.data_str_lc_nullable AS __table1\nWHERE in(__table1.id, (\n    SELECT id AS id\n    FROM dictionary(\'dict_string\')\n    WHERE equals(name, \'abc\')\n))\nSETTINGS optimize_inverse_dictionary_lookup = 1
 rewrite: LC(Nullable(K)) key
 1
 rewrite: LC(Nullable(K)) key, opt off
