@@ -332,7 +332,10 @@ then
 else
     drain_capture /tmp/stress_script.log "$FAILURE_DRAIN_GRACE_OK"
 fi
-flush_capture /tmp/stress_script.log "$mirrored_bytes"
+finalize_capture /tmp/stress_script.log "$stress_script_exit_code"
+# The capture's writers can outlive the script by more than the settle wait allows, so look
+# once more whenever the job ends, including the early exits below.
+trap 'finalize_capture /tmp/stress_script.log "$stress_script_exit_code"' EXIT
 set -e
 if [ "$stress_script_exit_code" -eq 0 ]
 then

@@ -64,14 +64,33 @@ function drain_capture()
 
 function flush_capture()
 {
-    # Print the bytes of $1 past offset $2, which the console mirror did not reach.
+    # Print the bytes of $1 past offset $2, leaving the end of what was printed in
+    # `flushed_offset`: a byte appended mid-flush belongs to the next one, never to both.
     local captured="$1"
     local mirrored="$2"
     local size
     size=$(stat -c %s "$captured" 2>/dev/null || echo 0)
+    flushed_offset="$mirrored"
     if [ "$size" -gt "$mirrored" ]
     then
-        tail -c "+$(( mirrored + 1 ))" "$captured"
+        tail -c "+$(( mirrored + 1 ))" "$captured" | head -c "$(( size - mirrored ))"
+        flushed_offset="$size"
+    fi
+}
+
+function finalize_capture()
+{
+    # Whatever arrived past `$mirrored_bytes` reaches the console, and a failing run keeps the
+    # capture with the other artifacts. Runs from an EXIT trap under errexit, where a command
+    # that fails would replace the status the job is reporting, so nothing here may fail.
+    local captured="$1"
+    local exit_code="$2"
+    flush_capture "$captured" "${mirrored_bytes:-0}" ||:
+    mirrored_bytes="$flushed_offset"
+    if [ "$exit_code" -ne 0 ] && [ -s "$captured" ]
+    then
+        cp "$captured" /test_output/stress_script.log \
+            || echo "Cannot preserve $captured, its late output is lost"
     fi
 }
 
