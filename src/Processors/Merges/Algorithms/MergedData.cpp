@@ -1,8 +1,10 @@
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
+#include <DataTypes/DataTypeObject.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -40,7 +42,12 @@ void MergedData::initialize(const Block & header, const IMergingAlgorithm::Input
         /// Columns with dynamic structure (like JSON/Dynamic) need their structure to be
         /// merged from all source columns before the merge starts.
         if (columns[i]->hasDynamicStructure())
+        {
+            /// If this is a JSON column with SHARED REGEXP patterns, make sure matching paths are
+            /// never selected as dynamic paths below, regardless of their statistics.
+            setPathRegexpsSharedDataForMergeRecursively(*columns[i], tryGetPathRegexpsSharedDataForMerge(header.getByPosition(i).type));
             columns[i]->chooseDynamicStructureForMerge(source_columns[i], max_dynamic_subcolumns);
+        }
         /// Columns with statistics (like Map with adaptive buckets) need their statistics to be
         /// merged from all source columns before the merge starts.
         /// Must be called after `chooseDynamicStructureForMerge` for columns that have both.

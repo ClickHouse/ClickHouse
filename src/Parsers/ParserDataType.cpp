@@ -157,7 +157,7 @@ private:
     }
 };
 
-/// Parser of Object type argument. For example: JSON(some_parameter=N, some.path SomeType, SKIP skip.path, ...)
+/// Parser of Object type argument. For example: JSON(some_parameter=N, some.path SomeType, SKIP skip.path, SHARED REGEXP 'some\.path\..*', ...)
 class ObjectArgumentParser : public IParserBase
 {
 private:
@@ -190,6 +190,26 @@ private:
                 argument->skip_path = compound_identifier;
                 argument->children.push_back(argument->skip_path);
             }
+
+            node = argument;
+            return true;
+        }
+
+        /// SHARED REGEXP '<some_regexp>'
+        if (ParserKeyword(Keyword::SHARED).ignore(pos))
+        {
+            if (!ParserKeyword(Keyword::REGEXP).ignore(pos))
+            {
+                expected.add(pos, "REGEXP");
+                return false;
+            }
+
+            ParserStringLiteral literal_parser;
+            ASTPtr literal;
+            if (!literal_parser.parse(pos, literal, expected))
+                return false;
+            argument->shared_path_regexp = literal;
+            argument->children.push_back(argument->shared_path_regexp);
 
             node = argument;
             return true;

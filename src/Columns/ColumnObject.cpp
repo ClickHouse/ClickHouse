@@ -2,6 +2,9 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnSparse.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Arena.h>
@@ -153,6 +156,10 @@ ColumnObject::ColumnObject(const ColumnObject & other)
     sorted_dynamic_paths.clear();
     for (const auto & [path, _] : dynamic_paths)
         sorted_dynamic_paths.emplace(path);
+
+    /// Preserve the SHARED REGEXP patterns on the copy (RE2 isn't copyable, so this can't be done
+    /// via the member initializer list above).
+    other.copyPathRegexpsSharedDataForMerge(*this);
 }
 
 ColumnObject::Ptr ColumnObject::create(
@@ -225,7 +232,7 @@ MutableColumnPtr ColumnObject::cloneEmpty() const
     for (const auto & [path, column] : dynamic_paths)
         empty_dynamic_paths[path] = column->cloneEmpty();
 
-    return ColumnObject::create(
+    auto result = ColumnObject::create(
         std::move(empty_typed_paths),
         std::move(empty_dynamic_paths),
         shared_data->cloneEmpty(),
@@ -233,6 +240,21 @@ MutableColumnPtr ColumnObject::cloneEmpty() const
         global_max_dynamic_paths,
         max_dynamic_types,
         statistics);
+    /// Preserve the SHARED REGEXP patterns so the clone keeps enforcing them (see createColumn()).
+    copyPathRegexpsSharedDataForMerge(*result);
+    return result;
+}
+
+void ColumnObject::copyPathRegexpsSharedDataForMerge(IColumn & to) const
+{
+    if (path_regexps_shared_data_for_merge.empty())
+        return;
+
+    std::vector<String> patterns;
+    patterns.reserve(path_regexps_shared_data_for_merge.size());
+    for (const auto & regexp : path_regexps_shared_data_for_merge)
+        patterns.push_back(regexp.pattern());
+    assert_cast<ColumnObject &>(to).setPathRegexpsSharedDataForMerge(patterns);
 }
 
 MutableColumnPtr ColumnObject::cloneResized(size_t size) const
@@ -247,7 +269,7 @@ MutableColumnPtr ColumnObject::cloneResized(size_t size) const
     for (const auto & [path, column] : dynamic_paths)
         resized_dynamic_paths[path] = column->cloneResized(size);
 
-    return ColumnObject::create(
+    auto result = ColumnObject::create(
         std::move(resized_typed_paths),
         std::move(resized_dynamic_paths),
         shared_data->cloneResized(size),
@@ -255,6 +277,9 @@ MutableColumnPtr ColumnObject::cloneResized(size_t size) const
         global_max_dynamic_paths,
         max_dynamic_types,
         statistics);
+    /// Preserve the SHARED REGEXP patterns so the clone keeps enforcing them (see createColumn()).
+    copyPathRegexpsSharedDataForMerge(*result);
+    return result;
 }
 
 Field ColumnObject::operator[](size_t n) const
@@ -461,6 +486,17 @@ ColumnDynamic * ColumnObject::tryToAddNewDynamicPath(std::string_view path)
 {
     if (dynamic_paths.size() == max_dynamic_paths)
         return nullptr;
+
+    /// Paths matching a SHARED REGEXP pattern from the column's type must never become a dynamic
+    /// path, regardless of the dynamic paths budget: they always belong in shared data. This is
+    /// the single choke point for all dynamic-path creation (parsing, generic Field-based insert,
+    /// column-to-column copies like insertFrom/insertRangeFrom), so enforcing it here guarantees
+    /// the rule holds everywhere, not just in the JSON-text/binary parsing paths.
+    for (const auto & regexp : path_regexps_shared_data_for_merge)
+    {
+        if (re2::RE2::FullMatch(path, regexp))
+            return nullptr;
+    }
 
     auto new_dynamic_column = ColumnDynamic::create(max_dynamic_types);
     new_dynamic_column->reserve(shared_data->capacity());
@@ -1873,6 +1909,13 @@ bool ColumnObject::dynamicStructureEquals(const IColumn & rhs) const
     return true;
 }
 
+void ColumnObject::setPathRegexpsSharedDataForMerge(const std::vector<String> & path_regexps_shared_data_)
+{
+    path_regexps_shared_data_for_merge.clear();
+    for (const auto & regexp_str : path_regexps_shared_data_)
+        path_regexps_shared_data_for_merge.emplace_back(regexp_str);
+}
+
 void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     if (!empty())
@@ -1920,6 +1963,23 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
                 it = path_to_total_number_of_non_null_values.emplace(path, 0).first;
             it->second += size;
         }
+    }
+
+    /// Paths matching a SHARED REGEXP pattern from the column's type must always be stored in shared
+    /// data and must never be selected as dynamic paths, regardless of their statistics. Filter them
+    /// out of the candidate set before the top-K selection below.
+    if (!path_regexps_shared_data_for_merge.empty())
+    {
+        std::erase_if(path_to_total_number_of_non_null_values, [this](const auto & entry)
+        {
+            const auto & path = entry.first;
+            for (const auto & regexp : path_regexps_shared_data_for_merge)
+            {
+                if (re2::RE2::FullMatch(path, regexp))
+                    return true;
+            }
+            return false;
+        });
     }
 
     /// Reset current state.
@@ -1993,6 +2053,39 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
             typed_path_source_columns.push_back(assert_cast<const ColumnObject &>(*source_column).typed_paths.at(path));
         column->chooseDynamicStructureForMerge(typed_path_source_columns, max_dynamic_subcolumns);
     }
+}
+
+void setPathRegexpsSharedDataForMergeRecursively(IColumn & column, const std::vector<String> & path_regexps_shared_data)
+{
+    if (path_regexps_shared_data.empty())
+        return;
+
+    /// Unwrap the column wrappers that merge algorithms may put around the actual JSON column
+    /// (Nullable, Sparse, Replicated) to reach the real ColumnObject, if there is one.
+    IColumn * current = &column;
+    bool unwrapped_something = true;
+    while (unwrapped_something)
+    {
+        unwrapped_something = false;
+        if (auto * nullable = typeid_cast<ColumnNullable *>(current))
+        {
+            current = &nullable->getNestedColumn();
+            unwrapped_something = true;
+        }
+        else if (auto * sparse = typeid_cast<ColumnSparse *>(current))
+        {
+            current = &sparse->getValuesColumn();
+            unwrapped_something = true;
+        }
+        else if (auto * replicated = typeid_cast<ColumnReplicated *>(current))
+        {
+            current = &*replicated->getNestedColumn();
+            unwrapped_something = true;
+        }
+    }
+
+    if (auto * object = typeid_cast<ColumnObject *>(current))
+        object->setPathRegexpsSharedDataForMerge(path_regexps_shared_data);
 }
 
 void ColumnObject::takeExactDynamicStructureFrom(const IColumn & source)

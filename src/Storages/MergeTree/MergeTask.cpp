@@ -12,6 +12,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Disks/SingleDiskVolume.h>
@@ -1838,6 +1839,8 @@ public:
         , merge_block_size_bytes(merge_block_size_bytes_)
         , max_dynamic_subcolumns(max_dynamic_subcolumns_)
         , is_result_sparse(is_result_sparse_)
+        /// The header has exactly 1 column: this step gathers a single column from all source parts.
+        , path_regexps_shared_data(tryGetPathRegexpsSharedDataForMerge(input_header_->getByPosition(0).type))
     {}
 
     String getName() const override { return "ColumnGatherer"; }
@@ -1859,7 +1862,8 @@ public:
             merge_block_size_rows,
             merge_block_size_bytes,
             max_dynamic_subcolumns,
-            is_result_sparse);
+            is_result_sparse,
+            path_regexps_shared_data);
 
         pipeline.addTransform(std::move(transform));
     }
@@ -1891,6 +1895,9 @@ private:
     const UInt64 merge_block_size_bytes;
     const std::optional<size_t> max_dynamic_subcolumns;
     const bool is_result_sparse;
+    /// SHARED REGEXP patterns from the column's DataTypeObject, if this is a JSON column with such
+    /// patterns; empty otherwise.
+    const std::vector<String> path_regexps_shared_data;
 };
 
 MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline

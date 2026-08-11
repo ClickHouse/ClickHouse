@@ -27,6 +27,7 @@ protected:
  *  - pair (path, data type)
  *  - path that should be skipped
  *  - path regexp for paths that should be skipped
+ *  - path regexp for paths that must always be stored in shared data
  *  - setting in a form of `setting=N`
  */
 class ASTObjectTypeArgument : public IAST
@@ -35,6 +36,7 @@ public:
     ASTPtr path_with_type;
     ASTPtr skip_path;
     ASTPtr skip_path_regexp;
+    ASTPtr shared_path_regexp;
     ASTPtr parameter;
 
     /** Get the text that identifies this element. */
