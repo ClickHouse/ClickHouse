@@ -520,9 +520,11 @@ def test_packed_io_create_rejects_output_inside_input(started_cluster):
 def test_merge_over_stale_packed_tmp_dir(started_cluster):
     # A merge must reclaim a leftover tmp_merge_ directory of an interrupted previous attempt
     # and must not seed any data from it into the new part.
+    # The storage_policy pin encodes a hard precondition: the part directory is copied with plain cp,
+    # which is only valid on a local disk (on object storage it would corrupt blob reference counts).
     node.query(
         "CREATE OR REPLACE TABLE t_packed_stale_tmp_dir (a UInt64, v UInt64) ENGINE = MergeTree ORDER BY a "
-        "SETTINGS min_bytes_for_full_part_storage = '1G'"
+        "SETTINGS min_bytes_for_full_part_storage = '1G', storage_policy = 'default'"
     )
 
     # Two deterministic parts with distinguishable contents, so contamination would change the sums below.
