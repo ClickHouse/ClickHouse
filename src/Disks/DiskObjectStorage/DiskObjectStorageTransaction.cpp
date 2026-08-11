@@ -530,6 +530,21 @@ void DiskObjectStorageTransaction::copyFileImpl(
     const ReadSettings & read_settings,
     const WriteSettings & write_settings)
 {
+    /// An inlined source file has no blobs to copy: route the content through writeFile, which
+    /// re-inlines it when the destination supports that and uploads a blob otherwise.
+    if (src_metadata_storage->supportsInlineData())
+    {
+        if (String inline_data = src_metadata_storage->readInlineDataToString(from_file_path); !inline_data.empty())
+        {
+            WriteSettings inline_write_settings = write_settings;
+            inline_write_settings.inline_file_max_bytes = metadata_storage->supportsInlineData() ? inline_data.size() : 0;
+            auto buf = writeFile(to_file_path, inline_data.size(), WriteMode::Rewrite, inline_write_settings);
+            buf->write(inline_data.data(), inline_data.size());
+            buf->finalize();
+            return;
+        }
+    }
+
     /// Share the enriched settings via shared_ptr so each task lambda captures a cheap refcount bump
     /// rather than a full copy of ReadSettings / WriteSettings.
     const auto enriched_read_settings = std::make_shared<const ReadSettings>(

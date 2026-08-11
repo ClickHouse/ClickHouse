@@ -8,6 +8,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int DIRECTORY_DOESNT_EXIST;
     extern const int FILE_DOESNT_EXIST;
     extern const int FILE_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
@@ -373,6 +374,12 @@ void MetadataStorageFromMemoryTransaction::createDirectoryRecursive(const std::s
 void MetadataStorageFromMemoryTransaction::removeDirectory(const std::string & path)
 {
     std::unique_lock lock(storage.metadata_mutex);
+
+    const std::string normalized(normalizePath(path));
+    if (storage.files.contains(normalized))
+        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "`{}` is a file, not a directory", path);
+    if (!storage.existsDirectoryUnlocked(normalized))
+        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory `{}` doesn't exist", path);
 
     const std::string prefix = directoryPrefix(path);
     if (auto it = storage.files.lower_bound(prefix); it != storage.files.end() && it->first.starts_with(prefix))

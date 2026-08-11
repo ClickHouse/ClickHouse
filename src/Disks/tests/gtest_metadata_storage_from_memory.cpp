@@ -292,6 +292,22 @@ TEST(MetadataStorageFromMemory, DirectoriesAndSubdirectoryListing)
     EXPECT_FALSE(storage->existsDirectory("empty.dir"));
 }
 
+TEST(MetadataStorageFromMemory, RemoveDirectoryValidatesTarget)
+{
+    auto storage = makeWritableStorage();
+    auto tx = storage->createTransaction();
+
+    tx->createMetadataFile("file.bin", singleObject("blobs/file", "file.bin", 1));
+    tx->createDirectory("dir");
+
+    EXPECT_THROW(tx->removeDirectory("no_such"), Exception);
+    EXPECT_THROW(tx->removeDirectory("file.bin"), Exception);
+    EXPECT_THROW(tx->removeDirectory("file.bin/no_such"), Exception);
+
+    tx->removeDirectory("dir");
+    EXPECT_FALSE(storage->existsDirectory("dir"));
+}
+
 TEST(MetadataStorageFromMemory, IncrementBlobRefCountBumpsHardlinkCount)
 {
     auto storage = makeWritableStorage();
@@ -455,6 +471,32 @@ TEST_F(DiskObjectStorageOverMemoryMetadataTest, SmallWritesAreInlinedByTheTransa
     ASSERT_EQ(memory->getStorageObjects("big.bin").size(), 1u);
     EXPECT_EQ(memory->getFileSize("big.bin"), 30u);
     EXPECT_EQ(countBlobs(), blobs_before + 1);
+
+    tx->undo();
+}
+
+TEST_F(DiskObjectStorageOverMemoryMetadataTest, CopyFilePreservesInlineContent)
+{
+    auto wrapped = disk->wrapWithMemoryMetadata();
+    auto memory = wrapped->getMetadataStorage();
+    auto tx = wrapped->createTransaction();
+
+    WriteSettings settings;
+    settings.inline_file_max_bytes = 16;
+
+    const size_t blobs_before = countBlobs();
+
+    {
+        auto buf = tx->writeFile("small.txt", 4096, WriteMode::Rewrite, settings);
+        writeString("tiny", *buf);
+        buf->finalize();
+    }
+
+    /// The copy carries the inline content over; no blob appears on either side.
+    tx->copyFile("small.txt", "copy.txt", /*read_settings=*/{}, /*write_settings=*/{});
+    EXPECT_EQ(memory->readInlineDataToString("copy.txt"), "tiny");
+    EXPECT_TRUE(memory->getStorageObjects("copy.txt").empty());
+    EXPECT_EQ(countBlobs(), blobs_before);
 
     tx->undo();
 }
