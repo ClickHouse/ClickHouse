@@ -453,6 +453,8 @@ namespace
                     throwInconsistentSchema("OffsetOp", ctx->getText());
                 auto & timestamp = new_node->at_timestamp.emplace();
                 ok &= parseTimestamp(number_ctx, timestamp);
+                if (ok && timestamp_ctx->SUB())
+                    timestamp = -timestamp;
             }
 
             if (auto * offset_value_ctx = ctx->offsetValue())

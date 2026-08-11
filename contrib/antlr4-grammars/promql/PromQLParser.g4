@@ -111,7 +111,7 @@ parens
 // Timestamps and durations
 
 timestamp
-    : NUMBER
+    : (ADD | SUB)? NUMBER
     ;
 
 duration
