@@ -2481,20 +2481,16 @@ bool FunctionArrayElement<mode>::gatherReplicated(
         ssize_t nested_row = replication_indexes.getIndexAt(i);
         /// `offsets[-1]` is a guaranteed zero (`PaddedPODArray` left padding), same as `ColumnArray::offsetAt`.
         ColumnArray::Offset begin = offsets[nested_row - 1];
-        size_t array_size = offsets[nested_row] - begin;
+        ColumnArray::Offset end = offsets[nested_row];
 
         IndexType index = indices[i];
-        if (index > 0 && static_cast<size_t>(index) <= array_size)
+        /// Positive index is 1-based from the beginning of the array, negative counts from the end.
+        /// Any invalid index (zero, out of range) lands outside [begin, end) and produces a default value.
+        size_t insert_position = index > 0 ? begin + index - 1 : end + index;
+        if (begin <= insert_position && insert_position < end)
         {
-            size_t j = begin + index - 1;
-            result.insertFrom(data, j);
-            builder.update(j);
-        }
-        else if (index < 0 && -static_cast<size_t>(index) <= array_size)
-        {
-            size_t j = offsets[nested_row] + index;
-            result.insertFrom(data, j);
-            builder.update(j);
+            result.insertFrom(data, insert_position);
+            builder.update(insert_position);
         }
         else
         {
