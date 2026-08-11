@@ -279,4 +279,13 @@ inline StoragePtr resolveStorageProxyLoading(const StoragePtr & storage)
     return storage;
 }
 
+/// False only while a proxy has not created the storage it wraps, which is the state a lazily
+/// loaded table is in before its first access. Everything else is loaded by definition.
+inline bool isStorageLoaded(const StoragePtr & storage)
+{
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return proxy->tryGetNested() != nullptr;
+    return storage != nullptr;
+}
+
 }

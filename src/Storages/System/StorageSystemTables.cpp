@@ -403,6 +403,12 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
             "(the `TO` target, or the implicit `.inner.*` table). Empty for other engines."
         },
         {"definer", std::make_shared<DataTypeString>(), "SQL security definer's name used for the table."},
+        {"is_loaded", std::make_shared<DataTypeUInt8>(),
+            "Whether the table engine has been created in memory. A table in a database with "
+            "`lazy_load_tables` is reported as not loaded until its first access, and the columns "
+            "describing its structure and size are unknown while that is the case. Keep this column last: "
+            "the temporary-table branch below identifies it by position."
+        },
     };
 
     description.setAliases({
@@ -620,8 +626,13 @@ protected:
 
                         while (src_index < columns_mask.size())
                         {
+                            // is_loaded: declared last, and a temporary table is never a proxy.
+                            if (src_index + 1 == columns_mask.size() && columns_mask[src_index])
+                            {
+                                res_columns[res_index++]->insert(1u);
+                            }
                             // total_rows
-                            if (src_index == 14 && columns_mask[src_index])
+                            else if (src_index == 14 && columns_mask[src_index])
                             {
                                 // parameterized view parameters
                                 fillParametralizedViewData(res_columns, table.second, res_index);
@@ -1148,6 +1159,10 @@ protected:
                     else
                         res_columns[res_index++]->insertDefault();
                 }
+
+                // is_loaded
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(isStorageLoaded(table) ? 1u : 0u);
             }
         }
         UInt64 num_rows = res_columns.at(0)->size();

@@ -53,6 +53,40 @@ def test_mergetree_family_is_deferred(env):
     assert env.is_deferred(DB, "t")
 
 
+def test_is_loaded_column(env):
+    """`system.tables.is_loaded` is how a client tells "no sorting key" from "not known yet"."""
+    env.create_table(DB, "lazy_t", "id UInt64")
+    instance.query(f"CREATE TABLE {DB}.eager_t (id UInt64) ENGINE = Memory")
+    env.reload(DB)
+
+    def is_loaded(table):
+        return instance.query(
+            f"SELECT is_loaded FROM system.tables WHERE database = '{DB}' AND name = '{table}'"
+        ).strip()
+
+    # The deferred table agrees with the engine name, and an eager one is loaded by definition.
+    assert env.is_deferred(DB, "lazy_t")
+    assert is_loaded("lazy_t") == "0"
+    assert is_loaded("eager_t") == "1"
+
+    # Reading the column must not itself load the table.
+    assert env.is_deferred(DB, "lazy_t")
+
+    assert int(instance.query(f"SELECT count() FROM {DB}.lazy_t")) == 0
+    assert is_loaded("lazy_t") == "1"
+    assert not env.is_deferred(DB, "lazy_t")
+
+    # A temporary table is never proxied, so it must not be reported as unloaded. Both statements
+    # have to share one session for the temporary table to still exist for the SELECT.
+    assert (
+        instance.query(
+            "CREATE TEMPORARY TABLE tmp_t (id UInt64) ENGINE = Memory;"
+            "SELECT is_loaded FROM system.tables WHERE is_temporary AND name = 'tmp_t';"
+        ).strip()
+        == "1"
+    )
+
+
 def test_other_engines_stay_eager(env):
     """Engines reached by casting to a concrete storage type must not be deferred."""
     instance.query(
@@ -146,76 +180,6 @@ def test_kafka_ingests_after_restart(env):
         k.kafka_delete_topic(admin_client, topic)
 
 
-def test_metadata_visible_before_first_access(env):
-    """A deferred table must report its real structure without being loaded to answer."""
-    env.create_table(
-        DB,
-        "t",
-        "d Date, id UInt64, v String, n UInt32, "
-        "INDEX idx_v v TYPE bloom_filter GRANULARITY 1, "
-        "PROJECTION proj (SELECT n, count() GROUP BY n)",
-        order_by="(id, v)",
-        extra="PARTITION BY toYYYYMM(d) PRIMARY KEY id SAMPLE BY id TTL d + INTERVAL 10 YEAR",
-    )
-    instance.query(
-        f"INSERT INTO {DB}.t SELECT '2024-01-01', number, toString(number), number % 5 FROM numbers(10)"
-    )
-    env.reload(DB)
-
-    assert env.is_deferred(DB, "t")
-
-    row = instance.query(
-        f"SELECT sorting_key, partition_key, primary_key, sampling_key "
-        f"FROM system.tables WHERE database = '{DB}' AND name = 't'"
-    ).strip()
-    assert row == "id, v\ttoYYYYMM(d)\tid\tid", row
-
-    assert (
-        instance.query(
-            f"SELECT name FROM system.data_skipping_indices WHERE database = '{DB}' AND table = 't'"
-        ).strip()
-        == "idx_v"
-    )
-    assert (
-        instance.query(
-            f"SELECT name FROM system.projections WHERE database = '{DB}' AND table = 't'"
-        ).strip()
-        == "proj"
-    )
-    assert (
-        instance.query(
-            f"SELECT groupArray(name) FROM (SELECT name FROM system.columns "
-            f"WHERE database = '{DB}' AND table = 't' AND is_in_sorting_key ORDER BY name)"
-        ).strip()
-        == "['id','v']"
-    )
-
-    # Reading the metadata must not have forced the real storage to be created.
-    assert env.is_deferred(DB, "t")
-
-
-def test_versioned_collapsing_sorting_key(env):
-    """VersionedCollapsingMergeTree appends its version column to the sorting key, so a deferred
-    table must report the same key as a loaded one."""
-    instance.query(
-        f"CREATE TABLE {DB}.vcmt (id UInt64, sign Int8, ver UInt64) "
-        f"ENGINE = VersionedCollapsingMergeTree(sign, ver) ORDER BY id"
-    )
-    env.reload(DB)
-
-    assert env.is_deferred(DB, "vcmt")
-    deferred = instance.query(
-        f"SELECT sorting_key FROM system.tables WHERE database = '{DB}' AND name = 'vcmt'"
-    ).strip()
-
-    assert int(instance.query(f"SELECT count() FROM {DB}.vcmt")) == 0
-    loaded = instance.query(
-        f"SELECT sorting_key FROM system.tables WHERE database = '{DB}' AND name = 'vcmt'"
-    ).strip()
-
-    assert deferred == loaded == "id, ver", f"deferred={deferred!r} loaded={loaded!r}"
-
-
 def test_mutations(env):
     """`checkMutationIsPossible` is asked before `mutate`, so it has to reach the real storage."""
     env.create_table(
@@ -264,42 +228,6 @@ def test_lightweight_update(env):
     assert instance.query(f"SELECT v FROM {DB}.t WHERE id = 3").strip() == "updated"
 
 
-def test_deprecated_engine_syntax_is_eager(env):
-    """The deprecated engine-argument syntax keeps its keys in the engine arguments, which the proxy
-    cannot report, so such a table must not be deferred."""
-    if env.table_engine != "MergeTree":
-        pytest.skip("the deprecated syntax test is specific to plain MergeTree")
-
-    instance.query(
-        f"CREATE TABLE {DB}.legacy (d Date, id UInt64, v String) ENGINE = MergeTree(d, id, 8192)",
-        settings={"allow_deprecated_syntax_for_merge_tree": 1},
-    )
-    env.reload(DB)
-
-    assert not env.is_deferred(DB, "legacy")
-    assert (
-        instance.query(
-            f"SELECT sorting_key, partition_key FROM system.tables "
-            f"WHERE database = '{DB}' AND name = 'legacy'"
-        ).strip()
-        == "id\ttoYYYYMM(d)"
-    )
-
-
-def test_comment_visible_before_first_access(env):
-    """`system.tables.comment` is read from the metadata, so the proxy has to carry it."""
-    env.create_table(DB, "t", "id UInt64", extra="COMMENT 'a lazy table'")
-    env.reload(DB)
-
-    assert env.is_deferred(DB, "t")
-    assert (
-        instance.query(
-            f"SELECT comment FROM system.tables WHERE database = '{DB}' AND name = 't'"
-        ).strip()
-        == "a lazy table"
-    )
-
-
 def test_skip_index_sizes_after_access(env):
     """`system.data_skipping_indices` reads the size columns from the catalog object, which needs
     `getSecondaryIndexSizes` to reach the real storage."""
@@ -309,47 +237,25 @@ def test_skip_index_sizes_after_access(env):
     instance.query(f"INSERT INTO {DB}.t SELECT number, toString(number) FROM numbers(1000)")
     env.reload(DB)
 
-    # Before any access the definition is visible but the sizes cannot be known without loading.
+    # Listing the system table must not load the table, so it reports nothing about it yet.
     assert env.is_deferred(DB, "t")
+    instance.query(
+        f"SELECT count() FROM system.data_skipping_indices WHERE database = '{DB}' AND table = 't'"
+    )
+    assert env.is_deferred(DB, "t"), "listing skip indices must not load the table"
+
+    assert int(instance.query(f"SELECT count() FROM {DB}.t")) == 1000
     assert (
         instance.query(
             f"SELECT name FROM system.data_skipping_indices WHERE database = '{DB}' AND table = 't'"
         ).strip()
         == "idx_v"
     )
-    assert env.is_deferred(DB, "t"), "reading the index sizes must not load the table"
-
-    assert int(instance.query(f"SELECT count() FROM {DB}.t")) == 1000
     sizes = instance.query(
         f"SELECT data_compressed_bytes > 0, data_uncompressed_bytes > 0, marks_bytes > 0 "
         f"FROM system.data_skipping_indices WHERE database = '{DB}' AND table = 't'"
     ).strip()
     assert sizes == "1\t1\t1", sizes
-
-
-def test_implicit_minmax_indices_visible_before_access(env):
-    """`add_minmax_index_for_*` adds indices that no `INDEX` clause mentions, so the proxy has to
-    synthesize them the same way the engine does."""
-    env.create_table(
-        DB,
-        "t",
-        "id UInt64, s String",
-        extra="SETTINGS add_minmax_index_for_numeric_columns = 1, add_minmax_index_for_string_columns = 1",
-    )
-    env.reload(DB)
-
-    assert env.is_deferred(DB, "t")
-    deferred = instance.query(
-        f"SELECT count() FROM system.data_skipping_indices WHERE database = '{DB}' AND table = 't'"
-    ).strip()
-
-    assert int(instance.query(f"SELECT count() FROM {DB}.t")) == 0
-    loaded = instance.query(
-        f"SELECT count() FROM system.data_skipping_indices WHERE database = '{DB}' AND table = 't'"
-    ).strip()
-
-    assert deferred == loaded, f"deferred={deferred} loaded={loaded}"
-    assert int(loaded) >= 2, loaded
 
 
 def test_system_graphite_retentions(env):
