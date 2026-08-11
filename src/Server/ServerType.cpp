@@ -83,9 +83,6 @@ bool ServerType::shouldStart(Type server_type, const std::string & server_custom
             return false;
     }
 
-    if (server_type == Type::INTROSPECTION)
-        return type == Type::INTROSPECTION;
-
     if (type == Type::QUERIES_ALL)
         return true;
 

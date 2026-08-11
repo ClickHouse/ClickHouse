@@ -35,10 +35,16 @@ def test_introspection_port(started_cluster):
         " WHERE Settings['log_comment'] = 'introspection_test_startup_script'",
         "1",
     )
+    assert "QUERY_IS_PROHIBITED" in introspection_client().query_and_get_error(
+        "SYSTEM RELOAD CONFIG"
+    )
+
     introspection_client().query(
         "KILL QUERY WHERE Settings['log_comment'] = 'introspection_test_startup_script'"
     )
     assert_eq_with_retry(node, "SELECT 1", "1")
+
+    assert_eq_with_retry(introspection_client(), "SYSTEM RELOAD CONFIG", "")
 
     assert "AUTHENTICATION_FAILED" in introspection_client().query_and_get_error(
         "SELECT 1", password="invalid"

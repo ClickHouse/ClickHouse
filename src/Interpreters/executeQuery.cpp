@@ -1182,6 +1182,27 @@ static bool isAllowedOnIntrospectionPort(const IAST & ast)
 }
 
 
+static void checkQueryIsAllowedOnIntrospectionPort(const IAST & ast, const Context & context)
+{
+    if (!isAllowedOnIntrospectionPort(ast))
+        throw Exception(
+            ErrorCodes::QUERY_IS_PROHIBITED,
+            "Only diagnostic queries are allowed on the introspection port: "
+            "SELECT, SHOW, DESCRIBE, EXPLAIN, EXISTS, KILL QUERY, SYSTEM, SET and USE");
+
+    const auto * system_query = ast.as<ASTSystemQuery>();
+    if (system_query
+        && (system_query->type == ASTSystemQuery::Type::RELOAD_CONFIG
+            || system_query->type == ASTSystemQuery::Type::RELOAD_USERS)
+        && !context.isServerCompletelyStarted())
+        throw Exception(
+            ErrorCodes::QUERY_IS_PROHIBITED,
+            "SYSTEM {} is not allowed on the introspection port until the server is completely started, "
+            "because reloading the configuration may break the initialization order",
+            ASTSystemQuery::typeToString(system_query->type));
+}
+
+
 static BlockIO executeQueryImpl(
     const char * begin,
     const char * end,
@@ -1594,11 +1615,8 @@ static BlockIO executeQueryImpl(
 
         if (out_ast)
         {
-            if (!internal && client_info.is_from_introspection_port && !isAllowedOnIntrospectionPort(*out_ast))
-                throw Exception(
-                    ErrorCodes::QUERY_IS_PROHIBITED,
-                    "Only diagnostic queries are allowed on the introspection port: "
-                    "SELECT, SHOW, DESCRIBE, EXPLAIN, EXISTS, KILL QUERY, SYSTEM, SET and USE");
+            if (client_info.is_from_introspection_port)
+                checkQueryIsAllowedOnIntrospectionPort(*out_ast, *context);
 
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.

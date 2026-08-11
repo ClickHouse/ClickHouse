@@ -3262,10 +3262,6 @@ try
         /// In either case, we need to return an error.
         if (is_cancelled || !global_context->isServerCompletelyStarted())
             throw Exception(ErrorCodes::ABORTED, "Cannot start listeners because the server is starting up or shutting down");
-        if (server_type.type == ServerType::Type::INTROSPECTION)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Introspection listeners are opened at server startup and stay open for the lifetime of the server");
         createServers(
             config(),
             server_settings,
@@ -3449,7 +3445,8 @@ try
             *async_metrics,
             introspection_servers,
             /* start_servers= */ true,
-            ServerType(ServerType::Type::INTROSPECTION));
+            ServerType(ServerType::Type::QUERIES_ALL),
+            /* only_introspection_protocols= */ true);
     }
 
     try
@@ -3911,7 +3908,7 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     const bool is_introspection = isIntrospectionProtocol(config, protocol);
     std::string innermost_type;
 
-    auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name);
+    auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name, is_introspection);
 
     while (true)
     {
@@ -3968,7 +3965,8 @@ void Server::createServers(
     AsynchronousMetrics & async_metrics,
     std::vector<ProtocolServerAdapter> & servers,
     bool start_servers,
-    const ServerType & server_type)
+    const ServerType & server_type,
+    bool only_introspection_protocols)
 {
     const Settings & settings = global_context->getSettingsRef();
 
@@ -3992,7 +3990,10 @@ void Server::createServers(
     for (const auto & protocol : protocols)
     {
         const bool is_introspection = isIntrospectionProtocol(config, protocol);
-        if (!server_type.shouldStart(is_introspection ? ServerType::Type::INTROSPECTION : ServerType::Type::CUSTOM, protocol))
+        if (is_introspection != only_introspection_protocols)
+            continue;
+
+        if (!server_type.shouldStart(ServerType::Type::CUSTOM, protocol))
             continue;
 
         std::string prefix = "protocols." + protocol + ".";
@@ -4038,6 +4039,10 @@ void Server::createServers(
             });
         }
     }
+
+    /// Introspection ports can only be configured in the protocols config section.
+    if (only_introspection_protocols)
+        return;
 
     for (const auto & listen_host : listen_hosts)
     {
