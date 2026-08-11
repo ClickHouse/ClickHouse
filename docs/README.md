@@ -183,7 +183,7 @@ Guidelines:
 
 The docs CI checks run in Docker through Praktika. Install Python 3 and Docker, start Docker, and run the checks relevant to your change from the repository root. Praktika pulls the configured `clickhouse/docs-builder` image and runs each check in the container, so you do not need to install the check dependencies locally.
 
-The complete `Docs check (Mintlify)` job cannot run outside CI. The change-gated `Check changelogs` check needs pull-request changed-file metadata, while `No direct edits to generated or read-only docs` needs pull-request revisions and merge-base metadata supplied by the CI workflow.
+The complete `Docs check (Mintlify)` job cannot run outside CI. The table below lists the checks that can run locally. `Check changelogs` and `No direct edits to generated or read-only docs` need pull-request metadata supplied by the CI workflow and therefore run only in CI.
 
 Pass a check name to `--test` to run it individually. The match is case-insensitive and accepts partial names, but using the full names below avoids selecting the wrong check.
 
@@ -197,5 +197,5 @@ Pass a check name to `--test` to run it individually. The match is case-insensit
 | `Check locale links` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Check locale links"` | Checks that links in translated documentation resolve to existing files; translated heading fragments are not checked. |
 | `Check locale component links` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Check locale component links"` | Validates localized links in JSX components and MDX data, and checks referenced image assets. |
 | `Check quickstarts` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Check quickstarts"` | Validates quickstart frontmatter and markers, then checks that generated explorer data and badges are current. |
-| `Check changelogs` | `python3 -m ci.praktika run "Docs check (Mintlify)" --pr <PR_NUMBER> --test "Check changelogs"` | Checks that generated changelog cards, content, and navigation are current. This change-gated check runs only when the specified pull request changes a changelog input, output, or checker. |
+| `Check changelogs` | CI only | Checks that generated changelog cards, content, and navigation are current. It runs when a pull request changes a changelog input, output, or checker. |
 | `No direct edits to generated or read-only docs` | CI only | Rejects direct changes to generated regions and documentation copied from another repository. It requires pull-request revisions and merge-base metadata supplied by CI. |
