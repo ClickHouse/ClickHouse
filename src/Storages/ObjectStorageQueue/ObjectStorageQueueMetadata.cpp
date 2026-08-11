@@ -1566,8 +1566,8 @@ void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
         return;
     }
 
-    /// Collect all Failed cache entries and build paths to their expected /failed nodes
-    std::vector<std::pair<std::string, std::string>> cache_entries;  // (file_path, failed_node_path)
+    /// Collect all Failed cache entries and build paths to both terminal and retriable nodes
+    std::vector<std::tuple<std::string, std::string, std::string>> cache_entries;  // (file_path, terminal_node_path, retriable_node_path)
     {
         auto all_entries = local_file_statuses.dump();
         for (const auto & entry : all_entries)
@@ -1579,7 +1579,10 @@ void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
                 path_hash.update(entry.mapped->path);
                 auto node_name = toString(path_hash.get64());
                 auto failed_node_path = fs::path(failed_path) / node_name;
-                cache_entries.emplace_back(entry.mapped->path, failed_node_path.string());
+                cache_entries.emplace_back(
+                    entry.mapped->path,
+                    failed_node_path.string(),
+                    failed_node_path.string() + ".retriable");
             }
         }
     }
@@ -1590,8 +1593,9 @@ void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
         return;
     }
 
-    /// Check existence of each /failed node in batches.
-    /// Only remove cache entries for nodes confirmed absent (ZNONODE).
+    /// Check existence of both terminal and retriable nodes for each cache entry in batches.
+    /// Only remove cache entries if BOTH nodes are confirmed absent (ZNONODE).
+    /// This preserves actively-retrying files that have only .retriable nodes.
     std::unordered_set<std::string> paths_to_remove;
     const size_t batch_size = keeper_multiread_batch_size;
 
@@ -1599,10 +1603,13 @@ void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
     {
         size_t batch_end = std::min(i + batch_size, cache_entries.size());
         std::vector<std::string> batch_paths;
-        batch_paths.reserve(batch_end - i);
+        batch_paths.reserve(2 * (batch_end - i));  // 2 paths per cache entry
 
         for (size_t j = i; j < batch_end; ++j)
-            batch_paths.push_back(cache_entries[j].second);
+        {
+            batch_paths.push_back(std::get<1>(cache_entries[j]));  // terminal node
+            batch_paths.push_back(std::get<2>(cache_entries[j]));  // retriable node
+        }
 
         zkutil::ZooKeeper::MultiTryGetResponse response;
         zk_retries.resetFailures();
@@ -1611,12 +1618,15 @@ void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
             response = zk_client->tryGet(batch_paths);
         });
 
-        for (size_t j = 0; j < response.size(); ++j)
+        for (size_t j = 0; j < response.size(); j += 2)
         {
-            /// Only mark for removal if node is confirmed absent
-            if (response[j].error == Coordination::Error::ZNONODE)
+            bool terminal_absent = (response[j].error == Coordination::Error::ZNONODE);
+            bool retriable_absent = (response[j + 1].error == Coordination::Error::ZNONODE);
+
+            /// Only mark for removal if BOTH terminal and retriable nodes are confirmed absent
+            if (terminal_absent && retriable_absent)
             {
-                paths_to_remove.insert(cache_entries[i + j].first);
+                paths_to_remove.insert(std::get<0>(cache_entries[i + j / 2]));
             }
         }
     }
