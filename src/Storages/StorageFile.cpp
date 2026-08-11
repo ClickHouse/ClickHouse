@@ -236,14 +236,9 @@ void listFilesWithRegexpMatchingImpl(
     /// result in, so the same directory is not resolved twice for one match.
     auto add_matched_path = [&](const std::string & path, size_t bytes, const fs::path * parent_canonical_hint = nullptr)
     {
-        /// Resolve the PARENT directory but keep the final component as written. A symlink
-        /// aliasing an ancestor gives one file several lexical paths that a lexical key cannot
-        /// recognize as one (`root/file.txt` and `root/a/back/file.txt` for `root/a/back -> ..`),
-        /// so the parent has to be resolved. The final component must NOT be, because a symlink
-        /// to a file is a separate name the pattern selected and reporting only its target would
-        /// drop a `_file` value the user asked for (`root/alias.txt -> real.txt` matched by
-        /// `root/**/*.txt` is two rows, not one). Fall back to the lexical form when the parent
-        /// cannot be resolved.
+        /// Resolve the PARENT but keep the final component as written: an ancestor-aliasing
+        /// symlink gives one file several lexical paths, while a symlink TO a file is a distinct
+        /// name the pattern selected and must stay its own row. Lexical form if it cannot resolve.
         std::string dedup_key;
         if (!deduplicate_by_canonical_path)
         {
@@ -288,15 +283,9 @@ void listFilesWithRegexpMatchingImpl(
     {
         try
         {
-            /// We use fs::canonical to resolve the canonical path and check if the file does exists
-            /// but the result path will be fs::absolute.
-            /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-            /// Also serves as the existence check: the throwing overload is what makes the
-            /// `catch` below skip a suffix that does not resolve. Resolving the PARENT rather than
-            /// the whole candidate keeps that check (a candidate under an unresolvable parent
-            /// cannot resolve either, and the `fs::file_size` below still rejects a missing file)
-            /// and gives the deduplication key its parent directly, so one match resolves one
-            /// directory once instead of resolving the candidate here and its parent again below.
+            /// Throwing overload on purpose: it is the existence check the `catch` below relies on
+            /// to skip a suffix that does not resolve. The PARENT is resolved rather than the whole
+            /// candidate, which keeps that check and doubles as the deduplication key.
             const fs::path parent_canonical = fs::canonical(fs::path(path_for_ls + for_match).parent_path());
             fs::path absolute_path = fs::absolute(path_for_ls + for_match);
             absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
@@ -367,39 +356,17 @@ void listFilesWithRegexpMatchingImpl(
         return dir_canonical ? &*dir_canonical : nullptr;
     };
 
-    /// Walk each frame at most once, where a frame is the canonical directory together with the
-    /// pattern still to be matched there. That pair is the whole state of the walk, so a frame
-    /// repeating it can only redo what another frame has already done, whether that frame is an
-    /// enclosing one (a symlink cycle) or an already-finished sibling (an alias reaching the same
-    /// directory by another name). Both are pruned here.
+    /// A frame is (canonical directory, remaining pattern), which is the whole state of the walk,
+    /// so a repeated pair can only redo what its claimant already does. The directory alone is NOT
+    /// a sufficient key: `**` also matches zero levels, so re-entering with a SHORTER suffix is new
+    /// work that can reach files no other path reaches.
     ///
-    /// Re-entering the same directory with a DIFFERENT remaining pattern is legitimate new work
-    /// and must proceed: `**` matches zero directory levels, so the zero-level re-application
-    /// enters the current directory with a shorter suffix and can reach a file no other path
-    /// reaches (e.g. `file('root/*/**/top.txt')` with `root/x/back -> ..` reaches `root/top.txt`
-    /// only as (`root`, `/top.txt`), while the enclosing frame holds (`root`, `/*/**/top.txt`)).
-    /// Keying on the directory alone conflates the two and silently drops such matches.
+    /// Only frames whose remaining pattern still holds a whole-segment `**` are tracked, since a
+    /// bounded finite tail cannot recurse without end and may legitimately reach a file through an
+    /// ancestor symlink.
     ///
-    /// Tracking is limited to frames whose remaining pattern still contains a whole-segment `**`,
-    /// i.e. those from which unbounded recursion is still reachable. That covers the `**` segment
-    /// itself and every finite `*` ancestor traversed before reaching a `**`, since their
-    /// remaining pattern still has the `**` ahead. Inside a BOUNDED finite tail after the last
-    /// `**` no unbounded recursion is possible, so nothing is tracked and a finite suffix like
-    /// `*/*.txt` may legitimately reach a file through a symlink resolving to an ancestor
-    /// (`file('root/**/mid/*/*.txt')` with `root/deep/mid/back -> ../..`). Purely finite globs
-    /// never track anything, so `file('root/*/*/*.txt')` with `root/a/back -> ..` keeps working.
-    ///
-    /// Termination and completeness both hold: every remaining pattern is a suffix of the
-    /// expanded pattern, so the set of reachable pairs is finite, and skipping a repeated pair
-    /// cannot lose a match because the frame that claimed it enumerates exactly the same paths.
-    /// The set is scoped per expanded pattern, so brace-expansion alternatives never share it.
-    ///
-    /// This prunes TRAVERSAL, which is a different job from the output deduplication in
-    /// `add_matched_path`: that one keeps a repeated visit from emitting a row twice, while this
-    /// one keeps the walk from making the repeated visit at all. Both are needed. Without pruning,
-    /// several sibling symlinks under one root let the walk re-descend every branch on each
-    /// re-entry, so the visited-path count grows combinatorially until the kernel symlink limit
-    /// stops it, which deduplication cannot prevent because it only filters results.
+    /// This prunes TRAVERSAL, which is separate from the output deduplication in
+    /// `add_matched_path`: that filters rows, this stops the repeated visit happening at all.
     if (patternHasGlobstarSegment(suffix_with_globs))
     {
         const fs::path * prefix_canonical_ptr = dir_canonical_hint();
@@ -491,16 +458,9 @@ void listFilesWithRegexpMatchingImpl(
         {
             if (recursive)
             {
-                /// When the current segment is the globstar `**` followed by a suffix (e.g.
-                /// `**/file.txt`), descend into subdirectories keeping the whole `**/...` pattern,
-                /// so the globstar keeps matching at every deeper level (any number of
-                /// directories). The zero-level branch above applies the post-`**` suffix at the
-                /// current level, so the combination matches zero, one, or more directory
-                /// components. Without this, a literal suffix (e.g. `pick.tsv`) would short-circuit
-                /// the recursion at the no-glob exact-match branch after a single level, and only a
-                /// glob suffix (e.g. `*.tsv`) would keep descending. For a trailing `**` (no
-                /// suffix), keep re-applying `current_glob` (`/**`) to list all files recursively,
-                /// as before.
+                /// A `**` with a suffix descends carrying the WHOLE `**/...` pattern, so the
+                /// globstar keeps matching at every depth; the zero-level branch above covers the
+                /// current level. A trailing `**` keeps re-applying `current_glob`.
                 const std::string descent_pattern = (current_glob == "/**" && looking_for_directory)
                     ? suffix_with_globs
                     : (looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob);
