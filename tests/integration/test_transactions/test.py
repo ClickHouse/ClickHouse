@@ -1228,10 +1228,11 @@ def test_kill_transaction_mutation_rollback_window(start_cluster):
         # (test_kill_transaction_mutation_task_selected_before_rollback pins
         # both messages against wording drift by asserting their presence).
         # transactionID() prints the tuple as (csn,ltid,'uuid'), while the log
-        # message formats it as (csn, ltid, uuid).
-        tid_csn, tid_ltid, tid_host = tid.strip("()").split(",")
-        tid_host = tid_host.strip("'")
-        log_tid = f"({tid_csn}, {tid_ltid}, {tid_host})"
+        # message formats it as (csn, ltid, uuid).  Some builds extend the TID
+        # with extra trailing fields (printed the same way in both places), so
+        # rebuild the log form from however many fields the tuple has.
+        tid_fields = [f.strip().strip("'") for f in tid.strip("()").split(",")]
+        log_tid = f"({', '.join(tid_fields)})"
         node.query("SYSTEM START MERGES mt_kill_txn_rollback_window")
         for _ in range(20):
             node.query("SYSTEM FLUSH LOGS part_log, text_log")
@@ -1506,10 +1507,11 @@ def test_kill_transaction_mutation_task_selected_before_rollback(start_cluster):
         # test_kill_transaction_mutation_rollback_window asserts the absence
         # of, so that assertion cannot silently become vacuous.
         # transactionID() prints the tuple as (csn,ltid,'uuid'), while the log
-        # message formats it as (csn, ltid, uuid).
-        tid_csn, tid_ltid, tid_host = tid.strip("()").split(",")
-        tid_host = tid_host.strip("'")
-        log_tid = f"({tid_csn}, {tid_ltid}, {tid_host})"
+        # message formats it as (csn, ltid, uuid).  Some builds extend the TID
+        # with extra trailing fields (printed the same way in both places), so
+        # rebuild the log form from however many fields the tuple has.
+        tid_fields = [f.strip().strip("'") for f in tid.strip("()").split(",")]
+        log_tid = f"({', '.join(tid_fields)})"
         node.query("SYSTEM FLUSH LOGS text_log")
         assert (
             int(
