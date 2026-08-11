@@ -1969,7 +1969,13 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
                 {
-                    /// Check if we are going to DROP a column that some other columns depend on.
+                    /// Check if we are going to DROP a column that some other columns depend on. A dependency
+                    /// on any column of a dropped Nested group is a dependency on the dropped name.
+                    auto is_dropped_column = [&](const String & name_in_storage) {
+                        return name_in_storage == command.column_name
+                            || (share_nested && startsWith(name_in_storage, command.column_name + "."));
+                    };
+
                     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
                     {
                         auto execution_context = Context::createCopy(context);
@@ -1990,7 +1996,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                     for (const auto & selected_column : table_expression->getSelectedColumnsNames())
                                     {
                                         auto column_name_and_type = all_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, selected_column);
-                                        if (column_name_and_type && column_name_and_type->getNameInStorage() == command.column_name)
+                                        if (column_name_and_type && is_dropped_column(column_name_and_type->getNameInStorage()))
                                             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot drop column {}, because column {} depends on it", backQuote(command.column_name), backQuote(column.name));
                                     }
                                 }
@@ -2009,7 +2015,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                 for (const auto & required_column : actions->getRequiredColumns())
                                 {
                                     auto column_name_and_type = all_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_column);
-                                    if (column_name_and_type && column_name_and_type->getNameInStorage() == command.column_name)
+                                    if (column_name_and_type && is_dropped_column(column_name_and_type->getNameInStorage()))
                                         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot drop column {}, because column {} depends on it", backQuote(command.column_name), backQuote(column.name));
                                 }
                             }

@@ -37,6 +37,12 @@ ALTER TABLE test DROP COLUMN IF EXISTS n;
 ALTER TABLE test DROP COLUMN n; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
 DROP TABLE test;
 
+-- Dropping the group is rejected when a DEFAULT of another column reads a column of the group
+CREATE TABLE test (`n.a` UInt64, x UInt64, c UInt64 DEFAULT `n.a` + 1) ENGINE = MergeTree ORDER BY x;
+ALTER TABLE test DROP COLUMN n; -- { serverError ILLEGAL_COLUMN }
+ALTER TABLE test DROP COLUMN IF EXISTS n; -- { serverError ILLEGAL_COLUMN }
+DROP TABLE test;
+
 -- Without shared Nested offsets the name does not denote the group: it is an unknown name to drop,
 -- and a no-op under IF EXISTS
 CREATE TABLE test (`n.a` UInt64, x UInt64) ENGINE = MergeTree ORDER BY `n.a` SETTINGS share_nested_offsets = 0;
