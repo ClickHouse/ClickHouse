@@ -71,6 +71,14 @@ SELECT 'Nullable(String) key, Variant(FixedString(3))',
     (SELECT count() FROM oracle WHERE s = CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64)))
         = (SELECT count() FROM pk_nullable WHERE s = CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64)));
 
+-- A JSON extraction whose requested type is erased: the extracted member is `FixedString(3)`, unlike
+-- an untyped `JSON` path, which yields `String` (asserted under B below).
+SELECT 'String key, JSONExtract to Variant(FixedString(3))',
+    (SELECT count() FROM oracle WHERE s = JSONExtract('{"a":"V0"}', 'a', 'Variant(FixedString(3), UInt64)'))
+        = (SELECT count() FROM pk_string WHERE s = JSONExtract('{"a":"V0"}', 'a', 'Variant(FixedString(3), UInt64)')),
+    (SELECT groupArray(hex(s)) FROM (SELECT s FROM oracle WHERE s = JSONExtract('{"a":"V0"}', 'a', 'Variant(FixedString(3), UInt64)') ORDER BY s))
+        = (SELECT groupArray(hex(s)) FROM (SELECT s FROM pk_string WHERE s = JSONExtract('{"a":"V0"}', 'a', 'Variant(FixedString(3), UInt64)') ORDER BY s));
+
 SELECT '-- A2: notEquals agrees with the oracle (exact-count projection pinned on)';
 
 -- Both settings are pinned because only `_exact_count_projection` derives the count from the key
@@ -83,6 +91,21 @@ SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 SELECT 'String key, Dynamic holding FixedString(3)',
     (SELECT count() FROM oracle WHERE s != CAST(toFixedString('V0', 3) AS Dynamic))
         = (SELECT count() FROM pk_string WHERE s != CAST(toFixedString('V0', 3) AS Dynamic))
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+
+SELECT '-- A3: range comparisons agree with the oracle (the greater arm pins the exact-count projection)';
+
+-- `less` and `greaterOrEquals` hold whether or not the active member type is recovered, so an
+-- assertion on them would pass either way; only these two discriminate.
+SELECT 'String key, Variant(FixedString(3)), lessOrEquals',
+    (SELECT count() FROM oracle WHERE s <= CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64)))
+        = (SELECT count() FROM pk_string WHERE s <= CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64)));
+
+-- The `greater` range excludes no matching row once a filter runs, so the count differs only where
+-- `_exact_count_projection` derives it from the key ranges; both settings gate that projection.
+SELECT 'String key, Variant(FixedString(3)), greater',
+    (SELECT count() FROM oracle WHERE s > CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64)))
+        = (SELECT count() FROM pk_string WHERE s > CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64)))
 SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 
 SELECT '-- Keys that already pruned correctly are untouched';
@@ -114,7 +137,8 @@ FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_string WHERE s = CAST('V0' AS V
 SELECT 'Dynamic holding String', count() > 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_string WHERE s = CAST('V0' AS Dynamic)) WHERE explain ILIKE '%Granules: 1/5%';
 
--- A JSON subcolumn is Dynamic, so this reaches the same site with no CAST written.
+-- An untyped JSON path is Dynamic, so it reaches the same site with no CAST written, but its
+-- extracted member type is String, so the recovered type keeps the range and the pruning.
 SELECT 'JSON path constant', count() > 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_string WHERE s = ('{"a":"V0"}'::JSON).a) WHERE explain ILIKE '%Granules: 1/5%';
 
