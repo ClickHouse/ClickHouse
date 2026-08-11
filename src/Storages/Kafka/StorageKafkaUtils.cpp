@@ -195,7 +195,13 @@ void registerStorageKafka(StorageFactory & factory)
         auto num_consumers = (*kafka_settings)[KafkaSetting::kafka_num_consumers].value;
         auto max_consumers = std::max<uint32_t>(getNumberOfCPUCoresToUse(), 16);
 
-        if (!args.getLocalContext()->getSettingsRef()[Setting::kafka_disable_num_consumers_limit] && num_consumers > max_consumers)
+        /// The limit depends on the local CPU count, so a definition read back from metadata may have been
+        /// accepted on a bigger server. Validate only a freshly introduced one, so existing tables stay loadable.
+        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+
+        if (is_fresh_definition
+            && !args.getLocalContext()->getSettingsRef()[Setting::kafka_disable_num_consumers_limit] && num_consumers > max_consumers)
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -266,7 +272,8 @@ void registerStorageKafka(StorageFactory & factory)
                 args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name);
         }
 
-        if (!args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_kafka_offsets_storage_in_keeper] && !args.query.attach)
+        if (args.mode <= LoadingStrictnessLevel::CREATE
+            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_kafka_offsets_storage_in_keeper])
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Storing the Kafka offsets in Keeper is experimental. Set `allow_experimental_kafka_offsets_storage_in_keeper` setting "
@@ -790,13 +797,41 @@ Either both of the settings must be specified or neither of them. When both of t
 
 ### Static partition-to-shard affinity {#static-partition-to-shard-affinity}
 
-When using StorageKafka2, you can optionally enable static partition-to-shard affinity by specifying `kafka_partition_shard_num` and `kafka_shard_count`. This allows multiple ClickHouse instances (shards) to consume from the same Kafka topic, with each shard only processing a deterministic subset of partitions based on the formula:
+When using `StorageKafka2`, you can optionally enable static partition-to-shard affinity by specifying `kafka_partition_shard_num` and `kafka_shard_count`. This allows multiple ClickHouse instances (shards) to consume from the same Kafka topic, with each shard only processing a deterministic subset of partitions based on the formula:
 
 ```text
 partition_id % kafka_shard_count == kafka_partition_shard_num - 1
 ```
 
-Both settings must be specified together; specifying only one raises an exception. The `kafka_partition_shard_num` value must be between 1 and `kafka_shard_count` inclusive. It supports macro expansion (e.g., `'{shard}'`), which is re-expanded on each server startup.
+Both settings must be specified together; specifying only one raises an exception. The `kafka_partition_shard_num` value must be between 1 and `kafka_shard_count` inclusive. It supports macro expansion (e.g., `'{shard}'`), which is re-expanded on each server startup. This allows the same table metadata to be shared across shards in a `Replicated` database, with each shard resolving its own value. Validation is performed after macro expansion.
+
+All shards should use the same `kafka_keeper_path` value. All replicas share committed offsets and intent sizes, but only replicas with the same shard number compete with each other for partition locks (assuming all replicas have the same shard count).
+
+Example with 3 shards consuming a 12-partition topic:
+
+```sql
+-- Shard 1: consumes partitions 0, 3, 6, 9
+CREATE TABLE kafka_shard1 (key UInt64, value String)
+ENGINE = Kafka('localhost:9092', 'my-topic', 'my-group', 'JSONEachRow')
+SETTINGS
+    kafka_keeper_path = '/clickhouse/kafka/{database}',
+    kafka_replica_name = '{replica}',
+    kafka_partition_shard_num = '1',
+    kafka_shard_count = 3
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+
+-- Shard 2: consumes partitions 1, 4, 7, 10
+CREATE TABLE kafka_shard2 (key UInt64, value String)
+ENGINE = Kafka('localhost:9092', 'my-topic', 'my-group', 'JSONEachRow')
+SETTINGS
+    kafka_keeper_path = '/clickhouse/kafka/{database}',
+    kafka_replica_name = '{replica}',
+    kafka_partition_shard_num = '2',
+    kafka_shard_count = 3
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+```
+
+When combined with replicas (multiple `kafka_replica_name` values sharing the same `kafka_keeper_path`), the affinity filter is applied first to determine eligible partitions, then ZooKeeper locks distribute those eligible partitions among replicas.
 
 Example:
 
@@ -814,6 +849,7 @@ SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 As the new engine is experimental, it is not production ready yet. There are few known limitations of the implementation:
 - Rapidly dropping and recreating the table or specifying the same ClickHouse Keeper path to different engines might cause issues. As best practice you can use the `{uuid}` in `kafka_keeper_path` to avoid clashing paths.
 - To make repeatable reads, messages cannot be consumed from multiple partitions on a single thread. On the other hand, the Kafka consumers have to be polled regularly to keep them alive. As a result of these two objectives, we decided to only allow creating multiple consumers if `kafka_thread_per_consumer` is enabled, otherwise it is too complicated to avoid issues regarding polling consumers regularly.
+- When using partition affinity, all shards must use the same `kafka_shard_count`; otherwise some partitions may be consumed by multiple shards or remain unconsumed.
 
 **See Also**
 

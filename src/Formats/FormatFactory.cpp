@@ -149,6 +149,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.hive_text.collection_items_delimiter = settings[Setting::input_format_hive_text_collection_items_delimiter];
     format_settings.hive_text.map_keys_delimiter = settings[Setting::input_format_hive_text_map_keys_delimiter];
     format_settings.hive_text.allow_variable_number_of_columns = settings[Setting::input_format_hive_text_allow_variable_number_of_columns];
+    format_settings.hive_text.rows_delimiter = settings[Setting::format_hive_text_rows_delimiter];
     format_settings.custom.escaping_rule = settings[Setting::format_custom_escaping_rule];
     format_settings.custom.field_delimiter = settings[Setting::format_custom_field_delimiter];
     format_settings.custom.result_after_delimiter = settings[Setting::format_custom_result_after_delimiter];
@@ -172,6 +173,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.import_nested_json = settings[Setting::input_format_import_nested_json];
     format_settings.input_allow_errors_num = settings[Setting::input_format_allow_errors_num];
     format_settings.input_allow_errors_ratio = settings[Setting::input_format_allow_errors_ratio];
+    format_settings.json_max_string_column_growth_step = settings[Setting::input_format_json_max_string_column_growth_step];
     format_settings.json.max_depth = settings[Setting::input_format_json_max_depth];
     format_settings.json.array_of_rows = settings[Setting::output_format_json_array_of_rows];
     format_settings.json.escape_forward_slashes = settings[Setting::output_format_json_escape_forward_slashes];
@@ -225,6 +227,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.bloom_filter_push_down = settings[Setting::input_format_parquet_bloom_filter_push_down];
     format_settings.parquet.dictionary_filter_push_down = settings[Setting::input_format_parquet_dictionary_filter_push_down];
     format_settings.parquet.page_filter_push_down = settings[Setting::input_format_parquet_page_filter_push_down];
+    format_settings.parquet.spatial_filter_push_down = settings[Setting::input_format_parquet_spatial_filter_push_down];
     format_settings.parquet.use_offset_index = settings[Setting::input_format_parquet_use_offset_index];
 
     format_settings.parquet.enable_json_parsing = settings[Setting::input_format_parquet_enable_json_parsing];

@@ -26,6 +26,7 @@ namespace DB
 namespace Setting
 {
 extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
+extern const SettingsBool enable_packed_string_keys_in_aggregation;
 extern const SettingsBool enable_parallel_single_level_merge;
 extern const SettingsBool enable_software_prefetch_in_aggregation;
 extern const SettingsUInt64 group_by_two_level_threshold;
@@ -261,7 +262,8 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*stats_collecting_params_=*/{},
             /*enable_producing_buckets_out_of_order_in_aggregation_=*/false,
             /*serialize_string_with_zero_byte_=*/false,
-            /*enable_parallel_single_level_merge_=*/settings[Setting::enable_parallel_single_level_merge]);
+            /*enable_parallel_single_level_merge_=*/settings[Setting::enable_parallel_single_level_merge],
+            /*enable_packed_string_keys_=*/settings[Setting::enable_packed_string_keys_in_aggregation]);
 
         auto merge_threads = settings[Setting::max_threads];
         auto temporary_data_merge_threads = settings[Setting::aggregation_memory_efficient_merge_threads]
@@ -339,9 +341,6 @@ void LazyReadReplacingFinalSource::work()
 
     pipeline_output = pipe.getOutputPort(0);
     processors = Pipe::detachProcessors(std::move(pipe));
-
-    for (auto & proc : processors)
-        proc->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
 }
 
 IProcessor::PipelineUpdate LazyReadReplacingFinalSource::updatePipeline()
@@ -349,6 +348,10 @@ IProcessor::PipelineUpdate LazyReadReplacingFinalSource::updatePipeline()
     inputs.emplace_back(pipeline_output->getHeader(), this);
     connect(*pipeline_output, inputs.back());
     inputs.back().setNeeded();
+
+    /// We need to retag the processors in order to track their execution time correctly in EXPLAIN ANALYZE
+    for (auto & processor : processors)
+        processor->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
     return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 

@@ -48,6 +48,9 @@ struct FormatSettings
     String column_names_for_schema_inference{};
     String schema_inference_hints{};
 
+    /// Cap for power-of-two growth of the JSON column's internal String buffers while materializing (0 = unlimited).
+    size_t json_max_string_column_growth_step = 0;
+
     bool try_infer_integers = true;
     bool try_infer_dates = true;
     bool try_infer_datetimes = true;
@@ -268,7 +271,11 @@ struct FormatSettings
         char collection_items_delimiter = '\x02';
         char map_keys_delimiter = '\x03';
         bool allow_variable_number_of_columns = true;
+        char rows_delimiter = '\n';
         Names input_field_names;
+        /// Transient state used only by the HiveText output serialization to track the current
+        /// Hive separator nesting level (see getHiveTextDelimiter). Not a user-facing setting.
+        size_t nesting_level = 1;
     } hive_text{};
 
     struct Custom
@@ -397,6 +404,7 @@ struct FormatSettings
         double bloom_filter_bits_per_value = 10.5;
         size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
         bool allow_geoparquet_parser = true;
+        bool spatial_filter_push_down = true;
         bool write_geometadata = true;
         size_t max_dictionary_size = 1024 * 1024;
     } parquet{};
