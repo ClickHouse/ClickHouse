@@ -84,9 +84,8 @@ unsigned char patternByte(size_t i)
 }
 
 /// Shared state of `MockFileCacheProvider`: stored bytes, resident ranges, and a log of writes.
-/// `concurrent_download` simulates another thread holding the downloader role over those ranges:
-/// `claim` leaves them unlisted and `write` refuses to land bytes there, so the driver fetches
-/// them through from source instead.
+/// `concurrent_download` holds the ranges another thread is downloading: `claim` leaves them
+/// unlisted and `write` refuses to land bytes there, so the driver fetches them through from source.
 struct MockCacheState
 {
     std::vector<char> store;

@@ -194,8 +194,8 @@ ChainedBuffers DiskCacheReader::read(ByteRange subrange)
         subrange = ByteRange{lo, hi - lo};
     }
 
-    /// Record what we serve so the destructor can bump its LRU priority; recording before the pread
-    /// keeps the record coherent even if the read throws.
+    /// Record what we serve so the destructor can bump its LRU priority. Record before the pread, so a
+    /// throwing read still leaves a coherent record.
     hits_to_touch.push_back(subrange);
 
     chassert(subrange.offset >= object_file_offset);
@@ -346,13 +346,11 @@ ChainedBuffers DiskCacheWriter::read(ByteRange subrange)
 
 CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
 {
-    /// `window` is FILE-space, clamped per segment. For each held segment overlapping it, the
-    /// committed prefix is `available` (read from cache now, whoever holds the role). For the
-    /// uncommitted tail, `getOrSetDownloader` either makes us the downloader (`to_fetch`: fetch+write
-    /// while the claim is open) or another downloader leads it (left unlisted). Only roles NEWLY won here enter
-    /// the release set, which completes-and-resets exactly those segments - else one leaks DOWNLOADING
-    /// and the foreground teardown, unable to reset a foreign downloader, aborts the holder dtor on
-    /// `chassert(!is_last_holder)`.
+    /// `window` is FILE-space, clamped per segment. `getCurrentWriteOffset` splits each held segment's
+    /// overlap into the committed prefix (`available`) and the uncommitted tail; `getOrSetDownloader`
+    /// decides whether that tail is ours (`to_fetch`) or another downloader's (left unlisted). Only
+    /// roles NEWLY won here enter the release set - else a leaked DOWNLOADING segment aborts the
+    /// foreground holder dtor on `chassert(!is_last_holder)` (it cannot reset a foreign downloader).
     FillClaim c;
     if (!holder)
     {
