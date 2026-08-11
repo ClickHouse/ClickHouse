@@ -2,6 +2,8 @@
 -- The rewrite is disabled by default; only when the setting is enabled does m['key'] become m.key_<key>.
 SET explain_query_plan_default = 'legacy';
 
+-- The rewrite is only performed by the analyzer.
+SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 
 DROP TABLE IF EXISTS t_map_element_setting;

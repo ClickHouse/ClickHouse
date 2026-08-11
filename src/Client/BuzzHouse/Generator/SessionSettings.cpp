@@ -455,6 +455,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_inverse_dictionary_lookup", trueOrFalseSetting},
        {"optimize_limit_by_function_keys", trueOrFalseSetting},
        {"optimize_limit_by_in_order", trueOrFalseSetting},
+       {"optimize_map_element_to_subcolumn", trueOrFalseSetting},
        {"optimize_move_to_prewhere", trueOrFalseSetting},
        {"optimize_move_to_prewhere_if_final", trueOrFalseSetting},
        {"optimize_multiif_to_if", trueOrFalseSetting},

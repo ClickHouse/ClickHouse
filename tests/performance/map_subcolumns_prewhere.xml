@@ -8,6 +8,8 @@
     <settings>
         <max_insert_threads>4</max_insert_threads>
         <use_query_condition_cache>0</use_query_condition_cache>
+        <!-- Rewrite tags['k'] to the key subcolumn; disabled by default. -->
+        <optimize_map_element_to_subcolumn>1</optimize_map_element_to_subcolumn>
     </settings>
 
     <!-- Wide part format -->
