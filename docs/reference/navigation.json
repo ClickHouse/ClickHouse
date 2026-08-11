@@ -421,6 +421,7 @@
             "reference/engines/database-engines/materialized-postgresql",
             "reference/engines/database-engines/mysql",
             "reference/engines/database-engines/postgresql",
+            "reference/engines/database-engines/remote",
             "reference/engines/database-engines/replicated",
             "reference/engines/database-engines/shared",
             "reference/engines/database-engines/sqlite"

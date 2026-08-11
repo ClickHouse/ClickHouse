@@ -2696,6 +2696,10 @@
     "source": "/engines/database-engines/postgresql"
   },
   {
+    "destination": "/reference/engines/database-engines/remote",
+    "source": "/engines/database-engines/remote"
+  },
+  {
     "destination": "/reference/engines/database-engines/replicated",
     "source": "/engines/database-engines/replicated"
   },
