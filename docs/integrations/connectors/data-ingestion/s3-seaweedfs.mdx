@@ -46,7 +46,13 @@ docker run -d --name seaweedfs -p 8333:8333 \
   mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -bucket=clickhouse
 ```
 
-The S3 endpoint listens on port 8333. Once the stack is up, more buckets can be created at any time with `echo "s3.bucket.create -name mybucket" | docker exec -i seaweedfs weed shell`.
+The S3 endpoint listens on port 8333; wait for it to respond before continuing:
+
+```bash
+until curl -s -o /dev/null http://localhost:8333; do sleep 1; done
+```
+
+More buckets can be created at any time with `echo "s3.bucket.create -name mybucket" | docker exec -i seaweedfs weed shell`.
 
 By default a write is acknowledged once it is handed to the operating system. To fsync every write to disk before acknowledging it, enable fsync on the bucket:
 
