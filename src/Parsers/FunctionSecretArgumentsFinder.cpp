@@ -1,6 +1,7 @@
 #include <Parsers/FunctionSecretArgumentsFinder.h>
 
 #include <algorithm>
+#include <unordered_set>
 
 #include <Common/KnownObjectNames.h>
 #include <Common/StringUtils.h>
@@ -279,6 +280,10 @@ void FunctionSecretArgumentsFinder::findOrdinaryFunctionSecretArguments()
     {
         findYTsaurusStorageTableEngineSecretArguments();
     }
+    else if (function->name() == "bigquery")
+    {
+        findBigQuerySecretArguments();
+    }
     else if ((function->name() == "arrowFlight") || (function->name() == "arrowflight"))
     {
         findArrowFlightSecretArguments();
@@ -298,11 +303,40 @@ void FunctionSecretArgumentsFinder::findMySQLFunctionSecretArguments()
     {
         /// mysql(named_collection, ..., password = 'password', ...)
         findSecretNamedArgument("password", 1);
+        findTLSCredentialsSecretArguments(1);
     }
     else
     {
         /// mysql('host:port', 'database', 'table', 'user', 'password', ...)
         markSecretArgument(4);
+        findTLSCredentialsSecretArguments(5);
+    }
+}
+
+void FunctionSecretArgumentsFinder::findTLSCredentialsSecretArguments(size_t start)
+{
+    for (const auto & key : tls_credentials_secret_keys)
+        findSecretNamedArgument(key, start);
+
+    /// The named-collection parser does not require the key of a `key = value` argument to be a plain
+    /// literal or identifier: `getKeyValueFromASTImpl` evaluates it as a constant expression, so
+    /// `mysql(creds, concat('ssl_ca', '_pem') = 'SECRET', table = 't')` passes a TLS credential too.
+    /// This finder works on the AST alone and cannot evaluate an expression, so it fails closed: the
+    /// value of every argument whose key it cannot read is hidden. Hiding the value of a non-secret
+    /// argument written that way is harmless, while leaving a credential visible is not.
+    for (size_t i = start; i < function->arguments->size(); ++i)
+    {
+        const auto equals_func = function->arguments->at(i)->getFunction();
+        if (!equals_func || (equals_func->name() != "equals"))
+            continue;
+
+        if (!equals_func->arguments || equals_func->arguments->size() != 2)
+            continue;
+
+        if (tryGetStringFromArgument(*equals_func->arguments->at(0), nullptr))
+            continue;
+
+        markSecretArgument(i, /* argument_is_named= */ true);
     }
 }
 
@@ -809,6 +843,10 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
     {
         findYTsaurusStorageTableEngineSecretArguments();
     }
+    else if (engine_name == "BigQuery")
+    {
+        findBigQuerySecretArguments();
+    }
     else if (engine_name == "ArrowFlight")
     {
         findArrowFlightSecretArguments();
@@ -821,12 +859,69 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
         /// the same finder (it also handles the named-collection form `Remote(named_collection, ...)`).
         findRemoteFunctionSecretArguments();
     }
+    else if (engine_name == "NATS")
+    {
+        /// NATS(named_collection, nats_password = 'password', nats_credentials = '...', ...)
+        findNATSTableEngineSecretArguments();
+    }
     else if ((engine_name == "JDBC") || (engine_name == "ODBC"))
     {
         /// JDBC('DSN', database, table)
         /// ODBC('DSN', database, table)
         /// The DSN (connection string) may contain credentials.
         findXDBCSecretArguments();
+    }
+}
+
+void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()
+{
+    /// NATS(named_collection [, nats_password = 'password'] [, nats_token = 'token']
+    ///      [, nats_credential_file = '/path'] [, nats_credentials = 'user JWT and seed']
+    ///      [, nats_url = 'nats://user:password@host:4222'], ...)
+    /// The only positional argument the engine accepts is the name of a named collection, so the
+    /// credentials can only appear as named overrides. The `SETTINGS` clause form is masked
+    /// separately by `NATS::SETTINGS_TO_HIDE`, and this function masks the same keys the same way:
+    /// the secrets are hidden whole, while `nats_url` keeps everything but its userinfo password.
+    /// Fail closed on a key we cannot read as a plain literal: it can name a secret setting.
+    for (size_t i = 0; i < function->arguments->size(); ++i)
+    {
+        const auto equals_func = function->arguments->at(i)->getFunction();
+        if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments()
+            || equals_func->arguments->size() != 2)
+        {
+            /// The engine accepts no positional arguments except the collection name in the first
+            /// position, but it rejects them only after the query has been formatted for logging.
+            /// A malformed positional argument can carry a secret (a credential file path, a url
+            /// with a password), so hide it whole rather than leak it (fail closed).
+            if (i > 0 || !function->arguments->at(i)->isIdentifier())
+                markSecretArgument(i, /* argument_is_named= */ false);
+            continue;
+        }
+
+        String key;
+        if (!equals_func->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
+        {
+            markSecretArgument(i, /* argument_is_named= */ true);
+        }
+        else if (key == "nats_url")
+        {
+            String url;
+            if (equals_func->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
+            {
+                if (maskURIPassword(&url))
+                    result.replaced_arguments[i] = "nats_url = " + quoteString(url);
+            }
+            else
+            {
+                /// A url built from a constant expression can embed credentials in its pieces, which
+                /// we cannot evaluate here; hide it whole rather than leak.
+                markSecretArgument(i, /* argument_is_named= */ true);
+            }
+        }
+        else if (std::find(std::begin(nats_secret_keys), std::end(nats_secret_keys), key) != std::end(nats_secret_keys))
+        {
+            markSecretArgument(i, /* argument_is_named= */ true);
+        }
     }
 }
 
@@ -907,6 +1002,91 @@ void FunctionSecretArgumentsFinder::findYTsaurusStorageTableEngineSecretArgument
     markSecretArgument(2);
 }
 
+void FunctionSecretArgumentsFinder::findBigQuerySecretArguments()
+{
+    /// bigquery('project', 'dataset', 'table'[, 'access_token'][, key = value, ...])
+    /// bigquery(named_collection[, key = value, ...])
+    /// `BigQueryConfiguration::fromArguments` folds arbitrary constant expressions for the
+    /// positional arguments and for both sides of the `key = value` arguments (via
+    /// `getKeyValueFromAST`), so none of them has to be a plain literal, and `key = value`
+    /// arguments can be interleaved with positional ones. The finder cannot evaluate
+    /// expressions, so every argument whose meaning is not evident from the AST alone
+    /// fails closed and is hidden whole.
+
+    /// The keys whose values never carry credentials; the values of the other known keys
+    /// (`access_token`, `service_account_key`, `client_secret`, `refresh_token`), of unknown
+    /// keys (rejected, but logged before validation), and of keys that are constant
+    /// expressions rather than literals are hidden.
+    static constexpr std::string_view plain_keys[]
+        = {"project", "dataset", "table", "client_id", "billing_project", "base_url", "token_url"};
+
+    /// The positional arguments fill these slots in this order, exactly as
+    /// `BigQueryConfiguration::fromArguments` does; a slot already claimed by a `key = value`
+    /// argument makes the query invalid, but it is logged before validation rejects it.
+    static constexpr std::string_view positional_slots[] = {"project", "dataset", "table", "access_token"};
+
+    const size_t start = isNamedCollectionName(0) ? 1 : 0;
+
+    /// The first pass reads the keys: a positional argument is only non-secret when the slot it
+    /// lands on is not claimed by a named argument, and the named arguments can follow it.
+    std::unordered_set<std::string_view> named_slots;
+    bool all_keys_readable = true;
+    for (size_t i = start; i < function->arguments->size(); ++i)
+    {
+        const auto equals_func = function->arguments->at(i)->getFunction();
+        if (!equals_func || equals_func->name() != "equals")
+            continue;
+
+        String key;
+        if (equals_func->arguments && equals_func->arguments->size() == 2
+            && tryGetStringFromArgument(*equals_func->arguments->at(0), &key))
+        {
+            const auto * slot = std::find(std::begin(positional_slots), std::end(positional_slots), key);
+            if (slot != std::end(positional_slots))
+                named_slots.emplace(*slot);
+        }
+        else
+        {
+            /// A key we cannot read may claim any slot, so no positional argument can be trusted.
+            all_keys_readable = false;
+        }
+    }
+
+    size_t num_positional = 0;
+    for (size_t i = start; i < function->arguments->size(); ++i)
+    {
+        const auto equals_func = function->arguments->at(i)->getFunction();
+        if (equals_func && equals_func->name() == "equals")
+        {
+            String key;
+            if (equals_func->arguments && equals_func->arguments->size() == 2
+                && tryGetStringFromArgument(*equals_func->arguments->at(0), &key))
+            {
+                if (std::find(std::begin(plain_keys), std::end(plain_keys), key) == std::end(plain_keys))
+                    markSecretArgument(i, /* argument_is_named= */ true);
+            }
+            else
+            {
+                /// A key we cannot read (e.g. `concat('access', '_token') = '...'`) may name a
+                /// credential, and echoing the key expression is not safe either.
+                markSecretArgument(i);
+            }
+        }
+        else
+        {
+            const size_t slot_index = num_positional;
+            ++num_positional;
+            /// Only the positional arguments landing on the free 'project', 'dataset' and 'table'
+            /// slots are not secret: the 4th slot is the access token, and anything past it - a
+            /// positional argument after a named collection, a 5th positional, or one whose slot
+            /// is already taken by a `key = value` argument - is invalid, but the query is logged
+            /// before validation rejects it.
+            if (start == 1 || !all_keys_readable || slot_index >= 3 || named_slots.contains(positional_slots[slot_index]))
+                markSecretArgument(i);
+        }
+    }
+}
+
 void FunctionSecretArgumentsFinder::findDatabaseEngineSecretArguments()
 {
     const String & engine_name = function->name();
@@ -916,6 +1096,16 @@ void FunctionSecretArgumentsFinder::findDatabaseEngineSecretArguments()
     {
         /// MySQL('host:port', 'database', 'user', 'password')
         /// PostgreSQL('host:port', 'database', 'user', 'password')
+        findMySQLDatabaseSecretArguments();
+    }
+    else if (engine_name == "Remote" || engine_name == "RemoteSecure")
+    {
+        /// Remote('addresses_expr', 'database', 'user', 'password')
+        /// RemoteSecure(...) - same as Remote(...)
+        /// The password is the last positional argument (or `password = ...` in the named-collection
+        /// form), exactly like the MySQL/PostgreSQL database engines. Note this differs from the
+        /// `Remote`/`RemoteSecure` *table* engine signature (which also has a table name), so the
+        /// database engine cannot reuse `findRemoteFunctionSecretArguments`.
         findMySQLDatabaseSecretArguments();
     }
     else if (engine_name == "S3")
@@ -939,11 +1129,13 @@ void FunctionSecretArgumentsFinder::findMySQLDatabaseSecretArguments()
     {
         /// MySQL(named_collection, ..., password = 'password', ...)
         findSecretNamedArgument("password", 1);
+        findTLSCredentialsSecretArguments(1);
     }
     else
     {
         /// MySQL('host:port', 'database', 'user', 'password')
         markSecretArgument(3);
+        findTLSCredentialsSecretArguments(4);
     }
 }
 
