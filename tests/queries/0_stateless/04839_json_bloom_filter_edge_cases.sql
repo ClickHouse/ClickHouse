@@ -3,6 +3,14 @@ DROP TABLE IF EXISTS json_bf_dynamic_edges;
 DROP TABLE IF EXISTS json_bf_shared_edges;
 DROP TABLE IF EXISTS json_bf_materialize;
 
+CREATE TABLE json_bf_invalid (id UInt64, j JSON, INDEX idx j TYPE jsonbf_v1(0.01) GRANULARITY 1) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE json_bf_invalid (id UInt64, j JSON, INDEX idx j TYPE jsonbf_v1(false_positive_rate = 0.01, false_positive_rate = 0.02) GRANULARITY 1) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE json_bf_invalid (id UInt64, j JSON, INDEX idx j TYPE jsonbf_v1(false_positive_rate = 2.0) GRANULARITY 1) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE json_bf_invalid (id UInt64, j JSON, INDEX idx j TYPE jsonbf_v1(tokenizer = 'splitByNonAlpha') GRANULARITY 1) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE json_bf_invalid (id UInt64, j JSON, INDEX idx j TYPE jsonbf_v1(bogus = 1) GRANULARITY 1) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE json_bf_invalid (id UInt64, j JSON, INDEX idx (j, id) TYPE jsonbf_v1() GRANULARITY 1) ENGINE = MergeTree ORDER BY id; -- { serverError INCORRECT_NUMBER_OF_COLUMNS }
+CREATE TABLE json_bf_invalid (id UInt64, j JSON, INDEX idx id TYPE jsonbf_v1() GRANULARITY 1) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+
 CREATE TABLE json_bf_edges
 (
     id UInt64,
@@ -72,6 +80,7 @@ SELECT count() FROM json_bf_edges WHERE CAST(j.nullable AS String) = 'absent'; -
 SELECT 'missing typed value', groupArray(id) FROM json_bf_edges WHERE j.n = 123456 SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'and', groupArray(id) FROM json_bf_edges WHERE j.n = 42 AND j.tup.b = 'tuple-two' SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'or', arraySort(groupArray(id)) FROM json_bf_edges WHERE j.n = 42 OR j.ip = toIPv4('192.0.2.1') SETTINGS force_data_skipping_indices = 'idx';
+SELECT 'not with indexable partner', groupArray(id) FROM json_bf_edges WHERE NOT (j.n = 42) AND j.tup.b = 'tuple-one' SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'like', groupArray(id) FROM json_bf_edges WHERE j.tup.b LIKE '%ple-tw%' SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'startsWith', groupArray(id) FROM json_bf_edges WHERE startsWith(j.tup.b, 'tuple-o') SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'endsWith', groupArray(id) FROM json_bf_edges WHERE endsWith(j.tup.b, 'e-two') SETTINGS force_data_skipping_indices = 'idx';
@@ -93,8 +102,8 @@ ORDER BY id
 SETTINGS index_granularity = 1;
 
 INSERT INTO json_bf_dynamic_edges FORMAT JSONEachRow
-{"id":1,"j":{"value":7,"zero":-0.0,"poly":7,"nested":{"leaf":"alpha"},"items":[{"leaf":11},{"leaf":12}],"unsupported":null}}
-{"id":2,"j":{"value":1.5,"zero":1.0,"poly":[7,8],"nested":{"leaf":"beta"},"items":[{"leaf":21}],"unsupported":[[1,2],[3]]}}
+{"id":1,"j":{"value":7,"bool_value":true,"zero":-0.0,"poly":7,"nested":{"leaf":"alpha"},"items":[{"leaf":11},{"leaf":12}],"unsupported":null}}
+{"id":2,"j":{"value":1.5,"bool_value":false,"zero":1.0,"poly":[7,8],"nested":{"leaf":"beta"},"items":[{"leaf":21}],"unsupported":[[1,2],[3]]}}
 {"id":3,"j":{"value":"9","poly":"seven","nested":{"leaf":"gamma"},"items":[],"unsupported":{"inside":"x"}}}
 {"id":4,"j":{"value":true,"nested":{},"unsupported":null}}
 {"id":5,"j":{}}
@@ -105,6 +114,7 @@ SELECT 'dynamic cast int', groupArray(id) FROM json_bf_dynamic_edges WHERE CAST(
 SELECT 'dynamic cast float', groupArray(id) FROM json_bf_dynamic_edges WHERE CAST(j.value AS Float64) = 1.5 SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'dynamic cast string', groupArray(id) FROM json_bf_dynamic_edges WHERE CAST(j.value AS String) = '9' SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'dynamic cast bool string', groupArray(id) FROM json_bf_dynamic_edges WHERE CAST(j.value AS String) = 'true' SETTINGS force_data_skipping_indices = 'idx';
+SELECT 'dynamic bool string direct', groupArray(id) FROM json_bf_dynamic_edges WHERE j.bool_value = 'true' SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'dynamic numeric inexact', groupArray(id) FROM json_bf_dynamic_edges WHERE j.value = 7.5 SETTINGS force_data_skipping_indices = 'idx', dynamic_throw_on_type_mismatch = 0;
 SELECT count() FROM json_bf_dynamic_edges WHERE j.value = 7 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError NO_COMMON_TYPE }
 SELECT count() FROM json_bf_dynamic_edges WHERE j.value = 'x' SETTINGS force_data_skipping_indices = 'idx'; -- { serverError TYPE_MISMATCH }
