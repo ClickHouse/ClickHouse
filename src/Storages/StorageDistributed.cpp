@@ -2211,20 +2211,21 @@ void registerStorageDistributed(StorageFactory & factory)
 
         finalizeDistributedSettings(distributed_settings, context);
 
-        /// Infer an omitted structure under the user's context (like the `Remote` creator and
-        /// `TableFunctionRemote`), so the local-shard `SHOW_COLUMNS` check in
-        /// `getStructureOfRemoteTableInShard` runs against the user rather than the global context
-        /// the constructor holds.
+        /// Infer an omitted structure here, so a fresh definition resolves under the user's context
+        /// and the local-shard `SHOW_COLUMNS` check applies to them. A definition restored from
+        /// metadata (including a short `ATTACH`) has no user, so it keeps the global context.
         ColumnsDescription columns = args.columns;
         if (columns.empty())
         {
+            const bool from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+            const ContextPtr & structure_context = from_existing_metadata ? context : local_context;
             /// Expanded first, so this resolves the same cluster the constructor will: a Replicated
             /// database's implicit cluster is found by the expanded name only.
-            const String expanded_cluster_name = local_context->getMacros()->expand(cluster_name);
+            const String expanded_cluster_name = structure_context->getMacros()->expand(cluster_name);
             columns = getStructureOfRemoteTable(
-                *local_context->getCluster(expanded_cluster_name),
+                *structure_context->getCluster(expanded_cluster_name),
                 StorageID{remote_database, remote_table},
-                local_context,
+                structure_context,
                 /* table_func_ptr = */ nullptr);
         }
 

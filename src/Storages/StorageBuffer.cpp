@@ -1487,17 +1487,19 @@ void registerStorageBuffer(StorageFactory & factory)
             destination_id.table_name = destination_table;
         }
 
-        /// Infer an omitted structure here, under the user's context, so the constructor never reads
-        /// the destination's columns under the long-lived context it holds. The `SHOW_COLUMNS` check
-        /// runs only for a freshly introduced definition; a metadata reload has no user to check.
+        /// Infer an omitted structure here, so the constructor never reads the destination under
+        /// the long-lived context it holds. A definition restored from metadata (including a short
+        /// `ATTACH`) has no user, so it is neither access-checked nor resolved under one.
         ColumnsDescription columns = args.columns;
         if (columns.empty() && !destination_id.empty())
         {
-            if (!(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
+            const bool from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+            const ContextPtr & structure_context = from_existing_metadata ? args.getContext() : args.getLocalContext();
+            if (!from_existing_metadata)
                 args.getLocalContext()->checkAccess(AccessType::SHOW_COLUMNS, destination_id);
 
-            auto destination = DatabaseCatalog::instance().getTable(destination_id, args.getLocalContext());
-            auto destination_metadata = destination->getInMemoryMetadataPtr(args.getLocalContext(), false);
+            auto destination = DatabaseCatalog::instance().getTable(destination_id, structure_context);
+            auto destination_metadata = destination->getInMemoryMetadataPtr(structure_context, false);
             columns = destination_metadata->getColumns();
         }
 
