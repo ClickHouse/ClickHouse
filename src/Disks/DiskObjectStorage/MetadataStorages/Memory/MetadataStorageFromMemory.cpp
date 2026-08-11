@@ -430,7 +430,25 @@ void MetadataStorageFromMemoryTransaction::moveFile(const std::string & path_fro
 
 void MetadataStorageFromMemoryTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
 {
-    moveFile(path_from, path_to);
+    std::unique_lock lock(storage.metadata_mutex);
+
+    auto it = storage.files.find(path_from);
+    if (it == storage.files.end())
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File `{}` doesn't exist", path_from);
+
+    /// Overwrite semantics: the destination record, if any, is dropped and its sole-owner blobs
+    /// are queued for disposal.
+    if (auto to_it = storage.files.find(path_to); to_it != storage.files.end())
+    {
+        storage.releaseRecordUnlocked(to_it->second);
+        storage.files.erase(to_it);
+    }
+
+    auto node = storage.files.extract(it);
+    node.key() = path_to;
+    for (auto & object : node.mapped().objects)
+        object.local_path = path_to;
+    storage.files.insert(std::move(node));
 }
 
 void MetadataStorageFromMemoryTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)

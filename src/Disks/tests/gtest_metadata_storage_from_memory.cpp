@@ -190,6 +190,31 @@ TEST(MetadataStorageFromMemory, MoveFileSemantics)
     EXPECT_TRUE(storage->takePendingOwnRemovals().empty());
 }
 
+TEST(MetadataStorageFromMemory, ReplaceFileOverwritesDestination)
+{
+    auto storage = makeWritableStorage();
+    auto tx = storage->createTransaction();
+
+    tx->createMetadataFile("from.bin", singleObject("blobs/from", "from.bin", 5));
+    tx->createMetadataFile("occupied.bin", singleObject("blobs/occupied", "occupied.bin", 5));
+
+    tx->replaceFile("from.bin", "occupied.bin");
+
+    EXPECT_FALSE(storage->existsFile("from.bin"));
+    EXPECT_TRUE(storage->existsFile("occupied.bin"));
+    EXPECT_EQ(storage->getStorageObjects("occupied.bin").at(0).remote_path, "blobs/from");
+    EXPECT_EQ(storage->getStorageObjects("occupied.bin").at(0).local_path, "occupied.bin");
+    /// The overwritten record's blob is queued for disposal.
+    EXPECT_EQ(storage->takePendingOwnRemovals(), std::vector<String>{"blobs/occupied"});
+
+    /// Replacing onto a free name is a plain move.
+    tx->replaceFile("occupied.bin", "free.bin");
+    EXPECT_TRUE(storage->existsFile("free.bin"));
+    EXPECT_FALSE(storage->existsFile("occupied.bin"));
+
+    EXPECT_THROW(tx->replaceFile("no_such.bin", "x.bin"), Exception);
+}
+
 TEST(MetadataStorageFromMemory, CreateHardLinkCopiesRecord)
 {
     auto storage = makeWritableStorage();
