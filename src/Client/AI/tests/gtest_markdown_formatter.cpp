@@ -117,4 +117,40 @@ TEST(MarkdownFormatter, BoldContainingInlineCode)
         renderMarkdownToANSI("**run `x`**"));
 }
 
+TEST(MarkdownFormatter, IntrawordUnderscoreIsNotEmphasis)
+{
+    /// Underscores inside a word (identifiers) must be left literal.
+    EXPECT_EQ("max_execution_time", renderMarkdownToANSI("max_execution_time"));
+    EXPECT_EQ("foo_bar_baz", renderMarkdownToANSI("foo_bar_baz"));
+    EXPECT_EQ("use max_execution_time here", renderMarkdownToANSI("use max_execution_time here"));
+}
+
+TEST(MarkdownFormatter, IntrawordAsteriskIsNotEmphasis)
+{
+    /// Asterisks between word characters (e.g. arithmetic) must be left literal.
+    EXPECT_EQ("2*n*3", renderMarkdownToANSI("2*n*3"));
+    EXPECT_EQ("a*b*c", renderMarkdownToANSI("a*b*c"));
+}
+
+TEST(MarkdownFormatter, EmphasisOnlyWhenClosingIsAtWordBoundary)
+{
+    /// The opening `_` is at a boundary but the closing one is inside a word - not emphasis.
+    EXPECT_EQ("_foo_bar", renderMarkdownToANSI("_foo_bar"));
+}
+
+TEST(MarkdownFormatter, EmphasisStillWorksAtWordBoundaries)
+{
+    EXPECT_EQ(
+        "this is " + std::string(ITALIC) + "very" + std::string(RESET) + " important",
+        renderMarkdownToANSI("this is *very* important"));
+    /// Trailing punctuation after the closing delimiter is a boundary.
+    EXPECT_EQ(
+        "see " + std::string(ITALIC) + "this" + std::string(RESET) + ".",
+        renderMarkdownToANSI("see *this*."));
+    /// Surrounding punctuation on both sides is a boundary.
+    EXPECT_EQ(
+        "(" + std::string(ITALIC) + "note" + std::string(RESET) + ")",
+        renderMarkdownToANSI("(*note*)"));
+}
+
 #endif

@@ -1,5 +1,6 @@
 #include <Client/AI/MarkdownFormatter.h>
 
+#include <cctype>
 #include <string>
 #include <string_view>
 
@@ -21,6 +22,25 @@ constexpr std::string_view ansi_header = "\033[1;4m"; /// bold + underline for h
 bool startsWith(const std::string & s, size_t pos, std::string_view prefix)
 {
     return pos + prefix.size() <= s.size() && std::string_view(s).substr(pos, prefix.size()) == prefix;
+}
+
+/// A "word" character for the purpose of emphasis boundaries: an ASCII alphanumeric, or any byte
+/// of a UTF-8 multibyte sequence (high bit set), so that letters of non-Latin scripts also count.
+bool isWordChar(char c)
+{
+    const auto byte = static_cast<unsigned char>(c);
+    return (byte & 0x80) != 0 || std::isalnum(byte) != 0;
+}
+
+/// `*`/`_` emphasis is applied only at word boundaries, never inside a word, so that identifiers
+/// like `max_execution_time` and expressions like `2*n` are left untouched. The opening delimiter
+/// (at `open`) must not be preceded by a word character, and the closing delimiter (whose run ends
+/// just before `after_close`) must not be followed by one.
+bool emphasisAtWordBoundary(const std::string & line, size_t open, size_t after_close)
+{
+    const bool open_ok = open == 0 || !isWordChar(line[open - 1]);
+    const bool close_ok = after_close >= line.size() || !isWordChar(line[after_close]);
+    return open_ok && close_ok;
 }
 
 /// Render inline spans (`code`, **bold**, *italic*, [text](url)) of a single line.
@@ -54,7 +74,7 @@ std::string renderInline(const std::string & line)
         {
             const std::string_view delimiter = std::string_view(line).substr(i, 2);
             const size_t close = line.find(delimiter, i + 2);
-            if (close != std::string::npos && close > i + 2)
+            if (close != std::string::npos && close > i + 2 && emphasisAtWordBoundary(line, i, close + 2))
             {
                 out += ansi_bold;
                 out += renderInline(line.substr(i + 2, close - i - 2));
@@ -64,11 +84,13 @@ std::string renderInline(const std::string & line)
             }
         }
 
-        /// Italic: *...* or _..._ (a single delimiter, not the start of a bold run).
+        /// Italic: *...* or _..._ (a single delimiter, not the start of a bold run). Applied only
+        /// at word boundaries, so underscores/asterisks inside a word (`max_execution_time`, `2*n`)
+        /// are left as-is.
         if (c == '*' || c == '_')
         {
             const size_t close = line.find(c, i + 1);
-            if (close != std::string::npos && close > i + 1)
+            if (close != std::string::npos && close > i + 1 && emphasisAtWordBoundary(line, i, close + 1))
             {
                 out += ansi_italic;
                 out += line.substr(i + 1, close - i - 1);
