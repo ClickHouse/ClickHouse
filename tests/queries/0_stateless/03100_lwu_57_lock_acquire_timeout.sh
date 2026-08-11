@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: long, no-replicated-database, no-parallel
-# long: the lock holds and the ~20 s cancellation fixture put this at about 44 s.
+# long: the lock holds put this at about a minute.
 # no-replicated-database - path in zookeeper differs with replicated database
 # no-parallel: the `infinite_sleep` failpoint is server-global, so a concurrent test would park
 #   every one of its own `sleep()` calls at it or disable it while a holder here is parked.
@@ -235,6 +235,27 @@ function run()
     release_holder
     wait
 
+    # A timeout shorter than one wait chunk leaves the whole wait inside a single chunk, so the
+    # cancellation has to be seen once the chunk returns rather than only before the next one.
+    # Otherwise this reports the lock timing out, which is a different error than the query's own
+    # limit even though both are TIMEOUT_EXCEEDED, hence matching on the message.
+    start_parked_holder "$table_name" "$mode"
+
+    tag="$run_id-$mode-shortcancel"
+    error=$($CLICKHOUSE_CLIENT --query "
+        SET enable_lightweight_update = 1;
+        UPDATE $table_name SET v = 600 WHERE s = 'xx'
+        SETTINGS update_parallel_mode = '$mode', lock_acquire_timeout = 2.5,
+                 max_execution_time = 2, timeout_overflow_mode = 'throw', log_comment = '$tag';
+    " 2>&1 >/dev/null) && error=""
+
+    cancelled=0
+    if [[ "$error" == *"maximum: 2000 ms"* ]]; then cancelled=1; fi
+    echo "$mode single-chunk cancelled-in-wait $cancelled"
+
+    release_holder
+    wait
+
     # An uncontended update must still be granted with lock_acquire_timeout = 0, which is the
     # current behaviour of both Keeper modes and is intentionally left unchanged.
     $CLICKHOUSE_CLIENT --query "
@@ -281,6 +302,24 @@ function run_plain()
     cancelled=0
     if [[ "$error" == *"maximum: 2000 ms"* ]]; then cancelled=1; fi
     echo "plain $mode cancelled-in-wait $cancelled"
+
+    release_holder
+    wait
+
+    # Same single-chunk case as in Keeper: one shared helper serves all four paths.
+    start_parked_holder "$table_name" "$mode" 0
+
+    tag="$run_id-plain-$mode-shortcancel"
+    error=$($CLICKHOUSE_CLIENT --query "
+        SET enable_lightweight_update = 1;
+        UPDATE $table_name SET v = 600 WHERE s = 'xx'
+        SETTINGS update_parallel_mode = '$mode', lock_acquire_timeout = 2.5,
+                 max_execution_time = 2, timeout_overflow_mode = 'throw', log_comment = '$tag';
+    " 2>&1 >/dev/null) && error=""
+
+    cancelled=0
+    if [[ "$error" == *"maximum: 2000 ms"* ]]; then cancelled=1; fi
+    echo "plain $mode single-chunk cancelled-in-wait $cancelled"
 
     release_holder
     wait
@@ -388,12 +427,13 @@ function run_churn()
 
 # The wait is split into chunks that poll query cancellation in between, so max_execution_time and
 # KILL QUERY take effect instead of being deferred until the whole lock_acquire_timeout has elapsed.
-# Needs a hold longer than one chunk, which the 3000 ms failpoint cannot give: 8 unmerged parts of
-# 10 rows sleeping 0.25 s per row is 2.5 s per block (under the 3 s per block sleep limit) and about
-# 20 s in total, and the lock is held for the whole update.
+# The holder parks at the failpoint, so how long the lock is held is chosen here rather than being
+# the duration of an update, which randomized settings are free to change.
 function run_cancel()
 {
     table_name="t_lwu_cancel"
+    # More than the three chunks the watch arm below requires, so that arm cannot pass vacuously.
+    local hold_chunks=4
 
     $CLICKHOUSE_CLIENT --query "
         SET insert_keeper_fault_injection_probability = 0.0;
@@ -406,24 +446,10 @@ function run_cancel()
             enable_block_number_column = 1,
             enable_block_offset_column = 1;
 
-        SYSTEM STOP MERGES $table_name;
+        INSERT INTO $table_name VALUES (1, 'aa', 0) (2, 'bb', 0) (3, 'cc', 0);
     "
 
-    for part in {0..7}
-    do
-        $CLICKHOUSE_CLIENT --query "
-            SET insert_keeper_fault_injection_probability = 0.0;
-            INSERT INTO $table_name SELECT number + $part * 10, 'bb', 0 FROM numbers(10);
-        "
-    done
-
-    $CLICKHOUSE_CLIENT --query "
-        SET enable_lightweight_update = 1;
-        UPDATE $table_name SET s = 'xx' || toString(sleepEachRow(0.25)) WHERE id >= 0
-        SETTINGS update_parallel_mode = 'auto', lock_acquire_timeout = 600, max_threads = 1;
-    " &
-
-    wait_for_lock_held "$table_name" "auto"
+    start_parked_holder "$table_name" "auto"
 
     # max_execution_time rather than KILL QUERY: both are enforced by QueryStatus::checkTimeLimit(),
     # and this needs no second client racing to catch the waiter in system.processes.
@@ -439,20 +465,27 @@ function run_cancel()
 
     cancelled=0
     if [[ "$error" == *"maximum: 2000 ms"* ]]; then cancelled=1; fi
-    # Interrupted within about one chunk, not held to the end of the ~20 s update.
+    # Interrupted within about one chunk rather than waiting out the hold.
     echo "cancel interrupted $cancelled promptly $(( duration_ms < 8000 ))"
 
-    # The lock is still held for most of that ~20 s update, so one more waiter with no
-    # max_execution_time parks here across several chunks. Chunking the wait must not re-register the
-    # watch per chunk: a timed out tryWait deregisters nothing, so that would leave a live callback
-    # per chunk on one node. The watch is set by exactly one call, on the conflicting update's node,
-    # so a query that waits through N chunks must still register once per outer iteration.
+    # A waiter with no max_execution_time parks across several chunks. Chunking the wait must not
+    # re-register the watch per chunk: a timed out tryWait deregisters nothing, so that would leave a
+    # live callback per chunk on one node. The watch is set by exactly one call, on the conflicting
+    # update's node, so a query that waits through N chunks must still register once per outer
+    # iteration. The holder is released only after the waiter has been blocked for more chunks than
+    # the bound below requires, so how many chunks it spans is not raced against the holder.
     tag="$run_id-watch"
-    $CLICKHOUSE_CLIENT --query "
+    $CLICKHOUSE_CLIENT --query_id "$tag" --query "
         SET enable_lightweight_update = 1;
         UPDATE $table_name SET v = 77 WHERE s LIKE 'xx%'
         SETTINGS update_parallel_mode = 'auto', lock_acquire_timeout = 600, log_comment = '$tag';
-    "
+    " &
+    waiter_pid=$!
+
+    wait_for_blocked_on_lock "$tag"
+    sleep "$(( hold_chunks * 3 ))"
+    release_holder
+    wait "$waiter_pid"
 
     # Guard against a vacuous pass: a waiter that spans fewer chunks than the bound below allows
     # would satisfy it even while re-registering per chunk. Three chunks is what makes the bound

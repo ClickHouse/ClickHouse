@@ -64,14 +64,21 @@ Int64 getRemainingMs(const Stopwatch & watch, Int64 timeout_ms)
 template <typename WaitChunk>
 bool waitInterruptibly(const ContextPtr & context, const Stopwatch & watch, Int64 timeout_ms, WaitChunk && wait_chunk)
 {
+    auto query_status = context->getProcessListElementSafe();
+
     for (auto remaining_ms = getRemainingMs(watch, timeout_ms); remaining_ms > 0; remaining_ms = getRemainingMs(watch, timeout_ms))
     {
-        if (auto query_status = context->getProcessListElementSafe())
+        if (query_status)
             query_status->checkTimeLimit();
 
         if (wait_chunk(std::min(max_wait_chunk_ms, remaining_ms)))
             return true;
     }
+
+    /// The last chunk is not followed by another iteration's check, so a cancellation that arrived
+    /// while waiting in it would otherwise be reported as the lock timing out.
+    if (query_status)
+        query_status->checkTimeLimit();
 
     return false;
 }
