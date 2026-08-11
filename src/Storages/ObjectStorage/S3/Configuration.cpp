@@ -35,6 +35,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_archive_path_syntax;
+    extern const SettingsBool use_glob_ast_parser;
     extern const SettingsBool s3_create_new_file_on_insert;
     extern const SettingsBool s3_ignore_file_doesnt_exist;
     extern const SettingsUInt64 s3_list_object_keys_size;
@@ -220,13 +221,15 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
             std::filesystem::path(collection_url) / filename,
             settings[Setting::allow_archive_path_syntax],
             /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
-            /*uri_style*/ settings[Setting::s3_uri_style]);
+            /*uri_style*/ settings[Setting::s3_uri_style],
+            /*use_glob_ast_parser*/ settings[Setting::use_glob_ast_parser]);
     else
         url = S3::URI(
             collection_url,
             settings[Setting::allow_archive_path_syntax],
             /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
-            /*uri_style*/ settings[Setting::s3_uri_style]);
+            /*uri_style*/ settings[Setting::s3_uri_style],
+            /*use_glob_ast_parser*/ settings[Setting::use_glob_ast_parser]);
 
     const auto & config = context->getConfigRef();
 
@@ -724,7 +727,8 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         url_str,
         context->getSettingsRef()[Setting::allow_archive_path_syntax],
         /*keep_presigned_query_parameters*/ !context->getSettingsRef()[Setting::compatibility_s3_presigned_url_query_in_path],
-        /*uri_style*/ context->getSettingsRef()[Setting::s3_uri_style]);
+        /*uri_style*/ context->getSettingsRef()[Setting::s3_uri_style],
+        /*use_glob_ast_parser*/ context->getSettingsRef()[Setting::use_glob_ast_parser]);
 
     s3_settings = std::make_unique<S3Settings>();
     s3_settings->loadFromConfigForObjectStorage(

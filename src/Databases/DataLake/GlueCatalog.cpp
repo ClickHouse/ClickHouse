@@ -52,6 +52,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 
 namespace DB::ErrorCodes
@@ -580,7 +581,9 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
     auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
     auto configuration = std::make_shared<DB::StorageS3IcebergConfiguration>(storage_settings);
-    DB::StorageObjectStorageConfiguration::initialize(*configuration, args, getContext(), false);
+    /// Catalog-provided paths are shared table metadata: classify them with the legacy glob
+    /// parser regardless of the session `use_glob_ast_parser`, like stored tables.
+    DB::StorageObjectStorageConfiguration::initialize(*configuration, args, DB::contextWithPinnedGlobParser(getContext()), false);
 
     auto object_storage = configuration->createObjectStorage(getContext(), true, {});
 

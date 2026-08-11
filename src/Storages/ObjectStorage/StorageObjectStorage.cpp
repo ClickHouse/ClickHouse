@@ -74,22 +74,6 @@ namespace FailPoints
     extern const char datalake_simulate_missing_table_state[];
 }
 
-/// Stored tables (not table functions) must interpret their persisted path the same way in
-/// every session: schema/format inference, hive-partition sample-path resolution and reads
-/// must not reclassify the path with the per-query `use_glob_ast_parser` setting, otherwise
-/// a table created or first resolved under one setting would read a different object set
-/// (e.g. the literal key `data_{x}.json` vs the expansion `data_x.json`) under another.
-/// Pin the legacy classifier, consistent with `initPartitionStrategy` and `write`/`truncate`.
-static ContextPtr contextWithPinnedGlobParser(const ContextPtr & context)
-{
-    if (!context->getSettingsRef()[Setting::use_glob_ast_parser])
-        return context;
-
-    auto pinned = Context::createCopy(context);
-    pinned->setSetting("use_glob_ast_parser", false);
-    return pinned;
-}
-
 String StorageObjectStorage::getPathSample(ContextPtr context)
 {
     /// The sample path feeds hive-partition column discovery, which is shared table metadata.

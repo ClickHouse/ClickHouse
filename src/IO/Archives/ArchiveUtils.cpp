@@ -1,5 +1,7 @@
 #include <IO/Archives/ArchiveUtils.h>
 
+#include <Common/parseGlobs.h>
+
 #include <string_view>
 #include <array>
 
@@ -47,7 +49,7 @@ bool hasSupportedArchiveExtension(std::string_view path)
     return hasSupportedTarExtension(path) || hasSupportedZipExtension(path) || hasSupported7zExtension(path);
 }
 
-std::pair<std::string, std::optional<std::string>> getURIAndArchivePattern(const std::string & source)
+std::pair<std::string, std::optional<std::string>> getURIAndArchivePattern(const std::string & source, bool use_glob_ast)
 {
     size_t pos = source.find("::");
     if (pos == std::string::npos)
@@ -71,10 +73,14 @@ std::pair<std::string, std::optional<std::string>> getURIAndArchivePattern(const
     /// possible situations when the first part can be archive is only if one of the following is true:
     /// - it contains supported extension
     /// - it contains spaces after or before :: (URI cannot contain spaces)
-    /// - it contains characters that could mean glob expression
+    /// - it contains a glob expression under the selected glob parser (e.g. `data_{x}` is a glob
+    ///   for the legacy parser but literal text for the AST parser)
+    const bool path_to_archive_has_globs = use_glob_ast
+        ? GlobAST::GlobString(std::string{path_to_archive_view}).hasGlobs()
+        : path_to_archive_view.find_first_of("*?{") != std::string_view::npos;
     if (archive_pattern_view.empty() || path_to_archive_view.empty()
         || (!contains_spaces_around_operator && !hasSupportedArchiveExtension(path_to_archive_view)
-            && path_to_archive_view.find_first_of("*?{") == std::string_view::npos))
+            && !path_to_archive_has_globs))
         return {source, std::nullopt};
 
     return std::pair{std::string{path_to_archive_view}, std::string{archive_pattern_view}};

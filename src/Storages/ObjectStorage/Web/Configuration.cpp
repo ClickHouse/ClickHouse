@@ -26,6 +26,7 @@ namespace Setting
     extern const SettingsBool schema_inference_use_cache_for_url;
     extern const SettingsUInt64 glob_expansion_max_elements;
     extern const SettingsBool allow_archive_path_syntax;
+    extern const SettingsBool use_glob_ast_parser;
 }
 
 namespace ErrorCodes
@@ -267,7 +268,7 @@ void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
     String url = raw_url;
     archive_pattern.reset();
     if (context->getSettingsRef()[Setting::allow_archive_path_syntax])
-        std::tie(url, archive_pattern) = getURIAndArchivePattern(raw_url);
+        std::tie(url, archive_pattern) = getURIAndArchivePattern(raw_url, context->getSettingsRef()[Setting::use_glob_ast_parser]);
 
     const auto scheme_pos = url.find("://");
     const auto authority_start = scheme_pos == String::npos ? 0 : scheme_pos + 3;

@@ -70,5 +70,13 @@ void expandPaimonKeeperMacrosIfNeeded(
     const StorageFactory::Arguments & args,
     const DataLakeStorageSettingsPtr & storage_settings);
 
+/// Stored tables (not table functions) must interpret their persisted path the same way in
+/// every session: configuration parsing (including the archive `::` split), schema/format
+/// inference, hive-partition sample-path resolution and reads must not reclassify the path
+/// with the per-query `use_glob_ast_parser` setting, otherwise a table created or first
+/// resolved under one setting would read a different object set (e.g. the literal key
+/// `data_{x}.json` vs the expansion `data_x.json`) under another. Returns a copy of the
+/// context with the legacy glob parser pinned (or the context itself when already legacy).
+ContextPtr contextWithPinnedGlobParser(const ContextPtr & context);
 
 }

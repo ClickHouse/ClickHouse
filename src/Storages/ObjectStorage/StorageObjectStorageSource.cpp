@@ -2040,7 +2040,8 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
     if (!is_archive)
         return object_info;
 
-    auto [path_to_archive, path_in_archive] = getURIAndArchivePattern(object_info->getPath());
+    auto [path_to_archive, path_in_archive]
+        = getURIAndArchivePattern(object_info->getPath(), getContext()->getSettingsRef()[Setting::use_glob_ast_parser]);
     if (!path_in_archive.has_value())
         return object_info;
 

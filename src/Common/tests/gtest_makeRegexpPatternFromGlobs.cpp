@@ -1,6 +1,7 @@
 #include <Common/parseGlobs.h>
 #include <Common/Exception.h>
 #include <Common/re2.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <gtest/gtest.h>
 
 #include <map>
@@ -859,6 +860,52 @@ TEST(Common, GlobASTSlashInsideEnums)
     /// A single-character brace group parses as constant text, so it holds no enum at all.
     GlobAST::GlobString literal_group("dir/{a}/file.csv");
     EXPECT_FALSE(literal_group.hasSlashInsideEnums());
+}
+
+/// The archive-vs-plain split of object-storage paths (`archive::inner`) must use the
+/// selected glob parser for its "left side is a glob" capability check, mirroring
+/// `splitToArchivePathAndPathInArchive` for the `file` engine.
+TEST(Common, GlobASTArchiveURISplit)
+{
+    /// A supported archive extension splits under both parsers.
+    for (bool use_ast : {false, true})
+    {
+        auto [path, pattern] = getURIAndArchivePattern("data.tar::foo.csv", use_ast);
+        EXPECT_EQ(path, "data.tar");
+        ASSERT_TRUE(pattern.has_value());
+        EXPECT_EQ(*pattern, "foo.csv");
+    }
+
+    /// `{x}` is a glob to the legacy parser but constant text to the AST parser,
+    /// so under the AST parser the whole string stays one exact (non-archive) path.
+    {
+        auto [path, pattern] = getURIAndArchivePattern("data_{x}::foo.csv", /*use_glob_ast*/ false);
+        EXPECT_EQ(path, "data_{x}");
+        ASSERT_TRUE(pattern.has_value());
+        EXPECT_EQ(*pattern, "foo.csv");
+    }
+    {
+        auto [path, pattern] = getURIAndArchivePattern("data_{x}::foo.csv", /*use_glob_ast*/ true);
+        EXPECT_EQ(path, "data_{x}::foo.csv");
+        EXPECT_FALSE(pattern.has_value());
+    }
+
+    /// An enum is a glob under both parsers, so the split happens under both.
+    for (bool use_ast : {false, true})
+    {
+        auto [path, pattern] = getURIAndArchivePattern("data_{a,b}::foo.csv", use_ast);
+        EXPECT_EQ(path, "data_{a,b}");
+        ASSERT_TRUE(pattern.has_value());
+        EXPECT_EQ(*pattern, "foo.csv");
+    }
+
+    /// No archive extension and no glob on the left: never split.
+    for (bool use_ast : {false, true})
+    {
+        auto [path, pattern] = getURIAndArchivePattern("plain::foo.csv", use_ast);
+        EXPECT_EQ(path, "plain::foo.csv");
+        EXPECT_FALSE(pattern.has_value());
+    }
 }
 
 TEST(Common, GlobASTMatchDeepRecursionGuard)

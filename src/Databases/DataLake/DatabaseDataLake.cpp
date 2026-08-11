@@ -37,6 +37,7 @@
 #include <Storages/StorageNull.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
@@ -853,7 +854,10 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
-    StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
+    /// Catalog-provided paths are shared table metadata: classify them with the legacy glob
+    /// parser regardless of the session `use_glob_ast_parser`, like stored tables.
+    StorageObjectStorageConfiguration::initialize(
+        *configuration, args, contextWithPinnedGlobParser(context_copy), /* with_table_structure */false);
 
     const auto & query_settings = context_->getSettingsRef();
 
