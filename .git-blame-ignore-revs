@@ -19,3 +19,6 @@ e6f5a3f98b21ba99cf274a9833797889e020a2b3
 
 # Enabling clang-tidy readability-else-no-return rule
 67c1e89d90ef576e62f8b1c68269742a3c6f9b1e
+
+# Applied clang-format-22 to src/Storages/Statistics
+11cd5bf6b4c073fab5e98612b353b1d0a623d18e
