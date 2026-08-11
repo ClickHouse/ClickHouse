@@ -1,0 +1,38 @@
+-- BACKUP without WRITE ON FILE: denied, and it names the missing grant
+1
+-- BACKUP with WRITE ON FILE: allowed
+allowed
+-- RESTORE without READ ON FILE: denied
+denied
+-- the table was not created by the rejected restore
+0
+-- RESTORE with READ ON FILE: allowed
+allowed
+42
+-- CREATE DATABASE ENGINE = Backup without READ ON FILE: denied
+denied
+-- the database was not created
+0
+-- CREATE DATABASE ENGINE = Backup with READ ON FILE: allowed and readable
+allowed
+42
+-- WRITE ON FILE alone does not authorize reading a backup
+denied
+-- Disk(...) is exempt in this change: still allowed with SOURCES revoked
+allowed
+allowed
+-- re-attaching an already-authorized database does not re-demand the grant
+allowed
+42
+-- a full definition is a new definition, so it is still validated
+denied
+-- restoring over an existing Backup-engine database does not demand the inner locator
+allowed
+-- under create_database='create' the pre-existing DATABASE_ALREADY_EXISTS survives
+Code: 82
+-- an explicit base_backup locator is authorized for reading, not for the outer direction
+1
+-- with READ ON FILE as well: allowed
+allowed
+-- an admin holding SOURCES is unaffected
+42

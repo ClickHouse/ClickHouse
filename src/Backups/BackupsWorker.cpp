@@ -149,6 +149,28 @@ namespace
         return status == BackupStatus::RESTORING;
     }
 
+    /// A base backup is only ever opened for reading, lazily, and an internal leg's context has no user,
+    /// so an explicitly requested one is authorized here: as the real user, before the query is
+    /// distributed.
+    void checkAccessToExplicitBaseBackup(
+        const BackupInfo & backup_info,
+        const std::optional<BackupInfo> & base_backup_info,
+        bool use_same_s3_credentials_for_base_backup,
+        bool is_internal,
+        const ContextPtr & context)
+    {
+        if (!base_backup_info || is_internal)
+            return;
+
+        /// Authorize the locator that will actually be opened: `BackupImpl::getBaseBackupUnlocked`
+        /// fills the credentials from the outer locator first, so a base missing them is not malformed.
+        BackupInfo effective_base_backup_info = *base_backup_info;
+        if (use_same_s3_credentials_for_base_backup && backup_info.canCopyS3CredentialsTo(effective_base_backup_info))
+            backup_info.copyS3CredentialsTo(effective_base_backup_info);
+
+        BackupFactory::instance().checkSourceAccess(effective_base_backup_info, context, IBackup::OpenMode::READ);
+    }
+
     /// We use slightly different read and write settings for backup/restore
     /// with a separate throttler and limited usage of filesystem cache.
     ReadSettings getReadSettingsForBackup(const ContextPtr & context, const BackupSettings & backup_settings)
@@ -639,6 +661,12 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(
     backup_create_params.context = context;
     backup_create_params.backup_info = backup_info;
     backup_create_params.base_backup_info = backup_settings.base_backup_info;
+    checkAccessToExplicitBaseBackup(
+        backup_info,
+        backup_settings.base_backup_info,
+        backup_settings.use_same_s3_credentials_for_base_backup,
+        backup_settings.internal,
+        context);
     backup_create_params.compression_method = backup_settings.compression_method;
     backup_create_params.compression_level = backup_settings.compression_level;
     backup_create_params.password = backup_settings.password;
@@ -1096,6 +1124,12 @@ BackupPtr BackupsWorker::openBackupForReading(const BackupInfo & backup_info, co
     backup_open_params.context = context;
     backup_open_params.backup_info = backup_info;
     backup_open_params.base_backup_info = restore_settings.base_backup_info;
+    checkAccessToExplicitBaseBackup(
+        backup_info,
+        restore_settings.base_backup_info,
+        restore_settings.use_same_s3_credentials_for_base_backup,
+        restore_settings.internal,
+        context);
     backup_open_params.password = restore_settings.password;
     backup_open_params.allow_s3_native_copy = restore_settings.allow_s3_native_copy;
     backup_open_params.allow_azure_native_copy = restore_settings.allow_azure_native_copy;

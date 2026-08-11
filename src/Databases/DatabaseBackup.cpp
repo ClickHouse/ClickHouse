@@ -32,6 +32,8 @@
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 
+#include <Access/ContextAccess.h>
+
 #include <Backups/BackupFactory.h>
 
 #include <Disks/DiskBackup.h>
@@ -507,6 +509,16 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr)
 
 }
 
+void DatabaseBackup::parseAndAuthorizeLocator(const ASTs & engine_args, ContextPtr query_context)
+{
+    /// A locator we cannot parse opens nothing: creation rejects it, so there is nothing to authorize.
+    if (engine_args.size() == 2 && !engine_args[1]->as<ASTFunction>())
+        return;
+
+    auto config = parseArguments(engine_args, query_context);
+    BackupFactory::instance().checkSourceAccess(config.backup_info, query_context, IBackup::OpenMode::READ);
+}
+
 void registerDatabaseBackup(DatabaseFactory & factory);
 void registerDatabaseBackup(DatabaseFactory & factory)
 {
@@ -520,6 +532,15 @@ void registerDatabaseBackup(DatabaseFactory & factory)
             engine_args = engine->arguments->children;
 
         auto config = parseArguments(engine_args, args.context);
+
+        /// Authorize only a newly introduced definition: one read back from this server's metadata was
+        /// already validated, and a context with no user cannot be checked per user.
+        const bool has_real_user = args.context->getAccess()->getUserID().has_value();
+        const bool from_existing_metadata
+            = isLoadingFromExistingMetadata(args.mode) || args.create_query.attach_short_syntax;
+        if (has_real_user && !from_existing_metadata)
+            BackupFactory::instance().checkSourceAccess(config.backup_info, args.context, IBackup::OpenMode::READ);
+
         return std::make_shared<DatabaseBackup>(args.database_name, args.metadata_path, config, args.context);
     };
 

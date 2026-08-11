@@ -14,6 +14,7 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
 #include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DatabaseBackup.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
@@ -289,7 +290,25 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             AccessFlags flags;
 
             if (restore_settings.create_database != RestoreDatabaseCreationMode::kMustExist)
+            {
                 flags |= AccessType::CREATE_DATABASE;
+
+                /// The last point on this path that still runs as the real user. An existing local
+                /// database means nothing is created here, and `create_fn` authorizes it if it is
+                /// dropped in between. Under CHECK_ACCESS_ONLY the creating host is a different one,
+                /// so a local existence answer says nothing about it.
+                const bool database_exists_so_nothing_is_created
+                    = (mode != Mode::CHECK_ACCESS_ONLY) && DatabaseCatalog::instance().isDatabaseExist(database_name);
+
+                if (!context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]
+                    && !database_exists_so_nothing_is_created && database_info.create_database_query)
+                {
+                    const auto & create = database_info.create_database_query->as<const ASTCreateQuery &>();
+                    if (create.storage && create.storage->engine && create.storage->engine->name == "Backup"
+                        && create.storage->engine->arguments)
+                        DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, context);
+                }
+            }
 
             if (!flags)
                 flags = AccessType::SHOW_DATABASES;
