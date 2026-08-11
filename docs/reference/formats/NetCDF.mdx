@@ -123,6 +123,11 @@ format: a FixedString is read back as a String, an Enum or a LowCardinality colu
 wraps, dates and times as plain numbers, and a Nullable column as its base type, unless the file is
 read with `input_format_netcdf_fill_value_as_null`.
 
+The offsets of the data of the variables are a part of the header, and the header is at the beginning
+of the file, so the whole result is kept in memory while it is written, and it is written out at the
+end. A large export is therefore limited by the memory available to the query, and not only by the
+space for the file: it can exceed `max_memory_usage` even when the resulting file would be valid.
+
 A string shorter than its dimension is padded with zero bytes, as the format prescribes, so a
 String or FixedString value that itself ends in a zero byte cannot be stored: it would be read back
 without its trailing zero bytes by every implementation of the format. Writing such a value throws
@@ -146,8 +151,12 @@ attribute, which is the way the format marks missing data. The value of the attr
 default fill value of the type of the netCDF library, or, when the data of the column contains that
 value, another value that the data does not contain, so that a value of the column is never read
 back as a `NULL`. Read the file back with `input_format_netcdf_fill_value_as_null` to get the
-`NULL`s again. A `NULL` in a String column is written as an empty string, because the format has no
-way to mark a missing string.
+`NULL`s again. This requires a value of the type of the column to be left over, which is not the
+case for a small type whose every value is present in the data: a `Nullable(UInt8)` column that
+contains a `NULL` and all of the 256 values of `UInt8` cannot be written, and throws an exception.
+A column that has no `NULL`s at all is written without the attribute instead, and is read back as
+not `Nullable`. A `NULL` in a String column is written as an empty string, because the format has
+no way to mark a missing string.
 
 ## Format settings {#format-settings}
 
