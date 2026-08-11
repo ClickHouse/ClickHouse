@@ -602,7 +602,7 @@ void MergeTreeReaderWide::prefetchForColumn(
             return;
 
         /// Skip substreams that don't need to be prefetched.
-        if (ISerialization::isPrefetchUnneededSubstream(substream_path, substream_path.size(), settings.prefetch_json_shared_data_substreams))
+        if (!ISerialization::isPrefetchNeededForSubstream(substream_path, substream_path.size(), settings.prefetch_json_shared_data_substreams))
             return;
 
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
