@@ -1212,7 +1212,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                                     element_types_known = false;
                                     break;
                                 }
-                                rhs_has_null_element |= child_node->result_type->onlyNull();
+                                rhs_has_null_element |= isNullableOrLowCardinalityNullable(child_node->result_type);
                                 element_types.push_back(child_node->result_type);
                             }
                         }
@@ -1223,13 +1223,13 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         {
                             for (const auto & element_type : right_argument_tuple_type->getElements())
                             {
-                                rhs_has_null_element |= element_type->onlyNull();
+                                rhs_has_null_element |= isNullableOrLowCardinalityNullable(element_type);
                                 element_types.push_back(element_type);
                             }
                         }
                         else if (right_argument_type)
                         {
-                            rhs_has_null_element = right_argument_type->onlyNull();
+                            rhs_has_null_element = isNullableOrLowCardinalityNullable(right_argument_type);
                             element_types.push_back(right_argument_type);
                         }
                         else
@@ -1246,7 +1246,12 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                             if (!tryGetLeastSupertype(supertype_candidates))
                             {
                                 cast_elements_to = left_argument_type;
-                                if ((rhs_has_null_element || !data.getContext()->getSettingsRef()[Setting::transform_null_in])
+                                /// The `Nullable` target is used when the right-hand side can contain `NULL`
+                                /// values or when `NULL` values must not match - a property of the resolved
+                                /// function (`nullIn` compares `NULL`s, `in` does not), not of the
+                                /// `transform_null_in` setting, which only renames `in` to `nullIn` before
+                                /// this rewrite.
+                                if ((rhs_has_null_element || !inFunctionComparesNulls(node.name))
                                     && !isTupleType(cast_elements_to))
                                     cast_elements_to = makeNullableOrLowCardinalityNullableSafe(cast_elements_to);
                             }

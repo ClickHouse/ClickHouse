@@ -19,8 +19,7 @@ SELECT 1 IN (materialize('1')) SETTINGS transform_null_in = 1;
 SELECT 1 IN (materialize('x')) SETTINGS transform_null_in = 1; -- { serverError CANNOT_PARSE_TEXT }
 SELECT nullIn(1, materialize('1'));
 1
-SELECT nullIn(1, materialize('x'));
-0
+SELECT nullIn(1, materialize('x')); -- { serverError CANNOT_PARSE_TEXT }
 SELECT toDate('2020-01-01') IN (materialize('2020-01-01'));
 1
 SELECT toDate('2020-01-01') NOT IN (materialize('2020-01-02'));
@@ -48,8 +47,7 @@ SELECT 1 IN (materialize('1')) SETTINGS transform_null_in = 1;
 SELECT 1 IN (materialize('x')) SETTINGS transform_null_in = 1; -- { serverError CANNOT_PARSE_TEXT }
 SELECT nullIn(1, materialize('1'));
 1
-SELECT nullIn(1, materialize('x'));
-0
+SELECT nullIn(1, materialize('x')); -- { serverError CANNOT_PARSE_TEXT }
 SELECT toDate('2020-01-01') IN (materialize('2020-01-01'));
 1
 SELECT toDate('2020-01-01') NOT IN (materialize('2020-01-02'));

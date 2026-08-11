@@ -196,7 +196,8 @@ private:
         const QueryTreeNodes & tuple_args,
         const QueryTreeNodePtr & in_first_argument,
         IdentifierResolveScope & scope,
-        bool expand_single_tuple_value);
+        bool expand_single_tuple_value,
+        bool compare_nulls);
 
     QueryTreeNodes getArrayElementsForInTupleArguments(
         const QueryTreeNodes & tuple_args,

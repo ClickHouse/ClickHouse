@@ -133,6 +133,7 @@ static std::shared_ptr<ListNode> makeInArrayArgumentsList(
     const QueryTreeNodes & array_elements,
     DataTypePtr common_type,
     bool rhs_has_null,
+    bool compare_nulls,
     IdentifierResolveScope & scope,
     CastNodeToType && cast_node_to_type)
 {
@@ -145,12 +146,15 @@ static std::shared_ptr<ListNode> makeInArrayArgumentsList(
     }
 
     /// `has` compares the array elements against the left-hand side value, so the element type has
-    /// to be able to hold `NULL` when the right-hand side contains `NULL` literals or when `NULL`
-    /// values must not match. Types that cannot be inside `Nullable`, such as `Array(...)` or
-    /// `Map(...)`, are left as they are - the `Nullable` wrapper would be rejected when the column
-    /// is created. `Tuple(...)` is excluded explicitly, because it reports that it can be inside
-    /// `Nullable` while a `Nullable(Tuple(...))` column cannot be created by default.
-    if ((rhs_has_null || !scope.context->getSettingsRef()[Setting::transform_null_in])
+    /// to be able to hold `NULL` when the right-hand side can contain `NULL` values or when `NULL`
+    /// values must not match. Whether `NULL` values match is a property of the resolved function
+    /// (`nullIn` compares `NULL`s, `in` does not), not of the `transform_null_in` setting, which
+    /// only renames `in` to `nullIn` before this rewrite. Types that cannot be inside `Nullable`,
+    /// such as `Array(...)` or `Map(...)`, are left as they are - the `Nullable` wrapper would be
+    /// rejected when the column is created. `Tuple(...)` is excluded explicitly, because it reports
+    /// that it can be inside `Nullable` while a `Nullable(Tuple(...))` column cannot be created by
+    /// default.
+    if ((rhs_has_null || !compare_nulls)
         && !isTuple(common_type))
         common_type = makeNullableOrLowCardinalityNullableSafe(common_type);
 
@@ -434,14 +438,16 @@ QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
     const QueryTreeNodes & tuple_args,
     const QueryTreeNodePtr & in_first_argument,
     IdentifierResolveScope & scope,
-    bool expand_single_tuple_value)
+    bool expand_single_tuple_value,
+    bool compare_nulls)
 {
     QueryTreeNodes array_elements = getArrayElementsForInTupleArguments(tuple_args, in_first_argument, scope, expand_single_tuple_value);
 
     bool left_is_null = isNullConstant(in_first_argument);
 
     bool rhs_has_null = std::any_of(array_elements.begin(), array_elements.end(),
-        [](const auto & arg) { return isNullConstant(arg); });
+        [](const auto & arg)
+        { return isNullConstant(arg) || isNullableOrLowCardinalityNullable(arg->getResultType()); });
 
     DataTypePtr common_type = getLeastSupertypeForInArrayElements(array_elements, in_first_argument, left_is_null);
     /// If no supertype exists, keep the old behaviour for non-NULL left-hand side
@@ -450,7 +456,7 @@ QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
     if (!common_type && !left_is_null)
         common_type = in_first_argument->getResultType();
 
-    auto array_arguments_list = makeInArrayArgumentsList(array_elements, common_type, rhs_has_null, scope,
+    auto array_arguments_list = makeInArrayArgumentsList(array_elements, common_type, rhs_has_null, compare_nulls, scope,
         [this](const QueryTreeNodePtr & node, const DataTypePtr & target_type, IdentifierResolveScope & function_scope)
         {
             return castNodeToType(node, target_type, function_scope);
@@ -1685,7 +1691,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     }
 
                     /// convert tuple to array and rewrite to has()
-                    QueryTreeNodePtr array_arg = convertTupleToArray(tuple_args, in_first_argument, scope, expand_single_tuple_value);
+                    QueryTreeNodePtr array_arg = convertTupleToArray(tuple_args, in_first_argument, scope, expand_single_tuple_value, compare_nulls);
                     return buildHasExpression(
                         node,
                         array_arg,
@@ -1706,8 +1712,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// exists, the RHS is still a one-element set, so mirror the cast-to-LHS-type
                     /// fallback of the tuple/array rewrite (a failed `CAST` to a `Nullable` target
                     /// produces `NULL`, like the constant `Set` path skipping unrepresentable
-                    /// elements). A tuple LHS keeps the direct comparison, matching the scalar
-                    /// rewrite of the old analyzer.
+                    /// elements). The `Nullable` target is used when the RHS can be `NULL` or when
+                    /// `NULL` values must not match - a property of the resolved function (`nullIn`
+                    /// compares `NULL`s, `in` does not), not of the `transform_null_in` setting. A
+                    /// tuple LHS keeps the direct comparison, matching the scalar rewrite of the
+                    /// old analyzer.
                     QueryTreeNodePtr right_argument = fn_args[1];
                     const auto & left_type = in_first_argument->getResultType();
                     if (!left_type->onlyNull() && !isTuple(removeNullable(left_type)))
@@ -1716,7 +1725,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         if (!tryGetLeastSupertype(DataTypes{left_type, right_type}))
                         {
                             DataTypePtr cast_elements_to = left_type;
-                            if (right_type->onlyNull() || !scope.context->getSettingsRef()[Setting::transform_null_in])
+                            if (isNullableOrLowCardinalityNullable(right_type) || !compare_nulls)
                                 cast_elements_to = makeNullableOrLowCardinalityNullableSafe(cast_elements_to);
                             right_argument = castNodeToType(right_argument, cast_elements_to, scope);
                         }
