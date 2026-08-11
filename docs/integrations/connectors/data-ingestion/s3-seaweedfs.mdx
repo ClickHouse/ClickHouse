@@ -14,7 +14,7 @@ import SelfManaged from '/snippets/_self_managed_only_no_roadmap.mdx';
 
 <SelfManaged />
 
-ClickHouse's `s3` table function and `S3` disk type are compatible with [SeaweedFS](https://github.com/seaweedfs/seaweedfs), an open-source distributed object store with an S3-compatible gateway. SeaweedFS serves path-style requests natively, so a self-hosted store works without wildcard DNS, and its S3 gateway also serves an Iceberg REST catalog - see the [SeaweedFS catalog guide](/guides/use-cases/data-warehousing/seaweedfs-catalog) for querying Iceberg tables through the same endpoint.
+ClickHouse's `s3` table function and `S3` disk type are compatible with [SeaweedFS](https://github.com/seaweedfs/seaweedfs), an open-source distributed object store with an S3-compatible gateway. SeaweedFS serves path-style requests natively, so a self-hosted store works without wildcard DNS. SeaweedFS also supports Iceberg tables: its table buckets store the table data as Parquet files, and the built-in Iceberg REST catalog serves the table metadata - see the [SeaweedFS catalog guide](/guides/use-cases/data-warehousing/seaweedfs-catalog) for querying them through the same endpoint.
 
 ## Running SeaweedFS locally {#running-seaweedfs-locally}
 
