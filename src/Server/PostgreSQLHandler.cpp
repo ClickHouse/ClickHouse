@@ -2326,9 +2326,36 @@ FROM pg_class_entries
 WHERE NOT (relnamespace = 11 AND name IN (
     'pg_type', 'pg_attribute', 'pg_proc', 'pg_class', 'pg_namespace', 'pg_enum', 'pg_range')))");
 
+    /// Besides the historic `*in` / `*out` rows, `pg_proc` must resolve every receive-function OID that
+    /// `pg_type.typreceive` advertises above: a client that probes for binary I/O support by joining
+    /// `pg_type.typreceive` to `pg_proc.oid` (rather than only comparing `typreceive` against zero) would
+    /// otherwise drop every emulated type. The names are the ones `pg_catalog` proper uses, and the OIDs are
+    /// the synthetic ones chosen for `typreceive`, so the join is closed in both directions - every
+    /// advertised receive function has a row here, and none of these rows is an orphan.
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_proc AS
 SELECT * FROM VALUES(
     'oid UInt32, proname String',
+    (241, 'int8recv'),
+    (242, 'int4recv'),
+    (243, 'int2recv'),
+    (244, 'namerecv'),
+    (245, 'charrecv'),
+    (246, 'boolrecv'),
+    (247, 'textrecv'),
+    (248, 'bytearecv'),
+    (249, 'varcharrecv'),
+    (250, 'float4recv'),
+    (251, 'float8recv'),
+    (252, 'date_recv'),
+    (253, 'timestamp_recv'),
+    (254, 'oidrecv'),
+    (255, 'timestamptz_recv'),
+    (256, 'numeric_recv'),
+    (257, 'uuid_recv'),
+    (260, 'array_recv'),
+    (261, 'range_recv'),
+    (262, 'multirange_recv'),
+    (263, 'enum_recv'),
     (1247, 'boolin'),
     (1248, 'boolout'),
     (1249, 'byteain'),

@@ -1,0 +1,14 @@
+--- the receive function of a representative type of every kind resolves through pg_proc
+_int4|b|A|array_recv
+bool|b|B|boolrecv
+int4|b|N|int4recv
+int8multirange|m|R|multirange_recv
+int8range|r|R|range_recv
+mood|e|E|enum_recv
+numeric|b|N|numeric_recv
+text|b|S|textrecv
+timestamptz|b|D|timestamptz_recv
+--- no type advertises a receive function that pg_proc does not resolve
+0
+--- and every type advertises one: none is left at zero
+0
