@@ -321,7 +321,8 @@ void HandledSignals::addSignalHandler(
     [[maybe_unused]] const std::vector<int> & signals,
     [[maybe_unused]] signal_function handler,
     [[maybe_unused]] bool register_signal,
-    [[maybe_unused]] const std::vector<int> & additional_masked_signals)
+    [[maybe_unused]] const std::vector<int> & additional_masked_signals,
+    [[maybe_unused]] bool use_alt_stack)
 {
 #if !defined(OS_HAS_SIGNAL_HANDLERS)
     return;
@@ -330,6 +331,9 @@ void HandledSignals::addSignalHandler(
     memset(&sa, 0, sizeof(sa));
     sa.sa_sigaction = handler;
     sa.sa_flags = SA_SIGINFO;
+
+    if (use_alt_stack)
+        sa.sa_flags |= SA_ONSTACK;
 
 #if defined(OS_DARWIN)
     sigemptyset(&sa.sa_mask);
@@ -848,8 +852,17 @@ void HandledSignals::setupCommonDeadlySignalHandlers()
 #else
     const std::vector<int> unwind_recovery_signals;
 #endif
-    addSignalHandler(
-        {SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGTSTP, SIGTRAP}, signalHandler, true, unwind_recovery_signals);
+    const std::vector<int> fault_signals{SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGTRAP};
+    /// Each call masks the other's signals, so both keep the `sa_mask` of the single registration that
+    /// once covered all eight.
+    std::vector<int> fault_masked_signals = unwind_recovery_signals;
+    fault_masked_signals.push_back(SIGTSTP);
+    std::vector<int> tstp_masked_signals = unwind_recovery_signals;
+    tstp_masked_signals.insert(tstp_masked_signals.end(), fault_signals.begin(), fault_signals.end());
+
+    /// Not SIGTSTP: it is never raised by stack exhaustion, and its handler returns.
+    addSignalHandler(fault_signals, signalHandler, true, fault_masked_signals, /*use_alt_stack=*/true);
+    addSignalHandler({SIGTSTP}, signalHandler, true, tstp_masked_signals);
 
 #if defined(SANITIZER)
     __sanitizer_set_death_callback(sanitizerDeathCallback);
