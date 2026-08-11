@@ -1275,6 +1275,15 @@ InputOrderInfoPtr buildInputOrderInfo(
                 && order_info.input_order->sort_description_for_merging.size() >= description.size())
                 reading->setPreferMultipleStreams();
 
+            /// When the order is preserved through a `JOIN` (`keepLeftPipelineInOrder`), the join
+            /// keeps exactly the probe-side streams it receives and runs one `JoiningTransform`
+            /// per stream (`QueryPipelineBuilder::joinPipelinesRightLeft` skips the resize). If
+            /// `PrefetchingConcatProcessor` collapsed a single-part filtered read into one stream,
+            /// all that per-stream join work would be serialized. Keep the streams parallel; they
+            /// are merged later, in the `SortingStep` above the join.
+            if (!find_reading_ctx.joins_to_keep_in_order.empty())
+                reading->setPreferMultipleStreams();
+
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
                 join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         }
@@ -1298,7 +1307,8 @@ InputOrderInfoPtr buildInputOrderInfo(
             /// Same as for the direct `ReadFromMergeTree` path above, forwarded to the child reads.
             if (find_reading_ctx.passed_residual_cpu_step
                 || (sorting.hasLimitByHint()
-                    && order_info.input_order->sort_description_for_merging.size() >= description.size()))
+                    && order_info.input_order->sort_description_for_merging.size() >= description.size())
+                || !find_reading_ctx.joins_to_keep_in_order.empty())
                 merge->setPreferMultipleStreams();
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
