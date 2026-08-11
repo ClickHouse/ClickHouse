@@ -18,6 +18,7 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [VALID UNTIL datetime]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [DEFAULT DATABASE database | NONE]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
     [DROP ALL PROFILES]
     [DROP ALL SETTINGS]
@@ -99,6 +100,11 @@ ALTER USER user1 IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '
 Reset authentication methods and keep the most recent added one:
 ```sql
 ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
+```
+
+Change the default database for an user:
+```sql
+ALTER USER user1 DEFAULT DATABASE database1
 ```
 
 ## VALID UNTIL Clause {#valid-until-clause}
