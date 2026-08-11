@@ -2379,7 +2379,7 @@ ColumnPtr FunctionArrayElement<mode>::executeReplicated(
             = {{compact.compact_indexed_columns[0], args[0].type, args[0].name},
                {compact.compact_indexed_columns[1], args[1].type, args[1].name}};
         auto nested_res = executeImpl(nested_args, result_type, nested_rows_count);
-        
+
         /// Wrap the result in a new ColumnReplicated with the compacted indexes column
         return convertToFullColumnIfReplicationNotUseful(
             ColumnReplicated::create(std::move(nested_res), compact.compact_indexes));
