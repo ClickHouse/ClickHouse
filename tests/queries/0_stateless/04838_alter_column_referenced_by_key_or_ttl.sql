@@ -27,9 +27,17 @@ DROP TABLE test;
 CREATE TABLE test (`n.a` UInt64, `n.b` UInt64, x UInt64) ENGINE = MergeTree ORDER BY `n.a`;
 ALTER TABLE test DROP COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 ALTER TABLE test CLEAR COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test DROP COLUMN IF EXISTS n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 DROP TABLE test;
 CREATE TABLE test (`n.a` UInt64, `n.b` UInt64, x UInt64) ENGINE = MergeTree ORDER BY x;
 ALTER TABLE test DROP COLUMN n;
+DROP TABLE test;
+
+-- Without shared Nested offsets the name does not denote the group: it is an unknown name to drop,
+-- and a no-op under IF EXISTS
+CREATE TABLE test (`n.a` UInt64, x UInt64) ENGINE = MergeTree ORDER BY `n.a` SETTINGS share_nested_offsets = 0;
+ALTER TABLE test DROP COLUMN n; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
+ALTER TABLE test DROP COLUMN IF EXISTS n;
 DROP TABLE test;
 
 -- A special column of the engine that is a key column as well

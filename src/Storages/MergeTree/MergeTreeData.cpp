@@ -5136,7 +5136,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     /// are handled here to keep the check in a single place.
     for (const AlterCommand & command : commands)
     {
-        if (command.type != AlterCommand::DROP_COLUMN)
+        /// A command already marked to be skipped (e.g. `DROP COLUMN ... IF EXISTS` for a missing column)
+        if (command.type != AlterCommand::DROP_COLUMN || command.ignore)
             continue;
 
         if (columns_in_keys.contains(command.column_name))
@@ -5156,11 +5157,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
         }
 
-        /// The dropped name can also refer to a whole Nested group rather than a single column. Dropping
+        /// The dropped name can also refer to a whole nested group rather than a single column. Dropping
         /// the group removes all of its columns and clearing it rewrites their data, so a key column
         /// inside the group forbids the operation, the same as dropping that column directly. A column
         /// with this exact name takes precedence over the group and is fully covered by the checks above.
-        if (!old_columns.has(command.column_name))
+        /// A name denotes a group only when nested offsets are shared - the same definition of column
+        /// existence that validation and preparation of the commands use.
+        if ((*getSettings())[MergeTreeSetting::share_nested_offsets] && !old_columns.has(command.column_name))
         {
             const String nested_prefix = command.column_name + ".";
             Names keyed_children;
