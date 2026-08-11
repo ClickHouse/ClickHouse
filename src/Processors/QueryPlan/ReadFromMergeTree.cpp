@@ -2214,7 +2214,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWith
         /*find_exact_ranges=*/false,
         is_parallel_reading_from_replicas,
         /*allow_query_condition_cache_=*/false,
-        supportsSkipIndexesOnDataRead());
+        supportsSkipIndexesOnDataRead(),
+        /*check_row_limits=*/true);
 }
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEstimation() const
