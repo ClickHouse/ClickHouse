@@ -1809,8 +1809,10 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
 
     if (code == Coordination::Error::ZNONODE)
     {
-        /// No failed path exists yet - nothing to drop
+        /// No failed path exists yet - nothing to drop.
+        /// Reconcile cache to clear any stale entries before returning.
         LOG_TRACE(log, "Failed files path does not exist, nothing to drop");
+        reconcileFailedFilesCache();
         return;
     }
 
@@ -1819,7 +1821,10 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
 
     if (failed_nodes.empty())
     {
+        /// No failed files to drop (or only .retriable nodes remain).
+        /// Reconcile cache to clear any stale entries before returning.
         LOG_TRACE(log, "No failed files to drop");
+        reconcileFailedFilesCache();
         return;
     }
 
@@ -2029,12 +2034,18 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
                             retry_code = getZooKeeper()->tryRemove(remove_requests[k]->getPath());
                         });
 
-                        if (retry_code == Coordination::Error::ZOK)
+                        if (retry_code == Coordination::Error::ZOK || retry_code == Coordination::Error::ZNONODE)
                         {
+                            /// ZOK: retry succeeded. ZNONODE: first attempt already deleted the node
+                            /// before the multi aborted. Either way, the node is gone - clear cache.
                             auto cache_key = getMetadataCacheKey(batch_file_paths[batch_start_idx + k]);
                             local_file_statuses.remove(cache_key);
                             file_paths.push_back(batch_file_paths[batch_start_idx + k]);
                             ++batch_succeeded;
+
+                            if (retry_code == Coordination::Error::ZNONODE)
+                                LOG_TRACE(log, "Node `{}` already removed (likely by first attempt before multi aborted)",
+                                          remove_requests[k]->getPath());
                         }
                         else
                         {
