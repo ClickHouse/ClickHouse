@@ -105,14 +105,10 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
         /// either input arrives or downstream demand appears.
     }
 
-    /// Back-pressure on the soft cap, but only when there is no `canPush` empty port.
-    /// When such a port exists, the deadlock with sequential consumers takes priority
-    /// over the soft memory bound: we let queues overshoot to feed the asking path.
-    /// Under pathological skew (all rows hashing to one shard while a sibling port is
-    /// asking) this can buffer most of the input on the receiving shard, bounded by the
-    /// applicable memory limit rather than by the soft cap (see comment in the header).
-    /// Once input finishes, the first pass will finalize the empty ports.
-    if (any_queue_at_capacity && !has_pushable_empty_port)
+    /// Back-pressure on the soft cap, except when the only demand is an empty port and
+    /// nothing is drainable: a sequentially-activated consumer would then wait forever on
+    /// that port, so keep pulling input to feed it even though the cap is reached.
+    if (any_queue_at_capacity && !(has_pushable_empty_port && !has_pushable_queued_chunks))
         return has_pushable_queued_chunks ? Status::Ready : Status::PortFull;
 
     /// Try to pull a new input chunk.
