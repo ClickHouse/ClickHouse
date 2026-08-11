@@ -1,0 +1,25 @@
+-- A: equals agrees with the oracle (count and row set)
+String key, Variant(FixedString(3))	1	1
+String key, Dynamic holding FixedString(3)	1
+String key, Variant(LowCardinality(FixedString(3)))	1
+String key, Dynamic holding LowCardinality(FixedString(3))	1
+String key, Dynamic(max_types = 0)	1
+String key, Variant(FixedString(2)) filled exactly	1
+LowCardinality(String) key, Variant(FixedString(3))	1
+Nullable(String) key, Variant(FixedString(3))	1
+-- A2: notEquals agrees with the oracle at default optimize_use_implicit_projections
+String key, Variant(FixedString(3))	1
+String key, Dynamic holding FixedString(3)	1
+-- Keys that already pruned correctly are untouched
+FixedString(5) key, Variant(FixedString(3))	1
+FixedString(3) key, Variant(FixedString(4))	1
+String key, plain FixedString(3)	1
+String key, LIKE pattern	1
+-- B: an erased constant whose active type is String keeps pruning
+plain String constant	1
+Variant(String) constant	1
+Dynamic holding String	1
+JSON path constant	1
+FixedString(5) key, Variant(FixedString(3))	1
+-- C: the declining arms report the index as unused
+1

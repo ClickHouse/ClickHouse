@@ -34,10 +34,13 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Core/Settings.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
@@ -3537,6 +3540,44 @@ static bool tryRewriteFloatLiteralForIntKeyComparison(
     UNREACHABLE();
 }
 
+/// A `Variant`/`Dynamic` constant holds exactly one value, hence exactly one active member type, while its
+/// declared type is only the wrapper and `tryGetConstant` hands out the nested value.
+/// Returns that member type, or nullptr when it cannot be determined.
+static DataTypePtr tryGetActiveTypeOfErasedConstant(const RPNBuilderTreeNode & const_node)
+{
+    if (!const_node.isConstant())
+        return nullptr;
+
+    const auto column_with_type = const_node.getConstantColumn();
+    ColumnPtr column = column_with_type.column;
+    if (!column)
+        return nullptr;
+
+    if (isColumnConst(*column))
+        column = assert_cast<const ColumnConst &>(*column).getDataColumnPtr();
+
+    if (column->empty())
+        return nullptr;
+
+    if (const auto * dynamic_column = typeid_cast<const ColumnDynamic *>(column.get()))
+        return dynamic_column->getTypeAt(0);
+
+    if (const auto * variant_column = typeid_cast<const ColumnVariant *>(column.get()))
+    {
+        const auto * variant_type = typeid_cast<const DataTypeVariant *>(column_with_type.type.get());
+        if (!variant_type)
+            return nullptr;
+
+        const auto global_discr = variant_column->globalDiscriminatorAt(0);
+        if (global_discr == ColumnVariant::NULL_DISCRIMINATOR || global_discr >= variant_type->getVariants().size())
+            return nullptr;
+
+        return variant_type->getVariants()[global_discr];
+    }
+
+    return nullptr;
+}
+
 bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out)
 {
     const auto * node_dag = node.getDAGNode();
@@ -3917,8 +3958,17 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                         /// a `LowCardinality(Nullable(FixedString(N)))` constant reaches here with the inner
                         /// `Nullable` intact; peel both wrappers so no variant slips past this guard (the key
                         /// type is already `LowCardinality`/`Nullable`-stripped above).
-                        const auto const_type_unwrapped = removeLowCardinalityAndNullable(const_type);
-                        if (WhichDataType(const_type_unwrapped).isFixedString() && isStringOrFixedString(key_expr_type_not_null))
+                        /// The rule applies to the erased constant's active member type; an active type that
+                        /// cannot be determined counts as possibly padded, so the range is declined.
+                        DataTypePtr const_type_unwrapped = removeLowCardinalityAndNullable(const_type);
+                        if (WhichDataType(const_type_unwrapped).isVariant() || WhichDataType(const_type_unwrapped).isDynamic())
+                        {
+                            const auto active_type = tryGetActiveTypeOfErasedConstant(func.getArgumentAt(const_arg_pos));
+                            const_type_unwrapped = active_type ? removeLowCardinalityAndNullable(active_type) : nullptr;
+                        }
+
+                        if ((!const_type_unwrapped || WhichDataType(const_type_unwrapped).isFixedString())
+                            && isStringOrFixedString(key_expr_type_not_null))
                         {
                             const size_t const_bytes = const_value.safeGet<String>().size();
                             const auto * fixed_key = typeid_cast<const DataTypeFixedString *>(key_expr_type_not_null.get());
