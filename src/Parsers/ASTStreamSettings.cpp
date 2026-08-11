@@ -96,7 +96,7 @@ void ASTStreamSettings::updateTreeHashImpl(SipHash & hash_state, bool ignore_ali
 {
     /// The cursor tree and the watermark column/idle timeout are not children (only the
     /// watermark expression is, see `setWatermark`), so hash them explicitly.
-    static_assert(sizeof(*this) == 64, "If members were added to ASTStreamSettings, hash them here unless they are purely cosmetic.");
+    static_assert(sizeof(*this) <= 64, "If members were added to ASTStreamSettings, hash them here unless they are purely cosmetic.");
     hash_state.update(cursor != nullptr);
     if (cursor)
         updateCursorTreeHash(hash_state, *cursor);

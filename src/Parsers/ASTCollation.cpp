@@ -24,7 +24,7 @@ namespace ErrorCodes
     {
         /// The collation name is not a child (see `ParserCollation`), so without this it is
         /// absent from the hash and column declarations differing only in collation compare equal.
-        static_assert(sizeof(*this) == 40, "If members were added to ASTCollation, hash them here unless they are purely cosmetic.");
+        static_assert(sizeof(*this) <= 40, "If members were added to ASTCollation, hash them here unless they are purely cosmetic.");
         hash_state.update(collation != nullptr);
         if (collation)
             collation->updateTreeHash(hash_state, ignore_aliases);

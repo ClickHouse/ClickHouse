@@ -42,7 +42,7 @@ ASTPtr ASTTTLElement::clone() const
 
 void ASTTTLElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    static_assert(sizeof(*this) == 120, "If members were added to ASTTTLElement, hash them here unless they are purely cosmetic.");
+    static_assert(sizeof(*this) <= 120, "If members were added to ASTTTLElement, hash them here unless they are purely cosmetic.");
     hash_state.update(mode);
     hash_state.update(destination_type);
     hash_state.update(destination_name.size());

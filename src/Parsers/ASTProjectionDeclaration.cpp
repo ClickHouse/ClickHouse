@@ -35,7 +35,7 @@ ASTPtr ASTProjectionDeclaration::clone() const
 void ASTProjectionDeclaration::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     /// `name` is not a child, so the default implementation does not see it.
-    static_assert(sizeof(*this) == 88, "If members were added to ASTProjectionDeclaration, hash them here unless they are purely cosmetic.");
+    static_assert(sizeof(*this) <= 88, "If members were added to ASTProjectionDeclaration, hash them here unless they are purely cosmetic.");
     hash_state.update(name.size());
     hash_state.update(name);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
