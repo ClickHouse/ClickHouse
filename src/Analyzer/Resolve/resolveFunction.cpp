@@ -1702,10 +1702,30 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 {
                     auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
 
+                    /// The comparison functions below need a common supertype of both sides. When none
+                    /// exists, the RHS is still a one-element set, so mirror the cast-to-LHS-type
+                    /// fallback of the tuple/array rewrite (a failed `CAST` to a `Nullable` target
+                    /// produces `NULL`, like the constant `Set` path skipping unrepresentable
+                    /// elements). A tuple LHS keeps the direct comparison, matching the scalar
+                    /// rewrite of the old analyzer.
+                    QueryTreeNodePtr right_argument = fn_args[1];
+                    const auto & left_type = in_first_argument->getResultType();
+                    if (!left_type->onlyNull() && !isTuple(removeNullable(left_type)))
+                    {
+                        const auto & right_type = non_const_set_candidate->getResultType();
+                        if (!tryGetLeastSupertype(DataTypes{left_type, right_type}))
+                        {
+                            DataTypePtr cast_elements_to = left_type;
+                            if (right_type->onlyNull() || !scope.context->getSettingsRef()[Setting::transform_null_in])
+                                cast_elements_to = makeNullableOrLowCardinalityNullableSafe(cast_elements_to);
+                            right_argument = castNodeToType(right_argument, cast_elements_to, scope);
+                        }
+                    }
+
                     if (compare_nulls)
                     {
                         auto comparison_fn = std::make_shared<FunctionNode>(is_not_in ? "isDistinctFrom" : "isNotDistinctFrom");
-                        comparison_fn->getArguments().getNodes() = {fn_args[0], fn_args[1]};
+                        comparison_fn->getArguments().getNodes() = {fn_args[0], right_argument};
 
                         node = comparison_fn;
                         resolveFunction(node, scope);
@@ -1713,7 +1733,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     }
 
                     auto eq_fn = std::make_shared<FunctionNode>(is_not_in ? "notEquals" : "equals");
-                    eq_fn->getArguments().getNodes() = {fn_args[0], fn_args[1]};
+                    eq_fn->getArguments().getNodes() = {fn_args[0], right_argument};
 
                     auto default_val = std::make_shared<ConstantNode>(is_not_in ? Field{1u} : Field{0u});
                     auto ifnull_fn = std::make_shared<FunctionNode>("ifNull");
