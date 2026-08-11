@@ -1,5 +1,3 @@
-SET allow_experimental_window_view = 1;
-
 -- The timezone is pinned on every argument: an unqualified DateTime literal is interpreted in
 -- the session timezone, which moves the value across the overflow boundary.
 -- A hop window ending past the DateTime range must be rejected, not wrapped around.
