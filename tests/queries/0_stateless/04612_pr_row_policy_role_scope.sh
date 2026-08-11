@@ -63,11 +63,13 @@ $CLICKHOUSE_CLIENT -q "
 SELECT ProfileEvents['ParallelReplicasUsedCount'] > 0
 FROM system.query_log
 WHERE event_date >= yesterday()
+    AND event_time >= now() - toIntervalMinute(30)
     AND type = 'QueryFinish'
     AND is_initial_query
     AND current_database = currentDatabase()
     AND log_comment IN ('04612_narrow_${CLICKHOUSE_DATABASE}', '04612_admin_${CLICKHOUSE_DATABASE}')
-ORDER BY log_comment
+ORDER BY log_comment, event_time_microseconds DESC
+LIMIT 1 BY log_comment
 "
 
 $CLICKHOUSE_CLIENT -m -q "
