@@ -72,6 +72,19 @@ exact_pw=$($CLICKHOUSE_CLIENT --use_statistics=1 --optimize_move_to_prewhere=1 -
 [ -n "$capped_pw" ] && echo 1 || echo "no prewhere chosen"
 [ "$capped_pw" = "$exact_pw" ] && echo 1 || { echo "PREWHERE differs"; echo "$capped_pw"; echo "$exact_pw"; }
 
+# An expression on the left has no statistics of its own, and below the limit it is given a flat
+# default. The size-based path must not turn that into "matches everything" just because the set is
+# large, or crossing an internal cost limit would silently change the plan. A literal list is used
+# because a subquery set is never built for a non-indexed expression, so it would not reach the path.
+echo '--- expression on the left: same PREWHERE above and below the limit ---'
+LITERALS=$($CLICKHOUSE_CLIENT --query "SELECT arrayStringConcat(groupArray(toString(number)), ',') FROM numbers(500)")
+EXPR_QUERY="SELECT count() FROM probe_tbl WHERE bitXor(k1, 42) IN ($LITERALS) AND k2 > 5"
+expr_capped=$($CLICKHOUSE_CLIENT --use_statistics=1 --optimize_move_to_prewhere=1 --query_plan_optimize_prewhere=1 --allow_reorder_prewhere_conditions=1 --statistics_max_set_size_for_exact_selectivity_estimation=100 \
+    --query "EXPLAIN actions=1 $EXPR_QUERY" | grep -F 'Prewhere filter column:')
+expr_exact=$($CLICKHOUSE_CLIENT --use_statistics=1 --optimize_move_to_prewhere=1 --query_plan_optimize_prewhere=1 --allow_reorder_prewhere_conditions=1 --statistics_max_set_size_for_exact_selectivity_estimation=0 \
+    --query "EXPLAIN actions=1 $EXPR_QUERY" | grep -F 'Prewhere filter column:')
+[ "$expr_capped" = "$expr_exact" ] && echo 1 || { echo "PREWHERE differs"; echo "$expr_capped"; echo "$expr_exact"; }
+
 # A set nobody has built cannot be analysed, because filling it would mean running the subquery
 # during planning. `k1` is not the sort key here, so no index analysis builds the set first.
 echo '--- an unbuilt set is skipped rather than filled ---'

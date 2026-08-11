@@ -337,9 +337,26 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     [Setting::statistics_max_set_size_for_exact_selectivity_estimation];
                 if (max_set_size && columns[0]->size() > max_set_size)
                 {
-                    ProfileEvents::increment(ProfileEvents::SelectivityEstimatorInSetEstimatedFromSize);
-                    out.selectivity = estimateSelectivityFromSetSize(
-                        metadata, func.getArgumentAt(0).getColumnName(), *columns[0], func_name != "in");
+                    /// Only `in` and `notIn` reach here: `atom_map` has no entry for the other `IN`
+                    /// operators, so the lookup at the top of this function already rejected them.
+                    const bool negative = func_name != "in";
+                    const String lhs_name = func.getArgumentAt(0).getColumnName();
+
+                    /// An expression rather than a column (`lower(col) IN (...)`) has no statistics to
+                    /// consult, and below the limit it is given a flat default by the "not a real column"
+                    /// branch further down. Use that same default here, so that crossing the limit cannot
+                    /// change the estimate for such an atom - and skip the size-based path, which would
+                    /// otherwise read `set_size / <no cardinality>` as "matches everything".
+                    if (metadata && !metadata->getColumns().tryGet(lhs_name))
+                    {
+                        out.selectivity.true_sel = negative ? 1.0 - default_cond_equal_factor : default_cond_equal_factor;
+                    }
+                    else
+                    {
+                        ProfileEvents::increment(ProfileEvents::SelectivityEstimatorInSetEstimatedFromSize);
+                        out.selectivity = estimateSelectivityFromSetSize(metadata, lhs_name, *columns[0], negative);
+                    }
+
                     out.finalized = true;
                     return false;
                 }
