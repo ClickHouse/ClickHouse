@@ -215,23 +215,6 @@ TEST(MetadataStorageFromMemory, ReplaceFileOverwritesDestination)
     EXPECT_THROW(tx->replaceFile("no_such.bin", "x.bin"), Exception);
 }
 
-TEST(MetadataStorageFromMemory, CreateHardLinkCopiesRecord)
-{
-    auto storage = makeWritableStorage();
-    auto tx = storage->createTransaction();
-
-    tx->createMetadataFile("src.bin", singleObject("blobs/src", "src.bin", 7));
-    tx->createHardLink("src.bin", "dst.bin");
-
-    EXPECT_TRUE(storage->existsFile("src.bin"));
-    EXPECT_TRUE(storage->existsFile("dst.bin"));
-    EXPECT_EQ(storage->getStorageObjects("dst.bin").at(0).remote_path, "blobs/src");
-    EXPECT_EQ(storage->getStorageObjects("dst.bin").at(0).local_path, "dst.bin");
-    EXPECT_EQ(storage->getHardlinkCount("dst.bin"), 0u);
-
-    EXPECT_THROW(tx->createHardLink("no_such.bin", "x.bin"), Exception);
-}
-
 TEST(MetadataStorageFromMemory, RemoveRecursiveHonorsPredicate)
 {
     auto storage = makeWritableStorage();

@@ -502,19 +502,9 @@ void MetadataStorageFromMemoryTransaction::moveDirectory(const std::string & pat
             object.local_path = it->first;
 }
 
-void MetadataStorageFromMemoryTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
+void MetadataStorageFromMemoryTransaction::createHardLink(const std::string & /*path_from*/, const std::string & /*path_to*/)
 {
-    std::unique_lock lock(storage.metadata_mutex);
-
-    auto it = storage.files.find(path_from);
-    if (it == storage.files.end())
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File `{}` doesn't exist", path_from);
-
-    auto record = it->second;
-    for (auto & object : record.objects)
-        object.local_path = path_to;
-
-    storage.putRecordUnlocked(path_to, std::move(record));
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Hardlinks are not supported by in-memory metadata storage");
 }
 
 void MetadataStorageFromMemoryTransaction::setLastModified(const std::string & /*path*/, const Poco::Timestamp & /*timestamp*/)
