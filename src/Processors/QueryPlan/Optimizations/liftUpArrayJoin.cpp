@@ -24,6 +24,15 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (!(expression_step || filter_step) || !array_join_step)
         return 0;
 
+    /// The rewrite splits the parent step, moves a part of it below the `ARRAY JOIN`, and
+    /// rebuilds both parts as fresh unmarked steps. When the parent is the seal of a
+    /// `SQL SECURITY` view, the replacements would not carry the flag and later passes could
+    /// merge an outer invoker step into them; and when the `ARRAY JOIN` itself hides rows
+    /// (an empty array drops the row), nothing from above it may descend below it. Either way,
+    /// fail closed. See IQueryPlanStep::isSecurityBarrier.
+    if (parent->isSecurityBarrier() || child->isSecurityBarrier())
+        return 0;
+
     const auto & array_join_columns = array_join_step->getColumns();
     const auto & expression = expression_step ? expression_step->getExpression()
                                               : filter_step->getExpression();
