@@ -1828,6 +1828,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             && !context->getSettingsRef()[Setting::allow_statistics])
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
 
+        /// Storages that reject the dedicated `ADD/DROP/MODIFY STATISTICS` commands in `checkAlterIsPossible`
+        /// must not accept statistics through the column-declaration spelling either, so that engine support
+        /// doesn't depend on how the same logical alter is spelled.
+        if (command.column_statistics_decl != nullptr && !table->supportsStatistics())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support statistics", table->getName());
+
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
         {
