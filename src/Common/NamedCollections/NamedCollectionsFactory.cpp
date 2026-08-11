@@ -480,6 +480,23 @@ void NamedCollectionFactory::removeDependencies(const StorageID & table_id)
     }
 }
 
+void NamedCollectionFactory::removeDependency(const String & collection_name, const StorageID & table_id)
+{
+    std::lock_guard lock(mutex);
+
+    auto & idx = dependencies.get<Collection>();
+    auto range = idx.equal_range(collection_name);
+    for (auto it = range.first; it != range.second; ++it)
+    {
+        if (it->table_id.database_name == table_id.database_name && it->table_id.table_name == table_id.table_name
+            && it->table_id.uuid == table_id.uuid)
+        {
+            idx.erase(it);
+            return;
+        }
+    }
+}
+
 void NamedCollectionFactory::renameDependencies(const StorageID & from_table_id, const StorageID & to_table_id)
 {
     std::lock_guard lock(mutex);

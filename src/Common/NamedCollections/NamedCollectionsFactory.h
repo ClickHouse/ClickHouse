@@ -95,6 +95,12 @@ public:
 
     void addDependency(const String & collection_name, const StorageID & table_id);
     void removeDependencies(const StorageID & table_id);
+    /// Removes one exact entry: the collection and the whole `StorageID` (database, table, UUID) must
+    /// match. The stale-entry cleanup of `DROP NAMED COLLECTION` uses it because the proof of staleness
+    /// it holds - the `DDLGuard` of the recorded table name - covers only that exact entry: erasing
+    /// everything under the entry's UUID could remove the live dependency of an in-flight
+    /// `CREATE TABLE ... UUID` that reuses the UUID under a different table name.
+    void removeDependency(const String & collection_name, const StorageID & table_id);
     void renameDependencies(const StorageID & from_table_id, const StorageID & to_table_id);
     /// A `RENAME TABLE` that moves a table between an `Ordinary` and an `Atomic` database changes the
     /// identity the dependency is keyed by: the move into `Atomic` assigns a fresh UUID to the table and

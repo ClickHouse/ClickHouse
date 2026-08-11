@@ -76,7 +76,11 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
                     }
                 }
 
-                NamedCollectionFactory::instance().removeDependencies(dep);
+                /// Only this exact entry: the guard proves that no create is in flight for the recorded
+                /// table name, but `CREATE TABLE ... UUID` can reuse the UUID of the failed create under
+                /// a different name, and erasing everything under the UUID would remove the live
+                /// dependency of such an in-flight create.
+                NamedCollectionFactory::instance().removeDependency(query.collection_name, dep);
             }
 
             if (!dependent_names.empty())
