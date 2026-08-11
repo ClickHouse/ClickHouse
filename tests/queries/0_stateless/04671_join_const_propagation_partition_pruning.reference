@@ -7,7 +7,7 @@ Parts: 1/14
 Parts: 1/1
 Parts: 1/1
 equi key plus bounds in JOIN ON
-1	160
+1	395
 left join keeps all left rows
 400	399
 left join with bounds in WHERE
