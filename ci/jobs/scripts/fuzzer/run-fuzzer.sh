@@ -15,6 +15,17 @@ repo_dir=/repo
 
 CONFIG_DIR="/etc/clickhouse-server"
 
+# The fuzzer profile (query-fuzzer-tweaks-users.xml) enables the server-side AST fuzzer
+# for the `default` user with `ast_fuzzer_runs=5` and `ast_fuzzer_any_query=true`, which
+# also applies to the harness's own readiness and diagnostic probes below: each probe
+# would trigger five mutated follow-up queries in the connection thread, inflating its
+# `receive_timeout` or executing an unintended statement. Pin `ast_fuzzer_runs=0` on
+# every harness-owned query; the actual fuzzer client invocation must NOT use it.
+# Exported so that `setup_log_cluster.sh` (reached via `clickhouse_proc.py
+# logs_export_start`) inherits it too. This job always runs the freshly built binary,
+# so the pre-26.2 client concern of `install_packages` does not apply here.
+export NO_AST_FUZZER="--ast_fuzzer_runs=0"
+
 export PATH="$repo_dir/ci/tmp/:$PATH"
 export PYTHONPATH=$repo_dir:$repo_dir/ci
 
@@ -106,7 +117,7 @@ function filter_exists_and_template
 
 function stop_server
 {
-    clickhouse-client --query "select elapsed, query from system.processes" ||:
+    clickhouse-client ${NO_AST_FUZZER:-} --query "select elapsed, query from system.processes" ||:
     clickhouse stop
 
     # Debug.
@@ -149,7 +160,7 @@ function fuzz
     # A dead server is detected early, so the deadline only affects hung servers.
     for _ in {1..120}
     do
-        if clickhouse-client --receive_timeout=5 --query "select 1" || ! kill -0 $server_bg_pid
+        if clickhouse-client ${NO_AST_FUZZER:-} --receive_timeout=5 --query "select 1" || ! kill -0 $server_bg_pid
         then
             break
         fi
@@ -159,7 +170,7 @@ function fuzz
 
     kill -0 $server_pid
 
-    IS_ASAN=$(clickhouse-client --query "SELECT count() FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)")
+    IS_ASAN=$(clickhouse-client ${NO_AST_FUZZER:-} --query "SELECT count() FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)")
     if [[ "$IS_ASAN" = "1" ]];
     then
         echo "ASAN build detected. Not using gdb since it disables LeakSanitizer detections"
@@ -198,13 +209,13 @@ function fuzz
         gdb -batch -command script.gdb -p $server_pid &
         sleep 5
         # gdb will send SIGSTOP, spend some time loading debug info, and then send SIGCONT, wait for it (up to send_timeout, 300s)
-        time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
+        time clickhouse-client ${NO_AST_FUZZER:-} --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
 
         # Check connectivity after we attach gdb, because it might cause the server
         # to freeze, and the fuzzer will fail. In debug build, it can take a lot of time.
         for _ in {1..180}
         do
-            if clickhouse-client --receive_timeout=5 --query "select 1"
+            if clickhouse-client ${NO_AST_FUZZER:-} --receive_timeout=5 --query "select 1"
             then
                 break
             fi
@@ -337,7 +348,7 @@ function fuzz
         # Make sure the server is still accepting queries before restarting: a fuzzer that
         # exited with code 0 against a dead server would otherwise restart-loop until the budget
         # runs out and hide the failure.
-        if ! clickhouse-client --receive_timeout=5 --query "SELECT 'fuzzer restart liveness check'"; then
+        if ! clickhouse-client ${NO_AST_FUZZER:-} --receive_timeout=5 --query "SELECT 'fuzzer restart liveness check'"; then
             echo "Server is not responding, not restarting the fuzzer"
             break
         fi
@@ -367,7 +378,7 @@ function fuzz
 
     for _ in {1..100}
     do
-        if clickhouse-client --receive_timeout=5 --query "SELECT 1" 2> err
+        if clickhouse-client ${NO_AST_FUZZER:-} --receive_timeout=5 --query "SELECT 1" 2> err
         then
             server_died=0
             break
@@ -380,7 +391,7 @@ function fuzz
                 # diagnostic and runs under `set -e`; if the same overload rejects
                 # it, do not abort the script (that would skip the status.tsv
                 # write below and surface as a missing-status job ERROR).
-                clickhouse-client --query "SHOW PROCESSLIST" ||:
+                clickhouse-client ${NO_AST_FUZZER:-} --query "SHOW PROCESSLIST" ||:
                 timeouts=0
                 sleep 1
             elif grep -F 'MEMORY_LIMIT_EXCEEDED' err

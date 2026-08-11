@@ -20,9 +20,10 @@ CLICKHOUSE_CI_LOGS_CLUSTER=${CLICKHOUSE_CI_LOGS_CLUSTER:-system_logs_export}
 # cluster (the ones using `CONNECTION_ARGS`) must not, because the remote server has no
 # fuzzer profile and may be of a version that predates the setting.
 # Default to the opt-out here so this shared helper is safe by default in every
-# fuzzer-profile job: the dedicated AST fuzzer's `run-fuzzer.sh` installs
-# `query-fuzzer-tweaks-users.xml` (`ast_fuzzer_runs=5`, `ast_fuzzer_any_query=true`) and
-# then calls `clickhouse_proc.py logs_export_start` without exporting the variable.
+# fuzzer-profile job, even when a caller under a fuzzer profile forgets to export the
+# variable. The dedicated AST fuzzer's `run-fuzzer.sh` (which installs
+# `query-fuzzer-tweaks-users.xml`: `ast_fuzzer_runs=5`, `ast_fuzzer_any_query=true`)
+# exports it for its own probes and for `clickhouse_proc.py logs_export_start`.
 # Plain `-` (not `:-`) matters: `install_packages` in `stress_tests.lib` deliberately
 # sets `NO_AST_FUZZER=""` for a client that predates the `ast_fuzzer_runs` setting and
 # would reject the unknown option, and that empty opt-out must be preserved.
