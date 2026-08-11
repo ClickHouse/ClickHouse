@@ -2186,6 +2186,13 @@ void Planner::buildPlanForQueryNode()
     if (should_cache && !query_result_cache)
         should_cache = false;
 
+    /// Explicit per-subquery opt-in (`SETTINGS use_query_cache = 1` on the subquery) can enable the Planner-level cache
+    /// even when the outer query runs with `use_query_cache = 0`, in which case the equivalent check in `executeQuery`
+    /// never fired. Without it, a non-THROW overflow mode could store a truncated subquery result which later cache hits
+    /// would reuse as if it were complete.
+    if (should_cache)
+        throwIfQueryResultCacheUsedWithNonThrowOverflowMode(settings);
+
     /// For explicit per-subquery opt-in, we track cache eligibility locally
     /// without mutating the shared query context (which would leak to the outer query).
     bool local_can_use_cache = can_use_query_result_cache || should_cache;

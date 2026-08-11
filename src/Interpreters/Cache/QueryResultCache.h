@@ -35,6 +35,12 @@ struct Settings;
 /// the user-visible exception surfaces.
 bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check = false, bool no_throw = false);
 
+/// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query result cache will store a truncated
+/// result (if enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query result cache that
+/// the query result is truncated. Therefore throw an exception, to notify the user to disable either the query result cache or use
+/// another overflow mode. Called by `executeQuery` for the top-level cache and by `Planner` for the subquery-level cache.
+void throwIfQueryResultCacheUsedWithNonThrowOverflowMode(const Settings & settings);
+
 class QueryResultCacheWriter;
 class QueryResultCacheReader;
 

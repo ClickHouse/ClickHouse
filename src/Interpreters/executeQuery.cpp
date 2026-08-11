@@ -152,16 +152,13 @@ namespace Setting
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsDialect dialect;
-    extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool enable_global_with_statement;
     extern const SettingsBool enable_reads_from_query_cache;
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsSetOperationMode except_default_mode;
-    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsBool implicit_transaction;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsSetOperationMode intersect_default_mode;
-    extern const SettingsOverflowMode join_overflow_mode;
     extern const SettingsString log_comment;
     extern const SettingsBool log_formatted_queries;
     extern const SettingsBool log_profile_events;
@@ -192,14 +189,7 @@ namespace Setting
     extern const SettingsQueryResultCacheSystemTableHandling query_cache_system_table_handling;
     extern const SettingsSeconds query_cache_ttl;
     extern const SettingsInt64 query_metric_log_interval;
-    extern const SettingsOverflowMode read_overflow_mode;
-    extern const SettingsOverflowMode read_overflow_mode_leaf;
-    extern const SettingsOverflowMode result_overflow_mode;
-    extern const SettingsOverflowMode set_overflow_mode;
-    extern const SettingsOverflowMode sort_overflow_mode;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
-    extern const SettingsOverflowMode timeout_overflow_mode;
-    extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsBool use_query_cache;
     extern const SettingsBool wait_for_async_insert;
@@ -227,7 +217,6 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
-    extern const int QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
@@ -1817,17 +1806,8 @@ static BlockIO executeQueryImpl(
         /// result (if enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query result cache that
         /// the query result is truncated. Therefore throw an exception, to notify the user to disable either the query result cache or use
         /// another overflow mode.
-        if (settings[Setting::use_query_cache] && (settings[Setting::read_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::read_overflow_mode_leaf] != OverflowMode::THROW
-            || settings[Setting::group_by_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::sort_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::result_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::timeout_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::set_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::join_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::transfer_overflow_mode] != OverflowMode::THROW
-            || settings[Setting::distinct_overflow_mode] != OverflowMode::THROW))
-            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE, "use_query_cache and overflow_mode != 'throw' cannot be used together");
+        if (settings[Setting::use_query_cache])
+            throwIfQueryResultCacheUsedWithNonThrowOverflowMode(settings);
 
         /// If the query runs with "use_query_cache = 1", we first probe if the query result cache already contains the query result (if
         /// yes: return result from cache). If doesn't, we execute the query normally and write the result into the query result cache. Both

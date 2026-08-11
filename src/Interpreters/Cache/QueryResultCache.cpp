@@ -22,6 +22,7 @@
 #include <Parsers/TokenIterator.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Columns/IColumn.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
@@ -62,12 +63,23 @@ namespace Setting
     extern const SettingsQueryResultCacheNondeterministicFunctionHandling query_cache_nondeterministic_function_handling;
     extern const SettingsQueryResultCacheSystemTableHandling query_cache_system_table_handling;
     extern const SettingsString query_cache_tag;
+    extern const SettingsOverflowMode distinct_overflow_mode;
+    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
+    extern const SettingsOverflowMode join_overflow_mode;
+    extern const SettingsOverflowMode read_overflow_mode;
+    extern const SettingsOverflowMode read_overflow_mode_leaf;
+    extern const SettingsOverflowMode result_overflow_mode;
+    extern const SettingsOverflowMode set_overflow_mode;
+    extern const SettingsOverflowMode sort_overflow_mode;
+    extern const SettingsOverflowMode timeout_overflow_mode;
+    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 namespace ErrorCodes
 {
     extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
+    extern const int QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE;
 }
 
 namespace
@@ -266,6 +278,21 @@ bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_con
     }
 
     return false;
+}
+
+void throwIfQueryResultCacheUsedWithNonThrowOverflowMode(const Settings & settings)
+{
+    if (settings[Setting::read_overflow_mode] != OverflowMode::THROW
+        || settings[Setting::read_overflow_mode_leaf] != OverflowMode::THROW
+        || settings[Setting::group_by_overflow_mode] != OverflowMode::THROW
+        || settings[Setting::sort_overflow_mode] != OverflowMode::THROW
+        || settings[Setting::result_overflow_mode] != OverflowMode::THROW
+        || settings[Setting::timeout_overflow_mode] != OverflowMode::THROW
+        || settings[Setting::set_overflow_mode] != OverflowMode::THROW
+        || settings[Setting::join_overflow_mode] != OverflowMode::THROW
+        || settings[Setting::transfer_overflow_mode] != OverflowMode::THROW
+        || settings[Setting::distinct_overflow_mode] != OverflowMode::THROW)
+        throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE, "use_query_cache and overflow_mode != 'throw' cannot be used together");
 }
 
 namespace
