@@ -14,78 +14,73 @@
 namespace DB
 {
 
-/// Which storage tier a cache provider represents; drives per-tier byte
-/// attribution in observability.
+/// Which storage tier a cache provider represents. The metrics use this to attribute bytes per tier.
 enum class CacheTier
 {
     PageCache,
     FilesystemCache,
 };
 
-/// Per-range buffer API: `resolve` splits a read into HIT ranges (each owns a `CacheReader`) and
-/// MISS cells (each carries a `CacheWriter` when populating). Coordinates are FILE-LEVEL throughout.
+/// Per-range buffer API for the cache tiers. `resolve` splits a read into hit ranges and miss
+/// segments. Each hit owns a `CacheReader`. Each miss carries a `CacheWriter` when the tier
+/// populates. All coordinates are file-level.
 
-/// Held, re-readable view of ONE resident (hit) file-level range. Owns the pin
-/// that keeps its bytes alive; holds NO cursor (the executor's ChainedBuffers owns it).
+/// A held, re-readable view of ONE hit range (bytes already in the cache). It owns the pin that
+/// keeps its bytes alive. It holds no cursor; the executor's `ChainedBuffers` owns the cursor.
 class CacheReader
 {
 public:
     virtual ~CacheReader() = default;
 
-    /// Cache-aligned range this buffer can serve (may be wider than the hit
-    /// the plan asked for - the executor clamps).
+    /// The cache-aligned range this buffer can serve. It may be wider than the requested hit. The
+    /// executor clamps it.
     virtual ByteRange range() const = 0;
 
-    /// Read `subrange` (within `range()`) as a ChainedBuffers of file-level nodes. Records
-    /// `subrange` for the view's deferred LRU bump. A hit is the committed prefix; growth is the
-    /// WRITER's story (`CacheWriter::committed`).
+    /// Read `subrange` (inside `range()`) as a `ChainedBuffers` of file-level nodes. Record `subrange`
+    /// so the view can bump its LRU recency later. A reader serves only the committed prefix; the
+    /// writer tracks any later growth (`CacheWriter::committed`).
     virtual ChainedBuffers read(ByteRange subrange) = 0;
 };
 
-/// Held, incrementally-fillable target for ONE miss file-level range. Owns its
-/// own writable segment ref(s), so it appends across many windows and is
-/// finalized only at destruction.
+/// A held, fill-as-you-go target for ONE miss range. It owns its own writable segment references,
+/// so it can append across many windows. It finalizes only at destruction.
 class CacheWriter
 {
 public:
     virtual ~CacheWriter() = default;
 
-    /// Cache-ALIGNED range; may extend beyond the requested miss range.
+    /// The cache-aligned range. It may extend beyond the requested miss range.
     virtual ByteRange range() const = 0;
 
-    /// Bytes within `range()` already committed (any order). By value: a snapshot under the writer's
-    /// own lock, since the prefetch worker and foreground may write one writer concurrently.
+    /// The bytes inside `range()` already committed, in any order. Returned by value: a snapshot taken
+    /// under the writer's lock, because a background prefetch and the foreground read may write the
+    /// same writer at the same time.
     virtual IntervalSet committed() const = 0;
 
     bool complete() const { return committed().subtract(range()).empty(); }
 
-    /// Store the portion of `data` within `range()` minus `committed()`.
-    /// Returns the bytes that newly landed; 0 for bytes outside the range,
-    /// already committed, an unclaimed cell, reservation failure or
-    /// bypass - NEVER throws on those, degrades to a partial or zero return.
-    /// On tiers that coordinate downloaders (the disk cache) a write lands only
-    /// into cells covered by an open `claim` of the calling thread.
+    /// Store the part of `data` that lies in `range()` and is not yet in `committed()`. Return the
+    /// bytes that newly landed. Return 0 for bytes outside the range, already committed, in an
+    /// unclaimed segment, on a reservation failure, or on bypass. Never throw for those; return a
+    /// partial or zero count instead. On a tier that coordinates downloaders (the filesystem cache),
+    /// a write lands only in segments that an open `claim` of the calling thread covers.
     virtual size_t write(ChainedBuffers data) = 0;
 
-    /// Serve an already-committed sub-range from this buffer's own held
-    /// segments/cells, without a source round-trip.
+    /// Serve an already-committed sub-range from this writer's own held segments. Do not go to the source.
     virtual ChainedBuffers read(ByteRange subrange) = 0;
 
-    /// The result of `claim`: the downloader roles the calling thread holds over one window,
-    /// plus the window's decomposition into runs to fetch (`to_fetch` - roles won, or
-    /// uncoordinated bytes) and runs a sibling leads (`sibling_led` - already cached, or
-    /// being downloaded by another reader; serve them from cache after). Move-only RAII:
-    /// roles are thread-affine (the downloader id is the caller id), so the token must be
-    /// created, written through, and destroyed on ONE thread; the destructor
-    /// completes-and-releases exactly the roles this claim NEWLY won. Exceptions in the release
-    /// are swallowed and logged.
+    /// The result of `claim`. It splits the window into `available` (already committed; read from the
+    /// cache, never fetch) and `to_fetch` (the uncommitted tail whose downloader role this thread won;
+    /// fetch and write it while the claim is open). Move-only and bound to one thread (the downloader
+    /// id is the caller id). The destructor completes and releases exactly the roles this claim won,
+    /// swallowing and logging any error.
     class FillClaim
     {
     public:
         FillClaim() = default;
         FillClaim(FillClaim && other) noexcept
-            : to_fetch(std::move(other.to_fetch))
-            , sibling_led(std::move(other.sibling_led))
+            : available(std::move(other.available))
+            , to_fetch(std::move(other.to_fetch))
             , release(std::exchange(other.release, nullptr))
         {
         }
@@ -94,8 +89,8 @@ public:
             if (this != &other)
             {
                 reset();
+                available = std::move(other.available);
                 to_fetch = std::move(other.to_fetch);
-                sibling_led = std::move(other.sibling_led);
                 release = std::exchange(other.release, nullptr);
             }
             return *this;
@@ -110,16 +105,17 @@ public:
                 r();
         }
 
+        /// Already committed: read from the cache, never fetch.
+        VectorWithMemoryTracking<ByteRange> available;
+        /// The uncommitted tail whose downloader role this thread won: fetch and write it.
         VectorWithMemoryTracking<ByteRange> to_fetch;
-        VectorWithMemoryTracking<ByteRange> sibling_led;
-        /// Completes-and-releases the newly-won roles; noexcept by construction (the
-        /// provider wraps its body in try/catch). Empty when nothing was won.
+        /// Completes and releases the newly-won roles. Never throws. Empty when the claim won nothing.
         std::function<void()> release;
     };
 
-    /// Acquire downloader roles for the cells overlapping `window` (clamped). The ONLY
-    /// role-acquisition site - `write` never adopts a role, so live claims alone answer "which
-    /// roles does this thread hold". Does NOT wait. Default: whole window to-fetch, nothing to release.
+    /// Acquire downloader roles for the segments that overlap `window` (clamped). This is the only
+    /// place that acquires a role; `write` never takes one. So the live claims alone tell which roles
+    /// a thread holds. This does not wait. Default: fetch the whole window, release nothing.
     virtual FillClaim claim(ByteRange window)
     {
         FillClaim c;
@@ -127,10 +123,10 @@ public:
         return c;
     }
 
-    /// Wait (bounded by `wait_for_concurrent_download_timeout_milliseconds`) until `subrange`'s
-    /// bytes are committed by the sibling downloader, then serve them from this writer's own held
-    /// segments (cache file). On a timeout the read can be short. Default: plain read (no wait).
-    virtual ChainedBuffers waitAndReadSiblingLed(ByteRange subrange) { return read(subrange); }
+    /// Wait (bounded by `wait_for_concurrent_download_timeout_milliseconds`) until the concurrent
+    /// downloader commits `subrange`, then serve those bytes from this writer's own held segments. On
+    /// a timeout the read can be short. Default: plain read (no wait).
+    virtual ChainedBuffers waitAndRead(ByteRange subrange) { return read(subrange); }
 };
 
 using CacheReaderPtr = std::unique_ptr<CacheReader>;
@@ -144,20 +140,20 @@ public:
 
     virtual CacheTier tier() const = 0;
 
-    /// Whether a miss on this tier is populated (write-through) or bypassed
-    /// (read-only, writes are no-ops). Drives promotion: a range served from
-    /// a slower tier is written up only into faster tiers that populate.
+    /// Whether a miss on this tier populates the cache (write-through) or is bypassed (read-only;
+    /// writes do nothing). This drives promotion: a range served from a slower tier is written up only
+    /// into faster tiers that populate.
     virtual bool populatesOnMiss() const { return true; }
 
-    /// Whether a cell is written WHOLE (first-writer-wins, never completed later -
-    /// the page cache) vs incrementally appended (the filesystem cache). A
-    /// whole-cell tier is a fill target only when a connection covers the ENTIRE
-    /// cell; an incremental tier appends whatever prefix is covered.
-    virtual bool fillsWholeCell() const { return false; }
+    /// Whether the tier writes each segment WHOLE (first-writer-wins, never completed later) or
+    /// appends it incrementally. The filesystem cache appends. A whole-segment tier is a fill target
+    /// only when one connection covers the ENTIRE segment; an incremental tier stores whatever prefix
+    /// it covers.
+    virtual bool fillsWholeSegment() const { return false; }
 
     virtual String name() const = 0;
 
-    /// One step of the residency walk (the executor's iterator consumes this).
+    /// One step of the residency walk. The executor consumes these in order.
     struct Resolution
     {
         enum class Kind : uint8_t
@@ -167,23 +163,22 @@ public:
         };
 
         Kind kind = Kind::Miss;
-        /// Hit: one committed run. Miss: ONE cell of this tier containing the position (may
-        /// overhang the asked span via grid rounding / object-end clamp).
+        /// Hit: one committed run. Miss: ONE segment of this tier that contains the position. A miss
+        /// segment may overhang the asked span (segment-boundary rounding, or the object-end clamp).
         ByteRange range{};
-        /// Hit only. A re-ask of the same run may return a fresh reader or a
-        /// null one - the walker collects exactly one per run either way.
+        /// Hit only. A re-ask of the same run may return a fresh reader or a null one; the executor
+        /// keeps exactly one per run either way.
         CacheReaderPtr reader;
-        /// Miss only: the cell's OPEN writer (populating tiers; null on
-        /// bypass/read-only configurations).
+        /// Miss only: the segment's open writer. It is null on a bypass or read-only tier.
         CacheWriterPtr writer;
     };
 
-    /// Resolve `range` in ONE pass: every resolution covering it, in offset order, each once -
-    /// hits carry readers. Whether a MISS carries an open writer is THE PROVIDER'S decision: a
-    /// populating cache opens it here, a read-only / bypass cache returns it writer-less. The
-    /// caller subtracts faster-tier hits BEFORE asking. Cells at the edges may overhang `range`
-    /// (grid rounding, object-end clamp). Holds no per-call state, so a shared provider is safe
-    /// to resolve from many threads (the `readBigAt` fan-out).
+    /// Resolve `range` in ONE pass. Return every resolution that covers it, in offset order, each
+    /// once. Hits carry readers. The provider decides whether a miss carries an open writer: a
+    /// populating tier opens it here, a read-only or bypass tier returns it writer-less. The caller
+    /// subtracts faster-tier hits before it asks. Edge segments may overhang `range` (segment-boundary
+    /// rounding, or the object-end clamp). Holds no per-call state, so many threads can resolve one
+    /// shared provider at once (parallel `readBigAt`).
     virtual VectorWithMemoryTracking<Resolution> resolve(
         const StoredObject & object, size_t object_file_offset, ByteRange range) = 0;
 };

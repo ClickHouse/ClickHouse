@@ -84,9 +84,9 @@ unsigned char patternByte(size_t i)
 }
 
 /// Shared state of `MockFileCacheProvider`: stored bytes, resident ranges, and a log of writes.
-/// `sibling_led` simulates a concurrent reader holding the downloader role over those ranges:
-/// `claim` reports them as sibling-led and `write` refuses to land bytes there, so the driver
-/// fetches them through from source instead.
+/// `concurrent_download` simulates another thread holding the downloader role over those ranges:
+/// `claim` leaves them unlisted and `write` refuses to land bytes there, so the driver fetches
+/// them through from source instead.
 struct MockCacheState
 {
     std::vector<char> store;
@@ -95,11 +95,11 @@ struct MockCacheState
     /// the final block stays full-width and its whole-block `covers` check can never be satisfied.
     size_t declared_size;
     IntervalSet resident;
-    IntervalSet sibling_led;
+    IntervalSet concurrent_download;
     VectorWithMemoryTracking<ByteRange> writes;
     explicit MockCacheState(size_t file_size) : store(file_size, 0), declared_size(file_size) {}
 
-    void addSibling(ByteRange r) { sibling_led.add(r); }
+    void addConcurrentDownload(ByteRange r) { concurrent_download.add(r); }
 };
 
 /// A minimal in-memory FILE-LEVEL cache (like the page cache): block-aligned, whole-block writes,
@@ -112,7 +112,7 @@ public:
         : block_size(block_size_), state(std::move(state_)), bypass(bypass_) {}
 
     CacheTier tier() const override { return CacheTier::PageCache; }
-    bool fillsWholeCell() const override { return true; }
+    bool fillsWholeSegment() const override { return true; }
     String name() const override { return "MockFileCache"; }
 
     /// Tile the asked range into file-level blocks: a fully-resident block is a Hit (fresh reader),
@@ -190,18 +190,16 @@ private:
             if (lo >= hi)
                 return c;
             const ByteRange overlap{lo, hi - lo};
-            c.to_fetch = state->sibling_led.subtract(overlap);
-            IntervalSet ours;
-            for (const auto & t : c.to_fetch)
-                ours.add(t);
-            c.sibling_led = ours.subtract(overlap);
+            /// We win the role over the parts no other thread holds; a part held elsewhere is left
+            /// unlisted (neither `available` nor `to_fetch`), matching the real provider.
+            c.to_fetch = state->concurrent_download.subtract(overlap);
             return c;
         }
         size_t write(ChainedBuffers data) override
         {
-            /// A sibling-led block is not ours to fill (no downloader role).
+            /// A block another thread is downloading is not ours to fill (no downloader role).
             size_t free_bytes = 0;
-            for (const auto & fr : state->sibling_led.subtract(r))
+            for (const auto & fr : state->concurrent_download.subtract(r))
                 free_bytes += fr.size;
             if (free_bytes != r.size)
                 return 0;
@@ -557,16 +555,16 @@ TEST_F(ReaderExecutorTest, PageCacheFillsBlockStraddlingObjectBoundary)
         << "warm read fetched from source -> a boundary block missed the cache";
 }
 
-TEST_F(ReaderExecutorTest, SiblingLedCellIsFetchedThrough)
+TEST_F(ReaderExecutorTest, ConcurrentDownloadCellIsFetchedThrough)
 {
-    /// A cell a sibling is already downloading is fetched through - this simple FS-only driver does
-    /// not wait. Our write into that cell lands 0 (we do not hold the downloader role), but the
-    /// source fetch still serves the bytes correctly and leaves the cell for the sibling to cache.
+    /// A cell another thread is already downloading is fetched through - this simple FS-only driver
+    /// does not wait. Our write into that cell lands 0 (we do not hold the downloader role), but the
+    /// source fetch still serves the bytes correctly and leaves the cell for that thread to cache.
     StoredObjects objects{makeFile("a.bin", 1024)};
     const size_t block = 256;
 
     auto state = std::make_shared<MockCacheState>(/*file_size=*/1024);
-    state->addSibling(ByteRange{0, 256});
+    state->addConcurrentDownload(ByteRange{0, 256});
     CacheChain chain;
     chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
 
@@ -579,10 +577,10 @@ TEST_F(ReaderExecutorTest, SiblingLedCellIsFetchedThrough)
     for (size_t i = 0; i < data.size(); ++i)
         ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
 
-    /// Cold: everything came from source; the sibling's block was fetched through, not written.
+    /// Cold: everything came from source; the concurrently-downloaded block was fetched through, not written.
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 1024u);
     for (const auto & wr : state->writes)
-        EXPECT_GE(wr.offset, 256u) << "wrote into the sibling-led block";
+        EXPECT_GE(wr.offset, 256u) << "wrote into the concurrently-downloaded block";
     EXPECT_FALSE(state->resident.subtract(ByteRange{0, block}).empty());
 }
 

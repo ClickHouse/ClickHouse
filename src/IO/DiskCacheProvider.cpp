@@ -167,14 +167,12 @@ DiskCacheReader::DiskCacheReader(
     ByteRange range_in_file,
     size_t object_file_offset_,
     ThrottlerPtr local_throttler_,
-    ReaderAnchorCache * anchors_,
-    std::shared_ptr<DiskCacheTouchBook> touch_book_)
+    ReaderAnchorCache * anchors_)
     : holder(std::move(holder_))
     , hit_range(range_in_file)
     , object_file_offset(object_file_offset_)
     , local_throttler(std::move(local_throttler_))
     , anchors(anchors_)
-    , touch_book(std::move(touch_book_))
 {
 }
 
@@ -196,11 +194,9 @@ ChainedBuffers DiskCacheReader::read(ByteRange subrange)
         subrange = ByteRange{lo, hi - lo};
     }
 
-    /// Record before reading (deferred-bump record): a throwing pread still
-    /// leaves a coherent entry that the view's dtor re-fetches and no-ops for
-    /// gone segments.
-    if (touch_book)
-        touch_book->touched.push_back(subrange);
+    /// Record what we serve so the destructor can bump its LRU priority; recording before the pread
+    /// keeps the record coherent even if the read throws.
+    hits_to_touch.push_back(subrange);
 
     chassert(subrange.offset >= object_file_offset);
     ByteRange sub_in_object{subrange.offset - object_file_offset, subrange.size};
@@ -257,8 +253,8 @@ size_t DiskCacheWriter::write(ChainedBuffers data)
         if (segment.isDetached())
             continue;
 
-        /// Only segments this thread claimed accept bytes; roles a sibling freed are picked up by
-        /// the NEXT claim, not here - so open claims fully describe this thread's roles.
+        /// Only segments this thread claimed accept bytes; a role another thread freed is picked up
+        /// by the NEXT claim, not here - so open claims fully describe this thread's roles.
         if (!segment.isDownloader())
         {
             LOG_TRACE(log, "DiskCacheWriter::write: segment [{}, {}] not claimed by this thread, skipping",
@@ -350,12 +346,12 @@ ChainedBuffers DiskCacheWriter::read(ByteRange subrange)
 
 CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
 {
-    /// `window` is FILE-space, clamped per segment. DOWNLOADED → `sibling_led` (serve from cache);
-    /// else `getOrSetDownloader` makes us the downloader (`to_fetch`: fetch+write while the claim is
-    /// open) or a sibling leads it (`sibling_led`). Only roles NEWLY won here enter the release set
-    /// (a nested tile-claim inside a window-long claim must not release the outer's). The release
-    /// completes-and-resets exactly those segments - else one leaks DOWNLOADING and the foreground
-    /// teardown, unable to reset a foreign downloader, aborts the holder dtor on
+    /// `window` is FILE-space, clamped per segment. For each held segment overlapping it, the
+    /// committed prefix is `available` (read from cache now, whoever holds the role). For the
+    /// uncommitted tail, `getOrSetDownloader` either makes us the downloader (`to_fetch`: fetch+write
+    /// while the claim is open) or another downloader leads it (left unlisted). Only roles NEWLY won here enter
+    /// the release set, which completes-and-resets exactly those segments - else one leaks DOWNLOADING
+    /// and the foreground teardown, unable to reset a foreign downloader, aborts the holder dtor on
     /// `chassert(!is_last_holder)`.
     FillClaim c;
     if (!holder)
@@ -381,22 +377,31 @@ CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
 
         if (segment.state() == FileSegmentState::DOWNLOADED)
         {
-            c.sibling_led.push_back(ByteRange{lo, hi - lo});
+            c.available.push_back(ByteRange{lo, hi - lo});   // fully cached: whole overlap readable now
             continue;
         }
 
         const bool already_mine = segment.isDownloader();
         if (!already_mine)
             segment.getOrSetDownloader();
+
+        /// Read `cwo` after the role decision. If we hold the role, only we advance it, so the
+        /// committed-prefix / tail split is exact; if another downloader holds it, `cwo` is a lower
+        /// bound, so we under-report `available`, never over. `cwo` is object-local; shift to file space.
+        const size_t cwo_file = segment.getCurrentWriteOffset() + object_file_offset;
+        const size_t avail_hi = std::min(hi, cwo_file);
+        if (avail_hi > lo)
+            c.available.push_back(ByteRange{lo, avail_hi - lo});
+
+        /// Record a won role for release even with nothing to fetch: holding it would otherwise
+        /// self-deadlock a later `waitAndRead` on this thread.
         if (segment.isDownloader())
         {
-            c.to_fetch.push_back(ByteRange{lo, hi - lo});
+            const size_t fetch_lo = std::max(lo, cwo_file);
+            if (fetch_lo < hi)
+                c.to_fetch.push_back(ByteRange{fetch_lo, hi - fetch_lo});
             if (!already_mine)
                 won->push_back(segment_ptr);
-        }
-        else
-        {
-            c.sibling_led.push_back(ByteRange{lo, hi - lo});
         }
     }
 
@@ -424,7 +429,7 @@ CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
     return c;
 }
 
-ChainedBuffers DiskCacheWriter::waitAndReadSiblingLed(ByteRange subrange)
+ChainedBuffers DiskCacheWriter::waitAndRead(ByteRange subrange)
 {
     /// `subrange` is FILE-space. Wait until each held segment overlapping it has committed
     /// through the overlap end, then serve the bytes from our own held segments. The caller
@@ -500,17 +505,15 @@ bool DiskCacheWriter::tryWriteToSegment(FileSegment & segment, char * data, size
     }
 }
 
-DiskCacheTouchBook::~DiskCacheTouchBook()
+DiskCacheReader::~DiskCacheReader()
 {
-    /// Deferred LRU bump of segments the probe's readers actually read, so a hit next to fresh
-    /// inserts isn't aged below them. Bump on the held `holder` directly - it pins exactly those
-    /// segments, so no re-`cache->get` (no re-lock, no re-hash). Sorted records let one linear sweep
-    /// bump each touched segment once. Runs at the LAST owner's death, after every reader is
-    /// released (the executor orders write-buffer destruction first).
-    if (touched.empty() || !holder)
+    /// Deferred LRU bump of the segments this reader served, so a hit next to fresh inserts isn't
+    /// aged below them. Bump on the held `holder` directly - it pins those segments, so no
+    /// re-`cache->get`. Sorted records let one linear sweep bump each segment once.
+    if (hits_to_touch.empty() || !holder)
         return;
 
-    std::sort(touched.begin(), touched.end(),
+    std::sort(hits_to_touch.begin(), hits_to_touch.end(),
         [](const ByteRange & a, const ByteRange & b) { return a.offset < b.offset; });
 
     try
@@ -529,11 +532,9 @@ DiskCacheTouchBook::~DiskCacheTouchBook()
             const size_t seg_start = seg_range.left + object_file_offset;
             const size_t seg_end = seg_range.right + 1 + object_file_offset;
 
-            /// Drop records lying entirely before this segment.
-            while (ti < touched.size() && touched[ti].end() <= seg_start)
+            while (ti < hits_to_touch.size() && hits_to_touch[ti].end() <= seg_start)
                 ++ti;
-            /// Bump once if the next record overlaps the segment.
-            if (ti < touched.size() && touched[ti].offset < seg_end)
+            if (ti < hits_to_touch.size() && hits_to_touch[ti].offset < seg_end)
                 segment->increasePriority();
         }
     }
@@ -598,7 +599,6 @@ VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
                     resolved_key, ask_lo_obj, ask_hi_obj - ask_lo_obj,
                     /*file_segments_limit=*/0, resolved_origin.user_id))
                 holder = std::shared_ptr<FileSegmentsHolder>(std::move(got));
-        auto book = std::make_shared<DiskCacheTouchBook>(holder, object_file_offset);
 
         /// The exact uncached extent, clamped to the ask; no rounding since nothing is filled here.
         auto emit_miss = [&](size_t lo_obj, size_t hi_obj)
@@ -629,7 +629,7 @@ VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
                 hit.range = ByteRange{seg_left + object_file_offset, committed_end - seg_left};
                 hit.reader = std::make_unique<DiskCacheReader>(
                     holder, hit.range, object_file_offset,
-                    local_throttler, &reader_anchors, book);
+                    local_throttler, &reader_anchors);
                 out.push_back(std::move(hit));
             }
             if (committed_end < seg_end)
@@ -654,7 +654,6 @@ VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
         /*file_segments_limit=*/0,
         resolved_origin,
         cache_settings.boundary_alignment));
-    auto book = std::make_shared<DiskCacheTouchBook>(shared_holder, object_file_offset);
 
     for (const auto & segment_ptr : *shared_holder)
     {
@@ -671,7 +670,7 @@ VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
             hit.range = ByteRange{seg_left + object_file_offset, committed_end - seg_left};
             hit.reader = std::make_unique<DiskCacheReader>(
                 shared_holder, hit.range, object_file_offset,
-                local_throttler, &reader_anchors, book);
+                local_throttler, &reader_anchors);
             out.push_back(std::move(hit));
         }
         if (committed_end < seg_end)
