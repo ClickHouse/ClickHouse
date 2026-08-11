@@ -827,7 +827,12 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
     /// inserted rows afterwards. A leftover LIMIT/OFFSET would pre-truncate the raw
     /// input stream, which steady-state inserts do not have, so the initialized state
     /// would diverge from live behavior. WITH TIES cannot survive without its LIMIT
-    /// (and its ORDER BY was replaced or removed above anyway).
+    /// (and its ORDER BY was replaced or removed above anyway). Plain DISTINCT is an
+    /// output-stage modifier too: after the select list was rewritten to raw source
+    /// columns above, it would deduplicate source rows before they reach the view query
+    /// (which applies the original DISTINCT itself). DISTINCT ON needs no extra handling:
+    /// the parser lowers it to LIMIT BY, which was cleared above.
+    modified_select.distinct = false;
     modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, {});
     modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, {});
     modified_select.limit_with_ties = false;
