@@ -537,7 +537,11 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
 
         /// The cached record already has this terminal state: it describes a local attempt
         /// (e.g. `rows_processed` of a file processed by this server), so keep it.
-        if (cached_state == terminal_state.state)
+        /// A cached `Failed` may describe an earlier retriable local attempt, so it is kept
+        /// only when its retry count matches the terminal `failed` node payload.
+        if (cached_state == terminal_state.state
+            && (terminal_state.state != FileStatus::State::Failed
+                || status->retries.load() == terminal_state.retries))
             continue;
 
         /// A locally owned `Processing` state is updated by its owner on commit.

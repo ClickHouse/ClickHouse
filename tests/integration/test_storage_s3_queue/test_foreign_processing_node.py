@@ -10,6 +10,7 @@ from helpers.s3_queue_common import (
     create_table,
     create_mv,
     generate_random_string,
+    put_s3_file_content,
 )
 
 
@@ -669,6 +670,95 @@ def test_failed_node_appearing_during_set_processing_in_ordered_mode(started_clu
         assert node.query(f"SELECT count() FROM {dst_table_name}").strip() == "0"
     finally:
         node.query(f"SYSTEM DISABLE FAILPOINT {SET_PROCESSING_PAUSE_FAILPOINT}")
+        node.query(
+            f"""
+        DROP TABLE IF EXISTS {dst_table_name};
+        DROP TABLE IF EXISTS {table_name};
+        """
+        )
+
+
+def test_terminal_failure_replaces_cached_retriable_local_failure(started_cluster):
+    """A cached retriable local `Failed` follows the terminal `failed` node of another processor.
+
+    `FileStatus::Failed` also describes retriable local attempts (`retries < loading_retries`).
+    When this server fails a file with retries to spare and another processor later exhausts
+    the retries, the write-back guards must not treat the equal cached state as the terminal
+    record: the cached exception and retries must be replaced with the `failed` node payload,
+    and the file must stop being retried locally.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_terminal_over_retriable_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    generate_random_files(started_cluster, files_path, 1, start_ind=0, row_num=1)
+
+    # A file this table cannot parse: every local attempt fails retriably.
+    bad_file = f"{files_path}/test_bad.csv"
+    put_s3_file_content(started_cluster, bad_file, b"unparsable,1,1\n")
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "s3queue_loading_retries": 100,
+            # Always check keeper, so that the terminal node is discovered promptly.
+            "s3queue_foreign_processing_node_cache_ttl_seconds": 0,
+        },
+    )
+
+    bad_node = node.query(f"SELECT sipHash64('{bad_file}')").strip()
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    try:
+        create_mv(node, table_name, dst_table_name)
+
+        def get_count():
+            return int(node.query(f"SELECT count() FROM {dst_table_name}").strip())
+
+        # The good file is ingested, the bad one keeps failing retriably.
+        run_with_retry(lambda x: x == 1, get_count)
+
+        def get_cached_record():
+            return node.query(
+                f"SELECT status, exception FROM system.s3queue_metadata_cache "
+                f"WHERE file_path LIKE '%{bad_file}'"
+            ).strip()
+
+        # The cached record describes a retriable local failure.
+        run_with_retry(lambda x: x.startswith("Failed\t"), get_cached_record)
+        assert "another processor" not in get_cached_record()
+
+        # Another processor exhausts the retries and commits the terminal `failed` node.
+        zk.ensure_path(f"{keeper_path}/failed")
+        zk.create(
+            f"{keeper_path}/failed/{bad_node}",
+            json.dumps(
+                {
+                    "file_path": bad_file,
+                    "last_processed_timestamp": int(time.time()),
+                    "last_exception": "Failed by another processor",
+                    "retries": 100,
+                    "processor_id": "0",
+                }
+            ).encode(),
+        )
+
+        # The cached record follows the terminal payload instead of keeping the
+        # stale retriable local exception.
+        run_with_retry(lambda x: x == "Failed\tFailed by another processor", get_cached_record)
+
+        # The file was never ingested.
+        assert get_count() == 1
+    finally:
         node.query(
             f"""
         DROP TABLE IF EXISTS {dst_table_name};

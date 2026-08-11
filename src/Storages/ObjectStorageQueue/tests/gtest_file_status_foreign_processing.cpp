@@ -227,6 +227,64 @@ void expectSetProcessingTerminalDiscoveryRefreshesWholeRecord()
         FAIL() << "The set-processing probe does not report the discovered terminal node metadata";
 }
 
+/// A cached `Failed` state of a retriable local attempt (`retries < loading_retries`) does
+/// not describe the terminal `failed` node written later by another processor which
+/// exhausted the retries: the equal-state guard must not keep the stale local record.
+template <typename Metadata>
+void expectTerminalFailureReplacesCachedRetriableLocalFailure()
+{
+    if constexpr (requires { typename Metadata::FileTerminalState; })
+    {
+        /// The dependent alias keeps this branch uninstantiated at the merge base.
+        using FS = typename Metadata::FileStatus;
+        using TerminalState = typename Metadata::FileTerminalState;
+        std::atomic<size_t> metadata_ref_count{0};
+
+        {
+            /// A retriable local failure, then another processor exhausts the retries.
+            auto file_status = std::make_shared<FS>("data/file.csv");
+            auto metadata = makeFileMetadata(file_status, metadata_ref_count);
+
+            file_status->onProcessing();
+            file_status->retries = 1;
+            file_status->onFailed("Retriable local failure");
+
+            metadata->afterSetProcessing(
+                /* success */ false,
+                FS::State::Failed,
+                TerminalState{FS::State::Failed, "Terminal foreign failure", 3});
+
+            ASSERT_EQ(file_status->state.load(), FS::State::Failed);
+            ASSERT_EQ(file_status->getException(), "Terminal foreign failure");
+            ASSERT_EQ(file_status->retries.load(), 3UL);
+        }
+
+        {
+            /// The local attempt was the terminal one: its record (with the per-attempt
+            /// data such as the processing times) is kept.
+            auto file_status = std::make_shared<FS>("data/file.csv");
+            auto metadata = makeFileMetadata(file_status, metadata_ref_count);
+
+            file_status->onProcessing();
+            file_status->retries = 3;
+            file_status->onFailed("Terminal local failure");
+            const auto end_time = file_status->processing_end_time.load();
+            ASSERT_NE(end_time, 0);
+
+            metadata->afterSetProcessing(
+                /* success */ false,
+                FS::State::Failed,
+                TerminalState{FS::State::Failed, "Terminal local failure", 3});
+
+            ASSERT_EQ(file_status->state.load(), FS::State::Failed);
+            ASSERT_EQ(file_status->getException(), "Terminal local failure");
+            ASSERT_EQ(file_status->processing_end_time.load(), end_time);
+        }
+    }
+    else
+        FAIL() << "The set-processing probe does not report the discovered terminal node metadata";
+}
+
 }
 
 TEST(ObjectStorageQueueFileStatus, ForeignTerminalStateReplacesDataOfPreviousLocalAttempt)
@@ -237,4 +295,9 @@ TEST(ObjectStorageQueueFileStatus, ForeignTerminalStateReplacesDataOfPreviousLoc
 TEST(ObjectStorageQueueFileStatus, SetProcessingTerminalDiscoveryRefreshesWholeRecord)
 {
     expectSetProcessingTerminalDiscoveryRefreshesWholeRecord<ObjectStorageQueueUnorderedFileMetadata>();
+}
+
+TEST(ObjectStorageQueueFileStatus, TerminalFailureReplacesCachedRetriableLocalFailure)
+{
+    expectTerminalFailureReplacesCachedRetriableLocalFailure<ObjectStorageQueueUnorderedFileMetadata>();
 }

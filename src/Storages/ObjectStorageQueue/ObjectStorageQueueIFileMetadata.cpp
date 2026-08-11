@@ -443,9 +443,14 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(
                 /// record, with the same guards as the listing pre-filter (see
                 /// `FileIterator::filterProcessableFiles`).
                 const auto cached_state = file_status->state.load();
-                if (cached_state == file_state.value())
+                if (cached_state == file_state.value()
+                    && (file_state.value() != FileStatus::State::Failed
+                        || !terminal_state.has_value()
+                        || file_status->retries.load() == terminal_state->retries))
                 {
                     /// The cached record already describes this terminal state (a local attempt).
+                    /// A cached `Failed` may describe an earlier retriable local attempt, so it
+                    /// is kept only when its retry count matches the `failed` node payload.
                 }
                 else if (cached_state == FileStatus::State::Processing && !file_status->isProcessingByAnotherProcessor())
                 {
