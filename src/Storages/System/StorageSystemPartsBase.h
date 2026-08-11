@@ -21,6 +21,10 @@ static constexpr size_t COLUMNS_CANCELLATION_CHECK_PERIOD = 128;
 /// result building slow enough for the tests of query cancellation and time limits.
 void slowDownSystemPartsEnumeration(const String & table_name);
 
+/// The same, but for the column-enumeration loops: sleeps once per
+/// `COLUMNS_CANCELLATION_CHECK_PERIOD` enumerated columns of a part.
+void slowDownSystemPartsColumnsEnumeration(const String & table_name, size_t column_position);
+
 struct StoragesInfo
 {
     StoragePtr storage = nullptr;

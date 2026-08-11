@@ -9,4 +9,6 @@ fast parts 1
 fast parts_columns 1
 fast projection_parts 1
 fast projection_parts_columns 1
+fast parts_columns_wide 1
+fast projection_parts_columns_wide 1
 fast dropped_tables_parts 1

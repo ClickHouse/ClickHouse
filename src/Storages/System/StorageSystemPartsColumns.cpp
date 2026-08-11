@@ -171,6 +171,7 @@ void StorageSystemPartsColumns::processNextStorage(
         for (const auto & column : part->getColumns())
         {
             ++column_position;
+            slowDownSystemPartsColumnsEnumeration(info.table, column_position);
             if (query_status && column_position % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && !query_status->checkTimeLimit())
             {
                 time_limit_exceeded = true;

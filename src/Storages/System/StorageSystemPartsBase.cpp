@@ -66,6 +66,18 @@ void slowDownSystemPartsEnumeration([[maybe_unused]] const String & table_name)
     });
 }
 
+void slowDownSystemPartsColumnsEnumeration([[maybe_unused]] const String & table_name, [[maybe_unused]] size_t column_position)
+{
+    fiu_do_on(FailPoints::slowdown_system_parts_enumeration,
+    {
+        /// Sleep at the same cadence as the cancellation checkpoints of the column-enumeration
+        /// loops, so that a test can prove with a timed assertion that those checkpoints stop
+        /// the eager result building on a table with many columns per part.
+        if (column_position % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && table_name.starts_with("t_slowdown_system_parts"))
+            sleepForMilliseconds(1000);
+    });
+}
+
 StoragesInfoStreamBase::StoragesInfoStreamBase(ContextPtr context)
     : query_id(context->getCurrentQueryId()), lock_timeout(std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds())), query_status(context->getProcessListElement()), next_row(0), rows(0)
 {
