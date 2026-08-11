@@ -685,7 +685,7 @@ Read data types in binary format instead of type names in Native input format
     DECLARE(UInt64, output_format_compression_level, 3, R"(
 Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`.
 
-Possible values: from `1` to `22`
+Possible values: from `1` to `22`. The accepted range depends on the compression method: `zstd` accepts `1` to `22`, `gzip` and `deflate` accept `1` to `12`, where levels above `9` are accepted for compatibility with 26.7 and are clamped to `9`, the maximum level supported by `zlib`.
 )", 0) \
     DECLARE(UInt64, output_format_compression_zstd_window_log, 0, R"(
 Can be used when the output compression method is `zstd`. If greater than `0`, this setting explicitly sets compression window size (power of `2`) and enables a long-range mode for zstd compression. This can help to achieve a better compression ratio.
