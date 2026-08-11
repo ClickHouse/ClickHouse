@@ -62,6 +62,11 @@ void addFromGeoColumn(BboxAccumulator & acc, const IColumn & col, size_t row)
 
 /// Try to extract the bounding box of a constant ActionsDAG COLUMN node
 /// containing a native CH geometry (Tuple/Array of Float64 tuples).
+/// Delegates to `tryExtractBboxFromColumn` (Common/GeoBbox.h) so that invalid
+/// polygons/multipolygons are rejected the same way as the Parquet geo-pruning
+/// path, rather than silently producing a bogus bbox that can prune away all
+/// granules and hide the "Polygon is not valid" exception `pointInPolygon`
+/// would otherwise throw at execute time.
 bool tryExtractConstGeoBbox(
     const ActionsDAG::Node * node,
     double & xmin, double & ymin,
@@ -70,20 +75,7 @@ bool tryExtractConstGeoBbox(
     if (!node->column || !node->is_deterministic_constant)
         return false;
 
-    const IColumn * raw = node->column.get();
-    if (const auto * const_col = typeid_cast<const ColumnConst *>(raw))
-        raw = &const_col->getDataColumn();
-
-    BboxAccumulator acc;
-    addFromGeoColumn(acc, *raw, 0);
-    if (!acc.found)
-        return false;
-
-    xmin = acc.xmin;
-    ymin = acc.ymin;
-    xmax = acc.xmax;
-    ymax = acc.ymax;
-    return true;
+    return tryExtractBboxFromColumn(*node->column, xmin, ymin, xmax, ymax);
 }
 
 }
