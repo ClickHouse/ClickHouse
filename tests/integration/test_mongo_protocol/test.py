@@ -1519,3 +1519,54 @@ def test_dialect_writes_the_embedded_documents_the_wire_path_creates(started_clu
     }
 
     collection.drop()
+
+
+def test_create_index_rejects_unsupported_semantics(started_cluster):
+    """`createIndexes` implements one thing: a single-field `bloom_filter` data skipping index.
+    An index whose semantics the server cannot honor - `unique`, a compound key, a TTL, a
+    special index type - must be an error rather than an acknowledged no-op, or duplicate
+    writes would start succeeding after a migration that asked for a unique index."""
+    client = make_client()
+    collection = client["db"]["index_options"]
+    collection.drop()
+    collection.insert_one({"email": "a@b.c", "a": 1, "b": 2})
+
+    with pytest.raises(pymongo.errors.OperationFailure) as error:
+        collection.create_index("email", unique=True)
+    assert "unique" in str(error.value)
+
+    with pytest.raises(pymongo.errors.OperationFailure) as error:
+        collection.create_index([("a", 1), ("b", 1)])
+    assert "Compound indexes" in str(error.value)
+
+    with pytest.raises(pymongo.errors.OperationFailure) as error:
+        collection.create_index([("email", "text")])
+    assert "must be 1 or -1" in str(error.value)
+
+    with pytest.raises(pymongo.errors.OperationFailure):
+        collection.create_index("email", expireAfterSeconds=3600)
+
+    collection.create_index([("email", -1)])
+
+    collection.drop()
+
+
+def test_find_sort_rejects_invalid_directions(started_cluster):
+    """The direction of a `find` sort must be 1 or -1, as in MongoDB: `0`, another integer, a
+    fraction or a string orders nothing and must be a controlled error rather than a silently
+    accepted or an unvalidated value."""
+    client = make_client()
+    database = client["db"]
+    collection = database["sort_directions"]
+    collection.drop()
+    collection.insert_many([{"id": 2}, {"id": 1}])
+
+    for direction in (0, 5, 1.5, "asc"):
+        with pytest.raises(pymongo.errors.OperationFailure) as error:
+            database.command({"find": "sort_directions", "sort": {"id": direction}})
+        assert "must be 1 or -1" in str(error.value)
+
+    ids = [document["id"] for document in collection.find({}).sort("id", -1)]
+    assert ids == [2, 1]
+
+    collection.drop()
