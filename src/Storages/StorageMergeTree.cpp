@@ -1640,6 +1640,28 @@ void StorageMergeTree::loadMutations()
         }
     }
 
+    /// Upgrade legacy partition-scoped mutation files after the directory scan (creating
+    /// files while iterating the directory could confuse the iterator). Once upgraded, the
+    /// file carries the resolved partition scope, so later loads (and the mutation executor)
+    /// never have to decode the `IN PARTITION` literal through the table metadata again --
+    /// decoding it again can throw after a safe partition key type change (e.g.
+    /// `Enum8 -> Int8`), making the table unloadable.
+    for (auto & [block_number, entry] : current_mutations_by_version)
+    {
+        if (!entry.needs_file_upgrade)
+            continue;
+
+        if (entry.disk->isReadOnly() || entry.disk->isWriteOnce())
+        {
+            LOG_WARNING(log, "Cannot upgrade legacy mutation file {} to the current format: disk {} is not writable",
+                entry.file_name, entry.disk->getName());
+            continue;
+        }
+
+        LOG_INFO(log, "Upgrading legacy mutation file {} to persist the resolved partition scope", entry.file_name);
+        entry.upgradeFileWithResolvedPartitionScope(getContext()->getWriteSettings());
+    }
+
     if (!current_mutations_by_version.empty())
         increment.value = std::max(increment.value.load(), current_mutations_by_version.rbegin()->first);
 }

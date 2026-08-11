@@ -252,7 +252,48 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
     assertEOF(*buf);
 
     if (!partition_ids_loaded)
+    {
         partition_ids = storage_->resolvePartitionIdsForCommands(*commands, context_);
+
+        /// The resolution above decoded the `IN PARTITION` literals of the commands through
+        /// the current table metadata. That is only guaranteed to work while the partition
+        /// key stays the same as when the mutation was created, so the file has to be
+        /// upgraded to persist the resolved scope (see `upgradeFileWithResolvedPartitionScope`).
+        /// Files whose commands are not partition-scoped decode nothing and need no upgrade.
+        for (const auto & command : *commands)
+            if (command.resolved_partition_id)
+                needs_file_upgrade = true;
+    }
+}
+
+void MergeTreeMutationEntry::upgradeFileWithResolvedPartitionScope(const WriteSettings & settings)
+{
+    chassert(needs_file_upgrade);
+
+    /// Write the replacement into a temporary file first: a crash in the middle of a plain
+    /// rewrite would corrupt the file and make the table unloadable. Leftover temporary
+    /// files are removed by `StorageMergeTree::loadMutations`.
+    String tmp_file_name = "tmp_mutation_upgrade_" + toString(block_number) + ".txt";
+    auto out = disk->writeFile(std::filesystem::path(path_prefix) / tmp_file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
+    *out << "format version: 1\n"
+        << "create time: " << LocalDateTime(create_time, DateLUT::serverTimezoneInstance()) << "\n";
+    *out << "commands: ";
+    commands->writeText(*out, /* with_pure_metadata_commands = */ false);
+    *out << "\n";
+    writePartitionIdsOfCommands(*commands, *out);
+    if (!tid.isNonTransactional())
+    {
+        *out << "tid: ";
+        TransactionID::write(tid, *out);
+        *out << "\n";
+        if (csn != Tx::UnknownCSN)
+            *out << "csn: " << csn << "\n";
+    }
+    out->finalize();
+    out->sync();
+
+    disk->replaceFile(std::filesystem::path(path_prefix) / tmp_file_name, std::filesystem::path(path_prefix) / file_name);
+    needs_file_upgrade = false;
 }
 
 MergeTreeMutationEntry::MergeTreeMutationEntry(MergeTreeMutationEntry && other) noexcept
@@ -271,6 +312,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MergeTreeMutationEntry && other) 
     , latest_fail_reason(std::move(other.latest_fail_reason))
     , latest_fail_error_code_name(std::move(other.latest_fail_error_code_name))
     , partition_ids(std::move(other.partition_ids))
+    , needs_file_upgrade(std::exchange(other.needs_file_upgrade, false))
     , tid(other.tid)
     , csn(other.csn)
 {

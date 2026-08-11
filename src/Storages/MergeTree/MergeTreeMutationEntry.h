@@ -51,6 +51,14 @@ struct MergeTreeMutationEntry
     /// If empty, applied to all partitions.
     PartitionIds partition_ids;
 
+    /// True if the entry was loaded from a legacy `mutation_*.txt` file that has no
+    /// persisted `partition ids:` line although some of its commands are partition-scoped.
+    /// Such a file has to be upgraded to the current format after loading (see
+    /// `upgradeFileWithResolvedPartitionScope`), otherwise every load resolves the
+    /// `IN PARTITION` literal through the current table metadata again, which can throw
+    /// after a safe partition key type change and make the table unloadable.
+    bool needs_file_upgrade = false;
+
     /// ID of transaction which has created mutation.
     TransactionID tid = Tx::NonTransactionalTID;
     /// CSN of transaction which has created mutation
@@ -73,6 +81,10 @@ struct MergeTreeMutationEntry
     void removeFile();
 
     void writeCSN(CSN csn_);
+
+    /// Rewrite a legacy on-disk file (see `needs_file_upgrade`) in the current format,
+    /// with the resolved partition scope of the commands persisted next to them.
+    void upgradeFileWithResolvedPartitionScope(const WriteSettings & settings);
 
     std::shared_ptr<const IBackupEntry> backup() const;
 
