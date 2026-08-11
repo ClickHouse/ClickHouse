@@ -1050,6 +1050,20 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
+# lldb's shared-library-event breakpoint is a software int3 in the inferior's
+# text, and only the debugger that wrote it restores it. Dropping it keeps the
+# server's text intact however the debugger ends. Selected by symbol: internal
+# breakpoint ids are insertion-ordered, and the JIT and sanitizer hooks own the
+# low ones.
+LLDB_DROP_RENDEZVOUS_BREAKPOINT = (
+    "script t=lldb.target; "
+    "[t.BreakpointDelete(-i) for i in range(1, 16) "
+    "if t.FindBreakpointByID(-i).IsValid() "
+    'and "dl_debug_state" in str(t.FindBreakpointByID(-i)'
+    ".GetLocationAtIndex(0).GetAddress().GetSymbol().GetName())]"
+)
+
+
 # collect server stacktraces using lldb (used uniformly on Linux and macOS)
 def get_stacktraces_from_lldb(pid):
     # 30s ceiling: `thread backtrace all` should finish in seconds even on a
@@ -1069,7 +1083,9 @@ def get_stacktraces_from_lldb(pid):
     # print_c_stacktraces save the full dump to c_stacktraces.log and preview
     # it, instead of shell_get_output flooding stderr with nothing attached.
     return shell_get_output(
-        f"{sudo}{lldb} --batch -p {pid} -o 'thread backtrace all' -o 'detach' -o 'quit'",
+        f"{sudo}{lldb} --batch -p {pid}"
+        f" -o '{LLDB_DROP_RENDEZVOUS_BREAKPOINT}'"
+        " -o 'thread backtrace all' -o 'detach' -o 'quit'",
         timeout=30,
         keep_output_on_error=True,
     )

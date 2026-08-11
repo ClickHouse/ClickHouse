@@ -26,9 +26,13 @@ import argparse
 import io
 import os
 import runpy
+import shutil
+import subprocess
 from collections import Counter
 from contextlib import redirect_stdout
 from pathlib import Path
+
+import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _CLICKHOUSE_TEST = str(_REPO_ROOT / "tests" / "clickhouse-test")
@@ -149,6 +153,85 @@ def test_get_stacktraces_tolerates_repeated_client_options():
 
     assert dump, "no stacktraces collected: the client rejected the command line"
     assert "thread_name" in dump, dump[:2000]
+
+
+def _lldb_collector_command(ct, pid):
+    # The command string get_stacktraces_from_lldb would run, captured instead
+    # of executed.
+    captured = {}
+
+    def capture(cmd, timeout=None, keep_output_on_error=False):
+        captured["cmd"] = cmd
+        return ""
+
+    saved = ct["get_stacktraces_from_lldb"].__globals__["shell_get_output"]
+    ct["get_stacktraces_from_lldb"].__globals__["shell_get_output"] = capture
+    try:
+        ct["get_stacktraces_from_lldb"](pid)
+    finally:
+        ct["get_stacktraces_from_lldb"].__globals__["shell_get_output"] = saved
+    return captured["cmd"]
+
+
+def _internal_breakpoints(command):
+    # Swap the expensive backtrace for the observation, so the run is quick and
+    # the only thing measured is which internal breakpoints survive.
+    command = command.replace(
+        "-o 'thread backtrace all'", "-o 'breakpoint list --internal'"
+    )
+    done = subprocess.run(
+        command,
+        shell=True,
+        executable="/bin/bash",
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+    )
+    return done.stdout + done.stderr
+
+
+def test_lldb_collector_drops_the_loader_rendezvous_breakpoint():
+    # lldb's shared-library-event breakpoint is a software int3 in the running
+    # server's text.  Only the debugger that wrote it restores it, so a debugger
+    # killed mid-backtrace leaves it behind and the next dlopen in the server
+    # raises SIGTRAP, which the daemon reports as a fatal signal.
+    ct = _load_clickhouse_test()
+    if not shutil.which("lldb"):
+        pytest.skip("lldb is not installed")
+    pid = ct["get_server_pid"](_make_args())
+    assert pid, "no server pid"
+
+    command = _lldb_collector_command(ct, pid)
+    drop = ct["LLDB_DROP_RENDEZVOUS_BREAKPOINT"]
+    assert f" -o '{drop}'" in command, command
+    # Ordering is load-bearing: after the backtrace the breakpoint has already
+    # existed for the whole window in which the debugger can be killed.
+    assert command.index(drop) < command.index("thread backtrace all"), command
+
+    with_drop = _internal_breakpoints(command)
+    without_drop = _internal_breakpoints(command.replace(f" -o '{drop}'", "", 1))
+
+    # Premise: both arms must have attached, or neither observation means
+    # anything.  Both must also have detached, since the arm that keeps the
+    # breakpoint relies on the detach to restore the byte and must not leave the
+    # very defect under test in a live server.
+    for arm, out in (("with", with_drop), ("without", without_drop)):
+        assert f"Process {pid} stopped" in out, (arm, out[:4000])
+        assert f"Process {pid} detached" in out, (arm, out[:4000])
+    # And the breakpoint must be present without the drop, or the arms would
+    # agree for lack of anything to remove.
+    assert "Kind: shared-library-event" in without_drop, without_drop[:4000]
+
+    assert "Kind: shared-library-event" not in with_drop, with_drop[:4000]
+    # Selecting by symbol rather than by id: the JIT and sanitizer hooks take
+    # the low internal ids, so exactly one breakpoint may disappear.
+    kept = [line for line in without_drop.splitlines() if line.startswith("Kind: ")]
+    remaining = [line for line in with_drop.splitlines() if line.startswith("Kind: ")]
+    assert remaining == [k for k in kept if "shared-library-event" not in k], (
+        remaining,
+        kept,
+    )
 
 
 def test_is_asan_build_uses_collected_flags():
