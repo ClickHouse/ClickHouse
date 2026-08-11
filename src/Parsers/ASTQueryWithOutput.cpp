@@ -37,34 +37,22 @@ void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
     /// with a `BAD_ARGUMENTS` parse error instead of reaching a logical exception later,
     /// and so it cannot build an AST that the SQL parser could never produce.
     out_file = r.readChildOfType<ASTLiteral>("out_file");
-    if (out_file)
-    {
-        /// `out_file` is parsed by `ParserStringLiteral`.
-        if (out_file->as<ASTLiteral &>().value.getType() != Field::Types::String)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Output 'out_file' must be a string literal during AST JSON deserialization");
-        children.push_back(out_file);
-    }
+    /// `out_file` is parsed by `ParserStringLiteral`.
+    if (out_file && out_file->as<ASTLiteral &>().value.getType() != Field::Types::String)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Output 'out_file' must be a string literal during AST JSON deserialization");
 
     /// `format_ast` is parsed by `ParserIdentifier`.
     format_ast = r.readChildOfType<ASTIdentifier>("format_ast");
-    if (format_ast)
-        children.push_back(format_ast);
 
     /// `settings_ast` is parsed by `ParserSetQuery`.
     settings_ast = r.readChildOfType<ASTSetQuery>("settings_ast");
-    if (settings_ast)
-        children.push_back(settings_ast);
 
     compression = r.readChildOfType<ASTLiteral>("compression");
-    if (compression)
-    {
-        /// `compression` is parsed by `ParserStringLiteral`.
-        if (compression->as<ASTLiteral &>().value.getType() != Field::Types::String)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Output 'compression' must be a string literal during AST JSON deserialization");
-        children.push_back(compression);
-    }
+    /// `compression` is parsed by `ParserStringLiteral`.
+    if (compression && compression->as<ASTLiteral &>().value.getType() != Field::Types::String)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Output 'compression' must be a string literal during AST JSON deserialization");
 
     compression_level = r.readChildOfType<ASTLiteral>("compression_level");
     if (compression_level)
@@ -74,8 +62,13 @@ void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
         if (type != Field::Types::UInt64 && type != Field::Types::Int64 && type != Field::Types::Float64)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Output 'compression_level' must be a numeric literal during AST JSON deserialization");
-        children.push_back(compression_level);
     }
+
+    /// Append the children in the same canonical order the parser and `cloneOutputOptions`
+    /// use, so a JSON round-trip preserves the child order and therefore the tree hash.
+    for (auto member : output_option_members)
+        if (this->*member)
+            children.push_back(this->*member);
 
     setIsOutfileAppend(r.getBool("is_outfile_append"));
     setIsOutfileTruncate(r.getBool("is_outfile_truncate"));

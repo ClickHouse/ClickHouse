@@ -153,6 +153,23 @@ TEST(TreeHashCompleteness, OutputOptionFlagsAreSignificant)
     EXPECT_EQ(hashOfJSONRoundTrip("SELECT 1 INTO OUTFILE 'x' APPEND"), hashOf("SELECT 1 INTO OUTFILE 'x' APPEND"));
 }
 
+TEST(TreeHashCompleteness, OutputOptionsJSONRoundTripKeepsChildOrder)
+{
+    /// `readOutputOptionsJSON` must append the output-option children in the canonical
+    /// `output_option_members` order (`out_file`, `compression`, `compression_level`,
+    /// `format_ast`, `settings_ast`), the order the parser and `cloneOutputOptions` use;
+    /// otherwise `COMPRESSION` combined with `FORMAT` / `SETTINGS` reorders `children`
+    /// across a JSON round-trip and the hash diverges even though the SQL did not change.
+    const std::string with_format = "SELECT 1 INTO OUTFILE 'x' COMPRESSION 'gz' FORMAT JSONEachRow";
+    EXPECT_EQ(hashOfJSONRoundTrip(with_format), hashOf(with_format));
+
+    const std::string with_settings = "SELECT 1 INTO OUTFILE 'x' COMPRESSION 'gz' SETTINGS max_threads = 1";
+    EXPECT_EQ(hashOfJSONRoundTrip(with_settings), hashOf(with_settings));
+
+    const std::string with_all = "SELECT 1 INTO OUTFILE 'x' COMPRESSION 'gz' LEVEL 3 FORMAT JSONEachRow SETTINGS max_threads = 1";
+    EXPECT_EQ(hashOfJSONRoundTrip(with_all), hashOf(with_all));
+}
+
 TEST(TreeHashCompleteness, TemporaryFlagIsSignificant)
 {
     /// `TEMPORARY` lives in `ASTQueryWithTableAndOutput`'s flags, so it is not a child either, and it
