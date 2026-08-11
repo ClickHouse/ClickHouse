@@ -82,7 +82,9 @@ def test_cloud_not_supported_badges_link_to_published_page():
     assert slug is not None
     anchor = "list-of-unsupported-features"
     assert f"{{#{anchor}}}" in page
-    expected_href = f'href="/docs{slug.group(1)}#{anchor}"'
+    expected_href = (
+        f'href="https://clickhouse.com/docs{slug.group(1)}#{anchor}"'
+    )
 
     snippets = REPO_ROOT / "docs/snippets"
     components = list(
