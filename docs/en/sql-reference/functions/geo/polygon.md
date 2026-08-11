@@ -11,7 +11,6 @@ doc_type: 'reference'
 Returns a WKT (Well Known Text) geometric object from various [Geo Data Types](../../data-types/geo.md). Supported WKT objects are:
 
 - POINT
-- MULTIPOINT
 - POLYGON
 - MULTIPOLYGON
 - LINESTRING
@@ -28,7 +27,6 @@ WKT(geo_data)
 `geo_data` can be one of the following [Geo Data Types](../../data-types/geo.md) or their underlying primitive types:
 
 - [Point](../../data-types/geo.md#point)
-- [MultiPoint](../../data-types/geo.md#multipoint)
 - [Ring](../../data-types/geo.md#ring)
 - [Polygon](../../data-types/geo.md#polygon)
 - [MultiPolygon](../../data-types/geo.md#multipolygon)
@@ -38,7 +36,6 @@ WKT(geo_data)
 **Returned value**
 
 - WKT geometric object `POINT` is returned for a Point.
-- WKT geometric object `MULTIPOINT` is returned for a MultiPoint.
 - WKT geometric object `POLYGON` is returned for a Polygon
 - WKT geometric object `MULTIPOLYGON` is returned for a MultiPolygon.
 - WKT geometric object `LINESTRING` is returned for a LineString.
@@ -206,34 +203,6 @@ SELECT readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3), (4 4, 5 5, 6 6)
 
 ```response
 [[(1,1),(2,2),(3,3)],[(4,4),(5,5),(6,6)]]
-```
-
-## readWKTMultiPoint {#readwktmultipoint}
-
-Parses a Well-Known Text (WKT) representation of a MultiPoint geometry and returns it in the internal ClickHouse format.
-
-### Syntax {#syntax-readwktmultipoint}
-
-```sql
-readWKTMultiPoint(wkt_string)
-```
-
-### Arguments {#arguments-readwktmultipoint}
-
-- `wkt_string`: The input WKT string representing a MultiPoint geometry.
-
-### Returned value {#returned-value-readwktmultipoint}
-
-The function returns a ClickHouse internal representation of the multipoint geometry.
-
-### Example {#example-readwktmultipoint}
-
-```sql
-SELECT readWKTMultiPoint('MULTIPOINT (1 1, 2 2, 3 3)');
-```
-
-```response
-[(1,1),(2,2),(3,3)]
 ```
 
 ## readWKTRing {#readwktring}
@@ -414,34 +383,6 @@ SELECT readWKBMultiLineString(unhex('0105000000020000000102000000030000000000000
 ### Returned value {#returned-value-11}
 
 UInt8, 0 for false, 1 for true
-
-## readWKBMultiPoint {#readwkbmultipoint}
-
-Parses a Well-Known Binary (WKB) representation of a MultiPoint geometry and returns it in the internal ClickHouse format.
-
-### Syntax {#syntax-readwkbmultipoint}
-
-```sql
-readWKBMultiPoint(wkb_string)
-```
-
-### Arguments {#arguments-readwkbmultipoint}
-
-- `wkb_string`: The input WKB string representing a MultiPoint geometry.
-
-### Returned value {#returned-value-readwkbmultipoint}
-
-The function returns a ClickHouse internal representation of the multipoint geometry.
-
-### Example {#example-readwkbmultipoint}
-
-```sql
-SELECT readWKBMultiPoint(unhex('0104000000020000000101000000000000000000f03f000000000000f03f010100000000000000000000400000000000000040'));
-```
-
-```response
-[(1,1),(2,2)]
-```
 
 ## polygonsDistanceSpherical {#polygonsdistancespherical}
 
@@ -629,60 +570,6 @@ SELECT polygonsIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535
 Two polygons
 
 ### Returned value {#returned-value-intersects-spherical}
-
-UInt8, 0 for false, 1 for true
-
-## geometryIntersectCartesian {#geometryintersectcartesian}
-
-Returns true if two geometries intersect (share any common point, line or area).
-
-Unlike [`polygonsIntersectCartesian`](#polygonsintersectcartesian), it accepts any geometry data type
-(`Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`), including the common
-[`Geometry`](../../data-types/geo.md#geometry) type, and the two arguments may be of different types.
-
-Coordinates are in the Cartesian coordinate system.
-
-### Example {#example-geometry-intersects-cartesian}
-
-```sql
-SELECT geometryIntersectCartesian([(2., 2.), (2., 3.), (3., 3.), (3., 2.)]::Ring, [(1., 1.), (1., 4.), (4., 4.), (4., 1.)]::Ring)
-```
-```response
-1
-```
-
-### Input parameters {#input-parameters-geometry-intersects-cartesian}
-
-Two geometries of any geometry data type (or `Geometry`).
-
-### Returned value {#returned-value-geometry-intersects-cartesian}
-
-UInt8, 0 for false, 1 for true
-
-## geometryIntersectSpherical {#geometryintersectspherical}
-
-Returns true if two geometries intersect (share any common point, line or area).
-
-Unlike [`polygonsIntersectSpherical`](#polygonsintersectspherical), it accepts any geometry data type
-(`Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`), including the common
-[`Geometry`](../../data-types/geo.md#geometry) type, and the two arguments may be of different types.
-
-Coordinates are interpreted as being on an ideal sphere.
-
-### Example {#example-geometry-intersects-spherical}
-
-```sql
-SELECT geometryIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]]::MultiPolygon, (4.36, 50.85)::Point)
-```
-```response
-1
-```
-
-### Input parameters {#input-parameters-geometry-intersects-spherical}
-
-Two geometries of any geometry data type (or `Geometry`).
-
-### Returned value {#returned-value-geometry-intersects-spherical}
 
 UInt8, 0 for false, 1 for true
 

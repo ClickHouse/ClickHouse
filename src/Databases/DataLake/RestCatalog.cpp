@@ -3,7 +3,6 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/Exception.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/config_version.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
@@ -59,7 +58,6 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int FAULT_INJECTED;
-    extern const int ACCESS_DENIED;
 }
 
 namespace DB::Setting
@@ -657,8 +655,7 @@ BigLakeCatalog::BigLakeCatalog(
     const std::string & google_adc_client_secret_,
     const std::string & google_adc_refresh_token_,
     const std::string & google_adc_quota_project_id_,
-    DB::ContextPtr context_,
-    bool allow_server_credentials_in_user_queries_)
+    DB::ContextPtr context_)
     : RestCatalog(warehouse_, base_url_, "", "", false, context_)
     , google_project_id(google_project_id_)
     , google_service_account(google_service_account_)
@@ -667,7 +664,6 @@ BigLakeCatalog::BigLakeCatalog(
     , google_adc_client_secret(google_adc_client_secret_)
     , google_adc_refresh_token(google_adc_refresh_token_)
     , google_adc_quota_project_id(google_adc_quota_project_id_)
-    , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
 {
     update_token_if_expired = true;
     // Get token before loading config so getAuthHeaders() can work
@@ -734,29 +730,23 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessTokenFromRefreshToken() con
 
 AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
 {
-    const auto & context = getContext();
-
-    /// An explicit Application Default Credentials triple is a user-supplied credential, so it is honored.
-    /// Fail closed if it does not work: do not fall back to the server's GCP metadata service, which would
-    /// mint a token with the server's own identity.
     if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
-        return retrieveGoogleCloudAccessTokenFromRefreshToken();
+    {
+        try
+        {
+            return retrieveGoogleCloudAccessTokenFromRefreshToken();
+        }
+        catch (const DB::Exception & e)
+        {
+            LOG_DEBUG(log, "Failed to use ADC credentials, falling back to metadata service: {}", e.what());
+        }
+    }
 
-    /// Otherwise the token comes from the GCP metadata service, i.e. the server's own (ambient) identity.
-    /// S3/GCS access that originates from user SQL must not use it (see shouldRestrictUserQueryS3Credentials),
-    /// unless that was allowed when the database was created. The context here is the global one, whose live
-    /// setting never reflects the creating session, so pass the value captured at CREATE time.
-    if (context->shouldRestrictUserQueryS3Credentials(allow_server_credentials_in_user_queries))
-        throw DB::Exception(
-            DB::ErrorCodes::ACCESS_DENIED,
-            "BigLake catalog access from user queries is not allowed to mint a token from the server's GCP "
-            "metadata service. Provide an explicit Google ADC triple (google_adc_client_id, "
-            "google_adc_client_secret, google_adc_refresh_token), or enable the setting "
-            "`s3_allow_server_credentials_in_user_queries`.");
-
-    /// GCP metadata service (works inside GCP infrastructure)
+    /// Fallback to GCP metadata service (works inside GCP infrastructure)
     /// https://cloud.google.com/compute/docs/metadata/overview
     static constexpr auto DEFAULT_REQUEST_TOKEN_PATH = "/computeMetadata/v1/instance/service-accounts";
+
+    const auto & context = getContext();
 
     const auto allowed_metadata_hosts = getAllowedBigLakeMetadataServiceHosts(context->getConfigRef());
     if (allowed_metadata_hosts.empty())
@@ -903,9 +893,11 @@ bool RestCatalog::empty() const
     {
         if (found_table)
             return true;
-        const auto tables = listTablesInNamespace(namespace_name, /* limit */1);
+
+        const auto tables = getTables(namespace_name, /* limit */1);
         if (!tables.empty())
             found_table = true;
+
         return found_table;
     };
 
@@ -915,7 +907,7 @@ bool RestCatalog::empty() const
     return !found_table;
 }
 
-CatalogTables RestCatalog::getTables() const
+DB::Names RestCatalog::getTables() const
 {
     auto & pool = getContext()->getIcebergCatalogThreadpool();
     DB::Names tables;
@@ -930,7 +922,7 @@ CatalogTables RestCatalog::getTables() const
             runner.enqueueAndKeepTrack(
             [=, &tables, &mutex, this]
             {
-                auto tables_in_namespace = listTablesInNamespace(current_namespace);
+                auto tables_in_namespace = getTables(current_namespace);
                 std::lock_guard lock(mutex);
                 std::move(tables_in_namespace.begin(), tables_in_namespace.end(), std::back_inserter(tables));
             });
@@ -946,36 +938,7 @@ CatalogTables RestCatalog::getTables() const
         runner.waitForAllToFinishAndRethrowFirstError();
     }
 
-    /// A REST catalog is Iceberg-only, so every listed table is readable.
-    CatalogTables result;
-    result.reserve(tables.size());
-    for (auto & name : tables)
-        result.push_back(CatalogTable{.name = std::move(name)});
-    return result;
-}
-
-RestCatalog::Namespaces RestCatalog::getNamespaces() const
-{
-    /// Enumerate the whole namespace tree (every node at every level). Used by
-    /// the `getTables(const TableNameFilter &)` namespace push-down.
-    Namespaces namespaces;
-    getNamespacesRecursive(
-        /* base_namespace */"", /// Empty base namespace means starting from root.
-        namespaces,
-        /* stop_condition */{},
-        /* execute_func */{});
-    return namespaces;
-}
-
-CatalogTables RestCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
-{
-    /// A REST catalog is Iceberg-only, so every listed table is readable.
-    CatalogTables result;
-    auto names = listTablesInNamespace(namespace_name);
-    result.reserve(names.size());
-    for (auto & name : names)
-        result.push_back(CatalogTable{.name = std::move(name)});
-    return result;
+    return tables;
 }
 
 void RestCatalog::getNamespacesRecursive(
@@ -986,7 +949,7 @@ void RestCatalog::getNamespacesRecursive(
 {
     checkStackSize();
 
-    auto namespaces = listChildNamespaces(base_namespace);
+    auto namespaces = getNamespaces(base_namespace);
     result.reserve(result.size() + namespaces.size());
     result.insert(result.end(), namespaces.begin(), namespaces.end());
 
@@ -1020,17 +983,7 @@ Poco::URI::QueryParameters RestCatalog::createParentNamespaceParams(const std::s
     return {{"parent", parent_param}};
 }
 
-bool RestCatalog::hasFlatNamespaces() const
-{
-    /// Catalogs whose namespaces are single-level and which ignore the `parent` filter when listing
-    /// namespaces. For these, sub-namespace listing is skipped (see `parseNamespaces`) so that an echo
-    /// of the parent is not turned into a fake child, which would otherwise recurse without bound.
-    const auto type = getCatalogType();
-    return type == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
-        || type == DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING;
-}
-
-RestCatalog::Namespaces RestCatalog::listChildNamespaces(const std::string & base_namespace) const
+RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_namespace) const
 {
     const auto state_snapshot = state.get();
 
@@ -1141,13 +1094,11 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
 
             const int idx = static_cast<int>(current_namespace_array->size()) - 1;
             const auto current_namespace = current_namespace_array->get(idx).extract<String>();
-            /// Some catalogs have flat (single-level) namespaces and do not support multi-level ones:
-            /// BigLake, and Databricks Delta Sharing (share -> namespace/schema -> table). When asked
-            /// for sub-namespaces of a non-empty parent (via ?parent=X) they ignore the filter and
-            /// return other top-level namespaces instead. Skip all sub-namespace results to avoid
-            /// constructing fake multi-level paths like "ns1.ns2" (and, for BigLake, an HTTP 400) and,
-            /// in turn, the unbounded recursion that fake children would cause in getNamespacesRecursive.
-            if (hasFlatNamespaces() && !base_namespace.empty())
+            /// BigLake does not support multi-level namespaces. When asked for sub-namespaces of
+            /// a non-empty parent (via ?parent=X), BigLake ignores the filter and returns other
+            /// top-level namespaces instead. Skip all sub-namespace results to avoid constructing
+            /// fake multi-level paths like "ns1.ns2" that BigLake will reject with HTTP 400.
+            if (getCatalogType() == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE && !base_namespace.empty())
             {
                 continue;
             }
@@ -1161,13 +1112,17 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
         /// Iceberg REST OpenAPI spec: response carries `next-page-token` (kebab-case).
         /// Empty / null / missing token all mean "no more pages".
         ///
-        /// Flat-namespace short-circuit: when the skip above drops every returned entry (because a
-        /// flat-namespace catalog ignores `parent` and returns unrelated top-level namespaces),
-        /// continuing pagination just burns O(pages) REST calls per parent namespace without ever
-        /// contributing to the result. Treat the first page as terminal by leaving `next_page_token`
-        /// empty (already cleared at function entry) so the outer `listChildNamespaces` loop returns immediately.
-        const bool flat_namespace_drops_all_entries = hasFlatNamespaces() && !base_namespace.empty();
-        if (!flat_namespace_drops_all_entries
+        /// BigLake-non-empty-base-namespace short-circuit: when the BigLake quirk
+        /// above drops every returned entry (because BigLake ignores `parent`
+        /// and returns unrelated top-level namespaces), continuing pagination
+        /// just burns O(pages) REST calls per parent namespace without ever
+        /// contributing to the result. Treat the first page as terminal by
+        /// leaving `next_page_token` empty (already cleared at function entry)
+        /// so the outer `getNamespaces` loop returns immediately.
+        const bool biglake_drops_all_entries
+            = getCatalogType() == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
+            && !base_namespace.empty();
+        if (!biglake_drops_all_entries
             && object->has("next-page-token")
             && !object->isNull("next-page-token"))
         {
@@ -1183,7 +1138,7 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
     }
 }
 
-DB::Names RestCatalog::listTablesInNamespace(const std::string & base_namespace, size_t limit) const
+DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limit) const
 {
     const auto state_snapshot = state.get();
 
@@ -1308,10 +1263,14 @@ bool RestCatalog::tryGetTableMetadata(
     {
         return getTableMetadataImpl(namespace_name, table_name, result);
     }
-    catch (const DB::Exception & ex)
+    catch (const DB::HTTPException & ex)
     {
-        LOG_DEBUG(log, "tryGetTableMetadata response: {}", ex.what());
-        return false;
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+        {
+            LOG_DEBUG(log, "Table {}.{} does not exist: {}", namespace_name, table_name, ex.displayText());
+            return false;
+        }
+        throw;
     }
 }
 
@@ -1593,72 +1552,8 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     {
         sendRequest(*state_snapshot, endpoint, request_body);
     }
-    catch (const DB::HTTPException & ex)
+    catch (const DB::HTTPException &)
     {
-        LOG_TRACE(log, "Unsucceeded request {}", ex.what());
-        return false;
-    }
-    return true;
-}
-
-bool RestCatalog::updateSchema(
-    const String & namespace_name,
-    const String & table_name,
-    const String & /*new_metadata_path*/,
-    Poco::JSON::Object::Ptr new_schema,
-    Int32 previous_schema_id) const
-{
-    const auto state_snapshot = state.get();
-    const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
-
-    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
-    {
-        Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
-        identifier->set("name", table_name);
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
-        identifier->set("namespace", namespaces);
-
-        request_body->set("identifier", identifier);
-    }
-
-    {
-        Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
-        requirement->set("type", "assert-current-schema-id");
-        requirement->set("current-schema-id", previous_schema_id);
-
-        Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
-        requirements->add(requirement);
-        request_body->set("requirements", requirements);
-    }
-
-    {
-        Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
-
-        {
-            Poco::JSON::Object::Ptr add_schema = new Poco::JSON::Object;
-            add_schema->set("action", "add-schema");
-            add_schema->set("schema", new_schema);
-            updates->add(add_schema);
-        }
-
-        {
-            Poco::JSON::Object::Ptr set_current_schema = new Poco::JSON::Object;
-            set_current_schema->set("action", "set-current-schema");
-            set_current_schema->set("schema-id", -1);
-            updates->add(set_current_schema);
-        }
-
-        request_body->set("updates", updates);
-    }
-
-    try
-    {
-        sendRequest(*state_snapshot, endpoint, request_body);
-    }
-    catch (const DB::HTTPException & ex)
-    {
-        LOG_TRACE(log, "Unsucceeded request {}", ex.what());
         return false;
     }
     return true;

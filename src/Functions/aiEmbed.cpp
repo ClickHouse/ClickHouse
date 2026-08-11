@@ -24,8 +24,8 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 
-#include <exception>
-#include <thread>
+#include <exception> /// std::current_exception for retry classification
+#include <thread> /// thread::sleep for retry backoff
 
 namespace ProfileEvents
 {
@@ -99,7 +99,6 @@ public:
     {
         FunctionArgumentDescriptors mandatory_args{
             {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
-            /// `model` must be a plain (non-nullable) `String`; constness is enforced by the column validator.
             {"model", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
         };
         FunctionArgumentDescriptors optional_args{
@@ -110,9 +109,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
     }
 
-    /// Parameters accepted in the optional trailing `Map(String, String)` argument. `aiEmbed` does not
-    /// inherit `FunctionBaseAI`, so it declares its own spec (no `max_tokens`, which embeddings do not
-    /// use; no `model`, which is a required positional argument for `aiEmbed`).
+    /// Parameters accepted in the optional trailing `Map(String, String)` argument.
     static AIParamSpecs embeddingParams()
     {
         return {
@@ -211,6 +208,7 @@ public:
             AIEmbeddingRequest ai_embedding_request;
             ai_embedding_request.model = model;
             ai_embedding_request.dimensions = dimensions;
+            ai_embedding_request.function_name = getName();
             ai_embedding_request.inputs.reserve(batch_end - batch_start);
 
             for (size_t k = batch_start; k < batch_end; ++k)
@@ -220,8 +218,9 @@ public:
             bool batch_ok = false;
             for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
             {
-                /// Check quotas before every request.
-                /// Kept outside the `try` so an exception due to `throw_on_quota_exceeded` is not caught by the retry handler.
+                /// Enforce the API-call quota before every provider request, including retries, so a flaky
+                /// endpoint can't dispatch more than `ai_function_max_api_calls_per_query` requests per query.
+                /// Kept outside the `try` so a `throw_on_quota_exceeded` throw is not caught by the retry handler.
                 if (quota.checkQuotas())
                     break;
 
@@ -238,6 +237,8 @@ public:
                 }
                 catch (...)
                 {
+                    /// Retry transient failures (network errors, provider-side HTTP errors) like the
+                    /// `url` table function does; deterministic errors are surfaced immediately.
                     if (attempt < max_retries && FunctionBaseAI::isRetriableProviderError(std::current_exception()))
                     {
                         std::this_thread::sleep_for(std::chrono::milliseconds(FunctionBaseAI::computeRetryBackoffMs(retry_delay_ms, attempt)));
@@ -317,7 +318,7 @@ from a chat one.
 
 The `model` is a required positional argument (a constant `String`). Unlike the text functions,
 `aiEmbed` does not read `model` from the named collection or the parameter map. A named collection
-that defines `model` is rejected rather than silently ignored.
+that defines `model` is rejected.
 
 The optional `dimensions` parameter, when supported by the model (e.g. OpenAI's `text-embedding-3-*`),
 requests a vector of the given size; otherwise the model's native size is returned.
@@ -332,7 +333,7 @@ requests a vector of the given size; otherwise the model's native size is return
         = {{"Embed a single string (`credentials` can be omitted if the `ai_function_embedding_default_credentials` setting is set)", "SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))", ""},
            {"With explicit dimensions", "SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))", ""},
            {"Embed a column of texts", "SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10", ""}},
-        .introduced_in = {26, 6},
+        .introduced_in = {26, 5},
         .category = FunctionDocumentation::Category::AI});
 }
 

@@ -101,7 +101,7 @@ MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) c
     return column;
 }
 
-MutableColumnConstPtr IDataType::createColumnConst(size_t size, const Field & field) const
+ColumnPtr IDataType::createColumnConst(size_t size, const Field & field) const
 {
     auto column = createColumn();
     column->insert(field);
@@ -109,7 +109,7 @@ MutableColumnConstPtr IDataType::createColumnConst(size_t size, const Field & fi
 }
 
 
-MutableColumnConstPtr IDataType::createColumnConstWithDefaultValue(size_t size) const
+ColumnPtr IDataType::createColumnConstWithDefaultValue(size_t size) const
 {
     return createColumnConst(size, getDefault());
 }
@@ -276,14 +276,6 @@ DataTypePtr IDataType::getSubcolumnType(std::string_view subcolumn_name) const
 
 ColumnPtr IDataType::tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const
 {
-    if (const auto * column_const = checkAndGetColumn<ColumnConst>(column.get()))
-    {
-        auto subcolumn = tryGetSubcolumn(subcolumn_name, column_const->getDataColumnPtr());
-        if (!subcolumn)
-            return nullptr;
-        return ColumnConst::create(subcolumn, column_const->size());
-    }
-
     auto data = SubstreamData(getSerialization(*getSerializationInfo(*column))).withType(getPtr()).withColumn(column);
     auto subcolumn_data = getSubcolumnData(subcolumn_name, data, {}, false);
     return subcolumn_data ? subcolumn_data->column : nullptr;
@@ -291,9 +283,6 @@ ColumnPtr IDataType::tryGetSubcolumn(std::string_view subcolumn_name, const Colu
 
 ColumnPtr IDataType::getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const
 {
-    if (const auto * column_const = checkAndGetColumn<ColumnConst>(column.get()))
-        return ColumnConst::create(getSubcolumn(subcolumn_name, column_const->getDataColumnPtr()), column_const->size());
-
     auto data = SubstreamData(getSerialization(*getSerializationInfo(*column))).withType(getPtr()).withColumn(column);
     return getSubcolumnData(subcolumn_name, data, {}, true)->column;
 }

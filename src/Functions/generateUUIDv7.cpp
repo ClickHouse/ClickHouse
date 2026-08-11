@@ -12,22 +12,23 @@ namespace
 
 uint64_t getTimestampMillisecond()
 {
-    timespec tp{};
+    timespec tp;
     clock_gettime(CLOCK_REALTIME, &tp);/// NOLINT(cert-err33-c)
     const uint64_t sec = tp.tv_sec;
     return sec * 1000 + tp.tv_nsec / 1000000;
 }
 
 
-class FunctionGenerateUUIDv7 : public IFunction
+#define DECLARE_SEVERAL_IMPLEMENTATIONS(...) \
+DECLARE_DEFAULT_CODE      (__VA_ARGS__) \
+DECLARE_X86_64_V3_SPECIFIC_CODE(__VA_ARGS__)
+
+DECLARE_SEVERAL_IMPLEMENTATIONS(
+
+class FunctionGenerateUUIDv7Base : public IFunction
 {
 public:
     static constexpr auto name = "generateUUIDv7";
-
-    static FunctionPtr create(ContextPtr)
-    {
-        return std::make_shared<FunctionGenerateUUIDv7>();
-    }
 
     String getName() const final {  return name; }
     size_t getNumberOfArguments() const final { return 0; }
@@ -72,14 +73,51 @@ public:
         return col_res;
     }
 };
+) // DECLARE_SEVERAL_IMPLEMENTATIONS
+#undef DECLARE_SEVERAL_IMPLEMENTATIONS
+
+class FunctionGenerateUUIDv7Base : public TargetSpecific::Default::FunctionGenerateUUIDv7Base
+{
+public:
+    using Self = FunctionGenerateUUIDv7Base;
+    using Parent = TargetSpecific::Default::FunctionGenerateUUIDv7Base;
+
+    explicit FunctionGenerateUUIDv7Base(ContextPtr context)
+        : selector(context)
+    {
+        selector.registerImplementation<TargetArch::Default, Parent>();
+
+#if USE_MULTITARGET_CODE
+        using Parentv3 = TargetSpecific::x86_64_v3::FunctionGenerateUUIDv7Base;
+        selector.registerImplementation<TargetArch::x86_64_v3, Parentv3>();
+#endif
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+    }
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<Self>(context);
+    }
+
+private:
+    ImplementationSelector<IFunction> selector;
+};
 
 REGISTER_FUNCTION(GenerateUUIDv7)
 {
     /// generateUUIDv7 documentation
     FunctionDocumentation::Description description = R"(
-Generates a [version 7](https://www.rfc-editor.org/rfc/rfc9562) [UUID](../data-types/uuid.md) as defined by [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562).
+Generates a [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04) [UUID](../data-types/uuid.md).
 
 See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
+
+:::note
+As of September 2025, version 7 UUIDs are in draft status and their layout may change in future.
+:::
     )";
     FunctionDocumentation::Syntax syntax = "generateUUIDv7([expr])";
     FunctionDocumentation::Arguments arguments = {
@@ -116,7 +154,7 @@ SELECT generateUUIDv7(1), generateUUIDv7(1);
     FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionGenerateUUIDv7>(documentation);
+    factory.registerFunction<FunctionGenerateUUIDv7Base>(documentation);
 }
 }
 }

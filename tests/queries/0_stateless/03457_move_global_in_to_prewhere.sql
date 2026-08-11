@@ -1,4 +1,3 @@
-SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS 03457_data;
 DROP TABLE IF EXISTS 03457_filter;
 

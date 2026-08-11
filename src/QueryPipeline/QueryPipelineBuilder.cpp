@@ -1,7 +1,5 @@
-#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
-#include <Columns/ColumnConst.h>
 #include <Core/SortDescription.h>
 #include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
@@ -33,7 +31,6 @@
 #include <Processors/Transforms/PasteJoinTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
-#include <Processors/QueryPlan/JoinStep.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <Common/CurrentThread.h>
 #include <Common/iota.h>
@@ -102,7 +99,7 @@ void QueryPipelineBuilder::addTransform(ProcessorPtr transform, InputPort * tota
     pipe.addTransform(std::move(transform), totals, extremes);
 }
 
-void QueryPipelineBuilder::addChains(VectorWithMemoryTracking<Chain> chains)
+void QueryPipelineBuilder::addChains(std::vector<Chain> chains)
 {
     checkInitializedAndNotCompleted();
     pipe.addChains(std::move(chains));
@@ -111,7 +108,7 @@ void QueryPipelineBuilder::addChains(VectorWithMemoryTracking<Chain> chains)
 void QueryPipelineBuilder::addChain(Chain chain)
 {
     checkInitializedAndNotCompleted();
-    VectorWithMemoryTracking<Chain> chains;
+    std::vector<Chain> chains;
     chains.emplace_back(std::move(chain));
     pipe.resize(1);
     pipe.addChains(std::move(chains));
@@ -177,21 +174,7 @@ void QueryPipelineBuilder::addDefaultTotals()
 
     for (size_t i = 0; i < current_header->columns(); ++i)
     {
-        const auto & elem = current_header->getByPosition(i);
-        /// Keep the value of a constant column in the synthesized totals row.
-        /// Every row of a constant column carries the same value, so the totals
-        /// row must carry it too; otherwise it collapses to a type default. This
-        /// matters for JOINs with `WITH TOTALS`: the default totals are produced
-        /// for the side that has no totals of its own (e.g. a constant subquery),
-        /// and which side that is can change depending on build/probe ordering
-        /// (`query_plan_join_swap_table`).
-        if (elem.column && isColumnConst(*elem.column))
-        {
-            columns.emplace_back(elem.column->cloneResized(1));
-            continue;
-        }
-
-        auto column = elem.type->createColumn();
+        auto column = current_header->getByPosition(i).type->createColumn();
         column->insertDefault();
         columns.emplace_back(std::move(column));
     }
@@ -223,7 +206,7 @@ void QueryPipelineBuilder::addExtremesTransform()
 }
 
 QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
-    VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines,
+    std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines,
     size_t max_threads_limit,
     Processors * collected_processors)
 {
@@ -343,21 +326,12 @@ QueryPipelineBuilderPtr QueryPipelineBuilder::selectPipeline(
     return signal;
 }
 
-static void assignToJoinStage(const Processors * processors, IQueryPlanStep * join_step, JoinStep::JoinStage stage)
-{
-    if (!processors)
-        return;
-    for (const auto & processor : *processors)
-        processor->setQueryPlanStep(join_step, static_cast<size_t>(stage));
-}
-
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped(
     std::unique_ptr<QueryPipelineBuilder> left,
     std::unique_ptr<QueryPipelineBuilder> right,
     JoinPtr join,
     SharedHeader & out_header,
     size_t max_block_size,
-    IQueryPlanStep * join_step,
     Processors * collected_processors)
 {
     left->checkInitializedAndNotCompleted();
@@ -381,16 +355,11 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     if (join->getTableJoin().kind() == JoinKind::Paste)
     {
         auto joining = std::make_shared<PasteJoinTransform>(join, inputs, out_header, max_block_size);
-        auto result = mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
-        assignToJoinStage(collected_processors, join_step, JoinStep::JoinStage::Default);
-        return result;
+        return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
     }
 
     auto joining = std::make_shared<MergeJoinTransform>(join, inputs, out_header, max_block_size);
-    auto result = mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
-
-    assignToJoinStage(collected_processors, join_step, JoinStep::JoinStage::Default);
-    return result;
+    return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
 }
 
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShapedByShards(
@@ -399,7 +368,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     JoinPtr join,
     SharedHeader & out_header,
     size_t max_block_size,
-    IQueryPlanStep * join_step,
     Processors * collected_processors)
 {
     left->checkInitializedAndNotCompleted();
@@ -434,8 +402,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     left->pipe.header = left->pipe.output_ports.front()->getSharedHeader();
     left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
     left->resources = std::move(right->resources);
-
-    assignToJoinStage(collected_processors, join_step, JoinStep::JoinStage::Default);
     return left;
 }
 
@@ -448,7 +414,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     size_t min_block_size_rows,
     size_t min_block_size_bytes,
     size_t max_streams,
-    IQueryPlanStep * join_step,
     bool keep_left_read_in_order,
     Processors * collected_processors)
 {
@@ -461,15 +426,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     left->pipe.collected_processors = collected_processors;
 
-    auto add_to_left_pipe = [&](ProcessorPtr processor)
-    {
-        if (collected_processors)
-            collected_processors->emplace_back(processor);
-        left->pipe.processors->emplace_back(std::move(processor));
-    };
-
+    /// Remember the last step of the right pipeline.
+    IQueryPlanStep * step = right->pipe.processors->back()->getQueryPlanStep();
     /// Collect the NEW processors for the right pipeline.
-    QueryPipelineProcessorsCollector collector(*right, join_step);
+    QueryPipelineProcessorsCollector collector(*right, step);
 
     /// In case joined subquery has totals, and we don't, add default chunk to totals.
     bool default_totals = false;
@@ -551,9 +511,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     auto lit = left->pipe.output_ports.begin();
     auto rit = right->pipe.output_ports.begin();
 
-    OutputPortRawPtrs joined_output_ports;
-    OutputPortRawPtrs delayed_root_output_ports;
-    OutputPortRawPtrs non_joined_output_ports;
+    std::vector<OutputPort *> joined_output_ports;
+    std::vector<OutputPort *> delayed_root_output_ports;
+    std::vector<OutputPort *> non_joined_output_ports;
 
     std::shared_ptr<DelayedJoinedBlocksTransform> delayed_root = nullptr;
     if (join->hasDelayedBlocks())
@@ -565,7 +525,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
                             "but has {} inputs and {} outputs",
                             num_streams, delayed_root->getInputs().size(), delayed_root->getOutputs().size());
 
-        add_to_left_pipe(delayed_root);
+        if (collected_processors)
+            collected_processors->emplace_back(delayed_root);
+        left->pipe.processors->emplace_back(delayed_root);
 
         for (auto & outport : delayed_root->getOutputs())
             delayed_root_output_ports.emplace_back(&outport);
@@ -594,7 +556,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             auto squashing = std::make_shared<SimpleSquashingChunksTransform>(left->getSharedHeader(), min_block_size_rows, min_block_size_bytes);
             connect(*left_port, squashing->getInputs().front());
             left_port = &squashing->getOutputPort();
-            add_to_left_pipe(std::move(squashing));
+            left->pipe.processors->emplace_back(std::move(squashing));
         }
 
         auto joining = std::make_shared<JoiningTransform>(
@@ -617,7 +579,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             joined_output_ports.push_back(&joining->getOutputs().front());
             joined_output_ports.push_back(&delayed->getOutputs().front());
 
-            add_to_left_pipe(std::move(delayed));
+            if (collected_processors)
+                collected_processors->emplace_back(delayed);
+            left->pipe.processors->emplace_back(std::move(delayed));
 
             if (use_parallel_non_joined)
             {
@@ -626,7 +590,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
                 non_joined_output_ports.push_back(&non_joined->getPort());
 
-                add_to_left_pipe(std::move(non_joined));
+                if (collected_processors)
+                    collected_processors->emplace_back(non_joined);
+                left->pipe.processors->emplace_back(std::move(non_joined));
             }
         }
         else if (use_parallel_non_joined)
@@ -638,7 +604,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             joined_output_ports.push_back(&joining->getOutputs().front());
             joined_output_ports.push_back(&non_joined->getPort());
 
-            add_to_left_pipe(std::move(non_joined));
+            if (collected_processors)
+                collected_processors->emplace_back(non_joined);
+            left->pipe.processors->emplace_back(std::move(non_joined));
         }
         else
         {
@@ -648,19 +616,24 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
         ++lit;
         ++rit;
-        add_to_left_pipe(std::move(joining));
+        if (collected_processors)
+            collected_processors->emplace_back(joining);
+
+        left->pipe.processors->emplace_back(std::move(joining));
     }
 
     if (delayed_root || use_parallel_non_joined)
     {
         // Process DelayedJoinedBlocksTransform after all JoiningTransforms.
-        VectorWithMemoryTracking<UInt64> delayed_ports_numbers;
+        std::vector<UInt64> delayed_ports_numbers;
         delayed_ports_numbers.reserve(joined_output_ports.size() / 2);
         for (size_t i = 1; i < joined_output_ports.size(); i += 2)
             delayed_ports_numbers.push_back(i);
 
         auto delayed_processor = std::make_shared<DelayedPortsProcessor>(output_header, 2 * num_streams, delayed_ports_numbers);
-        add_to_left_pipe(delayed_processor);
+        if (collected_processors)
+            collected_processors->emplace_back(delayed_processor);
+        left->pipe.processors->emplace_back(delayed_processor);
 
         // Connect @delayed_processor ports with inputs (JoiningTransforms & DelayedJoinedBlocksTransforms) / pipe outputs
         auto next_delayed_input = delayed_processor->getInputs().begin();
@@ -676,14 +649,16 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         // delays the NonJoinedBlocksTransforms until all delayed-block workers finish.
         if (delayed_root && use_parallel_non_joined)
         {
-            VectorWithMemoryTracking<UInt64> non_joined_delayed_ports;
+            std::vector<UInt64> non_joined_delayed_ports;
             non_joined_delayed_ports.reserve(num_streams);
             for (size_t i = 0; i < num_streams; ++i)
                 non_joined_delayed_ports.push_back(2 * i + 1);
 
             auto non_joined_processor = std::make_shared<DelayedPortsProcessor>(
                 output_header, 2 * num_streams, non_joined_delayed_ports);
-            add_to_left_pipe(non_joined_processor);
+            if (collected_processors)
+                collected_processors->emplace_back(non_joined_processor);
+            left->pipe.processors->emplace_back(non_joined_processor);
 
             auto next_input = non_joined_processor->getInputs().begin();
             for (size_t i = 0; i < num_streams; ++i)
@@ -708,16 +683,16 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
         ++rit;
 
-        add_to_left_pipe(std::move(joining));
+        if (collected_processors)
+            collected_processors->emplace_back(joining);
+
+        left->pipe.processors->emplace_back(std::move(joining));
     }
 
-    assignToJoinStage(collected_processors, join_step, JoinStep::JoinStage::Probe);
-
     /// Move the collected processors to the last step in the right pipeline.
-    Processors processors = collector.detachProcessors(static_cast<size_t>(JoinStep::JoinStage::Build));
-    if (join_step)
-        join_step->appendExtraProcessors(processors);
-
+    Processors processors = collector.detachProcessors();
+    if (step)
+        step->appendExtraProcessors(processors);
 
     left->pipe.processors->insert(left->pipe.processors->end(), right->pipe.processors->begin(), right->pipe.processors->end());
     left->resources = std::move(right->resources);
@@ -732,7 +707,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
     JoinPtr join,
     SharedHeader & output_header,
     size_t max_block_size,
-    IQueryPlanStep * join_step,
     Processors * collected_processors)
 {
     left->checkInitializedAndNotCompleted();
@@ -744,8 +718,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
 
     left->pipe.collected_processors = collected_processors;
 
+    /// Remember the last step of the right pipeline.
+    IQueryPlanStep * step = right->pipe.processors->back()->getQueryPlanStep();
     /// Collect the NEW processors for the right pipeline.
-    QueryPipelineProcessorsCollector collector(*right, join_step);
+    QueryPipelineProcessorsCollector collector(*right, step);
 
     if (left->hasTotals() || right->hasTotals())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Join by layers is supported only for pipelines without totals");
@@ -769,7 +745,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
             num_streams, right->getNumStreams());
 
     SharedHeader left_header = left->getSharedHeader();
-    VectorWithMemoryTracking<JoinPtr> joins;
+    std::vector<JoinPtr> joins;
     right->addSimpleTransform([&](const SharedHeader & header)
     {
         joins.push_back(join->cloneNoParallel(std::make_shared<TableJoin>(join->getTableJoin()), left->getSharedHeader(), header));
@@ -799,12 +775,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
         left->pipe.processors->emplace_back(std::move(joining));
     }
 
-    assignToJoinStage(collected_processors, join_step, JoinStep::JoinStage::Probe);
-
     /// Move the collected processors to the last step in the right pipeline.
-    Processors processors = collector.detachProcessors(static_cast<size_t>(JoinStep::JoinStage::Build));
-    if (join_step)
-        join_step->appendExtraProcessors(processors);
+    Processors processors = collector.detachProcessors();
+    if (step)
+        step->appendExtraProcessors(processors);
 
     left->pipe.processors->insert(left->pipe.processors->end(), right->pipe.processors->begin(), right->pipe.processors->end());
     left->resources = std::move(right->resources);
@@ -887,7 +861,7 @@ void QueryPipelineBuilder::addPipelineBefore(QueryPipelineBuilder pipeline)
     bool has_totals = pipe.getTotalsPort();
     bool has_extremes = pipe.getExtremesPort();
     size_t num_extra_ports = (has_totals ? 1 : 0) + (has_extremes ? 1 : 0);
-    VectorWithMemoryTracking<UInt64> delayed_streams(pipe.numOutputPorts() + num_extra_ports);
+    std::vector<UInt64> delayed_streams(pipe.numOutputPorts() + num_extra_ports);
     iota(delayed_streams.data(), delayed_streams.size(), UInt64{0});
 
     auto * collected_processors = pipe.collected_processors;

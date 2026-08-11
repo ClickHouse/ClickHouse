@@ -1,8 +1,8 @@
 #pragma once
 
 #include <string_view>
+#include <unordered_map>
 #include <base/types.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Compression/ICompressionCodec.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/MultiVersion.h>
@@ -93,7 +93,7 @@ public:
         /// because all algorithms can be described in config and used for different tables.
         struct Params
         {
-            UnorderedMapWithMemoryTracking<UInt64, String> keys_storage[MAX_ENCRYPTION_METHOD];
+            std::unordered_map<UInt64, String> keys_storage[MAX_ENCRYPTION_METHOD];
             UInt64 current_key_id[MAX_ENCRYPTION_METHOD] = {0, 0};
             String nonce[MAX_ENCRYPTION_METHOD];
         };

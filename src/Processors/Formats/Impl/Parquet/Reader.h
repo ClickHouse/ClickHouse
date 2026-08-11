@@ -150,9 +150,9 @@ struct Reader
     struct PrimitiveColumnInfo
     {
         /// Primitive column index in parquet file. NOT index in primitive_columns array.
-        size_t column_idx{};
+        size_t column_idx;
         /// Index in parquet `schema` (in FileMetaData).
-        size_t schema_idx{};
+        size_t schema_idx;
         /// Index of the top-level column that contains this primitive column.
         size_t idx_in_output_block = UINT64_MAX;
         String name; // possibly mapped by ColumnMapper (e.g. using iceberg metadata)
@@ -161,13 +161,6 @@ struct Reader
         DataTypePtr decoded_type; // what decoder outputs, not Nullable
         DataTypePtr output_type; // maybe Nullable
         bool output_nullable = false;
-        /// This leaf is inside a Tuple group that is requested as Nullable(Tuple(...)) and is
-        /// eligible for it (the OPTIONAL group has no optional/nullable ancestor and an all-REQUIRED,
-        /// non-array subtree). Then this leaf's definition-level null map is exactly the group's null
-        /// map. We keep that null map (instead of throwing CANNOT_INSERT_NULL) and fill defaults at
-        /// the null rows; the group null map is later used to wrap the assembled ColumnTuple in
-        /// ColumnNullable. See OutputColumnInfo::nullable_group.
-        bool group_nullable = false;
         /// TODO [parquet]: Consider also adding output_low_cardinality to allow producing LowCardinality
         ///       column directly from parquet dictionary+indices. This is not straightforward
         ///       because ColumnLowCardinality requires values to be unique and the first value to
@@ -209,13 +202,6 @@ struct Reader
         bool is_missing_column = false;
         bool needs_cast = false; // if output_type is different from input_type
 
-        /// If set, the assembled column (a ColumnTuple) is wrapped in ColumnNullable using the group
-        /// null map reconstructed from the leaves' definition levels. Used to read a physically
-        /// nullable parquet struct (OPTIONAL group) as Nullable(Tuple(...)). Only set when the group
-        /// has no optional/nullable ancestor and an all-REQUIRED, non-array subtree, so every leaf's
-        /// null map equals the group null map. `needs_cast` (if any) is applied after wrapping.
-        bool nullable_group = false;
-
         /// If type is Array, this is the repetition level of that array.
         /// `rep - 1` is index in ColumnChunk::arrays_offsets.
         UInt8 rep = 0;
@@ -242,7 +228,7 @@ struct Reader
 
     struct BloomFilterBlock
     {
-        size_t block_idx{};
+        size_t block_idx;
         PrefetchHandle prefetch;
     };
 
@@ -277,14 +263,14 @@ struct Reader
         /// PrefetchHandle in ColumnChunk::data_pages or data_pages_prefetch).
         /// Either way the data is padded for simd.
         std::span<const char> data;
-        parq::Encoding::type encoding{};
+        parq::Encoding::type encoding;
 
         std::unique_ptr<PageDecoder> decoder;
         bool is_dictionary_encoded = false;
 
         /// If data_state is still compressed. We always decompress it before calling the decoder.
         /// Decompression is deferred a little to see if we can decompress directly into IColumn.
-        parq::CompressionCodec::type codec{};
+        parq::CompressionCodec::type codec;
         size_t values_uncompressed_size = 0;
 
         /// Empty if the corresponding max rep/def level is 0.
@@ -304,7 +290,7 @@ struct Reader
 
     struct ColumnChunk
     {
-        const parq::ColumnChunk * meta{};
+        const parq::ColumnChunk * meta;
 
         bool use_bloom_filter = false;
         bool use_dictionary_filter = false;
@@ -353,7 +339,7 @@ struct Reader
         /// Index in data_pages up to which we checked which pages need to be read, after applying prewhere.
         size_t data_pages_prefetch_idx = 0;
 
-        ReadStage stage{};
+        ReadStage stage;
     };
 
     struct ColumnSubchunk
@@ -363,20 +349,12 @@ struct Reader
 
         MutableColumnPtr null_map;
 
-        /// For a leaf of a physically-nullable struct read as Nullable(Tuple(...)) (see
-        /// PrimitiveColumnInfo::group_nullable): the group's definition-level null map, moved here
-        /// in decodePrimitiveColumn before any leaf-level Nullable wrapping can consume `null_map`.
-        /// formOutputColumn reads it from the group's first leaf to wrap the assembled ColumnTuple
-        /// in ColumnNullable. Kept separate from `null_map` so it survives even when the leaf itself
-        /// is materialized as Nullable(...) (which moves `null_map` into the leaf's ColumnNullable).
-        MutableColumnPtr group_null_map;
-
         /// If this primitive column is inside an array, this is the offsets for `ColumnArray`s at
         /// all nesting levels, from outer to inner. Index is repetition level - 1.
         /// Derived from parquet's repetition/definition levels. See comment on LevelInfo.
         /// ("Arrays offsets" is intentionally grammatically incorrect to emphasize that it's a
         ///  list of lists.)
-        MutableColumns arrays_offsets;
+        std::vector<MutableColumnPtr> arrays_offsets;
 
         /// Covers `column`, `arrays_offsets`, and also RowSubgroup::output (data can be moved from
         /// the former to the latter).
@@ -420,9 +398,9 @@ struct Reader
 
     struct RowGroup
     {
-        const parq::RowGroup * meta{};
+        const parq::RowGroup * meta;
 
-        size_t row_group_idx{}; // in parquet file
+        size_t row_group_idx; // in parquet file
         size_t start_global_row_idx = 0; // total number of rows in preceding row groups in the file
 
         bool need_to_process = false;
@@ -455,7 +433,7 @@ struct Reader
     };
 
     ReadOptions options;
-    const Block * sample_block{};
+    const Block * sample_block;
     FormatFilterInfoPtr format_filter_info;
     Prefetcher prefetcher;
 

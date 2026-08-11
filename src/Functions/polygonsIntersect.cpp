@@ -24,7 +24,7 @@ namespace
 {
 
 template <typename Point>
-class FunctionpolygonsIntersect final : public IFunction
+class FunctionpolygonsIntersect : public IFunction
 {
 public:
     static inline const char * name;
@@ -76,11 +76,6 @@ public:
                     || std::is_same_v<ColumnToMultiLineStringsConverter<Point>, RightConverter>)
                     throw Exception(
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be MultiLineString", getName());
-                else if constexpr (
-                    std::is_same_v<ColumnToMultiPointsConverter<Point>, LeftConverter>
-                    || std::is_same_v<ColumnToMultiPointsConverter<Point>, RightConverter>)
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be MultiPoint", getName());
                 else
                 {
                     auto first = LeftConverter::convert(arguments[0].column->convertToFullColumnIfConst());
@@ -133,9 +128,9 @@ REGISTER_FUNCTION(polygonsIntersect)
 
         )",
             R"(
-┌─polygonsIntersectCartesian()─┐
-│                            1 │
-└──────────────────────────────┘
+                ┌─polygonsIntersectCartesian()─┐
+                │ 1 │
+                └───────────────────┘
         )"}},
         .introduced_in = {25, 7},
         .category = FunctionDocumentation::Category::Geo});
@@ -161,9 +156,9 @@ REGISTER_FUNCTION(polygonsIntersect)
 
         )",
             R"(
-┌─polygonsIntersectSpherical()─┐
-│                            1 │
-└──────────────────────────────┘
+                ┌─polygonsIntersectSpherical()─┐
+                │ 1 │
+                └───────────────────┘
         )"}},
         .introduced_in = {25, 7},
         .category = FunctionDocumentation::Category::Geo});
