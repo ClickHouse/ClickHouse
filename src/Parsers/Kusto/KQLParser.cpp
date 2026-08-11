@@ -1139,7 +1139,7 @@ KQLOperatorPtr KQLParser::parsePipelineOperator()
         failAt(name_token, fmt::format("'{}' is not a supported KQL operator", name));
 
     /// Consume the operator name (one token, or three for the hyphenated forms).
-    if (name.find('-') != String::npos)
+    if (name.contains('-'))
         index += 3;
     else
         ++index;
@@ -1746,8 +1746,7 @@ ASTPtr KQLParser::parsePrimary()
                     value = value * 16 + unhex(text[i]);
                 return makeLiteral(value);
             }
-            if (text.find('.') != std::string_view::npos || text.find('e') != std::string_view::npos
-                || text.find('E') != std::string_view::npos)
+            if (text.contains('.') || text.contains('e') || text.contains('E'))
                 return makeLiteral(std::stod(String(text)));
 
             /// KQL integer literals are 64-bit signed (`long`).

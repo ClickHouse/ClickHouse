@@ -518,7 +518,7 @@ private:
             case KQLOperatorKind::ProjectAway:
             {
                 for (const auto & pattern : op.column_patterns)
-                    if (pattern.find('*') != String::npos)
+                    if (pattern.contains('*'))
                         unsupported("Wildcards in 'project-away' are not supported");
                 builder.setProjection({asteriskExcept(op.column_patterns)});
                 return;
@@ -529,7 +529,7 @@ private:
                 ASTs columns;
                 for (const auto & pattern : op.column_patterns)
                 {
-                    if (pattern.find('*') != String::npos)
+                    if (pattern.contains('*'))
                         unsupported("Wildcards in 'project-keep' are not supported");
                     columns.push_back(ident(pattern));
                 }

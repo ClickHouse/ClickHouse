@@ -125,6 +125,10 @@ FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     -e /FunctionBaseAI.h
     -e /aiEmbed.cpp
     -e /aiSimilarity.cpp
+    # `KQLPlanBuilder` is an analysis-time helper, not a function: it is created inside
+    # `buildImpl`, uses the context only to look up the delegates it composes, and is
+    # destroyed before the resulting `FunctionKQLPlan` (which holds no context) executes.
+    -e /Kusto/KQLPlan.h
 )
 find $ROOT_PATH/src/Functions -type f | xargs grep -l 'ContextPtr [a-z_]*;' | grep -v "${FUNCTIONS_CONTEXT_PTR_EXCEPTIONS[@]}" | grep -P '.' && echo "Avoid holding a copy of ContextPtr in Functions"
 
