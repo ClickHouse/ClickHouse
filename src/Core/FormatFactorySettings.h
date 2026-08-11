@@ -24,7 +24,7 @@ If it is set to true, allow strings in single quotes.
 If it is set to true, allow strings in double quotes.
 )", 0) \
     DECLARE(Bool, input_format_parallel_parsing, true, R"(
-Enables or disables order-preserving parallel parsing of data formats. Supported only for [TabSeparated (TSV)](/interfaces/formats/TabSeparated), [TSKV](/interfaces/formats/TSKV), [CSV](/interfaces/formats/CSV) and [JSONEachRow](/interfaces/formats/JSONEachRow) formats.
+Enables or disables order-preserving parallel parsing of data formats. Supported only for [TabSeparated (TSV)](/reference/formats/TabSeparated/TabSeparated), [TSKV](/reference/formats/TabSeparated/TSKV), [CSV](/reference/formats/CSV/CSV) and [JSONEachRow](/reference/formats/JSON/JSONEachRow) formats.
 
 Possible values:
 
@@ -32,7 +32,7 @@ Possible values:
 - 0 — Disabled.
 )", 0) \
     DECLARE(Bool, output_format_parallel_formatting, true, R"(
-Enables or disables parallel formatting of data formats. Supported only for [TSV](/interfaces/formats/TabSeparated), [TSKV](/interfaces/formats/TSKV), [CSV](/interfaces/formats/CSV) and [JSONEachRow](/interfaces/formats/JSONEachRow) formats.
+Enables or disables parallel formatting of data formats. Supported only for [TSV](/reference/formats/TabSeparated/TabSeparated), [TSKV](/reference/formats/TabSeparated/TSKV), [CSV](/reference/formats/CSV/CSV) and [JSONEachRow](/reference/formats/JSON/JSONEachRow) formats.
 
 Possible values:
 
@@ -75,12 +75,12 @@ When writing data, ClickHouse throws an exception if input data contain columns 
 
 Supported formats:
 
-- [JSONEachRow](/interfaces/formats/JSONEachRow) (and other JSON formats)
-- [BSONEachRow](/interfaces/formats/BSONEachRow) (and other JSON formats)
-- [TSKV](/interfaces/formats/TSKV)
+- [JSONEachRow](/reference/formats/JSON/JSONEachRow) (and other JSON formats)
+- [BSONEachRow](/reference/formats/BSONEachRow) (and other JSON formats)
+- [TSKV](/reference/formats/TabSeparated/TSKV)
 - All formats with suffixes WithNames/WithNamesAndTypes
-- [MySQLDump](/interfaces/formats/MySQLDump)
-- [Native](/interfaces/formats/Native)
+- [MySQLDump](/reference/formats/MySQLDump)
+- [Native](/reference/formats/Native)
 
 Possible values:
 
@@ -94,18 +94,18 @@ To improve insert performance, we recommend disabling this check if you are sure
 
 Supported formats:
 
-- [CSVWithNames](/interfaces/formats/CSVWithNames)
-- [CSVWithNamesAndTypes](/interfaces/formats/CSVWithNamesAndTypes)
-- [TabSeparatedWithNames](/interfaces/formats/TabSeparatedWithNames)
-- [TabSeparatedWithNamesAndTypes](/interfaces/formats/TabSeparatedWithNamesAndTypes)
-- [JSONCompactEachRowWithNames](/interfaces/formats/JSONCompactEachRowWithNames)
-- [JSONCompactEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactEachRowWithNamesAndTypes)
-- [JSONCompactStringsEachRowWithNames](/interfaces/formats/JSONCompactStringsEachRowWithNames)
-- [JSONCompactStringsEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactStringsEachRowWithNamesAndTypes)
-- [RowBinaryWithNames](/interfaces/formats/RowBinaryWithNames)
-- [RowBinaryWithNamesAndTypes](/interfaces/formats/RowBinaryWithNamesAndTypes)
-- [CustomSeparatedWithNames](/interfaces/formats/CustomSeparatedWithNames)
-- [CustomSeparatedWithNamesAndTypes](/interfaces/formats/CustomSeparatedWithNamesAndTypes)
+- [CSVWithNames](/reference/formats/CSV/CSVWithNames)
+- [CSVWithNamesAndTypes](/reference/formats/CSV/CSVWithNamesAndTypes)
+- [TabSeparatedWithNames](/reference/formats/TabSeparated/TabSeparatedWithNames)
+- [TabSeparatedWithNamesAndTypes](/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes)
+- [JSONCompactEachRowWithNames](/reference/formats/JSON/JSONCompactEachRowWithNames)
+- [JSONCompactEachRowWithNamesAndTypes](/reference/formats/JSON/JSONCompactEachRowWithNamesAndTypes)
+- [JSONCompactStringsEachRowWithNames](/reference/formats/JSON/JSONCompactStringsEachRowWithNames)
+- [JSONCompactStringsEachRowWithNamesAndTypes](/reference/formats/JSON/JSONCompactStringsEachRowWithNamesAndTypes)
+- [RowBinaryWithNames](/reference/formats/RowBinary/RowBinaryWithNames)
+- [RowBinaryWithNamesAndTypes](/reference/formats/RowBinary/RowBinaryWithNamesAndTypes)
+- [CustomSeparatedWithNames](/reference/formats/CustomSeparated/CustomSeparatedWithNames)
+- [CustomSeparatedWithNamesAndTypes](/reference/formats/CustomSeparated/CustomSeparatedWithNamesAndTypes)
 
 Possible values:
 
@@ -117,12 +117,12 @@ Controls whether format parser should check if data types from the input data ma
 
 Supported formats:
 
-- [CSVWithNamesAndTypes](/interfaces/formats/CSVWithNamesAndTypes)
-- [TabSeparatedWithNamesAndTypes](/interfaces/formats/TabSeparatedWithNamesAndTypes)
-- [JSONCompactEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactEachRowWithNamesAndTypes)
-- [JSONCompactStringsEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactStringsEachRowWithNamesAndTypes)
-- [RowBinaryWithNamesAndTypes](/interfaces/formats/RowBinaryWithNamesAndTypes)
-- [CustomSeparatedWithNamesAndTypes](/interfaces/formats/CustomSeparatedWithNamesAndTypes)
+- [CSVWithNamesAndTypes](/reference/formats/CSV/CSVWithNamesAndTypes)
+- [TabSeparatedWithNamesAndTypes](/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes)
+- [JSONCompactEachRowWithNamesAndTypes](/reference/formats/JSON/JSONCompactEachRowWithNamesAndTypes)
+- [JSONCompactStringsEachRowWithNamesAndTypes](/reference/formats/JSON/JSONCompactStringsEachRowWithNamesAndTypes)
+- [RowBinaryWithNamesAndTypes](/reference/formats/RowBinary/RowBinaryWithNamesAndTypes)
+- [CustomSeparatedWithNamesAndTypes](/reference/formats/CustomSeparated/CustomSeparatedWithNamesAndTypes)
 
 Possible values:
 
@@ -134,7 +134,7 @@ Enables or disables the insertion of JSON data with nested objects.
 
 Supported formats:
 
-- [JSONEachRow](/interfaces/formats/JSONEachRow)
+- [JSONEachRow](/reference/formats/JSON/JSONEachRow)
 
 Possible values:
 
@@ -143,10 +143,10 @@ Possible values:
 
 See also:
 
-- [Usage of Nested Structures](/integrations/data-formats/json/other-formats#accessing-nested-json-objects) with the `JSONEachRow` format.
+- [Usage of Nested Structures](/guides/clickhouse/data-formats/json/formats#accessing-nested-json-objects) with the `JSONEachRow` format.
 )", 0) \
     DECLARE(Bool, input_format_defaults_for_omitted_fields, true, R"(
-When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option applies to [JSONEachRow](/interfaces/formats/JSONEachRow) (and other JSON formats), [CSV](/interfaces/formats/CSV), [TabSeparated](/interfaces/formats/TabSeparated), [TSKV](/interfaces/formats/TSKV), [Parquet](/interfaces/formats/Parquet), [Arrow](/interfaces/formats/Arrow), [Avro](/interfaces/formats/Avro), [ORC](/interfaces/formats/ORC), [Native](/interfaces/formats/Native) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
+When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option applies to [JSONEachRow](/reference/formats/JSON/JSONEachRow) (and other JSON formats), [CSV](/reference/formats/CSV/CSV), [TabSeparated](/reference/formats/TabSeparated/TabSeparated), [TSKV](/reference/formats/TabSeparated/TSKV), [Parquet](/reference/formats/Parquet/Parquet), [Arrow](/reference/formats/Arrow/Arrow), [Avro](/reference/formats/Avro/Avro), [ORC](/reference/formats/ORC), [Native](/reference/formats/Native) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
 
 :::note
 When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
@@ -170,7 +170,7 @@ Treat empty fields in TSV input as default values.
 Treat inserted enum values in TSV formats as enum indices.
 )", 0) \
     DECLARE(Bool, input_format_null_as_default, true, R"(
-Enables or disables the initialization of [NULL](/sql-reference/syntax#literals) fields with [default values](/sql-reference/statements/create/table#default_values), if data type of these fields is not [nullable](/sql-reference/data-types/nullable).
+Enables or disables the initialization of [NULL](/reference/syntax#literals) fields with [default values](/reference/statements/create/table#default_values), if data type of these fields is not [nullable](/reference/data-types/nullable).
 If column type is not nullable and this setting is disabled, then inserting `NULL` causes an exception. If column type is nullable, then `NULL` values are inserted as is, regardless of this setting.
 
 This setting is applicable for most input formats.
@@ -886,7 +886,7 @@ Write values of [JSON](/reference/data-types/newjson) data type as JSON [String]
 )", 0) \
     \
     DECLARE(Bool, output_format_json_quote_64bit_integers, false, R"(
-Controls quoting of 64-bit or bigger [integers](/reference/data-types/int-uint) (like `UInt64` or `Int128`) when they are output in a [JSON](/interfaces/formats/JSON) format.
+Controls quoting of 64-bit or bigger [integers](/reference/data-types/int-uint) (like `UInt64` or `Int128`) when they are output in a [JSON](/reference/formats/JSON/JSON) format.
 Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations.
 
 Possible values:
@@ -895,7 +895,7 @@ Possible values:
 - 1 — Integers are enclosed in quotes.
 )", 0) \
     DECLARE(Bool, output_format_json_quote_denormals, false, R"str(
-Enables `+nan`, `-nan`, `+inf`, `-inf` outputs in [JSON](/interfaces/formats/JSON) output format.
+Enables `+nan`, `-nan`, `+inf`, `-inf` outputs in [JSON](/reference/formats/JSON/JSON) output format.
 
 Possible values:
 
@@ -1015,7 +1015,7 @@ Enabled by default.
 Skip key value pairs with null value when serialize named tuple columns as JSON objects. It is only valid when output_format_json_named_tuples_as_objects is true.
 )", 0) \
     DECLARE(Bool, output_format_json_array_of_rows, false, R"(
-Enables the ability to output all rows as a JSON array in the [JSONEachRow](/interfaces/formats/JSONEachRow) format.
+Enables the ability to output all rows as a JSON array in the [JSONEachRow](/reference/formats/JSON/JSONEachRow) format.
 
 Possible values:
 
@@ -1118,7 +1118,7 @@ Disabled by default.
 )", 0) \
     \
     DECLARE(String, format_json_object_each_row_column_for_object_name, "", R"(
-The name of column that will be used for storing/writing object names in [JSONObjectEachRow](/interfaces/formats/JSONObjectEachRow) format.
+The name of column that will be used for storing/writing object names in [JSONObjectEachRow](/reference/formats/JSON/JSONObjectEachRow) format.
 Column type should be String. If value is empty, default names `row_{i}`will be used for object names.
 )", 0) \
     \
@@ -1461,7 +1461,7 @@ The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`
         Controls whether named tuples in Pretty format are output as pretty-printed JSON objects.
 )", 0) \
     DECLARE(Bool, insert_distributed_one_random_shard, false, R"(
-Enables or disables random shard insertion into a [Distributed](/engines/table-engines/special/distributed) table when there is no distributed key.
+Enables or disables random shard insertion into a [Distributed](/reference/engines/table-engines/special/distributed) table when there is no distributed key.
 
 By default, when inserting data into a `Distributed` table with more than one shard, the ClickHouse server will reject any insertion request if there is no distributed key. When `insert_distributed_one_random_shard = 1`, insertions are allowed and data is forwarded randomly among all shards.
 
@@ -1529,7 +1529,7 @@ Maximum size of a single CapnProto message in bytes. This protects against malfo
 Use autogenerated Protobuf when format_schema is not set
 )", 0) \
     DECLARE(String, output_format_schema, "", R"(
-The path to the file where the automatically generated schema will be saved in [Cap'n Proto](/interfaces/formats/CapnProto) or [Protobuf](/interfaces/formats/Protobuf) formats.
+The path to the file where the automatically generated schema will be saved in [Cap'n Proto](/reference/formats/CapnProto) or [Protobuf](/reference/formats/Protobuf/Protobuf) formats.
 )", 0) \
     \
     DECLARE(String, input_format_mysql_dump_table_name, "", R"(
@@ -1573,7 +1573,7 @@ table functions, and dictionaries.
 User wishing to see secrets must also have
 [`display_secrets_in_show_and_select` server setting](/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select)
 turned on and a
-[`displaySecretsInShowAndSelect`](/sql-reference/statements/grant#displaysecretsinshowandselect) privilege.
+[`displaySecretsInShowAndSelect`](/reference/statements/grant#displaysecretsinshowandselect) privilege.
 
 Possible values:
 

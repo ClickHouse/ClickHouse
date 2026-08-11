@@ -269,7 +269,7 @@ Recommendations for using object storage as `tmp_policy`:
 - `move_factor`, `keep_free_space_bytes`,`max_data_part_size_bytes` and are ignored.
 - Policy should have exactly *one volume*
 
-For more information see the [MergeTree Table Engine](/engines/table-engines/mergetree-family/mergetree) documentation.
+For more information see the [MergeTree Table Engine](/reference/engines/table-engines/mergetree-family/mergetree) documentation.
 :::
 
 **Example**
@@ -444,7 +444,7 @@ To disable the cgroup observer, set this value to `0`.
     DECLARE(Bool, ignore_empty_sql_security_in_create_view_query, true, R"(
 If true, a `CREATE VIEW` or `CREATE MATERIALIZED VIEW` query that specifies neither `DEFINER` nor `SQL SECURITY` is stored as written, and the view gets an empty SQL security type. Specifying `DEFINER` alone counts as `SQL SECURITY DEFINER`, so such a query is unaffected by this setting. A normal view with an empty SQL security type runs with the permissions of the invoker. For a materialized view with an explicitly specified target table, the access checks on the target table are skipped: inserting into the source table does not require the `INSERT` privilege on the target table, and reading from the view does not require the `SELECT` privilege on it.
 
-If false, the defaults from the [`default_normal_view_sql_security`](/operations/settings/settings#default_normal_view_sql_security), [`default_materialized_view_sql_security`](/operations/settings/settings#default_materialized_view_sql_security), and [`default_view_definer`](/operations/settings/settings#default_view_definer) settings are written into the view definition at creation time. With the default values of those settings, a materialized view created with neither clause records the creating user as its definer and runs with that user's permissions.
+If false, the defaults from the [`default_normal_view_sql_security`](/reference/settings/session-settings#default_normal_view_sql_security), [`default_materialized_view_sql_security`](/reference/settings/session-settings#default_materialized_view_sql_security), and [`default_view_definer`](/reference/settings/session-settings#default_view_definer) settings are written into the view definition at creation time. With the default values of those settings, a materialized view created with neither clause records the creating user as its definer and runs with that user's permissions.
 
 Refreshable materialized views always receive the defaults, regardless of this setting.
 
@@ -462,7 +462,7 @@ A value of `0` means all cores.
     \
     /* Database Catalog */ \
     DECLARE(UInt64, database_atomic_delay_before_drop_table_sec, 8 * 60, R"(
-The delay during which a dropped table can be restored using the [`UNDROP`](/sql-reference/statements/undrop.md) statement. If `DROP TABLE` ran with a `SYNC` modifier, the setting is ignored.
+The delay during which a dropped table can be restored using the [`UNDROP`](/reference/statements/undrop) statement. If `DROP TABLE` ran with a `SYNC` modifier, the setting is ignored.
 The default for this setting is `480` (8 minutes).
 )", 0) \
     DECLARE(UInt64, database_catalog_unused_dir_hide_timeout_sec, 60 * 60, R"(
@@ -579,7 +579,7 @@ This setting can be modified at runtime and will take effect immediately.
     DECLARE(Double, uncompressed_cache_size_ratio, DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the uncompressed cache relative to the cache's total size.)", 0) \
     DECLARE(String, mark_cache_policy, DEFAULT_MARK_CACHE_POLICY, R"(Mark cache policy name.)", 0) \
     DECLARE(UInt64, mark_cache_size, DEFAULT_MARK_CACHE_MAX_SIZE, R"(
-Maximum size of cache for marks (index of [`MergeTree`](/engines/table-engines/mergetree-family) family of tables).
+Maximum size of cache for marks (index of [`MergeTree`](/reference/engines/table-engines/mergetree-family) family of tables).
 
 :::note
 This setting can be modified at runtime and will take effect immediately.
@@ -678,8 +678,8 @@ This setting allows avoiding frequent open/close calls (which are very expensive
 
 The amount of data in mapped files can be monitored in the following system tables with the following metrics:
 
-- `MMappedFiles`/`MMappedFileBytes`/`MMapCacheCells` in [`system.metrics`](/operations/system-tables/metrics), [`system.metric_log`](/operations/system-tables/metric_log)
-- `CreatedReadBufferMMap`/`CreatedReadBufferMMapFailed`/`MMappedFileCacheHits`/`MMappedFileCacheMisses` in [`system.events`](/operations/system-tables/events), [`system.processes`](/operations/system-tables/processes), [`system.query_log`](/operations/system-tables/query_log), [`system.query_thread_log`](/operations/system-tables/query_thread_log), [`system.query_views_log`](/operations/system-tables/query_views_log)
+- `MMappedFiles`/`MMappedFileBytes`/`MMapCacheCells` in [`system.metrics`](/reference/system-tables/metrics), [`system.metric_log`](/reference/system-tables/metric_log)
+- `CreatedReadBufferMMap`/`CreatedReadBufferMMapFailed`/`MMappedFileCacheHits`/`MMappedFileCacheMisses` in [`system.events`](/reference/system-tables/events), [`system.processes`](/reference/system-tables/processes), [`system.query_log`](/reference/system-tables/query_log), [`system.query_thread_log`](/reference/system-tables/query_thread_log), [`system.query_views_log`](/reference/system-tables/query_views_log)
 
 :::note
 The amount of data in mapped files does not consume memory directly and is not accounted for in query or server memory usage — because this memory can be discarded similar to the OS page cache. The cache is dropped (the files are closed) automatically on the removal of old parts in tables of the MergeTree family, also it can be dropped manually by the `SYSTEM DROP MMAP CACHE` query.
@@ -1008,9 +1008,9 @@ Possible values:
 - `shortest_task_first` — Always execute smaller merge or mutation. Merges and mutations are assigned priorities based on their resulting size. Merges with smaller sizes are strictly preferred over bigger ones. This policy ensures the fastest possible merge of small parts but can lead to indefinite starvation of big merges in partitions heavily overloaded by `INSERT`s.
 )", 0) \
     DECLARE(UInt64, background_move_pool_size, 8, R"(The maximum number of threads that will be used for moving data parts to another disk or volume for *MergeTree-engine tables in a background.)", 0) \
-    DECLARE(UInt64, background_fetches_pool_size, 16, R"(The maximum number of threads that will be used for fetching data parts from another replica for [*MergeTree-engine](/engines/table-engines/mergetree-family) tables in the background.)", 0) \
-    DECLARE(UInt64, background_common_pool_size, 8, R"(The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/engines/table-engines/mergetree-family) tables in the background.)", 0) \
-    DECLARE(UInt64, background_buffer_flush_schedule_pool_size, 16, R"(The maximum number of threads that will be used for performing flush operations for [Buffer-engine tables](/engines/table-engines/special/buffer) in the background.)", 0) \
+    DECLARE(UInt64, background_fetches_pool_size, 16, R"(The maximum number of threads that will be used for fetching data parts from another replica for [*MergeTree-engine](/reference/engines/table-engines/mergetree-family) tables in the background.)", 0) \
+    DECLARE(UInt64, background_common_pool_size, 8, R"(The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/reference/engines/table-engines/mergetree-family) tables in the background.)", 0) \
+    DECLARE(UInt64, background_buffer_flush_schedule_pool_size, 16, R"(The maximum number of threads that will be used for performing flush operations for [Buffer-engine tables](/reference/engines/table-engines/special/buffer) in the background.)", 0) \
     DECLARE(UInt64, background_schedule_pool_size, 512, R"(The cap on the number of threads used to execute lightweight periodic operations for replicated tables, Kafka streaming, DNS cache updates, and similar tasks. Threads are spawned lazily on demand up to this cap, so a server with light background load uses far fewer threads than this number.)", 0) \
     DECLARE(UInt64, background_schedule_pool_initial_size, 16, R"(Initial number of worker threads allocated for each background schedule pool. Each pool grows lazily up to its configured cap (`background_schedule_pool_size` and friends) when demand exceeds the current set of workers. Lower values reduce startup overhead and idle thread counts; higher values eliminate first-task scheduling latency on busy servers.)", 0) \
     DECLARE(Float, background_schedule_pool_max_parallel_tasks_per_type_ratio, 0.8f, R"(The maximum ratio of threads in the pool that can execute tasks of the same type simultaneously.)", 0) \
@@ -1061,7 +1061,7 @@ Enables or disables showing secrets in `SHOW` and `SELECT` queries for tables, d
 User wishing to see secrets must also have
 [`format_display_secrets_in_show_and_select` format setting](/reference/settings/formats/format#format_display_secrets_in_show_and_select)
 turned on and a
-[`displaySecretsInShowAndSelect`](/sql-reference/statements/grant#displaysecretsinshowandselect) privilege.
+[`displaySecretsInShowAndSelect`](/reference/statements/grant#displaysecretsinshowandselect) privilege.
 
 Possible values:
 
@@ -1176,13 +1176,13 @@ The replica name in ZooKeeper.
 Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for all background merges. Can be overridden by a merge tree setting.
 
 **See Also**
-- [Workload Scheduling](/operations/workload-scheduling.md)
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
     DECLARE(String, mutation_workload, "default", R"(
 Used to regulate how resources are utilized and shared between mutations and other workloads. Specified value is used as `workload` setting value for all background mutations. Can be overridden by a merge tree setting.
 
 **See Also**
-- [Workload Scheduling](/operations/workload-scheduling.md)
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
     DECLARE(Bool, throw_on_unknown_workload, false, R"(
 Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
@@ -1197,7 +1197,7 @@ Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
 ```
 
 **See Also**
-- [Workload Scheduling](/operations/workload-scheduling.md)
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
     DECLARE(Bool, cpu_slot_preemption, true, R"(
 Defines how workload scheduling for CPU resources (MASTER THREAD and WORKER THREAD) is done.
@@ -1212,7 +1212,7 @@ Defines how workload scheduling for CPU resources (MASTER THREAD and WORKER THRE
 ```
 
 **See Also**
-- [Workload Scheduling](/operations/workload-scheduling.md)
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
     DECLARE(UInt64, cpu_slot_quantum_ns, 10000000, R"(
 It defines how many CPU nanoseconds a thread is allowed to consume after acquired a CPU slot and before it should request another CPU slot. Makes sense only if `cpu_slot_preemption` is enabled and CPU resource is defined for MASTER THREAD or WORKER THREAD.
@@ -1224,7 +1224,7 @@ It defines how many CPU nanoseconds a thread is allowed to consume after acquire
 ```
 
 **See Also**
-- [Workload Scheduling](/operations/workload-scheduling.md)
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
     DECLARE(UInt64, cpu_slot_preemption_timeout_ms, 1000, R"(
 It defines how many milliseconds could a worker thread wait during preemption, i.e. while waiting for another CPU slot to be granted. After this timeout, if thread was unable to acquire a new CPU slot it will exit and the query is scaled down to a lower number of concurrently executing threads dynamically. Note that master thread never downscaled, but could be preempted indefinitely. Makes sense only when `cpu_slot_preemption` is enabled and CPU resource is defined for WORKER THREAD.
@@ -1236,7 +1236,7 @@ It defines how many milliseconds could a worker thread wait during preemption, i
 ```
 
 **See Also**
-- [Workload Scheduling](/operations/workload-scheduling.md)
+- [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
     DECLARE(String, series_keeper_path, "/clickhouse/series", R"(
 Path in Keeper with auto-incremental numbers, generated by the `generateSerialID` function. Each series will be a node under this path.
@@ -1419,11 +1419,11 @@ Disabled by default to avoid possible security issues which can be caused by bug
     DECLARE(Bool, os_collect_psi_metrics, true, "Enable accounting PSI metrics from /proc/pressure/ files.", 0) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_drop_connection, 0, R"(
 Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider dropping connections. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.
-See [Controlling behavior on server CPU overload](/operations/settings/server-overload) for more details.
+See [Controlling behavior on server CPU overload](/concepts/features/configuration/settings/server-overload) for more details.
 )", 0) \
     DECLARE(Float, max_os_cpu_wait_time_ratio_to_drop_connection, 0, R"(
 Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider dropping connections. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.
-See [Controlling behavior on server CPU overload](/operations/settings/server-overload) for more details.
+See [Controlling behavior on server CPU overload](/concepts/features/configuration/settings/server-overload) for more details.
 )", 0) \
     DECLARE(Float, distributed_cache_keep_up_free_connections_ratio, 0.1f, "Soft limit for number of active connection distributed cache will try to keep free. After the number of free connections goes below distributed_cache_keep_up_free_connections_ratio * max_connections, connections with oldest activity will be closed until the number goes above the limit.", 0) \
     DECLARE(UInt64, tcp_close_connection_after_queries_num, 0, R"(Maximum number of queries allowed per TCP connection before the connection is closed. Set to 0 for unlimited queries.)", 0) \
@@ -1438,7 +1438,7 @@ See [Controlling behavior on server CPU overload](/operations/settings/server-ov
     DECLARE(Bool, jemalloc_enable_global_profiler, Jemalloc::default_enable_global_profiler, R"(Enable jemalloc's allocation profiler for all threads. Jemalloc will sample allocations and all deallocations for sampled allocations.
     Profiles can be flushed using SYSTEM JEMALLOC FLUSH PROFILE which can be used for allocation analysis.
     Samples can also be stored in system.trace_log using config jemalloc_collect_global_profile_samples_in_trace_log or with query setting jemalloc_collect_profile_samples_in_trace_log.
-    See [Allocation Profiling](/operations/allocation-profiling))", 0) \
+    See [Allocation Profiling](/concepts/features/performance/allocation-profiling))", 0) \
     DECLARE(Bool, jemalloc_collect_global_profile_samples_in_trace_log, Jemalloc::default_collect_global_profile_samples_in_trace_log, R"(Store jemalloc's sampled allocations in system.trace_log)", 0) \
     DECLARE(Bool, jemalloc_enable_background_threads, Jemalloc::default_enable_background_threads, R"(Enable jemalloc background threads. Jemalloc uses background threads to cleanup unused memory pages. Disabling it could lead to performance degradation.)", 0) \
     DECLARE(UInt64, jemalloc_max_background_threads_num, Jemalloc::default_max_background_threads_num, R"(Maximum amount of jemalloc background threads to create, set to 0 to use jemalloc's default value)", 0) \
@@ -1538,7 +1538,7 @@ The trailing slash is mandatory.
 ```
 )", 0) \
     DECLARE(String, user_files_path, "/var/lib/clickhouse/user_files/", R"(
-The directory with user files. Used in the table function [file()](/sql-reference/table-functions/file), [fileCluster()](/sql-reference/table-functions/fileCluster).
+The directory with user files. Used in the table function [file()](/reference/functions/table-functions/file), [fileCluster()](/reference/functions/table-functions/fileCluster).
 
 **Example**
 
@@ -1548,7 +1548,7 @@ The directory with user files. Used in the table function [file()](/sql-referenc
 )", 0) \
     DECLARE(String, dictionaries_lib_path, "/var/lib/clickhouse/dictionaries_lib/", R"(The directory with shared libraries for the `library` dictionary source. The setting is deprecated: the `library` dictionary source was removed.)", SettingsTierType::OBSOLETE) \
     DECLARE(String, user_scripts_path, "/var/lib/clickhouse/user_scripts/", R"(
-The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](/sql-reference/functions/udf#executable-user-defined-functions).
+The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](/reference/functions/regular-functions/udf#executable-user-defined-functions).
 
 **Example**
 
@@ -1631,7 +1631,7 @@ Port for exchanging data between ClickHouse servers over `<HTTPS>`.
     DECLARE(String, include_from, "/etc/metrika.xml", R"(
 The path to the file with substitutions. Both XML and YAML formats are supported.
 
-For more information, see the section [Configuration files](/operations/configuration-files).
+For more information, see the section [Configuration files](/concepts/features/configuration/server-config/configuration-files).
 
 **Example**
 
@@ -1654,7 +1654,7 @@ Path on the local filesystem to store temporary data for processing large querie
 ```
 )", 0) \
     DECLARE(String, format_schema_path, "/var/lib/clickhouse/format_schemas/", R"(
-The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](/interfaces/formats/CapnProto) format.
+The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](/reference/formats/CapnProto) format.
 
 **Example**
 

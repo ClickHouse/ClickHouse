@@ -16,7 +16,7 @@ Produces a 64-bit [SipHash](https://en.wikipedia.org/wiki/SipHash) hash value.
 
 This is a cryptographic hash function. It works at least three times faster than the [`MD5`](#MD5) hash function.
 
-The function [interprets](/sql-reference/functions/type-conversion-functions#reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them.
+The function [interprets](/reference/functions/regular-functions/type-conversion-functions#reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them.
 It then combines the hashes using the following algorithm:
 
 1. The first and the second hash value are concatenated to an array which is hashed.
@@ -136,7 +136,7 @@ New projects should probably use [`sipHash128ReferenceKeyed`](#sipHash128Referen
     factory.registerFunction<FunctionSipHash128Keyed>(sipHash128Keyed_documentation);
 
     FunctionDocumentation::Description sipHash128Ref_description = R"(
-Like [`sipHash128`](/sql-reference/functions/hash-functions#sipHash128) but implements the 128-bit algorithm from the original authors of SipHash.
+Like [`sipHash128`](/reference/functions/regular-functions/hash-functions#sipHash128) but implements the 128-bit algorithm from the original authors of SipHash.
     )";
     FunctionDocumentation::Syntax sipHash128Ref_syntax = "sipHash128Reference(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments sipHash128Ref_arguments = {
@@ -613,9 +613,9 @@ For `NULL`, the function returns `42`, matching Spark's seed behavior.
 
 #if USE_SSL
     FunctionDocumentation::Description halfMD5_description = R"(
-[Interprets](/sql-reference/functions/type-conversion-functions#reinterpretAsString) all the input
+[Interprets](/reference/functions/regular-functions/type-conversion-functions#reinterpretAsString) all the input
 parameters as strings and calculates the MD5 hash value for each of them. Then combines hashes, takes the first 8 bytes of the hash of the
-resulting string, and interprets them as [UInt64](/sql-reference/data-types/int-uint) in big-endian byte order. The function is
+resulting string, and interprets them as [UInt64](/reference/data-types/int-uint) in big-endian byte order. The function is
 relatively slow (5 million short strings per second per processor core).
 
 Consider using the [`sipHash64`](#sipHash64) function instead.

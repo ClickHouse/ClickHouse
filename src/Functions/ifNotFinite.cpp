@@ -74,7 +74,7 @@ REGISTER_FUNCTION(IfNotFinite)
     FunctionDocumentation::Description description = R"(
 Checks whether a floating point value is finite.
 
-You can get a similar result by using the [ternary operator](/sql-reference/functions/conditional-functions#if): `isFinite(x) ? x : y`.
+You can get a similar result by using the [ternary operator](/reference/functions/regular-functions/conditional-functions#if): `isFinite(x) ? x : y`.
     )";
     FunctionDocumentation::Syntax syntax = "ifNotFinite(x,y)";
     FunctionDocumentation::Arguments arguments = {

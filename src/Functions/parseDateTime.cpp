@@ -2370,7 +2370,7 @@ REGISTER_FUNCTION(ParseDateTime)
     FunctionDocumentation::Description parseDateTime_description = R"(
 Parses a date and time string according to a MySQL date format string.
 
-This function is the inverse of [`formatDateTime`](/sql-reference/functions/date-time-functions).
+This function is the inverse of [`formatDateTime`](/reference/functions/regular-functions/date-time-functions).
 It parses a String argument using a format String. Returns a DateTime type.
     )";
     FunctionDocumentation::Syntax parseDateTime_syntax = "parseDateTime(time_string, format[, timezone])";
@@ -2457,7 +2457,7 @@ SELECT parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
     FunctionDocumentation::Description parseDateTime64_description = R"(
 Parses a date and time string with sub-second precision according to a MySQL date format string.
 
-This function is the inverse of [`formatDateTime`](/sql-reference/functions/date-time-functions) for DateTime64.
+This function is the inverse of [`formatDateTime`](/reference/functions/regular-functions/date-time-functions) for DateTime64.
 It parses a String argument using a format String. Returns a DateTime64 type which can represent dates from 0000 to 9999 with sub-second precision (high precisions cover a narrower range because the value is stored in an `Int64` number of ticks: precision 8 reaches about 4892 and precision 9 spans 1677 to 2262).
     )";
     FunctionDocumentation::Syntax parseDateTime64_syntax = "parseDateTime64(time_string, format[, timezone])";
@@ -2544,7 +2544,7 @@ SELECT parseDateTime64OrNull('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
     FunctionDocumentation::Description parseDateTimeInJodaSyntax_description = R"(
 Parses a date and time string according to a Joda date format string.
 
-This function is the inverse of [`formatDateTimeInJodaSyntax`](/sql-reference/functions/date-time-functions#formatDateTimeInJodaSyntax).
+This function is the inverse of [`formatDateTimeInJodaSyntax`](/reference/functions/regular-functions/date-time-functions#formatDateTimeInJodaSyntax).
 It parses a String argument using a Joda-style format String. Returns a DateTime type.
 
 Refer to [Joda Time documentation](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) for the format patterns.
@@ -2633,7 +2633,7 @@ SELECT parseDateTimeInJodaSyntaxOrNull('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:
     FunctionDocumentation::Description parseDateTime64InJodaSyntax_description = R"(
 Parses a date and time string with sub-second precision according to a Joda date format string.
 
-This function is the inverse of [`formatDateTimeInJodaSyntax`](/sql-reference/functions/date-time-functions#formatDateTimeInJodaSyntax) for DateTime64.
+This function is the inverse of [`formatDateTimeInJodaSyntax`](/reference/functions/regular-functions/date-time-functions#formatDateTimeInJodaSyntax) for DateTime64.
 It parses a String argument using a Joda-style format String. Returns a DateTime64 type which can represent dates from 0000 to 9999 with sub-second precision (high precisions cover a narrower range because the value is stored in an `Int64` number of ticks: precision 8 reaches about 4892 and precision 9 spans 1677 to 2262).
 
 Refer to [Joda Time documentation](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) for the format patterns.

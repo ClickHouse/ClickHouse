@@ -2445,8 +2445,8 @@ Operator `[n]` provides the same functionality.
     )";
     FunctionDocumentation::Syntax syntax = "arrayElement(arr, n)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "The array to search. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"n", "Position of the element to get. [`(U)Int*`](/sql-reference/data-types/int-uint)."}
+        {"arr", "The array to search. [`Array(T)`](/reference/data-types/array)."},
+        {"n", "Position of the element to get. [`(U)Int*`](/reference/data-types/int-uint)."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a single combined array from the provided array arguments", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {

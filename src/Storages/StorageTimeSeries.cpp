@@ -713,8 +713,8 @@ CREATE TABLE my_table ENGINE=TimeSeries
 ```
 
 Then this table can be used with the following protocols (a port must be assigned in the server configuration):
-- [prometheus remote-write](/interfaces/prometheus#remote-write)
-- [prometheus remote-read](/interfaces/prometheus#remote-read)
+- [prometheus remote-write](/concepts/features/interfaces/prometheus#remote-write)
+- [prometheus remote-read](/concepts/features/interfaces/prometheus#remote-read)
 
 ### Outer columns {#outer-columns}
 

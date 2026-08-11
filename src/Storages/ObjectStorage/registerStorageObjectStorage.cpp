@@ -165,7 +165,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 - `blobpath` - file path. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.
 - `account_name` - if storage_account_url is used, then account name can be specified here
 - `account_key` - if storage_account_url is used, then account key can be specified here
-- `format` — The [format](/interfaces/formats.md) of the file.
+- `format` — The [format](/reference/formats) of the file.
 - `compression` — Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).
 - `partition_strategy` – Options: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. If the path contains a `{_partition_id}` placeholder, defaults to `wildcard` — the only strategy compatible with such a path. Otherwise defaults to the `file_like_engine_default_partition_strategy` setting (`wildcard` under `compatibility` settings older than `26.6`, `hive` otherwise).
 - `partition_columns_in_data_file` - Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
@@ -203,13 +203,13 @@ SELECT * FROM test_table;
 
 Currently there are 3 ways to authenticate:
 - `Managed Identity` - Can be used by providing an `endpoint`, `connection_string` or `storage_account_url`.
-- `SAS Token` - Can be used by providing an `endpoint`, `connection_string` or `storage_account_url`. It is identified by presence of '?' in the url. See [azureBlobStorage](/sql-reference/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) for examples.
+- `SAS Token` - Can be used by providing an `endpoint`, `connection_string` or `storage_account_url`. It is identified by presence of '?' in the url. See [azureBlobStorage](/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) for examples.
 - `Workload Identity` - Can be used by providing an `endpoint` or `storage_account_url`. If `use_workload_identity` parameter is set in config, ([workload identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications)) is used for authentication.
 
 ### Data cache {#data-cache}
 
 `Azure` table engine supports data caching on local disk.
-See filesystem cache configuration options and usage in this [section](/operations/storing-data.md/#using-local-cache).
+See filesystem cache configuration options and usage in this [section](/concepts/features/configuration/server-config/storing-data#using-local-cache).
 Caching is made depending on the path and ETag of the storage object, so clickhouse will not read a stale cache version.
 
 To enable caching use a setting `filesystem_cache_name = '<name>'` and `enable_filesystem_cache = 1`.
@@ -233,13 +233,13 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 </clickhouse>
 ```
 
-2. reuse cache configuration (and therefore cache storage) from clickhouse `storage_configuration` section, [described here](/operations/storing-data.md/#using-local-cache)
+2. reuse cache configuration (and therefore cache storage) from clickhouse `storage_configuration` section, [described here](/concepts/features/configuration/server-config/storing-data#using-local-cache)
 
 ### PARTITION BY {#partition-by}
 
 `PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
 
-For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
+For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
 
 #### Partition strategy {#partition-strategy}
 
@@ -268,7 +268,7 @@ select _path, * from azure_table;
 
 ## See also {#see-also}
 
-[Azure Blob Storage Table Function](/sql-reference/table-functions/azureBlobStorage)
+[Azure Blob Storage Table Function](/reference/functions/table-functions/azureBlobStorage)
 )DOCS_MD",
         .syntax = "ENGINE = AzureBlobStorage(connection_string | storage_account_url, container_name, blobpath, "
             "[account_name, account_key,] format [, compression])",
@@ -286,7 +286,7 @@ static void registerStorageS3Impl(const String & name, StorageFactory & factory)
     if (name == S3Definition::storage_engine_name)
     {
         description = R"DOCS_MD(
-This engine provides integration with the [Amazon S3](https://aws.amazon.com/s3/) ecosystem. This engine is similar to the [HDFS](/engines/table-engines/integrations/hdfs) engine, but provides S3-specific features.
+This engine provides integration with the [Amazon S3](https://aws.amazon.com/s3/) ecosystem. This engine is similar to the [HDFS](/reference/engines/table-engines/integrations/hdfs) engine, but provides S3-specific features.
 
 ## Example {#example}
 
@@ -320,18 +320,18 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 
 - `path` — Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings. For more information see [below](#wildcards-in-path).
 - `NOSIGN` - If this keyword is provided in place of credentials, all the requests will not be signed.
-- `format` — The [format](/interfaces/formats#formats-overview) of the file.
+- `format` — The [format](/reference/formats#formats-overview) of the file.
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file. For more information see [Using S3 for Data Storage](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
 - `compression` — Compression type. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Parameter is optional. By default, it will auto-detect compression by file extension.
 - `partition_strategy` – Options: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. If the path contains a `{_partition_id}` placeholder, defaults to `wildcard` — the only strategy compatible with such a path. Otherwise defaults to the `file_like_engine_default_partition_strategy` setting (`wildcard` under `compatibility` settings older than `26.6`, `hive` otherwise).
 - `partition_columns_in_data_file` - Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
 - `storage_class_name` - Options: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Only S3 storage classes that allow immediate retrieval are supported (archival classes such as `GLACIER` and `DEEP_ARCHIVE` are not). Allows to specify [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
-- `extra_credentials` - Optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
+- `extra_credentials` - Optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
 ### Data cache {#data-cache}
 
 `S3` table engine supports data caching on local disk.
-See filesystem cache configuration options and usage in this [section](/operations/storing-data.md/#using-local-cache).
+See filesystem cache configuration options and usage in this [section](/concepts/features/configuration/server-config/storing-data#using-local-cache).
 Caching is made depending on the path and ETag of the storage object, so clickhouse will not read a stale cache version.
 
 To enable caching use a setting `filesystem_cache_name = '<name>'` and `enable_filesystem_cache = 1`.
@@ -357,13 +357,13 @@ There are two ways to define cache in configuration file.
 </clickhouse>
 ```
 
-2. reuse cache configuration (and therefore cache storage) from clickhouse `storage_configuration` section, [described here](/operations/storing-data.md/#using-local-cache)
+2. reuse cache configuration (and therefore cache storage) from clickhouse `storage_configuration` section, [described here](/concepts/features/configuration/server-config/storing-data#using-local-cache)
 
 ### PARTITION BY {#partition-by}
 
 `PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
 
-For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
+For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
 
 #### Partition strategy {#partition-strategy}
 
@@ -507,7 +507,7 @@ Code: 48. DB::Exception: Received from localhost:9000. DB::Exception: Reading fr
 
 ## Insert data {#inserting-data}
 
-Note that rows can only be inserted into new files. There are no merge cycles or file split operations. Once a file is written, subsequent inserts will fail. To avoid this you can use `s3_truncate_on_insert` and `s3_create_new_file_on_insert` settings. See more details [here](/integrations/s3#inserting-data).
+Note that rows can only be inserted into new files. There are no merge cycles or file split operations. Once a file is written, subsequent inserts will fail. To avoid this you can use `s3_truncate_on_insert` and `s3_create_new_file_on_insert` settings. See more details [here](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
 
 ## Virtual columns {#virtual-columns}
 
@@ -707,11 +707,11 @@ CREATE TABLE big_table (name String, value UInt32)
 
 ## Optimizing performance {#optimizing-performance}
 
-For details on optimizing the performance of the s3 function see [our detailed guide](/integrations/s3/performance).
+For details on optimizing the performance of the s3 function see [our detailed guide](/integrations/connectors/data-ingestion/AWS/performance).
 
 ## Role-based access {#role-based-access}
 
-In ClickHouse Cloud, you can use role-based access to authenticate with S3 instead of using access keys. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
+In ClickHouse Cloud, you can use role-based access to authenticate with S3 instead of using access keys. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
 Once configured, a `roleARN` can be passed via an `extra_credentials` parameter:
 
@@ -730,7 +730,7 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
 ## See also {#see-also}
 
 - [s3 table function](/reference/functions/table-functions/s3)
-- [Integrating S3 with ClickHouse](/integrations/s3)
+- [Integrating S3 with ClickHouse](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)
 )DOCS_MD";
     }
     else
@@ -745,7 +745,7 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
 
         description = "The `" + name + "` engine provides integration with " + provider
             + " through its Amazon S3-compatible API. It shares the implementation, parameters, and settings of the "
-              "[`S3`](/engines/table-engines/integrations/s3) table engine; see that engine's documentation for the "
+              "[`S3`](/reference/engines/table-engines/integrations/s3) table engine; see that engine's documentation for the "
               "full description, parameters, examples, and settings.\n";
     }
 
@@ -812,7 +812,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 <CloudNotSupportedBadge/>
 
-This engine provides integration with the [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) ecosystem by allowing to manage data on [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html) via ClickHouse. This engine is similar to the [File](/engines/table-engines/special/file) and [URL](/engines/table-engines/special/url) engines, but provides Hadoop-specific features.
+This engine provides integration with the [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) ecosystem by allowing to manage data on [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html) via ClickHouse. This engine is similar to the [File](/reference/engines/table-engines/special/file) and [URL](/reference/engines/table-engines/special/url) engines, but provides Hadoop-specific features.
 
 This feature is not supported by ClickHouse engineers, and it is known to have a sketchy quality. In case of any problems, fix them yourself and submit a pull request.
 
@@ -828,14 +828,14 @@ ENGINE = HDFS(URI, format)
 - `format` - specifies one of the available file formats. To perform
 `SELECT` queries, the format must be supported for input, and to perform
 `INSERT` queries – for output. The available formats are listed in the
-[Formats](/interfaces/formats#formats-overview) section.
+[Formats](/reference/formats#formats-overview) section.
 - [PARTITION BY expr]
 
 ### PARTITION BY {#partition-by}
 
 `PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
 
-For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
+For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
 
 **Example:**
 
@@ -1143,7 +1143,7 @@ void registerStorageIceberg(StorageFactory & factory)
         Documentation{
             .description = R"DOCS_MD(
 :::warning
-We recommend using the [Iceberg Table Function](/sql-reference/table-functions/iceberg.md) for working with Iceberg data in ClickHouse. The Iceberg Table Function currently provides sufficient functionality, offering a partial read-only interface for Iceberg tables.
+We recommend using the [Iceberg Table Function](/reference/functions/table-functions/iceberg) for working with Iceberg data in ClickHouse. The Iceberg Table Function currently provides sufficient functionality, offering a partial read-only interface for Iceberg tables.
 
 The Iceberg Table Engine is available but may have limitations. ClickHouse wasn't originally designed to support tables with externally changing schemas, which can affect the functionality of the Iceberg Table Engine. As a result, some features that work with regular tables may be unavailable or may not function correctly, especially when using the old analyzer.
 
@@ -1175,7 +1175,7 @@ CREATE TABLE iceberg_table_local
 Description of the arguments coincides with description of arguments in engines `S3`, `AzureBlobStorage`, `HDFS` and `File` correspondingly.
 `format` stands for the format of data files in the Iceberg table.
 
-For `IcebergS3`, an optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
+For `IcebergS3`, an optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
 Engine parameters can be specified using [Named Collections](/concepts/features/configuration/server-config/named-collections)
 
@@ -1510,7 +1510,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 
 ## See also {#see-also}
 
-- [iceberg table function](/sql-reference/table-functions/iceberg.md)
+- [iceberg table function](/reference/functions/table-functions/iceberg)
 )DOCS_MD",
             .syntax = "ENGINE = Iceberg(url [, access_key_id, secret_access_key])",
             .related = {"IcebergS3", "IcebergAzure", "IcebergHDFS", "IcebergLocal", "DeltaLake", "Hudi"}});
@@ -2235,9 +2235,9 @@ ENGINE = DeltaLake(url, [aws_access_key_id, aws_secret_access_key,] [extra_crede
 
 - `url` — Bucket url with path to the existing Delta Lake table.
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file.
-- `extra_credentials` - Optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
+- `extra_credentials` - Optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
-Engine parameters can be specified using [Named Collections](/operations/named-collections.md).
+Engine parameters can be specified using [Named Collections](/concepts/features/configuration/server-config/named-collections).
 
 **Example**
 
@@ -2504,9 +2504,9 @@ CREATE TABLE hudi_table
 
 - `url` — Bucket url with the path to an existing Hudi table.
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file.
-- `extra_credentials` - Optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
+- `extra_credentials` - Optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
 
-Engine parameters can be specified using [Named Collections](/operations/named-collections.md).
+Engine parameters can be specified using [Named Collections](/concepts/features/configuration/server-config/named-collections).
 
 **Example**
 
@@ -2534,7 +2534,7 @@ CREATE TABLE hudi_table ENGINE=Hudi(hudi_conf, filename = 'test_table')
 
 ## See also {#see-also}
 
-- [hudi table function](/sql-reference/table-functions/hudi.md)
+- [hudi table function](/reference/functions/table-functions/hudi)
 )DOCS_MD",
             .syntax = "ENGINE = Hudi(url [, access_key_id, secret_access_key])",
             .related = {"Iceberg", "DeltaLake"}});

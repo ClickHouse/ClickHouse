@@ -162,11 +162,11 @@ If the difference is negative, it is ignored.
 
 :::tip
 The underlying data must be sorted for this function to work properly.
-If you would like to use this function in a [materialized view](/sql-reference/statements/create/view#materialized-view), you most likely want to use the [`deltaSumTimestamp`](/sql-reference/aggregate-functions/reference/deltasumtimestamp) function instead.
+If you would like to use this function in a [materialized view](/reference/statements/create/view#materialized-view), you most likely want to use the [`deltaSumTimestamp`](/reference/functions/aggregate-functions/deltaSumTimestamp) function instead.
 :::
 
 See also:
-- [`runningDifference`](/sql-reference/functions/other-functions#runningDifference)
+- [`runningDifference`](/reference/functions/regular-functions/other-functions#runningDifference)
     )";
     FunctionDocumentation::Syntax syntax = "deltaSum(x1[, x2, ...])";
     FunctionDocumentation::Arguments arguments = {

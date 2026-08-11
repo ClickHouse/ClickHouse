@@ -150,38 +150,38 @@ Exactly one authentication method must be provided. BigQuery does not allow anon
 2. **Service account key** (recommended for servers). Pass the content of a key file created in Google Cloud IAM with the `service_account_key` argument. ClickHouse signs a JWT with the key and exchanges it for an access token, refreshing it automatically.
 3. **Refresh token**. Pass `client_id`, `client_secret` and `refresh_token`, for example, taken from `~/.config/gcloud/application_default_credentials.json` after `gcloud auth application-default login`.
 
-Store credentials in a [named collection](/operations/named-collections) to avoid specifying them in each query. A permanent table created from a named collection (with the `BigQuery` table engine or `CREATE TABLE ... AS bigquery(...)`) is registered as a dependency of the collection, so `DROP NAMED COLLECTION` is blocked while the table exists.
+Store credentials in a [named collection](/concepts/features/configuration/server-config/named-collections) to avoid specifying them in each query. A permanent table created from a named collection (with the `BigQuery` table engine or `CREATE TABLE ... AS bigquery(...)`) is registered as a dependency of the collection, so `DROP NAMED COLLECTION` is blocked while the table exists.
 
 ## Data type mapping {#data-type-mapping}
 
 | BigQuery type            | ClickHouse type                 |
 |--------------------------|---------------------------------|
-| `STRING`                 | [String](/sql-reference/data-types/string) |
-| `BYTES`                  | [String](/sql-reference/data-types/string) (raw bytes) |
-| `INTEGER` / `INT64`      | [Int64](/sql-reference/data-types/int-uint) |
-| `FLOAT` / `FLOAT64`      | [Float64](/sql-reference/data-types/float) |
-| `BOOLEAN` / `BOOL`       | [Bool](/sql-reference/data-types/boolean) |
-| `TIMESTAMP`              | [DateTime64(6, 'UTC')](/sql-reference/data-types/datetime64) |
-| `DATE`                   | [Date32](/sql-reference/data-types/date32) |
-| `TIME`                   | [Time64(6)](/sql-reference/data-types/time64) |
-| `DATETIME`               | [DateTime64(6, 'UTC')](/sql-reference/data-types/datetime64) |
-| `NUMERIC` / `DECIMAL`    | [Decimal(38, 9)](/sql-reference/data-types/decimal), or `Decimal(P, S)` when parameterized |
-| `BIGNUMERIC`             | [Decimal(76, 38)](/sql-reference/data-types/decimal), or `Decimal(P, S)` when parameterized |
-| `GEOGRAPHY`              | [Geometry](/sql-reference/data-types/geo#geometry) (parsed from WKT) |
-| `JSON`                   | [String](/sql-reference/data-types/string) |
-| `INTERVAL`               | [String](/sql-reference/data-types/string) |
-| `RANGE`                  | [String](/sql-reference/data-types/string) (read-only) |
-| `RECORD` / `STRUCT`      | [Tuple](/sql-reference/data-types/tuple), or [Nullable](/sql-reference/data-types/nullable)(`Tuple`) in `NULLABLE` mode |
-| `REPEATED` mode          | [Array](/sql-reference/data-types/array) of the element type, with a non-`Nullable` element (`Array(Tuple(...))` for a `RECORD` element), because a BigQuery array cannot contain `NULL` elements |
-| `NULLABLE` mode          | [Nullable](/sql-reference/data-types/nullable) (except `GEOGRAPHY`, whose `Geometry` type holds a `NULL` by itself) |
+| `STRING`                 | [String](/reference/data-types/string) |
+| `BYTES`                  | [String](/reference/data-types/string) (raw bytes) |
+| `INTEGER` / `INT64`      | [Int64](/reference/data-types/int-uint) |
+| `FLOAT` / `FLOAT64`      | [Float64](/reference/data-types/float) |
+| `BOOLEAN` / `BOOL`       | [Bool](/reference/data-types/boolean) |
+| `TIMESTAMP`              | [DateTime64(6, 'UTC')](/reference/data-types/datetime64) |
+| `DATE`                   | [Date32](/reference/data-types/date32) |
+| `TIME`                   | [Time64(6)](/reference/data-types/time64) |
+| `DATETIME`               | [DateTime64(6, 'UTC')](/reference/data-types/datetime64) |
+| `NUMERIC` / `DECIMAL`    | [Decimal(38, 9)](/reference/data-types/decimal), or `Decimal(P, S)` when parameterized |
+| `BIGNUMERIC`             | [Decimal(76, 38)](/reference/data-types/decimal), or `Decimal(P, S)` when parameterized |
+| `GEOGRAPHY`              | [Geometry](/reference/data-types/geo#geometry) (parsed from WKT) |
+| `JSON`                   | [String](/reference/data-types/string) |
+| `INTERVAL`               | [String](/reference/data-types/string) |
+| `RANGE`                  | [String](/reference/data-types/string) (read-only) |
+| `RECORD` / `STRUCT`      | [Tuple](/reference/data-types/tuple), or [Nullable](/reference/data-types/nullable)(`Tuple`) in `NULLABLE` mode |
+| `REPEATED` mode          | [Array](/reference/data-types/array) of the element type, with a non-`Nullable` element (`Array(Tuple(...))` for a `RECORD` element), because a BigQuery array cannot contain `NULL` elements |
+| `NULLABLE` mode          | [Nullable](/reference/data-types/nullable) (except `GEOGRAPHY`, whose `Geometry` type holds a `NULL` by itself) |
 
 Notes:
 
 - BigQuery `DATETIME` has no time zone; it is mapped to `DateTime64(6, 'UTC')` so that the displayed value does not depend on the server time zone.
 - A `NULLABLE` `RECORD` is mapped to `Nullable(Tuple(...))`, so a whole-record `NULL` is preserved as `NULL` instead of collapsing to a `Tuple` of default values. A `NULL` (or empty) array becomes an empty array, because `Array` cannot be inside `Nullable` in ClickHouse. A BigQuery array cannot contain `NULL` elements (`ARRAY<T>` is equivalent to `ARRAY<T NOT NULL>`), so the element type of a `REPEATED` field is not `Nullable` (`Array(T)`, or `Array(Tuple(...))` for a `RECORD` element); a `NULL` element in a `tabledata.list` response is rejected as malformed input.
 - Reading and writing `Nullable(Tuple(...))` columns through the `bigquery` table function works without extra settings. Creating a persistent `BigQuery`-engine table that contains such a column (whether the structure is inferred or declared explicitly) requires the `enable_nullable_tuple_type` setting, as for any `Nullable(Tuple)` column. When declaring columns explicitly, a `RECORD` field may instead be declared as a plain `Tuple(...)` to avoid the setting, at the cost of coercing a whole-record `NULL` to a default tuple; the only accepted difference from the inferred type is dropping a `Nullable` that wraps a `RECORD`'s `Tuple`, and only at that same record — the nullability cannot be moved to a different (inner or outer) record.
-- `GEOGRAPHY` is mapped to [Geometry](/sql-reference/data-types/geo#geometry). BigQuery transfers a `GEOGRAPHY` value as [WKT](https://en.wikipedia.org/wiki/Well-known_text_representation_of_geometry) text, which is parsed into the matching alternative of `Geometry` (a `Variant` of `Point`, `MultiPoint`, `Ring`, `LineString`, `MultiLineString`, `Polygon` and `MultiPolygon`) on read, and serialized back to WKT on write. A `GEOMETRYCOLLECTION` and an empty geometry (such as `POINT EMPTY`) have no `Geometry` counterpart, so reading a row that contains such a value raises an error. Because `Variant` holds a `NULL` by itself, a `NULLABLE` `GEOGRAPHY` field is mapped to `Geometry` and not to `Nullable(Geometry)`, and `NULL` still round-trips.
-- `JSON` is mapped to `String` rather than to the [JSON](/sql-reference/data-types/newjson) data type, because the ClickHouse `JSON` type accepts only an object (`{...}`) at the top level, while a BigQuery `JSON` value can be any JSON value — a scalar, an array, or `null` — so a table containing such values could not be read. In addition, `JSON` cannot be wrapped in `Nullable`, so an SQL `NULL` in a `NULLABLE` column would not be preserved. The `String` mapping is lossless; top-level objects can be converted with `CAST(value AS JSON)`.
+- `GEOGRAPHY` is mapped to [Geometry](/reference/data-types/geo#geometry). BigQuery transfers a `GEOGRAPHY` value as [WKT](https://en.wikipedia.org/wiki/Well-known_text_representation_of_geometry) text, which is parsed into the matching alternative of `Geometry` (a `Variant` of `Point`, `MultiPoint`, `Ring`, `LineString`, `MultiLineString`, `Polygon` and `MultiPolygon`) on read, and serialized back to WKT on write. A `GEOMETRYCOLLECTION` and an empty geometry (such as `POINT EMPTY`) have no `Geometry` counterpart, so reading a row that contains such a value raises an error. Because `Variant` holds a `NULL` by itself, a `NULLABLE` `GEOGRAPHY` field is mapped to `Geometry` and not to `Nullable(Geometry)`, and `NULL` still round-trips.
+- `JSON` is mapped to `String` rather than to the [JSON](/reference/data-types/newjson) data type, because the ClickHouse `JSON` type accepts only an object (`{...}`) at the top level, while a BigQuery `JSON` value can be any JSON value — a scalar, an array, or `null` — so a table containing such values could not be read. In addition, `JSON` cannot be wrapped in `Nullable`, so an SQL `NULL` in a `NULLABLE` column would not be preserved. The `String` mapping is lossless; top-level objects can be converted with `CAST(value AS JSON)`.
 - `BIGNUMERIC` values with more than 38 digits in the integer part do not fit into `Decimal(76, 38)` and produce an error.
 - `TIMESTAMP` and `DATE` values outside of the range of `DateTime64`/`Date32` (years 1900-2299) are not supported.
 - `RANGE` columns are read-only. `tabledata.insertAll` expects a `RANGE<T>` value as a structured `{start, end}` object, which cannot be reconstructed from the `String` mapping, so inserting into a `RANGE` column raises an error.

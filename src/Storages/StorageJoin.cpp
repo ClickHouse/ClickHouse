@@ -543,7 +543,7 @@ void registerStorageJoin(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-Optional prepared data structure for usage in [JOIN](/sql-reference/statements/select/join) operations.
+Optional prepared data structure for usage in [JOIN](/reference/statements/select/join) operations.
 
 :::note
 In ClickHouse Cloud, if your service was created with a version earlier than 25.4, you will need to set the compatibility to at least 25.4 using  `SET compatibility=25.4`.
@@ -559,17 +559,17 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = Join(join_strictness, join_type, k1[, k2, ...])
 ```
 
-See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+See the detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
 
 ## Engine parameters {#engine-parameters}
 
 ### `join_strictness` {#join_strictness}
 
-`join_strictness` – [JOIN strictness](/sql-reference/statements/select/join#supported-types-of-join).
+`join_strictness` – [JOIN strictness](/reference/statements/select/join#supported-types-of-join).
 
 ### `join_type` {#join_type}
 
-`join_type` – [JOIN type](/sql-reference/statements/select/join#supported-types-of-join).
+`join_type` – [JOIN type](/reference/statements/select/join#supported-types-of-join).
 
 ### Key columns {#key-columns}
 
@@ -592,11 +592,11 @@ You can use `INSERT` queries to add data to the `Join`-engine tables. If the tab
 Main use-cases for `Join`-engine tables are following:
 
 - Place the table to the right side in a `JOIN` clause.
-- Call the [joinGet](/sql-reference/functions/other-functions.md/#joinGet) function, which lets you extract data from the table the same way as from a dictionary.
+- Call the [joinGet](/reference/functions/regular-functions/other-functions#joinGet) function, which lets you extract data from the table the same way as from a dictionary.
 
 ### Deleting data {#deleting-data}
 
-`ALTER DELETE` queries for `Join`-engine tables are implemented as [mutations](/sql-reference/statements/alter/index.md#mutations). `DELETE` mutation reads filtered data and overwrites data of memory and disk.
+`ALTER DELETE` queries for `Join`-engine tables are implemented as [mutations](/reference/statements/alter/skipping-index#mutations). `DELETE` mutation reads filtered data and overwrites data of memory and disk.
 
 ### Limitations and settings {#join-limitations-and-settings}
 
@@ -625,7 +625,7 @@ When creating a table, the following settings are applied:
 
 #### Persistent {#persistent}
 
-Disables persistency for the Join and [Set](/engines/table-engines/special/set.md) table engines.
+Disables persistency for the Join and [Set](/reference/engines/table-engines/special/set) table engines.
 
 Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
 

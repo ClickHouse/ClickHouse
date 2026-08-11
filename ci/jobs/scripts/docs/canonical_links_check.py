@@ -29,7 +29,7 @@ except ImportError:
 
 LOCALE_DIRS = {"ar", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh"}
 
-# Markdown links, JSX attributes, and navigation data such as
+# Markdown links, JSX attributes, navigation data such as
 # ``{ label: "Settings", href: "/operations/settings" }``. GT rewrites the
 # first two forms, while ClickHouse's locale component fixer covers the latter;
 # all of them must start from a canonical English route.
@@ -37,6 +37,10 @@ MARKDOWN_LINK = re.compile(r"\]\(\s*(?P<url>/[^\s)]+)")
 NAVIGATION_URL = re.compile(
     r"(?<![A-Za-z0-9_])(?:(?:['\"])?(?:href|to)(?:['\"])?)[ \t]*[:=][ \t]*"
     r"\{?[ \t]*(?P<quote>['\"`])(?P<url>/[^'\"`\s$]+)(?P=quote)"
+)
+BARE_DOCS_URL = re.compile(
+    r"(?P<url>https://clickhouse\.com/docs(?:/en)?/"
+    r"[^\s'\"`)<>]*[A-Za-z0-9_/#?=&%+~-])"
 )
 
 MDX_COMMENT = re.compile(r"\{/\*.*?\*/\}", re.DOTALL)
@@ -90,8 +94,20 @@ def load_redirects(docs_root):
 
 def canonicalize_url(url, redirects):
     """Return the final redirect destination, preserving caller fragments."""
-    original_path, original_suffix = split_path_suffix(url)
+    public_prefix = ""
+    internal_url = url
+    for prefix in ("https://clickhouse.com/docs/en", "https://clickhouse.com/docs"):
+        if url.startswith(f"{prefix}/"):
+            public_prefix = "https://clickhouse.com/docs"
+            internal_url = url[len(prefix) :]
+            break
+
+    original_path, original_suffix = split_path_suffix(internal_url)
     lookup = original_path.rstrip("/") or "/"
+    for extension in (".mdx", ".md"):
+        if lookup.endswith(extension):
+            lookup = lookup[: -len(extension)]
+            break
     if lookup not in redirects:
         return None
 
@@ -114,14 +130,17 @@ def canonicalize_url(url, redirects):
 
     if original_suffix and not split_path_suffix(destination)[1]:
         destination += original_suffix
-    return destination
+    return public_prefix + destination
 
 
-def find_aliases_in_text(text, redirects):
+def find_aliases_in_text(text, redirects, include_public_urls=False):
     masked = mask_non_links(text)
     aliases = []
     occupied = set()
-    for pattern in (MARKDOWN_LINK, NAVIGATION_URL):
+    patterns = [MARKDOWN_LINK, NAVIGATION_URL]
+    if include_public_urls:
+        patterns.append(BARE_DOCS_URL)
+    for pattern in patterns:
         for match in pattern.finditer(masked):
             start, end = match.span("url")
             if (start, end) in occupied:
@@ -134,9 +153,9 @@ def find_aliases_in_text(text, redirects):
     return sorted(aliases)
 
 
-def source_files(docs_root):
+def source_files(docs_root, repo_root):
     files = {
-        rel
+        os.path.join(docs_root, rel)
         for rel in dump_inputs(docs_root)
         if rel.endswith((".md", ".mdx"))
     }
@@ -149,7 +168,16 @@ def source_files(docs_root):
             dirs[:] = [d for d in dirs if d not in LOCALE_DIRS]
         for name in names:
             if name.endswith((".js", ".jsx")):
-                files.add(os.path.relpath(os.path.join(root, name), docs_root))
+                files.add(os.path.join(root, name))
+
+    # A growing portion of the reference documentation is embedded in the C++
+    # registration code and exported verbatim. These links are English source
+    # links too, even though their containing files live outside ``docs``.
+    source_root = os.path.join(repo_root, "src")
+    for root, _dirs, names in os.walk(source_root):
+        for name in names:
+            if name.endswith((".cpp", ".h")):
+                files.add(os.path.join(root, name))
     return sorted(files)
 
 
@@ -162,15 +190,18 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     docs_root = os.path.abspath(args.docs_root)
+    repo_root = os.path.dirname(docs_root)
     redirects = load_redirects(docs_root)
     violations = []
     fixed = 0
 
-    for rel in source_files(docs_root):
-        path = os.path.join(docs_root, rel)
+    for path in source_files(docs_root, repo_root):
+        rel = os.path.relpath(path, repo_root)
         with open(path, encoding="utf-8", errors="replace") as f:
             text = f.read()
-        aliases = find_aliases_in_text(text, redirects)
+        aliases = find_aliases_in_text(
+            text, redirects, include_public_urls=rel.startswith("src/")
+        )
         if not aliases:
             continue
 

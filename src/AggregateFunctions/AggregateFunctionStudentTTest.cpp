@@ -104,7 +104,7 @@ The null hypothesis is that means of populations are equal. Normal distribution 
 **See Also**
 
 - [Student's t-test](https://en.wikipedia.org/wiki/Student%27s_t-test)
-- [welchTTest function](/sql-reference/aggregate-functions/reference/welchttest)
+- [welchTTest function](/reference/functions/aggregate-functions/welchTTest)
     )";
     FunctionDocumentation::Syntax syntax_studentTTest = R"(
 studentTTest([confidence_level])(sample_data, sample_index)

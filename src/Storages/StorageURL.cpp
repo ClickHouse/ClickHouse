@@ -2662,7 +2662,7 @@ Syntax: `URL(URL [,Format] [,CompressionMethod])`
 
 - The `URL` parameter must conform to the structure of a Uniform Resource Locator. For an `http`/`https` URL (the default backend), it must point to a server that uses HTTP or HTTPS, and getting a response from the server does not require any additional headers. A URL with a recognized non-HTTP scheme (`file://`, `s3://`, `az://`, `hdfs://`, …) is instead delegated to the matching engine — see [Dispatching by URL scheme](#scheme-dispatch) below.
 
-- The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](/interfaces/formats#formats-overview).
+- The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](/reference/formats#formats-overview).
 
     If this argument is not specified, ClickHouse detects the format automatically from the suffix of the `URL` parameter. If the suffix of `URL` parameter does not match any supported formats, it fails to create table. For example, for engine expression `URL('http://localhost/test.json')`, `JSON` format is applied.
 
@@ -2688,9 +2688,9 @@ For example, for engine expression `URL('http://localhost/test.gzip')`, `gzip` c
 
 ## Dispatching by URL scheme {#scheme-dispatch}
 
-The `URL` engine is a unified wrapper on top of the other file- and object-storage engines: it dispatches to the right backend based on the URL scheme. `http`/`https` (and any unrecognized scheme) are served by the `URL` engine itself; `file://` is served by the [File](/reference/engines/table-engines/special/file) engine; `s3://`, `gs://`, `gcs://`, `oss://` by the [S3](/engines/table-engines/integrations/s3) engine; `az://`, `azure://`, `abfss://`, `abfs://` by the [AzureBlobStorage](/engines/table-engines/integrations/azureBlobStorage) engine; and `hdfs://` by the [HDFS](/engines/table-engines/integrations/hdfs) engine.
+The `URL` engine is a unified wrapper on top of the other file- and object-storage engines: it dispatches to the right backend based on the URL scheme. `http`/`https` (and any unrecognized scheme) are served by the `URL` engine itself; `file://` is served by the [File](/reference/engines/table-engines/special/file) engine; `s3://`, `gs://`, `gcs://`, `oss://` by the [S3](/reference/engines/table-engines/integrations/s3) engine; `az://`, `azure://`, `abfss://`, `abfs://` by the [AzureBlobStorage](/reference/engines/table-engines/integrations/azureBlobStorage) engine; and `hdfs://` by the [HDFS](/reference/engines/table-engines/integrations/hdfs) engine.
 
-Only the S3 schemes that the S3 URI mapper resolves to a concrete endpoint without extra configuration (`s3`, plus `gs`/`gcs`/`oss`) are dispatched. Other S3-compatible vendor schemes (`cos`, `obs`, `eos`, …) are region-specific and have no default endpoint mapping, so passing such a URL to the `URL` engine is treated as an unrecognized scheme and reported as an error; use the [S3](/engines/table-engines/integrations/s3) engine directly (with `url_scheme_mappers` configured) for those backends.
+Only the S3 schemes that the S3 URI mapper resolves to a concrete endpoint without extra configuration (`s3`, plus `gs`/`gcs`/`oss`) are dispatched. Other S3-compatible vendor schemes (`cos`, `obs`, `eos`, …) are region-specific and have no default endpoint mapping, so passing such a URL to the `URL` engine is treated as an unrecognized scheme and reported as an error; use the [S3](/reference/engines/table-engines/integrations/s3) engine directly (with `url_scheme_mappers` configured) for those backends.
 
 The [url_base](/reference/settings/session-settings/url#url_base) setting is applied before scheme dispatch, so a relative reference is first resolved against the base and then routed to the matching engine.
 
@@ -2710,7 +2710,7 @@ You can limit the maximum number of HTTP GET redirect hops using the [max_http_g
 ## Wildcards with HTTP index pages {#wildcards-with-http-index-pages}
 
 When [allow_experimental_url_wildcard_from_index_pages](/reference/settings/session-settings/allow-experimental#allow_experimental_url_wildcard_from_index_pages) is enabled, the `URL` table engine can expand wildcards by fetching HTTP index pages and extracting links from them.
-This is the same mechanism as the [`url`](/sql-reference/table-functions/url#wildcards-with-http-index-pages) table function.
+This is the same mechanism as the [`url`](/reference/functions/table-functions/url#wildcards-with-http-index-pages) table function.
 
 Expansion is limited by [max_http_index_page_size](/reference/settings/server-settings/settings/max#max_http_index_page_size) for each fetched index page and by [url_wildcard_max_directories_to_read](/reference/settings/session-settings/url#url_wildcard_max_directories_to_read) for recursive directory traversal.
 

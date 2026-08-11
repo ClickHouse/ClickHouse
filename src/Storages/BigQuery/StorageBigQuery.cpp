@@ -692,7 +692,7 @@ The column list is optional: when omitted, the structure is inferred from the Bi
 - `table` — The table name.
 - `access_token` — An OAuth 2.0 access token (optional positional argument).
 
-The parameters can also be passed as a [named collection](/operations/named-collections) with `key = value` overrides. See the [`bigquery` table function](/sql-reference/table-functions/bigquery#arguments) for the full list of keys and the description of the [authentication methods](/sql-reference/table-functions/bigquery#authentication). Exactly one authentication method must be provided; for a permanent table a `service_account_key` or a `refresh_token` is preferable to an `access_token`, because access tokens expire within an hour.
+The parameters can also be passed as a [named collection](/concepts/features/configuration/server-config/named-collections) with `key = value` overrides. See the [`bigquery` table function](/sql-reference/table-functions/bigquery#arguments) for the full list of keys and the description of the [authentication methods](/sql-reference/table-functions/bigquery#authentication). Exactly one authentication method must be provided; for a permanent table a `service_account_key` or a `refresh_token` is preferable to an `access_token`, because access tokens expire within an hour.
 
 ## Usage example {#usage-example}
 

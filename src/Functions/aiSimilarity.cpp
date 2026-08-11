@@ -294,7 +294,7 @@ named collection or the parameter map.
         = {{"text1", "First text.", {"String"}},
            {"text2", "Second text.", {"String"}},
            {"model", "Embedding model name.", {"const String"}},
-           {"params", "Optional constant `Map(String, String)` of parameters. Function-specific key: `dimensions` (target dimensionality of the embeddings; `0` or omitted means the model's native size). The common parameter `credentials` also applies (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}}},
+           {"params", "Optional constant `Map(String, String)` of parameters. Function-specific key: `dimensions` (target dimensionality of the embeddings; `0` or omitted means the model's native size). The common parameter `credentials` also applies (see [AI Functions](/reference/functions/regular-functions/ai-functions)).", {"Map(String, String)"}}},
         .returned_value = {"The cosine similarity in `[-1, 1]`, or NULL if either text is NULL or empty, an embedding request failed and `ai_function_throw_on_error` is disabled, or a quota was exceeded with `ai_function_throw_on_quota_exceeded` disabled.", {"Nullable(Float32)"}},
         .examples
         = {{"Compare two strings (`credentials` can be omitted if the `ai_function_embedding_default_credentials` setting is set)", "SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))", ""},

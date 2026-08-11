@@ -263,7 +263,7 @@ The query `SELECT * FROM UserActivity FORMAT JSONEachRow` returns:
 {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
 ```
 
-Unlike the [JSON](/interfaces/formats/JSON) format, there is no substitution of invalid UTF-8 sequences. Values are escaped in the same way as for `JSON`.
+Unlike the [JSON](/reference/formats/JSON/JSON) format, there is no substitution of invalid UTF-8 sequences. Values are escaped in the same way as for `JSON`.
 
 :::info
 Any set of bytes can be output in the strings. Use the [`JSONEachRow`](/reference/formats/JSON/JSONEachRow) format if you are sure that the data in the table can be formatted as JSON without losing any information.

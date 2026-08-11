@@ -110,3 +110,27 @@ def test_canonical_link_checker_follows_redirect_chains():
         canonical_links_check.canonicalize_url("/old#details", redirects)
         == "/reference/current#details"
     )
+
+
+def test_canonical_link_checker_rewrites_source_code_urls():
+    redirects = {
+        "/engines/table-engines/mergetree-family/mergetree": (
+            "/reference/engines/table-engines/mergetree-family/mergetree"
+        ),
+        "/sql-reference/data-types/date": "/reference/data-types/date",
+    }
+    text = """See https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree/.
+[Date](/sql-reference/data-types/date.md)
+"""
+
+    aliases = canonical_links_check.find_aliases_in_text(
+        text, redirects, include_public_urls=True
+    )
+
+    assert [(old, new) for _start, _end, old, new in aliases] == [
+        (
+            "https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree/",
+            "https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/mergetree",
+        ),
+        ("/sql-reference/data-types/date.md", "/reference/data-types/date"),
+    ]

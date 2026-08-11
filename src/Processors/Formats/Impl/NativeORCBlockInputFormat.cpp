@@ -2894,31 +2894,31 @@ The table below compares supported ORC data types and their corresponding ClickH
 
 | ORC data type (`INSERT`)              | ClickHouse data type                                                                                              | ORC data type (`SELECT`) |
 |---------------------------------------|-------------------------------------------------------------------------------------------------------------------|--------------------------|
-| `Boolean`                             | [Bool](/sql-reference/data-types/boolean.md)                                                              | `Boolean`                |
-| `Tinyint`                             | [Int8/UInt8](/sql-reference/data-types/int-uint.md)/[Enum8](/sql-reference/data-types/enum.md)    | `Tinyint`                |
-| `Smallint`                            | [Int16/UInt16](/sql-reference/data-types/int-uint.md)/[Enum16](/sql-reference/data-types/enum.md) | `Smallint`               |
-| `Int`                                 | [Int32/UInt32](/sql-reference/data-types/int-uint.md)                                                     | `Int`                    |
-| `Bigint`                              | [Int64/UInt64](/sql-reference/data-types/int-uint.md)                                                     | `Bigint`                 |
-| `Float`                               | [Float32](/sql-reference/data-types/float.md)                                                             | `Float`                  |
-| `Double`                              | [Float64](/sql-reference/data-types/float.md)                                                             | `Double`                 |
-| `Decimal`                             | [Decimal](/sql-reference/data-types/decimal.md)                                                           | `Decimal`                |
-| `Date`                                | [Date32](/sql-reference/data-types/date32.md)                                                             | `Date`                   |
-| `Timestamp`                           | [DateTime64](/sql-reference/data-types/datetime64.md)                                                     | `Timestamp`              |
-| `String`, `Varchar`, `Binary`         | [String](/sql-reference/data-types/string.md)                                                             | `String`                 |
-| `Char`                                | [FixedString](/sql-reference/data-types/fixedstring.md)                                                   | `String`                 |
-| `List`                                | [Array](/sql-reference/data-types/array.md)                                                               | `List`                   |
-| `Struct`                              | [Tuple](/sql-reference/data-types/tuple.md)                                                               | `Struct`                 |
-| `Map`                                 | [Map](/sql-reference/data-types/map.md)                                                                   | `Map`                    |
-| `Int`                                 | [IPv4](/sql-reference/data-types/int-uint.md)                                                             | `Int`                    |
-| `Binary`                              | [IPv6](/sql-reference/data-types/ipv6.md)                                                                 | `Binary`                 |
-| `Binary`                              | [Int128/UInt128/Int256/UInt256](/sql-reference/data-types/int-uint.md)                                    | `Binary`                 |
-| `Binary`                              | [Decimal256](/sql-reference/data-types/decimal.md)                                                        | `Binary`                 |
-| `Union`                               | [Variant](/sql-reference/data-types/variant.md)                                                           | `Union`                  |
+| `Boolean`                             | [Bool](/reference/data-types/boolean)                                                              | `Boolean`                |
+| `Tinyint`                             | [Int8/UInt8](/reference/data-types/int-uint)/[Enum8](/reference/data-types/enum)    | `Tinyint`                |
+| `Smallint`                            | [Int16/UInt16](/reference/data-types/int-uint)/[Enum16](/reference/data-types/enum) | `Smallint`               |
+| `Int`                                 | [Int32/UInt32](/reference/data-types/int-uint)                                                     | `Int`                    |
+| `Bigint`                              | [Int64/UInt64](/reference/data-types/int-uint)                                                     | `Bigint`                 |
+| `Float`                               | [Float32](/reference/data-types/float)                                                             | `Float`                  |
+| `Double`                              | [Float64](/reference/data-types/float)                                                             | `Double`                 |
+| `Decimal`                             | [Decimal](/reference/data-types/decimal)                                                           | `Decimal`                |
+| `Date`                                | [Date32](/reference/data-types/date32)                                                             | `Date`                   |
+| `Timestamp`                           | [DateTime64](/reference/data-types/datetime64)                                                     | `Timestamp`              |
+| `String`, `Varchar`, `Binary`         | [String](/reference/data-types/string)                                                             | `String`                 |
+| `Char`                                | [FixedString](/reference/data-types/fixedstring)                                                   | `String`                 |
+| `List`                                | [Array](/reference/data-types/array)                                                               | `List`                   |
+| `Struct`                              | [Tuple](/reference/data-types/tuple)                                                               | `Struct`                 |
+| `Map`                                 | [Map](/reference/data-types/map)                                                                   | `Map`                    |
+| `Int`                                 | [IPv4](/reference/data-types/int-uint)                                                             | `Int`                    |
+| `Binary`                              | [IPv6](/reference/data-types/ipv6)                                                                 | `Binary`                 |
+| `Binary`                              | [Int128/UInt128/Int256/UInt256](/reference/data-types/int-uint)                                    | `Binary`                 |
+| `Binary`                              | [Decimal256](/reference/data-types/decimal)                                                        | `Binary`                 |
+| `Union`                               | [Variant](/reference/data-types/variant)                                                           | `Union`                  |
 
 - Other types are not supported.
-- An ORC `Union` column is read as a [Variant](/sql-reference/data-types/variant.md) over the union's branch types, and a `Variant` column is written as an ORC `Union` over its branch types. Note that `Variant` sorts its branch types, so the branch order may differ from the ORC file. Unions with duplicate branch types (e.g. `uniontype<int,int>`) are not supported.
+- An ORC `Union` column is read as a [Variant](/reference/data-types/variant) over the union's branch types, and a `Variant` column is written as an ORC `Union` over its branch types. Note that `Variant` sorts its branch types, so the branch order may differ from the ORC file. Unions with duplicate branch types (e.g. `uniontype<int,int>`) are not supported.
 - Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
-- The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#CAST) the data to the data type set for the ClickHouse table column.
+- The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to the data type set for the ClickHouse table column.
 
 ## Example usage {#example-usage}
 

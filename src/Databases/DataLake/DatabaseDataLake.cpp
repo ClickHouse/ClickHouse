@@ -1667,8 +1667,8 @@ The following settings are supported:
 
 See below sections for examples of using the `DataLakeCatalog` engine:
 
-* [Unity Catalog](/use-cases/data-lake/unity-catalog)
-* [Glue Catalog](/use-cases/data-lake/glue-catalog)
+* [Unity Catalog](/guides/use-cases/data-warehousing/unity-catalog)
+* [Glue Catalog](/guides/use-cases/data-warehousing/glue-catalog)
 * OneLake Catalog
     Can be used by enabling `allow_experimental_database_iceberg` or `allow_database_iceberg`.
 ```sql

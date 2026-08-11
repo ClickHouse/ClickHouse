@@ -238,7 +238,7 @@ toUInt64('64'):  64
 
     /// toUInt128 documentation
     FunctionDocumentation::Description toUInt128_description = R"(
-Converts an input value to a value of type [`UInt128`](/sql-reference/functions/type-conversion-functions#toUInt128).
+Converts an input value to a value of type [`UInt128`](/reference/functions/regular-functions/type-conversion-functions#toUInt128).
 Throws an exception in case of an error.
 The function uses rounding towards zero, meaning it truncates fractional digits of numbers.
 
@@ -576,7 +576,7 @@ toInt64('-64'):  -64
 
     /// toInt128 documentation
     FunctionDocumentation::Description toInt128_description = R"(
-Converts an input value to a value of type [Int128](/sql-reference/data-types/int-uint).
+Converts an input value to a value of type [Int128](/reference/data-types/int-uint).
 Throws an exception in case of an error.
 The function uses rounding towards zero, meaning it truncates fractional digits of numbers.
 
@@ -630,7 +630,7 @@ toInt128('-128'): -128
 
     /// toInt256 documentation
     FunctionDocumentation::Description toInt256_description = R"(
-Converts an input value to a value of type [Int256](/sql-reference/data-types/int-uint).
+Converts an input value to a value of type [Int256](/reference/data-types/int-uint).
 Throws an exception in case of an error.
 The function uses rounding towards zero, meaning it truncates fractional digits of numbers.
 
@@ -721,7 +721,7 @@ toBFloat16('42.7'):          42.5
 
     /// toFloat32 documentation
     FunctionDocumentation::Description toFloat32_description = R"(
-Converts an input value to a value of type [Float32](/sql-reference/data-types/float).
+Converts an input value to a value of type [Float32](/reference/data-types/float).
 Throws an exception in case of an error.
 
 Supported arguments:
@@ -1050,7 +1050,7 @@ type_c: Decimal(76, 3)
 
     /// toDate documentation
     FunctionDocumentation::Description description_toDate = R"(
-Converts an input value to type [`Date`](/sql-reference/data-types/date).
+Converts an input value to type [`Date`](/reference/data-types/date).
 Supports conversion from String, FixedString, DateTime, or numeric types.
     )";
     FunctionDocumentation::Syntax syntax_toDate = "toDate(x)";
@@ -1158,15 +1158,15 @@ toTypeName(value): Date32
 
     /// toTime documentation
     FunctionDocumentation::Description description_toTime = R"(
-Converts an input value to type [Time](/sql-reference/data-types/time).
+Converts an input value to type [Time](/reference/data-types/time).
 Supports conversion from String, FixedString, DateTime, DateTime64, or numeric types representing seconds since midnight.
 Numeric values outside of the range of the type (`-999:59:59` to `999:59:59`, that is `-3599999` to `3599999` seconds) are saturated to the range boundaries, and non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception.
 
 :::note Legacy `toTime`
 Before v25.5, `toTime` was a different function, which converted a date with time to a fixed date (`1970-01-02`) while preserving the
-time component. That function is still available under the name [`toTimeWithFixedDate`](/sql-reference/functions/date-time-functions#toTimeWithFixedDate).
+time component. That function is still available under the name [`toTimeWithFixedDate`](/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate).
 
-Setting [`use_legacy_to_time`](/operations/settings/settings#use_legacy_to_time) to `1` also keeps the name `toTime` bound to the legacy
+Setting [`use_legacy_to_time`](/reference/settings/session-settings#use_legacy_to_time) to `1` also keeps the name `toTime` bound to the legacy
 function, i.e. calls to `toTime` resolve to `toTimeWithFixedDate` instead of the conversion function described here.
 While the setting is enabled, use `CAST(x AS Time)` or `x::Time` to convert to type `Time`.
 The setting defaults to `0` since v26.7, but defaulted to `1` from v25.6 to v26.6, which is why the examples below set it explicitly.
@@ -1219,7 +1219,7 @@ SELECT toTime(toDateTime(52225, 'UTC'))
     factory.registerFunction<detail::FunctionToTime>(documentation_toTime);
 
     FunctionDocumentation::Description description_toTime64 = R"(
-Converts an input value to type [Time64](/sql-reference/data-types/time64).
+Converts an input value to type [Time64](/reference/data-types/time64).
 Supports conversion from String, FixedString, DateTime64, or numeric types representing seconds since midnight.
 Provides sub-second precision for time values, up to `scale` fractional digits.
     )";
@@ -1444,7 +1444,7 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
     /// toIPv4 documentation
     FunctionDocumentation::Description description_toIPv4 = R"(
 Converts a string or a UInt32 form of IPv4 address to type IPv4.
-It is similar to [`IPv4StringToNum`](/sql-reference/functions/ip-address-functions#IPv4StringToNum) and [`IPv4NumToString`](/sql-reference/functions/ip-address-functions#IPv4NumToString) functions but it supports both string and unsigned integer data types as input arguments.
+It is similar to [`IPv4StringToNum`](/reference/functions/regular-functions/ip-address-functions#IPv4StringToNum) and [`IPv4NumToString`](/reference/functions/regular-functions/ip-address-functions#IPv4NumToString) functions but it supports both string and unsigned integer data types as input arguments.
 )";
     FunctionDocumentation::Syntax syntax_toIPv4 = "toIPv4(x)";
     FunctionDocumentation::Arguments arguments_toIPv4 = {
@@ -1500,7 +1500,7 @@ SELECT toIPv4(2130706433);
     FunctionDocumentation::Description description_toIPv6 = R"(
 onverts a string or a `UInt128` form of IPv6 address to [`IPv6`](/reference/data-types/ipv6) type.
 For strings, if the IPv6 address has an invalid format, returns an empty value.
-Similar to [`IPv6StringToNum`](/sql-reference/functions/ip-address-functions#IPv6StringToNum) and [`IPv6NumToString`](/sql-reference/functions/ip-address-functions#IPv6NumToString) functions, which convert IPv6 address to and from binary format (i.e. `FixedString(16)`).
+Similar to [`IPv6StringToNum`](/reference/functions/regular-functions/ip-address-functions#IPv6StringToNum) and [`IPv6NumToString`](/reference/functions/regular-functions/ip-address-functions#IPv6NumToString) functions, which convert IPv6 address to and from binary format (i.e. `FixedString(16)`).
 
 If the input string contains a valid IPv4 address, then the IPv6 equivalent of the IPv4 address is returned.
 )";
@@ -2068,7 +2068,7 @@ toInt32OrZero('abc'): 0
     factory.registerFunction<detail::FunctionToInt32OrZero>(documentation_toInt32OrZero);
 
     FunctionDocumentation::Description description_toInt64OrZero = R"(
-Converts an input value to type [Int64](/sql-reference/data-types/int-uint) but returns `0` in case of an error.
+Converts an input value to type [Int64](/reference/data-types/int-uint) but returns `0` in case of an error.
 Like [`toInt64`](#toInt64) but returns `0` instead of throwing an exception.
 
 See also:
@@ -2108,7 +2108,7 @@ SELECT toInt64OrZero('abc')
     factory.registerFunction<detail::FunctionToInt64OrZero>(documentation_toInt64OrZero);
 
     FunctionDocumentation::Description description_toInt128OrZero = R"(
-Converts an input value to type [Int128](/sql-reference/data-types/int-uint) but returns `0` in case of an error.
+Converts an input value to type [Int128](/reference/data-types/int-uint) but returns `0` in case of an error.
 Like [`toInt128`](#toInt128) but returns `0` instead of throwing an exception.
 
 See also:
@@ -2148,7 +2148,7 @@ SELECT toInt128OrZero('abc')
     factory.registerFunction<detail::FunctionToInt128OrZero>(documentation_toInt128OrZero);
 
     FunctionDocumentation::Description description_toInt256OrZero = R"(
-Converts an input value to type [Int256](/sql-reference/data-types/int-uint) but returns `0` in case of an error.
+Converts an input value to type [Int256](/reference/data-types/int-uint) but returns `0` in case of an error.
 Like [`toInt256`](#toInt256) but returns `0` instead of throwing an exception.
 
 See also:
@@ -2679,7 +2679,7 @@ SELECT toDecimal256OrZero('42.7', 2), toDecimal256OrZero('invalid', 2)
     /// toUUIDOrZero documentation
     FunctionDocumentation::Description description_toUUIDOrZero = R"(
 Converts an input value to a value of type [UUID](/reference/data-types/uuid) but returns zero UUID in case of an error.
-Like [`toUUID`](/sql-reference/functions/type-conversion-functions#toUUID) but returns zero UUID (`00000000-0000-0000-0000-000000000000`) instead of throwing an exception on conversion errors.
+Like [`toUUID`](/reference/functions/regular-functions/type-conversion-functions#toUUID) but returns zero UUID (`00000000-0000-0000-0000-000000000000`) instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - String representations of UUID in standard format (8-4-4-4-12 hexadecimal digits).
@@ -3936,7 +3936,7 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
     FunctionDocumentation::Description description_toUUIDOrNull = R"(
 Converts an input value to a value of type `UUID` but returns `NULL` in case of an error.
 
-Like [`toUUID`](/sql-reference/functions/type-conversion-functions#toUUID) but returns `NULL` instead of throwing an exception on conversion errors.
+Like [`toUUID`](/reference/functions/regular-functions/type-conversion-functions#toUUID) but returns `NULL` instead of throwing an exception on conversion errors.
 
 Supported arguments:
 - String representations of UUID in standard format (8-4-4-4-12 hexadecimal digits).
@@ -4316,7 +4316,7 @@ SELECT parseDateTimeBestEffortUSOrNull('02/10/2025') AS valid_us,
 
     /// parseDateTime32BestEffort documentation
     FunctionDocumentation::Description description_parseDateTime32BestEffort = R"(
-Converts a string representation of a date and time to the [`DateTime`](/sql-reference/data-types/datetime) data type.
+Converts a string representation of a date and time to the [`DateTime`](/reference/data-types/datetime) data type.
 
 The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 1123 - 5.2.14 RFC-822 Date and Time Specification](https://tools.ietf.org/html/rfc1123#page-55), ClickHouse's and some other date and time formats.
     )";

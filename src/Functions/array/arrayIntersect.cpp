@@ -755,7 +755,7 @@ REGISTER_FUNCTION(ArrayIntersect)
 {
     FunctionDocumentation::Description intersect_description = "Takes multiple arrays and returns an array with elements which are present in all source arrays. The result contains only unique values.";
     FunctionDocumentation::Syntax intersect_syntax = "arrayIntersect(arr, arr1, ..., arrN)";
-    FunctionDocumentation::Arguments intersect_argument = {{"arrN", "N arrays from which to make the new array. [`Array(T)`](/sql-reference/data-types/array)."}};
+    FunctionDocumentation::Arguments intersect_argument = {{"arrN", "N arrays from which to make the new array. [`Array(T)`](/reference/data-types/array)."}};
     FunctionDocumentation::ReturnedValue intersect_returned_value = {"Returns an array with distinct elements that are present in all N arrays", {"Array(T)"}};    FunctionDocumentation::Examples intersect_example = {{"Usage example",
 R"(SELECT
 arrayIntersect([1, 2], [1, 3], [2, 3]) AS empty_intersection,
@@ -803,7 +803,7 @@ In contrast, function `arraySymmetricDifference` simply returns the set of input
 :::
 )";
     FunctionDocumentation::Syntax symdiff_syntax = "arraySymmetricDifference(arr1, arr2, ... , arrN)";
-    FunctionDocumentation::Arguments symdiff_argument = {{"arrN", "N arrays from which to make the new array. [`Array(T)`](/sql-reference/data-types/array)."}};
+    FunctionDocumentation::Arguments symdiff_argument = {{"arrN", "N arrays from which to make the new array. [`Array(T)`](/reference/data-types/array)."}};
     FunctionDocumentation::ReturnedValue symdiff_returned_value = {"Returns an array of distinct elements not present in all source arrays", {"Array(T)"}};    FunctionDocumentation::Examples symdiff_example = {{"Usage example", R"(SELECT
 arraySymmetricDifference([1, 2], [1, 2], [1, 2]) AS empty_symmetric_difference,
 arraySymmetricDifference([1, 2], [1, 2], [1, 3]) AS non_empty_symmetric_difference;

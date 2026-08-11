@@ -455,7 +455,7 @@ Both parts the `arg` and the `min` behave as [aggregate functions](/sql-referenc
 
 **See also**
 
-- [Tuple](/sql-reference/data-types/tuple.md)
+- [Tuple](/reference/data-types/tuple)
     )";
     FunctionDocumentation::Syntax syntax_argMin = R"(
 argMin(arg, val)
@@ -526,7 +526,7 @@ Both parts the `arg` and the `max` behave as [aggregate functions](/sql-referenc
 
 **See also**
 
-- [Tuple](/sql-reference/data-types/tuple.md)
+- [Tuple](/reference/data-types/tuple)
     )";
     FunctionDocumentation::Syntax syntax_argMax = R"(
 argMax(arg, val)
@@ -606,7 +606,7 @@ The only difference with `argMin` is that `argAndMin` returns both argument and 
 **See also**
 
 - [argMin](/sql-reference/aggregate-functions/reference/argMin.md)
-- [Tuple](/sql-reference/data-types/tuple.md)
+- [Tuple](/reference/data-types/tuple)
     )";
     FunctionDocumentation::Syntax syntax_argAndMin = R"(
 argAndMin(arg, val)
@@ -683,7 +683,7 @@ The only difference with `argMax` is that `argAndMax` returns both argument and 
 **See also**
 
 - [argMax](/sql-reference/aggregate-functions/reference/argMax.md)
-- [Tuple](/sql-reference/data-types/tuple.md)
+- [Tuple](/reference/data-types/tuple)
     )";
     FunctionDocumentation::Syntax syntax_argAndMax = R"(
 argAndMax(arg, val)
