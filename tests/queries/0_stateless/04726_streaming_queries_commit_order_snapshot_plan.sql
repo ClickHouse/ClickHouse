@@ -47,9 +47,21 @@ WHERE _partition_id = 'all' AND _block_number <= 6 AND (_block_number > 3 OR (_b
 ORDER BY _block_number, _block_offset;
 
 SELECT '';
-SELECT '-- cursor over blocks [4, 8]: merged parts read via the projection, level-0 parts via the main table';
+SELECT '-- cursor over blocks [4, 8]: all parts read via the projection, because commit-order projections are also built at insert';
 EXPLAIN indexes = 1, projections = 1
 SELECT a, _partition_id, _block_number, _block_offset
 FROM t_commit_order_snapshot
 WHERE _partition_id = 'all' AND _block_number <= 8 AND (_block_number > 3 OR (_block_number = 3 AND _block_offset > 15))
+ORDER BY _block_number, _block_offset;
+
+ALTER TABLE t_commit_order_snapshot MODIFY SETTING materialize_projections_on_insert = 0;
+INSERT INTO t_commit_order_snapshot SELECT number FROM numbers(16); -- all_9_9_0, without the projection
+ALTER TABLE t_commit_order_snapshot MODIFY SETTING materialize_projections_on_insert = 1;
+
+SELECT '';
+SELECT '-- cursor over blocks [4, 9]: parts having the projection are read via it, the part inserted with materialize_projections_on_insert = 0 via the main table';
+EXPLAIN indexes = 1, projections = 1
+SELECT a, _partition_id, _block_number, _block_offset
+FROM t_commit_order_snapshot
+WHERE _partition_id = 'all' AND _block_number <= 9 AND (_block_number > 3 OR (_block_number = 3 AND _block_offset > 15))
 ORDER BY _block_number, _block_offset;
