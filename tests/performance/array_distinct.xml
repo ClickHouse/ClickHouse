@@ -1,0 +1,13 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- Baseline: cost of producing the input arrays, without arrayDistinct. -->
+    <query>SELECT sum(length(arr)) FROM (SELECT arrayMap(i -> (number + i) % 40, range(30)) AS arr FROM numbers(2000000)) FORMAT Null</query>
+
+    <query>SELECT sum(length(arrayDistinct(arr))) FROM (SELECT arrayMap(i -> (number + i) % 40, range(30)) AS arr FROM numbers(2000000)) FORMAT Null</query>
+    <query>SELECT sum(length(arrayDistinct(arr))) FROM (SELECT arrayMap(i -> (number + i) % 5, range(30)) AS arr FROM numbers(2000000)) FORMAT Null</query>
+    <query>SELECT sum(length(arrayDistinct(arr))) FROM (SELECT arrayMap(i -> toString((number + i) % 40), range(30)) AS arr FROM numbers(500000)) FORMAT Null</query>
+    <query>SELECT sum(length(arrayDistinct(arr))) FROM (SELECT arrayMap(i -> [(number + i) % 40], range(30)) AS arr FROM numbers(500000)) FORMAT Null</query>
+</test>
