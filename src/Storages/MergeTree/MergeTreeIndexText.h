@@ -101,12 +101,18 @@ struct MergeTreeIndexTextParams
 
 /// Field-tagged dictionary keys use one canonical physical layout:
 ///
-///   [ logical token bytes ][ field id: 2-byte little-endian `UInt16` ]
+///   [ escaped logical token bytes ][ 0x00 ][ escape flag ][ field id: big-endian `UInt16` ]
 ///
-/// The fixed-width suffix makes decoding unambiguous for arbitrary token bytes, while existing
-/// posting and position payload formats remain unchanged. Dictionary ordering is the byte order of
-/// the complete encoded key; it is not a logical tuple ordering for prefix-related token values.
+/// A logical NUL is escaped as 0x00 0xFF. The escape flag is 0x00 for ordinary tokens and 0x01
+/// when the token contains an escaped NUL. Both terminators sort before the encoded continuation
+/// of a longer token, while the big-endian field ID preserves numeric order. Consequently, sorting
+/// physical keys is equivalent to sorting `(logical token, field id)`, so all field variants of one
+/// token are contiguous even when another token has it as a prefix. Existing posting and position
+/// payload formats remain unchanged.
 inline constexpr size_t TEXT_INDEX_FIELD_ID_SIZE = 2;
+inline constexpr size_t TEXT_INDEX_TOKEN_TERMINATOR_SIZE = 2;
+inline constexpr UInt8 TEXT_INDEX_TOKEN_HAS_ESCAPES = 0x01;
+inline constexpr UInt8 TEXT_INDEX_TOKEN_ESCAPED_NUL = 0xFF;
 static_assert(sizeof(UInt16) == TEXT_INDEX_FIELD_ID_SIZE);
 
 struct DecodedTextIndexFieldToken
@@ -115,12 +121,47 @@ struct DecodedTextIndexFieldToken
     UInt16 field_id;
 };
 
-/// Append the canonical suffix in place. The query path uses this helper so it cannot diverge
-/// from the build-side encoding.
-inline void appendTextIndexFieldId(String & token, UInt16 field_id)
+/// Encode the order-preserving token component in place. Keeping this component separate from the
+/// field suffix allows a later query stage to construct one contiguous range for all field variants
+/// of a token without duplicating the escaping rules.
+inline void encodeTextIndexTokenComponent(String & token)
 {
-    token.push_back(static_cast<char>(field_id & 0xFF));
-    token.push_back(static_cast<char>((field_id >> 8) & 0xFF));
+    const size_t first_nul = token.find('\0');
+    const bool has_escaped_nul = first_nul != String::npos;
+    if (has_escaped_nul)
+    {
+        String escaped;
+        escaped.reserve(token.size() + 1 + TEXT_INDEX_TOKEN_TERMINATOR_SIZE + TEXT_INDEX_FIELD_ID_SIZE);
+
+        size_t chunk_begin = 0;
+        for (size_t nul = first_nul; nul != String::npos; nul = token.find('\0', chunk_begin))
+        {
+            escaped.append(token, chunk_begin, nul - chunk_begin);
+            escaped.push_back('\0');
+            escaped.push_back(static_cast<char>(TEXT_INDEX_TOKEN_ESCAPED_NUL));
+            chunk_begin = nul + 1;
+        }
+        escaped.append(token, chunk_begin);
+        token = std::move(escaped);
+    }
+
+    token.reserve(token.size() + TEXT_INDEX_TOKEN_TERMINATOR_SIZE + TEXT_INDEX_FIELD_ID_SIZE);
+    token.push_back('\0');
+    token.push_back(static_cast<char>(has_escaped_nul ? TEXT_INDEX_TOKEN_HAS_ESCAPES : 0x00));
+}
+
+inline void appendTextIndexFieldId(String & encoded_token_component, UInt16 field_id)
+{
+    encoded_token_component.push_back(static_cast<char>((field_id >> 8) & 0xFF));
+    encoded_token_component.push_back(static_cast<char>(field_id & 0xFF));
+}
+
+/// Encode an owned logical token in place. The query path uses this helper so it cannot diverge
+/// from the build-side encoding.
+inline void encodeTextIndexFieldToken(String & token, UInt16 field_id)
+{
+    encodeTextIndexTokenComponent(token);
+    appendTextIndexFieldId(token, field_id);
 }
 
 /// Encode a non-owning tokenizer result into caller-owned storage for dictionary insertion.
@@ -130,23 +171,61 @@ inline void encodeTextIndexFieldToken(std::string_view token, UInt16 field_id, S
         encoded.clear();
     else
         encoded.assign(token.data(), token.size());
-    appendTextIndexFieldId(encoded, field_id);
+    encodeTextIndexFieldToken(encoded, field_id);
 }
 
-/// Decode without copying the logical token. `std::nullopt` means the key is too short to contain
-/// the fixed-width suffix, allowing callers with tagged index context to reject malformed keys.
-inline std::optional<DecodedTextIndexFieldToken> decodeTextIndexFieldToken(std::string_view encoded)
+/// Decode the escaped logical token and fixed-width field ID. For the common case without escaped
+/// NUL bytes, the returned token points directly into `encoded`. Otherwise it points into the
+/// caller-owned `token_scratch`, which can be reused after the current view is consumed.
+/// `std::nullopt` means the key is not a canonical field-tagged key.
+inline std::optional<DecodedTextIndexFieldToken> decodeTextIndexFieldToken(std::string_view encoded, String & token_scratch)
 {
-    if (encoded.size() < TEXT_INDEX_FIELD_ID_SIZE)
+    constexpr size_t minimum_size = TEXT_INDEX_TOKEN_TERMINATOR_SIZE + TEXT_INDEX_FIELD_ID_SIZE;
+    if (encoded.size() < minimum_size)
         return std::nullopt;
 
-    const size_t token_size = encoded.size() - TEXT_INDEX_FIELD_ID_SIZE;
-    const auto low = static_cast<UInt16>(static_cast<unsigned char>(encoded[token_size]));
-    const auto high = static_cast<UInt16>(static_cast<unsigned char>(encoded[token_size + 1]));
-    return DecodedTextIndexFieldToken{
-        .token = encoded.substr(0, token_size),
-        .field_id = static_cast<UInt16>(low | (high << 8)),
-    };
+    const size_t field_id_offset = encoded.size() - TEXT_INDEX_FIELD_ID_SIZE;
+    const size_t token_end = field_id_offset - TEXT_INDEX_TOKEN_TERMINATOR_SIZE;
+    if (encoded[token_end] != '\0')
+        return std::nullopt;
+
+    const std::string_view encoded_token = encoded.substr(0, token_end);
+    const auto high = static_cast<UInt16>(static_cast<unsigned char>(encoded[field_id_offset]));
+    const auto low = static_cast<UInt16>(static_cast<unsigned char>(encoded[field_id_offset + 1]));
+    const UInt16 field_id = static_cast<UInt16>((high << 8) | low);
+
+    const auto escape_flag = static_cast<UInt8>(encoded[token_end + 1]);
+    if (escape_flag == 0)
+    {
+        if (encoded_token.find('\0') != std::string_view::npos)
+            return std::nullopt;
+        return DecodedTextIndexFieldToken{.token = encoded_token, .field_id = field_id};
+    }
+    if (escape_flag != TEXT_INDEX_TOKEN_HAS_ESCAPES)
+        return std::nullopt;
+
+    token_scratch.clear();
+    token_scratch.reserve(token_end);
+    bool decoded_nul = false;
+    for (size_t pos = 0; pos < token_end; ++pos)
+    {
+        const char byte = encoded[pos];
+        if (byte != '\0')
+        {
+            token_scratch.push_back(byte);
+            continue;
+        }
+
+        if (++pos >= token_end || static_cast<UInt8>(encoded[pos]) != TEXT_INDEX_TOKEN_ESCAPED_NUL)
+            return std::nullopt;
+        token_scratch.push_back('\0');
+        decoded_nul = true;
+    }
+
+    if (!decoded_nul)
+        return std::nullopt;
+
+    return DecodedTextIndexFieldToken{.token = token_scratch, .field_id = field_id};
 }
 
 using PostingList = roaring::Roaring;

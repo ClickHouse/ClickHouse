@@ -3644,8 +3644,10 @@ TEST(PostingListCursorTest, TextIndexFieldTokenCodecRoundTrip)
 {
     const std::vector<std::pair<String, UInt16>> cases = {
         {String{}, 1},
-        {String{"a"}, 0x1234},
+        {String{"a"}, 255},
+        {String{"aa"}, 256},
         {String{"a\0b", 3}, std::numeric_limits<UInt16>::max()},
+        {String{"\0a\0", 3}, 0x1234},
     };
 
     for (const auto & [token, field_id] : cases)
@@ -3653,21 +3655,114 @@ TEST(PostingListCursorTest, TextIndexFieldTokenCodecRoundTrip)
         String encoded;
         encodeTextIndexFieldToken(token, field_id, encoded);
 
-        ASSERT_EQ(encoded.size(), token.size() + TEXT_INDEX_FIELD_ID_SIZE);
-        EXPECT_EQ(static_cast<unsigned char>(encoded[encoded.size() - 2]), field_id & 0xFF);
-        EXPECT_EQ(static_cast<unsigned char>(encoded[encoded.size() - 1]), field_id >> 8);
+        const size_t escaped_nuls = std::ranges::count(token, '\0');
+        ASSERT_EQ(encoded.size(), token.size() + escaped_nuls + TEXT_INDEX_TOKEN_TERMINATOR_SIZE + TEXT_INDEX_FIELD_ID_SIZE);
+        EXPECT_EQ(encoded[encoded.size() - 4], '\0');
+        const UInt8 expected_escape_flag = escaped_nuls == 0 ? UInt8{0} : TEXT_INDEX_TOKEN_HAS_ESCAPES;
+        EXPECT_EQ(static_cast<UInt8>(encoded[encoded.size() - 3]), expected_escape_flag);
+        EXPECT_EQ(static_cast<unsigned char>(encoded[encoded.size() - 2]), field_id >> 8);
+        EXPECT_EQ(static_cast<unsigned char>(encoded[encoded.size() - 1]), field_id & 0xFF);
 
-        const auto decoded = decodeTextIndexFieldToken(encoded);
+        String token_scratch;
+        const auto decoded = decodeTextIndexFieldToken(encoded, token_scratch);
         ASSERT_TRUE(decoded);
         EXPECT_EQ(decoded->token, std::string_view(token));
         EXPECT_EQ(decoded->field_id, field_id);
+        if (escaped_nuls == 0)
+            EXPECT_EQ(decoded->token.data(), encoded.data());
+        else
+            EXPECT_EQ(decoded->token.data(), token_scratch.data());
     }
 
-    EXPECT_FALSE(decodeTextIndexFieldToken(String{}));
-    EXPECT_FALSE(decodeTextIndexFieldToken(String{"x"}));
+    String encoded_with_nul;
+    encodeTextIndexFieldToken(String{"a\0b", 3}, 0x1234, encoded_with_nul);
+    String expected_bytes;
+    expected_bytes.push_back('a');
+    expected_bytes.push_back('\0');
+    expected_bytes.push_back(static_cast<char>(TEXT_INDEX_TOKEN_ESCAPED_NUL));
+    expected_bytes.push_back('b');
+    expected_bytes.push_back('\0');
+    expected_bytes.push_back(static_cast<char>(TEXT_INDEX_TOKEN_HAS_ESCAPES));
+    expected_bytes.push_back(static_cast<char>(0x12));
+    expected_bytes.push_back(static_cast<char>(0x34));
+    EXPECT_EQ(encoded_with_nul, expected_bytes);
+
+    String token_scratch;
+    EXPECT_FALSE(decodeTextIndexFieldToken(String{}, token_scratch));
+    EXPECT_FALSE(decodeTextIndexFieldToken(String{"x"}, token_scratch));
+
+    String missing_terminator = "valid";
+    encodeTextIndexFieldToken(missing_terminator, 1);
+    missing_terminator[missing_terminator.size() - 4] = 'x';
+    EXPECT_FALSE(decodeTextIndexFieldToken(missing_terminator, token_scratch));
+
+    String invalid_escape_flag = "valid";
+    encodeTextIndexFieldToken(invalid_escape_flag, 1);
+    invalid_escape_flag[invalid_escape_flag.size() - 3] = static_cast<char>(0x02);
+    EXPECT_FALSE(decodeTextIndexFieldToken(invalid_escape_flag, token_scratch));
+
+    String unexpected_encoded_nul{"a\0b", 3};
+    encodeTextIndexFieldToken(unexpected_encoded_nul, 1);
+    unexpected_encoded_nul[unexpected_encoded_nul.size() - 3] = 0;
+    EXPECT_FALSE(decodeTextIndexFieldToken(unexpected_encoded_nul, token_scratch));
+
+    String missing_escape = "valid";
+    encodeTextIndexFieldToken(missing_escape, 1);
+    missing_escape[missing_escape.size() - 3] = static_cast<char>(TEXT_INDEX_TOKEN_HAS_ESCAPES);
+    EXPECT_FALSE(decodeTextIndexFieldToken(missing_escape, token_scratch));
+
+    String invalid_escape{"a\0b", 3};
+    encodeTextIndexFieldToken(invalid_escape, 1);
+    invalid_escape[2] = static_cast<char>(0xFE);
+    EXPECT_FALSE(decodeTextIndexFieldToken(invalid_escape, token_scratch));
+
+    String incomplete_escape{"\0", 1};
+    encodeTextIndexFieldToken(incomplete_escape, 1);
+    incomplete_escape.erase(1, 1);
+    EXPECT_FALSE(decodeTextIndexFieldToken(incomplete_escape, token_scratch));
 }
 
-TEST(PostingListCursorTest, TextIndexFieldBindingResortsAndRehashes)
+TEST(PostingListCursorTest, TextIndexFieldTokenCodecPreservesTupleOrdering)
+{
+    std::vector<String> tokens = {
+        String{},
+        String{"\0a", 2},
+        String{"a\0", 2},
+        String{"a\0a", 3},
+        String{"aa"},
+    };
+    for (UInt16 byte = 0; byte <= std::numeric_limits<UInt8>::max(); ++byte)
+        tokens.emplace_back(1, static_cast<char>(byte));
+
+    const std::vector<UInt16> field_ids = {1, 255, 256, std::numeric_limits<UInt16>::max()};
+    std::vector<std::pair<String, UInt16>> expected;
+    std::vector<String> encoded_keys;
+    for (const auto & token : tokens)
+    {
+        for (const auto field_id : field_ids)
+        {
+            expected.emplace_back(token, field_id);
+            String encoded;
+            encodeTextIndexFieldToken(token, field_id, encoded);
+            encoded_keys.emplace_back(std::move(encoded));
+        }
+    }
+
+    std::ranges::sort(expected);
+    std::ranges::sort(encoded_keys);
+    ASSERT_EQ(encoded_keys.size(), expected.size());
+
+    for (size_t i = 0; i < encoded_keys.size(); ++i)
+    {
+        String token_scratch;
+        const auto decoded = decodeTextIndexFieldToken(encoded_keys[i], token_scratch);
+        ASSERT_TRUE(decoded);
+        EXPECT_EQ(decoded->token, std::string_view(expected[i].first));
+        EXPECT_EQ(decoded->field_id, expected[i].second);
+    }
+}
+
+TEST(PostingListCursorTest, TextIndexFieldBindingPreservesOrderingAndRehashes)
 {
     TextSearchQuery max_id_query(
         "hasAllTokens", TextSearchMode::All, TextIndexDirectReadMode::None, VectorWithMemoryTracking<String>{"a", "aa"});
@@ -3676,14 +3771,14 @@ TEST(PostingListCursorTest, TextIndexFieldBindingResortsAndRehashes)
     max_id_query.bindToField(std::numeric_limits<UInt16>::max());
     ASSERT_EQ(max_id_query.getTokens().size(), 2);
 
-    /// With an all-ones suffix, `aa || id` sorts before `a || id`, unlike the logical tokens.
-    /// `bindToField` must restore physical dictionary order after appending the suffix.
-    const auto first = decodeTextIndexFieldToken(max_id_query.getTokens()[0]);
-    const auto second = decodeTextIndexFieldToken(max_id_query.getTokens()[1]);
+    String first_token_scratch;
+    String second_token_scratch;
+    const auto first = decodeTextIndexFieldToken(max_id_query.getTokens()[0], first_token_scratch);
+    const auto second = decodeTextIndexFieldToken(max_id_query.getTokens()[1], second_token_scratch);
     ASSERT_TRUE(first);
     ASSERT_TRUE(second);
-    EXPECT_EQ(first->token, "aa");
-    EXPECT_EQ(second->token, "a");
+    EXPECT_EQ(first->token, "a");
+    EXPECT_EQ(second->token, "aa");
     EXPECT_NE(max_id_query.getHash(), untagged_hash);
 
     TextSearchQuery min_id_query(

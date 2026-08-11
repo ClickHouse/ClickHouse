@@ -81,15 +81,15 @@ void TextSearchQuery::bindToField(UInt16 field_id_)
         /// Empty tokens are prune-all sentinels produced by some predicate conversions. Leaving
         /// them untagged preserves the invariant that they cannot match a dictionary entry.
         if (!token.empty())
-            appendTextIndexFieldId(token, field_id_);
+            encodeTextIndexFieldToken(token, field_id_);
     }
-    /// Appending a suffix can change the order of prefix-related tokens, for example `a` and `aa`.
+    /// Establish the physical dictionary order independently of how the query was constructed.
     std::sort(tokens.begin(), tokens.end());
 
     for (auto & token : phrase_tokens)
     {
         if (!token.empty())
-            appendTextIndexFieldId(token, field_id_);
+            encodeTextIndexFieldToken(token, field_id_);
     }
 
     initializeHash();
@@ -600,6 +600,7 @@ std::string MergeTreeIndexConditionText::getDescription() const
     }
     else
     {
+        String decoded_token_scratch;
         for (size_t i = 0; i < all_search_tokens.size(); ++i)
         {
             if (i > 0)
@@ -610,7 +611,7 @@ std::string MergeTreeIndexConditionText::getDescription() const
             {
                 /// Keep binary suffix bytes out of `EXPLAIN indexes` output while retaining the
                 /// selected-field identity that distinguishes otherwise equal logical tokens.
-                const auto decoded = decodeTextIndexFieldToken(token);
+                const auto decoded = decodeTextIndexFieldToken(token, decoded_token_scratch);
                 chassert(decoded);
                 description += fmt::format("\"{}\"@{}", decoded->token, decoded->field_id);
             }
