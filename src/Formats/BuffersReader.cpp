@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <Core/Defines.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/BuffersReader.h>
