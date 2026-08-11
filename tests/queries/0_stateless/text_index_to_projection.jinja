@@ -21,7 +21,8 @@
 {%- set pre = line.split(' TYPE text')[0] -%}
 {%- set post = line[pre|length:] -%}
 {%- set head = pre.rsplit('INDEX ', 1)[0] -%}
-{%- set decl = pre.rsplit('INDEX ', 1)[1] -%}
+{#- `ALTER TABLE ... ADD INDEX  idx(...)` in upstream has a double space, so strip. -#}
+{%- set decl = pre.rsplit('INDEX ', 1)[1].strip() -%}
 {%- if ' ' in decl -%}
 {%- set name = decl.split(' ', 1)[0] -%}
 {%- set expr = decl.split(' ', 1)[1] -%}
