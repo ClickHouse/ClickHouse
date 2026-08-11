@@ -116,6 +116,9 @@ private:
 
     void onSessionIDResponse(const Coordination::ZooKeeperResponsePtr & response) noexcept;
 
+    /// The only place that knows which responses do not go to a per-session response callback.
+    bool tryRouteSpecialResponse(const KeeperResponseForSession & response) noexcept;
+
 public:
     KeeperDispatcher();
 

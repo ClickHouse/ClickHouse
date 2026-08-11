@@ -12,6 +12,10 @@
 extern template class NonblockingBoundedQueue<DB::KeeperRequestForSession>;
 extern template class NonblockingBoundedQueue<DB::KeeperResponseForSession>;
 
+/// White-box unit tests that seed in_flight_batches (befriended inside KeeperRequestDispatcher).
+class KeeperDispatcher_SessionIDCommitCorrelation_Test;
+class KeeperDispatcher_SessionIDErrorReachesWaiter_Test;
+
 namespace DB
 {
 
@@ -85,7 +89,7 @@ namespace DB
 class KeeperRequestDispatcher
 {
 public:
-    explicit KeeperRequestDispatcher(KeeperServer * server_);
+    KeeperRequestDispatcher(KeeperServer * server_, KeeperSpecialResponseRouter special_response_router_);
 
     /// Start response draining before Raft startup. NuRaft can commit catch-up
     /// entries during `KeeperServer::startup`, before request dispatch is safe.
@@ -124,6 +128,9 @@ public:
     void onResponseDeallocated(const Coordination::ZooKeeperResponse & response);
 
 private:
+    friend class ::KeeperDispatcher_SessionIDCommitCorrelation_Test;
+    friend class ::KeeperDispatcher_SessionIDErrorReachesWaiter_Test;
+
     /// Suppose we get a write request from some session and put it in batch B and send that
     /// batch to leader. While B is still in flight, we get a read request from the same session.
     /// We'd like to execute that read as soon as B is committed. So we want a list of such
@@ -279,6 +286,8 @@ private:
 
     KeeperServer * server;
     KeeperContextPtr keeper_context;
+    /// Consulted before responses_queue; see KeeperSpecialResponseRouter.
+    KeeperSpecialResponseRouter special_response_router;
     LoggerPtr log;
 
     ThreadFromGlobalPool dispatch_thread;

@@ -18,6 +18,9 @@
 #include <Common/Macros.h>
 #include <Poco/JSON/Object.h>
 
+/// White-box unit test of the SessionID error path (befriended inside KeeperRequestDispatcherOld).
+class KeeperDispatcherOld_SessionIDErrorReachesWaiter_Test;
+
 namespace DB
 {
 
@@ -27,6 +30,8 @@ namespace DB
 class KeeperRequestDispatcherOld
 {
 private:
+    friend class ::KeeperDispatcherOld_SessionIDErrorReachesWaiter_Test;
+
     using RequestsQueue = ConcurrentBoundedQueue<KeeperRequestForSession>;
     using ResponsesQueue = ConcurrentBoundedQueue<KeeperResponseForSession>;
     using SessionToResponseCallback = std::unordered_map<int64_t, ZooKeeperResponseCallback>;
@@ -52,6 +57,9 @@ private:
     LoggerPtr log;
 
     KeeperContextPtr keeper_context;
+
+    /// Consulted before responses_queue; see KeeperSpecialResponseRouter.
+    KeeperSpecialResponseRouter special_response_router;
 
     using SessionAndXID = std::pair</*session ID*/ int64_t, Coordination::XID>;
 
@@ -89,7 +97,7 @@ private:
         RaftAppendResult & result, KeeperRequestsForSessions & requests_for_sessions, bool clear_requests_on_success);
 
 public:
-    explicit KeeperRequestDispatcherOld(KeeperServer * server_);
+    KeeperRequestDispatcherOld(KeeperServer * server_, KeeperSpecialResponseRouter special_response_router_);
 
     void shutdown();
 

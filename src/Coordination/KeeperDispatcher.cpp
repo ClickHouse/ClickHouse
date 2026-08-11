@@ -129,10 +129,9 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
             if (response.request)
                 response.request->spans.maybeInitialize(KeeperSpan::DispatcherResponsesQueue, response.request->tracing_context.get());
 
-            /// Special new session response.
-            if (response.response->xid != Coordination::WATCH_XID && response.response->getOpNum() == Coordination::OpNum::SessionID)
-                onSessionIDResponse(response.response);
-            else if (dispatcher_old)
+            if (tryRouteSpecialResponse(response))
+                return;
+            if (dispatcher_old)
                 dispatcher_old->onResponse(std::move(response));
             else
                 dispatcher->onResponse(std::move(response));
@@ -154,13 +153,15 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     {
         if (keeper_context->getCoordinationSettings()[CoordinationSetting::use_new_dispatcher])
         {
-            dispatcher = std::make_unique<KeeperRequestDispatcher>(server.get());
+            dispatcher = std::make_unique<KeeperRequestDispatcher>(
+                server.get(), [this](const KeeperResponseForSession & response) { return tryRouteSpecialResponse(response); });
             dispatcher->startupResponseThread();
             new_dispatcher_response_thread_started = true;
         }
         else
         {
-            dispatcher_old = std::make_unique<KeeperRequestDispatcherOld>(server.get());
+            dispatcher_old = std::make_unique<KeeperRequestDispatcherOld>(
+                server.get(), [this](const KeeperResponseForSession & response) { return tryRouteSpecialResponse(response); });
         }
 
         LOG_DEBUG(log, "Waiting server to initialize");
@@ -498,6 +499,17 @@ void KeeperDispatcher::finishSession(int64_t session_id)
         dispatcher_old->finishSession(session_id);
     else
         dispatcher->finishSession(session_id);
+}
+
+bool KeeperDispatcher::tryRouteSpecialResponse(const KeeperResponseForSession & response) noexcept
+{
+    /// A SessionID response carries session_id -1, which has no registered response callback.
+    /// Its waiter is a promise in new_session_id_requests, keyed by internal_id.
+    if (response.response->xid == Coordination::WATCH_XID || response.response->getOpNum() != Coordination::OpNum::SessionID)
+        return false;
+
+    onSessionIDResponse(response.response);
+    return true;
 }
 
 void KeeperDispatcher::onSessionIDResponse(const Coordination::ZooKeeperResponsePtr & response) noexcept

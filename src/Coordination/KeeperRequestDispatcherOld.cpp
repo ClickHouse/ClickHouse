@@ -163,11 +163,12 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
 
 }
 
-KeeperRequestDispatcherOld::KeeperRequestDispatcherOld(KeeperServer * server_)
+KeeperRequestDispatcherOld::KeeperRequestDispatcherOld(KeeperServer * server_, KeeperSpecialResponseRouter special_response_router_)
     : responses_queue(std::numeric_limits<size_t>::max())
     , server(server_)
     , log(getLogger("KeeperRequestDispatcherOld"))
     , keeper_context(server->getKeeperContext())
+    , special_response_router(std::move(special_response_router_))
 {
     requests_queue = std::make_unique<RequestsQueue>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_queue_size]);
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
@@ -937,7 +938,9 @@ void KeeperRequestDispatcherOld::addErrorResponses(const KeeperRequestsForSessio
         response->zxid = 0;
         response->error = error;
         response->enqueue_ts = std::chrono::steady_clock::now();
-        if (!responses_queue.push(DB::KeeperResponseForSession{request_for_session.session_id, response}))
+        DB::KeeperResponseForSession response_for_session{request_for_session.session_id, response};
+        if (!(special_response_router && special_response_router(response_for_session))
+            && !responses_queue.push(std::move(response_for_session)))
             throw Exception(ErrorCodes::SYSTEM_ERROR,
                 "Could not push error response xid {} zxid {} error message {} to responses queue",
                 response->xid,

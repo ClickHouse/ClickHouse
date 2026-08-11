@@ -3,6 +3,7 @@
 #if USE_NURAFT
 
 #include <Coordination/CoordinationSettings.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
@@ -202,9 +203,10 @@ struct BusyWaitBackoff
     }
 };
 
-KeeperRequestDispatcher::KeeperRequestDispatcher(KeeperServer * server_)
+KeeperRequestDispatcher::KeeperRequestDispatcher(KeeperServer * server_, KeeperSpecialResponseRouter special_response_router_)
     : server(server_)
     , keeper_context(server->getKeeperContext())
+    , special_response_router(std::move(special_response_router_))
     , log(getLogger("KeeperRequestDispatcher"))
 {
     const auto & coordination_settings = keeper_context->getCoordinationSettings();
@@ -1065,7 +1067,10 @@ void KeeperRequestDispatcher::addErrorResponse(const KeeperRequestForSession & r
     response->zxid = 0;
     response->error = error;
     response->enqueue_ts = std::chrono::steady_clock::now();
-    onResponse(DB::KeeperResponseForSession{request_for_session.session_id, response});
+    DB::KeeperResponseForSession response_for_session{request_for_session.session_id, response};
+    if (special_response_router && special_response_router(response_for_session))
+        return;
+    onResponse(std::move(response_for_session));
 }
 
 void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_for_session)
@@ -1097,6 +1102,21 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
         req.request->xid != request_for_session.request->xid)
     {
         return;
+    }
+
+    /// SessionID requests all carry session_id -1 and xid 0, so the check above matches any of them,
+    /// including ones originating on other servers (onCommit runs for every committed entry on every
+    /// node). Their identity is (server_id, internal_id).
+    if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
+    {
+        const auto * head = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest *>(req.request.get());
+        const auto * committed = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest *>(request_for_session.request.get());
+        if (head == nullptr || committed == nullptr
+            || head->server_id != committed->server_id
+            || head->internal_id != committed->internal_id)
+        {
+            return;
+        }
     }
 
     if (current_stream_is_suspect.load())
