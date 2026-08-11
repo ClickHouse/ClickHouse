@@ -77,6 +77,12 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 max_rows_to_transfer;
+}
+
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
@@ -205,26 +211,56 @@ public:
     {
     }
 
+    /// Appends a data chunk. Throws if the exchange is cancelled, so the producer stops early.
+    /// Drops the chunk if the reader is detached.
     void appendChunk(Chunk chunk)
     {
         LOG_TEST(log, "Appending chunk to exchange '{}', rows {}", name, chunk.getNumRows());
 
         std::lock_guard lock(mutex);
+        if (cancelled)
+            throwCancelled();
+        if (reader_detached)
+            return;
         chunks.emplace_back(std::move(chunk));
         has_data.notify_one();
     }
 
-    /// Wake any waiter so it stops instead of blocking forever for a chunk that will never arrive
-    /// (the producing task was cancelled before sending the end-of-data marker).
-    void cancel()
+    /// Appends the end-of-data marker. Allowed after a cancel: the queued stream is complete,
+    /// so a draining consumer may still use it.
+    void finish()
+    {
+        LOG_TEST(log, "Finishing exchange '{}'", name);
+
+        std::lock_guard lock(mutex);
+        chunks.emplace_back(Chunk{});
+        has_data.notify_one();
+    }
+
+    /// Wake any waiter. Consumers get `reason_` (or a generic cancellation error) instead of
+    /// end-of-data, so an aborted stream cannot pass for a complete one.
+    void cancel(std::exception_ptr reason_)
     {
         std::lock_guard lock(mutex);
         cancelled = true;
+        if (!reason)
+            reason = reason_;
+        has_data.notify_all();
+    }
+
+    /// The reader stopped and does not need more data, e.g. its pipeline finished early.
+    /// Wakes a blocked `getChunk`; chunks appended after this are dropped. Unlike `cancel`,
+    /// this is not a failure: the producer continues.
+    void detachReader()
+    {
+        std::lock_guard lock(mutex);
+        reader_detached = true;
         has_data.notify_all();
     }
 
     /// Waits up to `timeout` for a chunk. Returns std::nullopt if nothing arrived in time.
-    /// An empty chunk is the producer's end-of-data marker (also reported when cancelled).
+    /// An empty chunk is the producer's end-of-data marker. Chunks queued before a cancel are
+    /// still handed out; once a cancelled queue is empty, throws the cancellation reason.
     std::optional<Chunk> getChunk(std::chrono::milliseconds timeout)
     {
         LOG_TEST(log, "Waiting for chunk from exchange '{}'", name);
@@ -232,10 +268,14 @@ public:
         Chunk chunk;
         {
             std::unique_lock lock(mutex);
-            if (!has_data.wait_for(lock, timeout, [this] { return !chunks.empty() || cancelled; }))
+            if (!has_data.wait_for(lock, timeout, [this] { return !chunks.empty() || cancelled || reader_detached; }))
                 return std::nullopt;
+            /// The reader is stopping and does not need more data.
+            if (reader_detached)
+                return std::nullopt;
+            /// The wait ended with an empty queue only when cancelled.
             if (chunks.empty())
-                return Chunk{};   /// Cancelled: report end of data.
+                throwCancelled();
             chunk = std::move(chunks.front());
             chunks.pop_front();
         }
@@ -246,12 +286,23 @@ public:
     }
 
 private:
+    [[noreturn]] void throwCancelled() const
+    {
+        if (reason)
+            std::rethrow_exception(reason);
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+            "Distributed query was cancelled before exchange '{}' transferred all data", name);
+    }
+
     LoggerPtr log = getLogger("InMemoryExchange");
     String name;
     std::mutex mutex;
     std::condition_variable has_data;
     DequeWithMemoryTracking<Chunk> chunks;
     bool cancelled = false;
+    bool reader_detached = false;
+    /// The first failure passed to `cancel`.
+    std::exception_ptr reason;
 };
 
 using InMemoryExchangePtr = std::shared_ptr<InMemoryExchange>;
@@ -269,25 +320,29 @@ public:
         {
             element = std::make_shared<InMemoryExchange>(exchange_id);
             /// A task built concurrently with the cancellation may look up its exchange after
-            /// cancelQuery already ran; hand it out pre-cancelled so its reads do not block forever.
-            if (cancelled_queries.contains(query_id))
-                element->cancel();
+            /// cancelQuery already ran; hand it out pre-cancelled so its reads fail right away.
+            if (auto cancelled_it = cancelled_queries.find(query_id); cancelled_it != cancelled_queries.end())
+                element->cancel(cancelled_it->second);
         }
         return element;
     }
 
-    /// Cancel every exchange of the query so waiting tasks unblock. The exchanges stay in the
-    /// registry so a result reader that looks one up afterwards still finds the produced chunks and
-    /// their end-of-data marker; removeQuery drops them once the whole query pipeline is destroyed.
-    void cancelQuery(const String & query_id)
+    /// Cancel every exchange of the query so waiting tasks stop, reporting `failure` as the
+    /// reason (null for a plain cancellation). The exchanges stay in the registry so a result
+    /// reader that looks one up afterwards still finds the produced chunks and their end-of-data
+    /// marker; removeQuery drops them once the whole query pipeline is destroyed.
+    void cancelQuery(const String & query_id, std::exception_ptr failure)
     {
         std::lock_guard lock(mutex);
-        cancelled_queries.insert(query_id);
+        auto [cancelled_it, inserted] = cancelled_queries.emplace(query_id, failure);
+        /// Keep the first failure, but let a later one replace a plain cancellation.
+        if (!inserted && !cancelled_it->second && failure)
+            cancelled_it->second = failure;
         auto it = exchanges_by_query_id.find(query_id);
         if (it == exchanges_by_query_id.end())
             return;
         for (auto & [_, exchange] : it->second)
-            exchange->cancel();
+            exchange->cancel(failure);
     }
 
     /// Drop the query's exchanges from the registry. Called when the query pipeline is destroyed.
@@ -308,7 +363,8 @@ private:
     using InMemoryExchangeMap = UnorderedMapWithMemoryTracking<String, InMemoryExchangePtr>;
 
     UnorderedMapWithMemoryTracking<String, InMemoryExchangeMap> exchanges_by_query_id TSA_GUARDED_BY(mutex);
-    UnorderedSetWithMemoryTracking<String> cancelled_queries TSA_GUARDED_BY(mutex);
+    /// Cancelled query -> its root failure (null for a plain cancellation).
+    UnorderedMapWithMemoryTracking<String, std::exception_ptr> cancelled_queries TSA_GUARDED_BY(mutex);
     std::mutex mutex;
 };
 
@@ -357,7 +413,7 @@ private:
 
         void onFinish() override
         {
-            exchange->appendChunk({});
+            exchange->finish();
         }
 
     private:
@@ -377,6 +433,11 @@ private:
 
         std::optional<Chunk> tryGenerate() override
         {
+            /// This source's own pipeline is being torn down: stop quietly, its output is
+            /// discarded anyway.
+            if (isCancelled())
+                return std::nullopt;
+
             /// A processor must not block the pipeline thread, so wait with a timeout. On the
             /// timeout, push a chunk with no rows: a source that yields without producing output
             /// stays ready and gets rescheduled at once, monopolizing the thread, while pushed
@@ -389,10 +450,10 @@ private:
             return chunk;
         }
 
-        /// Wake the timed wait so the source finishes right away instead of on its next poll.
+        /// Wake the timed wait so the source stops right away instead of on its next poll.
         void onCancel() noexcept override
         {
-            exchange->cancel();
+            exchange->detachReader();
         }
 
     private:
@@ -645,10 +706,16 @@ ExchangeLookupPtr createExchangeLookup(
 }
 
 
-static String serializeQueryPlan(const QueryPlan & query_plan)
+static String serializeQueryPlan(const QueryPlan & query_plan, const ContextPtr & context)
 {
+    /// A shipped set must be complete, so the overflow mode is always throw;
+    /// `transfer_overflow_mode = 'break'` does not apply to it.
+    const auto & settings = context->getSettingsRef();
+    SizeLimits sets_transfer_limits(
+        settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], OverflowMode::THROW);
+
     WriteBufferFromOwnString out;
-    query_plan.serialize(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    query_plan.serializeForDistributedTask(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, sets_transfer_limits);
     return out.str();
 }
 
@@ -852,7 +919,7 @@ public:
         /// InMemoryExchange::getChunk never returns. The exchanges are not removed here: the result
         /// reader still drains final_result after the driver finishes; removal happens when the query
         /// pipeline is destroyed (see makeInMemoryExchangesCleaner).
-        InMemoryExchanges::instance()->cancelQuery(toString(unique_query_id));
+        InMemoryExchanges::instance()->cancelQuery(toString(unique_query_id), cancellation->getFailure());
 
         joinAllThreads();
         stage_tasks.clear();
@@ -899,7 +966,7 @@ protected:
         started_tasks.reserve(stage.tasks.size());
         started_threads.reserve(stage.tasks.size());
         DistributedQueryTaskDescription task_description;
-        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
+        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
 
         for (const auto & task : stage.tasks)
@@ -1539,7 +1606,7 @@ protected:
     {
         DistributedQueryTaskDescription task_description;
         task_description.initial_query_id = context->getCurrentQueryId();
-        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
+        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = context->getSettingsRef().changes();
 
@@ -1612,9 +1679,18 @@ void DistributedQueryCancellation::recordCurrentException()
     /// Publish the failure and the flag in one critical section. Setting the flag outside it would
     /// let a waiter that already read no failure still see the flag and report `Query was cancelled`.
     std::lock_guard lock(mutex);
-    if (!first_exception)
-        first_exception = std::current_exception();
+    /// A bare cancellation is not a root cause: a task stopped by the cancellation of its
+    /// exchange must not become the query's reported failure.
+    auto exception = std::current_exception();
+    if (!first_exception && getExceptionErrorCode(exception) != ErrorCodes::QUERY_WAS_CANCELLED)
+        first_exception = exception;
     cancelled = true;
+}
+
+std::exception_ptr DistributedQueryCancellation::getFailure() const
+{
+    std::lock_guard lock(mutex);
+    return first_exception;
 }
 
 void DistributedQueryCancellation::rethrowIfFailedLocked() const
@@ -1780,9 +1856,9 @@ std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
     return executor;
 }
 
-void cancelDistributedQueryInMemoryExchanges(const UUID & unique_query_id)
+void cancelDistributedQueryInMemoryExchanges(const UUID & unique_query_id, std::exception_ptr failure)
 {
-    InMemoryExchanges::instance()->cancelQuery(toString(unique_query_id));
+    InMemoryExchanges::instance()->cancelQuery(toString(unique_query_id), failure);
 }
 
 }
