@@ -1567,7 +1567,7 @@ void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
     }
 
     /// Collect all Failed cache entries and build paths to both terminal and retriable nodes
-    std::vector<std::tuple<std::string, std::string, std::string>> cache_entries;  // (file_path, terminal_node_path, retriable_node_path)
+    std::vector<std::tuple<std::string, std::string, std::string, uint64_t>> cache_entries;  // (file_path, terminal_node_path, retriable_node_path, generation)
     {
         auto all_entries = local_file_statuses.dump();
         for (const auto & entry : all_entries)
@@ -1582,7 +1582,8 @@ void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
                 cache_entries.emplace_back(
                     entry.mapped->path,
                     failed_node_path.string(),
-                    failed_node_path.string() + ".retriable");
+                    failed_node_path.string() + ".retriable",
+                    entry.mapped->generation.load());
             }
         }
     }
@@ -1636,13 +1637,23 @@ void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
     using KeyType = UInt128;
     using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
     local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
-        [&paths_to_remove, &removed](const KeyType & /* key */, const StatusPtr & status)
+        [&paths_to_remove, &cache_entries, &removed](const KeyType & /* key */, const StatusPtr & status)
         {
             if (status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed
                 && paths_to_remove.contains(status->path))
             {
-                ++removed;
-                return true;
+                /// Find the generation we captured for this path at snapshot time
+                auto it = std::find_if(cache_entries.begin(), cache_entries.end(),
+                    [&](const auto & e) { return std::get<0>(e) == status->path; });
+
+                if (it != cache_entries.end() && status->generation.load() == std::get<3>(*it))
+                {
+                    /// Generation matches snapshot → same entry, safe to remove
+                    ++removed;
+                    return true;
+                }
+                /// Generation changed → new entry re-inserted, don't remove
+                return false;
             }
             return false;
         }
