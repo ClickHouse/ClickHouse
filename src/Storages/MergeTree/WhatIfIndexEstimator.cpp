@@ -376,11 +376,6 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXPLAIN WHATIF: query analysis result is not available");
     const auto & analysis = *analysis_ptr;
 
-    /// Can't model a projection-served read, the hypothetical index isn't on projection parts
-    if (analysis.readFromProjection())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "EXPLAIN WHATIF is not supported when the query is served from a projection");
-
     const RangesInDataParts & baseline_parts = analysis.parts_with_ranges;
 
     Result result;
@@ -434,8 +429,18 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         return result;
     }
 
+    /// Conditions that rule out every candidate at once. Reporting them per candidate keeps the
+    /// baseline visible and tells the user why nothing can help, instead of failing the statement
+    String blanket_not_applicable_reason;
+    if (query_with_final)
+        blanket_not_applicable_reason = "EXPLAIN WHATIF cannot accurately model skip-index pruning under FINAL "
+                                        "(PrimaryKeyExpand may re-include granules selected by skip indexes)";
+    else if (analysis.readFromProjection())
+        blanket_not_applicable_reason = "The query is served from projection '"
+            + baseline_parts.front().data_part->name + "', so an index on the base table's parts would not be read";
+
     /// Only track per-candidate surviving marks when a combined row could actually be produced
-    const bool want_combined = settings.empirical && !query_with_final
+    const bool want_combined = settings.empirical && blanket_not_applicable_reason.empty()
         && hypo_indexes.size() >= 2 && result.baseline_marks > 0;
 
     std::vector<UInt8> combined_surviving_marks;
@@ -446,14 +451,13 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
 
     for (const auto & index_desc : hypo_indexes)
     {
-        if (query_with_final)
+        if (!blanket_not_applicable_reason.empty())
         {
             IndexResult r;
             r.index_name = index_desc.name;
             r.index_type = index_desc.type;
             r.status = IndexResult::NotApplicable;
-            r.not_applicable_reason = "EXPLAIN WHATIF cannot accurately model skip-index pruning under FINAL "
-                                      "(PrimaryKeyExpand may re-include granules selected by skip indexes)";
+            r.not_applicable_reason = blanket_not_applicable_reason;
             result.index_results.push_back(std::move(r));
             continue;
         }
