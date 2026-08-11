@@ -3434,6 +3434,22 @@ TEST_F(WallabyTest, PrefersAWiderScaleThatCollapsesTheLanes)
     EXPECT_LT(wallabyCompressedSize(values), 1400u);
 }
 
+TEST_F(WallabyTest, TerminatesOnAPartialPowerOfTwoVector)
+{
+    /// A partial trailing vector of 64 values has a growable sample (the count is a power of
+    /// two above 32), but the sample saturates at the vector size - far below the 256-sample
+    /// maximum. A quarter-step ramp votes three different scales (x.25 -> 2, x.5 -> 1,
+    /// integers -> 0 and below), so the narrower candidates pass the pruning gate with a weak
+    /// bound and ask for a stronger sample. An encoder revision that only stopped growing at
+    /// the 256-sample maximum spun forever here, hanging the insert; the sample cannot say
+    /// more than the whole vector.
+    std::vector<Float64> values(64);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = static_cast<Float64>(i) * 0.25;
+
+    EXPECT_LT(wallabyCompressedSize(values), 600u);
+}
+
 TEST_F(WallabyTest, DecompressMalformedInputReservedXorFlagBit)
 {
     /// Bit 0 is the only XOR flag the version-1 encoder emits; a payload with any reserved

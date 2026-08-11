@@ -1115,9 +1115,14 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         };
         /// best_total_size also carries the caller-provided bound, so a candidate that cannot
         /// beat the other encoding of this vector is skipped even before any candidate wins.
+        /// The sample saturates at the vector size, not only at WALLABY_MAX_SAMPLES: a partial
+        /// trailing vector of 64 or 128 values (a power of two, so the sample is growable) has
+        /// every position sampled after one growth step, and asking grow_sample for more would
+        /// loop forever without making the bound any stronger.
+        const UInt32 sample_limit = std::min<UInt32>(count, WALLABY_MAX_SAMPLES);
         while (header_size + bound_bytes(exceptions_lower_bound) < best_total_size)
         {
-            if (!sample_can_grow || sampled_positions >= WALLABY_MAX_SAMPLES)
+            if (!sample_can_grow || sampled_positions >= sample_limit)
                 return true;
             grow_sample(sampled_positions * 4);
             exceptions_lower_bound = exceptions_bound();
