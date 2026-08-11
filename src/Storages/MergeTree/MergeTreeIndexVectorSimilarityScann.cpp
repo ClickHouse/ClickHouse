@@ -910,11 +910,15 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
 
     auto & opts = opts_or.value();
 
-    if (opts.serialized_partitioner)
-        opts.serialized_partitioner->SerializeToString(&serialized_partitioner_proto);
+    if (opts.serialized_partitioner
+        && !opts.serialized_partitioner->SerializeToString(&serialized_partitioner_proto))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ScaNN index build failed: could not serialize partitioner");
 
-    if (opts.ah_codebook)
-        opts.ah_codebook->SerializeToString(&serialized_codebook_proto);
+    if (opts.ah_codebook
+        && !opts.ah_codebook->SerializeToString(&serialized_codebook_proto))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ScaNN index build failed: could not serialize AH codebook");
 
     if (opts.hashed_dataset && !opts.hashed_dataset->empty())
     {
