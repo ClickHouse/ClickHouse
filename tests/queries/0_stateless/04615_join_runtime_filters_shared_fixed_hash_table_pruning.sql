@@ -43,6 +43,10 @@ SET max_bytes_before_external_join = 0;
 SET max_bytes_ratio_before_external_join = 0;
 -- Keep rf_shared_dim on the build side (its 8 parts feed the parallel build streams).
 SET query_plan_join_swap_table = 0;
+-- A fabricated probe-side row count from randomized join-order statistics can land at or below
+-- the threshold, in which case no runtime filter is built at all.
+SET query_plan_optimize_join_order_randomize = 0;
+SET join_runtime_filter_min_probe_rows = 0;
 
 -- Correctness: every one of the 4000 matching rows must survive.
 SELECT count() = 4000 FROM rf_shared_fact AS f INNER JOIN rf_shared_dim AS d ON f.id = d.id

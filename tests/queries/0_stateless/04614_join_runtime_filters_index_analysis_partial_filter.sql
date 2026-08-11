@@ -43,6 +43,10 @@ SET enable_parallel_replicas = 0;
 SET join_algorithm = 'hash';
 -- Keep rf_dim on the build side (its 8 parts feed the parallel build streams).
 SET query_plan_join_swap_table = 0;
+-- A fabricated probe-side row count from randomized join-order statistics can land at or below
+-- the threshold, in which case no runtime filter is built at all.
+SET query_plan_optimize_join_order_randomize = 0;
+SET join_runtime_filter_min_probe_rows = 0;
 
 -- Correctness: with index analysis on, every one of the 4000 matching rows must survive. A partial
 -- or racily read exact set would prune probe granules for not-yet-merged keys and undercount.
