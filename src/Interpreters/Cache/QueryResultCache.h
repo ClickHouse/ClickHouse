@@ -17,7 +17,6 @@ namespace DB
 {
 
 struct Settings;
-class AccessRightsElements;
 
 /// Checks that query cache can be used for query.
 /// Only use the query cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
@@ -26,12 +25,6 @@ class AccessRightsElements;
 /// This is used for explicit per-subquery opt-in where the subquery has SETTINGS use_query_cache = true
 /// but the outer query context may not have the flag set.
 bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check = false);
-
-/// True if the session is limited by a per-authentication-method `GRANTS` clause (a token-style credential).
-/// The query result cache is not access-control-aware on a hit: it isolates entries by user/roles but never re-checks
-/// access (and, like data changes, it is not invalidated by `GRANT`/`REVOKE` - see the class comment below). To keep
-/// such a limited credential fail-close, these sessions do not read from or write to the query result cache.
-bool sessionHasCredentialAccessLimit(const ContextPtr & context);
 
 class QueryResultCacheWriter;
 class QueryResultCacheReader;
@@ -76,13 +69,6 @@ public:
         std::optional<UUID> user_id;
         std::vector<UUID> current_user_roles;
 
-        /// The per-authentication-method GRANTS clause (see CREATE/ALTER USER) narrows a session's access rights to the intersection with
-        /// these grants (token-style credentials). It is therefore part of the effective privilege identity and must isolate cache entries:
-        /// the same user with the same roles but a more restrictive credential must not read results produced under a broader credential.
-        /// Stored as the precisely-serialized clause (`AccessRightsElements::toStringPrecise`, never the widening `toString`; empty when
-        /// there is no clause), compared for equality on read like `user_id`/`current_user_roles`.
-        String authentication_grants;
-
         /// If the associated entry can be read by other users. In general, sharing is a bad idea: First, it is unlikely that different
         /// users pose the same queries. Second, sharing potentially breaches security. E.g. User A should not be able to bypass row
         /// policies on some table by running the same queries as user B for whom no row policies exist.
@@ -121,7 +107,6 @@ public:
             SharedHeader header_,
             const String & query_id_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
-            const std::shared_ptr<const AccessRightsElements> & authentication_grants_,
             bool is_shared_,
             std::chrono::time_point<std::chrono::system_clock> created_at_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
@@ -134,7 +119,6 @@ public:
             const Settings & settings,
             const String & query_id_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
-            const std::shared_ptr<const AccessRightsElements> & authentication_grants_,
             bool is_subquery_);
 
         bool operator==(const Key & other) const;

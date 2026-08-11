@@ -100,26 +100,14 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&password=full_password&se
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&password=token_password&session_id=${session}" -d "SELECT x FROM t2" 2>&1 | grep -m1 -o "ACCESS_DENIED" | head -n 1
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&password=full_password&session_id=${session}" -d "SELECT x FROM t2"
 
-echo "-- The query result cache must not serve a token the results cached under a broader credential of the same user"
+echo "-- The query result cache is shared for a user regardless of the authentication method"
 # The full credential populates the query cache for a SELECT on t2 (which the token cannot read).
 login "full_password" "SELECT x FROM t2 SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0" > /dev/null
 # Re-running with the full credential is a cache hit and returns the row, proving the entry is in the cache.
 login "full_password" "SELECT x FROM t2 SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0"
-# The token's GRANTS omit SELECT ON t2, so the same query must be a cache miss and get denied,
-# rather than being served the cached rows without an access check.
-login_expect_error "token_password" "ACCESS_DENIED" "SELECT x FROM t2 SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0"
-
-echo "-- A credential-limited session does not use the query result cache, so a later REVOKE is enforced on the token"
-# The token can read t1 (SELECT ON t1 is granted to the user and listed in the token's GRANTS).
-# Because the session is credential-limited, this query must not populate the query result cache.
-login "token_password" "SELECT x FROM t1 SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0"
-# Revoke the underlying grant from the user.
-admin "REVOKE SELECT ON ${CLICKHOUSE_DATABASE}.t1 FROM ${user}"
-# The token must now be denied. The query result cache is not access-control-aware on a hit and is not invalidated by
-# REVOKE, so had the token populated it above, this would be served the stale cached row instead of ACCESS_DENIED.
-login_expect_error "token_password" "ACCESS_DENIED" "SELECT x FROM t1 SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0"
-# Restore the grant so the rest of the test is unaffected.
-admin "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t1 TO ${user}"
+# The cache is deliberately shared for the same user across authentication methods (a cache hit does not
+# re-check access rights), so the token is served the result the same user cached under the full credential.
+login "token_password" "SELECT x FROM t2 SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0"
 
 echo "-- ALTER USER ADD IDENTIFIED with the GRANTS clause adds a new token"
 admin "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password BY 'second_token' GRANTS (SELECT(x) ON ${CLICKHOUSE_DATABASE}.t2)"

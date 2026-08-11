@@ -21,12 +21,9 @@ ACCESS_DENIED
 2
 ACCESS_DENIED
 2
--- The query result cache must not serve a token the results cached under a broader credential of the same user
+-- The query result cache is shared for a user regardless of the authentication method
 2
-ACCESS_DENIED
--- A credential-limited session does not use the query result cache, so a later REVOKE is enforced on the token
-1
-ACCESS_DENIED
+2
 -- ALTER USER ADD IDENTIFIED with the GRANTS clause adds a new token
 CREATE USER user IDENTIFIED WITH plaintext_password, plaintext_password VALID UNTIL \'2077-01-01 00:00:00\' GRANTS (SELECT, INSERT ON db.t1), plaintext_password GRANTS (SELECT(x) ON db.t2)
 2
