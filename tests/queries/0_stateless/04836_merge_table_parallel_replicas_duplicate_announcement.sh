@@ -13,8 +13,15 @@
 # concurrently running test, the table name carries `$CLICKHOUSE_DATABASE` so that two runs of this
 # test - the flaky check runs it many times at once - cannot drop or create each other's table. The
 # regex is anchored to that unique name so no other table can leak into the merge.
-# `index_granularity = 128` matters: at the default granularity the initiator's replica claims every
-# mark range and the followers are cancelled before announcing, so the collision never fires.
+# `index_granularity = 16` matters: at the default granularity the initiator's replica claims every
+# mark range and the followers are cancelled before announcing, so the collision never fires. The
+# row count keeps the same ~3900 marks as the originally verified 500000-row/granularity-128
+# fixture while staying fast enough for a debug build running many copies concurrently.
+#
+# `allow_experimental_parallel_reading_from_replicas = 2` makes an unsupported-shape fallback to a
+# plain local read an error instead of a silent success, and the `system.text_log` coordinator
+# count proves the outer read really engaged parallel replicas, so the test cannot silently stop
+# exercising the announcement path.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -23,32 +30,41 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 table="t_merge_pr_dup_announce_${CLICKHOUSE_DATABASE}"
 
 $CLICKHOUSE_CLIENT --query "
-DROP TABLE IF EXISTS default.${table};
+DROP TABLE IF EXISTS default.${table} SYNC;
 
 CREATE TABLE default.${table} (dt DateTime, idx Int32, i Nullable(UInt64))
-ENGINE = MergeTree PARTITION BY (idx % 3) ORDER BY idx SETTINGS index_granularity = 128;
+ENGINE = MergeTree PARTITION BY (idx % 3) ORDER BY idx SETTINGS index_granularity = 16;
 
-INSERT INTO default.${table} SELECT toDateTime(number), number, number FROM numbers(500000);
+INSERT INTO default.${table} SELECT toDateTime(number), number, number FROM numbers(62500);
 "
 
-$CLICKHOUSE_CLIENT --query "
-USE default;
+for local_plan in 0 1; do
+    query_id="04836_${CLICKHOUSE_DATABASE}_local_plan_${local_plan}"
+    $CLICKHOUSE_CLIENT --query_id "$query_id" --query "
+    USE default;
 
-SET enable_analyzer = 1;
-SET allow_experimental_parallel_reading_from_replicas = 1;
-SET max_parallel_replicas = 3;
-SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
-SET parallel_replicas_for_non_replicated_merge_tree = 1;
-SET automatic_parallel_replicas_mode = 0;
-SET parallel_replicas_min_number_of_rows_per_replica = 0;
+    SET enable_analyzer = 1;
+    SET allow_experimental_parallel_reading_from_replicas = 2;
+    SET max_parallel_replicas = 3;
+    SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+    SET parallel_replicas_for_non_replicated_merge_tree = 1;
+    SET automatic_parallel_replicas_mode = 0;
+    SET parallel_replicas_min_number_of_rows_per_replica = 0;
+    SET parallel_replicas_local_plan = ${local_plan};
 
-SET parallel_replicas_local_plan = 0;
-SELECT count() FROM default.${table}
-WHERE idx GLOBAL IN (i NOT IN (SELECT i FROM merge('^${table}\$') WHERE dt >= -2147483648));
+    SELECT count() FROM default.${table}
+    WHERE idx GLOBAL IN (i NOT IN (SELECT i FROM merge('^${table}\$') WHERE dt >= -2147483648));
+    "
 
-SET parallel_replicas_local_plan = 1;
-SELECT count() FROM default.${table}
-WHERE idx GLOBAL IN (i NOT IN (SELECT i FROM merge('^${table}\$') WHERE dt >= -2147483648));
-"
+    # The count above would also be 1 if parallel replicas silently fell back to a plain local
+    # read, and then the announcement path would not be exercised at all. Prove the outer read
+    # created a parallel replicas coordinator.
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
+    $CLICKHOUSE_CLIENT --query "
+    SELECT count() > 0
+    FROM system.text_log
+    WHERE query_id = '$query_id'
+      AND message LIKE '%Creating parallel replicas coordinator%'"
+done
 
-$CLICKHOUSE_CLIENT --query "DROP TABLE default.${table}"
+$CLICKHOUSE_CLIENT --query "DROP TABLE default.${table} SYNC"
