@@ -142,6 +142,12 @@ FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_string WHERE s = CAST('V0' AS D
 SELECT 'JSON path constant', count() > 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_string WHERE s = ('{"a":"V0"}'::JSON).a) WHERE explain ILIKE '%Granules: 1/5%';
 
+-- max_types = 0 keeps the value in the shared variant, whose member type is encoded alongside the
+-- value instead of being listed in the wrapper, so this arm exercises a decode no other arm reaches.
+SELECT 'Dynamic(max_types = 0) holding String', count() > 0
+FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_string WHERE s = CAST('V0' AS Dynamic(max_types = 0)))
+WHERE explain ILIKE '%Granules: 1/5%';
+
 SELECT 'FixedString(5) key, Variant(FixedString(3))', count() > 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_fixed_string_5 WHERE s = CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64)))
 WHERE explain ILIKE '%Granules: 3/5%';
@@ -150,6 +156,7 @@ SELECT '-- C: the declining arms report the index as unused';
 
 SELECT count() FROM pk_string WHERE s = CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64)) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
 SELECT count() FROM pk_string WHERE s = CAST(toFixedString('V0', 3) AS Dynamic) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM pk_string WHERE s > CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64)) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
 SELECT count() FROM pk_string WHERE s = CAST('V0' AS Variant(String, UInt64)) SETTINGS force_primary_key = 1;
 
 DROP TABLE oracle;

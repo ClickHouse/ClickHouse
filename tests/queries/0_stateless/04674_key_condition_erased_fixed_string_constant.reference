@@ -24,6 +24,7 @@ plain String constant	1
 Variant(String) constant	1
 Dynamic holding String	1
 JSON path constant	1
+Dynamic(max_types = 0) holding String	1
 FixedString(5) key, Variant(FixedString(3))	1
 -- C: the declining arms report the index as unused
 1
