@@ -73,6 +73,7 @@ SELECT 'map string key', groupArray(id) FROM json_bf_edges WHERE j.map_s['second
 SELECT 'map string key unoptimized', groupArray(id) FROM json_bf_edges WHERE j.map_s['second'] = 7 SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 0;
 SELECT 'map key separation', groupArray(id) FROM json_bf_edges WHERE j.map_s['missing'] = 7 SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'map low cardinality key', groupArray(id) FROM json_bf_edges WHERE j.map_lc['second'] = 71 SETTINGS force_data_skipping_indices = 'idx';
+SELECT count() FROM json_bf_edges WHERE j.n = 42 AND j.map_s[123] = 7 SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 0; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT 'tuple integer', groupArray(id) FROM json_bf_edges WHERE j.tup.a = 10 SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'tuple string', groupArray(id) FROM json_bf_edges WHERE j.tup.b = 'tuple-one' SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'nullable present', groupArray(id) FROM json_bf_edges WHERE j.nullable = 'present' SETTINGS force_data_skipping_indices = 'idx';

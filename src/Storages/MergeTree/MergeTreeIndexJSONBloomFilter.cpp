@@ -380,7 +380,7 @@ private:
         }
 
         const auto key_type = removeJSONBloomWrappers(map_type.getKeyType());
-        const auto value_type = map_type.getValueType();
+        const auto & value_type = map_type.getValueType();
         const auto & tuple = map_column.getNestedData();
         const auto & keys = tuple.getColumn(0);
         const auto full_keys = keys.convertToFullColumnIfLowCardinality();
@@ -670,11 +670,9 @@ std::optional<JSONPathMatch> tryMatchJSONPath(const RPNBuilderTreeNode & node, c
         return std::nullopt;
 
     const auto key_type = removeJSONBloomWrappers(map_type->getKeyType());
-    const auto converted_key = tryConvertFieldToType(key, *key_type, key_source_type.get(), {}, /* strict= */ true);
-    if (converted_key.isNull())
-        return std::nullopt;
     auto key_column = key_type->createColumn();
-    key_column->insert(converted_key);
+    if (!key_column->tryInsert(key))
+        return std::nullopt;
 
     map_match->path = appendMapKey(map_match->path, key_type, *key_column, 0);
     map_match->type = map_type->getValueType();

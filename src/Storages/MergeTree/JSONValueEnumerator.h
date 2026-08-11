@@ -40,10 +40,10 @@ void enumerateJSONValues(
         DataTypePtr type;
         String type_name;
         ColumnPtr owned_column;
-        const IColumn * column;
+        const IColumn * column = nullptr;
         SerializationPtr serialization;
-        bool is_dynamic;
-        bool is_nullable;
+        bool is_dynamic = false;
+        bool is_nullable = false;
         ColumnVariant::Discriminator cached_discriminator = ColumnVariant::NULL_DISCRIMINATOR;
         const IDataType * cached_dynamic_type = nullptr;
         SerializationPtr cached_dynamic_serialization{};
@@ -190,7 +190,7 @@ void enumerateJSONValues(
             return;
         }
 
-        const IDataType * type;
+        const IDataType * type = nullptr;
         SerializationPtr serialization;
         if constexpr (path_major)
         {

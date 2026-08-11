@@ -2034,11 +2034,12 @@ SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
 
 ## Data skipping indexes for JSON {#data-skipping-indexes-for-json}
 
-[Data skipping indexes](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) can be used with `JSON` columns in three ways:
+[Data skipping indexes](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) can be used with `JSON` columns in four ways:
 
 1. **Indexes on specific subcolumns** — create a standard skip index on a known JSON path, just like on a regular column. This indexes the *values* at that path.
 2. **Path-based indexes with `JSONAllPaths`** — index the *set of paths* present in each granule to skip granules that cannot contain the queried path.
 3. **Value-based indexes with `JSONAllValues`** — index *all values* across all JSON paths using a [text index](/reference/engines/table-engines/mergetree-family/textindexes) to accelerate full-text search on any JSON subcolumn with a single index.
+4. **Type-aware indexes with `jsonbf_v1`** — index scalar leaves together with their paths, container roles, runtime types, and values.
 
 ### Indexes on specific subcolumns {#json-indexes-on-subcolumns}
 
@@ -2188,6 +2189,24 @@ When a query filters on `json.some.path`, the index checks whether the string `"
 When a JSON path is absent from a granule, the subcolumn evaluates to:
 - `NULL` for `Dynamic` type (e.g., `json.path`) and `Nullable` typed subcolumns (e.g., `json.path.:Int64`) — comparisons with `NULL` always return false, so skipping is safe.
 - The type's default value for non-`Nullable` CAST expressions (e.g., `json.path::Int64` produces `0` when the path is missing) — skipping is safe only when the compared value differs from the default. The index automatically handles this distinction.
+
+### Type-aware Bloom filter with jsonbf_v1 {#json-indexes-jsonbf-v1}
+
+The `jsonbf_v1` index covers the scalar leaves of one direct `JSON` column while keeping values at different paths separate. It indexes array elements, typed `Map` values by key, and named `Tuple` fields. Whole containers are not stringified.
+
+```sql title="Query"
+CREATE TABLE events
+(
+    data JSON,
+    INDEX json_values data TYPE jsonbf_v1(false_positive_rate = 0.025) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+```
+
+The optional `tokenizer = ngrams(N)` argument also supports positive string predicates such as `LIKE`, `startsWith`, `endsWith`, `multiSearchAny`, and `match`. Runtime `Dynamic` types that cannot be represented make the containing index granule conservative, so ClickHouse reads it instead of risking a false negative.
+
+See [`jsonbf_v1`](/concepts/features/performance/skip-indexes#bloom-filter-types) in the data skipping index documentation for details.
 
 ### Full-text search with JSONAllValues {#json-indexes-jsonallvalues}
 
