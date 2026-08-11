@@ -140,7 +140,7 @@ namespace
             {
                 throw Exception(
                     ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
-                    "`enable_table_name_url_routing` cannot be combined with a configured `database` or `table`");
+                    "Setting 'enable_table_name_url_routing' cannot be combined with a configured 'database' or 'table'");
             }
         }
     }
@@ -159,8 +159,8 @@ namespace
 
         throw Exception(
             ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
-            "`enable_table_name_url_routing` is not supported for Prometheus handler type `{}`; "
-            "it is supported only for remote-write handlers and `prometheus_api_v1`",
+            "Setting 'enable_table_name_url_routing' is not supported for Prometheus handler type '{}'; "
+            "it is supported only for remote-write handlers and 'prometheus_api_v1'",
             full_type);
     }
 

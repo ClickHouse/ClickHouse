@@ -675,9 +675,12 @@ def test_prometheus_url_routing_config_validation():
     try:
         cluster.start()
         for handler_type in ("prometheus_remote_read", "prometheus_query_api"):
+            # NOTE: `contains_in_log` interpolates the pattern into a double-quoted
+            # bash string, so backticks in the expected message would be executed
+            # as command substitution. Keep the expected messages backtick-free.
             expected_message = (
-                "`enable_table_name_url_routing` is not supported for Prometheus "
-                f"handler type `{handler_type}`"
+                "Setting 'enable_table_name_url_routing' is not supported for Prometheus "
+                f"handler type '{handler_type}'"
             )
             assert_config_is_rejected(
                 [("<type>prometheus_write</type>", f"<type>{handler_type}</type>")],
@@ -685,8 +688,8 @@ def test_prometheus_url_routing_config_validation():
             )
 
         fixed_target_error = (
-            "`enable_table_name_url_routing` cannot be combined with a configured "
-            "`database` or `table`"
+            "Setting 'enable_table_name_url_routing' cannot be combined with a configured "
+            "'database' or 'table'"
         )
         assert_config_is_rejected(
             [
