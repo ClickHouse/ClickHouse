@@ -23,10 +23,10 @@ import re
 import sys
 
 try:
-    from .lychee_check import dump_inputs
+    from .lychee_check import dump_inputs, strip_doc_page_extension
 except ImportError:
     # The CI command executes this file directly from the docs root.
-    from lychee_check import dump_inputs
+    from lychee_check import dump_inputs, strip_doc_page_extension
 
 
 LOCALE_DIRS = {"ar", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh"}
@@ -116,12 +116,10 @@ def canonicalize_url(url, redirects, make_relative=False):
             internal_url = url[len(prefix) :]
             break
 
-    original_path, original_suffix = split_path_suffix(internal_url)
+    normalized_url = strip_doc_page_extension(internal_url)
+    extension_removed = normalized_url != internal_url
+    original_path, original_suffix = split_path_suffix(normalized_url)
     lookup = original_path.rstrip("/") or "/"
-    for extension in (".mdx", ".md"):
-        if lookup.endswith(extension):
-            lookup = lookup[: -len(extension)]
-            break
     if lookup in redirects:
         destination = redirects[lookup]
         seen = {lookup}
@@ -139,7 +137,7 @@ def canonicalize_url(url, redirects, make_relative=False):
             if destination_suffix and not split_path_suffix(next_destination)[1]:
                 next_destination += destination_suffix
             destination = next_destination
-    elif public_prefix and make_relative:
+    elif extension_removed or (public_prefix and make_relative):
         destination = lookup
     else:
         return None

@@ -81,6 +81,7 @@ def test_source_embedded_doc_links_are_materialized_for_lychee(tmp_path):
         '''R"DOCS_MD(
 [Relative](/reference/functions/example#syntax)
 [Public](https://clickhouse.com/docs/reference/data-types/newjson)
+[Source path](/reference/functions/example.mdx#syntax)
 <Card href="/concepts/best-practices/json-type" />
 [External](https://example.com/reference/not-checked)
 ```md
@@ -97,10 +98,11 @@ def test_source_embedded_doc_links_are_materialized_for_lychee(tmp_path):
 
     output_name, count = lychee_check.write_source_doc_links(repo_root, output)
 
-    assert count == 3
+    assert count == 4
     materialized = (output / output_name).read_text(encoding="utf-8")
-    assert "](/reference/functions/example#syntax)" in materialized
+    assert materialized.count("](/reference/functions/example#syntax)") == 2
     assert "](/reference/data-types/newjson)" in materialized
+    assert ".mdx#syntax" not in materialized
     assert "](/concepts/best-practices/json-type)" in materialized
     assert "clickhouse.com/docs" not in materialized
     assert "not-checked" not in materialized
@@ -177,6 +179,22 @@ def test_canonical_link_checker_follows_redirect_chains():
         canonical_links_check.canonicalize_url("/old#details", redirects)
         == "/reference/current#details"
     )
+
+
+def test_canonical_link_checker_removes_page_extensions():
+    text = """[Markdown](/reference/functions/example.md)
+[MDX](/reference/functions/example.mdx#anchor)
+"""
+
+    aliases = canonical_links_check.find_aliases_in_text(text, {})
+
+    assert [(old, new) for _start, _end, old, new in aliases] == [
+        ("/reference/functions/example.md", "/reference/functions/example"),
+        (
+            "/reference/functions/example.mdx#anchor",
+            "/reference/functions/example#anchor",
+        ),
+    ]
 
 
 def test_canonical_link_checker_rewrites_template_route_base():

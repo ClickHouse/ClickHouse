@@ -95,6 +95,19 @@ def strip_code_blocks(text):
     return INLINE_CODE_RE.sub("", text)
 
 
+def strip_doc_page_extension(route):
+    """Return a served docs route, not its Markdown source-file path."""
+    suffix_at = min(
+        (index for marker in ("?", "#") if (index := route.find(marker)) >= 0),
+        default=len(route),
+    )
+    path, suffix = route[:suffix_at], route[suffix_at:]
+    for extension in (".mdx", ".md"):
+        if path.endswith(extension):
+            return path[: -len(extension)] + suffix
+    return route
+
+
 # `import Foo from '/snippets/x.mdx'` (or a relative path). Mintlify renders the
 # snippet's body inline where the component is used, so a heading anchor defined
 # in the snippet resolves on the page -- but lychee never expands imports.
@@ -606,6 +619,7 @@ def source_doc_links(text):
                 if route.startswith(f"{prefix}/"):
                     route = route[len(prefix):]
                     break
+            route = strip_doc_page_extension(route)
             links.append((rendered.count("\n", 0, start) + 1, original, route))
     return sorted(links)
 
