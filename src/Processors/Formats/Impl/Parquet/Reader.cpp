@@ -193,12 +193,23 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
     while (pos < uncompressed_size)
     {
         decompressor->set(out + pos, uncompressed_size - pos);
-        decompressor->next();
+        if (!decompressor->next())
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
+                "Unexpected end of compressed page: expected {} uncompressed bytes, got {}", uncompressed_size, pos);
         chassert(decompressor->position() == out + pos);
         size_t n = decompressor->available();
         chassert(n <= uncompressed_size - pos);
         pos += n;
     }
+    /// Producing the expected number of bytes does not prove that the compressed stream ended
+    /// cleanly: e.g. zlib reports a missing or corrupted gzip trailer only on the read after the
+    /// one that filled the output exactly. Force one more read: it throws on a damaged stream,
+    /// and returns data if the stream uncompresses to more bytes than the page header declared.
+    char check_byte = 0;
+    decompressor->set(&check_byte, 1);
+    if (decompressor->next())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Compressed page has extra data after the expected {} uncompressed bytes", uncompressed_size);
 }
 
 void Reader::init(const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_)
