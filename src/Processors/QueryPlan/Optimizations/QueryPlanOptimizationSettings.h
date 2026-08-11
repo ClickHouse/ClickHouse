@@ -142,6 +142,7 @@ struct QueryPlanOptimizationSettings
     /// If lazy materialization optimisation is enabled
     bool optimize_lazy_materialization = false;
     bool optimize_lazy_materialization_for_object_storage = false;
+    bool optimize_lazy_materialization_for_file = false;
     size_t max_limit_for_lazy_materialization = 0;
 
     /// If lazy FINAL optimization for ReplacingMergeTree is enabled
