@@ -1589,6 +1589,16 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                         else
                         {
                             file_metadata->prepareResetProcessingRequests(requests);
+
+                            /// Remove stale .retriable node if it exists from prior failures.
+                            /// Non-max files in ordered mode don't call prepareProcessedRequests (which
+                            /// would clear .retriable), so we must explicitly clear it here to avoid
+                            /// leaking .retriable nodes when a previously-failed file succeeds.
+                            if (retriable_version.has_value() && retriable_version.value() >= 0)
+                            {
+                                auto retriable_failed_node_path = file_metadata->getFailedNodePath() + ".retriable";
+                                requests.push_back(zkutil::makeRemoveRequest(retriable_failed_node_path, retriable_version.value()));
+                            }
                         }
                         if (has_partitioning)
                             file_metadata->preparePartitionProcessedMap(file_map);
