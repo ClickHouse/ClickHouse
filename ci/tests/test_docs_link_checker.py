@@ -6,7 +6,11 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
-from ci.jobs.scripts.docs import locale_components_check, lychee_check
+from ci.jobs.scripts.docs import (
+    canonical_links_check,
+    locale_components_check,
+    lychee_check,
+)
 
 
 def write_settings_explorer(docs_root, rendered_href):
@@ -67,3 +71,42 @@ def test_locale_static_link_parser_leaves_templates_to_template_parser():
     template = locale_components_check.TEMPLATE.search(rendered_href)
     assert template is not None
     assert template.group(1) == "/docs"
+
+
+def test_canonical_link_checker_rewrites_rendered_links_only():
+    redirects = {
+        "/sql-reference/functions/plus": "/reference/functions/plus",
+        "/operations/settings": "/reference/settings",
+    }
+    text = """[Plus](/sql-reference/functions/plus#examples)
+<Card href="/operations/settings" />
+const item = { href: "/sql-reference/functions/plus" };
+`[Example](/sql-reference/functions/plus)`
+```md
+[Example](/sql-reference/functions/plus)
+```
+{/* [Hidden](/operations/settings) */}
+"""
+
+    aliases = canonical_links_check.find_aliases_in_text(text, redirects)
+
+    assert [(old, new) for _start, _end, old, new in aliases] == [
+        (
+            "/sql-reference/functions/plus#examples",
+            "/reference/functions/plus#examples",
+        ),
+        ("/operations/settings", "/reference/settings"),
+        ("/sql-reference/functions/plus", "/reference/functions/plus"),
+    ]
+
+
+def test_canonical_link_checker_follows_redirect_chains():
+    redirects = {
+        "/old": "/older",
+        "/older": "/reference/current",
+    }
+
+    assert (
+        canonical_links_check.canonicalize_url("/old#details", redirects)
+        == "/reference/current#details"
+    )
