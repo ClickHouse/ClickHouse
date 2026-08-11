@@ -74,4 +74,21 @@ SELECT count() FROM (EXPLAIN QUERY TREE
 
 DROP TABLE t_chain_hint_r;
 
+-- Same-named columns of different tables never join one chain: the column source is part
+-- of query tree node identity, so no condition is derived and no false conflict is found.
+SELECT 'same_name_isolation';
+DROP TABLE IF EXISTS t_chain_hint_n1;
+DROP TABLE IF EXISTS t_chain_hint_n2;
+CREATE TABLE t_chain_hint_n1 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a AS SELECT 20, 20;
+CREATE TABLE t_chain_hint_n2 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a AS SELECT 7, 1;
+SELECT count() FROM t_chain_hint_n1, t_chain_hint_n2
+    WHERE t_chain_hint_n1.a <= t_chain_hint_n1.b AND t_chain_hint_n2.b < 5;
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_hint_n1, t_chain_hint_n2
+    WHERE t_chain_hint_n1.a <= t_chain_hint_n1.b AND t_chain_hint_n2.b < 5)
+    WHERE explain LIKE '%function_name: indexHint%' OR explain LIKE '%function_name: lessOrEquals,%';
+SELECT count() FROM t_chain_hint_n1, t_chain_hint_n2
+    WHERE t_chain_hint_n1.a = t_chain_hint_n1.b AND t_chain_hint_n1.b = 20 AND t_chain_hint_n2.a != 20;
+DROP TABLE t_chain_hint_n1;
+DROP TABLE t_chain_hint_n2;
+
 DROP TABLE t_chain_hint;

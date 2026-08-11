@@ -22,3 +22,7 @@ join_derived_stays_plain
 hint_does_not_suppress
 0
 4
+same_name_isolation
+1
+1
+1
