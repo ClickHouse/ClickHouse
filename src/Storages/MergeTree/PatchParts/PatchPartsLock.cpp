@@ -352,7 +352,7 @@ void PlainLightweightUpdatesSync::lockColumns(const UpdateAffectedColumns & affe
     });
 
     if (!res)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to get lock in {} ms for lightwegiht update with auto mode", timeout_ms);
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to get lock in {} ms for lightweight update with auto mode", timeout_ms);
 
     in_progress_columns.add(affected_columns);
 }
