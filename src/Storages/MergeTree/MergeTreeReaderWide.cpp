@@ -65,8 +65,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     {
         for (size_t i = 0; i < columns_to_read.size(); ++i)
         {
-            /// Column was dropped by a pending mutation or invalidated. Don't read stale data;
-            if (!isColumnDroppedByPendingMutation(i) && !isSystemColumnInvalidated(i))
+            if (!isColumnDroppedByPendingMutation(i))
                 addStreams(columns_to_read[i], serializations[i]);
         }
     }
@@ -133,7 +132,7 @@ void MergeTreeReaderWide::prefetchForAllColumns(
     /// so if reading can be asynchronous, it will also be performed in parallel for all columns.
     for (size_t pos = 0; pos < num_columns; ++pos)
     {
-        if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+        if (isColumnDroppedByPendingMutation(pos))
             continue;
 
         try
@@ -176,7 +175,8 @@ size_t MergeTreeReaderWide::readRows(
 
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
-            if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+            /// Column was dropped by a pending mutation. Don't read stale data; let defaults be used.
+            if (isColumnDroppedByPendingMutation(pos))
             {
                 res_columns[pos] = nullptr;
                 continue;
@@ -307,8 +307,7 @@ MergeTreeReaderWide::FileStreams::iterator MergeTreeReaderWide::addStream(const 
         settings.save_marks_in_cache,
         settings.read_settings,
         load_marks_threadpool,
-        /*num_columns_in_mark=*/ 1,
-        settings.use_streaming_marks_compression);
+        /*num_columns_in_mark=*/ 1);
 
     auto stream_settings = settings;
     stream_settings.is_low_cardinality_dictionary = ISerialization::isLowCardinalityDictionarySubcolumn(substream_path);
@@ -448,6 +447,13 @@ void MergeTreeReaderWide::deserializePrefix(
             if (stream_name)
                 streams.erase(*stream_name);
         };
+        deserialize_settings.check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path) -> bool
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                name_and_type, substream_path, ".bin",
+                data_part_info_for_read->getChecksums(), storage_settings);
+            return stream_name.has_value();
+        };
         deserialize_settings.release_all_prefixes_streams = settings.read_only_column_sample;
         deserialize_settings.has_uniform_marks_callback =
             [&](const ISerialization::SubstreamPath & substream_path,
@@ -495,7 +501,7 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsImpl(size_t num_columns,
         DeserializeBinaryBulkStateMap deserialize_state_map;
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
-            if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+            if (isColumnDroppedByPendingMutation(pos))
                 continue;
 
             try
@@ -634,25 +640,6 @@ void MergeTreeReaderWide::readData(
             return;
 
         streams[*stream_name]->seekToMark(mark);
-    };
-
-    /// Seek a substream's stream to the current granule's mark. Needed by serializations that read a
-    /// value not implied by the ongoing range position (e.g. a per-part value broadcast to every
-    /// granule): the data getter above seeks only conditionally (skipped on prefetch/continue_reading),
-    /// so such a stream can be left at a sibling substream's offset. With `read_without_marks` the
-    /// whole part is one range read from the start and the stream has no marks to seek to, so skip it.
-    deserialize_settings.seek_stream_to_current_mark_callback = [&](const ISerialization::SubstreamPath & substream_path)
-    {
-        if (read_without_marks)
-            return;
-
-        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
-        if (!stream_name)
-            return;
-
-        auto it = streams.find(*stream_name);
-        if (it != streams.end())
-            it->second->seekToMark(from_mark);
     };
 
     deserialize_settings.get_avg_value_size_hint_callback

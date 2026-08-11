@@ -8,11 +8,9 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
-#include <Common/ProfileEvents.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
 #include <IO/CompressionMethod.h>
-#include <IO/Libdeflate.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Processors/Formats/Impl/Parquet/Reader.h>
@@ -139,15 +137,8 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
             throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "Cannot decompress Snappy: ClickHouse was compiled without Snappy support");
 #endif
         case parq::CompressionCodec::GZIP:
-#if USE_LIBDEFLATE
-            /// One-shot libdeflate: the whole page is in memory and the uncompressed size is known,
-            /// which is faster than the streaming zlib path.
-            Libdeflate::decompress(CompressionMethod::Gzip, data, compressed_size, out, uncompressed_size);
-            return;
-#else
             method = CompressionMethod::Gzip;
             break;
-#endif
         case parq::CompressionCodec::LZO:
             /// Arrow also doesn't support it.
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LZO decompression is not supported");
@@ -178,9 +169,6 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
         std::move(mem_buf),
         method,
         /*zstd_window_log_max*/ 0,
-        /// Parquet's `SNAPPY` codec is raw block compression and is special-cased above —
-        /// this dispatch never sees it, so the snappy mode here is irrelevant.
-        SnappyMode::Basic,
         uncompressed_size,
         out);
     size_t pos = 0;
@@ -378,10 +366,8 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         for (size_t idx_in_output_block : format_filter_info->key_condition->getUsedColumns())
         {
             const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
-            /// No file-readable column for this key-condition column: it has no column-chunk
-            /// stats, so it cannot prune. Skip it (its range stays the whole universe).
             if (!output_idx.has_value())
-                continue;
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "KeyCondition uses PREWHERE output");
             const OutputColumnInfo & output_info = output_columns[output_idx.value()];
 
             if (output_info.is_primitive)
@@ -452,10 +438,8 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         for (const auto & [idx_in_output_block, key_condition] : column_conditions)
         {
             const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
-            /// No file-readable column for this key-condition column: it has no page-index
-            /// stats, so it cannot prune. Skip it (page-level pruning is disabled for it).
             if (!output_idx.has_value())
-                continue;
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column condition uses PREWHERE output");
             const OutputColumnInfo & output_info = output_columns[output_idx.value()];
 
             if (!output_info.is_primitive || !primitive_columns[output_info.primitive_start].decoder.allow_stats)

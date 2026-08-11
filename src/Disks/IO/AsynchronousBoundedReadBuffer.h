@@ -4,8 +4,6 @@
 #include <utility>
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/ReadSettings.h>
-#include <IO/IReadBufferMetadataProvider.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 
 namespace Poco { class Logger; }
@@ -17,7 +15,7 @@ struct AsyncReadCounters;
 using AsyncReadCountersPtr = std::shared_ptr<AsyncReadCounters>;
 class ReadBufferFromRemoteFSGather;
 
-class AsynchronousBoundedReadBuffer : public ReadBufferFromFileBase, public IReadBufferMetadataProvider
+class AsynchronousBoundedReadBuffer : public ReadBufferFromFileBase
 {
 public:
     using Impl = ReadBufferFromFileBase;
@@ -61,13 +59,7 @@ public:
     /// buffer when covered, otherwise the prefetch is dropped and the read falls back to impl.
     bool supportsReadAt() override { return impl->supportsReadAt(); }
 
-    /// Reads into `memory` (or prefetch_buffer), not into the pointer set via `ReadBuffer::set`.
-    /// Same reasoning as `AsynchronousReadBufferFromFileDescriptor::supportsExternalBufferMode`.
-    bool supportsExternalBufferMode() const override { return false; }
-
     size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
-
-    std::optional<Field> getMetadata(const String & name) const override;
 
 private:
     const ImplPtr impl;

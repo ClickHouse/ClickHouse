@@ -19,8 +19,6 @@
 namespace DB
 {
 
-using URLParams = std::vector<std::pair<std::string, std::string>>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-
 /// Class for Helpers for XDBC-bridges, provide utility methods, not main request.
 class IXDBCBridgeHelper : public IBridgeHelper
 {
@@ -28,7 +26,7 @@ class IXDBCBridgeHelper : public IBridgeHelper
 public:
     explicit IXDBCBridgeHelper(ContextPtr context_) : IBridgeHelper(context_) {}
 
-    virtual URLParams getURLParams(UInt64 max_block_size) const = 0;
+    virtual std::vector<std::pair<std::string, std::string>> getURLParams(UInt64 max_block_size) const = 0;
 
     virtual Poco::URI getColumnsInfoURI() const = 0;
 
@@ -153,6 +151,8 @@ private:
     Poco::Net::HTTPBasicCredentials credentials{};
 
 protected:
+    using URLParams = std::vector<std::pair<std::string, std::string>>;
+
     Poco::URI getColumnsInfoURI() const override
     {
         auto uri = createBaseURI();
@@ -163,7 +163,7 @@ protected:
 
     URLParams getURLParams(UInt64 max_block_size) const override
     {
-        URLParams result;
+        std::vector<std::pair<std::string, std::string>> result;
 
         result.emplace_back("connection_string", connection_string); /// already validated
         result.emplace_back("max_block_size", std::to_string(max_block_size));

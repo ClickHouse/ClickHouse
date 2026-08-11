@@ -33,7 +33,7 @@ void registerDataTypeUUID(DataTypeFactory & factory)
             .description = R"DOCS_MD(
 A Universally Unique Identifier (UUID) is a 16-byte value used to identify records. For detailed information about UUIDs, see [Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier).
 
-While different UUID variants exist, e.g. UUIDv4 and UUIDv7 (see [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562)), ClickHouse does not validate that inserted UUIDs conform to a particular variant.
+While different UUID variants exist, e.g. UUIDv4 and UUIDv7 (see [here](https://datatracker.ietf.org/doc/html/draft-ietf-uuidrev-rfc4122bis)), ClickHouse does not validate that inserted UUIDs conform to a particular variant.
 UUIDs are internally treated as a sequence of 16 random bytes with [8-4-4-4-12 representation](https://en.wikipedia.org/wiki/Universally_unique_identifier#Textual_representation) at SQL level.
 
 Example UUID value:
@@ -55,7 +55,7 @@ While this is fine for UUIDv4 values, this can deteriorate performance with UUID
 More specifically, UUIDv7 values consist of a timestamp in the first half and a counter in the second half.
 UUIDv7 sorting in sparse primary key indexes (i.e., the first values of each index granule) will therefore be by counter field.
 Assuming UUIDs were sorted by the first half (timestamp), then the primary key index analysis step at the beginning of queries is expected to prune all marks in all but one part.
-However, with sorting by the second half (counter), at least one mark is expected to be returned for all parts, leading to unnecessary disk accesses.
+However, with sorting by the second half (counter), at least one mark is expected to be returned for all parts, leading to unnecessary unnecessary disk accesses.
 :::
 
 Example:

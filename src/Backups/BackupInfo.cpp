@@ -3,7 +3,6 @@
 #include <Access/ContextAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTExpressionList.h>
@@ -22,11 +21,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_named_collection_override_by_default;
-}
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -282,8 +276,6 @@ BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
         return *this;
 
     BackupInfo res = *this;
-    /// The resolved snapshot contains the original overrides and cannot be kept after redacting them.
-    res.frozen_named_collection.reset();
 
     /// S3('url', 'access_key_id', 'secret_access_key') -> S3('url')
     if (res.id_arg.empty() && res.args.size() == 3)
@@ -306,8 +298,7 @@ BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
                 auto key = getEffectiveKeyValueArgName(kv_arg, context);
                 return key
                     && (*key == "access_key_id" || *key == "secret_access_key" || *key == "session_token" || *key == "role_arn"
-                        || *key == "role_session_name" || *key == "external_id"
-                        || *key == "google_adc_client_secret" || *key == "google_adc_refresh_token");
+                        || *key == "role_session_name" || *key == "external_id");
             }),
         res.kv_args.end());
 
@@ -357,12 +348,6 @@ NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const
     if (id_arg.empty())
         return nullptr;
 
-    if (frozen_named_collection)
-    {
-        context->checkAccess(AccessType::NAMED_COLLECTION, id_arg);
-        return frozen_named_collection;
-    }
-
     /// Load named collections (both from config and SQL-defined)
     NamedCollectionFactory::instance().loadIfNot();
 
@@ -378,34 +363,12 @@ NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const
     {
         auto mutable_collection = collection->duplicate();
         auto params_from_query = getParamsMapFromAST(kv_args, context);
-        const auto allow_override_by_default = context->getSettingsRef()[Setting::allow_named_collection_override_by_default];
         for (const auto & [key, value] : params_from_query)
-        {
-            /// Enforce the same override permission as the table-function/storage paths
-            /// (`tryGetNamedCollectionWithOverrides`): a non-overridable key (e.g. an operator-static endpoint or
-            /// credentials) must not be redirected from the query, otherwise the collection's static credentials
-            /// could be reused against a user-chosen endpoint under the S3 credential restriction.
-            if (!mutable_collection->isOverridable(key, allow_override_by_default))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
             mutable_collection->setOrUpdate<String>(key, fieldToString(value), {});
-            mutable_collection->markQueryOverridden(key);
-        }
         collection = std::move(mutable_collection);
     }
 
     return collection;
-}
-
-BackupInfo BackupInfo::freezeNamedCollection(ContextPtr context) const
-{
-    if (id_arg.empty() || frozen_named_collection)
-        return *this;
-
-    BackupInfo res = *this;
-    auto collection = getNamedCollection(context);
-    /// `getNamedCollection` already returns a private copy when overrides are present.
-    res.frozen_named_collection = kv_args.empty() ? collection->duplicate() : std::move(collection);
-    return res;
 }
 
 }

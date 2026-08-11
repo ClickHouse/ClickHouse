@@ -16,9 +16,8 @@ public:
 
     const std::string & getDataPath() const;
 
-    /// Create a transaction for the target table. `table_schema` is the table's logical schema;
-    /// see the implementation for how partitioned vs unpartitioned tables derive the write context.
-    void create(const DB::Names & partition_columns, const DB::NamesAndTypesList & table_schema);
+    /// Create a transcation.
+    void create();
 
     struct CommitFile
     {
@@ -47,7 +46,7 @@ private:
 
     KernelExternEngine engine;
     KernelTransaction transaction;
-    KernelWriteContext unpartitioned_write_context;
+    KernelWriteContext write_context;
     DB::NamesAndTypesList write_schema;
 
     void assertTransactionCreated() const;

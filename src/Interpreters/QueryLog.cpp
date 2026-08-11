@@ -272,12 +272,14 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
     }
 
+    if (query_settings)
     {
-        Map map;
-        map.reserve(query_settings.size());
-        for (const auto & [name, value] : query_settings)
-            map.push_back(Tuple{name, value});
-        columns[i++]->insert(map);
+        auto * column = columns[i++].get();
+        query_settings->dumpToMapColumn(column, true);
+    }
+    else
+    {
+        typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
     }
 
     {
@@ -335,13 +337,10 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(uint8_t(query_result_cache_usage));
 
-    {
-        Map map;
-        map.reserve(async_read_counters.size());
-        for (const auto & [name, value] : async_read_counters)
-            map.push_back(Tuple{name, value});
-        columns[i++]->insert(map);
-    }
+    if (async_read_counters)
+        async_read_counters->dumpToMapColumn(columns[i++].get());
+    else
+        typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
 
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(is_internal);
 }

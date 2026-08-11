@@ -8,7 +8,6 @@
 #include <Backups/getBackupDataFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
-#include <Common/FailPoint.h>
 #include <Common/StackTrace.h>
 #include <Common/StringUtils.h>
 #include <base/hex.h>
@@ -48,11 +47,6 @@ namespace ProfileEvents
 namespace DB
 {
 
-namespace FailPoints
-{
-    extern const char backup_fail_before_writing_metadata[];
-}
-
 namespace ErrorCodes
 {
     extern const int BACKUP_NOT_FOUND;
@@ -68,7 +62,6 @@ namespace ErrorCodes
     extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
     extern const int LOGICAL_ERROR;
     extern const int INSECURE_PATH;
-    extern const int FAULT_INJECTED;
 }
 
 namespace fs = std::filesystem;
@@ -183,7 +176,6 @@ BackupImpl::BackupImpl(
     , data_file_name_prefix_length(params.data_file_name_prefix_length)
     , coordination(params.backup_coordination)
     , uuid(params.backup_uuid)
-    , backup_id(params.backup_id)
     , version(CURRENT_BACKUP_VERSION)
     , base_backup_info(params.base_backup_info)
     , log(getLogger("BackupImpl"))
@@ -355,27 +347,6 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
     return base_backup;
 }
 
-std::map<String, String> BackupImpl::getEngineSettings() const
-{
-    std::lock_guard lock{mutex};
-
-    /// Both a BACKUP and a RESTORE can involve more than one engine with different endpoint settings, which
-    /// a flat map cannot represent: an incremental BACKUP writes through `writer` but also reads from the
-    /// base backup, and a RESTORE reads from the base backup (incremental restores) and/or the lightweight
-    /// snapshot reader in addition to the top-level backup. Report the engine settings only when a single
-    /// engine is involved; otherwise omit them.
-    if (base_backup_info || lightweight_snapshot_reader)
-        return {};
-
-    if (writer)
-        return writer->getSerializedSettings();
-
-    if (reader)
-        return reader->getSerializedSettings();
-
-    return {};
-}
-
 size_t BackupImpl::getNumFiles() const
 {
     std::lock_guard lock{mutex};
@@ -443,8 +414,6 @@ void BackupImpl::writeBackupMetadata()
     *out << "<deduplicate_files>" << params.deduplicate_files << "</deduplicate_files>";
     *out << "<timestamp>" << toString(LocalDateTime{timestamp}) << "</timestamp>";
     *out << "<uuid>" << toString(*uuid) << "</uuid>";
-    if (!backup_id.empty())
-        *out << "<backup_id>" << xml << backup_id << "</backup_id>";
     if (data_file_name_generator != BackupDataFileNameGeneratorType::FirstFileName)
         *out << "<data_file_name_generator>" << SettingFieldBackupDataFileNameGeneratorTypeTraits::toString(data_file_name_generator)
              << "</data_file_name_generator>";
@@ -635,9 +604,6 @@ void BackupImpl::readBackupMetadata()
 
         timestamp = parse<::LocalDateTime>(req("timestamp")).to_time_t();
         uuid = parse<UUID>(req("uuid"));
-
-        if (h.contains("backup_id"))
-            backup_id = req("backup_id");
 
         if (h.contains("base_backup") && !base_backup_info)
         {
@@ -1191,15 +1157,6 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     if (entry->isReference())
         return;
 
-    if (entry->isFromRemoteFile())
-    {
-        LOG_TRACE(log, "Writing backup for file {} : skipped because of lightweight snapshot", info.data_file_name);
-        std::lock_guard lock{mutex};
-        original_endpoint = entry->getEndpointURI();
-        original_namespace = entry->getNamespace();
-        return;
-    }
-
     if (open_mode == OpenMode::READ)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for reading. Something is wrong internally");
 
@@ -1300,10 +1257,6 @@ void BackupImpl::finalizeWriting()
     if (!params.is_internal_backup)
     {
         LOG_TRACE(log, "Finalizing backup {}", backup_name_for_logging);
-        fiu_do_on(FailPoints::backup_fail_before_writing_metadata,
-        {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_before_writing_metadata is triggered");
-        });
         writeBackupMetadata();
         closeArchive(/* finalize= */ true);
         setCompressedSize();
@@ -1321,6 +1274,16 @@ void BackupImpl::setCompressedSize()
         compressed_size = writer ? writer->getFileSize(archive_params.archive_name) : reader->getFileSize(archive_params.archive_name);
     else
         compressed_size = uncompressed_size;
+}
+
+
+void BackupImpl::setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept
+{
+    if (original_endpoint.empty())
+    {
+        original_endpoint = endpoint_;
+        original_namespace = namespace_;
+    }
 }
 
 
@@ -1385,10 +1348,7 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
             files_to_remove.push_back(".backup");
             coordination->forEachFileInfoForAllHosts([&](const BackupFileInfo & file_info)
             {
-                /// Skip entries with no data file — an empty file, or one wholly covered by the base backup.
-                /// Their `data_file_name` is empty, which would otherwise resolve to the backup root.
-                if (!file_info.data_file_name.empty())
-                    files_to_remove.push_back(file_info.data_file_name);
+                files_to_remove.push_back(file_info.data_file_name);
             });
         }
 
