@@ -1647,8 +1647,40 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
             std::string lock_value = zk_client->get(zookeeper_cleanup_lock_path);
             if (lock_value == LOCK_OPERATION_DROP_FAILED)
             {
-                LOG_INFO(log, "Another replica is already executing SYSTEM DROP S3QUEUE FAILED FILES, skipping");
-                return;
+                /// Another replica is executing the same operation. Wait for it to complete
+                /// with bounded polling to avoid indefinite hangs.
+                LOG_INFO(log, "Another replica is executing SYSTEM DROP S3QUEUE FAILED FILES, waiting for completion");
+
+                static constexpr size_t max_iterations = 50; /// 5 seconds total (50 * 100ms)
+                for (size_t i = 0; i < max_iterations; ++i)
+                {
+                    sleepForMilliseconds(100);
+
+                    try
+                    {
+                        /// Poll to see if the lock still exists
+                        zk_client->get(zookeeper_cleanup_lock_path);
+                    }
+                    catch (const Coordination::Exception & poll_e)
+                    {
+                        if (poll_e.code == Coordination::Error::ZNONODE)
+                        {
+                            /// Lock was released, cleanup completed by the other replica.
+                            /// Reconcile local cache to match Keeper state.
+                            LOG_INFO(log, "Cleanup lock was released after {}ms, reconciling cache", (i + 1) * 100);
+                            reconcileFailedFilesCache();
+                            return;
+                        }
+                        /// Other errors during polling are transient - retry on next iteration
+                    }
+
+                    if (i == max_iterations - 1)
+                    {
+                        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                            "Failed file cleanup lock held by another replica for more than 5 seconds. "
+                            "Please retry in a moment.");
+                    }
+                }
             }
         }
         catch (const Coordination::Exception & e)
