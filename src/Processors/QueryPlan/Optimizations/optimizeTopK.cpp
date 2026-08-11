@@ -27,7 +27,12 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     /// None of this can be transmitted to remote workers, so when the plan is
     /// going to be distributed, the remote node would fail to deserialize the
     /// plan with `Unknown function __topKFilter` (or run with stale state).
-    if (settings.make_distributed_plan)
+    ///
+    /// Plan-based parallel replicas ships a fragment of this plan the same way, so it is suppressed here for
+    /// the same reason. Each half is re-optimized with the flag off (the local one in `optimizeTreeSecondPass`,
+    /// the shipped one on the replica), so Top-K is still applied per replica - and soundly: a row worse than
+    /// a replica's own N-th best cannot be in the global top-N either.
+    if (settings.make_distributed_plan || settings.enable_parallel_replicas)
         return 0;
 
     QueryPlan::Node * node = parent_node;

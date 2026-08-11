@@ -95,6 +95,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.join_swap_table,
         optimization_settings.parallel_replicas_filter_pushdown,
         optimization_settings.make_distributed_plan,
+        optimization_settings.enable_parallel_replicas,
     };
 
     while (!stack.empty())
@@ -217,6 +218,7 @@ void optimizeTreeSecondPass(
         optimization_settings.join_swap_table,
         optimization_settings.parallel_replicas_filter_pushdown,
         optimization_settings.make_distributed_plan,
+        optimization_settings.enable_parallel_replicas,
     };
 
     Stack stack;

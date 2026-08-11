@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -24,6 +25,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -290,6 +292,74 @@ public:
             parent_node->children = {&new_split_node};
             return;
         }
+
+        const auto * sorting_step = typeid_cast<const SortingStep *>(parent_step);
+        if (sorting_step && sortingCanBeShipped(*sorting_step) && subtreeIsShippable(parent_node))
+        {
+            /// Ship the sort with the fragment and merge the already sorted streams on the initiator. Without
+            /// this the sort stays above the union, so neither the local fragment nor the shipped one contains
+            /// a `Sorting` above the read, `requestReadingInOrder` is never called and both sides fall back to
+            /// `CoordinationMode::Default`. With the sort inside the fragment each side re-derives read-in-order
+            /// from the same sort description, so they agree on `WithOrder`/`ReverseOrder`.
+            const auto sort_description = sorting_step->getSortDescription();
+            const UInt64 limit = sorting_step->getLimit();
+            /// `exact_rows_before_limit` needs the exact count, so the bound must not be applied per replica.
+            const bool read_till_end = mustReadTillEnd();
+
+            /// Per-replica sort. Still a full sort here: read-in-order runs later, separately on each side.
+            auto & partial_sorting_node = nodes.emplace_back();
+            partial_sorting_node.step = sorting_step->clone();
+            partial_sorting_node.step->setStepDescription("partial");
+            partial_sorting_node.children = {original_split_node->children.front()};
+
+            QueryPlan::Node * fragment_root = &partial_sorting_node;
+
+            /// `SortingStep::serialize` drops the limit and `deserialize` rebuilds an unbounded sort, so a
+            /// top-N has to be restated as a step to survive the wire. The offset is deliberately not shipped:
+            /// it applies once, globally, above the merge.
+            if (const UInt64 local_limit = read_till_end ? 0 : limit)
+            {
+                auto & limit_node = nodes.emplace_back();
+                limit_node.step = std::make_unique<LimitStep>(partial_sorting_node.step->getOutputHeader(), local_limit, 0);
+                limit_node.step->setStepDescription("local top-N");
+                limit_node.children = {&partial_sorting_node};
+                fragment_root = &limit_node;
+            }
+
+            auto & new_split_node = nodes.emplace_back();
+            new_split_node.step = std::make_unique<ParallelReplicasSplitStep>(fragment_root->step->getOutputHeader());
+            new_split_node.children = {fragment_root};
+
+            /// Each replica returns one sorted stream, so the initiator only has to merge them.
+            auto merging_sorted_step = std::make_unique<SortingStep>(
+                new_split_node.step->getOutputHeader(), sort_description, sorting_step->getSettings(), limit, read_till_end);
+            merging_sorted_step->setStepDescription("merge sorted streams from replicas");
+            parent_node->step = std::move(merging_sorted_step);
+            parent_node->children = {&new_split_node};
+            return;
+        }
+    }
+
+private:
+    /// True if any ancestor LIMIT must read till the end (`exact_rows_before_limit`).
+    bool mustReadTillEnd() const
+    {
+        for (const auto & frame : stack)
+            if (const auto * limit = typeid_cast<const LimitStep *>(frame.node->step.get()))
+                if (limit->alwaysReadTillEnd())
+                    return true;
+
+        return false;
+    }
+
+    /// The sort is cloned into the fragment and serialized, so it must be serializable - which for a
+    /// `SortingStep` means a plain full sort. That holds for an ordinary ORDER BY here, because this pass runs
+    /// before `optimizeReadInOrder` and `applyOrder` convert sorts to `FinishSorting`. A sort feeding a full
+    /// sorting merge join is excluded separately: its output is consumed by a join on the initiator rather
+    /// than merged, so replacing it with a merge of per-replica sorts would change what the join sees.
+    static bool sortingCanBeShipped(const SortingStep & sorting_step)
+    {
+        return sorting_step.isSerializable() && !sorting_step.isSortingForMergeJoin();
     }
 };
 
