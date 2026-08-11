@@ -108,13 +108,6 @@ class ClusterDiscovery::Flags
 public:
     Flags() = default;
 
-    template <typename It>
-    Flags(It begin, It end)
-    {
-        for (auto it = begin; it != end; ++it)
-            flags.emplace(*it, false);
-    }
-
     void set(const T & key, bool value = true)
     {
         std::unique_lock<std::mutex> lk(mu);
@@ -169,7 +162,7 @@ public:
     }
 
 private:
-    mutable std::condition_variable cv;
+    std::condition_variable cv;
     mutable std::mutex mu;
 
     /// flag indicates that update is required
