@@ -3835,6 +3835,28 @@ void ClientBase::initAIAgent()
     ai_agent = std::make_unique<AIAgent>(ai_config, std::move(transport), hooks, ai_query_context, output_stream, stdout_is_a_tty);
 }
 
+namespace
+{
+/// Whether the input is one of the client's known `/`-prefixed meta-commands. In AI-chat mode a
+/// known one runs as the command itself instead of being sent to the agent; unknown `/...` input
+/// is left for the agent. Keep in sync with the `/`-commands dispatched in `processQueryText`.
+bool isKnownSlashCommand(const String & trimmed_input)
+{
+    /// `/clear` takes no argument; `/help` and `/man` take an optional one.
+    if (boost::iequals(trimmed_input, "/clear"))
+        return true;
+    for (const std::string_view command : {"/help", "/man"})
+    {
+        if (boost::iequals(trimmed_input, command))
+            return true;
+        if (trimmed_input.size() > command.size() && boost::istarts_with(trimmed_input, command)
+            && isWhitespaceASCII(trimmed_input[command.size()]))
+            return true;
+    }
+    return false;
+}
+}
+
 bool ClientBase::processAIChat(const String & text)
 {
     if (!is_interactive)
@@ -3842,6 +3864,12 @@ bool ClientBase::processAIChat(const String & text)
         error_stream << "The AI chat (the `?` command) is only available in interactive mode." << std::endl;
         return true;
     }
+
+    /// A known `/`-command runs as the command itself, without involving the agent (and works
+    /// even when no AI provider is configured). Anything else - including an unknown `/...` - is
+    /// a question for the agent.
+    if (isKnownSlashCommand(trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; })))
+        return processQueryText(text);
 
     try
     {
