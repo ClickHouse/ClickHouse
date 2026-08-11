@@ -351,13 +351,22 @@ void SerializationMapKeysOrValues::deserializeBinaryBulkWithMultipleStreams(
     /// otherwise fall back to bucket-ascending order (old parts without the index stream).
     else
     {
+        /// The `bucket_indexes` stream is a flat array with one entry per key-value pair, so the
+        /// number of entries that belong to the first `rows_offset` rows is not known in advance
+        /// and those entries cannot be skipped on their own. Read the skipped rows together with
+        /// the requested ones, reassemble the whole range in the original order and drop the
+        /// prefix afterwards, so that the index stream stays in sync with the bucket streams.
+        const bool reorder_with_skipped_rows = map_keys_or_values_with_buckets_state->has_bucket_index && rows_offset != 0;
+        const size_t buckets_rows_offset = reorder_with_skipped_rows ? 0 : rows_offset;
+        const size_t buckets_limit = reorder_with_skipped_rows ? rows_offset + limit : limit;
+
         VectorWithMemoryTracking<ColumnPtr> keys_or_values_buckets(buckets_info_state_concrete->buckets);
         for (size_t bucket = 0; bucket != buckets_info_state_concrete->buckets; ++bucket)
         {
             settings.path.push_back(Substream::Bucket);
             settings.path.back().bucket = bucket;
             keys_or_values_buckets[bucket] = column->cloneEmpty();
-            keys_or_values_serialization->deserializeBinaryBulkWithMultipleStreams(keys_or_values_buckets[bucket], rows_offset, limit, settings, map_keys_or_values_with_buckets_state->bucket_keys_or_values_states[bucket], cache);
+            keys_or_values_serialization->deserializeBinaryBulkWithMultipleStreams(keys_or_values_buckets[bucket], buckets_rows_offset, buckets_limit, settings, map_keys_or_values_with_buckets_state->bucket_keys_or_values_states[bucket], cache);
             settings.path.pop_back();
         }
 
@@ -379,7 +388,17 @@ void SerializationMapKeysOrValues::deserializeBinaryBulkWithMultipleStreams(
                 bucket_index_column, 0, total_kv_pairs, settings, map_keys_or_values_with_buckets_state->bucket_index_state, cache);
             settings.path.pop_back();
 
-            collectMapKeysOrValuesFromBucketsWithOrder(keys_or_values_buckets, *bucket_index_column, *column->assumeMutable());
+            if (reorder_with_skipped_rows)
+            {
+                auto whole_range_column = column->cloneEmpty();
+                collectMapKeysOrValuesFromBucketsWithOrder(keys_or_values_buckets, *bucket_index_column, *whole_range_column);
+                if (whole_range_column->size() > rows_offset)
+                    column->assumeMutable()->insertRangeFrom(*whole_range_column, rows_offset, whole_range_column->size() - rows_offset);
+            }
+            else
+            {
+                collectMapKeysOrValuesFromBucketsWithOrder(keys_or_values_buckets, *bucket_index_column, *column->assumeMutable());
+            }
         }
         else
         {
