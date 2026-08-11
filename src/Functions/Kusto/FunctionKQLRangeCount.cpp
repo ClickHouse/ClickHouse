@@ -4,10 +4,12 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/assert_cast.h>
+#include <base/arithmeticOverflow.h>
 
 #include <cmath>
 #include <limits>
@@ -79,6 +81,22 @@ public:
 
         const Domain domain = classify(operands[0].type, operands[1].type, operands[2].type);
 
+        /// The exact decimal domain compares all three operands at one common scale.
+        std::array<Int256, 3> rescale{1, 1, 1};
+        if (domain == Domain::Decimal)
+        {
+            UInt32 common_scale = 0;
+            for (const Operand & operand : operands)
+                if (isDecimal(operand.type))
+                    common_scale = std::max(common_scale, getDecimalScale(*operand.type));
+            for (size_t i = 0; i < 3; ++i)
+            {
+                const UInt32 scale = isDecimal(operands[i].type) ? getDecimalScale(*operands[i].type) : 0;
+                for (UInt32 digit = scale; digit < common_scale; ++digit)
+                    rescale[i] *= 10;
+            }
+        }
+
         auto result = ColumnUInt64::create(input_rows_count);
         auto & counts = result->getData();
 
@@ -109,6 +127,21 @@ public:
                 const Int128 step = integerAt(*operands[2].values, *operands[2].type, row);
                 counts[row] = flooredCount(span, step);
             }
+            else if (domain == Domain::Decimal)
+            {
+                /// Exact rational arithmetic: every operand as an integer at the common scale.
+                const auto scaled = [&](size_t i) -> Int256
+                {
+                    Int256 value;
+                    if (common::mulOverflow(exactAt(*operands[i].values, *operands[i].type, row), rescale[i], value))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The bounds and the step of a 'range' are too large to count");
+                    return value;
+                };
+                Int256 span;
+                if (common::subOverflow(scaled(1), scaled(0), span))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The bounds and the step of a 'range' are too large to count");
+                counts[row] = flooredCount(span, scaled(2));
+            }
             else
             {
                 const Int128 span
@@ -126,6 +159,7 @@ private:
     {
         Numeric,
         Integral,
+        Decimal,
         Temporal,
     };
 
@@ -134,6 +168,12 @@ private:
         /// Integers up to 64 bits count exactly: a `Float64` cannot tell integers above 2^53 apart.
         if (isNativeInteger(from) && isNativeInteger(to) && isNativeInteger(step))
             return Domain::Integral;
+
+        /// Decimals (possibly mixed with integers) count exactly too: `(0.3 - 0.1) / 0.1` as
+        /// `Float64` is 1.9999..., which floors one row short of the exact decimal sequence.
+        const auto is_exact = [](const DataTypePtr & type) { return isNativeInteger(type) || isDecimal(type); };
+        if (is_exact(from) && is_exact(to) && is_exact(step))
+            return Domain::Decimal;
 
         if (isNumber(from) && isNumber(to) && isNumber(step))
             return Domain::Numeric;
@@ -161,15 +201,16 @@ private:
 
     /// `floor(span / step) + 1`, and never less than zero. Integer division truncates
     /// toward zero, so an inexact quotient of differing signs is one too high.
-    static UInt64 flooredCount(Int128 span, Int128 step)
+    template <typename T>
+    static UInt64 flooredCount(T span, T step)
     {
         if (step == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The step of a 'range' must not be zero");
 
-        Int128 steps = span / step;
+        T steps = span / step;
         if (span % step != 0 && (span < 0) != (step < 0))
             --steps;
-        if (steps >= Int128(std::numeric_limits<UInt64>::max()))
+        if (steps >= T(std::numeric_limits<UInt64>::max()))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'range' has too many rows to count");
         return steps < 0 ? 0 : static_cast<UInt64>(steps) + 1;
     }
@@ -180,6 +221,24 @@ private:
         if (isNativeUInt(type))
             return Int128(column.getUInt(row));
         return Int128(column.getInt(row));
+    }
+
+    /// A native integer or a decimal, as its unscaled integer value, widened losslessly.
+    static Int256 exactAt(const IColumn & column, const IDataType & type, size_t row)
+    {
+        switch (WhichDataType(type).idx)
+        {
+            case TypeIndex::Decimal32:
+                return Int256(assert_cast<const ColumnDecimal<Decimal32> &>(column).getData()[row].value);
+            case TypeIndex::Decimal64:
+                return Int256(assert_cast<const ColumnDecimal<Decimal64> &>(column).getData()[row].value);
+            case TypeIndex::Decimal128:
+                return Int256(assert_cast<const ColumnDecimal<Decimal128> &>(column).getData()[row].value);
+            case TypeIndex::Decimal256:
+                return assert_cast<const ColumnDecimal<Decimal256> &>(column).getData()[row].value;
+            default:
+                return Int256(integerAt(column, type, row));
+        }
     }
 
     /// A datetime, or an interval of a fixed-length kind, as integer nanoseconds.
@@ -213,7 +272,8 @@ REGISTER_FUNCTION(KQLRangeCount)
 The number of rows the `range` source of the Kusto Query Language produces: `floor((to - from)
 / step) + 1`, and never less than zero. The bounds and the step are numbers, or datetimes
 stepped by a timespan (an `Interval`), or timespans; the temporal forms are counted in integer
-nanoseconds, which no single ClickHouse division expresses.
+nanoseconds, which no single ClickHouse division expresses. Integers and decimals are counted
+exactly, not through `Float64`.
 
 This function backs the `range` source when `dialect = 'kusto'`. It is not meant to be called
 directly from SQL.

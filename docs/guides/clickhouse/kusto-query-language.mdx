@@ -116,6 +116,10 @@ Rejected with a parse error, rather than mistranslated:
   (`format_datetime` and `extract_all` are rejected rather than approximated: Kusto's
   `yyyy-MM-dd` format specifiers are not ClickHouse's, and Kusto's `extract_all` returns one
   array per capture group.)
+- Kusto names that collide with a ClickHouse function of a different meaning: `range` (shown
+  above), `repeat`, `replace`, `translate` and `materialize`. Passing them through would
+  quietly compute something else — Kusto's `repeat(1, 3)` is the array `[1, 1, 1]`, while
+  ClickHouse's `repeat` repeats a string — so each is rejected by name.
 - The geospatial functions that take or return GeoJSON — every `geo_*_to_central_point`, and
   everything operating on polygons and lines. The point, geohash and H3 functions that work in
   plain longitude/latitude *are* supported. `geo_point_to_s2cell` is not: ClickHouse has no
@@ -129,6 +133,8 @@ Rejected with a parse error, rather than mistranslated:
 - Query and `join` hints (`hint.strategy`, `hint.shufflekey`, ...).
 - Operator options: `mv-expand ... to typeof(T)` / `limit N` / `bagexpansion`, `summarize`
   hints, `union kind=` / `withsource=` / `isfuzzy=`, `join hint.*`.
+- Wildcard column patterns in `project-away` and `project-keep` (`project-away Tmp*`):
+  expanding one needs the schema, which is not visible while parsing. Spell the columns out.
 - The `evaluate` plugin mechanism entirely, and with it `bag_unpack`, `pivot`, `narrow`,
   `python`, `R` and the rest.
 - Application statements: `alias database`, `declare pattern`,
@@ -172,5 +178,6 @@ Rejected with a parse error, rather than mistranslated:
 ## Reporting a problem
 
 A query that parses but returns something Kusto would not is a bug — please report it with
-both results. A query that is rejected and that you need is a feature request; the rejection
-list above is the current boundary, not a permanent one.
+both results. A query that is rejected and that you need is a feature request; the lists
+above sketch the boundary rather than enumerating every rejected name — the parse error
+itself is the authoritative answer for any particular query — and none of it is permanent.
