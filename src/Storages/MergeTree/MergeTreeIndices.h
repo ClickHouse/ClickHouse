@@ -385,6 +385,9 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach, 
 MergeTreeIndexPtr bloomFilterIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
+MergeTreeIndexPtr jsonBloomFilterIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void jsonBloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+
 #if USE_USEARCH
 MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);

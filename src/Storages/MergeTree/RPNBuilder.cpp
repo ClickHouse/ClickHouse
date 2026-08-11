@@ -30,6 +30,7 @@
 #include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
 #include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/MergeTreeIndexJSONBloomFilter.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 namespace DB
@@ -665,4 +666,5 @@ template class RPNBuilder<ConditionSelectivityEstimator::RPNElement>;
 template class RPNBuilder<MergeTreeConditionBloomFilterText::RPNElement>;
 template class RPNBuilder<MergeTreeIndexConditionBloomFilter::RPNElement>;
 template class RPNBuilder<MergeTreeIndexConditionText::RPNElement>;
+template class RPNBuilder<MergeTreeIndexConditionJSONBloomFilter::RPNElement>;
 }

@@ -150,9 +150,18 @@ A *Bloom filter* is a data structure that allows space-efficient testing of set 
 
 Because Bloom filters can more efficiently handle testing for a large number of discrete values, they can be appropriate for conditional expressions that produce more values to test. In particular, a Bloom filter index can be applied to arrays, where every value of the array is tested, and to maps, by converting either the keys or values to an array using the mapKeys or mapValues function.
 
-There are three Data Skipping Index types based on Bloom filters:
+There are four Data Skipping Index types based on Bloom filters:
 
 * The basic **bloom_filter** which takes a single optional parameter of the allowed "false positive" rate between 0 and 1 (if unspecified, .025 is used).
+
+* The specialized **jsonbf_v1** indexes scalar leaves of one direct `JSON` column. Paths, container roles, runtime types, and values are hashed separately, so values at different paths do not match each other. Arrays are indexed by element, typed `Map` values by key, and `Tuple` values by field. Whole containers are not stringified. The optional `tokenizer = ngrams(N)` argument also indexes path-qualified ngrams for positive string predicates such as `LIKE`, `startsWith`, `endsWith`, `multiSearchAny`, and `match`.
+
+  ```sql
+  INDEX json_values data TYPE jsonbf_v1(false_positive_rate = 0.025) GRANULARITY 1
+  INDEX json_search data TYPE jsonbf_v1(false_positive_rate = 0.025, tokenizer = ngrams(3)) GRANULARITY 1
+  ```
+
+  Runtime `Dynamic` types that cannot be represented by `jsonbf_v1` make the containing index granule conservative: ClickHouse reads that granule instead of risking a false negative. Complex runtime values add a path-qualified presence token so incompatible predicates on the same path cannot hide an exception. The `ngrams` tokenizer adds one path-qualified token for every distinct ngram, so long strings or JSON documents with many string leaves can produce large index granules.
 
 * The specialized **tokenbf_v1** *(Deprecated)*). It takes three parameters, all related to tuning the bloom filter used:  (1) the size of the filter in bytes (larger filters have fewer false positives, at some cost in storage), (2) number of hash functions applied (again, more hash filters reduce false positives), and (3) the seed for the bloom filter hash functions.  See the calculator [here](https://hur.st/bloomfilter/) for more detail on how these parameters affect bloom filter functionality.
 This index works only with String, FixedString, and Map datatypes. The input expression is split into character sequences separated by non-alphanumeric characters. For example, a column value of `This is a candidate for a "full text" search` will contain the tokens `This` `is` `a` `candidate` `for` `full` `text` `search`.  It is intended for use in LIKE, EQUALS, IN, hasToken() and similar searches for words and other values within longer strings.  For example, one possible use might be searching for a small number of class names or line numbers in a column of free form application log lines.
