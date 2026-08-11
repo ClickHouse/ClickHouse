@@ -66,11 +66,7 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/Resolve/QueryAnalyzer.h>
-#include <Planner/PlannerContext.h>
 #include <Planner/TableExpressionData.h>
-#include <Planner/CollectTableExpressionData.h>
 #include <Storages/StorageDummy.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
