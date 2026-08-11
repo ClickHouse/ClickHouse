@@ -1656,12 +1656,15 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
                 /// with bounded polling to avoid indefinite hangs.
                 LOG_INFO(log, "Another replica is executing SYSTEM DROP S3QUEUE FAILED FILES, waiting for completion");
 
-                /// Timeout is proportional to failed_file_ttl_sec: larger TTL implies larger
-                /// expected /failed subtrees that take longer to clean. Formula:
-                /// max(5, min(60, 10 * failed_file_ttl_sec)) seconds. Floor ensures reasonable
-                /// responsiveness for small cleanups; ceiling prevents indefinite waits.
+                /// Timeout strategy: when failed_file_ttl_sec=0 (default "store forever"),
+                /// /failed can be arbitrarily large since there's no automatic cleanup, so use
+                /// a generous 60s timeout. When TTL is set, use proportional timeout:
+                /// max(5, min(60, 10 * failed_file_ttl_sec)) - larger TTL implies larger expected
+                /// /failed subtrees. Floor ensures responsiveness; ceiling prevents indefinite waits.
                 const UInt64 ttl_sec = table_metadata.failed_files_ttl_sec.load();
-                const size_t timeout_seconds = std::max<size_t>(5, std::min<size_t>(60, 10 * ttl_sec));
+                const size_t timeout_seconds = (ttl_sec == 0)
+                    ? 60  /// No TTL: /failed can be arbitrarily large, use generous timeout
+                    : std::max<size_t>(5, std::min<size_t>(60, 10 * ttl_sec));
                 const size_t max_iterations = timeout_seconds * 10; /// Poll every 100ms
 
                 for (size_t i = 0; i < max_iterations; ++i)
@@ -1742,12 +1745,46 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
         {
             if (e.code == Coordination::Error::ZNONODE)
             {
-                /// The ephemeral lock node disappeared between our tryCreate and get,
-                /// meaning another replica already completed the cleanup and released the lock.
-                /// Reconcile local cache to match Keeper state.
-                LOG_INFO(log, "Cleanup lock was released (cleanup already completed by another replica), reconciling cache");
-                reconcileFailedFilesCache();
-                return;
+                /// The ephemeral lock node disappeared between our tryCreate and get.
+                /// We don't know whose lock it was (manual_drop_failed vs background_cleanup),
+                /// so verify /failed is actually empty before claiming success.
+                LOG_INFO(log, "Cleanup lock was released, verifying cleanup succeeded");
+
+                const std::string failed_path = zookeeper_path / "failed";
+                Strings remaining_failed_nodes;
+                Coordination::Error check_code = zk_client->tryGetChildren(failed_path, remaining_failed_nodes);
+
+                if (check_code != Coordination::Error::ZOK && check_code != Coordination::Error::ZNONODE)
+                {
+                    /// Transient Keeper error during verification
+                    throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+                        "Failed to verify cleanup completion (Keeper error: {}). Please retry the command.",
+                        magic_enum::enum_name(check_code));
+                }
+
+                /// Count only terminal failed nodes (exclude .retriable suffix nodes)
+                size_t terminal_failed_count = 0;
+                for (const auto & node : remaining_failed_nodes)
+                {
+                    if (!node.ends_with(".retriable"))
+                        ++terminal_failed_count;
+                }
+
+                if (terminal_failed_count == 0)
+                {
+                    /// Cleanup succeeded: no terminal failed nodes remain
+                    reconcileFailedFilesCache();
+                    LOG_INFO(log, "Verified cleanup completed successfully");
+                    return;
+                }
+                else
+                {
+                    /// Terminal nodes remain - cannot confirm cleanup succeeded
+                    throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+                        "Failed file cleanup verification found {} terminal failed nodes remaining. "
+                        "Cannot confirm cleanup succeeded. Please retry the command.",
+                        terminal_failed_count);
+                }
             }
 
             /// For other errors (connection issues, etc.), treat as a transient error.
@@ -1904,12 +1941,18 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
                                 retry_code = getZooKeeper()->tryRemove(remove_requests[k]->getPath());
                             });
 
-                            if (retry_code == Coordination::Error::ZOK)
+                            if (retry_code == Coordination::Error::ZOK || retry_code == Coordination::Error::ZNONODE)
                             {
+                                /// ZOK: retry succeeded. ZNONODE: first attempt already deleted the node
+                                /// before the multi aborted. Either way, the node is gone - clear cache.
                                 auto cache_key = getMetadataCacheKey(batch_file_paths[batch_start_idx + k]);
                                 local_file_statuses.remove(cache_key);
                                 file_paths.push_back(batch_file_paths[batch_start_idx + k]);
                                 ++batch_succeeded;
+
+                                if (retry_code == Coordination::Error::ZNONODE)
+                                    LOG_TRACE(log, "Node `{}` already removed (likely by first attempt before multi aborted)",
+                                              remove_requests[k]->getPath());
                             }
                             else
                             {
