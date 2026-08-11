@@ -4551,23 +4551,11 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
                     rhs_type = std::make_shared<DataTypeTuple>(rhs_tuple->getElements());
 
                 if (!lhs_type->equals(*rhs_type))
-                {
-                    /// Analysis types a function over a subquery set (e.g. `in`) with a
-                    /// non-constant set argument, so a `LowCardinality` argument does not wrap
-                    /// the result type. Here the set is a constant, so the rebuilt function can
-                    /// wrap it. Keep the serialized type: execution uses `result_type`, so the
-                    /// node computes the same column as on the serializing side.
-                    bool has_set_argument = false;
-                    for (const auto * child : node.children)
-                        has_set_argument |= WhichDataType(child->result_type).isSet();
-
-                    if (!has_set_argument || !lhs_type->equals(*removeLowCardinality(rhs_type)))
-                        throw Exception(ErrorCodes::INCORRECT_DATA,
-                            "Deserialized function {} has invalid type. Expected {}, deserialized {}.",
-                            function_name,
-                            rhs_type->getName(),
-                            lhs_type->getName());
-                }
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Deserialized function {} has invalid type. Expected {}, deserialized {}.",
+                        function_name,
+                        rhs_type->getName(),
+                        lhs_type->getName());
             }
         }
         else if (node.type == ActionType::ARRAY_JOIN)
