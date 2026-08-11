@@ -338,6 +338,9 @@ def test_retry_loading_parts(cluster):
     node.query("DROP TABLE s3_retry_loading_parts")
 
 
+BROKEN_PART_ERROR = "is broken and needs manual correction"
+
+
 def create_not_found_table(node, name):
     node.query(
         """
@@ -359,8 +362,9 @@ def detached_parts(node, name):
     ).strip()
 
 
-# A transient not-found must not cost the part: the object is still there, so the load is
-# retried and the part comes back intact.
+# A transient not-found must not cost the part: the object is still there, so the load
+# is retried and the part comes back intact. A part that attaches is not broken, so the
+# absorbed attempt must not report it as needing manual correction either.
 def test_transient_not_found_at_part_load(cluster):
     node = cluster.instances["node"]
     create_not_found_table(node, "s3_transient_not_found")
@@ -368,6 +372,7 @@ def test_transient_not_found_at_part_load(cluster):
     node.query("DETACH TABLE s3_transient_not_found")
 
     retries_before = int(node.count_in_log("at try 0 with retryable error"))
+    broken_before = int(node.count_in_log(BROKEN_PART_ERROR))
     fail_request(cluster, 5, "GET", status=404, code="NoSuchKey")
     node.query("ATTACH TABLE s3_transient_not_found")
     fail_request(cluster, 0)
@@ -375,6 +380,7 @@ def test_transient_not_found_at_part_load(cluster):
     assert node.query("SELECT count() FROM s3_transient_not_found") == "1\n"
     assert detached_parts(node, "s3_transient_not_found") == "0"
     assert int(node.count_in_log("at try 0 with retryable error")) > retries_before
+    assert int(node.count_in_log(BROKEN_PART_ERROR)) == broken_before
 
     node.query("DROP TABLE s3_transient_not_found")
 

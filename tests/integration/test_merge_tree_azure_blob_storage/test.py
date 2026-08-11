@@ -763,6 +763,9 @@ def get_azure_client(container_name, port):
     return blob_service_client.get_container_client(container_name)
 
 
+BROKEN_PART_ERROR = "is broken and needs manual correction"
+
+
 def test_azure_broken_parts(cluster):
     node = cluster.instances[NODE_NAME]
     account_name = "devstoreaccount1"
@@ -810,6 +813,10 @@ def test_azure_broken_parts(cluster):
     client = get_azure_client(container_name, port)
     client.delete_blob(remote_path)
 
+    try_0_before = int(node.count_in_log("at try 0 with retryable error"))
+    try_1_before = int(node.count_in_log("at try 1 with retryable error"))
+    broken_before = int(node.count_in_log(BROKEN_PART_ERROR))
+
     azure_query(node, "DETACH TABLE t_azure_broken_parts")
     azure_query(node, "ATTACH TABLE t_azure_broken_parts")
 
@@ -822,3 +829,10 @@ def test_azure_broken_parts(cluster):
     ).strip()
 
     assert int(result) == 1
+
+    # A deleted blob answers 404, so both attempts before the part is given up on are
+    # absorbed and logged; these deltas fail if the Azure not-found arm stops matching.
+    # The part is reported through the detach path only, not as needing correction.
+    assert int(node.count_in_log("at try 0 with retryable error")) > try_0_before
+    assert int(node.count_in_log("at try 1 with retryable error")) > try_1_before
+    assert int(node.count_in_log(BROKEN_PART_ERROR)) == broken_before
