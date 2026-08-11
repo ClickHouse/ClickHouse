@@ -1454,8 +1454,11 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     }
     catch (...)
     {
-        /// Don't scare people with broken part error if it's retryable.
-        if (!isRetryableException(std::current_exception()))
+        auto load_exception = std::current_exception();
+
+        /// Don't scare people with broken part error if it's retryable or the object store just
+        /// reported the object absent: neither says anything about this part's contents.
+        if (!isRetryableException(load_exception) && !isObjectStorageNotFoundException(load_exception))
         {
             auto message = getCurrentExceptionMessage(true);
             LOG_ERROR(storage.log, "Part {} is broken and needs manual correction. Reason: {}",
