@@ -2156,15 +2156,18 @@ private:
     mutable std::set<String> query_id_set TSA_GUARDED_BY(query_id_set_mutex);
     mutable std::mutex query_id_set_mutex;
 
-    /// Counts one rejected insert in `ProfileEvents::RejectedInserts`, at most once per query.
+    /// Counts one rejected insert in `ProfileEvents::RejectedInserts`, at most once per query
+    /// and table.
     ///
     /// A plain `INSERT` fans out to `max_insert_threads` parallel sinks, and every sink evaluates
     /// the "too many parts" check in its constructor, while the insert chain is being built, so a
     /// single rejected `INSERT` reaches the throw path once per sink stream. The event, however,
-    /// counts rejected inserts, so the sibling sinks of one query must bump it only once.
-    /// The "already counted" flag lives on the query's `QueryStatus`, so concurrent rejected
-    /// inserts into the same table are each counted independently.
-    static void countRejectedInsert(const ContextPtr & query_context);
+    /// counts rejected inserts of a block to a table, so the sibling sinks of one query writing
+    /// to the same table must bump it only once. The "already counted" set lives on the query's
+    /// `QueryStatus` and is keyed by table, so concurrent rejected inserts into the same table
+    /// are each counted independently, and one query whose materialized views make several tables
+    /// reject (under `materialized_views_ignore_errors`) counts every rejecting table.
+    void countRejectedInsert(const ContextPtr & query_context) const;
 
     // Get partition matcher for FREEZE / UNFREEZE queries.
     MatcherFn getPartitionMatcher(const ASTPtr & partition, ContextPtr context) const;

@@ -7233,11 +7233,11 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 }
 
 
-void MergeTreeData::countRejectedInsert(const ContextPtr & query_context)
+void MergeTreeData::countRejectedInsert(const ContextPtr & query_context) const
 {
     /// Without a process list element there is nothing to identify the query by, so count every rejection.
     if (QueryStatusPtr process_list_element = query_context->getProcessListElement())
-        if (!process_list_element->tryCountRejectedInsert())
+        if (!process_list_element->tryCountRejectedInsert(getStorageID().getNameForLogs()))
             return;
 
     ProfileEvents::increment(ProfileEvents::RejectedInserts);
