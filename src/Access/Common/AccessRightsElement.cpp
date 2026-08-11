@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
+#include <Common/re2.h>
 #include <unordered_set>
 
 
@@ -15,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_COMPILE_REGEXP;
     extern const int INVALID_GRANT;
     extern const int LOGICAL_ERROR;
 }
@@ -407,10 +409,28 @@ bool AccessRightsElements::sameOptions() const
     return (size() < 2) || std::all_of(std::next(begin()), end(), [this](const AccessRightsElement & e) { return e.sameOptions(front()); });
 }
 
+void AccessRightsElement::throwIfFilterIsNotCompilable() const
+{
+    if (!hasFilter())
+        return;
+
+    re2::RE2::Options options;
+    options.set_log_errors(false);
+    if (const re2::RE2 compiled(filter, options); !compiled.ok())
+        throw Exception(
+            ErrorCodes::CANNOT_COMPILE_REGEXP, "The pattern '{}' cannot be compiled: {}", filter, compiled.error());
+}
+
 void AccessRightsElements::throwIfNotGrantable() const
 {
     for (const auto & element : *this)
         element.throwIfNotGrantable();
+}
+
+void AccessRightsElements::throwIfFilterIsNotCompilable() const
+{
+    for (const auto & element : *this)
+        element.throwIfFilterIsNotCompilable();
 }
 
 void AccessRightsElements::eraseNotGrantable()

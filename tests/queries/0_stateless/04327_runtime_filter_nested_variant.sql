@@ -5,6 +5,7 @@
 
 SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
+SET join_runtime_filter_min_probe_rows = 0;
 SET allow_suspicious_types_in_order_by = 1;
 
 -- Tuple(Variant, ...), exactly 1 distinct value on the right (the "equals" path).

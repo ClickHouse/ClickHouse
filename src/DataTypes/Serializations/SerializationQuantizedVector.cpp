@@ -191,6 +191,11 @@ SerializationQuantizedVector::SerializationQuantizedVector(const SerializationPt
     }
 }
 
+String SerializationQuantizedVector::getCustomSerializationIdentity() const
+{
+    return fmt::format("QuantizedVector({},{},{},{})", params.method, params.dimensions, params.bits, params.m);
+}
+
 void SerializationQuantizedVector::enumerateStreams(
     EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
 {

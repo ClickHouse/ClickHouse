@@ -2,11 +2,15 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForAggregationOperator.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
+
+#include <cmath>
+#include <limits>
 
 
 namespace DB::ErrorCodes
@@ -23,7 +27,7 @@ namespace
 {
     /// Checks if the types of the specified arguments are valid for the `quantile` aggregation operator.
     void checkArgumentTypes(
-        const PQT::AggregationOperator * operator_node,
+        const PrometheusQueryTree::AggregationOperator * operator_node,
         const std::vector<SQLQueryPiece> & arguments,
         const ConverterContext & context)
     {
@@ -89,7 +93,7 @@ namespace
 
 
 SQLQueryPiece applyAggregationOperatorQuantile(
-    const PQT::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     checkArgumentTypes(operator_node, arguments, context);
 
@@ -101,7 +105,19 @@ SQLQueryPiece applyAggregationOperatorQuantile(
         return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
 
     vector_arg = toVectorGrid(std::move(vector_arg), context);
-    ASTPtr phi = getPhi(std::move(phi_arg), context);
+
+    /// PromQL evaluates `quantile` with an out-of-range or NaN parameter to a constant
+    /// (with a warning) instead of failing the query:
+    ///   phi < 0  -> -Inf for every group
+    ///   phi > 1  -> +Inf for every group
+    ///   phi NaN  -> NaN for every group
+    /// quantileExactInclusive() would throw an exception for such phi, so if a constant phi
+    /// is out of range we emit a constant-valued array aligned to the time grid instead
+    /// (the same way `histogram_quantile` handles an out-of-range phi). A runtime scalar phi
+    /// (e.g. `scalar(vector(-0.5))`, StoreMethod::SINGLE_SCALAR) gets the same treatment at
+    /// runtime, see below.
+    bool const_phi_out_of_range = (phi_arg.store_method == StoreMethod::CONST_SCALAR)
+        && (std::isnan(phi_arg.scalar_value) || (phi_arg.scalar_value < 0) || (phi_arg.scalar_value > 1));
 
     auto res = vector_arg;
     res.node = operator_node;
@@ -121,10 +137,84 @@ SQLQueryPiece applyAggregationOperatorQuantile(
         builder.select_list.push_back(std::move(new_group));
         builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 
-        /// quantileExactInclusiveForEach(phi)(values)
-        builder.select_list.push_back(addParametersToAggregateFunction(
-            makeASTFunction("quantileExactInclusiveForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
-            std::move(phi)));
+        ASTPtr quantile_expr;
+        if (const_phi_out_of_range)
+        {
+            Float64 out_of_range_value = std::numeric_limits<Float64>::quiet_NaN();
+            if (std::isnan(phi_arg.scalar_value))
+                out_of_range_value = std::numeric_limits<Float64>::quiet_NaN();
+            else if (phi_arg.scalar_value < 0)
+                out_of_range_value = -std::numeric_limits<Float64>::infinity();
+            else
+                out_of_range_value = std::numeric_limits<Float64>::infinity();
+
+            /// arrayMap(x -> if(isNotNull(x), <constant>, NULL), anyForEach(values))
+            /// anyForEach produces one array per group aligned to the time grid, with NULL at
+            /// positions where no input series had data. arrayMap then replaces every non-NULL
+            /// position with the constant and keeps NULLs as-is.
+            quantile_expr = makeASTFunction(
+                "arrayMap",
+                makeASTFunction(
+                    "lambda",
+                    makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
+                    makeASTFunction("if",
+                        makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("x")),
+                        make_intrusive<ASTLiteral>(out_of_range_value),
+                        make_intrusive<ASTLiteral>(Field{} /* NULL */))),
+                makeASTFunction("anyForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+        }
+        else if (phi_arg.store_method == StoreMethod::SINGLE_SCALAR)
+        {
+            /// The value of a runtime scalar phi (e.g. `scalar(vector(-0.5))`) is not known here,
+            /// so the out-of-range check has to happen at runtime: the phi parameter passed to
+            /// the aggregate function is clamped to [0, 1] to keep the aggregate function from
+            /// throwing (a scalar subquery is still a constant at analysis time, so it can be
+            /// used as a parameter), and then every non-NULL element of the result is replaced
+            /// with the Prometheus constant if phi turns out to be out of range or NaN:
+            ///
+            /// arrayMap(x -> if(isNotNull(x),
+            ///                  multiIf(isNaN(phi), nan, phi < 0, -inf, phi > 1, inf, x),
+            ///                  NULL),
+            ///          quantileExactInclusiveForEach(least(greatest(phi, 0.), 1.))(values))
+            ///
+            /// least() and greatest() clamp a NaN phi to a valid value too, which one doesn't
+            /// matter because the result is replaced with NaN anyway.
+            ASTPtr phi = getPhi(std::move(phi_arg), context);
+
+            ASTPtr clamped_phi = makeASTFunction("least",
+                makeASTFunction("greatest", phi->clone(), make_intrusive<ASTLiteral>(0.)),
+                make_intrusive<ASTLiteral>(1.));
+
+            ASTPtr substituted_element = makeASTFunction("multiIf",
+                makeASTFunction("isNaN", phi->clone()),
+                make_intrusive<ASTLiteral>(std::numeric_limits<Float64>::quiet_NaN()),
+                makeASTFunction("less", phi->clone(), make_intrusive<ASTLiteral>(0.)),
+                make_intrusive<ASTLiteral>(-std::numeric_limits<Float64>::infinity()),
+                makeASTFunction("greater", phi->clone(), make_intrusive<ASTLiteral>(1.)),
+                make_intrusive<ASTLiteral>(std::numeric_limits<Float64>::infinity()),
+                make_intrusive<ASTIdentifier>("x"));
+
+            quantile_expr = makeASTFunction(
+                "arrayMap",
+                makeASTFunction(
+                    "lambda",
+                    makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
+                    makeASTFunction("if",
+                        makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("x")),
+                        std::move(substituted_element),
+                        make_intrusive<ASTLiteral>(Field{} /* NULL */))),
+                addParametersToAggregateFunction(
+                    makeASTFunction("quantileExactInclusiveForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
+                    std::move(clamped_phi)));
+        }
+        else
+        {
+            /// quantileExactInclusiveForEach(phi)(values)
+            quantile_expr = addParametersToAggregateFunction(
+                makeASTFunction("quantileExactInclusiveForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
+                getPhi(std::move(phi_arg), context));
+        }
+        builder.select_list.push_back(std::move(quantile_expr));
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
         if (operator_node->by || operator_node->without)

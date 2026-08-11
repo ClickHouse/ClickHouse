@@ -772,11 +772,9 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster, db, unique):
     deadline = time.monotonic() + 180
     expected = messages_num * threads_num * NUM_MV
     while time.monotonic() < deadline:
-        result = 0
-        for mv_id in range(NUM_MV):
-            result += int(
-                instance.query(f"SELECT count() FROM {db}.combo_{mv_id}")
-            )
+        # Every instance.query() spawns a clickhouse-client, so poll all NUM_MV targets at once.
+        # The anchor keeps the combo_N_mv views out: reading a view counts its combo_N target again.
+        result = int(instance.query(f"SELECT count() FROM merge({db!r}, '^combo_[0-9]+$')"))
         if int(result) == expected:
             break
         logging.debug(f"Result: {result} / {expected}")
