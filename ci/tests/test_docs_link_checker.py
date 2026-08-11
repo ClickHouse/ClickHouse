@@ -1,7 +1,6 @@
 """Regression tests for links extracted from generated docs components."""
 
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -75,15 +74,14 @@ def test_locale_static_link_parser_leaves_templates_to_template_parser():
 
 
 def test_cloud_not_supported_badges_link_to_published_page():
-    page = (
-        REPO_ROOT / "docs/products/cloud/guides/cloud-compatibility.mdx"
-    ).read_text(encoding="utf-8")
-    slug = re.search(r"^slug: (\S+)$", page, re.MULTILINE)
-    assert slug is not None
+    docs_root = REPO_ROOT / "docs"
+    page_path = docs_root / "products/cloud/guides/cloud-compatibility.mdx"
+    page = page_path.read_text(encoding="utf-8")
     anchor = "list-of-unsupported-features"
     assert f"{{#{anchor}}}" in page
+    route = page_path.relative_to(docs_root).with_suffix("").as_posix()
     expected_href = (
-        f'href="https://clickhouse.com/docs{slug.group(1)}#{anchor}"'
+        f'href="https://clickhouse.com/docs/{route}#{anchor}"'
     )
 
     snippets = REPO_ROOT / "docs/snippets"
