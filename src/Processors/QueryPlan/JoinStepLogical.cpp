@@ -712,7 +712,12 @@ struct JoinPlanningContext
     bool is_storage_join{};
 };
 
-static void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & right_node, const JoinSettings & join_settings, const JoinPlanningContext & planning_context)
+static void predicateOperandsToCommonType(
+    JoinActionRef & left_node,
+    JoinActionRef & right_node,
+    const JoinSettings & join_settings,
+    const JoinPlanningContext & planning_context,
+    std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors)
 {
     const auto & left_type = left_node.getType();
     const auto & right_type = right_node.getType();
@@ -759,20 +764,35 @@ static void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionR
     if (!left_type->equals(*common_type))
         left_node = JoinActionRef::transform({left_node}, cast_transform);
 
+    auto cast_right_node = [&]
+    {
+        /// The build-side key name is the rendezvous between the shared runtime filter descriptors
+        /// registered by the joinRuntimeFilter optimization and `HashJoin::publishSharedRuntimeFilters`;
+        /// keep the descriptors pointing at the cast key the join clause will use.
+        String name_before_cast = right_node.getColumnName();
+        right_node = JoinActionRef::transform({right_node}, cast_transform);
+        for (auto & descriptor : shared_runtime_filter_descriptors)
+        {
+            if (descriptor.second == name_before_cast)
+                descriptor.second = right_node.getColumnName();
+        }
+    };
+
     if (planning_context.is_storage_join)
     {
         if (!right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
-            right_node = JoinActionRef::transform({right_node}, cast_transform);
+            cast_right_node();
     }
     else
     {
         if (!right_type->equals(*common_type))
-            right_node = JoinActionRef::transform({right_node}, cast_transform);
+            cast_right_node();
     }
 }
 
 static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
-    std::vector<JoinActionRef> & used_expressions, const JoinSettings & join_settings, const JoinPlanningContext & planning_context)
+    std::vector<JoinActionRef> & used_expressions, const JoinSettings & join_settings, const JoinPlanningContext & planning_context,
+    std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors)
 {
     bool has_join_predicates = false;
     std::vector<JoinActionRef> new_predicates;
@@ -789,7 +809,7 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
         else if (!lhs.fromLeft() || !rhs.fromRight())
             continue;
 
-        predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context);
+        predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context, shared_runtime_filter_descriptors);
         bool null_safe_comparison = JoinConditionOperator::NullSafeEquals == predicate_op;
         if (null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType()))
         {
@@ -907,7 +927,7 @@ tryGetIEJoinKeyCondition(const JoinActionRef & condition)
 /// not dropped).
 static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
     std::vector<JoinActionRef> & join_expression,
-    const JoinOperator & join_operator,
+    JoinOperator & join_operator,
     std::vector<JoinActionRef> & used_expressions,
     const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context)
@@ -939,7 +959,7 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
     for (size_t i = 0; i < keys.size(); ++i)
     {
         auto & [predicate_op, lhs, rhs] = keys[i];
-        predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context);
+        predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context, join_operator.shared_runtime_filter_descriptors);
 
         description.operators[i] = predicate_op;
         description.key_names_left.push_back(lhs.getColumnName());
@@ -1024,6 +1044,7 @@ static bool tryAddDisjunctiveConditions(
     std::vector<JoinActionRef> & used_expressions,
     const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context,
+    std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors,
     bool throw_on_error)
 {
     if (join_expressions.size() != 1)
@@ -1043,7 +1064,8 @@ static bool tryAddDisjunctiveConditions(
             join_condition = expr.getArguments();
 
         auto & table_join_clause = table_join_clauses.emplace_back();
-        bool has_keys = addJoinPredicatesToTableJoin(join_condition, table_join_clause, used_expressions, join_settings, planning_context);
+        bool has_keys = addJoinPredicatesToTableJoin(
+            join_condition, table_join_clause, used_expressions, join_settings, planning_context, shared_runtime_filter_descriptors);
         if (!has_keys)
         {
             table_join_clauses.resize(initial_clauses_num);
@@ -1387,7 +1409,9 @@ static QueryPlanNode buildPhysicalJoinImpl(
                 join_expression, join_operator, used_expressions, join_settings, planning_context);
 
         bool has_keys = !ie_join_description
-            && addJoinPredicatesToTableJoin(join_expression, table_join_clauses.emplace_back(), used_expressions, join_settings, planning_context);
+            && addJoinPredicatesToTableJoin(
+                join_expression, table_join_clauses.emplace_back(), used_expressions, join_settings, planning_context,
+                join_operator.shared_runtime_filter_descriptors);
 
         if (!ie_join_description && !has_keys && join_operator.strictness != JoinStrictness::Asof)
         {
@@ -1406,7 +1430,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
                     && join_operator.strictness == JoinStrictness::All;
 
                 is_disjunctive_condition = tryAddDisjunctiveConditions(
-                    join_expression, table_join_clauses, used_expressions, join_settings, planning_context, !can_convert_to_cross);
+                    join_expression, table_join_clauses, used_expressions, join_settings, planning_context,
+                    join_operator.shared_runtime_filter_descriptors, !can_convert_to_cross);
 
                 if (!is_disjunctive_condition)
                 {
@@ -1454,7 +1479,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
                 throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join does not support multiple inequality predicates in JOIN ON expression");
             found_asof_predicate_it = it;
 
-            predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context);
+            predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context, join_operator.shared_runtime_filter_descriptors);
 
             used_expressions.push_back(lhs);
             used_expressions.push_back(rhs);
@@ -1497,13 +1522,30 @@ static QueryPlanNode buildPhysicalJoinImpl(
     /// expression, while the residual filter still drops rows from the result.
     JoinActionRef on_clause_condition = concatConditions(join_expression);
     JoinActionRef residual_filter_condition = concatConditions(join_operator.residual_filter);
+
+    const bool build_mixed_join_expression
+        = on_clause_condition && (is_disjunctive_condition || !canPushDownFromOn(join_operator));
+
+    /// A prepared storage delivers its columns already converted to `Nullable`, so the conversion is
+    /// dropped from the right-side expression below and the aliased `Nullable` node is what the join
+    /// is expected to output.
+    ///
+    /// A mixed join expression is the exception for a key-value storage: it is evaluated during the
+    /// join, over the right columns as they were stored, and only the hash family evaluates it at all.
+    /// `DirectKeyValueJoin` declines a mixed condition, so such a join always runs an algorithm that
+    /// reads the key-value storage as an ordinary stream and applies `join_use_nulls` itself. Handing
+    /// it a pre-converted right side would shadow the non-`Nullable` columns the mixed condition is
+    /// built on with same-named `Nullable` ones, and `HashJoin`, which resolves those columns by name,
+    /// would then evaluate the condition over mismatched column types.
+    const bool right_nullable_from_prepared_storage
+        = prepared_join_storage && !(prepared_join_storage.storage_key_value && build_mixed_join_expression);
+
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> actions_after_join_fold;
     for (const auto * action : actions_after_join)
     {
         if (action->type == ActionsDAG::ActionType::ALIAS)
         {
-            //bool remove_right_nullable = prepared_join_storage && use_nulls && isLeftOrFull(join_operator.kind);
-            if (prepared_join_storage && JoinActionRef(action, expression_actions).fromRight())
+            if (right_nullable_from_prepared_storage && JoinActionRef(action, expression_actions).fromRight())
             {
                 /// StorageJoin should convert to nullable by itself.
             }
@@ -1544,7 +1586,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     collect_required_input_nodes(residual_filter_condition);
 
     ExpressionActionsPtr ie_join_residual_condition;
-    if (on_clause_condition && (is_disjunctive_condition || !canPushDownFromOn(join_operator)))
+    if (build_mixed_join_expression)
     {
         auto on_clause_dag = JoinExpressionActions::getSubDAG(std::views::single(on_clause_condition));
         auto on_clause_expression = std::make_shared<ExpressionActions>(std::move(on_clause_dag), optimization_settings.actions_settings);
@@ -1571,7 +1613,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     {
         if (action->type == ActionsDAG::ActionType::ALIAS)
         {
-            if (prepared_join_storage && JoinActionRef(action, expression_actions).fromRight())
+            if (right_nullable_from_prepared_storage && JoinActionRef(action, expression_actions).fromRight())
             {
                 /// x (Alias) -> toNullable(x) -> x (Input)
                 action = action->children.at(0)->children.at(0);
@@ -1623,7 +1665,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     ActionsDAG left_dag = JoinExpressionActions::getSubDAG(used_expressions | std::views::filter([](const auto & node) { return node.fromLeft() || node.fromNone(); }));
     ActionsDAG right_dag = JoinExpressionActions::getSubDAG(used_expressions | std::views::filter([](const auto & node) { return node.fromRight(); }));
 
-    if (logical_lookup && prepared_join_storage.storage_key_value)
+    if (logical_lookup && prepared_join_storage.storage_key_value && right_nullable_from_prepared_storage)
     {
         right_dag.mergeInplace(
             JoinExpressionActions::getSubDAG(
