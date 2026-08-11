@@ -127,7 +127,12 @@ MergeTreeIndexAggregatorSpatialBbox::MergeTreeIndexAggregatorSpatialBbox(
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSpatialBbox::getGranuleAndReset()
 {
     auto granule = std::make_shared<MergeTreeIndexGranuleSpatialBbox>(index_name);
-    if (acc.found)
+    /// acc.valid is false if any non-finite coordinate was seen in the granule. The
+    /// finite subset's bbox must not be used for pruning in that case: the spatial
+    /// functions reject non-finite coordinates at execute time, and pruning based on
+    /// the finite subset's bbox alone could hide that exception. Serialize a
+    /// non-prunable ("no data") granule instead, same as the empty-geometry case.
+    if (acc.found && acc.valid)
     {
         granule->xmin = acc.xmin;
         granule->ymin = acc.ymin;
