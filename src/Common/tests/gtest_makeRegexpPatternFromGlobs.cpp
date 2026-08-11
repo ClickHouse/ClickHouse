@@ -912,7 +912,7 @@ TEST(Common, GlobASTLegacyMatchFuzz)
     constexpr size_t max_candidate_len = 6;
     constexpr size_t max_reported = 40;
 
-    std::mt19937 rng(0xC10BA5); // NOLINT(cert-msc32-c,cert-msc51-cpp): deterministic seed for reproducible fuzzing
+    std::mt19937 rng(0xC10BA5); // NOLINT(cert-msc32-c,cert-msc51-cpp,bugprone-random-generator-seed): deterministic seed for reproducible fuzzing
 
     auto random_string = [&](const std::string & alphabet, size_t max_len)
     {
@@ -930,7 +930,7 @@ TEST(Common, GlobASTLegacyMatchFuzz)
     /// double-star semantics against the oracle.
     auto has_legacy_buggy_wildcard_run = [](const std::string & s)
     {
-        if (s.find("***") != std::string::npos)
+        if (s.contains("***"))
             return true;
         for (size_t i = 0; i < s.size(); ++i)
         {
