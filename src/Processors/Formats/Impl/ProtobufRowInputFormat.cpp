@@ -213,7 +213,7 @@ message MessageType {
 
 ClickHouse tries to find a column named `x.y.z` (or `x_y_z` or `X.y_Z` and so on).
 
-Nested messages are suitable for input or output of a [nested data structures](/sql-reference/data-types/nested-data-structures/index.md).
+Nested messages are suitable for input or output of a [nested data structures](/reference/data-types/nested-data-structures).
 
 For **mapped** fields that are missing on the wire:
 

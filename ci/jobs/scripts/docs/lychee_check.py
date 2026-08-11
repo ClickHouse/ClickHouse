@@ -42,6 +42,11 @@ The internal and locale link modes also materialize the generated settings
 explorers' JSX destinations as Markdown links. This makes lychee validate the
 pages those runtime links open, while an explicit check verifies that the JSX
 keeps the production `/docs` mount which is absent from the on-disk docs root.
+
+The internal mode likewise materializes internal links from Markdown embedded
+in ``src/**/*.cpp`` and ``src/**/*.h``. Those files are the source of generated
+reference pages but are not Markdown inputs themselves, so this extra input
+makes lychee validate their page targets and fragments against the docs tree.
 """
 
 import argparse
@@ -317,6 +322,12 @@ def build_tree(docs_root, dest):
             else:
                 # Empty placeholder: only its existence matters to lychee.
                 open(dst, "w").close()
+    # A directory index is served at the directory route (``/reference/foo``),
+    # but offline lychee does not open ``reference/foo/index.mdx`` when checking
+    # a fragment on that route. Add an anchor-only sibling page so directory
+    # routes resolve exactly like Mintlify without re-checking index outbound
+    # links a second time.
+    materialize_index_routes(dest)
     # Placeholders for redirect sources so links to redirected paths resolve.
     materialize_redirects(docs_root, dest)
     # lychee reads its configuration from the working directory.
@@ -324,6 +335,36 @@ def build_tree(docs_root, dest):
     if os.path.isfile(cfg):
         with open(cfg) as fin, open(os.path.join(dest, "lychee.toml"), "w") as fout:
             fout.write(fin.read())
+
+
+def materialize_index_routes(dest):
+    """Expose ``dir/index.mdx`` anchors at the served ``/dir`` route."""
+    for root, _dirs, names in os.walk(dest):
+        if root == dest:
+            continue
+        index_name = next(
+            (name for name in ("index.mdx", "index.md") if name in names), None
+        )
+        if not index_name:
+            continue
+        route_path = root + ".mdx"
+        if os.path.exists(route_path) or os.path.exists(root + ".md"):
+            continue
+        with open(
+            os.path.join(root, index_name), encoding="utf-8", errors="replace"
+        ) as f:
+            text = strip_code_blocks(strip_mdx_comments(f.read()))
+        anchors = {
+            match.group(1) or match.group(2)
+            for match in ANCHOR_ID_RE.finditer(text)
+        }
+        anchors |= {match.group(1) for match in ELEMENT_ID_RE.finditer(text)}
+        with open(route_path, "w", encoding="utf-8") as f:
+            f.write(
+                "".join(
+                    f'<a id="{anchor}"></a>\n' for anchor in sorted(anchors)
+                )
+            )
 
 
 def write_redirects(docs_root, dest):
@@ -531,9 +572,76 @@ def locale_markdown_files(docs_root):
     return files
 
 
+# Internal destinations carried by Markdown embedded in C++ source. Root-
+# relative routes are already suitable for the throwaway docs tree. Public
+# ClickHouse Docs URLs are converted to their internal path for offline target
+# and fragment validation. Other external URLs remain the responsibility of the
+# non-blocking external-link pass.
+SOURCE_MARKDOWN_LINK = re.compile(
+    r"\]\(\s*(?P<url>(?:https://clickhouse\.com/docs(?:/en)?)?/[^\s)]+)"
+)
+SOURCE_ATTRIBUTE_LINK = re.compile(
+    r"\b(?:href|to)\s*=\s*\{?\s*['\"]"
+    r"(?P<url>(?:https://clickhouse\.com/docs(?:/en)?)?/[^'\"\s}]+)"
+)
+
+
+def source_doc_links(text):
+    """Return rendered internal docs links as ``(line, original, route)``."""
+    rendered = strip_code_blocks(strip_mdx_comments(text))
+    links = []
+    occupied = set()
+    for pattern in (SOURCE_MARKDOWN_LINK, SOURCE_ATTRIBUTE_LINK):
+        for match in pattern.finditer(rendered):
+            start, end = match.span("url")
+            if (start, end) in occupied:
+                continue
+            occupied.add((start, end))
+            original = match.group("url")
+            route = original
+            for prefix in (
+                "https://clickhouse.com/docs/en",
+                "https://clickhouse.com/docs",
+            ):
+                if route.startswith(f"{prefix}/"):
+                    route = route[len(prefix):]
+                    break
+            links.append((rendered.count("\n", 0, start) + 1, original, route))
+    return sorted(links)
+
+
+def write_source_doc_links(repo_root, dest):
+    """Materialize links from C++-embedded Markdown for lychee to validate."""
+    output_name = "_lychee_source_doc_links.md"
+    source_root = os.path.join(repo_root, "src")
+    links = []
+    for root, _dirs, names in os.walk(source_root):
+        for name in names:
+            if not name.endswith((".cpp", ".h")):
+                continue
+            path = os.path.join(root, name)
+            rel = os.path.relpath(path, repo_root)
+            with open(path, encoding="utf-8", errors="replace") as f:
+                text = f.read()
+            for line, _original, route in source_doc_links(text):
+                links.append((rel, line, route))
+
+    with open(os.path.join(dest, output_name), "w", encoding="utf-8") as f:
+        f.write("# Links from source-embedded documentation\n\n")
+        for rel, line, route in sorted(links):
+            f.write(f"- [{rel}:{line}]({route})\n")
+    return output_name, len(links)
+
+
 def check_links(docs_root):
     dest = tempfile.mkdtemp(prefix="lychee-links-")
     build_tree(docs_root, dest)
+    source_input, source_link_count = write_source_doc_links(
+        os.path.dirname(docs_root), dest)
+    print(
+        f"Materialized {source_link_count} source-embedded documentation links.",
+        flush=True,
+    )
     _explorer_input, rc_explorer = write_settings_explorer_links(
         docs_root, dest, include_fragments=True)
     rc = run_lychee(
@@ -542,7 +650,8 @@ def check_links(docs_root):
     # lychee cannot tell a snippet file (imported, not a page) from a real page,
     # so it blesses /snippets/... links; reject them here over the same inputs.
     rc_snip = report_snippet_links(docs_root, dump_inputs(docs_root))
-    return rc or (1 if rc_snip or rc_explorer else 0)
+    rc_source_snip = report_snippet_links(dest, [source_input])
+    return rc or (1 if rc_snip or rc_source_snip or rc_explorer else 0)
 
 
 def check_locale_links(docs_root):

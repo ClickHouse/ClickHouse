@@ -248,7 +248,7 @@ SELECT * FROM bigquery(my_bigquery, table = 'my_table');
 
 ## Related {#related}
 
-- [`BigQuery` table engine](/engines/table-engines/integrations/bigquery)
+- [`BigQuery` table engine](/reference/engines/table-engines/integrations/bigquery)
 )DOCS_MD",
         .category = FunctionDocumentation::Category::TableFunction
     });

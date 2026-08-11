@@ -451,7 +451,7 @@ void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory & factory)
 
     FunctionDocumentation::Description description_argMin = R"(
 Calculates the `arg` value for a minimum `val` value. If there are multiple rows with equal `val` being the maximum, which of the associated `arg` is returned is not deterministic.
-Both parts the `arg` and the `min` behave as [aggregate functions](/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
+Both parts the `arg` and the `min` behave as [aggregate functions](/reference/functions/aggregate-functions), they both [skip `Null`](/reference/functions/aggregate-functions#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 **See also**
 
@@ -522,7 +522,7 @@ SELECT argMin(a, (b, a)), min(tuple(b, a)) FROM test;
 
     FunctionDocumentation::Description description_argMax = R"(
 Calculates the `arg` value for a maximum `val` value. If there are multiple rows with equal `val` being the maximum, which of the associated `arg` is returned is not deterministic.
-Both parts the `arg` and the `max` behave as [aggregate functions](/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
+Both parts the `arg` and the `max` behave as [aggregate functions](/reference/functions/aggregate-functions), they both [skip `Null`](/reference/functions/aggregate-functions#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 **See also**
 
@@ -597,7 +597,7 @@ SELECT argMax(a, (b,a)) FROM test;
     FunctionDocumentation::Description description_argAndMin = R"(
 Calculates the `arg` and `val` value for a minimum `val` value.
 If there are multiple rows with equal `val` being the minimum, which of the associated `arg` and `val` is returned is not deterministic.
-Both parts the `arg` and the `min` behave as [aggregate functions](/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
+Both parts the `arg` and the `min` behave as [aggregate functions](/reference/functions/aggregate-functions), they both [skip `Null`](/reference/functions/aggregate-functions#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 :::note
 The only difference with `argMin` is that `argAndMin` returns both argument and value.
@@ -674,7 +674,7 @@ SELECT argAndMin(a, (b, a)), min(tuple(b, a)) FROM test;
     FunctionDocumentation::Description description_argAndMax = R"(
 Calculates the `arg` and `val` value for a maximum `val` value.
 If there are multiple rows with equal `val` being the maximum, which of the associated `arg` and `val` is returned is not deterministic.
-Both parts the `arg` and the `max` behave as [aggregate functions](/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
+Both parts the `arg` and the `max` behave as [aggregate functions](/reference/functions/aggregate-functions), they both [skip `Null`](/reference/functions/aggregate-functions#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 :::note
 The only difference with `argMax` is that `argAndMax` returns both argument and value.

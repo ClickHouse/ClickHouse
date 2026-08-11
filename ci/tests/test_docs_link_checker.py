@@ -73,6 +73,73 @@ def test_locale_static_link_parser_leaves_templates_to_template_parser():
     assert template.group(1) == "/docs"
 
 
+def test_source_embedded_doc_links_are_materialized_for_lychee(tmp_path):
+    repo_root = tmp_path / "repo"
+    source = repo_root / "src/Functions/example.cpp"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        '''R"DOCS_MD(
+[Relative](/reference/functions/example#syntax)
+[Public](https://clickhouse.com/docs/reference/data-types/newjson)
+<Card href="/concepts/best-practices/json-type" />
+[External](https://example.com/reference/not-checked)
+```md
+[Code sample](/reference/not-checked)
+```
+)DOCS_MD";
+''',
+        encoding="utf-8",
+    )
+    readme = repo_root / "src/Functions/README.md"
+    readme.write_text("[Out of scope](/reference/not-checked)\n", encoding="utf-8")
+    output = tmp_path / "output"
+    output.mkdir()
+
+    output_name, count = lychee_check.write_source_doc_links(repo_root, output)
+
+    assert count == 3
+    materialized = (output / output_name).read_text(encoding="utf-8")
+    assert "](/reference/functions/example#syntax)" in materialized
+    assert "](/reference/data-types/newjson)" in materialized
+    assert "](/concepts/best-practices/json-type)" in materialized
+    assert "clickhouse.com/docs" not in materialized
+    assert "not-checked" not in materialized
+
+
+def test_broken_source_doc_target_is_materialized_for_lychee(tmp_path):
+    repo_root = tmp_path / "repo"
+    source = repo_root / "src/example.h"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "[Broken](https://clickhouse.com/docs/reference/not-a-real-page)\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "output"
+    output.mkdir()
+
+    output_name, count = lychee_check.write_source_doc_links(repo_root, output)
+
+    assert count == 1
+    assert "](/reference/not-a-real-page)" in (
+        output / output_name
+    ).read_text(encoding="utf-8")
+
+
+def test_directory_index_route_materializes_anchors_only(tmp_path):
+    index = tmp_path / "reference/operators/index.mdx"
+    index.parent.mkdir(parents=True)
+    index.write_text(
+        '<a id="interval"></a>\n[Do not duplicate](/reference/missing)\n',
+        encoding="utf-8",
+    )
+
+    lychee_check.materialize_index_routes(tmp_path)
+
+    route = (tmp_path / "reference/operators.mdx").read_text(encoding="utf-8")
+    assert '<a id="interval"></a>' in route
+    assert "reference/missing" not in route
+
+
 def test_canonical_link_checker_rewrites_rendered_links_only():
     redirects = {
         "/sql-reference/functions/plus": "/reference/functions/plus",
