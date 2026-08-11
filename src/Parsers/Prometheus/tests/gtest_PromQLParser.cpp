@@ -1233,6 +1233,10 @@ TEST(PromQLParser, InvalidStringQuoteEscapes)
     for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
              {R"(up{label="a\'b"})", 11},
              {R"(up{label='a\"b'})", 11},
+             {R"("hello\
+world")", 6},
+             {R"("hello\x
+world")", 6},
          })
     {
         PrometheusQueryTree query_tree;
@@ -1243,6 +1247,43 @@ TEST(PromQLParser, InvalidStringQuoteEscapes)
         EXPECT_EQ(error_pos, expected_error_pos) << query;
         EXPECT_NE(error_message.find("Invalid escape sequence"), String::npos) << query;
     }
+}
+
+
+TEST(PromQLParser, RejectLiteralLFInQuotedStrings)
+{
+    for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
+             {R"("hello
+world")", 0},
+             {R"('hello
+world')", 0},
+             {R"("hello\\
+world")", 0},
+             {"\"hello\r\nworld\"", 0},
+             {R"("hello
+world\q")", 0},
+             {R"(up{job="hello
+world"})", 7},
+             {R"("hello
+world" "x")", 0},
+             {R"("hello
+world" $)", 0},
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_EQ(error_message, "unterminated quoted string") << query;
+        EXPECT_EQ(error_pos, expected_error_pos) << query;
+    }
+
+    EXPECT_EQ(parseStringLiteral(R"(`hello
+world`)"), "hello\nworld");
+    EXPECT_EQ(parseStringLiteral(R"("hello\nworld")"), "hello\nworld");
+    EXPECT_EQ(parseStringLiteral(R"('hello\nworld')"), "hello\nworld");
+    EXPECT_EQ(parseStringLiteral("\"hello\rworld\""), "hello\rworld");
 }
 
 
