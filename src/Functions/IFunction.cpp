@@ -975,22 +975,22 @@ namespace
             /// `serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH` test annotations
             /// valid after a function adopts a declarative signature.
             const bool mentions_arity =
-                reason.find("too few arguments") != std::string::npos
-                || reason.find("too many arguments") != std::string::npos
-                || reason.find("number of arguments") != std::string::npos;
+                reason.contains("too few arguments")
+                || reason.contains("too many arguments")
+                || reason.contains("number of arguments");
             /// `has type ` and `must be of type ` are produced by the type-matcher
             /// `ArgumentDescription` wrapper for every type-mismatch; arity-only
             /// reasons never include them. `doesn't match` appears in the
             /// outer alternatives wrapper (`Variant ... doesn't match because ...`)
             /// even for pure-arity failures, so we cannot use it as the type-marker.
             const bool mentions_type_mismatch =
-                reason.find(" has type ") != std::string::npos
-                || reason.find("must be of type ") != std::string::npos;
+                reason.contains(" has type ")
+                || reason.contains("must be of type ");
             /// `ArgumentDescription::match` produces "must be ..., but it is not constant"
             /// when the only problem is that a `const` matcher position received a
             /// non-constant column. Map that to the legacy `ILLEGAL_COLUMN` so existing
             /// `serverError ILLEGAL_COLUMN` test annotations keep working.
-            const bool mentions_non_const = reason.find("but it is not constant") != std::string::npos;
+            const bool mentions_non_const = reason.contains("but it is not constant");
 
             /// Authoritative arity signal: when the call has more or fewer arguments than
             /// *any* alternative of the signature can accept, this is unambiguously an
