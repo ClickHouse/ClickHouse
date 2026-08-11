@@ -3,6 +3,7 @@
 #include <Client/AI/AIPrompts.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <base/scope_guard.h>
 
 #include <fmt/format.h>
 
@@ -130,9 +131,14 @@ void AIAgent::chat(const String & user_text)
 
     for (size_t step_index = 0; step_index < config.max_steps; ++step_index)
     {
-        display.startThinking();
-        AIAgentStep step = transport->step(system_prompt, messages, tools);
-        display.stopThinking();
+        AIAgentStep step;
+        {
+            /// The transports report failures as `step.error`, but if one ever throws, the
+            /// thinking animation thread must not be left repainting the terminal.
+            display.startThinking();
+            SCOPE_EXIT(display.stopThinking());
+            step = transport->step(system_prompt, messages, tools);
+        }
 
         if (!step.ok())
         {

@@ -3775,9 +3775,11 @@ void ClientBase::stopKeystrokeInterceptorIfExists()
 #if USE_CLIENT_AI
 void ClientBase::initAIAgent()
 {
-    if (ai_agent_initialized)
+    /// Failures below (a config error, an unavailable provider, a failed probe) are not
+    /// latched: the next `?` retries the initialization, so the agent becomes available
+    /// once the user fixes the configuration or the session state.
+    if (ai_agent)
         return;
-    ai_agent_initialized = true;
 
     AIConfiguration ai_config = AIClientFactory::loadConfiguration(getClientConfiguration());
 
