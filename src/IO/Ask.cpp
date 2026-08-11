@@ -7,7 +7,7 @@
 namespace DB
 {
 
-bool ask(std::string question, ReadBuffer & in, WriteBuffer & out)
+bool ask(std::string question, ReadBuffer & in, WriteBuffer & out, bool default_yes)
 {
     while (true)
     {
@@ -17,14 +17,16 @@ bool ask(std::string question, ReadBuffer & in, WriteBuffer & out)
         readStringUntilNewlineInto(answer, in);
         skipToNextLineOrEOF(in);
 
-        if (answer.empty() || answer == "n" || answer == "N")
+        if (answer.empty())
+            return default_yes;
+        if (answer == "n" || answer == "N")
             return false;
         if (answer == "y" || answer == "Y")
             return true;
     }
 }
 
-bool ask(std::string question)
+bool ask(std::string question, bool default_yes)
 {
     while (true)
     {
@@ -34,7 +36,9 @@ bool ask(std::string question)
         if (!std::cin.good())
             return false;
 
-        if (answer.empty() || answer == "n" || answer == "N")
+        if (answer.empty())
+            return default_yes;
+        if (answer == "n" || answer == "N")
             return false;
         if (answer == "y" || answer == "Y")
             return true;

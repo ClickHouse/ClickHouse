@@ -3796,7 +3796,7 @@ void ClientBase::initAIAgent()
 
         /// Show the query the agent wants to run before asking, as if the user typed it.
         echoQueryForAI(query);
-        return ask("Run this query? [y/N] ", *std_in, *std_out);
+        return ask("Run this query? [Y/n] ", *std_in, *std_out, /*default_yes=*/ true);
     };
 
     std::unique_ptr<IAIAgentTransport> transport;
@@ -4262,11 +4262,11 @@ bool ClientBase::checkAIProviderAcknowledgment()
 
         const auto question = fmt::format(
             "The AI agent will use the {} API key from an environment variable.{}\n"
-            "Do you want to continue? [y/N] ",
+            "Do you want to continue? [Y/n] ",
             ai_provider_name,
             unused_key_note);
 
-        if (!ask(question, *std_in, *std_out))
+        if (!ask(question, *std_in, *std_out, /*default_yes=*/ true))
         {
             // User declined
             error_stream << "AI query cancelled.\n";
