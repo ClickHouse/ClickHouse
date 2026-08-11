@@ -192,6 +192,13 @@ public:
     /// Returns true if the storage supports columns with dynamic structure (like JSON or Dynamic types).
     virtual bool supportsColumnsWithDynamicStructure() const { return false; }
 
+    /// Returns true if a storage snapshot captured now can be read later and is guaranteed to return
+    /// exactly the data that existed at capture time, even if the table is concurrently written or merged.
+    /// Used for atomic `CREATE MATERIALIZED VIEW ... POPULATE`, which pins such a snapshot and populates
+    /// the view from it (see InterpreterCreateQuery). True for the MergeTree family, which retains the
+    /// pinned data parts for the lifetime of the snapshot.
+    virtual bool supportsPinnedSnapshot() const { return false; }
+
     /// Requires squashing small blocks to large for optimal storage.
     /// This is true for most storages that store data on disk.
     virtual bool prefersLargeBlocks() const { return true; }
@@ -209,9 +216,12 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
-    /// Same as parameterless overload but also includes sizes for requested subcolumns
+    /// Same as parameterless overload but also includes sizes for the requested subcolumns.
+    /// Computing exact subcolumn sizes can be expensive, so `calculate_subcolumn_sizes` (driven by
+    /// `allow_calculating_subcolumns_sizes_for_merge_tree_reading` at call sites) selects between the
+    /// exact size and the cheaper top-level column size as an approximation.
     /// The default implementation falls back to the parameterless version.
-    virtual ColumnSizeByName getColumnSizes(const Names & /*columns*/) const { return getColumnSizes(); }
+    virtual ColumnSizeByName getColumnSizes(const Names & /*columns*/, bool /*calculate_subcolumn_sizes*/) const { return getColumnSizes(); }
 
     /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias
     virtual std::optional<ColumnSizeByName> tryGetColumnSizes() const { return getColumnSizes(); }

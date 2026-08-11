@@ -248,7 +248,7 @@ IcebergMetadata::IcebergMetadata(
     /// TODO: for now it's okay to start/stop the task via constructor/destructor. Once refactored, we'd need to plumb startup/shutdown and schedule the task from there
     if (persistent_components.metadata_cache && data_lake_settings[DataLakeStorageSetting::iceberg_metadata_async_prefetch_period_ms] != 0)
     {
-        background_metadata_prefetch_task = context_->getIcebergSchedulePool().createTask(
+        background_metadata_prefetch_task = context_->getIcebergSchedulePool()->createTask(
             StorageID("", persistent_components.table_uuid ? *persistent_components.table_uuid : persistent_components.table_path),
             "backgroundMetadataPrefetcherThread",
             [this]
@@ -990,6 +990,8 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
             history_record.parent_id = 0;
 
         bool found_in_snapshot_log = false;
+        /// A snapshot-id can occur in snapshot-log more than once (a rollback makes an older
+        /// snapshot current again); made_current_at is the LAST such time, so do not stop early.
         for (size_t j = 0; j < snapshot_logs->size(); ++j)
         {
             const auto snapshot_log = snapshot_logs->getObject(static_cast<UInt32>(j));
@@ -997,7 +999,6 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
             {
                 history_record.made_current_at = parse_timestamp_ms(snapshot_log);
                 found_in_snapshot_log = true;
-                break;
             }
         }
 
@@ -1125,6 +1126,37 @@ bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metada
             object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id);
 
         if (!files_handle.areAllDataFilesSortedBySortOrderID(sorting_key.sort_order_id.value()))
+            return false;
+    }
+    return true;
+}
+
+bool IcebergMetadata::supportsLazyMaterialization(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const
+{
+    auto table_state_snapshot = extractIcebergSnapshotIdFromMetadataObject(storage_metadata_snapshot);
+    if (table_state_snapshot == nullptr)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Can't extract iceberg table state from storage snapshot for table location {}",
+            persistent_components.table_location);
+    }
+
+    /// An empty table trivially satisfies the requirements.
+    auto data_snapshot = getRelevantDataSnapshotFromTableStateSnapshot(*table_state_snapshot, context);
+    if (!data_snapshot)
+        return true;
+
+    /// The lazy branch re-reads the surviving rows by their physical row numbers, and the main
+    /// read must be able to prune the deferred columns. Prove that for every file of the snapshot:
+    /// all data files are Parquet, none needs schema evolution, and there are no equality deletes.
+    /// The manifest files are cached, and the read itself traverses them anyway.
+    for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
+    {
+        auto files_handle = getManifestFileEntriesHandle(
+            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id);
+
+        if (!files_handle.areAllDataFilesEligibleForLazyMaterialization(table_state_snapshot->schema_id))
             return false;
     }
     return true;
@@ -1413,7 +1445,9 @@ void IcebergMetadata::addDeleteTransformers(
             LOG_DEBUG(log, "Use expression {} in equality deletes", dag.dumpDAG());
             /// update_row_numbers_info = true: every transform that can precede this one (the
             /// position-delete transform, an earlier equality-delete filter) maintains
-            /// `ChunkInfoRowNumbers`, so it still describes the chunk here.
+            /// `ChunkInfoRowNumbers`, so it still describes the chunk here. Keeping the physical row
+            /// numbers consistent after rows are removed is what makes the `_row_number` virtual
+            /// column and lazy materialization correct on top of equality deletes.
             return std::make_shared<FilterTransform>(
                 header, std::make_shared<ExpressionActions>(std::move(dag)), "notInResult", true,
                 /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
