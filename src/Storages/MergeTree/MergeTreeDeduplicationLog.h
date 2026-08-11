@@ -314,14 +314,35 @@ private:
     ///
     /// The marker is the log file with number 0 - a number no real log can have, since
     /// rotation and compaction only ever create `current_log_number + 1` and numbers
-    /// start at 1 - holding a single no-op rollback record. That encoding needs no
-    /// format version: a server from before the marker existed replays it as an
-    /// ordinary log whose one record does nothing (and may eventually remove it with
-    /// the outdated logs), which is exactly the old, pre-marker behavior, while
-    /// servers with this code never replay it (load skips log number 0) and treat a
-    /// non-empty marker as "the last compaction did not finish cleanly". The marker is
-    /// cleared by removing the file or - if the removal fails - overwriting it with an
-    /// empty file, so a marker that merely exists but is empty is inactive.
+    /// start at 1 - holding a single no-op rollback record. Servers with this code
+    /// never replay it (load skips log number 0) and treat a non-empty marker as "the
+    /// last compaction did not finish cleanly". The marker is cleared by removing the
+    /// file or - if the removal fails - overwriting it with an empty file, so a marker
+    /// that merely exists but is empty is inactive.
+    ///
+    /// The marker only protects servers that know it. A server from before the marker
+    /// existed replays it as an ordinary log whose one record does nothing and carries
+    /// on to the rest of the history, so it is NOT what keeps a downgrade safe. That is
+    /// instead two invariants of compact itself: (1) while any stale file a failed
+    /// compaction left behind is still readable, no new record is written anywhere -
+    /// the failure path immediately removes such a file or truncates it to an empty
+    /// one, which replays as a no-op on every server version, and until that
+    /// neutralization succeeds every operation fails closed in prepareToWrite - so no
+    /// server, however old, can replay a stale snapshot on top of records committed
+    /// after it; and (2) a snapshot that survives a crash intact holds exactly the
+    /// live state that replaying the older files reconstructs, so replaying it after
+    /// them changes nothing. The residual exposure is a crash while some stale file
+    /// could be neither removed nor emptied (the disk failed both a remove and a
+    /// rewrite): a later downgraded server replays that file where a server with this
+    /// code discards the whole history, and the replay can rebuild a wrong eviction
+    /// order or, at worst, resurrect a block id whose part was since dropped -
+    /// wrongly deduplicating its re-insert. A format-version gate was considered and
+    /// deliberately not used: it cannot cover that corner anyway (the lingering files
+    /// are written in the old format before the failure), while encoding the snapshot
+    /// itself in a format older servers refuse would cost EVERY downgrade after any
+    /// successful compaction the entire deduplication history - the snapshot is the
+    /// permanent history from then on - a strictly larger regression than a
+    /// double-fault-plus-crash window.
     /// Returns whether the marker is durably on disk; on failure the compaction must
     /// not start (a half-done compaction without the marker is the unprotected state
     /// this exists to prevent).
