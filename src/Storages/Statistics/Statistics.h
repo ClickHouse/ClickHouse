@@ -89,7 +89,7 @@ public:
     /// Per-value estimations.
     /// Returns std::nullopt when the statistics object cannot produce a meaningful estimate
     /// (e.g. the value cannot be converted to the column type).
-    virtual Float64 estimateEqual(const Field & val) const; /// cardinality of val in the column
+    virtual std::optional<Float64> estimateEqual(const Field & val) const; /// cardinality of val in the column
     virtual std::optional<Float64> estimateLess(const Field & val) const; /// summarized cardinality of values < val in the column
     virtual Float64 estimateRange(const Range & range) const;
     virtual String getNameForLogs() const = 0;
@@ -117,6 +117,7 @@ struct Estimate
     std::optional<Field> estimated_min;
     std::optional<Field> estimated_max;
     std::optional<UInt64> estimated_null_count;
+    std::optional<UInt64> estimated_default_count;
 };
 
 using Estimates = std::unordered_map<String, Estimate>;
@@ -143,6 +144,9 @@ public:
     UInt64 getNonNullRowCount() const;
     /// True iff null-count tracking is available for this column (e.g. via `Basic` on a Nullable column).
     bool hasNullCount() const;
+    /// True iff loaded statistics include a source of numeric min/max values
+    /// (`MinMax`, or `Basic` on a numeric/temporal column).
+    bool hasMinMax() const;
     UInt64 estimateCardinality() const;
     UInt64 estimateDefaults() const;
 
@@ -237,10 +241,5 @@ private:
 void removeImplicitStatistics(ColumnsDescription & columns);
 void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str);
 
-/// Validates a value of the `auto_statistics_types` MergeTree setting and rejects deprecated types
-/// (currently `minmax`). This must be called only on the setting-change path (CREATE / ALTER ...
-/// MODIFY SETTING), never when loading existing metadata, so that tables which still carry `minmax`
-/// in the setting keep loading and remain alterable.
-void validateAutoStatisticsTypes(const String & statistics_types_str);
 
 }

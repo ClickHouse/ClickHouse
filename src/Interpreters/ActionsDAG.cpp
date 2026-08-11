@@ -191,6 +191,36 @@ bool isConstantFromScalarSubquery(const ActionsDAG::Node * node)
     return true;
 }
 
+/// Returns the constant a `__scalarSubqueryResult` chain stands for, or nullptr if unavailable.
+/// Unwraps only value-preserving nodes and takes that node's own already-folded constant: never
+/// searches the subtree (an enclosing expression's value is not its descendant's), never executes
+/// (a non-foldable child has no folded column) and never casts (a type mismatch rejects).
+ColumnPtr tryGetScalarSubqueryPayload(const ActionsDAG::Node * node, const DataTypePtr & expected_type)
+{
+    bool unwrapped_scalar_subquery = false;
+    while (true)
+    {
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.at(0);
+
+        if (node->type != ActionsDAG::ActionType::FUNCTION || node->function_base->getName() != "__scalarSubqueryResult")
+            break;
+
+        unwrapped_scalar_subquery = true;
+        node = node->children.at(0);
+    }
+
+    /// Requiring the wrapper keeps this a no-op for every chain the check above does not already
+    /// accept, in particular a plain `identity`, which is not whitelisted there.
+    if (!unwrapped_scalar_subquery || !node->column || !isColumnConst(*node->column))
+        return nullptr;
+
+    if (!node->result_type->equals(*expected_type))
+        return nullptr;
+
+    return node->column;
+}
+
 }
 
 ActionsDAG::ActionsDAG() = default;
@@ -259,9 +289,17 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state) const
 
         /// We must also hash the actual constant value, not just the column type name.
         /// Otherwise, two different constants with the same type and the same expression-based
-        /// result_name (e.g. from CTE constant folding) would produce identical hashes,
-        /// leading to query condition cache collisions and incorrect results.
-        column->updateHashWithValue(0, hash_state);
+        /// result_name (e.g. from CTE constant folding, or a folded `now()` / `randConstant`) would
+        /// produce identical hashes, leading to query-condition-cache collisions and stale Auto-PR
+        /// statistics reuse.
+        ///
+        /// The one exception is the join runtime-filter id carrier: its value is a per-plan-build
+        /// rendezvous key (never a stable hash component), while its identity is its `result_name`,
+        /// hashed above. Skipping only its value keeps the single-replica and parallel-replicas plan
+        /// builds matching without dropping any other constant's value (it still serializes normally
+        /// for distributed propagation).
+        if (!is_runtime_filter_id)
+            column->updateHashWithValue(0, hash_state);
     }
 
     for (const auto & child : children)
@@ -377,7 +415,13 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
     return addNode(std::move(node));
 }
 
-const ActionsDAG::Node & ActionsDAG::addColumn(ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic_constant)
+const ActionsDAG::Node & ActionsDAG::addColumn(
+    ColumnConstPtr column,
+    DataTypePtr type,
+    std::string name,
+    bool is_deterministic_constant,
+    bool is_masked_secret,
+    bool is_runtime_filter_id)
 {
     if (!column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", name);
@@ -393,6 +437,8 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnConstPtr column, DataTypePt
     node.result_name = std::move(name);
     node.column = std::move(column);
     node.is_deterministic_constant = is_deterministic_constant;
+    node.is_masked_secret = is_masked_secret;
+    node.is_runtime_filter_id = is_runtime_filter_id;
 
     return addNode(std::move(node));
 }
@@ -436,7 +482,12 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         if (arguments[pos].column && isColumnConst(*arguments[pos].column))
             continue;
 
-        if (isConstantFromScalarSubquery(children[pos]))
+        /// Prefer the value the scalar subquery stands for: `build` below derives the result type
+        /// from this column, so a default here declares a type that disagrees with the value
+        /// execution will use (wrong scale/timezone, or a LOGICAL_ERROR on the type mismatch).
+        if (auto column = tryGetScalarSubqueryPayload(children[pos], arguments[pos].type))
+            arguments[pos].column = std::move(column);
+        else if (isConstantFromScalarSubquery(children[pos]))
             arguments[pos].column = arguments[pos].type->createColumnConstWithDefaultValue(0);
     }
 
@@ -1891,6 +1942,18 @@ void ActionsDAG::removeFromOutputs(const std::string & node_name)
     removeUnusedActions(/*allow_remove_inputs=*/false);
 }
 
+void ActionsDAG::removeFromOutputs(const NameSet & node_names)
+{
+    NodeRawConstPtrs new_outputs;
+    new_outputs.reserve(outputs.size());
+
+    for (const auto * output : outputs)
+        if (!node_names.contains(output->result_name))
+            new_outputs.push_back(output);
+
+    outputs = std::move(new_outputs);
+}
+
 ActionsDAG ActionsDAG::clone() const
 {
     std::unordered_map<const Node *, const Node *> old_to_new_nodes;
@@ -2918,7 +2981,10 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & co
                         dumpDAG());
 
     std::unordered_set<const Node *> split_nodes = {node};
-    auto res = split(split_nodes);
+    /// The filter name may also be an input name. Two same-named outputs of different structure in the
+    /// first half would break the Block invariant, so let split() rename the promoted node and repair
+    /// the second half. The mapping carries the final name of the filter node.
+    auto res = split(split_nodes, /*create_split_nodes_mapping=*/ true, /*avoid_duplicate_inputs=*/ true);
     return res;
 }
 
@@ -3721,7 +3787,13 @@ std::optional<ActionsDAG> buildFilterActionsDAGImpl(
             }
             case ActionsDAG::ActionType::COLUMN:
             {
-                result_node = &result_dag.addColumn(node->column, node->result_type, node->result_name, node->is_deterministic_constant);
+                /// Propagate `is_runtime_filter_id` too: this rebuilds COLUMN nodes from scratch (unlike
+                /// the whole-node copies in clone/split/merge), and filter pushdown/merge is re-run after
+                /// `tryAddJoinRuntimeFilter`, so without this a rebuilt runtime-filter carrier would lose
+                /// its mark and hash its volatile value again.
+                result_node = &result_dag.addColumn(
+                    node->column, node->result_type, node->result_name,
+                    node->is_deterministic_constant, node->is_masked_secret, node->is_runtime_filter_id);
                 break;
             }
             case ActionsDAG::ActionType::ALIAS:
@@ -4304,7 +4376,14 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
 
         writeIntBinary(column_flags, out);
 
-        if (has_column)
+        /// When computing a cache key (`registry.for_cache_key`), skip the VALUE of the runtime-filter
+        /// id carrier only: it is a volatile per-plan-build rendezvous key, not a stable key component,
+        /// while its `result_name`/`column_flags` (already written) carry the stable structural id.
+        /// Every other constant's value — including a folded `now()`/`randConstant` — must stay in the
+        /// key, otherwise semantically different queries would share statistics. This output is
+        /// hash-only and never deserialized, so omitting the carrier value is safe; the transmission
+        /// path (`for_cache_key == false`) always writes it.
+        if (has_column && !(registry.for_cache_key && node.is_runtime_filter_id))
             serializeConstant(*node.result_type, *node.column, out, registry);
 
         if (node.type == ActionType::INPUT)
@@ -4464,11 +4543,23 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
                     rhs_type = std::make_shared<DataTypeTuple>(rhs_tuple->getElements());
 
                 if (!lhs_type->equals(*rhs_type))
-                    throw Exception(ErrorCodes::INCORRECT_DATA,
-                        "Deserialized function {} has invalid type. Expected {}, deserialized {}.",
-                        function_name,
-                        rhs_type->getName(),
-                        lhs_type->getName());
+                {
+                    /// Analysis types a function over a subquery set (e.g. `in`) with a
+                    /// non-constant set argument, so a `LowCardinality` argument does not wrap
+                    /// the result type. Here the set is a constant, so the rebuilt function can
+                    /// wrap it. Keep the serialized type: execution uses `result_type`, so the
+                    /// node computes the same column as on the serializing side.
+                    bool has_set_argument = false;
+                    for (const auto * child : node.children)
+                        has_set_argument |= WhichDataType(child->result_type).isSet();
+
+                    if (!has_set_argument || !lhs_type->equals(*removeLowCardinality(rhs_type)))
+                        throw Exception(ErrorCodes::INCORRECT_DATA,
+                            "Deserialized function {} has invalid type. Expected {}, deserialized {}.",
+                            function_name,
+                            rhs_type->getName(),
+                            lhs_type->getName());
+                }
             }
         }
         else if (node.type == ActionType::ARRAY_JOIN)

@@ -1,0 +1,62 @@
+-- { echoOn }
+
+-- The exact query from the issue. The right-side columns must become Nullable.
+SELECT t1.a, t1.c, t2.a, t2.c, toTypeName(t2.a), toTypeName(t2.c)
+FROM t1 LEFT JOIN t2 ON (t1.a = t2.a AND t1.c >= t2.c)
+ORDER BY ALL;
+1	1	\N	\N	Nullable(UInt64)	Nullable(UInt64)
+2	2	2	2	Nullable(UInt64)	Nullable(UInt64)
+3	5	3	3	Nullable(UInt64)	Nullable(UInt64)
+-- RIGHT JOIN: the left-side columns must become Nullable.
+SELECT t1.a, t2.a, toTypeName(t1.a)
+FROM t1 RIGHT JOIN t2 ON (t1.a = t2.a AND t1.c >= t2.c)
+ORDER BY ALL;
+2	2	Nullable(UInt64)
+3	3	Nullable(UInt64)
+\N	3	Nullable(UInt64)
+-- FULL JOIN: both sides must become Nullable.
+SELECT t1.a, t2.a, toTypeName(t1.a), toTypeName(t2.a)
+FROM t1 FULL JOIN t2 ON (t1.a = t2.a AND t1.c >= t2.c)
+ORDER BY ALL;
+1	\N	Nullable(UInt64)	Nullable(UInt64)
+2	2	Nullable(UInt64)	Nullable(UInt64)
+3	3	Nullable(UInt64)	Nullable(UInt64)
+\N	3	Nullable(UInt64)	Nullable(UInt64)
+-- INNER JOIN with a residual inequality.
+SELECT t1.a, t2.a
+FROM t1 INNER JOIN t2 ON (t1.a = t2.a AND t1.c >= t2.c)
+ORDER BY ALL;
+2	2
+3	3
+-- Other inequality operators.
+SELECT t1.a, t2.a, t2.c FROM t1 LEFT JOIN t2 ON (t1.a = t2.a AND t1.c < t2.c) ORDER BY ALL;
+1	\N	\N
+2	\N	\N
+3	3	9
+SELECT t1.a, t2.a, t2.c FROM t1 LEFT JOIN t2 ON (t1.a = t2.a AND t1.c != t2.c) ORDER BY ALL;
+1	\N	\N
+2	\N	\N
+3	3	3
+3	3	9
+-- Expression on both sides of the inequality.
+SELECT t1.a, t2.a, t2.c FROM t1 LEFT JOIN t2 ON (t1.a = t2.a AND t1.c + 1 >= t2.c) ORDER BY ALL;
+1	\N	\N
+2	2	2
+3	3	3
+-- More than one residual inequality referencing both tables.
+SELECT t1.a, t2.a FROM t1 FULL JOIN t2 ON (t1.a = t2.a AND t1.c >= t2.c AND t1.b <= t2.b) ORDER BY ALL;
+1	\N
+2	2
+3	3
+\N	3
+-- Disjunction mixing both tables inside the residual condition.
+SELECT t1.a, t2.a, t2.c FROM t1 LEFT JOIN t2 ON (t1.a = t2.a AND (t1.c >= t2.c OR t1.b = t2.b)) ORDER BY ALL;
+1	\N	\N
+2	2	2
+3	3	3
+3	3	9
+-- The same with the grace_hash algorithm.
+SELECT t1.a, t2.a FROM t1 LEFT JOIN t2 ON (t1.a = t2.a AND t1.c >= t2.c) ORDER BY ALL SETTINGS join_algorithm = 'grace_hash';
+1	\N
+2	2
+3	3

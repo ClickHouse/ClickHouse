@@ -40,7 +40,7 @@ void StatisticsUniqV2::build(const ColumnPtr & column)
 {
     auto raw_column = getRawColumnForUniqBuild(column);
     const IColumn * raw_column_ptr = raw_column.get();
-    collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &(raw_column_ptr), nullptr);
+    collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &raw_column_ptr, nullptr);
 }
 
 void StatisticsUniqV2::merge(const StatisticsPtr & other_stats)

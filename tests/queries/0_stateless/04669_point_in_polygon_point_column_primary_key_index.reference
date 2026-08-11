@@ -1,0 +1,17 @@
+25001
+25001
+Condition: pointInPolygon(coord, [(0, 0), (0, 25000), (25000, 25000), (25000, 0), (0, 0)])
+Parts: 1/1
+Granules: 26/100
+0
+Condition: pointInPolygon(coord, [(200000, 200000), (200000, 300000), (300000, 300000), (300000, 200000), (200000, 200000)])
+Parts: 0/1
+Granules: 0/100
+40001
+Condition: pointInPolygon(coord, [(0, 30000), (0, 70000), (10, 70000), (10, 30000), (0, 30000)])
+Parts: 1/1
+Granules: 42/100
+25001
+Condition: pointInPolygon(coord, [(0, 0), (0, 25000), (25000, 25000), (25000, 0), (0, 0)])
+Parts: 1/1
+Granules: 26/100

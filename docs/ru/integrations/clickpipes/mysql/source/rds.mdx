@@ -15,38 +15,36 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 В этом пошаговом руководстве показано, как настроить Amazon RDS MySQL для репликации данных в ClickHouse Cloud с помощью [MySQL ClickPipe](/ru/integrations/clickpipes/mysql/index). Ответы на распространённые вопросы о CDC MySQL см. на [странице с часто задаваемыми вопросами по MySQL](/ru/integrations/clickpipes/mysql/faq).
 
 <div id="enable-binlog-retention-rds">
-  ## Включение хранения бинарных логов
+  ## Включение хранения бинарного лога
 </div>
 
-Бинарный лог — это набор файлов журналов, содержащих сведения об изменениях данных на экземпляре сервера MySQL; файлы бинарного лога необходимы для репликации. Чтобы настроить хранение бинарных логов в RDS MySQL, необходимо [включить бинарное логирование](#enable-binlog-logging) и [увеличить интервал хранения binlog](#binlog-retention-interval).
+Бинарный лог — это набор файлов журнала, содержащих информацию об изменениях данных, внесённых в экземпляр сервера MySQL, и эти файлы бинарного лога необходимы для репликации. Чтобы настроить хранение бинарного лога в RDS MySQL, необходимо [включить бинарное логирование](#enable-binlog-logging) и [увеличить интервал хранения бинарного лога](#binlog-retention-interval).
 
-<div id="enable-binlog-logging">
-  ### 1. Включите бинарное логирование с помощью автоматического резервного копирования
-</div>
+<Steps>
+  <Step title="Включите бинарное логирование с помощью автоматического резервного копирования" id="enable-binlog-logging">
+    Функция автоматического резервного копирования определяет, будет ли для MySQL включено бинарное логирование. Автоматическое резервное копирование можно настроить для вашего экземпляра в RDS Console, перейдя в **Modify** &gt; **Additional configuration** &gt; **Backup** и установив флажок **Enable automated backups** (если он ещё не установлен).
 
-В MySQL бинарное логирование включается или отключается в зависимости от того, включено ли автоматическое резервное копирование. Автоматическое резервное копирование можно настроить для вашего экземпляра в RDS Console, перейдя в **Modify** &gt; **Additional configuration** &gt; **Backup** и установив флажок **Enable automated backups** (если он ещё не установлен).
+    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Включение автоматического резервного копирования в RDS" size="lg" border />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Включение автоматического резервного копирования в RDS" size="lg" border />
+    Мы рекомендуем установить для **Backup retention period** достаточно длительный срок в зависимости от сценария использования репликации.
+  </Step>
 
-Рекомендуем установить для **Backup retention period** достаточно большое значение — в зависимости от сценария репликации.
+  <Step title="Увеличьте интервал хранения бинарного лога" id="binlog-retention-interval">
+    <Warning>
+      Если ClickPipes попытается возобновить репликацию, а необходимые файлы бинарного лога уже были удалены из-за настроенного срока хранения binlog, ClickPipe перейдёт в состояние с ошибкой, и потребуется повторная синхронизация.
+    </Warning>
 
-<div id="binlog-retention-interval">
-  ### 2. Увеличьте интервал хранения бинарного лога
-</div>
+    По умолчанию Amazon RDS удаляет бинарный лог как можно быстрее (то есть использует *отложенную очистку*). Мы рекомендуем увеличить интервал хранения бинарного лога как минимум до **72 часов**, чтобы файлы бинарного лога оставались доступными для репликации в случае сбоев. Чтобы задать интервал хранения бинарного лога ([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours)), используйте процедуру [`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration):
 
-<Warning>
-  Если ClickPipes попытается возобновить репликацию, а необходимые файлы бинарного лога уже были удалены из-за настроенного срока хранения binlog, ClickPipe перейдёт в состояние с ошибкой, и потребуется повторная синхронизация.
-</Warning>
+    [//]: # "ПРИМЕЧАНИЕ: Большинство провайдеров CDC рекомендуют максимальный срок хранения для RDS (7 дней/168 часов). Поскольку это влияет на использование диска, мы даём более осторожную рекомендацию: минимум 3 дня/72 часа."
 
-По умолчанию Amazon RDS удаляет бинарный лог как можно быстрее (то есть использует *отложенную очистку*). Мы рекомендуем увеличить интервал хранения бинарного лога как минимум до **72 часов**, чтобы файлы бинарного лога оставались доступными для репликации в случае сбоев. Чтобы задать интервал хранения бинарного лога ([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours)), используйте процедуру [`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration):
+    ```text
+    mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
+    ```
 
-[//]: # "ПРИМЕЧАНИЕ: Большинство провайдеров CDC рекомендуют максимальный срок хранения для RDS (7 дней/168 часов). Поскольку это влияет на использование диска, мы даём более осторожную рекомендацию: минимум 3 дня/72 часа."
-
-```text
-mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
-```
-
-Если этот параметр не задан или задан слишком маленький интервал, это может привести к пропускам в бинарных логах, из-за чего ClickPipes не сможет возобновить репликацию.
+    Если этот параметр не задан или задан слишком маленький интервал, это может привести к пропускам в бинарных логах, из-за чего ClickPipes не сможет возобновить репликацию.
+  </Step>
+</Steps>
 
 <div id="binlog-settings">
   ## Настройка параметров binlog
@@ -138,6 +136,18 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
+<div id="iam-authentication">
+  ### Использование IAM authentication (необязательно)
+</div>
+
+Вместо пароля можно аутентифицировать пользователя ClickPipes с помощью role-based access через роль IAM AWS. Создайте пользователя, как показано ниже, а затем предоставьте ему те же привилегии на схему и репликацию, что и выше:
+
+```sql
+CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
+```
+
+См. [Аутентификация БД с помощью AWS IAM (RDS/Aurora)](/ru/integrations/clickpipes/postgres/auth), где приведены полные инструкции по настройке роли IAM и политики, необходимых для аутентификации ClickPipes таким способом.
+
 <div id="configure-network-access">
   ## Настройте сетевой доступ
 </div>
@@ -146,11 +156,11 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
   ### Управление доступом на основе IP
 </div>
 
-Чтобы ограничить сетевой доступ к вашему экземпляру Aurora MySQL, добавьте [статические NAT IP-адреса, указанные в документации](/ru/integrations/clickpipes/home#list-of-static-ips), в **Inbound rules** вашей группы безопасности RDS.
+Чтобы ограничить доступ к вашему экземпляру Aurora MySQL, добавьте [статические NAT IP-адреса, указанные в документации](/ru/integrations/clickpipes/home#list-of-static-ips), в **Inbound rules** группы безопасности RDS.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Где найти группу безопасности в RDS MySQL?" size="lg" border />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Изменение правил входящего трафика для указанной выше группы безопасности" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Изменить правила входящего трафика для указанной выше группы безопасности" size="lg" border />
 
 <div id="private-access-via-aws-privatelink">
   ### Доступ через AWS PrivateLink по частной сети
@@ -159,7 +169,7 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
 Чтобы подключиться к вашему экземпляру RDS по частной сети, можно использовать AWS PrivateLink. Следуйте [руководству по настройке AWS PrivateLink для ClickPipes](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes), чтобы настроить подключение.
 
 <div id="next-steps">
-  ## Дальнейшие шаги
+  ## Следующие шаги
 </div>
 
-Теперь, когда ваш экземпляр Amazon RDS MySQL настроен для репликации через binlog и безопасно подключён к ClickHouse Cloud, вы можете [создать свой первый MySQL ClickPipe](/ru/integrations/clickpipes/mysql/index#create-your-clickpipe). Ответы на распространённые вопросы о CDC MySQL см. на [странице с часто задаваемыми вопросами по MySQL](/ru/integrations/clickpipes/mysql/faq).
+Теперь, когда ваш экземпляр Amazon RDS MySQL настроен для репликации через binlog и безопасного подключения к ClickHouse Cloud, вы можете [создать свой первый MySQL ClickPipe](/ru/integrations/clickpipes/mysql/index#create-your-clickpipe). Ответы на распространённые вопросы о MySQL CDC см. на [странице с часто задаваемыми вопросами по MySQL](/ru/integrations/clickpipes/mysql/faq).

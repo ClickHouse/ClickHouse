@@ -104,8 +104,11 @@ public:
     /// operation, so this avoids the `DETACH ... SYNC` that would otherwise block on the live table.
     void rebuildObjectStorageClient(ContextPtr rebuild_context);
 
-    /// Can setting be changed via ALTER TABLE MODIFY SETTING query.
+    /// Whether a setting can be changed via `ALTER TABLE ... MODIFY SETTING`.
     static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode);
+
+    /// Whether a setting can be changed without special migration settings or detached dependencies.
+    static bool isSettingChangeableInPlace(const std::string & name, ObjectStorageQueueMode mode);
 
     /// Generate id for the S3(Azure/etc)Queue commit.
     /// Used for system.s3(azure/etc)_queue_log.

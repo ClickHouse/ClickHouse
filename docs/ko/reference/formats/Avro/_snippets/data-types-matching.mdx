@@ -35,7 +35,7 @@ title: 데이터 타입 매핑
 **  [Variant 타입](/ko/reference/data-types/variant)은 필드 값으로 `null`을 암묵적으로 허용하므로, 예를 들어 Avro `union(T1, T2, null)`은 `Variant(T1, T2)`로 변환됩니다.
 따라서 ClickHouse에서 Avro를 생성할 때는 스키마 추론 과정에서 실제로 `null`인 값이 있는지 알 수 없으므로, Avro `union` 타입 목록에 항상 `null` 타입을 포함해야 합니다.
 
-*** [Avro 논리 타입](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+*** [Avro 논리 타입](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
 
 지원되지 않는 Avro 논리 데이터 타입:
 

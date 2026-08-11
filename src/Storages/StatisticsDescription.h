@@ -16,7 +16,7 @@ enum class StatisticsType : UInt8
     Uniq = 1,
     CountMinSketch = 2,
     MinMax = 3,
-    Basic = 4, /// Min, max, string-length min/max, and null count, depending on the column type.
+    Basic = 4,
     UniqV2 = 5,
     UniqAssumedAllDistinct = 6, /// Serialized physical representation for Uniq with all non-NULL values assumed distinct.
     UniqV2AssumedAllDistinct = 7, /// Serialized physical representation for UniqV2 with all non-NULL values assumed distinct.

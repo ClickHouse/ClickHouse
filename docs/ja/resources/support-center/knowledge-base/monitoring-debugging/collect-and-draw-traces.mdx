@@ -1,0 +1,183 @@
+---
+date: 2025-12-30
+title: クエリトレースを収集して可視化する方法
+tags: ['ツールとユーティリティ']
+keywords: ['クエリトレース', 'OTel', 'Grafana']
+description: "このガイドでは、組み込みの方法または Grafana を使って、セルフマネージド ClickHouse でクエリトレースを収集し、可視化する方法を説明します。これは特に、複雑なクエリを扱う際に、EXPLAIN でわかる内容を超えて内部的な実行の仕組みを理解したい場合に役立ちます。"
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+**前提条件**:
+
+* ClickHouseの[設定ファイル](/ja/concepts/features/configuration/server-config/configuration-files)に関する知識
+* 稼働中の[ClickHouse server](/ja/get-started/setup/install)インスタンス
+* (任意) 稼働中のローカル[Grafanaインスタンス](https://grafana.com/docs/grafana/latest/fundamentals/getting-started/)
+
+<Steps>
+  <Step title={<><code>opentelemetry_span_log</code> システムテーブルが有効になっていることを確認する</>} id="enable-system-table">
+    `config.xml` の `opentelemetry_span_log` セクションを変更していない場合は、この手順は省略できます。
+
+    デフォルトの ClickHouse `config.xml` ファイルを開き、次のセクションを探してください。
+
+    ```yaml
+    <!--
+        OpenTelemetry log contains OpenTelemetry trace spans.
+
+        NOTE: this table does not use standard schema with event_date and event_time!
+    -->
+    <opentelemetry_span_log>
+        <!--
+            The default table creation code is insufficient, this <engine> spec
+            is a workaround. There is no 'event_time' for this log, but two times,
+            start and finish. It is sorted by finish time, to avoid inserting
+            data too far away in the past (probably we can sometimes insert a span
+            that is seconds earlier than the last span in the table, due to a race
+            between several spans inserted in parallel). This gives the spans a
+            global order that we can use to e.g. retry insertion into some external
+            system.
+        -->
+        <engine>
+            engine MergeTree
+            partition by toYYYYMM(finish_date)
+            order by (finish_date, finish_time_us, trace_id)
+        </engine>
+        <database>system</database>
+        <table>opentelemetry_span_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </opentelemetry_span_log>
+    ```
+
+    コメントアウトされていないことを確認してください。コメントアウトされていると、以降の手順で `system.opentelemetry_span_log` を確認できません。
+    ClickHouse server がデフォルトの設定ファイルを使用していない場合も、同様です。
+
+    次のような内容がないか、サーバーログを確認してください。
+
+    ```text
+    Processing configuration file 'config.xml'.
+    There is no file 'config.xml', will use embedded config.
+    ```
+
+    <Tip>
+      標準的なインストールでは、このファイルは`/etc/clickhouse-server/config.xml`にあります
+    </Tip>
+  </Step>
+
+  <Step title="OpenTelemetryトレーシングを有効にする" id="enable-otel-tracing">
+    ClickHouse serverが起動したら、ClickHouse clientを開き、次のクエリでトレース収集を有効にします。
+
+    ```bash
+    SET opentelemetry_trace_processors=1;
+    ```
+
+    以下を実行すると、`opentelemetry_span_log` システムテーブルが表示されるはずです:
+
+    ```sql
+    SHOW TABLES IN system
+    ```
+
+    次回の実行:
+
+    ```
+    SET opentelemetry_start_trace_probability=1;
+    ```
+
+    これは、実行されたクエリに対して ClickHouse がトレースを開始する確率を設定します。ここで、
+    `1` は、実行されたすべてのクエリでトレースが有効になることを意味します。
+  </Step>
+
+  <Step title="クエリIDを取得する" id="obtain-query-id">
+    以下のダミークエリ、またはトレースしたいクエリを実行します。
+
+    ```sql
+    SELECT pow(number, 2) FROM numbers(10E4);
+    ```
+
+    Query idをコピーします：
+
+    ```sql highlight={6}
+    :) SELECT pow(number, 2) FROM numbers(10E4);
+
+    SELECT pow(number, 2)
+    FROM numbers(100000.)
+
+    Query id: a9241258-a0c4-4776-a00b-e6a1d9bec4a1
+    ```
+  </Step>
+
+  <Step title="トレースファイルを生成する" id="generate-trace-file">
+    前の手順で取得したクエリ ID に置き換え、次のクエリを実行してください。
+
+    ```sql
+    WITH 'a9241258-a0c4-4776-a00b-e6a1d9bec4a1' AS my_query_id
+    SELECT
+        concat(substring(hostName(), length(hostName()), 1), leftPad(greatest(attribute['clickhouse.thread_id'], attribute['thread_number']), 5, '0')) AS group,
+        operation_name,
+        start_time_us,
+        finish_time_us,
+        sipHash64(operation_name) AS color,
+        attribute
+    FROM system.opentelemetry_span_log
+    WHERE (trace_id IN (
+        SELECT trace_id
+        FROM system.opentelemetry_span_log
+        WHERE (attribute['clickhouse.query_id']) = my_query_id
+    )) AND (operation_name != 'query') AND (operation_name NOT LIKE 'Query%')
+    ORDER BY
+        hostName() ASC,
+        group ASC,
+        parent_span_id ASC,
+        start_time_us ASC
+    INTO OUTFILE 'trace.json'
+    FORMAT JSON
+    SETTINGS output_format_json_named_tuples_as_objects = 1
+    ```
+
+    これにより、トレースが `trace.json` という名前のファイルに書き込まれます。
+    デフォルトでは、このファイルは `clickhouse-client` または `clickhouse-local` を実行した現在の作業ディレクトリに作成されます。
+  </Step>
+
+  <Step title="組み込みツールでトレースを可視化する" id="visualize-trace-using-built-in-tooling">
+    ホスト型のトレース可視化ツールは [https://trace-visualizer.clickhouse.com/](https://trace-visualizer.clickhouse.com/) を使用してください。
+    前のステップで作成した `trace.json` ファイルを読み込んで、トレースを可視化します。
+
+    <Image img="/images/knowledgebase/trace-visualizer-example.png" size="md" alt="ClickHouse トレース可視化ツールの例" />
+  </Step>
+
+  <Step title="Grafana でトレースを可視化する" id="using-grafana">
+    公式のClickHouseプラグインを使用してトレースデータを可視化し、Explore で確認・分析するには、Grafana の利用を推奨します。
+    このプラグインは、Trace Panel を使ったトレースの可視化に対応できるよう強化されています。
+    これは、可視化機能としても、Explore 内のコンポーネントとしてもサポートされています。
+
+    ClickHouseプラグインを使用して Grafana をセットアップするには、[&quot;Using Grafana and ClickHouse for Observability&quot;](/ja/guides/use-cases/observability/build-your-own/grafana)
+    で説明されている手順に従ってください。
+
+    その後、Explore タブから次のクエリを実行できます。`trace_id` はご自身のものに置き換えてください。
+
+    ```sql
+    SELECT
+        toString(trace_id) AS traceID,
+        toString(span_id) AS spanID,
+        if(toString(parent_span_id)='0', '', toString(parent_span_id)) AS parentSpanID,
+        'ClickHouse' AS serviceName,
+        operation_name AS operationName,
+        start_time_us/1000000 AS startTime,
+        (finish_time_us - start_time_us)/1000 AS duration,
+        arrayMap(key -> map('key', key, 'value', attribute[key]), mapKeys(attribute)) AS serviceTags
+    FROM system.opentelemetry_span_log
+    WHERE trace_id = '68a14b27-a61f-596d-3746-2b03d2530e42' ORDER BY startTime ASC
+    ```
+
+    `Query type` を `Traces` に設定してください：
+
+    <Image img="/images/knowledgebase/trace-visualization-grafana.png" size="md" alt="Grafana における ClickHouse トレースの可視化" />
+
+    &quot;Run Query&quot; をクリックして、トレース図を確認してください：
+
+    <Image img="/images/knowledgebase/trace-visualization-diagram.png" size="md" alt="Grafana における ClickHouse トレースの可視化" />
+  </Step>
+</Steps>

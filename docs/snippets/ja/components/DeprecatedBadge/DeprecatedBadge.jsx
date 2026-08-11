@@ -10,3 +10,5 @@ export const DeprecatedBadge = () => {
         </div>
     )
 }
+
+export default DeprecatedBadge;

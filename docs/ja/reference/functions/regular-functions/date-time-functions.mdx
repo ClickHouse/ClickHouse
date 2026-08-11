@@ -42,9 +42,13 @@ SELECT
 
 導入バージョン: v22.11.0
 
-クエリ分析時点の現在の日時を返します。この関数は定数式です。
+解析時点の現在の日時を返します。この関数は定数式です。
 
 この関数は、`now('UTC')` と同じ結果を返します。追加されたのは MySQL サポートのためだけです。推奨される使用方法は [`now`](#now) です。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -60,7 +64,7 @@ UTCTimestamp()
 
 **戻り値**
 
-クエリ解析時点における現在の日付と時刻を返します。[`DateTime`](/ja/reference/data-types/datetime)
+解析時点における現在の日付と時刻を返します。[`DateTime`](/ja/reference/data-types/datetime)
 
 **例**
 
@@ -1596,31 +1600,31 @@ LIMIT 10
 
 **置換フィールド:**
 
-| プレースホルダー   | 説明               | 表示形式  | 例                          |
-| ---------- | ---------------- | ----- | -------------------------- |
-| G          | 紀元               | テキスト  | AD                         |
-| C          | 紀元の世紀 (&gt;=0)   | 数値    | 20                         |
-| Y          | 紀元の年 (&gt;=0)    | 年     | 1996                       |
-| x          | 週ベース年 (未対応)      | 年     | 1996                       |
-| w          | 週ベース年の週 (未対応)    | 数値    | 27                         |
-| e          | 曜日               | 数値    | 2                          |
-| E          | 曜日               | テキスト  | Tuesday; Tue               |
-| y          | 年                | 年     | 1996                       |
-| D          | 年内通算日            | 数値    | 189                        |
-| M          | 月                | 月     | July; Jul; 07              |
-| d          | 日                | 数値    | 10                         |
-| a          | 午前/午後            | テキスト  | PM                         |
-| K          | 午前/午後の時 (0~11)   | 数値    | 0                          |
-| h          | 午前/午後の時刻 (1~12)  | 数値    | 12                         |
-| H          | 時 (0~23)         | 数値    | 0                          |
-| k          | 時刻 (1~24)        | 数値    | 24                         |
-| m          | 分                | 数値    | 30                         |
-| s          | 秒                | 数値    | 55                         |
-| S          | 秒の小数部            | 数値    | 978                        |
-| z          | タイムゾーン           | テキスト  | Eastern Standard Time; EST |
-| Z          | タイムゾーンオフセット      | ゾーン   | -0800; -0812               |
-| &#39;      | テキストのエスケープ       | 区切り文字 |                            |
-| &#39;&#39; | 単一引用符            | リテラル  | &#39;                      |
+| プレースホルダー   | 説明              | 表示形式  | 例                          |
+| ---------- | --------------- | ----- | -------------------------- |
+| G          | 紀元              | テキスト  | AD                         |
+| C          | 紀元の世紀 (&gt;=0)  | 数値    | 20                         |
+| Y          | 紀元の年 (&gt;=0)   | 年     | 1996                       |
+| x          | 週ベース年 (未対応)     | 年     | 1996                       |
+| w          | 週ベース年の週 (未対応)   | 数値    | 27                         |
+| e          | 曜日              | 数値    | 2                          |
+| E          | 曜日              | テキスト  | Tuesday; Tue               |
+| y          | 年               | 年     | 1996                       |
+| D          | 年内通算日           | 数値    | 189                        |
+| M          | 月               | 月     | July; Jul; 07              |
+| d          | 日               | 数値    | 10                         |
+| a          | 午前/午後           | テキスト  | PM                         |
+| K          | 午前/午後の時 (0~11)  | 数値    | 0                          |
+| h          | 午前/午後の時刻 (1~12) | 数値    | 12                         |
+| H          | 時 (0~23)        | 数値    | 0                          |
+| k          | 時刻 (1~24)       | 数値    | 24                         |
+| m          | 分               | 数値    | 30                         |
+| s          | 秒               | 数値    | 55                         |
+| S          | 秒の小数部           | 数値    | 978                        |
+| z          | タイムゾーン          | テキスト  | Eastern Standard Time; EST |
+| Z          | タイムゾーンオフセット     | ゾーン   | -0800; -0812               |
+| &#39;      | テキストのエスケープ      | 区切り文字 |                            |
+| &#39;&#39; | 単一引用符           | リテラル  | &#39;                      |
 
 **構文**
 
@@ -1648,8 +1652,8 @@ SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd
 
 ```response title=Response
 ┌─formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')─┐
-│ 2010-01-04 12:34:56                                                                     │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+│ 2010-01-04 12:34:56                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="fromDaysSinceYearZero">
@@ -1843,9 +1847,9 @@ SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')
 ```
 
 ```response title=Response
-┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3), 'Asia/Shanghai')─┐
-│                                                 2023-03-16 18:00:00.000 │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')─┐
+│                                                   2023-03-16 18:00:00.000 │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="fromUnixTimestamp">
@@ -1960,6 +1964,10 @@ SELECT fromUnixTimestampInJodaSyntax(1234334543, 'yyyy-MM-dd HH:mm:ss', 'UTC') A
 
 クエリ解析時点における、サーバー (またはセッション) のタイムゾーンでの現在の時刻を返します。
 この関数は定数式です。SQL 標準 / PostgreSQL の `LOCALTIME` であり、`CAST(now() AS Time)` と等価です。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -2230,13 +2238,17 @@ SELECT monthName(date_value)
 
 クエリの解析時点における現在の日付と時刻を返します。この関数は定数式です。
 
+<Note>
+  この関数は非決定論的です。同じ引数に対しても異なる結果を返すことがあります。
+</Note>
+
 **構文**
 
 ```sql
 now([timezone])
 ```
 
-**別名**: `localtimestamp`, `current_timestamp`
+**別名**: `current_timestamp`, `localtimestamp`
 
 **引数**
 
@@ -2292,6 +2304,10 @@ SELECT NOW, CURRENT_TIMESTAMP
 
 クエリ解析時点の、秒未満の精度を持つ現在の日付と時刻を返します。この関数は定数式です。
 
+<Note>
+  この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+</Note>
+
 **構文**
 
 ```sql
@@ -2330,6 +2346,10 @@ SELECT now64(), now64(9, 'Asia/Istanbul')
 各データブロックの処理時点における現在の日時を返します。関数 [`now`](#now) とは異なり、これは定数式ではないため、長時間実行されるクエリではブロックごとに戻り値が異なります。
 
 この関数は、長時間実行される `INSERT SELECT` クエリで現在時刻を生成する場合に適しています。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -2377,6 +2397,10 @@ FORMAT PrettyCompactMonoBlock
 
 この関数は、長時間実行される INSERT SELECT クエリで現在時刻を生成する場合に適しています。
 
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
+
 **構文**
 
 ```sql
@@ -2422,6 +2446,10 @@ FORMAT PrettyCompactMonoBlock
 
 server のタイムゾーン、つまり [`timezone`](/ja/reference/settings/server-settings/settings#timezone) 設定の値を返します。
 この関数が分散テーブルのコンテキストで実行される場合、各分片に対応する値を持つ通常のカラムを返します。そうでない場合は、定数値を返します。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対しても異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -2976,9 +3004,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 quarter)
 ```
 
 ```response title=Response
-┌─minus(CAST('1⋯Quarter(10))─┐
-│                1996-09-16 │
-└───────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalQuarter(10))─┐
+│                                               1995-12-16 │
+└──────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractSeconds">
@@ -3404,6 +3432,10 @@ SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
 
 現在のセッションのタイムゾーン名を返すか、タイムゾーンの
 オフセットまたは名前を正規のタイムゾーン名に変換します。
+
+<Note>
+  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
@@ -3933,15 +3965,15 @@ toLastDayOfWeek(datetime[, mode[, timezone]])
 
 ```sql title=Query
 SELECT
-    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')), /* 金曜日 */
-    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* 金曜日 */
+    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')), /* a Friday */
+    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* a Friday */
     toLastDayOfWeek(toDate('2023-04-23')), /* a Sunday */
     toLastDayOfWeek(toDate('2023-04-23'), 1) /* a Sunday */
 FORMAT Vertical
 ```
 
 ```response title=Response
-行 1:
+Row 1:
 ──────
 toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')):      2023-04-23
 toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1):   2023-04-22
@@ -4171,8 +4203,8 @@ toMonday(value)
 
 ```sql title=Query
 SELECT
-toMonday(toDateTime('2023-04-21 10:20:30')), -- 金曜日
-toMonday(toDate('2023-04-24'));              -- すでに月曜日
+toMonday(toDateTime('2023-04-21 10:20:30')), -- A Friday
+toMonday(toDate('2023-04-24'));              -- Already a Monday
 ```
 
 ```response title=Response
@@ -4750,7 +4782,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-行 1:
+Row 1:
 ──────
 toStartOfFifteenMinutes(toDateTime('2023-04-21 10:17:00')): 2023-04-21 10:15:00
 toStartOfFifteenMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:15:00
@@ -4763,7 +4795,7 @@ toStartOfFifteenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:15:00
 
 導入バージョン: v22.6.0
 
-日時を直前の 5 分間隔の開始時点に切り下げます。
+日時を直前の5分間隔の開始時点に切り下げます。
 
 <Note>
   戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定で変更できます。
@@ -4783,7 +4815,7 @@ toStartOfFiveMinutes(datetime)
 
 **戻り値**
 
-日時を直近の5分単位の開始時刻に丸めた値を返します。[`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
+日時を直近の5分間隔の開始時刻に丸めた値を返します。[`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 
 **例**
 
@@ -4798,7 +4830,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-行 1:
+Row 1:
 ──────
 toStartOfFiveMinutes(toDateTime('2023-04-21 10:17:00')): 2023-04-21 10:15:00
 toStartOfFiveMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:20:00
@@ -4930,20 +4962,20 @@ toStartOfInterval(value, INTERVAL x unit[, time_zone])
 toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 ```
 
-**別名**: `time_bucket`, `date_bin`
+**別名**: `date_bin`, `time_bucket`
 
 **引数**
 
 * `value` — 切り下げる日付または日時の値。[`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
-* `x` — 間隔の長さを表す数値。- `unit` — 間隔の単位: YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND. - `time_zone` — 任意。文字列で指定するタイムゾーン名。- `origin` — 任意。計算の始点 (2 番目のオーバーロードのみ) 。
+* `x` — インターバルの長さを表す数値。- `unit` — インターバルの単位: YEAR, QUARTER, MONTH, WEEK, DAY, HOUR, MINUTE, SECOND, MILLISECOND, MICROSECOND, NANOSECOND. - `time_zone` — 任意。文字列で指定するタイムゾーン名。- `origin` — 任意。計算の始点 (2 番目のオーバーロードのみ) 。
 
 **戻り値**
 
-入力値を含む間隔の開始時点を返します。[`DateTime`](/ja/reference/data-types/datetime)
+入力値を含むインターバルの開始時点を返します。[`DateTime`](/ja/reference/data-types/datetime)
 
 **例**
 
-**基本的な間隔の丸め**
+**基本的なインターバルの丸め**
 
 ```sql title=Query
 SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
@@ -5107,7 +5139,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-行 1:
+Row 1:
 ──────
 toStartOfMinute(toDateTime('2023-04-21 10:20:30')):           2023-04-21 10:20:00
 toStartOfMinute(toDateTime64('2023-04-21 10:20:30.5300', 8)): 2023-04-21 10:20:00
@@ -5119,7 +5151,7 @@ toStartOfMinute(toDateTime64('2023-04-21 10:20:30.5300', 8)): 2023-04-21 10:20:0
 
 導入バージョン: v1.1.0
 
-date または日時をその月の初日に切り下げます。
+日付または日時をその月の初日に切り下げます。
 
 <Note>
   戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定によって変更できます。
@@ -5334,7 +5366,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-行 1:
+Row 1:
 ──────
 toStartOfTenMinutes(toDateTime('2023-04-21 10:17:00')): 2023-04-21 10:10:00
 toStartOfTenMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:20:00
@@ -5375,10 +5407,10 @@ toStartOfWeek(datetime[, mode[, timezone]])
 
 ```sql title=Query
 SELECT
-        toStartOfWeek(toDateTime('2023-04-21 10:20:30')), /* 金曜日 */
-        toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* 金曜日 */
-        toStartOfWeek(toDate('2023-04-24')), /* 月曜日 */
-        toStartOfWeek(toDate('2023-04-24'), 1) /* 月曜日 */
+        toStartOfWeek(toDateTime('2023-04-21 10:20:30')), /* a Friday */
+        toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* a Friday */
+        toStartOfWeek(toDate('2023-04-24')), /* a Monday */
+        toStartOfWeek(toDate('2023-04-24'), 1) /* a Monday */
     FORMAT Vertical
 ```
 
@@ -5566,8 +5598,8 @@ SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')
 
 ```response title=Response
 ┌─toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')─┐
-│                                     2023-03-15 16:00:00 │
-└─────────────────────────────────────────────────────────┘
+│                                       2023-03-15 16:00:00 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 <div id="toUnixTimestamp">
@@ -5928,13 +5960,17 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 クエリ解析時点での現在の日付を返します。`toDate(now())` と同じです。
 
+<Note>
+  この関数は非決定論的であり、同じ引数に対して異なる結果を返すことがあります。
+</Note>
+
 **構文**
 
 ```sql
 today()
 ```
 
-**別名**: `curdate`, `current_date`
+**別名**: `current_date`, `curdate`
 
 **引数**
 
@@ -5981,6 +6017,10 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 導入バージョン: v1.1.0
 
 引数を受け取らず、クエリ解析中のある時点における昨日の日付を返します。
+
+<Note>
+  この関数は非決定論的であり、同じ引数に対して異なる結果を返すことがあります。
+</Note>
 
 **構文**
 
