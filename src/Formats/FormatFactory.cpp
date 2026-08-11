@@ -219,6 +219,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.import_nested_json = settings[Setting::input_format_import_nested_json];
     format_settings.input_allow_errors_num = settings[Setting::input_format_allow_errors_num];
     format_settings.input_allow_errors_ratio = settings[Setting::input_format_allow_errors_ratio];
+    format_settings.json_max_string_column_growth_step = settings[Setting::input_format_json_max_string_column_growth_step];
     format_settings.json.max_depth = settings[Setting::input_format_json_max_depth];
     format_settings.json.array_of_rows = settings[Setting::output_format_json_array_of_rows];
     format_settings.json.escape_forward_slashes = settings[Setting::output_format_json_escape_forward_slashes];

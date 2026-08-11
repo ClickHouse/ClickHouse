@@ -45,6 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"output_format_parquet_column_field_ids", "", "", "New setting to specify explicit Parquet `field_id` overrides per column (`Map(String, Int32)`), useful for Iceberg compatibility."},
             {"output_format_parquet_auto_assign_field_ids", false, false, "New setting to auto-assign sequential Parquet `field_id`s to every output column, Iceberg-style."},
+            {"input_format_json_max_string_column_growth_step", 0, 0, "New setting to cap the power-of-two growth of the JSON column's internal String buffers while materializing JSON, bounding over-allocation."},
             {"max_insert_threads", 1, 0, "Changed the default from 1 (no parallel execution) to auto (0), which resolves to the number of CPU cores available to the server, reduced under memory pressure via `max_insert_threads_min_free_memory_per_thread`. This parallelizes `INSERT SELECT` by default. Set to 1 to restore the previous single-threaded behavior."},
             {"unique_key_probe_implementation", "auto", "auto", "New setting: selects the UNIQUE KEY probe implementation (currently only the simple baseline exists)"},
             {"use_indexes_refiner_in_read_pools", false, false, "New setting to drop mark ranges fully filtered out by skip indexes or a projection index before read tasks are created in MergeTree read pools."},
@@ -81,6 +82,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_text_index_negative_tokens_cache", false, true, "New setting to cache absent text index tokens and avoid repeated dictionary lookups."},
             {"filesystem_cache_wait_for_concurrent_download_timeout_milliseconds", 60000, 1000, "New setting to bound how long a read waits for a file segment being downloaded to the filesystem cache by a concurrent query; on timeout the read bypasses the cache instead of waiting indefinitely. The previous value 60000 corresponds to the old behavior (one full 60 s wait cycle on the downloader)."},
             {"text_index_posting_list_apply_mode", "materialize", "lazy", "Text index queries now decode posting lists on demand with a cursor instead of materializing them into Roaring Bitmaps, which reduces memory usage and CPU time for selective queries."},
+            {"filesystem_cache_verbose_logging", false, false, "New setting gating the per-buffer-refill TEST-level log messages of the filesystem cache read buffer, which were previously emitted unconditionally once the log level allowed them."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
