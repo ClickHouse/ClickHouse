@@ -20,7 +20,7 @@ import ExampleFiles from '/snippets/fr/_working_example.mdx';
 import CloudTip from '/snippets/fr/_cloud_tip.mdx';
 
 > Dans cet exemple, vous allez apprendre à mettre en place un cluster ClickHouse simple et
-> évolutif. Cinq serveurs sont configurés. Deux servent à partitionner les données.
+> évolutif. Cinq serveurs sont configurés. Deux servent à sharder les données.
 > Les trois autres sont utilisés pour la coordination.
 
 L’architecture du cluster que vous allez mettre en place est illustrée ci-dessous :
@@ -38,9 +38,7 @@ L’architecture du cluster que vous allez mettre en place est illustrée ci-des
 * Docker est installé sur votre machine
 
 <Steps>
-  <Step>
-    ## Configurer la structure de répertoires et l&#39;environnement de test
-
+  <Step title="Configurer la structure de répertoires et l'environnement de test" id="set-up">
     <ExampleFiles />
 
     Dans ce tutoriel, vous utiliserez [Docker compose](https://docs.docker.com/compose/) pour
@@ -164,9 +162,7 @@ L’architecture du cluster que vous allez mettre en place est illustrée ci-des
     <ConfigExplanation />
   </Step>
 
-  <Step>
-    ## Configurer les nœuds ClickHouse
-
+  <Step title="Configurer les nœuds ClickHouse" id="configure-clickhouse-servers">
     ### Configuration du serveur
 
     Modifiez maintenant chaque fichier de configuration vide `config.xml` situé dans
@@ -400,9 +396,7 @@ L’architecture du cluster que vous allez mettre en place est illustrée ci-des
     </Note>
   </Step>
 
-  <Step>
-    ## Configurer ClickHouse Keeper
-
+  <Step title="Configurer ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
     ### Configuration de ClickHouse Keeper
 
     <KeeperConfig />
@@ -418,9 +412,7 @@ L’architecture du cluster que vous allez mettre en place est illustrée ci-des
     <CloudTip />
   </Step>
 
-  <Step>
-    ## Tester la configuration
-
+  <Step title="Tester la configuration" id="test-the-setup">
     Assurez-vous que Docker est en cours d’exécution sur votre machine.
     Démarrez le cluster à l’aide de la commande `docker-compose up` depuis la racine du répertoire `cluster_2S_1R` :
 
@@ -499,9 +491,7 @@ L’architecture du cluster que vous allez mettre en place est illustrée ci-des
     À l’étape suivante, vous créerez une table dans le cluster.
   </Step>
 
-  <Step>
-    ## Créer une base de données
-
+  <Step title="Créer une base de données" id="creating-a-database">
     Maintenant que vous avez vérifié que le cluster est correctement configuré et en cours d’exécution, vous
     allez recréer la même table que celle utilisée dans le tutoriel du [jeu de données d’exemple sur les prix de l’immobilier au Royaume-Uni](/fr/get-started/sample-datasets/uk-price-paid).
     Il contient environ 30 millions de lignes correspondant aux prix d’achat
@@ -558,9 +548,7 @@ L’architecture du cluster que vous allez mettre en place est illustrée ci-des
     ```
   </Step>
 
-  <Step>
-    ## Créer une table sur le cluster
-
+  <Step title="Créer une table sur le cluster" id="creating-a-table">
     Maintenant que la base de données a été créée, vous allez créer une table.
     Exécutez la requête suivante depuis n’importe quel client hôte :
 
@@ -662,9 +650,7 @@ L’architecture du cluster que vous allez mettre en place est illustrée ci-des
     moteur de table [`Distributed`](/fr/reference/engines/table-engines/special/distributed). Voyons comment cela fonctionne.
   </Step>
 
-  <Step>
-    ## Créer une table distribuée
-
+  <Step title="Créer une table distribuée" id="create-distributed-table">
     Créez une table distribuée à l’aide de la requête suivante :
 
     ```sql
@@ -700,9 +686,7 @@ L’architecture du cluster que vous allez mettre en place est illustrée ci-des
     ```
   </Step>
 
-  <Step>
-    ## Insérer des données dans une table distribuée
-
+  <Step title="Insérer des données dans une table distribuée" id="inserting-data-into-distributed-table">
     Connectez-vous maintenant à l&#39;un des hôtes et insérez les données :
 
     ```sql
@@ -785,7 +769,7 @@ L’architecture du cluster que vous allez mettre en place est illustrée ci-des
     docker stop clickhouse-01
     ```
 
-    Vérifiez que l&#39;hôte est hors ligne en exécutant :
+    Vérifiez que l’hôte est hors ligne en exécutant :
 
     ```bash
     docker-compose ps
@@ -799,7 +783,7 @@ L’architecture du cluster que vous allez mettre en place est illustrée ci-des
     clickhouse-keeper-03   clickhouse/clickhouse-keeper:latest-alpine   "/entrypoint.sh"   clickhouse-keeper-03   X minutes ago    Up X minutes    127.0.0.1:9183->9181/tcp
     ```
 
-    Depuis `clickhouse-02`, exécutez maintenant la même requête select que précédemment sur la table Distributed :
+    Depuis `clickhouse-02`, exécutez maintenant la même requête select que précédemment sur la table distribuée :
 
     ```sql
     SELECT count(*)

@@ -23,10 +23,14 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 データの取り込み時にはさまざまな障害が発生する可能性があり、その結果、一部のみが挿入されたり、重複データが発生したりすることがあります。Object Storage 用 ClickPipes は挿入の失敗に強く、一時的なステージングテーブルを使用して exactly-once セマンティクスを提供します。データはまずステージングテーブルに挿入され、問題が発生した場合はステージングテーブルを空にして、クリーンな状態から挿入を再試行します。挿入が正常に完了した場合にのみ、パーティションがターゲットテーブルに移動されます。
 
 <Steps>
-  <Step>
-    ## Amazon SQS キューの作成
-
+  <Step title="Amazon SQS キューの作成" id="create-sqs-queue">
     **1.** AWS Console で **Simple Queue Service &gt; Create queue** に移動します。デフォルト設定のまま新しい標準キューを作成します。
+
+    <Warning>
+      **ClickPipe ごとに 1 つのキュー**
+
+      各 ClickPipe には専用の SQS キューが必要です。SQS では、各メッセージは 1 つのコンシューマーにしか配信されません。2 つ以上の ClickPipe (または他のアプリケーション) が同じキューを消費すると、各イベントを受信できるのはそのうち 1 つだけになり、イベントを受信しなかったパイプでは対応するファイルが気付かれないままスキップされます。これは、ClickPipes が異なるパスパターンを使用している場合でも同様です。一致しないファイルのイベントを受信したパイプはそのイベントを破棄し、そのイベントを他のパイプが受け取ることはありません。同じバケットから複数の ClickPipes で取り込むには、ClickPipe ごとに 1 つのキューを作成し、EventBridge ルールを使用してイベントを各キューに振り分けてください。
+    </Warning>
 
     <Tip>
       SQS キューに **Dead-Letter-Queue (DLQ)** を設定することを強く推奨します。これにより、失敗したメッセージのデバッグや再試行が容易になります。DLQ が設定されている場合、失敗したメッセージは再度エンキューされ、DLQ の `maxReceiveCount` パラメータで設定された回数まで再処理されます。
@@ -119,7 +123,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
         }
         ```
 
-        **b.** S3 バケットのプロパティで、`ObjectCreated` イベントに対する **Event notifications** を有効にし、宛先を SQS キューに設定します。必要に応じて、通知をトリガーするオブジェクトを絞り込むためにプレフィックスまたは接尾辞を指定できます。その場合は、ClickPipe に設定したパスと一致していることを確認してください。
+        **b.** S3 バケットのプロパティで **Event notifications** を有効にし、イベントタイプとして **All object create events** (`s3:ObjectCreated:*`) を選択して、宛先を SQS キューに設定します。代わりに個別のイベントタイプを選択しないでください。アップロード方法によって発生する `ObjectCreated` イベントの種類が異なるためです (たとえば、multipart upload では `Put` ではなく `CompleteMultipartUpload` が発生します) 。また、選択していないイベントタイプに該当するファイルはキューに配信されません。必要に応じて、通知をトリガーするオブジェクトを絞り込むためにプレフィックスまたは接尾辞を指定できます。その場合は、ClickPipe に設定したパスと一致していることを確認してください。
 
         <Note>
           S3 では、同じバケット内で同じイベントタイプを対象とする、重複する複数の通知ルールは設定できません。このバケットに対してすでに `ObjectCreated` イベントの通知ルールがある場合は、代わりに EventBridge の方法を使用してください。
@@ -128,9 +132,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     </Tabs>
   </Step>
 
-  <Step>
-    ## IAM ロールを設定する
-
+  <Step title="IAM ロールを設定する" id="configure-iam-role">
     **1.** ClickHouse Cloud console で **Settings &gt; Network security information** に移動し、サービスの **IAM role ARN** をコピーします。
 
     **2.** AWS Console で **IAM &gt; Roles &gt; Create role** に移動します。**Custom trust policy** を選択し、以下の内容を貼り付けます。`<ch-cloud-arn>` は、前の手順でコピーした IAM role ARN に置き換えてください。
@@ -191,12 +193,10 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## 順不同モードで ClickPipe を作成する
-
+  <Step title="順不同モードで ClickPipe を作成する" id="create-clickpipe">
     **1.** ClickHouse Cloudコンソールで **Data Sources &gt; Create ClickPipe** に移動し、**Amazon S3** を選択します。S3 バケットへの接続に必要な情報を入力します。**Authentication method** で **IAM role** を選択し、前の手順で作成したロールの ARN を指定します。
 
-    **2.** **Incoming data** で **Continuous ingestion** をオンにします。インジェストモードとして **Any order** を選択し、バケットに接続されたキューの **SQS queue URL** を指定します。
+    **2.** **Incoming data** で **Continuous ingestion** をオンにします。インジェストモードとして **Any order** を選択し、バケットに接続されたキューの **SQS queue URL** を指定します。このキューはこの ClickPipe 専用に使用する必要があります。詳しくは [Amazon SQS キューの作成](#create-sqs-queue) を参照してください。
 
     **3.** **Parse information** で、ターゲットテーブルの **Sorting key** を定義します。マッピングされたスキーマに必要な調整を加えたら、ClickPipes のデータベースユーザーに割り当てるロールを設定します。
 

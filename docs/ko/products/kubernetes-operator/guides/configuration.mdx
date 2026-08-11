@@ -97,11 +97,11 @@ spec:
 ```
 
 <Note>
-  연산자는 사용 중인 스토리지 클래스가 볼륨 확장을 지원하는 경우에만 기존 PVC를 수정할 수 있습니다.
+  연산자는 사용 중인 StorageClass가 볼륨 확장을 지원하는 경우에만 기존 PVC를 수정할 수 있습니다.
 </Note>
 
 멀티 디스크(JBOD) 레이아웃에서 추가 디스크를 연결하는 방법, 영구 볼륨 없이 실행하는 방법,
-용량 확장, 사용자 지정 저장소 정책, 그리고 생성 후 변경할 수 없는 항목에 대한 규칙은
+용량 확장, 사용자 지정 저장소 정책, 저장 시 암호화, 그리고 생성 후 변경할 수 없는 항목에 대한 규칙은
 전용
 [Storage and volumes guide](/ko/products/kubernetes-operator/guides/storage)에서 다룹니다.
 
@@ -185,9 +185,10 @@ spec:
   ## 클러스터 도메인
 </div>
 
-`spec.clusterDomain`은 연산자가 ClickHouse 서버
-구성에 기록하는 정규화된 파드 호스트 이름을 생성할 때 사용하는 Kubernetes DNS 접미사를 설정합니다. 기본값은 `cluster.local`이며,
-`ClickHouseCluster`와 `KeeperCluster` 둘 다에서 사용할 수 있습니다.
+`spec.clusterDomain`은 operator가 ClickHouse 서버
+구성에 기록하는 정규화된 파드 호스트 이름을 생성할 때 사용하는
+Kubernetes DNS 접미사를 설정합니다. 기본값은 `cluster.local`이며,
+`ClickHouseCluster`와 `KeeperCluster` 둘 다에 있습니다.
 
 ```yaml
 spec:
@@ -196,17 +197,18 @@ spec:
 
 연산자는 헤드리스 Service를 통해 모든 파드에
 `<pod>.<headless-service>.<namespace>.svc.<clusterDomain>` 형식으로 접근합니다. 이 접미사는
-생성된 구성의 두 부분에 사용됩니다.
+생성된 구성의 두 부분에 반영됩니다:
 
 * `ClickHouseCluster`에서는 이 값이 `remote_servers`의 레플리카 호스트 이름에 사용됩니다
-  (`Distributed` 쿼리 및 레플리카 간 통신).
-* `KeeperCluster`에서는 이 값을 바탕으로 ClickHouse가 조정에 사용하는
-  Keeper 노드 호스트 이름을 구성합니다.
+  (`Distributed` 쿼리와 레플리카 간 쿼리용).
+* `KeeperCluster`에서는 이 값으로 ClickHouse가 조정에 사용하는 Keeper 노드 호스트 이름을
+  구성합니다.
 
 <Note>
-  클러스터의 `큐블릿`이 `cluster.local`이 아닌 `--cluster-domain`으로 실행되는 경우에만 이를 재정의하십시오. 값이 실제 클러스터 도메인과 일치하지 않으면
-  ClickHouse는 Keeper 및 레플리카 호스트 이름을 확인할 수 없으므로, 조정과
-  `Distributed` 쿼리가 DNS 해석 오류로 실패합니다. 참조되는
+  클러스터의 `큐블릿`이 `cluster.local`이 아닌 `--cluster-domain`으로 실행되는 경우에만
+  이 값을 재정의하십시오. 값이 실제 클러스터 도메인과 일치하지 않으면
+  ClickHouse가 Keeper 및 레플리카 호스트 이름을 해석할 수 없어 조정과
+  `Distributed` 쿼리가 DNS 해석 오류로 실패합니다. 참조 대상인
   `ClickHouseCluster`와 `KeeperCluster`에 **동일한** 값을 설정하십시오.
 </Note>
 
@@ -516,13 +518,14 @@ spec:
 
 시크릿에는 다음 키가 포함되어야 합니다:
 
-| Key                     | Format                                 | When required            |
-| ----------------------- | -------------------------------------- | ------------------------ |
-| `interserver-password`  | 평문 비밀번호                                | 항상                       |
-| `management-password`   | 평문 비밀번호                                | 항상                       |
-| `keeper-identity`       | `clickhouse:<password>`                | 항상                       |
-| `cluster-secret`        | 평문 비밀번호                                | 항상                       |
-| `named-collections-key` | 16바이트 AES 키를 16진수로 인코딩한 값(16진수 문자 32개) | ClickHouse `>= 25.12`에서만 |
+| Key                     | Format                                 | When required                   |
+| ----------------------- | -------------------------------------- | ------------------------------- |
+| `interserver-password`  | 평문 비밀번호                                | 항상                              |
+| `management-password`   | 평문 비밀번호                                | 항상                              |
+| `keeper-identity`       | `clickhouse:<password>`                | 항상                              |
+| `cluster-secret`        | 평문 비밀번호                                | 항상                              |
+| `named-collections-key` | 16바이트 AES 키를 16진수로 인코딩한 값(16진수 문자 32개) | ClickHouse `>= 25.12`에서만        |
+| `disk-encryption-key`   | 16바이트 AES 키를 16진수로 인코딩한 값(16진수 문자 32개) | `settings.encryption`이 설정된 경우에만 |
 
 전체 시크릿은 다음과 같습니다:
 
@@ -539,6 +542,7 @@ stringData:
   keeper-identity: "clickhouse:keeper-auth-password"
   cluster-secret: "cluster-internal-secret"
   named-collections-key: "0123456789abcdef0123456789abcdef"   # 32 hex chars = 16 bytes
+  disk-encryption-key: "00112233445566778899aabbccddeeff"     # only when settings.encryption is set
 ```
 
 <div id="external-secret-policy">
@@ -586,7 +590,7 @@ kubectl get clickhousecluster sample -o jsonpath='{.status.conditions}' | jq
 시크릿이 유효하지 않은 동안 연산자는 리컨실리에이션을 다시 큐에 넣습니다. 따라서 누락된 키를 추가하면 다음 reconcile 시 자동으로 반영되므로 파드를 재시작할 필요가 없습니다.
 
 <Note>
-  필요한 키 집합은 실행 중인 ClickHouse 버전에 따라 달라집니다. `named-collections-key`는 연산자의 version probe가 ClickHouse `25.12` 이상을 감지한 경우에만 검증됩니다. 이전 버전에서는 해당 키가 시크릿에 없을 수 있습니다.
+  필요한 키 집합은 실행 중인 ClickHouse 버전에 따라 달라집니다. `named-collections-key`는 연산자의 버전 프로브가 ClickHouse `25.12` 이상을 감지한 경우에만 검증됩니다. 이전 버전에서는 해당 키가 시크릿에 없을 수 있습니다. `disk-encryption-key`는 `spec.settings.encryption`이 설정된 경우에만 필요합니다.
 </Note>
 
 <div id="additional-ports">

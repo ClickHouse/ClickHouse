@@ -76,13 +76,13 @@ In this case, consider possibility of using [`quantileTDigest`](/sql-reference/a
 quantileTDigestWeighted(level)(expr, weight)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"expr", "Expression over the column values resulting in numeric data types, Date or DateTime.", {"(U)Int*", "Float*", "Decimal*", "Date", "DateTime"}},
+        {"expr", "Expression over the column values resulting in numeric data types, `Date` or `DateTime`.", {"(U)Int*", "Float*", "Date", "DateTime"}},
         {"weight", "Column with weights of sequence elements. Weight is a number of value occurrences.", {"UInt*"}}
     };
     FunctionDocumentation::Parameters parameters = {
         {"level", "Optional. Level of quantile. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates median.", {"Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Approximate quantile of the specified level.", {"Float64", "Date", "DateTime"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Approximate quantile of the specified level. For `Date` and `DateTime` inputs the output format matches the input format.", {"Float32", "Date", "DateTime"}};
     FunctionDocumentation::Examples examples = {
     {
         "Computing weighted quantile with t-digest",
@@ -110,27 +110,27 @@ This function is equivalent to [`quantileTDigestWeighted`](/sql-reference/aggreg
 
 The maximum error is 1%. Memory consumption is `log(n)`, where `n` is a number of values.
 
-The performance of the function is lower than performance of [`quantiles`](/sql-reference/aggregate-functions/reference/quantiles) or [`quantilesTiming`](/sql-reference/aggregate-functions/reference/quantilestiming).
+The performance of the function is lower than performance of [`quantiles`](/sql-reference/aggregate-functions/reference/quantiles) or [`quantilesTiming`](/sql-reference/aggregate-functions/reference/quantilesTiming).
 In terms of the ratio of State size to precision, this function is much better than `quantiles`.
 
 The result depends on the order of running the query, and is nondeterministic.
 
 :::note
 Using `quantilesTDigestWeighted` [is not recommended for tiny data sets](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275) and can lead to significant error.
-In this case, consider possibility of using [`quantilesTDigest`](/sql-reference/aggregate-functions/reference/quantilestdigest) instead.
+In this case, consider possibility of using [`quantilesTDigest`](/sql-reference/aggregate-functions/reference/quantilesTDigest) instead.
 :::
     )";
     FunctionDocumentation::Syntax syntax_quantiles = R"(
 quantilesTDigestWeighted(level1, level2, ...)(expr, weight)
     )";
     FunctionDocumentation::Arguments arguments_quantiles = {
-        {"expr", "Expression over the column values resulting in numeric data types, Date or DateTime.", {"(U)Int*", "Float*", "Decimal*", "Date", "DateTime"}},
+        {"expr", "Expression over the column values resulting in numeric data types, `Date` or `DateTime`.", {"(U)Int*", "Float*", "Date", "DateTime"}},
         {"weight", "Column with weights of sequence elements. Weight is a number of value occurrences.", {"UInt*"}}
     };
     FunctionDocumentation::Parameters parameters_quantiles = {
         {"level", "Levels of quantiles. One or more constant floating-point numbers from 0 to 1. We recommend using `level` values in the range of `[0.01, 0.99]`.", {"Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_quantiles = {"Array of approximate quantiles of the specified levels in the same order as the levels were specified.", {"Array(Float64)", "Array(Date)", "Array(DateTime)"}};
+    FunctionDocumentation::ReturnedValue returned_value_quantiles = {"Array of approximate quantiles of the specified levels in the same order as the levels were specified. For `Date` and `DateTime` inputs the output format matches the input format.", {"Array(Float32)", "Array(Date)", "Array(DateTime)"}};
     FunctionDocumentation::Examples examples_quantiles = {
     {
         "Computing multiple weighted quantiles with t-digest",
@@ -138,8 +138,8 @@ quantilesTDigestWeighted(level1, level2, ...)(expr, weight)
 SELECT quantilesTDigestWeighted(0.25, 0.5, 0.75)(number, 1) FROM numbers(100);
         )",
         R"(
-┌─quantilesTDigestWeighted(0.25, 0.5, 0.75)(number, 1)─┐
-│ [24.75,49.5,74.25]                                   │
+┌─quantilesTDigestWeighted(0.25, 0.5, 0.75)(number, 1)──┐
+│ [24.75,49.5,74.25]                                    │
 └───────────────────────────────────────────────────────┘
         )"
     }

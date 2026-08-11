@@ -10,6 +10,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <sys/types.h>
+#include <atomic>
 
 
 namespace DB
@@ -295,6 +296,12 @@ private:
       */
     bool finished = false;
 
+    /** Test-only. True only while this executor's reading thread is parked at the
+      * `remote_query_executor_receive_packet_pause` failpoint, so that the drain pause in
+      * `finish` cannot be satisfied by a sibling shard. False unless the failpoints are enabled.
+      */
+    std::atomic_bool in_receive_packet_window = false;
+
     /** Cancel query request was sent to all replicas because data is not needed anymore
       * This behaviour may occur when:
       * - data size is already satisfactory (when using LIMIT, for example)
@@ -372,4 +379,5 @@ private:
     ReadResult processPacket(Packet packet);
 };
 
+ThrottlerPtr getThrottler(const ContextPtr & context);
 }

@@ -2,14 +2,62 @@
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
 title: 'Cloud 変更履歴 - 2026'
-description: '各 ClickHouse Cloud リリースの新機能を紹介する ClickHouse Cloud の変更履歴'
-doc_type: '変更履歴'
+description: '各 ClickHouse Cloud リリースの新機能を紹介する ClickHouse Cloud 変更履歴'
+doc_type: 'changelog'
 keywords: ['変更履歴', 'リリースノート', '更新', '新機能', 'Cloud の変更']
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-このClickHouse Cloudの変更履歴に加えて、[Cloud Compatibility](/ja/products/cloud/guides/cloud-compatibility)ページもご覧ください。
+この ClickHouse Cloud changelog に加えて、[Cloud Compatibility](/ja/products/cloud/guides/cloud-compatibility) ページもご覧ください。
+
+<Update label="2026年7月13日">
+  今週の更新には、通常の HTTPS 経由での sticky レプリカルーティング、billing period の開始日のカスタマイズ、object storage ClickPipes 向けの新しい初期ロード制御が含まれます。
+
+  ### HTTPS 経由の sticky レプリカルーティング (プライベートプレビュー)
+
+  通常の service URL に `?session_id=` パラメータを追加するだけで、特別なホスト名や DNS の変更なしに、標準的な HTTPS 経由で queries を特定の レプリカ に固定できるようになりました。これにより、一時テーブルのような session スコープのオブジェクトを queries 間で利用し続けることができ、繰り返し実行される queries が レプリカ ローカルのウォームキャッシュにヒットしやすくなります。これは、すべての Enterprise 顧客に対してプライベートプレビューで順次提供されており、Scale 顧客についてはリクエストに応じて利用できます。既存のサブドメインベースのルーティングも引き続き動作しますが、最終的にはこの方式へ移行する予定です。[レプリカ対応ルーティング](/manage/replica-aware-routing) のドキュメントをご覧ください。
+
+  ### billing period 開始日のカスタマイズ
+
+  組織 の billing date、つまり各 billing period が始まる月内の日付を、たとえば請求書を暦月に合わせるために変更依頼できるようになりました。希望する日付を記載してサポートチケットを作成してください。Billing date は UTC で適用され、各 invoice には billing date から翌月の同じ日付まで (ただしその日付自体は含まない) の usage が含まれます。
+
+  ### object storage ClickPipes の初期ロードをスキップ
+
+  object storage [ClickPipes](/ja/integrations/clickpipes) (S3、GCS、Azure Blob Storage) では、パイプ 作成時の初期ロードを制御する 2 つの方法が利用できるようになりました。**Start after** は指定した object key までのファイルをその key 自体も含めてスキップし、**Skip initial load** は既存ファイルを完全にスキップして、新しい object notification のみを処理します。これまでは、新しい パイプ は常にそのパス内のすべてのファイルを backfill していました。これら 2 つのオプションは相互排他的であり、指定した パイプ に対して永続的です。スキップした backfill は後から実行できません。UI、Cloud API、Terraform v3.18.0 以降で利用できます。
+</Update>
+
+<Update label="2026年6月30日">
+  今週の更新には、Postgres と ClickHouse internals 向けの新しいオブザーバビリティ機能、Kafka exactly-once 配信を含む ClickPipes の制御機能の拡張、さらに Azure Marketplace BYOC、公式 Airflow provider、ClickHouse Agents のアップデートなど、複数のプラットフォーム機能追加が含まれます。
+
+  ### ClickPipes での Kafka exactly-once 配信
+
+  [ClickPipes](/ja/integrations/clickpipes/kafka/index) のインポートフローで、Kafka インポートに対して exactly-once 配信を直接有効にできるようになりました。同じオプションは、プログラムによるセットアップ向けに公開 API からも利用できます。
+
+  ### CDC ソース向けの統一された TLS 制御
+
+  TLS の有効化と検証レベルが、CDC ソース全体で統一されました。OpenAPI の create および update エンドポイントで `postgres_skip_cert_verification`、`postgres_disable_tls`、`mongo_skip_cert_verification` の各フィールドが反映されるようになり、API 経由で証明書の扱いを管理できます。
+
+  ### Replicated databases が ClickPipes picker に復帰
+
+  Replicated databases を、ClickPipes の宛先 picker で再び選択できるようになりました。
+
+  ### ClickHouse Agents の更新 (パブリックベータ)
+
+  [ClickHouse Agents](/ja/products/cloud/features/ai-ml/agents/index) で、会話を整理するための Chat Projects、トークン使用量とコンテキストウィンドウ使用量を表示するコンテキスト使用量ゲージ、エージェント作成の Skills、さらに ClickHouse のベストプラクティスをまとめた Skills がサポートされるようになりました。このリリースには、設定、ナビゲーション、ショートカット、ピン留めに関する改善も含まれています。
+
+  ### Azure Marketplace 上の ClickHouse BYOC
+
+  ClickHouse の [Bring Your Own Cloud](/ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview) が Azure Marketplace に掲載され、顧客は Private Offer を通じて購入し、Azure account 経由で課金される BYOC をデプロイできるようになりました。プラットフォーム側では、Azure BYOC の marketplace listings と product IDs に対する billing サポートも追加されました。
+
+  ### 公式 ClickHouse Airflow provider
+
+  ClickHouse 向けの公式 Apache Airflow provider が PyPI で利用可能になり、Airflow registry にも掲載されました。これにより、ClickHouse へのデータ入出力で従来の legacy community plugin に依存する必要がなくなります。
+
+  ### Billing の可視性向上と marketplace の改善
+
+  Billing に、セルフサービスで確認できる credit history table、使用済みおよび失効済み金額を表示する prepaid summary、GCP MPPO のメールサポートが追加されました。
+</Update>
 
 <Update label="2026年6月3日">
   Open House 2026 ウィークでは、データが存在する場所で ClickHouse を稼働させることと、AIエージェント主導のワークフローをプラットフォームに取り込むことを軸に、数多くの新機能が一斉にリリースされました。
@@ -159,7 +207,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
   ### ClickPipes 向け Terraform と OpenAPI (一般提供)
 
-  ClickHouse の [Terraform プロバイダー](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) における ClickPipes リソースが、安定版リリースの一部として一般提供となりました。また、[OpenAPI エンドポイント](/ja/api-reference/organization/get-list-of-available-organizations) もベータ表記ではなくなりました。これには CDC コネクタ (Postgres、MySQL、MongoDB) の完全対応が含まれます。詳細は [Terraform ドキュメント](/ja/integrations/clickpipes/programmatic-access/terraform)、[OpenAPI ドキュメント](/ja/integrations/clickpipes/programmatic-access/openapi)、および [ブログ記事](https://clickhouse.com/blog/terraform-ga) をご覧ください。
+  ClickHouse の [Terraform プロバイダー](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) における ClickPipes リソースが、安定版リリースの一部として一般提供となりました。また、[OpenAPI エンドポイント](/ja/products/cloud/api-reference/organization/get-list-of-available-organizations) もベータ表記ではなくなりました。これには CDC コネクタ (Postgres、MySQL、MongoDB) の完全対応が含まれます。詳細は [Terraform ドキュメント](/ja/integrations/clickpipes/programmatic-access/terraform)、[OpenAPI ドキュメント](/ja/integrations/clickpipes/programmatic-access/openapi)、および [ブログ記事](https://clickhouse.com/blog/terraform-ga) をご覧ください。
 </Update>
 
 <Update label="2026年4月17日">
@@ -232,7 +280,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <Update label="2026年1月16日">
   * **API によるサービス単位での利用コストの絞り込み:** API で、特定のサービスタグを使って組織の利用コストを絞り込めるようになりました。これにより、より細かい粒度で支出を分析しやすくなります。
-  * **Data Catalog integration:** 外部データカタログをデータソースとして接続できるようになりました。ClickHouse Cloud は AWS Glue と Unity Catalog に対応しており (今後さらに追加予定) 、接続するとカタログがデータベースとして表示され、データを複製することなく Iceberg テーブルを直接読み取れます。利用するには、サポートに連絡してアクセスをリクエストしてください。
+  * **データカタログインテグレーション:** 外部データカタログをデータソースとして接続できるようになりました。ClickHouse Cloud は AWS Glue と Unity Catalog に対応しており (今後さらに追加予定) 、接続するとカタログがデータベースとして表示され、データを複製することなく Iceberg テーブルを直接読み取れます。利用するには、サポートに連絡してアクセスをリクエストしてください。
   * **ClickPipes:**
     * MongoDB コネクタがパブリックベータに昇格し、すべてのサービスティアで、新規および既存の ClickHouse Cloud のお客様にご利用いただけるようになりました。新機能の概要については [ブログ記事](https://clickhouse.com/blog/mongodb-cdc-connector-clickpipes-beta) をご覧ください。利用開始方法は [ドキュメント](/ja/integrations/clickpipes/mongodb/index) を参照してください。
     * [S3 ClickPipe](/ja/integrations/clickpipes/object-storage/amazon-s3/overview) が、OVHcloud の S3 API 互換オブジェクトストレージサービスである OVH Object Storage に対応しました。
