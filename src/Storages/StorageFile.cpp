@@ -81,6 +81,7 @@
 #include <filesystem>
 #include <shared_mutex>
 #include <algorithm>
+#include <optional>
 #include <unordered_set>
 
 #include <Poco/Util/AbstractConfiguration.h>
@@ -348,6 +349,24 @@ void listFilesWithRegexpMatchingImpl(
     if (!fs::exists(prefix_without_globs, prefix_exists_ec) || prefix_exists_ec)
         return;
 
+    /// The frame key below and every entry the loop emits name this same directory, so one
+    /// resolution serves them all. Null means it does not resolve: a skip for the frame key,
+    /// the lexical fallback for a match.
+    std::optional<fs::path> dir_canonical;
+    bool dir_canonical_attempted = false;
+    auto dir_canonical_hint = [&]() -> const fs::path *
+    {
+        if (!dir_canonical_attempted)
+        {
+            dir_canonical_attempted = true;
+            std::error_code canon_ec;
+            auto canonical_path = fs::canonical(prefix_without_globs, canon_ec);
+            if (!canon_ec)
+                dir_canonical = std::move(canonical_path);
+        }
+        return dir_canonical ? &*dir_canonical : nullptr;
+    };
+
     /// Walk each frame at most once, where a frame is the canonical directory together with the
     /// pattern still to be matched there. That pair is the whole state of the walk, so a frame
     /// repeating it can only redo what another frame has already done, whether that frame is an
@@ -383,10 +402,10 @@ void listFilesWithRegexpMatchingImpl(
     /// stops it, which deduplication cannot prevent because it only filters results.
     if (patternHasGlobstarSegment(suffix_with_globs))
     {
-        std::error_code prefix_canon_ec;
-        const auto prefix_canonical = fs::canonical(prefix_without_globs, prefix_canon_ec);
-        if (prefix_canon_ec)
+        const fs::path * prefix_canonical_ptr = dir_canonical_hint();
+        if (!prefix_canonical_ptr)
             return; /// Dangling/inaccessible: mirror the pre-existing `it.increment(ec)` skip semantics.
+        const fs::path & prefix_canonical = *prefix_canonical_ptr;
         /// Key on `suffix_with_globs` rather than `for_match`: `for_match` still carries the
         /// literal prefix that `prefix_without_globs` has already consumed, so the same walk
         /// state would get different keys depending on how much literal text the caller passed
@@ -464,7 +483,8 @@ void listFilesWithRegexpMatchingImpl(
                     continue;
                 }
 
-                add_matched_path(it->path().string(), file_size);
+                add_matched_path(it->path().string(), file_size,
+                                 deduplicate_by_canonical_path ? dir_canonical_hint() : nullptr);
             }
         }
         else if (is_directory)
