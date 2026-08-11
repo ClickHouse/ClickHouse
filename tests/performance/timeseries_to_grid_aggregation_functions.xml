@@ -66,6 +66,9 @@
         FROM numbers_mt(400 * 1000)
     </fill_query>
 
+    <!-- Bucketing-heavy case: all 4M samples are assigned to just two grid buckets, keeping finalization small. -->
+    <query>SELECT id, timeSeriesResampleToGridWithStaleness(0, 100000, 100000, 100000)(timestamp, value) FROM ts_grid GROUP BY id FORMAT Null</query>
+
     <!-- step = 10 over [0, 100000] -> 10001 grid points, ~1 populated bucket per step, window/10 buckets per window. -->
     <query>SELECT id, timeSeriesResampleToGridWithStaleness(0, 100000, 10, {window})(timestamp, value) FROM ts_grid GROUP BY id FORMAT Null</query>
     <query>SELECT id, timeSeriesInstantRateToGrid(0, 100000, 10, {window})(timestamp, value) FROM ts_grid GROUP BY id FORMAT Null</query>

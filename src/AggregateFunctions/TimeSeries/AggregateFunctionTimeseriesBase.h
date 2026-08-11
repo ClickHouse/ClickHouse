@@ -9,6 +9,7 @@
 #include <type_traits>
 #include <utility>
 
+#include <base/arithmeticOverflow.h>
 #include <base/sort.h>
 
 #include <Columns/ColumnArray.h>
@@ -663,18 +664,34 @@ private:
         /// unclamped_grid_index = ceil((timestamp - start) / step), the grid point at the upper edge
         /// of the sample's step.
         /// It's unclamped: for timestamps at or before grid point #0 `unclamped_grid_index <= 0`.
-        /// Everything is computed in Int128 to stay overflow-safe when `start_timestamp` is
-        /// near INT64_MIN and `step` near INT64_MAX.
-        const Int128 offset = static_cast<Int128>(static_cast<Int64>(timestamp)) - static_cast<Int128>(static_cast<Int64>(start_timestamp));
+        /// The offset is usually representable by Int64, so use native division and modulo in that common case.
+        /// Keep the Int128 path for extreme ranges where subtracting the timestamps would overflow Int64.
+        const Int64 timestamp_64 = static_cast<Int64>(timestamp);
+        const Int64 start_timestamp_64 = static_cast<Int64>(start_timestamp);
+        Int64 offset_64;
+        const bool offset_overflow = common::subOverflow(timestamp_64, start_timestamp_64, offset_64);
+        const Int128 offset = offset_overflow
+            ? static_cast<Int128>(timestamp_64) - static_cast<Int128>(start_timestamp_64)
+            : static_cast<Int128>(offset_64);
         const Int128 step_128 = static_cast<Int128>(static_cast<Int64>(step));
 
         /// `step == 0` is possible only when `start == end` (a single grid point).
         Int128 unclamped_grid_index = 0;
         if (step > 0)
         {
-            unclamped_grid_index = offset / step_128;
-            if ((offset % step_128) > 0)
-                ++unclamped_grid_index;
+            if (likely(!offset_overflow))
+            {
+                const Int64 step_64 = static_cast<Int64>(step);
+                unclamped_grid_index = static_cast<Int128>(offset_64 / step_64);
+                if ((offset_64 % step_64) > 0)
+                    ++unclamped_grid_index;
+            }
+            else
+            {
+                unclamped_grid_index = offset / step_128;
+                if ((offset % step_128) > 0)
+                    ++unclamped_grid_index;
+            }
         }
 
         /// The related grid point's index is always non-negative.
