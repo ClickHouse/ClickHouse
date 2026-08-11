@@ -1671,20 +1671,28 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
             std::string lock_value = zk_client->get(zookeeper_cleanup_lock_path);
             if (lock_value == LOCK_OPERATION_DROP_FAILED)
             {
-                /// Another replica is executing the same operation. Wait for it to complete
-                /// with bounded polling to avoid indefinite hangs.
+                /// Another replica is executing the same operation. Wait for it to complete,
+                /// observing its progress via decreasing /failed node count rather than using
+                /// a fixed wall-clock timeout that could be too short for large backlogs.
                 LOG_INFO(log, "Another replica is executing SYSTEM DROP S3QUEUE FAILED FILES, waiting for completion");
 
-                /// Timeout is independent of failed_file_ttl_sec: TTL controls retention (when nodes
-                /// become eligible for cleanup), not cleanup speed or /failed tree size. Tree size
-                /// depends on failure rate and cleanup interval. Use a flat 60s timeout - generous
-                /// enough for slow Keeper or large /failed trees, short enough to avoid indefinite waits.
-                static constexpr size_t timeout_seconds = 60;
-                const size_t max_iterations = timeout_seconds * 10; /// Poll every 100ms
+                /// Progress-based wait: poll the lock every 100ms for completion,
+                /// and periodically check /failed node count to detect forward progress.
+                /// If the count is decreasing or changing, the winner is actively working.
+                /// Only timeout if the count is unchanged for an extended period (stall detection).
+                static constexpr size_t POLL_INTERVAL_MS = 100;
+                static constexpr size_t PROGRESS_CHECK_INTERVAL_MS = 10000;  /// Check /failed count every 10s
+                static constexpr size_t STALL_TIMEOUT_MS = 180000;           /// 3 min without any change = stalled
+                static constexpr size_t ABSOLUTE_MAX_WAIT_MS = 1800000;      /// 30 min absolute cap (safety net)
 
-                for (size_t i = 0; i < max_iterations; ++i)
+                size_t last_progress_check_iteration = 0;
+                size_t last_failed_node_count = SIZE_MAX;  /// Unknown initially
+                size_t iterations_without_progress = 0;
+                const size_t max_total_iterations = ABSOLUTE_MAX_WAIT_MS / POLL_INTERVAL_MS;
+
+                for (size_t i = 0; i < max_total_iterations; ++i)
                 {
-                    sleepForMilliseconds(100);
+                    sleepForMilliseconds(POLL_INTERVAL_MS);
 
                     try
                     {
@@ -1747,11 +1755,70 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
                         /// Other errors during polling are transient - retry on next iteration
                     }
 
-                    if (i == max_iterations - 1)
+                    /// Periodically check if winner is making progress by observing /failed node count
+                    if ((i - last_progress_check_iteration) * POLL_INTERVAL_MS >= PROGRESS_CHECK_INTERVAL_MS)
+                    {
+                        size_t elapsed_iterations = i - last_progress_check_iteration;
+                        last_progress_check_iteration = i;
+
+                        const std::string failed_path = zookeeper_path / "failed";
+                        Strings failed_nodes;
+                        Coordination::Error code = zk_client->tryGetChildren(failed_path, failed_nodes);
+
+                        if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE)
+                        {
+                            size_t terminal_count = 0;
+                            for (const auto & node : failed_nodes)
+                                if (!node.ends_with(".retriable"))
+                                    ++terminal_count;
+
+                            if (last_failed_node_count != SIZE_MAX)
+                            {
+                                if (terminal_count < last_failed_node_count)
+                                {
+                                    /// Progress detected: node count decreased
+                                    LOG_TRACE(log, "Winner making progress: {} -> {} terminal failed nodes",
+                                              last_failed_node_count, terminal_count);
+                                    iterations_without_progress = 0;
+                                }
+                                else if (terminal_count > last_failed_node_count)
+                                {
+                                    /// Count increased: new files failed concurrently while winner is cleaning.
+                                    /// The winner is processing a moving target, but it's definitely still active.
+                                    /// Reset stall timer - a hung winner wouldn't see new failures being added.
+                                    LOG_TRACE(log, "New files failed concurrently: {} -> {} terminal failed nodes. Winner still active.",
+                                              last_failed_node_count, terminal_count);
+                                    iterations_without_progress = 0;
+                                }
+                                else
+                                {
+                                    /// Count unchanged: no definitive progress signal.
+                                    /// Accumulate stall time - if this persists, winner may be hung.
+                                    iterations_without_progress += elapsed_iterations;
+
+                                    if (iterations_without_progress * POLL_INTERVAL_MS >= STALL_TIMEOUT_MS)
+                                    {
+                                        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                                            "Winner replica appears stalled: /failed node count has been {} "
+                                            "for {} seconds with no changes. Please retry the command.",
+                                            terminal_count,
+                                            (iterations_without_progress * POLL_INTERVAL_MS) / 1000);
+                                    }
+                                }
+                            }
+
+                            last_failed_node_count = terminal_count;
+                        }
+                        /// Transient Keeper errors during progress check are ignored - retry on next check
+                    }
+
+                    /// Hit absolute safety-net timeout
+                    if (i == max_total_iterations - 1)
                     {
                         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-                            "Failed file cleanup lock held by another replica for more than {} seconds. "
-                            "Please retry in a moment.", timeout_seconds);
+                            "Cleanup did not complete within {} minute safety-net timeout. "
+                            "The winner may be processing an extremely large backlog. Please retry or investigate.",
+                            ABSOLUTE_MAX_WAIT_MS / 60000);
                     }
                 }
             }
