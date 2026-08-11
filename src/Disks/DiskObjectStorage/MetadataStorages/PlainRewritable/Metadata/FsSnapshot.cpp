@@ -33,14 +33,6 @@ bool isVirtual(const FsNodePtr & node)
     return !node->info.has_value();
 }
 
-FsNodePtr cloneFsNodeIfNotExclusive(const FsNodePtr & node)
-{
-    if (node.use_count() > 1)
-        return std::make_shared<FsNode>(*node);
-
-    return node;
-}
-
 template <class Ptr>
 Ptr walk(Ptr node, const NormalizedPath & path)
 {
@@ -95,14 +87,14 @@ bool hasFileOnPath(const FsNodePtr & root, const NormalizedPath & path)
 
 std::pair<FsNodePtr, FsNodePtr> clonePath(const FsNodePtr & start, const NormalizedPath & path)
 {
-    FsNodePtr cloned_start = cloneFsNodeIfNotExclusive(start);
+    FsNodePtr cloned_start = std::make_shared<FsNode>(*start);
     FsNodePtr node = cloned_start;
 
     for (const auto & step : path)
     {
         FsNodePtr cloned_child;
         if (auto it = node->subdirectories.find(step); it != node->subdirectories.end())
-            cloned_child = cloneFsNodeIfNotExclusive(it->second);
+            cloned_child = std::make_shared<FsNode>(*it->second);
         else
             cloned_child = std::make_shared<FsNode>();
 

@@ -3,3 +3,7 @@
 1
 = the filter sees post-FINAL rows only =
 2
+= a later text-index rewrite reaches the deferred prewhere =
+1
+1
+1

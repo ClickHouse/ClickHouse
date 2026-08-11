@@ -81,6 +81,22 @@ MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const IMergeTreeData
     return {0 /*unknown*/, {}};
 }
 
+MergeTreeIndexSubstreams IMergeTreeIndex::getAllSubstreamsInPart(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & relative_path_prefix,
+    const IDataPartStorage * storage) const
+{
+    /// Not routed through `getDeserializedFormat`: that answers the read-time question and
+    /// reports nothing once a required system column is invalidated, while a file left on disk
+    /// still has to be skipped/stripped here. (minmax overrides to add its legacy `.idx`.)
+    MergeTreeIndexSubstreams substreams;
+    for (const auto & substream : getSubstreams())
+        if (indexFileExistsInChecksums(checksums, relative_path_prefix + substream.suffix, substream.extension, storage))
+            substreams.push_back(substream);
+
+    return substreams;
+}
+
 void IMergeTreeIndexGranule::serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const
 {
     auto * stream = streams.at(MergeTreeIndexSubstream::Type::Regular);

@@ -276,6 +276,15 @@ struct IMergeTreeIndex
     /// the skp_idx.packed overlay. Passing null disables the archive check.
     virtual MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const;
 
+    /// Union of every checksummed or packed on-disk version present (unlike
+    /// `getDeserializedFormat`, which returns only the preferred readable layout and reports
+    /// nothing once a required system column is invalidated). Mutation cleanup uses this so a
+    /// stale legacy substream on a mixed-format part is skipped/stripped, not hardlinked forward.
+    virtual MergeTreeIndexSubstreams getAllSubstreamsInPart(
+        const MergeTreeDataPartChecksums & checksums,
+        const std::string & relative_path_prefix,
+        const IDataPartStorage * storage) const;
+
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
     /// A more optimal filtering method
