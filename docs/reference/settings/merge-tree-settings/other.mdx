@@ -66,30 +66,6 @@ Comma-separated list of statistics types to calculate automatically on all suita
 Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
 The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
 
-## auto_statistics_assume_floats_distinct {#auto_statistics_assume_floats_distinct}
-<SettingsInfoBlock type="Bool" default_value="0" />
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "New setting"}]}]}/>
-
-When enabled, automatic cardinality statistics for Float columns are materialized with an all-distinct assumption instead of scanning values.
-
-## auto_statistics_assume_long_strings_distinct {#auto_statistics_assume_long_strings_distinct}
-<SettingsInfoBlock type="Bool" default_value="0" />
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "New setting"}]}]}/>
-
-When enabled, automatic cardinality statistics for String and FixedString columns whose probed average value length is at least [auto_statistics_long_string_distinct_min_length](#auto_statistics_long_string_distinct_min_length) are materialized with an all-distinct assumption instead of scanning all values.
-
-## auto_statistics_long_string_distinct_min_length {#auto_statistics_long_string_distinct_min_length}
-<SettingsInfoBlock type="UInt64" default_value="64" />
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "64"},{"label": "New setting"}]}]}/>
-
-Average string byte length threshold used by [auto_statistics_assume_long_strings_distinct](#auto_statistics_assume_long_strings_distinct).
-
-## auto_statistics_long_string_distinct_probe_rows {#auto_statistics_long_string_distinct_probe_rows}
-<SettingsInfoBlock type="UInt64" default_value="1000" />
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1000"},{"label": "New setting"}]}]}/>
-
-Number of initial rows probed to decide whether [auto_statistics_assume_long_strings_distinct](#auto_statistics_assume_long_strings_distinct) applies. Set to `0` to disable the long-string all-distinct assumption.
-
 ## background_task_preferred_step_execution_time_ms {#background_task_preferred_step_execution_time_ms}
 <SettingsInfoBlock type="Milliseconds" default_value="50" />
 

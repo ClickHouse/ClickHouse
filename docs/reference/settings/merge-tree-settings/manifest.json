@@ -1,5 +1,5 @@
 {
-  "settings": 362,
+  "settings": 358,
   "anchorRoutes": {
     "adaptive_write_buffer_initial_size": "/reference/settings/merge-tree-settings/other",
     "add_implicit_sign_column_constraint_for_collapsing_engine": "/reference/settings/merge-tree-settings/other",
@@ -33,10 +33,6 @@
     "assign_part_uuids": "/reference/settings/merge-tree-settings/other",
     "async_block_ids_cache_update_wait_ms": "/reference/settings/merge-tree-settings/async",
     "async_insert": "/reference/settings/merge-tree-settings/async",
-    "auto_statistics_assume_floats_distinct": "/reference/settings/merge-tree-settings/other",
-    "auto_statistics_assume_long_strings_distinct": "/reference/settings/merge-tree-settings/other",
-    "auto_statistics_long_string_distinct_min_length": "/reference/settings/merge-tree-settings/other",
-    "auto_statistics_long_string_distinct_probe_rows": "/reference/settings/merge-tree-settings/other",
     "auto_statistics_types": "/reference/settings/merge-tree-settings/other",
     "background_task_preferred_step_execution_time_ms": "/reference/settings/merge-tree-settings/other",
     "cache_populated_by_fetch": "/reference/settings/merge-tree-settings/cache-populated-by-fetch",
