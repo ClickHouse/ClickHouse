@@ -14,6 +14,7 @@
 #include <Common/OvercommitTracker.h>
 #include <Common/ThreadStatus.h>
 #include <Interpreters/ProcessList.h>
+#include <base/scope_guard.h>
 
 namespace DB::ErrorCodes
 {
@@ -32,6 +33,7 @@ namespace
 /// use large allocations and compare with a tolerance instead of asserting exact equality.
 constexpr Int64 MB = 1024 * 1024;
 constexpr Int64 TOLERANCE = MB;
+constexpr Int64 GLOBAL_TOLERANCE = 64 * 1024;
 constexpr Int64 LIMIT = 50 * MB;
 constexpr Int64 OVER_LIMIT = 60 * MB;
 
@@ -125,6 +127,20 @@ TEST(MemoryTracker, ParentLimitFailureRollsBackHierarchy)
     });
 
     expectUsage(hierarchy, 0);
+}
+
+TEST(MemoryTracker, GlobalLimitFailureRollsBackAmountAndRSS)
+{
+    const Int64 amount_before = total_memory_tracker.get();
+    const Int64 rss_before = total_memory_tracker.getRSS();
+    const Int64 hard_limit_before = total_memory_tracker.getHardLimit();
+    SCOPE_EXIT(total_memory_tracker.setHardLimit(hard_limit_before));
+
+    total_memory_tracker.setHardLimit(std::max(amount_before, rss_before) + LIMIT);
+    expectMemoryLimitExceeded(OVER_LIMIT);
+
+    EXPECT_LE(std::abs(total_memory_tracker.get() - amount_before), GLOBAL_TOLERANCE);
+    EXPECT_LE(std::abs(total_memory_tracker.getRSS() - rss_before), GLOBAL_TOLERANCE);
 }
 
 TEST(MemoryTracker, ParentLimitFailureDoesNotUpdatePeaks)
