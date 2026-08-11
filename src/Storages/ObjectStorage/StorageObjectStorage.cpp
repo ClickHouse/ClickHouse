@@ -431,7 +431,8 @@ std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns(const Stor
 
         /// Unresolved metadata leaves the identity-partition list unknown. The answer must stay
         /// per-table: `Merge` intersects every regex-matched child's contract before filtering by
-        /// `_table` and access, so an empty set here also constrains reachable siblings.
+        /// `_table` and access, so an empty set here also constrains reachable siblings. A filter
+        /// admitted on such a column is rejected in `read`, where the list is known.
         if (!metadata_resolved)
             return metadata_snapshot->getColumnsWithoutDefaultExpressions(
                 /*exclude=*/ hive_partition_columns_to_read_from_file_path);
