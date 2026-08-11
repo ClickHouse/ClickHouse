@@ -1055,7 +1055,7 @@ void registerDatabaseRemote(DatabaseFactory & factory)
                 /// An IPv6 literal has to be bracketed before a port can be appended: the addresses are
                 /// later split with `parseAddress`, which treats the first `:` of an unbracketed address
                 /// as the port separator, so a bare `2001:db8::1` would be torn apart.
-                if (host.find(':') != String::npos && !host.starts_with('['))
+                if (host.contains(':') && !host.starts_with('['))
                     host = '[' + host + ']';
                 addresses_expr = named_collection->has("port") ? host + ':' + toString(named_collection->get<UInt64>("port")) : host;
             }
