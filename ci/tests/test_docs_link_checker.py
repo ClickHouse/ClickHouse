@@ -96,3 +96,38 @@ def test_cloud_not_supported_badges_link_to_published_page():
     assert components
     for component in components:
         assert expected_href in component.read_text(encoding="utf-8")
+
+
+def test_feature_status_badges_link_to_published_pages():
+    docs_root = REPO_ROOT / "docs"
+    snippets = docs_root / "snippets"
+    page_route = "reference/settings/beta-and-experimental-features"
+    badges = (
+        ("BetaBadge", "beta-features"),
+        ("ExperimentalBadge", "experimental-features"),
+    )
+
+    for badge, anchor in badges:
+        components = list(
+            snippets.glob(f"**/components/{badge}/{badge}.jsx")
+        )
+        components += list(
+            snippets.glob(f"**/components/Badges/{badge}.jsx")
+        )
+        assert len(components) == 18
+
+        for component in components:
+            relative = component.relative_to(snippets)
+            locale = (
+                relative.parts[0]
+                if relative.parts[0] in locale_components_check.LOCALE_DIRS
+                else None
+            )
+            locale_prefix = f"/{locale}" if locale else ""
+            page = docs_root / locale_prefix.lstrip("/") / f"{page_route}.mdx"
+            assert anchor in page.read_text(encoding="utf-8")
+            expected_href = (
+                f'href="https://clickhouse.com/docs{locale_prefix}/'
+                f'{page_route}#{anchor}"'
+            )
+            assert expected_href in component.read_text(encoding="utf-8")
