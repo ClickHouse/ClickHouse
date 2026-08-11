@@ -1969,7 +1969,7 @@ bool PostgreSQLHandler::isTransactionControlQuery(const String & query)
     /// trailing one has been trimmed, this is a multi-statement simple query such as `BEGIN READ ONLY; SELECT 1`.
     /// Treating it as ignorable transaction-control would silently drop the trailing statement, so let it fall
     /// through to normal processing instead.
-    if (normalized.find(';') != String::npos)
+    if (normalized.contains(';'))
         return false;
 
     /// Validate the statement against the exact wrapper spellings PostgreSQL defines for plain
@@ -2536,7 +2536,7 @@ void PostgreSQLHandler::prepareSystemTables(ContextMutablePtr query_context, con
     /// `pg_`). Unquoted PostgreSQL identifiers are case-insensitive, so the check is too - `PG_CLASS` reads
     /// the same catalog. Plain data statements skip the `system.tables` scan. The check may fire spuriously
     /// (e.g. a user table named `pg_something`), which merely costs a refresh.
-    if (Poco::toLower(query).find("pg_") != String::npos)
+    if (Poco::toLower(query).contains("pg_"))
         refreshCatalogOids(query_context);
 }
 
