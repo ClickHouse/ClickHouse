@@ -36,6 +36,8 @@
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/ProtocolDefines.h>
+#include <Common/config_version.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -631,6 +633,16 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
     refresh_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
     refresh_context->setSetting("log_comment", log_comment);
     refresh_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
+    /// The client info is inherited from the table's (global) context and has no client version.
+    /// This server is the real initiator of the refresh query and of any distributed sub-query it
+    /// spawns (e.g. the refresh `SELECT` reads from a `Distributed` table), so fill the version with
+    /// this server's version. Otherwise remote shards treat the initiator as a pre-23.3 server and
+    /// apply legacy compatibility downgrades, and `RemoteQueryExecutor` rejects the zero version
+    /// outright.
+    if (client_info.client_version_major == 0
+        && client_info.client_version_minor == 0
+        && client_info.client_version_patch == 0)
+        refresh_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
     /// Generate a random query id.
     refresh_context->setCurrentQueryId("");
     /// Use the database where the materialized view is created to run the select query in the refresh task
@@ -744,6 +756,8 @@ void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePt
     /// set on refresh_context, and DatabaseReplicated needs it to skip stale temp-table entries.
     refresh_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
     refresh_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+    /// Nothing waits for this table afterwards, so keep the drop below asynchronous.
+    refresh_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
 
     auto query_scope = QueryScope::create(refresh_context);
 

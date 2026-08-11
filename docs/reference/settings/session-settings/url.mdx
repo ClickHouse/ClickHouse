@@ -26,6 +26,7 @@ When set, relative URLs are resolved as follows:
 - Query-only reference (e.g. `?x=1`): appended to the base URL path (replacing any existing query/fragment).
 - Fragment-only reference (e.g. `#frag`): appended to the base URL, preserving any query string (replacing any existing fragment).
 - Empty reference: returns the base URL without fragment.
+- If the base URL is only a scheme (e.g. `file://`), a path-relative URL is appended to it directly: `file://` + `data.csv` = `file://data.csv`, which for the `file://` scheme means a path relative to the user_files directory (the current directory for clickhouse-local). Dot segments are kept as-is in this case, so the target engine resolves them against its own base directory.
 
 For example, if `url_base` is `https://example.com/def/`, then:
 - `data.csv` resolves to `https://example.com/def/data.csv`
