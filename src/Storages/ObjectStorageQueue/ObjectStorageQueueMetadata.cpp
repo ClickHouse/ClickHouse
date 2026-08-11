@@ -1566,27 +1566,43 @@ void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
         return;
     }
 
-    /// Build set of file paths that still exist in Keeper
-    std::unordered_set<std::string> keeper_file_paths;
-    const size_t batch_size = keeper_multiread_batch_size;
-    std::filesystem::path failed_fs_path(failed_path);
-
-    for (size_t i = 0; i < keeper_failed_nodes.size(); i += batch_size)
+    /// Collect all Failed cache entries and build paths to their expected /failed nodes
+    std::vector<std::pair<std::string, std::string>> cache_entries;  // (file_path, failed_node_path)
     {
-        size_t batch_end = std::min(i + batch_size, keeper_failed_nodes.size());
+        auto all_entries = local_file_statuses.dump();
+        for (const auto & entry : all_entries)
+        {
+            if (entry.mapped->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+            {
+                /// Compute node name as hash of file path (same logic as getNodeName)
+                SipHash path_hash;
+                path_hash.update(entry.mapped->path);
+                auto node_name = toString(path_hash.get64());
+                auto failed_node_path = fs::path(failed_path) / node_name;
+                cache_entries.emplace_back(entry.mapped->path, failed_node_path.string());
+            }
+        }
+    }
+
+    if (cache_entries.empty())
+    {
+        LOG_TRACE(log, "No Failed cache entries to reconcile");
+        return;
+    }
+
+    /// Check existence of each /failed node in batches.
+    /// Only remove cache entries for nodes confirmed absent (ZNONODE).
+    std::unordered_set<std::string> paths_to_remove;
+    const size_t batch_size = keeper_multiread_batch_size;
+
+    for (size_t i = 0; i < cache_entries.size(); i += batch_size)
+    {
+        size_t batch_end = std::min(i + batch_size, cache_entries.size());
         std::vector<std::string> batch_paths;
         batch_paths.reserve(batch_end - i);
 
         for (size_t j = i; j < batch_end; ++j)
-        {
-            /// Include both terminal and .retriable nodes in the preservation set.
-            /// Cache entries for files with .retriable state should survive reconciliation
-            /// because their Keeper nodes are still present and actively tracking retries.
-            batch_paths.push_back(failed_fs_path / keeper_failed_nodes[j]);
-        }
-
-        if (batch_paths.empty())
-            continue;
+            batch_paths.push_back(cache_entries[j].second);
 
         zkutil::ZooKeeper::MultiTryGetResponse response;
         zk_retries.resetFailures();
@@ -1597,23 +1613,23 @@ void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
 
         for (size_t j = 0; j < response.size(); ++j)
         {
-            if (response[j].error == Coordination::Error::ZOK)
+            /// Only mark for removal if node is confirmed absent
+            if (response[j].error == Coordination::Error::ZNONODE)
             {
-                auto metadata = ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(response[j].data);
-                keeper_file_paths.insert(metadata.file_path);
+                paths_to_remove.insert(cache_entries[i + j].first);
             }
         }
     }
 
-    /// Remove cache entries for Failed files not in Keeper
+    /// Remove cache entries confirmed absent in Keeper
     size_t removed = 0;
     using KeyType = UInt128;
     using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
     local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
-        [&keeper_file_paths, &removed](const KeyType & /* key */, const StatusPtr & status)
+        [&paths_to_remove, &removed](const KeyType & /* key */, const StatusPtr & status)
         {
             if (status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed
-                && !keeper_file_paths.contains(status->path))
+                && paths_to_remove.contains(status->path))
             {
                 ++removed;
                 return true;
@@ -1622,7 +1638,7 @@ void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
         }
     ));
 
-    LOG_INFO(log, "Reconciled cache: removed {} stale Failed entries", removed);
+    LOG_INFO(log, "Reconciled cache: removed {} Failed entries confirmed absent in Keeper", removed);
 }
 
 void ObjectStorageQueueMetadata::dropFailedFiles()
