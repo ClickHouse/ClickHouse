@@ -3317,3 +3317,124 @@ def test_detach_clone_removed_when_covering_part_creation_fails(started_cluster)
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:
             pass
+
+
+SHARED_UUID_DEDUP_EPOCH_WRITER = "12345678-abcd-abcd-abcd-12345678ab37"
+
+
+def test_stale_dedup_writer_discarded_on_leadership_loss(started_cluster):
+    """
+    Regression for the shared deduplication-log writer surviving a leadership epoch change. On
+    the supported `S3`/`plain_rewritable` path every rotation leaves the log's `current_writer`
+    pointing at the NEXT numbered `deduplication_log_N.txt` in `WriteMode::Rewrite` (append is
+    unsupported). If the node then loses leadership while alive, that writer used to be carried
+    along and finalized later — by `shutdown` (e.g. `DETACH TABLE`), the destructor, or the log
+    reload on a future reacquisition — overwriting file `N` with its (empty or stale) buffer,
+    even though the intervening leader had already written its own records into file `N`. That
+    silently erased dedup history, so a retried `INSERT` could be applied twice.
+
+    Now the leadership-loss callback discards (cancels) the writer, and `shutdown` fails closed
+    by cancelling instead of finalizing when the lease is no longer fresh.
+
+    The live demotion is real, not simulated: node1 is suspended (`SIGSTOP`/freezer) past
+    `leader_election_session_timeout`, node2 claims the lease and writes a dedup record — into
+    exactly the file number node1's stale writer still points at — and after resuming, node1
+    observes the lost lease and transitions to follower.
+    """
+    ensure_node_up(node1)
+    ensure_node_up(node2)
+    table = "test_dedup_writer_epoch"
+
+    def lost_leadership_count(node):
+        return int(
+            node.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "grep -c 'Lost leadership, stopping background write operations'"
+                    " /var/log/clickhouse-server/clickhouse-server.log || true",
+                ]
+            ).strip()
+        )
+
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_DEDUP_EPOCH_WRITER}' (x UInt64)
+            ENGINE = MergeTree ORDER BY x
+            SETTINGS {TABLE_SETTINGS}, non_replicated_deduplication_window = 100
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+
+        # Leaves node1's dedup-log writer open on the next numbered log file (every record
+        # rotates on object storage without append support).
+        node1.query(f"INSERT INTO {table} VALUES (1)")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 1
+
+        # The attach must carry the deduplication window too: the helper's definition would
+        # leave node2 with `non_replicated_deduplication_window = 0`, i.e. no deduplication at
+        # all after its takeover, and the final assertion would fail for an unrelated reason.
+        node2.query(
+            f"""
+            ATTACH TABLE {table} UUID '{SHARED_UUID_DEDUP_EPOCH_WRITER}' (x UInt64)
+            ENGINE = MergeTree ORDER BY x
+            SETTINGS {TABLE_SETTINGS}, non_replicated_deduplication_window = 100
+            """
+        )
+
+        baseline_losses = lost_leadership_count(node1)
+
+        # Freeze node1 past the session timeout: the lease expires while the process — and its
+        # open dedup-log writer — stays alive. node2 claims leadership and writes a dedup
+        # record into the file number node1's stale writer still points at.
+        with cluster.pause_container("node1"):
+            wait_for_leader([node2], table_name=table)
+            node2.query(f"INSERT INTO {table} VALUES (2)")
+
+        # node1 resumes, observes node2's lease and demotes itself; wait until the
+        # leadership-loss callback (which discards the stale writer) has actually run.
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            if lost_leadership_count(node1) > baseline_losses:
+                break
+            time.sleep(1)
+        assert lost_leadership_count(node1) > baseline_losses, (
+            "node1 did not demote itself after its lease expired"
+        )
+
+        # Sanity: node2's deduplication is active — the retry is suppressed by its in-memory
+        # state even before any reload.
+        node2.query(f"INSERT INTO {table} VALUES (2)")
+        assert int(node2.query(f"SELECT count() FROM {table} WHERE x = 2").strip()) == 1, (
+            "Deduplication is not active on node2 after its takeover"
+        )
+
+        # The trigger of the old clobber: shutting the table down on the demoted node used to
+        # finalize the stale writer, overwriting the log file that now holds node2's record.
+        node1.query(f"DETACH TABLE {table}")
+
+        # The decisive check: node2 reloads the dedup log from shared storage (as any leader
+        # does on takeover) and the retried INSERT must still be deduplicated. With the stale
+        # writer finalized, the record of `(2)` was erased and the retry inserted a duplicate.
+        node2.query(f"DETACH TABLE {table}")
+        node2.query(f"ATTACH TABLE {table}")
+        wait_for_leader([node2], table_name=table)
+
+        node2.query(f"INSERT INTO {table} VALUES (2)")
+        assert int(node2.query(f"SELECT count() FROM {table} WHERE x = 2").strip()) == 1, (
+            "The stale leader's dedup-log writer clobbered the new leader's log file: "
+            "the retried INSERT was applied twice after the reload"
+        )
+        # And the table still has exactly the two real rows.
+        assert node2.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").strip() == "1\n2"
+    finally:
+        try:
+            node1.query(f"ATTACH TABLE {table}")
+        except Exception:
+            pass
+        for node in (node1, node2):
+            try:
+                node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass

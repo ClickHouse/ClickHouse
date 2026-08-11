@@ -184,6 +184,14 @@ public:
 
     void shutdown();
 
+    /// Stop the log and cancel the open writer WITHOUT finalizing it. Called on leadership
+    /// loss under `leader_election`: on object storage without append support the writer
+    /// points at the next numbered log file in `WriteMode::Rewrite`, so finalizing it later
+    /// (from `shutdown`, the destructor, or when the reload on a future leadership
+    /// reacquisition replaces this object) would overwrite a log file the intervening leader
+    /// already owns, losing deduplication history. Idempotent, like `shutdown`.
+    void discard();
+
     ~MergeTreeDeduplicationLog();
 private:
     const std::string logs_dir;

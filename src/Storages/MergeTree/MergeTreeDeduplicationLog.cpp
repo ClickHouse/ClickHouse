@@ -473,6 +473,17 @@ void MergeTreeDeduplicationLog::shutdown()
     stopped = true;
     if (current_writer)
     {
+        /// Fail-closed for shared logs: finalizing rewrites a whole shared log file on object
+        /// storage without append support, so if the lease is no longer fresh — the leadership-loss
+        /// callback may not have fired yet — cancel the writer instead of letting the finalize
+        /// clobber a log file the next leader may already own.
+        if (may_write_shared_state && !may_write_shared_state())
+        {
+            current_writer->cancel();
+            current_writer.reset();
+            return;
+        }
+
         /// If an error has occurred during finalize, we'd like to have the exception set for reset.
         /// Otherwise, we'll be in a situation when a finalization didn't happen, and we didn't get
         /// any error, causing logical error (see ~MemoryBuffer()).
@@ -487,6 +498,20 @@ void MergeTreeDeduplicationLog::shutdown()
             current_writer->cancel();
             current_writer.reset();
         }
+    }
+}
+
+void MergeTreeDeduplicationLog::discard()
+{
+    std::lock_guard lock(state_mutex);
+    if (stopped)
+        return;
+
+    stopped = true;
+    if (current_writer)
+    {
+        current_writer->cancel();
+        current_writer.reset();
     }
 }
 

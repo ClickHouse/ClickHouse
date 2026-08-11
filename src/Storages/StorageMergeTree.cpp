@@ -508,6 +508,18 @@ void StorageMergeTree::startup()
                     follower_merges_cancellation = merger_mutator.merges_blocker.cancel();
                     follower_moves_cancellation = parts_mover.moves_blocker.cancel();
 
+                    /// The shared deduplication log must not carry its open writer across
+                    /// leadership epochs. On the supported `S3`/`plain_rewritable` path every
+                    /// rotation leaves `current_writer` pointing at the next numbered log file
+                    /// in `WriteMode::Rewrite`, so finalizing it later — from `shutdown`, the
+                    /// destructor, or when a future leadership reacquisition replaces the log
+                    /// object in `loadDeduplicationLog` — would overwrite a log file the
+                    /// intervening leader already owns, losing deduplication history and
+                    /// letting retried inserts bypass deduplication. Cancel it instead; the
+                    /// log object is rebuilt from shared storage on the next acquisition.
+                    if (deduplication_log)
+                        deduplication_log->discard();
+
                     /// Followers periodically re-scan shared object storage so that `SELECT`
                     /// observes parts the current leader has committed since this replica
                     /// started up. The task is created in `MergeTreeData::loadDataParts` and
@@ -1982,7 +1994,16 @@ void StorageMergeTree::loadDeduplicationLog()
         /// of this function covers only its beginning.
         std::function<bool()> may_write_shared_state;
         if ((*settings)[MergeTreeSetting::leader_election])
+        {
             may_write_shared_state = [this] { return mayMutateSharedStorage(); };
+
+            /// Defense in depth: the leadership-loss callback already discards the previous
+            /// epoch's log object, but if one survived with an open writer, destroying it via
+            /// the replacement below would finalize that writer and clobber a shared log file
+            /// the previous epoch no longer owns (see the callback for details).
+            if (deduplication_log)
+                deduplication_log->discard();
+        }
 
         deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(
             path, (*settings)[MergeTreeSetting::non_replicated_deduplication_window], format_version, disk,
