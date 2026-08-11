@@ -63,9 +63,7 @@ Block BuffersReader::read()
 
         ColumnPtr & read_column = column.column;
 
-        /// Buffers is a plain format (not the protocol), so it always uses the portable per-value
-        /// String layout - only type-level versions apply, there are no serialization kinds in Buffers.
-        auto serialization = column.type->getSerialization(SerializationInfoSettings::enableAllSupportedSerializations());
+        auto serialization = column.type->getDefaultSerialization();
 
         const size_t before = istr.count();
 

@@ -39,11 +39,7 @@ void BuffersWriter::write(const Block & block)
     {
         const auto & column = block.safeGetByPosition(i);
 
-        /// Buffers is a plain format (not the protocol): it always uses the portable per-value String
-        /// layout and a type-level serialization (never column-derived kinds like Sparse), so the column
-        /// must be densified to match it. convertToFullIfWrapped strips Const/Replicated/Sparse but
-        /// keeps the LowCardinality type.
-        SerializationPtr serialization = column.type->getSerialization(SerializationInfoSettings::enableAllSupportedSerializations());
+        SerializationPtr serialization = column.type->getSerialization();
 
         ColumnPtr dense_column = column.column->convertToFullIfWrapped();
 
