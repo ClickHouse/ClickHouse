@@ -43,6 +43,12 @@ NAVIGATION_URL = re.compile(
     r"(?<![A-Za-z0-9_])(?:(?:['\"])?(?:href|to)(?:['\"])?)[ \t]*[:=][ \t]*"
     r"\{?[ \t]*(?P<quote>['\"`])(?P<url>/[^'\"`\s$]+)(?P=quote)"
 )
+# Template literals whose static prefix is an internal route. These are used by
+# shared navigation snippets such as QuickStartsGrid and KBExplorer. Capture the
+# prefix through its separator so a rewrite keeps ``/${...}`` intact.
+TEMPLATE_URL = re.compile(
+    r"`(?P<url>/[A-Za-z0-9][A-Za-z0-9/_.#-]*)\$\{"
+)
 BARE_DOCS_URL = re.compile(
     r"(?P<url>https://clickhouse\.com/docs(?:/en)?/"
     r"[^\s'\"`)<>\\]*[A-Za-z0-9_/#?=&%+~-])"
@@ -60,10 +66,13 @@ def mask_match(match):
     return "".join("\n" if c == "\n" else " " for c in match.group(0))
 
 
-def mask_non_links(text):
+def mask_blocks_and_comments(text):
     text = MDX_COMMENT.sub(mask_match, text)
-    text = FENCED_CODE.sub(mask_match, text)
-    return INLINE_CODE.sub(mask_match, text)
+    return FENCED_CODE.sub(mask_match, text)
+
+
+def mask_non_links(text):
+    return INLINE_CODE.sub(mask_match, mask_blocks_and_comments(text))
 
 
 def split_path_suffix(url):
@@ -140,15 +149,28 @@ def canonicalize_url(url, redirects, make_relative=False):
     return destination if make_relative else public_prefix + destination
 
 
-def find_aliases_in_text(text, redirects, include_public_urls=False):
+def find_aliases_in_text(
+    text, redirects, include_public_urls=False, include_templates=True
+):
     masked = mask_non_links(text)
+    template_masked = mask_blocks_and_comments(text)
     aliases = []
     occupied = set()
-    patterns = [(MARKDOWN_LINK, False), (NAVIGATION_URL, False)]
+    patterns = [
+        (MARKDOWN_LINK, False, False, masked),
+        (NAVIGATION_URL, False, False, masked),
+    ]
+    if include_templates:
+        patterns.append((TEMPLATE_URL, False, True, template_masked))
     if include_public_urls:
-        patterns.extend(((PUBLIC_MARKDOWN_LINK, True), (BARE_DOCS_URL, False)))
-    for pattern, make_relative in patterns:
-        for match in pattern.finditer(masked):
+        patterns.extend(
+            (
+                (PUBLIC_MARKDOWN_LINK, True, False, masked),
+                (BARE_DOCS_URL, False, False, masked),
+            )
+        )
+    for pattern, make_relative, preserve_separator, content in patterns:
+        for match in pattern.finditer(content):
             start, end = match.span("url")
             if (start, end) in occupied:
                 continue
@@ -157,6 +179,13 @@ def find_aliases_in_text(text, redirects, include_public_urls=False):
             canonical = canonicalize_url(
                 original, redirects, make_relative=make_relative
             )
+            if (
+                preserve_separator
+                and original.endswith("/")
+                and canonical
+                and not canonical.endswith("/")
+            ):
+                canonical += "/"
             if canonical and canonical != original:
                 aliases.append((start, end, original, canonical))
     return sorted(aliases)
@@ -209,7 +238,10 @@ def main(argv=None):
         with open(path, encoding="utf-8", errors="replace") as f:
             text = f.read()
         aliases = find_aliases_in_text(
-            text, redirects, include_public_urls=rel.startswith("src/")
+            text,
+            redirects,
+            include_public_urls=rel.startswith("src/"),
+            include_templates=rel.endswith((".js", ".jsx")),
         )
         if not aliases:
             continue

@@ -112,6 +112,16 @@ def test_canonical_link_checker_follows_redirect_chains():
     )
 
 
+def test_canonical_link_checker_rewrites_template_route_base():
+    aliases = canonical_links_check.find_aliases_in_text(
+        "const x = { href: `/old/${id}` }", {"/old": "/new"}
+    )
+
+    assert [(old, new) for _start, _end, old, new in aliases] == [
+        ("/old/", "/new/")
+    ]
+
+
 def test_canonical_link_checker_rewrites_source_code_urls():
     redirects = {
         "/engines/table-engines/mergetree-family/mergetree": (
