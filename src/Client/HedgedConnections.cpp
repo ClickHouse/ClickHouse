@@ -382,7 +382,18 @@ Packet HedgedConnections::receivePacketUnlocked(AsyncCallback async_callback)
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot receive packets: no query sent.");
     if (!hasActiveConnections())
+    {
+        /// A reader can get here after `RemoteQueryExecutor::finish` cancelled and drained these
+        /// connections from another pipeline thread: `onUpdatePorts` runs in parallel with `read`
+        /// once LIMIT closes the port. Nothing is left to read then, and that is not an error.
+        if (cancelled)
+        {
+            Packet res;
+            res.type = Protocol::Server::EndOfStream;
+            return res;
+        }
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No more packets are available.");
+    }
 
     if (epoll.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No pending events in epoll.");

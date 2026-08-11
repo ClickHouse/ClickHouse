@@ -315,6 +315,7 @@ namespace Setting
     extern const SettingsBool filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage;
     extern const SettingsBool filesystem_cache_enable_background_download_during_fetch;
     extern const SettingsBool filesystem_cache_prefer_bigger_buffer_size;
+    extern const SettingsBool filesystem_cache_verbose_logging;
     extern const SettingsBool http_make_head_request;
     extern const SettingsUInt64 http_max_fields;
     extern const SettingsUInt64 http_max_field_name_size;
@@ -8443,6 +8444,7 @@ ReadSettings Context::getReadSettings() const
     res.filesystem_cache_settings.read_if_exists_otherwise_bypass
         = settings_ref[Setting::read_from_filesystem_cache_if_exists_otherwise_bypass_cache];
     res.filesystem_cache_settings.enable_log = settings_ref[Setting::enable_filesystem_cache_log];
+    res.filesystem_cache_settings.verbose_logging = settings_ref[Setting::filesystem_cache_verbose_logging];
     res.filesystem_cache_settings.segments_batch_size = settings_ref[Setting::filesystem_cache_segments_batch_size];
     res.filesystem_cache_settings.reserve_space_wait_lock_timeout_milliseconds
         = settings_ref[Setting::filesystem_cache_reserve_space_wait_lock_timeout_milliseconds];
@@ -8685,6 +8687,17 @@ PartitionIdToMaxBlockPtr Context::getPartitionIdToMaxBlock(const UUID & table_uu
 {
     auto it = partition_id_to_max_block.find(table_uuid);
     return it != partition_id_to_max_block.end() ? it->second : nullptr;
+}
+
+void Context::setPinnedStorageSnapshot(const UUID & table_uuid, StorageSnapshotPtr snapshot)
+{
+    pinned_storage_snapshots[table_uuid] = std::move(snapshot);
+}
+
+StorageSnapshotPtr Context::getPinnedStorageSnapshot(const UUID & table_uuid) const
+{
+    auto it = pinned_storage_snapshots.find(table_uuid);
+    return it != pinned_storage_snapshots.end() ? it->second : nullptr;
 }
 
 const ServerSettings & Context::getServerSettings() const

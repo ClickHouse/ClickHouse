@@ -484,7 +484,7 @@ ASTPtr ASTTableIdentifier::getDatabase() const
 
 void ASTTableIdentifier::resetTable(const String & database_name, const String & table_name)
 {
-    auto identifier = make_intrusive<ASTTableIdentifier>(database_name, table_name);
+    auto identifier = make_intrusive<ASTTableIdentifier>(StorageID{database_name, table_name});
     full_name.swap(identifier->full_name);
     name_parts.swap(identifier->name_parts);
     uuid = identifier->uuid;
