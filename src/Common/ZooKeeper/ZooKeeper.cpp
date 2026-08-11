@@ -43,6 +43,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int NO_ELEMENTS_IN_CONFIG;
@@ -1460,7 +1461,7 @@ void ZooKeeper::deleteEphemeralNodeIfContentMatches(const std::string & path, st
         int32_t timeout_ms = 3 * args.session_timeout_ms;
         if (!eph_node_disappeared->tryWait(timeout_ms))
             throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR,
+                DB::ErrorCodes::ABORTED,
                 "Ephemeral node {} still exists after {}s, probably it's owned by someone else. "
                 "Either session_timeout_ms in client's config is different from server's config or it's a bug. "
                 "Node data: '{}'",

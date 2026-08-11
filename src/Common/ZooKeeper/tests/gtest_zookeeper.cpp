@@ -3,12 +3,67 @@
 
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+
 using namespace Coordination;
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int ABORTED;
+}
+
+namespace
+{
+
+zkutil::ZooKeeper::Ptr makeTestKeeperClient(int32_t session_timeout_ms)
+{
+    zkutil::ZooKeeperArgs args;
+    args.implementation = "testkeeper";
+    args.session_timeout_ms = session_timeout_ms;
+    return zkutil::ZooKeeper::createWithoutKillingPreviousSessions(args);
+}
+
+}
+
+TEST(ZooKeeperTest, DeleteEphemeralNodeIfContentMatchesForeignHolder)
+{
+    /// The node is persistent, so it never disappears and the wait always reaches its deadline.
+    constexpr int32_t session_timeout_ms = 200;
+    auto zk = makeTestKeeperClient(session_timeout_ms);
+    zk->create("/foreign", "someone-else", zkutil::CreateMode::Persistent);
+
+    const auto started_at = std::chrono::steady_clock::now();
+    try
+    {
+        zk->deleteEphemeralNodeIfContentMatches("/foreign", "me");
+        FAIL() << "Expected an exception for a node held by someone else";
+    }
+    catch (const DB::Exception & e)
+    {
+        /// A foreign or not-yet-expired holder is expected runtime state, not a broken invariant.
+        EXPECT_EQ(e.code(), DB::ErrorCodes::ABORTED);
+    }
+    const auto elapsed_ms
+        = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started_at).count();
+
+    EXPECT_GE(elapsed_ms, 3 * session_timeout_ms);
+    EXPECT_TRUE(zk->exists("/foreign"));
+}
+
+TEST(ZooKeeperTest, DeleteEphemeralNodeIfContentMatchesOwnNode)
+{
+    auto zk = makeTestKeeperClient(/*session_timeout_ms=*/ 200);
+    zk->create("/mine", "me", zkutil::CreateMode::Persistent);
+
+    EXPECT_NO_THROW(zk->deleteEphemeralNodeIfContentMatches("/mine", "me"));
+    EXPECT_FALSE(zk->exists("/mine"));
+}
 
 TEST(ZooKeeperTest, TestMatchPath)
 {
