@@ -539,7 +539,8 @@ StorageDistributed::StorageDistributed(
     LoadingStrictnessLevel mode,
     ClusterPtr owned_cluster_,
     ASTPtr remote_table_function_ptr_,
-    bool is_remote_function_)
+    bool is_remote_function_,
+    bool is_remote_database_proxy_)
     : IStorage(id_)
     , WithContext(context_->getGlobalContext())
     , remote_database(remote_database_)
@@ -555,6 +556,7 @@ StorageDistributed::StorageDistributed(
     , distributed_settings(std::make_unique<DistributedSettings>(distributed_settings_))
     , rng(randomSeed())
     , is_remote_function(is_remote_function_)
+    , is_remote_database_proxy(is_remote_database_proxy_)
 {
     if (!(*distributed_settings)[DistributedSetting::flush_on_detach] && (*distributed_settings)[DistributedSetting::background_insert_batch])
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and background_insert_batch=1 are incompatible");
@@ -650,7 +652,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
             else
             {
                 LOG_DEBUG(log, "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster{}",
-                        has_sharding_key ? "" : " (no sharding key)");
+                        hasShardingKeyForReads() ? "" : " (no sharding key)");
             }
         }
     }
@@ -775,7 +777,7 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
 std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const
 {
     bool optimize_sharding_key_aggregation = settings[Setting::optimize_skip_unused_shards] && settings[Setting::optimize_distributed_group_by_sharding_key]
-        && has_sharding_key && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
+        && hasShardingKeyForReads() && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
 
     QueryProcessingStage::Enum default_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
     if (settings[Setting::distributed_push_down_limit])
@@ -833,7 +835,7 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const
 {
     bool optimize_sharding_key_aggregation = settings[Setting::optimize_skip_unused_shards] && settings[Setting::optimize_distributed_group_by_sharding_key]
-        && has_sharding_key && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
+        && hasShardingKeyForReads() && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
 
     QueryProcessingStage::Enum default_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
     if (settings[Setting::distributed_push_down_limit])
@@ -915,33 +917,6 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 
 namespace
 {
-
-class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasColumnsVisitor>
-{
-    static QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node)
-    {
-        const auto * column_node = node->as<ColumnNode>();
-        if (!column_node || !column_node->hasExpression())
-            return nullptr;
-
-        const auto & column_source = column_node->getColumnSourceOrNull();
-        if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
-            return nullptr;
-
-        auto column_expression = column_node->getExpression();
-        column_expression->setAlias(column_node->getColumnName());
-        return column_expression;
-    }
-
-public:
-    void visitImpl(QueryTreeNodePtr & node)
-    {
-        if (auto column_expression = getColumnNodeAliasExpression(node))
-            node = column_expression;
-    }
-};
 
 class RewriteInToGlobalInVisitor : public InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>
 {
@@ -1092,8 +1067,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
-    ReplaseAliasColumnsVisitor replace_alias_columns_visitor;
-    replace_alias_columns_visitor.visit(query_tree_to_modify);
+    inlineAliasColumns(query_tree_to_modify);
 
     const auto & settings = query_context->getSettingsRef();
 
@@ -1114,6 +1088,21 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
 }
 
+void StorageDistributed::checkLocalShardAccess(const AccessFlags & access, const ContextPtr & local_context) const
+{
+    if (!is_remote_database_proxy)
+        return;
+
+    for (const auto & shard_info : getCluster()->getShardsInfo())
+    {
+        if (shard_info.isLocal())
+        {
+            local_context->checkAccess(access, remote_database, remote_table);
+            return;
+        }
+    }
+}
+
 void StorageDistributed::read(
     QueryPlan & query_plan,
     const Names &,
@@ -1124,6 +1113,8 @@ void StorageDistributed::read(
     const size_t /*max_block_size*/,
     const size_t /*num_streams*/)
 {
+    checkLocalShardAccess(AccessType::SELECT, local_context);
+
     SharedHeader header;
 
     SelectQueryInfo modified_query_info = query_info;
@@ -1215,6 +1206,8 @@ void StorageDistributed::read(
 
 SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    checkLocalShardAccess(AccessType::INSERT, local_context);
+
     /// When the target is a table function (e.g. `numbers(...)`, `view(...)`), there is no remote
     /// table to insert into: `remote_storage` is an empty `StorageID`, so `DistributedSink` would
     /// build an `INSERT` into an empty table id. Such targets are read-only by nature, so reject the
@@ -1542,6 +1535,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
 
 std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
 {
+    checkLocalShardAccess(AccessType::INSERT, local_context);
+
     const Settings & settings = local_context->getSettingsRef();
     if (settings[Setting::max_distributed_depth] && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
         throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
@@ -1730,6 +1725,16 @@ Strings StorageDistributed::getDataPaths() const
 
 void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
+    /// For a `Distributed` storage, `TRUNCATE` only clears the on-disk async-insert spool. A table of
+    /// a `Remote` database has none, so the statement would be a silent no-op reported as success,
+    /// while the user expects the remote table to be truncated; reject it like the rest of the DDL
+    /// against such a database.
+    if (is_remote_database_proxy)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Table {} is a read-through proxy of a `Remote` database and does not support TRUNCATE TABLE",
+            getStorageID().getNameForLogs());
+
     std::lock_guard lock(cluster_nodes_mutex);
 
     LOG_DEBUG(log, "Removing pending blocks for async INSERT from filesystem on TRUNCATE TABLE");
@@ -1893,7 +1898,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
 
     bool sharding_key_is_usable = settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic;
 
-    if (has_sharding_key && sharding_key_is_usable)
+    if (hasShardingKeyForReads() && sharding_key_is_usable)
     {
         ClusterPtr optimized = skipUnusedShards(cluster, query_info, syntax_analyzer_result, storage_snapshot, local_context);
         if (optimized)
@@ -1901,9 +1906,9 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
     }
 
     UInt64 force = settings[Setting::force_optimize_skip_unused_shards];
-    if (force == FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS || (force == FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY && has_sharding_key))
+    if (force == FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS || (force == FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY && hasShardingKeyForReads()))
     {
-        if (!has_sharding_key)
+        if (!hasShardingKeyForReads())
             throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "No sharding key");
         if (!sharding_key_is_usable)
             throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "Sharding key is not deterministic");
