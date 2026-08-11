@@ -2303,7 +2303,7 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
                     else
                     {
                         result_vec[out] = DataType();
-                        if (out_of_bounds_is_null)
+                        if (result_null_map && out_of_bounds_is_null)
                             (*result_null_map)[out] = UInt8(1);
                     }
                 }
@@ -2411,7 +2411,7 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
                 else
                 {
                     result_nested_col->insertDefault();
-                    if (out_of_bounds_is_null)
+                    if (result_null_map && out_of_bounds_is_null)
                         (*result_null_map)[out] = UInt8(1);
                 }
             }
