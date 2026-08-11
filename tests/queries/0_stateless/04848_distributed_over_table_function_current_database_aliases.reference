@@ -1,0 +1,9 @@
+Distributed(\'test_shard_localhost\', numbers(assumeNotNull((SELECT v FROM _db_.alias_src WHERE d = \'_db_\'))))
+Distributed(\'test_shard_localhost\', numbers(assumeNotNull((SELECT v FROM _db_.alias_src WHERE d = \'_db_\'))))
+Distributed(\'test_shard_localhost\', numbers(assumeNotNull((SELECT v FROM _db_.alias_src WHERE d = \'_db_\'))))
+Remote(\'127.0.0.1\', numbers(assumeNotNull((SELECT v FROM _db_.alias_src WHERE d = \'_db_\'))))
+6
+6
+6
+6
+6
