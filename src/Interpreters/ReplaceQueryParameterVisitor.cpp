@@ -16,8 +16,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/FieldFromAST.h>
-#include <Parsers/Access/ASTCreateUserQuery.h>
-#include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Parsers/forEachNonChildSemanticAST.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Analyzer/Utils.h>
 #include <Common/SettingsChanges.h>
@@ -53,17 +52,17 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
         visitSetQuery(*set_query);
     else
     {
+        /// Some AST classes keep semantic subtrees outside `children` — e.g. `SHOW TABLES LIMIT
+        /// {n:UInt64}` keeps the limit in `ASTShowTablesQuery::limit_length`, and `CREATE USER
+        /// {u:Identifier}` keeps the names in `ASTCreateUserQuery::names`. Substitute there too:
+        /// a placeholder left in such a member would be invisible to the interpreters and to the
+        /// query rewrite rules, which match the substituted query (a literal `REJECT` rule must
+        /// not be bypassable by parameterizing the matched value). The walk shares the carrier
+        /// list with the rewrite-rule matcher — see `forEachNonChildSemanticAST`.
+        forEachMutableNonChildSemanticAST(*ast, [&](ASTPtr & member) { visit(member); });
+
         if (auto * describe_query = dynamic_cast<ASTDescribeQuery *>(ast.get()); describe_query && describe_query->table_expression)
             visitChildren(describe_query->table_expression);
-        else if (auto * create_user_query = dynamic_cast<ASTCreateUserQuery *>(ast.get()))
-        {
-            if (create_user_query->names)
-            {
-                ASTPtr names = create_user_query->names;
-                visitChildren(names);
-            }
-            visitChildren(ast);
-        }
         else if (auto * create_query = dynamic_cast<ASTCreateQuery *>(ast.get()))
         {
             if (create_query->isParameterizedView())

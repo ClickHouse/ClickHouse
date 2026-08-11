@@ -1,5 +1,6 @@
 #include <Interpreters/RewriteRulesASTTraversal.h>
 #include <Parsers/ASTQueryParameter.h>
+#include <Parsers/forEachNonChildSemanticAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTExpressionList.h>
@@ -65,8 +66,81 @@ ASTPtr unwrapQueryParameterCast(const ASTPtr & node)
     return node;
 }
 
+/// Whether any node of the subtree — `children` and the non-`children` semantic members alike —
+/// is a typed-query-parameter substitution wrapper.
+bool containsQueryParameterCast(const ASTPtr & node)
+{
+    if (unwrapQueryParameterCast(node).get() != node.get())
+        return true;
+    for (const auto & child : node->children)
+        if (containsQueryParameterCast(child))
+            return true;
+    bool found = false;
+    forEachNonChildSemanticAST(*node, [&](const ASTPtr & member)
+    {
+        if (!found)
+            found = containsQueryParameterCast(member);
+    });
+    return found;
+}
+
+/// Replaces every typed-query-parameter substitution wrapper in the subtree with the literal it
+/// stands for. `node` must be a fresh clone (rewritten in place); the non-`children` semantic
+/// members are still replaced by rewritten clones of their own, because `clone` implementations
+/// may share those members with the source node (e.g. `ASTShowTablesQuery::clone`
+/// copy-constructs), and the matcher must never mutate the query's own AST.
+void unwrapQueryParameterCastsInPlace(ASTPtr & node)
+{
+    if (ASTPtr unwrapped = unwrapQueryParameterCast(node); unwrapped.get() != node.get())
+        node = unwrapped;
+    for (auto & child : node->children)
+    {
+        const IAST * old_child = child.get();
+        unwrapQueryParameterCastsInPlace(child);
+        /// Some AST classes have naked pointers to children elements as members
+        /// (cf. `ReplaceQueryParameterVisitor::visitChildren`).
+        if (child.get() != old_child)
+            node->updatePointerToChild(old_child, child);
+    }
+    forEachMutableNonChildSemanticAST(*node, [&](ASTPtr & member)
+    {
+        if (!containsQueryParameterCast(member))
+            return;
+        ASTPtr member_clone = member->clone();
+        unwrapQueryParameterCastsInPlace(member_clone);
+        member = member_clone;
+    });
+}
+
+/// A typed-query-parameter wrapper may also sit INSIDE a non-`children` semantic member — e.g.
+/// `SHOW TABLES LIMIT {n:UInt64}` substitutes into `ASTShowTablesQuery::limit_length` — where it
+/// is folded into the node's tree/node hashes rather than visited as a queue node, so the
+/// unwrap-at-pop above never sees it and a rule pinning the bare literal would not match. Returns
+/// a clone with such members rewritten (wrappers replaced by their literals); the query's own AST
+/// is never mutated, so a query that no rule matches still executes with its `_CAST`s intact.
+ASTPtr unwrapNonChildQueryParameterCasts(const ASTPtr & node)
+{
+    bool found = false;
+    forEachNonChildSemanticAST(*node, [&](const ASTPtr & member)
+    {
+        if (!found)
+            found = containsQueryParameterCast(member);
+    });
+    if (!found)
+        return node;
+
+    ASTPtr res = node->clone();
+    forEachMutableNonChildSemanticAST(*res, [&](ASTPtr & member)
+    {
+        ASTPtr member_clone = member->clone();
+        unwrapQueryParameterCastsInPlace(member_clone);
+        member = member_clone;
+    });
+    return res;
+}
+
 /// Counts AST elements and depth over `IAST::children` AND the semantic AST members kept outside
-/// `children` that the matcher's tree hash folds in (see `forEachRewriteRuleNonChildAST`), throwing
+/// `children` that the matcher's tree hash folds in (see `forEachNonChildSemanticAST`), throwing
 /// `TOO_BIG_AST` / `TOO_DEEP_AST` past the limits. `IAST::checkSize` / `IAST::checkDepth` follow only
 /// `children`, so on their own they would let a `SHOW ... WHERE <huge>` (or a `BACKUP` with huge
 /// settings, a `ROW POLICY` with a huge filter, ...) slip past the limit and still force the matcher
@@ -83,7 +157,7 @@ void countRewriteRuleAST(const IAST & node, size_t & elements, size_t depth, UIn
         if (child)
             countRewriteRuleAST(*child, elements, depth + 1, max_elements, max_depth);
 
-    forEachRewriteRuleNonChildAST(node, [&](const ASTPtr & member)
+    forEachNonChildSemanticAST(node, [&](const ASTPtr & member)
     {
         countRewriteRuleAST(*member, elements, depth + 1, max_elements, max_depth);
     });
@@ -158,7 +232,7 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
     /// `checkRewriteRuleASTLimits` above covers `children` and the non-`children` members of the
     /// query node itself, but if the submitted query is itself a `CREATE RULE` / `ALTER RULE` its
     /// rule templates (`source_query` / `resulting_query`) live outside `children` and outside
-    /// `forEachRewriteRuleNonChildAST`. Those templates are first fully walked by the matcher's tree hash
+    /// `forEachNonChildSemanticAST`. Those templates are first fully walked by the matcher's tree hash
     /// below (through the rule-DDL node's `updateTreeHashImpl`), before the generic
     /// `checkRewriteRuleTemplateLimits` gate runs later from `checkASTSizeLimits` in `executeQuery`.
     /// Bound the submitted templates here too, so an oversized submitted rule template cannot force
@@ -214,8 +288,10 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
             queue_rule.pop();
             /// Treat a typed-query-parameter `_CAST(<literal>, '<type>')` wrapper on the query side
             /// as the literal it stands for, so a rule written against a bare literal still matches
-            /// (and `{x:Int}` still captures) a value supplied through a typed parameter.
+            /// (and `{x:Int}` still captures) a value supplied through a typed parameter — both as
+            /// a queue node and inside the non-`children` semantic members the hashes fold in.
             top1 = unwrapQueryParameterCast(top1);
+            top1 = unwrapNonChildQueryParameterCasts(top1);
             if (top1->getTreeHash(true) != top2->getTreeHash(true))
             {
                 auto hash1 = top1->getCurrentNodeHash(true);
@@ -351,7 +427,7 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
             checkRewriteRuleASTLimits(*ast, settings);
             /// A rule can also rewrite a query into rule DDL (`CREATE RULE` / `ALTER RULE`),
             /// whose templates (`source_query` / `resulting_query`) live outside both `children`
-            /// and `forEachRewriteRuleNonChildAST` and are therefore invisible to the check above,
+            /// and `forEachNonChildSemanticAST` and are therefore invisible to the check above,
             /// while the next rule's matcher still hashes them through the rule-DDL node's
             /// `updateTreeHashImpl`. Bound them here for the same reason they are bounded for the
             /// submitted query above, so no intermediate carrier of a rule template escapes
@@ -412,7 +488,7 @@ void checkRewriteRuleTemplateLimits(const IAST & ast, const Settings & settings)
         /// `children`; the matcher hashes it, so count it here too — otherwise a rule template with
         /// a huge `WHERE` / `LIMIT` / `BACKUP` setting / `ROW POLICY` filter would be accepted under
         /// a low limit and force the matcher to walk an unbounded tree.
-        forEachRewriteRuleNonChildAST(node, [&](const ASTPtr & member)
+        forEachNonChildSemanticAST(node, [&](const ASTPtr & member)
         {
             check_template(*member, elements, depth + 1);
         });

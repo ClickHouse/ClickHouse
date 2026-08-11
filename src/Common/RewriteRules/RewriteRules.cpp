@@ -17,6 +17,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTShowTablesQuery.h>
+#include <Parsers/forEachNonChildSemanticAST.h>
 #include <Parsers/ASTShowColumnsQuery.h>
 #include <Parsers/ASTShowIndexesQuery.h>
 #include <Parsers/ASTBackupQuery.h>
@@ -307,7 +308,7 @@ namespace
 
     /// Returns the name of the first `{name:Type}` placeholder (`ASTQueryParameter`) reachable
     /// from `ast` only through an AST member kept OUTSIDE `IAST::children` (see
-    /// `forEachRewriteRuleNonChildAST`) — for example the `{n:Int}` in `SHOW TABLES LIMIT {n:Int}`,
+    /// `forEachNonChildSemanticAST`) — for example the `{n:Int}` in `SHOW TABLES LIMIT {n:Int}`,
     /// which lives in `ASTShowTablesQuery::limit_length`. The matcher and the result substitution
     /// (`RewriteRulesASTTraversal.cpp`) follow only `children`, so such a placeholder can be
     /// neither bound nor substituted: the rule would be stored but silently never work. Reject it
@@ -323,7 +324,7 @@ namespace
                 return query_parameter->name;
 
         std::optional<String> found;
-        forEachRewriteRuleNonChildAST(*ast, [&](const ASTPtr & member)
+        forEachNonChildSemanticAST(*ast, [&](const ASTPtr & member)
         {
             if (!found)
                 found = findQueryParameterInNonChildMember(member, true);
@@ -363,7 +364,7 @@ namespace
         }
 
         std::optional<String> found;
-        forEachRewriteRuleNonChildAST(*ast, [&](const ASTPtr & member)
+        forEachNonChildSemanticAST(*ast, [&](const ASTPtr & member)
         {
             if (!found)
                 found = findFlattenedQueryParameterInUserName(member);
@@ -381,7 +382,7 @@ namespace
     /// Whether `node`'s AST class has been audited for complete tree-hash coverage: every data
     /// member that affects the formatted text is folded into `getTreeHash(true)` (via an
     /// `updateTreeHashImpl` override, membership in `children`, the `getID` string, or the
-    /// `forEachRewriteRuleNonChildAST` fold), so that for instances of this class an equal tree
+    /// `forEachNonChildSemanticAST` fold), so that for instances of this class an equal tree
     /// hash implies semantic equality. The rewrite-rule matcher relies on exactly that invariant
     /// when it declares a template subtree an exact match of a query subtree, so a rule template
     /// may only be built from audited classes — anything else is rejected at DDL time (fail
@@ -390,7 +391,7 @@ namespace
     ///
     /// The check is by exact type: a derived class does not inherit its base's audit (it can add
     /// unhashed members of its own). When auditing a new class, mind members whose subtree only
-    /// the class itself knows about (see `forEachRewriteRuleNonChildAST`) and flags whose only
+    /// the class itself knows about (see `forEachNonChildSemanticAST`) and flags whose only
     /// trace is in the formatted text.
     bool isExactMatchAuditedASTClass(const IAST & node)
     {
@@ -490,7 +491,7 @@ namespace
     /// Returns the first node reachable from a rule's source template whose AST class is not
     /// audited for the exact-match invariant (see `isExactMatchAuditedASTClass`), or `nullptr`.
     /// Walks everything the matcher's tree hash covers: ordinary `children`, the non-`children`
-    /// members of `forEachRewriteRuleNonChildAST`, and — for nested rule DDL — both nested
+    /// members of `forEachNonChildSemanticAST`, and — for nested rule DDL — both nested
     /// templates (the outer template's hash covers them through the rule-DDL node's
     /// `updateTreeHashImpl`). Only the source template needs screening: hashes are compared
     /// per class, so a false "exact match" requires the under-hashed class to be present in the
@@ -520,7 +521,7 @@ namespace
         }
 
         const IAST * found = nullptr;
-        forEachRewriteRuleNonChildAST(*ast, [&](const ASTPtr & member)
+        forEachNonChildSemanticAST(*ast, [&](const ASTPtr & member)
         {
             if (!found)
                 found = findUnauditedTemplateNode(member);
@@ -688,72 +689,6 @@ namespace
                 "Rewrite rule `{}` uses query parameter `{}` with type `{}` in its result template "
                 "but type `{}` in its source template; a placeholder must use the same type in both",
                 query.rule_name, mismatch->name, mismatch->result_type, mismatch->source_type);
-    }
-}
-
-void forEachRewriteRuleNonChildAST(const IAST & node, const std::function<void(const ASTPtr &)> & visit)
-{
-    auto visit_if = [&](const ASTPtr & member)
-    {
-        if (member)
-            visit(member);
-    };
-
-    if (const auto * show_tables = node.as<ASTShowTablesQuery>())
-    {
-        visit_if(show_tables->where_expression);
-        visit_if(show_tables->limit_length);
-    }
-    else if (const auto * show_columns = node.as<ASTShowColumnsQuery>())
-    {
-        visit_if(show_columns->where_expression);
-        visit_if(show_columns->limit_length);
-    }
-    else if (const auto * show_indexes = node.as<ASTShowIndexesQuery>())
-    {
-        visit_if(show_indexes->where_expression);
-    }
-    else if (const auto * backup = node.as<ASTBackupQuery>())
-    {
-        visit_if(backup->settings);
-        visit_if(backup->cluster_host_ids);
-        for (const auto & element : backup->elements)
-            if (element.partitions)
-                for (const auto & partition : *element.partitions)
-                    visit_if(partition);
-    }
-    else if (const auto * row_policy = node.as<ASTCreateRowPolicyQuery>())
-    {
-        for (const auto & filter_pair : row_policy->filters)
-            visit_if(filter_pair.second);
-    }
-    else if (const auto * masking_policy = node.as<ASTCreateMaskingPolicyQuery>())
-    {
-        visit_if(masking_policy->update_assignments);
-        visit_if(masking_policy->where_condition);
-    }
-    else if (const auto * create_user = node.as<ASTCreateUserQuery>())
-    {
-        /// The target user names of `CREATE USER` / `ALTER USER` are kept in the `names` member,
-        /// outside `children`, and `ParserCreateUserQuery` explicitly accepts a query parameter
-        /// there (`ParserUserNamesWithHost(/*allow_query_parameter=*/true)`), so
-        /// `CREATE USER {u:Identifier}` carries an `ASTQueryParameter` that the generic `children`
-        /// walks never see. The tree hash folds `names` in, so the walks must reach it too.
-        visit_if(create_user->names);
-    }
-    else if (const auto * set_query = node.as<ASTSetQuery>())
-    {
-        /// A setting value in a `SETTINGS` clause can itself be an AST — for example the
-        /// `{n:Int}` in `SETTINGS max_threads = {n:Int}`. The parser stores it as a `Field`
-        /// wrapping the AST (`FieldFromASTImpl`, see `ParserSetQuery`), not as a child of the
-        /// `ASTSetQuery`, so the generic `children` walks never see it (compare
-        /// `QueryParameterVisitor::visitSetQuery` / `ReplaceQueryParameterVisitor::visitSettingsChanges`).
-        for (const auto & change : set_query->changes)
-        {
-            CustomType custom;
-            if (change.value.tryGet<CustomType>(custom) && std::string_view(custom.getTypeName()) == FieldFromASTImpl::name)
-                visit_if(dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast);
-        }
     }
 }
 
