@@ -3434,4 +3434,13 @@ TEST_F(WallabyTest, PrefersAWiderScaleThatCollapsesTheLanes)
     EXPECT_LT(wallabyCompressedSize(values), 1400u);
 }
 
+TEST_F(WallabyTest, DecompressMalformedInputReservedXorFlagBit)
+{
+    /// Bit 0 is the only XOR flag the version-1 encoder emits; a payload with any reserved
+    /// bit set is malformed and must throw rather than decode as if the bit were clear.
+    std::vector<UInt8> vectors = wallabyGoldenXorVectors();
+    vectors[5] = 0x81; // flags: bit 7 is reserved and must be zero
+    verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 24), "Cannot decompress Wallaby-encoded data, unknown XOR flags", 192);
+}
+
 }

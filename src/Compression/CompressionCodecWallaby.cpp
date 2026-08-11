@@ -75,6 +75,8 @@ namespace DB
  *   - 8 bits of flags; bit 0 set means the trailing-zero field is omitted in the XOR branches
  *     (chosen by the encoder for data whose XOR residues have almost no trailing zeros, where
  *     the field would be pure overhead; the center then simply extends to the lowest bit);
+ *     bits 1..7 are reserved for future XOR subformats: version-1 encoders write them as zero
+ *     and the decoder rejects a payload where any of them is set;
  *   - the first value is written raw (float_width * 8 bits);
  *   - for each following value, one bit selects between a run and a single value:
  *     1: run; 10 bits of length L in [1, 1023]: the previous value repeats L more times;
@@ -1667,7 +1669,12 @@ void decodeXor(const char * payload, UInt32 payload_size, char * out, UInt32 cou
     };
 
     require_bits(8 + width);
-    const bool omit_trail = (reader.readBits(8) & 1) != 0;
+    const UInt64 flags = reader.readBits(8);
+    /// Bit 0 is the only flag the version-1 encoder emits; the remaining bits are reserved
+    /// for future XOR subformats and must be zero, so corrupt input throws instead of decoding.
+    if (flags & ~UInt64(1))
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, unknown XOR flags");
+    const bool omit_trail = flags != 0;
 
     std::array<T, WALLABY_RING_SIZE> ring{};
     UInt32 ring_position = 0;
