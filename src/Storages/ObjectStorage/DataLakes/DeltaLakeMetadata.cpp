@@ -19,6 +19,7 @@
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Interpreters/Context.h>
@@ -48,6 +49,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/String.h>
 #include <Poco/URI.h>
 
 namespace fs = std::filesystem;
@@ -648,6 +650,27 @@ static bool isDeltaKernelEnabled(ContextPtr context, ObjectStorageType storage_t
     return supports_delta_kernel && context->getSettingsRef()[Setting::allow_delta_kernel_rs] ;
 }
 
+static bool hasAuthorizationHeader(const StorageObjectStorageConfigurationPtr & configuration)
+{
+#if USE_AWS_S3
+    if (configuration->getType() != ObjectStorageType::S3)
+        return false;
+
+    const auto * s3_configuration = dynamic_cast<const StorageS3Configuration *>(configuration.get());
+    if (!s3_configuration)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected S3 configuration for S3 object storage");
+
+    const auto headers = s3_configuration->getAuthSettings().getHeaders();
+    return std::ranges::any_of(headers, [](const HTTPHeaderEntry & header)
+    {
+        return Poco::icompare(header.name, "Authorization") == 0;
+    });
+#else
+    static_cast<void>(configuration);
+    return false;
+#endif
+}
+
 bool DeltaLakeMetadata::supportsTotalRows(ContextPtr context, ObjectStorageType storage_type)
 {
     return isDeltaKernelEnabled(context, storage_type);
@@ -664,10 +687,15 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
     ContextPtr local_context)
 {
 #if USE_DELTA_KERNEL_RS
-    if (isDeltaKernelEnabled(local_context, configuration.lock()->getType()))
+    const auto locked_configuration = configuration.lock();
+    const bool delta_kernel_enabled = isDeltaKernelEnabled(local_context, locked_configuration->getType());
+    const bool has_authorization_header = hasAuthorizationHeader(locked_configuration);
+    if (delta_kernel_enabled && !has_authorization_header)
     {
         return DeltaLakeMetadataDeltaKernel::create(object_storage, configuration);
     }
+    if (delta_kernel_enabled && has_authorization_header)
+        LOG_DEBUG(getLogger("DeltaLakeMetadata"), "Using the native Delta Lake metadata reader because Delta Kernel does not support Authorization headers");
 #endif
     const auto & settings = local_context->getSettingsRef();
     if (settings[Setting::delta_lake_snapshot_version].value != -1)
