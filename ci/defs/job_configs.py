@@ -117,7 +117,7 @@ common_ft_job_config = Job.Config(
             "./tests/config",
             "./tests/*.txt",
             "./ci/docker/stateless-test",
-            "./ci/jobs/scripts/functional_tests/setup_minio.sh",
+            "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
         ],
     ),
     result_name_for_cidb="Tests",
@@ -530,28 +530,6 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
-    # tests/fuzz/build.sh runs as a POST_BUILD step of the `fuzzers` target and
-    # stages the .options files, a source-derived fallback all.dict, and seed
-    # corpora repacked from tests/queries/0_stateless/*.sql into the build
-    # output (see ArtifactConfigs.fuzzers), so the produced artifact also
-    # depends on the inputs under tests/fuzz and on the stateless test queries,
-    # which the shared build digest does not cover. Extend the digest of the
-    # fuzzers build only, so that a dictionary generation or corpus change
-    # cannot cache-hit a stale artifact while the other builds are unaffected.
-    special_build_jobs = [
-        (
-            job.set_digest_config(
-                Job.CacheDigestConfig(
-                    include_paths=build_digest_config.include_paths
-                    + ["./tests/fuzz/", "./tests/queries/0_stateless/"],
-                    with_git_submodules=True,
-                )
-            )
-            if job.parameter == BuildTypes.ARM_FUZZERS
-            else job
-        )
-        for job in special_build_jobs
-    ]
     install_check_jobs = Job.Config(
         name=JobNames.INSTALL_TEST,
         runs_on=[],  # from parametrize()
@@ -1324,6 +1302,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
+                "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -1362,6 +1341,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
+                "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -1390,6 +1370,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
+                "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -1662,19 +1643,9 @@ class JobConfigs:
         name=JobNames.LIBFUZZER_TEST,
         runs_on=RunnerLabels.ARM_MEDIUM,
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
-        # The release binary is used to generate the fuzzer dictionary (all.dict)
-        # from the actual set of functions, data types and keywords.
-        requires=[
-            ArtifactNames.ARM_FUZZERS,
-            ArtifactNames.FUZZERS_CORPUS,
-            ArtifactNames.CH_ARM_RELEASE,
-        ],
+        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/libfuzzer_test_check.py",
-                "./tests/fuzz/update_dict.sh",
-                "./tests/fuzz/dictionaries/old.dict",
-            ],
+            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
         ),
     )
     collect_clickhouse_profiles_jobs = Job.Config(
