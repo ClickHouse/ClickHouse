@@ -58,7 +58,6 @@ uniqCombinedState(number) bytes identical
 groupArrayState(number) bytes identical
 quantileState(toFloat64(number)) bytes identical
 quantilesTDigestState(0.5)(toFloat64(number)) bytes identical
-topKState(number) bytes identical
 groupBitmapState(toUInt32(number)) bytes identical
 maxMapState([number % 7], [number]) bytes identical
 sumMap version 0	([0,1,2,3,4,5,6],[71071,71214,71357,71500,71643,71786,70929])

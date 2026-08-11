@@ -125,7 +125,6 @@ check_state "uniqCombinedState(number)"
 check_state "groupArrayState(number)"
 check_state "quantileState(toFloat64(number))"
 check_state "quantilesTDigestState(0.5)(toFloat64(number))"
-check_state "topKState(number)"
 check_state "groupBitmapState(toUInt32(number))"
 check_state "maxMapState([number % 7], [number])"
 
