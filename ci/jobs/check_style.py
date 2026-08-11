@@ -225,19 +225,26 @@ def check_functional_test_cases(files):
 
 
 # A query that pulls a server-side filesystem path out of a system table into the shell.
+# Single quotes are allowed inside the window so that a derived expression such as
+# `concat(path, '/data.bin')` is still recognized; double quotes, backticks, pipes, and
+# semicolons still bound the match to one query.
 FETCHES_SERVER_PATH_RE = re.compile(
-    r"(?i)\b(path|data_paths|metadata_path)\b[^\"'`|;]{0,300}?"
+    r"(?i)\b(path|data_paths|metadata_path)\b[^\"`|;]{0,300}?"
     r"\bfrom\s+system\.(parts|detached_parts|projection_parts|tables|disks)\b"
 )
 # The server data root fetched as SELECT value FROM system.server_settings WHERE name = 'path'.
+# The `value` token is required so that queries that merely inspect the setting without
+# materializing the path (e.g. SELECT count() ...) are not classified as a path fetch.
 FETCHES_SERVER_ROOT_RE = re.compile(
-    r"(?i)\bfrom\s+system\.server_settings\b[^\"'`|;]{0,100}?\bname\s*=\s*'path'"
+    r"(?i)\bvalue\b[^\"`|;]{0,100}?\bfrom\s+system\.server_settings\b"
+    r"[^\"`|;]{0,100}?\bname\s*=\s*'path'"
 )
 # Shell commands that create, modify, or delete files, at the start of a line or after
-# anything that can precede a command: a pipe / & / ; / subshell / group / backtick, or a
-# shell keyword (`if true; then rm ...; fi` compressed onto one line must not slip through).
+# anything that can precede a command: a pipe / & / ; / subshell / group / backtick /
+# `case` branch delimiter, or a shell keyword (`if true; then rm ...; fi` compressed onto
+# one line must not slip through).
 FILE_MUTATION_CMD_RE = re.compile(
-    r"(?:^|[|&;({`]|\b(?:if|then|elif|else|do|while|until)\b)\s*"
+    r"(?:^|[|&;(){)`]|\b(?:if|then|elif|else|do|while|until)\b)\s*"
     r"(?:sudo\s+)?(?:rm|cp|mv|dd|truncate|ln|chmod|touch|mkdir|tar|install|shred)\s"
 )
 SED_IN_PLACE_RE = re.compile(r"\bsed\s+(?:-\w+\s+)*-i\b")

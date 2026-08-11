@@ -66,6 +66,43 @@ def test_redirect_into_server_path_is_flagged(tmp_path):
     assert _run(tmp_path, FETCH_PART_PATH + 'echo broken > "$path/data.bin"\n')
 
 
+def test_mutation_in_case_branch_is_flagged(tmp_path):
+    assert _run(
+        tmp_path, FETCH_PART_PATH + 'case 1 in 1) rm -f "$path/data.bin";; esac\n'
+    )
+
+
+def test_derived_path_expression_is_flagged(tmp_path):
+    # The fetched expression need not be the bare column: a derived expression such as
+    # concat(path, '/data.bin') still pulls a server-side path into the shell.
+    assert _run(
+        tmp_path,
+        "p=$(${CLICKHOUSE_CLIENT} -q \"SELECT concat(path, '/data.bin')"
+        " FROM system.parts WHERE table = 't' LIMIT 1\")\n"
+        'rm -f "$p"\n',
+    )
+
+
+def test_server_root_fetch_is_flagged(tmp_path):
+    assert _run(
+        tmp_path,
+        'root=$(${CLICKHOUSE_CLIENT} -q "SELECT value FROM system.server_settings'
+        " WHERE name = 'path'\")\n"
+        'rm -f "$root/flags/force_drop_table"\n',
+    )
+
+
+def test_server_settings_inspection_without_value_is_not_flagged(tmp_path):
+    # Merely inspecting the setting without materializing the path is not a fetch.
+    assert not _run(
+        tmp_path,
+        'x=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.server_settings'
+        " WHERE name = 'path'\")\n"
+        "tmp=$(mktemp)\n"
+        'rm -f "$tmp"\n',
+    )
+
+
 def test_no_server_path_fetch_is_not_flagged(tmp_path):
     # File mutations over the test's own scratch files are fine.
     assert not _run(tmp_path, 'f=$(mktemp)\nrm -f "$f"\n')
