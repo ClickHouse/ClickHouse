@@ -62,17 +62,23 @@ frame 130 2147483648 'SELECT 1' 5 | post 2>&1 | grep -c 'Too large size_decompre
 
 echo '-- a codec that stores data uncompressed must not lie about the uncompressed size'
 frame 2 999 'SELECT 1' | post 2>&1 | grep -c 'does not match size_decompressed (999)'
+# Quantized (0x9e = 158) is the other codec reporting isNone(); the read path builds it from the
+# method byte alone, so the check applies to it without allow_experimental_codecs.
+echo '-- and neither may the other verbatim codec'
+frame 158 999 'SELECT 1' | post 2>&1 | grep -c 'does not match size_decompressed (999)'
 
-# compressor --stat prints: codec, size_decompressed, size_compressed. Both fields are bounded, and
-# only $3 sees the codec's expansion, so asserting $2 alone cannot observe an over-bound frame.
-# --stat also refuses a frame above the bound outright, which produces no rows at all: an empty
-# read must be reported, not counted as zero over-bound frames.
+# compressor --stat prints one row per frame: codec, size_decompressed, size_compressed. Both fields
+# are bounded, and only $3 sees the codec's expansion, so asserting $2 alone cannot observe an
+# over-bound frame. Only a well-formed row counts as a frame: a diagnostic on the merged stderr has
+# empty size fields, which compare as zero, so counting it would report a clean run for a failed one.
 over_bound() {
     ${CLICKHOUSE_BINARY} compressor --stat --input "$1" 2>&1 \
         | awk -F'\t' '
-            /^Code: 39/ { print "frames above the bound: rejected by --stat"; bad = 1; exit }
-            { seen++; if ($2 > 1073741824 || $3 > 1073741824) over++ }
-            END { if (bad) exit; if (!seen) print "frames above the bound: no frames read";
+            /^Code: 39/ { print "frames above the bound: rejected by --stat"; done = 1; exit }
+            NF == 3 && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ {
+                seen++; if ($2 > 1073741824 || $3 > 1073741824) over++; next }
+            { print "frames above the bound: unparsed output:", $0; done = 1; exit }
+            END { if (done) exit; if (!seen) print "frames above the bound: no frames read";
                   else print "frames above the bound:", over + 0 }'
 }
 
@@ -137,7 +143,7 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_mt_bound (k UInt64, s String, INDEX idx_s s TYPE minmax GRANULARITY 1)
         ENGINE = MergeTree ORDER BY k
         SETTINGS index_granularity = 8, compress_marks = 1, compress_primary_key = 1,
-                 min_bytes_for_wide_part = 0;
+                 min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 0;
 
     INSERT INTO t_log_bound SELECT repeat('a', 100) FROM numbers(1000);
     INSERT INTO t_stripe_bound SELECT repeat('a', 100) FROM numbers(1000);
@@ -147,7 +153,8 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT count(), sum(length(s)) FROM t_stripe_bound;
     SELECT count(), sum(length(s)) FROM t_mt_bound WHERE s LIKE '%a%';
     SELECT count() FROM t_mt_bound WHERE k = 42;
-    -- Reaches the skip-index file class in checkDataPart, which a read also reaches.
+    -- packed_skip_index_max_bytes = 0 keeps the index in its own file, which is the skip-index class
+    -- checkDataPart iterates over; a packed one carries no per-file checksum entry to visit.
     CHECK TABLE t_mt_bound SETTINGS check_query_single_value_result = 1;
 
     DROP TABLE t_log_bound;

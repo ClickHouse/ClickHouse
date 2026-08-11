@@ -10,6 +10,8 @@
 1
 -- a codec that stores data uncompressed must not lie about the uncompressed size
 1
+-- and neither may the other verbatim codec
+1
 -- a writer asked for a frame above the bound emits several frames within it
 frames above the bound: 0
 -- and its output round-trips

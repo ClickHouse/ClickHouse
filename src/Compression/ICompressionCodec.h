@@ -63,8 +63,10 @@ public:
         return getHeaderSize() + getMaxCompressedDataSize(uncompressed_size);
     }
 
-    /// buf_size reduced so that a full frame serializes both size fields within
-    /// DBMS_MAX_COMPRESSED_SIZE. A nonzero buf_size is never reduced to zero.
+    /// buf_size reduced so a full frame's size fields stay within DBMS_MAX_COMPRESSED_SIZE, where the
+    /// codec's reported worst-case expansion leaves room to subtract it; otherwise the request passes
+    /// through and the reader's own bound rejects an over-limit frame.
+    /// A nonzero buf_size is never reduced to zero.
     size_t capUncompressedFrameSize(size_t buf_size) const;
 
     /// Some codecs (LZ4, for example) require additional bytes at end of buffer
