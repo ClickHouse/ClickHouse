@@ -48,16 +48,16 @@
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTDataType.h>
-#include <Parsers/ASTEnumDataType.h>
-#include <Parsers/ASTTupleDataType.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
+#include <Parsers/ASTDropFunctionQuery.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTDropResourceQuery.h>
 #include <Parsers/ASTDropWorkloadQuery.h>
+#include <Parsers/ASTEnumDataType.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
@@ -76,6 +76,7 @@
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTRefreshStrategy.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTSQLSecurity.h>
@@ -87,6 +88,7 @@
 #include <Parsers/ASTShowFunctionsQuery.h>
 #include <Parsers/ASTShowIndexesQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
+#include <Parsers/ASTSnapshotQuery.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTSubquery.h>
@@ -94,6 +96,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTTimeInterval.h>
 #include <Parsers/ASTTransactionControl.h>
+#include <Parsers/ASTTupleDataType.h>
 #include <Parsers/ASTUndropQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -112,6 +115,7 @@
 #include <Parsers/ParserDataType.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/SyncReplicaMode.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <pcg_random.hpp>
 #include <Common/SettingsChanges.h>
@@ -1373,6 +1377,15 @@ static String getFuzzedTableName(const String & original_name, size_t index)
     return original_name + "__fuzz_" + toString(index);
 }
 
+/// Allocate the next `__fuzz_N` name for a table. The counter is what
+/// `getDropQueriesForFuzzedTables` later walks to clean the run up, so every name a rewritten
+/// definition is given has to come from here, never from `getFuzzedTableName` directly.
+String QueryFuzzer::nextFuzzedTableName(const String & full_name)
+{
+    const auto original_name = getOriginalTableName(full_name);
+    return getFuzzedTableName(original_name, index_of_fuzzed_table[original_name]++);
+}
+
 /// Fuzz a table storage definition (ENGINE and SETTINGS clauses).
 /// Used both for the storage of a plain CREATE TABLE and for the
 /// inner table storage of a materialized view.
@@ -2194,10 +2207,8 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         cons.erase(cons.begin() + fuzz_rand() % cons.size());
     }
 
-    auto full_name = create.getTable();
-    auto original_name = getOriginalTableName(full_name);
-    size_t index = index_of_fuzzed_table[original_name]++;
-    auto new_name = getFuzzedTableName(original_name, index);
+    auto original_name = getOriginalTableName(create.getTable());
+    auto new_name = nextFuzzedTableName(original_name);
 
     /// Occasionally wrap a live fuzzed clone of this table in a Distributed/Remote/RemoteSecure/Buffer/
     /// Alias/Merge engine, dropping the (now inferred) column list and the key clauses these engines reject.
@@ -3063,6 +3074,18 @@ const std::map<size_t, Strings> & QueryFuzzer::swapAggregateNames()
     return swapAggrs;
 }
 
+/// Pick one of the live `__fuzz_N` clones of a corpus table. Empty when nothing has been created
+/// under that name yet, either because no `CREATE` was fuzzed for it or because the clones were
+/// already dropped.
+String QueryFuzzer::pickFuzzedTableName(const String & full_name)
+{
+    const auto it = original_table_name_to_fuzzed.find(getOriginalTableName(full_name));
+    if (it == original_table_name_to_fuzzed.end() || it->second.empty())
+        return {};
+
+    return *std::next(it->second.begin(), fuzz_rand() % it->second.size());
+}
+
 void QueryFuzzer::fuzzTableName(ASTTableExpression & table)
 {
     if (!table.database_and_table_name || fuzz_rand() % 3 == 0)
@@ -3076,15 +3099,21 @@ void QueryFuzzer::fuzzTableName(ASTTableExpression & table)
     if (table_id.empty())
         return;
 
-    auto original_name = getOriginalTableName(table_id.getTableName());
-    auto it = original_table_name_to_fuzzed.find(original_name);
-    if (it != original_table_name_to_fuzzed.end() && !it->second.empty())
+    const auto new_table_name = pickFuzzedTableName(table_id.getTableName());
+    if (new_table_name.empty())
+        return;
+
+    ASTPtr new_identifier = make_intrusive<ASTTableIdentifier>(StorageID(table_id.database_name, new_table_name));
+    /// The identifier is registered as a child, so both slots have to move together.
+    for (auto & child : table.children)
     {
-        auto new_table_name = it->second.begin();
-        std::advance(new_table_name, fuzz_rand() % it->second.size());
-        StorageID new_table_id(table_id.database_name, *new_table_name);
-        table.database_and_table_name = make_intrusive<ASTTableIdentifier>(new_table_id);
+        if (child == table.database_and_table_name)
+        {
+            child = new_identifier;
+            break;
+        }
     }
+    table.database_and_table_name = std::move(new_identifier);
 }
 
 void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
@@ -3727,15 +3756,12 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
         ASTPtr new_child = nullptr;
         static const constexpr int asterisk_prob = 2000;
 
-        /// ORDER BY lists contain ASTOrderByElement nodes which must not be replaced by
-        /// arbitrary expressions — doing so breaks the order_by_all formatting invariant
-        /// (ASTSelectQuery::formatImpl assumes children[0] is ASTOrderByElement when
-        /// order_by_all == true) and causes a null-pointer crash in format().
-        /// `WINDOW` lists likewise contain `ASTWindowListElement` nodes: the analyzer and query
-        /// tree builder cast every `window()` child to `ASTWindowListElement`, so replacing one
-        /// with a plain expression breaks that node-type invariant. We still recurse into the
-        /// element below (via `fuzz(child)`) so the window definition is fuzzed in place.
-        if (!typeid_cast<ASTOrderByElement *>(child.get()) && !typeid_cast<ASTWindowListElement *>(child.get()))
+        /// These lists hold structural nodes, not expressions: replacing one with an expression
+        /// emits text no parser accepts back, and readers cast every element through a throwing
+        /// `as<T &>`. `fuzz(child)` below still mutates them in place.
+        if (!typeid_cast<ASTOrderByElement *>(child.get()) && !typeid_cast<ASTWindowListElement *>(child.get())
+            && !typeid_cast<ASTAssignment *>(child.get()) && !typeid_cast<ASTAlterCommand *>(child.get())
+            && !typeid_cast<ASTWithElement *>(child.get()) && !typeid_cast<ASTInterpolateElement *>(child.get()))
         {
             if (auto * /*literal*/ _ = typeid_cast<ASTLiteral *>(child.get()))
             {
@@ -3912,6 +3938,28 @@ void QueryFuzzer::fuzz(ASTs & asts)
     for (auto & ast : asts)
     {
         fuzz(ast);
+    }
+}
+
+/// Fuzz `children` for a node whose `ASTPtr` member aliases an entry of it. `fuzz` can swap an element
+/// outright, so the slot is remembered first and the member is pointed back at it afterwards;
+/// otherwise the member the formatter reads would keep the stale subtree and the two would diverge.
+void QueryFuzzer::fuzzChildrenWithAlias(IAST & parent, ASTPtr & aliased_member)
+{
+    std::optional<size_t> slot;
+
+    for (size_t i = 0; aliased_member && i < parent.children.size(); i++)
+    {
+        if (parent.children[i] == aliased_member)
+        {
+            slot = i;
+            break;
+        }
+    }
+    fuzz(parent.children);
+    if (slot.has_value() && slot.value() < parent.children.size())
+    {
+        aliased_member = parent.children[slot.value()];
     }
 }
 
@@ -6650,6 +6698,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         /// DROP SYNC: wait for all mutations/merges to finish before returning
         if (drop_query->kind == ASTDropQuery::Drop && fuzz_rand() % 20 == 0)
             drop_query->sync = !drop_query->sync;
+        fuzzChildrenWithAlias(*drop_query, drop_query->database_and_tables);
         /// Turn a single-table DROP into UNDROP TABLE for the same target. Exercises the Atomic
         /// database delayed-cleanup / UUID-resurrection path (undrop only makes sense right after a
         /// drop, so replacing an emitted DROP is a natural place to probe it).
@@ -6668,20 +6717,28 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * create_index_query = typeid_cast<ASTCreateIndexQuery *>(ast.get()))
     {
+        fuzzTableName(*create_index_query);
         /// Apply the same index-specific mutations as CREATE TABLE and ALTER TABLE ADD INDEX
         if (create_index_query->index_decl)
             if (auto * idx = create_index_query->index_decl->as<ASTIndexDeclaration>())
                 fuzzIndexDeclaration(*idx);
         if (fuzz_rand() % 20 == 0)
             create_index_query->if_not_exists = !create_index_query->if_not_exists;
+        fuzzChildrenWithAlias(*create_index_query, create_index_query->index_decl);
     }
     else if (auto * drop_index_query = typeid_cast<ASTDropIndexQuery *>(ast.get()))
     {
+        fuzzTableName(*drop_index_query);
         if (fuzz_rand() % 20 == 0)
             drop_index_query->if_exists = !drop_index_query->if_exists;
+        /// Every child is a bare identifier, and `fuzz` has no branch for those, so there is nothing
+        /// here to recurse into.
     }
     else if (auto * insert_query = typeid_cast<ASTInsertQuery *>(ast.get()))
     {
+        /// Only the table name moves, so the inlined-data pointers into the original query text
+        /// stay valid; the per-table copies `getQueriesForFuzzedTables` emits are unfuzzed.
+        fuzzTableName(*insert_query);
         /// Remove a column from the explicit column list (exercises DEFAULT filling)
         if (insert_query->columns && insert_query->columns->children.size() > 1 && fuzz_rand() % 100 == 0)
         {
@@ -6727,6 +6784,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * delete_query = typeid_cast<ASTDeleteQuery *>(ast.get()))
     {
+        fuzzTableName(*delete_query);
         fuzzMandatoryPredicate(delete_query->predicate, delete_query->children);
         /// Drop IN PARTITION, widening the mutation to the whole table
         if (delete_query->partition && fuzz_rand() % 20 == 0)
@@ -6746,6 +6804,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * update_query = typeid_cast<ASTUpdateQuery *>(ast.get()))
     {
+        fuzzTableName(*update_query);
         fuzzMandatoryPredicate(update_query->predicate, update_query->children);
         /// Fuzz SET assignments: remove a column assignment if multiple exist
         if (update_query->assignments && update_query->assignments->children.size() > 1 && fuzz_rand() % 50 == 0)
@@ -6776,6 +6835,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * alter_query = typeid_cast<ASTAlterQuery *>(ast.get()))
     {
+        if (alter_query->alter_object == ASTAlterQuery::AlterObjectType::TABLE)
+            fuzzTableName(*alter_query);
         if (alter_query->command_list)
         {
             auto & cmds = alter_query->command_list->children;
@@ -7074,6 +7135,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * optimize_query = typeid_cast<ASTOptimizeQuery *>(ast.get()))
     {
+        /// The per-table copies `getQueriesForFuzzedTables` emits are reparsed from the original
+        /// text, so this is the only way a fuzzed OPTIMIZE reaches a fuzzed table.
+        fuzzTableName(*optimize_query);
         if (fuzz_rand() % 20 == 0)
         {
             optimize_query->final = !optimize_query->final;
@@ -7200,8 +7264,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             kill_query->sync = !kill_query->sync;
         if (fuzz_rand() % 10 == 0)
             kill_query->test = !kill_query->test;
-        /// where_expression is registered as a child.
-        fuzz(kill_query->children);
+        fuzzChildrenWithAlias(*kill_query, kill_query->where_expression);
     }
     else if (auto * explain_query = typeid_cast<ASTExplainQuery *>(ast.get()))
     {
@@ -7232,14 +7295,15 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         /// Toggle MATERIALIZED: makes the CTE evaluate once and cache the result
         if (fuzz_rand() % 10 == 0)
             with_elem->is_materialized = !with_elem->is_materialized;
-        fuzz(with_elem->children);
+        /// `aliases` is never registered as a child, so only `subquery` is reached here.
+        fuzzChildrenWithAlias(*with_elem, with_elem->subquery);
     }
     else if (auto * interpolate_elem = typeid_cast<ASTInterpolateElement *>(ast.get()))
     {
         /// Occasionally rename the target column to exercise unresolved-column paths
         if (fuzz_rand() % 200 == 0)
-            interpolate_elem->column = "col_" + std::to_string(fuzz_rand() % 10);
-        fuzz(interpolate_elem->children);
+            interpolate_elem->column = "c" + std::to_string(fuzz_rand() % 10);
+        fuzzChildrenWithAlias(*interpolate_elem, interpolate_elem->expr);
     }
     else if (auto * assignment = typeid_cast<ASTAssignment *>(ast.get()))
     {
@@ -7357,6 +7421,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * system_query = typeid_cast<ASTSystemQuery *>(ast.get()))
     {
+        fuzzTableName(*system_query);
         using Type = ASTSystemQuery::Type;
         /// Toggle paired commands to exercise both code paths with the same operand.
         /// Includes START/STOP pairs, individual/bulk reload pairs, and ENABLE/DISABLE pairs.
@@ -7510,8 +7575,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             if (system_query->fake_time_for_view.has_value())
                 system_query->fake_time_for_view.reset();
             else
-                system_query->fake_time_for_view
-                    = DateLUT::instance().timeToString(static_cast<time_t>(fuzz_rand() % 2000000000LL));
+                system_query->fake_time_for_view = DateLUT::instance().timeToString(static_cast<time_t>(fuzz_rand() % 2000000000LL));
         }
         /// Toggle CLEAR FILESYSTEM CACHE between clearing all, by name, and by name+key+offset
         if (system_query->type == Type::CLEAR_FILESYSTEM_CACHE && fuzz_rand() % 5 == 0)
@@ -7728,6 +7792,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * hypo_index = typeid_cast<ASTHypotheticalIndexQuery *>(ast.get()))
     {
+        fuzzTableName(*hypo_index);
         /// CREATE/DROP HYPOTHETICAL INDEX: mutate the embedded index declaration
         /// like a regular skipping index and toggle the IF [NOT] EXISTS flags.
         if (hypo_index->index_decl)
@@ -8158,6 +8223,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * check_table = typeid_cast<ASTCheckTableQuery *>(ast.get()))
     {
+        fuzzTableName(*check_table);
         /// Occasionally rewrite CHECK TABLE db.t into CHECK DATABASE db.
         if (check_table->database && fuzz_rand() % 20 == 0)
         {
@@ -8174,6 +8240,36 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             if (check_table->partition)
                 fuzz(check_table->partition);
             fuzz(check_table->children);
+        }
+    }
+    else if (auto * describe = typeid_cast<ASTDescribeQuery *>(ast.get()))
+    {
+        /// `table_expression` is dereferenced unconditionally by the formatter, so never drop it.
+        /// TEMPORARY only reparses in front of a plain table name: a table function or a subquery
+        /// after `DESCRIBE TEMPORARY TABLE` is a syntax error. Turning it off is always safe.
+        if (fuzz_rand() % 10 == 0)
+        {
+            const auto * table_exp = typeid_cast<const ASTTableExpression *>(describe->table_expression.get());
+            if (describe->temporary || (table_exp && table_exp->database_and_table_name))
+                describe->temporary = !describe->temporary;
+        }
+        fuzzChildrenWithAlias(*describe, describe->table_expression);
+    }
+    else if (auto * drop_function = typeid_cast<ASTDropFunctionQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            drop_function->if_exists = !drop_function->if_exists;
+        fuzz(drop_function->children);
+    }
+    else if (auto * snapshot = typeid_cast<ASTSnapshotQuery *>(ast.get()))
+    {
+        /// ALL is always formattable; TABLE prints the bare table name, so it needs one to exist.
+        if (fuzz_rand() % 10 == 0)
+        {
+            if (snapshot->element.type == ASTSnapshotQuery::TABLE)
+                snapshot->element.type = ASTSnapshotQuery::ALL;
+            else if (!snapshot->element.table_name.empty())
+                snapshot->element.type = ASTSnapshotQuery::TABLE;
         }
     }
     else

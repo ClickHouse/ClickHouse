@@ -3,6 +3,7 @@
 #include <DataTypes/IDataType.h>
 
 #include <map>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -306,7 +307,24 @@ private:
     void fuzzIndexDeclaration(ASTIndexDeclaration & index);
     void fuzzProjectionDeclaration(ASTProjectionDeclaration & projection);
     void fuzzProjectionWithSettings(ASTProjectionDeclaration & projection);
+    String pickFuzzedTableName(const String & full_name);
     void fuzzTableName(ASTTableExpression & table);
+
+    /// Point a statement that names an existing table at one of its live `__fuzz_N` clones, so the
+    /// rewritten definitions are exercised outside a `FROM` too. Takes any node exposing the
+    /// `table` / `getTable` / `setTable` trio; `setTable` re-registers the child, so there is
+    /// nothing else to keep in sync.
+    template <typename Query>
+    void fuzzTableName(Query & query)
+    {
+        if (!query.table || fuzz_rand() % 3 == 0)
+            return;
+
+        const auto new_table_name = pickFuzzedTableName(query.getTable());
+        if (!new_table_name.empty())
+            query.setTable(new_table_name);
+    }
+
     void fuzzTableFunctionName(ASTPtr & table_function);
     void fuzzClusterFunctionArguments(ASTFunction & fn);
     void fuzzMergeFunctionArguments(ASTFunction & fn);
@@ -327,6 +345,8 @@ private:
     void fuzzMandatoryPredicate(ASTPtr & predicate, ASTs & children);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
+    void fuzzChildrenWithAlias(IAST & parent, ASTPtr & aliased_member);
+    String nextFuzzedTableName(const String & full_name);
     void collectFuzzInfoMain(ASTPtr ast);
     void addTableLike(ASTPtr ast);
     void addColumnLike(ASTPtr ast);
