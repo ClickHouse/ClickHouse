@@ -68,12 +68,13 @@ public:
     {
         if (text.empty())
             return;
+        const std::string safe = sanitizeForTerminal(text);
         if (!use_colors)
-            output_stream << text;
+            output_stream << safe;
         else if (final)
-            output_stream << renderMarkdownToANSI(text);
+            output_stream << renderMarkdownToANSI(safe);
         else
-            output_stream << "\033[2m" << text << "\033[0m";
+            output_stream << "\033[2m" << safe << "\033[0m";
         output_stream << "\n" << std::flush;
     }
 
@@ -81,9 +82,9 @@ public:
     {
         if (use_colors)
             output_stream << "\033[33m";
-        output_stream << "⚙ " << tool_name;
+        output_stream << "⚙ " << sanitizeForTerminal(tool_name);
         if (!args_summary.empty())
-            output_stream << " " << args_summary;
+            output_stream << " " << sanitizeForTerminal(args_summary);
         if (use_colors)
             output_stream << "\033[0m";
         output_stream << "\n" << std::flush;
@@ -93,7 +94,7 @@ public:
     {
         if (use_colors)
             output_stream << (success ? "\033[2;32m" : "\033[2;31m");
-        output_stream << (success ? "  ✓ " : "  ✗ ") << oneLine(summary);
+        output_stream << (success ? "  ✓ " : "  ✗ ") << oneLine(sanitizeForTerminal(summary));
         if (use_colors)
             output_stream << "\033[0m";
         output_stream << "\n" << std::flush;
@@ -103,10 +104,28 @@ public:
     {
         if (use_colors)
             output_stream << "\033[31m";
-        output_stream << "AI agent error: " << message;
+        output_stream << "AI agent error: " << sanitizeForTerminal(message);
         if (use_colors)
             output_stream << "\033[0m";
         output_stream << "\n" << std::flush;
+    }
+
+    /// The model's output (and everything derived from it, like tool names or error messages
+    /// quoting it) is untrusted: a prompt-injected response could carry raw ANSI/OSC escape
+    /// sequences taking control of the user's terminal (clipboard writes, cursor movement,
+    /// prompt spoofing). Drop all control characters except newlines and tabs; the display
+    /// adds its own formatting escapes on top of the sanitized text.
+    static std::string sanitizeForTerminal(const std::string & text)
+    {
+        std::string result;
+        result.reserve(text.size());
+        for (char c : text)
+        {
+            const auto byte = static_cast<unsigned char>(c);
+            if (c == '\n' || c == '\t' || (byte >= 0x20 && byte != 0x7F))
+                result += c;
+        }
+        return result;
     }
 
     void showNotice(const std::string & message)
