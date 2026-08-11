@@ -40,7 +40,10 @@ set -euo pipefail
 #   --assigned            Select PRs assigned to you.
 #   --related             Select PRs you've contributed to (commented/reviewed),
 #                         but only ones that look abandoned - no activity by
-#                         anyone but you in the last week (RELATED_STALE_DAYS).
+#                         anyone but you in the last week (RELATED_STALE_DAYS) -
+#                         and whose author is not listed in exclude-authors.txt
+#                         (next to this script). Authors there are still updated
+#                         via --mine (your own PRs) and --assigned.
 #                         --mine/--assigned/--related are combinable; if none is
 #                         given, all three are selected.
 #   --worktree-base PATH  Base path for worker worktrees; worker i lives at
@@ -100,6 +103,11 @@ REPO="ClickHouse/ClickHouse"
 
 # The Python terminal renderer that draws the status bar (sits next to this script).
 STATUS_RENDERER="${BASH_SOURCE[0]%/*}/continue-all-prs-status.py"
+
+# Authors whose PRs are excluded from --related updates (one login per line;
+# blank/`#` lines ignored). Sits next to this script.
+EXCLUDE_AUTHORS_FILE="${BASH_SOURCE[0]%/*}/exclude-authors.txt"
+declare -A EXCLUDED_AUTHOR
 
 # Bright magenta for the orchestrator's own messages, to distinguish from the
 # per-PR (hash-colored) lines.
@@ -702,6 +710,18 @@ related_is_abandoned()
     [[ "$verdict" == "abandoned" ]]
 }
 
+# Load exclude-authors.txt into EXCLUDED_AUTHOR (lowercased logins).
+load_excluded_authors()
+{
+    [[ -r "$EXCLUDE_AUTHORS_FILE" ]] || return 0
+    local line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%%#*}"                 # strip trailing comment
+        line="${line//[[:space:]]/}"       # strip all whitespace
+        [[ -n "$line" ]] && EXCLUDED_AUTHOR["${line,,}"]=1
+    done < "$EXCLUDE_AUTHORS_FILE"
+}
+
 fetch_prs()
 {
     if [[ -n "${CONTINUE_ALL_PRS_PRS_FILE:-}" ]]; then
@@ -717,24 +737,25 @@ fetch_prs()
     # are unioned, `hold`-labeled PRs dropped, collapsed to one record per PR
     # (keeping "always" if it matched any always category), and sorted by last
     # update (oldest first). Related-only PRs are then kept only if they look
-    # abandoned - no activity by anyone but me within RELATED_STALE_DAYS.
+    # abandoned - no activity by anyone but me within RELATED_STALE_DAYS - and
+    # their author is not in exclude-authors.txt.
     local cutoff candidates
     cutoff=$(date -u -d "${RELATED_STALE_DAYS} days ago" +%Y-%m-%dT%H:%M:%SZ)
 
     candidates=$( {
         if (( MODE_MINE )); then
             gh search prs --repo "$REPO" --state open --author @me --limit 1000 \
-                --json number,title,updatedAt,labels | jq -c 'map(. + {always:true})'
+                --json number,title,updatedAt,labels,author | jq -c 'map(. + {always:true})'
         fi
         if (( MODE_ASSIGNED )); then
             gh search prs --repo "$REPO" --state open --assignee @me --limit 1000 \
-                --json number,title,updatedAt,labels | jq -c 'map(. + {always:true})'
+                --json number,title,updatedAt,labels,author | jq -c 'map(. + {always:true})'
         fi
         if (( MODE_RELATED )); then
             gh search prs --repo "$REPO" --state open --commenter @me --limit 1000 \
-                --json number,title,updatedAt,labels | jq -c 'map(. + {always:false})'
+                --json number,title,updatedAt,labels,author | jq -c 'map(. + {always:false})'
             gh search prs --repo "$REPO" --state open --reviewed-by @me --limit 1000 \
-                --json number,title,updatedAt,labels | jq -c 'map(. + {always:false})'
+                --json number,title,updatedAt,labels,author | jq -c 'map(. + {always:false})'
         fi
     } | jq -s -r '
         add
@@ -742,17 +763,23 @@ fetch_prs()
         | group_by(.number)
         | map({ number:    .[0].number,
                 title:     .[0].title,
+                author:    (.[0].author.login // ""),
                 updatedAt: (map(.updatedAt) | max),
                 always:    (any(.[]; .always)) })
         | sort_by(.updatedAt)
-        | .[] | [ .number, (.always | tostring), .updatedAt, .title ] | @tsv' )
+        | .[] | [ .number, (.always | tostring), .author, .updatedAt, .title ] | @tsv' )
 
-    local number always updatedAt title
-    while IFS=$'\t' read -r number always updatedAt title; do
+    local number always author updatedAt title
+    while IFS=$'\t' read -r number always author updatedAt title; do
         [[ -n "$number" ]] || continue
         if [[ "$always" == "true" ]]; then
+            # mine / assigned to me -> always processed, regardless of author.
             printf '%s\t%s\n' "$number" "$title"
-        elif [[ "$updatedAt" < "$cutoff" ]]; then
+            continue
+        fi
+        # related-only: skip if the author is excluded from --related updates.
+        [[ -n "${EXCLUDED_AUTHOR[${author,,}]:-}" ]] && continue
+        if [[ "$updatedAt" < "$cutoff" ]]; then
             # No activity by anyone (including me) in the window -> abandoned.
             printf '%s\t%s\n' "$number" "$title"
         elif related_is_abandoned "$number" "$cutoff"; then
@@ -771,6 +798,7 @@ if [[ -z "${CONTINUE_ALL_PRS_PRS_FILE:-}" ]]; then
 fi
 
 maybe_color_hint
+load_excluded_authors
 
 modes=()
 (( MODE_MINE ))     && modes+=("mine")
@@ -784,6 +812,7 @@ banner "Workers:         $WORKERS"
 banner "Worktree base:   ${WORKTREE_BASE}-{0..$((WORKERS - 1))}"
 [[ -n "$GH_USER" ]] && banner "GitHub user:     $GH_USER"
 banner "Selecting:       $MODES_DESC"
+(( MODE_RELATED )) && (( ${#EXCLUDED_AUTHOR[@]} )) && banner "Excluded (related): ${!EXCLUDED_AUTHOR[*]}"
 banner "Per-PR timeout:  ${TIMEOUT}s (shared across up to ${MAX_CONTINUE} turns)"
 banner "ccache:          ${CCACHE_DIR} (max ${CCACHE_MAXSIZE})"
 banner "Effort:          ${EFFORT}"
