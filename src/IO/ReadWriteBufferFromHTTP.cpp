@@ -393,9 +393,13 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             /// The cancellation flag, on the other hand, deliberately does not change this exit: the
             /// error of the attempt that really failed is the only reason we have, it is what the
             /// caller would get with no cancellation at all, and a reader which must still succeed
-            /// discards it anyway, see StorageURLSource::generate. Replacing it with a synthesized
-            /// cancellation error could mask the failure that tore the pipeline down.
+            /// discards it, see StorageURLSource::generate. Replacing it with a synthesized
+            /// cancellation error could mask the failure that tore the pipeline down. Marking the
+            /// error lets that reader tell it from a failure the cancellation has nothing to do
+            /// with, which it must not discard.
             CurrentThread::checkIfNotCancelled();
+            if (isReadCancelled())
+                cancellation->markReadInterrupted();
 
             std::rethrow_exception(exception);
         }
@@ -429,10 +433,14 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                 /// query gave up on further data (a soft timeout with the `break` overflow mode, or a
                 /// consumer that has enough data). There is nothing to gain from the remaining
                 /// attempts, so report the error of the last one - it is the only reason we have, and
-                /// it is what the caller would get after the attempts were exhausted anyway.
+                /// it is what the caller would get after the attempts were exhausted anyway. Mark it,
+                /// so that the reader which discards the errors of the read it has cancelled can tell
+                /// this one from a failure the cancellation has nothing to do with, see
+                /// StorageURLSource::generate.
                 /// Do not leave this loop silently: the callers rely on getting either their data or an
-                /// exception, and treat a normal return as a success. A reader which must succeed
-                /// without the data discards this error itself, see StorageURLSource::generate.
+                /// exception, and treat a normal return as a success.
+                cancellation->markReadInterrupted();
+
                 if (!mute_logging)
                     LOG_DEBUG(log,
                               "Stopped retrying the request to '{}'{} at try {}/{}, because the read was cancelled. "

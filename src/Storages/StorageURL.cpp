@@ -554,6 +554,14 @@ Chunk StorageURLSource::generate()
             if (!cancellation->isCancelledSoftly())
                 throw;
 
+            /// Discard only the interruption of the read itself: the error of a request which was
+            /// abandoned because of the cancellation, see Cancellation::markReadInterrupted. An
+            /// error the cancellation has nothing to do with - for example, a parse error of the
+            /// data that had already been downloaded when it arrived - fails the query the same way
+            /// it would with no cancellation at all.
+            if (!cancellation->isReadInterrupted())
+                throw;
+
             /// The reason delivered to the source may understate a kill: the executor polls
             /// QueryStatus::checkTimeLimitSoft, which returns false for a killed query, and cancels
             /// the pipeline with CancelledByTimeout. When that poll wins the race against the
@@ -735,7 +743,10 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         if (cancellation && cancellation->isCancelled())
         {
             if (cancellation->isCancelledSoftly())
+            {
+                cancellation->markReadInterrupted();
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "The URL read has been cancelled while choosing the URI to read from");
+            }
 
             return true;
         }
@@ -793,9 +804,15 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
             /// The error of a request whose read has been cancelled - for example, the last HTTP error
             /// rethrown when the cancellation woke up the retry backoff, see doWithRetries - must
             /// propagate instead: the source discards it or fails with it depending on the reason of
-            /// the cancellation, see generate.
+            /// the cancellation, see generate. It is marked as the interruption of the read here too:
+            /// the request may have failed just before the cancellation arrived, in which case its
+            /// error is unmarked, but not probing the remaining options because of the cancellation
+            /// makes it the error the read is interrupted with.
             if (cancellation && cancellation->isCancelled())
+            {
+                cancellation->markReadInterrupted();
                 throw;
+            }
 
             if (first_exception_message.empty())
                 first_exception_message = getCurrentExceptionMessage(false);
