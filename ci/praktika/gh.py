@@ -1054,7 +1054,11 @@ class GH:
         return status_map
 
     @classmethod
-    def merge_pr(cls, pr=None, repo=None, squash=False, keep_branch=False):
+    def merge_pr(cls, pr=None, repo=None, squash=False, keep_branch=False, admin=False):
+        """Merge PR #`pr`. With `admin`, merge right away with administrator
+        privileges: required checks are not awaited and the merge queue on the
+        base branch is bypassed. Only for automation that has already decided
+        the change must land immediately, such as reverting a broken merge."""
         if not repo:
             repo = _Environment.get().REPOSITORY
         if not pr:
@@ -1067,6 +1071,8 @@ class GH:
             extra_args += " --squash"
         else:
             extra_args += " --merge"
+        if admin:
+            extra_args += " --admin"
 
         cmd = f"gh pr merge {pr} --repo {repo} {extra_args}"
         return cls.do_command_with_retries(cmd)
