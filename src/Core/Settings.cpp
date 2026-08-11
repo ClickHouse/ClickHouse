@@ -4594,7 +4594,7 @@ Maximum number of elements generated during glob pattern expansion (for file glo
     DECLARE(Bool, use_glob_ast_parser, false, R"(
 Experimental. Use the new AST-based glob parser (GlobAST) instead of the legacy regex-based parser. The new parser supports direct matching without regex compilation and can expand globs with ranges. Its matching follows POSIX shell semantics more closely than the legacy parser; in particular a single-element brace group such as `{a}` is treated as the literal text `{a}` (the legacy parser expands it to `a`).
 
-The setting applies to per-query paths only (table functions such as `s3` and `file`, `INFILE`, and cluster functions). Stored tables (`ENGINE = S3`, `ENGINE = File`, `S3Queue`, ...) always classify their persisted path with the legacy parser, so table metadata, reads and writes cannot change meaning across sessions.
+The setting applies to per-query paths only (table functions such as `s3` and `file`, `INFILE`, and cluster functions), and for object storage it affects reads and listing only: writes (e.g. `INSERT INTO FUNCTION s3(...)`) and `partition_strategy` validation always classify the path with the legacy parser. Stored tables (`ENGINE = S3`, `ENGINE = File`, `S3Queue`, ...) always classify their persisted path with the legacy parser, so table metadata, reads and writes cannot change meaning across sessions.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_url_wildcard_from_index_pages, false, R"(
 Allow experimental wildcard expansion for `url()` and `ENGINE = URL` from HTTP index pages.
