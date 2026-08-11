@@ -97,7 +97,8 @@ public:
         String comparator = literal_id > func_id ? function->getFunctionName() : swap_relations.at(function->getFunctionName());
 
         const auto * func_node = function->getArguments().getNodes()[func_id]->as<FunctionNode>();
-        /// Currently we only handle single-argument functions.
+        /// The preimage API does not receive constant function arguments. Explicit-time-zone
+        /// overloads therefore cannot be calculated safely, so optimize only one-argument calls.
         if (!func_node || func_node->getArguments().getNodes().size() != 1)
             return;
 

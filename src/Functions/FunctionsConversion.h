@@ -56,6 +56,7 @@
 #include <Formats/FormatFactory.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/DateTimeTransforms.h>
+#include <Functions/FieldInterval.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsCodingIP.h>
@@ -3483,6 +3484,19 @@ public:
         return Monotonic::get(type, left, right);
     }
 
+    bool hasInformationAboutPreimage() const override
+    {
+        return std::is_same_v<ToDataType, DataTypeDate>;
+    }
+
+    FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
+    {
+        if constexpr (std::is_same_v<ToDataType, DataTypeDate>)
+            return Monotonic::getPreimage(type, point);
+
+        return IFunction::getPreimage(type, point);
+    }
+
 private:
     const FunctionConvertSettings settings;
 
@@ -4334,6 +4348,14 @@ template <typename T>
 struct ToDateMonotonicity
 {
     static bool has() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        /// With the default `date_time_overflow_behavior=ignore`, converting `DateTime64` or `Date32`
+        /// to `Date` can wrap and have multiple disjoint preimages. The shared helper only accepts
+        /// `DateTime`, whose `UInt32` domain has a single interval preimage for complete civil days.
+        return getPreimageForDateRounding(type, point, DateRoundingInterval::Day);
+    }
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {

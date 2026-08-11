@@ -129,7 +129,8 @@ void OptimizeDateOrDateTimeConverterWithPreimageMatcher::visit(const ASTFunction
     String comparator = literal_id > func_id ? function.name : swap_relations.at(function.name);
 
     const auto * ast_func = function.arguments->children[func_id]->as<ASTFunction>();
-    /// Currently we only handle single-argument functions.
+    /// The preimage API does not receive constant function arguments. Explicit-time-zone
+    /// overloads therefore cannot be calculated safely, so optimize only one-argument calls.
     if (!ast_func || !ast_func->arguments || ast_func->arguments->children.size() != 1)
         return;
 

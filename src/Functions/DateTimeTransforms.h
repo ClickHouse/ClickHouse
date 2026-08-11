@@ -141,6 +141,212 @@ auto extendedFactorForMonotonicity(ArgType arg, const DateLUTImpl & date_lut)
         return FactorTransform::execute(arg, date_lut);
 }
 
+enum class DateRoundingInterval : UInt8
+{
+    Day,
+    Week,
+    Month,
+    LastDayOfMonth,
+    Quarter,
+    Year,
+    ISOYear,
+};
+
+inline FieldIntervalPtr makeDateOrDateTimePreimageForDayRange(
+    const IDataType & type, ExtendedDayNum start_day, ExtendedDayNum end_day)
+{
+    /// This optimization is deliberately limited to `Date` and `DateTime`. Extending it to
+    /// `Date32` and `DateTime64` is not just another type branch: date-returning transforms depend
+    /// on `enable_extended_results_for_datetime_functions`, default results can clamp or wrap at
+    /// the type boundaries, and `DateTime64` bounds are scale-dependent. Supporting the complete
+    /// source-type surface requires result-type-aware bounds and, in some cases, multiple intervals.
+    const auto & utc_time_zone = DateLUT::instance("UTC");
+    if (isDate(type))
+    {
+        /// `Date` is already a civil day number, so its preimage does not require time-zone conversion.
+        if (start_day.toUnderType() < 0 || end_day.toUnderType() > DATE_LUT_MAX_DAY_NUM)
+            return nullptr;
+
+        return std::make_shared<FieldInterval>(
+            Field(utc_time_zone.fromDayNum(start_day)), Field(utc_time_zone.fromDayNum(end_day)));
+    }
+
+    const auto * date_time_type = checkAndGetDataType<DataTypeDateTime>(&type);
+    if (!date_time_type || start_day.toUnderType() <= 0 || end_day.toUnderType() > DATE_LUT_MAX_DAY_NUM)
+        return nullptr;
+
+    /// Do not optimize partial civil days at the edges of the `DateTime` domain.
+    const auto & source_time_zone = date_time_type->getTimeZone();
+    const auto source_start = source_time_zone.fromDayNum(start_day);
+    const auto source_end = source_time_zone.fromDayNum(end_day);
+    if (source_start < 0 || source_end > std::numeric_limits<UInt32>::max())
+        return nullptr;
+
+    /// Preimage bounds are rendered as civil date/time strings in UTC by the optimizer and then
+    /// converted to the column type. Preserve the local components of the actual source-time-zone
+    /// boundaries in UTC surrogates. A boundary need not be midnight: for example,
+    /// America/Lima advanced its clock at 1994-01-01 00:00:00, so that civil year starts at 01:00:00.
+    ///
+    /// Parsing an ambiguous local time can also choose a different timestamp. Decline the
+    /// optimization unless both strings round-trip to the exact source boundaries.
+    const auto make_utc_civil_time_surrogate =
+        [&](DateLUTImpl::Time source_time) -> std::optional<DateLUTImpl::Time>
+    {
+        const auto components = source_time_zone.toDateTimeComponents(source_time);
+        const auto reparsed_source_time = source_time_zone.makeDateTime(
+            components.date.year,
+            components.date.month,
+            components.date.day,
+            static_cast<UInt8>(components.time.hour),
+            components.time.minute,
+            components.time.second);
+
+        if (reparsed_source_time != source_time)
+            return std::nullopt;
+
+        return utc_time_zone.makeDateTime(
+            components.date.year,
+            components.date.month,
+            components.date.day,
+            static_cast<UInt8>(components.time.hour),
+            components.time.minute,
+            components.time.second);
+    };
+
+    const auto start_surrogate = make_utc_civil_time_surrogate(source_start);
+    const auto end_surrogate = make_utc_civil_time_surrogate(source_end);
+    if (!start_surrogate || !end_surrogate)
+        return nullptr;
+
+    return std::make_shared<FieldInterval>(
+        Field(*start_surrogate), Field(*end_surrogate));
+}
+
+inline FieldIntervalPtr getPreimageForDateRounding(
+    const IDataType & type, const Field & point, DateRoundingInterval interval)
+{
+    if (point.getType() != Field::Types::UInt64)
+        return nullptr;
+
+    const UInt64 day_num = point.safeGet<UInt64>();
+    if (day_num > DATE_LUT_MAX_DAY_NUM)
+        return nullptr;
+
+    const auto & calendar = DateLUT::instance("UTC");
+    const ExtendedDayNum point_day(static_cast<Int32>(day_num));
+    ExtendedDayNum start_day = point_day;
+    ExtendedDayNum end_day = point_day;
+
+    switch (interval)
+    {
+        case DateRoundingInterval::Day:
+            end_day = ExtendedDayNum(point_day.toUnderType() + 1);
+            break;
+        case DateRoundingInterval::Week:
+            start_day = calendar.toFirstDayNumOfWeek(point_day);
+            end_day = ExtendedDayNum(start_day.toUnderType() + 7);
+            break;
+        case DateRoundingInterval::Month:
+            start_day = calendar.toFirstDayNumOfMonth(point_day);
+            end_day = calendar.addMonths(start_day, 1);
+            break;
+        case DateRoundingInterval::LastDayOfMonth:
+            start_day = calendar.toFirstDayNumOfMonth(point_day);
+            end_day = calendar.addMonths(start_day, 1);
+            break;
+        case DateRoundingInterval::Quarter:
+            start_day = calendar.toFirstDayNumOfQuarter(point_day);
+            end_day = calendar.addQuarters(start_day, 1);
+            break;
+        case DateRoundingInterval::Year:
+            start_day = calendar.toFirstDayNumOfYear(point_day);
+            end_day = calendar.addYears(start_day, 1);
+            break;
+        case DateRoundingInterval::ISOYear:
+            start_day = calendar.toFirstDayNumOfISOYear(point_day);
+            end_day = calendar.toFirstDayNumOfISOYear(ExtendedDayNum(start_day.toUnderType() + 371));
+            break;
+    }
+
+    const auto result_day = interval == DateRoundingInterval::LastDayOfMonth
+        ? calendar.toLastDayNumOfMonth(point_day)
+        : start_day;
+
+    /// Values which cannot be produced by this rounding function have an empty preimage.
+    if (result_day != point_day)
+        return nullptr;
+
+    return makeDateOrDateTimePreimageForDayRange(type, start_day, end_day);
+}
+
+inline FieldIntervalPtr getPreimageForISOYear(const IDataType & type, const Field & point)
+{
+    if (point.getType() != Field::Types::UInt64)
+        return nullptr;
+
+    const UInt64 iso_year = point.safeGet<UInt64>();
+    if (iso_year < DATE_LUT_MIN_YEAR || iso_year >= DATE_LUT_MAX_YEAR)
+        return nullptr;
+
+    const auto & calendar = DateLUT::instance("UTC");
+    const auto january_fourth = calendar.makeDayNum(static_cast<Int16>(iso_year), 1, 4);
+    const auto next_january_fourth = calendar.makeDayNum(static_cast<Int16>(iso_year + 1), 1, 4);
+    const auto start_day = calendar.toFirstDayNumOfISOYear(january_fourth);
+    const auto end_day = calendar.toFirstDayNumOfISOYear(next_january_fourth);
+    return makeDateOrDateTimePreimageForDayRange(type, start_day, end_day);
+}
+
+inline FieldIntervalPtr getPreimageForYYYYMMDD(const IDataType & type, const Field & point)
+{
+    if (point.getType() != Field::Types::UInt64)
+        return nullptr;
+
+    const UInt64 yyyymmdd = point.safeGet<UInt64>();
+    const UInt64 year = yyyymmdd / 10000;
+    const UInt64 month = yyyymmdd / 100 % 100;
+    const UInt64 day = yyyymmdd % 100;
+    if (year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day < 1 || day > 31)
+        return nullptr;
+
+    const auto & calendar = DateLUT::instance("UTC");
+    const auto point_day = calendar.tryToMakeDayNum(
+        static_cast<Int16>(year), static_cast<UInt8>(month), static_cast<UInt8>(day));
+    if (!point_day || calendar.toNumYYYYMMDD(*point_day) != yyyymmdd)
+        return nullptr;
+
+    return makeDateOrDateTimePreimageForDayRange(
+        type, *point_day, ExtendedDayNum(point_day->toUnderType() + 1));
+}
+
+inline FieldIntervalPtr getPreimageForStartOfDay(const IDataType & type, const Field & point)
+{
+    if (point.getType() != Field::Types::UInt64)
+        return nullptr;
+
+    /// Keep the source types aligned with `makeDateOrDateTimePreimageForDayRange`; in particular,
+    /// the default `DateTime` result for extended source types can have a non-contiguous preimage.
+    const DateLUTImpl * source_time_zone = nullptr;
+    if (const auto * date_time_type = checkAndGetDataType<DataTypeDateTime>(&type))
+        source_time_zone = &date_time_type->getTimeZone();
+    else if (isDate(type))
+        source_time_zone = &DateLUT::instance();
+    else
+        return nullptr;
+
+    const UInt64 timestamp = point.safeGet<UInt64>();
+    if (timestamp > std::numeric_limits<UInt32>::max())
+        return nullptr;
+
+    const auto source_day = source_time_zone->toDayNum(static_cast<UInt32>(timestamp));
+    const ExtendedDayNum start_day(static_cast<Int32>(source_day.toUnderType()));
+    const ExtendedDayNum end_day(start_day.toUnderType() + 1);
+    const auto source_start = source_time_zone->fromDayNum(start_day);
+    if (source_start < 0 || static_cast<UInt64>(source_start) != timestamp)
+        return nullptr;
+
+    return makeDateOrDateTimePreimageForDayRange(type, start_day, end_day);
+}
+
 template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior>
 struct ToDateImpl
 {
@@ -272,6 +478,13 @@ struct ToStartOfDayImpl
         return common::mulIgnoreOverflow(time_zone.fromDayNum(ExtendedDayNum(d)), DecimalUtils::scaleMultiplier<DateTime64>(DataTypeDateTime64::default_scale));
     }
 
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForStartOfDay(type, point);
+    }
+
     using FactorTransform = ZeroTransform;
 };
 
@@ -305,6 +518,13 @@ struct ToMondayImpl
     {
         return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d));
     }
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForDateRounding(type, point, DateRoundingInterval::Week);
+    }
+
     using FactorTransform = ZeroTransform;
 };
 
@@ -337,6 +557,13 @@ struct ToStartOfMonthImpl
     static Int32 executeExtendedResult(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfMonth(ExtendedDayNum(d));
+    }
+
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForDateRounding(type, point, DateRoundingInterval::Month);
     }
 
     using FactorTransform = ZeroTransform;
@@ -372,6 +599,14 @@ struct ToLastDayOfMonthImpl
     {
         return time_zone.toLastDayNumOfMonth(ExtendedDayNum(d));
     }
+
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForDateRounding(type, point, DateRoundingInterval::LastDayOfMonth);
+    }
+
     using FactorTransform = ZeroTransform;
 };
 
@@ -405,6 +640,13 @@ struct ToStartOfQuarterImpl
     {
         return time_zone.toFirstDayNumOfQuarter(ExtendedDayNum(d));
     }
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForDateRounding(type, point, DateRoundingInterval::Quarter);
+    }
+
     using FactorTransform = ZeroTransform;
 };
 
@@ -437,6 +679,13 @@ struct ToStartOfYearImpl
     static Int32 executeExtendedResult(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfYear(ExtendedDayNum(d));
+    }
+
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForDateRounding(type, point, DateRoundingInterval::Year);
     }
 
     using FactorTransform = ZeroTransform;
@@ -2063,7 +2312,12 @@ struct ToISOYearImpl
     {
         return time_zone.toISOYear(DayNum(d));
     }
-    static constexpr bool hasPreimage() { return false; }
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForISOYear(type, point);
+    }
 
     using FactorTransform = ZeroTransform;
 };
@@ -2104,6 +2358,13 @@ struct ToStartOfISOYearImpl
     static Int32 executeExtendedResult(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfISOYear(ExtendedDayNum(d));
+    }
+
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForDateRounding(type, point, DateRoundingInterval::ISOYear);
     }
 
     using FactorTransform = ZeroTransform;
@@ -2578,7 +2839,12 @@ struct ToYYYYMMDDImpl
     {
         return time_zone.toNumYYYYMMDD(DayNum(d));
     }
-    static constexpr bool hasPreimage() { return false; }
+    static constexpr bool hasPreimage() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        return getPreimageForYYYYMMDD(type, point);
+    }
 
     using FactorTransform = ZeroTransform;
 };
