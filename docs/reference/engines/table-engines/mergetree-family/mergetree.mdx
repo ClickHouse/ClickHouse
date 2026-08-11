@@ -63,7 +63,8 @@ For a detailed description of the parameters, see the [CREATE TABLE](/reference/
 
 `ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. The `MergeTree` engine has no parameters.
 
-#### ORDER BY {#order_by}
+<a id="order_by"></a>
+#### ORDER BY {#order-by}
 
 `ORDER BY` — The sorting key.
 
@@ -679,7 +680,14 @@ Currently supported:
 The framework allows adding more index types in the future.
 
 ### Projection storage {#projection-storage}
-Projections are stored inside the part directory. It's similar to an index but contains a subdirectory that stores an anonymous `MergeTree` table's part. The table is induced by the definition query of the projection. If there is a `GROUP BY` clause, the underlying storage engine becomes [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/aggregatingmergetree), and all aggregate functions are converted to `AggregateFunction`. If there is an `ORDER BY` clause, the `MergeTree` table uses it as its primary key expression. During the merge process the projection part is merged via its storage's merge routine. The checksum of the parent table's part is combined with the projection's part. Other maintenance jobs are similar to skip indices.
+A projection is stored alongside the data part it belongs to. It is similar to an index but holds an anonymous `MergeTree` table's part, induced by the projection's definition query. If there is a `GROUP BY` clause, the underlying storage engine becomes [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/aggregatingmergetree), and all aggregate functions are converted to `AggregateFunction`. If there is an `ORDER BY` clause, the `MergeTree` table uses it as its primary key expression. During the merge process the projection part is merged via its storage's merge routine. The checksum of the parent table's part is combined with the projection's part. Other maintenance jobs are similar to skip indices.
+
+The on-disk layout is controlled by the experimental [`projection_storage_format`](/operations/settings/merge-tree-settings#projection_storage_format) setting. For a part `all_1_1_0` with a projection `p`:
+
+- `legacy_nested` (default) — a subdirectory inside the part directory: `store/uuid/all_1_1_0/p.proj`
+- `flat` — a sibling directory at the part root: `store/uuid/all_1_1_0.p.proj`
+
+Both layouts are always read transparently; the setting only controls the layout of newly written parts. Changing it does not rewrite existing parts — every subsequent insert, merge, mutation, or materialization writes new parts in the chosen layout. `flat` is intended for storage engines with atomic multi-directory commit.
 
 ### Query analysis {#projection-query-analysis}
 1. Check if the projection can be used to answer the given query, that is, it generates the same answer as querying the base table.
@@ -1297,16 +1305,16 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 - `basic`
 
     A compact bundle of single-value summaries derived from a column. Depending on the column type, the following pieces are populated:
+  - for any column: the number of rows equal to the type's default value (`0` for integers and floats, `''` for `String`, `[]` for `Array`, `NULL` for `Nullable`, etc.), which lets the optimizer estimate `col = <default>` predicates and `IS NULL` filters;
   - for any column whose values are represented by a number (integers, floats, `Decimal*`, `Date*`, `DateTime*`, `Enum*`, `IPv4`, ...): the minimum and maximum value, which allow to estimate the selectivity of range filters and enable part pruning;
-  - for `String` and `FixedString` columns: the total byte length of non-`NULL` values (from which the average string length can be derived);
-  - for `Nullable` and `LowCardinality(Nullable)` columns: the count of `NULL` values, which the optimizer uses to discount `NULL` rows from selectivity estimates.
+  - for `String` and `FixedString` columns: the total byte length of non-`NULL` values (from which the average string length can be derived).
 
-    A single `basic` statistic can populate several of these at once — for example on a `Nullable(UInt32)` column it tracks both numeric min/max and the null count. Compared to `minmax`, `basic` additionally works on `String` / `FixedString` columns and can be declared on `Nullable` wrappers of types like `UUID` or `IPv6` purely to track the null count.
+    A single `basic` statistic can populate several of these at once — for example on a `Nullable(UInt32)` column it tracks both numeric min/max and the `NULL` count. Because a default-value count is defined for every column type, `basic` can be declared on any column, including composite types such as `Array`, `Tuple`, and `Map`.
 
 - `minmax` (deprecated)
 
 <Note>
-    `minmax` statistics are deprecated and can no longer be created (`CREATE TABLE ... STATISTICS(minmax)` and `ALTER TABLE ... ADD/MODIFY STATISTICS ... TYPE minmax` return an error). Existing tables and parts with `minmax` statistics keep working. Use `basic` statistics instead.
+    `minmax` statistics are deprecated. Use `basic` statistics instead, which is a superset of `minmax`.
 </Note>
 
 - `tdigest`
@@ -1335,31 +1343,37 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 ### Supported data types {#supported-data-types}
 
-|               | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString |
-|---------------|----------------------------------------------------|----- |-----------------------|
-| basic         | ✔                                                  | ✔    | ✔                     |
-| countmin      | ✔                                                  | ✔    | ✔                     |
-| minmax        | ✔                                                  | ✔    | ✗                     |
-| tdigest       | ✔                                                  | ✗    | ✗                     |
-| uniq          | ✔                                                  | ✔    | ✔                     |
-| uniq_v2       | ✔                                                  | ✔    | ✔                     |
+|          | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString | Any other type |
+|----------|----------------------------------------------------|------|-----------------------|----------------|
+| basic    | ✔                                                  | ✔    | ✔                     | ✔ (default count only) |
+| countmin | ✔                                                  | ✔    | ✔                     | ✗              |
+| minmax   | ✔                                                  | ✔    | ✗                     | ✗              |
+| tdigest  | ✔                                                  | ✗    | ✗                     | ✗              |
+| uniq     | ✔                                                  | ✔    | ✔                     | ✗              |
+| uniq_v2  | ✔                                                  | ✔    | ✔                     | ✗              |
 
-All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `Basic` may additionally be declared on `Nullable` wrappers of types like `UUID` or `IPv6` purely to track the null count.
+All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `basic` may additionally be declared on any other type (including composite types such as `Array`, `Tuple`, and `Map`), where it records only the default-value count.
 
 ### Supported operations {#supported-operations}
 
-|               | Equality filters (==) | Range filters (`>, >=, <, <=`) |
-|---------------|------------------------|---------------------------------|
-| basic         | ✗                      | ✔ (numeric columns only)        |
-| countmin      | ✔                      | ✗                               |
-| minmax        | ✗                      | ✔ (numeric columns only)        |
-| tdigest       | ✗                      | ✔ (numeric columns only)        |
-| uniq          | ✔                      | ✗                               |
-| uniq_v2       | ✔                      | ✗                               |
+|          | Equality filters (==)    | Range filters (`>, >=, <, <=`) |
+|----------|--------------------------|--------------------------------|
+| basic    | ✔ (default value only)   | ✔ (numeric columns only)       |
+| countmin | ✔                        | ✗                              |
+| minmax   | ✗                        | ✔ (numeric columns only)       |
+| tdigest  | ✗                        | ✔ (numeric columns only)       |
+| uniq     | ✔                        | ✗                              |
+| uniq_v2  | ✔                        | ✗                              |
 
-For `basic` on `String` / `FixedString` columns the statistic only records the total
-non-NULL byte length (used to estimate average string length) and the null count;
-range filters and part pruning are not driven by it.
+`basic` answers an equality filter exactly only when the compared value matches the column's
+internal storage default (raw integer `0` for numeric types, `''` / N zero bytes for `String` /
+`FixedString`, `NULL` for `Nullable` columns, etc.). For `Enum` types in particular, the fast path
+fires only when the enumerator literal maps to raw integer `0`; if no enumerator has raw value `0`
+the statistic contributes nothing to equality estimation. For other values the optimizer falls back
+to other statistics.
+For `basic` on `String` / `FixedString` columns the statistic records the total non-NULL byte length
+(used to estimate average string length) plus the default/`NULL` count; range filters and part
+pruning are not driven by it.
 
 ## Column-level settings {#column-level-settings}
 

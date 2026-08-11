@@ -688,10 +688,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPart(
     BlockWithPartition & block,
     StorageMetadataPtr metadata_snapshot,
     ContextPtr context,
-    bool may_exist)
+    bool may_have_leftover)
 {
     auto partition_id = block.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
-    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*source_parts_set=*/ {}, std::move(context), data.insert_increment.get(), may_exist);
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*source_parts_set=*/ {}, std::move(context), data.insert_increment.get(), may_have_leftover);
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPatchPart(
@@ -700,9 +700,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPatchPart(
     String partition_id,
     SourcePartsSetForPatch source_parts_set,
     ContextPtr context,
-    bool may_exist)
+    bool may_have_leftover)
 {
-    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), std::move(source_parts_set), std::move(context), data.insert_increment.get(), may_exist);
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), std::move(source_parts_set), std::move(context), data.insert_increment.get(), may_have_leftover);
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
@@ -712,7 +712,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     SourcePartsSetForPatch source_parts_set,
     ContextPtr context,
     UInt64 block_number,
-    bool may_exist)
+    bool may_have_leftover)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     Block & block = *block_with_partition.block;
@@ -762,7 +762,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         temp_prefix += temp_postfix + "_";
 
     std::string part_dir = temp_prefix + part_name;
-    temp_part->temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
 
     auto indices = collectSkipIndicesToMaterialize(
         metadata_snapshot,
@@ -898,10 +897,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         data_part_volume = createVolumeFromReservation(reservation, volume);
     }
 
-    /// The part dir name is non-unique across retries; the leftover of a failed same-named attempt
-    /// must be removed before the part storage is constructed (see reclaimStaleTemporaryDirectory).
-    if (may_exist)
-        data.reclaimStaleTemporaryDirectory(data_part_volume->getDisk(), fs::path(data.getRelativeDataPath()) / part_dir);
+    /// The part directory name can be non-unique because of leftovers of previous runs.
+    temp_part->temporary_directory_lock = data.claimTemporaryPartDirectory(data_part_volume->getDisk(), part_dir, may_have_leftover);
 
     auto part_format = data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr);
     /// UNIQUE KEY parts must use Full part storage: the dense-index sidecar
@@ -912,7 +909,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     if (metadata_snapshot->hasUniqueKey())
         part_format.storage_type = MergeTreeDataPartStorageType::Full;
 
-    auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings(), /*part_may_exist_on_disk=*/ may_exist)
+    auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings(), PartDirIntent::CreateFresh)
         .withPartFormat(part_format)
         .withPartInfo(new_part_info)
         .build();
@@ -1050,7 +1047,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             if (projection_block.rows())
             {
                 auto proj_temp_part
-                    = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false, context);
+                    = writeProjectionPart(data, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false, context);
                 new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
 
                 if (global_settings[Setting::finalize_projection_parts_synchronously])
@@ -1094,7 +1091,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     bool is_temp,
     IMergeTreeDataPart * parent_part,
     const MergeTreeData & data,
-    LoggerPtr /* log */,
     Block block,
     const ProjectionDescription & projection,
     MergeTreeIndices indices,
@@ -1238,7 +1234,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
     const MergeTreeData & data,
-    LoggerPtr log,
     Block block,
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part,
@@ -1253,24 +1248,22 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         query_settings,
         *data.getSettings());
 
-        return writeProjectionPartImpl(
-            projection.name,
-            false /* is_temp */,
-            parent_part,
-            data,
-            log,
-            std::move(block),
-            projection,
-            std::move(indices),
-            merge_is_needed,
-            /*try_adaptive_codec=*/ false);
+    return writeProjectionPartImpl(
+        projection.name,
+        false /* is_temp */,
+        parent_part,
+        data,
+        std::move(block),
+        projection,
+        std::move(indices),
+        merge_is_needed,
+        /*try_adaptive_codec=*/ false);
 }
 
 /// This is used for projection materialization process which may contain multiple stages of
 /// projection part merges.
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     const MergeTreeData & data,
-    LoggerPtr log,
     Block block,
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part,
@@ -1288,14 +1281,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     auto part_name = fmt::format("{}_{}", projection.name, block_num);
     auto new_part = writeProjectionPartImpl(
         part_name,
-        /*is_temp=*/true,
+        /*is_temp=*/ true,
         parent_part,
         data,
-        log,
         std::move(block),
         projection,
         std::move(indices),
-        /*merge_is_needed=*/true,
+        /*merge_is_needed=*/ true,
         /*try_adaptive_codec=*/ true);
 
     new_part->part->temp_projection_block_number = block_num;
