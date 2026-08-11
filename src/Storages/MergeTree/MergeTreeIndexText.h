@@ -190,12 +190,13 @@ struct PostingsSerialization
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
 
 private:
+    const IPostingListCodec & resolveCodec(UInt64 header);
+
     PostingListCodecPtr posting_list_codec;
     MergeTreeIndexVersion serialization_version;
 
-    /// Reusable buffers to avoid repeated heap allocations during deserialization.
+    /// Reusable buffer to avoid repeated heap allocations during deserialization.
     std::vector<UInt32> raw_postings_buffer;
-    std::vector<char> deserialization_buffer;
 };
 
 /// Closed range of rows.

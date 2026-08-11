@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/BitpackingBlockCodec.h>
 #include <Storages/MergeTree/PostingListBlockCodec.h>
+#include <Common/PODArray.h>
 
 #include <roaring/roaring.hh>
 
@@ -223,6 +224,24 @@ void PostingListCodecBitpacking::encode(
         const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const
 {
     encodePostingsInBlocks(postings, max_rowids_in_segment, IPostingListCodec::Type::Bitpacking, info, out);
+}
+
+void PostingListCodecNone::decode(ReadBuffer & in, PostingList & postings) const
+{
+    size_t num_bytes = 0;
+    readVarUInt(num_bytes, in);
+
+    /// If the posting list is completely in the buffer, avoid copying.
+    if (in.position() && in.position() + num_bytes <= in.buffer().end())
+    {
+        postings = PostingList::read(in.position());
+        in.position() += num_bytes;
+        return;
+    }
+
+    PaddedPODArray<char> buffer(num_bytes);
+    in.readStrict(buffer.data(), num_bytes);
+    postings = PostingList::read(buffer.data());
 }
 
 }
