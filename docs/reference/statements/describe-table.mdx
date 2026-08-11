@@ -21,7 +21,7 @@ The `DESCRIBE` statement returns a row for each table column with the following 
 - `default_type` — A clause that is used in the column [default expression](/reference/statements/create/table): `DEFAULT`, `MATERIALIZED` or `ALIAS`. If there is no default expression, then empty string is returned.
 - `default_expression` — An expression specified after the `DEFAULT` clause.
 - `comment` — A [column comment](/reference/statements/alter/column#comment-column).
-- `codec_expression` — A [codec](/reference/statements/create/table#column_compression_codec) that is applied to the column.
+- `codec_expression` — A [codec](/reference/statements/create/table/codec) that is applied to the column.
 - `ttl_expression` — A [TTL](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) expression.
 - `is_subcolumn` — A flag that equals `1` for internal subcolumns. It is included into the result only if subcolumn description is enabled by the [describe_include_subcolumns](/reference/settings/session-settings/describe-include#describe_include_subcolumns) setting.
 
