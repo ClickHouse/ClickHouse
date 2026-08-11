@@ -13,9 +13,9 @@
 # is inherently nondeterministic.
 #
 # The second group of checks proves that the per-part cancellation checkpoints actually stop the
-# eager result building: the `slowdown_system_parts_enumeration` failpoint sleeps 100 ms on every
+# eager result building: the `slowdown_system_parts_enumeration` failpoint sleeps 500 ms on every
 # enumerated part of the tables named `t_slowdown_system_parts*`, so building the full result
-# takes at least (100 parts) * (100 ms) = 10 seconds, and a query with a 1 second deadline must
+# takes at least (20 parts) * (500 ms) = 10 seconds, and a query with a 1 second deadline must
 # finish well under that - it can only do so by stopping between parts. Without the checkpoints
 # these queries keep building rows long past the deadline and the elapsed time assertions fail.
 # The failpoint only slows down the specially named tables, so concurrently running tests are not
@@ -26,10 +26,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# A table with many parts and a projection: exercises the checkpoints of the per-part loops.
-NUM_PARTS=100
+# A table with several parts and a projection: exercises the checkpoints of the per-part loops.
+NUM_PARTS=20
 # A table with many columns in a single part: exercises the checkpoints of the column-enumeration loops.
-NUM_COLUMNS=300
+NUM_COLUMNS=100
 
 WIDE_COLUMNS=$(for i in $(seq 1 $NUM_COLUMNS); do echo -n ", c$i UInt64"; done)
 
@@ -56,20 +56,18 @@ CREATE TABLE t_break_result (name String) ENGINE = Memory;
 INSERT INTO t_slowdown_system_parts SELECT number FROM numbers($NUM_PARTS) SETTINGS max_partitions_per_insert_block = 0;
 INSERT INTO t_slowdown_system_parts_dropped SELECT number FROM numbers($NUM_PARTS) SETTINGS max_partitions_per_insert_block = 0;
 INSERT INTO t_break_columns (x) VALUES (1);
-"
 
-# Sanity check: without any limits, the whole result is built.
-$CLICKHOUSE_CLIENT --query "
+-- Sanity check: without any limits, the whole result is built.
 SELECT 'full columns', count() = $NUM_COLUMNS + 1 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_break_columns';
-"
 
-# The table is dropped but kept in `system.dropped_tables_parts` for `database_atomic_delay_before_drop_table_sec`.
-$CLICKHOUSE_CLIENT --query "DROP TABLE t_slowdown_system_parts_dropped SETTINGS database_atomic_wait_for_drop_and_detach_synchronously = 0"
+-- The table is dropped but kept in system.dropped_tables_parts for database_atomic_delay_before_drop_table_sec.
+DROP TABLE t_slowdown_system_parts_dropped SETTINGS database_atomic_wait_for_drop_and_detach_synchronously = 0;
+"
 
 # $1 - a label, $2 - the system table, $3 - the source table, $4 - the total number of rows without the time limit.
-function check_break()
+function check_break_query()
 {
-    $CLICKHOUSE_CLIENT --query "
+    echo "
     TRUNCATE TABLE t_break_result;
 
     INSERT INTO t_break_result
@@ -80,12 +78,16 @@ function check_break()
     "
 }
 
-check_break parts parts t_slowdown_system_parts $NUM_PARTS
-check_break parts_columns parts_columns t_slowdown_system_parts $NUM_PARTS
-check_break projection_parts projection_parts t_slowdown_system_parts $NUM_PARTS
-check_break projection_parts_columns projection_parts_columns t_slowdown_system_parts $NUM_PARTS
-check_break parts_columns_wide parts_columns t_break_columns $((NUM_COLUMNS + 1))
-check_break dropped_tables_parts dropped_tables_parts t_slowdown_system_parts_dropped $NUM_PARTS
+# All quick checks go in a single client invocation: the client startup is significant
+# with the sanitizer and debug builds.
+{
+    check_break_query parts parts t_slowdown_system_parts $NUM_PARTS
+    check_break_query parts_columns parts_columns t_slowdown_system_parts $NUM_PARTS
+    check_break_query projection_parts projection_parts t_slowdown_system_parts $NUM_PARTS
+    check_break_query projection_parts_columns projection_parts_columns t_slowdown_system_parts $NUM_PARTS
+    check_break_query parts_columns_wide parts_columns t_break_columns $((NUM_COLUMNS + 1))
+    check_break_query dropped_tables_parts dropped_tables_parts t_slowdown_system_parts_dropped $NUM_PARTS
+} | $CLICKHOUSE_CLIENT
 
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT slowdown_system_parts_enumeration"
 

@@ -62,7 +62,7 @@ void slowDownSystemPartsEnumeration([[maybe_unused]] const String & table_name)
         /// Slow down only the tables with a special name prefix, so that the tests using
         /// this failpoint do not affect concurrent queries over the tables of other tests.
         if (table_name.starts_with("t_slowdown_system_parts"))
-            sleepForMilliseconds(100);
+            sleepForMilliseconds(500);
     });
 }
 
