@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# Tag no-fasttest: needs a Distributed table over `test_cluster_two_shards`, which the fast test
-# configuration does not provide.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
