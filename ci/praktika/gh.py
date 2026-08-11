@@ -8,6 +8,8 @@ import time
 import traceback
 from typing import Dict, List, Optional, Union
 
+import requests
+
 from praktika._environment import _Environment
 from praktika.info import Info
 from praktika.result import Result
@@ -18,6 +20,18 @@ from praktika.utils import Shell
 # failure (command, exit code, attempt count) are short. Cap the unbounded ones so a caller
 # that bounds the whole message, or a log reader, still sees the cause.
 _GH_DIAGNOSTIC_FIELD_LIMIT = 300
+
+# Retry policy for direct HTTP reads of the GitHub API (GH.api_get). Separate from
+# Settings.MAX_RETRIES_GH, which bounds `gh` CLI invocations: the CLI needs a token even
+# for a public read, so the two paths have different failure classes and budgets.
+API_GET_RETRIES_COUNT = 5
+API_GET_RETRY_SLEEP = 3
+# Cap the growth so that raising the retry count extends the total window rather than
+# exploding a single sleep.
+API_GET_RETRY_MAX_BACKOFF = 60
+# Statuses transient by definition. Everything else keeps the flat per-attempt sleep:
+# telling a transient 403 from a terminal one needs a body match this cannot do.
+API_GET_RETRYABLE_STATUSES = frozenset({429})
 
 
 def _elide(text, limit=_GH_DIAGNOSTIC_FIELD_LIMIT):
@@ -189,6 +203,67 @@ class GH:
             repo_url,
         )
         return match.group(1) if match else ""
+
+    @classmethod
+    def api_get(
+        cls,
+        url,
+        retries=API_GET_RETRIES_COUNT,
+        sleep=API_GET_RETRY_SLEEP,
+        timeout=30,
+        on_http_error=None,
+        **kwargs,
+    ):
+        """GET a GitHub API url over HTTP, retrying transient failures.
+
+        Transport errors and the statuses in ``API_GET_RETRYABLE_STATUSES`` (plus every
+        5xx) grow the delay as ``sleep * 2 ** attempt``, capped at
+        ``API_GET_RETRY_MAX_BACKOFF``; any other status keeps a flat ``sleep``, so a
+        terminal 4xx is not turned into a long wait. The growth base is the caller's
+        ``sleep``, so a caller passing 0 still gets no sleep at all.
+
+        Raises ``RuntimeError`` once the budget is spent. It never returns a falsy
+        response, which a caller could not tell apart from an empty result.
+
+        ``on_http_error(exc)`` returning True restarts the attempt budget without
+        sleeping, so a caller can retry under different credentials. It is not
+        forwarded to ``requests.get``.
+        """
+        exc = None
+        attempt = 0
+        while attempt < retries:
+            attempt += 1
+            # A transport failure carries no status; a response status downgrades this.
+            grow_backoff = True
+            try:
+                response = requests.get(url, timeout=timeout, **kwargs)
+                response.raise_for_status()
+                return response
+            except requests.HTTPError as e:
+                exc = e
+                if on_http_error is not None and on_http_error(e):
+                    attempt = 0
+                    continue
+                grow_backoff = (
+                    e.response.status_code >= 500
+                    or e.response.status_code in API_GET_RETRYABLE_STATUSES
+                )
+            except Exception as e:  # pylint: disable=broad-except
+                exc = e
+
+            if attempt < retries:
+                delay = (
+                    min(sleep * (2 ** (attempt - 1)), API_GET_RETRY_MAX_BACKOFF)
+                    if grow_backoff
+                    else sleep
+                )
+                print(
+                    f"WARNING: Exception [{_elide(str(exc))}] while getting [{url}], "
+                    f"attempt {attempt} of {retries}, retrying in {delay} seconds"
+                )
+                time.sleep(delay)
+
+        raise RuntimeError(f"Unable to request data from GH API: {url}") from exc
 
     @classmethod
     def do_command_with_retries(cls, command, verbose=False):

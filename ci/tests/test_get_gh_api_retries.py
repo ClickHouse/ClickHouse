@@ -1,18 +1,26 @@
 """
-Tests for `build_download_helper.get_gh_api`.
+Tests for the GitHub API read retry policy.
 
-`get_gh_api` is the single chokepoint for every GitHub API call in `tests/ci`.
-The upgrade check resolves the previous release through it during setup, so a
-GitHub API blip there wastes the whole job without ever starting a ClickHouse
-binary. These tests pin the retry policy:
+The policy lives in `GH.api_get` (`ci/praktika/gh.py`);
+`build_download_helper.get_gh_api` is a thin shim over it that adds the robot-token
+failover and the `APIException` class its callers catch. The upgrade check resolves the
+previous release through the shim during setup, so a GitHub API blip there wastes the
+whole job without ever starting a ClickHouse binary.
 
-  * statuses that are transient by definition (5xx, 429) and transport errors
-    are retried over a window long enough to ride out a short outage, with a
-    capped exponential backoff;
-  * the backoff base is the caller-supplied `sleep`, so callers that ask for no
-    sleep at all (`pr_info.RETRY_SLEEP = 0`) still get none;
-  * every other 4xx keeps its existing behaviour, including the 403/404 auth failover
-    and the 403 bodies the rate-limit predicate does not match.
+Split accordingly: policy cases drive `GH.api_get`, failover and error-class cases drive
+the shim.
+
+  * statuses that are transient by definition (5xx, 429) and transport errors are retried
+    over a window long enough to ride out a short outage, with a capped exponential
+    backoff;
+  * the backoff base is the caller-supplied `sleep`, so callers that ask for no sleep at
+    all (`pr_info.RETRY_SLEEP = 0`) still get none;
+  * every other 4xx keeps its existing behaviour, including the 403/404 auth failover and
+    the 403 bodies the rate-limit predicate does not match.
+
+`get_gh_api` is not the only unauthenticated GitHub HTTP call in `tests/ci`
+(`ci_utils.py` and `github_helper.py` have their own); it is the one the release-tag
+lookup and PR info resolution go through.
 """
 
 import importlib.util
@@ -22,9 +30,16 @@ import types
 import pytest
 import requests
 
-# Load the module directly from its file so we do not have to put the whole
-# `tests/ci` directory on `sys.path` for the entire pytest session (which would
-# risk shadowing equally-named modules in other tests).
+# The shim inserts the repository root on `sys.path` and imports `ci.praktika.gh`, so
+# these tests must patch the SAME module object. Importing `praktika.gh` instead would
+# load a second, distinct module (praktika/__init__.py appends `ci/` to `sys.path`), and
+# the monkeypatch would silently miss while the code hit the real network.
+import ci.praktika.gh as gh_module
+from ci.praktika.gh import GH
+
+# Load the shim directly from its file so we do not have to put the whole `tests/ci`
+# directory on `sys.path` for the entire pytest session (which would risk shadowing
+# equally-named modules in other tests).
 _BDH_PATH = os.path.join(
     os.path.dirname(__file__), "..", "..", "tests", "ci", "build_download_helper.py"
 )
@@ -38,6 +53,8 @@ SECONDARY_RATELIMIT_BODY = (
     b"You have exceeded a secondary rate limit. Please wait a few minutes"
 )
 PRIMARY_RATELIMIT_BODY = b"API rate limit exceeded for 1.2.3.4."
+
+URL = "https://api.github.com/repos/o/r/releases/tags/v1"
 
 
 class FakeResponse:
@@ -55,21 +72,8 @@ class FakeResponse:
         return {}
 
 
-def _run(
-    monkeypatch,
-    statuses,
-    *,
-    body: bytes = b"",
-    token_preset: bool = False,
-    transport_error=None,
-    **kwargs,
-):
-    """Drive the real `get_gh_api` against scripted responses.
-
-    Returns (attempts, sleeps, outcome). `statuses` is consumed one per attempt;
-    the last entry repeats. Never sleeps for real: the whole suite must stay fast.
-    """
-    sleeps = []
+def _install_fake_transport(monkeypatch, statuses, body, transport_error, sleeps):
+    """Patch `GH`'s requests/time so no test ever sleeps or reaches the network."""
     calls = {"count": 0}
     auth_seen = []
 
@@ -82,8 +86,45 @@ def _run(
         status = statuses[index] if index < len(statuses) else statuses[-1]
         return FakeResponse(status, body)
 
-    monkeypatch.setattr(bdh.requests, "get", fake_get)
-    monkeypatch.setattr(bdh, "time", types.SimpleNamespace(sleep=sleeps.append))
+    monkeypatch.setattr(gh_module.requests, "get", fake_get)
+    monkeypatch.setattr(gh_module, "time", types.SimpleNamespace(sleep=sleeps.append))
+    return calls, auth_seen
+
+
+def _run_api_get(
+    monkeypatch, statuses, *, body: bytes = b"", transport_error=None, **kwargs
+):
+    """Drive the real `GH.api_get` against scripted responses.
+
+    Returns (attempts, sleeps, outcome). `statuses` is consumed one per attempt; the last
+    entry repeats.
+    """
+    sleeps: list = []
+    calls, auth_seen = _install_fake_transport(
+        monkeypatch, statuses, body, transport_error, sleeps
+    )
+    try:
+        GH.api_get(URL, **kwargs)
+        outcome = "SUCCESS"
+    except Exception as e:  # pylint: disable=broad-except
+        outcome = type(e).__name__
+    return calls["count"], sleeps, outcome, auth_seen
+
+
+def _run_shim(
+    monkeypatch,
+    statuses,
+    *,
+    body: bytes = b"",
+    token_preset: bool = False,
+    transport_error=None,
+    **kwargs,
+):
+    """Drive the real `get_gh_api` shim, which delegates the policy to `GH.api_get`."""
+    sleeps: list = []
+    calls, auth_seen = _install_fake_transport(
+        monkeypatch, statuses, body, transport_error, sleeps
+    )
 
     class FakeRobotToken:
         ROBOT_TOKEN = "preset-token" if token_preset else None
@@ -95,90 +136,149 @@ def _run(
     monkeypatch.setattr(bdh, "grt", FakeRobotToken)
 
     try:
-        bdh.get_gh_api("https://api.github.com/repos/o/r/releases/tags/v1", **kwargs)
+        bdh.get_gh_api(URL, **kwargs)
         outcome = "SUCCESS"
     except Exception as e:  # pylint: disable=broad-except
         outcome = type(e).__name__
-
     return calls["count"], sleeps, outcome, auth_seen
 
 
-# Row 1: the reported production failure (504), plus the boundaries of the
-# `>= 500` contract. Each must span a window long enough to ride out a short
-# GitHub outage, where before every status shared one fixed 4 x 3 s window.
+# --------------------------------------------------------------------------------------
+# Policy cases: GH.api_get owns the backoff.
+# --------------------------------------------------------------------------------------
+
+
+# Row 1: the reported production failure (504), plus the boundaries of the `>= 500`
+# contract. Each must span a window long enough to ride out a short GitHub outage, where
+# before every status shared one fixed 4 x 3 s window.
 @pytest.mark.parametrize("status", [500, 502, 503, 504, 599])
 def test_persistent_5xx_uses_exponential_backoff(monkeypatch, status):
-    attempts, sleeps, outcome, _ = _run(monkeypatch, [status])
+    attempts, sleeps, outcome, _ = _run_api_get(monkeypatch, [status])
 
-    assert outcome == "APIException"
-    assert attempts == bdh.DOWNLOAD_RETRIES_COUNT
+    assert outcome == "RuntimeError"
+    assert attempts == gh_module.API_GET_RETRIES_COUNT
     assert sleeps == [3, 6, 12, 24]
     assert sum(sleeps) == 45
 
 
-# Row 2: must-not-regress. A blip that clears still succeeds on the attempt that
-# gets a good response. Deliberately does not assert the sleep pattern, so that it
-# keeps guarding the success path independently of the backoff formula.
+# Row 2: must-not-regress. A blip that clears still succeeds on the attempt that gets a
+# good response. Deliberately does not assert the sleep pattern, so that it keeps guarding
+# the success path independently of the backoff formula.
 def test_5xx_that_clears_succeeds(monkeypatch):
-    attempts, _, outcome, _ = _run(monkeypatch, [504, 504, 200])
+    attempts, _, outcome, _ = _run_api_get(monkeypatch, [504, 504, 200])
 
     assert outcome == "SUCCESS"
     assert attempts == 3
 
 
-# Row 3: the growing sleep stays capped, so raising the retry count extends the
-# total window instead of exploding a single sleep.
+# Row 3: the growing sleep stays capped, so raising the retry count extends the total
+# window instead of exploding a single sleep.
 def test_backoff_is_capped(monkeypatch):
-    _, sleeps, outcome, _ = _run(monkeypatch, [503], retries=10)
+    _, sleeps, outcome, _ = _run_api_get(monkeypatch, [503], retries=10)
 
-    assert outcome == "APIException"
+    assert outcome == "RuntimeError"
     assert sleeps == [3, 6, 12, 24, 48, 60, 60, 60, 60]
-    assert max(sleeps) == bdh.DOWNLOAD_RETRY_MAX_BACKOFF
+    assert max(sleeps) == gh_module.API_GET_RETRY_MAX_BACKOFF
 
 
-# Row 4: `pr_info.RETRY_SLEEP = 0` feeds five call sites that deliberately ask
-# for no sleep. The backoff multiplies the caller's `sleep`, so zero stays zero.
-# This is the only row that distinguishes `sleep * 2**i` from a hardcoded base.
+# Row 4: `pr_info.RETRY_SLEEP = 0` feeds five call sites that deliberately ask for no
+# sleep. The backoff multiplies the caller's `sleep`, so zero stays zero. This is the only
+# row that distinguishes `sleep * 2**i` from a hardcoded base.
 def test_zero_sleep_caller_is_unaffected(monkeypatch):
-    attempts, sleeps, outcome, _ = _run(monkeypatch, [504], sleep=0)
+    attempts, sleeps, outcome, _ = _run_api_get(monkeypatch, [504], sleep=0)
 
-    assert outcome == "APIException"
-    assert attempts == bdh.DOWNLOAD_RETRIES_COUNT
+    assert outcome == "RuntimeError"
+    assert attempts == gh_module.API_GET_RETRIES_COUNT
     assert sleeps == [0, 0, 0, 0]
     assert sum(sleeps) == 0
 
 
-# Row 5: a bare 429 carries no `rate limit exceeded` body, so it gets neither the
-# auth failover nor (before this) any backoff growth. 429 is the only status that is
-# both a 4xx and newly retryable, so this row pins both halves.
+# Row 5a: 429 is the only status that is both a 4xx and retryable, so it pins the
+# retryable-status set independently of the `>= 500` threshold.
 def test_bare_429_gets_backoff(monkeypatch):
-    attempts, sleeps, outcome, auth_seen = _run(monkeypatch, [429])
+    attempts, sleeps, outcome, _ = _run_api_get(monkeypatch, [429])
 
-    assert outcome == "APIException"
+    assert outcome == "RuntimeError"
     assert sleeps == [3, 6, 12, 24]
-    assert attempts == bdh.DOWNLOAD_RETRIES_COUNT
-    assert not any(auth_seen)
+    assert attempts == gh_module.API_GET_RETRIES_COUNT
 
 
-# Row 6: the 403 rate-limit failover still sets the auth header, still resets the
-# attempt counter, and its retry budget is unchanged.
+# Row 8a-policy: a terminal 4xx keeps the flat sleep, and 499 pins the `>= 500` threshold
+# from below. Without this row a predicate that always returns True would pass.
+@pytest.mark.parametrize("status", [401, 422, 499])
+def test_terminal_4xx_keeps_flat_sleep(monkeypatch, status):
+    attempts, sleeps, outcome, _ = _run_api_get(monkeypatch, [status])
+
+    assert outcome == "RuntimeError"
+    assert attempts == gh_module.API_GET_RETRIES_COUNT
+    assert sleeps == [3, 3, 3, 3]
+    assert sum(sleeps) == 12
+
+
+# Row 9: a transport error carries no status at all. A read timeout was attempt 1 of the
+# reported production failure, and is not a `ConnectionError` subclass, so both classes
+# are exercised.
+@pytest.mark.parametrize(
+    "transport_error",
+    [requests.ConnectionError, requests.ReadTimeout],
+)
+def test_transport_error_gets_backoff(monkeypatch, transport_error):
+    attempts, sleeps, outcome, _ = _run_api_get(
+        monkeypatch, [200], transport_error=transport_error
+    )
+
+    assert outcome == "RuntimeError"
+    assert attempts == gh_module.API_GET_RETRIES_COUNT
+    assert sleeps == [3, 6, 12, 24]
+
+
+# Row 10: the retry diagnostic is the only trace a CI operator gets, so pin the marker and
+# the two fields the message promises. Reverting to a bare one-line message, or dropping
+# the attempt or the delay, must redden this row.
+def test_retry_log_names_attempt_and_delay(monkeypatch, capsys):
+    _run_api_get(monkeypatch, [504])
+
+    lines = [l for l in capsys.readouterr().out.splitlines() if "WARNING" in l]
+    assert lines
+    assert "attempt 1 of 5" in lines[0]
+    assert "retrying in 3 seconds" in lines[0]
+
+
+# Row 11: exhaustion raises. `get_output_with_retries` returns '' on exhaustion by
+# default, which a caller cannot tell apart from an empty result; this path must not
+# acquire that behaviour.
+def test_api_get_raises_on_exhaustion_rather_than_returning_falsy(monkeypatch):
+    sleeps: list = []
+    _install_fake_transport(monkeypatch, [504], b"", None, sleeps)
+
+    with pytest.raises(RuntimeError, match="Unable to request data from GH API"):
+        GH.api_get(URL)
+
+
+# --------------------------------------------------------------------------------------
+# Shim cases: build_download_helper.get_gh_api owns the token failover and the error class.
+# --------------------------------------------------------------------------------------
+
+
+# Row 6: the 403 rate-limit failover still sets the auth header, still resets the attempt
+# counter, and its retry budget is unchanged.
 def test_403_ratelimit_failover_unchanged(monkeypatch):
-    attempts, sleeps, outcome, auth_seen = _run(
+    attempts, sleeps, outcome, auth_seen = _run_shim(
         monkeypatch, [403], body=PRIMARY_RATELIMIT_BODY
     )
 
     assert outcome == "APIException"
     assert auth_seen[0] is False and auth_seen[1] is True
-    # The failover resets the attempt counter once, so the budget is one attempt
-    # longer than the retry count (measured identical on the tree before this change).
+    # The failover resets the attempt counter once, so the budget is one attempt longer
+    # than the retry count (measured identical on the tree before this change).
     assert attempts == bdh.DOWNLOAD_RETRIES_COUNT + 1
     assert sleeps == [3, 3, 3, 3]
 
 
-# Row 7: the 404 failover still fires exactly once, granting a fresh budget with
-# a token. Byte-identical to the behaviour before this change.
+# Row 7: the 404 failover still fires exactly once, granting a fresh budget with a token.
+# Byte-identical to the behaviour before this change.
 def test_404_failover_unchanged(monkeypatch):
-    attempts, sleeps, outcome, auth_seen = _run(monkeypatch, [404])
+    attempts, sleeps, outcome, auth_seen = _run_shim(monkeypatch, [404])
 
     assert outcome == "APIException"
     assert auth_seen[0] is False and auth_seen[1] is True
@@ -186,9 +286,9 @@ def test_404_failover_unchanged(monkeypatch):
     assert sleeps == [3, 3, 3, 3]
 
 
-# Row 8a: no 4xx changes at all, no failover for any, and 499 pins the new 5xx
-# threshold from below. Without a preset token the failover guard is live, so
-# `auth_seen` catches a widened 403 predicate granting these a token and a reset.
+# Row 8b: no 4xx changes at all, and no failover for any. Without a preset token the
+# failover guard is live, so `auth_seen` catches a widened 403 predicate granting these a
+# token and a reset.
 @pytest.mark.parametrize(
     "status,body",
     [
@@ -200,7 +300,7 @@ def test_404_failover_unchanged(monkeypatch):
     ],
 )
 def test_4xx_budgets_unchanged_and_no_failover(monkeypatch, status, body):
-    attempts, sleeps, outcome, auth_seen = _run(monkeypatch, [status], body=body)
+    attempts, sleeps, outcome, auth_seen = _run_shim(monkeypatch, [status], body=body)
 
     assert outcome == "APIException"
     assert not any(auth_seen)
@@ -209,10 +309,10 @@ def test_4xx_budgets_unchanged_and_no_failover(monkeypatch, status, body):
     assert sum(sleeps) == 12
 
 
-# Row 8b: the 404 budget once the token is already set, so the failover cannot fire
-# a second time. Distinct from row 7, which owns the case where it does fire.
+# Row 8c: the 404 budget once the token is already set, so the failover cannot fire a
+# second time. Distinct from row 7, which owns the case where it does fire.
 def test_404_budget_unchanged_with_token(monkeypatch):
-    attempts, sleeps, outcome, _ = _run(monkeypatch, [404], token_preset=True)
+    attempts, sleeps, outcome, _ = _run_shim(monkeypatch, [404], token_preset=True)
 
     assert outcome == "APIException"
     assert attempts == bdh.DOWNLOAD_RETRIES_COUNT
@@ -220,32 +320,48 @@ def test_404_budget_unchanged_with_token(monkeypatch):
     assert sum(sleeps) == 12
 
 
-# Row 9: a transport error carries no status at all. A read timeout was attempt 1
-# of the reported production failure, and is not a `ConnectionError` subclass, so
-# both classes are exercised.
-@pytest.mark.parametrize(
-    "transport_error",
-    [requests.ConnectionError, requests.ReadTimeout],
-)
-def test_transport_error_gets_backoff(monkeypatch, transport_error):
-    attempts, sleeps, outcome, _ = _run(
-        monkeypatch, [200], transport_error=transport_error
-    )
+# Row 5b: a bare 429 carries no `rate limit exceeded` body, so it gets the backoff but no
+# failover. The policy half of this case lives on `GH.api_get`.
+def test_bare_429_gets_no_failover(monkeypatch):
+    attempts, sleeps, outcome, auth_seen = _run_shim(monkeypatch, [429])
 
     assert outcome == "APIException"
+    assert not any(auth_seen)
     assert attempts == bdh.DOWNLOAD_RETRIES_COUNT
     assert sleeps == [3, 6, 12, 24]
 
 
-# Row 10: the retry diagnostic is the only trace a CI operator gets, so pin the level
-# and the two fields the message promises. Reverting to the old `logger.info` line, or
-# dropping the attempt or delay, must redden this row.
-def test_retry_log_names_attempt_and_delay(monkeypatch, caplog):
-    with caplog.at_level("WARNING", logger="build_download_helper"):
-        _run(monkeypatch, [504])
+# Row 12: the shim must translate praktika's RuntimeError into APIException. report.py
+# catches APIException specifically and falls back to a run URL rather than failing the
+# job, so a leaked RuntimeError would kill a job that used to degrade.
+def test_shim_raises_apiexception_not_runtimeerror(monkeypatch):
+    sleeps: list = []
+    _install_fake_transport(monkeypatch, [504], b"", None, sleeps)
+    monkeypatch.setattr(
+        bdh, "grt", types.SimpleNamespace(ROBOT_TOKEN=None, get_best_robot_token=str)
+    )
 
-    records = [r for r in caplog.records if r.levelname == "WARNING"]
-    assert records
-    first = records[0].getMessage()
-    assert "attempt 1 of 5" in first
-    assert "retrying in 3 seconds" in first
+    with pytest.raises(bdh.APIException):
+        bdh.get_gh_api(URL)
+
+    # Mirrors report.py:48,58 — the fallback there depends on this class being catchable.
+    try:
+        bdh.get_gh_api(URL)
+    except bdh.APIException:
+        caught = True
+    assert caught
+
+
+# Row 13: a success is returned unchanged through the shim, so callers still get the
+# response object and not a truthy placeholder.
+def test_shim_returns_response_on_success(monkeypatch):
+    sleeps: list = []
+    _install_fake_transport(monkeypatch, [200], b"", None, sleeps)
+    monkeypatch.setattr(
+        bdh, "grt", types.SimpleNamespace(ROBOT_TOKEN=None, get_best_robot_token=str)
+    )
+
+    response = bdh.get_gh_api(URL)
+
+    assert response.status_code == 200
+    assert sleeps == []
