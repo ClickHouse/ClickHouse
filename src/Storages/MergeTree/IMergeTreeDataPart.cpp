@@ -1443,13 +1443,15 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             /// needs this. A part written by a mutation does NOT reach loadProjections through here (its finalize
             /// calls loadProjections directly), and there createProjection/renameProjection already keep the owned
             /// set true; a probe there could miss dirs still staged in the part's deferred object-storage transaction.
-            auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+            /// checksums is the ownership boundary: only manifest-backed projection dirs may become
+            /// owned. Seeding from metadata-declared names as well would adopt a same-named foreign
+            /// directory (e.g. a planted flat sibling) that no projection part ever loads, and carry it
+            /// through DETACH/MOVE/FREEZE/clone. (loadChecksums restores the projection records from a
+            /// disk probe when checksums.txt itself is missing, so legacy parts are covered here too.)
             Strings owned_projection_dirs;
             for (const auto & [file_name, _] : checksums.files)
                 if (IDataPartStorage::Projection::dirNameType(file_name) == IDataPartStorage::Projection::Status::Live)
                     owned_projection_dirs.push_back(file_name);
-            for (const auto & projection : metadata_snapshot->projections)
-                owned_projection_dirs.push_back(IDataPartStorage::Projection::dirName(projection.name, false));
             getDataPartStorage().setProjections(getDataPartStorage().detectProjections({.candidates = owned_projection_dirs}));
 
             loadProjections(require_columns_checksums, check_consistency, has_broken_projections, false /* if_not_loaded */);
