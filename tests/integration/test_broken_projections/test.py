@@ -766,14 +766,14 @@ def test_broken_projection_part_refetched_from_replica(cluster):
     node.query(
         f"""
         create table {table1} (a int, b int, projection ab (select a, sum(b) group by a))
-        engine = ReplicatedMergeTree('/test/02254/projection_broken_parts/rmt', 'r1')
+        engine = ReplicatedMergeTree('/clickhouse/tables/02254/projection_broken_parts/rmt', 'r1')
         order by a settings index_granularity = 1
         """
     )
     node.query(
         f"""
         create table {table2} (a int, b int, projection ab (select a, sum(b) group by a))
-        engine = ReplicatedMergeTree('/test/02254/projection_broken_parts/rmt', 'r2')
+        engine = ReplicatedMergeTree('/clickhouse/tables/02254/projection_broken_parts/rmt', 'r2')
         order by a settings index_granularity = 1
         """
     )
