@@ -36,32 +36,36 @@ PortsProbeResult probe(UInt16 plain_port, UInt16 secure_port, const String & hos
 
 }
 
-/// A server listening on both ports keeps being connected over the plain port, as without the probing.
-TEST(PortsProbe, PreferPlainWhenBothListen)
+/// TLS is preferred: a server listening on both ports is connected over the secure port.
+TEST(PortsProbe, PreferSecureWhenBothListen)
 {
     auto plain = listenOnLoopback();
     auto secure = listenOnLoopback();
     auto result = probe(plain.address().port(), secure.address().port());
-    EXPECT_EQ(result.choice, PortsProbeResult::Choice::PreferPlain);
+    EXPECT_EQ(result.choice, PortsProbeResult::Choice::PreferSecure);
     /// The address that answered is reported, so that the connection does not start over from the
     /// first resolved address of the host.
+    ASSERT_TRUE(result.address.has_value());
+    EXPECT_EQ(result.address->toString(), secure.address().toString());
+}
+
+/// A plain-only server (the most common setup) is chosen when the secure port refuses,
+/// without waiting for the preference window to elapse.
+TEST(PortsProbe, PlainOnlyWhenSecureRefused)
+{
+    auto plain = listenOnLoopback();
+    auto result = probe(plain.address().port(), closedPort());
+    EXPECT_EQ(result.choice, PortsProbeResult::Choice::PlainOnly);
     ASSERT_TRUE(result.address.has_value());
     EXPECT_EQ(result.address->toString(), plain.address().toString());
 }
 
-/// A plain-only server (the most common setup) is chosen even though the secure port refuses.
-TEST(PortsProbe, PreferPlainWhenOnlyPlainListens)
-{
-    auto plain = listenOnLoopback();
-    EXPECT_EQ(probe(plain.address().port(), closedPort()).choice, PortsProbeResult::Choice::PreferPlain);
-}
-
 /// When only the secure port answers (e.g. the plain port is closed or firewalled), TLS is chosen.
-TEST(PortsProbe, SecureOnlyWhenPlainRefused)
+TEST(PortsProbe, PreferSecureWhenPlainRefused)
 {
     auto secure = listenOnLoopback();
     auto result = probe(closedPort(), secure.address().port());
-    EXPECT_EQ(result.choice, PortsProbeResult::Choice::SecureOnly);
+    EXPECT_EQ(result.choice, PortsProbeResult::Choice::PreferSecure);
     ASSERT_TRUE(result.address.has_value());
     EXPECT_EQ(result.address->toString(), secure.address().toString());
 }
@@ -72,23 +76,9 @@ TEST(PortsProbe, ReportsTheAddressThatAnswered)
 {
     auto plain = listenOnLoopback();
     auto result = probe(plain.address().port(), closedPort(), "localhost");
-    ASSERT_EQ(result.choice, PortsProbeResult::Choice::PreferPlain);
+    ASSERT_EQ(result.choice, PortsProbeResult::Choice::PlainOnly);
     ASSERT_TRUE(result.address.has_value());
     EXPECT_EQ(result.address->toString(), plain.address().toString());
-}
-
-/// When the plain port is chosen but the secure port has also answered, the secure address is
-/// reported too: if the connection to the plain port then fails at the native protocol level
-/// (e.g. a proxy accepts TCP on the plain port but only serves TLS there), the fallback over TLS
-/// starts from an address that is known to answer instead of the first resolved one.
-TEST(PortsProbe, ReportsTheSecureAddressForTheFallback)
-{
-    auto plain = listenOnLoopback();
-    auto secure = listenOnLoopback();
-    auto result = probe(plain.address().port(), secure.address().port());
-    ASSERT_EQ(result.choice, PortsProbeResult::Choice::PreferPlain);
-    ASSERT_TRUE(result.secure_address.has_value());
-    EXPECT_EQ(result.secure_address->toString(), secure.address().toString());
 }
 
 /// When nothing answers, the failure of every probed address is reported.

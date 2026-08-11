@@ -1,7 +1,8 @@
 """When neither `port` nor `secure`/`no-secure` is specified, clickhouse-client probes both the
-plain (9000) and the secure (9440) native ports concurrently. The plain port is preferred when it
-answers (backward compatibility), and TLS is enabled automatically when only the secure port is
-reachable, e.g. for servers whose plain port is firewalled, like play.clickhouse.com."""
+plain (9000) and the secure (9440) native ports concurrently. TLS is preferred: the secure port
+is chosen whenever it is reachable (e.g. servers listening on both ports, or servers whose plain
+port is firewalled, like play.clickhouse.com), and the plain port is used only when the secure
+port does not answer."""
 
 import ipaddress
 import threading
@@ -89,8 +90,7 @@ def redirect_plain_port_to_secure(add, source=None):
     """Redirect connections from `source` (node_plain_only by default) to the plain port (9000)
     of node_both_ports to its secure port (9440). A native (non-TLS) connection to the plain port
     is then answered by the TLS listener, simulating a proxy that accepts TCP on the plain port but
-    only serves TLS there. The TCP connection succeeds (so the probe prefers the plain port), but
-    the native handshake fails."""
+    only serves TLS there."""
     node_both_ports.exec_in_container(
         [
             "iptables",
@@ -172,11 +172,11 @@ def query_is_secure(server, *args, from_node=None):
     )
 
 
-def test_plain_port_preferred_when_both_listen():
-    assert query_is_secure(node_both_ports) == 0
+def test_secure_port_preferred_when_both_listen():
+    assert query_is_secure(node_both_ports) == 1
 
 
-def test_plain_port_preferred_when_only_plain_listens():
+def test_plain_port_chosen_when_only_plain_listens():
     assert query_is_secure(node_plain_only, from_node=node_both_ports) == 0
 
 
@@ -208,10 +208,9 @@ def test_secure_port_chosen_when_plain_dropped():
 
 def test_secure_port_chosen_when_plain_serves_tls():
     # A proxy in front of the server accepts TCP on the plain port but only speaks TLS there.
-    # The probe sees the plain port accept the connection and prefers it, but the native handshake
-    # reads the TLS alert record as an unexpected packet (UNEXPECTED_PACKET_FROM_SERVER). The client
-    # must treat that as a connection-level failure and retry over TLS on the secure port instead of
-    # giving up, otherwise the "plain port accepts TCP but only serves TLS" case stays broken.
+    # Both probes see their TCP connection accepted, so the preferred secure port is chosen and
+    # the connection is established over TLS directly, without ever speaking the native protocol
+    # to the TLS listener behind the plain port.
     redirect_plain_port_to_secure(add=True)
     try:
         assert query_is_secure(node_both_ports) == 1
@@ -250,8 +249,10 @@ def test_an_unresponsive_server_is_not_waited_for_twice():
     # listener on the plain port: it is simply unresponsive, and its secure port is not going to
     # answer either. Retrying it there would double the time the client waits before it reports the
     # failure, which is what the automatic choice is supposed to avoid in the first place. The
-    # timeouts are lowered through a client configuration file, because the connection timeouts are
-    # read from the configuration and not from the settings.
+    # secure port refuses connections outright here, so the probe chooses the plain port with the
+    # secure port as the protocol-level fallback candidate; the timeout on the plain port must not
+    # trigger that fallback. The timeouts are lowered through a client configuration file, because
+    # the connection timeouts are read from the configuration and not from the settings.
     node_plain_only.exec_in_container(
         [
             "bash",
@@ -261,7 +262,7 @@ def test_an_unresponsive_server_is_not_waited_for_twice():
         ],
     )
     swallow_established_packets(9000, add=True)
-    swallow_established_packets(9440, add=True)
+    firewall_secure_port(add=True)
     try:
         output = node_plain_only.exec_in_container(
             [
@@ -274,7 +275,7 @@ def test_an_unresponsive_server_is_not_waited_for_twice():
         assert "SOCKET_TIMEOUT" in output, output
         assert "also failed to connect with TLS" not in output, output
     finally:
-        swallow_established_packets(9440, add=False)
+        firewall_secure_port(add=False)
         swallow_established_packets(9000, add=False)
 
 
@@ -484,65 +485,6 @@ def test_the_probed_address_is_used_for_the_connection():
         blackhole_address(client, blackhole, add=False)
 
 
-def test_the_probed_address_is_used_for_the_secure_fallback():
-    # The plain port of the server accepts TCP but only serves TLS (see
-    # test_secure_port_chosen_when_plain_serves_tls), and the host resolves to a black hole first
-    # and to that server second. The probe prefers the plain port and learns which address answered;
-    # the native handshake on it then fails and the client falls back to TLS on the secure port.
-    # The fallback has to start from the address that answered as well: if it walked the resolved
-    # addresses from the start, it would pay a whole connection timeout on the black hole, which is
-    # exactly the delay the probing exists to avoid. The connect timeout is raised to 60 seconds, so
-    # the query cannot possibly finish in time unless the fallback skips the black hole.
-    client, blackhole = probe_client_and_blackhole()
-    redirect_plain_port_to_secure(add=True, source=client)
-    blackhole_address(client, blackhole, add=True)
-    client.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"printf '%s tlsproxyhost\\n%s tlsproxyhost\\n' {blackhole} {node_both_ports.ip_address} >> /etc/hosts",
-        ],
-        user="root",
-    )
-    try:
-        assert_the_black_hole_is_resolved_first(client, "tlsproxyhost", blackhole)
-        query_id = str(uuid.uuid4())
-        start = time.time()
-        output = client.exec_in_container(
-            [
-                "bash",
-                "-c",
-                "clickhouse client --host tlsproxyhost --accept-invalid-certificate"
-                f" --connect_timeout 60 --query_id {query_id}"
-                " --query 'SELECT 1' 2>&1 || true",
-            ]
-        )
-        elapsed = time.time() - start
-        assert output == "1\n", output
-        assert elapsed < 30, f"Connecting took {elapsed} seconds: {output}"
-        node_both_ports.query("SYSTEM FLUSH LOGS query_log")
-        assert (
-            int(
-                node_both_ports.query(
-                    f"SELECT is_secure FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish' LIMIT 1"
-                )
-            )
-            == 1
-        )
-    finally:
-        # `/etc/hosts` is bind-mounted into the container, so it can only be rewritten in place.
-        client.exec_in_container(
-            [
-                "bash",
-                "-c",
-                "grep -v tlsproxyhost /etc/hosts > /tmp/hosts && cat /tmp/hosts > /etc/hosts && rm /tmp/hosts",
-            ],
-            user="root",
-        )
-        blackhole_address(client, blackhole, add=False)
-        redirect_plain_port_to_secure(add=False, source=client)
-
-
 def firewall_plain_port_of(server, add, action, extra=()):
     """Apply an iptables rule on `server` to packets from node_plain_only to its plain port."""
     server.exec_in_container(
@@ -574,8 +516,10 @@ def test_the_remembered_address_is_refreshed_when_the_connection_falls_through()
     # waits out a whole connection timeout on the dead address again, even though the previous
     # reconnect already learned the working one.
     #
-    # Here `refreshedhost` resolves to `node_both_ports` and `node_extra`. The first connection
-    # goes to `node_both_ports` (the other one is rejected during the probing). Then new
+    # Here `refreshedhost` resolves to `node_both_ports` and `node_extra`. The secure port of
+    # `node_both_ports` is rejected for the whole test, so that the automatic choice settles on
+    # the plain transport, which both servers speak. The first connection goes to
+    # `node_both_ports` (the plain port of the other one is rejected during the probing). Then new
     # connections to it start being silently dropped (the established session is not affected)
     # and `node_extra` becomes reachable. An `INSERT` rejected by a constraint makes the client
     # disconnect and reconnect on the next query (see the test above): the first reconnect pays
@@ -594,6 +538,7 @@ def test_the_remembered_address_is_refreshed_when_the_connection_falls_through()
         ],
         user="root",
     )
+    firewall_secure_port(add=True)
     firewall_plain_port_of(node_extra, add=True, action="REJECT")
     extra_rejected = True
     first_address_dropped = False
@@ -637,6 +582,7 @@ def test_the_remembered_address_is_refreshed_when_the_connection_falls_through()
             firewall_plain_port_of(node_both_ports, add=False, action="DROP", extra=("--syn",))
         if extra_rejected:
             firewall_plain_port_of(node_extra, add=False, action="REJECT")
+        firewall_secure_port(add=False)
         # `/etc/hosts` is bind-mounted into the container, so it can only be rewritten in place.
         node_plain_only.exec_in_container(
             [

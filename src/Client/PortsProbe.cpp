@@ -37,7 +37,7 @@ PortsProbeResult probePlainAndSecurePorts(
     UInt16 plain_port,
     UInt16 secure_port,
     Poco::Timespan timeout,
-    Poco::Timespan plain_preference_window)
+    Poco::Timespan secure_preference_window)
 {
     std::vector<Probe> probes;
 
@@ -69,10 +69,10 @@ PortsProbeResult probePlainAndSecurePorts(
 
     Stopwatch watch;
     const UInt64 timeout_us = static_cast<UInt64>(timeout.totalMicroseconds());
-    const UInt64 window_us = static_cast<UInt64>(plain_preference_window.totalMicroseconds());
+    const UInt64 window_us = static_cast<UInt64>(secure_preference_window.totalMicroseconds());
 
-    /// The moment the first probe of the secure port connected: starts the plain preference window.
-    std::optional<UInt64> secure_connected_at_us;
+    /// The moment the first probe of the plain port connected: starts the secure preference window.
+    std::optional<UInt64> plain_connected_at_us;
 
     /// The probes are all created before this loop, so pointers into `probes` stay valid.
     auto chosen = [](PortsProbeResult::Choice choice, const Probe & probe)
@@ -87,7 +87,7 @@ PortsProbeResult probePlainAndSecurePorts(
     {
         const Probe * plain_connected = nullptr;
         const Probe * secure_connected = nullptr;
-        bool plain_pending = false;
+        bool secure_pending = false;
         bool any_pending = false;
 
         for (const auto & probe : probes)
@@ -101,35 +101,30 @@ PortsProbeResult probePlainAndSecurePorts(
             if (probe.pending)
             {
                 any_pending = true;
-                if (!probe.to_secure_port)
-                    plain_pending = true;
+                if (probe.to_secure_port)
+                    secure_pending = true;
             }
         }
 
-        if (plain_connected)
-        {
-            auto result = chosen(PortsProbeResult::Choice::PreferPlain, *plain_connected);
-            if (secure_connected)
-                result.secure_address = secure_connected->address;
-            return result;
-        }
+        if (secure_connected)
+            return chosen(PortsProbeResult::Choice::PreferSecure, *secure_connected);
 
         const UInt64 elapsed_us = watch.elapsedMicroseconds();
 
-        if (secure_connected && (!plain_pending || elapsed_us >= *secure_connected_at_us + window_us))
-            return chosen(PortsProbeResult::Choice::SecureOnly, *secure_connected);
+        if (plain_connected && (!secure_pending || elapsed_us >= *plain_connected_at_us + window_us))
+            return chosen(PortsProbeResult::Choice::PlainOnly, *plain_connected);
 
         if (!any_pending)
             break;
 
         UInt64 deadline_us = timeout_us;
-        if (secure_connected)
-            deadline_us = std::min(deadline_us, *secure_connected_at_us + window_us);
+        if (plain_connected)
+            deadline_us = std::min(deadline_us, *plain_connected_at_us + window_us);
 
         if (elapsed_us >= deadline_us)
         {
-            if (secure_connected)
-                return chosen(PortsProbeResult::Choice::SecureOnly, *secure_connected);
+            if (plain_connected)
+                return chosen(PortsProbeResult::Choice::PlainOnly, *plain_connected);
 
             for (auto & probe : probes)
             {
@@ -180,8 +175,8 @@ PortsProbeResult probePlainAndSecurePorts(
             if (error == 0 && writable)
             {
                 probe.connected = true;
-                if (probe.to_secure_port && !secure_connected_at_us)
-                    secure_connected_at_us = watch.elapsedMicroseconds();
+                if (!probe.to_secure_port && !plain_connected_at_us)
+                    plain_connected_at_us = watch.elapsedMicroseconds();
             }
             else
             {

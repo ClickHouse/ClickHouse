@@ -14,8 +14,8 @@ struct PortsProbeResult
 {
     enum class Choice
     {
-        PreferPlain,  /// The plain port is reachable. Connect to it first; the secure port may serve as a fallback.
-        SecureOnly,   /// Only the secure port is reachable. Connect to it with TLS.
+        PreferSecure, /// The secure port is reachable. Connect to it with TLS.
+        PlainOnly,    /// Only the plain port answered. Connect to it; the secure port may serve as a fallback.
         Neither,      /// No port answered.
     };
 
@@ -26,14 +26,6 @@ struct PortsProbeResult
     /// from the first resolved address: otherwise the connection waits out the timeout of every address
     /// that the probe has already found unresponsive.
     std::optional<Poco::Net::SocketAddress> address;
-
-    /// The address that answered on the secure port when the plain port was chosen, if a secure
-    /// probe had also connected by that time (with Choice::SecureOnly the secure address is
-    /// `address` itself). When the connection to the plain port fails at the native protocol
-    /// level (e.g. a proxy accepts TCP on the plain port but only serves TLS there) and the
-    /// caller falls back to TLS on the secure port, the fallback has to start from this address,
-    /// for the same reason as above.
-    std::optional<Poco::Net::SocketAddress> secure_address;
 
     /// A description of the per-address failures, for Choice::Neither.
     String failure_reason;
@@ -46,10 +38,11 @@ struct PortsProbeResult
 /// address of the host) to choose the protocol automatically when neither `port` nor `secure`/`no-secure`
 /// is specified explicitly.
 ///
-/// The plain port is preferred for compatibility: if it becomes reachable no later than `plain_preference_window`
-/// after the secure port, the plain port is chosen. The secure port is chosen only when the plain port is
-/// unreachable: refused, unroutable, or not answering within the window (as with servers behind a firewall
-/// that silently drops packets to the plain port, e.g. play.clickhouse.com).
+/// TLS is preferred: the secure port is chosen as soon as it becomes reachable. The plain port is chosen
+/// only when the secure port is unreachable — refused, unroutable, or not answering within
+/// `secure_preference_window` after the plain port (the window gives the secure port a head start over
+/// a plain port that merely answered faster, without stalling plain-only servers, which is the most
+/// common setup).
 ///
 /// Only raw TCP reachability is checked, concurrently for all addresses and ports, bounded by `timeout` in total.
 /// The caller performs the actual connection afterwards.
@@ -59,6 +52,6 @@ PortsProbeResult probePlainAndSecurePorts(
     UInt16 plain_port,
     UInt16 secure_port,
     Poco::Timespan timeout,
-    Poco::Timespan plain_preference_window);
+    Poco::Timespan secure_preference_window);
 
 }

@@ -586,9 +586,10 @@ void Client::connect()
             /// Candidate ports for the connection, in the order of preference. Normally there is a single
             /// candidate, resolved by `ConnectionParameters`. But when neither the port nor the TLS mode is
             /// specified explicitly, both the plain and the secure default ports are probed concurrently,
-            /// and TLS is enabled automatically when only the secure port answers (for example,
-            /// play.clickhouse.com serves TLS on 9440 while the plain port is silently firewalled;
-            /// waiting for the plain connection attempt to time out first would take too long).
+            /// and TLS is preferred: it is enabled automatically whenever the secure port answers. The
+            /// probing is concurrent because waiting for a connection attempt to time out first would take
+            /// too long (for example, play.clickhouse.com serves TLS on 9440 while the plain port is
+            /// silently firewalled).
             std::vector<std::pair<UInt16, Protocol::Secure>> candidates;
             candidates.emplace_back(connection_parameters.port, connection_parameters.security);
 
@@ -609,9 +610,11 @@ void Client::connect()
             {
                 const auto secure_port = static_cast<UInt16>(config().getInt("tcp_port_secure", DBMS_DEFAULT_SECURE_PORT));
 
-                /// The plain port wins if it answers at most this much later than the secure port,
-                /// so that servers listening on both ports keep being connected without TLS as before.
-                static const Poco::Timespan plain_preference_window(0, 100000);
+                /// TLS is preferred: the secure port wins whenever it answers, even if the plain port
+                /// answered first. The plain port is chosen only when the secure port does not answer
+                /// within this much after it, so that plain-only servers (the most common setup) are
+                /// not stalled for the whole connection timeout of the unreachable secure port.
+                static const Poco::Timespan secure_preference_window(0, 100000);
 
                 PortsProbeResult probe;
                 try
@@ -622,7 +625,7 @@ void Client::connect()
                         connection_parameters.port,
                         secure_port,
                         connection_parameters.timeouts.connection_timeout,
-                        plain_preference_window);
+                        secure_preference_window);
                 }
                 catch (...)
                 {
@@ -638,26 +641,23 @@ void Client::connect()
 
                 switch (probe.choice)
                 {
-                    case PortsProbeResult::Choice::PreferPlain:
+                    case PortsProbeResult::Choice::PreferSecure:
+                        candidates.front() = {secure_port, Protocol::Secure::Enable};
+                        break;
+                    case PortsProbeResult::Choice::PlainOnly:
 #if USE_SSL
                         candidates.emplace_back(secure_port, Protocol::Secure::Enable);
 
                         /// If the plain connection fails at the native protocol level and the secure
                         /// fallback candidate is tried (see below), it has to start from an address that
                         /// is known to answer as well, and not from the first resolved address of the
-                        /// host: the address of the secure probe if one succeeded, or the address that
-                        /// answered on the plain port otherwise (the same backend is the best guess for
-                        /// its secure port). Otherwise the fallback pays a whole connection timeout for
-                        /// every unresponsive address in front of the working one, which is exactly the
-                        /// delay the probing exists to avoid.
-                        if (probe.secure_address)
-                            secure_answering_address = probe.secure_address;
-                        else if (probe.address)
+                        /// host: the secure port of the address that answered on the plain port (the
+                        /// same backend is the best guess for its secure port). Otherwise the fallback
+                        /// pays a whole connection timeout for every unresponsive address in front of
+                        /// the working one, which is exactly the delay the probing exists to avoid.
+                        if (probe.address)
                             secure_answering_address = Poco::Net::SocketAddress(probe.address->host(), secure_port);
 #endif
-                        break;
-                    case PortsProbeResult::Choice::SecureOnly:
-                        candidates.front() = {secure_port, Protocol::Secure::Enable};
                         break;
                     case PortsProbeResult::Choice::Neither:
                         /// See above: no connection was made, so the resolved addresses may be stale.
