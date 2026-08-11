@@ -1,0 +1,42 @@
+--- rejected: cross-side arrayJoin in a residual, every supported kind
+--- rejected: a large expansion read out of bounds instead of past the padding
+--- rejected: the unnest alias resolves to arrayJoin and is refused too
+--- rejected: not dependent on join_use_nulls
+--- rejected: a one-sided arrayJoin that is not split out of the ON clause
+--- kept: a one-sided arrayJoin is extracted into a filter before the join
+1
+1
+1
+2
+2
+2
+3
+3
+3
+1
+2
+3
+--- kept: ALL INNER applies the condition after the join instead of building a residual
+1
+1
+1
+2
+2
+--- kept: a residual without arrayJoin still runs
+1
+1
+2
+3
+\N
+\N
+2
+3
+--- kept: an equality key over arrayJoin is extracted before the join
+1
+3
+3
+--- kept: the supported rewrite, ARRAY JOIN in a subquery before the join
+1
+1
+2
+--- kept: without the analyzer the condition is refused during analysis

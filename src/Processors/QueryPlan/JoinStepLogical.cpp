@@ -1568,7 +1568,19 @@ static QueryPlanNode buildPhysicalJoinImpl(
         /// For IEJoin the condition gates candidate pairs inside the operator; TableJoin's
         /// mixed join expression is consumed only by the hash-family algorithms.
         if (ie_join_description)
+        {
+            /// IEJoin evaluates this condition per batch of candidate pairs and indexes the result by
+            /// a pair's position in that batch, so it must preserve the number of rows.
+            if (on_clause_expression->hasArrayJoin())
+            {
+                throw Exception(
+                    ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                    "Condition '{}' from JOIN ON section contains 'arrayJoin', which changes the number of rows. "
+                    "If the expansion depends on one side only, use ARRAY JOIN in a subquery before the JOIN",
+                    on_clause_condition.getColumnName());
+            }
             ie_join_residual_condition = std::move(on_clause_expression);
+        }
         else
             table_join->getMixedJoinExpression() = std::move(on_clause_expression);
         on_clause_condition = JoinActionRef(nullptr);
