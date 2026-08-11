@@ -25,11 +25,11 @@ ClickPipes is a separate cloud service that runs independently of the ClickHouse
 </Accordion>
 
 <Accordion title="What are the requirements for using ClickPipes for Kafka?">
-In order to use ClickPipes for Kafka, you will need a running Kafka broker and a ClickHouse Cloud service with ClickPipes enabled. You will also need to ensure that ClickHouse Cloud can access your Kafka broker. This can be achieved by allowing remote connection on the Kafka side, whitelisting [ClickHouse Cloud Egress IP addresses](/products/cloud/guides/data-sources/cloud-endpoints-api) in your Kafka setup. Alternatively, you can use [AWS PrivateLink](/integrations/clickpipes/aws-privatelink) to connect ClickPipes for Kafka to your Kafka brokers.
+In order to use ClickPipes for Kafka, you will need a running Kafka broker and a ClickHouse Cloud service with ClickPipes enabled. You will also need to ensure that ClickHouse Cloud can access your Kafka broker. This can be achieved by allowing remote connection on the Kafka side, whitelisting [ClickHouse Cloud Egress IP addresses](/products/cloud/guides/data-sources/cloud-endpoints-api) in your Kafka setup. Alternatively, you can use [AWS PrivateLink](/integrations/clickpipes/networking/aws-privatelink) to connect ClickPipes for Kafka to your Kafka brokers.
 </Accordion>
 
 <Accordion title="Does ClickPipes for Kafka support AWS PrivateLink?">
-AWS PrivateLink is supported. See [the documentation](/integrations/clickpipes/aws-privatelink) for more information on how to set it up.
+AWS PrivateLink is supported. See [the documentation](/integrations/clickpipes/networking/aws-privatelink) for more information on how to set it up.
 </Accordion>
 
 <Accordion title="Can I use ClickPipes for Kafka to write data to a Kafka topic?">
@@ -73,7 +73,7 @@ Yes. ClickPipes expects you to include the port number for the Kafka surface, wh
 </Accordion>
 
 <Accordion title="Are ClickPipes IPs still relevant for Azure Event Hubs?">
-Yes. To restrict traffic to your Event Hubs instance, please add the [documented static NAT IPs](/integrations/clickpipes/home#list-of-static-ips) to .
+Yes. To restrict traffic to your Event Hubs instance, please add the [documented static NAT IPs](/integrations/clickpipes/networking/static-ips) to the IP firewall rules for your Event Hubs namespace.
 </Accordion>
 
 <Accordion title="Is the connection string for the Event Hub, or is it for the Event Hub namespace?">

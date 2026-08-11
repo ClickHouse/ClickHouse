@@ -7,9 +7,14 @@
 
 namespace DB
 {
+
+thread_local Strings BaseSettingsHelpers::unknown_settings;
+thread_local bool BaseSettingsHelpers::unknown_settings_warning_logged = false;
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
+    extern const int TYPE_MISMATCH;
     extern const int UNKNOWN_SETTING;
 }
 
@@ -53,6 +58,32 @@ SettingsTierType BaseSettingsHelpers::getTier(UInt64 flags)
 void BaseSettingsHelpers::throwSettingNotFound(std::string_view name)
 {
     throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}'", String{name});
+}
+
+void BaseSettingsHelpers::throwValuelessSettingIsNotBool(std::string_view name, std::string_view type)
+{
+    throw Exception(
+        ErrorCodes::TYPE_MISMATCH,
+        "Setting '{}' has type {}, so it cannot be set without a value. Write '{} = <value>'",
+        String{name}, String{type}, String{name});
+}
+
+void BaseSettingsHelpers::throwValuelessSettingIsNotBool(std::string_view name)
+{
+    /// For consumers that read a `SettingChange` without a settings schema at hand, so they know the
+    /// setting is not Bool but not what its type is.
+    throw Exception(
+        ErrorCodes::TYPE_MISMATCH,
+        "Setting '{}' is not Bool, so it cannot be set without a value. Write '{} = <value>'",
+        String{name}, String{name});
+}
+
+void BaseSettingsHelpers::throwValuelessSettingHasValue(std::string_view name)
+{
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Setting '{}' is marked as written without a value, which stands for `{} = true`, "
+        "but it carries a different value", String{name}, String{name});
 }
 
 /// Log the summary of unknown settings as a warning instead of warning for each one separately.

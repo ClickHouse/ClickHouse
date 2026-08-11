@@ -1,7 +1,9 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/Logger.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
@@ -45,6 +47,7 @@
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTFromJSON.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
 #include <Parsers/toOneLineQuery.h>
@@ -85,6 +88,7 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Common/ProfileEvents.h>
 #include <Planner/PlannerContext.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -154,6 +158,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_json_ast_dialect;
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool allow_experimental_polyglot_dialect;
@@ -1288,6 +1293,50 @@ static BlockIO executeQueryImpl(
                 settings[Setting::allow_experimental_polyglot_dialect]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
+        else if (settings[Setting::dialect] == Dialect::clickhouse_json && !internal)
+        {
+            /// Allow `SET` queries in plain SQL so users can switch back to another dialect
+            /// without being locked into JSON-only input. The experimental gate must be
+            /// applied only to the JSON-deserialization branch — otherwise a session with
+            /// `dialect = clickhouse_json` and `enable_json_ast_dialect = 0`
+            /// cannot execute `SET dialect = 'clickhouse'` to recover.
+            if (isClickHouseJSONSetEscape(begin, end, settings[Setting::max_query_size]))
+            {
+                ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+                out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            }
+            else
+            {
+                if (!settings[Setting::enable_json_ast_dialect])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Support for clickhouse_json dialect is disabled "
+                        "(turn on setting 'enable_json_ast_dialect')");
+
+                if (max_query_size != 0 && static_cast<size_t>(end - begin) > max_query_size)
+                    throw Exception(ErrorCodes::SYNTAX_ERROR,
+                        "Max query size exceeded (can be increased with the `max_query_size` setting)");
+
+                /// A single-statement `clickhouse_json` query may carry a trailing `;` delimiter, just as
+                /// the SQL path and the JSON multiquery scanner accept one. `Poco::JSON::Parser` rejects
+                /// any trailing non-whitespace ("Excess characters found after JSON end"), so strip one
+                /// trailing `;` (and surrounding whitespace) before deserializing. Anything else after the
+                /// object is still rejected by the JSON parser as excess input.
+                const char * json_end = end;
+                while (json_end > begin && isWhitespaceASCII(json_end[-1]))
+                    --json_end;
+                if (json_end > begin && json_end[-1] == ';')
+                {
+                    --json_end;
+                    while (json_end > begin && isWhitespaceASCII(json_end[-1]))
+                        --json_end;
+                }
+
+                out_ast = IAST::createFromJSON(String(begin, json_end),
+                    settings[Setting::max_ast_depth],
+                    settings[Setting::max_ast_elements]);
+                checkASTSizeLimits(*out_ast, settings);
+            }
+        }
         else
         {
             ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
@@ -2111,9 +2160,6 @@ static BlockIO executeQueryImpl(
         /// Hold element of process list till end of query execution.
         res.process_list_entries.push_back(process_list_entry);
 
-        /// Hold query metadata cache till end of query execution.
-        res.query_metadata_cache = std::move(query_metadata_cache);
-
         if (query_plan)
         {
             auto plan = QueryPlan::makeSets(std::move(*query_plan), context);
@@ -2463,6 +2509,12 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzz_context->setCurrentQueryId("");
             if (!fuzzed_query_params.empty())
                 fuzz_context->setQueryParameters(fuzzed_query_params);
+
+            /// Run the fuzzed query on its own thread group, so that code reading the query context
+            /// from the thread (read/write settings, temporary data, distributed plan execution, ...)
+            /// sees the fuzz context and the limits pinned above instead of the outer query's.
+            ThreadGroupSwitcher thread_group_switcher(
+                ThreadGroup::createForQuery(fuzz_context), ThreadName::AST_FUZZER, /*allow_existing_group=*/ true);
 
             auto result = executeQuery(fuzzed_query, fuzz_context, QueryFlags{.internal = true});
 

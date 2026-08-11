@@ -1,3 +1,4 @@
+#include <Processors/QueryPlan/resolveStorages.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
@@ -57,8 +58,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_TEXT;
 }
 
-Identifier parseTableIdentifier(const std::string & str, const ContextPtr & context);
-
 Identifier parseTableIdentifier(const std::string & str, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
@@ -74,8 +73,6 @@ Identifier parseTableIdentifier(const std::string & str, const ContextPtr & cont
 
     return Identifier(std::move(res->as<ASTIdentifier>()->name_parts));
 }
-
-std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context);
 
 std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context)
 {
@@ -215,7 +212,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(
             /// key also tells modifier-bearing reads apart.
             if (auto modifiers = reading_from_table_function->getTableExpressionModifiers(); modifiers != TableExpressionModifiers{})
                 table_function_node->setTableExpressionModifiers(std::move(modifiers));
-            select_query_info.table_expression = query_tree_node;
+            select_query_info.table_expression = static_pointer_cast<ITableExpressionNode>(query_tree_node);
         }
         else if (auto * table_node = query_tree_node->as<TableNode>())
         {
@@ -230,6 +227,9 @@ static QueryPlanResourceHolder replaceReadingFromTable(
 
         select_query_info.table_expression_modifiers = reading_from_table_function->getTableExpressionModifiers();
     }
+
+    if (select_query_info.table_expression_modifiers)
+        snapshot = snapshot->clone(extendMetadataWithModifiers(snapshot->metadata, *select_query_info.table_expression_modifiers), snapshot->data);
 
     TableLockHolder table_lock;
     if (reading_from_table && bound_storage && bound_table_lock)

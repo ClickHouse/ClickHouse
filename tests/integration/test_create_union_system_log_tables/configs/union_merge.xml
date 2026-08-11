@@ -1,0 +1,5 @@
+<clickhouse>
+    <create_union_system_log_tables>
+        <merge_rotated_tables>true</merge_rotated_tables>
+    </create_union_system_log_tables>
+</clickhouse>

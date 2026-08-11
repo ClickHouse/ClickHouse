@@ -1,0 +1,8 @@
+= apply_prewhere_after_final = 1: WHERE is not moved =
+0
+= deferred row policy: WHERE is not moved and runs after the policy =
+0
+1
+= sorting-key-only row policy is not deferred, so the move happens =
+      Prewhere filter
+      Prewhere filter column: greaterOrEquals(k, 1) (removed)
