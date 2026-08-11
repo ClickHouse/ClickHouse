@@ -12,6 +12,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 disk_name="04817_query_limit_${CLICKHOUSE_DATABASE}"
 limit=1048576
 
+# Both are randomized in CI and both make a read cache nothing at all, which is the premise here.
+cache_settings="enable_filesystem_cache = 1, read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0"
+
 $CLICKHOUSE_CLIENT -m --query "
 DROP TABLE IF EXISTS test_no_limit;
 DROP TABLE IF EXISTS test_with_limit;
@@ -47,10 +50,13 @@ written_bytes() {
     ORDER BY event_time_microseconds DESC LIMIT 1;"
 }
 
-$CLICKHOUSE_CLIENT --query "SELECT * FROM test_no_limit FORMAT Null" --query_id "no_limit_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT --query_id "no_limit_${CLICKHOUSE_DATABASE}" \
+    --query "SELECT * FROM test_no_limit SETTINGS ${cache_settings} FORMAT Null"
 echo "no limit: writes more than the limit  $(( $(written_bytes "no_limit_${CLICKHOUSE_DATABASE}") > limit ))"
 
-$CLICKHOUSE_CLIENT --query "SELECT * FROM test_with_limit FORMAT Null" --query_id "with_limit_${CLICKHOUSE_DATABASE}" --filesystem_cache_max_download_size $limit
+$CLICKHOUSE_CLIENT --query_id "with_limit_${CLICKHOUSE_DATABASE}" \
+    --query "SELECT * FROM test_with_limit
+             SETTINGS ${cache_settings}, filesystem_cache_max_download_size = ${limit} FORMAT Null"
 echo "with limit: stays within the limit  $(( $(written_bytes "with_limit_${CLICKHOUSE_DATABASE}") <= limit ))"
 
 $CLICKHOUSE_CLIENT -m --query "DROP TABLE test_no_limit; DROP TABLE test_with_limit;"
