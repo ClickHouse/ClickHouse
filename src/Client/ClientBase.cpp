@@ -2782,10 +2782,18 @@ void ClientBase::processParsedSingleQuery(
             client_context->setSettings(old_settings);
             connection->setFormatSettings(getFormatSettings(client_context));
         });
-        /// Capture whether this query was parsed via the `clickhouse_json` dialect *before* applying any
-        /// in-query `SET` (which may change `dialect`/`enable_json_ast_dialect`). The outbound
-        /// transport dialect is pinned to match the outbound text in `pinOutboundDialectForJSONDialect`.
-        current_query_parsed_as_json_dialect = client_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
+        /// Capture the parse-time dialect settings *before* applying any in-query `SET` or `SETTINGS`
+        /// clause (which may change `dialect`, `enable_json_ast_dialect` or the polyglot settings).
+        /// The AST was produced under these settings (see parseQuery), so the decision how to send the
+        /// very same text — and the settings that govern its server-side reparse — must be derived from
+        /// them, not from the settings the query itself installs for its own execution. The outbound
+        /// transport dialect for `clickhouse_json` is pinned in `pinOutboundDialectForJSONDialect`;
+        /// verbatim (foreign) dialects are pinned below, after `applySettingsFromServerIfNeeded`.
+        const Dialect parse_dialect = client_context->getSettingsRef()[Setting::dialect];
+        const Field parse_dialect_value = client_context->getSettingsRef().get("dialect");
+        const Field parse_allow_polyglot_value = client_context->getSettingsRef().get("allow_experimental_polyglot_dialect");
+        const Field parse_polyglot_dialect_value = client_context->getSettingsRef().get("polyglot_dialect");
+        current_query_parsed_as_json_dialect = parse_dialect == Dialect::clickhouse_json;
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
         connection->setFormatSettings(getFormatSettings(client_context));
 
@@ -2818,8 +2826,31 @@ void ClientBase::processParsedSingleQuery(
         /// `clickhouse_json` is excluded: it is not a foreign SQL dialect but a different serialization
         /// of a ClickHouse AST, the client deserializes it locally without rewriting any query text, and
         /// its INSERT data is streamed by the client as usual (from stdin, INFILE or `input`).
-        const Dialect query_dialect = client_context->getSettingsRef()[Setting::dialect];
-        const bool send_query_verbatim = query_dialect != Dialect::clickhouse && query_dialect != Dialect::clickhouse_json;
+        /// The decision is made from the *parse-time* dialect: the AST in hand was produced by the
+        /// foreign-dialect classifier, so a query-local `SETTINGS dialect = ...` must not switch the
+        /// same query onto the native path (where e.g. `insert->data`, already cleared by the polyglot
+        /// parser, would be expected to carry the inline data).
+        const bool send_query_verbatim = parse_dialect != Dialect::clickhouse && parse_dialect != Dialect::clickhouse_json;
+
+        if (send_query_verbatim)
+        {
+            /// The original query text is sent verbatim, and the server reparses (for polyglot:
+            /// transpiles) it under the settings that accompany the query. Pin those settings to their
+            /// parse-time values so the query's own `SETTINGS` clause cannot change how the very same
+            /// text is interpreted on the server (e.g. `SELECT 1 SETTINGS
+            /// allow_experimental_polyglot_dialect = 0` in the polyglot dialect must not be accepted
+            /// locally and then rejected by the server before transpilation). Like the `clickhouse_json`
+            /// pinning above, this is transient: a `SET` still takes effect for subsequent queries (it
+            /// is applied to the server session and re-applied to the client context after this query
+            /// completes), and a `SETTINGS` clause is applied by the server itself when it executes the
+            /// transpiled query.
+            client_context->setSetting("dialect", parse_dialect_value);
+            if (parse_dialect == Dialect::polyglot)
+            {
+                client_context->setSetting("allow_experimental_polyglot_dialect", parse_allow_polyglot_value);
+                client_context->setSetting("polyglot_dialect", parse_polyglot_dialect_value);
+            }
+        }
 
         /// When the user explicitly requested inline insert data mode (via `--inline-insert-data` or
         /// `send_table_structure_on_insert_with_inline_data = 0`), it takes precedence over `async_insert`

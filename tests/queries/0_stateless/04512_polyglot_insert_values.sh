@@ -240,5 +240,19 @@ $CLICKHOUSE_CLIENT $POLY -q "EXPLAIN INSERT INTO t VALUES (987654324)" 2>&1 | gr
 echo "--- no insert from a polyglot EXPLAIN INSERT (expect: 112 7) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 
+# The query's own SETTINGS clause must not change how the very same text is handled on the wire:
+# the AST was classified under the parse-time polyglot settings, so those are pinned for this query.
+# Disabling the polyglot dialect from inside the query must not make the server reject the text the
+# client already accepted; the SETTINGS clause still applies to the query's execution itself.
+echo "--- a polyglot query may disable the polyglot dialect in its own SETTINGS clause (expect: 42) ---"
+$CLICKHOUSE_CLIENT $POLY_CH -q "SELECT 41 + 1 SETTINGS allow_experimental_polyglot_dialect = 0"
+
+# Likewise, switching `dialect` inside an inline INSERT must not pull it off the verbatim path: the
+# polyglot parser already cleared `insert->data` (the server reads the data from the transpiled
+# text), so taking the native client path here would lose the inline data.
+$CLICKHOUSE_CLIENT $POLY_CH -q "INSERT INTO t SETTINGS dialect = 'clickhouse' VALUES (13)"
+echo "--- inline data survives a dialect switch in the INSERT's own SETTINGS clause (expect: 125 8) ---"
+$CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE b"

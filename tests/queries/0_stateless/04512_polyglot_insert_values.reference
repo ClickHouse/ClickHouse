@@ -54,3 +54,7 @@ INCORRECT_QUERY
 SYNTAX_ERROR
 --- no insert from a polyglot EXPLAIN INSERT (expect: 112 7) ---
 112	7
+--- a polyglot query may disable the polyglot dialect in its own SETTINGS clause (expect: 42) ---
+42
+--- inline data survives a dialect switch in the INSERT's own SETTINGS clause (expect: 125 8) ---
+125	8
