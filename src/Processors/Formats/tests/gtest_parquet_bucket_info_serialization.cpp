@@ -273,4 +273,53 @@ TEST(ParquetFileBucketInfoSerialization, FooterDigestIgnoresOutOfRangeThriftEnum
     EXPECT_NE(computeParquetFooterDigest(other), digest);
 }
 
+TEST(ParquetFileBucketInfoSerialization, FooterDigestCoversStatisticsAndKeyValueMetadata)
+{
+    parquet::format::FileMetaData metadata;
+    metadata.num_rows = 200;
+    metadata.schema.resize(1);
+    metadata.schema[0].name = "root";
+    metadata.schema[0].__set_num_children(1);
+
+    metadata.row_groups.resize(1);
+    auto & row_group = metadata.row_groups[0];
+    row_group.num_rows = 200;
+    row_group.total_byte_size = 1000;
+    row_group.columns.resize(1);
+    auto & column = row_group.columns[0];
+    column.file_offset = 4;
+    column.__isset.meta_data = true;
+    auto & meta = column.meta_data;
+    meta.num_values = 200;
+    meta.total_compressed_size = 500;
+    meta.total_uncompressed_size = 900;
+    meta.data_page_offset = 100;
+    meta.path_in_schema = {"s"};
+    meta.__isset.statistics = true;
+    meta.statistics.__set_min_value("aaa");
+    meta.statistics.__set_max_value("zzz");
+
+    const UInt64 digest = computeParquetFooterDigest(metadata);
+    EXPECT_EQ(digest, computeParquetFooterDigest(metadata));
+
+    /// A same-layout rewrite with different data values changes the per-column statistics, and the
+    /// digest must catch it: this is the only footer-visible difference such a rewrite leaves.
+    parquet::format::FileMetaData different_values = metadata;
+    different_values.row_groups[0].columns[0].meta_data.statistics.__set_max_value("zzy");
+    EXPECT_NE(computeParquetFooterDigest(different_values), digest);
+
+    /// Absent statistics digest differently from present ones (presence flags are hashed).
+    parquet::format::FileMetaData no_stats = metadata;
+    no_stats.row_groups[0].columns[0].meta_data.__isset.statistics = false;
+    EXPECT_NE(computeParquetFooterDigest(no_stats), digest);
+
+    /// File-level key-value metadata (e.g. a writer's schema annotation) is covered too.
+    parquet::format::FileMetaData different_kv = metadata;
+    different_kv.key_value_metadata.resize(1);
+    different_kv.key_value_metadata[0].key = "writer.note";
+    different_kv.key_value_metadata[0].__set_value("generation B");
+    different_kv.__isset.key_value_metadata = true;
+    EXPECT_NE(computeParquetFooterDigest(different_kv), digest);
+}
+
 #endif

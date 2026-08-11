@@ -29,15 +29,19 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     /// Digest of the footer (`FileMetaData`) the bucket assignment was computed from
     /// (see `computeParquetFooterDigest`). 0 means "unknown" and disables the check.
     ///
-    /// This is the exact generation token of the file the assignment describes, and it is the only
-    /// one available on every backend: neither the local `{mtime, inode, size}` version token nor a
-    /// storage etag can be relied on. Locally, an in-place rewrite that keeps the inode and the byte
-    /// size and lands in the same filesystem timestamp tick produces an identical token, so a
-    /// `ParquetMetadataCache` entry keyed on that token may describe a previous generation of the
-    /// file. On object storage, only S3 pins the read to the listed etag
-    /// (`s3_validate_etag_on_read`), so with that check off - or on a backend whose etag is not a
-    /// strong content identifier - two bucket readers of the same object can otherwise open two
-    /// different generations and return a mixed-generation result.
+    /// This is the strongest generation token of the file available on every backend: neither the
+    /// local `{mtime, inode, size}` version token nor a storage etag can be relied on. Locally, an
+    /// in-place rewrite that keeps the inode and the byte size and lands in the same filesystem
+    /// timestamp tick produces an identical token, so a `ParquetMetadataCache` entry keyed on that
+    /// token may describe a previous generation of the file. On object storage, only S3 pins the
+    /// read to the listed etag (`s3_validate_etag_on_read`), so with that check off - or on a
+    /// backend whose etag is not a strong content identifier - two bucket readers of the same
+    /// object can otherwise open two different generations and return a mixed-generation result.
+    /// It is not an exact byte-level token: it covers everything the footer records about the data
+    /// (layout, offsets, per-column statistics), so it fails close on any footer-visible rewrite,
+    /// but a rewrite whose footer is identical in all hashed fields is not detectable from
+    /// metadata alone - exactness requires the read itself to be pinned to a generation (see
+    /// `computeParquetFooterDigest`).
     ///
     /// Every per-bucket source therefore parses the footer of the bytes it actually opened (the
     /// format metadata cache is bypassed unless the read is pinned to the generation the cache key
@@ -75,11 +79,12 @@ struct ParquetBucketSplitter : public IBucketSplitter
 
 /// Digest of a parsed Parquet footer, used to tie a single-file bucket assignment to the file
 /// generation it was computed from (see `ParquetFileBucketInfo::footer_digest`). Computed over the
-/// footer's layout - schema shape, row-group and column-chunk row counts, sizes and offsets - so a
-/// footer parsed from the file and the same footer returned by `ParquetMetadataCache` produce the
-/// same value. Thrift enum fields are deliberately not read (a malformed file can hold an
-/// out-of-range enumerator, whose load is undefined behavior). Never returns 0 (the "unknown"
-/// marker).
+/// footer's layout - schema shape, row-group and column-chunk row counts, sizes and offsets - and
+/// its value-bearing fields (per-column statistics, key-value metadata, `created_by`), so a footer
+/// parsed from the file and the same footer returned by `ParquetMetadataCache` produce the same
+/// value, while any footer-visible rewrite changes it. Thrift enum fields are deliberately not
+/// read (a malformed file can hold an out-of-range enumerator, whose load is undefined behavior).
+/// Never returns 0 (the "unknown" marker).
 UInt64 computeParquetFooterDigest(const parquet::format::FileMetaData & file_metadata);
 
 /// Cache-aware single-file split. Parses the Parquet footer via `Parquet::Reader::readFileMetaData`

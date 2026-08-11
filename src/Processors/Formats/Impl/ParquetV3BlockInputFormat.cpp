@@ -65,7 +65,8 @@ static void checkFileMatchesBucketAssignment(const ParquetFileBucketInfo & bucke
     /// the file; on object storage, a read that is not pinned to the listed etag can return a different
     /// generation than the one the assignment was computed from. Comparing the digest of the footer
     /// actually read here against the one the assignment was computed from fails close in both cases
-    /// (see `ParquetFileBucketInfo::footer_digest`).
+    /// on any footer-visible difference, including the per-column statistics that change with the
+    /// data values (see `ParquetFileBucketInfo::footer_digest` for the exactness contract).
     if (bucket.footer_digest != 0 && computeParquetFooterDigest(file_metadata) != bucket.footer_digest)
         throw Exception(
             ErrorCodes::FILE_CHANGED_WHILE_READING,
@@ -731,11 +732,18 @@ void setFooterDigest(std::vector<FileBucketInfoPtr> & buckets, const parquet::fo
 
 UInt64 computeParquetFooterDigest(const parquet::format::FileMetaData & file_metadata)
 {
-    /// Hashes the footer's layout: the schema shape, and every row group's and column chunk's row
-    /// counts, byte sizes and file offsets. That is what a bucket assignment is computed from, so two
-    /// generations of a file that differ in any of it produce different digests, while the same
+    /// Hashes the footer's layout - the schema shape, and every row group's and column chunk's row
+    /// counts, byte sizes and file offsets - plus its value-bearing fields: per-column statistics
+    /// (min/max/null/distinct/NaN counts), key-value metadata and `created_by`. The layout is what a
+    /// bucket assignment is computed from, and the statistics change whenever the data values do, so
+    /// two generations of a file that differ in any of it produce different digests, while the same
     /// in-memory struct - whether freshly parsed or returned by `ParquetMetadataCache` - always
-    /// produces the same one.
+    /// produces the same one. A rewrite whose footer is identical in all hashed fields (same layout
+    /// AND same statistics at the same offsets) is indistinguishable without re-reading the data
+    /// pages, so the digest is a fail-close guard against footer-visible generation drift, not a
+    /// content hash of the file; an exact byte-level pin additionally requires the read itself to be
+    /// pinned to a generation (locally the file-version token bracket, on S3
+    /// `s3_validate_etag_on_read`).
     ///
     /// Deliberately hand-rolled instead of re-serializing the thrift struct: `FileMetaData` carries
     /// thrift enums (`SchemaElement::type`, `ColumnMetaData::codec`, `PageEncodingStats::page_type`,
@@ -753,9 +761,29 @@ UInt64 computeParquetFooterDigest(const parquet::format::FileMetaData & file_met
         if (is_set)
             hash.update(value);
     };
+    auto update_optional_string = [&](bool is_set, const std::string & value)
+    {
+        hash.update(is_set);
+        if (is_set)
+            hash.update(value);
+    };
+    auto update_key_value_metadata = [&](bool is_set, const std::vector<parquet::format::KeyValue> & key_value_metadata)
+    {
+        hash.update(is_set);
+        if (!is_set)
+            return;
+        hash.update(key_value_metadata.size());
+        for (const auto & key_value : key_value_metadata)
+        {
+            hash.update(key_value.key);
+            update_optional_string(key_value.__isset.value, key_value.value);
+        }
+    };
 
     hash.update(file_metadata.version);
     hash.update(file_metadata.num_rows);
+    update_optional_string(file_metadata.__isset.created_by, file_metadata.created_by);
+    update_key_value_metadata(file_metadata.__isset.key_value_metadata, file_metadata.key_value_metadata);
     hash.update(file_metadata.schema.size());
     for (const auto & element : file_metadata.schema)
     {
@@ -801,6 +829,25 @@ UInt64 computeParquetFooterDigest(const parquet::format::FileMetaData & file_met
             hash.update(meta.path_in_schema.size());
             for (const auto & part : meta.path_in_schema)
                 hash.update(part);
+            update_key_value_metadata(meta.__isset.key_value_metadata, meta.key_value_metadata);
+            /// The statistics are the footer's only fields whose values depend on the data pages'
+            /// contents, so they are what distinguishes two generations whose layout happens to be
+            /// identical (e.g. a same-size rewrite with different values). All hashed subfields are
+            /// integers, booleans or byte strings - no thrift enums.
+            hash.update(meta.__isset.statistics);
+            if (meta.__isset.statistics)
+            {
+                const auto & stats = meta.statistics;
+                update_optional_string(stats.__isset.max, stats.max);
+                update_optional_string(stats.__isset.min, stats.min);
+                update_optional(stats.__isset.null_count, stats.null_count);
+                update_optional(stats.__isset.distinct_count, stats.distinct_count);
+                update_optional_string(stats.__isset.max_value, stats.max_value);
+                update_optional_string(stats.__isset.min_value, stats.min_value);
+                update_optional(stats.__isset.is_max_value_exact, stats.is_max_value_exact);
+                update_optional(stats.__isset.is_min_value_exact, stats.is_min_value_exact);
+                update_optional(stats.__isset.nan_count, stats.nan_count);
+            }
         }
     }
 
