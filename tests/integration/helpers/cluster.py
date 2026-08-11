@@ -58,6 +58,7 @@ from minio import Minio
 
 from . import pytest_xdist_logging_to_separate_files
 from .client import Client, QueryRuntimeException
+from .hdfs_api import HDFSApi
 from .config_cluster import (
     dremio_pass,
     dremio_user,
@@ -681,6 +682,7 @@ class ClickHouseCluster:
         self.base_redis_cmd = []
         self.base_azurite_cmd = []
         self.base_nginx_cmd = []
+        self.base_hdfs_cmd = []
         self.base_prometheus_cmd = []
         self.pre_zookeeper_commands = []
         self.instances: dict[str, ClickHouseInstance] = {}
@@ -707,6 +709,7 @@ class ClickHouseCluster:
         self.with_rabbitmq = False
         self.with_nats = False
         self.with_odbc_drivers = False
+        self.with_hdfs = False
         self.with_mongo = False
         self.with_net_trics = False
         self.with_redis = False
@@ -830,6 +833,15 @@ class ClickHouseCluster:
         self.nats_dir = p.abspath(p.join(self.instances_dir, "nats"))
         self.nats_cert_dir = os.path.join(self.nats_dir, "cert")
         self.nats_ssl_context = None
+
+        # available when with_hdfs == True
+        self.hdfs_host = "hdfs1"
+        self.hdfs_ip = None
+        self.hdfs_name_port = 50070
+        self.hdfs_data_port = 50075
+        self.hdfs_dir = p.abspath(p.join(self.instances_dir, "hdfs"))
+        self.hdfs_logs_dir = os.path.join(self.hdfs_dir, "logs")
+        self.hdfs_api = None
 
         # available when with_nginx == True
         self.nginx_host = "nginx"
@@ -1975,6 +1987,24 @@ class ClickHouseCluster:
         )
         return self.base_jdbc_bridge_cmd
 
+    def setup_hdfs_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_hdfs = True
+        env_variables["HDFS_HOST"] = self.hdfs_host
+        env_variables["HDFS_NAME_PORT"] = str(self.hdfs_name_port)
+        env_variables["HDFS_DATA_PORT"] = str(self.hdfs_data_port)
+        env_variables["HDFS_LOGS"] = self.hdfs_logs_dir
+        env_variables["HDFS_FS"] = "bind"
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_hdfs.yml")]
+        )
+        self.base_hdfs_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_hdfs.yml"),
+        )
+        return self.base_hdfs_cmd
+
     def setup_nginx_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_nginx = True
 
@@ -2101,6 +2131,7 @@ class ClickHouseCluster:
         clickhouse_log_file=CLICKHOUSE_LOG_FILE,
         clickhouse_error_log_file=CLICKHOUSE_ERROR_LOG_FILE,
         with_arrowflight=False,
+        with_hdfs=False,
         with_mongo=False,
         with_nginx=False,
         with_redis=False,
@@ -2439,6 +2470,11 @@ class ClickHouseCluster:
         if with_nats and not self.with_nats:
             cmds.append(
                 self.setup_nats_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_hdfs and not self.with_hdfs:
+            cmds.append(
+                self.setup_hdfs_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_nginx and not self.with_nginx:
@@ -3143,6 +3179,7 @@ class ClickHouseCluster:
                         self.base_rabbitmq_cmd + ["logs"], stdout=f
                     )
                 rabbitmq_debuginfo(self.rabbitmq_docker_id, self.rabbitmq_cookie)
+                break
             except Exception as ex:
                 logging.debug("Unable to get logs from docker: %s:", ex)
                 time.sleep(0.5)
@@ -3228,6 +3265,32 @@ class ClickHouseCluster:
         raise Exception(
             "Cannot wait ZooKeeper container (probably it's a `iptables-nft` issue, you may try to `sudo iptables -P FORWARD ACCEPT`)"
         ) from err
+
+    def make_hdfs_api(self, timeout=180):
+        self.hdfs_ip = self.get_instance_ip(self.hdfs_host)
+        self.hdfs_api = HDFSApi(
+            user="root",
+            timeout=timeout,
+            host=self.hdfs_host,
+            data_port=self.hdfs_data_port,
+            proxy_port=self.hdfs_name_port,
+            hdfs_ip=self.hdfs_ip,
+        )
+
+    def wait_hdfs_to_start(self, timeout=300):
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                self.hdfs_api.write_data("/somefilewithrandomname222", "1")
+                logging.debug("Connected to HDFS and SafeMode disabled! ")
+                return
+            except Exception as ex:
+                logging.exception(
+                    "Can't connect to HDFS or preparations are not done yet " + str(ex)
+                )
+                time.sleep(1)
+
+        raise Exception("Can't wait HDFS to start")
 
     def wait_kafka_is_available(self, kafka_docker_id, kafka_port, max_retries=120):
         retries = 0
@@ -3979,6 +4042,15 @@ class ClickHouseCluster:
                 self.nats_docker_id = self.get_instance_docker_id("nats1")
                 self.up_called = True
                 self.wait_nats_is_available()
+
+            if self.with_hdfs and self.base_hdfs_cmd:
+                logging.debug("Setup HDFS")
+                os.makedirs(self.hdfs_logs_dir)
+                os.chmod(self.hdfs_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                subprocess_check_call(self.base_hdfs_cmd + common_opts)
+                self.up_called = True
+                self.make_hdfs_api()
+                self.wait_hdfs_to_start()
 
             if self.with_nginx and self.base_nginx_cmd:
                 logging.debug("Setup nginx")

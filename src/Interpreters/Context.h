@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
 #include <Common/Exception.h>
 #include <Common/MultiVersion.h>
@@ -93,7 +94,6 @@ class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
 class AsynchronousMetrics;
-class BackgroundSchedulePool;
 class MergeList;
 class MovesList;
 class ReplicatedFetchList;
@@ -435,6 +435,11 @@ protected:
     /// Max block numbers in partitions to read from MergeTree tables.
     /// Saved separately for each table uuid used in the query.
     std::unordered_map<UUID, PartitionIdToMaxBlockPtr> partition_id_to_max_block;
+
+    /// A pinned point-in-time storage snapshot to read instead of taking a fresh one, keyed by table uuid.
+    /// Used by atomic `CREATE MATERIALIZED VIEW ... POPULATE` to populate the view from the exact data
+    /// captured at the moment the view was subscribed to new inserts. See InterpreterCreateQuery.
+    std::unordered_map<UUID, StorageSnapshotPtr> pinned_storage_snapshots;
 
 public:
     /// Record entities accessed by current query, and store this information in system.query_log.
@@ -1614,12 +1619,24 @@ public:
     BackgroundTaskSchedulingSettings getBackgroundMoveTaskSchedulingSettings() const;
     BackgroundTaskSchedulingSettings getBackgroundStreamingTaskSchedulingSettings() const;
 
-    BackgroundSchedulePool & getBufferFlushSchedulePool() const;
-    BackgroundSchedulePool & getSchedulePool() const;
-    BackgroundSchedulePool & getMessageBrokerSchedulePool() const;
-    BackgroundSchedulePool & getDistributedSchedulePool() const;
-    BackgroundSchedulePool & getIcebergSchedulePool() const;
-    BackgroundSchedulePool & getStreamingSchedulePool() const;
+    /// Create the pool if needed and return it. Returns a `shared_ptr` (not a reference) so a
+    /// caller keeping the pool around cannot outlive it: `shutdown` clears the members while
+    /// background tasks may still hold their pool.
+    BackgroundSchedulePoolPtr getBufferFlushSchedulePool() const;
+    BackgroundSchedulePoolPtr getSchedulePool() const;
+    BackgroundSchedulePoolPtr getMessageBrokerSchedulePool() const;
+    BackgroundSchedulePoolPtr getDistributedSchedulePool() const;
+    BackgroundSchedulePoolPtr getIcebergSchedulePool() const;
+    BackgroundSchedulePoolPtr getStreamingSchedulePool() const;
+
+    /// Return the pool only if it has already been created, null otherwise, so that reading
+    /// `system.background_schedule_pool` does not instantiate one.
+    BackgroundSchedulePoolPtr getBufferFlushSchedulePoolIfExists() const;
+    BackgroundSchedulePoolPtr getSchedulePoolIfExists() const;
+    BackgroundSchedulePoolPtr getMessageBrokerSchedulePoolIfExists() const;
+    BackgroundSchedulePoolPtr getDistributedSchedulePoolIfExists() const;
+    BackgroundSchedulePoolPtr getIcebergSchedulePoolIfExists() const;
+    BackgroundSchedulePoolPtr getStreamingSchedulePoolIfExists() const;
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
@@ -1943,6 +1960,11 @@ public:
 
     void setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;
+
+    /// A pinned storage snapshot to be returned by the table's getStorageSnapshot instead of a fresh one.
+    /// Used by atomic `CREATE MATERIALIZED VIEW ... POPULATE`.
+    void setPinnedStorageSnapshot(const UUID & table_uuid, StorageSnapshotPtr snapshot);
+    StorageSnapshotPtr getPinnedStorageSnapshot(const UUID & table_uuid) const;
 
     const ServerSettings & getServerSettings() const;
 
