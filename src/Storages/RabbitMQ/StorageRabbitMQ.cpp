@@ -179,8 +179,10 @@ StorageRabbitMQ::StorageRabbitMQ(
 
         /// connectImpl takes the transport (amqp/amqps) from the URI scheme and ignores the
         /// `rabbitmq_secure` setting for the address form, so reject a contradictory
-        /// `rabbitmq_secure = 1` rather than silently connecting in plaintext.
-        if (secure_connection && !address->secure())
+        /// `rabbitmq_secure = 1` rather than silently connecting in plaintext. Only for a fresh
+        /// CREATE though: an existing table must still attach on restart (it stays plaintext, as
+        /// it did before), so this validation does not brick upgrades.
+        if (mode <= LoadingStrictnessLevel::CREATE && secure_connection && !address->secure())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "`rabbitmq_secure = 1` conflicts with the plaintext `amqp://` scheme in "
