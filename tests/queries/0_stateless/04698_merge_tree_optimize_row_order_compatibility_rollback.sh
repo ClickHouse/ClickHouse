@@ -23,6 +23,10 @@ run_case()
     # shellcheck disable=SC2086
     ${CLICKHOUSE_LOCAL} $1 --multiquery --query "
         SET max_insert_threads = 1;
+        -- The oracle below compares against the on-disk row order, so the read must be
+        -- single-streamed: with more than one stream, groupArray would reflect stream
+        -- interleaving rather than the physical order.
+        SET max_threads = 1;
 
         SELECT value FROM system.merge_tree_settings WHERE name = 'optimize_row_order_if_no_order_by';
 
