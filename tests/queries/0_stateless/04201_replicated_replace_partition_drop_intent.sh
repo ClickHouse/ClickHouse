@@ -21,8 +21,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 FAILPOINT="rmt_cancel_removed_parts_check_pause_in_gap"
 
-# SYSTEM WAIT FAILPOINT blocks until the pause is released, so an early exit anywhere below would
-# otherwise leave the REPLACE parked and the table undroppable.
+# A paused thread stays parked until the failpoint is notified or disabled, so an early exit below
+# would leave the REPLACE parked and the table undroppable.
 function cleanup()
 {
     ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT ${FAILPOINT}" 2>/dev/null ||:
@@ -34,11 +34,11 @@ cleanup
 
 ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE dst (p UInt8, x UInt64, y UInt64 DEFAULT 0)
-    ENGINE = ReplicatedMergeTree('/clickhouse/test/04201_${CLICKHOUSE_DATABASE}/dst', 'r1')
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dst', 'r1')
     PARTITION BY p ORDER BY x
     SETTINGS number_of_free_entries_in_pool_to_execute_mutation = 0;
     CREATE TABLE src (p UInt8, x UInt64, y UInt64 DEFAULT 0)
-    ENGINE = ReplicatedMergeTree('/clickhouse/test/04201_${CLICKHOUSE_DATABASE}/src', 'r1')
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/src', 'r1')
     PARTITION BY p ORDER BY x;
 "
 
