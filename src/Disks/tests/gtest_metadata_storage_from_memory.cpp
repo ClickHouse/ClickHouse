@@ -225,7 +225,8 @@ TEST(MetadataStorageFromMemory, RemoveRecursiveHonorsPredicate)
     tx->createMetadataFile("sub/removed.bin", singleObject("blobs/removed", "sub/removed.bin", 1));
     tx->createMetadataFile("outside.bin", singleObject("blobs/outside", "outside.bin", 1));
 
-    tx->removeRecursive("sub", [](const std::string & path) { return path.ends_with("removed.bin"); });
+    /// The predicate receives paths relative to the removed root.
+    tx->removeRecursive("sub", [](const std::string & path) { return path == "removed.bin"; });
 
     EXPECT_FALSE(storage->existsDirectory("sub"));
     EXPECT_FALSE(storage->existsFile("sub/kept.bin"));

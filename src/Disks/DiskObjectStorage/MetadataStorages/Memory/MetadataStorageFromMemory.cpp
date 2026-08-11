@@ -391,16 +391,18 @@ void MetadataStorageFromMemoryTransaction::removeRecursive(const std::string & p
     const std::string normalized(normalizePath(path));
     const std::string prefix = directoryPrefix(normalized);
 
+    /// The predicate receives paths relative to the removed root, same as the on-disk backend
+    /// (callers fill their keep-lists with relative names).
     if (auto it = storage.files.find(normalized); it != storage.files.end())
     {
-        if (!should_remove_objects || should_remove_objects(it->first))
+        if (!should_remove_objects || should_remove_objects("."))
             storage.releaseRecordUnlocked(it->second);
         storage.files.erase(it);
     }
 
     for (auto it = storage.files.lower_bound(prefix); it != storage.files.end() && it->first.starts_with(prefix);)
     {
-        if (!should_remove_objects || should_remove_objects(it->first))
+        if (!should_remove_objects || should_remove_objects(it->first.substr(prefix.size())))
             storage.releaseRecordUnlocked(it->second);
         it = storage.files.erase(it);
     }
