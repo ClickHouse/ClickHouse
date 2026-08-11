@@ -510,15 +510,19 @@ DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPt
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
 void LocalServer::tryInitPath()
 {
-    std::string path;
+    /// Kept as `fs::path` until the final `set*Path` boundaries: on Windows a round trip
+    /// through a narrow string and back into `std::filesystem` would reinterpret the bytes
+    /// through the active code page (see base/pathToString.h).
+    fs::path path;
 
     if (getClientConfiguration().has("path"))
     {
         /// User-supplied path.
-        path = getClientConfiguration().getString("path");
-        Poco::trimInPlace(path);
+        auto path_string = getClientConfiguration().getString("path");
+        Poco::trimInPlace(path_string);
+        path = pathFromString(path_string);
 
-        if (path.empty())
+        if (path_string.empty())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Cannot work with empty storage path that is explicitly specified"
@@ -563,42 +567,42 @@ void LocalServer::tryInitPath()
         /// The directory can be created lazily during the runtime.
         temporary_directory_to_delete = default_path;
 
-        path = pathToString(default_path);
-        LOG_DEBUG(log, "Working directory will be created as needed: {}", path);
+        path = default_path;
+        LOG_DEBUG(log, "Working directory will be created as needed: {}", pathToString(path));
     }
 
     fs::create_directories(path);
 
-    global_context->setPath(pathToGenericString(fs::path(path) / ""));
+    global_context->setPath(pathToGenericString(path / ""));
 
     /// clickhouse-local keeps a generous default limit on temporary data to guard against
     /// runaway queries filling up the disk. It can be raised, or lifted entirely with a value of 0,
     /// via the `max_temporary_data_on_disk_size` server setting.
     const auto & max_temporary_data_on_disk_size = server_settings[ServerSetting::max_temporary_data_on_disk_size];
     global_context->setTemporaryStoragePath(
-        pathToGenericString(fs::path(path) / "tmp" / ""), max_temporary_data_on_disk_size.changed ? max_temporary_data_on_disk_size.value : 1_TiB);
-    global_context->setFlagsPath(pathToGenericString(fs::path(path) / "flags" / ""));
+        pathToGenericString(path / "tmp" / ""), max_temporary_data_on_disk_size.changed ? max_temporary_data_on_disk_size.value : 1_TiB);
+    global_context->setFlagsPath(pathToGenericString(path / "flags" / ""));
 
     global_context->setUserFilesPath(""); /// user's files are everywhere
 
-    std::string user_scripts_path = getClientConfiguration().getString("user_scripts_path", pathToGenericString(fs::path(path) / "user_scripts" / ""));
+    std::string user_scripts_path = getClientConfiguration().getString("user_scripts_path", pathToGenericString(path / "user_scripts" / ""));
     global_context->setUserScriptsPath(user_scripts_path);
 
     std::string dynamic_udf_path = getClientConfiguration().getString(
         "dynamic_user_defined_executable_functions_path",
-        pathToGenericString(fs::path(path) / "dynamic_user_defined_executable_functions" / ""));
+        pathToGenericString(path / "dynamic_user_defined_executable_functions" / ""));
     global_context->setDynamicUserDefinedExecutableFunctionsPath(dynamic_udf_path);
-    fs::create_directories(dynamic_udf_path);
+    fs::create_directories(pathFromString(dynamic_udf_path));
 
     /// Set path for filesystem caches
-    String filesystem_caches_path(getClientConfiguration().getString("filesystem_caches_path", pathToGenericString(fs::path(path) / "cache" / "")));
+    String filesystem_caches_path(getClientConfiguration().getString("filesystem_caches_path", pathToGenericString(path / "cache" / "")));
     if (!filesystem_caches_path.empty())
         global_context->setFilesystemCachesPath(filesystem_caches_path);
 
     /// top_level_domains_lists
-    const std::string & top_level_domains_path = getClientConfiguration().getString("top_level_domains_path", pathToGenericString(fs::path(path) / "top_level_domains/"));
+    const std::string & top_level_domains_path = getClientConfiguration().getString("top_level_domains_path", pathToGenericString(path / "top_level_domains/"));
     if (!top_level_domains_path.empty())
-        TLDListsHolder::getInstance().parseConfig(pathToGenericString(fs::path(top_level_domains_path) / ""), getClientConfiguration());
+        TLDListsHolder::getInstance().parseConfig(pathToGenericString(pathFromString(top_level_domains_path) / ""), getClientConfiguration());
 }
 
 
@@ -1078,7 +1082,7 @@ void LocalServer::setupUsers()
     /// auto-discovered via `getLocalConfigPath`, e.g. `~/.clickhouse-local/config.xml`).
     if (!loaded_config_path.empty())
     {
-        const auto config_dir = pathToString(pathFromString(loaded_config_path).remove_filename());
+        const auto config_dir = pathFromString(loaded_config_path).remove_filename();
         bool has_user_directories = getClientConfiguration().has("user_directories");
         String users_config_path = getClientConfiguration().getString("users_config", "");
 
@@ -1088,8 +1092,8 @@ void LocalServer::setupUsers()
         /// Anchor relative paths to the config's directory, not the cwd.
         /// Otherwise a missing `users.xml` silently falls back to `./users.xml`,
         /// which could grant `access_management` to the default user.
-        if (!users_config_path.empty() && fs::path(users_config_path).is_relative())
-            users_config_path = pathToGenericString(fs::path(config_dir) / users_config_path);
+        if (!users_config_path.empty() && pathFromString(users_config_path).is_relative())
+            users_config_path = pathToGenericString(config_dir / pathFromString(users_config_path));
 
         if (users_config_path.empty())
             users_config = getConfigurationFromXMLString(minimal_default_user_xml);
@@ -1688,17 +1692,19 @@ void LocalServer::processConfig()
         /// If it is loaded from a user-specified path, we load it as usual. If not, we create it as a memory (ephemeral) database.
         bool attached_system_database = false;
 
-        String path = global_context->getPath();
+        /// `getPath` returns UTF-8; `pathFromString` (rather than the narrow `fs::path`
+        /// constructor) keeps it intact on Windows.
+        fs::path path = pathFromString(global_context->getPath());
 
         /// Lock path directory before read
-        fs::create_directories(fs::path(path));
-        status.emplace(pathToGenericString(fs::path(path) / "status"), StatusFile::write_full_info);
+        fs::create_directories(path);
+        status.emplace(pathToGenericString(path / "status"), StatusFile::write_full_info);
 
-        if (fs::exists(fs::path(path) / "metadata"))
+        if (fs::exists(path / "metadata"))
         {
-            LOG_DEBUG(log, "Loading metadata from {}", path);
+            LOG_DEBUG(log, "Loading metadata from {}", pathToString(path));
 
-            if (fs::exists(std::filesystem::path(path) / "metadata" / "system.sql"))
+            if (fs::exists(path / "metadata" / "system.sql"))
             {
                 LoadTaskPtrs load_system_metadata_tasks = loadMetadataSystem(global_context);
                 waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
@@ -1720,7 +1726,7 @@ void LocalServer::processConfig()
         if (!attached_system_database)
             attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false, false);
 
-        if (fs::exists(fs::path(path) / "user_defined"))
+        if (fs::exists(path / "user_defined"))
             global_context->getUserDefinedSQLObjectsStorage().loadObjects();
     }
     else if (!getClientConfiguration().has("no-system-tables"))

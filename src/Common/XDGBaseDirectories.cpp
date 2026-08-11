@@ -2,6 +2,8 @@
 
 #include <Common/getUserHomePath.h>
 
+#include <base/pathToString.h>
+
 #include <filesystem>
 
 
@@ -28,16 +30,19 @@ namespace
 
     fs::path getPathFromEnvOrDefault(const char* env_var_name, const char* path_prefix)
     {
-        auto * xdg_config_home = getenv(env_var_name); // NOLINT(concurrency-mt-unsafe)
-        if (xdg_config_home)
-            return fs::path(xdg_config_home) / APP_NAME;
+        /// Read through the wide environment on Windows and construct the path from UTF-8:
+        /// `getenv` + `fs::path(const char *)` would round-trip through the active code page
+        /// and mangle any component outside it.
+        auto xdg_config_home = getPathFromEnvironment(env_var_name);
+        if (!xdg_config_home.empty())
+            return pathFromString(xdg_config_home) / APP_NAME;
 
         /// Not plain `$HOME`: a native Windows shell names the home directory differently
         /// (see getUserHomePath), and without this the client has no default config, history
         /// or cache location there at all.
         auto home_path = getUserHomePath();
         if (!home_path.empty())
-            return fs::path(home_path) / path_prefix / APP_NAME;
+            return pathFromString(home_path) / path_prefix / APP_NAME;
 
         return "";
     }

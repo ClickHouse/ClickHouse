@@ -15,4 +15,9 @@ namespace DB
 /// and would mangle a user name outside it.
 std::string getUserHomePath();
 
+/// An environment variable that names a filesystem path, as a UTF-8 string, or an empty string
+/// when it is unset or empty. On Windows the value is read through the wide environment for the
+/// same reason as above; on POSIX this is plain `getenv`.
+std::string getPathFromEnvironment(const char * name);
+
 }

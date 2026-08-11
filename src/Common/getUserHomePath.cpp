@@ -1,6 +1,7 @@
 #include <Common/getUserHomePath.h>
 
 #include <cstdlib>
+#include <cstring>
 
 #if defined(OS_WINDOWS)
 #include <filesystem>
@@ -26,6 +27,13 @@ std::string getPathEnvUTF8(const wchar_t * name)
 
 }
 
+std::string getPathFromEnvironment(const char * name)
+{
+    /// Environment variable names are ASCII, so widening them character by character is exact.
+    std::wstring wide_name(name, name + strlen(name));
+    return getPathEnvUTF8(wide_name.c_str());
+}
+
 std::string getUserHomePath()
 {
     if (auto home = getPathEnvUTF8(L"HOME"); !home.empty())
@@ -48,6 +56,12 @@ std::string getUserHomePath()
 {
     const char * home = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
     return home ? home : "";
+}
+
+std::string getPathFromEnvironment(const char * name)
+{
+    const char * value = getenv(name); // NOLINT(concurrency-mt-unsafe)
+    return value ? value : "";
 }
 
 #endif
