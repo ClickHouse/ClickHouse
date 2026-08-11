@@ -12,12 +12,7 @@ namespace ErrorCodes
 
 bool MergeTreeReaderIndex::canSkipAnyMark() const
 {
-    /// `canSkipMark` only ever returns true when a skip-index or projection-index read result is present.
-    /// `lazy_materializing_rows` alone affects row-level filtering inside a granule and never returns
-    /// true from `canSkipMark`, so a reader configured only for lazy materialization does not skip
-    /// whole marks.
-    return index_read_result
-        && (index_read_result->skip_index_read_result || index_read_result->projection_index_read_result);
+    return index_read_result && index_read_result->canSkipAnyMark();
 }
 
 MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_, MergeTreeIndexReadResultPtr index_read_result_, const PaddedPODArray<UInt64> * lazy_materializing_rows_)
@@ -159,35 +154,7 @@ size_t MergeTreeReaderIndex::readRows(
 
 bool MergeTreeReaderIndex::canSkipMark(size_t mark)
 {
-    if (index_read_result && index_read_result->skip_index_read_result)
-    {
-        const auto & skip_index_read_result = *index_read_result->skip_index_read_result;
-        chassert(mark < skip_index_read_result.granules_selected.size());
-
-        if (!skip_index_read_result.granules_selected.at(mark))
-            return true;
-
-        if (skip_index_read_result.threshold_tracker && skip_index_read_result.threshold_tracker->isSet())
-        {
-            if (skip_index_read_result.min_max_index_for_top_k) /// index may not have been materialized for this part
-            {
-                auto granule_num = skip_index_read_result.min_max_index_for_top_k->granules_map[mark];
-                if (!skip_index_read_result.threshold_tracker->isValueInsideThreshold(
-                        skip_index_read_result.min_max_index_for_top_k->granules[granule_num].min_or_max_value))
-                    return true;
-            }
-        }
-    }
-
-    if (index_read_result && index_read_result->projection_index_read_result)
-    {
-        size_t begin = data_part_info_for_read->getIndexGranularity().getMarkStartingRow(mark);
-        size_t end = begin + data_part_info_for_read->getIndexGranularity().getMarkRows(mark);
-        if (index_read_result->projection_index_read_result->rangeAllZero(begin, end))
-            return true;
-    }
-
-    return false;
+    return index_read_result && index_read_result->canSkipMark(mark, data_part_info_for_read->getIndexGranularity());
 }
 
 }

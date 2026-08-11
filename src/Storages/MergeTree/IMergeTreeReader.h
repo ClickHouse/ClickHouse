@@ -86,6 +86,11 @@ public:
     /// before `performRequiredConversions` is applied.
     const NamesAndTypes & getColumnsToRead() const { return columns_to_read; }
 
+    /// Columns for which only a part of the streams is read (e.g. only the offsets of an array
+    /// whose data is missing from the part). Such columns are not fully populated until
+    /// `fillMissingColumns` runs and must not be consumed as regular columns before that.
+    const NameSet & getPartiallyReadColumns() const { return partially_read_columns; }
+
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;
