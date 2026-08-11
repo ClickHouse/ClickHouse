@@ -38,6 +38,17 @@ namespace
 /// How many as-you-type hint rows to show at once (mirrors the Web UI completion window).
 constexpr size_t HINTS_MAX_ROWS = 5;
 
+/// Whether the current input is an AI-chat line (the interactive `?` / `??` command). Such a
+/// line is a natural-language question, not SQL, so SQL identifier hints and completions are
+/// noise and are suppressed for it.
+bool isAIChatLine(const std::string & text)
+{
+    size_t i = 0;
+    while (i < text.size() && (text[i] == ' ' || text[i] == '\t'))
+        ++i;
+    return i < text.size() && text[i] == '?';
+}
+
 /// Extract identifier-like words from a query so they can be prioritized in completions/hints
 /// (column names, aliases, etc. typed elsewhere in the same query). Uses the SQL lexer so that
 /// string literals, numbers, and comments are not mistaken for identifiers.
@@ -388,6 +399,10 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     auto callback = [this] (const String & context, size_t context_size)
     {
+        /// No SQL completions while composing an AI-chat question (the `?` mode or an inline `?`).
+        if (ai_mode || isAIChatLine(rx.get_state().text()))
+            return replxx::Replxx::completions_t{};
+
         /// When this completion corresponds to the hints currently displayed, reuse the exact
         /// snapshot taken when they were shown. replxx accepts a hint by indexing this completion
         /// list with the hint selection, and the background `Suggest::load` thread can insert a
@@ -436,6 +451,11 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             hint_completions.clear();
             hint_completions_context.clear();
             hint_completions_context_size = 0;
+
+            /// No SQL hints while composing an AI-chat question (the `?` mode or an inline `?`):
+            /// it is natural-language text, so identifier suggestions are only noise.
+            if (ai_mode || isAIChatLine(rx.get_state().text()))
+                return replxx::Replxx::hints_t{};
 
             /// Mirror `set_complete_on_empty(false)` *before* matching: an empty last word matches
             /// every suggestion, and this callback runs on every zero-delay repaint, so we must not
@@ -638,6 +658,33 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     };
     rx.bind_key(Replxx::KEY::meta('#'), insert_comment_action);
 
+    /// A leading `?` on an empty line is a mode switch into AI chat rather than a character:
+    /// the prompt becomes the magenta `:?` and the line stays empty. Any other `?` (mid-line,
+    /// or already in AI mode) is inserted normally.
+    rx.bind_key('?', [this](char32_t code)
+    {
+        if (!ai_mode && rx.get_state().text()[0] == '\0')
+        {
+            ai_mode = true;
+            rx.set_prompt(aiModePrompt());
+            return Replxx::ACTION_RESULT::CONTINUE;
+        }
+        return rx.invoke(Replxx::ACTION::INSERT_CHARACTER, code);
+    });
+
+    /// Backspace on the empty `:?` line leaves AI chat mode and restores the SQL prompt; a
+    /// backspace with text present deletes a character as usual.
+    rx.bind_key(Replxx::KEY::BACKSPACE, [this](char32_t code)
+    {
+        if (ai_mode && rx.get_state().text()[0] == '\0')
+        {
+            ai_mode = false;
+            rx.set_prompt(sql_prompt);
+            return Replxx::ACTION_RESULT::CONTINUE;
+        }
+        return rx.invoke(Replxx::ACTION::DELETE_CHARACTER_LEFT_OF_CURSOR, code);
+    });
+
     char key_fuzzy = 'R';
     char key_regular = 'T';
     if (options.interactive_history_legacy_keymap)
@@ -745,11 +792,23 @@ ReplxxLineReader::~ReplxxLineReader()
         rx.print("%s", "\033[0 q");
 }
 
+std::string ReplxxLineReader::aiModePrompt() const
+{
+    /// Colors are enabled together with highlighting; without them, show a plain `:?`.
+    return highlighter ? "\033[1;35m:?\033[0m " : ":? ";
+}
+
 LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
 {
     input.clear();
 
-    const char* cinput = rx.input(prompt);
+    /// Remember the SQL prompt so it can be restored when leaving AI-chat mode (the key handler
+    /// that leaves the mode has no access to it otherwise). In AI mode the passed SQL prompt is
+    /// replaced by the `:?` prompt.
+    if (!ai_mode)
+        sql_prompt = prompt;
+
+    const char* cinput = rx.input(ai_mode ? aiModePrompt() : prompt);
     if (cinput == nullptr)
         return (errno != EAGAIN) ? ABORT : RESET_LINE;
     input = cinput;

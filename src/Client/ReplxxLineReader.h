@@ -46,8 +46,13 @@ public:
 
     /// Set text to be prepopulated in the next readLine call
     void setInitialText(const String & text) override;
+
+    bool inAIMode() const override { return ai_mode; }
 private:
     InputStatus readOneLine(const String & prompt) override;
+
+    /// The prompt shown while in AI-chat mode: a magenta `:?` (plain when colors are off).
+    std::string aiModePrompt() const;
     void addToHistory(const String & line) override;
     int executeEditor(const std::string & path);
     void openEditor(bool format_query);
@@ -78,6 +83,13 @@ private:
 
     std::string editor;
     bool overwrite_mode = false;
+
+    /// AI-chat mode state. Entered by typing a leading `?` on an empty line (which switches the
+    /// prompt to `:?` instead of inserting the character) and left by pressing Backspace on the
+    /// empty `:?` line. Persists across readLine() calls until left. `sql_prompt` remembers the
+    /// normal prompt so it can be restored when leaving the mode.
+    bool ai_mode = false;
+    std::string sql_prompt;
 
     /// As-you-type hint state (input-thread only). `hints_visible` is whether a hint with
     /// something to complete is currently shown. `hint_count` is how many hints are shown and

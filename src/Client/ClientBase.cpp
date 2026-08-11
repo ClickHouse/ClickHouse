@@ -4800,6 +4800,17 @@ void ClientBase::runInteractive()
         if (input.empty())
             break;
 
+#if USE_CLIENT_AI
+        /// In AI-chat mode (entered with a leading `?`) the whole line is a question for the
+        /// agent, not SQL - route it directly, bypassing the SQL conveniences below.
+        if (lr->inAIMode())
+        {
+            processAIChat(input);
+            last_input = input;
+            continue;
+        }
+#endif
+
         has_vertical_output_suffix = false;
         if (input.ends_with("\\G") || input.ends_with("\\G;"))
         {
