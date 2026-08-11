@@ -82,24 +82,34 @@ DataTypePtr createDataTypeExponentialTimeDecayingFloat64(Float64 decay_length)
             std::make_unique<DataTypeCustomExponentialTimeDecayingFloat64>(decay_length)));
 }
 
-std::optional<Float64> tryGetExponentialTimeDecayingFloat64DecayLength(const DataTypePtr & type)
+std::optional<Float64> tryGetExponentialTimeDecayingFloat64DecayLength(const IDataType & type)
 {
-    if (!type || !type->getCustomName())
+    if (!type.getCustomName())
         return std::nullopt;
 
     if (const auto * decaying_type
-        = dynamic_cast<const DataTypeCustomExponentialTimeDecayingFloat64 *>(type->getCustomName()))
+        = dynamic_cast<const DataTypeCustomExponentialTimeDecayingFloat64 *>(type.getCustomName()))
         return decaying_type->getDecayLength();
 
     if (const auto * simple_aggregate
-        = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName()))
+        = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(type.getCustomName()))
     {
         const auto & argument_types = simple_aggregate->getArgumentsDataTypes();
         if (argument_types.size() == 1)
-            return tryGetExponentialTimeDecayingFloat64DecayLength(argument_types[0]);
+            return tryGetExponentialTimeDecayingFloat64DecayLength(*argument_types[0]);
     }
 
     return std::nullopt;
+}
+
+std::optional<Float64> tryGetExponentialTimeDecayingFloat64DecayLength(const DataTypePtr & type)
+{
+    return type ? tryGetExponentialTimeDecayingFloat64DecayLength(*type) : std::nullopt;
+}
+
+bool isExponentialTimeDecayingFloat64(const IDataType & type)
+{
+    return tryGetExponentialTimeDecayingFloat64DecayLength(type).has_value();
 }
 
 bool isExponentialTimeDecayingFloat64(const DataTypePtr & type)

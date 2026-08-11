@@ -559,6 +559,7 @@ ContextMutablePtr makeContext()
     context->setSetting("allow_deprecated_error_prone_window_functions", 1);
     context->setSetting("allow_not_comparable_types_in_comparison_functions", 1);
     context->setSetting("allow_experimental_time_time64_type", 1);
+    context->setSetting("allow_experimental_time_decay_aggregate_functions", 1);
     context->setSetting("allow_introspection_functions", 1);
     context->setSetting("allow_experimental_full_text_index", 1);
     return context;

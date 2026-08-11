@@ -26,7 +26,9 @@ private:
 };
 
 DataTypePtr createDataTypeExponentialTimeDecayingFloat64(Float64 decay_length);
+std::optional<Float64> tryGetExponentialTimeDecayingFloat64DecayLength(const IDataType & type);
 std::optional<Float64> tryGetExponentialTimeDecayingFloat64DecayLength(const DataTypePtr & type);
+bool isExponentialTimeDecayingFloat64(const IDataType & type);
 bool isExponentialTimeDecayingFloat64(const DataTypePtr & type);
 
 void registerDataTypeExponentialTimeDecayingFloat64(DataTypeFactory & factory);
