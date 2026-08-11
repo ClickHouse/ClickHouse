@@ -352,6 +352,13 @@ void spatialBboxIndexValidator(const IndexDescription & index, bool /*attach*/, 
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "spatial_bbox index must be defined on exactly one column");
 
+    /// The runtime path (extractQueryBbox) only recognizes a bare ActionsDAG INPUT node
+    /// matching the indexed column name -- an index on a computed expression like
+    /// tuple(p.1, p.2) would build and store data but could never be used for pruning.
+    if (!index.isSimpleSingleColumnIndex())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "spatial_bbox index must be defined on a plain column, not a computed expression");
+
     /// Accept Point (Tuple(Float64,Float64)), Ring/Polygon/MultiPolygon (nested Arrays),
     /// or any column whose ultimate element type is Tuple(Float64,Float64).
     const DataTypePtr & type = index.data_types[0];
