@@ -14,8 +14,6 @@
 #include <Interpreters/TokenizerFactory.h>
 #include <ranges>
 
-#include "config.h"
-
 namespace DB
 {
 
