@@ -680,8 +680,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
     }
 
     /// If the prefix description is used, we can't restore the full description from PK value.
-    /// TODO: partial sort description can be used as well. Implement support later.
-    if (order_key_prefix_descr.size() < description.size() || pk_column_names.size() < next_sort_key)
+    if (pk_column_names.size() < next_sort_key)
         can_optimize_virtual_row = false;
 
     auto order_info = std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, read_direction, limit);
