@@ -542,7 +542,7 @@ void validateMaterializedPostgreSQLCoordinationSettings(
     /// projection is denoted by a `(` after a table name in the setting value (the same syntax parsed by
     /// `getTableAllowedColumns`).
     const String coordinated_tables_list = settings[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list];
-    if (coordination_enabled && coordinated_tables_list.find('(') != String::npos)
+    if (coordination_enabled && coordinated_tables_list.contains('('))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "materialized_postgresql_keeper_path (replica coordination) cannot be combined with a column-filtered "
             "materialized_postgresql_tables_list (e.g. `table(col1, col2)`). Coordinated replicas share one set of "
