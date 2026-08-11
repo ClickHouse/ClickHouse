@@ -45,15 +45,19 @@ $CLICKHOUSE_CLIENT -q "SELECT methods FROM system.handlers WHERE name = '${H}_ok
 
 echo "=== it is not served over GET or HEAD ==="
 # The handler does not declare GET, so neither GET nor the implicit HEAD alias routes to it: a liveness probe
-# or crawler hitting the URL gets 404 and never triggers the backups.
-${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{http_code}\n' "${BASE}${P}/ok"
-${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{http_code}\n' --head "${BASE}${P}/ok"
+# or crawler hitting the URL gets the generic not-found response and never triggers the backups. The status code
+# alone cannot prove that: a request routed to the query would fail too, and the exception may map to the same
+# 404 status (`UNKNOWN_TABLE` does). So assert on the not-found body, and for the bodyless HEAD response on the
+# absence of the exception header that every routed error response carries.
+${CLICKHOUSE_CURL} -sS "${BASE}${P}/ok" | grep -o "There is no handle" | head -1
+${CLICKHOUSE_CURL} -sS --head "${BASE}${P}/ok" | grep -c "X-ClickHouse-Exception-Code" || true
 
 echo "=== the same URL over POST does reach query execution ==="
-# The tables do not exist, so execution fails and the server answers with an error status - which proves the
-# request was routed to the query, unlike the 404 of the safe methods above.
-code=$(${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{http_code}' -X POST "${BASE}${P}/ok")
-if [ "$code" = "404" ]; then echo "not routed"; else echo "routed"; fi
+# The tables do not exist, so execution fails with an exception - which proves the request was routed to the
+# query. The exception may itself map to a 404 status (`UNKNOWN_TABLE`), so routing is detected by the response
+# body, not by the status code.
+body=$(${CLICKHOUSE_CURL} -sS -X POST "${BASE}${P}/ok")
+if [[ "$body" == *"There is no handle"* ]]; then echo "not routed"; else echo "routed"; fi
 
 echo "=== a composite of read-only statements needs no mutating method ==="
 # The wrapper kind alone is classified as modifying, so following the wrapped statements is what makes this
@@ -73,6 +77,9 @@ $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_exec\` URL '${P}/exec' METHODS (GET
 echo "=== a bare EXECUTE AS handler, which makes the session run as another user, is rejected ==="
 $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_exec\` URL '${P}/exec' METHODS (GET, POST) AS EXECUTE AS user04842" 2>&1 | grep -o "BAD_ARGUMENTS" | head -1
 
-echo "=== an EXECUTE AS handler wrapping a SELECT is accepted with the default methods ==="
-$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_exec\` URL '${P}/exec' AS EXECUTE AS user04842 SELECT 1"
+echo "=== an EXECUTE AS handler needs a mutating method even for a wrapped SELECT (IMPERSONATE is denied under readonly) ==="
+$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_exec\` URL '${P}/exec' AS EXECUTE AS user04842 SELECT 1" 2>&1 | grep -o "BAD_ARGUMENTS" | head -1
+
+echo "=== the same EXECUTE AS handler is accepted with a mutating method ==="
+$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_exec\` URL '${P}/exec' METHODS (POST) AS EXECUTE AS user04842 SELECT 1"
 $CLICKHOUSE_CLIENT -q "SELECT methods FROM system.handlers WHERE name = '${H}_exec'"

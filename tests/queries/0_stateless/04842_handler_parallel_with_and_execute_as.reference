@@ -9,8 +9,8 @@ BAD_ARGUMENTS
 === the same BACKUP composite with only mutating methods is accepted ===
 ['POST']
 === it is not served over GET or HEAD ===
-404
-404
+There is no handle
+0
 === the same URL over POST does reach query execution ===
 routed
 === a composite of read-only statements needs no mutating method ===
@@ -23,5 +23,7 @@ BAD_ARGUMENTS
 BAD_ARGUMENTS
 === a bare EXECUTE AS handler, which makes the session run as another user, is rejected ===
 BAD_ARGUMENTS
-=== an EXECUTE AS handler wrapping a SELECT is accepted with the default methods ===
-['GET']
+=== an EXECUTE AS handler needs a mutating method even for a wrapped SELECT (IMPERSONATE is denied under readonly) ===
+BAD_ARGUMENTS
+=== the same EXECUTE AS handler is accepted with a mutating method ===
+['POST']

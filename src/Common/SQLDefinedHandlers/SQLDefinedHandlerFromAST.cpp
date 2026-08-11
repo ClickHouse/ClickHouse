@@ -64,6 +64,9 @@ void collectExecutedStatements(const IAST & query, std::vector<const IAST *> & r
 
     if (const auto * execute_as = query.as<ASTExecuteAsQuery>(); execute_as && execute_as->subquery)
     {
+        /// The wrapper itself is also part of the list: impersonation has its own execution requirements
+        /// (see `statementRequiresMutatingMethod`), independent of the wrapped statement's.
+        result.push_back(&query);
         collectExecutedStatements(*execute_as->subquery, result);
         return;
     }
@@ -157,11 +160,13 @@ bool statementRequiresMutatingMethod(const IAST & statement)
     /// (the mode a safe HTTP method such as `GET` sets) and must not require a mutating method.
     if (statement.as<ASTWatchQuery>())
         return false;
-    /// A bare `EXECUTE AS <user>` only impersonates a user for the rest of the session, which `readonly` does not
-    /// block (`InterpreterExecuteAsQuery` checks the `IMPERSONATE` privilege only), so it does not require a
-    /// mutating method. Its session-visible effect is fenced off by `statementHasSideEffectsUnderReadonly`.
+    /// `EXECUTE AS <user>` - bare or wrapping a statement - checks the `IMPERSONATE` privilege, which belongs
+    /// to `ACCESS_MANAGEMENT` and is therefore denied under any `readonly` (see `ContextAccess`,
+    /// `write_dcl_access` is part of `not_readonly_flags`). So impersonation can never run over a safe method
+    /// and requires a mutating one, whatever the wrapped statement is. The session-visible effect of the bare
+    /// form is additionally fenced off by `statementHasSideEffectsUnderReadonly`.
     if (statement.as<ASTExecuteAsQuery>())
-        return false;
+        return true;
     return queryKindRequiresMutatingMethod(statement.getQueryKind());
 }
 
@@ -445,7 +450,9 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
         && std::none_of(handler->methods.begin(), handler->methods.end(), isMutatingHTTPMethod))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Handler `{}` runs a query that modifies data, but its allowed HTTP methods ({}) are all read-only. "
+            "Handler `{}` runs a query that cannot execute in the readonly mode of safe HTTP methods "
+            "(it modifies data, or, like EXECUTE AS, needs a privilege that readonly denies), "
+            "but its allowed HTTP methods ({}) are all read-only. "
             "Add a mutating method (POST, PUT, or DELETE) to the METHODS clause.",
             create.handler_name, fmt::join(handler->methods, ", "));
     }
