@@ -84,6 +84,8 @@ namespace KafkaSetting
     extern const KafkaSettingsUInt64 kafka_skip_broken_messages;
     extern const KafkaSettingsBool kafka_thread_per_consumer;
     extern const KafkaSettingsString kafka_topic_list;
+    extern const KafkaSettingsString kafka_partition_shard_num;
+    extern const KafkaSettingsUInt64 kafka_shard_count;
 }
 
 using namespace std::chrono_literals;
@@ -193,7 +195,13 @@ void registerStorageKafka(StorageFactory & factory)
         auto num_consumers = (*kafka_settings)[KafkaSetting::kafka_num_consumers].value;
         auto max_consumers = std::max<uint32_t>(getNumberOfCPUCoresToUse(), 16);
 
-        if (!args.getLocalContext()->getSettingsRef()[Setting::kafka_disable_num_consumers_limit] && num_consumers > max_consumers)
+        /// The limit depends on the local CPU count, so a definition read back from metadata may have been
+        /// accepted on a bigger server. Validate only a freshly introduced one, so existing tables stay loadable.
+        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+
+        if (is_fresh_definition
+            && !args.getLocalContext()->getSettingsRef()[Setting::kafka_disable_num_consumers_limit] && num_consumers > max_consumers)
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -251,10 +259,21 @@ void registerStorageKafka(StorageFactory & factory)
         const auto has_replica_name = (*kafka_settings)[KafkaSetting::kafka_replica_name].changed && !(*kafka_settings)[KafkaSetting::kafka_replica_name].value.empty();
 
         if (!has_keeper_path && !has_replica_name)
+        {
+            const auto & partition_num_str = (*kafka_settings)[KafkaSetting::kafka_partition_shard_num].value;
+            const auto shard_count_val = (*kafka_settings)[KafkaSetting::kafka_shard_count].value;
+            if (!partition_num_str.empty() || shard_count_val > 0)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "'kafka_partition_shard_num' and 'kafka_shard_count' are only supported with StorageKafka2 "
+                    "(requires 'kafka_keeper_path' and 'kafka_replica_name' to be set)");
+
             return std::make_shared<StorageKafka>(
                 args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name);
+        }
 
-        if (!args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_kafka_offsets_storage_in_keeper] && !args.query.attach)
+        if (args.mode <= LoadingStrictnessLevel::CREATE
+            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_kafka_offsets_storage_in_keeper])
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Storing the Kafka offsets in Keeper is experimental. Set `allow_experimental_kafka_offsets_storage_in_keeper` setting "
@@ -377,7 +396,9 @@ SETTINGS
     [kafka_consumer_acquire_timeout_ms = 30000,]
     [kafka_max_rows_per_message = 1,]
     [kafka_compression_codec = '',]
-    [kafka_compression_level = -1];
+    [kafka_compression_level = -1,]
+    [kafka_partition_shard_num = '',]
+    [kafka_shard_count = 0];
 ```
 
 Required parameters:
@@ -385,7 +406,7 @@ Required parameters:
 - `kafka_broker_list` — A comma-separated list of brokers (for example, `localhost:9092`).
 - `kafka_topic_list` — A list of Kafka topics.
 - `kafka_group_name` — A group of Kafka consumers. Reading margins are tracked for each group separately. If you do not want messages to be duplicated in the cluster, use the same group name everywhere.
-- `kafka_format` — Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](../../../interfaces/formats.md) section.
+- `kafka_format` — Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](/reference/formats/index) section.
 
 Optional parameters:
 
@@ -397,13 +418,13 @@ Optional parameters:
 - `kafka_schema` — Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `kafka_schema_registry_skip_bytes` — The number of bytes to skip from the beginning of each message when using schema registry with envelope headers (e.g., AWS Glue Schema Registry which includes a 19-byte envelope). Range: `[0, 255]`. Default: `0`.
 - `kafka_num_consumers` — The number of consumers per table. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition, and must not be greater than the number of physical cores on the server where ClickHouse is deployed. Default: `1`.
-- `kafka_max_block_size` — The maximum batch size (in messages) for poll. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
+- `kafka_max_block_size` — The maximum batch size (in messages) for poll. Default: [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size).
 - `kafka_skip_broken_messages` — Kafka message parser tolerance to schema-incompatible messages per block. If `kafka_skip_broken_messages = N` then the engine skips *N* Kafka messages that cannot be parsed (a message equals a row of data). Default: `0`.
 - `kafka_commit_every_batch` — Commit every consumed and handled batch instead of a single commit after writing a whole block. Default: `0`.
 - `kafka_client_id` — Client identifier. Empty by default.
-- `kafka_poll_timeout_ms` — Timeout for single poll from Kafka. Default: [stream_poll_timeout_ms](../../../operations/settings/settings.md#stream_poll_timeout_ms).
-- `kafka_poll_max_batch_size` — Maximum amount of messages to be polled in a single Kafka poll. Default: [max_block_size](/operations/settings/settings#max_block_size).
-- `kafka_flush_interval_ms` — Timeout for flushing data from Kafka. Default: [stream_flush_interval_ms](/operations/settings/settings#stream_flush_interval_ms).
+- `kafka_poll_timeout_ms` — Timeout for single poll from Kafka. Default: [stream_poll_timeout_ms](/reference/settings/session-settings/stream#stream_poll_timeout_ms).
+- `kafka_poll_max_batch_size` — Maximum amount of messages to be polled in a single Kafka poll. Default: [max_block_size](/reference/settings/session-settings/max#max_block_size).
+- `kafka_flush_interval_ms` — Timeout for flushing data from Kafka. Default: [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms).
 - `kafka_consumer_reschedule_ms` — Reschedule interval when Kafka stream processing is stalled (e.g., when no messages are available to consume). This setting controls the delay before the consumer retries polling. Must not exceed `kafka_consumers_pool_ttl_ms`. Default: `500` milliseconds.
 - `kafka_thread_per_consumer` — Provide independent thread for each consumer. When enabled, every consumer flush the data independently, in parallel (otherwise — rows from several consumers squashed to form one block). Default: `0`.
 - `kafka_handle_error_mode` — How to handle errors for Kafka engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`), dead_letter_queue (error related data will be saved in system.dead_letter_queue).
@@ -423,6 +444,8 @@ Note: Kafka brokers must be configured with `broker.rack` and `replica.selector.
 - `kafka_compression_codec` — Compression codec used for producing messages. Supported: empty string, `none`, `gzip`, `snappy`, `lz4`, `zstd`. In case of empty string the compression codec is not set by the table, thus values from the config files or default value from `librdkafka` will be used. Default: empty string.
 - `kafka_compression_level` — Compression level parameter for algorithm selected by kafka_compression_codec. Higher values will result in better compression at the cost of more CPU usage. Usable range is algorithm-dependent: `[0-9]` for `gzip`; `[0-12]` for `lz4`; only `0` for `snappy`; `[0-12]` for `zstd`; `-1` = codec-dependent default compression level. Default: `-1`.
 - `kafka_map_virtual_columns_on_write` — If enabled, columns with special names `_key`, `_timestamp`, `_headers.name` and `_headers.value` in the table schema are mapped to the corresponding Kafka message metadata on `INSERT` and are excluded from the message payload. See [Mapping columns to Kafka message metadata](#mapping-columns-to-kafka-message-metadata). Default: `false`.
+- `kafka_partition_shard_num` — The current shard number for static partition-to-shard affinity. Must be between 1 and `kafka_shard_count` inclusive. Partitions are assigned by the formula `partition_id % kafka_shard_count == kafka_partition_shard_num - 1`. Supports macro expansion (e.g., `'{shard}'`). Must be used together with `kafka_shard_count`. Only supported with StorageKafka2 (requires `kafka_keeper_path` and `kafka_replica_name`). Default: `''` (disabled).
+- `kafka_shard_count` — Total number of shards participating in consumption. Used together with `kafka_partition_shard_num` to statically assign partitions. Must be used together with `kafka_partition_shard_num`. Only supported with StorageKafka2. Default: `0` (disabled).
 
 Examples:
 
@@ -519,7 +542,7 @@ Example, using [named collections](/concepts/features/configuration/server-confi
 
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
-To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size). If the block wasn't formed within [stream_flush_interval_ms](/operations/settings/settings#stream_flush_interval_ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size). If the block wasn't formed within [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
@@ -756,11 +779,11 @@ The produced Kafka message has payload `{"event_json":"{\"a\":1}"}`, key `sessio
 
 ## Data formats support {#data-formats-support}
 
-Kafka engine supports all [formats](../../../interfaces/formats.md) supported in ClickHouse.
+Kafka engine supports all [formats](/reference/formats/index) supported in ClickHouse.
 The number of rows in one Kafka message depends on whether the format is row-based or block-based:
 
 - For row-based formats the number of rows in one Kafka message can be controlled by setting `kafka_max_rows_per_message`.
-- For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](/operations/settings/settings#max_block_size).
+- For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](/reference/settings/session-settings/max#max_block_size).
 
 ## Engine to store committed offsets in ClickHouse Keeper {#engine-to-store-committed-offsets-in-clickhouse-keeper}
 
@@ -771,6 +794,44 @@ If `allow_experimental_kafka_offsets_storage_in_keeper` is enabled, then two mor
 - `kafka_replica_name` specifies the replica name in ClickHouse Keeper
 
 Either both of the settings must be specified or neither of them. When both of them are specified, then a new, experimental Kafka engine will be used. The new engine doesn't depend on storing the committed offsets in Kafka, but stores them in ClickHouse Keeper. It still tries to commit the offsets to Kafka, but it only depends on those offsets when the table is created. In any other circumstances (table is restarted, or recovered after some error) the offsets stored in ClickHouse Keeper will be used as an offset to continue consuming messages from. Apart from the committed offset, it also stores how many messages were consumed in the last batch, so if the insert fails, the same amount of messages will be consumed, thus enabling deduplication if necessary.
+
+### Static partition-to-shard affinity {#static-partition-to-shard-affinity}
+
+When using `StorageKafka2`, you can optionally enable static partition-to-shard affinity by specifying `kafka_partition_shard_num` and `kafka_shard_count`. This allows multiple ClickHouse instances (shards) to consume from the same Kafka topic, with each shard only processing a deterministic subset of partitions based on the formula:
+
+```text
+partition_id % kafka_shard_count == kafka_partition_shard_num - 1
+```
+
+Both settings must be specified together; specifying only one raises an exception. The `kafka_partition_shard_num` value must be between 1 and `kafka_shard_count` inclusive. It supports macro expansion (e.g., `'{shard}'`), which is re-expanded on each server startup. This allows the same table metadata to be shared across shards in a `Replicated` database, with each shard resolving its own value. Validation is performed after macro expansion.
+
+All shards should use the same `kafka_keeper_path` value. All replicas share committed offsets and intent sizes, but only replicas with the same shard number compete with each other for partition locks (assuming all replicas have the same shard count).
+
+Example with 3 shards consuming a 12-partition topic:
+
+```sql
+-- Shard 1: consumes partitions 0, 3, 6, 9
+CREATE TABLE kafka_shard1 (key UInt64, value String)
+ENGINE = Kafka('localhost:9092', 'my-topic', 'my-group', 'JSONEachRow')
+SETTINGS
+    kafka_keeper_path = '/clickhouse/kafka/{database}',
+    kafka_replica_name = '{replica}',
+    kafka_partition_shard_num = '1',
+    kafka_shard_count = 3
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+
+-- Shard 2: consumes partitions 1, 4, 7, 10
+CREATE TABLE kafka_shard2 (key UInt64, value String)
+ENGINE = Kafka('localhost:9092', 'my-topic', 'my-group', 'JSONEachRow')
+SETTINGS
+    kafka_keeper_path = '/clickhouse/kafka/{database}',
+    kafka_replica_name = '{replica}',
+    kafka_partition_shard_num = '2',
+    kafka_shard_count = 3
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+```
+
+When combined with replicas (multiple `kafka_replica_name` values sharing the same `kafka_keeper_path`), the affinity filter is applied first to determine eligible partitions, then ZooKeeper locks distribute those eligible partitions among replicas.
 
 Example:
 
@@ -788,12 +849,13 @@ SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 As the new engine is experimental, it is not production ready yet. There are few known limitations of the implementation:
 - Rapidly dropping and recreating the table or specifying the same ClickHouse Keeper path to different engines might cause issues. As best practice you can use the `{uuid}` in `kafka_keeper_path` to avoid clashing paths.
 - To make repeatable reads, messages cannot be consumed from multiple partitions on a single thread. On the other hand, the Kafka consumers have to be polled regularly to keep them alive. As a result of these two objectives, we decided to only allow creating multiple consumers if `kafka_thread_per_consumer` is enabled, otherwise it is too complicated to avoid issues regarding polling consumers regularly.
+- When using partition affinity, all shards must use the same `kafka_shard_count`; otherwise some partitions may be consumed by multiple shards or remain unconsumed.
 
 **See Also**
 
-- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
-- [background_message_broker_schedule_pool_size](/operations/server-configuration-parameters/settings#background_message_broker_schedule_pool_size)
-- [system.kafka_consumers](../../../operations/system-tables/kafka_consumers.md)
+- [Virtual columns](/reference/engines/table-engines/index#table_engines-virtual_columns)
+- [background_message_broker_schedule_pool_size](/reference/settings/server-settings/settings/background#background_message_broker_schedule_pool_size)
+- [system.kafka_consumers](/reference/system-tables/kafka_consumers)
 )DOCS_MD",
             .syntax = "ENGINE = Kafka() SETTINGS kafka_broker_list = 'host:port', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'format', ...",
             .related = {"RabbitMQ", "NATS", "FileLog"}});

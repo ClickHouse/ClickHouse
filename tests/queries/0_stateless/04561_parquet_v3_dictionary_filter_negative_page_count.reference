@@ -1,0 +1,6 @@
+-- negcount_dict --
+v1: {"result":[{"count()":50}],"rows_read":200}
+no_such_value: {"result":[{"count()":0}],"rows_read":200}
+-- negcount_data --
+v1: {"result":[{"count()":50}],"rows_read":200}
+no_such_value: {"result":[{"count()":0}],"rows_read":200}

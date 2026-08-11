@@ -12,6 +12,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -89,11 +90,13 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     ConditionSelectivityEstimatorPtr estimator_,
     const Names & queried_columns_,
     const std::optional<NameSet> & supported_columns_,
+    bool supported_columns_include_subcolumns_,
     LoggerPtr log_)
     : estimator(estimator_)
     , table_columns(getTableColumns(storage_snapshot, queried_columns_))
     , queried_columns{queried_columns_}
     , supported_columns{supported_columns_}
+    , supported_columns_include_subcolumns{supported_columns_include_subcolumns_}
     , sorting_key_names{NameSet(
           storage_snapshot->metadata->getSortingKey().column_names.begin(), storage_snapshot->metadata->getSortingKey().column_names.end())}
     , primary_key_names_positions(fillNamesPositions(storage_snapshot->metadata->getPrimaryKey().column_names))
@@ -107,6 +110,9 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
         if (it != column_sizes.end())
             total_size_of_queried_columns += it->second;
     }
+
+    if (estimator)
+        total_rows = estimator->getTotalRows();
 }
 
 void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, const ContextPtr & context) const
@@ -506,6 +512,22 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
                 pk_positions.emplace(cond.min_position_in_primary_key);
             }
 
+            /// Combine I/O cost with selectivity using the classic conjunctive filter ordering rule:
+            /// sort by cost / (1 - selectivity), i.e. cost per rejected row.
+            const double rejected_rows = static_cast<double>(total_rows) - static_cast<double>(cond.estimated_row_count);
+            if (total_rows == 0)
+                /// No statistics: fall back to pure I/O cost.
+                cond.cost_with_selectivity = static_cast<double>(cond.columns_size);
+            else if (rejected_rows <= 0)
+                /// Rejects no rows, so it is useless in PREWHERE regardless of its cost: schedule it last.
+                cond.cost_with_selectivity = std::numeric_limits<double>::infinity();
+            else if (cond.columns_size == 0)
+                /// Compact parts don't track per-column compressed sizes: fall back to pure selectivity,
+                /// otherwise every condition collapses to cost 0 and keeps its original position.
+                cond.cost_with_selectivity = static_cast<double>(cond.estimated_row_count);
+            else
+                cond.cost_with_selectivity = static_cast<double>(cond.columns_size) / rejected_rows;
+
             res.emplace_back(std::move(cond));
         }
     }
@@ -531,6 +553,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
             Condition cond({conjunct});
             cond.table_columns = columns;
             cond.columns_size = getColumnsSize(columns);
+            cond.cost_with_selectivity = static_cast<double>(cond.columns_size);
             cond.viable =
                 !has_invalid_column
                 && !columns.empty()
@@ -695,8 +718,10 @@ bool MergeTreeWhereOptimizer::columnsSupportPrewhere(const NameSet & columns) co
     if (!supported_columns.has_value())
         return true;
 
+    /// The contract lists top-level names; a subcolumn is admitted through its origin column.
+    const auto & columns_description = storage_metadata->getColumns();
     for (const auto & column : columns)
-        if (!supported_columns->contains(column))
+        if (!prewhereSupportedColumnsContain(*supported_columns, supported_columns_include_subcolumns, columns_description, column))
             return false;
 
     return true;

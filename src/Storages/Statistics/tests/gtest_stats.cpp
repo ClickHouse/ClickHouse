@@ -8,8 +8,11 @@
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -18,9 +21,12 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/Statistics/Statistics.h>
+#include <Storages/Statistics/StatisticsBasic.h>
 #include <Storages/Statistics/StatisticsMinMax.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/StatisticsDescription.h>
@@ -73,8 +79,40 @@ TEST(Statistics, TDigestLessThan)
     test_less_than(data, {-1, 1e9, 50000.0, 3000.0, 30.0}, {0, 100000, 50000, 3000, 30}, {0, 0, 0.001, 0.001, 0.001});
 }
 
+TEST(Statistics, TryConvertToFloat64)
+{
+    const auto data_type = std::make_shared<DataTypeFloat64>();
+
+    auto converted_int = StatisticsUtils::tryConvertToFloat64(Field(Int64(-42)), data_type);
+    ASSERT_TRUE(converted_int.has_value());
+    EXPECT_DOUBLE_EQ(*converted_int, -42.0);
+
+    auto converted_string = StatisticsUtils::tryConvertToFloat64(Field(String("1.25")), data_type);
+    ASSERT_TRUE(converted_string.has_value());
+    EXPECT_DOUBLE_EQ(*converted_string, 1.25);
+
+    const auto decimal_type = std::make_shared<DataTypeDecimal64>(18, 2);
+    auto converted_decimal = StatisticsUtils::tryConvertToFloat64(
+        Field(DecimalField<Decimal64>(Decimal64(12345), 2)), decimal_type);
+    ASSERT_TRUE(converted_decimal.has_value());
+    EXPECT_DOUBLE_EQ(*converted_decimal, 123.45);
+
+    const auto ipv4_type = std::make_shared<DataTypeIPv4>();
+    auto converted_ipv4 = StatisticsUtils::tryConvertToFloat64(Field(IPv4(0x7f000001)), ipv4_type);
+    ASSERT_TRUE(converted_ipv4.has_value());
+    EXPECT_DOUBLE_EQ(*converted_ipv4, 2130706433.0);
+
+    EXPECT_FALSE(StatisticsUtils::tryConvertToFloat64(Field(String("1.25 trailing")), data_type).has_value());
+    EXPECT_FALSE(StatisticsUtils::tryConvertToFloat64(Field(Array{}), data_type).has_value());
+    EXPECT_FALSE(StatisticsUtils::tryConvertToFloat64(Field(Float64(1.0)), std::make_shared<DataTypeArray>(data_type)).has_value());
+}
+
 TEST(Statistics, Estimator)
 {
+    /// Register scalar functions used while interpreting estimator expressions so this
+    /// test does not depend on earlier tests in the binary having registered them.
+    tryRegisterFunctions();
+
     DataTypePtr data_type = std::make_shared<DataTypeInt32>();
     /// column a, distribution 1,2...,10000
     /// column b, distribution 500,600,500,600...
@@ -141,6 +179,7 @@ TEST(Statistics, Estimator)
     ///
     test_f("a in (1,2,3,4,5)", 5);
     test_f("a not in (1,2,3,4,5)", 10000-5);
+    test_f("a < '3'", 2); /// Quoted numeric literal reaches statistics as a String Field.
     test_f("b in (2, 500, 500)", 5000);
     test_f("a < 3 and b = 500", 1);
     test_f("a < 3 and b = 500 and a < b", 1); /// unknown condition 'a < b' assumes 100% selectivity
@@ -719,5 +758,152 @@ TEST(Statistics, StructureEqualsConsidersDataType)
     EXPECT_TRUE(make_stat(bool_type)->structureEquals(*make_stat(bool_type)));
     EXPECT_FALSE(make_stat(bool_type)->structureEquals(*make_stat(uint8_type)));
     EXPECT_FALSE(make_stat(uint8_type)->structureEquals(*make_stat(bool_type)));
+}
+
+TEST(Statistics, BasicDefaultCountNonNullable)
+{
+    auto data_type = std::make_shared<DataTypeInt32>();
+    MutableColumnPtr col = data_type->createColumn();
+    /// 10 rows, 4 of them equal to the default (0).
+    const Int64 values[10] = {0, 1, 0, 2, 0, 3, 0, 4, 5, 6};
+    for (Int64 v : values)
+        col->insert(Field(v));
+    auto stats = createTestStats({StatisticsType::Basic}, data_type);
+    stats->build(std::move(col));
+
+    /// A non-Nullable column has no NULL count.
+    EXPECT_FALSE(stats->hasNullCount());
+    EXPECT_EQ(stats->getNullCount(), 0u);
+    EXPECT_EQ(stats->estimateDefaults(), 4u);
+
+    /// Exact equality-to-default estimate.
+    auto eq0 = stats->estimateEqual(Field(Int64(0)));
+    ASSERT_TRUE(eq0.has_value());
+    EXPECT_DOUBLE_EQ(*eq0, 4.0);
+
+    /// A non-default value has no exact answer from `basic` alone.
+    EXPECT_FALSE(stats->estimateEqual(Field(Int64(3))).has_value());
+}
+
+TEST(Statistics, BasicDefaultCountFixedString)
+{
+    auto data_type = std::make_shared<DataTypeFixedString>(4);
+    MutableColumnPtr col = data_type->createColumn();
+    /// 6 rows: 3 all-zero (default), 3 non-zero.
+    col->insertDefault();                           /// "\0\0\0\0"
+    col->insertDefault();                           /// "\0\0\0\0"
+    col->insertDefault();                           /// "\0\0\0\0"
+    col->insert(Field(String("abc\0", 4)));         /// non-default
+    col->insert(Field(String("xyz\0", 4)));         /// non-default
+    col->insert(Field(String("hi\0\0", 4)));        /// non-default
+    auto stats = createTestStats({StatisticsType::Basic}, data_type);
+    stats->build(std::move(col));
+
+    EXPECT_EQ(stats->estimateDefaults(), 3u);
+
+    /// col = '' should match the 3 zero rows ('' gets padded to N zero bytes by tryConvertFieldToType).
+    auto eq_empty = stats->estimateEqual(Field(String("")));
+    ASSERT_TRUE(eq_empty.has_value());
+    EXPECT_DOUBLE_EQ(*eq_empty, 3.0);
+
+    /// A non-default value should fall through.
+    EXPECT_FALSE(stats->estimateEqual(Field(String("abc\0", 4))).has_value());
+}
+
+TEST(Statistics, BasicDefaultCountEnum)
+{
+    DataTypeEnum8::Values values_zero_default{{"a", 0}, {"b", 1}};
+    auto enum_zero = std::make_shared<DataTypeEnum8>(values_zero_default);
+
+    /// 5 rows: 3 'a' (raw 0, the column default) and 2 'b' (raw 1).
+    /// Insert via raw integer values — ColumnVector<Int8> does not accept String fields directly.
+    {
+        MutableColumnPtr col = enum_zero->createColumn();
+        col->insert(Field(Int64(0)));  /// 'a'
+        col->insert(Field(Int64(1)));  /// 'b'
+        col->insert(Field(Int64(0)));  /// 'a'
+        col->insert(Field(Int64(0)));  /// 'a'
+        col->insert(Field(Int64(1)));  /// 'b'
+        auto stats = createTestStats({StatisticsType::Basic}, enum_zero);
+        stats->build(std::move(col));
+
+        EXPECT_EQ(stats->estimateDefaults(), 3u);  /// 3 rows with raw value 0 ('a')
+
+        /// col = 'a' — 'a' maps to raw 0, which is the column default → exact count.
+        auto eq_a = stats->estimateEqual(Field(String("a")));
+        ASSERT_TRUE(eq_a.has_value());
+        EXPECT_DOUBLE_EQ(*eq_a, 3.0);
+
+        /// col = 'b' — 'b' maps to raw 1, not the column default → fall through.
+        EXPECT_FALSE(stats->estimateEqual(Field(String("b"))).has_value());
+    }
+
+    /// Enum where the first enumerator has a non-zero raw value: raw 0 is not a valid enumerator,
+    /// so default_count = 0 and estimateEqual must return nullopt for any enumerator (not 0).
+    DataTypeEnum8::Values values_nonzero_default{{"a", 1}, {"b", 2}};
+    auto enum_nonzero = std::make_shared<DataTypeEnum8>(values_nonzero_default);
+    {
+        MutableColumnPtr col = enum_nonzero->createColumn();
+        for (int i = 0; i < 100; ++i)
+            col->insert(Field(Int64(1)));  /// 100 rows of 'a' (raw 1)
+        auto stats = createTestStats({StatisticsType::Basic}, enum_nonzero);
+        stats->build(std::move(col));
+
+        EXPECT_EQ(stats->estimateDefaults(), 0u);  /// no rows with raw value 0
+
+        /// col = 'a' — 'a' is the first enumerator but maps to raw 1, not the column default.
+        /// Must return nullopt, not 0 (which would suppress `col = 'a'` predicates entirely).
+        EXPECT_FALSE(stats->estimateEqual(Field(String("a"))).has_value());
+    }
+}
+
+TEST(Statistics, BasicDefaultCountNullableIsNullCount)
+{
+    /// 100 rows, every 5th NULL -> 20 NULLs.
+    auto stats = buildNullableInt32Stats({StatisticsType::Basic}, /*total=*/100, /*null_every=*/5);
+    EXPECT_TRUE(stats->hasNullCount());
+    EXPECT_EQ(stats->getNullCount(), 20u);
+    EXPECT_EQ(stats->estimateDefaults(), 20u);
+    EXPECT_FALSE(stats->estimateEqual(Field(Int64(0))).has_value());
+}
+
+TEST(Statistics, BasicDefaultCountRoundTrip)
+{
+    auto data_type = std::make_shared<DataTypeInt32>();
+    MutableColumnPtr col = data_type->createColumn();
+    for (Int64 i = 0; i < 8; ++i)
+        col->insert(Field(i % 2 == 0 ? Int64(0) : i)); /// 4 zeros out of 8
+    auto stats = createTestStats({StatisticsType::Basic}, data_type);
+    stats->build(std::move(col));
+    ASSERT_EQ(stats->estimateDefaults(), 4u);
+
+    WriteBufferFromOwnString wb;
+    stats->serialize(wb);
+    ReadBufferFromString rb(wb.str());
+    auto restored = ColumnStatistics::deserialize(rb, data_type);
+
+    EXPECT_EQ(restored->estimateDefaults(), 4u);
+    auto eq0 = restored->estimateEqual(Field(Int64(0)));
+    ASSERT_TRUE(eq0.has_value());
+    EXPECT_DOUBLE_EQ(*eq0, 4.0);
+}
+
+TEST(Statistics, BasicDefaultCountArray)
+{
+    auto data_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
+    EXPECT_TRUE(basicStatisticsValidator(SingleStatisticsDescription(StatisticsType::Basic, nullptr, false), data_type));
+
+    MutableColumnPtr col = data_type->createColumn();
+    col->insert(Field(Array{}));                                     /// empty (default)
+    col->insert(Field(Array{Field(UInt64(1))}));                     /// non-empty
+    col->insert(Field(Array{}));                                     /// empty (default)
+    col->insert(Field(Array{Field(UInt64(2)), Field(UInt64(3))}));   /// non-empty
+    auto stats = createTestStats({StatisticsType::Basic}, data_type);
+    stats->build(std::move(col));
+
+    EXPECT_EQ(stats->estimateDefaults(), 2u);
+    auto eq_empty = stats->estimateEqual(Field(Array{}));
+    ASSERT_TRUE(eq_empty.has_value());
+    EXPECT_DOUBLE_EQ(*eq_empty, 2.0);
 }
 

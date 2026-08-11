@@ -63,48 +63,10 @@ public:
         TimeSeriesTagsFunctionHelpers::checkArgumentTypesForTagNamesAndValues(name, arguments, 1);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        const auto & id_type = TimeSeriesTagsFunctionHelpers::checkArgumentTypeForID(name, arguments, 0, /* allow_nullable = */ true);
-        if (id_type == typeid(UInt64))
-            return executeForIDType<UInt64, false>(arguments, result_type, input_rows_count);
-        if (id_type == typeid(std::optional<UInt64>))
-            return executeForIDType<UInt64, true>(arguments, result_type, input_rows_count);
-        if (id_type == typeid(UInt128))
-            return executeForIDType<UInt128, false>(arguments, result_type, input_rows_count);
-        if (id_type == typeid(std::optional<UInt128>))
-            return executeForIDType<UInt128, true>(arguments, result_type, input_rows_count);
-        UNREACHABLE();
-    }
-
-    template <typename IDType, bool id_is_nullable>
-    ColumnPtr executeForIDType(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
     {
         auto tags_vector = TimeSeriesTagsFunctionHelpers::extractTagNamesAndValuesFromArguments(name, arguments, 1);
-
-        if constexpr (id_is_nullable)
-        {
-            auto ids = TimeSeriesTagsFunctionHelpers::extractIDFromArgument<std::optional<IDType>>(name, arguments, 0);
-            VectorWithMemoryTracking<IDType> valid_ids;
-            valid_ids.reserve(ids.size());
-            for (size_t i = 0; i != ids.size(); ++i)
-            {
-                if (ids[i])
-                {
-                    size_t offset = valid_ids.size();
-                    valid_ids.emplace_back(*ids[i]);
-                    tags_vector[offset] = tags_vector[i];
-                }
-            }
-            tags_vector.resize(valid_ids.size());
-            tags_collector->storeTags(valid_ids, tags_vector);
-        }
-        else
-        {
-            auto ids = TimeSeriesTagsFunctionHelpers::extractIDFromArgument<IDType>(name, arguments, 0);
-            tags_collector->storeTags(ids, tags_vector);
-        }
-
+        tags_collector->storeTags(arguments[0].column, tags_vector);
         return arguments[0].column;
     }
 
@@ -123,7 +85,7 @@ can be used to access this mapping later during the query execution.
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesStoreTags(id, tags_array, separate_tag_name_1, separate_tag_value_1, ...)";
     FunctionDocumentation::Arguments arguments = {
-        {"id", "Identifier of a time series.", {"UInt64", "UInt128", "UUID", "FixedString(16)"}},
+        {"id", "Identifier of a time series. Can be of any comparable type. Rows with NULL identifiers are skipped.", {"Any"}},
         {"tags_array", "Array of pairs (tag_name, tag_value).", {"Array(Tuple(String, String))", "NULL"}},
         {"separate_tag_name_i", "The name of a tag.", {"String", "FixedString"}},
         {"separate_tag_value_i", "The value of a tag.", {"String", "FixedString", "Nullable(String)"}}\

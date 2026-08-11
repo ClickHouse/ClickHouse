@@ -7,7 +7,7 @@ doc_type: 'référence'
 keywords: ['clickstack', 'json', 'map', 'attributs', 'schéma', 'observabilité']
 ---
 
-import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 Le [schéma par défaut](/fr/clickstack/ingesting-data/schemas) de ClickStack stocke les attributs resource, scope, log et span dans des colonnes `Map(LowCardinality(String), String)`. ClickHouse prend également en charge le [type `JSON`](/fr/reference/formats/JSON/JSON), et ClickStack offre une prise en charge bêta permettant de l’utiliser à la place de `Map`.
 

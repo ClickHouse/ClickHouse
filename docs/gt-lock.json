@@ -84760,7 +84760,7 @@
           "postProcessHash": "4494dfcdb3dfbcc251c46cb11eb6d9176d6250cf23d559a73a3cbc422b1f36e3"
         }
       },
-      "fileName": "products/cloud/guides/migration/oss-to-cloud-backup-restore.mdx",
+      "fileName": "get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore.mdx",
       "staged": false
     },
     {
@@ -103633,46 +103633,46 @@
       "translations": {
         "es": {
           "updatedAt": "2026-07-23T21:28:43.621Z",
-          "fileName": "snippets/es/components/Badges/ExperimentalBadge.jsx",
+          "fileName": "snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx",
           "postProcessHash": "5e42dbae272c93e063d918d6cf52bc4eaf06704bb24038d48e69e0fba4cbc6bb"
         },
         "ja": {
           "updatedAt": "2026-07-23T21:28:43.621Z",
-          "fileName": "snippets/ja/components/Badges/ExperimentalBadge.jsx",
+          "fileName": "snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx",
           "postProcessHash": "5fdd699781809e728e1ba3bc385eef33d429b8d620ce1a48930431d2c9d6229b"
         },
         "ko": {
           "updatedAt": "2026-07-23T21:28:43.622Z",
-          "fileName": "snippets/ko/components/Badges/ExperimentalBadge.jsx",
+          "fileName": "snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx",
           "postProcessHash": "c39ef8494a0b60dec8ad289c3903bcbbdaf49546ae6a9eafe6c4e7c9840bdb2e"
         },
         "pt-BR": {
           "updatedAt": "2026-07-23T21:28:43.622Z",
-          "fileName": "snippets/pt-BR/components/Badges/ExperimentalBadge.jsx",
+          "fileName": "snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx",
           "postProcessHash": "73f7464dbfc1904bff8da944dbb9d7fd890fa7360998871e7570c6749e8e46cf"
         },
         "ru": {
           "updatedAt": "2026-07-23T21:28:43.622Z",
-          "fileName": "snippets/ru/components/Badges/ExperimentalBadge.jsx",
+          "fileName": "snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx",
           "postProcessHash": "f751c39b6db9bad503e198823c560e5abf4eac7bb12aa2f74b1c2a7cb29dadde"
         },
         "zh": {
           "updatedAt": "2026-07-23T21:28:43.622Z",
-          "fileName": "snippets/zh/components/Badges/ExperimentalBadge.jsx",
+          "fileName": "snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx",
           "postProcessHash": "caee53ef88b0aabf015313c017bb166d455470924607cad9a60f94ff64a527c1"
         },
         "ar": {
           "updatedAt": "2026-07-23T21:28:43.622Z",
-          "fileName": "snippets/ar/components/Badges/ExperimentalBadge.jsx",
+          "fileName": "snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx",
           "postProcessHash": "5d555dd9dfdc8dd9a6392b24df7482e3bef484283cbc47f82e0b9c03e72468e5"
         },
         "fr": {
           "updatedAt": "2026-07-23T21:28:43.623Z",
-          "fileName": "snippets/fr/components/Badges/ExperimentalBadge.jsx",
+          "fileName": "snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx",
           "postProcessHash": "fbca281a54014652c52665bde690f92cd4bfb4758d9368fbe884f949dd1202d4"
         }
       },
-      "fileName": "snippets/components/Badges/ExperimentalBadge.jsx",
+      "fileName": "snippets/components/ExperimentalBadge/ExperimentalBadge.jsx",
       "staged": false
     },
     {
