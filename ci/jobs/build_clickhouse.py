@@ -253,10 +253,19 @@ def main():
             if os.path.isdir(".git/modules/contrib") and os.listdir(
                 ".git/modules/contrib"
             ):
-                # Submodule cache was restored by runner.py — just populate working trees
+                # Submodule cache was restored by runner.py — just populate working trees.
+                # A bare `git submodule update` walks the submodules one by one on a
+                # single core (~40s of the job with nothing else running), so fan the
+                # working-tree checkouts out over the idle cores, the same way
+                # `contrib/update-submodules.sh` and the fast test job do it.
                 print("Submodule cache detected, populating working trees from cache")
+                submodules = Shell.get_output_or_raise(
+                    "git config --file .gitmodules --get-regexp '.*path' | sed 's/[^ ]* //'"
+                ).split()
+                assert submodules, "No submodule paths found in .gitmodules"
                 res = res and Shell.check(
-                    "git submodule update --depth 1 --single-branch",
+                    command=f"xargs --max-procs={min(Utils.cpu_count(), 20)} --null --no-run-if-empty --max-args=1 git submodule update --depth 1 --single-branch --",
+                    stdin_str="\0".join(submodules) + "\0",
                     retries=3,
                 )
             else:
