@@ -4127,7 +4127,7 @@ ASTPtr QueryFuzzer::generatePredicate()
                     }
                     /// Run mostly equality conditions
                     next_condition = makeASTFunction(
-                        (fuzz_rand() % 10 == 0) ? pickRandomly(fuzz_rand, comparison_comparators) : String("equals"),
+                        ((fuzz_rand() % 10) < 2) ? pickRandomly(fuzz_rand, comparison_comparators) : String("equals"),
                         expression_1,
                         expression_2);
                 }
@@ -4487,7 +4487,7 @@ ASTPtr QueryFuzzer::addJoinClause()
                 }
                 /// Run mostly equi-joins
                 ASTPtr next_condition = makeASTFunction(
-                    (fuzz_rand() % 10 == 0) ? pickRandomly(fuzz_rand, comparison_comparators) : String("equals"),
+                    ((fuzz_rand() % 10) < 3) ? pickRandomly(fuzz_rand, comparison_comparators) : String("equals"),
                     expression_1,
                     expression_2);
                 next_condition = fuzzPredicate(next_condition, 30);
