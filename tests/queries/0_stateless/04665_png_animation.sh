@@ -171,6 +171,14 @@ png_http "${DIMS}&output_format_image_time_multiplier_seconds=5&output_format_im
 " > "${OUT}/scale_up.png"
 python3 "${PARSER}" "${OUT}/scale_up.png"
 
+# The time scale is taken as a reduced fraction, so a multiplier over the 16-bit limit of the frame
+# delay parts is fine as long as the fraction reduces: a unit of 100000/60 s is exactly 5000/3 s.
+echo "--- time scale 100000/60 reduces to 5000/3 ---"
+png_http "${DIMS}&output_format_image_time_multiplier_seconds=100000" "
+    SELECT toUInt8(number) AS t, toUInt8(number) AS v FROM numbers(2) FORMAT PNG
+" > "${OUT}/reduced_scale.png"
+python3 "${PARSER}" "${OUT}/reduced_scale.png"
+
 # Each frame is an independent image: a pixel painted in one frame is not carried into the next.
 echo "--- frames are independent ---"
 png_http "output_format_image_width=2&output_format_image_height=2" "
@@ -267,12 +275,14 @@ png_http "${DIMS}&output_format_image_terminal_mode=kitty" "
     SELECT toUInt8(number) AS t, toUInt8(number) AS v FROM numbers(2) FORMAT PNG
 " | grep -oE "BAD_ARGUMENTS" | head -1
 
-# The time scale must fit into the 16-bit parts of the frame delay.
+# The parts of the time scale must not be zero.
 png_http "${DIMS}&output_format_image_time_divisor_seconds=0" "
     SELECT toUInt8(number) AS t, toUInt8(number) AS v FROM numbers(2) FORMAT PNG
 " | grep -oE "BAD_ARGUMENTS" | head -1
 
-png_http "${DIMS}&output_format_image_time_multiplier_seconds=100000" "
+# The reduced denominator of the time scale must fit into the 16-bit part of the frame delay,
+# and 1/100000 does not reduce.
+png_http "${DIMS}&output_format_image_time_divisor_seconds=100000" "
     SELECT toUInt8(number) AS t, toUInt8(number) AS v FROM numbers(2) FORMAT PNG
 " | grep -oE "BAD_ARGUMENTS" | head -1
 

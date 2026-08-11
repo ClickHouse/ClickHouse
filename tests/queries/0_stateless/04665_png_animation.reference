@@ -71,6 +71,13 @@ sequence_consecutive=True
 frame0 delay=10/1 rect=2x1+0+0 dispose=0 blend=0
 frame1 delay=10/1 rect=2x1+0+0 dispose=0 blend=0
 frame2 delay=10/1 rect=2x1+0+0 dispose=0 blend=0
+--- time scale 100000/60 reduces to 5000/3 ---
+size=2x1 color_type=0
+acTL=num_frames=2 num_plays=0
+real_frames=2
+sequence_consecutive=True
+frame0 delay=5000/3 rect=2x1+0+0 dispose=0 blend=0
+frame1 delay=5000/3 rect=2x1+0+0 dispose=0 blend=0
 --- frames are independent ---
 size=2x2 color_type=2
 acTL=num_frames=2 num_plays=0

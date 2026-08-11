@@ -406,18 +406,28 @@ PNGSerializer::Impl::Impl(const Block & header, const FormatSettings & format_se
 
         streaming_animation = format_settings.image.streaming_animation;
 
-        /// The time scale ends up in the two 16-bit parts of the `fcTL` frame delay, so both settings have
-        /// to fit there for any delay to be representable at all.
-        time_multiplier = format_settings.image.time_multiplier_seconds;
-        time_divisor = format_settings.image.time_divisor_seconds;
-        if (time_multiplier == 0 || time_multiplier > MAX_DELAY_PART)
+        /// The time scale is the fraction `multiplier / divisor`, and only its reduced form matters:
+        /// a scale of 100000/60 is 5000/3, which the 16-bit parts of the `fcTL` frame delay represent
+        /// exactly even though the raw multiplier does not fit into them. So the fraction is normalized
+        /// first, and only the reduced denominator has to fit: it goes into `delay_den` verbatim, while
+        /// a numerator over the 16-bit limit merely means that delays past the longest expressible one
+        /// are clamped, which `delayFromUnits` does for long delays anyway.
+        const UInt64 multiplier_setting = format_settings.image.time_multiplier_seconds;
+        const UInt64 divisor_setting = format_settings.image.time_divisor_seconds;
+        if (multiplier_setting == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "'output_format_image_time_multiplier_seconds' must be between 1 and {}, got {}",
-                MAX_DELAY_PART, time_multiplier);
-        if (time_divisor == 0 || time_divisor > MAX_DELAY_PART)
+                "'output_format_image_time_multiplier_seconds' must not be zero");
+        if (divisor_setting == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "'output_format_image_time_divisor_seconds' must be between 1 and {}, got {}",
-                MAX_DELAY_PART, time_divisor);
+                "'output_format_image_time_divisor_seconds' must not be zero");
+        const UInt64 scale_gcd = std::gcd(multiplier_setting, divisor_setting);
+        time_multiplier = multiplier_setting / scale_gcd;
+        time_divisor = divisor_setting / scale_gcd;
+        if (time_divisor > MAX_DELAY_PART)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The time unit {}/{} of the 't' column reduces to {}/{} seconds, and its denominator "
+                "does not fit the 16-bit frame delay of an animated PNG (at most {})",
+                multiplier_setting, divisor_setting, time_multiplier, time_divisor, MAX_DELAY_PART);
     }
 
     /// Precompute the per-channel extraction plan once, in the order the channels are written.
@@ -497,7 +507,7 @@ std::pair<UInt16, UInt16> PNGSerializer::Impl::delayFromUnits(UInt64 units) cons
         den /= common_divisor;
     }
 
-    /// Both parts are 16-bit; the denominator always fits, because the divisor setting is validated
+    /// Both parts are 16-bit; the denominator always fits, because the reduced divisor is validated
     /// against `MAX_DELAY_PART`, but the numerator can exceed it. A delay of `MAX_DELAY_PART` seconds
     /// or more is longer than any that `fcTL` can express, and is clamped to the longest one, in the
     /// same spirit as the clamping applied to out-of-range pixel values. The comparison is written with
