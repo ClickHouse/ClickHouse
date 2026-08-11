@@ -98,6 +98,13 @@ public:
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override;
     std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override;
 
+    /// Registers every schema and snapshot->schema binding in the document, applying the same
+    /// per-snapshot requirements a read applies. False if `snapshot_id` is not in the document.
+    static bool registerMetadataSchemasAndSnapshots(
+        const Poco::JSON::Object::Ptr & metadata_object,
+        Int64 snapshot_id,
+        Iceberg::IcebergSchemaProcessorPtr schema_processor);
+
     static Int32 parseTableSchema(
         const Poco::JSON::Object::Ptr & metadata_object,
         Iceberg::IcebergSchemaProcessor & schema_processor,

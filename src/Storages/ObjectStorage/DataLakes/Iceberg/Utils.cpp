@@ -25,6 +25,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <base/getThreadId.h>
@@ -99,6 +100,7 @@ namespace ProfileEvents
 
 namespace DB::Setting
 {
+    extern const SettingsBool allow_experimental_geo_types_in_iceberg;
     extern const SettingsUInt64 iceberg_metadata_staleness_ms;
     extern const SettingsUInt64 output_format_compression_level;
 }
@@ -409,15 +411,28 @@ static void convergeVersionHint(
 
 /// Followable = a reader of this document's current snapshot gets through its manifest list and
 /// finds every object it would then open.
-// NOLINTBEGIN(clang-analyzer-core.uninitialized.UndefReturn)
-// Clang analyzer wrongly thinks the avro GenericDatum value can be uninitialized.
 static bool isMetadataSnapshotFollowable(
     const Poco::JSON::Object::Ptr & metadata_object,
     const IcebergPathResolver & resolver,
+    CompressionMethod compression_method,
     const DB::ObjectStoragePtr & object_storage,
     const DB::ContextPtr & context)
 {
     auto log = getLogger("IcebergVersionHintConvergence");
+
+    /// The read path parses the document's own schema before it looks for a snapshot, so a
+    /// document that cannot be parsed at all is refused here without examining one either.
+    auto schema_processor = std::make_shared<IcebergSchemaProcessor>(
+        context->getSettingsRef()[Setting::allow_experimental_geo_types_in_iceberg]);
+    try
+    {
+        IcebergMetadata::parseTableSchema(metadata_object, *schema_processor, log);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
+    }
 
     if (!metadata_object->has(f_current_snapshot_id) || metadata_object->isNull(f_current_snapshot_id))
         return true;
@@ -458,115 +473,67 @@ static bool isMetadataSnapshotFollowable(
 
         try
         {
-            /// Every field the manifest-list read path requires, with the type it requires; an
-            /// entry failing any of them is one no reader gets past. `type()` resolves a union to
-            /// its branch, so a null reports `AVRO_NULL` and is refused here too.
-            auto reader_would_accept = [&](const avro::GenericRecord & entry, String & rejection)
-            {
-                auto typed = [&](const std::string & field, avro::Type type)
-                {
-                    if (!entry.hasField(field))
-                    {
-                        rejection = fmt::format("is missing '{}'", field);
-                        return false;
-                    }
-                    if (entry.field(field).type() != type)
-                    {
-                        rejection = fmt::format("has '{}' of an unexpected type", field);
-                        return false;
-                    }
-                    return true;
-                };
+            Int32 snapshot_schema_id = snapshot->getValue<Int32>(f_schema_id);
 
-                if (!typed(f_added_snapshot_id, avro::AVRO_LONG) || !typed(f_manifest_path, avro::AVRO_STRING)
-                    || !typed(f_manifest_length, avro::AVRO_LONG) || !typed(f_partition_spec_id, avro::AVRO_INT))
-                    return false;
-                if (entry.field(f_manifest_length).value<Int64>() < 0)
-                {
-                    rejection = fmt::format("has a negative '{}'", f_manifest_length);
-                    return false;
-                }
-                /// These two the read path takes only when present, but with a fixed type when it
-                /// does, so absence is acceptable here and a wrong type is not.
-                for (const auto & [field, type] : {std::pair{f_sequence_number, avro::AVRO_LONG},
-                                                   std::pair{f_content, avro::AVRO_INT}})
-                {
-                    if (entry.hasField(field) && !typed(field, type))
-                        return false;
-                }
-                return true;
+            /// `metadata_cache = nullptr` keeps this probe from publishing the document's
+            /// manifests to other readers, which also makes the `table_uuid` those cache keys
+            /// are built from unreachable.
+            auto probe_components = PersistentTableComponents{
+                .schema_processor = schema_processor,
+                .metadata_cache = nullptr,
+                .format_version = metadata_object->getValue<Int32>(f_format_version),
+                .table_location = resolver.getTableLocation(),
+                .metadata_compression_method = compression_method,
+                .table_path = resolver.getTableRoot(),
+                .table_uuid = std::nullopt,
+                .path_resolver = resolver,
             };
 
-            /// A carried-forward manifest keeps its original adder id, so only the snapshot's own
-            /// files are at risk.
-            auto is_added_by_current_snapshot = [&](const avro::GenericRecord & entry)
-            { return entry.field(f_added_snapshot_id).value<Int64>() == current_snapshot_id; };
-
-            bool every_object_present = true;
-            std::vector<String> manifests_added_by_current_snapshot;
-            forEachAvroEntry(
-                resolved_manifest_list_path,
-                object_storage,
-                context,
-                "IcebergVersionHintConvergence",
-                [&](const avro::GenericDatum & datum)
-                {
-                    if (!every_object_present)
-                        return;
-                    const auto & entry = datum.value<avro::GenericRecord>();
-                    String rejection;
-                    if (!reader_would_accept(entry, rejection))
-                    {
-                        LOG_DEBUG(
-                            log,
-                            "Manifest list {} has an entry that {}, which a reader rejects",
-                            resolved_manifest_list_path,
-                            rejection);
-                        every_object_present = false;
-                        return;
-                    }
-                    auto manifest_path
-                        = IcebergPathFromMetadata::deserialize(entry.field(f_manifest_path).value<std::string>());
-                    auto resolved_manifest_path = resolver.resolve(manifest_path);
-                    if (!object_storage->exists(StoredObject(resolved_manifest_path)))
-                    {
-                        LOG_DEBUG(log, "Manifest {} named by {} is missing", resolved_manifest_path, resolved_manifest_list_path);
-                        every_object_present = false;
-                        return;
-                    }
-                    if (is_added_by_current_snapshot(entry))
-                        manifests_added_by_current_snapshot.push_back(resolved_manifest_path);
-                });
-            if (!every_object_present)
-                return false;
-
-            for (const auto & resolved_manifest_path : manifests_added_by_current_snapshot)
+            /// Registers every schema and snapshot binding the manifests resolve against, with the
+            /// same requirements the read path applies to each one, including the history.
+            if (!IcebergMetadata::registerMetadataSchemasAndSnapshots(
+                    metadata_object, current_snapshot_id, probe_components.schema_processor))
             {
-                forEachAvroEntry(
-                    resolved_manifest_path,
-                    object_storage,
-                    context,
-                    "IcebergVersionHintConvergence",
-                    [&](const avro::GenericDatum & datum)
+                LOG_DEBUG(log, "Current snapshot {} is absent from the document's own '{}'", current_snapshot_id, f_snapshots);
+                return false;
+            }
+
+            auto manifest_list_entries
+                = getManifestList(object_storage, probe_components, context, manifest_list_path, log);
+
+            for (const auto & manifest_file : manifest_list_entries)
+            {
+                auto resolved_manifest_path = resolver.resolve(manifest_file.manifest_file_path);
+                if (!object_storage->exists(StoredObject(resolved_manifest_path)))
+                {
+                    LOG_DEBUG(log, "Manifest {} named by {} is missing", resolved_manifest_path, resolved_manifest_list_path);
+                    return false;
+                }
+
+                /// A carried-forward manifest keeps its original adder id, so only the ones this
+                /// snapshot added name files it wrote itself.
+                if (manifest_file.added_snapshot_id != current_snapshot_id)
+                    continue;
+
+                auto entries = getManifestFileEntriesHandle(
+                    object_storage, probe_components, context, log, manifest_file, snapshot_schema_id);
+
+                for (auto content : {FileContentType::DATA, FileContentType::POSITION_DELETE, FileContentType::EQUALITY_DELETE})
+                {
+                    for (const auto & entry : entries.getFilesWithoutDeleted(content))
                     {
-                        if (!every_object_present)
-                            return;
-                        const auto & entry = datum.value<avro::GenericRecord>();
-                        /// Only an ADDED entry names a file this snapshot wrote; an EXISTING one
-                        /// belongs to an ancestor and a DELETED one is no longer required.
-                        if (entry.field(f_status).value<Int32>() != static_cast<Int32>(ManifestEntryStatus::ADDED))
-                            return;
-                        auto file_path = IcebergPathFromMetadata::deserialize(
-                            entry.field(f_data_file).value<avro::GenericRecord>().field(f_file_path).value<std::string>());
-                        auto resolved_file_path = resolver.resolve(file_path);
+                        /// An EXISTING row names a file an ancestor wrote, which this commit does
+                        /// not own and a compaction carries forward for the whole live table.
+                        if (entry->parsed_entry->status != ManifestEntryStatus::ADDED)
+                            continue;
+                        auto resolved_file_path = resolver.resolve(entry->parsed_entry->file_path_key);
                         if (!object_storage->exists(StoredObject(resolved_file_path)))
                         {
                             LOG_DEBUG(log, "File {} named by {} is missing", resolved_file_path, resolved_manifest_path);
-                            every_object_present = false;
+                            return false;
                         }
-                    });
-                if (!every_object_present)
-                    return false;
+                    }
+                }
             }
             return true;
         }
@@ -580,7 +547,6 @@ static bool isMetadataSnapshotFollowable(
     LOG_DEBUG(log, "Current snapshot {} is absent from the document's own '{}'", current_snapshot_id, f_snapshots);
     return false;
 }
-// NOLINTEND(clang-analyzer-core.uninitialized.UndefReturn)
 
 /// The target metadata file already exists, so a hint naming an earlier version is behind. The
 /// target existing does not authorize publishing it: only a reader being able to follow it does.
@@ -614,7 +580,7 @@ static bool convergeVersionHintForLostRace(
             if (!metadata_object)
                 return false;
 
-            return isMetadataSnapshotFollowable(metadata_object, resolver, object_storage, context);
+            return isMetadataSnapshotFollowable(metadata_object, resolver, compression_method, object_storage, context);
         };
 
         convergeVersionHint(

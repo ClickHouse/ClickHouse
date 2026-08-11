@@ -395,6 +395,12 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
     return current_snapshot;
 }
 
+bool IcebergMetadata::registerMetadataSchemasAndSnapshots(
+    const Poco::JSON::Object::Ptr & metadata_object, Int64 snapshot_id, IcebergSchemaProcessorPtr schema_processor)
+{
+    return !traverseMetadataAndFindNecessarySnapshotObject(metadata_object, snapshot_id, schema_processor).isNull();
+}
+
 IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSON(
     Poco::JSON::Object::Ptr snapshot_object, Int64 snapshot_id, ContextPtr local_context) const
 {

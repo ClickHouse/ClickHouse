@@ -210,6 +210,129 @@ def _drop_snapshot_schema_id(metadata_json):
     return json.dumps(metadata)
 
 
+def _drop_current_schema_id(metadata_json):
+    """Remove the document's top-level `current-schema-id`.
+
+    Parsing a v2 table's schema requires it and throws BAD_ARGUMENTS without it
+    (`parseTableSchemaV2Method`), before any snapshot or manifest is examined, so the
+    document is unreadable however intact its objects are. ClickHouse always writes it
+    (`MetadataGenerator.cpp`).
+    """
+    metadata = json.loads(metadata_json)
+    assert "current-schema-id" in metadata, "Document has no current-schema-id to drop"
+    del metadata["current-schema-id"]
+    return json.dumps(metadata)
+
+
+def _drop_history_snapshot_schema_id(metadata_json):
+    """Remove `schema-id` from a snapshot that is not the current one.
+
+    Reading resolves manifest entries of older snapshots through the document, and the
+    traversal that registers those bindings requires the field on every snapshot, not
+    only the current one. So a document whose history is missing it is refused by a
+    reader while its own current snapshot looks intact.
+    """
+    metadata = json.loads(metadata_json)
+    current = metadata["current-snapshot-id"]
+    patched = False
+    for snapshot in metadata["snapshots"]:
+        if snapshot["snapshot-id"] != current and "schema-id" in snapshot:
+            del snapshot["schema-id"]
+            patched = True
+    assert patched, "Document has no non-current snapshot with a schema-id to drop"
+    return json.dumps(metadata)
+
+
+def _rewrite_manifest_file(avro_bytes, patch_metadata, patch_schema=None, patch_record=None):
+    """Rewrite a manifest file, its Avro header metadata, and optionally its rows.
+
+    A manifest file carries more of its own state in the Avro header than a manifest
+    list does: `partition-spec` and `schema` are read from there, so damaging a
+    manifest means damaging that header. `patch_metadata` reports whether it changed
+    anything, so a fixture that matched nothing fails loudly instead of writing an
+    undamaged manifest back.
+    """
+    reader = avro.datafile.DataFileReader(io.BytesIO(avro_bytes), avro.io.DatumReader())
+    schema = json.loads(str(reader.datum_reader.writers_schema))
+    metadata = dict(reader.meta)
+    records = list(reader)
+    reader.close()
+
+    assert patch_metadata(metadata), "Manifest has nothing for this fixture to patch"
+    if patch_schema is not None:
+        assert patch_schema(schema), "Manifest schema has no field for this fixture to patch"
+    for record in records:
+        if patch_record is not None:
+            patch_record(record)
+
+    out = io.BytesIO()
+    writer = avro.datafile.DataFileWriter(
+        out, avro.io.DatumWriter(), avro.schema.parse(json.dumps(schema))
+    )
+    for key, value in metadata.items():
+        if not key.startswith("avro."):
+            writer.set_meta(key, value)
+    for record in records:
+        writer.append(record)
+    writer.flush()
+    result = out.getvalue()
+    writer.close()
+    return result
+
+
+def _drop_manifest_partition_spec(avro_bytes):
+    """Remove the `partition-spec` key from a manifest file's Avro header.
+
+    Building a manifest reader requires it and throws
+    ICEBERG_SPECIFICATION_VIOLATION ("No partition-spec in iceberg manifest file")
+    without it. ClickHouse always writes it (`IcebergWrites.cpp`), so an externally
+    written manifest is what reaches this shape.
+    """
+
+    def patch_metadata(metadata):
+        return metadata.pop("partition-spec", None) is not None
+
+    return _rewrite_manifest_file(avro_bytes, patch_metadata)
+
+
+def _drop_manifest_schema(avro_bytes):
+    """Remove the `schema` key from a manifest file's Avro header.
+
+    The manifest's own schema is what resolves its entries' columns, so a reader
+    refuses the manifest without it (BAD_ARGUMENTS) before opening a data file.
+    """
+
+    def patch_metadata(metadata):
+        return metadata.pop("schema", None) is not None
+
+    return _rewrite_manifest_file(avro_bytes, patch_metadata)
+
+
+def _current_snapshot_added_manifests(cluster, instance, storage_type, table_name, metadata_json):
+    """The manifests the document's current snapshot added, table-relative.
+
+    Only these name files the snapshot wrote itself, which is the set the publish
+    fence reads; a carried-forward manifest keeps an older adder id.
+    """
+    manifest_list = _current_snapshot_manifest_list(metadata_json)
+    snapshot_id = json.loads(metadata_json)["current-snapshot-id"]
+    reader = avro.datafile.DataFileReader(
+        io.BytesIO(
+            _read_bytes(cluster, instance, storage_type, table_name, manifest_list)
+        ),
+        avro.io.DatumReader(),
+    )
+    try:
+        paths = [
+            record["manifest_path"]
+            for record in reader
+            if record.get("added_snapshot_id") == snapshot_id
+        ]
+    finally:
+        reader.close()
+    return [raw[raw.index("metadata/") :] for raw in paths]
+
+
 def _delete(cluster, instance, storage_type, table_name, rel_path):
     if storage_type == "local":
         instance.exec_in_container(
@@ -298,6 +421,19 @@ def _current_snapshot_manifest_list(metadata_json):
             # table-relative, so keep only the metadata/... tail.
             return raw[raw.index("metadata/") :]
     raise AssertionError(f"snapshot {snapshot_id} absent from its own snapshot list")
+
+
+def _attach_pinned_to_metadata(cluster, storage_type, table_name, new_table_name, metadata_rel_path):
+    """CREATE a second table over an existing one, pinned to one metadata document."""
+    settings = f"SETTINGS iceberg_metadata_file_path = '{metadata_rel_path}'"
+    if storage_type == "local":
+        engine = f"IcebergLocal(local, path = '{LOCAL_PREFIX}/{table_name}', format=Parquet)"
+    else:
+        engine = (
+            f"IcebergS3(s3, filename = '{S3_PREFIX}/{table_name}/', format=Parquet, "
+            f"url = 'http://minio1:9001/{cluster.minio_bucket}/')"
+        )
+    return f"CREATE TABLE {new_table_name} ENGINE={engine} {settings}"
 
 
 def _attach_pinned_to_v1(cluster, storage_type, table_name):
@@ -835,6 +971,8 @@ def test_version_hint_not_advanced_to_a_snapshot_whose_data_files_are_gone(
         (_drop_partition_spec_id, "no_partition_spec_id", False),
         (_retype_sequence_number, "wrong_typed_sequence_number", False),
         (_drop_snapshot_schema_id, "no_snapshot_schema_id", True),
+        (_drop_current_schema_id, "no_current_schema_id", True),
+        (_drop_history_snapshot_schema_id, "no_history_schema_id", True),
     ],
 )
 def test_version_hint_not_advanced_to_a_snapshot_a_reader_refuses(
@@ -953,3 +1091,235 @@ def test_version_hint_not_advanced_to_a_snapshot_a_reader_refuses(
     # Without the check the hint names that version and the read is refused with
     # ICEBERG_SPECIFICATION_VIOLATION.
     instance.query(f"SELECT x FROM {table_name} ORDER BY x")
+
+@pytest.mark.parametrize("storage_type", ["local", "s3"])
+@pytest.mark.parametrize(
+    "damage,label",
+    [
+        (_drop_manifest_partition_spec, "no_manifest_partition_spec"),
+        (_drop_manifest_schema, "no_manifest_schema"),
+    ],
+)
+def test_version_hint_not_advanced_to_a_snapshot_whose_manifests_a_reader_refuses(
+    started_cluster_iceberg_no_spark, storage_type, damage, label
+):
+    """A manifest list a reader accepts does not mean its manifests are readable.
+
+    Each manifest carries `partition-spec` and `schema` in its own Avro header, and a
+    reader refuses the manifest without either before it opens a data file. So a
+    version whose list and objects are all intact can still be one every reader
+    rejects, and publishing it would replace a readable v(N-1) with an unreadable vN.
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    table_name = "test_version_hint_" + label + "_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        table_name,
+        started_cluster_iceberg_no_spark,
+        "(x Int32)",
+        use_version_hint=True,
+    )
+    instance.query(f"INSERT INTO {table_name} VALUES (1)")
+    instance.query(f"INSERT INTO {table_name} VALUES (2)")
+
+    hint = _read(
+        started_cluster_iceberg_no_spark, instance, storage_type, table_name, HINT
+    )
+    assert hint.isdigit(), f"Fixture did not write a numeric {HINT}, got {hint!r}"
+    committed_version = int(hint)
+
+    # Only the manifests the last commit added are damaged, so the version the hint
+    # falls back to keeps readable manifests of its own. Damaging a carried-forward
+    # one would make a broken fixture indistinguishable from a failed guard.
+    metadata_json = _read(
+        started_cluster_iceberg_no_spark,
+        instance,
+        storage_type,
+        table_name,
+        f"metadata/v{committed_version}.metadata.json",
+    )
+    added_manifests = _current_snapshot_added_manifests(
+        started_cluster_iceberg_no_spark, instance, storage_type, table_name, metadata_json
+    )
+    assert added_manifests, "Current snapshot added no manifest for this fixture to damage"
+    for rel_path in added_manifests:
+        _write_bytes(
+            started_cluster_iceberg_no_spark,
+            instance,
+            storage_type,
+            table_name,
+            rel_path,
+            damage(
+                _read_bytes(
+                    started_cluster_iceberg_no_spark,
+                    instance,
+                    storage_type,
+                    table_name,
+                    rel_path,
+                )
+            ),
+        )
+
+    # Everything the snapshot names must still exist, otherwise this is one of the
+    # already-covered missing-object cases and says nothing about the manifest rules.
+    for rel_path in _list_manifests(
+        started_cluster_iceberg_no_spark, instance, storage_type, table_name
+    ) | _list_data_files(started_cluster_iceberg_no_spark, instance, storage_type, table_name):
+        assert _exists(
+            started_cluster_iceberg_no_spark, instance, storage_type, table_name, rel_path
+        ), f"Fixture removed {rel_path}, which is a missing-object case instead"
+
+    _write(
+        started_cluster_iceberg_no_spark,
+        instance,
+        storage_type,
+        table_name,
+        HINT,
+        str(committed_version - 1),
+    )
+    assert (
+        _read(started_cluster_iceberg_no_spark, instance, storage_type, table_name, HINT)
+        == str(committed_version - 1)
+    ), "The hint rollback did not take effect"
+
+    # Control: the version the hint now names is readable, so a later unreadable
+    # table can only come from adopting the damaged one.
+    assert instance.query(f"SELECT x FROM {table_name} ORDER BY x") == "1\n"
+
+    # Whether the statement succeeds is not the property under test; not adopting
+    # the unfollowable version is.
+    try:
+        instance.query(f"INSERT INTO {table_name} VALUES (3)")
+    except Exception:
+        pass
+
+    healed = _read(
+        started_cluster_iceberg_no_spark, instance, storage_type, table_name, HINT
+    )
+    assert healed.isdigit(), f"version-hint.text is no longer numeric: {healed!r}"
+    assert int(healed) != committed_version, (
+        f"version-hint.text was advanced to v{committed_version}, whose manifests a "
+        f"reader refuses ({label})"
+    )
+
+    # Without the check the hint names that version and the read is refused before
+    # any data file is opened.
+    instance.query(f"SELECT x FROM {table_name} ORDER BY x")
+
+def _add_geo_schema(metadata_json):
+    """Append a schema carrying a `geometry` field, under an unused schema-id.
+
+    A table another engine wrote can hold geo fields, whose type resolves only with
+    `allow_experimental_geo_types_in_iceberg`. Every schema in the document is
+    registered eagerly (`SchemaProcessor.cpp`), so a probe whose parser disagrees with
+    the reader's throws on a document the reader accepts. The current snapshot keeps
+    its own schema-id, so this changes what must be registered without changing what
+    the snapshot's entries resolve against.
+    """
+    metadata = json.loads(metadata_json)
+    schema_ids = [schema["schema-id"] for schema in metadata["schemas"]]
+    metadata["schemas"].append(
+        {
+            "schema-id": max(schema_ids) + 1,
+            "type": "struct",
+            "fields": [{"id": 1, "name": "g", "required": False, "type": "geometry"}],
+        }
+    )
+    return json.dumps(metadata)
+
+
+@pytest.mark.parametrize("storage_type", ["local", "s3"])
+def test_version_hint_advanced_to_a_geo_schema_target(
+    started_cluster_iceberg_no_spark, storage_type
+):
+    """A followable target carrying a geo schema must still be published.
+
+    The fence reads the candidate through the production reader, so it builds a schema
+    processor of its own. Configuring that processor differently from the reader's would
+    make it refuse a document the reader accepts, leaving the hint stuck on v(N-1)
+    forever, which is the wedge this PR exists to remove rather than a safe refusal.
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    table_name = "test_version_hint_geo_schema_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        table_name,
+        started_cluster_iceberg_no_spark,
+        "(x Int32)",
+        use_version_hint=True,
+        settings={"allow_experimental_geo_types_in_iceberg": 1},
+    )
+    instance.query(f"INSERT INTO {table_name} VALUES (1)")
+    instance.query(f"INSERT INTO {table_name} VALUES (2)")
+
+    hint = _read(
+        started_cluster_iceberg_no_spark, instance, storage_type, table_name, HINT
+    )
+    assert hint.isdigit(), f"Fixture did not write a numeric {HINT}, got {hint!r}"
+    committed_version = int(hint)
+
+    metadata_rel_path = f"metadata/v{committed_version}.metadata.json"
+    _write(
+        started_cluster_iceberg_no_spark,
+        instance,
+        storage_type,
+        table_name,
+        metadata_rel_path,
+        _add_geo_schema(
+            _read(
+                started_cluster_iceberg_no_spark,
+                instance,
+                storage_type,
+                table_name,
+                metadata_rel_path,
+            )
+        ),
+    )
+
+    _write(
+        started_cluster_iceberg_no_spark,
+        instance,
+        storage_type,
+        table_name,
+        HINT,
+        str(committed_version - 1),
+    )
+
+    # Control: the geo document is readable through a table pinned to it, so a refusal
+    # below can only come from the fence disagreeing with the reader rather than from
+    # metadata this fixture broke.
+    probe_table = table_name + "_pinned"
+    instance.query(
+        _attach_pinned_to_metadata(
+            started_cluster_iceberg_no_spark, storage_type, table_name, probe_table, metadata_rel_path
+        ),
+        settings={"allow_experimental_geo_types_in_iceberg": 1},
+    )
+    assert (
+        instance.query(
+            f"SELECT x FROM {probe_table} ORDER BY x",
+            settings={"allow_experimental_geo_types_in_iceberg": 1},
+        )
+        == "1\n2\n"
+    )
+
+    try:
+        instance.query(
+            f"INSERT INTO {table_name} VALUES (3)",
+            settings={"allow_experimental_geo_types_in_iceberg": 1},
+        )
+    except Exception:
+        pass
+
+    healed = _read(
+        started_cluster_iceberg_no_spark, instance, storage_type, table_name, HINT
+    )
+    assert healed.isdigit(), f"version-hint.text is no longer numeric: {healed!r}"
+    assert int(healed) >= committed_version, (
+        f"version-hint.text stayed at v{healed} instead of adopting the followable "
+        f"v{committed_version}, whose only unusual feature is a geo schema"
+    )
