@@ -12,11 +12,10 @@ namespace DB
 {
 
 RuntimeFilterReadRangesRefiner::RuntimeFilterReadRangesRefiner(
-    StorageMetadataPtr metadata_snapshot_, ContextPtr context_, String key_column_name_, DataTypePtr key_column_type_)
+    StorageMetadataPtr metadata_snapshot_, ContextPtr context_, std::vector<RuntimeFilterIndexAnalysisDescriptor> descriptors_)
     : metadata_snapshot(std::move(metadata_snapshot_))
     , context(std::move(context_))
-    , key_column_name(std::move(key_column_name_))
-    , key_column_type(std::move(key_column_type_))
+    , descriptors(std::move(descriptors_))
 {
 }
 
@@ -29,14 +28,15 @@ void RuntimeFilterReadRangesRefiner::setFilter(const RuntimeFilterConstPtr & fil
 
 void RuntimeFilterReadRangesRefiner::setFilterImpl(const RuntimeFilterConstPtr & filter)
 {
+    /// The seal payload is the leading filter; it only triggers the refinement. The predicate
+    /// is built from ALL the descriptors (the primary key prefix covered by the gating join's
+    /// filters), which are complete by now: their build transforms are upstream of the seal
+    /// emitter. The shared builder makes `key IN (exact values)` else `key BETWEEN [min, max]`
+    /// per filter, ANDed; a filter which recorded nothing usable is skipped (fail-open).
     chassert(filter && filter->isReady());
 
-    /// Build `key IN (exact values)` (else `key BETWEEN [min, max]`) with the shared builder
-    /// used by the read-time index analysis, and turn it into a primary key condition. A null
-    /// predicate means the filter recorded nothing usable (e.g. key tracking was not enabled,
-    /// or an ANTI join); then only the row-level filter applies.
     ActionsDAG dag;
-    const auto * predicate = convertRuntimeFilterToKeyConditionDAG(*filter, key_column_name, key_column_type, dag, context);
+    const auto * predicate = buildRuntimeRangePredicate(*context->getRuntimeFilterLookup(), descriptors, dag, context);
     if (!predicate)
         return;
     dag.getOutputs() = {predicate};

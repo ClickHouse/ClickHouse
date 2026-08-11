@@ -22,46 +22,47 @@ bool isTransparentForSealGating(IQueryPlanStep * step)
     return typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step);
 }
 
-/// The first `__applyFilter` conjunct found in the DAG, if any (see findAppliedRuntimeFilters).
-std::optional<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilter(const ActionsDAG & dag)
-{
-    auto descriptors = findAppliedRuntimeFilters(dag);
-    if (descriptors.empty())
-        return {};
-    return std::move(descriptors.front());
-}
-
 struct ProbeSide
 {
     ReadFromMergeTree * reading = nullptr;
-    /// The first `__applyFilter` conjunct found on the way.
-    std::optional<RuntimeFilterIndexAnalysisDescriptor> runtime_filter;
+    /// All `__applyFilter` conjuncts found on the way (a multi-key join plants one per key).
+    std::vector<RuntimeFilterIndexAnalysisDescriptor> runtime_filters;
 };
 
-/// The runtime filter is planted as a FilterStep conjunct above the reading step (it is not
-/// pushed into the reading step's own filter, which is populated earlier in the second pass),
-/// so look for it while walking down. The reading step's own filter and prewhere are checked
-/// too in case a later optimization moved the conjunct there.
+/// The runtime filters are planted as FilterStep conjuncts above the reading step (they are
+/// not pushed into the reading step's own filter, which is populated earlier in the second
+/// pass), so look for them while walking down. The reading step's own filter and prewhere are
+/// checked too in case a later optimization moved the conjuncts there.
 ProbeSide findProbeSide(QueryPlan::Node * node)
 {
     ProbeSide res;
+
+    auto append = [&](std::vector<RuntimeFilterIndexAnalysisDescriptor> found)
+    {
+        for (auto & descr : found)
+        {
+            bool seen = std::any_of(
+                res.runtime_filters.begin(), res.runtime_filters.end(),
+                [&](const auto & existing) { return existing.filter_id == descr.filter_id; });
+            if (!seen)
+                res.runtime_filters.push_back(std::move(descr));
+        }
+    };
+
     while (node)
     {
-        if (!res.runtime_filter)
-        {
-            if (const auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
-                res.runtime_filter = findAppliedRuntimeFilter(filter_step->getExpression());
-        }
+        if (const auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
+            append(findAppliedRuntimeFilters(filter_step->getExpression()));
 
         if (auto * reading = typeid_cast<ReadFromMergeTree *>(node->step.get()))
         {
             res.reading = reading;
-            if (!res.runtime_filter)
+            if (res.runtime_filters.empty())
             {
                 if (const auto & dag = reading->getFilterActionsDAG())
-                    res.runtime_filter = findAppliedRuntimeFilter(*dag);
-                if (!res.runtime_filter && reading->getQueryInfo().prewhere_info)
-                    res.runtime_filter = findAppliedRuntimeFilter(reading->getQueryInfo().prewhere_info->prewhere_actions);
+                    append(findAppliedRuntimeFilters(*dag));
+                if (res.runtime_filters.empty() && reading->getQueryInfo().prewhere_info)
+                    append(findAppliedRuntimeFilters(reading->getQueryInfo().prewhere_info->prewhere_actions));
             }
             return res;
         }
@@ -74,7 +75,8 @@ ProbeSide findProbeSide(QueryPlan::Node * node)
     return res;
 }
 
-/// Find the build-side runtime filter step with the given rendezvous key.
+/// Find the build-side runtime filter step with the given rendezvous key. A multi-key join
+/// plants a chain of BuildRuntimeFilterSteps, one per key: walk through the whole chain.
 BuildRuntimeFilterStep * findBuildSideRuntimeFilter(QueryPlan::Node * node, const String & filter_key)
 {
     while (node)
@@ -110,36 +112,52 @@ void tryMarkJoin(QueryPlan::Node & node)
 
     const size_t probe_idx = join_step->swap_streams ? 1 : 0;
 
-    auto [reading, match] = findProbeSide(node.children[probe_idx]);
-    if (!reading || !match)
+    auto [reading, matches] = findProbeSide(node.children[probe_idx]);
+    if (!reading || matches.empty())
         return;
 
     if (reading->isQueryWithFinal() || reading->isParallelReadingEnabled())
         return;
 
-    auto * build_step = findBuildSideRuntimeFilter(node.children[1 - probe_idx], match->filter_id);
-    if (!build_step)
-        return;
-
-    /// Gating pays off only if the completed filter converts into a positive primary-key
-    /// predicate: a NOT-contains (ANTI) filter never does, and an exact-set-only key type
-    /// may lose its set to a bloom-filter overflow. Such probes are better read ungated,
-    /// overlapping with the build, with row-level filtering only.
-    if (!build_step->canSealPrunePrimaryKey())
-        return;
-
-    /// The filter can prune ranges only through the primary key.
+    /// Cover the longest primary-key PREFIX with the matched filters, in the key order: only
+    /// a prefix condition can cut mark ranges (a filter on a non-leading key column selects
+    /// rows scattered over the whole part), so gating on anything else would only delay the
+    /// probe side. Each covering filter must also be guaranteed to convert into a positive
+    /// predicate once complete: a NOT-contains (ANTI) filter never does, and an
+    /// exact-set-only key type may lose its set to a bloom-filter overflow.
     const auto & primary_key_columns = reading->getStorageMetadata()->getPrimaryKey().column_names;
-    if (std::find(primary_key_columns.begin(), primary_key_columns.end(), match->key_column_name) == primary_key_columns.end())
+    std::vector<RuntimeFilterIndexAnalysisDescriptor> prefix;
+    std::vector<BuildRuntimeFilterStep *> build_steps;
+    for (const auto & pk_column : primary_key_columns)
+    {
+        auto it = std::find_if(
+            matches.begin(), matches.end(),
+            [&](const auto & descr) { return descr.key_column_name == pk_column; });
+        if (it == matches.end())
+            break;
+
+        auto * build_step = findBuildSideRuntimeFilter(node.children[1 - probe_idx], it->filter_id);
+        if (!build_step || !build_step->canSealPrunePrimaryKey())
+            break;
+
+        prefix.push_back(*it);
+        build_steps.push_back(build_step);
+    }
+
+    if (prefix.empty())
         return;
 
-    /// The filter must record the exact key values (or at least the range envelope) for the
-    /// seal payload to prune anything; this is off by default (it costs a bit at build time)
-    /// unless enable_join_runtime_filters_index_analysis already turned it on.
-    build_step->enableKeyRangeTracking();
+    /// The filters must record the exact key values (or at least the range envelope) for the
+    /// seal to prune anything; this is off by default (it costs a bit at build time) unless
+    /// enable_join_runtime_filters_index_analysis already turned it on.
+    for (auto * build_step : build_steps)
+        build_step->enableKeyRangeTracking();
 
-    reading->enableSealGatedReading(match->key_column_name, match->key_column_type, match->filter_id);
-    join_step->enableSealGatedProbeReading(match->filter_id);
+    /// The gating (pipeline) edge is keyed by the leading filter; the refiner picks up the
+    /// whole prefix from the runtime filter lookup once the seal arrives (all the filters of
+    /// this join are complete by then: their transforms are upstream of the seal emitter).
+    join_step->enableSealGatedProbeReading(prefix.front().filter_id);
+    reading->enableSealGatedReading(std::move(prefix));
 }
 
 }

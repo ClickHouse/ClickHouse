@@ -4411,7 +4411,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         && result.split_parts.layers.empty())
     {
         seal_gate_refiner = std::make_shared<RuntimeFilterReadRangesRefiner>(
-            storage_snapshot->metadata, context, seal_gated_reading->key_column_name, seal_gated_reading->key_column_type);
+            storage_snapshot->metadata, context, seal_gated_reading->pk_prefix_filters);
     }
 
     /// The runtime filters to apply during reading. A read gated on a filter's seal already
@@ -4422,7 +4422,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     if (seal_gate_refiner)
         std::erase_if(
             runtime_filters_for_data_read,
-            [&](const auto & descr) { return descr.filter_id == seal_gated_reading->filter_id; });
+            [&](const auto & descr)
+            {
+                return std::any_of(
+                    seal_gated_reading->pk_prefix_filters.begin(), seal_gated_reading->pk_prefix_filters.end(),
+                    [&](const auto & gated) { return gated.filter_id == descr.filter_id; });
+            });
 
     /// Now check if we have to use primary-key or skip indexes for join pruning
     bool runtime_prune_primary_key = false;

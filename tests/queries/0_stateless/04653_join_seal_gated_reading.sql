@@ -18,9 +18,6 @@ SET enable_join_runtime_filters_index_analysis = 0, use_skip_indexes_on_data_rea
 -- The asserts need the big table on the probe side: keep the join order deterministic (the
 -- CI randomization can flip the sides, which correctly falls back to ungated reading).
 SET query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false';
--- A cached hash-table size hint can make an exact-set-only key (e.g. String) eligible for
--- gating once a previous run recorded the build size: keep the decisions run-independent.
-SET join_runtime_filter_size_from_hash_table_stats = 0;
 
 DROP TABLE IF EXISTS t_seal_probe;
 DROP TABLE IF EXISTS t_seal_build;
@@ -109,8 +106,8 @@ SELECT count() > 0 AS has_gated_reads_anti FROM (
 ) WHERE explain LIKE '%SealGatedRead%';
 
 -- A String key tracks no [min, max] envelope, so the exact set may be lost to a bloom
--- filter overflow; without a statistics hint that the build side fits, the probe side
--- must not be gated.
+-- filter overflow (on the value count or on the byte size): the probe side must not
+-- be gated.
 DROP TABLE IF EXISTS t_seal_probe_str;
 DROP TABLE IF EXISTS t_seal_build_str;
 CREATE TABLE t_seal_probe_str (s String) ENGINE = MergeTree ORDER BY s;
@@ -123,6 +120,31 @@ SELECT count() > 0 AS has_gated_reads_string_key FROM (
 ) WHERE explain LIKE '%SealGatedRead%';
 DROP TABLE t_seal_probe_str;
 DROP TABLE t_seal_build_str;
+
+-- With a composite primary key, gating requires the filters to cover a key PREFIX: a filter
+-- on the second key column alone selects rows scattered over the whole part and cannot cut
+-- ranges, so such a probe is not gated (and stays correct).
+DROP TABLE IF EXISTS t_seal_probe_ab;
+DROP TABLE IF EXISTS t_seal_build_ab;
+CREATE TABLE t_seal_probe_ab (a UInt64, b UInt64, v String) ENGINE = MergeTree ORDER BY (a, b)
+    SETTINGS index_granularity = 8;
+INSERT INTO t_seal_probe_ab SELECT number % 100, intDiv(number, 100), toString(number) FROM numbers(50000);
+OPTIMIZE TABLE t_seal_probe_ab FINAL;
+CREATE TABLE t_seal_build_ab (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY (a, b);
+INSERT INTO t_seal_build_ab SELECT number * 20, number * 100 FROM numbers(5);
+SELECT count() FROM t_seal_probe_ab AS p JOIN t_seal_build_ab AS q ON p.b = q.b;
+SELECT count() > 0 AS has_gated_reads_non_prefix_key FROM (
+    EXPLAIN PIPELINE SELECT count() FROM t_seal_probe_ab AS p JOIN t_seal_build_ab AS q ON p.b = q.b
+) WHERE explain LIKE '%SealGatedRead%';
+
+-- Both key columns joined (written in the reverse order) cover the (a, b) prefix: the read
+-- is gated and the refiner prunes by the whole prefix.
+SELECT /* seal_gated_pk_prefix */ count() FROM t_seal_probe_ab AS p JOIN t_seal_build_ab AS q ON p.b = q.b AND p.a = q.a;
+SELECT count() > 0 AS has_gated_reads_pk_prefix FROM (
+    EXPLAIN PIPELINE SELECT count() FROM t_seal_probe_ab AS p JOIN t_seal_build_ab AS q ON p.b = q.b AND p.a = q.a
+) WHERE explain LIKE '%SealGatedRead%';
+DROP TABLE t_seal_probe_ab;
+DROP TABLE t_seal_build_ab;
 
 -- Joins whose probe side cannot be gated fall back to ungated reading (fail-open).
 SELECT count(), sum(p.k) FROM t_seal_probe AS p LEFT JOIN t_seal_build AS b ON p.k = b.k WHERE b.k = 0;
@@ -211,6 +233,16 @@ FROM system.query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
     AND query LIKE '%seal_gated_reverse_key%'
+    AND query NOT LIKE '%query_log%';
+
+-- The prefix-covering filters prune together at task-cut time.
+SELECT
+    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 6000 AS dropped_marks,
+    read_rows < 20000 AS read_few_rows
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND type = 'QueryFinish'
+    AND query LIKE '%seal_gated_pk_prefix%'
     AND query NOT LIKE '%query_log%';
 
 -- The gated read pruned at task-cut time and the read-time pruning by the same filter was

@@ -152,13 +152,11 @@ bool BuildRuntimeFilterStep::canSealPrunePrimaryKey() const
         return false;
 
     /// For these key types the [min, max] envelope survives an exact-set overflow, so the
-    /// completed filter always yields at least a range predicate.
-    if (runtimeFilterKeySupportsMinMaxRange(filter_column_type))
-        return true;
-
-    /// Otherwise only the exact value set can prune, and it is lost on overflow: require a
-    /// statistics hint that the build side fits into it.
-    return distinct_keys_hint && *distinct_keys_hint <= exact_values_limit;
+    /// completed filter always yields at least a range predicate. Other key types can prune
+    /// only through the exact value set, which is lost when EITHER of its limits overflows
+    /// (value count or byte size); a distinct-count statistics hint alone cannot promise the
+    /// byte cap for wide keys such as String, so such filters stay ungated.
+    return runtimeFilterKeySupportsMinMaxRange(filter_column_type);
 }
 
 void BuildRuntimeFilterStep::updateOutputHeader()

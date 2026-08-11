@@ -438,16 +438,17 @@ public:
 
     /// Gate this read on a seal from a join marked with enableSealGatedProbeReading: the
     /// sources are replaced by SealGatedReadTransforms which do not read until the seal
-    /// arrives through a pipeline edge, and the runtime filter delivered with the seal then
-    /// prunes mark ranges by the given primary key column (see RuntimeFilterReadRangesRefiner).
-    /// Set by the plan optimization together with marking the join step. The filter id names
-    /// the same filter on the plan level: its read-time index analysis (see
-    /// addJoinRuntimeFilterIndexAnalysisOnDataRead) is redundant on a gated read and skipped.
-    /// Reads under FINAL, parallel replicas or a join sharded by PK ranges are not gated; the
-    /// mark has no effect there and the join wiring falls back gracefully.
-    void enableSealGatedReading(const String & key_column_name, const DataTypePtr & key_column_type, const String & filter_id)
+    /// arrives through a pipeline edge, and the given runtime filters (covering a prefix of
+    /// the primary key, in the key order) then prune mark ranges at task-cut time (see
+    /// RuntimeFilterReadRangesRefiner). Set by the plan optimization together with marking
+    /// the join step. The filter ids name the same filters on the plan level: their
+    /// read-time index analysis (see addJoinRuntimeFilterIndexAnalysisOnDataRead) is
+    /// redundant on a gated read and skipped. Reads under FINAL, parallel replicas or a join
+    /// sharded by PK ranges are not gated; the mark has no effect there and the join wiring
+    /// falls back gracefully.
+    void enableSealGatedReading(std::vector<RuntimeFilterIndexAnalysisDescriptor> pk_prefix_filters)
     {
-        seal_gated_reading = SealGatedReading{key_column_name, key_column_type, filter_id};
+        seal_gated_reading = SealGatedReading{std::move(pk_prefix_filters)};
     }
 
     const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
@@ -697,9 +698,8 @@ private:
     /// See enableSealGatedReading.
     struct SealGatedReading
     {
-        String key_column_name;
-        DataTypePtr key_column_type;
-        String filter_id;
+        /// Runtime filters covering a prefix of the primary key, in the key order.
+        std::vector<RuntimeFilterIndexAnalysisDescriptor> pk_prefix_filters;
     };
     std::optional<SealGatedReading> seal_gated_reading;
 
