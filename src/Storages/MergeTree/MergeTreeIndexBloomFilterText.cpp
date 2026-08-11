@@ -15,6 +15,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Functions/FunctionsComparison.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -158,6 +159,7 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     , index_data_types(index_sample_block.getNamesAndTypesList().getTypes())
     , params(params_)
     , tokenizer(token_extactor_)
+    , comparison_format_settings(ComparisonParams(context).format_settings)
 {
     if (!predicate)
     {
@@ -450,7 +452,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         if (auto json_info = tryMatchNodeToJSONIndex(key_node, index_columns, "JSONAllPaths"))
         {
             auto key_type = key_node.getDAGNode()->result_type;
-            if (!isJSONPathFilterSafe(key_type, value_field))
+            if (!isJSONPathFilterSafe(key_type, value_field, comparison_format_settings))
                 return false;
 
             out.key_column = json_info->header_position;

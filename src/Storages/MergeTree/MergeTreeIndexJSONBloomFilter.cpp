@@ -23,6 +23,7 @@
 #include <DataTypes/DataTypesCache.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatSettings.h>
+#include <Functions/FunctionsComparison.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -702,10 +703,11 @@ bool appendTypedProbe(
     JSONBloomRole role,
     const Field & value,
     const DataTypePtr & source_type,
-    DataTypePtr target_type)
+    DataTypePtr target_type,
+    const FormatSettings & format_settings)
 {
     target_type = removeJSONBloomWrappers(std::move(target_type));
-    const auto converted = tryConvertFieldToType(value, *target_type, source_type.get(), {}, /* strict= */ true);
+    const auto converted = tryConvertFieldToType(value, *target_type, source_type.get(), format_settings, /* strict= */ true);
     if (converted.isNull())
         return false;
 
@@ -736,7 +738,8 @@ std::vector<UInt64> makeDynamicCastProbes(
     DataTypePtr source_type,
     DataTypePtr cast_type,
     const Field & value,
-    const DataTypePtr & value_type)
+    const DataTypePtr & value_type,
+    const FormatSettings & format_settings)
 {
     source_type = removeJSONBloomWrappers(std::move(source_type));
     cast_type = removeJSONBloomWrappers(std::move(cast_type));
@@ -749,7 +752,7 @@ std::vector<UInt64> makeDynamicCastProbes(
         if (runtime_type->equals(*cast_type))
         {
             if (comparisonUsesExactConversion(*runtime_type, *removeJSONBloomWrappers(value_type)))
-                appendTypedProbe(hashes, path, role, value, value_type, runtime_type);
+                appendTypedProbe(hashes, path, role, value, value_type, runtime_type, format_settings);
             else
                 hashes.push_back(dynamicTypePresenceHash(path, role, *runtime_type));
         }
@@ -766,7 +769,8 @@ std::vector<UInt64> makeValueProbes(
     JSONBloomRole role,
     DataTypePtr target_type,
     const Field & value,
-    const DataTypePtr & source_type)
+    const DataTypePtr & source_type,
+    const FormatSettings & format_settings)
 {
     std::vector<UInt64> hashes;
     target_type = removeJSONBloomWrappers(std::move(target_type));
@@ -777,7 +781,7 @@ std::vector<UInt64> makeValueProbes(
         for (const auto & dynamic_type : getDynamicScalarTypes())
         {
             if (comparisonUsesExactConversion(*dynamic_type, *unwrapped_source_type))
-                appendTypedProbe(hashes, path, role, value, source_type, dynamic_type);
+                appendTypedProbe(hashes, path, role, value, source_type, dynamic_type, format_settings);
             else
                 hashes.push_back(dynamicTypePresenceHash(path, role, *dynamic_type));
         }
@@ -795,7 +799,7 @@ std::vector<UInt64> makeValueProbes(
     if (!comparisonUsesExactConversion(*target_type, *unwrapped_source_type))
         return hashes;
 
-    appendTypedProbe(hashes, path, role, value, source_type, target_type);
+    appendTypedProbe(hashes, path, role, value, source_type, target_type, format_settings);
 
     std::ranges::sort(hashes);
     hashes.erase(std::unique(hashes.begin(), hashes.end()), hashes.end());
@@ -807,11 +811,12 @@ std::vector<UInt64> makeArrayElementProbes(
     JSONBloomRole role,
     DataTypePtr target_type,
     const Field & value,
-    DataTypePtr source_type)
+    DataTypePtr source_type,
+    const FormatSettings & format_settings)
 {
     target_type = removeJSONBloomWrappers(std::move(target_type));
     if (!isDynamic(target_type))
-        return makeValueProbes(path, role, target_type, value, source_type);
+        return makeValueProbes(path, role, target_type, value, source_type, format_settings);
 
     source_type = removeJSONBloomWrappers(std::move(source_type));
     if (WhichDataType(source_type).isNothing()
@@ -824,7 +829,7 @@ std::vector<UInt64> makeArrayElementProbes(
     std::vector<UInt64> hashes;
     /// `Array(Dynamic)` membership compares the literal's runtime variant directly.
     /// Other element variants cannot match and do not throw, so they need no presence probes.
-    appendTypedProbe(hashes, path, role, value, source_type, source_type);
+    appendTypedProbe(hashes, path, role, value, source_type, source_type, format_settings);
     return hashes;
 }
 
@@ -926,6 +931,7 @@ MergeTreeIndexConditionJSONBloomFilter::MergeTreeIndexConditionJSONBloomFilter(
     : header(header_)
     , hash_functions(hash_functions_)
     , tokenizer(tokenizer_)
+    , comparison_format_settings(ComparisonParams(context).format_settings)
 {
     if (!predicate)
     {
@@ -1106,9 +1112,9 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
         {
             Field value;
             set_column->get(row, value);
-            if (!isJSONPathFilterSafe(key_node.getDAGNode()->result_type, value))
+            if (!isJSONPathFilterSafe(key_node.getDAGNode()->result_type, value, comparison_format_settings))
                 return false;
-            auto probes = makeValueProbes(path->path, path->role, path->type, value, set_type);
+            auto probes = makeValueProbes(path->path, path->role, path->type, value, set_type, comparison_format_settings);
             out.hashes.insert(out.hashes.end(), probes.begin(), probes.end());
         }
 
@@ -1135,7 +1141,7 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
 
     if (function_name == "equals")
     {
-        if (!isJSONPathFilterSafe(key_node->getDAGNode()->result_type, constant))
+        if (!isJSONPathFilterSafe(key_node->getDAGNode()->result_type, constant, comparison_format_settings))
             return false;
         if (path->cast_type)
         {
@@ -1145,10 +1151,11 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
                 path->type,
                 path->cast_type,
                 constant,
-                constant_type);
+                constant_type,
+                comparison_format_settings);
         }
         else
-            out.hashes = makeValueProbes(path->path, path->role, path->type, constant, constant_type);
+            out.hashes = makeValueProbes(path->path, path->role, path->type, constant, constant_type, comparison_format_settings);
         if (out.hashes.empty())
             return false;
         out.function = RPNElement::FUNCTION_ANY;
@@ -1166,7 +1173,8 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
         path->role = JSONBloomRole::ArrayElement;
         if (function_name == "has")
         {
-            out.hashes = makeArrayElementProbes(path->path, path->role, array_type->getNestedType(), constant, constant_type);
+            out.hashes = makeArrayElementProbes(
+                path->path, path->role, array_type->getNestedType(), constant, constant_type, comparison_format_settings);
             if (out.hashes.empty())
                 return false;
             out.function = RPNElement::FUNCTION_ANY;
@@ -1187,7 +1195,8 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
                 path->role,
                 array_type->getNestedType(),
                 value,
-                constant_array_type->getNestedType());
+                constant_array_type->getNestedType(),
+                comparison_format_settings);
             if (probes.empty())
                 return false;
 

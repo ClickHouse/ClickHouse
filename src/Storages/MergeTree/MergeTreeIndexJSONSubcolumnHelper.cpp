@@ -100,7 +100,8 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
 
 bool isJSONPathFilterSafe(
     const DataTypePtr & key_expression_type,
-    const Field & value_field)
+    const Field & value_field,
+    const FormatSettings & format_settings)
 {
     /// Types that can contain NULL (Dynamic, Nullable, LowCardinality(Nullable), Variant)
     /// store NULL for missing paths — always safe to skip.
@@ -110,7 +111,7 @@ bool isJSONPathFilterSafe(
     /// Non-nullable type: missing path produces the type's default value.
     /// If comparing to the default, we cannot safely skip the granule.
     /// Convert value_field to the key expression type before comparing.
-    auto converted = convertFieldToType(value_field, *key_expression_type);
+    auto converted = convertFieldToType(value_field, *key_expression_type, nullptr, format_settings);
     if (converted == key_expression_type->getDefault())
         return false;
 

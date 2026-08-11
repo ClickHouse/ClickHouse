@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/ITokenizer.h>
+#include <Formats/FormatSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
 
 namespace DB
@@ -75,6 +76,7 @@ private:
     const Block & header;
     size_t hash_functions;
     TokenizerPtr tokenizer;
+    const FormatSettings comparison_format_settings;
     std::vector<RPNElement> rpn;
 };
 

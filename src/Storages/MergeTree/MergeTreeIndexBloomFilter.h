@@ -5,6 +5,7 @@
 #include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
@@ -91,6 +92,7 @@ public:
 private:
     const Block & header;
     const size_t hash_functions;
+    const FormatSettings comparison_format_settings;
     std::vector<RPNElement> rpn;
 
     bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const;

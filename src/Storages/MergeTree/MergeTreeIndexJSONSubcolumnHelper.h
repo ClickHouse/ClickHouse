@@ -5,6 +5,7 @@
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <DataTypes/IDataType.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
@@ -65,6 +66,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
 /// @param value_field          the constant value being compared against
 bool isJSONPathFilterSafe(
     const DataTypePtr & key_expression_type,
-    const Field & value_field);
+    const Field & value_field,
+    const FormatSettings & format_settings);
 
 }

@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/ITokenizer.h>
+#include <Formats/FormatSettings.h>
 
 
 namespace DB
@@ -148,6 +149,7 @@ private:
     DataTypes index_data_types;
     BloomFilterParameters params;
     TokenizerPtr tokenizer;
+    const FormatSettings comparison_format_settings;
     RPN rpn;
 };
 
