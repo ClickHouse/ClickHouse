@@ -400,6 +400,10 @@ void AzureObjectStorage::removeObjectImpl(
                     elapsed,
                     error_code,
                     error_message);
+
+            if (successful_objects)
+                successful_objects->emplace_back(object);
+
             return;
         }
 

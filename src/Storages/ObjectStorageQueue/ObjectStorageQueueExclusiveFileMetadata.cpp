@@ -86,14 +86,16 @@ void ObjectStorageQueueExclusiveFileMetadata::filterOutProcessedAndFailed(
 }
 
 ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueExclusiveFileMetadata::getPathState(
-    std::string & /*failure_message*/) const
+    std::string & failure_message) const
 {
     const auto state = file_status->state.load();
 
     switch (state)
     {
         case FileStatus::State::Processed: return PathState::Processed;
-        case FileStatus::State::Failed:    return PathState::Failed;
+        case FileStatus::State::Failed:
+            failure_message = file_status->getException();
+            return PathState::Failed;
         default:                           return PathState::Unknown;
     }
 }
