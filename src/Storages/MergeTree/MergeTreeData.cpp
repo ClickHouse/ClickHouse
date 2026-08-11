@@ -776,7 +776,7 @@ MergeTreeData::MergeTreeData(
     {
         try
         {
-            checkPartitionKeyAndInitMinMax(metadata_.partition_key, /*attach=*/!sanity_checks);
+            checkPartitionKeyAndInitMinMax(metadata_.partition_key);
             setProperties(metadata_, metadata_, !sanity_checks);
             if (minmax_idx_date_column_pos == -1)
                 throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Could not find Date column");
@@ -791,7 +791,7 @@ MergeTreeData::MergeTreeData(
     else
     {
         is_custom_partitioned = true;
-        checkPartitionKeyAndInitMinMax(metadata_.partition_key, /*attach=*/!sanity_checks);
+        checkPartitionKeyAndInitMinMax(metadata_.partition_key);
     }
     setProperties(metadata_, metadata_, !sanity_checks);
 
@@ -940,34 +940,19 @@ bool MergeTreeData::supportsFinal() const
         || merging_params.mode == MergingParams::VersionedCollapsing;
 }
 
-static bool astsEquivalent(const ASTPtr & lhs, const ASTPtr & rhs)
-{
-    if (!lhs || !rhs)
-        return !lhs && !rhs;
-    return lhs->getTreeHash(/*ignore_aliases=*/ true) == rhs->getTreeHash(/*ignore_aliases=*/ true);
-}
-
-static void checkKeyExpression(
-    const ExpressionActions & expr,
-    const Block & sample_block,
-    const String & key_name,
-    bool allow_nullable_key,
-    bool skip_determinism_check)
+static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name, bool allow_nullable_key)
 {
     if (expr.hasArrayJoin())
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} key cannot contain array joins", key_name);
 
-    if (!skip_determinism_check)
+    try
     {
-        try
-        {
-            expr.assertDeterministic();
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(fmt::format("for {} key", key_name));
-            throw;
-        }
+        expr.assertDeterministic();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(fmt::format("for {} key", key_name));
+        throw;
     }
 
     for (const ColumnWithTypeAndName & element : sample_block)
@@ -1352,17 +1337,7 @@ void MergeTreeData::checkProperties(
         MergeTreeStatisticsFactory::instance().validate(col.statistics, col.type, allow_deprecated_minmax);
     }
 
-    /// An unrelated ALTER carries the existing key AST through unchanged, and the parts on disk are
-    /// already sorted by it. Determinism constrains only a key the statement actually introduces.
-    const bool sorting_key_unchanged
-        = is_alter && astsEquivalent(new_metadata.sorting_key.definition_ast, old_metadata.sorting_key.definition_ast);
-
-    checkKeyExpression(
-        *new_sorting_key.expression,
-        new_sorting_key.sample_block,
-        "Sorting",
-        allow_nullable_key_,
-        /*skip_determinism_check=*/attach || sorting_key_unchanged);
+    checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key_);
 }
 
 void MergeTreeData::checkMetadataProperties(
@@ -1495,17 +1470,12 @@ MergeTreeData::getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & 
     return getCombinedIndicesExpression(metadata_snapshot->getSortingKey(), indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
 }
 
-void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key, bool attach)
+void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key)
 {
     if (new_partition_key.expression_list_ast->children.empty())
         return;
 
-    checkKeyExpression(
-        *new_partition_key.expression,
-        new_partition_key.sample_block,
-        "Partition",
-        allow_nullable_key,
-        /*skip_determinism_check=*/attach);
+    checkKeyExpression(*new_partition_key.expression, new_partition_key.sample_block, "Partition", allow_nullable_key);
 
     /// Add all columns used in the partition key to the min-max index.
     const auto minmax_columns = getMinMaxColumns(new_partition_key, getSettings());

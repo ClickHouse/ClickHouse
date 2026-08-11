@@ -1819,8 +1819,7 @@ protected:
 
     void checkMinMaxIndexForJSON(const IndexDescription & index) const;
 
-    /// `attach` skips the determinism check: the table already exists on disk with that key.
-    void checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key, bool attach);
+    void checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key);
 
     void checkTTLExpressions(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata) const;
 

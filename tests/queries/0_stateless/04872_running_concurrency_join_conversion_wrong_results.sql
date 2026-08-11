@@ -89,31 +89,3 @@ DROP TABLE events_04872;
 DROP TABLE events_date_04872;
 DROP TABLE events_dt64_04872;
 DROP TABLE keys_04872;
-
--- A key expression is durable, so a non-deterministic one is refused for a new key but accepted
--- for a table that already exists on disk. `ATTACH TABLE` with an inline schema reaches the
--- storage constructor in attach mode, which is the path an upgraded server takes on startup.
-SET allow_deprecated_database_ordinary = 1;
-DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
-CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary;
-
-ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.legacy_sorting_key
-    (a UInt64, s DateTime, e DateTime) ENGINE = MergeTree ORDER BY runningConcurrency(s, e);
-ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.legacy_sorting_key ADD COLUMN c UInt8 DEFAULT 0;
-SELECT 'legacy sorting key attach and unrelated alter ok';
-
-ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.legacy_partition_key
-    (a UInt64, s DateTime, e DateTime) ENGINE = MergeTree PARTITION BY runningConcurrency(s, e) ORDER BY a;
-ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.legacy_partition_key ADD COLUMN c UInt8 DEFAULT 0;
-SELECT 'legacy partition key attach and unrelated alter ok';
-
--- Introducing the key anew is still refused, on either DDL path.
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.rejected
-    (a UInt64, s DateTime, e DateTime) ENGINE = MergeTree ORDER BY runningConcurrency(s, e); -- { serverError BAD_ARGUMENTS }
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.rejected
-    (a UInt64, s DateTime, e DateTime) ENGINE = MergeTree PARTITION BY runningConcurrency(s, e) ORDER BY a; -- { serverError BAD_ARGUMENTS }
-ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.legacy_sorting_key
-    ADD COLUMN s2 DateTime, ADD COLUMN e2 DateTime,
-    MODIFY ORDER BY (runningConcurrency(s, e), runningConcurrency(s2, e2)); -- { serverError BAD_ARGUMENTS }
-
-DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
