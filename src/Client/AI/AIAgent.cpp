@@ -94,13 +94,21 @@ String AIAgent::systemPrompt() const
 
 void AIAgent::pushUserMessage(const String & text)
 {
-    /// After a failed step the history may already end with a user message (e.g. tool results
-    /// that never got a model response). Providers require alternating roles, so append
-    /// to that message instead of pushing a second user message in a row.
+    /// After a failed step the history may already end with a user message. Providers require
+    /// alternating roles, so a plain text message is extended in place. But free-form text must
+    /// not be mixed into a tool-results message (the server-function transport serializes such
+    /// a message as tool results only, dropping the text): close the dangling tool-result turn
+    /// with a synthetic assistant message and start a fresh user turn after it.
     if (!messages.empty() && messages.back().role == ai::kMessageRoleUser)
-        messages.back().content.emplace_back(ai::TextContentPart{text});
-    else
-        messages.push_back(ai::Message::user(text));
+    {
+        if (!messages.back().has_tool_results())
+        {
+            messages.back().content.emplace_back(ai::TextContentPart{text});
+            return;
+        }
+        messages.push_back(ai::Message::assistant("(the model call failed after these tool results)"));
+    }
+    messages.push_back(ai::Message::user(text));
 }
 
 void AIAgent::chat(const String & user_text)
@@ -215,7 +223,10 @@ void AIAgent::trimHistory()
 void AIAgent::reset()
 {
     messages.clear();
-    last_seen_seqno = 0;
+    /// Baseline to the present: the buffered recent-query history was part of the conversation
+    /// being cleared, so it must not be replayed into the first turn of the next one.
+    if (query_context)
+        last_seen_seqno = query_context->latestSeqno();
 }
 
 String AIAgent::status() const

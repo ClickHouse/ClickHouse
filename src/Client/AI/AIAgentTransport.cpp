@@ -155,6 +155,15 @@ String AIServerFunctionTransport::renderConversation(const ai::Messages & messag
                         renderToolResultValue(result.result, out);
                         writeString("\n\n", out);
                     }
+
+                    /// A message normally carries either tool results or text, but if both are
+                    /// present (should not happen), the text must not be silently dropped.
+                    if (const auto text = message.get_text(); !text.empty())
+                    {
+                        writeString("User:\n", out);
+                        writeString(text, out);
+                        writeString("\n\n", out);
+                    }
                 }
                 else
                 {
