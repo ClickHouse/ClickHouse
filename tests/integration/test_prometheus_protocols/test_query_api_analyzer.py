@@ -14,6 +14,7 @@ import uuid
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 from .prometheus_test_utils import (
     extract_data_from_http_api_response,
     get_response_to_http_api,
@@ -51,6 +52,14 @@ SHARED_SUBQUERY_QUERIES = [
     "topk(3, last_over_time(shared_a[100]))",
 ]
 NO_SHARED_SUBQUERY_QUERY = "sum(last_over_time(shared_a[100]))"
+
+# `read_rows` ceiling per shared shape, as a multiple of what the single-scan control reads.
+# Each value sits between the shape's materialized and unmaterialized measurements: `or`
+# reads 624 materialized and 880 not, `topk` 320 and 576, against a 288 single scan.
+UNMATERIALIZED_READ_ROWS_BOUND = {
+    SHARED_SUBQUERY_QUERIES[0]: 2.5,
+    SHARED_SUBQUERY_QUERIES[1]: 1.5,
+}
 
 
 def samples_table_name():
@@ -107,6 +116,16 @@ def read_rows_for_promql_query(promql, path, params=None):
     data = extract_data_from_http_api_response(response)
 
     node.query("SYSTEM FLUSH LOGS query_log")
+    # The response is flushed to the client before the QueryFinish row is queued, so the row
+    # need not exist yet when the request returns. Exactly one row is still required.
+    assert_eq_with_retry(
+        node,
+        "SELECT count() FROM system.query_log "
+        f"WHERE type = 'QueryFinish' AND query_id = '{query_id}'",
+        "1\n",
+        retry_count=30,
+        sleep_time=1,
+    )
     row = node.query(
         "SELECT read_rows, Settings['allow_experimental_analyzer'] FROM system.query_log "
         f"WHERE type = 'QueryFinish' AND query_id = '{query_id}'"
@@ -165,19 +184,20 @@ def test_query_without_shared_subquery_is_unaffected(path):
 
 
 @pytest.mark.parametrize("path", ["/api/v1/query", "/api/v1/query_range"])
-def test_shared_subquery_reads_less_than_unmaterialized(path):
+@pytest.mark.parametrize("promql", SHARED_SUBQUERY_QUERIES)
+def test_shared_subquery_reads_less_than_unmaterialized(path, promql):
     """
     Guards the assertions above against becoming vacuous. If a shared subquery ever stopped
     being materialized for every mode, the equality checks would still hold while the
-    optimization was gone. Reading strictly fewer rows than the query that shares nothing
-    scales with cannot be satisfied by an unmaterialized plan.
+    optimization was gone. Reading strictly fewer rows than an unmaterialized plan needs
+    cannot be satisfied without materialization. Both shapes are checked because `or` and
+    `topk` acquire the mark through independent code paths.
     """
-    shared = read_rows_for_promql_query(SHARED_SUBQUERY_QUERIES[0], path)
+    shared = read_rows_for_promql_query(promql, path)
     single_scan = read_rows_for_promql_query(NO_SHARED_SUBQUERY_QUERY, path)
 
-    # The `or` query touches two metrics of equal size. Materialized it reads about twice a
-    # single scan, unmaterialized about three times, so the bound sits between the two.
-    assert shared < 2.5 * single_scan, (
-        f"{SHARED_SUBQUERY_QUERIES[0]!r} on {path} read {shared} rows against {single_scan} "
-        f"for a single scan, which is what an unmaterialized plan reads"
+    bound = UNMATERIALIZED_READ_ROWS_BOUND[promql]
+    assert shared < bound * single_scan, (
+        f"{promql!r} on {path} read {shared} rows against {single_scan} for a single scan, "
+        f"over the {bound}x ceiling that separates a materialized plan from a rescanning one"
     )
