@@ -12,6 +12,7 @@
 #include <Formats/FormatFactory.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/Chunk.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -41,6 +42,7 @@ namespace DB::ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
+extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -774,6 +776,9 @@ void alter(
     bool succeeded = false;
     while (i < MAX_TRANSACTION_RETRIES)
     {
+        if (auto elem = context->getProcessListElement(); elem && elem->isKilled())
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "ALTER TABLE cancelled during retry loop");
+
         auto log = getLogger("IcebergMutations");
 
         int last_version = 0;
@@ -871,11 +876,12 @@ void alter(
         const auto new_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
         Poco::JSON::Object::Ptr new_schema;
         auto schemas = metadata->getArray(Iceberg::f_schemas);
-        for (UInt32 schema_index = 0; schema_index < schemas->size(); ++schema_index)
+        for (auto schema_index = schemas->size(); schema_index > 0; --schema_index)
         {
-            if (schemas->getObject(schema_index)->getValue<Int32>(Iceberg::f_schema_id) == new_schema_id)
+            auto candidate = schemas->getObject(static_cast<unsigned>(schema_index - 1));
+            if (candidate->getValue<Int32>(Iceberg::f_schema_id) == new_schema_id)
             {
-                new_schema = schemas->getObject(schema_index);
+                new_schema = candidate;
                 break;
             }
         }
@@ -922,7 +928,9 @@ void alter(
     }
 
     if (!succeeded)
-        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to alter iceberg table");
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED,
+            "ALTER TABLE commit kept losing to concurrent modifications after {} retries",
+            MAX_TRANSACTION_RETRIES);
 
     /// Invalidate the metadata files cache so that subsequent operations on this table see the
     /// schema we just wrote. See `PersistentTableComponents::invalidateMetadataCache` for the

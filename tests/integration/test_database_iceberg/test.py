@@ -745,6 +745,109 @@ def test_insert(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` ORDER BY ALL") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n\\N\tPavel Ivanov (pudge1000-7) pereezhai v amsterdam\t193.24\t193.31\t('bot')\n"
 
 
+def test_optimize_manifest_with_catalog(started_cluster):
+    # OPTIMIZE TABLE ... MANIFEST on a catalog-managed table must consolidate the per-insert manifests
+    # and commit the new snapshot back through the catalog, without changing the data.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_optimize_manifest_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    # Unpartitioned table, so every per-insert data manifest can consolidate into a single one.
+    create_table(catalog, root_namespace, table_name, DEFAULT_SCHEMA, PartitionSpec(), DEFAULT_SORT_ORDER)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    # Several separate inserts -> several snapshots, each adding its own data manifest.
+    num_inserts = 5
+    for i in range(num_inserts):
+        node.query(
+            f"INSERT INTO {table_ref} VALUES (NULL, 'sym{i}', {100 + i}, {200 + i}, tuple('bot'));",
+            settings=write_settings,
+        )
+
+    def current_snapshot_id():
+        # Read the current snapshot from the catalog's metadata.json (avoids parsing the manifest-list
+        # Avro, which pyiceberg rejects because ClickHouse omits field-ids there).
+        table = catalog.load_table(f"{root_namespace}.{table_name}")
+        assert table.current_snapshot() is not None, "expected a current snapshot after inserts"
+        return table.metadata.current_snapshot_id
+
+    snapshot_id_before = current_snapshot_id()
+    rows_before = node.query(f"SELECT symbol, bid, ask FROM {table_ref} ORDER BY ALL")
+
+    node.query(
+        f"OPTIMIZE TABLE {table_ref} MANIFEST",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_manifest_min_count_to_compact": 2,
+            "allow_insert_into_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    # The compaction must commit a new (replace) snapshot back through the catalog.
+    assert current_snapshot_id() != snapshot_id_before, (
+        "OPTIMIZE TABLE ... MANIFEST did not commit a new snapshot through the catalog"
+    )
+
+    # The metadata-only rewrite must not change the data.
+    rows_after = node.query(f"SELECT symbol, bid, ask FROM {table_ref} ORDER BY ALL")
+    assert rows_after == rows_before
+
+
+@pytest.mark.parametrize(
+    "fields_to_remove",
+    [
+        ["snapshots"],
+        ["metadata-log"],
+        ["snapshot-log"],
+        ["snapshots", "metadata-log", "snapshot-log"],
+    ],
+)
+def test_insert_into_table_without_optional_metadata_arrays(started_cluster, fields_to_remove):
+    # The Iceberg spec marks snapshots / metadata-log / snapshot-log as optional, so external
+    # engines may create empty-table metadata that omits any of them. Inserting into such a table
+    # must still succeed instead of aborting in the metadata write path.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_insert_no_optional_arrays_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    create_table(catalog, root_namespace, table_name, DEFAULT_SCHEMA, PartitionSpec(), DEFAULT_SORT_ORDER)
+
+    iceberg_table = catalog.load_table(f"{root_namespace}.{table_name}")
+    assert iceberg_table.metadata_location.startswith("s3://")
+    metadata_bucket, metadata_key = iceberg_table.metadata_location[len("s3://"):].split("/", 1)
+    metadata = json.loads(get_file_contents(started_cluster.minio_client, metadata_bucket, metadata_key))
+    for field in fields_to_remove:
+        metadata.pop(field, None)
+    metadata_bytes = json.dumps(metadata).encode()
+    started_cluster.minio_client.put_object(
+        metadata_bucket,
+        metadata_key,
+        io.BytesIO(metadata_bytes),
+        len(metadata_bytes),
+        content_type="application/json",
+    )
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (NULL, 'AAPL', 193.24, 193.31, tuple('bot'));",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n"
+
+
 def test_create(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -1116,6 +1219,16 @@ def test_writes_schema_evolution_drop_last_column(started_cluster):
 
     assert node.query(f"SELECT x, y FROM {table_ref} ORDER BY ALL", settings=write_settings) == "abc\t1\n"
 
+    # Add another column after the drop to exercise schema-id allocation when
+    # current-schema-id is not the highest in the schemas list (Fix 1 reproducer).
+    node.query(f"ALTER TABLE {table_ref} ADD COLUMN w Nullable(Int64);", settings=write_settings)
+    desc = node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
+    assert "w" in desc
+    assert "z" not in desc
+
+    node.query(f"INSERT INTO {table_ref} (x, y, w) VALUES ('def', 2, 42);", settings=write_settings)
+    assert node.query(f"SELECT x, y, w FROM {table_ref} ORDER BY x", settings=write_settings) == "abc\t1\t\\N\ndef\t2\t42\n"
+
 
 def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
     node = started_cluster.instances["node1"]
@@ -1365,4 +1478,3 @@ def test_partitioning_by_string(started_cluster):
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
 
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}`") == "a:b,c[d=e/f%g?h\ttest\t12:00:00.000000\n"
-
