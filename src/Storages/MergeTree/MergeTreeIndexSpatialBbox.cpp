@@ -196,6 +196,13 @@ MergeTreeIndexConditionSpatialBbox::extractQueryBbox(
             /// Parquet::tryExtractSpatialFilterFromNode's "exactly one
             /// non-constant input" guard.
             bool has_extra_non_constant = false;
+            /// A constant geometry child that fails to convert to a bbox (e.g. an invalid
+            /// polygon) must not just be skipped: `pointInPolygon` is expected to raise an
+            /// exception for it at execute time, so silently unioning the bbox from the
+            /// remaining valid children could still prune granules that don't overlap them,
+            /// hiding the exception. Matches Parquet::tryExtractSpatialFilterFromNode's
+            /// `any_extraction_failed` guard.
+            bool any_extraction_failed = false;
             QueryBbox bbox;
             for (const auto * child : node->children)
             {
@@ -221,7 +228,10 @@ MergeTreeIndexConditionSpatialBbox::extractQueryBbox(
                 double xmax = 0;
                 double ymax = 0;
                 if (!tryExtractConstGeoBbox(child, xmin, ymin, xmax, ymax))
+                {
+                    any_extraction_failed = true;
                     continue;
+                }
 
                 if (!has_bbox)
                 {
@@ -237,7 +247,7 @@ MergeTreeIndexConditionSpatialBbox::extractQueryBbox(
                 }
             }
 
-            if (input_child && has_bbox && !has_extra_non_constant)
+            if (input_child && has_bbox && !has_extra_non_constant && !any_extraction_failed)
                 return bbox;
         }
 
