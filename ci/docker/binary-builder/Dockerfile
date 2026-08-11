@@ -53,10 +53,22 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
 # headers and `libmsvcrt.a` lack the `_l`-suffixed per-locale CRT functions (`_iswctype_l`, ...)
 # that the libc++ 22 locale support calls. Take the packages from a newer Ubuntu instead: both
 # are data-only `all`-architecture packages (headers and import libraries, no host binaries)
-# depending only on each other, so they install cleanly on any base. The `launchpadlibrarian.net`
-# URLs are Launchpad's permanent per-file archive, unaffected by the package being superseded.
-RUN curl -fsSL -o /tmp/mingw-w64-common.deb "https://launchpadlibrarian.net/847416730/mingw-w64-common_13.0.0-2ubuntu1_all.deb" \
-    && curl -fsSL -o /tmp/mingw-w64-x86-64-dev.deb "https://launchpadlibrarian.net/847416735/mingw-w64-x86-64-dev_13.0.0-2ubuntu1_all.deb" \
+# depending only on each other, so they install cleanly on any base.
+#
+# Two sources per file, both verified against the same SHA-256 pins below: the Ubuntu archive
+# pool (fast, but the URL disappears once the package is superseded in its release) and
+# Launchpad's permanent per-file archive `launchpadlibrarian.net` (unaffected by the package
+# being superseded, but intermittently answers 503), with retries on both.
+RUN fetch() { \
+        curl -fsSL --connect-timeout 10 --retry 5 --retry-all-errors -o "$1" "$2" \
+        || curl -fsSL --connect-timeout 10 --retry 5 --retry-all-errors -o "$1" "$3"; \
+    } \
+    && fetch /tmp/mingw-w64-common.deb \
+        "http://archive.ubuntu.com/ubuntu/pool/universe/m/mingw-w64/mingw-w64-common_13.0.0-2ubuntu1_all.deb" \
+        "https://launchpadlibrarian.net/847416730/mingw-w64-common_13.0.0-2ubuntu1_all.deb" \
+    && fetch /tmp/mingw-w64-x86-64-dev.deb \
+        "http://archive.ubuntu.com/ubuntu/pool/universe/m/mingw-w64/mingw-w64-x86-64-dev_13.0.0-2ubuntu1_all.deb" \
+        "https://launchpadlibrarian.net/847416735/mingw-w64-x86-64-dev_13.0.0-2ubuntu1_all.deb" \
     && printf '%s\n' \
         "da9b2cb14134ca0ef3a31302df50295a2dd6fee7aa4fd888b11c6f72f8ab939e /tmp/mingw-w64-common.deb" \
         "da40b9e2ae89d98d44b547a9e4fd01862858edb176bade9f12ad143e7ae7efe4 /tmp/mingw-w64-x86-64-dev.deb" \
