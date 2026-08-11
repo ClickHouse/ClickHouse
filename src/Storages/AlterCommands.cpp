@@ -658,7 +658,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
         /// Otherwise just clear data on disk
         if (!clear && !partition)
         {
-            if (should_skip_column_operation())
+            /// A nested group counts as existing here: skipping it would keep its columns while the
+            /// mutation still drops their data.
+            if (if_exists && !metadata.columns.has(column_name) && !(share_nested_offsets && metadata.columns.hasNested(column_name)))
                 return;
             metadata.columns.remove(column_name);
         }

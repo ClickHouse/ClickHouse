@@ -31,6 +31,10 @@ ALTER TABLE test DROP COLUMN IF EXISTS n; -- { serverError ALTER_OF_COLUMN_IS_FO
 DROP TABLE test;
 CREATE TABLE test (`n.a` UInt64, `n.b` UInt64, x UInt64) ENGINE = MergeTree ORDER BY x;
 ALTER TABLE test DROP COLUMN n;
+ALTER TABLE test ADD COLUMN `n.a` UInt64, ADD COLUMN `n.b` UInt64;
+-- The IF EXISTS form has to drop the group from the metadata too, not only its data
+ALTER TABLE test DROP COLUMN IF EXISTS n;
+ALTER TABLE test DROP COLUMN n; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
 DROP TABLE test;
 
 -- Without shared Nested offsets the name does not denote the group: it is an unknown name to drop,
