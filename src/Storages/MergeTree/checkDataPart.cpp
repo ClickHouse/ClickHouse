@@ -352,10 +352,14 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                 /// (all .bin files in MergeTree are compressed), compute both compressed and uncompressed checksums.
                 /// The .bin check is important for dynamic stream files that may not be visited
                 /// during enumerateStreams when columns_substreams.txt is absent.
-                /// Every file class reaching here (part data, marks, primary index, skip and text indexes)
-                /// is written with a compress block size that used to be unclamped.
-                checksums_data.files[file_name]
-                    = checksum_compressed_file(data_part_storage, file_name, /* allow_unbounded_decompressed_size */ true);
+                ///
+                /// Statistics use a fixed frame size, so their reader keeps the bound and this must too.
+                /// An unclassified name is left unbounded: that only forgoes hardening here, while
+                /// bounding a class a read accepts reports a good legacy part as broken.
+                const bool is_statistics
+                    = file_name.starts_with(STATS_FILE_PREFIX) && file_name.ends_with(STATS_FILE_SUFFIX);
+                checksums_data.files[file_name] = checksum_compressed_file(
+                    data_part_storage, file_name, /* allow_unbounded_decompressed_size */ !is_statistics);
             }
             else
             {

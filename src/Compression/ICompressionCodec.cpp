@@ -110,7 +110,8 @@ size_t ICompressionCodec::capUncompressedFrameSize(size_t buf_size) const
         return requested;
     }
 
-    /// requested <= limit, so this also covers a reserve that wrapped its UInt32 arithmetic.
+    /// A reserve computed in wrapping UInt32 arithmetic can land within the limit for a frame that
+    /// exceeds it, so this bounds the allocation but not every emitted frame.
     if (reserve <= limit)
         return requested;
 

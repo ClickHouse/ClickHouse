@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: long, no-fasttest
+# - The bound is 1 GiB, so an arm that crosses it has to write about that much.
+# Memory limits: 10 GiB
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -65,37 +67,40 @@ over_bound() {
                   else print "frames above the bound:", over + 0 }'
 }
 
+# AES-CTR over zeroes is incompressible and reproducible from the key alone, so the arms that need
+# incompressible input regenerate it instead of keeping a copy on disk. Each output is removed as
+# soon as its last assertion is done: the arms below write about 1 GiB each and must not coexist.
+incompressible() { head -c "$1" /dev/zero | openssl enc -aes-256-ctr -pbkdf2 -pass pass:04848 -nosalt 2>/dev/null; }
+
 echo '-- a writer asked for a frame above the bound emits several frames within it'
-${CLICKHOUSE_BINARY} compressor --block-size 1207959552 < <(head -c 1207959552 /dev/zero) \
+head -c 1207959552 /dev/zero | ${CLICKHOUSE_BINARY} compressor --block-size 1207959552 \
     > "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_capped.bin"
 over_bound "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_capped.bin"
-
-echo '-- the same holds for the parallel writer'
-${CLICKHOUSE_BINARY} compressor --threads 2 --block-size 1207959552 < <(head -c 1207959552 /dev/zero) \
-    > "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_capped_parallel.bin"
-over_bound "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_capped_parallel.bin"
-
-echo '-- a codec that does not compress expands the frame by the header alone, and still fits'
-${CLICKHOUSE_BINARY} compressor --none --block-size 1073741824 < <(head -c 1073741824 /dev/zero) \
-    > "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_none.bin"
-over_bound "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_none.bin"
-
-echo '-- and so does a compressing codec handed incompressible input'
-head -c 1073741824 /dev/urandom > "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_rand.raw"
-${CLICKHOUSE_BINARY} compressor --block-size 1073741824 \
-    < "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_rand.raw" \
-    > "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_incompressible.bin"
-over_bound "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_incompressible.bin"
-
-echo '-- the capped output round-trips'
+echo '-- and its output round-trips'
 ${CLICKHOUSE_BINARY} compressor --decompress --input "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_capped.bin" \
     | wc -c
-${CLICKHOUSE_BINARY} compressor --decompress --input "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_incompressible.bin" \
-    | cmp -s - "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_rand.raw" && echo 'incompressible input round-trips'
+rm -f "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_capped.bin"
 
-rm -f "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_capped.bin" "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_capped_parallel.bin" \
-      "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_none.bin" "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_incompressible.bin" \
-      "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_rand.raw"
+echo '-- the same holds for the parallel writer'
+head -c 1207959552 /dev/zero | ${CLICKHOUSE_BINARY} compressor --threads 2 --block-size 1207959552 \
+    > "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_capped_parallel.bin"
+over_bound "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_capped_parallel.bin"
+rm -f "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_capped_parallel.bin"
+
+echo '-- a codec that does not compress expands the frame by the header alone, and still fits'
+head -c 1073741824 /dev/zero | ${CLICKHOUSE_BINARY} compressor --none --block-size 1073741824 \
+    > "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_none.bin"
+over_bound "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_none.bin"
+rm -f "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_none.bin"
+
+echo '-- and so does a compressing codec handed incompressible input'
+incompressible 1073741824 | ${CLICKHOUSE_BINARY} compressor --block-size 1073741824 \
+    > "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_incompressible.bin"
+over_bound "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_incompressible.bin"
+echo '-- and it round-trips byte for byte'
+${CLICKHOUSE_BINARY} compressor --decompress --input "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_incompressible.bin" \
+    | cmp -s - <(incompressible 1073741824) && echo 'incompressible input round-trips'
+rm -f "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_incompressible.bin"
 
 echo '-- a reader of data an uncapped writer produced accepts an over-bound frame'
 frame 130 2147483648 'SELECT 1' > "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_over.bin"
