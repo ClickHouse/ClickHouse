@@ -353,9 +353,11 @@ bool rowValueIsValidAnywhere(LiteralEscapingStyle literal_escaping_style)
 }
 
 /// Whether the external database accepts the row value `(a, b)` in the position described by
-/// `row_value_context`. `BooleanPredicate` never occurs while walking a raw `(SELECT ...)`
-/// argument (`normalizeSubqueryForExternalDatabaseImpl` does not track boolean positions there),
-/// only on the predicate-pushdown path.
+/// `row_value_context`. A tuple in a `BooleanPredicate` position is never a row value for the
+/// external database: it is ClickHouse's list-of-predicates form, which the callers lower to a
+/// conjunction instead (the pushdown path splits it into separate predicates after this check
+/// fails, `normalizeSubqueryForExternalDatabaseImpl` rewrites the `tuple` call to `and` before
+/// reaching it); the folded `Tuple` literal carrier of constants stays rejected.
 bool rowValueIsAllowedHere(RowValueContext row_value_context, LiteralEscapingStyle literal_escaping_style)
 {
     switch (row_value_context)
@@ -822,6 +824,27 @@ static void normalizeSubqueryForExternalDatabaseImpl(ASTPtr & node, LiteralEscap
         /// the external database - reject it instead of sending broken SQL.
         if (function->name == "tuple")
         {
+            /// In a boolean position a tuple is not a row value but ClickHouse's list-of-predicates
+            /// form (`WHERE (a > 0, b > 10)`), and no external database accepts a row value as a
+            /// condition anyway (PostgreSQL: "argument of WHERE must be type boolean, not type
+            /// record"). Lower it to a conjunction, exactly as the predicate-pushdown path does.
+            if (row_value_context == RowValueContext::BooleanPredicate
+                && function->arguments && !function->arguments->children.empty())
+            {
+                if (function->arguments->children.size() == 1)
+                {
+                    node = function->arguments->children[0];
+                }
+                else
+                {
+                    function->name = "and";
+                    /// `AND` only has the operator text form (`and(...)` is ClickHouse syntax).
+                    function->setIsOperator(true);
+                }
+                normalizeSubqueryForExternalDatabaseImpl(node, literal_escaping_style, RowValueContext::BooleanPredicate);
+                return;
+            }
+
             if (!function->arguments || function->arguments->children.size() < 2)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Cannot format a tuple with fewer than two elements for the external database: "
@@ -869,6 +892,17 @@ static void normalizeSubqueryForExternalDatabaseImpl(ASTPtr & node, LiteralEscap
             return;
         }
 
+        /// The operands of `AND` / `OR` / `NOT` are boolean positions themselves - a row value is
+        /// not accepted there by any external database, but a tuple there is ClickHouse's
+        /// list-of-predicates form and is lowered to a conjunction (see the `tuple` branch above).
+        if ((function->name == "and" || function->name == "or" || function->name == "not")
+            && function->arguments)
+        {
+            for (auto & child : function->arguments->children)
+                normalizeSubqueryForExternalDatabaseImpl(child, literal_escaping_style, RowValueContext::BooleanPredicate);
+            return;
+        }
+
         if (function->name.empty())
         {
             /// The parentheses-only wrapper added by `wrapSingleRowTupleSetForINNode` is
@@ -903,6 +937,23 @@ static void normalizeSubqueryForExternalDatabaseImpl(ASTPtr & node, LiteralEscap
                 "written in ClickHouse-specific syntax. Rewrite the query passed to the external "
                 "database without it",
                 literal->value.getTypeName());
+    }
+    if (auto * select = node->as<ASTSelectQuery>())
+    {
+        /// The filtering clauses of the subquery are boolean positions: a tuple there is
+        /// ClickHouse's list-of-predicates form, not a row value (no external database accepts
+        /// a row value as a condition).
+        for (auto & child : node->children)
+        {
+            const bool is_boolean_clause = (select->prewhere() && child == select->prewhere())
+                || (select->where() && child == select->where())
+                || (select->having() && child == select->having())
+                || (select->qualify() && child == select->qualify());
+            normalizeSubqueryForExternalDatabaseImpl(
+                child, literal_escaping_style,
+                is_boolean_clause ? RowValueContext::BooleanPredicate : RowValueContext::Disallowed);
+        }
+        return;
     }
     for (auto & child : node->children)
         normalizeSubqueryForExternalDatabaseImpl(child, literal_escaping_style, RowValueContext::Disallowed);

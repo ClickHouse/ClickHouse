@@ -700,3 +700,53 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentForMySQL)
         "(SELECT a, arr FROM test.table WHERE (a, arr) IN ((1, [1, 2])))",
         IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular));
 }
+
+TEST(TransformQueryForExternalDatabase, QueryTableArgumentBooleanPredicate)
+{
+    const State & state = State::instance();
+
+    /// A tuple in a boolean position - the `WHERE` / `HAVING` of the subquery, or an operand of
+    /// `AND` / `OR` / `NOT` - is ClickHouse's list-of-predicates form, not a row value, and no
+    /// external database accepts a row value as a condition anyway (PostgreSQL: "argument of
+    /// WHERE must be type boolean, not type record"). It is lowered to a conjunction, the same
+    /// way the predicate-pushdown path rewrites `WHERE (a > 0, b > 10)`.
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT field, value FROM test.table WHERE (a > 0, value > 10))",
+            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT field, value FROM test."table" WHERE (a > 0) AND (value > 10))");
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT field, value FROM test.table WHERE tuple(a > 0, value > 10))",
+            IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular),
+        "SELECT field, value FROM test.`table` WHERE (a > 0) AND (value > 10)");
+    /// ... including nested in `AND` / `OR` / `NOT` operands and in `HAVING`.
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT field FROM test.table WHERE (field = 'foo') OR ((a > 0, value > 10)))",
+            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT field FROM test."table" WHERE (field = 'foo') OR ((a > 0) AND (value > 10)))");
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT field FROM test.table GROUP BY field HAVING (count() > 1, a > 0))",
+            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT field FROM test."table" GROUP BY field HAVING (count() > 1) AND (a > 0))");
+    /// A single-predicate `tuple` call is unwrapped to the predicate itself.
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT field FROM test.table WHERE tuple(a > 0))",
+            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT field FROM test."table" WHERE a > 0)");
+    /// The folded `Tuple` literal carrier (a tuple of constants) is not a list of predicates the
+    /// external database could evaluate - it is rejected for every dialect, including PostgreSQL,
+    /// whose row constructors are otherwise valid anywhere but not as a condition.
+    EXPECT_ANY_THROW(formatQueryTableArgument(state,
+        "(SELECT field FROM test.table WHERE ('foo', 'bar'))",
+        IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL));
+    /// A genuine row value next to a comparison inside the lowered conjunction still works.
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT field, value FROM test.table WHERE (a > 0, (field, value) = ('foo', 'bar')))",
+            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT field, value FROM test."table" WHERE (a > 0) AND ((field, value) = ('foo', 'bar')))");
+}
