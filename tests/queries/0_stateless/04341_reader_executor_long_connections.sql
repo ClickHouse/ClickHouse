@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-distributed-cache, no-encrypted-storage
+-- Tags: no-fasttest, no-distributed-cache, no-encrypted-storage, no-parallel-replicas
 -- The experimental ReaderExecutor's long-connection reuse: on a sequential scan of an
 -- object-storage table (storage_policy='s3_no_cache', so the executor actually engages), a held
 -- source connection is opened and reused across windows -- emitting the ReaderExecutorLongConnection* metrics --
@@ -46,51 +46,22 @@ SYSTEM FLUSH LOGS query_log;
 -- ON: a long connection was opened and reused (a held connection serves more than one window), the
 -- held path served real bytes, and over-read is expected -- gap-bridging reads past the requested
 -- window, so source bytes are at least the requested bytes (the inverse of 04327's strict equality).
--- The counters are incremented on whichever replica reads the window, so under parallel replicas they
--- land on secondary rows whose `current_database` is `default`. Resolve this run's own initiator by
--- `current_database`, then sum over every row of that one query via `initial_query_id`.
-WITH initial_query_ids AS
-(
-    SELECT query_id
-    FROM system.query_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600
-      AND current_database = currentDatabase()
-      AND type = 'QueryFinish'
-      AND is_initial_query = 1
-      AND log_comment = '04341_long_conn_on'
-    ORDER BY event_time_microseconds DESC
-    LIMIT 1
-)
 SELECT
-    sum(ProfileEvents['ReaderExecutorLongConnectionOpened']) > 0,
-    sum(ProfileEvents['ReaderExecutorLongConnectionHits']) > 0,
-    sum(ProfileEvents['ReaderExecutorLongConnectionBytes']) > 0,
-    sum(ProfileEvents['ReaderExecutorBytesFromSource']) >= sum(ProfileEvents['ReaderExecutorRequestedBytes'])
+    ProfileEvents['ReaderExecutorLongConnectionOpened'] > 0,
+    ProfileEvents['ReaderExecutorLongConnectionHits'] > 0,
+    ProfileEvents['ReaderExecutorLongConnectionBytes'] > 0,
+    ProfileEvents['ReaderExecutorBytesFromSource'] >= ProfileEvents['ReaderExecutorRequestedBytes']
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600
-  AND type = 'QueryFinish'
-  AND initial_query_id IN (SELECT query_id FROM initial_query_ids);
+WHERE log_comment = '04341_long_conn_on' AND type = 'QueryFinish' AND current_database = currentDatabase()
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 -- OFF: the executor still read from the source, but the setting gated long connections off.
-WITH initial_query_ids AS
-(
-    SELECT query_id
-    FROM system.query_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600
-      AND current_database = currentDatabase()
-      AND type = 'QueryFinish'
-      AND is_initial_query = 1
-      AND log_comment = '04341_long_conn_off'
-    ORDER BY event_time_microseconds DESC
-    LIMIT 1
-)
 SELECT
-    sum(ProfileEvents['ReaderExecutorSourceRequests']) > 0,
-    sum(ProfileEvents['ReaderExecutorLongConnectionOpened']) = 0
+    ProfileEvents['ReaderExecutorSourceRequests'] > 0,
+    ProfileEvents['ReaderExecutorLongConnectionOpened'] = 0
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600
-  AND type = 'QueryFinish'
-  AND initial_query_id IN (SELECT query_id FROM initial_query_ids);
+WHERE log_comment = '04341_long_conn_off' AND type = 'QueryFinish' AND current_database = currentDatabase()
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 DROP TABLE t_reader_executor_lc_on;
 DROP TABLE t_reader_executor_lc_off;

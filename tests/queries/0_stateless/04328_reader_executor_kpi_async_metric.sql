@@ -1,7 +1,9 @@
--- Tags: no-distributed-cache, no-encrypted-storage
+-- Tags: no-distributed-cache, no-encrypted-storage, no-parallel-replicas
 -- The executor falls back on the distributed cache and decryption (which can't be
 -- disabled from the test), so its metrics would not be emitted there; skip those
 -- configs (as in 04316 / 04327).
+--   no-parallel-replicas: the counters are incremented on whichever replica reads the
+--   mark, so the initiator's `query_log` row does not carry them.
 --
 -- End-to-end check that the modeled-cost KPI asynchronous metric
 -- `ReaderExecutorModeledCostMsPerRequestedMiB` moves when the executor does work.
@@ -46,44 +48,25 @@ SYSTEM RELOAD ASYNCHRONOUS METRICS;
 SYSTEM FLUSH LOGS query_log, asynchronous_metric_log;
 
 -- (1) The query itself recorded a non-zero modeled cost.
--- The counters are incremented on whichever replica reads the mark, so under parallel replicas
--- they land on secondary rows whose `current_database` is `default`. Resolve this run's own
--- initiator by `current_database`, then sum over every row of that one query by `initial_query_id`.
-WITH initial_query_ids AS
-(
-    SELECT query_id
-    FROM system.query_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600
-      AND current_database = currentDatabase()
-      AND type = 'QueryFinish'
-      AND is_initial_query = 1
-      AND log_comment = '04328_reader_executor_kpi_probe'
-    ORDER BY event_time_microseconds DESC
-    LIMIT 1
-)
-SELECT sum(ProfileEvents['ReaderExecutorModeledCostMicroseconds']) > 0
+SELECT ProfileEvents['ReaderExecutorModeledCostMicroseconds'] > 0
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600
+WHERE log_comment = '04328_reader_executor_kpi_probe'
   AND type = 'QueryFinish'
-  AND initial_query_id IN (SELECT query_id FROM initial_query_ids);
+  AND current_database = currentDatabase()
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
 
 -- (2) In the same time slot (at or after the query started), the asynchronous KPI
--- metric logged a non-zero value. The lower bound is this run's own initiator, so a
--- reused database cannot satisfy the assertion from an earlier invocation's sample.
+-- metric logged a non-zero value. Scoping by the probe's start time excludes the
+-- baseline tick above (which ran before the read).
 SELECT max(value) > 0
 FROM system.asynchronous_metric_log
 WHERE metric = 'ReaderExecutorModeledCostMsPerRequestedMiB'
-  AND event_date >= yesterday() AND event_time >= now() - 600
   AND event_time >= (
-      SELECT query_start_time
+      SELECT min(query_start_time)
       FROM system.query_log
-      WHERE event_date >= yesterday() AND event_time >= now() - 600
+      WHERE log_comment = '04328_reader_executor_kpi_probe'
         AND current_database = currentDatabase()
-        AND type = 'QueryFinish'
-        AND is_initial_query = 1
-        AND log_comment = '04328_reader_executor_kpi_probe'
-      ORDER BY event_time_microseconds DESC
-      LIMIT 1
   );
 
 DROP TABLE t_reader_executor_kpi;

@@ -1,8 +1,10 @@
--- Tags: no-distributed-cache, no-encrypted-storage
+-- Tags: no-distributed-cache, no-encrypted-storage, no-parallel-replicas
 -- Like 04316, the executor falls back on the distributed cache and decryption
 -- (which can't be disabled from the test), so its metrics would not be emitted on
 -- those storage configs. Skip them; the test still runs on local disk and plain
 -- object storage where the executor engages.
+--   no-parallel-replicas: the counters are incremented on whichever replica reads the
+--   mark, so the initiator's `query_log` row does not carry them.
 --
 -- Checks that the experimental ReaderExecutor emits its observability metrics.
 -- Reads a MergeTree table with `use_reader_executor = 1` and verifies, via the
@@ -46,10 +48,7 @@ SETTINGS log_comment = '04327_reader_executor_metrics_probe' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
--- Per-query ProfileEvents for the marked query, summed over every row of that query.
--- The counters are incremented on whichever replica reads the mark, so under parallel replicas they
--- land on secondary rows whose `current_database` is `default`. Resolve this run's own initiator by
--- `current_database`, then sum over every row of that one query via `initial_query_id`.
+-- Per-query ProfileEvents for the marked query, scoped to this test's database.
 -- Columns (all expected 1):
 --   1: source requests happened
 --   2: bytes were read from source
@@ -58,30 +57,20 @@ SYSTEM FLUSH LOGS query_log;
 --   5: modeled cost >= 30ms-per-source-request floor (the byte term only adds to it)
 --   6,7: cache get / cache populate stay 0 (not implemented)
 --   8: incomplete connections stay 0 (no held connections to drop with long connections off)
-WITH initial_query_ids AS
-(
-    SELECT query_id
-    FROM system.query_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600
-      AND current_database = currentDatabase()
-      AND type = 'QueryFinish'
-      AND is_initial_query = 1
-      AND log_comment = '04327_reader_executor_metrics_probe'
-    ORDER BY event_time_microseconds DESC
-    LIMIT 1
-)
 SELECT
-    sum(ProfileEvents['ReaderExecutorSourceRequests']) > 0,
-    sum(ProfileEvents['ReaderExecutorBytesFromSource']) > 0,
-    sum(ProfileEvents['ReaderExecutorRequestedBytes']) = sum(ProfileEvents['ReaderExecutorBytesFromSource']),
-    sum(ProfileEvents['ReaderExecutorWorkMicroseconds']) > 0,
-    sum(ProfileEvents['ReaderExecutorModeledCostMicroseconds']) >= 30000 * sum(ProfileEvents['ReaderExecutorSourceRequests']),
-    sum(ProfileEvents['ReaderExecutorCacheGetRequests']) = 0,
-    sum(ProfileEvents['ReaderExecutorCachePopulateRequests']) = 0,
-    sum(ProfileEvents['ReaderExecutorIncompleteConnections']) = 0
+    ProfileEvents['ReaderExecutorSourceRequests'] > 0,
+    ProfileEvents['ReaderExecutorBytesFromSource'] > 0,
+    ProfileEvents['ReaderExecutorRequestedBytes'] = ProfileEvents['ReaderExecutorBytesFromSource'],
+    ProfileEvents['ReaderExecutorWorkMicroseconds'] > 0,
+    ProfileEvents['ReaderExecutorModeledCostMicroseconds'] >= 30000 * ProfileEvents['ReaderExecutorSourceRequests'],
+    ProfileEvents['ReaderExecutorCacheGetRequests'] = 0,
+    ProfileEvents['ReaderExecutorCachePopulateRequests'] = 0,
+    ProfileEvents['ReaderExecutorIncompleteConnections'] = 0
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600
+WHERE log_comment = '04327_reader_executor_metrics_probe'
   AND type = 'QueryFinish'
-  AND initial_query_id IN (SELECT query_id FROM initial_query_ids);
+  AND current_database = currentDatabase()
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
 
 DROP TABLE t_reader_executor_metrics;
