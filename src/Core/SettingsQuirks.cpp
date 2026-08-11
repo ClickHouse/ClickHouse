@@ -50,8 +50,6 @@ namespace Setting
     extern const SettingsBool make_distributed_plan;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
-    extern const SettingsBool rewrite_in_to_join;
-    extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsBool compile_expressions;
@@ -116,11 +114,6 @@ void adjustSettingsForMakeDistributedPlan(Settings & settings)
     {
         settings[Setting::automatic_parallel_replicas_mode] = 0;
         adjusted.emplace_back("automatic_parallel_replicas_mode = 0");
-    }
-    if (!settings[Setting::rewrite_in_to_join] && settings[Setting::allow_experimental_correlated_subqueries])
-    {
-        settings[Setting::rewrite_in_to_join] = true;
-        adjusted.emplace_back("rewrite_in_to_join = 1");
     }
     if (settings[Setting::correlated_subqueries_use_in_memory_buffer])
     {
