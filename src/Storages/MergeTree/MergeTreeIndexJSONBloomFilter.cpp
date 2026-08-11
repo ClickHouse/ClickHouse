@@ -719,8 +719,8 @@ bool appendTypedProbe(
 
 bool comparisonUsesExactConversion(const IDataType & left, const IDataType & right)
 {
-    /// A failed strict conversion proves inequality only inside the numeric comparison domain.
-    /// Other type pairs need a presence probe because execution can match or throw.
+    /// A failed strict conversion proves inequality for numeric comparisons and for constant strings,
+    /// which comparison execution converts to the left-hand type with the same format settings.
     const auto is_number = [](const IDataType & type)
     {
         return isBool(type.getPtr()) || isNativeNumber(type) || WhichDataType(type).isDecimal();
@@ -729,6 +729,7 @@ bool comparisonUsesExactConversion(const IDataType & left, const IDataType & rig
         || (WhichDataType(right).isDecimal() && WhichDataType(left).isNativeFloat()))
         return false;
     return left.equals(right)
+        || WhichDataType(right).isStringOrFixedString()
         || (is_number(left) && is_number(right));
 }
 
