@@ -422,13 +422,14 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
     }
     else
     {
-        /// If the ownership of the data could not be determined (a lazy-load proxy whose real
-        /// storage failed to materialize during `drop()`), mirror `DatabaseCatalog::dropTableFinally`:
-        /// still clean up node-local disks (so an ordinary table does not leak its data directory
-        /// on a transient load failure), but skip disks whose metadata is shared across nodes
+        /// If the ownership of the data could not be determined — no table object at all (a lazy
+        /// database drops tables it never loaded) or a lazy-load proxy whose real storage failed
+        /// to materialize during `drop()` — mirror `DatabaseCatalog::dropTableFinally`: still
+        /// clean up node-local disks (so an ordinary table does not leak its data directory on a
+        /// transient load failure), but skip disks whose metadata is shared across nodes
         /// (`plain_rewritable` — the layout `leader_election` requires — or `keeper`), where
         /// `removeRecursive` could destroy data a live leader still owns.
-        const bool data_ownership_unknown = table && table->dropDataOwnershipUnknown();
+        const bool data_ownership_unknown = !table || table->dropDataOwnershipUnknown();
 
         for (const auto & [disk_name, disk] : getContext()->getDisksMap())
         {
