@@ -202,6 +202,8 @@ WHERE NOT
 )
 ORDER BY id;
 
+SELECT 'vector addition oracle completed';
+
 -- Finalized values support implicit and explicit decay lengths, plus State/Merge.
 WITH
     source AS
