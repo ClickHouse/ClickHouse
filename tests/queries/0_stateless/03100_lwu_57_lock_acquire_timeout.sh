@@ -86,9 +86,10 @@ function release_holder()
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT infinite_sleep"
 }
 
-# Blocks until the query tagged $1 has failed its first attempt at the lock, so it is inside the
-# wait rather than about to enter it. A count of tries is a fact about where the query got to, which
-# a slow runner cannot change, whereas the time it has spent waiting depends on the machine.
+# Blocks until the query tagged $1 is inside the wait for the lock rather than about to enter it.
+# Waits for the watch it registers before waiting, which is set only after an attempt has come back
+# saying the lock is taken -- the try counter alone is incremented before that attempt is even sent.
+# Where a query got to is a fact a slow runner cannot change, unlike how long it has been waiting.
 function wait_for_blocked_on_lock()
 {
     local query_id=$1
@@ -96,12 +97,15 @@ function wait_for_blocked_on_lock()
     for _ in {0..600}
     do
         sleep 0.1
-        local tries
-        tries=$($CLICKHOUSE_CLIENT --query "
-            SELECT ProfileEvents['PatchesAcquireLockTries'] FROM system.processes WHERE query_id = '$query_id'
+        local watches
+        watches=$($CLICKHOUSE_CLIENT --query "
+            SYSTEM FLUSH LOGS zookeeper_log;
+            SELECT count() FROM system.zookeeper_log
+            WHERE type = 'Request' AND has_watch AND query_id = '$query_id'
+              AND path LIKE '%/lightweight_updates%'
         ")
 
-        if [[ -n "$tries" && "$tries" -gt 0 ]]
+        if [[ -n "$watches" && "$watches" -gt 0 ]]
         then
             return 0
         fi
@@ -165,9 +169,10 @@ function run()
 
     timed_out=0
     if [[ "$error" == *TIMEOUT_EXCEEDED* ]]; then timed_out=1; fi
-    # The timeout is what ended the wait: it lasted about that long, and it is not a number of
-    # attempts each of which may itself wait the whole timeout.
-    echo "$mode $timeout_ms failed $timed_out waited $(( duration_ms >= timeout_ms * 9 / 10 && tries <= 5 ))"
+    # The timeout is what ended the wait: it lasted about that long and no more, and it is not a
+    # number of attempts each of which may itself wait the whole timeout. The upper bound is loose
+    # enough for a sanitizer runner but far below the multiples an unbounded retry loop produces.
+    echo "$mode $timeout_ms failed $timed_out waited $(( duration_ms >= timeout_ms * 9 / 10 && duration_ms < timeout_ms * 10 && tries <= 5 ))"
 
     release_holder
 
@@ -266,14 +271,22 @@ function run_churn()
     # A watch on the parent directory wakes once per commit anywhere under it, so the churn has to
     # commit repeatedly while the waiter is inside the wait for the try count below to tell the two
     # watch targets apart. `w` counts the churn's own commits, which no runner speed can change.
+    churned=0
     for _ in {0..600}
     do
         sleep 0.1
         if [[ "$($CLICKHOUSE_CLIENT --query "SELECT w FROM $table_name WHERE id = 1")" -ge 10 ]]
         then
+            churned=1
             break
         fi
     done
+
+    if [[ "$churned" != 1 ]]
+    then
+        echo "Churn never committed enough times to wake a parent directory watch" >&2
+        exit 2
+    fi
 
     release_holder
     wait "$waiter_pid"
