@@ -165,6 +165,11 @@ private:
     bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
     bool
     tryExtractStringPredicateAtom(const StorageMetadataPtr & metadata, const RPNBuilderFunctionTreeNode & func, RPNElement & out) const;
+    bool
+    tryExtractLikePredicateAtom(const StorageMetadataPtr & metadata, const RPNBuilderFunctionTreeNode & func, RPNElement & out) const;
+    /// Share of NULL rows in a column: statistics-based when available, a default heuristic otherwise.
+    Float64
+    estimateColumnNullShare(const StorageMetadataPtr & metadata, const DataTypePtr & column_type, const String & column_name) const;
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.

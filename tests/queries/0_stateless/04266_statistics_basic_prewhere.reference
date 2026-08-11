@@ -34,3 +34,13 @@ String predicates: NOT inverts startsWith selectivity
 1
 String predicates: FixedString startsWith is estimated
 1
+LIKE contains pattern is more selective than range
+1
+LIKE match-all with IS NOT NULL keeps same-column nullable selectivity
+1
+Nested same-column LIKE OR with IS NOT NULL keeps correlation
+1
+FixedString exact LIKE length mismatch is not estimated as equality
+1
+FixedString exact LIKE matching length may use equality estimate
+1

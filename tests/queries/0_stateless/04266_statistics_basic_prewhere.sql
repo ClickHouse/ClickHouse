@@ -321,3 +321,71 @@ SELECT position(prewhere_line, 'fs') < position(prewhere_line, 's_prefix_short')
 );
 
 DROP TABLE test_string_predicate_prewhere;
+
+-- =============================================================================
+-- LIKE selectivity: constant LIKE patterns should participate in statistics-based
+-- prewhere ordering, keep same-column NULL correlation, and avoid treating short
+-- FixedString exact LIKE patterns as equality because equality ignores trailing
+-- NUL padding while LIKE matches FixedString(N)'s full byte sequence.
+-- =============================================================================
+DROP TABLE IF EXISTS test_like_selectivity;
+
+CREATE TABLE test_like_selectivity
+(
+    id UInt64,
+    a Nullable(String) STATISTICS(basic),
+    fixed FixedString(5) STATISTICS(uniq),
+    probe UInt64 STATISTICS(tdigest)
+) ENGINE = MergeTree()
+ORDER BY id
+SETTINGS auto_statistics_types = '';
+
+INSERT INTO test_like_selectivity
+SELECT
+    number,
+    if(number % 5 = 0, NULL, concat('value', toString(number))),
+    toFixedString('abcde', 5),
+    number
+FROM numbers(1000);
+
+SELECT 'LIKE contains pattern is more selective than range';
+SELECT position(prewhere_line, 'like') < position(prewhere_line, 'probe') AS like_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count() FROM test_like_selectivity
+        WHERE a LIKE '%9999%' AND probe < 50
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'LIKE match-all with IS NOT NULL keeps same-column nullable selectivity';
+SELECT position(prewhere_line, 'probe') < position(prewhere_line, 'like') AS probe_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count() FROM test_like_selectivity
+        WHERE a LIKE '%' AND a IS NOT NULL AND probe < 700
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'Nested same-column LIKE OR with IS NOT NULL keeps correlation';
+SELECT position(prewhere_line, 'probe') < position(prewhere_line, 'like') AS probe_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count() FROM test_like_selectivity
+        WHERE (a LIKE '%' OR a LIKE 'x%') AND a IS NOT NULL AND probe < 700
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'FixedString exact LIKE length mismatch is not estimated as equality';
+SELECT position(prewhere_line, 'like') < position(prewhere_line, 'probe') AS like_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count() FROM test_like_selectivity
+        WHERE fixed LIKE 'abc' AND probe < 500
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'FixedString exact LIKE matching length may use equality estimate';
+SELECT position(prewhere_line, 'probe') < position(prewhere_line, 'like') AS probe_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count() FROM test_like_selectivity
+        WHERE fixed LIKE 'abcde' AND probe < 500
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+DROP TABLE test_like_selectivity;

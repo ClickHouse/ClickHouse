@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/likePatternToRegexp.h>
 #include <Common/logger_useful.h>
 
 
@@ -115,8 +116,17 @@ namespace
 
 enum class StringPatternKind
 {
+    Unsupported,
+    /// Matches every non-NULL value, e.g. `LIKE '%'` or an empty startsWith/endsWith needle.
+    MatchEverything,
+    /// A LIKE pattern without unescaped wildcards, e.g. `LIKE 'abc'`.
+    Exact,
+    /// `startsWith(col, 'abc')` / `col LIKE 'abc%'`.
     Prefix,
+    /// `endsWith(col, 'abc')` / `col LIKE '%abc'`.
     Suffix,
+    /// `col LIKE '%abc%'`.
+    Contains,
 };
 
 struct StringPredicateTraits
@@ -166,10 +176,123 @@ Float64 clampSelectivity(Float64 value)
 
 Float64 estimateStringPatternFactor(StringPatternKind kind, size_t literal_size, Float64 fallback)
 {
-    /// Local copy of the small pattern-shape heuristics intended for LIKE prefix/suffix
-    /// estimates. TODO: deduplicate with the LIKE pattern helper when it lands here.
-    const Float64 base = kind == StringPatternKind::Prefix ? 0.25 : 0.35;
+    /// Pattern-shape heuristics shared by startsWith/endsWith and the equivalent LIKE patterns:
+    /// a longer literal is more selective, and a prefix constrains more than a suffix, which
+    /// constrains more than a substring. Capped by the generic LIKE fallback so a pattern-shape
+    /// estimate never looks less selective than an opaque LIKE.
+    Float64 base = 0.45; /// StringPatternKind::Contains
+    if (kind == StringPatternKind::Prefix)
+        base = 0.25;
+    else if (kind == StringPatternKind::Suffix)
+        base = 0.35;
     return std::min(fallback, std::pow(base, static_cast<Float64>(std::min<size_t>(literal_size, 4))));
+}
+
+struct LikePatternClassification
+{
+    StringPatternKind kind = StringPatternKind::Unsupported;
+    String literal;
+};
+
+/// Classify a LIKE pattern by shape and extract its single literal, mirroring the escape
+/// semantics of likePatternToRegexp(): only `\%`, `\_` and `\\` are escape sequences; for an
+/// unknown escape sequence the backslash is a literal character. Patterns with `_`, with more
+/// than one literal segment, or with a trailing backslash are Unsupported.
+LikePatternClassification classifyLikePattern(std::string_view pattern)
+{
+    String current_literal;
+    current_literal.reserve(pattern.size());
+    std::vector<String> literal_segments;
+
+    bool starts_with_percent = false;
+    bool ends_with_percent = false;
+    bool in_percent_run = false;
+    bool saw_anything = false;
+    size_t percent_runs = 0;
+
+    auto finish_literal_segment = [&]()
+    {
+        if (!current_literal.empty())
+        {
+            literal_segments.push_back(current_literal);
+            current_literal.clear();
+        }
+    };
+
+    const char * pos = pattern.data();
+    const char * const end = pattern.data() + pattern.size();
+    while (pos < end)
+    {
+        switch (*pos)
+        {
+            case '%': {
+                if (!in_percent_run)
+                {
+                    ++percent_runs;
+                    if (!saw_anything)
+                        starts_with_percent = true;
+                    finish_literal_segment();
+                    in_percent_run = true;
+                }
+                ends_with_percent = true;
+                saw_anything = true;
+                ++pos;
+                break;
+            }
+            case '_': return {};
+            case '\\': {
+                in_percent_run = false;
+                ends_with_percent = false;
+                saw_anything = true;
+                ++pos;
+                if (pos == end)
+                    return {};
+
+                /// Match likePatternToRegexp(): only %, _ and \ are special escape sequences.
+                /// For an unknown escape sequence the backslash is literal and the following
+                /// character is processed normally on the next iteration.
+                if (*pos == '%' || *pos == '_' || *pos == '\\')
+                {
+                    current_literal += *pos;
+                    ++pos;
+                }
+                else
+                {
+                    current_literal += '\\';
+                }
+                break;
+            }
+            default: {
+                in_percent_run = false;
+                ends_with_percent = false;
+                saw_anything = true;
+                current_literal += *pos;
+                ++pos;
+                break;
+            }
+        }
+    }
+    finish_literal_segment();
+
+    if (percent_runs == 0)
+        return {StringPatternKind::Exact, literal_segments.empty() ? String{} : literal_segments.front()};
+
+    if (literal_segments.empty())
+        return {StringPatternKind::MatchEverything, {}};
+
+    if (literal_segments.size() != 1)
+        return {};
+
+    if (!starts_with_percent && ends_with_percent && percent_runs == 1)
+        return {StringPatternKind::Prefix, literal_segments.front()};
+
+    if (starts_with_percent && !ends_with_percent && percent_runs == 1)
+        return {StringPatternKind::Suffix, literal_segments.front()};
+
+    if (starts_with_percent && ends_with_percent && percent_runs == 2)
+        return {StringPatternKind::Contains, literal_segments.front()};
+
+    return {};
 }
 
 }
@@ -344,6 +467,19 @@ bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & dat
     return false;
 }
 
+Float64 ConditionSelectivityEstimator::estimateColumnNullShare(
+    const StorageMetadataPtr & metadata, const DataTypePtr & column_type, const String & column_name) const
+{
+    if (!isNullableOrLowCardinalityNullable(column_type))
+        return 0.0;
+
+    auto it = column_estimators.find(column_name);
+    if (it != column_estimators.end() && isCompatibleStatistics(metadata, it->second.stats, column_name))
+        return clampSelectivity(it->second.stats->estimateIsNull());
+
+    return default_cond_equal_factor;
+}
+
 bool ConditionSelectivityEstimator::tryExtractStringPredicateAtom(
     const StorageMetadataPtr & metadata, const RPNBuilderFunctionTreeNode & func, RPNElement & out) const
 {
@@ -373,16 +509,7 @@ bool ConditionSelectivityEstimator::tryExtractStringPredicateAtom(
     if (!needle_arg.getASTNode() && needle_type && !isSupportedStringPredicateType(needle_type, traits.is_utf8))
         return false;
 
-    Float64 null_sel = 0.0;
-    if (isNullableOrLowCardinalityNullable(column_desc->type))
-    {
-        auto it = column_estimators.find(column_name);
-        if (it != column_estimators.end() && isCompatibleStatistics(metadata, it->second.stats, column_name))
-            null_sel = it->second.stats->estimateIsNull();
-        else
-            null_sel = default_cond_equal_factor;
-    }
-    null_sel = clampSelectivity(null_sel);
+    const Float64 null_sel = estimateColumnNullShare(metadata, column_desc->type, column_name);
     const Float64 non_null_sel = std::max(0.0, 1.0 - null_sel);
 
     const String & needle = needle_value.safeGet<String>();
@@ -416,6 +543,119 @@ bool ConditionSelectivityEstimator::tryExtractStringPredicateAtom(
     return true;
 }
 
+bool ConditionSelectivityEstimator::tryExtractLikePredicateAtom(
+    const StorageMetadataPtr & metadata, const RPNBuilderFunctionTreeNode & func, RPNElement & out) const
+{
+    const String func_name = func.getFunctionName();
+    if (func_name != "like" && func_name != "ilike" && func_name != "notLike" && func_name != "notILike")
+        return false;
+
+    const bool negated = func_name == "notLike" || func_name == "notILike";
+    const bool case_insensitive = func_name == "ilike" || func_name == "notILike";
+
+    /// The optional third argument is a custom ESCAPE character.
+    const size_t num_args = func.getArgumentsSize();
+    if (!metadata || (num_args != 2 && num_args != 3))
+        return false;
+
+    const String column_name = func.getArgumentAt(0).getColumnName();
+    const ColumnDescription * column_desc = metadata->getColumns().tryGet(column_name);
+    if (!column_desc)
+        return false;
+
+    DataTypePtr nested_column_type = removeLowCardinalityAndNullable(column_desc->type);
+    if (!isStringOrFixedString(nested_column_type))
+        return false;
+    const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(nested_column_type.get());
+
+    Field pattern_value;
+    DataTypePtr pattern_type;
+    if (!func.getArgumentAt(1).tryGetConstant(pattern_value, pattern_type))
+        return false;
+
+    if (pattern_value.isNull())
+    {
+        /// `x LIKE NULL` and `x NOT LIKE NULL` evaluate to SQL NULL for every row, so WHERE
+        /// sees zero TRUE rows. Keep the NULL state finalized so an outer NOT preserves it.
+        out.selectivity = Selectivity{0.0, 1.0};
+        out.finalized = true;
+        return true;
+    }
+
+    if (pattern_value.getType() != Field::Types::String)
+        return false;
+
+    String pattern = pattern_value.safeGet<String>();
+    if (num_args == 3)
+    {
+        /// Normalize `LIKE pattern ESCAPE 'c'` into a backslash-escaped pattern. The escape
+        /// argument restrictions (a single ASCII character) mirror FunctionsStringSearch.
+        Field escape_value;
+        DataTypePtr escape_type;
+        if (!func.getArgumentAt(2).tryGetConstant(escape_value, escape_type))
+            return false;
+        if (escape_value.isNull() || escape_value.getType() != Field::Types::String)
+            return false;
+
+        const String & escape_string = escape_value.safeGet<String>();
+        if (escape_string.size() != 1 || static_cast<unsigned char>(escape_string[0]) > 0x7F)
+            return false;
+
+        try
+        {
+            pattern = likePatternWithCustomEscapeToLikePattern(pattern, escape_string[0]);
+        }
+        catch (const Exception &)
+        {
+            /// An invalid escape sequence throws at execution time as well; no estimate needed.
+            return false;
+        }
+    }
+
+    const LikePatternClassification classification = classifyLikePattern(pattern);
+    if (classification.kind == StringPatternKind::Unsupported)
+        return false;
+
+    /// Case-sensitive LIKE without wildcards is plain equality, so reuse the range machinery and
+    /// per-column statistics. Exact LIKE on FixedString(N) matches all N bytes, so it is equality
+    /// only when the literal is exactly N bytes long (unlike `=`, which ignores the trailing NUL
+    /// padding of a shorter String literal).
+    if (classification.kind == StringPatternKind::Exact && !case_insensitive
+        && (!fixed_string_type || classification.literal.size() == fixed_string_type->getN()))
+    {
+        atom_map.at(negated ? "notEquals" : "equals")(out, column_name, Field(classification.literal));
+        return true;
+    }
+
+    const Float64 null_sel = estimateColumnNullShare(metadata, column_desc->type, column_name);
+    const Float64 non_null_sel = std::max(0.0, 1.0 - null_sel);
+
+    /// LIKE matches the full N bytes of a FixedString(N), so an exact literal of a different
+    /// length and a prefix/suffix/substring literal longer than N can never match.
+    const bool literal_fits_column = !fixed_string_type
+        || (classification.kind == StringPatternKind::Exact ? classification.literal.size() == fixed_string_type->getN()
+                                                            : classification.literal.size() <= fixed_string_type->getN());
+
+    Float64 true_sel = 0.0;
+    if (!literal_fits_column)
+        true_sel = 0.0;
+    else if (classification.kind == StringPatternKind::MatchEverything)
+        true_sel = non_null_sel;
+    else if (classification.kind == StringPatternKind::Exact)
+        /// ILIKE without wildcards: equality up to character case.
+        true_sel = non_null_sel * default_cond_equal_factor;
+    else
+        true_sel = non_null_sel * estimateStringPatternFactor(classification.kind, classification.literal.size(), default_like_factor);
+
+    Selectivity selectivity{std::min(non_null_sel, clampSelectivity(true_sel)), null_sel};
+    if (negated)
+        selectivity = selectivity.applyNot();
+
+    out.function = RPNElement::FUNCTION_IN_RANGE;
+    out.column_selectivities.emplace(column_name, selectivity);
+    return true;
+}
+
 bool ConditionSelectivityEstimator::extractAtomFromTree(
     const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
 {
@@ -441,10 +681,13 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(
         if (tryExtractStringPredicateAtom(metadata, func, out))
             return true;
 
+        if (tryExtractLikePredicateAtom(metadata, func, out))
+            return true;
+
         auto atom_it = atom_map.find(func_name);
         if (atom_it == atom_map.end())
         {
-            /// LIKE/ILIKE cannot be represented as a range. Pre-set selectivity
+            /// LIKE/ILIKE cannot always be represented as a range. Pre-set selectivity
             /// so the estimator uses a tighter default than `default_unknown_cond_factor`.
             if (func_name == "like" || func_name == "ilike")
                 out.selectivity.true_sel = default_like_factor;
@@ -1027,10 +1270,14 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
                 || e.function == FUNCTION_IS_NOT_NULL
                 /// if the sub-clause is also cnf/dnf, it's good to merge
                 || e.function == function_to_merge
-                /// if the sub-clause is different, but has only one column, it also works, e.g
-                /// (a > 0 and a < 5) or (a > 3 and a < 10) can be merged to (a > 0 and a < 10)
+                /// if the sub-clause is different, but has only one per-column carrier, it also works, e.g
+                /// (a > 0 and a < 5) or (a > 3 and a < 10) can be merged to (a > 0 and a < 10).
+                /// Count every carrier map: an element with e.g. one selectivity entry and one null-check
+                /// for the same column preserves grouping that is unsafe to flatten through the opposite
+                /// operator.
                 || (e.column_ranges.size() + e.column_not_ranges.size()
-                    + e.null_check_columns.size() + e.not_null_check_columns.size()) == 1
+                    + e.null_check_columns.size() + e.not_null_check_columns.size()
+                    + e.column_selectivities.size()) == 1
                 || e.function == FUNCTION_UNKNOWN)
                 && !e.finalized;
     };
