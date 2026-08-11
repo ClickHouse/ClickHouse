@@ -15,6 +15,7 @@ extern template class NonblockingBoundedQueue<DB::KeeperResponseForSession>;
 /// White-box unit tests that seed in_flight_batches (befriended inside KeeperRequestDispatcher).
 class KeeperDispatcher_SessionIDCommitCorrelation_Test;
 class KeeperDispatcher_SessionIDErrorReachesWaiter_Test;
+class KeeperDispatcher_SessionIDErrorReachesRealWaiter_Test;
 
 namespace DB
 {
@@ -130,6 +131,7 @@ public:
 private:
     friend class ::KeeperDispatcher_SessionIDCommitCorrelation_Test;
     friend class ::KeeperDispatcher_SessionIDErrorReachesWaiter_Test;
+    friend class ::KeeperDispatcher_SessionIDErrorReachesRealWaiter_Test;
 
     /// Suppose we get a write request from some session and put it in batch B and send that
     /// batch to leader. While B is still in flight, we get a read request from the same session.

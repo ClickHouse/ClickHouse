@@ -2,9 +2,11 @@
 
 #if USE_NURAFT
 
+#include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperRequestDispatcher.h>
 #include <Coordination/KeeperRequestDispatcherOld.h>
 #include <Coordination/KeeperServer.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/scope_guard_safe.h>
 
@@ -174,6 +176,73 @@ TEST(KeeperDispatcherOld, SessionIDErrorReachesWaiter)
     const auto & session_id_response = dynamic_cast<const Coordination::ZooKeeperSessionIDResponse &>(*response.response);
     EXPECT_EQ(session_id_response.server_id, 1);
     EXPECT_EQ(session_id_response.internal_id, 13);
+}
+
+/// Unlike the arms above, which stop at the router seam, this one drives the production router and
+/// asserts on the getSessionID waiter a client actually blocks on.
+TEST(KeeperDispatcher, SessionIDErrorReachesRealWaiter)
+{
+    DispatcherFixture fixture;
+
+    /// onSessionIDResponse reads only server->getServerID(), set by the KeeperServer constructor, so
+    /// an un-started server suffices here.
+    DB::KeeperDispatcher keeper_dispatcher;
+    keeper_dispatcher.server = std::move(fixture.server);
+    /// Holds a raw pointer to the server keeper_dispatcher now owns, and would outlive it.
+    fixture.dispatcher.reset();
+
+    DB::KeeperRequestDispatcher dispatcher(
+        keeper_dispatcher.server.get(),
+        [&keeper_dispatcher](const DB::KeeperResponseForSession & response)
+        { return keeper_dispatcher.tryRouteSpecialResponse(response); });
+
+    /// Register the waiter the way getSessionID does.
+    constexpr int64_t internal_id = 17;
+    std::future<int64_t> future;
+    {
+        std::lock_guard lock(keeper_dispatcher.new_session_id_mutex);
+        auto [it, inserted] = keeper_dispatcher.new_session_id_requests.try_emplace(internal_id);
+        ASSERT_TRUE(inserted);
+        future = it->second.get_future();
+    }
+
+    auto seed_in_flight = [&dispatcher](const DB::KeeperRequestForSession & request)
+    {
+        size_t batch_idx = dispatcher.tail_idx.load();
+        auto & batch = dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()];
+        batch.requests = {request};
+        batch.activate({});
+        dispatcher.tail_idx.store(batch_idx + 1);
+    };
+
+    /// A response for a different client must not wake our waiter.
+    seed_in_flight(makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 18));
+    dispatcher.dropInFlightRequests();
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::timeout)
+        << "another client's SessionID error woke our waiter";
+    {
+        std::lock_guard lock(keeper_dispatcher.new_session_id_mutex);
+        EXPECT_EQ(keeper_dispatcher.new_session_id_requests.count(internal_id), 1u);
+    }
+
+    seed_in_flight(makeSessionIDRequest(/*server_id=*/ 1, internal_id));
+    dispatcher.dropInFlightRequests();
+
+    /// Ready without waiting: the client does not sit out the session timeout.
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::ready)
+        << "the dropped SessionID error did not reach the getSessionID waiter";
+
+    try
+    {
+        FAIL() << "getSessionID returned session id " << future.get() << " instead of the error";
+    }
+    catch (const Coordination::Exception & e)
+    {
+        EXPECT_EQ(e.code, Coordination::Error::ZCONNECTIONLOSS);
+    }
+
+    std::lock_guard lock(keeper_dispatcher.new_session_id_mutex);
+    EXPECT_EQ(keeper_dispatcher.new_session_id_requests.count(internal_id), 0u) << "the waiter entry leaked";
 }
 
 #endif
