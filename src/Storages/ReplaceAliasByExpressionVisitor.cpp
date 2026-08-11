@@ -4,16 +4,10 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/ColumnsDescription.h>
-#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 bool ReplaceAliasByExpressionMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
 {
@@ -60,29 +54,6 @@ void ReplaceAliasByExpressionMatcher::visit(const ASTIdentifier & column, ASTPtr
         /// Alias expr is saved in default expr.
         if (auto col_default = data.columns.getDefault(column_name))
         {
-            /// Reject an ALIAS whose free identifiers would be captured by an enclosing lambda parameter.
-            /// Parameters of lambdas inside the ALIAS body shadow their own scope, so drop them from `bound`.
-            auto check_alias_not_captured_by_lambda = [&column_name](this auto && self, const ASTPtr & sub_ast, NameSet bound) -> void
-            {
-                if (const auto * func = sub_ast->as<ASTFunction>(); func && func->name == "lambda")
-                {
-                    for (const auto & name : getASTLambdaArgumentNames(*func))
-                        bound.erase(name);
-                }
-                else if (const auto * identifier = sub_ast->as<ASTIdentifier>())
-                {
-                    /// A compound identifier like `t.v` is captured when its root `t` is a lambda parameter.
-                    const String & root = identifier->name_parts.empty() ? identifier->name() : identifier->name_parts.front();
-                    if (bound.contains(root))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "ALIAS column '{}' cannot be expanded inside a lambda: its expression references '{}', "
-                            "which is bound by the lambda parameter '{}'", column_name, identifier->name(), root);
-                }
-
-                for (const auto & child : sub_ast->children)
-                    self(child, bound);
-            };
-
             /// Expand the ALIAS chain (a -> b -> c) before deciding on capture. The inserted expression was
             /// written at table scope, so its identifiers refer to table columns even when they match a
             /// lambda parameter name, and only the fully expanded result can be captured.
@@ -92,8 +63,9 @@ void ReplaceAliasByExpressionMatcher::visit(const ASTIdentifier & column, ASTPtr
             Data table_scope{data.columns, {}, data.reject_lambda_capture};
             Visitor(table_scope).visit(expanded);
 
+            /// Reject an ALIAS whose free identifiers would be captured by an enclosing lambda parameter.
             if (data.reject_lambda_capture && !data.private_aliases.empty())
-                check_alias_not_captured_by_lambda(expanded, data.private_aliases);
+                validateAliasExpansionNotCapturedByLambda(column_name, expanded, data.private_aliases);
 
             ast = std::move(expanded);
         }

@@ -84,6 +84,13 @@ void ColumnAliasesMatcher::visit(ASTIdentifier & node, ASTPtr & ast, Data & data
             alias_data.changed = false;
             Visitor(alias_data).visit(alias_expr);
 
+            /// The alias body was written at table scope, so its identifiers must keep referring
+            /// to table columns. Raw AST substitution inside a lambda cannot express that: a name
+            /// matching a parameter of an enclosing lambda would be captured and change meaning.
+            /// Throw instead of computing wrong values.
+            if (!data.private_aliases.empty())
+                validateAliasExpansionNotCapturedByLambda(*column_name, alias_expr, data.private_aliases);
+
             if (data.replacement_mode == ColumnAliasReplacementMode::QueryAnalysis)
             {
                 ast = addTypeConversionToAST(std::move(alias_expr), col.type->getName(), data.columns.getAll(), data.context);

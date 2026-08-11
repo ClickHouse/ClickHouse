@@ -1164,11 +1164,13 @@ void MutationsInterpreter::prepare(bool dry_run)
             mutation_kind.set(MutationKind::MUTATE_OTHER);
             addStageIfNeeded(command.mutation_version, false);
 
-            // Can't materialize a column in the sort key
-            Names sort_columns = metadata_snapshot->getSortingKeyColumns();
+            /// Can't materialize a column the sort key depends on. Source columns of sort-key
+            /// expressions (e.g. `ORDER BY m + 1`) count too: rewriting them in place breaks
+            /// the stored order just the same as rewriting a bare key column.
+            Names sort_columns = metadata_snapshot->getColumnsRequiredForSortingKey();
             if (std::find(sort_columns.begin(), sort_columns.end(), command.column_name) != sort_columns.end())
             {
-                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Refused to materialize column {} because it's in the sort key. Doing so could break the sort order", backQuote(command.column_name));
+                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Refused to materialize column {} because the sort key depends on it. Doing so could break the sort order", backQuote(command.column_name));
             }
 
             const auto & column = columns_desc.get(command.column_name);
@@ -1565,6 +1567,31 @@ void MutationsInterpreter::prepare(bool dry_run)
         /// rewrite data the mutation is not supposed to touch and would sneak sort/partition key
         /// columns past the key-column guards that `UPDATE` and `MATERIALIZE COLUMN` apply.
         clear_rematerialized_columns = collectMaterializedColumnsStaleAfterClear(materialized_column_inputs, cleared_columns);
+
+        /// The recalculation stages below rewrite the stale MATERIALIZED columns in place, without
+        /// re-sorting rows or moving parts between partitions, so a column the sorting or partition
+        /// key depends on must not be rewritten - the same protection `UPDATE` and
+        /// `MATERIALIZE COLUMN` apply. `AlterCommands::validate` rejects such ALTERs up front;
+        /// this is a fail-fast for mutation entries created before that check existed.
+        {
+            Names sorting_key_columns = metadata_snapshot->getColumnsRequiredForSortingKey();
+            Names partition_key_columns = metadata_snapshot->getColumnsRequiredForPartitionKey();
+            for (const auto & name : clear_rematerialized_columns)
+            {
+                if (std::find(sorting_key_columns.begin(), sorting_key_columns.end(), name) != sorting_key_columns.end())
+                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                        "Cannot clear the requested column(s): the MATERIALIZED column {} has to be recalculated, "
+                        "but the sort key depends on it, and rewriting it could break the sort order",
+                        backQuote(name));
+
+                if (std::find(partition_key_columns.begin(), partition_key_columns.end(), name) != partition_key_columns.end())
+                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                        "Cannot clear the requested column(s): the MATERIALIZED column {} has to be recalculated, "
+                        "but the partition key depends on it, and the rewritten values would disagree with the "
+                        "partition the parts are placed in",
+                        backQuote(name));
+            }
+        }
 
         /// Recalculation reads the inputs of the MATERIALIZED expression from the existing part, but
         /// EPHEMERAL values only exist during INSERT and are not stored. The direct case is rejected

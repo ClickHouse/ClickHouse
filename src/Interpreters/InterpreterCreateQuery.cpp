@@ -746,6 +746,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested])
         res.flattenNested();
 
+    /// `columns_for_default_validation` above carries no default expressions, so the alias-capture
+    /// check inside `validateColumnsDefaultsAndGetSampleBlock` has nothing to expand at CREATE time.
+    /// Re-run it over the final description, which does carry them, against the same (flattened) schema.
+    if (mode <= LoadingStrictnessLevel::CREATE && !is_restore_from_backup)
+        validateNoAliasLambdaCaptureInStoredExpressions(res);
+
     if (res.getAllPhysical().empty())
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without physical columns");
 

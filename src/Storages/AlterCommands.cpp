@@ -2088,41 +2088,57 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 {
                     /// CLEAR COLUMN triggers recalculation of the MATERIALIZED columns that read
                     /// the cleared column, directly or through another recalculated MATERIALIZED
-                    /// column, but the recalculation cannot read EPHEMERAL columns: their values
-                    /// exist only during INSERT and are not stored in parts. Reject such ALTERs up
-                    /// front instead of queueing a mutation that can never succeed.
+                    /// column. Reject up front, instead of queueing a mutation that can never
+                    /// succeed or that would corrupt the parts, when:
+                    /// - the recalculation would read an EPHEMERAL column: its values exist only
+                    ///   during INSERT and are not stored in parts;
+                    /// - the recalculated column is required by the sorting or partition key:
+                    ///   the mutation rewrites it in place, without re-sorting rows or moving
+                    ///   parts between partitions, breaking the key invariants.
                     NameSet ephemeral_names;
                     for (const auto & col : all_columns.getEphemeral())
                         ephemeral_names.insert(col.name);
 
-                    if (!ephemeral_names.empty())
+                    std::unordered_map<String, Names> materialized_column_inputs;
+                    for (const ColumnDescription & column : all_columns)
                     {
-                        std::unordered_map<String, Names> materialized_column_inputs;
-                        for (const ColumnDescription & column : all_columns)
-                        {
-                            if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression)
-                                continue;
+                        if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression)
+                            continue;
 
-                            ASTPtr query = column.default_desc.expression->clone();
-                            expandColumnMatchersInExpression(query, all_columns);
-                            auto syntax_result = TreeRewriter(context).analyze(query, all_columns.getAll());
-                            materialized_column_inputs.emplace(column.name, syntax_result->requiredSourceColumns());
+                        ASTPtr query = column.default_desc.expression->clone();
+                        expandColumnMatchersInExpression(query, all_columns);
+                        auto syntax_result = TreeRewriter(context).analyze(query, all_columns.getAll());
+                        materialized_column_inputs.emplace(column.name, syntax_result->requiredSourceColumns());
+                    }
+
+                    auto stale_columns
+                        = collectMaterializedColumnsStaleAfterClear(materialized_column_inputs, {command.column_name});
+
+                    Names sorting_key_columns = metadata->getColumnsRequiredForSortingKey();
+                    Names partition_key_columns = metadata->getColumnsRequiredForPartitionKey();
+                    for (const auto & stale_column : stale_columns)
+                    {
+                        for (const auto & required_column : materialized_column_inputs.at(stale_column))
+                        {
+                            if (ephemeral_names.contains(required_column))
+                                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                    "Cannot clear column {}: the MATERIALIZED column {} has to be recalculated, but it "
+                                    "depends on the EPHEMERAL column {}, whose values cannot be read from existing parts",
+                                    backQuote(command.column_name), backQuote(stale_column), backQuote(required_column));
                         }
 
-                        auto stale_columns
-                            = collectMaterializedColumnsStaleAfterClear(materialized_column_inputs, {command.column_name});
+                        if (std::find(sorting_key_columns.begin(), sorting_key_columns.end(), stale_column) != sorting_key_columns.end())
+                            throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                "Cannot clear column {}: the MATERIALIZED column {} has to be recalculated, but the "
+                                "sort key depends on it, and rewriting it could break the sort order",
+                                backQuote(command.column_name), backQuote(stale_column));
 
-                        for (const auto & stale_column : stale_columns)
-                        {
-                            for (const auto & required_column : materialized_column_inputs.at(stale_column))
-                            {
-                                if (ephemeral_names.contains(required_column))
-                                    throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                                        "Cannot clear column {}: the MATERIALIZED column {} has to be recalculated, but it "
-                                        "depends on the EPHEMERAL column {}, whose values cannot be read from existing parts",
-                                        backQuote(command.column_name), backQuote(stale_column), backQuote(required_column));
-                            }
-                        }
+                        if (std::find(partition_key_columns.begin(), partition_key_columns.end(), stale_column) != partition_key_columns.end())
+                            throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                "Cannot clear column {}: the MATERIALIZED column {} has to be recalculated, but the "
+                                "partition key depends on it, and the rewritten values would disagree with the "
+                                "partition the parts are placed in",
+                                backQuote(command.column_name), backQuote(stale_column));
                     }
                 }
                 if (!command.clear)

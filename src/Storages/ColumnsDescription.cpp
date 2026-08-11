@@ -38,6 +38,7 @@
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
@@ -50,6 +51,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/ReplaceAliasByExpressionVisitor.h>
 #include <Storages/StorageDummy.h>
 #include <Common/Exception.h>
 #include <Common/re2.h>
@@ -81,6 +83,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int ILLEGAL_COLUMN;
     extern const int CANNOT_PARSE_TEXT;
@@ -1741,6 +1744,19 @@ std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(
     expandColumnMatchersImpl(default_expr_list, columns);
     detectRecursiveDefaultCycles(default_expr_list, columns);
 
+    /// Stored DEFAULT / MATERIALIZED / TTL expressions are evaluated after replacing references to
+    /// ALIAS columns with their bodies (see `cloneAndExpandColumnDefaultExpressionWithAliases`).
+    /// That raw AST substitution cannot express a table-scope binding inside a lambda: in
+    /// `arrayMap(x -> y, arr)` with `y ALIAS x + 1`, the substituted `x + 1` would be captured by
+    /// the lambda parameter `x` instead of reading the table column. Reject such definitions here,
+    /// at CREATE/ALTER time, instead of computing wrong values on INSERT. The visitor throws on
+    /// capture; its rewritten output is discarded.
+    {
+        auto expansion_probe = default_expr_list->clone();
+        ReplaceAliasByExpressionMatcher::Data alias_expansion_data{columns, {}, /*reject_lambda_capture=*/ true};
+        ReplaceAliasByExpressionMatcher::Visitor(alias_expansion_data).visit(expansion_probe);
+    }
+
     try
     {
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
@@ -1781,6 +1797,49 @@ void validateNoCyclicAliasesAfterExpansion(
     const ColumnsDescription & columns)
 {
     validateNoCyclicAliasesAfterExpansionImpl(alias_name, expanded_alias_expression, columns);
+}
+
+void validateAliasExpansionNotCapturedByLambda(
+    const String & alias_column_name, const ASTPtr & expanded_alias_expression, const NameSet & enclosing_lambda_parameters)
+{
+    /// Parameters of lambdas inside the expanded body shadow their own scope, so drop them from `bound`.
+    auto check = [&alias_column_name](this auto && self, const ASTPtr & sub_ast, NameSet bound) -> void
+    {
+        if (const auto * func = sub_ast->as<ASTFunction>(); func && func->name == "lambda")
+        {
+            for (const auto & name : getASTLambdaArgumentNames(*func))
+                bound.erase(name);
+        }
+        else if (const auto * identifier = sub_ast->as<ASTIdentifier>())
+        {
+            /// A compound identifier like `t.v` is captured when its root `t` is a lambda parameter.
+            const String & root = identifier->name_parts.empty() ? identifier->name() : identifier->name_parts.front();
+            if (bound.contains(root))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ALIAS column '{}' cannot be expanded inside a lambda: its expression references '{}', "
+                    "which is bound by the lambda parameter '{}'", alias_column_name, identifier->name(), root);
+        }
+
+        for (const auto & child : sub_ast->children)
+            self(child, bound);
+    };
+
+    check(expanded_alias_expression, enclosing_lambda_parameters);
+}
+
+void validateNoAliasLambdaCaptureInStoredExpressions(const ColumnsDescription & columns)
+{
+    for (const auto & column : columns)
+    {
+        if (!column.default_desc.expression)
+            continue;
+
+        /// The visitor throws when an ALIAS expanded under a lambda would be captured by
+        /// the lambda parameters; its rewritten output is discarded.
+        auto probe = cloneAndExpandColumnDefaultExpression(column.default_desc, columns);
+        ReplaceAliasByExpressionMatcher::Data alias_expansion_data{columns, {}, /*reject_lambda_capture=*/ true};
+        ReplaceAliasByExpressionMatcher::Visitor(alias_expansion_data).visit(probe);
+    }
 }
 
 ASTPtr cloneAndExpandColumnDefaultExpression(const ColumnDefault & column_default, const ColumnsDescription & columns)

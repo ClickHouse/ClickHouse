@@ -341,6 +341,19 @@ ASTPtr cloneAndExpandColumnDefaultExpressionWithAliases(const ColumnDefault & co
 /// dependency on that column.
 void collectColumnDependenciesFromAST(const ASTPtr & node, const NameSet & candidate_names, const ColumnsDescription & columns, NameSet & dependencies);
 void validateNoCyclicAliasesAfterExpansion(const String & alias_name, const ASTPtr & expanded_alias_expression, const ColumnsDescription & columns);
+
+/// Throw if the fully expanded body of the ALIAS column `alias_column_name` references a name from
+/// `enclosing_lambda_parameters`: the alias body was written at table scope, so its identifiers must
+/// refer to table columns, but raw AST substitution inside a lambda would let the lambda parameter
+/// capture them. Parameters of lambdas inside the expanded body shadow their own scope and are not
+/// considered captured.
+void validateAliasExpansionNotCapturedByLambda(
+    const String & alias_column_name, const ASTPtr & expanded_alias_expression, const NameSet & enclosing_lambda_parameters);
+
+/// Run the check above over every stored default expression of `columns` (the columns must carry
+/// their default expressions). Rejects definitions whose evaluation would capture an ALIAS body
+/// inside a lambda, e.g. `m MATERIALIZED arrayMap(x -> y, arr)` with `y ALIAS x + 1`.
+void validateNoAliasLambdaCaptureInStoredExpressions(const ColumnsDescription & columns);
 void expandColumnMatchersInExpression(ASTPtr & expression, const ColumnsDescription & columns);
 void expandColumnMatchersInExpressionList(ASTPtr & expression_list, const ColumnsDescription & columns);
 

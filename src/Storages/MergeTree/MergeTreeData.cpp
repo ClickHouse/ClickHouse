@@ -5319,15 +5319,18 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         /// check inspects are filled in - these commands are never executed.
         MutationCommands automatic_mutation_commands;
 
-        Names sorting_key_columns = new_metadata.getSortingKeyColumns();
+        /// The sort key check must cover the source columns of sort-key expressions
+        /// (e.g. `ORDER BY m + 1`), not only bare key columns: rewriting such a column
+        /// in place breaks the stored order just the same.
+        Names sorting_key_columns = new_metadata.getColumnsRequiredForSortingKey();
         Names partition_key_columns = new_metadata.getColumnsRequiredForPartitionKey();
         for (const auto & column_name : commands.getMaterializedColumnsWithChangedExpansion(old_metadata, new_metadata, local_context))
         {
             if (std::find(sorting_key_columns.begin(), sorting_key_columns.end(), column_name) != sorting_key_columns.end())
                 throw Exception(
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "The ALTER changes the effective expression of the MATERIALIZED column {}, which is in the sort key. "
-                    "Existing parts would have to be rematerialized, and that could break the sort order",
+                    "The ALTER changes the effective expression of the MATERIALIZED column {}, which the sort key "
+                    "depends on. Existing parts would have to be rematerialized, and that could break the sort order",
                     backQuote(column_name));
 
             if (std::find(partition_key_columns.begin(), partition_key_columns.end(), column_name) != partition_key_columns.end())
