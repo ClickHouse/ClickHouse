@@ -292,6 +292,26 @@ public:
         return true;
     }
 
+    /// Whether LIMIT lazy materialization can be used (see optimizeLazyMaterialization2).
+    /// It requires that the physical row numbers of the main read match a later positional
+    /// re-read of the same files, which for data lakes depends on how deletes and schema
+    /// evolution are applied.
+    virtual bool supportsLazyMaterialization(StorageMetadataPtr /*storage_metadata_snapshot*/, ContextPtr /*context*/) const
+    {
+        return true;
+    }
+
+    /// Whether the data files that back this configuration are immutable, i.e. an existing data
+    /// file is never overwritten in place (a change writes a new file). This holds for data lakes
+    /// (a new snapshot references new files) but not for plain object storage, where the object at
+    /// a given path can be overwritten. Lazy materialization rereads the surviving files in a
+    /// second pass; with immutable files that reread is race-free even on backends that cannot pin
+    /// a read to a captured object generation (see ReadFromObjectStorageStep::canUseLazyMaterialization).
+    virtual bool dataFilesAreImmutable() const
+    {
+        return false;
+    }
+
     virtual void drop(ContextPtr) {}
 
     virtual bool isBackgroundExecutable() const
