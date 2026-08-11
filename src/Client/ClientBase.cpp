@@ -166,7 +166,9 @@ namespace Setting
     extern const SettingsTimezone session_timezone;
     extern const SettingsUInt64 readonly;
     extern const SettingsSeconds max_execution_time;
+    extern const SettingsSeconds max_execution_time_leaf;
     extern const SettingsUInt64 max_memory_usage;
+    extern const SettingsUInt64 max_memory_usage_for_user;
 }
 
 namespace ErrorCodes
@@ -3957,37 +3959,42 @@ String ClientBase::runQueryForAI(const String & query, bool readonly)
         echoQueryForAI(query);
     }
 
-    /// Temporarily enforce the sandbox settings of the read-only tool. The query is unable
-    /// to override them: the validation above rejects SETTINGS clauses that touch them.
-    /// The limits are tighten-only, so a user with a stricter session limit keeps it; and if
-    /// the session is already read-only we leave the limits alone, because the server would
-    /// reject changing them under `readonly = 1` (the query stays read-only regardless).
-    std::optional<Settings> saved_settings;
+    /// Temporarily adjust the session settings for the query of the agent; restored on exit.
+    std::optional<Settings> saved_settings(client_context->getSettingsRef());
+    SCOPE_EXIT_SAFE({ client_context->setSettings(*saved_settings); });
+
+    /// The agent always emits ClickHouse SQL, so its queries are pinned to the ClickHouse
+    /// dialect even when the session was switched to another one (`SET dialect = 'prql'`,
+    /// `'kusto'`, ...) - the validation above also parsed the query as ClickHouse SQL.
+    if ((*saved_settings)[Setting::dialect] != Dialect::clickhouse)
+        client_context->setSetting("dialect", String("clickhouse"));
+
+    /// Enforce the sandbox settings of the read-only tool. The query is unable to override
+    /// them: the validation above rejects SETTINGS clauses that touch them. The limits are
+    /// tighten-only, so a user with a stricter session limit keeps it. If the session forbids
+    /// changing settings (e.g. a settings profile with `readonly = 1`), the query fails rather
+    /// than running without the promised limits: the error goes back to the model as the tool
+    /// result, and it can fall back to the run_query tool with the user's confirmation.
     if (readonly)
     {
         static constexpr UInt64 max_execution_time_limit = 30;
         static constexpr UInt64 max_memory_usage_limit = 10'000'000'000;
 
         const Settings & current = client_context->getSettingsRef();
-        saved_settings = current;
-
-        if (current[Setting::readonly] == 0)
+        const auto tighten = [&](std::string_view name, UInt64 current_value, UInt64 limit)
         {
-            const auto tighten = [&](std::string_view name, UInt64 current_value, UInt64 limit)
-            {
-                if (current_value == 0 || current_value > limit)
-                    client_context->setSetting(String(name), limit);
-            };
-            tighten("max_execution_time", static_cast<UInt64>(current[Setting::max_execution_time].totalSeconds()), max_execution_time_limit);
-            tighten("max_memory_usage", current[Setting::max_memory_usage], max_memory_usage_limit);
-            /// Applied last so the tightening above is not itself rejected under readonly.
+            if (current_value == 0 || current_value > limit)
+                client_context->setSetting(String(name), limit);
+        };
+        tighten("max_execution_time", static_cast<UInt64>(current[Setting::max_execution_time].totalSeconds()), max_execution_time_limit);
+        tighten("max_execution_time_leaf", static_cast<UInt64>(current[Setting::max_execution_time_leaf].totalSeconds()), max_execution_time_limit);
+        tighten("max_memory_usage", current[Setting::max_memory_usage], max_memory_usage_limit);
+        tighten("max_memory_usage_for_user", current[Setting::max_memory_usage_for_user], max_memory_usage_limit);
+
+        /// Keep a session that is already read-only as is (`readonly = 2` must not be lowered).
+        if (current[Setting::readonly] == 0)
             client_context->setSetting("readonly", static_cast<UInt64>(1));
-        }
     }
-    SCOPE_EXIT_SAFE({
-        if (saved_settings)
-            client_context->setSettings(*saved_settings);
-    });
 
     const UInt64 seqno_before = ai_query_context->latestSeqno();
 
@@ -4011,7 +4018,7 @@ String ClientBase::runQueryForAI(const String & query, bool readonly)
         /// Server-side errors are reported through the normal path; what reaches here are
         /// client-side errors. Record the outcome for the model and restore the connection,
         /// like the interactive loop does after a client-side exception.
-        ai_query_context->recordError(query, getCurrentExceptionMessage(false));
+        ai_query_context->recordError(query, getCurrentExceptionMessage(false), /*from_ai=*/ true);
         if (connection && !connection->checkConnected(connection_parameters.timeouts))
             connect();
     }
@@ -4035,19 +4042,33 @@ void ClientBase::recordErrorForAIContext(std::string_view query_or_input)
     else
         return;
 
-    ai_query_context->recordError(String(query_or_input), message);
+    /// A query that failed before an entry was opened (e.g. it could not be parsed) is recorded
+    /// standalone; it must keep the AI-initiated flag, so a failed query of the agent is not
+    /// replayed into the conversation as if the user had typed it.
+    ai_query_context->recordError(String(query_or_input), message, /*from_ai=*/ ai_running_query);
 }
 #endif
 
 Block ClientBase::fetchInternalQueryResult(const String & query, const NameToNameMap & params)
 {
+    /// The internal queries (of the AI agent and of the `help` command) are ClickHouse SQL,
+    /// so when the session was switched to another dialect, this query is explicitly pinned
+    /// to the ClickHouse dialect. The rest of the session settings are not sent: the query
+    /// runs under the defaults of the connection, like before.
+    std::optional<Settings> settings_to_send;
+    if (client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse)
+    {
+        settings_to_send.emplace();
+        settings_to_send->set("dialect", "clickhouse");
+    }
+
     connection->sendQuery(
         connection_parameters.timeouts,
         query,
         params,
         "", /// query_id
         QueryProcessingStage::Complete,
-        nullptr, /// settings
+        settings_to_send ? &*settings_to_send : nullptr,
         &client_context->getClientInfo(), /// a valid client info (with a query kind) is required by the TCP server
         false, /// with_pending_data
         {}, /// external_roles
@@ -4847,7 +4868,7 @@ void ClientBase::runInteractive()
 
 #if USE_CLIENT_AI
             if (ai_query_context)
-                ai_query_context->recordError(input, getExceptionMessage(e, false));
+                ai_query_context->recordError(input, getExceptionMessage(e, false), /*from_ai=*/ false);
 #endif
         }
 

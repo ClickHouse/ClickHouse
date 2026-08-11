@@ -21,6 +21,7 @@
 #include <Storages/IStorage.h>
 #include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/SettingSource.h>
 #include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
 #include <Common/ProfileEvents.h>
@@ -145,7 +146,7 @@ void LocalConnection::sendQuery(
     const NameToNameMap & query_parameters,
     const String & query_id,
     UInt64 stage,
-    const Settings *,
+    const Settings * passed_settings,
     const ClientInfo * client_info,
     bool,
     const std::vector<String> & /*external_roles*/,
@@ -163,6 +164,16 @@ void LocalConnection::sendQuery(
 
     query_context->setCurrentQueryId(query_id);
     query_context->setClientInterface(ClientInfo::Interface::LOCAL);
+
+    /// Apply the per-query settings passed with the query, like a remote server does with the
+    /// settings sent over the wire (throwing if they violate the constraints, as for an initial
+    /// query). The query below is also parsed with them (e.g. the `dialect`).
+    if (passed_settings)
+    {
+        const auto settings_changes = passed_settings->changes();
+        query_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
+        query_context->applySettingsChanges(settings_changes);
+    }
 
     /// Always track progress so that output formats (e.g. JSON) can report accurate statistics.
     /// The send_progress flag only controls the client-side progress bar, not progress tracking.
