@@ -199,6 +199,45 @@ String AIServerFunctionTransport::renderConversation(const ai::Messages & messag
     return out.str();
 }
 
+namespace
+{
+
+/// The position right after the end of the JSON value starting at `start` (which must point
+/// at `{` or `[`), respecting string literals and escapes, or `npos` if the value never closes.
+size_t findJsonValueEnd(const String & s, size_t start)
+{
+    size_t depth = 0;
+    bool in_string = false;
+    bool escaped = false;
+    for (size_t i = start; i < s.size(); ++i)
+    {
+        char c = s[i];
+        if (in_string)
+        {
+            if (escaped)
+                escaped = false;
+            else if (c == '\\')
+                escaped = true;
+            else if (c == '"')
+                in_string = false;
+        }
+        else if (c == '"')
+            in_string = true;
+        else if (c == '{' || c == '[')
+            ++depth;
+        else if (c == '}' || c == ']')
+        {
+            if (depth > 0)
+                --depth;
+            if (depth == 0)
+                return i + 1;
+        }
+    }
+    return String::npos;
+}
+
+}
+
 AIAgentStep AIServerFunctionTransport::parseResponse(const String & response, size_t & call_id_counter)
 {
     static constexpr std::string_view open_tag = "<tool_call>";
@@ -220,9 +259,44 @@ AIAgentStep AIServerFunctionTransport::parseResponse(const String & response, si
         writeString(response.substr(pos, open_pos - pos), text);
 
         size_t content_pos = open_pos + open_tag.size();
-        size_t close_pos = response.find(close_tag, content_pos);
-        String content = response.substr(content_pos, close_pos == String::npos ? String::npos : close_pos - content_pos);
-        pos = close_pos == String::npos ? response.size() : close_pos + close_tag.size();
+
+        /// The close tag can legitimately appear inside a JSON string of the arguments
+        /// (e.g. a query `SELECT '</tool_call>'`), so the end of the block is found by
+        /// scanning the JSON value itself when possible, not by searching for the close tag.
+        size_t content_end = String::npos;
+        size_t next_pos = String::npos;
+        size_t json_pos = content_pos;
+        while (json_pos < response.size() && isWhitespaceASCII(response[json_pos]))
+            ++json_pos;
+        if (json_pos < response.size() && response[json_pos] == '{')
+        {
+            if (size_t json_end = findJsonValueEnd(response, json_pos); json_end != String::npos)
+            {
+                size_t tag_pos = json_end;
+                while (tag_pos < response.size() && isWhitespaceASCII(response[tag_pos]))
+                    ++tag_pos;
+                if (response.compare(tag_pos, close_tag.size(), close_tag) == 0)
+                {
+                    content_end = json_end;
+                    next_pos = tag_pos + close_tag.size();
+                }
+                else if (json_end == response.size())
+                {
+                    /// An unclosed block ending in a complete JSON value.
+                    content_end = json_end;
+                    next_pos = json_end;
+                }
+            }
+        }
+        if (content_end == String::npos)
+        {
+            size_t close_pos = response.find(close_tag, content_pos);
+            content_end = close_pos == String::npos ? response.size() : close_pos;
+            next_pos = close_pos == String::npos ? response.size() : close_pos + close_tag.size();
+        }
+
+        String content = response.substr(content_pos, content_end - content_pos);
+        pos = next_pos;
 
         String call_id = "call_" + std::to_string(call_id_counter++);
         try
