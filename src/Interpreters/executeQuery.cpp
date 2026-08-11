@@ -83,6 +83,14 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/Access/ASTCheckGrantQuery.h>
+#include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/Access/ASTCreateRoleQuery.h>
+#include <Parsers/Access/ASTCreateQuotaQuery.h>
+#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
+#include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
+#include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
+#include <Parsers/Access/ASTDropAccessEntityQuery.h>
+#include <Parsers/Access/ASTSetRoleQuery.h>
 #include <Parsers/stripQuerySettings.h>
 #include <QueryPipeline/printPipeline.h>
 #include <IO/Progress.h>
@@ -1155,6 +1163,24 @@ static String extractObjectNamesFromAST(const IAST & ast, const String & current
     return result;
 }
 
+/// Administration of access entities reports generic query kinds: `CREATE USER` / `ALTER USER`
+/// is `QueryKind::Create`, `DROP ROLE` is `QueryKind::Drop`, `SET ROLE` is `QueryKind::Set`.
+/// These statements manage privileges and access control, so the audit log must classify them
+/// as DCL together with `GRANT` / `REVOKE` — otherwise an operator who enables only the `DCL`
+/// audit type would miss user and role administration events.
+static bool isAccessControlQuery(const ASTPtr & ast)
+{
+    return ast
+        && (ast->as<ASTCreateUserQuery>()
+            || ast->as<ASTCreateRoleQuery>()
+            || ast->as<ASTCreateQuotaQuery>()
+            || ast->as<ASTCreateRowPolicyQuery>()
+            || ast->as<ASTCreateSettingsProfileQuery>()
+            || ast->as<ASTCreateMaskingPolicyQuery>()
+            || ast->as<ASTDropAccessEntityQuery>()
+            || ast->as<ASTSetRoleQuery>());
+}
+
 void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & ast)
 {
     auto * audit_log = DB::getAuditLog();
@@ -1190,16 +1216,24 @@ void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & a
                 audit_type = Context::AuditLogTypes::DML;
             break;
 
-        /// TRUNCATE reports QueryKind::Drop but is a data-modifying operation (DML).
+        /// TRUNCATE reports QueryKind::Drop but is a data-modifying operation (DML), and
+        /// `DROP USER` / `DROP ROLE` / ... report QueryKind::Drop but remove access entities (DCL).
         case IAST::QueryKind::Drop:
             if (ast && ast->as<ASTDropQuery>() && ast->as<ASTDropQuery>()->kind == ASTDropQuery::Kind::Truncate)
                 audit_type = Context::AuditLogTypes::DML;
+            else if (isAccessControlQuery(ast))
+                audit_type = Context::AuditLogTypes::DCL;
             else
                 audit_type = Context::AuditLogTypes::DDL;
             break;
 
-        /// Statements that create, modify, or remove database objects (including backup/restore).
+        /// `CREATE USER`, `ALTER ROLE`, `CREATE ROW POLICY`, ... report QueryKind::Create but
+        /// administer access entities (DCL).
         case IAST::QueryKind::Create:
+            audit_type = isAccessControlQuery(ast) ? Context::AuditLogTypes::DCL : Context::AuditLogTypes::DDL;
+            break;
+
+        /// Statements that create, modify, or remove database objects (including backup/restore).
         case IAST::QueryKind::Undrop:
         case IAST::QueryKind::Rename:
         case IAST::QueryKind::Alter:
@@ -1214,12 +1248,16 @@ void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & a
         case IAST::QueryKind::Move:
             audit_type = Context::AuditLogTypes::DCL;
             break;
+
+        /// `SET ROLE` / `SET DEFAULT ROLE` report QueryKind::Set but change role assignment (DCL).
+        case IAST::QueryKind::Set:
+            audit_type = isAccessControlQuery(ast) ? Context::AuditLogTypes::DCL : Context::AuditLogTypes::MISC;
+            break;
         /// Session-, transaction-, and system-level statements that do not query or alter data,
         /// schema, or access control. All query kinds are listed explicitly (no `default`) so that
         /// any new kind added later forces a deliberate audit classification at compile time.
         case IAST::QueryKind::None:
         case IAST::QueryKind::System:
-        case IAST::QueryKind::Set:
         case IAST::QueryKind::Use:
         case IAST::QueryKind::KillQuery:
         case IAST::QueryKind::Begin:

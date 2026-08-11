@@ -759,3 +759,46 @@ def test_audit_log_failed_query_object_names_are_quoted(start_cluster):
     # OBJECT_NAMES is field index 5; both components must be backquoted, as in `system.query_log`.
     assert fields[5] == f"`{quoted_db}`.`{quoted_table}`", \
         f"OBJECT_NAMES must carry both components backquoted: {lines[0]}"
+
+
+def test_audit_log_access_control_statements_are_dcl(start_cluster):
+    """Access-entity administration reports generic query kinds (`CREATE USER` is Create,
+    `DROP ROLE` is Drop, `SET DEFAULT ROLE` is Set), but it must be audited as DCL together
+    with GRANT/REVOKE. node_user_dcl enables only the USER and DCL audit types, so these
+    statements must appear in its audit log, while genuine DDL and MISC statements must not."""
+    node_user_dcl.query("DROP USER IF EXISTS audit_dcl_user")
+    node_user_dcl.query("DROP ROLE IF EXISTS audit_dcl_role")
+
+    node_user_dcl.query("CREATE USER audit_dcl_user")
+    node_user_dcl.query("ALTER USER audit_dcl_user SETTINGS max_threads = 2")
+    node_user_dcl.query("CREATE ROLE audit_dcl_role")
+    node_user_dcl.query("GRANT audit_dcl_role TO audit_dcl_user")
+    node_user_dcl.query("SET DEFAULT ROLE audit_dcl_role TO audit_dcl_user")
+    node_user_dcl.query("DROP USER audit_dcl_user")
+    node_user_dcl.query("DROP ROLE audit_dcl_role")
+
+    # DDL and MISC are disabled on this node: a table statement must not be audited. It shares
+    # the `audit_dcl_` marker, so a misclassification would fail the per-line check below.
+    node_user_dcl.query("CREATE TABLE audit_dcl_table (a int) ENGINE = Memory")
+    node_user_dcl.query("DROP TABLE audit_dcl_table")
+
+    for marker in [
+        "CREATE USER audit_dcl_user",
+        "ALTER USER audit_dcl_user",
+        "CREATE ROLE audit_dcl_role",
+        "SET DEFAULT ROLE audit_dcl_role",
+        "DROP USER audit_dcl_user",
+        "DROP ROLE audit_dcl_role",
+    ]:
+        assert_audit_log_contain_with_retry(node_user_dcl, marker)
+
+    log_content = node_user_dcl.grep_in_log("audit_dcl_", from_host=True, filename="clickhouse-server.audit.log")
+    lines = [line for line in log_content.strip().split("\n") if "AUDIT:" in line]
+    assert lines, "access-control statements must produce audit records"
+    for line in lines:
+        fields = line.split("AUDIT: ", 1)[1].split(", ")
+        assert fields[0] == "DCL", f"access-control statements must be classified as DCL: {line}"
+
+    assert not node_user_dcl.contains_in_log(
+        "audit_dcl_table", from_host=True, filename="clickhouse-server.audit.log"
+    ), "table DDL must not be audited on a node with only USER and DCL audit types"
