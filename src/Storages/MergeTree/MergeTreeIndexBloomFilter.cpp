@@ -1,14 +1,12 @@
 #include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
 
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldAccurateComparison.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
@@ -447,20 +445,6 @@ void fillJSONPathBloomPredicate(
         BloomFilterHash::hashWithField(actual_type.get(), path_field)));
 }
 
-/// Serialize a JSON value exactly as `JSONAllValues` does and hash the resulting string.
-void fillJSONValueBloomPredicate(
-    const JSONSubcolumnIndexInfo & json_info,
-    const Block & header,
-    const String & serialized_value,
-    MergeTreeIndexConditionBloomFilter::RPNElement & out)
-{
-    const DataTypePtr & index_type = header.getByPosition(json_info.header_position).type;
-    const auto actual_type = BloomFilter::getPrimitiveType(index_type);
-    out.predicate.emplace_back(std::make_pair(
-        json_info.header_position,
-        BloomFilterHash::hashWithField(actual_type.get(), Field(serialized_value))));
-}
-
 }
 
 bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out, const RPNBuilderTreeNode * parent)
@@ -617,41 +601,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         fillJSONPathBloomPredicate(*json_info, header, out);
         out.function = RPNElement::FUNCTION_IN;
 
-        return true;
-    }
-
-    /// Match values from JSON subcolumns against an index over all serialized JSON values.
-    if (auto json_info = tryMatchNodeToJSONAllValuesIndex(key_node, header))
-    {
-        if (function_name != "in" && function_name != "globalIn")
-            return false;
-
-        auto key_type = key_node.getDAGNode()->result_type;
-        const auto format_settings = getFormatSettings(key_node.getTreeContext().getQueryContext());
-        auto serialized_values = ColumnString::create();
-        for (size_t row = 0; row < column->size(); ++row)
-        {
-            auto serialized_value = tryConvertAndSerializeJSONValueAsText(
-                (*column)[row],
-                type,
-                json_info->is_string_cast ? nullptr : key_type,
-                format_settings,
-                json_info->unindexed_value);
-            if (!serialized_value)
-                return false;
-
-            serialized_values->insert(*serialized_value);
-        }
-
-        const DataTypePtr & index_type = header.getByPosition(json_info->subcolumn.header_position).type;
-        const auto & array_type = assert_cast<const DataTypeArray &>(*index_type);
-        const auto & nested_type = array_type.getNestedType();
-        ColumnPtr serialized_values_column = std::move(serialized_values);
-        out.predicate.emplace_back(std::make_pair(
-            json_info->subcolumn.header_position,
-            BloomFilterHash::hashWithColumn(
-                nested_type, serialized_values_column, 0, serialized_values_column->size())));
-        out.function = RPNElement::FUNCTION_IN;
         return true;
     }
 
@@ -936,27 +885,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         out.function = RPNElement::FUNCTION_EQUALS;
         fillJSONPathBloomPredicate(*json_info, header, out);
 
-        return true;
-    }
-
-    if (auto json_info = tryMatchNodeToJSONAllValuesIndex(key_node, header))
-    {
-        if (function_name != "equals")
-            return false;
-
-        auto key_type = key_node.getDAGNode()->result_type;
-        const auto format_settings = getFormatSettings(key_node.getTreeContext().getQueryContext());
-        auto serialized_value = tryConvertAndSerializeJSONValueAsText(
-            value_field,
-            value_type,
-            json_info->is_string_cast ? nullptr : key_type,
-            format_settings,
-            json_info->unindexed_value);
-        if (!serialized_value)
-            return false;
-
-        out.function = RPNElement::FUNCTION_EQUALS;
-        fillJSONValueBloomPredicate(json_info->subcolumn, header, *serialized_value, out);
         return true;
     }
 

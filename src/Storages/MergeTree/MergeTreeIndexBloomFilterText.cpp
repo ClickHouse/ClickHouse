@@ -3,7 +3,6 @@
 #include <Columns/ColumnArray.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/quoteString.h>
-#include <Functions/FunctionFactory.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
 #include <Core/Defines.h>
@@ -11,9 +10,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMapHelpers.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Formats/FormatFactory.h>
 #include <Interpreters/Set.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -35,28 +32,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-}
-
-static bool unindexedValueCanMatch(
-    const String & function_name,
-    const Field & value,
-    const DataTypePtr & value_type,
-    const DataTypePtr & result_type,
-    const std::optional<Field> & unindexed_value,
-    const ContextPtr & context)
-{
-    if (!unindexed_value)
-        return false;
-
-    if (function_name == "notEquals" || function_name == "notLike")
-        return false;
-
-    ColumnsWithTypeAndName arguments{
-        {result_type->createColumnConst(1, *unindexed_value), result_type, ""},
-        {value_type->createColumnConst(1, value), value_type, ""},
-    };
-    auto function = FunctionFactory::instance().get(function_name, context)->build(arguments);
-    return function->execute(arguments, function->getResultType(), 1, false)->getBool(0);
 }
 
 MergeTreeIndexGranuleBloomFilterText::MergeTreeIndexGranuleBloomFilterText(
@@ -236,8 +211,6 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
             case RPNElement::FUNCTION_HAS:
                 rpn_stack.emplace_back(granule->bloom_filters[element.key_column].contains(*element.bloom_filter), true);
 
-                /// Negating the `BoolMask` swaps its possible truth values. A Bloom-filter hit becomes unknown,
-                /// not false, so a negative predicate cannot incorrectly discard a granule.
                 if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
                     rpn_stack.back() = !rpn_stack.back();
                 break;
@@ -410,7 +383,7 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
 
         if (functionIsInOrGlobalInOperator(function_name))
         {
-            if (tryPrepareSetBloomFilter(function_name, left_argument, right_argument, out))
+            if (tryPrepareSetBloomFilter(left_argument, right_argument, out))
             {
                 if (function_name == "notIn")
                 {
@@ -488,88 +461,14 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         }
     }
 
-    DataTypePtr serialized_value_type = value_type;
+    auto value_data_type = WhichDataType(value_type);
+    if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
+        return false;
+
     Field const_value = value_field;
 
     const auto column_name = key_node.getColumnName();
     auto key_index = getKeyIndex(column_name);
-
-    if (auto json_info = tryMatchNodeToJSONAllValuesIndex(key_node, index_columns))
-    {
-        key_index = json_info->subcolumn.header_position;
-
-        const auto key_type = key_node.getDAGNode()->result_type;
-        const auto format_settings = getFormatSettings(key_node.getTreeContext().getQueryContext());
-        if (json_info->is_string_cast && unindexedValueCanMatch(
-                function_name,
-                const_value,
-                serialized_value_type,
-                key_type,
-                json_info->unindexed_value,
-                key_node.getTreeContext().getQueryContext()))
-            return false;
-
-        DataTypePtr target_type;
-        bool serialize_quoted = false;
-        if (!json_info->is_string_cast)
-        {
-            if (function_name == "equals" || function_name == "notEquals")
-            {
-                target_type = key_type;
-            }
-            else if (function_name == "has" || function_name == "hasAny" || function_name == "hasAll")
-            {
-                if (const auto * key_array = typeid_cast<const DataTypeArray *>(key_type.get()))
-                {
-                    target_type = key_array->getNestedType();
-                    serialize_quoted = true;
-                }
-            }
-        }
-
-        if (function_name == "hasAny" || function_name == "hasAll")
-        {
-            const auto * array_type = typeid_cast<const DataTypeArray *>(serialized_value_type.get());
-            if (!array_type)
-                return false;
-
-            Array serialized_values;
-            const auto & values = const_value.safeGet<Array>();
-            serialized_values.reserve(values.size());
-            for (const auto & value : values)
-            {
-                auto serialized_value = tryConvertAndSerializeJSONValueAsText(
-                    value, array_type->getNestedType(), target_type, format_settings, std::nullopt, serialize_quoted);
-                if (!serialized_value)
-                    return false;
-
-                serialized_values.emplace_back(std::move(*serialized_value));
-            }
-
-            const_value = std::move(serialized_values);
-            serialized_value_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
-        }
-        else if (function_name != "multiSearchAny")
-        {
-            auto serialized_value = tryConvertAndSerializeJSONValueAsText(
-                const_value,
-                serialized_value_type,
-                target_type,
-                format_settings,
-                function_name == "equals" ? json_info->unindexed_value : std::nullopt,
-                serialize_quoted);
-            if (!serialized_value)
-                return false;
-
-            const_value = std::move(*serialized_value);
-            serialized_value_type = std::make_shared<DataTypeString>();
-        }
-    }
-
-    auto value_data_type = WhichDataType(serialized_value_type);
-    if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
-        return false;
-
     const auto map_key_index = getKeyIndex(fmt::format("mapKeys({})", column_name));
     const auto map_value_index = getKeyIndex(fmt::format("mapValues({})", column_name));
 
@@ -864,53 +763,10 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 }
 
 bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
-    const String & function_name,
     const RPNBuilderTreeNode & left_argument,
     const RPNBuilderTreeNode & right_argument,
     RPNElement & out)
 {
-    if (auto json_info = tryMatchNodeToJSONAllValuesIndex(left_argument, index_columns);
-        (function_name == "in" || function_name == "globalIn") && json_info)
-    {
-        auto future_set = right_argument.tryGetPreparedSet();
-        if (!future_set)
-            return false;
-
-        auto prepared_set = future_set->buildOrderedSetInplace(right_argument.getTreeContext().getQueryContext());
-        if (!prepared_set || !prepared_set->hasExplicitSetElements())
-            return false;
-
-        const auto & columns = prepared_set->getSetElements();
-        const auto & data_types = prepared_set->getDataTypes();
-        if (columns.size() != 1 || data_types.size() != 1)
-            return false;
-
-        const auto key_type = left_argument.getDAGNode()->result_type;
-        const auto format_settings = getFormatSettings(left_argument.getTreeContext().getQueryContext());
-        out.set_key_position.push_back(json_info->subcolumn.header_position);
-        out.set_bloom_filters.emplace_back();
-        auto & bloom_filters = out.set_bloom_filters.back();
-        bloom_filters.reserve(prepared_set->getTotalRowCount());
-
-        for (size_t row = 0; row < prepared_set->getTotalRowCount(); ++row)
-        {
-            auto serialized_value = tryConvertAndSerializeJSONValueAsText(
-                (*columns[0])[row],
-                data_types[0],
-                json_info->is_string_cast ? nullptr : key_type,
-                format_settings,
-                json_info->unindexed_value);
-            if (!serialized_value)
-                return false;
-
-            bloom_filters.emplace_back(params);
-            forEachTokenToBloomFilter(
-                *tokenizer, serialized_value->data(), serialized_value->size(), bloom_filters.back());
-        }
-
-        return true;
-    }
-
     std::vector<KeyTuplePositionMapping> key_tuple_mapping;
     DataTypes data_types;
 
@@ -935,6 +791,7 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         key_tuple_mapping.emplace_back(0, *key);
         data_types.push_back(index_data_types[*key]);
     }
+
     if (key_tuple_mapping.empty())
         return false;
 

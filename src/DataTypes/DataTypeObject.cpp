@@ -2038,7 +2038,7 @@ SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
 
 1. **Indexes on specific subcolumns** — create a standard skip index on a known JSON path, just like on a regular column. This indexes the *values* at that path.
 2. **Path-based indexes with `JSONAllPaths`** — index the *set of paths* present in each granule to skip granules that cannot contain the queried path.
-3. **Value-based indexes with `JSONAllValues`** — index *all values* across all JSON paths to accelerate equality or text searches on JSON subcolumns with a single index.
+3. **Value-based indexes with `JSONAllValues`** — index *all values* across all JSON paths using a [text index](/reference/engines/table-engines/mergetree-family/textindexes) to accelerate full-text search on any JSON subcolumn with a single index.
 
 ### Indexes on specific subcolumns {#json-indexes-on-subcolumns}
 
@@ -2189,35 +2189,13 @@ When a JSON path is absent from a granule, the subcolumn evaluates to:
 - `NULL` for `Dynamic` type (e.g., `json.path`) and `Nullable` typed subcolumns (e.g., `json.path.:Int64`) — comparisons with `NULL` always return false, so skipping is safe.
 - The type's default value for non-`Nullable` CAST expressions (e.g., `json.path::Int64` produces `0` when the path is missing) — skipping is safe only when the compared value differs from the default. The index automatically handles this distinction.
 
-### Value-based indexes with JSONAllValues {#json-indexes-jsonallvalues}
+### Full-text search with JSONAllValues {#json-indexes-jsonallvalues}
 
-The [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues) function returns every value from a JSON column as `Array(String)`. A single index on `JSONAllValues(json_column)` covers all JSON paths, without requiring an index for each subcolumn.
+[Text indexes](/reference/engines/table-engines/mergetree-family/textindexes) can be used to accelerate full-text search on JSON columns via the [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues) function.
+`JSONAllValues` returns all values from a JSON column as `Array(String)`, which can be indexed by a text index.
+A single index on `JSONAllValues(json_column)` covers all JSON paths, enabling full-text search on any subcolumn without creating separate indexes for each path.
 
-`JSONAllValues` can be used with these index types:
-
-- [`bloom_filter`](/reference/engines/table-engines/mergetree-family/mergetree#bloom-filter) for equality and `IN` predicates.
-- [`ngrambf_v1`](/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter), [`tokenbf_v1`](/reference/engines/table-engines/mergetree-family/mergetree#token-bloom-filter), and [`sparse_grams`](/reference/engines/table-engines/mergetree-family/mergetree#sparse-grams-bloom-filter) for equality, `IN`, and their supported text-search predicates. See the [function-support table](/reference/engines/table-engines/mergetree-family/mergetree#functions-support) for details. The `ngrambf_v1` and `tokenbf_v1` index types are deprecated for full-text search; prefer the `text` index for new applications.
-- [`text`](/reference/engines/table-engines/mergetree-family/textindexes) for full-text search.
-
-With the Bloom-filter-based index types above, direct equality and `IN` predicates can use the index when the JSON subcolumn has a concrete type. A direct `Dynamic` or `Variant` comparison may apply different type conversions for different stored values, so its serialized representation is not known while the index condition is built. Cast such paths to `String` to compare the representation stored by `JSONAllValues`, for example `data.value::String = '42'`. Explicit string casts also support the applicable text-search predicates listed above.
-
-For example, the following index can skip granules that do not contain the serialized value compared with `data.user_id`:
-
-```sql title="Query"
-CREATE TABLE events
-(
-    data JSON(user_id UInt64),
-    INDEX values_idx JSONAllValues(data) TYPE bloom_filter GRANULARITY 1
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-
-SELECT * FROM events WHERE data.user_id = 42;
-```
-
-Values are stored without their paths. A matching value under another path is therefore a possible false positive, and the original row-level predicate is still evaluated. A missing `Dynamic` or `Variant` path is not represented in `JSONAllValues`, so string predicates that can match its default value are not optimized.
-
-See [Value-based indexes with JSONAllValues](/reference/engines/table-engines/mergetree-family/textindexes#json-indexes-jsonallvalues) for details about the `text` index.
+See [Value-based indexes with JSONAllValues](/reference/engines/table-engines/mergetree-family/textindexes#json-indexes-jsonallvalues) in the text indexes documentation for details and examples.
 
 ## Tips for better usage of the JSON type {#tips-for-better-usage-of-the-json-type}
 

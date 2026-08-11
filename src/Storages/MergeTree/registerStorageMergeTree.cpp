@@ -1577,7 +1577,6 @@ INDEX map_value_index mapValues(map_column) TYPE bloom_filter
 
 -- on columns of type JSON:
 INDEX json_paths_index JSONAllPaths(json_column) TYPE bloom_filter
-INDEX json_values_index JSONAllValues(json_column) TYPE bloom_filter
 
 -- on columns of type Tuple:
 INDEX tuple_1_index tuple_column.1 TYPE bloom_filter
@@ -1648,8 +1647,8 @@ The following data types are supported:
 For the `Map` data type, the client can specify if the index should be created for keys or for values using the [`mapKeys`](/sql-reference/functions/tuple-map-functions.md/#mapKeys) or [`mapValues`](/sql-reference/functions/tuple-map-functions.md/#mapValues) functions.
 :::
 
-:::note JSON data type: indexing JSON paths and values
-For the [`JSON`](/sql-reference/data-types/newjson) data type, a bloom filter index can be created on the set of paths using the [`JSONAllPaths`](/sql-reference/functions/json-functions#JSONAllPaths) function or on the set of values using the [`JSONAllValues`](/sql-reference/functions/json-functions#JSONAllValues) function. This allows skipping granules where a queried JSON path or value is absent. Cast `Dynamic` or `Variant` paths to `String` to compare the representation stored by `JSONAllValues`. See [Data skipping indexes for JSON](/sql-reference/data-types/newjson#data-skipping-indexes-for-json) for details.
+:::note JSON data type: indexing JSON paths
+For the [`JSON`](/sql-reference/data-types/newjson) data type, a bloom filter index can be created on the set of paths using the [`JSONAllPaths`](/sql-reference/functions/json-functions#JSONAllPaths) function. This allows skipping granules where a queried JSON path is absent. See [Data skipping indexes for JSON](/sql-reference/data-types/newjson#data-skipping-indexes-for-json) for details.
 :::
 
 #### N-gram bloom filter *(Deprecated)* {#n-gram-bloom-filter}
@@ -1665,10 +1664,6 @@ For each index granule stores a [bloom filter](https://en.wikipedia.org/wiki/Blo
 ```text title="Syntax"
 ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 ```
-
-:::note JSON data type
-For the [`JSON`](/sql-reference/data-types/newjson) data type, an `ngrambf_v1` index can be created on the values returned by [`JSONAllValues`](/sql-reference/functions/json-functions#JSONAllValues). It supports equality, `IN`, and the applicable predicates in the [function-support table](#functions-support). Cast `Dynamic` or `Variant` paths to `String` to compare the representation stored by `JSONAllValues`.
-:::
 
 | Parameter                       | Description |
 |---------------------------------|-------------|
@@ -1740,10 +1735,6 @@ See page ["Full-text search with text indexes"](/engines/table-engines/mergetree
 tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 ```
 
-:::note JSON data type
-For the [`JSON`](/sql-reference/data-types/newjson) data type, a `tokenbf_v1` index can be created on the values returned by [`JSONAllValues`](/sql-reference/functions/json-functions#JSONAllValues). It supports equality, `IN`, and the applicable predicates in the [function-support table](#functions-support). Cast `Dynamic` or `Variant` paths to `String` to compare the representation stored by `JSONAllValues`.
-:::
-
 #### Sparse grams bloom filter {#sparse-grams-bloom-filter}
 
 The sparse grams bloom filter is similar to `ngrambf_v1` but uses [sparse grams tokens](/sql-reference/functions/string-functions.md/#sparseGrams) instead of ngrams.
@@ -1751,10 +1742,6 @@ The sparse grams bloom filter is similar to `ngrambf_v1` but uses [sparse grams 
 ```text title="Syntax"
 sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 ```
-
-:::note JSON data type
-For the [`JSON`](/sql-reference/data-types/newjson) data type, a `sparse_grams` index can be created on the values returned by [`JSONAllValues`](/sql-reference/functions/json-functions#JSONAllValues). It supports equality, `IN`, and the applicable predicates in the [function-support table](#functions-support). Cast `Dynamic` or `Variant` paths to `String` to compare the representation stored by `JSONAllValues`.
-:::
 
 ### Text index {#text}
 
