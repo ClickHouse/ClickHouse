@@ -3335,7 +3335,29 @@ catch (...)
         throw;
 }
 
-MergeTreeData::~MergeTreeData() = default;
+MergeTreeData::~MergeTreeData()
+{
+    /// The background tasks capture `this` and use members (`outdated_unloaded_data_parts`,
+    /// `unexpected_data_parts`, `refresh_parts_mutex`, `stats_mutex`, `cached_estimator`) that
+    /// are declared after their task holders, so they are destroyed before the holders' own
+    /// destructors deactivate the tasks. `shutdown` deactivates the tasks too, but a task
+    /// activated after the shutdown (a table startup or an ALTER of
+    /// `refresh_statistics_interval` racing with a drop) can still be running here, so join it
+    /// before any member is destroyed.
+    try
+    {
+        /// Sets the cancellation flags before deactivating, so a running load exits early.
+        stopOutdatedAndUnexpectedDataPartsLoadingTask();
+        if (refresh_parts_task)
+            refresh_parts_task->deactivate();
+        if (refresh_stats_task)
+            refresh_stats_task->deactivate();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to deactivate a background task");
+    }
+}
 
 void MergeTreeData::loadUnexpectedDataParts()
 try
@@ -3885,7 +3907,7 @@ void MergeTreeData::reclaimStaleTemporaryPartDirectory(const DiskPtr & disk, con
 {
     /// Only temporary names may be auto-reclaimed. Elsewhere (e.g. "detached/<dir>" during ATTACH) the
     /// directory contents are the payload, and reclaiming would destroy user data.
-    if (!startsWith(part_dir_name, "tmp") || part_dir_name.find('/') != String::npos)
+    if (!startsWith(part_dir_name, "tmp") || part_dir_name.contains('/'))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reclaim {}: not a temporary part directory name", part_dir_name);
 
     /// The claim is what makes the removal safe: with the name owned, an existing directory can only be
@@ -12343,6 +12365,18 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
 
 StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
+    /// A pinned snapshot is captured in advance for atomic `CREATE MATERIALIZED VIEW ... POPULATE`,
+    /// so the population reads exactly the data that existed when the view was subscribed to new inserts.
+    /// The pin is stored on the query context, so consult it as well: the population's read runs under
+    /// contexts derived from the query context rather than the exact context the pin was set on.
+    if (auto pinned = query_context->getPinnedStorageSnapshot(getStorageID().uuid))
+        return pinned;
+    if (query_context->hasQueryContext())
+    {
+        if (auto pinned = query_context->getQueryContext()->getPinnedStorageSnapshot(getStorageID().uuid))
+            return pinned;
+    }
+
     /// Inject artificial delay when taking storage snapshot.
     /// Useful for simulating concurrent mutations during snapshot acquisition.
     /// E.g. tests/queries/0_stateless/03443_shared_storage_snapshots.sh
