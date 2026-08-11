@@ -13,6 +13,8 @@
 namespace DB
 {
 
+class AccessFlags;
+
 struct DistributedSettings;
 struct Settings;
 class Context;
@@ -66,7 +68,8 @@ public:
         LoadingStrictnessLevel mode,
         ClusterPtr owned_cluster_ = {},
         ASTPtr remote_table_function_ptr_ = {},
-        bool is_remote_function_ = false);
+        bool is_remote_function_ = false,
+        bool is_remote_database_proxy_ = false);
 
     ~StorageDistributed() override;
 
@@ -218,6 +221,13 @@ private:
 
     bool isShardingKeySuitsQueryTreeNodeExpression(const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const;
 
+    /// The implicit `rand()` sharding key of a `Remote` database proxy (see `DatabaseRemote`) exists
+    /// only to spread `INSERT` rows across the shards; it says nothing about data placement. The read
+    /// path (shard pruning under `optimize_skip_unused_shards`/`force_optimize_skip_unused_shards`,
+    /// the distributed group-by optimization) must behave as if such a table has no sharding key,
+    /// exactly like a `Distributed` table declared without one.
+    bool hasShardingKeyForReads() const { return has_sharding_key && !is_remote_database_proxy; }
+
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
     std::string getClusterName() const { return cluster_name.empty() ? "<remote>" : cluster_name; }
 
@@ -282,6 +292,19 @@ private:
     pcg64 rng;
 
     bool is_remote_function;
+
+    /// The storage is a table of a `Remote` database: a transient proxy over the remote table with
+    /// no data of its own. Such a proxy enforces the caller's own rights on
+    /// `remote_database.remote_table` in `read`/`write` when a shard points to this server, where
+    /// the query runs directly under the caller and the stored engine credentials do not apply
+    /// (the ordinary resolution path of the database validates only `SHOW_COLUMNS`; the `remote`
+    /// table function performs the same check at storage construction time instead, in
+    /// `TableFunctionRemote::executeImpl`, because there the query kind is known by then). It also
+    /// rejects `TRUNCATE`, which for a `Distributed` storage only clears the on-disk async-insert
+    /// spool: the proxy has none, so it would be a silent no-op reported as success.
+    bool is_remote_database_proxy;
+
+    void checkLocalShardAccess(const AccessFlags & access, const ContextPtr & local_context) const;
 };
 
 }
