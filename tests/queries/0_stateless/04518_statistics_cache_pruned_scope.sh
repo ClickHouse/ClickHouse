@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-settings="--use_statistics=1 --use_statistics_cache=1 --collect_hash_table_stats_during_joins=0"
+settings="--enable_analyzer=1 --use_statistics=1 --use_statistics_cache=1 --collect_hash_table_stats_during_joins=0"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS fact_04518 SYNC;

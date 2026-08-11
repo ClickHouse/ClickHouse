@@ -390,6 +390,18 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         if (analyzed_result && analyzed_result->has_exact_ranges && analyzed_result->selected_rows == 0)
             return RelationStats{.estimated_rows = 0, .table_name = table_display_name};
 
+        /// `STREAM` reads intentionally defer index analysis to `MergeTreeCommitOrderSequentialSource`,
+        /// so the empty `AnalysisResult` is not an exact empty relation. Do not expose its sentinel
+        /// zero as a join cardinality estimate.
+        if (reading->getQueryInfo().isStream() && analyzed_result && analyzed_result->selected_rows == 0)
+        {
+            return RelationStats{
+                .estimated_rows = {},
+                .table_name = table_display_name,
+                .imprecise_estimate = true,
+                .source = RowEstimateSource::NoStatistics};
+        }
+
         const bool use_statistics = reading->getContext()->getSettingsRef()[Setting::use_statistics];
         if (use_statistics)
         {
