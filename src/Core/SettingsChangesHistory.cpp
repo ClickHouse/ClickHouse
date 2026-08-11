@@ -41,6 +41,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.6",
         {
+            {"analyzer_compatibility_allow_non_aggregate_in_having", false, false, "New compatibility setting. When enabled, the new analyzer mimics the legacy `HAVING`-to-`WHERE` rewrite for non-aggregate AND-conjuncts instead of raising `NOT_AN_AGGREGATE`."},
+            {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
+            {"iceberg_manifest_min_count_to_compact", 30, 30, "New setting to control manifest compaction for Iceberg tables."},
+            {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
+            {"output_format_image_height", 1024, 1024, "New setting controlling the height of the output image for image output formats such as PNG."},
+            {"output_format_image_terminal_mode", "", "", "New setting controlling whether image output formats such as PNG are rendered directly to the terminal using an inline image protocol."},
             {"join_runtime_filter_from_fixed_hash_table", false, true, "New setting."},
             {"use_lightweight_primary_key_index_analysis", false, true, "New setting to optimize primary key index analysis for tables with long primary keys"},
             {"ai_function_embedding_max_batch_size", 100, 100, "New setting"},
