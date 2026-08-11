@@ -23,7 +23,6 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/QueryRunnerSettings.h>
 #include <Storages/StorageFactory.h>
-#include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
@@ -40,6 +39,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -118,6 +118,15 @@ namespace
                 value);
 
         return {ShardSelectorKind::Fixed, shard_num};
+    }
+
+    /// Both operands are unbounded user settings, so the sum can wrap.
+    size_t saturatingAdd(size_t a, size_t b)
+    {
+        size_t result = 0;
+        if (__builtin_add_overflow(a, b, &result))
+            return std::numeric_limits<size_t>::max();
+        return result;
     }
 }
 
@@ -307,51 +316,56 @@ public:
         : WithContext(global_context_)
         , cluster_name(cluster_name_)
         , shard_selector(shard_selector_)
-        , queue(max_queue_size_)
-        , num_threads(num_threads_)
-        , max_queue_size(max_queue_size_)
         , log(log_)
-        , pool(CurrentMetrics::QueryRunnerThreads, CurrentMetrics::QueryRunnerThreadsActive, CurrentMetrics::QueryRunnerThreadsScheduled, num_threads_)
+        , pool(
+              CurrentMetrics::QueryRunnerThreads,
+              CurrentMetrics::QueryRunnerThreadsActive,
+              CurrentMetrics::QueryRunnerThreadsScheduled,
+              num_threads_,
+              /// An idle table must hold no thread: the pool starts threads on demand and retires them when idle.
+              /*max_free_threads*/ 0,
+              /// `queue_size` bounds running plus scheduled jobs, so it is the sum of both limits.
+              saturatingAdd(num_threads_, max_queue_size_),
+              /// A failing query must leave the table usable.
+              /*shutdown_on_exception*/ false)
     {
         client_info.client_name = String(client_name);
         client_info.setInitialQuery();
     }
 
-    void start()
-    {
-        try
-        {
-            for (size_t i = 0; i < num_threads; ++i)
-                pool.scheduleOrThrowOnError([this] { workerLoop(); });
-        }
-        catch (...)
-        {
-            shutdown();
-            throw;
-        }
-    }
-
     void submit(QueryRunnerJob job)
     {
-        job.seq = pending.issue();
+        const UInt64 seq = pending.issue();
         const auto batch = job.batch;
-        const UInt64 seq = job.seq;
+
+        std::shared_ptr<JobCompletion> completion;
         try
         {
-            if (queue.tryPush(std::move(job)))
-                return;
+            completion = std::make_shared<JobCompletion>(*this, batch, seq);
         }
         catch (...)
         {
+            /// The only path where `seq` has no owner yet.
             finishJob(batch, seq);
             throw;
         }
 
-        if (queue.isFinished())
+        std::lock_guard lock(admission_mutex);
+        if (admission_closed)
+        {
             LOG_WARNING(log, "The table is shutting down, discarding the query");
-        else
-            LOG_ERROR(LogFrequencyLimiter(log, 5), "The queue is full (max_queue_size = {}), discarding the query", max_queue_size);
-        finishJob(batch, seq);
+            return;
+        }
+
+        /// `completion` is held by value, so the job is retired whether the task runs, is refused, or is destroyed unrun.
+        if (!pool.trySchedule([this, completion, scheduled_job = std::move(job)]
+            {
+                setThreadName(ThreadName::QUERY_RUNNER);
+                completion->run([&] { executeJob(scheduled_job); });
+            }))
+        {
+            LOG_ERROR(LogFrequencyLimiter(log, 5), "Failed to schedule the query, discarding it");
+        }
     }
 
     void waitForAllPending(const QueryStatusPtr & query_status)
@@ -364,11 +378,12 @@ public:
         if (shutdown_called.exchange(true))
             return;
 
-        queue.finish();
-
-        QueryRunnerJob job;
-        while (queue.tryPop(job))
-            finishJob(job.batch, job.seq);
+        {
+            /// No job may be scheduled after this point, otherwise a task could outlive this object
+            /// despite `pool.wait()` below.
+            std::lock_guard lock(admission_mutex);
+            admission_closed = true;
+        }
 
         cluster_executors.cancelAll();
         pool.wait();
@@ -382,25 +397,44 @@ private:
         pending.retire(seq);
     }
 
-    void workerLoop()
+    /// Retires the job exactly once, whichever way the pool disposes of the task holding it.
+    /// Non-copyable so that the pool copying the task's lambda cannot duplicate `done`.
+    struct JobCompletion
     {
-        setThreadName(ThreadName::QUERY_RUNNER);
+        JobCompletion(QueryRunnerDispatcher & dispatcher_, std::shared_ptr<CountDownLatch> batch_, UInt64 seq_)
+            : dispatcher(dispatcher_), batch(std::move(batch_)), seq(seq_)
+        {
+        }
 
-        QueryRunnerJob job;
-        while (queue.pop(job))
+        JobCompletion(const JobCompletion &) = delete;
+        JobCompletion & operator=(const JobCompletion &) = delete;
+
+        template <typename F>
+        void run(F && f)
         {
             try
             {
-                executeJob(job);
+                f();
             }
             catch (...)
             {
-                tryLogCurrentException(log, "Failed to execute a query");
+                tryLogCurrentException(dispatcher.log, "Failed to execute a query");
             }
-
-            finishJob(job.batch, job.seq);
+            done = true;
+            dispatcher.finishJob(batch, seq);
         }
-    }
+
+        ~JobCompletion()
+        {
+            if (!done)
+                dispatcher.finishJob(batch, seq);
+        }
+
+        QueryRunnerDispatcher & dispatcher;
+        const std::shared_ptr<CountDownLatch> batch;
+        const UInt64 seq;
+        bool done = false;
+    };
 
     void executeJob(const QueryRunnerJob & job)
     {
@@ -639,11 +673,11 @@ private:
     const String cluster_name;
     const ShardSelector shard_selector;
     ClientInfo client_info;
-    ConcurrentBoundedQueue<QueryRunnerJob> queue;
-    const size_t num_threads;
-    const size_t max_queue_size;
     LoggerPtr log;
     ThreadPool pool;
+
+    std::mutex admission_mutex;
+    bool admission_closed TSA_GUARDED_BY(admission_mutex) = false;
 
     std::atomic<bool> shutdown_called = false;
 
@@ -778,11 +812,6 @@ StorageQueryRunner::StorageQueryRunner(
 }
 
 StorageQueryRunner::~StorageQueryRunner() = default;
-
-void StorageQueryRunner::startup()
-{
-    dispatcher->start();
-}
 
 void StorageQueryRunner::shutdown(bool /*is_drop*/)
 {
