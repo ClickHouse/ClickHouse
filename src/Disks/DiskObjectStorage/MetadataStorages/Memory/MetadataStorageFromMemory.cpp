@@ -8,32 +8,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int DIRECTORY_DOESNT_EXIST;
     extern const int FILE_DOESNT_EXIST;
-    extern const int FILE_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-}
-
-namespace
-{
-
-std::string_view normalizePath(std::string_view path)
-{
-    if (!path.empty() && path.ends_with('/'))
-        return path.substr(0, path.size() - 1);
-    return path;
-}
-
-/// "" (the root) prefixes everything; other directories prefix their subtree.
-std::string directoryPrefix(std::string_view directory)
-{
-    auto normalized = normalizePath(directory);
-    if (normalized.empty())
-        return "";
-    return std::string(normalized) + "/";
-}
-
 }
 
 MetadataStorageFromMemory::MetadataStorageFromMemory(std::string compatible_key_prefix_, ObjectStorageKeyGeneratorPtr key_generator_)
@@ -57,32 +34,19 @@ const std::string & MetadataStorageFromMemory::getPath() const
 bool MetadataStorageFromMemory::existsFile(const std::string & path) const
 {
     std::shared_lock lock(metadata_mutex);
-    return files.contains(path);
-}
-
-bool MetadataStorageFromMemory::existsDirectoryUnlocked(const std::string & path) const
-{
-    const std::string prefix = directoryPrefix(path);
-    if (auto it = files.lower_bound(prefix); it != files.end() && it->first.starts_with(prefix) && it->first.size() > prefix.size())
-        return true;
-
-    if (directories.contains(std::string(normalizePath(path))))
-        return true;
-
-    auto dir_it = directories.lower_bound(prefix);
-    return dir_it != directories.end() && dir_it->starts_with(prefix);
+    return tree.existsFile(path);
 }
 
 bool MetadataStorageFromMemory::existsDirectory(const std::string & path) const
 {
     std::shared_lock lock(metadata_mutex);
-    return existsDirectoryUnlocked(path);
+    return tree.existsDirectory(path);
 }
 
 bool MetadataStorageFromMemory::existsFileOrDirectory(const std::string & path) const
 {
     std::shared_lock lock(metadata_mutex);
-    return files.contains(std::string(normalizePath(path))) || existsDirectoryUnlocked(path);
+    return tree.existsFileOrDirectory(path);
 }
 
 Poco::Timestamp MetadataStorageFromMemory::getLastModified(const std::string & path) const
@@ -97,22 +61,25 @@ time_t MetadataStorageFromMemory::getLastChanged(const std::string & path) const
     return {};
 }
 
+const DiskObjectStorageMetadata & MetadataStorageFromMemory::getRecordUnlocked(const std::string & path) const
+{
+    const auto * record = tree.getRecord(path);
+    if (!record)
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File `{}` doesn't exist", path);
+    return *record;
+}
+
 uint64_t MetadataStorageFromMemory::getFileSize(const String & path) const
 {
     std::shared_lock lock(metadata_mutex);
-    auto it = files.find(path);
-    if (it == files.end())
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File `{}` doesn't exist", path);
-    return it->second.objects.empty() ? it->second.inline_data.size() : getTotalSize(it->second.objects);
+    const auto & record = getRecordUnlocked(path);
+    return record.objects.empty() ? record.inline_data.size() : getTotalSize(record.objects);
 }
 
 uint32_t MetadataStorageFromMemory::getHardlinkCount(const std::string & path) const
 {
     std::shared_lock lock(metadata_mutex);
-    auto it = files.find(path);
-    if (it == files.end())
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File `{}` doesn't exist", path);
-    return static_cast<uint32_t>(it->second.ref_count);
+    return static_cast<uint32_t>(getRecordUnlocked(path).ref_count);
 }
 
 StoredObjects MetadataStorageFromMemory::getStorageObjects(const std::string & path) const
@@ -123,48 +90,13 @@ StoredObjects MetadataStorageFromMemory::getStorageObjects(const std::string & p
 std::vector<std::string> MetadataStorageFromMemory::listDirectory(const std::string & path) const
 {
     std::shared_lock lock(metadata_mutex);
-    const std::string prefix = directoryPrefix(path);
-
-    std::set<std::string> children;
-
-    for (auto it = files.lower_bound(prefix); it != files.end() && it->first.starts_with(prefix); ++it)
-    {
-        std::string_view suffix = std::string_view(it->first).substr(prefix.size());
-        children.emplace(prefix + std::string(suffix.substr(0, std::min(suffix.find('/'), suffix.size()))));
-    }
-
-    for (auto it = directories.lower_bound(prefix); it != directories.end() && it->starts_with(prefix); ++it)
-    {
-        std::string_view suffix = std::string_view(*it).substr(prefix.size());
-        if (suffix.empty())
-            continue;
-        children.emplace(prefix + std::string(suffix.substr(0, std::min(suffix.find('/'), suffix.size()))));
-    }
-
-    return {children.begin(), children.end()};
+    return tree.listDirectory(path);
 }
 
 DirectoryIteratorPtr MetadataStorageFromMemory::iterateDirectory(const std::string & path) const
 {
     std::shared_lock lock(metadata_mutex);
-    const std::string prefix = directoryPrefix(path);
-
-    std::set<std::string> children;
-
-    for (auto it = files.lower_bound(prefix); it != files.end() && it->first.starts_with(prefix); ++it)
-    {
-        std::string_view suffix = std::string_view(it->first).substr(prefix.size());
-        children.emplace(prefix + std::string(suffix.substr(0, std::min(suffix.find('/'), suffix.size()))));
-    }
-
-    for (auto it = directories.lower_bound(prefix); it != directories.end() && it->starts_with(prefix); ++it)
-    {
-        std::string_view suffix = std::string_view(*it).substr(prefix.size());
-        if (suffix.empty())
-            continue;
-        children.emplace(prefix + std::string(suffix.substr(0, std::min(suffix.find('/'), suffix.size()))));
-    }
-
+    auto children = tree.listDirectory(path);
     return std::make_unique<StaticDirectoryIterator>(std::vector<std::filesystem::path>{children.begin(), children.end()});
 }
 
@@ -175,13 +107,11 @@ MetadataTransactionPtr MetadataStorageFromMemory::createTransaction()
 
 DiskObjectStorageMetadataPtr MetadataStorageFromMemory::readMetadataUnlocked(const std::string & path) const
 {
-    auto it = files.find(path);
-    if (it == files.end())
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File `{}` doesn't exist", path);
+    const auto & record = getRecordUnlocked(path);
 
     auto metadata = std::make_unique<DiskObjectStorageMetadata>(compatible_key_prefix, path);
-    metadata->objects = it->second.objects;
-    metadata->inline_data = it->second.inline_data;
+    metadata->objects = record.objects;
+    metadata->inline_data = record.inline_data;
     metadata->ref_count = 1;
     metadata->read_only = true;
 
@@ -240,19 +170,14 @@ void MetadataStorageFromMemory::putRecordUnlocked(const std::string & path, Disk
 {
     chassert(record.objects.empty() || record.inline_data.empty());
 
-    if (auto it = files.find(path); it != files.end())
-    {
-        releaseRecordUnlocked(it->second);
-        files.erase(it);
-    }
-
-    files.emplace(path, std::move(record));
+    if (auto displaced = tree.putFile(path, std::move(record)))
+        releaseRecordUnlocked(*displaced);
 }
 
 DiskObjectStorageMetadata & MetadataStorageFromMemory::findRecordOfBlobUnlocked(const std::string & remote_path)
 {
     DiskObjectStorageMetadata * found = nullptr;
-    for (auto & [path, record] : files)
+    tree.forEachRecordUnder("", [&](const std::string &, DiskObjectStorageMetadata & record)
     {
         for (const auto & object : record.objects)
         {
@@ -263,7 +188,7 @@ DiskObjectStorageMetadata & MetadataStorageFromMemory::findRecordOfBlobUnlocked(
                 found = &record;
             }
         }
-    }
+    });
 
     if (!found)
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "No file record references blob `{}`", remote_path);
@@ -289,11 +214,12 @@ bool MetadataStorageFromMemory::hasTransientBuildState() const
     if (!pending_own_removals.empty() || !replication_records.empty())
         return true;
 
-    for (const auto & [path, record] : files)
-        if (record.ref_count > 0)
-            return true;
-
-    return false;
+    bool found = false;
+    tree.forEachRecordUnder("", [&](const std::string &, DiskObjectStorageMetadata & record)
+    {
+        found = found || record.ref_count > 0;
+    });
+    return found;
 }
 
 /// MetadataStorageFromMemoryTransaction
@@ -336,179 +262,80 @@ void MetadataStorageFromMemoryTransaction::unlinkFile(const std::string & path, 
 {
     std::unique_lock lock(storage.metadata_mutex);
 
-    auto it = storage.files.find(path);
-    if (it == storage.files.end())
+    if (!storage.tree.existsFile(path))
     {
         if (if_exists)
             return;
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File `{}` doesn't exist", path);
     }
 
+    auto record = storage.tree.removeFile(path);
     if (should_remove_objects)
-        storage.releaseRecordUnlocked(it->second);
-
-    storage.files.erase(it);
+        storage.releaseRecordUnlocked(record);
 }
 
 void MetadataStorageFromMemoryTransaction::createDirectory(const std::string & path)
 {
     std::unique_lock lock(storage.metadata_mutex);
-    storage.directories.emplace(normalizePath(path));
+    storage.tree.createDirectory(path);
 }
 
 void MetadataStorageFromMemoryTransaction::createDirectoryRecursive(const std::string & path)
 {
     std::unique_lock lock(storage.metadata_mutex);
-
-    std::string_view remaining = normalizePath(path);
-    while (!remaining.empty())
-    {
-        storage.directories.emplace(remaining);
-        auto slash = remaining.rfind('/');
-        if (slash == std::string_view::npos)
-            break;
-        remaining = remaining.substr(0, slash);
-    }
+    storage.tree.createDirectoryRecursive(path);
 }
 
 void MetadataStorageFromMemoryTransaction::removeDirectory(const std::string & path)
 {
     std::unique_lock lock(storage.metadata_mutex);
-
-    const std::string normalized(normalizePath(path));
-    if (storage.files.contains(normalized))
-        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "`{}` is a file, not a directory", path);
-    if (!storage.existsDirectoryUnlocked(normalized))
-        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory `{}` doesn't exist", path);
-
-    const std::string prefix = directoryPrefix(path);
-    if (auto it = storage.files.lower_bound(prefix); it != storage.files.end() && it->first.starts_with(prefix))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove directory `{}`: file `{}` remains under it", path, it->first);
-
-    if (auto it = storage.directories.lower_bound(prefix); it != storage.directories.end() && it->starts_with(prefix))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove directory `{}`: directory `{}` remains under it", path, *it);
-
-    storage.directories.erase(std::string(normalizePath(path)));
+    storage.tree.removeDirectory(path);
 }
 
 void MetadataStorageFromMemoryTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects)
 {
     std::unique_lock lock(storage.metadata_mutex);
 
-    const std::string normalized(normalizePath(path));
-    const std::string prefix = directoryPrefix(normalized);
-
     /// The predicate receives paths relative to the removed root, same as the on-disk backend
     /// (callers fill their keep-lists with relative names).
-    if (auto it = storage.files.find(normalized); it != storage.files.end())
+    storage.tree.removeSubtree(path, [&](const std::string & relative_path, DiskObjectStorageMetadata & record)
     {
-        if (!should_remove_objects || should_remove_objects("."))
-            storage.releaseRecordUnlocked(it->second);
-        storage.files.erase(it);
-    }
-
-    for (auto it = storage.files.lower_bound(prefix); it != storage.files.end() && it->first.starts_with(prefix);)
-    {
-        if (!should_remove_objects || should_remove_objects(it->first.substr(prefix.size())))
-            storage.releaseRecordUnlocked(it->second);
-        it = storage.files.erase(it);
-    }
-
-    storage.directories.erase(normalized);
-    for (auto it = storage.directories.lower_bound(prefix); it != storage.directories.end() && it->starts_with(prefix);)
-        it = storage.directories.erase(it);
+        if (!should_remove_objects || should_remove_objects(relative_path))
+            storage.releaseRecordUnlocked(record);
+    });
 }
 
 void MetadataStorageFromMemoryTransaction::moveFile(const std::string & path_from, const std::string & path_to)
 {
     std::unique_lock lock(storage.metadata_mutex);
 
-    auto it = storage.files.find(path_from);
-    if (it == storage.files.end())
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File `{}` doesn't exist", path_from);
-
-    if (storage.files.contains(path_to))
-        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File `{}` already exists", path_to);
-
-    auto node = storage.files.extract(it);
-    node.key() = path_to;
-    for (auto & object : node.mapped().objects)
+    storage.tree.moveFile(path_from, path_to, /*replace=*/false);
+    for (auto & object : storage.tree.getRecord(path_to)->objects)
         object.local_path = path_to;
-    storage.files.insert(std::move(node));
 }
 
 void MetadataStorageFromMemoryTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
 {
     std::unique_lock lock(storage.metadata_mutex);
 
-    auto it = storage.files.find(path_from);
-    if (it == storage.files.end())
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File `{}` doesn't exist", path_from);
-
-    /// Overwrite semantics: the destination record, if any, is dropped and its sole-owner blobs
-    /// are queued for disposal.
-    if (auto to_it = storage.files.find(path_to); to_it != storage.files.end())
-    {
-        storage.releaseRecordUnlocked(to_it->second);
-        storage.files.erase(to_it);
-    }
-
-    auto node = storage.files.extract(it);
-    node.key() = path_to;
-    for (auto & object : node.mapped().objects)
+    /// Overwrite semantics: the displaced destination record's sole-owner blobs are queued
+    /// for disposal.
+    if (auto displaced = storage.tree.moveFile(path_from, path_to, /*replace=*/true))
+        storage.releaseRecordUnlocked(*displaced);
+    for (auto & object : storage.tree.getRecord(path_to)->objects)
         object.local_path = path_to;
-    storage.files.insert(std::move(node));
 }
 
 void MetadataStorageFromMemoryTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)
 {
     std::unique_lock lock(storage.metadata_mutex);
 
-    const std::string from(normalizePath(path_from));
-    const std::string to(normalizePath(path_to));
-    const std::string from_prefix = directoryPrefix(from);
-    const std::string to_prefix = directoryPrefix(to);
-
-    if (!storage.existsDirectoryUnlocked(from))
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Directory `{}` doesn't exist", from);
-
-    if (storage.existsDirectoryUnlocked(to) || storage.files.contains(to))
-        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File or directory `{}` already exists", to);
-
-    auto rekey = [&](auto & container, bool include_exact)
+    storage.tree.moveDirectory(path_from, path_to);
+    storage.tree.forEachRecordUnder(path_to, [](const std::string & full_path, DiskObjectStorageMetadata & record)
     {
-        auto get_key = [](const auto & entry) -> const std::string *
-        {
-            if constexpr (requires { entry.first; })
-                return &entry.first;
-            else
-                return &entry;
-        };
-
-        std::vector<std::string> keys_to_move;
-        if (include_exact && container.contains(from))
-            keys_to_move.push_back(from);
-        for (auto it = container.lower_bound(from_prefix); it != container.end() && get_key(*it)->starts_with(from_prefix); ++it)
-            keys_to_move.push_back(*get_key(*it));
-
-        for (const auto & key : keys_to_move)
-        {
-            auto node = container.extract(key);
-            std::string new_key = to + key.substr(from.size());
-            if constexpr (requires { node.key(); })
-                node.key() = std::move(new_key);
-            else
-                node.value() = std::move(new_key);
-            container.insert(std::move(node));
-        }
-    };
-
-    rekey(storage.files, /*include_exact=*/false);
-    rekey(storage.directories, /*include_exact=*/true);
-
-    for (auto it = storage.files.lower_bound(to_prefix); it != storage.files.end() && it->first.starts_with(to_prefix); ++it)
-        for (auto & object : it->second.objects)
-            object.local_path = it->first;
+        for (auto & object : record.objects)
+            object.local_path = full_path;
+    });
 }
 
 void MetadataStorageFromMemoryTransaction::createHardLink(const std::string & /*path_from*/, const std::string & /*path_to*/)

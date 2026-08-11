@@ -145,6 +145,8 @@ TEST(MetadataStorageFromMemory, MoveDirectoryDoesNotTouchSimilarlyNamedSibling)
     auto storage = makeWritableStorage();
     auto tx = storage->createTransaction();
 
+    tx->createDirectory("sub");
+    tx->createDirectory("sub2");
     tx->createMetadataFile("sub/a.bin", singleObject("blobs/a", "sub/a.bin", 1));
     tx->createMetadataFile("sub2/b.bin", singleObject("blobs/b", "sub2/b.bin", 1));
 
@@ -264,15 +266,15 @@ TEST(MetadataStorageFromMemory, DirectoriesAndSubdirectoryListing)
     EXPECT_TRUE(storage->existsFileOrDirectory("empty.dir"));
     EXPECT_FALSE(storage->existsFile("empty.dir"));
 
-    /// A directory implied by a deeper file path exists as well.
-    tx->createMetadataFile("implied.dir/a.bin", singleObject("blobs/a", "implied.dir/a.bin", 1));
-    EXPECT_TRUE(storage->existsDirectory("implied.dir"));
+    tx->createDirectory("sub.dir");
+    tx->createMetadataFile("sub.dir/a.bin", singleObject("blobs/a", "sub.dir/a.bin", 1));
+    EXPECT_TRUE(storage->existsDirectory("sub.dir"));
 
     tx->createMetadataFile("root.bin", singleObject("blobs/root", "root.bin", 1));
 
     /// listDirectory returns direct children only, files and directories alike.
-    EXPECT_EQ(storage->listDirectory(""), (std::vector<String>{"empty.dir", "implied.dir", "root.bin"}));
-    EXPECT_EQ(storage->listDirectory("implied.dir"), std::vector<String>{"implied.dir/a.bin"});
+    EXPECT_EQ(storage->listDirectory(""), (std::vector<String>{"empty.dir", "root.bin", "sub.dir"}));
+    EXPECT_EQ(storage->listDirectory("sub.dir"), std::vector<String>{"sub.dir/a.bin"});
 
     /// The iterator yields both files and subdirectories; `existsFile` distinguishes them.
     std::vector<String> root_files;
@@ -280,10 +282,10 @@ TEST(MetadataStorageFromMemory, DirectoriesAndSubdirectoryListing)
     for (auto it = storage->iterateDirectory(""); it->isValid(); it->next())
         (storage->existsFile(it->path()) ? root_files : root_dirs).push_back(it->name());
     EXPECT_EQ(root_files, std::vector<String>{"root.bin"});
-    EXPECT_EQ(root_dirs, (std::vector<String>{"empty.dir", "implied.dir"}));
+    EXPECT_EQ(root_dirs, (std::vector<String>{"empty.dir", "sub.dir"}));
 
     std::vector<String> subdir_files;
-    for (auto it = storage->iterateDirectory("implied.dir"); it->isValid(); it->next())
+    for (auto it = storage->iterateDirectory("sub.dir"); it->isValid(); it->next())
         if (storage->existsFile(it->path()))
             subdir_files.push_back(it->name());
     EXPECT_EQ(subdir_files, std::vector<String>{"a.bin"});
@@ -306,6 +308,40 @@ TEST(MetadataStorageFromMemory, RemoveDirectoryValidatesTarget)
 
     tx->removeDirectory("dir");
     EXPECT_FALSE(storage->existsDirectory("dir"));
+}
+
+TEST(MetadataStorageFromMemory, PathTopologyIsEnforced)
+{
+    auto storage = makeWritableStorage();
+    auto tx = storage->createTransaction();
+
+    tx->createMetadataFile("file.bin", singleObject("blobs/file", "file.bin", 1));
+
+    /// A file or directory can only be created under an existing directory.
+    EXPECT_THROW(tx->createMetadataFile("missing/a.bin", singleObject("blobs/a", "missing/a.bin", 1)), Exception);
+    EXPECT_THROW(tx->writeInlineDataToFile("missing/b.txt", "b"), Exception);
+    EXPECT_THROW(tx->createDirectory("missing/sub"), Exception);
+
+    /// A file component cannot act as a directory.
+    EXPECT_THROW(tx->createMetadataFile("file.bin/a.bin", singleObject("blobs/a", "file.bin/a.bin", 1)), Exception);
+    EXPECT_THROW(tx->createDirectory("file.bin"), Exception);
+    EXPECT_THROW(tx->createDirectoryRecursive("file.bin/sub"), Exception);
+
+    /// Moves land under existing directories only.
+    EXPECT_THROW(tx->moveFile("file.bin", "missing/file.bin"), Exception);
+    EXPECT_THROW(tx->replaceFile("file.bin", "missing/file.bin"), Exception);
+
+    tx->createDirectoryRecursive("a/b/c");
+    EXPECT_TRUE(storage->existsDirectory("a/b/c"));
+
+    /// A directory cannot move under itself.
+    EXPECT_THROW(tx->moveDirectory("a", "a/b/d"), Exception);
+
+    /// An existing directory is kept as is.
+    tx->createDirectory("a");
+    EXPECT_TRUE(storage->existsDirectory("a/b/c"));
+
+    EXPECT_TRUE(storage->existsFile("file.bin"));
 }
 
 TEST(MetadataStorageFromMemory, IncrementBlobRefCountBumpsHardlinkCount)

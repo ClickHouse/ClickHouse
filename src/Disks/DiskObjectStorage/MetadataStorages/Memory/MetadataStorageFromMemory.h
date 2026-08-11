@@ -6,20 +6,22 @@
 #include <Disks/IDisk.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/DiskObjectStorageMetadata.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Memory/InMemoryDirectoryTree.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageTransactionState.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
-
-#include <map>
-#include <set>
 
 namespace DB
 {
 
-/// In-memory metadata storage over standard `DiskObjectStorageMetadata` records. Starts empty;
-/// operations of its transactions apply immediately. A record with `ref_count > 0` shares its
-/// blobs with another owner, so unlinking it never releases them.
+/// In-memory metadata storage over standard `DiskObjectStorageMetadata` records, kept as an
+/// `InMemoryDirectoryTree`. Starts with an empty root; operations of its transactions apply
+/// immediately and enforce the same path topology as the on-disk backends. A record with
+/// `ref_count > 0` shares its blobs with another owner, so unlinking it never releases them.
 class MetadataStorageFromMemory final : public IMetadataStorage
 {
+    /// The record of the file at `path`; throws if there is no file there.
+    const DiskObjectStorageMetadata & getRecordUnlocked(const std::string & path) const;
+
     DiskObjectStorageMetadataPtr readMetadata(const std::string & path) const;
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path) const;
 
@@ -28,13 +30,11 @@ class MetadataStorageFromMemory final : public IMetadataStorage
     /// Queue the blobs of a removed/overwritten record for disposal; `ref_count > 0` releases nothing.
     void releaseRecordUnlocked(const DiskObjectStorageMetadata & record);
 
-    /// Insert `record` at `path`, disposing of the blob of a record it overwrites.
+    /// Insert a file `record` at `path`, disposing of the blob of a file it overwrites.
     void putRecordUnlocked(const std::string & path, DiskObjectStorageMetadata record);
 
     /// The unique record whose objects contain `remote_path`; throws if none.
     DiskObjectStorageMetadata & findRecordOfBlobUnlocked(const std::string & remote_path);
-
-    bool existsDirectoryUnlocked(const std::string & path) const;
 
 public:
     /// `key_generator_` may be null for a storage that only resolves existing blobs.
@@ -109,9 +109,8 @@ private:
 
     std::string compatible_key_prefix;
     ObjectStorageKeyGeneratorPtr key_generator;
-    std::map<std::string, DiskObjectStorageMetadata> files;
-    /// Explicitly created directories, so empty ones exist.
-    std::set<std::string> directories;
+
+    InMemoryDirectoryTree tree;
 
     std::vector<String> pending_own_removals;
     std::unordered_map<String, Locations> replication_records;
