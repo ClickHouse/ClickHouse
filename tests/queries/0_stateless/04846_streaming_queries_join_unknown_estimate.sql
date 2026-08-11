@@ -4,9 +4,11 @@
 
 SET enable_streaming_queries = 1;
 SET enable_analyzer = 1;
+SET enable_parallel_replicas = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_join_swap_table = 0;
-SET use_statistics = 0;
+SET use_statistics = 1;
+SET collect_hash_table_stats_during_joins = 0;
 
 DROP TABLE IF EXISTS fact_04846;
 DROP TABLE IF EXISTS dim_04846;
@@ -20,8 +22,11 @@ ENGINE = MergeTree ORDER BY id;
 INSERT INTO fact_04846 SELECT number FROM numbers(10);
 INSERT INTO dim_04846 SELECT number FROM numbers(5);
 
--- The `STREAM` side must be shown as unknown, not `f[0]`.
+-- The nonconstant equi-join must remain in the physical plan. The `STREAM`
+-- side must be shown as unknown, not `f[0]`.
 SELECT countIf(explain LIKE '%f[no_stats~?]%') = 1
+    AND countIf(explain LIKE '%f[0]%') = 0
+    AND countIf(explain LIKE '%id = id%') = 1
 FROM
 (
     EXPLAIN
