@@ -1026,11 +1026,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         auto columns_from_select = as_select_sample->getNamesAndTypesList();
         if (mode < LoadingStrictnessLevel::ATTACH)
         {
-            /// The inferred types come out of `IAggregateFunction::getStateType` unversioned, so a
-            /// `CREATE TABLE ... AS SELECT ...State(...)` has to spell the state version out the same
-            /// way an explicitly declared column does (see `getColumnType`) for it to reach the stored
-            /// metadata. On ATTACH the types are re-inferred rather than read from legacy metadata, so
-            /// they keep denoting the default version, as before.
+            /// A fresh `...State(...)` result type already spells its state version out, but an
+            /// inferred type can also come from an unversioned source (a `CREATE TABLE ... AS SELECT`
+            /// over an old table), so the version is pinned into the inferred types the same way it
+            /// is pinned into explicitly declared ones (see `getColumnType`) for it to reach the
+            /// stored metadata. On ATTACH the types are re-inferred rather than read from legacy
+            /// metadata, so they keep denoting the default version, as before.
             for (auto & column : columns_from_select)
                 pinCurrentStateVersionToAggregateFunctions(column.type);
         }

@@ -1,8 +1,8 @@
--- `CREATE TABLE ... AS SELECT` infers its columns from the query sample block, where an aggregate
--- function state type comes out of `IAggregateFunction::getStateType` unversioned. The current state
--- version has to be pinned into the inferred types too, not only into explicitly declared ones,
--- or the stored column would keep the version 0 layout and lose its skip degree on every local
--- storage round trip, making a merge over a lopsided split give a wrong, split-dependent answer.
+-- `CREATE TABLE ... AS SELECT` infers its columns from the query sample block. A fresh
+-- `quantileDeterministic` state type already spells its version out, but the inferred types are
+-- pinned too, so that a table inferred from an unversioned source (e.g. a `SELECT` from an old
+-- table) does not keep the version 0 layout and lose its skip degree on every local storage round
+-- trip, making a merge over a lopsided split give a wrong, split-dependent answer.
 
 DROP TABLE IF EXISTS quantile_deterministic_create_as_select;
 
