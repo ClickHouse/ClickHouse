@@ -269,6 +269,10 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
             auto tb = identifier->getTable();
             chassert(tb);
             tb->format(ostr, settings, state, frame);
+
+            /// The identifiers above are rebuilt from the name parts alone and cannot carry a clause.
+            if (identifier->has_uuid)
+                ostr << " UUID " << quoteString(toString(identifier->uuid));
         }
     }
     else

@@ -3,12 +3,26 @@
 -- the formatter emits the clause, including an explicit all-zero UUID
 SELECT k\nFROM src UUID \'a1a1a1a1-b2b2-c3c3-d4d4-e5e5e5e5e5e5\'
 SELECT k\nFROM src UUID \'00000000-0000-0000-0000-000000000000\'
+-- a multi-table DROP keeps the clause of each element
+DROP TABLE src UUID \'a1a1a1a1-b2b2-c3c3-d4d4-e5e5e5e5e5e5\', other
+DROP TABLE src UUID \'00000000-0000-0000-0000-000000000000\', other UUID \'a1a1a1a1-b2b2-c3c3-d4d4-e5e5e5e5e5e5\'
 -- a REFRESH ... DEPENDS ON dependency keeps its clause
 1
--- a stored view definition keeps the pin, qualified and unqualified alike
+-- a stored view definition is database-qualified and keeps the pin, written either way
 v_qualified	1
 v_unqualified	1
--- the pin survives JOIN predicate pushdown, so both values of the setting agree
+-- a stored view still reads the pinned table
+111
+111
+-- and the pin survives a round trip through the stored definition text
+v_qualified	1
+v_unqualified	1
+111
+111
+-- JOIN predicate pushdown rewrites the reference into a subquery carrying the clause
+1
+0
+-- so the pin is honoured with the pushdown on and off alike
 111
 111
 -- renaming a reference to its remote table voids the pin: no clause is emitted

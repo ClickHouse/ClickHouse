@@ -28,25 +28,50 @@ echo '-- the formatter emits the clause, including an explicit all-zero UUID'
 $CLICKHOUSE_CLIENT -q "SELECT formatQuery('SELECT k FROM src UUID \'$FIXED\'')"
 $CLICKHOUSE_CLIENT -q "SELECT formatQuery('SELECT k FROM src UUID \'$ZERO\'')"
 
+echo '-- a multi-table DROP keeps the clause of each element'
+$CLICKHOUSE_CLIENT -q "SELECT formatQuery('DROP TABLE src UUID \'$FIXED\', other')"
+$CLICKHOUSE_CLIENT -q "SELECT formatQuery('DROP TABLE src UUID \'$ZERO\', other UUID \'$FIXED\'')"
+
 echo '-- a REFRESH ... DEPENDS ON dependency keeps its clause'
 $CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM (SELECT formatQuery('CREATE MATERIALIZED VIEW mv REFRESH EVERY 1 HOUR DEPENDS ON src UUID \'$FIXED\' ENGINE = Memory AS SELECT 1') AS q) WHERE q ILIKE '%DEPENDS ON src UUID \'$FIXED\'%'"
 
-echo '-- a stored view definition keeps the pin, qualified and unqualified alike'
+echo '-- a stored view definition is database-qualified and keeps the pin, written either way'
+# One conjunction per view: the definition must be BOTH qualified and clause-bearing, so a rewriter
+# that declines to qualify the reference fails the assertion instead of satisfying it.
 $CLICKHOUSE_CLIENT -q "
     CREATE VIEW v_qualified AS SELECT v FROM ${CLICKHOUSE_DATABASE}.src UUID '$U';
     CREATE VIEW v_unqualified AS SELECT v FROM src UUID '$U';
-    SELECT name, position(create_table_query, 'UUID \'$U\'') > 0
+    SELECT name, position(create_table_query, '${CLICKHOUSE_DATABASE}.src UUID \'$U\'') > 0
     FROM system.tables WHERE database = currentDatabase() AND name IN ('v_qualified', 'v_unqualified') ORDER BY name;
 "
 
-# Rebind the name so resolving by name and resolving by UUID reach different tables: the pin must
-# survive JOIN predicate pushdown, hence both values of the (default-on) setting must agree on 111.
+# Rebind the name so resolving by name and resolving by UUID reach different tables: from here on
+# 111 means the pin was honoured and 222 means the reference fell back to the name.
 $CLICKHOUSE_CLIENT -q "
     RENAME TABLE src TO src_pinned;
     CREATE TABLE src (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
     INSERT INTO src VALUES (1, 222);
 "
-echo '-- the pin survives JOIN predicate pushdown, so both values of the setting agree'
+echo '-- a stored view still reads the pinned table'
+$CLICKHOUSE_CLIENT -q "SELECT v FROM v_qualified SETTINGS enable_analyzer = 0"
+$CLICKHOUSE_CLIENT -q "SELECT v FROM v_unqualified SETTINGS enable_analyzer = 0"
+
+echo '-- and the pin survives a round trip through the stored definition text'
+$CLICKHOUSE_CLIENT -q "
+    DETACH TABLE v_qualified; ATTACH TABLE v_qualified;
+    DETACH TABLE v_unqualified; ATTACH TABLE v_unqualified;
+    SELECT name, position(create_table_query, 'UUID \'$U\'') > 0
+    FROM system.tables WHERE database = currentDatabase() AND name IN ('v_qualified', 'v_unqualified') ORDER BY name;
+"
+$CLICKHOUSE_CLIENT -q "SELECT v FROM v_qualified SETTINGS enable_analyzer = 0"
+$CLICKHOUSE_CLIENT -q "SELECT v FROM v_unqualified SETTINGS enable_analyzer = 0"
+
+echo '-- JOIN predicate pushdown rewrites the reference into a subquery carrying the clause'
+# Mechanism oracle: the rewritten plan must show the clause, and the un-rewritten one must not, so
+# the pair reddens if the rewriter drops the clause AND if the rewriter never runs.
+$CLICKHOUSE_CLIENT --enable_analyzer 0 -q "SELECT count() > 0 FROM (EXPLAIN SYNTAX SELECT v FROM other AS o JOIN src UUID '$U' USING (k) SETTINGS enable_optimize_predicate_expression = 1) WHERE explain ILIKE '%FROM src UUID \'$U\'%'"
+$CLICKHOUSE_CLIENT --enable_analyzer 0 -q "SELECT count() > 0 FROM (EXPLAIN SYNTAX SELECT v FROM other AS o JOIN src UUID '$U' USING (k) SETTINGS enable_optimize_predicate_expression = 0) WHERE explain ILIKE '%FROM src UUID \'$U\'%'"
+echo '-- so the pin is honoured with the pushdown on and off alike'
 $CLICKHOUSE_CLIENT -q "SELECT v FROM other AS o JOIN src UUID '$U' USING (k) SETTINGS enable_analyzer = 0, enable_optimize_predicate_expression = 1"
 $CLICKHOUSE_CLIENT -q "SELECT v FROM other AS o JOIN src UUID '$U' USING (k) SETTINGS enable_analyzer = 0, enable_optimize_predicate_expression = 0"
 
