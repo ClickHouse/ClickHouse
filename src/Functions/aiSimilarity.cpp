@@ -278,10 +278,10 @@ REGISTER_FUNCTION(AiSimilarity)
         .description = R"(
 Computes the semantic similarity of two texts using the configured embedding provider.
 
-Calculates the embedding of both texts and returns the cosine similarity of the two vectors
-in the range `[-1, 1]`: `1` means the texts are semantically identical, `0` means unrelated,
-and negative values mean opposite. This is the complement of `cosineDistance` over the
-same embeddings (`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
+Calculates the vector embeddings of both texts and returns their cosine similarity, ranging from `1`
+(most similar: texts with the same meaning, e.g. `'tiny'` and `'little'`) down to `-1` (least similar).
+This is the complement of `cosineDistance` over the same embeddings
+(`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
 
 Batching, credentials, and the `dimensions` parameter match `aiEmbed`, including the
 `ai_function_embedding_default_credentials` default-credentials setting.
