@@ -3270,3 +3270,54 @@ def test_reload_foreign_sibling_not_owned():
     assert active_projection_parts("t_foreign") == "0"
     assert node.query("SELECT count() FROM t_foreign").strip() == "1000"
     assert check_table("t_foreign") == "1"
+
+
+# This test checks that the broken-part detach keeps the manifest as the ownership boundary when
+# checksums.txt is readable: a foreign flat sibling never listed there must not travel into
+# detached/ with the broken part. (The corrupt-manifest case deliberately falls back to disk truth
+# and carries every sibling -- see test_orphan_gc_broken_part_preserves_sibling.)
+# Scenario:
+# - 'flat' table with materialize_projections_on_insert = 0 -> checksums has no p.proj record
+# - stop the server, plant a foreign <part>.p.proj, break the part while keeping checksums.txt
+#   readable (remove count.txt), start it
+# - assert the part was detached as broken WITHOUT the foreign sibling
+def test_broken_part_detach_excludes_foreign_sibling():
+    node.query("DROP TABLE IF EXISTS t_broken_foreign SYNC")
+    node.query("SYSTEM STOP MERGES")
+    node.query(
+        """CREATE TABLE t_broken_foreign (key UInt64, id UInt64, value String,
+           PROJECTION p (SELECT key, id, value ORDER BY id))
+           ENGINE = MergeTree ORDER BY key
+           SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat',
+               materialize_projections_on_insert = 0"""
+    )
+    node.query(
+        "INSERT INTO t_broken_foreign SELECT number, number * 2, toString(number) FROM numbers(1000)"
+    )
+    p = part_dir("t_broken_foreign")
+    name = part_name("t_broken_foreign")
+    root = table_path("t_broken_foreign")
+    assert not path_exists(f"{p}.p.proj")
+
+    # plant a foreign sibling and break the part with the manifest left readable
+    node.stop_clickhouse()
+    plant_stale_live_sibling(f"{p}.p.proj")
+    node.exec_in_container(
+        ["bash", "-c", f"rm {p}/count.txt"], privileged=True, user="root"
+    )
+    node.start_clickhouse()
+
+    # wait for the broken part to land in detached/ (async load, see
+    # test_orphan_gc_broken_part_preserves_sibling)
+    def find_broken_part():
+        return node.exec_in_container(
+            ["bash", "-c", f"find {root}/detached -maxdepth 1 -type d -name 'broken*{name}' | head -1"],
+            privileged=True,
+            user="root",
+        ).strip()
+
+    wait_for(lambda: find_broken_part() != "", timeout=120)
+    detached_parent = find_broken_part()
+
+    # the foreign sibling was never owned per checksums, so it must not follow into detached/
+    assert not path_exists(f"{detached_parent}.p.proj")

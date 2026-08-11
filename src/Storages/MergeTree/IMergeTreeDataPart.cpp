@@ -2708,9 +2708,15 @@ String IMergeTreeDataPart::getRelativePathOfActivePart() const
 
 void IMergeTreeDataPart::adoptOnDiskProjectionsForDetach()
 {
+    /// Broken-part detach: the part failed to load, so the owned set was never seeded. When the
+    /// manifest is readable it stays the ownership boundary even here -- a same-named foreign sibling
+    /// that checksums never listed must not travel into detached/ (left behind, it becomes an orphan
+    /// once the part dir moves, and the reaper collects it). Only with no usable checksums does disk
+    /// truth take over, fail-safe: stranding a real projection of the broken part would lose data.
+    const bool has_manifest = !checksums.files.empty();
     IDataPartStorage::Projections adopted;
     for (const auto & [projection_dir, projection] : getDataPartStorage().detectProjections())
-        if (!projection.is_temp)
+        if (!projection.is_temp && (!has_manifest || checksums.has(projection_dir)))
             adopted.emplace(projection_dir, projection);
     getDataPartStorage().setProjections(std::move(adopted));
 }
