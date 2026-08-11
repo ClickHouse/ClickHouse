@@ -15,9 +15,15 @@ function cleanup()
 trap cleanup EXIT
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS $TABLE SYNC"
+# storage_policy is pinned to 'default' because the test copies the part directory with cp below.
+# The no-object-storage tag does not protect stress runs: they flip the default MergeTree
+# storage_policy to (cached) S3 or Azure in the server config without passing the corresponding
+# flag to clickhouse-test. On a remote disk, cp duplicates the metadata files without incrementing
+# the blob reference counts, so reclaiming the stale directory deletes blobs still referenced by
+# the live part, and every later read of it fails with 'The specified key does not exist'.
 $CLICKHOUSE_CLIENT --query "
     CREATE TABLE $TABLE (a UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
-    SETTINGS min_bytes_for_full_part_storage = 1073741824"
+    SETTINGS min_bytes_for_full_part_storage = 1073741824, storage_policy = 'default'"
 
 # Two deterministic parts with distinguishable contents, so contamination would change the values below.
 $CLICKHOUSE_CLIENT --query "SYSTEM STOP MERGES $TABLE"
