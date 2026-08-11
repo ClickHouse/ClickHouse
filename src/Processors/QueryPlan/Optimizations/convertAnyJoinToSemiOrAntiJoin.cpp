@@ -14,9 +14,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-namespace
-{
-
+/// This function is exposed for testing purposes
 FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const ActionsDAG & filter_dag, const String & filter_column_name)
 {
     /// If either DAG contains IN subquery sets that are not yet built we cannot evaluate the filter result
@@ -56,6 +54,9 @@ FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const Action
 
     return getFilterResult(filter_output[0]);
 }
+
+namespace
+{
 
 /// Check if filter has a form like "column" or "NOT column", where column is an input
 bool isSimpleFilter(const ActionsDAG::Node * filter_node, bool must_negate)
@@ -130,7 +131,16 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
     QueryPlan::Node * child_node = parent_node->children.front();
     auto & child = child_node->step;
     auto * join = typeid_cast<JoinStepLogical *>(child.get());
-    if (!join)
+    if (!join || child_node->children.size() != 2)
+        return 0;
+
+    /// The Join engine requires its declared join kind and strictness to remain unchanged.
+    auto isStorageJoin = [](auto & step)
+    {
+        auto * lookup_step = typeid_cast<JoinStepLogicalLookup *>(step.get());
+        return lookup_step && lookup_step->getPreparedJoinStorage().storage_join;
+    };
+    if (isStorageJoin(child_node->children.back()->step))
         return 0;
 
     auto & join_operator = join->getJoinOperator();

@@ -13,13 +13,13 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
   ## Contexto
 </div>
 
-Views materializadas incrementais (views materializadas) permitem transferir o custo da computação do momento da consulta para o momento da inserção, resultando em consultas `SELECT` mais rápidas.
+Visões materializadas incrementais (visões materializadas) permitem transferir o custo da computação do momento da consulta para o momento da inserção, resultando em consultas `SELECT` mais rápidas.
 
 Diferentemente de bancos de dados transacionais como o Postgres, uma visão materializada no ClickHouse é apenas um gatilho que executa uma consulta sobre blocos de dados à medida que eles são inseridos em uma tabela. O resultado dessa consulta é inserido em uma segunda tabela de &quot;destino&quot;. Se mais linhas forem inseridas, os resultados serão novamente enviados para a tabela de destino, onde os resultados intermediários serão atualizados e mesclados. Esse resultado mesclado equivale a executar a consulta sobre todos os dados originais.
 
-A principal motivação para usar views materializadas é que os resultados inseridos na tabela de destino representam o resultado de uma agregação, filtragem ou transformação das linhas. Esses resultados geralmente são uma representação menor dos dados originais (um esboço parcial, no caso de agregações). Isso, junto com o fato de a consulta resultante para ler os resultados da tabela de destino ser simples, garante tempos de consulta menores do que se a mesma computação fosse executada sobre os dados originais, transferindo a computação (e, portanto, a latência da consulta) do momento da consulta para o momento da inserção.
+A principal motivação para usar visões materializadas é que os resultados inseridos na tabela de destino representam o resultado de uma agregação, filtragem ou transformação das linhas. Esses resultados geralmente são uma representação menor dos dados originais (um esboço parcial, no caso de agregações). Isso, junto com o fato de a consulta resultante para ler os resultados da tabela de destino ser simples, garante tempos de consulta menores do que se a mesma computação fosse executada sobre os dados originais, transferindo a computação (e, portanto, a latência da consulta) do momento da consulta para o momento da inserção.
 
-As visões materializadas no ClickHouse são atualizadas em tempo real à medida que os dados fluem para a tabela em que se baseiam, funcionando mais como índices atualizados continuamente. Isso contrasta com outros bancos de dados, nos quais as views materializadas normalmente são snapshots estáticos de uma consulta que precisam ser atualizados (semelhantes às [views materializadas atualizáveis](/pt-BR/reference/statements/create/view#refreshable-materialized-view) do ClickHouse).
+As visões materializadas no ClickHouse são atualizadas em tempo real à medida que os dados fluem para a tabela em que se baseiam, funcionando mais como índices atualizados continuamente. Isso contrasta com outros bancos de dados, nos quais as visões materializadas normalmente são snapshots estáticos de uma consulta que precisam ser atualizados (semelhantes às [visões materializadas atualizáveis](/pt-BR/reference/statements/create/view#refreshable-materialized-view) do ClickHouse).
 
 <Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="Diagrama de visão materializada" />
 
@@ -1319,6 +1319,6 @@ WITH recent_users AS (
 SELECT * FROM stackoverflow.posts WHERE OwnerUserId IN (SELECT Id FROM recent_users)
 ```
 
-Nesse caso, a CTE `users` é reavaliada a cada insert em `posts`, e a visão materializada não será atualizada quando novos usuários forem inseridos — apenas quando houver insert em `posts`.
+Neste caso, a CTE users é reavaliada a cada inserção em posts, e a visão materializada não será atualizada quando novos usuários forem inseridos — apenas quando houver inserções em posts.
 
-Em geral, use CTEs para lógica que opera na mesma tabela de origem à qual a visão materializada está associada ou garanta que as tabelas referenciadas sejam pequenas e pouco propensas a causar gargalos de desempenho. Como alternativa, considere [as mesmas otimizações usadas para junções com visões materializadas](/pt-BR/concepts/features/materialized-views/incremental-materialized-view#join-best-practices).
+Em geral, use CTEs para lógica que opere sobre a mesma tabela de origem à qual a visão materializada está anexada ou garanta que as tabelas referenciadas sejam pequenas e improváveis de causar gargalos de desempenho. Como alternativa, considere [as mesmas otimizações usadas para junções com visões materializadas](/pt-BR/concepts/features/materialized-views/incremental-materialized-view#join-best-practices).

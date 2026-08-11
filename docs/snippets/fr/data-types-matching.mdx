@@ -33,9 +33,9 @@ Le tableau ci-dessous indique tous les types de données pris en charge par le f
 * `bytes` est la valeur par défaut, contrôlée par le paramètre [`output_format_avro_string_column_pattern`](/fr/reference/settings/formats#output_format_avro_string_column_pattern)
 
 **  Le [type Variant](/fr/reference/data-types/variant) accepte implicitement `null` comme valeur de champ. Ainsi, par exemple, le `union(T1, T2, null)` d’Avro sera converti en `Variant(T1, T2)`.
-Par conséquent, lors de la génération d’Avro à partir de ClickHouse, nous devons toujours inclure le type `null` dans le `union` d’Avro, car nous ne savons pas, lors de l’inférence du schéma, si une valeur est effectivement `null`.
+Par conséquent, lors de la génération d’Avro à partir de ClickHouse, nous devons toujours inclure le type `null` dans l’ensemble des types du `union` Avro, car nous ne savons pas, lors de l’inférence du schéma, si une valeur est effectivement `null`.
 
-*** [Types logiques Avro](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+*** [Types logiques Avro](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
 
 Types de données logiques Avro non pris en charge :
 

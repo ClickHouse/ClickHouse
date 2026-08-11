@@ -102,7 +102,8 @@ spec:
 </Note>
 
 L’ajout de disques supplémentaires dans une configuration multi-disques (JBOD), l’exécution sans
-volume persistant, l’augmentation de capacité, les politiques de stockage personnalisées ainsi que les règles relatives à ce qui ne peut pas
+volume persistant, l’augmentation de capacité, les politiques de stockage personnalisées, le chiffrement des données au repos ainsi que les
+règles relatives à ce qui ne peut pas
 être modifié après la création sont traités dans le
 [guide dédié au stockage et aux volumes](/fr/products/kubernetes-operator/guides/storage).
 
@@ -186,9 +187,9 @@ La capacité utilisable correspond à la somme de tous les disques, et chaque ta
   ## Domaine du cluster
 </div>
 
-`spec.clusterDomain` définit le suffixe DNS Kubernetes que l’opérateur utilise pour construire
-les noms d’hôte complets des pods qu’il écrit dans la
-configuration du serveur ClickHouse. Par défaut, sa valeur est `cluster.local`, et ce champ est présent à la fois dans
+`spec.clusterDomain` définit le suffixe DNS Kubernetes que l’opérateur utilise lorsqu’il génère
+les noms d’hôte complets des pods qu’il inscrit dans la
+configuration du serveur ClickHouse. La valeur par défaut est `cluster.local`, et ce champ existe à la fois dans
 `ClickHouseCluster` et `KeeperCluster`.
 
 ```yaml
@@ -196,20 +197,20 @@ spec:
   clusterDomain: cluster.local   # default; override only for a custom domain
 ```
 
-L’opérateur contacte chaque pod via le Service headless à l’adresse
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. Ce suffixe se retrouve dans
+L&#39;opérateur contacte chaque pod via le Service headless sous la forme
+`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. Ce suffixe est utilisé dans
 deux parties de la configuration générée :
 
-* Dans un `ClickHouseCluster`, sa valeur est utilisée pour les noms d’hôte des répliques dans
+* Dans un `ClickHouseCluster`, sa valeur est utilisée pour les noms d&#39;hôte des répliques dans
   `remote_servers` (requêtes entre répliques et requêtes `Distributed`).
-* Dans un `KeeperCluster`, sa valeur sert à construire les noms d’hôte des nœuds Keeper que
+* Dans un `KeeperCluster`, sa valeur sert à construire les noms d&#39;hôte des nœuds Keeper que
   ClickHouse utilise pour la coordination.
 
 <Note>
-  Ne remplacez cette valeur que si le `kubelet` de votre cluster s’exécute avec un `--cluster-domain`
-  différent de `cluster.local`. Si la valeur ne correspond pas au domaine réel du cluster,
-  ClickHouse ne pourra pas résoudre les noms d’hôte de Keeper ni ceux des répliques — la coordination et
-  les requêtes `Distributed` échoueront avec des erreurs de résolution DNS. Définissez la **même** valeur sur le
+  Ne remplacez cette valeur que si le `kubelet` de votre cluster s&#39;exécute avec un `--cluster-domain`
+  différent de `cluster.local`. Si la valeur ne correspond pas au véritable domaine du cluster,
+  ClickHouse ne peut pas résoudre les noms d&#39;hôte de Keeper ni ceux des répliques — la coordination et les
+  requêtes `Distributed` échouent avec des erreurs de résolution DNS. Définissez la **même** valeur sur le
   `ClickHouseCluster` et le `KeeperCluster` auquel il fait référence.
 </Note>
 
@@ -519,13 +520,14 @@ spec:
 
 Le Secret doit contenir les clés suivantes :
 
-| Clé                     | Format                                                                   | Quand requis                     |
-| ----------------------- | ------------------------------------------------------------------------ | -------------------------------- |
-| `interserver-password`  | mot de passe en clair                                                    | Toujours                         |
-| `management-password`   | mot de passe en clair                                                    | Toujours                         |
-| `keeper-identity`       | `clickhouse:<password>`                                                  | Toujours                         |
-| `cluster-secret`        | mot de passe en clair                                                    | Toujours                         |
-| `named-collections-key` | clé AES de 16 octets encodée en hexadécimal (32 caractères hexadécimaux) | ClickHouse `>= 25.12` uniquement |
+| Clé                     | Format                                                                   | Quand requis                                        |
+| ----------------------- | ------------------------------------------------------------------------ | --------------------------------------------------- |
+| `interserver-password`  | mot de passe en clair                                                    | Toujours                                            |
+| `management-password`   | mot de passe en clair                                                    | Toujours                                            |
+| `keeper-identity`       | `clickhouse:<password>`                                                  | Toujours                                            |
+| `cluster-secret`        | mot de passe en clair                                                    | Toujours                                            |
+| `named-collections-key` | clé AES de 16 octets encodée en hexadécimal (32 caractères hexadécimaux) | ClickHouse `>= 25.12` uniquement                    |
+| `disk-encryption-key`   | clé AES de 16 octets encodée en hexadécimal (32 caractères hexadécimaux) | Uniquement lorsque `settings.encryption` est défini |
 
 Voici à quoi ressemble un Secret complet :
 
@@ -542,6 +544,7 @@ stringData:
   keeper-identity: "clickhouse:keeper-auth-password"
   cluster-secret: "cluster-internal-secret"
   named-collections-key: "0123456789abcdef0123456789abcdef"   # 32 hex chars = 16 bytes
+  disk-encryption-key: "00112233445566778899aabbccddeeff"     # only when settings.encryption is set
 ```
 
 <div id="external-secret-policy">
@@ -589,7 +592,7 @@ Raisons possibles :
 L&#39;opérateur remet la réconciliation en file d&#39;attente tant que le Secret est invalide. Ainsi, dès que vous ajoutez les clés manquantes, la réconciliation suivante les prend automatiquement en compte : inutile de redémarrer les pods.
 
 <Note>
-  L&#39;ensemble des clés requises dépend de la version de ClickHouse utilisée. `named-collections-key` n&#39;est validée qu&#39;une fois que la sonde de version de l&#39;opérateur a détecté ClickHouse `25.12` ou une version plus récente. Sur les versions antérieures, la clé peut être absente du Secret.
+  L&#39;ensemble des clés requises dépend de la version de ClickHouse utilisée. `named-collections-key` n&#39;est validée qu&#39;une fois que la sonde de version de l&#39;opérateur a détecté ClickHouse `25.12` ou une version plus récente. Sur les versions antérieures, la clé peut être absente du Secret. `disk-encryption-key` n&#39;est requise que lorsque `spec.settings.encryption` est défini.
 </Note>
 
 <div id="additional-ports">

@@ -7,6 +7,9 @@ These tests verify that every status is mapped and the mapping is correct.
 
 import os
 import sys
+from types import SimpleNamespace
+
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
@@ -206,6 +209,64 @@ def test_to_markdown_no_failures(monkeypatch):
     assert "- Performance Comparison:" in md
 
 
+def _install_fake_get_changed_files_env(monkeypatch, info, shell_out="a.sql\n"):
+    """Stub `Info` and `Shell` in the `GH` module so `get_changed_files` can run
+    without a configured praktika env. Returns the list of shell commands run."""
+    gh_mod = sys.modules[GH.__module__]
+    monkeypatch.setattr(gh_mod, "Info", lambda: info)
+
+    commands = []
+
+    def fake_shell(command):
+        commands.append(command)
+        return 0, shell_out, ""
+
+    monkeypatch.setattr(gh_mod.Shell, "get_res_stdout_stderr", staticmethod(fake_shell))
+    return commands
+
+
+def _merge_queue_info(linked_pr_number):
+    return SimpleNamespace(
+        is_local_run=False,
+        repo_name="ClickHouse/ClickHouse",
+        sha="deadbeef",
+        pr_number=0,
+        is_merge_queue_event=True,
+        linked_pr_number=linked_pr_number,
+    )
+
+
+def test_get_changed_files_merge_queue_missing_linked_pr_fails_closed(monkeypatch):
+    """In a merge-queue run with no parseable linked PR number, a strict call
+    must fail closed rather than silently fall back to the 300-entry-capped
+    commits API (which would drop changed test files and turn the merge-queue
+    flaky check into a false green)."""
+    commands = _install_fake_get_changed_files_env(monkeypatch, _merge_queue_info(0))
+    try:
+        GH.get_changed_files(strict=True)
+        assert False, "Should have raised for a merge-queue run with no linked PR"
+    except RuntimeError as e:
+        assert "linked PR number" in str(e)
+    assert commands == [], "must not query the commits API when failing closed"
+
+
+def test_get_changed_files_merge_queue_missing_linked_pr_non_strict_tolerated(monkeypatch):
+    """A non-strict call keeps the tolerant fallback so master/release-style
+    callers are unaffected."""
+    commands = _install_fake_get_changed_files_env(monkeypatch, _merge_queue_info(0))
+    GH.get_changed_files(strict=False)
+    assert len(commands) == 1 and "commits/deadbeef" in commands[0]
+
+
+def test_get_changed_files_merge_queue_uses_linked_pr_files(monkeypatch):
+    """With a parseable linked PR number the merge-queue run uses that PR's
+    paginated files list, not the commits API."""
+    commands = _install_fake_get_changed_files_env(monkeypatch, _merge_queue_info(12345))
+    GH.get_changed_files(strict=True)
+    assert len(commands) == 1
+    assert "pulls/12345/files" in commands[0] and "--paginate" in commands[0]
+
+
 def test_post_commit_status_converts_transparently(monkeypatch):
     """post_commit_status must accept Result.Status values and convert them."""
     captured = {}
@@ -223,3 +284,107 @@ def test_post_commit_status_converts_transparently(monkeypatch):
         sha="abc123", repo="test/repo",
     )
     assert "state=success" in captured["cmd"], f"Expected state=success in command, got: {captured['cmd']}"
+
+
+# --- GH.get_pr_state_by_branch ------------------------------------------------
+
+
+def _install_fake_pr_list(monkeypatch, *, merged, open_):
+    """Stub GH.get_output_with_retries to answer per --state. Returns nothing;
+    each `gh pr list --json url` yields `[]` or a one-element array."""
+    gh_mod = sys.modules[GH.__module__]
+
+    def fake(cmd, *_a, **_k):
+        if "--state merged" in cmd:
+            return '[{"url": "m"}]' if merged else "[]"
+        if "--state open" in cmd:
+            return '[{"url": "o"}]' if open_ else "[]"
+        return "[]"
+
+    monkeypatch.setattr(gh_mod.GH, "get_output_with_retries", staticmethod(fake))
+
+
+def test_get_pr_state_by_branch_merged_takes_priority(monkeypatch):
+    _install_fake_pr_list(monkeypatch, merged=True, open_=True)
+    assert GH.get_pr_state_by_branch("auto/v1.1.1.1-stable", "o/r") == "MERGED"
+
+
+def test_get_pr_state_by_branch_open(monkeypatch):
+    _install_fake_pr_list(monkeypatch, merged=False, open_=True)
+    assert GH.get_pr_state_by_branch("auto/v1.1.1.1-stable", "o/r") == "OPEN"
+
+
+def test_get_pr_state_by_branch_absent(monkeypatch):
+    _install_fake_pr_list(monkeypatch, merged=False, open_=False)
+    assert GH.get_pr_state_by_branch("auto/v1.1.1.1-stable", "o/r") == ""
+
+
+def test_get_pr_state_by_branch_fails_closed(monkeypatch):
+    """An empty read (lookup failed) must raise, not be read as 'no PR'."""
+    gh_mod = sys.modules[GH.__module__]
+    monkeypatch.setattr(
+        gh_mod.GH, "get_output_with_retries", staticmethod(lambda *_a, **_k: "")
+    )
+    try:
+        GH.get_pr_state_by_branch("auto/v1.1.1.1-stable", "o/r")
+        assert False, "should have raised on a failed lookup"
+    except RuntimeError as e:
+        assert "refusing to treat a failed lookup as 'no PR'" in str(e)
+
+
+def test_request_team_reviews_adds_only_missing_teams(monkeypatch):
+    requests = []
+
+    def fake_get(command, verbose=False):
+        assert "pulls/42/requested_reviewers" in command
+        return '["clickpipes", "unmanaged-team"]'
+
+    def fake_submit(team_slugs, pr, repo):
+        requests.append((team_slugs, pr, repo))
+
+    monkeypatch.setattr(GH, "get_output_with_retries", staticmethod(fake_get))
+    monkeypatch.setattr(GH, "_submit_team_review_requests", staticmethod(fake_submit))
+
+    assert GH.request_team_reviews(
+        team_slugs=["docs", "clickpipes", "integrations-ecosystem"],
+        pr=42,
+        repo="ClickHouse/ClickHouse",
+    )
+    assert requests == [
+        (["docs", "integrations-ecosystem"], 42, "ClickHouse/ClickHouse")
+    ]
+
+
+def test_request_team_reviews_does_nothing_without_teams(monkeypatch):
+    monkeypatch.setattr(
+        GH,
+        "get_output_with_retries",
+        staticmethod(lambda *_args, **_kwargs: pytest.fail("unexpected lookup")),
+    )
+    monkeypatch.setattr(
+        GH,
+        "_submit_team_review_requests",
+        staticmethod(lambda *_args, **_kwargs: pytest.fail("unexpected request")),
+    )
+
+    assert GH.request_team_reviews(
+        team_slugs=[],
+        pr=42,
+        repo="ClickHouse/ClickHouse",
+    )
+
+
+def test_request_team_reviews_fails_when_lookup_fails(monkeypatch):
+    monkeypatch.setattr(
+        GH, "get_output_with_retries", staticmethod(lambda *_args, **_kwargs: "")
+    )
+
+    try:
+        GH.request_team_reviews(
+            team_slugs=["docs"],
+            pr=42,
+            repo="ClickHouse/ClickHouse",
+        )
+        assert False, "Should have raised when requested reviewers are unavailable"
+    except RuntimeError as e:
+        assert "Failed to retrieve team review requests" in str(e)

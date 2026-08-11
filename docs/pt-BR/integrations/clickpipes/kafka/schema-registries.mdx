@@ -40,7 +40,7 @@ Para integrar um registro de esquema durante a configuração do ClickPipes, voc
 
 O ClickPipes se conecta ao registro de esquemas via HTTPS na URL que você fornecer. O registro de esquemas não precisa ser acessível publicamente.
 
-Se os brokers do Kafka forem acessados por meio de um [endpoint privado reverso](/pt-BR/integrations/clickpipes/aws-privatelink) (AWS PrivateLink ou GCP Private Service Connect), o registro de esquemas poderá usar a mesma conectividade privada. O ClickPipes resolve o hostname do registro por meio do DNS privado do endpoint privado reverso, portanto, um registro hospedado de forma privada junto com seus brokers poderá ser acessado, desde que seu hostname seja resolvido para os endereços IP privados do endpoint privado reverso (por meio do suporte a DNS privado do endpoint ou de um mapeamento personalizado de DNS privado).
+Se os brokers do Kafka forem acessados por meio de um [endpoint privado reverso](/pt-BR/integrations/clickpipes/aws-privatelink) (AWS PrivateLink ou GCP Private Service Connect), o registro de esquemas poderá usar a mesma conectividade privada. O ClickPipes resolve o hostname do registro por meio do DNS privado do endpoint privado reverso, portanto, um registro hospedado de forma privada junto com seus brokers poderá ser acessado, desde que seu hostname seja resolvido para os endereços IP privados do endpoint privado reverso (por meio do suporte a DNS privado do endpoint ou de um [mapeamento personalizado de DNS privado](/pt-BR/integrations/clickpipes/aws-privatelink#custom-private-dns)).
 
 Tenha em mente o seguinte:
 

@@ -33,6 +33,31 @@ html:not(.dark) .ch-usecase-arrow {
 .dark .ch-usecase-arrow {
     color: #FCFF74;
 }
+
+/* Restore the layout and appearance of the legacy Docusaurus VersionBadge. */
+.versionBadge {
+    background-color: #F6F7FA;
+    border-radius: 16px;
+    margin-top: 15px;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    display: inline-flex;
+}
+
+.dark .versionBadge {
+    background-color: #282828;
+    color: white;
+}
+
+/* Highlight the `View` selector above the table of contents with theme accents. */
+html:not(.dark) .multi-view-dropdown-trigger {
+    border-color: #135BE6 !important;
+}
+.dark .multi-view-dropdown-trigger {
+    border-color: #FDFF75 !important;
+}
 /* Homepage content hidden until React has mounted and child effects have settled.
    Double-RAF in PageWrapper ensures FullWidthDivider's own RAF fires first. */
 .ch-page-hidden {
@@ -46,6 +71,35 @@ html:not(.dark) .ch-usecase-arrow {
 /* Overlay image drop shadow (hero cards with overlayImg) */
 .ch-overlay-shadow {
     box-shadow: 0 8px 32px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.18);
+}
+
+/* Preserve the sm/md/lg image hierarchy from the previous docs site.
+   Mintlify's content column is narrower, so 480px keeps md visibly distinct
+   from a full-width lg image. */
+.ch-image-sm,
+.ch-image-md,
+.ch-image-lg {
+    width: 100%;
+    margin-inline: auto;
+}
+
+.ch-image-sm {
+    max-width: 300px;
+}
+
+.ch-image-md {
+    max-width: 480px;
+}
+
+.ch-image-lg {
+    max-width: 100%;
+}
+
+.ch-image-sm img,
+.ch-image-md img,
+.ch-image-lg img {
+    width: 100%;
+    height: auto;
 }
 /* MCP icon — mask-size/repeat extracted from inline style; URL stays inline */
 .ch-mcp-icon {
@@ -599,6 +653,13 @@ html:not(.dark) .pagination-prev:hover {
     border-color: #535353;
 }
 
+/* Mintlify gives the pagination card's inner flex wrapper its own page-level
+   background. Keep it transparent so the complete button uses the parent
+   card color in both its resting and hover states. */
+#pagination > a > div {
+    background: transparent !important;
+}
+
 /* Previous card: keep chevron + label together on the left (maple's
    justify-between would otherwise spread them across the card) */
 #pagination > a:has(svg.lucide-chevron-left) {
@@ -782,23 +843,19 @@ html:not(.dark) .pagination-prev:hover {
     max-width: none !important;
 }
 
-/* Fix code block text alignment: JetBrains Mono renders box-drawing characters
-   (─, ┌, ┐, │, etc.) at ~13.6px vs ASCII at ~8.6px because it falls back to a
-   system font for box-drawing. Monaco renders both at equal width. Target the
-   pre.shiki and code elements directly since Mintlify overrides .font-mono. */
+/* Match the monospace stack used by the server's built-in documentation. */
 [data-component-part="code-block-root"] pre.shiki,
 [data-component-part="code-block-root"] code,
 [data-component-part="code-block-root"] .line,
 [data-component-part="code-block-root"] .line span {
-    font-family: "Monaco", "Menlo", "Consolas", "Ubuntu Mono", monospace !important;
-    font-variant-ligatures: none !important;
-    font-feature-settings: "kern" 0 !important;
+    font-family: "DejaVu Sans Mono", "Liberation Mono", "MonoLisa", "Consolas", monospace !important;
 }
 
-/* Tighten line-height for code blocks to match monospace table output
-   while ensuring box-drawing characters render fully */
 [data-component-part="code-block-root"] .font-mono {
-    line-height: 1.5 !important;
+    font-variant-ligatures: none !important;
+    font-feature-settings: "kern" 0 !important;
+    font-size: 0.8125rem !important;
+    line-height: 1.25 !important;
 }
 
 
@@ -816,35 +873,106 @@ html:not(.dark) .pagination-prev:hover {
    Sticky sidebar header (search + Ask AI)
    ============================================
 
-   `#sidebar-content` is the sidebar's scroll container (Mintlify gives it
-   `overflow-y-auto`). Its three direct children are, in order:
+   Mintlify's scroll viewport lives directly inside `#sidebar-content`. The
+   viewport's inner wrapper has three children, in order:
      [0] the logo + dark-mode-toggle row  (div.flex.justify-between.items-center)
      [1] the search + Ask AI row          (div.flex.flex-col.gap-4.mt-6)
      [2] the page navigation              (#navigation-items)
-   Because all three live inside the one scrolling box, the logo and search
-   rows scroll away with the nav. To pin them, move the scroll boundary off
-   `#sidebar-content` and onto `#navigation-items` only: lay `#sidebar-content`
-   out as a flex column that clips instead of scrolls, and let the nav list
-   flex-grow into the remaining height and scroll on its own. The two header
-   rows then stay put at the top while the nav scrolls beneath them.
+   Keep Mintlify's viewport as the scroll container so its visible Base UI
+   scrollbar continues to work. Pin the logo and search rows within that
+   viewport while the navigation scrolls beneath them.
    `#sidebar` is `hidden lg:flex`, so this only affects the desktop sidebar. */
-#sidebar-content {
-    display: flex !important;
-    flex-direction: column;
-    overflow-y: hidden !important;
-    min-height: 0;
+#sidebar-content > div[role="presentation"] > div[role="presentation"] > div:first-child,
+#sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2) {
+    position: sticky;
+    z-index: 20;
+    background: #ffffff;
 }
-#sidebar-content > #navigation-items {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    /* Gap below the pinned search + Ask AI row. Use margin, not padding: the
-       scroll container's scrollbar track spans its whole padding box, so
-       padding-top would leave the scrollbar flush against — visually touching —
-       the search/Ask AI buttons. A margin pushes the scroll box itself (and
-       therefore the top of its scrollbar) down below that row, so the scrollbar
-       no longer exceeds the first nav item. */
-    margin-top: 0.5rem;
+
+#sidebar-content > div[role="presentation"] > div[role="presentation"] > div:first-child {
+    top: 0;
+    z-index: 21;
+}
+
+#sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2) {
+    top: 3.5rem;
+}
+
+/* Cover the complete sticky header, including the space above, between, and
+   below its two rows, so menu items cannot show through while scrolling. */
+#sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2)::before {
+    position: absolute;
+    z-index: -1;
+    top: -5rem;
+    right: -1rem;
+    bottom: -2rem;
+    left: -1.75rem;
+    background: #ffffff;
+    content: "";
+    pointer-events: none;
+}
+
+.dark #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:first-child,
+.dark #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2),
+:is(.dark) #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:first-child,
+:is(.dark) #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2) {
+    background: #151515;
+}
+
+.dark #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2)::before,
+:is(.dark) #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2)::before {
+    background: #151515;
+}
+
+#sidebar-content #navigation-items {
+    /* Mintlify inserts an empty `mt-8` list before the first real menu item.
+       Preserve an explicit gap between the sticky controls and the first menu
+       item rather than relying on that empty element's collapsed margin. */
+    margin-top: 2rem;
+    scrollbar-width: thin;
+    scrollbar-color: #d1d5db transparent;
+}
+
+#navigation-items > ul.list-none.mt-8:first-child:empty {
+    margin-top: 0 !important;
+}
+
+/* Start Mintlify's scrollbar track at the first navigation item rather than at
+   the top of the sticky logo/search header. */
+#sidebar-content > [data-component-part="scroll-area-scrollbar"][data-orientation="vertical"] {
+    margin-top: 9.25rem;
+}
+
+#navigation-items::-webkit-scrollbar {
+    width: 5px;
+}
+
+#navigation-items::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#navigation-items::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: #d1d5db;
+}
+
+#navigation-items::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
+}
+
+.dark #navigation-items,
+:is(.dark) #navigation-items {
+    scrollbar-color: #52525b transparent;
+}
+
+.dark #navigation-items::-webkit-scrollbar-thumb,
+:is(.dark) #navigation-items::-webkit-scrollbar-thumb {
+    background: #52525b;
+}
+
+.dark #navigation-items::-webkit-scrollbar-thumb:hover,
+:is(.dark) #navigation-items::-webkit-scrollbar-thumb:hover {
+    background: #71717a;
 }
 
 /* Hide the chat assistant textarea and its floating-input wrapper */
@@ -1462,6 +1590,14 @@ button.rounded-xl {
     border-radius: 4px !important;
 }
 
+/* Match navigation division dropdowns to the sidebar's 4px radius. Mintlify
+   uses an arbitrary radius on the trigger and `rounded-2xl` on the menu, so
+   neither is covered by the shared `rounded-xl` override above. */
+.nav-dropdown-trigger,
+.nav-dropdown-content {
+    border-radius: 4px !important;
+}
+
 /* Override topbar CTA button styling */
 
 #topbar-cta-button {
@@ -1545,14 +1681,14 @@ button.rounded-xl {
    query for <img>-loaded SVGs while Blink ignores it — so the same icon paints a
    different grey in Safari vs Chrome. Force a deterministic grey keyed to the
    SITE theme instead: brightness(0) collapses whatever colour the SVG picked to
-   black, then invert() sets an exact grey — identical in every browser. The five
-   colourful brand icons (clickhouse, cloud-oss, language-picker, mcp, server) are
-   not part of this grey family and are excluded. */
-img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]):not([src*="icon-server.svg"]) {
+   black, then invert() sets an exact grey — identical in every browser. The four
+   colourful brand icons (clickhouse, cloud-oss, language-picker, mcp) are not
+   part of this grey family and are excluded. */
+img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]) {
     filter: brightness(0) invert(0.31); /* rgb(79,79,79) — matches the SVGs' light value */
 }
-.dark img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]):not([src*="icon-server.svg"]),
-:is(.dark) img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]):not([src*="icon-server.svg"]) {
+.dark img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]),
+:is(.dark) img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]) {
     filter: brightness(0) invert(0.78); /* rgb(199,199,199) — matches the SVGs' dark value */
 }
 
@@ -1694,40 +1830,41 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
 
 /* Beta Badge */
 .betaBadge {
-    background-color: #E5FFFB;
+    background-color: #DBEAFE;
     border-radius: 16px;
     display: flex;
     align-items: center;
     padding: 5px 12px;
-    color: #004237;
+    color: #1D4ED8;
     display: inline-flex;
     margin-right: 5px;
     font-size: 0.875rem;
 }
 
-.betaIcon {
+.betaBadge::before {
+    content: "β";
+    flex: 0 0 auto;
     margin-right: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1;
 }
 
-.betaIcon svg path {
-    fill: #004237;
-}
-
-.betaBadge a {
-    color: black;
+html:not(.dark) .prose a.betaBadge:not(.card):not(.card *),
+a.betaBadge {
+    color: #1D4ED8 !important;
+    text-decoration: none !important;
 }
 
 .dark .betaBadge {
-    background-color: #1A332D;
-    color: #66FFE5;
+    background-color: #1E3A6B;
+    color: #93C5FD;
 }
 
-.dark .betaBadge a {
-    color: #66FFE5;
-}
-
-.dark .betaIcon svg path {
-    fill: #66FFE5;
+html.dark .prose a.betaBadge:not(.card):not(.card *),
+.dark a.betaBadge {
+    color: #93C5FD !important;
+    text-decoration: none !important;
 }
 
 /* ClickHouse Supported Badge */
@@ -1785,6 +1922,12 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
     margin-right: 8px;
 }
 
+html:not(.dark) .prose a.cloudNotSupportedBadge:not(.card):not(.card *),
+a.cloudNotSupportedBadge {
+    color: #660099 !important;
+    text-decoration: none !important;
+}
+
 .cloudNotSupportedIcon svg path {
     stroke: #660099;
 }
@@ -1792,6 +1935,12 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
 .dark .cloudNotSupportedBadge {
     background-color: #33004D;
     color: #EECCFF;
+}
+
+html.dark .prose a.cloudNotSupportedBadge:not(.card):not(.card *),
+.dark a.cloudNotSupportedBadge {
+    color: #EECCFF !important;
+    text-decoration: none !important;
 }
 
 .dark .cloudNotSupportedIcon svg path {
@@ -1875,6 +2024,7 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
 /* Deprecated Badge */
 .deprecatedBadge {
     background-color: #DFDFDF;
+    color: #53575F;
     border-radius: 16px;
     display: flex;
     align-items: center;
@@ -1889,16 +2039,16 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
 }
 
 .deprecatedBadge a {
-    color: black;
+    color: inherit;
 }
 
 .dark .deprecatedBadge {
     background-color: #414141;
-    color: #000000;
+    color: #E6E7E9;
 }
 
 .dark .deprecatedBadge a {
-    color: #000000;
+    color: inherit;
 }
 
 .deprecatedIcon svg path {
@@ -1940,7 +2090,7 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
 }
 
 .dark .enterprisePlanFeatureContainer {
-    background-color: #F6F7FA;
+    background-color: #1F1F1C;
     border: 1px solid #414141;
 }
 
@@ -1951,9 +2101,9 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
 
 /* Experimental Badge */
 .experimentalBadge {
-    background-color: #FFEDD8;
+    background-color: #F3E8FF;
     border-radius: 16px;
-    color: black;
+    color: #6D28D9;
     display: flex;
     align-items: center;
     padding: 5px 12px;
@@ -1966,25 +2116,29 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
     margin-right: 8px;
 }
 
-.experimentalBadge a {
-    color: black;
+html:not(.dark) .prose a.experimentalBadge:not(.card):not(.card *),
+a.experimentalBadge {
+    color: #6D28D9 !important;
+    text-decoration: none !important;
 }
 
 .dark .experimentalBadge {
-    background-color: #E9D5FF;
-    color: #000000;
+    background-color: #3B1D6B;
+    color: #D8B4FE;
 }
 
-.dark .experimentalBadge a {
-    color: #000000;
+html.dark .prose a.experimentalBadge:not(.card):not(.card *),
+.dark a.experimentalBadge {
+    color: #D8B4FE !important;
+    text-decoration: none !important;
 }
 
 .experimentalIcon svg path {
-    stroke: #4F2B00;
+    stroke: #6D28D9;
 }
 
 .dark .experimentalIcon svg path {
-    stroke: #000000;
+    stroke: #D8B4FE;
 }
 
 /* Partner Badge */
@@ -2033,8 +2187,8 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
 
 /* Private Preview Badge */
 .privatePreviewBadge {
-    background-color: #F4FF66;
-    color: #4A4D00;
+    background-color: #FEF3C7;
+    color: #B45309;
     border-radius: 16px;
     display: flex;
     align-items: center;
@@ -2045,8 +2199,8 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
 }
 
 .dark .privatePreviewBadge {
-    background-color: #3C4601;
-    color: #FEFFC2;
+    background-color: #4B3410;
+    color: #FCD34D;
 }
 
 .privatePreviewIcon {
@@ -2054,11 +2208,11 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
 }
 
 .privatePreviewIcon svg path {
-    stroke: #4A4D00;
+    stroke: #B45309;
 }
 
 .dark .privatePreviewIcon svg path {
-    stroke: #FEFFC2;
+    stroke: #FCD34D;
 }
 
 /* Scale Plan Feature Badge */
@@ -2384,22 +2538,31 @@ html:not(.dark) .ch-logo-invert {
     }
 }
 
-/* On wide viewports, doc pages spread their content out: content-area centers
-   via mx-auto while content-side-layout (TOC / API request+response panels) sticks
-   to the right edge, leaving a big gap between them. Cap #content-container at
-   the exact width of content (768) + gap (32) + side-layout (448) + 32px x 2
-   padding = 1312px, and center it. The footer mirrors the same horizontal range
-   so its left and right edges line up with the content block. */
-@media (min-width: 1616px) {
+/* On wide viewports, give the article more room while keeping it aligned with
+   content-side-layout (TOC / API request+response panels). Cap #content-container
+   at the exact width of content (960) + gap (32) + side-layout (448) + 32px x 2
+   padding = 1504px, and center it. The 1824px breakpoint accommodates the
+   sidebar (304), the capped container (1504), and a desktop scrollbar, so the
+   layout cannot overflow when it takes effect. The footer mirrors the same
+   horizontal range so its edges line up with the content block. */
+@media (min-width: 1824px) {
+    html:not([data-page-mode="custom"]) #content-area {
+        max-width: 60rem !important;
+    }
+
     html:not([data-page-mode="custom"]) #content-container {
-        max-width: 1312px !important;
-        margin-left: max(19rem, calc((100vw - 1312px) / 2)) !important;
+        max-width: 1504px !important;
+        margin-left: max(19rem, calc((100vw - 1504px) / 2)) !important;
         margin-right: auto !important;
     }
 
     html:not([data-page-mode="custom"]) #ch-custom-footer {
-        padding-left: max(calc(19rem + 2rem), calc((100vw - 1312px) / 2 + 2rem)) !important;
-        padding-right: min(calc(100vw - 19rem - 1312px + 2rem), calc((100vw - 1312px) / 2 + 2rem)) !important;
+        padding-left: max(calc(19rem + 2rem), calc((100vw - 1504px) / 2 + 2rem)) !important;
+        padding-right: min(calc(100vw - 19rem - 1504px + 2rem), calc((100vw - 1504px) / 2 + 2rem)) !important;
+    }
+
+    html:not([data-page-mode="custom"]) #ch-custom-footer [data-inner] {
+        max-width: 1440px !important;
     }
 }
 
@@ -2447,8 +2610,8 @@ html:not(.dark) mark b {
    ============================================ */
 
 /* Light mode - remove gray-800 text color from nav tabs (let it inherit naturally) */
-html:not(.dark) .nav-tabs button[class*="text-gray-800"]>div,
-html:not(.dark) button.nav-tabs-item[class*="text-gray-800"]>div {
+html:not(.dark) .nav-tabs button.text-gray-800>div,
+html:not(.dark) button.nav-tabs-item.text-gray-800>div {
     color: inherit;
 }
 
@@ -2734,17 +2897,18 @@ html:not(.dark) [data-callout-type] [data-component-part="callout-content"] code
     color: lch(82.069 27.695 22.026 / 0.75);
 }
 
-/* Keep icons dark on hover in light mode */
-html:not(.dark) .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right),
-html:not(.dark) a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right) {
+/* Keep leading brand/mask icons dark on hover in light mode. The trailing SVG
+   on external links is an unboxed arrow and must not receive this background. */
+html:not(.dark) .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child),
+html:not(.dark) a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child) {
     background-color: #1a1a1a !important;
 }
 
-/* Make icons yellow on hover in dark mode */
-.dark .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right),
-.dark a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right),
-:is(.dark) .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right),
-:is(.dark) a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right) {
+/* Make leading brand/mask icons yellow on hover in dark mode */
+.dark .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child),
+.dark a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child),
+:is(.dark) .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child),
+:is(.dark) a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child) {
     background-color: #FAFF69 !important;
 }
 
@@ -2755,7 +2919,7 @@ div[data-radix-popper-content-wrapper]:has([role="menu"] > .nav-dropdown-item) {
 
 /* Match clickhouse.com/clickhouse navbar dropdown panel radius (8px instead
    of Mintlify's default 16px). Targets the panel that wraps `.nav-dropdown-item`. */
-div[data-radix-popper-content-wrapper]:has([role="menu"] > .nav-dropdown-item) > div {
+div[data-radix-popper-content-wrapper]:has([role="menu"] > .nav-dropdown-item) > div:not(.nav-dropdown-content) {
     border-radius: 8px !important;
 }
 
@@ -2945,6 +3109,50 @@ html:not(.dark) .card a {
     transform: rotate(-45deg);
 }
 
+/* Langfuse opens outside the docs site. Replace Mintlify's high-emphasis tile
+   with one small, unboxed external-link glyph. */
+a.nav-dropdown-item[href^="https://langfuse.com/docs"],
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover,
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus,
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible {
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+a.nav-dropdown-item[href^="https://langfuse.com/docs"] > svg:last-child {
+    width: 0.75rem !important;
+    height: 0.75rem !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    outline: 0 !important;
+    background: none !important;
+    box-shadow: none !important;
+    fill: none !important;
+    color: #9ca3af !important;
+    opacity: 0.6 !important;
+    transition: color 150ms ease, opacity 150ms ease, transform 150ms ease;
+}
+
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover > svg:last-child,
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible > svg:last-child {
+    color: #2563eb !important;
+    opacity: 1 !important;
+    transform: translate(1px, -1px);
+}
+
+.dark a.nav-dropdown-item[href^="https://langfuse.com/docs"] > svg:last-child,
+:is(.dark) a.nav-dropdown-item[href^="https://langfuse.com/docs"] > svg:last-child {
+    color: #71717a !important;
+}
+
+.dark a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover > svg:last-child,
+.dark a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible > svg:last-child,
+:is(.dark) a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover > svg:last-child,
+:is(.dark) a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible > svg:last-child {
+    color: #fdff75 !important;
+}
+
 /* ============================================
    Sidebar Section Spacing
    ============================================ */
@@ -2985,7 +3193,7 @@ html:not(.dark) .card a {
 }
 
 /* Preserve active-page styling (border + text color) when Home is selected */
-#navigation-items > ul.sidebar-group > li:only-child > a[class*="text-primary"] {
+#navigation-items > ul.sidebar-group > li:only-child > a.text-primary {
     border-left-color: currentColor !important;
 }
 
@@ -3179,7 +3387,7 @@ a.mobile-nav-tabs-item[href$="/products/clickhouse-private/index"] {
    hook is Mintlify's hard-coded pill background utility (light `bg-[#FDEAD8]`,
    always present in the class list even in dark mode). The title is the
    .break-words span; the METHOD pill spans carry no .break-words. */
-#sidebar a:has(div[class*="bg-[#FDEAD8]"]) span.break-words {
+#sidebar a:has(div.bg-\[\#FDEAD8\]) span.break-words {
     text-decoration: line-through;
 }
 

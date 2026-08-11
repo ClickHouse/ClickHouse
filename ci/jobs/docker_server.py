@@ -185,6 +185,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="allows binaries built on different branch if source digest matches current repo state",
     )
+    parser.add_argument(
+        "--apt-mirror-region",
+        type=str,
+        default="",
+        help="if set, point apt at the in-region AWS Ubuntu mirror for this region "
+        "(e.g. us-east-1) instead of Canonical's archive.ubuntu.com / "
+        "ports.ubuntu.com, which are frequently unreachable from the runners. "
+        "Empty means use the Dockerfile default (canonical mirror).",
+    )
 
     return parser.parse_args()
 
@@ -260,6 +269,7 @@ def buildx_args(
     version: str,
     sha: str,
     action_url: str,
+    apt_mirror_region: str,
 ) -> List[str]:
     args = [
         "--provenance=true",
@@ -275,6 +285,17 @@ def buildx_args(
         url = urls[arch]
         args.append(f"--build-arg=REPOSITORY='{url}'")
         args.append(f"--build-arg=deb_location_url='{url}'")
+    # Point apt at the in-region AWS Ubuntu mirror. Canonical's archive.ubuntu.com
+    # (amd64) and ports.ubuntu.com (arm64) are frequently unreachable over IPv4
+    # from the runners; the in-region mirror is reachable and fast. The Dockerfile
+    # defaults stay canonical so images build normally outside CI.
+    if apt_mirror_region:
+        args.append(
+            f"--build-arg=apt_archive=http://{apt_mirror_region}.ec2.archive.ubuntu.com"
+        )
+        args.append(
+            f"--build-arg=apt_ports_archive=http://{apt_mirror_region}.ec2.ports.ubuntu.com"
+        )
     return args
 
 
@@ -288,6 +309,7 @@ def build_and_push_image(
     direct_urls: Dict[str, List[str]],
     run_url: str,
     sha: str,
+    apt_mirror_region: str,
 ) -> List[Result]:
     result = []
     if os != "ubuntu":
@@ -338,6 +360,7 @@ def build_and_push_image(
                 version=version,
                 action_url=run_url,
                 sha=sha,
+                apt_mirror_region=apt_mirror_region,
             )
         )
         if not push:
@@ -480,11 +503,16 @@ def main():
     args = parse_args()
     info = Info()
 
-    version_dict = None
+    version = None
     if not info.is_local_run:
-        version_dict = info.get_kv_data("version")
-    if not version_dict:
-        version_dict = CHVersion.get_current_version_as_dict()
+        version = CHVersion.get_current_version_from_ci_pipeline()
+    if not version:
+        # Repo-read fallback: the merge-queue workflow runs no version_log hook,
+        # so KV storage is empty and this is the only path. The checkout is
+        # shallow there, so the tweak cannot be counted from git history -- read
+        # non-strict and let it degrade to the placeholder tweak instead of
+        # raising, matching the pre-refactor behavior.
+        version = CHVersion.get_current_version(no_strict=True)
         if not info.is_local_run:
             print(
                 "WARNING: ClickHouse version has not been found in workflow kv storage - read from repo"
@@ -492,7 +520,7 @@ def main():
             info.add_workflow_warning(
                 "ClickHouse version has not been found in workflow kv storage"
             )
-    assert version_dict
+    assert version
 
     if not info.is_local_run:
         assert not args.image_path and not args.image_repo
@@ -507,9 +535,11 @@ def main():
         assert False, f"Unexpected job name [{info.job_name}]"
 
     push = args.push
+    apt_mirror_region = args.apt_mirror_region
     del args.image_path
     del args.image_repo
     del args.push
+    del args.apt_mirror_region
 
     if (
         info.is_push_event
@@ -521,7 +551,7 @@ def main():
         push = True
 
     image = DockerImageData(image_repo, image_path)
-    tags = gen_tags(version_dict["string"], args.tag_type)
+    tags = gen_tags(version.string, args.tag_type)
     repo_urls = {}
     direct_urls: Dict[str, List[str]] = {}
 
@@ -577,10 +607,11 @@ def main():
                     repo_urls,
                     os_,
                     tag,
-                    version_dict["describe"],
+                    version.describe,
                     direct_urls,
                     run_url=info.run_url,
                     sha=info.sha,
+                    apt_mirror_region=apt_mirror_region,
                 )
             )
 

@@ -22,9 +22,7 @@ Ce guide présente des paramètres simples et minimaux pour configurer ClickHous
 </Note>
 
 <Steps>
-  <Step>
-    ## Créer un déploiement ClickHouse
-
+  <Step title="Créer un déploiement ClickHouse" id="1-create-a-clickhouse-deployment">
     Ce guide a été rédigé avec Ubuntu 20.04, et ClickHouse a été installé sur les hôtes suivants à l’aide du paquet DEB (avec apt). Le domaine est `marsnet.local` :
 
     | Hôte      | Adresse IP    |
@@ -38,9 +36,7 @@ Ce guide présente des paramètres simples et minimaux pour configurer ClickHous
     </Note>
   </Step>
 
-  <Step>
-    ## Créer des certificats TLS
-
+  <Step title="Créer des certificats TLS" id="2-create-tls-certificates">
     <Note>
       L’utilisation de certificats auto-signés est uniquement destinée à la démonstration et ne doit pas être utilisée en production. Les demandes de certificat doivent être créées afin d’être signées par l’organisation et validées à l’aide de la chaîne de certification de la CA qui sera configurée dans les paramètres. Toutefois, ces étapes peuvent être utilisées pour configurer et tester les paramètres, puis être remplacées par les certificats réels qui seront utilisés.
     </Note>
@@ -90,9 +86,7 @@ Ce guide présente des paramètres simples et minimaux pour configurer ClickHous
        ```
   </Step>
 
-  <Step>
-    ## Créez et configurez un répertoire pour stocker les certificats et les clés.
-
+  <Step title="Créez et configurez un répertoire pour stocker les certificats et les clés." id="3-create-and-configure-a-directory-to-store-certificates-and-keys">
     <Note>
       Cette opération doit être effectuée sur chaque nœud. Utilisez les certificats et les clés appropriés sur chaque hôte.
     </Note>
@@ -123,9 +117,7 @@ Ce guide présente des paramètres simples et minimaux pour configurer ClickHous
        ```
   </Step>
 
-  <Step>
-    ## Configurer l&#39;environnement avec des clusters de base à l&#39;aide de ClickHouse Keeper
-
+  <Step title="Configurer l’environnement avec des clusters de base à l’aide de ClickHouse Keeper" id="4-configure-the-environment-with-basic-clusters-using-clickhouse-keeper">
     Pour cet environnement de déploiement, les paramètres ClickHouse Keeper suivants sont utilisés sur chaque nœud. Chaque serveur possède son propre `<server_id>`. (Par exemple, `<server_id>1</server_id>` pour le nœud `chnode1`, et ainsi de suite.)
 
     <Note>
@@ -250,9 +242,7 @@ Ce guide présente des paramètres simples et minimaux pour configurer ClickHous
        ```
   </Step>
 
-  <Step>
-    ## Configurer les interfaces TLS sur les nœuds ClickHouse
-
+  <Step title="Configurer les interfaces TLS sur les nœuds ClickHouse" id="5-configure-tls-interfaces-on-clickhouse-nodes">
     Les paramètres ci-dessous sont configurés dans le `config.xml` du serveur ClickHouse
 
     1. Définissez le nom d’affichage du déploiement (facultatif) :
@@ -359,9 +349,7 @@ Ce guide présente des paramètres simples et minimaux pour configurer ClickHous
        ```
   </Step>
 
-  <Step>
-    ## Tests
-
+  <Step title="Test" id="6-testing">
     1. Démarrez tous les nœuds, un à la fois :
        ```bash
        service clickhouse-server start

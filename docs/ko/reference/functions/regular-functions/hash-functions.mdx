@@ -465,8 +465,8 @@ SELECT URLHash('https://www.clickhouse.com/docs', 1);
 
 64비트 [CityHash](https://github.com/google/cityhash) 해시 값을 생성합니다.
 
-빠른 비암호화 해시 함수입니다.
-문자열 매개변수에는 CityHash 알고리즘을 사용하고, 다른 데이터 타입의 매개변수에는 구현별 빠른 비암호화 해시 함수를 사용합니다.
+빠른 비암호학적 해시 함수입니다.
+문자열 매개변수에는 CityHash 알고리즘을 사용하고, 다른 데이터 타입의 매개변수에는 구현별 빠른 비암호학적 해시 함수를 사용합니다.
 이 함수는 최종 결과를 얻기 위해 CityHash combinator를 사용합니다.
 
 <Info>
@@ -477,7 +477,7 @@ SELECT URLHash('https://www.clickhouse.com/docs', 1);
 
 <Note>
   계산된 해시 값은 인수 타입이 다르더라도 입력값이 같으면 동일할 수 있습니다.
-  예를 들어 크기가 다른 정수 타입, 동일한 데이터를 가진 이름 있는 `Tuple`과 이름 없는 `Tuple`, 그리고 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입에 이런 현상이 발생할 수 있습니다.
+  예를 들어 크기가 다른 정수 타입, 동일한 데이터를 가진 기명 Tuple과 비기명 Tuple, 그리고 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입에 이런 현상이 발생할 수 있습니다.
 </Note>
 
 **구문**
@@ -548,7 +548,7 @@ SELECT groupBitXor(cityHash64(*)) FROM users;
 
 <Note>
   계산된 해시 값은 인수 타입이 서로 달라도 동일한 입력 값에 대해 같을 수 있습니다.
-  예를 들어 크기가 다른 정수 타입, 동일한 데이터를 가진 이름 있는 `Tuple`과 이름 없는 `Tuple`, 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입이 여기에 해당합니다.
+  예를 들어 크기가 다른 정수 타입, 동일한 데이터를 가진 기명 Tuple과 비기명 Tuple, 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입이 여기에 해당합니다.
 </Note>
 
 **구문**
@@ -593,7 +593,7 @@ SELECT farmFingerprint64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 
 
 <Note>
   계산된 해시 값은 인수 타입이 서로 달라도 입력 값이 같으면 동일할 수 있습니다.
-  예를 들면 크기가 다른 정수 타입, 동일한 데이터를 가진 이름 있는 `Tuple`과 이름 없는 `Tuple`, 그리고 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입이 여기에 해당합니다.
+  예를 들면 크기가 다른 정수 타입, 동일한 데이터를 가진 기명 Tuple과 비기명 Tuple, 그리고 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입이 여기에 해당합니다.
 </Note>
 
 **구문**
@@ -1893,7 +1893,7 @@ SELECT hex(sipHash128('foo', '\x01', 3));
 
 도입 버전: v23.2.0
 
-고정 키를 사용하는 대신 명시적으로 키 인수를 받는다는 점만 제외하면 [`sipHash128`](#sipHash128)과 동일합니다.
+고정 키를 사용하는 대신 명시적으로 지정한 키 인수를 받는다는 점만 제외하면 [`sipHash128`](#sipHash128)과 동일합니다.
 
 <Tip>
   **새 프로젝트에서는 sipHash128ReferenceKeyed를 사용하세요**
@@ -2692,6 +2692,46 @@ SELECT xxHash64('Hello, world!');
 ┌─xxHash64('Hello, world!')─┐
 │      17691043854468224118 │
 └───────────────────────────┘
+```
+
+<div id="xxHash64Spark">
+  ## xxHash64Spark
+</div>
+
+도입 버전: v26.7.0
+
+Spark와 동일한 시드를 사용해 문자열의 [xxHash](http://cyan4973.github.io/xxHash/)를 계산합니다.
+
+이 함수는 [`xxHash64`](#xxHash64)와 동일하지만, 시드 `42`를 사용하고 결과를 `Int64`로 반환합니다.
+입력값으로는 `String`과 `NULL`만 지원합니다.
+`NULL`의 경우 Spark의 시드 동작과 일치하게 `42`를 반환합니다.
+
+**구문**
+
+```sql
+xxHash64Spark(arg)
+```
+
+**인수**
+
+* `arg` — 해시할 입력 문자열입니다. [`String`](/ko/reference/data-types/string)
+
+**반환 값**
+
+입력 문자열의 계산된 64비트 해시값을 반환합니다. [`Int64`](/ko/reference/data-types/int-uint)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT xxHash64Spark('ABC');
+```
+
+```response title=Response
+┌─xxHash64Spark('ABC')─┐
+│  4105715581806190027 │
+└──────────────────────┘
 ```
 
 <div id="xxh3">

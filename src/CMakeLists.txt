@@ -136,6 +136,8 @@ add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Cache)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Local)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Plain)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/PlainRewritable)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Web)
 if (TARGET ch_contrib::sqlite)
     add_headers_and_sources(dbms Databases/SQLite)
@@ -167,6 +169,7 @@ add_headers_and_sources(dbms Common/Scheduler/Workload)
 
 add_headers_and_sources(dbms Core/YTsaurus)
 add_headers_and_sources(dbms Storages/YTsaurus)
+add_headers_and_sources(dbms Storages/BigQuery)
 
 add_headers_and_sources(dbms Core/Streaming)
 add_headers_and_sources(dbms Storages/Streaming)
@@ -499,12 +502,14 @@ endif()
 
 if (TARGET ch_contrib::nuraft)
     add_object_library(clickhouse_coordination Coordination)
+    add_object_library(clickhouse_coordination_storage Coordination/Storage)
 endif()
 
 add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
 
 target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
 target_link_libraries (dbms PRIVATE ch_contrib::clickstack_resources)
+target_link_libraries (dbms PRIVATE ch_contrib::xxHash)
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
 endif()
@@ -546,6 +551,7 @@ target_link_libraries (clickhouse_compression
             clickhouse_parsers
         PRIVATE
             ch_contrib::lz4
+            ch_contrib::zxc
             ch_contrib::roaring
 )
 if (TARGET ch_contrib::fastpfor)
@@ -601,10 +607,6 @@ target_link_libraries (clickhouse_common_io PUBLIC absl::stacktrace)
 target_link_libraries(dbms PUBLIC ch_contrib::roaring)
 if (TARGET ch_contrib::fastpfor)
     target_link_libraries(dbms PUBLIC ch_contrib::fastpfor)
-endif()
-
-if (TARGET ch_contrib::libpng)
-    target_link_libraries(dbms PUBLIC ch_contrib::libpng)
 endif()
 
 if (TARGET ch_contrib::rdkafka)
@@ -702,6 +704,10 @@ if (TARGET ch_contrib::icu)
     target_link_libraries(dbms PRIVATE ch_contrib::icu)
 endif ()
 
+if (TARGET ch_contrib::mecab)
+    target_link_libraries(dbms PRIVATE ch_contrib::mecab)
+endif ()
+
 if (TARGET ch_contrib::capnp)
     target_link_libraries(dbms PRIVATE ch_contrib::capnp)
 endif ()
@@ -777,7 +783,7 @@ if (TARGET ch_contrib::brotli)
 endif()
 
 if (TARGET ch_contrib::snappy)
-    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::snappy)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::snappy ch_contrib::crc32c)
 endif()
 
 if (TARGET ch_contrib::amqp_cpp)
@@ -842,8 +848,8 @@ if (TARGET ch_contrib::bzip2)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::bzip2)
 endif()
 
-if (TARGET ch_contrib::base64)
-    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::base64)
+if (TARGET ch_contrib::simdutf)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::simdutf)
 endif()
 
 if (TARGET ch_contrib::libarchive)
@@ -970,6 +976,10 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::azure_sdk)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::azure_sdk)
+    endif()
+
+    if (TARGET ch_contrib::hdfs)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::hdfs)
     endif()
 
     if (TARGET ch_contrib::parquet)

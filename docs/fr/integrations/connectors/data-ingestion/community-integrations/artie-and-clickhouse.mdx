@@ -26,25 +26,19 @@ Nous offrons aux entreprises le type de pipelines de streaming et le niveau d’
 Des leaders comme ClickUp, Substack et Alloy utilisent Artie non seulement pour résoudre les problèmes de pipeline actuels, mais aussi pour pérenniser leur stack de données à mesure que leur stratégie IA s’accélère.
 
 <Steps>
-  <Step>
-    ## Créer un compte Artie
-
+  <Step title="Créer un compte Artie" id="1-create-an-artie-account">
     Rendez-vous sur <a href="https://www.artie.com/contact" target="_blank">artie.com/contact</a> et remplissez le formulaire pour demander l’accès.
 
     <Image img="/images/integrations/data-ingestion/etl-tools/artie/artie_signup.webp" size="md" border alt="Page d’inscription Artie" />
   </Step>
 
-  <Step>
-    ## Trouver vos identifiants ClickHouse
-
+  <Step title="Trouver vos identifiants ClickHouse" id="2-find-your-clickhouse-credentials">
     Après avoir créé un service dans ClickHouse Cloud, recherchez les paramètres requis suivants :
 
     <ConnectionDetails />
   </Step>
 
-  <Step>
-    ## Créer un nouveau pipeline dans Artie
-
+  <Step title="Créer un nouveau pipeline dans Artie" id="3-create-a-new-pipeline-in-artie">
     Rendez-vous sur Artie avec les informations recueillies aux étapes précédentes et créez un nouveau pipeline en suivant un processus en 3 étapes.
 
     1. **Connectez votre source** - Configurez votre base de données source (Postgres, MySQL, Events API, etc.)
@@ -73,6 +67,6 @@ Supervision spécifique aux pipelines et aux tables
 
 <Image img="/images/integrations/data-ingestion/etl-tools/artie/monitor.webp" size="md" border alt="Supervision intégrée" />
 
-Notifications quotidiennes de modification du schéma
+Notifications quotidiennes des modifications du schéma
 
 <Image img="/images/integrations/data-ingestion/etl-tools/artie/schema_notification.webp" size="md" border alt="Notification de schéma" />

@@ -29,32 +29,26 @@ void OffsetMap::build(const StoredObjects & objects)
             total_size = StoredObject::UnknownSize;
             segments.push_back(Segment{
                 .object = obj,
-                .logical_offset = 0,
+                .file_offset = 0,
                 .size = StoredObject::UnknownSize,
             });
             return;
         }
         segments.push_back(Segment{
             .object = obj,
-            .logical_offset = total_size,
+            .file_offset = total_size,
             .size = obj.bytes_size,
         });
         total_size += obj.bytes_size;
     }
 }
 
-const StoredObject * OffsetMap::findObjectAt(size_t logical_offset, size_t * object_logical_start_offset) const
+const OffsetMap::Segment * OffsetMap::findObjectAt(size_t file_offset) const
 {
     /// Linear scan: the segment count equals the file's object count, a handful at most.
     for (const auto & seg : segments)
-    {
-        if (seg.logical_offset <= logical_offset && logical_offset < seg.logical_offset + seg.size)
-        {
-            if (object_logical_start_offset)
-                *object_logical_start_offset = seg.logical_offset;
-            return &seg.object;
-        }
-    }
+        if (seg.file_offset <= file_offset && file_offset < seg.file_offset + seg.size)
+            return &seg;
     return nullptr;
 }
 

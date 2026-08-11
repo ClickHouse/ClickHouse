@@ -28,9 +28,7 @@ pueda interactuar con el [Playground SQL de ClickHouse](https://sql.clickhouse.c
 Puedes seguir los pasos siguientes desde el REPL de Python o mediante un script.
 
 <Steps>
-  <Step>
-    ## Instalar bibliotecas
-
+  <Step title="Instalar bibliotecas" id="install-libraries">
     Instale la biblioteca necesaria con los siguientes comandos:
 
     ```python
@@ -39,9 +37,7 @@ Puedes seguir los pasos siguientes desde el REPL de Python o mediante un script.
     ```
   </Step>
 
-  <Step>
-    ## Configurar credenciales
-
+  <Step title="Configurar credenciales" id="setup-credentials">
     A continuación, deberás proporcionar tu clave de API de OpenAI:
 
     ```python
@@ -54,9 +50,7 @@ Puedes seguir los pasos siguientes desde el REPL de Python o mediante un script.
     ```
   </Step>
 
-  <Step>
-    ## Inicializar el servidor MCP y el agente de OpenAI
-
+  <Step title="Inicializar el servidor MCP y el agente de OpenAI" id="initialize-mcp-and-agent">
     Ahora configure el ClickHouse MCP server para que apunte al playground de ClickHouse SQL,
     inicialice su agente de OpenAI y hágale una pregunta:
 
@@ -68,7 +62,7 @@ Puedes seguir los pasos siguientes desde el REPL de Python o mediante un script.
     def simple_render_chunk(chunk):
         """Simple version that just filters important events"""
 
-        # Llamadas a herramientas
+        # Tool calls
         if (hasattr(chunk, 'type') and
                 chunk.type == 'run_item_stream_event'):
 
@@ -79,13 +73,13 @@ Puedes seguir los pasos siguientes desde el REPL de Python o mediante un script.
 
             elif chunk.name == 'tool_output':
                 try:
-                    # Manejar tanto cadenas como salida ya analizada
+                    # Handle both string and already-parsed output
                     if isinstance(chunk.item.output, str):
                         output = json.loads(chunk.item.output)
                     else:
                         output = chunk.item.output
 
-                    # Manejar tanto formato de diccionario como de lista
+                    # Handle both dict and list formats
                     if isinstance(output, dict):
                         if output.get('type') == 'text':
                             text = output['text']
@@ -94,7 +88,7 @@ Puedes seguir los pasos siguientes desde el REPL de Python o mediante un script.
                             else:
                                 print(f"✅ Result: {text[:100]}...")
                     elif isinstance(output, list) and len(output) > 0:
-                        # Manejar formato de lista
+                        # Handle list format
                         first_item = output[0]
                         if isinstance(first_item, dict) and first_item.get('type') == 'text':
                             text = first_item['text']
@@ -103,11 +97,11 @@ Puedes seguir los pasos siguientes desde el REPL de Python o mediante un script.
                             else:
                                 print(f"✅ Result: {text[:100]}...")
                     else:
-                        # Fallback - imprimir la salida sin procesar
+                        # Fallback - just print the raw output
                         print(f"✅ Result: {str(output)[:100]}...")
 
                 except (json.JSONDecodeError, AttributeError, KeyError) as e:
-                    # Fallback a la salida sin procesar si el análisis falla
+                    # Fallback to raw output if parsing fails
                     print(f"✅ Result: {str(chunk.item.output)[:100]}...")
 
             elif chunk.name == 'message_output_created':
@@ -118,7 +112,7 @@ Puedes seguir los pasos siguientes desde el REPL de Python o mediante un script.
                 except (AttributeError, IndexError):
                     print(f"💬 Response: {str(chunk.item)[:100]}...")
 
-        # Deltas de texto para streaming
+        # Text deltas for streaming
         elif (hasattr(chunk, 'type') and
               chunk.type == 'raw_response_event' and
               hasattr(chunk, 'data') and

@@ -32,6 +32,8 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+#include <Core/ProtocolDefines.h>
+#include <Core/SettingsEnums.h>
 
 namespace DB
 {
@@ -58,7 +60,9 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const QueryPlanSerializationSettingsBool optimize_group_by_constant_keys;
     extern const QueryPlanSerializationSettingsBool enable_producing_buckets_out_of_order_in_aggregation;
+    extern const QueryPlanSerializationSettingsBool enable_parallel_single_level_merge;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
+    extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
 }
 
 namespace ErrorCodes
@@ -89,6 +93,33 @@ static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_
             .preserves_number_of_rows = false,
         }
     };
+}
+
+static bool keysCanUsePackedStringMethod(const Block & header, const Names & keys)
+{
+    for (const auto & key : keys)
+    {
+        if (!header.has(key))
+            return true;
+    }
+
+    Sizes key_sizes;
+    return AggregatedDataVariants::chooseMethod(header, keys, key_sizes) == AggregatedDataVariants::Type::key_packed_string;
+}
+
+bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params)
+{
+    if (grouping_sets_params.empty())
+        return keysCanUsePackedStringMethod(header, keys);
+
+    /// Every grouping set gets its own `Aggregator` over its own subset of the keys, so the method is chosen per set.
+    for (const auto & grouping_set : grouping_sets_params)
+    {
+        if (keysCanUsePackedStringMethod(header, grouping_set.used_keys))
+            return true;
+    }
+
+    return false;
 }
 
 Block appendGroupingSetColumn(Block header)
@@ -176,6 +207,29 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     group_by_sort_description = std::move(group_by_sort_description_);
     explicit_sorting_required_for_aggregation_in_order = false;
 }
+
+std::vector<size_t> AggregatingStep::getStepGroups() const
+{
+    return {
+        static_cast<size_t>(AggregatingStage::PartialAggregation),
+        static_cast<size_t>(AggregatingStage::FinalAggregation),
+        static_cast<size_t>(AggregatingStage::Scatter),
+        static_cast<size_t>(AggregatingStage::AggregatingSharded)
+    };
+}
+
+String AggregatingStep::getStepGroupName(size_t group) const
+{
+    switch (static_cast<AggregatingStage>(group))
+    {
+        case AggregatingStage::PartialAggregation: return "partial aggregation";
+        case AggregatingStage::FinalAggregation: return "final aggregation";
+        case AggregatingStage::Scatter: return "scatter";
+        case AggregatingStage::AggregatingSharded: return "shard aggregation";
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown AggregatingStep group {}", group);
+}
+
 
 const SortDescription & AggregatingStep::getSortDescription() const
 {
@@ -438,7 +492,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                             new_merge_threads,
                             new_temporary_data_merge_threads,
                             should_produce_results_in_order_of_bucket_number,
-                            skip_merging);
+                            skip_merging,
+                            nullptr);
                         // For each input stream we have `grouping_sets_size` copies, so port index
                         // for transform #j should skip ports of first (j-1) streams.
                         connect(*ports[i + grouping_sets_size * j], aggregation_for_set->getInputs().front());
@@ -501,7 +556,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// (ignoring the read-stream-reduced cap) so downstream steps can process the result in parallel.
         pipeline.resize(params.max_threads);
 
-        aggregating = collector.detachProcessors(0);
+        aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
         return;
     }
 
@@ -551,11 +606,11 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 pipeline.addSimpleTransform([&](const SharedHeader & header)
                                             { return std::make_shared<FinalizeAggregatedTransform>(header, transform_params); });
                 pipeline.resize(max_threads);
-                aggregating_in_order = collector.detachProcessors(0);
+                aggregating_in_order = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
                 return;
             }
 
-            aggregating_in_order = collector.detachProcessors(0);
+            aggregating_in_order = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
 
             auto transform = std::make_shared<FinishAggregatingInOrderTransform>(
                 pipeline.getSharedHeader(),
@@ -582,7 +637,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     std::make_shared<SortingAggregatedForMemoryBoundMergingTransform>(pipeline.getHeader(), pipeline.getNumStreams()));
             }
 
-            aggregating_sorted = collector.detachProcessors(1);
+            aggregating_sorted = collector.detachProcessors(static_cast<size_t>(AggregatingStage::FinalAggregation));
         }
         else
         {
@@ -601,10 +656,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 return std::make_shared<FinalizeAggregatedTransform>(header, transform_params);
             });
 
-            aggregating_in_order = collector.detachProcessors(0);
+            aggregating_in_order = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
         }
 
-        finalizing = collector.detachProcessors(2);
         return;
     }
 
@@ -668,13 +722,15 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 });
         }
 
+        scatter = collector.detachProcessors(static_cast<size_t>(AggregatingStage::Scatter));
+
         pipeline.addSimpleTransform(
             [&](const SharedHeader & shard_header)
             { return std::make_shared<AggregatingTransform>(shard_header, transform_params, dataflow_cache_updater); });
 
         chassert(!should_produce_results_in_order_of_bucket_number);
 
-        aggregating = collector.detachProcessors(0);
+        aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::AggregatingSharded));
         return;
     }
 
@@ -706,7 +762,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : max_threads, false, settings.min_outstreams_per_resize_after_split);
 
-        aggregating = collector.detachProcessors(0);
+        aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
     }
     else
     {
@@ -715,7 +771,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : max_threads);
 
-        aggregating = collector.detachProcessors(0);
+        aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
     }
 }
 
@@ -745,11 +801,13 @@ void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
 void AggregatingStep::describePipeline(FormatSettings & settings) const
 {
     if (!aggregating.empty())
+    {
         IQueryPlanStep::describePipeline(aggregating, settings);
+        IQueryPlanStep::describePipeline(scatter, settings);
+    }
     else
     {
         /// Processors are printed in reverse order.
-        IQueryPlanStep::describePipeline(finalizing, settings);
         IQueryPlanStep::describePipeline(aggregating_sorted, settings);
         IQueryPlanStep::describePipeline(aggregating_in_order, settings);
     }
@@ -837,6 +895,26 @@ AggregatingProjectionStep::AggregatingProjectionStep(
     updateInputHeaders(std::move(input_headers_));
 }
 
+std::vector<size_t> AggregatingProjectionStep::getStepGroups() const
+{
+    return {
+        static_cast<size_t>(AggregatingStep::AggregatingStage::PartialAggregation),
+        static_cast<size_t>(AggregatingStep::AggregatingStage::FinalAggregation)
+    };
+}
+
+String AggregatingProjectionStep::getStepGroupName(size_t group) const
+{
+    switch (static_cast<AggregatingStep::AggregatingStage>(group))
+    {
+        case AggregatingStep::AggregatingStage::PartialAggregation: return "partial aggregation";
+        case AggregatingStep::AggregatingStage::FinalAggregation: return "final aggregation";
+        case AggregatingStep::AggregatingStage::Scatter: [[fallthrough]];
+        case AggregatingStep::AggregatingStage::AggregatingSharded: break;
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown AggregatingProjectionStep group {}", group);
+}
+
 void AggregatingProjectionStep::updateOutputHeader()
 {
     if (input_headers.size() != 2)
@@ -914,7 +992,7 @@ QueryPipelineBuilderPtr AggregatingProjectionStep::updatePipeline(
 }
 
 
-void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
     settings[QueryPlanSerializationSetting::aggregation_in_order_max_block_bytes] = aggregation_in_order_max_block_bytes;
@@ -945,6 +1023,45 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation] = params.stats_collecting_params.max_size_to_preallocate;
 
     settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation] = params.enable_producing_buckets_out_of_order_in_aggregation;
+    settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge] = params.enable_parallel_single_level_merge;
+
+    /// A peer whose query-plan serialization version knows the name (this `version` is already the minimum of ours
+    /// and the peer's) receives the value whenever the legacy method is requested, so the setting always takes
+    /// effect on remote aggregation under `serialize_query_plan = 1`.
+    ///
+    /// Towards an older peer the name is written only when the legacy method is requested *and* this step can
+    /// actually choose the single-`String` method *and* the plan can go two-level.
+    /// `QueryPlanSerializationSettings` is a strict named schema: `writeChangedBinary` writes every touched
+    /// entry by name and `readBinary` throws on a name it does not know, so writing this one whenever the session
+    /// setting is off would make plans for `count()` or `GROUP BY UInt64` - where the setting cannot change anything -
+    /// unreadable by a peer that predates it. Leaving it out keeps the receiver at the default (the packed method),
+    /// and a peer too old to know the name fails closed on an explicit `false` instead of silently aggregating with
+    /// the other method.
+    ///
+    /// Failing closed is deliberate, and it is *not* made redundant by the two-level fence in
+    /// `MultiplexedConnections::sendQuery` / `HedgedConnections::sendQuery`. Those zero
+    /// `group_by_two_level_threshold` / `group_by_two_level_threshold_bytes` in the `Settings` sent alongside the
+    /// query, but a deserialized `AggregatingStep` takes both thresholds from the plan's own
+    /// `QueryPlanSerializationSettings` (see `deserialize` below), which were written here from the initiator's
+    /// unmodified `params`. So under `serialize_query_plan = 1` the fence does not reach the remote aggregation: a
+    /// peer that silently used the other method could still go two-level, and two-level bucket numbering differs
+    /// between the two methods, which corrupts memory-efficient distributed merging. The exception is the only safe
+    /// outcome for that combination.
+    ///
+    /// When both serialized two-level thresholds are `0`, however, the mismatch cannot be observed, so towards an
+    /// old peer the name is left off the wire and the peer may run the plan with its default method. The receiver
+    /// takes both thresholds from the very settings written above, and with both at `0` every path to a two-level
+    /// state is closed:
+    /// `worthConvertToTwoLevel` is false for any size (also in the size-hint path of `initDataVariantsWithSizeHint`),
+    /// the external-group-by spill in `Aggregator::executeOnBlock` additionally requires `worth_convert_to_two_level`,
+    /// and the conversion in `Aggregator::mergeVariants` fires only when some variant is two-level already. The step
+    /// then only ever produces single-level blocks (`bucket_num = -1`), whose rows and serialized aggregate states do
+    /// not depend on the hash-table method, and every consumer merges them as a plain set-union by key.
+    if (!params.enable_packed_string_keys
+        && (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRING_KEYS_SETTING
+            || ((params.group_by_two_level_threshold != 0 || params.group_by_two_level_threshold_bytes != 0)
+                && aggregationCanUsePackedStringKeys(*input_headers.front(), params.keys, grouping_sets_params))))
+        settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = false;
 }
 
 void AggregatingStep::serialize(Serialization & ctx) const
@@ -964,7 +1081,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
     /// Overall, the rule is not strict.
 
     UInt8 flags = 0;
-    if (final && !ctx.skip_final_flag)
+    if (final && !ctx.for_cache_key)
         flags |= 1;
     if (params.overflow_row)
         flags |= 2;
@@ -1000,7 +1117,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
     serializeAggregateDescriptions(params.aggregates, ctx.out);
 
-    if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.skip_cache_key)
+    if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.for_cache_key)
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
 }
 
@@ -1084,7 +1201,9 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params,
         ctx.settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation],
-        ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte]};
+        ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte],
+        ctx.settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge],
+        ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation]};
 
     SortDescription sort_description_for_merging;
 
