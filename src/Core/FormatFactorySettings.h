@@ -53,6 +53,8 @@ Note: a flattened header is not read back into a Tuple by name when `input_forma
 If it set to true, then separate columns written in CSV format can be deserialized to Tuple column.
 
 This applies only to bare `Tuple`. A `Nullable(Tuple)` is always written as a single CSV field (see [output_format_csv_serialize_tuple_into_separate_columns](#output_format_csv_serialize_tuple_into_separate_columns)) and is likewise read back from a single field, never from separate columns, regardless of this setting. Separate-columns parsing is not supported for `Nullable(Tuple)` because a leading `\N` field is ambiguous (it may be the outer NULL of the tuple or the NULL of its first element).
+
+Because a bare `Tuple` then occupies one field per element, a `\N` in the field of a direct top-level element is that element and not the whole column, so [input_format_null_as_default](#input_format_null_as_default) applies to that element. A row that supplies a single field for the whole tuple is short by the remaining elements and is rejected instead of taking the column default. Set this setting to `0` to read such a field as the whole column again. A `\N` in the field of an element of a nested `Tuple` is still read as that whole nested element.
 )", 0) \
     DECLARE(Bool, output_format_csv_crlf_end_of_line, false, R"(
 If it is set true, end of line in CSV format will be \\r\\n instead of \\n.
@@ -219,6 +221,9 @@ Approximate memory limit for Parquet reader v3. Limits how many row groups or co
     DECLARE(Bool, input_format_parquet_page_filter_push_down, true, R"(
 Skip pages using min/max values from column index.
 )", 0) \
+    DECLARE(Bool, input_format_parquet_spatial_filter_push_down, true, R"(
+When reading GeoParquet files, skip whole row groups and, together with `input_format_parquet_page_filter_push_down`, individual pages based on spatial predicates in the WHERE clause and the geometry bounding box statistics (`geospatial_statistics.bbox` or `covering.bbox` columns) in the Parquet metadata.
+)", 0) \
     DECLARE(Bool, input_format_parquet_use_offset_index, true, R"(
 Minor tweak to how pages are read from parquet file when no page filtering is used.
 )", 0) \
@@ -271,6 +276,9 @@ Delimiter between a pair of map key/values in Hive Text File
 )", 0) \
     DECLARE(Bool, input_format_hive_text_allow_variable_number_of_columns, true, R"(
 Ignore extra columns in Hive Text input (if file has more columns than expected) and treat missing fields in Hive Text input as default values
+)", 0) \
+    DECLARE(Char, format_hive_text_rows_delimiter, '\n', R"(
+Delimiter at the end of each row in the Hive Text output format
 )", 0) \
     DECLARE(UInt64, input_format_msgpack_number_of_columns, 0, R"(
 The number of columns in inserted MsgPack data. Used for automatic schema inference from data.

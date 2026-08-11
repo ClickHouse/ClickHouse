@@ -675,7 +675,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
                 ParserTTLExpressionList parser;
                 auto ttl_for_table_ast = parseQuery(parser, new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
                 new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                    ttl_for_table_ast, new_metadata.columns, context, new_metadata.primary_key, true /* allow_suspicious; because it is replication */);
+                    ttl_for_table_ast, new_metadata.columns, context, new_metadata.primary_key, TTLValidationMode::Attach /* because it is replication */);
             }
             else /// TTL was removed
             {
@@ -688,7 +688,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     new_metadata.column_ttls_by_name.clear();
     for (const auto & [name, ast] : new_metadata.columns.getColumnTTLs())
     {
-        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, context, new_metadata.primary_key, true /* allow_suspicious; because it is replication */);
+        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, context, new_metadata.primary_key, TTLValidationMode::Attach /* because it is replication */);
         new_metadata.column_ttls_by_name[name] = new_ttl_entry;
     }
 
@@ -757,7 +757,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
 
     if (!ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)
         new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-            new_metadata.table_ttl.definition_ast, new_metadata.columns, context, new_metadata.primary_key, true /* allow_suspicious; because it is replication */);
+            new_metadata.table_ttl.definition_ast, new_metadata.columns, context, new_metadata.primary_key, TTLValidationMode::Attach /* because it is replication */);
 
     if (!projections_changed)
     {

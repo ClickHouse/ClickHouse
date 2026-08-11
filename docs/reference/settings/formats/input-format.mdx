@@ -948,6 +948,14 @@ Avoid reordering rows when reading from Parquet files. Not recommended as row or
 
 Skip columns with unsupported types while schema inference for format Parquet
 
+## input_format_parquet_spatial_filter_push_down {#input_format_parquet_spatial_filter_push_down}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "New setting: skip GeoParquet row groups and pages based on spatial predicates and bounding box statistics"}]}]}/>
+
+When reading GeoParquet files, skip whole row groups and, together with `input_format_parquet_page_filter_push_down`, individual pages based on spatial predicates in the WHERE clause and the geometry bounding box statistics (`geospatial_statistics.bbox` or `covering.bbox` columns) in the Parquet metadata.
+
 ## input_format_parquet_use_offset_index {#input_format_parquet_use_offset_index}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
