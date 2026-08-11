@@ -1,15 +1,16 @@
 -- Tags: no-fasttest, no-parallel
 -- Tag no-fasttest: requires S3/minio-backed storage with a filesystem cache.
--- Tag no-parallel: the cold->warm assertion needs the cold read's populated segments to survive in
--- the process-wide `s3_cache` FileCache until the warm read. Under the flaky check's self-parallel
--- reruns, concurrent copies share that one cache and evict each other's segments before the warm
--- read, so the copies must not run concurrently.
+-- Tag no-parallel: the cold->warm assertion needs the cold read's populate to reserve cache space
+-- and survive to the warm read. The dedicated `s3_cache_04511` policy isolates it from other tests'
+-- background-merge cache traffic (which saturates the shared `s3_cache` with non-releasable segments
+-- so the populate can't reserve); no-parallel additionally keeps the test's own flaky-check reruns
+-- from contending that dedicated cache.
 
 DROP TABLE IF EXISTS t_re_disk_cache;
 
 CREATE TABLE t_re_disk_cache (k UInt64, v String)
 ENGINE = MergeTree ORDER BY k
-SETTINGS storage_policy = 's3_cache', min_bytes_for_wide_part = 0;
+SETTINGS storage_policy = 's3_cache_04511', min_bytes_for_wide_part = 0;
 
 -- No cache-on-write, so the first SELECT below is a genuine cold read that must populate the cache.
 INSERT INTO t_re_disk_cache SELECT number, toString(number) FROM numbers(200000)
