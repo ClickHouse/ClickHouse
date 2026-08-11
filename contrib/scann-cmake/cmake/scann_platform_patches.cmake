@@ -168,4 +168,3 @@ using uint64 = uint64_t;
 file(WRITE "${_ci_cc_dst}" "${_ci_cc_content}")
 list(REMOVE_ITEM SCANN_SOURCES "${_ci_cc_src}")
 list(APPEND SCANN_SOURCES "${_ci_cc_dst}")
-
