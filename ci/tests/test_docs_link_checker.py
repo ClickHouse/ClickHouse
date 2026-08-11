@@ -1,12 +1,17 @@
 """Regression tests for links extracted from generated docs components."""
 
 import os
+import re
 import sys
+from pathlib import Path
 
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from ci.jobs.scripts.docs import locale_components_check, lychee_check
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def write_settings_explorer(docs_root, rendered_href):
@@ -67,3 +72,27 @@ def test_locale_static_link_parser_leaves_templates_to_template_parser():
     template = locale_components_check.TEMPLATE.search(rendered_href)
     assert template is not None
     assert template.group(1) == "/docs"
+
+
+def test_cloud_not_supported_badges_link_to_published_page():
+    page = (
+        REPO_ROOT / "docs/products/cloud/guides/cloud-compatibility.mdx"
+    ).read_text(encoding="utf-8")
+    slug = re.search(r"^slug: (\S+)$", page, re.MULTILINE)
+    assert slug is not None
+    anchor = "list-of-unsupported-features"
+    assert f"{{#{anchor}}}" in page
+    expected_href = f'href="/docs{slug.group(1)}#{anchor}"'
+
+    snippets = REPO_ROOT / "docs/snippets"
+    components = list(
+        snippets.glob(
+            "**/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx"
+        )
+    )
+    components += list(
+        snippets.glob("**/components/Badges/CloudNotSupportedBadge.jsx")
+    )
+    assert components
+    for component in components:
+        assert expected_href in component.read_text(encoding="utf-8")
