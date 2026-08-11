@@ -181,19 +181,32 @@ MergeTreeIndexConditionSpatialBbox::extractQueryBbox(
             /// only match a later argument would be incorrectly pruned.
             const ActionsDAG::Node * input_child = nullptr;
             bool has_bbox = false;
+            /// Any argument besides the single indexed-column input and constant
+            /// geometry literals (e.g. a second column, or a non-constant
+            /// expression) means the predicate's truth can depend on something
+            /// the bbox can't see — fail closed and disable pruning, matching
+            /// Parquet::tryExtractSpatialFilterFromNode's "exactly one
+            /// non-constant input" guard.
+            bool has_extra_non_constant = false;
             QueryBbox bbox;
             for (const auto * child : node->children)
             {
-                if (child->type == ActionsDAG::ActionType::INPUT
-                    && child->result_name == col_name
-                    && !input_child)
+                if (child->type == ActionsDAG::ActionType::INPUT)
                 {
-                    input_child = child;
+                    if (child->result_name == col_name && !input_child)
+                    {
+                        input_child = child;
+                        continue;
+                    }
+                    has_extra_non_constant = true;
                     continue;
                 }
 
                 if (child->type != ActionsDAG::ActionType::COLUMN || !child->is_deterministic_constant)
+                {
+                    has_extra_non_constant = true;
                     continue;
+                }
 
                 double xmin = 0;
                 double ymin = 0;
@@ -216,7 +229,7 @@ MergeTreeIndexConditionSpatialBbox::extractQueryBbox(
                 }
             }
 
-            if (input_child && has_bbox)
+            if (input_child && has_bbox && !has_extra_non_constant)
                 return bbox;
         }
 
