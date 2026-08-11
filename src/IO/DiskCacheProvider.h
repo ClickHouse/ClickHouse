@@ -50,24 +50,6 @@ struct StreamingReaderSlot
     bool checked_out = false;
 };
 
-/// Shared deferred-LRU-bump context of one probe: every hit reader records the
-/// sub-ranges it served, and the LAST owner's destruction runs the bump over
-/// the pinned holder - the probe cursor while the walk runs, then the final
-/// handed-out reader (the slide's release point).
-struct DiskCacheTouchBook
-{
-    DiskCacheTouchBook(std::shared_ptr<FileSegmentsHolder> holder_, size_t object_file_offset_)
-        : holder(std::move(holder_)), object_file_offset(object_file_offset_)
-    {
-    }
-    ~DiskCacheTouchBook();
-
-    std::shared_ptr<FileSegmentsHolder> holder;
-    size_t object_file_offset;
-    VectorWithMemoryTracking<ByteRange> touched;
-    LoggerPtr log = getLogger("DiskCacheTouchBook");
-};
-
 /// `CacheReader` over one resident range, backed by a read-only
 /// `FileSegmentsHolder` shared by all hit buffers of the view (keeps the
 /// segments pinned for the view's lifetime).
@@ -80,11 +62,11 @@ public:
         size_t object_file_offset_,
         ThrottlerPtr local_throttler_,
         ReaderAnchorCache * anchors_,
-        StreamingReaderSlot * stream_slot_,
-        std::shared_ptr<DiskCacheTouchBook> touch_book_);
+        StreamingReaderSlot * stream_slot_);
 
     ByteRange range() const override { return hit_range; }
     ChainedBuffers read(ByteRange sub) override;
+    ~DiskCacheReader() override;
 
 private:
     std::shared_ptr<FileSegmentsHolder> holder;
@@ -93,9 +75,9 @@ private:
     ThrottlerPtr local_throttler;
     ReaderAnchorCache * anchors = nullptr;
     StreamingReaderSlot * stream_slot = nullptr;
-    /// The probe's shared deferred-bump book: each `read` records its `sub`
-    /// here; the bump runs when the book's last owner dies.
-    std::shared_ptr<DiskCacheTouchBook> touch_book;
+    /// Sub-ranges this reader actually served; the d-tor bumps their LRU
+    /// priority once, so a hit is not aged below the fresh miss-fills.
+    VectorWithMemoryTracking<ByteRange> touched;
     LoggerPtr log = getLogger("DiskCacheReader");
 };
 

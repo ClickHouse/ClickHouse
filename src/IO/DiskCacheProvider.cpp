@@ -227,15 +227,13 @@ DiskCacheReader::DiskCacheReader(
     size_t object_file_offset_,
     ThrottlerPtr local_throttler_,
     ReaderAnchorCache * anchors_,
-    StreamingReaderSlot * stream_slot_,
-    std::shared_ptr<DiskCacheTouchBook> touch_book_)
+    StreamingReaderSlot * stream_slot_)
     : holder(std::move(holder_))
     , hit_range(range_in_file)
     , object_file_offset(object_file_offset_)
     , local_throttler(std::move(local_throttler_))
     , anchors(anchors_)
     , stream_slot(stream_slot_)
-    , touch_book(std::move(touch_book_))
 {
 }
 
@@ -257,11 +255,9 @@ ChainedBuffers DiskCacheReader::read(ByteRange sub)
         sub = ByteRange{lo, hi - lo};
     }
 
-    /// Record before reading (deferred-bump record): a throwing pread still
-    /// leaves a coherent entry that the view's dtor re-fetches and no-ops for
-    /// gone segments.
-    if (touch_book)
-        touch_book->touched.push_back(sub);
+    /// Record before reading: a throwing pread still leaves a coherent entry
+    /// that the d-tor bump re-checks and no-ops for gone segments.
+    touched.push_back(sub);
 
     chassert(sub.offset >= object_file_offset);
     ByteRange sub_in_object{sub.offset - object_file_offset, sub.size};
@@ -535,13 +531,14 @@ ChainedBuffers DiskCacheWriter::waitAndReadSiblingLed(ByteRange sub)
                 && st != FileSegmentState::DOWNLOADING)
                 continue;
 
-            /// `wait(offset)` blocks until `offset < getCurrentWriteOffset()`, i.e. the
-            /// segment has committed strictly past `offset`. We need bytes through `hi`
-            /// (object-local `want_obj_end`), so wait on `want_obj_end - 1`.
+            /// `wait(offset, timeout_ms)` blocks until `offset < getCurrentWriteOffset()`
+            /// (the segment has committed strictly past `offset`) or the timeout elapses.
+            /// We need bytes through `hi` (object-local `want_obj_end`), so wait on
+            /// `want_obj_end - 1`, bounded by the same timeout the legacy reader uses.
             chassert(hi >= object_file_offset);
             const size_t want_obj_end = hi - object_file_offset;
             if (want_obj_end > 0)
-                segment.wait(want_obj_end - 1);
+                segment.wait(want_obj_end - 1, cache_settings.wait_for_concurrent_download_timeout_milliseconds);
         }
     }
 
@@ -608,17 +605,17 @@ bool DiskCacheWriter::tryWriteToSegment(FileSegment & segment, char * data, size
     }
 }
 
-DiskCacheTouchBook::~DiskCacheTouchBook()
+DiskCacheReader::~DiskCacheReader()
 {
-    /// Deferred LRU bump: raise the priority of each segment the probe's readers
-    /// actually read, so a hit next to fresh inserts isn't aged below them. Bump
-    /// directly on the held `holder` - it pins exactly the segments the readers
+    /// Deferred LRU bump: raise the priority of each segment this reader
+    /// actually read, so a hit next to fresh inserts isn't aged below them.
+    /// Bump directly on the held `holder` - it pins the segments the reader
     /// read from, so there is no need to re-`cache->get` them (which would
     /// re-take the per-key metadata lock and re-hash the key). A sequential run
-    /// records many contiguous sub-ranges over the same few segments; sorting the
-    /// records lets the linear sweep below bump each touched segment exactly
-    /// once. Runs at the LAST owner's death - after every reader of the probe is
-    /// released (the executor orders write-buffer destruction before that).
+    /// records many contiguous sub-ranges over the same few segments; sorting
+    /// the records lets the linear sweep below bump each touched segment exactly
+    /// once. A segment still `DOWNLOADING` (a sibling writer fills its tail) is
+    /// skipped; the fill itself gives it insert priority.
     if (touched.empty() || !holder)
         return;
 
@@ -736,7 +733,6 @@ VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
                     resolved_key, ask_start, ask_end - ask_start,
                     /*file_segments_limit=*/0, resolved_origin.user_id))
                 holder = std::shared_ptr<FileSegmentsHolder>(std::move(got));
-        auto book = std::make_shared<DiskCacheTouchBook>(holder, object_file_offset);
 
         /// Boundary-align each writer-less miss (clamped to the object end); the
         /// bypass side never fills, so misses carry no fill-cell geometry.
@@ -768,7 +764,7 @@ VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
                 hit.range = ByteRange{seg_left + object_file_offset, committed_end - seg_left};
                 hit.reader = std::make_unique<DiskCacheReader>(
                     holder, hit.range, object_file_offset,
-                    local_throttler, &reader_anchors, &streaming_slot, book);
+                    local_throttler, &reader_anchors, &streaming_slot);
                 out.push_back(std::move(hit));
             }
             if (committed_end < seg_end)
@@ -793,7 +789,6 @@ VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
         /*file_segments_limit=*/0,
         resolved_origin,
         cache_settings.boundary_alignment));
-    auto book = std::make_shared<DiskCacheTouchBook>(shared_holder, object_file_offset);
 
     for (const auto & segment_ptr : *shared_holder)
     {
@@ -810,7 +805,7 @@ VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
             hit.range = ByteRange{seg_left + object_file_offset, committed_end - seg_left};
             hit.reader = std::make_unique<DiskCacheReader>(
                 shared_holder, hit.range, object_file_offset,
-                local_throttler, &reader_anchors, &streaming_slot, book);
+                local_throttler, &reader_anchors, &streaming_slot);
             out.push_back(std::move(hit));
         }
         if (committed_end < seg_end)
