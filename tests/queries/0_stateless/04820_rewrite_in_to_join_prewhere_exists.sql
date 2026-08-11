@@ -32,7 +32,7 @@ DROP TABLE t_114026;
 
 -- Nullable IN test: WHERE and PREWHERE must produce identical results with transform_null_in = 1
 DROP TABLE IF EXISTS t_114026_null;
-CREATE TABLE t_114026_null (x Nullable(UInt8)) ENGINE = Memory;
+CREATE TABLE t_114026_null (x Nullable(UInt8)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_114026_null VALUES (NULL), (1);
 
 SELECT count() FROM t_114026_null WHERE x IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS rewrite_in_to_join = 1, allow_experimental_correlated_subqueries = 1, transform_null_in = 1;
