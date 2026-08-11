@@ -461,6 +461,12 @@ void Loggers::startAsyncLoggingThreads()
         async->open();
 }
 
+void Loggers::closeAsyncLogging()
+{
+    if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
+        async->close();
+}
+
 void Loggers::stopLogging()
 {
     if (split)
