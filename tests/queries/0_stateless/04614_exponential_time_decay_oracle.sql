@@ -146,17 +146,31 @@ FROM
 );
 
 -- Exercise vector-vector addition rather than only constant expressions.
+-- Emit the complete input and result only when a comparison fails so the
+-- reference stays quiet on success while CI contains enough data to diagnose
+-- a numerical or anchoring error.
 SELECT
     id,
-    abs(tupleElement(operator_result, 'value') - expected_value) < 1e-12,
-    tupleElement(operator_result, 'time') = latest_time,
-    abs(tupleElement(operator_result, 'value') - tupleElement(function_result, 'value')) < 1e-12,
-    tupleElement(operator_result, 'time') = tupleElement(function_result, 'time'),
-    toTypeName(operator_result) = 'ExponentialTimeDecayingFloat64(10)'
+    av,
+    at,
+    bv,
+    bt,
+    expected_value,
+    tupleElement(operator_result, 'value') AS operator_value,
+    tupleElement(function_result, 'value') AS function_value,
+    operator_value - expected_value AS value_error,
+    latest_time AS expected_time,
+    tupleElement(operator_result, 'time') AS operator_time,
+    tupleElement(function_result, 'time') AS function_time,
+    toTypeName(operator_result) AS result_type
 FROM
 (
     SELECT
         id,
+        av,
+        at,
+        bv,
+        bt,
         a + b AS operator_result,
         exponentialTimeDecayingAdd(a, b) AS function_result,
         greatest(at, bt) AS latest_time,
@@ -177,6 +191,14 @@ FROM
             (2, 2, 10, 4, 10),
             (3, -8, 10, 4, 0))
     )
+)
+WHERE NOT
+(
+    abs(tupleElement(operator_result, 'value') - expected_value) < 1e-12
+    AND tupleElement(operator_result, 'time') = latest_time
+    AND abs(tupleElement(operator_result, 'value') - tupleElement(function_result, 'value')) < 1e-12
+    AND tupleElement(operator_result, 'time') = tupleElement(function_result, 'time')
+    AND toTypeName(operator_result) = 'ExponentialTimeDecayingFloat64(10)'
 )
 ORDER BY id;
 
