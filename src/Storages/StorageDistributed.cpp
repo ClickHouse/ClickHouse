@@ -2879,7 +2879,9 @@ void registerStorageDistributed(StorageFactory & factory)
             /// introduced and the named cluster has a local shard, analyze the target under the user's context -
             /// using the result for an omitted column list, and at least as an access check when columns are
             /// explicit. For a local shard `getStructureOfRemoteTableInShard` runs the function through
-            /// `getActualTableStructureWithAccess`, which performs exactly that check.
+            /// `getActualTableStructureWithAccess`, and the target is additionally executed under the same
+            /// context, so that arguments a static-structure function only evaluates at execution time
+            /// (e.g. a scalar subquery in `numbers((SELECT ...))`) are access-checked as well.
             ///
             /// Loading from already-validated stored metadata (server startup, a short `ATTACH TABLE t`, tables
             /// loaded by `ATTACH DATABASE`) skips this: the definition was validated when first created on this
@@ -2905,6 +2907,7 @@ void registerStorageDistributed(StorageFactory & factory)
                 /// given explicitly. A purely remote cluster with explicit columns needs neither.
                 if (columns.empty() || has_local_shard)
                 {
+                    const bool columns_were_omitted = columns.empty();
                     try
                     {
                         /// The `StorageID` is unused for a table-function target (the function is resolved
@@ -2917,6 +2920,25 @@ void registerStorageDistributed(StorageFactory & factory)
                             /*is_insert_query=*/ false);
                         if (columns.empty())
                             columns = std::move(inferred);
+
+                        /// Header inference alone is not a sufficient access check for a local target: a
+                        /// static-structure function (`numbers`, `zeros`, ...) does not look at its arguments
+                        /// when asked for its header, so a scalar-subquery argument like
+                        /// `numbers((SELECT count() FROM secret))` would only be executed later, on the local
+                        /// shard, under the cluster credentials. Execute the function under the creator's
+                        /// context, exactly as a local-shard read would, so every argument is evaluated (and
+                        /// access-checked) at create time. Empty cached columns make the execution eager
+                        /// instead of deferred behind a lazy `StorageTableFunctionProxy`. The temporary-table
+                        /// grant is not required: this is an internal probe, not a user-visible temporary table.
+                        if (has_local_shard)
+                        {
+                            TableFunctionPtr target_function
+                                = TableFunctionFactory::instance().get(remote_table_function_ptr, local_context);
+                            target_function->execute(
+                                remote_table_function_ptr, local_context, target_function->getName(),
+                                /*cached_columns=*/ {}, /*use_global_context=*/ false, /*is_insert_query=*/ false,
+                                /*check_create_temporary_table=*/ false);
+                        }
                     }
                     catch (const Exception & e)
                     {
@@ -2929,7 +2951,7 @@ void registerStorageDistributed(StorageFactory & factory)
                         /// exists, and a `timeSeries*` target over a temporary table has no inner tables to resolve
                         /// on a shard - so proceed with the explicit columns; the target is validated again when a
                         /// query actually reaches the shard.
-                        if (columns.empty() || e.code() == ErrorCodes::ACCESS_DENIED)
+                        if (columns_were_omitted || e.code() == ErrorCodes::ACCESS_DENIED)
                             throw;
                     }
                 }
@@ -3347,7 +3369,9 @@ void registerStorageRemote(StorageFactory & factory)
         /// to this server under the engine credentials, while `CREATE` never validated the creator's
         /// access to the function's underlying tables. For a local shard,
         /// `getStructureOfRemoteTableInShard` runs the table function through
-        /// `getActualTableStructureWithAccess`, which performs exactly that check.
+        /// `getActualTableStructureWithAccess`, and the target is additionally executed under the same
+        /// context, so that arguments a static-structure function only evaluates at execution time
+        /// (e.g. a scalar subquery in `numbers((SELECT ...))`) are access-checked as well.
         ///
         /// These access checks validate the user-supplied definition and must run when it is first
         /// introduced: a `CREATE`, a user `ATTACH` query that carries a full definition, or a backup
@@ -3435,6 +3459,25 @@ void registerStorageRemote(StorageFactory & factory)
                     /*is_insert_query=*/ false);
                 if (columns.empty())
                     columns = std::move(inferred);
+
+                /// Header inference alone is not a sufficient access check for a table-function target: a
+                /// static-structure function (`numbers`, `zeros`, ...) does not look at its arguments when
+                /// asked for its header, so a scalar-subquery argument like `numbers((SELECT ...))` would
+                /// only be executed later, on the local shard, under the engine credentials. Execute the
+                /// function under the creator's context, exactly as a local-shard read would, so every
+                /// argument is evaluated (and access-checked) at create time. Empty cached columns make the
+                /// execution eager instead of deferred behind a lazy `StorageTableFunctionProxy`. The
+                /// temporary-table grant is not required: this is an internal probe, not a user-visible
+                /// temporary table.
+                if (analyze_table_function_target)
+                {
+                    TableFunctionPtr target_function
+                        = TableFunctionFactory::instance().get(parsed.remote_table_function_ptr, args.getLocalContext());
+                    target_function->execute(
+                        parsed.remote_table_function_ptr, args.getLocalContext(), target_function->getName(),
+                        /*cached_columns=*/ {}, /*use_global_context=*/ false, /*is_insert_query=*/ false,
+                        /*check_create_temporary_table=*/ false);
+                }
             }
             catch (const Exception & e)
             {
