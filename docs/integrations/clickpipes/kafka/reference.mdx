@@ -26,7 +26,7 @@ import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/Experi
 
 ## Isolation Level {#isolation-level}
 
-The Kafka consumer isolation level determines whether a ClickPipe will only read and insert messages that were committed by a Kafka transaction.  It it set set at **read\_committed** for pipes that are configured as Exactly Once (skipping any messages that were written but aborted during a Kafka transaction), and **read\_uncommitted** otherwise.  The setting can be changed under the Advanced Settings tab when creating a pipe.
+The Kafka consumer isolation level determines whether a ClickPipe reads and inserts only messages committed by a Kafka transaction. Enable the `kafka_read_committed` setting to use `read_committed` and skip messages from aborted Kafka transactions. Disable it to use `read_uncommitted` and read all messages. You can configure this setting under **Advanced Settings**.
 
 ## Supported data formats {#supported-data-formats}
 
