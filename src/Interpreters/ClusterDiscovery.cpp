@@ -358,6 +358,14 @@ void ClusterDiscovery::removeStaticCluster(const String & name)
         cluster_impls.erase(name);
     }
 
+    /// A static entry may have been shadowing a same-named cluster under a multicluster root.
+    /// Roots are otherwise skipped while need_update is false and no children event fires.
+    if (!multicluster_discovery_paths.empty())
+    {
+        markMulticlusterRootsNeedUpdate();
+        clusters_to_update->set();
+    }
+
     LOG_DEBUG(log, "Static discovery cluster '{}' removed due to config change", name);
 }
 
@@ -463,6 +471,12 @@ void ClusterDiscovery::removeMulticlusterRoot(const String & full_path)
     clusters_to_update->set();
 
     LOG_DEBUG(log, "Removed multicluster discovery root '{}'", full_path);
+}
+
+void ClusterDiscovery::markMulticlusterRootsNeedUpdate()
+{
+    for (auto & [_, path] : multicluster_discovery_paths)
+        path.need_update->store(true);
 }
 
 bool ClusterDiscovery::updateMulticlusterRootFields(MulticlusterDiscovery & path, const ParsedMulticlusterDiscovery & parsed)

@@ -205,6 +205,8 @@ private:
     void addMulticlusterRoot(ParsedMulticlusterDiscovery && parsed);
     void removeMulticlusterRoot(const String & full_path);
     bool updateMulticlusterRootFields(MulticlusterDiscovery & path, const ParsedMulticlusterDiscovery & parsed);
+    /// Force findDynamicClusters to rescan roots (e.g. after a static name stops shadowing).
+    void markMulticlusterRootsNeedUpdate();
 
     void rebuildClusterObject(const ClusterInfo & info);
     void ensureWorkerStarted();

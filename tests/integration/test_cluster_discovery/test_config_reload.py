@@ -696,6 +696,25 @@ def test_reload_static_replaces_dynamic_same_name(start_cluster):
     </remote_servers>
 </clickhouse>
 """
+    config_static_and_multicluster = """
+<clickhouse>
+    <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
+    <remote_servers>
+        <test_collision_cluster>
+            <discovery>
+                <path>/clickhouse/discovery/test_collision_cluster</path>
+                <observer/>
+            </discovery>
+        </test_collision_cluster>
+        <dynamic_roots>
+            <discovery>
+                <observer/>
+                <multicluster_root_path>/clickhouse/discovery</multicluster_root_path>
+            </discovery>
+        </dynamic_roots>
+    </remote_servers>
+</clickhouse>
+"""
 
     reload_config_on_node(nodes["node1"], config_participant)
     reload_config_on_node(nodes["node0"], config_multicluster_observer)
@@ -723,28 +742,29 @@ def test_reload_static_replaces_dynamic_same_name(start_cluster):
         retries=6,
     )
 
-    # Watches must still work: stopping the participant removes it from the static observer view.
-    # start_clickhouse/wait_start cannot auth with users_with_pwd; use wait_for_start (TCP) instead.
-    nodes["node1"].stop_clickhouse()
-    try:
-        for retry in range(15):
-            count = int(
-                nodes["node0"].query(
-                    "SELECT count() FROM system.clusters WHERE cluster = 'test_collision_cluster'",
-                    password="passwordAbc",
-                )
-            )
-            if count == 0:
-                break
-            time.sleep(1)
-        else:
-            raise AssertionError(
-                "Static observer did not drop participant after stop; watches likely broken"
-            )
-    finally:
-        nodes["node1"].start_clickhouse(wait_start=False)
-        nodes["node1"].wait_for_start(60)
-        nodes["node1"].query("SELECT 1", password="passwordAbc")
+    # Static + multicluster: static shadows the dynamic name. Removing only the static entry
+    # must rescan roots so the dynamic cluster reappears without waiting for force refresh.
+    reload_config_on_node(nodes["node0"], config_static_and_multicluster)
+    check_on_cluster(
+        [nodes["node0"]],
+        1,
+        cluster_name="test_collision_cluster",
+        what="count()",
+        msg="Static+multicluster observer should see the participant",
+        query_params={"password": "passwordAbc"},
+        retries=6,
+    )
+
+    reload_config_on_node(nodes["node0"], config_multicluster_observer)
+    check_on_cluster(
+        [nodes["node0"]],
+        1,
+        cluster_name="test_collision_cluster",
+        what="count()",
+        msg="Dynamic cluster must reappear after static shadow is removed",
+        query_params={"password": "passwordAbc"},
+        retries=6,
+    )
 
 
 def _registration_config(hostname, shard):
