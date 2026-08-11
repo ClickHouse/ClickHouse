@@ -13,7 +13,7 @@ CREATE DICTIONARY test_dict_array_shards_inc
     value UInt16
 ) PRIMARY KEY key
 SOURCE(CLICKHOUSE(TABLE test_table_array_inc UPDATE_FIELD last_access))
-LAYOUT(HASHED_ARRAY(SHARDS 10))
+LAYOUT(HASHED_ARRAY(SHARDS 2))
 LIFETIME(0);
 
 -- The SHARDS/UPDATE_FIELD combination is rejected when the dictionary loads, not when it is created.
