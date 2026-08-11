@@ -276,6 +276,7 @@ Python 3와 Docker 외에는 추가 의존성이 필요하지 않습니다.
 * `Build (riscv64)` - RISC-V 64비트
 * `Build (s390x)` - IBM System/390 64비트
 * `Build (loongarch64)` - LoongArch 64비트
+* `Build (wasm64)` - Emscripten을 통한 WebAssembly 64비트. 실험적: `clickhouse` 바이너리를 빌드하고 Node.js ≥ 24에서 `clickhouse local`이 쿼리를 실행하는지 확인합니다(모듈은 브라우저에서도 실행되지만 CI에서는 아직 이를 확인하지 않습니다).
 
 작업이 성공하면 빌드 결과는 `<repo_root>/ci/tmp/build` 디렉터리에서 확인할 수 있습니다.
 

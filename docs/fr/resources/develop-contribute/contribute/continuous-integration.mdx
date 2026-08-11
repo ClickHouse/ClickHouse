@@ -276,6 +276,7 @@ Les noms des jobs de build sont exactement ceux qui apparaissent dans le rapport
 * `Build (riscv64)` - RISC-V 64 bits
 * `Build (s390x)` - IBM System/390 64 bits
 * `Build (loongarch64)` - LoongArch 64 bits
+* `Build (wasm64)` - WebAssembly 64 bits, via Emscripten. Expérimental : compile le binaire `clickhouse` et vérifie que `clickhouse local` exécute des requêtes sous Node.js ≥ 24 (le module s’exécute également dans les navigateurs, mais CI ne le vérifie pas encore)
 
 Si le job réussit, les résultats de la compilation seront disponibles dans le répertoire `<repo_root>/ci/tmp/build`.
 

@@ -276,6 +276,7 @@ python -m ci.praktika run "<BUILD_JOB_NAME>"
 * `Build (riscv64)` - 64-разрядная RISC-V
 * `Build (s390x)` - 64-разрядная IBM System/390
 * `Build (loongarch64)` - 64-разрядная LoongArch
+* `Build (wasm64)` - 64-разрядный WebAssembly через Emscripten. Экспериментальная: собирает бинарный файл `clickhouse` и проверяет, что `clickhouse local` выполняет запросы в Node.js ≥ 24 (модуль также работает в браузерах, но CI пока этого не проверяет)
 
 Если задача завершается успешно, результаты сборки будут доступны в каталоге `<repo_root>/ci/tmp/build`.
 

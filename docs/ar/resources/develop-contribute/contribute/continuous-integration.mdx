@@ -276,6 +276,7 @@ python -m ci.praktika run "<BUILD_JOB_NAME>"
 * `Build (riscv64)` - RISC-V ‏64-بت
 * `Build (s390x)` - IBM System/390 ‏64-بت
 * `Build (loongarch64)` - LoongArch ‏64-بت
+* `Build (wasm64)` - WebAssembly ‏64-بت، عبر Emscripten. تجريبي: يبني الملف التنفيذي `clickhouse` ويتحقق من أن `clickhouse local` ينفذ الاستعلامات ضمن Node.js ≥ 24 (تعمل الوحدة أيضًا في المتصفحات، لكن CI لا يتحقق من ذلك بعد)
 
 إذا نجحت المهمة، فستتوفر نتائج البناء في الدليل `<repo_root>/ci/tmp/build`.
 

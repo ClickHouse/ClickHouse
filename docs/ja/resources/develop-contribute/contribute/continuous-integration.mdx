@@ -277,6 +277,7 @@ python -m ci.praktika run "<BUILD_JOB_NAME>"
 * `Build (riscv64)` - RISC-V 64 ビット
 * `Build (s390x)` - IBM System/390 64 ビット
 * `Build (loongarch64)` - LoongArch 64 ビット
+* `Build (wasm64)` - Emscripten 経由の WebAssembly 64 ビット。実験的: `clickhouse` バイナリをビルドし、Node.js ≥ 24 上で `clickhouse local` がクエリを実行することを検証します (モジュールはブラウザでも実行されますが、CI ではまだ検証していません)
 
 ジョブが成功すると、ビルド結果は `<repo_root>/ci/tmp/build` ディレクトリで利用できます。
 

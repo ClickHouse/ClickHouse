@@ -276,6 +276,7 @@ python -m ci.praktika run "<BUILD_JOB_NAME>"
 * `Build (riscv64)` - RISC-V 64 位
 * `Build (s390x)` - IBM System/390 64 位
 * `Build (loongarch64)` - LoongArch 64 位
+* `Build (wasm64)` - 通过 Emscripten 构建的 WebAssembly 64 位。Experimental：构建 `clickhouse` 二进制文件，并验证 `clickhouse local` 可在 Node.js ≥ 24 下执行查询 (该模块也可在浏览器中运行，但 CI 尚未对此进行验证)
 
 如果作业成功，构建结果将位于 `<repo_root>/ci/tmp/build` 目录下。
 
