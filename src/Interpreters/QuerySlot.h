@@ -32,8 +32,8 @@ public:
     explicit QuerySlot(ResourceLink link_);
 
     /// Enqueues a query slot request without blocking. Calls on_ready from the resource scheduler
-    /// thread after the request is granted or failed; the callback must only wake the consumer
-    /// and must not throw.
+    /// thread after the request is granted or failed. The callback should only wake the consumer;
+    /// any exception it throws is captured for wait() and never escapes the scheduler thread.
     QuerySlot(ResourceLink link_, ClassifierPtr classifier_, std::function<void()> on_ready_);
 
     ~QuerySlot() override;

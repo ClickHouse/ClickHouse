@@ -1220,7 +1220,30 @@ void RefreshTask::doScheduling(bool is_shutdown)
                             std::move(classifier),
                             [execution_task_info]
                             {
-                                execution_task_info->schedule();
+                                try
+                                {
+                                    execution_task_info->schedule();
+                                }
+                                catch (...)
+                                {
+                                    /// Resource scheduler threads do not catch exceptions from
+                                    /// ResourceRequest::execute(). Retry through the delayed queue so
+                                    /// a transient BackgroundSchedulePool dispatch failure neither
+                                    /// terminates that thread nor strands the admitted refresh.
+                                    tryLogCurrentException(
+                                        __PRETTY_FUNCTION__,
+                                        "Failed to dispatch an admitted refreshable materialized view");
+                                    try
+                                    {
+                                        execution_task_info->scheduleAfter(100);
+                                    }
+                                    catch (...)
+                                    {
+                                        tryLogCurrentException(
+                                            __PRETTY_FUNCTION__,
+                                            "Failed to retry dispatching an admitted refreshable materialized view");
+                                    }
+                                }
                             });
                         waiting_for_resource = true;
                         execution.state = ExecutionState::State::WaitingForResource;

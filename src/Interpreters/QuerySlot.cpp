@@ -168,10 +168,15 @@ void QuerySlot::complete(State new_state, const std::exception_ptr & ptr)
     }
     catch (...)
     {
+        /// Resource scheduler threads have no exception boundary around ResourceRequest::execute().
+        /// Preserve the error for wait() instead of letting a consumer wakeup failure terminate
+        /// the scheduler thread.
         std::lock_guard lock(mutex);
+        if (!exception)
+            exception = std::current_exception();
         callback_running = false;
         cv.notify_all();
-        throw;
+        return;
     }
 
     {

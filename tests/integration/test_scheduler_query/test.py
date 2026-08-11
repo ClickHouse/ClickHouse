@@ -34,6 +34,7 @@ def clear_workloads_and_resources():
     node.query(
         """
         drop table if exists rmv_workload_cancel;
+        drop table if exists rmv_workload_no_query_resource;
         drop table if exists rmv_workload;
         drop table if exists rmv_default;
         drop workload if exists production;
@@ -270,6 +271,26 @@ def test_refreshable_mv_workload() -> None:
 
     node.query("system wait view rmv_workload")
     assert node.query("select count() from rmv_workload") == "1\n"
+
+
+def test_refreshable_mv_workload_without_query_resource() -> None:
+    node.query(
+        """
+        create workload all;
+        create materialized view rmv_workload_no_query_resource
+            refresh every 1 year settings workload='all'
+            (x UInt64) engine Memory
+            empty
+            as select number as x from numbers(1);
+        """
+    )
+
+    # The workload still classifies any configured CPU/I/O resources. Without a QUERY
+    # resource there is no admission queue, so the refresh executes without entering
+    # WaitingForResource.
+    node.query("system refresh view rmv_workload_no_query_resource")
+    node.query("system wait view rmv_workload_no_query_resource")
+    assert node.query("select count() from rmv_workload_no_query_resource") == "1\n"
 
 
 def test_refreshable_mv_workload_wait_can_be_stopped() -> None:
