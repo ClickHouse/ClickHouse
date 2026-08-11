@@ -2,7 +2,6 @@ DROP TABLE IF EXISTS test;
 
 -- A plain key column
 CREATE TABLE test (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
-ALTER TABLE test DROP COLUMN a; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 ALTER TABLE test DROP COLUMN IF EXISTS a; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 ALTER TABLE test CLEAR COLUMN a; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 ALTER TABLE test DROP COLUMN b;
@@ -19,7 +18,6 @@ DROP TABLE test;
 
 -- Only a subcolumn of the column is used in the key
 CREATE TABLE test (a Tuple(x UInt64, y UInt64), b UInt64) ENGINE = MergeTree ORDER BY a.x;
-ALTER TABLE test DROP COLUMN a; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 ALTER TABLE test CLEAR COLUMN a; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 ALTER TABLE test DROP COLUMN b;
 DROP TABLE test;
@@ -47,17 +45,9 @@ ALTER TABLE test ADD COLUMN b UInt64, MODIFY ORDER BY (a, b);
 ALTER TABLE test DROP COLUMN b; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 DROP TABLE test;
 
--- A column used only in a TTL expression is not a key column, so it is rejected later, when the
--- expression is recalculated. The drop is allowed together with a rewrite of the TTL
+-- A column used only in a TTL expression is not a key column, so the drop is allowed together with
+-- a rewrite of the TTL. The column the new expression refers to is protected in turn
 CREATE TABLE test (d Date, e Date, a UInt64) ENGINE = MergeTree ORDER BY a TTL d + INTERVAL 1 DAY;
-ALTER TABLE test DROP COLUMN d; -- { serverError UNKNOWN_IDENTIFIER }
 ALTER TABLE test DROP COLUMN d, MODIFY TTL e + INTERVAL 1 DAY;
 ALTER TABLE test DROP COLUMN e; -- { serverError UNKNOWN_IDENTIFIER }
-DROP TABLE test;
-
--- The same for a TTL of a single column
-CREATE TABLE test (d Date, a UInt64, v UInt64 TTL d + INTERVAL 1 DAY) ENGINE = MergeTree ORDER BY a;
-ALTER TABLE test DROP COLUMN d; -- { serverError UNKNOWN_IDENTIFIER }
-ALTER TABLE test DROP COLUMN v;
-ALTER TABLE test DROP COLUMN d;
 DROP TABLE test;

@@ -1,0 +1,5 @@
+Trying to ALTER DROP key a column which is a part of key expression
+Trying to ALTER DROP column a whose subcolumns (`a.x`) are part of key expression
+Trying to ALTER DROP sign (s) column
+Cannot apply ALTER because it breaks the TTL of the table
+Cannot apply ALTER because it breaks the TTL of column `v`
