@@ -2776,7 +2776,9 @@ except for arguments of a non-constant array and a constant index 0. In this cas
 When `n` is an array of integers, returns an array of the elements at the specified positions (a gather operation).
 This is equivalent to `arrayMap(i -> arr[i], n)`, but has a separate, more efficient implementation.
 Out-of-bounds positions produce the default value, the same as for a scalar index.
-The index elements may be nullable, and a `NULL` index produces `NULL`, the same as for a scalar index.
+The index elements may be nullable. A `NULL` index produces `NULL` (and makes the result element type nullable) when the element type can be
+wrapped in `Nullable`; for element types that cannot be inside `Nullable` (such as `Array`, `Tuple`, `Map`), a `NULL` index produces the
+default value instead. This is the same behavior as for a scalar `NULL` index.
 
 :::note
 Arrays in ClickHouse are one-indexed.
