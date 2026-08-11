@@ -38,7 +38,8 @@ FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
 STYLE_AND_FAST_TESTS = [
     # JobNames.STYLE_CHECK,
     JobNames.FAST_TEST,
-    JobNames.CI_TESTS,
+    # NOTE (strtgbb): CI_TESTS temporarily not gating builds (allow_failure + 137 OOM during setup)
+    # JobNames.CI_TESTS,
     # *[j.name for j in JobConfigs.tidy_build_arm_jobs],
 ]
 
