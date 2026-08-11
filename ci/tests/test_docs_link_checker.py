@@ -81,7 +81,7 @@ def test_cloud_not_supported_badges_link_to_published_page():
     assert f"{{#{anchor}}}" in page
     route = page_path.relative_to(docs_root).with_suffix("").as_posix()
     expected_href = (
-        f'href="https://clickhouse.com/docs/{route}#{anchor}"'
+        f'href="/docs/{route}#{anchor}"'
     )
 
     snippets = REPO_ROOT / "docs/snippets"
@@ -127,7 +127,7 @@ def test_feature_status_badges_link_to_published_pages():
             page = docs_root / locale_prefix.lstrip("/") / f"{page_route}.mdx"
             assert anchor in page.read_text(encoding="utf-8")
             expected_href = (
-                f'href="https://clickhouse.com/docs{locale_prefix}/'
+                f'href="/docs{locale_prefix}/'
                 f'{page_route}#{anchor}"'
             )
             assert expected_href in component.read_text(encoding="utf-8")
