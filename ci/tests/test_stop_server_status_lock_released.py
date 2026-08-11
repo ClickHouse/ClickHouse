@@ -277,6 +277,19 @@ def test_production_lock_wait_budgets_are_in_range():
         "handler is still in that prologue, so the core this leg exists to obtain "
         "is truncated or never written."
     )
+    assert 3 * (trap + kill) <= 3000, (
+        f"the worst case of {3 * (trap + kill)}s (stop_server walks three replica "
+        f"slots, each spending up to trap {trap}s + kill {kill}s) leaves too little "
+        "of the 9000s Stateless job timeout (ci/defs/job_configs.py:124) for the "
+        "rest of the leg. Overshooting it gets the whole job SIGKILLed, which loses "
+        "every artifact instead of the one replica this code path recovers."
+    )
+    assert kill >= 1, (
+        f"STOP_LOCK_WAIT_TIMEOUT_KILL is {kill}s, which disables waiting rather "
+        "than shortening it: _wait_status_lock_free tests the deadline before its "
+        "first sleep, so a holder still alive on the first probe is reported lost "
+        "immediately. SIGKILL is reaped asynchronously, so that is the normal case."
+    )
     assert kill <= 60, (
         f"STOP_LOCK_WAIT_TIMEOUT_KILL is {kill}s. The kernel drops the flock with "
         "the open file description as the process dies, so this only absorbs "
