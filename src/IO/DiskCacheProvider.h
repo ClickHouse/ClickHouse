@@ -20,13 +20,13 @@ namespace DB
 /// the next open is an `OpenedFileCache` hit. Internally synchronized.
 using ReaderAnchorCache = CacheBase<String, ReadBufferFromFileBase>;
 
-/// A `CacheReader` over one hit range, backed by a read-only `FileSegmentsHolder` shared by all hit
-/// buffers of the view. The holder keeps the segments pinned for the view's lifetime.
+/// A `CacheReader` over one hit range, backed by ONE `FileSegment` it pins (a copy of the
+/// `FileSegmentPtr` `resolve` hands out). It completes that segment at destruction.
 class DiskCacheReader : public CacheReader
 {
 public:
     DiskCacheReader(
-        std::shared_ptr<FileSegmentsHolder> holder_,
+        FileSegmentPtr segment_,
         ByteRange range_in_file,
         size_t object_file_offset_,
         ThrottlerPtr local_throttler_,
@@ -37,7 +37,7 @@ public:
     ChainedBuffers read(ByteRange subrange) override;
 
 private:
-    std::shared_ptr<FileSegmentsHolder> holder;
+    FileSegmentPtr segment;
     ByteRange hit_range;
     size_t object_file_offset;
     ThrottlerPtr local_throttler;
@@ -47,9 +47,9 @@ private:
     LoggerPtr log = getLogger("DiskCacheReader");
 };
 
-/// A `CacheWriter` over one cache-aligned miss range. It owns its OWN `FileSegmentsHolder`, which the
-/// `getOrSet` transaction in `resolve` builds. It appends across windows and finalizes at
-/// destruction; the holder's destructor shrinks a partial segment to its downloaded size.
+/// A `CacheWriter` over one cache-aligned miss segment. It pins ONE `FileSegment` (a copy of the
+/// `FileSegmentPtr` `resolve` hands out), appends across windows, and completes it at destruction;
+/// completing a partial segment shrinks it to its downloaded size.
 class DiskCacheWriter : public CacheWriter
 {
 public:
@@ -57,7 +57,7 @@ public:
         FileCachePtr cache_,
         size_t object_file_offset_,
         const FilesystemCacheSettings & cache_settings_,
-        std::shared_ptr<FileSegmentsHolder> holder_,
+        FileSegmentPtr segment_,
         ByteRange aligned_range_in_file);
 
     ByteRange range() const override { return aligned_range; }
@@ -70,19 +70,18 @@ public:
     ChainedBuffers read(ByteRange subrange) override;
     FillClaim claim(ByteRange window) override;
     ChainedBuffers waitAndRead(ByteRange subrange) override;
+    ~DiskCacheWriter() override;
 
 private:
-    bool tryWriteToSegment(FileSegment & segment, char * data, size_t size, size_t offset);
+    bool tryWriteToSegment(FileSegment & file_segment, char * data, size_t size, size_t offset);
 
     FileCachePtr cache;
     size_t object_file_offset;
     FilesystemCacheSettings cache_settings;
-    /// SHARED with the other writers from the same `resolve`. Each writer's `aligned_range` selects
-    /// its own segments from the holder.
-    std::shared_ptr<FileSegmentsHolder> holder;
+    FileSegmentPtr segment;
     IntervalSet committed_ranges;
     /// Guards `committed_ranges` only. The FileCache downloader gives per-segment write exclusion. A
-    /// background prefetch and the foreground read append disjoint segments of the SAME writer at the
+    /// background prefetch and the foreground read may append disjoint parts of the segment at the
     /// same time, so both update this set.
     mutable std::mutex committed_mutex;
     ByteRange aligned_range;

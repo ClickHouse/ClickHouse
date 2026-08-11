@@ -1554,6 +1554,14 @@ void FileSegmentsHolder::reset()
     file_segments.clear();
 }
 
+void FileSegmentsHolder::release()
+{
+    /// Unlike `reset`, complete NO segment: the caller (DiskCacheReader/DiskCacheWriter) has
+    /// copied out the `FileSegmentPtr`s and completes each itself. Only balance the hold metric.
+    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheHoldFileSegments, file_segments.size());
+    file_segments.clear();
+}
+
 FileSegmentsHolder::~FileSegmentsHolder()
 {
     reset();
