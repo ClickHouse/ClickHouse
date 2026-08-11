@@ -1071,27 +1071,27 @@ private:
     bool reads_armed = false;
 };
 
-using DiskEvents = std::shared_ptr<std::vector<std::string>>;
+using DiskEvents = std::vector<std::string>;
 
 /// Records `sync` on the file it wraps, so a test can tell a durable write from a write that
 /// only reached the page cache.
 class RecordingWriteBuffer : public DB::WriteBufferFromFileDecorator
 {
 public:
-    RecordingWriteBuffer(std::unique_ptr<DB::WriteBufferFromFileBase> impl_, std::string path_, DiskEvents events_)
-        : DB::WriteBufferFromFileDecorator(std::move(impl_)), path(std::move(path_)), events(std::move(events_))
+    RecordingWriteBuffer(std::unique_ptr<DB::WriteBufferFromFileBase> impl_, std::string path_, DiskEvents & events_)
+        : DB::WriteBufferFromFileDecorator(std::move(impl_)), path(std::move(path_)), events(events_)
     {
     }
 
     void sync() override
     {
         DB::WriteBufferFromFileDecorator::sync();
-        events->push_back("sync:" + path);
+        events.push_back("sync:" + path);
     }
 
 private:
     std::string path;
-    DiskEvents events;
+    DiskEvents & events;
 };
 
 /// Records the point at which the wrapped directory sync guard is destroyed, which is when the
@@ -1099,17 +1099,17 @@ private:
 class RecordingSyncGuard : public DB::ISyncGuard
 {
 public:
-    RecordingSyncGuard(DB::SyncGuardPtr impl_, DiskEvents events_) : impl(std::move(impl_)), events(std::move(events_)) { }
+    RecordingSyncGuard(DB::SyncGuardPtr impl_, DiskEvents & events_) : impl(std::move(impl_)), events(events_) { }
 
     ~RecordingSyncGuard() override
     {
         impl.reset();
-        events->push_back("dirsync");
+        events.push_back("dirsync");
     }
 
 private:
     DB::SyncGuardPtr impl;
-    DiskEvents events;
+    DiskEvents & events;
 };
 
 /// Test disk: records the order of the durability-relevant operations, so a test can assert that
@@ -1118,30 +1118,31 @@ private:
 class RecordingStateDisk : public DB::DiskLocal
 {
 public:
-    RecordingStateDisk(const std::string & disk_name, const std::string & disk_path, DiskEvents events_)
-        : DB::DiskLocal(disk_name, disk_path), events(std::move(events_))
-    {
-    }
+    RecordingStateDisk(const std::string & disk_name, const std::string & disk_path) : DB::DiskLocal(disk_name, disk_path) { }
+
+    /// The buffers and guards handed out below hold a reference to this and are created from the
+    /// disk, so the disk outlives every reader of it.
+    mutable DiskEvents events;
 
     std::unique_ptr<DB::WriteBufferFromFileBase>
     writeFile(const String & path, size_t buf_size, DB::WriteMode mode, const DB::WriteSettings & settings) override
     {
         /// Only `Rewrite` truncates, so `open:` marks the destructive open.
-        events->push_back((mode == DB::WriteMode::Append ? "append:" : "open:") + path);
+        events.push_back((mode == DB::WriteMode::Append ? "append:" : "open:") + path);
         auto inner = DB::DiskLocal::writeFile(path, buf_size, mode, settings);
         return std::make_unique<RecordingWriteBuffer>(std::move(inner), path, events);
     }
 
     void removeFile(const String & path) override
     {
-        events->push_back("remove:" + path);
+        events.push_back("remove:" + path);
         DB::DiskLocal::removeFile(path);
     }
 
     void removeFileIfExists(const String & path) override
     {
         if (existsFile(path))
-            events->push_back("remove:" + path);
+            events.push_back("remove:" + path);
         DB::DiskLocal::removeFileIfExists(path);
     }
 
@@ -1164,22 +1165,25 @@ public:
             || settings.use_page_cache_for_disks_without_file_cache || settings.use_page_cache_with_distributed_cache
             || settings.use_page_cache_for_local_disks || settings.use_page_cache_for_object_storage
             || settings.page_cache_settings.cache != nullptr || settings.local_fs_settings.mmap_cache != nullptr;
-        events->push_back((any_cache ? "read-cached:" : "read-uncached:") + path);
+        events.push_back((any_cache ? "read-cached:" : "read-uncached:") + path);
         DB::DiskLocal::prepareRead(path, settings, read_hint, pipeline);
     }
-
-private:
-    DiskEvents events;
 };
 
-/// The returned position is relative to the start of `events`, so a caller that searches a later
-/// window by passing a subspan has to add that window's offset back before comparing.
+/// The returned position is relative to the start of the span passed in, so a caller searching a
+/// later window has to add that window's offset back before comparing.
 std::optional<size_t> indexOf(std::span<const std::string> events, const std::string & event)
 {
     const auto it = std::find(events.begin(), events.end(), event);
     if (it == events.end())
         return std::nullopt;
     return static_cast<size_t>(it - events.begin());
+}
+
+/// The window of `events` that starts just past `position`.
+std::span<const std::string> after(const DiskEvents & events, size_t position)
+{
+    return {events.begin() + position + 1, events.end()};
 }
 
 }
@@ -1272,8 +1276,8 @@ TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
     ChangelogDirTest logs("./logs");
     this->setLogDirectory("./logs");
 
-    auto events = std::make_shared<std::vector<std::string>>();
-    auto disk = std::make_shared<RecordingStateDisk>("StateFile", ".", events);
+    auto disk = std::make_shared<RecordingStateDisk>("StateFile", ".");
+    auto & events = disk->events;
     this->keeper_context->setStateFileDisk(disk);
 
     /// `getReadSettings` takes the caches from the global context, so without one every cache is
@@ -1307,12 +1311,12 @@ TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
     {
         SCOPED_TRACE("Backup is durable before the live state file is truncated");
         /// Second save: "state" already exists, so it is backed up to "state-OLD" first.
-        events->clear();
+        events.clear();
         state_manager->save_state(*new_state);
 
-        const auto backup_synced = indexOf(*events, "sync:state-OLD");
-        const auto live_opened = indexOf(*events, "open:state");
-        const auto backup_removed = indexOf(*events, "remove:state-OLD");
+        const auto backup_synced = indexOf(events, "sync:state-OLD");
+        const auto live_opened = indexOf(events, "open:state");
+        const auto backup_removed = indexOf(events, "remove:state-OLD");
 
         /// Without the sync the backup can be page-cache-only, so a crash in the rewrite window
         /// loses both copies.
@@ -1323,12 +1327,11 @@ TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
         /// The backup is written from the bytes this read returned, and both this path and the
         /// backup's are reused across saves, so a cache keyed by path alone could supply an
         /// earlier term here.
-        ASSERT_TRUE(indexOf(*events, "read-uncached:state").has_value());
-        ASSERT_FALSE(indexOf(*events, "read-cached:state").has_value());
+        ASSERT_TRUE(indexOf(events, "read-uncached:state").has_value());
+        ASSERT_FALSE(indexOf(events, "read-cached:state").has_value());
 
         /// Anchored past the backup: an earlier sync of the live file also records a dirsync.
-        const auto after_backup_synced = std::span<const std::string>(*events).subspan(*backup_synced + 1);
-        const auto backup_dirsync_offset = indexOf(after_backup_synced, "dirsync");
+        const auto backup_dirsync_offset = indexOf(after(events, *backup_synced), "dirsync");
         ASSERT_TRUE(backup_dirsync_offset.has_value());
         const auto backup_dirsync = *backup_synced + 1 + *backup_dirsync_offset;
         ASSERT_LT(backup_dirsync, *live_opened);
@@ -1336,21 +1339,19 @@ TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
         /// The backup is dropped only once the replacement is durable in full, contents and
         /// directory entry. Anchored past the truncating open, or the sync of the old contents counts.
         ASSERT_TRUE(backup_removed.has_value());
-        const auto after_live_opened = std::span<const std::string>(*events).subspan(*live_opened + 1);
-        const auto live_synced_offset = indexOf(after_live_opened, "sync:state");
+        const auto live_synced_offset = indexOf(after(events, *live_opened), "sync:state");
         ASSERT_TRUE(live_synced_offset.has_value());
         const auto live_synced = *live_opened + 1 + *live_synced_offset;
         ASSERT_LT(live_synced, *backup_removed);
 
-        const auto after_live_synced = std::span<const std::string>(*events).subspan(live_synced + 1);
-        const auto live_dirsync_offset = indexOf(after_live_synced, "dirsync");
+        const auto live_dirsync_offset = indexOf(after(events, live_synced), "dirsync");
         ASSERT_TRUE(live_dirsync_offset.has_value());
         const auto live_dirsync = live_synced + 1 + *live_dirsync_offset;
         ASSERT_LT(live_dirsync, *backup_removed);
 
         /// Three directory syncs in total: the live file before the backup, the new backup, and
         /// the replacement, each distinct and in that order.
-        const auto pre_backup_dirsync = indexOf(*events, "dirsync");
+        const auto pre_backup_dirsync = indexOf(events, "dirsync");
         ASSERT_TRUE(pre_backup_dirsync.has_value());
         ASSERT_LT(*pre_backup_dirsync, *backup_synced);
         ASSERT_LT(*pre_backup_dirsync, backup_dirsync);
@@ -1367,26 +1368,25 @@ TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
         std::filesystem::copy_file("./state", "./state-OLD");
         std::filesystem::remove("./state");
 
-        events->clear();
+        events.clear();
         reload_state_manager();
         auto recovered = state_manager->read_state();
         ASSERT_NE(recovered, nullptr);
         ASSERT_EQ(recovered->get_term(), 2);
         ASSERT_EQ(recovered->get_voted_for(), 3);
-        ASSERT_FALSE(indexOf(*events, "remove:state-OLD").has_value());
+        ASSERT_FALSE(indexOf(events, "remove:state-OLD").has_value());
         ASSERT_TRUE(std::filesystem::exists("./state-OLD"));
 
         /// The returned term is about to be acted on, so the file it came from must be durable by
         /// then. A backup written by an earlier version was only finalized. The sync must append,
         /// since a rewrite would truncate the only remaining copy.
-        const auto backup_appended = indexOf(*events, "append:state-OLD");
+        const auto backup_appended = indexOf(events, "append:state-OLD");
         ASSERT_TRUE(backup_appended.has_value());
-        ASSERT_FALSE(indexOf(*events, "open:state-OLD").has_value());
-        const auto backup_synced = indexOf(*events, "sync:state-OLD");
+        ASSERT_FALSE(indexOf(events, "open:state-OLD").has_value());
+        const auto backup_synced = indexOf(events, "sync:state-OLD");
         ASSERT_TRUE(backup_synced.has_value());
         ASSERT_LT(*backup_appended, *backup_synced);
-        const auto after_backup_synced = std::span<const std::string>(*events).subspan(*backup_synced + 1);
-        ASSERT_TRUE(indexOf(after_backup_synced, "dirsync").has_value());
+        ASSERT_TRUE(indexOf(after(events, *backup_synced), "dirsync").has_value());
     }
 
     {
@@ -1395,27 +1395,27 @@ TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
         /// keep the backup rather than delete it on the strength of parsing. The previous step
         /// left only the backup, so restore the live file from it.
         std::filesystem::copy_file("./state-OLD", "./state");
-        events->clear();
+        events.clear();
         reload_state_manager();
         auto both_valid = state_manager->read_state();
         ASSERT_NE(both_valid, nullptr);
         ASSERT_EQ(both_valid->get_term(), 2);
-        ASSERT_FALSE(indexOf(*events, "remove:state-OLD").has_value());
+        ASSERT_FALSE(indexOf(events, "remove:state-OLD").has_value());
         ASSERT_TRUE(std::filesystem::exists("./state-OLD"));
 
         /// Returning a state means the node is about to act on that term, so the live file must be
         /// durable by then, or a power failure would make the node forget a term it voted in. The
         /// sync must be an append: a rewrite would truncate the file it is meant to preserve.
-        const auto live_appended = indexOf(*events, "append:state");
-        const auto live_synced = indexOf(*events, "sync:state");
+        const auto live_appended = indexOf(events, "append:state");
+        const auto live_synced = indexOf(events, "sync:state");
         ASSERT_TRUE(live_appended.has_value());
         ASSERT_TRUE(live_synced.has_value());
         ASSERT_LT(*live_appended, *live_synced);
-        ASSERT_FALSE(indexOf(*events, "open:state").has_value());
+        ASSERT_FALSE(indexOf(events, "open:state").has_value());
 
         /// Durable contents alone still allow the directory entry to be lost, which would lose the
         /// whole file.
-        const auto live_dirsync = indexOf(*events, "dirsync");
+        const auto live_dirsync = indexOf(events, "dirsync");
         ASSERT_TRUE(live_dirsync.has_value());
         ASSERT_LT(*live_synced, *live_dirsync);
 
@@ -1434,10 +1434,10 @@ TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
         /// while the live bytes are still only buffered. Both files are present here, which is
         /// exactly the state such a retry starts from.
         std::filesystem::copy_file("./state", "./state-OLD", std::filesystem::copy_options::overwrite_existing);
-        events->clear();
+        events.clear();
         state_manager->save_state(*new_state);
-        const auto live_synced_before_backup = indexOf(*events, "sync:state");
-        const auto backup_reopened = indexOf(*events, "open:state-OLD");
+        const auto live_synced_before_backup = indexOf(events, "sync:state");
+        const auto backup_reopened = indexOf(events, "open:state-OLD");
         ASSERT_TRUE(live_synced_before_backup.has_value());
         ASSERT_TRUE(backup_reopened.has_value());
         ASSERT_LT(*live_synced_before_backup, *backup_reopened);
