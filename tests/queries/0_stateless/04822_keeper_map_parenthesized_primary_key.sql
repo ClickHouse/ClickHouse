@@ -14,7 +14,9 @@ DROP TABLE IF EXISTS t_km_no_parens SYNC;
 CREATE TABLE t_km_parens (key UInt64, value String)
 Engine=KeeperMap('/' || currentDatabase() || '/km_parens') PRIMARY KEY(key);
 
-SELECT extract(value, 'primary key: (.*)') FROM system.zookeeper
+-- The stored metadata ends with a newline, and `extract` builds RE2 with `dot_nl`, so `.` would
+-- swallow it: match everything up to the end of the line instead.
+SELECT extract(value, 'primary key: ([^\n]*)') FROM system.zookeeper
 WHERE path = '/test_keeper_map/' || currentDatabase() || '/km_parens' AND name = 'metadata';
 
 -- The same path, with the primary key spelled without parentheses: the metadata must be
