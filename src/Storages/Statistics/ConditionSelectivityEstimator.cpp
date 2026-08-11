@@ -303,7 +303,12 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 if (!future_set)
                     return false;
 
-                auto prepared_set = future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
+                /// Deliberately not `buildOrderedSetInplace`: this estimator is advisory - it only ranks
+                /// PREWHERE candidates - so it must not run a subquery to fill a set. A set that is not
+                /// built yet simply cannot be analysed, and the condition falls back to the default
+                /// selectivity, as it did for every subquery set before `ActionsDAG::Node::column`
+                /// became a `ColumnConst` and made these sets visible here.
+                auto prepared_set = future_set->getOrderedSetIfAlreadyBuilt(rhs.getTreeContext().getQueryContext());
                 if (!prepared_set || !prepared_set->hasExplicitSetElements())
                     return false;
 

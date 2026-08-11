@@ -61,6 +61,12 @@ public:
     /// If possible, return set with stored elements useful for PK analysis.
     virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
 
+    /// The same, but never runs the subquery that fills the set: returns null if it is not built yet.
+    /// Callers that merely consult the set - notably `ConditionSelectivityEstimator`, which wants a
+    /// single selectivity number - must use this. A cost model that executes a subquery gives planning
+    /// a side effect of unbounded cost, for a result the plan may end up not needing at all.
+    SetPtr getOrderedSetIfAlreadyBuilt(const ContextPtr & context);
+
     using Hash = CityHash_v1_0_2::uint128;
     virtual Hash getHash() const = 0;
 
