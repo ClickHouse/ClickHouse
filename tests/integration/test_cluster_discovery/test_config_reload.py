@@ -374,7 +374,7 @@ def test_reload_add_remove_discovery_cluster(start_cluster):
 
 
 def test_reload_remove_retries_failed_unregister(start_cluster):
-    """Keeper unregister failure must not drop the remove; ephemeral cleanup is retried."""
+    """Failed Keeper unregister is retried; re-add of the same path must not be undone by that retry."""
     reload_config_on_all(CONFIG_WITH_PWD)
     check_on_cluster(
         list(nodes.values()),
@@ -388,15 +388,21 @@ def test_reload_remove_retries_failed_unregister(start_cluster):
 
     node0 = nodes["node0"]
     node1 = nodes["node1"]
-    node0.query(
-        "SYSTEM ENABLE FAILPOINT cluster_discovery_unregister_fail",
-        password="passwordAbc",
-    )
-    try:
-        reload_config_on_node(node0, CONFIG_NO_DISCOVERY)
 
-        # Local config apply must succeed despite the failed Keeper remove.
-        for retry in range(10):
+    def enable_unregister_failpoint():
+        node0.query(
+            "SYSTEM ENABLE FAILPOINT cluster_discovery_unregister_fail",
+            password="passwordAbc",
+        )
+
+    def disable_unregister_failpoint():
+        node0.query(
+            "SYSTEM DISABLE FAILPOINT cluster_discovery_unregister_fail",
+            password="passwordAbc",
+        )
+
+    def wait_local_cluster_gone():
+        for _ in range(10):
             count = int(
                 node0.query(
                     "SELECT count() FROM system.clusters WHERE cluster = 'test_reload_cluster'",
@@ -404,13 +410,17 @@ def test_reload_remove_retries_failed_unregister(start_cluster):
                 )
             )
             if count == 0:
-                break
+                return
             time.sleep(1)
-        else:
-            raise AssertionError("node0 still exposes removed discovery cluster after reload")
+        raise AssertionError("node0 still exposes removed discovery cluster after reload")
 
-        # Peer still sees node0 while the ephemeral linger is forced by the failpoint.
-        for retry in range(10):
+    # --- remove while unregister fails, then retry cleanup after failpoint is cleared ---
+    enable_unregister_failpoint()
+    try:
+        reload_config_on_node(node0, CONFIG_NO_DISCOVERY)
+        wait_local_cluster_gone()
+
+        for _ in range(10):
             hosts = int(
                 node1.query(
                     "SELECT count() FROM system.clusters WHERE cluster = 'test_reload_cluster'",
@@ -425,13 +435,9 @@ def test_reload_remove_retries_failed_unregister(start_cluster):
                 "Expected node0 ephemeral to remain visible on node1 while unregister failpoint is on"
             )
     finally:
-        node0.query(
-            "SYSTEM DISABLE FAILPOINT cluster_discovery_unregister_fail",
-            password="passwordAbc",
-        )
+        disable_unregister_failpoint()
 
-    # After failpoint is cleared, worker retries remove the ephemeral.
-    for retry in range(20):
+    for _ in range(20):
         hosts = int(
             node1.query(
                 "SELECT count() FROM system.clusters WHERE cluster = 'test_reload_cluster'",
@@ -447,44 +453,22 @@ def test_reload_remove_retries_failed_unregister(start_cluster):
         )
 
     reload_config_on_all(CONFIG_WITH_PWD)
-
-
-def test_reload_remove_readd_cancels_pending_unregister(start_cluster):
-    """Re-adding the same discovery path must cancel a queued pending unregister."""
-    reload_config_on_all(CONFIG_WITH_PWD)
     check_on_cluster(
         list(nodes.values()),
         len(nodes),
         cluster_name="test_reload_cluster",
         what="count()",
-        msg="Cluster not ready before remove/re-add unregister test",
+        msg="Cluster not restored before remove/re-add unregister test",
         query_params={"password": "passwordAbc"},
         retries=6,
     )
 
-    node0 = nodes["node0"]
-    node1 = nodes["node1"]
-    node0.query(
-        "SYSTEM ENABLE FAILPOINT cluster_discovery_unregister_fail",
-        password="passwordAbc",
-    )
+    # --- remove, re-add same path while unregister still failing; pending retry must not drop the node ---
+    enable_unregister_failpoint()
     try:
         reload_config_on_node(node0, CONFIG_NO_DISCOVERY)
+        wait_local_cluster_gone()
 
-        for retry in range(10):
-            count = int(
-                node0.query(
-                    "SELECT count() FROM system.clusters WHERE cluster = 'test_reload_cluster'",
-                    password="passwordAbc",
-                )
-            )
-            if count == 0:
-                break
-            time.sleep(1)
-        else:
-            raise AssertionError("node0 still exposes removed discovery cluster after reload")
-
-        # Re-add while unregister is still failing so pending cleanup remains queued.
         reload_config_on_node(node0, CONFIG_WITH_PWD)
         check_on_cluster(
             [node0, node1],
@@ -496,12 +480,8 @@ def test_reload_remove_readd_cancels_pending_unregister(start_cluster):
             retries=6,
         )
     finally:
-        node0.query(
-            "SYSTEM DISABLE FAILPOINT cluster_discovery_unregister_fail",
-            password="passwordAbc",
-        )
+        disable_unregister_failpoint()
 
-    # Pending retry must not delete the live ephemeral after re-add.
     for _ in range(15):
         hosts = int(
             node1.query(

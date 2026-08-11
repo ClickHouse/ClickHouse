@@ -326,11 +326,6 @@ void ClusterDiscovery::addStaticCluster(ParsedStaticDiscovery && parsed)
             /* observer_mode= */ parsed.observer,
             /* invisible= */ parsed.invisible));
 
-    /// Re-adding a participant on the same path must not let a stale pending unregister
-    /// delete the ephemeral after registerInZk (or before the first upsert).
-    if (!parsed.observer)
-        cancelPendingUnregister(parsed.zk_name, parsed.zk_root);
-
     get_nodes_callbacks[name] = std::make_shared<Coordination::WatchCallback>(
         [cluster_name = name, my_clusters_to_update = clusters_to_update](auto)
         {
@@ -348,7 +343,7 @@ void ClusterDiscovery::removeStaticCluster(const String & name)
 
     /// Drop local tracking even if Keeper remove fails: config already removed the cluster.
     /// Keep enough identity to retry ephemeral cleanup so peers stop seeing this node.
-    if (!unregisterFromZk(it->second))
+    if (!unregisterFromZk(it->second.zk_name, it->second.zk_root, name))
     {
         pending_zk_unregisters.push_back(PendingZkUnregister{
             .zk_name = it->second.zk_name,
@@ -915,7 +910,6 @@ void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & inf
         if (existing == payload)
         {
             LOG_DEBUG(log, "Current node {} already registered in cluster {} with up-to-date data", current_node_name, info.name);
-            cancelPendingUnregister(info.zk_name, info.zk_root);
             return;
         }
         /// Recreate ephemeral so children watches fire; setData alone does not notify peers.
@@ -923,69 +917,43 @@ void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & inf
     }
 
     zk->create(node_path, payload, zkutil::CreateMode::Ephemeral);
-    cancelPendingUnregister(info.zk_name, info.zk_root);
     LOG_DEBUG(log, "Current node {} registered in cluster {}", current_node_name, info.name);
 }
 
-bool ClusterDiscovery::tryUnregisterPath(const String & zk_name, const String & zk_root, const String & cluster_name_for_log)
-{
-    fiu_do_on(FailPoints::cluster_discovery_unregister_fail,
-    {
-        throw Exception(
-            ErrorCodes::KEEPER_EXCEPTION,
-            "Failpoint cluster_discovery_unregister_fail is triggered for cluster '{}'",
-            cluster_name_for_log);
-    });
-
-    auto zk = context->getDefaultOrAuxiliaryZooKeeper(zk_name);
-    String node_path = getShardsListPath(zk_root) / current_node_name;
-    auto code = zk->tryRemove(node_path);
-    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-    {
-        LOG_WARNING(
-            log,
-            "Cannot unregister current node {} from cluster '{}': {}",
-            current_node_name,
-            cluster_name_for_log,
-            Coordination::errorMessage(code));
-        return false;
-    }
-
-    LOG_DEBUG(log, "Current node {} unregistered from cluster {}", current_node_name, cluster_name_for_log);
-    return true;
-}
-
-bool ClusterDiscovery::unregisterFromZk(const ClusterInfo & info)
+bool ClusterDiscovery::unregisterFromZk(const String & zk_name, const String & zk_root, const String & cluster_name)
 {
     try
     {
-        return tryUnregisterPath(info.zk_name, info.zk_root, info.name);
+        fiu_do_on(FailPoints::cluster_discovery_unregister_fail,
+        {
+            throw Exception(
+                ErrorCodes::KEEPER_EXCEPTION,
+                "Failpoint cluster_discovery_unregister_fail is triggered for cluster '{}'",
+                cluster_name);
+        });
+
+        auto zk = context->getDefaultOrAuxiliaryZooKeeper(zk_name);
+        String node_path = getShardsListPath(zk_root) / current_node_name;
+        auto code = zk->tryRemove(node_path);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+        {
+            LOG_WARNING(
+                log,
+                "Cannot unregister current node {} from cluster '{}': {}",
+                current_node_name,
+                cluster_name,
+                Coordination::errorMessage(code));
+            return false;
+        }
+
+        LOG_DEBUG(log, "Current node {} unregistered from cluster {}", current_node_name, cluster_name);
+        return true;
     }
     catch (...)
     {
-        tryLogCurrentException(log, "Error while unregistering node from cluster '" + info.name + "'");
+        tryLogCurrentException(log, "Error while unregistering node from cluster '" + cluster_name + "'");
         return false;
     }
-}
-
-void ClusterDiscovery::cancelPendingUnregister(const String & zk_name, const String & zk_root)
-{
-    std::erase_if(
-        pending_zk_unregisters,
-        [&](const PendingZkUnregister & pending)
-        {
-            return pending.zk_name == zk_name && pending.zk_root == zk_root;
-        });
-}
-
-bool ClusterDiscovery::hasActiveParticipantOnPath(const String & zk_name, const String & zk_root) const
-{
-    for (const auto & [_, info] : clusters_info)
-    {
-        if (!info.current_node_is_observer && info.zk_name == zk_name && info.zk_root == zk_root)
-            return true;
-    }
-    return false;
 }
 
 bool ClusterDiscovery::retryPendingUnregisters()
@@ -998,29 +966,20 @@ bool ClusterDiscovery::retryPendingUnregisters()
 
     for (const auto & pending : pending_zk_unregisters)
     {
-        /// Cluster was re-added on this path; do not delete its live ephemeral.
-        if (hasActiveParticipantOnPath(pending.zk_name, pending.zk_root))
+        /// Re-add put a participant back on this path; drop stale cleanup instead of deleting the live ephemeral.
+        bool path_has_participant = false;
+        for (const auto & [_, info] : clusters_info)
         {
-            LOG_DEBUG(
-                log,
-                "Skipping pending unregister for cluster '{}' because a participant is active on the same path",
-                pending.cluster_name);
+            if (!info.current_node_is_observer && info.zk_name == pending.zk_name && info.zk_root == pending.zk_root)
+            {
+                path_has_participant = true;
+                break;
+            }
+        }
+        if (path_has_participant)
             continue;
-        }
 
-        bool ok = false;
-        try
-        {
-            ok = tryUnregisterPath(pending.zk_name, pending.zk_root, pending.cluster_name);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(
-                log,
-                "Error while retrying unregister from cluster '" + pending.cluster_name + "'");
-        }
-
-        if (!ok)
+        if (!unregisterFromZk(pending.zk_name, pending.zk_root, pending.cluster_name))
             still_pending.push_back(pending);
     }
 
