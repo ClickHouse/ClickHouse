@@ -407,6 +407,16 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 استخدم خطة الاستعلام لتحسين التجسيد الكسول.
 
+<div id="query_plan_optimize_lazy_materialization_for_object_storage">
+  ## query_plan_optimize_lazy_materialization_for_object_storage
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "إعداد جديد لاستخدام التجسيد الكسول لاستعلامات `ORDER BY ... LIMIT n` التي تقرأ ملفات Parquet من تخزين الكائنات (بما في ذلك جداول Iceberg)."}]}]} />
+
+استخدم تحسين التجسيد الكسول عند قراءة ملفات Parquet من تخزين الكائنات (بما في ذلك جداول Iceberg): في استعلامات `ORDER BY ... LIMIT n`، لا تُقرأ الأعمدة غير اللازمة للفرز والتصفية إلا للصفوف الـ `n` التي تبقى بعد تطبيق `LIMIT`. لا يسري هذا الإعداد إلا إذا كان `query_plan_optimize_lazy_materialization` مفعّلًا.
+
 <div id="query_plan_optimize_prewhere">
   ## query_plan_optimize_prewhere
 </div>

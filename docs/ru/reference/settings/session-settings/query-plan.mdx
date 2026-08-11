@@ -407,6 +407,16 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Использовать план запроса для оптимизации отложенной материализации.
 
+<div id="query_plan_optimize_lazy_materialization_for_object_storage">
+  ## query_plan_optimize_lazy_materialization_for_object_storage
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Новая настройка для использования отложенной материализации в запросах `ORDER BY ... LIMIT n`, считывающих файлы Parquet из объектного хранилища (включая таблицы Iceberg)."}]}]} />
+
+Использовать оптимизацию отложенной материализации при чтении файлов Parquet из объектного хранилища (включая таблицы Iceberg): в запросах `ORDER BY ... LIMIT n` столбцы, не необходимые для сортировки и фильтрации, считываются только для `n` строк, оставшихся после применения `LIMIT`. Действует только при включенной настройке `query_plan_optimize_lazy_materialization`.
+
 <div id="query_plan_optimize_prewhere">
   ## query_plan_optimize_prewhere
 </div>

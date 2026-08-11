@@ -390,13 +390,15 @@ Para o modo &#39;Ordered&#39;. Disponível desde a versão `24.6`. Se houver vá
   ### `use_persistent_processing_nodes`
 </div>
 
-Por padrão, a tabela S3Queue sempre usou nós de processamento efêmeros, o que poderia levar à duplicação de dados caso a sessão do ZooKeeper expire depois que o processamento já tiver sido iniciado, mas antes de o S3Queue fazer o commit dos arquivos processados no ZooKeeper. Essa configuração força o servidor a eliminar a possibilidade de duplicações em caso de expiração da sessão do Keeper.
+Os nós de processamento persistentes eliminam a possibilidade de duplicatas quando uma sessão do Keeper expira após o início do processamento, mas antes que o S3Queue faça commit do arquivo processado. Versões anteriores usavam nós de processamento efêmeros, que poderiam gerar duplicatas nesse caso.
+
+Essa configuração está obsoleta e seu valor é ignorado: nós de processamento persistentes são sempre usados. Uma tabela criada com `use_persistent_processing_nodes = 0` continua usando esses nós, e a introspecção de configurações, incluindo `SHOW CREATE TABLE`, informa `1`, independentemente do valor fornecido.
 
 <div id="persistent_processing_node_ttl_seconds">
   ### `persistent_processing_node_ttl_seconds`
 </div>
 
-Em caso de encerramento não gracioso do servidor, é possível que, se `use_persistent_processing_nodes` estiver habilitado, haja nós de processamento que não foram removidos. Essa configuração define um período durante o qual esses nós de processamento podem ser removidos com segurança. O mesmo TTL também é usado para o bloqueio do bucket no modo `Ordered`, que pode permanecer ativo por mais tempo do que um único nó de processamento, portanto o valor também deve levar isso em consideração.
+Em caso de encerramento não gracioso do servidor, é possível que haja nós de processamento que não foram removidos. Essa configuração define um período durante o qual esses nós de processamento podem ser removidos com segurança. O mesmo TTL também é usado para o bloqueio do bucket no modo `Ordered`, que pode permanecer ativo por mais tempo do que um único nó de processamento, portanto o valor também deve levar isso em consideração.
 
 Valor padrão: `21600` (6 horas).
 
@@ -513,9 +515,9 @@ Construções com `{}` são semelhantes à table function [remote](/pt-BR/refere
 
 1. Linhas duplicadas podem ocorrer em decorrência de:
 
-* uma exceção ocorrer durante o parsing, no meio do processamento do arquivo, e as tentativas de repetição estiverem habilitadas por meio de `s3queue_loading_retries`;
+* uma exceção ocorrer durante o parsing, no meio do processamento do arquivo, e as tentativas estiverem habilitadas por meio de `s3queue_loading_retries`;
 
-* `S3Queue` estar configurado em vários servidores apontando para o mesmo caminho no ZooKeeper, e a sessão do Keeper expirar antes que um servidor consiga fazer commit do arquivo processado, o que pode levar outro servidor a assumir o processamento do arquivo, que pode já ter sido processado parcial ou totalmente pelo primeiro servidor; no entanto, isso não é true desde a versão 25.8 se `use_persistent_processing_nodes = 1`.
+* `S3Queue` estar configurado em vários servidores apontando para o mesmo caminho no ZooKeeper, e a sessão do Keeper expirar antes que um servidor consiga fazer commit do arquivo processado, o que pode levar outro servidor a assumir o processamento do arquivo, que pode já ter sido processado parcial ou totalmente pelo primeiro servidor; no entanto, isso é evitado por nós de processamento persistentes, disponíveis desde a versão 25.8 e que agora são sempre usados (consulte [`use_persistent_processing_nodes`](#use_persistent_processing_nodes)).
 
 * encerramento anormal do servidor.
 

@@ -220,6 +220,8 @@ Se definido como true, colunas separadas gravadas no formato CSV podem ser desse
 
 Isso se aplica apenas a `Tuple` puro. Um `Nullable(Tuple)` sempre é gravado como um único campo CSV (consulte [output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns](/pt-BR/reference/settings/formats/output-format#output_format_csv_serialize_tuple_into_separate_columns)) e, da mesma forma, sempre é lido de volta de um único campo, nunca de colunas separadas, independentemente desta configuração. A análise em colunas separadas não é suportada para `Nullable(Tuple)` porque um campo inicial `\N` é ambíguo (ele pode ser o NULL externo da tupla ou o NULL do primeiro elemento dela).
 
+Como um `Tuple` puro passa a ocupar um campo por elemento, um `\N` no campo de um elemento direto de nível superior corresponde a esse elemento, e não à coluna inteira; portanto, [input&#95;format&#95;null&#95;as&#95;default](/pt-BR/reference/settings/formats/input-format#input_format_null_as_default) se aplica a esse elemento. Uma linha que fornece um único campo para a tupla inteira fica sem os elementos restantes e é rejeitada em vez de usar o valor padrão da coluna. Defina esta configuração como `0` para ler novamente esse campo como a coluna inteira. Um `\N` no campo de um elemento de um `Tuple` aninhado ainda é lido como esse elemento aninhado inteiro.
+
 <div id="input_format_csv_detect_header">
   ## input_format_csv_detect_header
 </div>

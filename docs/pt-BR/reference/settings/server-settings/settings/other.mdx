@@ -556,10 +556,14 @@ Tempo de expiração do HSTS, em segundos.
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
-Se definido como true, o ClickHouse não grava os valores padrão para uma instrução SQL SECURITY vazia em consultas `CREATE VIEW`.
+Se true, uma consulta `CREATE VIEW` ou `CREATE MATERIALIZED VIEW` que não especifica `DEFINER` nem `SQL SECURITY` é armazenada como foi escrita, e a view recebe um tipo de segurança SQL vazio. Especificar apenas `DEFINER` equivale a `SQL SECURITY DEFINER`; portanto, essa consulta não é afetada por essa configuração. Uma view normal com um tipo de segurança SQL vazio é executada com as permissões do invocador. Para uma visão materializada com uma tabela de destino explicitamente especificada, as verificações de acesso à tabela de destino são ignoradas: inserir na tabela de origem não requer o privilégio `INSERT` na tabela de destino, e ler a view não requer o privilégio `SELECT` nela.
+
+Se false, os valores padrão das configurações [`default_normal_view_sql_security`](/pt-BR/reference/settings/session-settings#default_normal_view_sql_security), [`default_materialized_view_sql_security`](/pt-BR/reference/settings/session-settings#default_materialized_view_sql_security) e [`default_view_definer`](/pt-BR/reference/settings/session-settings#default_view_definer) são gravados na definição da view no momento da criação. Com os valores padrão dessas configurações, uma visão materializada criada sem nenhuma dessas cláusulas registra o usuário que a criou como seu definidor e é executada com as permissões desse usuário.
+
+Views materializadas atualizáveis sempre recebem os valores padrão, independentemente dessa configuração.
 
 <Note>
-  Essa configuração é necessária apenas durante o período de migração e se tornará obsoleta na versão 24.4.
+  Alterar essa configuração afeta apenas as views criadas posteriormente; as definições armazenadas das views existentes permanecem inalteradas.
 </Note>
 
 <div id="include_from">

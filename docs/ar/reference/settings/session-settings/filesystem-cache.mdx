@@ -114,6 +114,16 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 تخطَّ التنزيل من نظام الملفات البعيد إذا تجاوز حجمه حجم ذاكرة التخزين المؤقت للاستعلام
 
+<div id="filesystem_cache_verbose_logging">
+  ## filesystem_cache_verbose_logging
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد جديد يتحكم في رسائل السجل بمستوى TEST التي تُصدر لكل إعادة تعبئة لمخزن القراءة المؤقت لذاكرة التخزين المؤقت لنظام الملفات، والتي كانت تُصدر سابقًا دون قيد متى سمح مستوى السجل بذلك."}]}]} />
+
+أصدر رسائل سجل بمستوى `TEST` لكل إعادة تعبئة لمخزن ذاكرة التخزين المؤقت لنظام الملفات (حالة القراءة، والحجم المتبقي للقراءة، والبايتات المقروءة). مخصصة لتصحيح الأخطاء فقط: تُنسَّق الرسائل مرة واحدة لكل قراءة، لذا فإن تمكينها لاستعلام يجري عددًا كبيرًا من القراءات الصغيرة المخزنة مؤقتًا يضيف عبئًا كبيرًا على التسجيل. ولا تظهر الرسائل إلا إذا كان مستوى السجل هو `test` أصلًا (راجع `send_logs_level`).
+
 <div id="filesystem_cache_wait_for_concurrent_download_timeout_milliseconds">
   ## filesystem_cache_wait_for_concurrent_download_timeout_milliseconds
 </div>

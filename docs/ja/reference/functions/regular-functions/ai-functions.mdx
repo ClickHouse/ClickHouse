@@ -240,7 +240,7 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 
 設定済みの AI プロバイダー を使用して、指定されたテキストの埋め込みベクトルを生成します。
 
-この関数はテキストを設定済みの埋め込み エンドポイント に送信し、生成されたベクトルを `Array(Float32)` として返します。
+この関数はテキストを設定済みの埋め込み用エンドポイントに送信し、生成されたベクトルを `Array(Float32)` として返します。
 1つの block 内の行については、呼び出しごとのオーバーヘッドを減らすため、入力は
 1回の HTTP リクエスト あたり最大
 [`ai_function_embedding_max_batch_size`](/ja/reference/settings/session-settings/ai-function#ai_function_embedding_max_batch_size)
@@ -249,7 +249,7 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 認証情報 (プロバイダー、エンドポイント、必要に応じて API key を指定する 名前付きコレクション)
 は、パラメータマップ の `credentials` キーから取得されるか、
 map で省略されている場合は `ai_function_embedding_default_credentials` 設定から取得されます。`aiEmbed` では
-テキスト関数とは別のデフォルト認証情報設定が使われる点に注意してください。これは、埋め込み エンドポイント が
+テキスト関数とは別のデフォルト認証情報設定が使われる点に注意してください。これは、埋め込み用エンドポイントが
 chat エンドポイント とは異なるためです。
 
 `model` は必須の位置引数 (定数の `String`) です。テキスト関数とは異なり、
@@ -264,6 +264,8 @@ chat エンドポイント とは異なるためです。
 ```sql
 aiEmbed(text, model[, params])
 ```
+
+**別名**: `AIEmbed`
 
 **引数**
 
@@ -406,6 +408,64 @@ SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials'
 
 ```sql title=Query
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
+```
+
+<div id="aiSimilarity">
+  ## aiSimilarity
+</div>
+
+導入バージョン: v26.8.0
+
+設定された埋め込みプロバイダーを使用して、2つのテキスト間の意味的な類似度を計算します。
+
+両方のテキストの埋め込みを計算し、2つのベクトルのコサイン類似度を
+`[-1, 1]` の範囲で返します。`1` はテキストが意味的に同一であること、`0` は無関係であることを示し、
+負の値は意味が反対であることを示します。これは、同じ埋め込みに対する
+`cosineDistance` の補数です (`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`) 。
+
+バッチ処理、認証情報、`dimensions` パラメータは `aiEmbed` と同じであり、
+`ai_function_embedding_default_credentials` のデフォルト認証情報設定も含まれます。
+
+`aiEmbed` と同様に、`model` は必須の位置引数 (定数の `String`) であり、名前付きコレクションや
+パラメータマップからは読み取られません。
+
+**構文**
+
+```sql
+aiSimilarity(text1, text2, model[, params])
+```
+
+**別名**: `AISimilarity`
+
+**引数**
+
+* `text1` — 1つ目のテキスト。[`String`](/ja/reference/data-types/string)
+* `text2` — 2つ目のテキスト。[`String`](/ja/reference/data-types/string)
+* `model` — 埋め込みモデル名。[`const String`](/ja/reference/data-types/string)
+* `params` — 任意の定数 `Map(String, String)` 型パラメータ。関数固有のキー: `dimensions` (埋め込みの目標次元数。`0` または省略した場合はモデル本来の次元数) 。共通パラメータ `credentials` も適用されます ([AI 関数](/ja/reference/functions/regular-functions/ai-functions)を参照) 。[`Map(String, String)`](/ja/reference/data-types/map)
+
+**戻り値**
+
+`[-1, 1]` のコサイン類似度。いずれかのテキストが NULL または空の場合、埋め込みリクエストが失敗し `ai_function_throw_on_error` が無効な場合、または `ai_function_throw_on_quota_exceeded` が無効な状態でクォータを超過した場合は NULL。[`Nullable(Float32)`](/ja/reference/data-types/nullable)
+
+**例**
+
+**2つの文字列を比較 (`ai_function_embedding_default_credentials` 設定が指定されている場合、`credentials` は省略できます)&#x20;**
+
+```sql title=Query
+SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
+```
+
+**クエリとの類似度に基づいてレビューをランク付けする**
+
+```sql title=Query
+SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
+```
+
+**自己結合による意味的重複排除**
+
+```sql title=Query
+SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
 <div id="aiTranslate">

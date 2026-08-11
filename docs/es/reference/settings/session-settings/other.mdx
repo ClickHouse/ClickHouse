@@ -929,7 +929,6 @@ Crea un plan de consulta distribuida.
 Al habilitarlo, se ajustan automáticamente las configuraciones que controlan funcionalidades que los planes de consulta distribuida aún no admiten:
 
 * `enable_parallel_replicas = 0` y `automatic_parallel_replicas_mode = 0` — el plan distribuido realiza su propia distribución del trabajo;
-* `rewrite_in_to_join = 1` — reescribe `IN (subquery)` como un `JOIN` para que pueda distribuirse (solo cuando `allow_experimental_correlated_subqueries` está habilitado);
 * `correlated_subqueries_use_in_memory_buffer = 0`;
 * `use_skip_indexes_on_data_read = 0`;
 * `compile_expressions = 0`;

@@ -928,7 +928,6 @@ Cloud でのデフォルト値: `1`.
 有効にすると、分散クエリプランでまだサポートされていない機能を制御する設定が自動的に調整されます。
 
 * `enable_parallel_replicas = 0` および `automatic_parallel_replicas_mode = 0` — 分散プランが処理を独自に分散します。
-* `rewrite_in_to_join = 1` — 分散可能にするため、`IN (subquery)` を `JOIN` に書き換えます (`allow_experimental_correlated_subqueries` が有効な場合のみ) 。
 * `correlated_subqueries_use_in_memory_buffer = 0`;
 * `use_skip_indexes_on_data_read = 0`;
 * `compile_expressions = 0`;

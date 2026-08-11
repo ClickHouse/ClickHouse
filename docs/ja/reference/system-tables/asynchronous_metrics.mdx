@@ -747,13 +747,13 @@ ClickHouse Keeper の平均リクエストレイテンシ。
   ### KeeperCommitLogsCacheEntries
 </div>
 
-次にコミットされるログ用のインメモリ cache に格納されているエントリ数
+changelog の先読み reader によって、commit thread の前方で現在 buffer されているデコード済みログエントリ数
 
 <div id="keepercommitlogscachesize">
   ### KeeperCommitLogsCacheSize
 </div>
 
-次にコミットされるログのインメモリcacheの合計サイズ
+changelogの先読みreaderによってcommit threadの前にbufferedされている、デコード済みログエントリの合計サイズ
 
 <div id="keeperephemeralscount">
   ### KeeperEphemeralsCount

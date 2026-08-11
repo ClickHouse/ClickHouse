@@ -407,6 +407,16 @@ Optimise la lecture avec FINAL à partir de ReplacingMergeTree en construisant u
 
 Utiliser le plan de requête pour l’optimisation par matérialisation différée.
 
+<div id="query_plan_optimize_lazy_materialization_for_object_storage">
+  ## query_plan_optimize_lazy_materialization_for_object_storage
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre permettant d'utiliser la matérialisation différée pour les requêtes `ORDER BY ... LIMIT n` lisant des fichiers Parquet depuis le stockage d'objets, y compris les tables Iceberg."}]}]} />
+
+Utilise l&#39;optimisation de matérialisation différée pour lire des fichiers Parquet depuis le stockage d&#39;objets, y compris les tables Iceberg : pour les requêtes `ORDER BY ... LIMIT n`, les colonnes inutiles pour le tri et le filtrage ne sont lues que pour les `n` lignes conservées après application de `LIMIT`. Ne prend effet que si `query_plan_optimize_lazy_materialization` est activé.
+
 <div id="query_plan_optimize_prewhere">
   ## query_plan_optimize_prewhere
 </div>

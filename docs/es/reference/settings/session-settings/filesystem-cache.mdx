@@ -114,6 +114,16 @@ Límite del tamaño de un único lote de segmentos de archivo que un búfer de l
 
 Omite la descarga desde el sistema de archivos remoto si esta supera el tamaño de la caché de consultas
 
+<div id="filesystem_cache_verbose_logging">
+  ## filesystem_cache_verbose_logging
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nueva configuración que controla los mensajes de registro de nivel TEST por cada recarga del búfer de lectura de la caché del sistema de archivos, que antes se emitían incondicionalmente cuando el nivel de registro lo permitía."}]}]} />
+
+Emite mensajes de registro de nivel `TEST` por cada recarga del búfer de la caché del sistema de archivos (estado de lectura, tamaño restante por leer y bytes leídos). Solo para depuración: los mensajes se formatean una vez por lectura, por lo que habilitar esta opción en una consulta que realiza muchas lecturas pequeñas desde la caché añade una considerable sobrecarga de registro. De todos modos, los mensajes solo son visibles cuando el nivel de registro es `test` (consulte `send_logs_level`).
+
 <div id="filesystem_cache_wait_for_concurrent_download_timeout_milliseconds">
   ## filesystem_cache_wait_for_concurrent_download_timeout_milliseconds
 </div>

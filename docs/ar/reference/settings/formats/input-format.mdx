@@ -220,6 +220,8 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 ينطبق هذا فقط على `Tuple` العاري. ويُكتب `Nullable(Tuple)` دائمًا كحقل CSV واحد (انظر [output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns](/ar/reference/settings/formats/output-format#output_format_csv_serialize_tuple_into_separate_columns))، وبالمثل يُقرأ مرة أخرى من حقل واحد فقط، وليس من أعمدة منفصلة مطلقًا، بغض النظر عن هذا الإعداد. تحليل الأعمدة المنفصلة غير مدعوم لـ `Nullable(Tuple)` لأن الحقل الأول `\N` ملتبس (فقد يكون NULL الخارجي للـ tuple أو NULL للعنصر الأول فيه).
 
+بما أن `Tuple` العاري يشغل حقلًا واحدًا لكل عنصر، فإن `\N` في حقل عنصر مباشر على المستوى الأعلى يمثل ذلك العنصر لا العمود بأكمله، لذا ينطبق [input&#95;format&#95;null&#95;as&#95;default](/ar/reference/settings/formats/input-format#input_format_null_as_default) على ذلك العنصر. ويُرفض الصف الذي يوفّر حقلًا واحدًا للـ tuple بأكمله لافتقاره إلى حقول العناصر المتبقية، بدلًا من استخدام القيمة الافتراضية للعمود. اضبط هذا الإعداد على `0` لقراءة هذا الحقل بوصفه العمود بأكمله مجددًا. ولا يزال `\N` في حقل عنصر ضمن `Tuple` متداخل يُقرأ بوصفه ذلك العنصر المتداخل بأكمله.
+
 <div id="input_format_csv_detect_header">
   ## input_format_csv_detect_header
 </div>

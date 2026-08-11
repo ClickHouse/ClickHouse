@@ -220,6 +220,8 @@ Si ce paramètre est défini sur true, des colonnes distinctes écrites au forma
 
 Cela s’applique uniquement à `Tuple` seul. Un `Nullable(Tuple)` est toujours écrit dans un seul champ CSV (voir [output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns](/fr/reference/settings/formats/output-format#output_format_csv_serialize_tuple_into_separate_columns)) et est de même relu depuis un seul champ, jamais depuis des colonnes distinctes, quel que soit ce paramètre. L’analyse de colonnes distinctes n’est pas prise en charge pour `Nullable(Tuple)`, car un champ initial `\N` est ambigu (il peut s’agir du NULL externe du tuple ou du NULL de son premier élément).
 
+Comme un `Tuple` seul occupe alors un champ par élément, un `\N` dans le champ d’un élément direct de niveau supérieur correspond à cet élément et non à toute la colonne, de sorte que [input&#95;format&#95;null&#95;as&#95;default](/fr/reference/settings/formats/input-format#input_format_null_as_default) s’applique à cet élément. Une ligne qui fournit un seul champ pour l’ensemble du tuple manque des éléments restants et est rejetée au lieu d’utiliser la valeur par défaut de la colonne. Définissez ce paramètre sur `0` pour relire un tel champ comme l’ensemble de la colonne. Un `\N` dans le champ d’un élément d’un `Tuple` imbriqué est toujours lu comme cet élément imbriqué dans son ensemble.
+
 <div id="input_format_csv_detect_header">
   ## input_format_csv_detect_header
 </div>

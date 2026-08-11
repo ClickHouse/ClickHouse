@@ -34,7 +34,7 @@ false (デフォルト) の場合、AI 関数は、プロンプトと API キー
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新しい設定"}]}]} />
 
-呼び出し時にパラメータマップで `credentials` が渡されない場合に、`aiEmbed` が使用する 名前付きコレクション の名前です。空の場合はデフォルトがないことを意味し、そのような呼び出しでは `credentials` を明示的に渡す必要があります。`aiEmbed` は `model` を必須の位置引数として受け取り、名前付きコレクション からは取得しません。埋め込み用のエンドポイントはチャット用のものとは異なるため、`ai_function_text_default_credentials` とは分けて管理されています。
+呼び出し時にパラメータマップで `credentials` が渡されない場合に、埋め込み関数 (`aiEmbed`、`aiSimilarity`) が使用する 名前付きコレクション の名前です。空の場合はデフォルトがないことを意味し、そのような呼び出しでは `credentials` を明示的に渡す必要があります。これらの関数は `model` を必須の位置引数として受け取り、名前付きコレクション からは取得しません。埋め込み用のエンドポイントはチャット用のものとは異なるため、`ai_function_text_default_credentials` とは分けて管理されています。
 
 <div id="ai_function_embedding_max_batch_size">
   ## ai_function_embedding_max_batch_size
@@ -46,7 +46,7 @@ false (デフォルト) の場合、AI 関数は、プロンプトと API キー
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "100"},{"label": "新しい設定"}]}]} />
 
-`aiEmbed` が 1 回の HTTP リクエストに含められるテキストの最大数です。API 呼び出しのオーバーヘッドを減らすため、テキストはこのサイズのバッチにまとめられます。たとえば、一意なテキストが 500 件あり、バッチサイズが 100 の場合、HTTP リクエストは 5 回になります。
+埋め込み関数 (`aiEmbed`、`aiSimilarity`) が 1 回の HTTP リクエストに含められるテキストの最大数です。API 呼び出しのオーバーヘッドを減らすため、テキストはこのサイズのバッチにまとめられます。たとえば、一意なテキストが 500 件あり、バッチサイズが 100 の場合、HTTP リクエストは 5 回になります。
 
 <div id="ai_function_max_api_calls_per_query">
   ## ai_function_max_api_calls_per_query
@@ -84,9 +84,9 @@ AI 関数が 1 クエリあたりに送信できる HTTP リクエストの最�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "500000"},{"label": "新しい設定"}]}]} />
 
-1 つのクエリ内における、すべての AI 関数 API 呼び出し にまたがる出力 (completion) トークン の合計上限です。これはプロバイダからのレスポンスに基づいて累積的に追跡されます。呼び出しごとの出力 トークン 数は事前にわからないため、この上限は 1 回の呼び出し分の出力 トークン だけ超過する場合があります。無効にするには 0 に設定します。
+1 つのクエリ内における、すべての AI 関数 API 呼び出し にまたがる出力 (補完) トークン の合計上限です。これはプロバイダからのレスポンスに基づいて累積的に追跡されます。呼び出しごとの出力 トークン 数は事前にわからないため、この上限は 1 回の呼び出し分の出力 トークン だけ超過する場合があります。無効にするには 0 に設定します。
 
-この制限が適用されるのは、レスポンス内で `usage` object を返すプロバイダ (OpenAI、Anthropic、vLLM) のみです。埋め込み関数 (特に aiEmbed) には適用されません。これらは出力 トークン を生成しないためです。
+この制限が適用されるのは、レスポンス内で usage オブジェクト を返すプロバイダ (OpenAI、Anthropic、vLLM) のみです。埋め込み関数 (`aiEmbed`、`aiSimilarity`) には適用されません。これらは出力 トークン を生成しないためです。
 
 <div id="ai_function_max_retries">
   ## ai_function_max_retries

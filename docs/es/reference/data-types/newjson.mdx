@@ -1168,7 +1168,9 @@ Puede comprobar que el `ALTER` se completó sin ninguna mutación consultando la
 SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 ```
 
-Con indicación de tipo diferida habilitada, esta consulta no devuelve ninguna fila, lo que confirma que la operación solo modificó los metadatos.
+Con indicación de tipo diferida habilitada, esta consulta no devuelve ninguna fila, lo que confirma que la operación fue una operación de solo metadatos.
+
+Esto se aplica a los cambios de indicaciones de tipo descritos anteriormente; consulte [Limitaciones](#lazy-type-hints-limitations) para conocer los casos que se rechazan en su lugar.
 
 <div id="materializing-type-hints">
   ### Materialización de indicaciones de tipo
@@ -1187,6 +1189,13 @@ Para materializar las indicaciones de tipo en los datos existentes, puedes optar
 * Esta funcionalidad es experimental y puede cambiar en futuras versiones
 * La conversión de tipos en tiempo de consulta puede suponer una sobrecarga de rendimiento significativa en comparación con los tipos materializados previamente, especialmente en objetos JSON grandes
 * Esta funcionalidad solo se aplica al modificar `typed_paths` (indicaciones de tipo); otros parámetros de JSON, como `max_dynamic_paths`, `SKIP` o `SKIP REGEXP`, siguen requiriendo mutaciones
+* Modificar una indicación de tipo (o eliminar una ruta tipada) **no** es una operación de solo metadatos, y se rechaza cuando la subcolumna afectada se utiliza en una estructura persistida posicionalmente:
+
+  * la **clave primaria/de ordenación** o la **clave de partición** — el cambio está prohibido, porque los valores en disco del índice primario o de la partición no se pueden reconstruir mediante un `ALTER` como operación de solo metadatos (como ocurre con cualquier otra columna clave);
+  * un **índice de omisión de datos** explícito — primero elimine el índice o desactive `allow_experimental_json_lazy_type_hints` para ejecutar el cambio como una mutación completa que reconstruya el índice.
+  * una **proyección cuya clave de ordenación (`ORDER BY`) lee la subcolumna** — primero elimine la proyección, porque un `ALTER` como operación de solo metadatos no puede reconstruir el índice primario de la proyección.
+
+  Añadir indicaciones para rutas que no se utilizan en ninguna de esas estructuras, o realizar cambios que no modifiquen el tipo en disco de las subcolumnas utilizadas (por ejemplo, añadir una ruta tipada no relacionada), sigue siendo una operación de solo metadatos.
 
 <div id="comparison-between-values-of-the-json-type">
   ## Comparación entre valores del tipo JSON

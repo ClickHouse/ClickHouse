@@ -557,10 +557,14 @@ ClickHouse перезагружает встроенные словари каж
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
-Если значение — true, ClickHouse не записывает значения по умолчанию для пустого оператора безопасность SQL в запросах `CREATE VIEW`.
+Если true, запрос `CREATE VIEW` или `CREATE MATERIALIZED VIEW`, в котором не указаны ни `DEFINER`, ни `SQL SECURITY`, сохраняется в исходном виде, а представлению присваивается пустой тип безопасности SQL. Указание только `DEFINER` считается указанием `SQL SECURITY DEFINER`, поэтому такая настройка на этот запрос не влияет. Обычное представление с пустым типом безопасности SQL выполняется с разрешениями пользователя, вызвавшего его. Для materialized view с явно указанной целевой таблицей проверки доступа к целевой таблице не выполняются: вставка в исходную таблицу не требует привилегии `INSERT` для целевой таблицы, а чтение из представления не требует привилегии `SELECT` для неё.
+
+Если false, значения по умолчанию из настроек [`default_normal_view_sql_security`](/ru/reference/settings/session-settings#default_normal_view_sql_security), [`default_materialized_view_sql_security`](/ru/reference/settings/session-settings#default_materialized_view_sql_security) и [`default_view_definer`](/ru/reference/settings/session-settings#default_view_definer) записываются в определение представления при его создании. При значениях этих настроек по умолчанию materialized view, созданное без указания обеих клауз, сохраняет создавшего его пользователя в качестве определяющего пользователя и выполняется с разрешениями этого пользователя.
+
+Refreshable materialized views всегда получают значения по умолчанию независимо от этой настройки.
 
 <Note>
-  Этот параметр нужен только в период миграции и станет устаревшим в 24.4
+  Изменение этой настройки влияет только на представления, созданные после этого; сохранённые определения существующих представлений остаются без изменений.
 </Note>
 
 <div id="include_from">

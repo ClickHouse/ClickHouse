@@ -1,7 +1,7 @@
 const SessionSettingsExplorer = () => {
-  // Mintlify의 프로덕션 렌더러는 모듈 스코프 바인딩을 유지하지 않은 채
-  // 내보낸 컴포넌트를 평가합니다. 지연(lazy) 상태를 사용하면 생성된 데이터가
-  // 해당 평가 스코프에 유지되며, 마운트당 한 번만 생성됩니다.
+  // Mintlify의 프로덕션 렌더러는 내보낸 컴포넌트를 모듈 범위 바인딩을
+  // 보존하지 않고 평가합니다. 지연 상태는 생성된 데이터를 해당 평가
+  // 스코프에 유지하여 마운트당 한 번만 구성되도록 합니다.
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -1032,7 +1032,7 @@ const SessionSettingsExplorer = () => {
     },
     {
       label: "filesystem_cache_*",
-      count: 11,
+      count: 12,
       settings: [
         { name: "filesystem_cache_allow_background_download", href: "/reference/settings/session-settings/filesystem-cache#filesystem_cache_allow_background_download", default: "1" },
         { name: "filesystem_cache_boundary_alignment", href: "/reference/settings/session-settings/filesystem-cache#filesystem_cache_boundary_alignment", default: "0" },
@@ -1060,6 +1060,7 @@ const SessionSettingsExplorer = () => {
           href: "/reference/settings/session-settings/filesystem-cache#filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit",
           default: "1"
         },
+        { name: "filesystem_cache_verbose_logging", href: "/reference/settings/session-settings/filesystem-cache#filesystem_cache_verbose_logging", default: "0" },
         {
           name: "filesystem_cache_wait_for_concurrent_download_timeout_milliseconds",
           href: "/reference/settings/session-settings/filesystem-cache#filesystem_cache_wait_for_concurrent_download_timeout_milliseconds",
@@ -1561,9 +1562,10 @@ const SessionSettingsExplorer = () => {
     },
     {
       label: "materialized_views_*",
-      count: 2,
+      count: 3,
       settings: [
         { name: "materialized_views_ignore_errors", href: "/reference/settings/session-settings/materialized-views#materialized_views_ignore_errors", default: "0" },
+        { name: "materialized_views_populate_atomically", href: "/reference/settings/session-settings/materialized-views#materialized_views_populate_atomically", default: "1" },
         { name: "materialized_views_squash_parallel_inserts", href: "/reference/settings/session-settings/materialized-views#materialized_views_squash_parallel_inserts", default: "1" }
       ],
       children: []
@@ -2452,7 +2454,7 @@ const SessionSettingsExplorer = () => {
     },
     {
       label: "query_plan_*",
-      count: 45,
+      count: 46,
       settings: [
         { name: "query_plan_aggregation_in_order", href: "/reference/settings/session-settings/query-plan#query_plan_aggregation_in_order", default: "1" },
         { name: "query_plan_convert_any_join_to_semi_or_anti_join", href: "/reference/settings/session-settings/query-plan#query_plan_convert_any_join_to_semi_or_anti_join", default: "1" },
@@ -2489,6 +2491,11 @@ const SessionSettingsExplorer = () => {
         { name: "query_plan_optimize_join_order_randomize", href: "/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_randomize", default: "0" },
         { name: "query_plan_optimize_lazy_final", href: "/reference/settings/session-settings/query-plan#query_plan_optimize_lazy_final", default: "0" },
         { name: "query_plan_optimize_lazy_materialization", href: "/reference/settings/session-settings/query-plan#query_plan_optimize_lazy_materialization", default: "1" },
+        {
+          name: "query_plan_optimize_lazy_materialization_for_object_storage",
+          href: "/reference/settings/session-settings/query-plan#query_plan_optimize_lazy_materialization_for_object_storage",
+          default: "1"
+        },
         { name: "query_plan_optimize_prewhere", href: "/reference/settings/session-settings/query-plan#query_plan_optimize_prewhere", default: "1" },
         { name: "query_plan_push_down_limit", href: "/reference/settings/session-settings/query-plan#query_plan_push_down_limit", default: "1" },
         { name: "query_plan_push_limit_by_into_sort", href: "/reference/settings/session-settings/query-plan#query_plan_push_limit_by_into_sort", default: "1" },

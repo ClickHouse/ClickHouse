@@ -114,6 +114,16 @@ Limite para o tamanho de um único lote de segmentos de arquivo que um buffer de
 
 Ignora o download do sistema de arquivos remoto caso exceda o tamanho do cache de consultas
 
+<div id="filesystem_cache_verbose_logging">
+  ## filesystem_cache_verbose_logging
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração que controla as mensagens de log de nível TEST emitidas a cada recarga do buffer de leitura do cache do sistema de arquivos, que antes eram emitidas incondicionalmente assim que o nível de log permitia."}]}]} />
+
+Emite mensagens de log de nível `TEST` para cada recarga de buffer do cache do sistema de arquivos (estado da leitura, tamanho restante a ler, bytes lidos). Apenas para depuração: as mensagens são formatadas uma vez por leitura; portanto, habilitar essa opção em uma consulta que realiza muitas pequenas leituras em cache adiciona uma grande sobrecarga de logging. As mensagens só são visíveis quando o nível de log é `test` (consulte `send_logs_level`).
+
 <div id="filesystem_cache_wait_for_concurrent_download_timeout_milliseconds">
   ## filesystem_cache_wait_for_concurrent_download_timeout_milliseconds
 </div>

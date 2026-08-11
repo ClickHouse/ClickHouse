@@ -273,9 +273,14 @@ los reintentos de insert. Solo disponible en ClickHouse Cloud
 
 <SettingsInfoBlock type="MergeCoordinatorDistributionAlgorithm" default_value="sainte_lague" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "sainte_lague"},{"label": "Habilita la distribución Sainte-Lague de forma predeterminada."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "water_filling"},{"label": "Nueva opción de configuración que controla qué algoritmo utiliza el coordinador de fusión para distribuir las fusiones entre réplicas"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "sainte_lague"},{"label": "Habilita la distribución Sainte-Lague de forma predeterminada."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "water_filling"},{"label": "Nueva configuración que controla qué algoritmo utiliza el coordinador de fusión para distribuir las fusiones entre réplicas"}]}]} />
 
-Algoritmo que usará el hilo del coordinador de fusión para distribuir las fusiones entre réplicas
+El algoritmo que utiliza el hilo del coordinador de fusión para distribuir las fusiones entre réplicas.
+
+Valores posibles:
+
+* `water_filling`
+* `sainte_lague`
 
 <div id="shared_merge_tree_merge_coordinator_election_check_period_ms">
   ## shared_merge_tree_merge_coordinator_election_check_period_ms

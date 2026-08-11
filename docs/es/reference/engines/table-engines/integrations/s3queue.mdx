@@ -389,13 +389,15 @@ Para el modo &#39;Ordered&#39;. Disponible desde la versión `24.6`. Si hay vari
   ### `use_persistent_processing_nodes`
 </div>
 
-De forma predeterminada, la tabla S3Queue siempre ha usado nodos de procesamiento efímeros, lo que podría dar lugar a datos duplicados si la sesión de ZooKeeper expira antes de que S3Queue confirme en ZooKeeper los archivos procesados, pero después de haber comenzado a procesarlos. Esta configuración obliga al servidor a eliminar la posibilidad de duplicados en caso de que expire una sesión de Keeper.
+Los nodos de procesamiento persistentes eliminan la posibilidad de duplicados cuando una sesión de Keeper expira después de que se inicia el procesamiento, pero antes de que S3Queue confirme el archivo procesado. Las versiones anteriores usaban nodos de procesamiento efímeros, que podían generar duplicados en ese caso.
+
+Esta configuración está obsoleta y su valor se ignora: siempre se usan nodos de procesamiento persistentes. Una tabla creada con `use_persistent_processing_nodes = 0` sigue usándolos, y la introspección de configuración, incluido `SHOW CREATE TABLE`, muestra `1` independientemente del valor proporcionado.
 
 <div id="persistent_processing_node_ttl_seconds">
   ### `persistent_processing_node_ttl_seconds`
 </div>
 
-En caso de una finalización no controlada del servidor, es posible que, si `use_persistent_processing_nodes` está habilitado, queden nodos de procesamiento sin eliminar. Esta configuración define un período de tiempo durante el cual estos nodos de procesamiento pueden eliminarse de forma segura. El mismo TTL también se usa para el bloqueo del bucket en el modo `Ordered`, que puede mantenerse durante más tiempo que un único nodo de procesamiento, por lo que el valor también debe tener esto en cuenta.
+En caso de una finalización no controlada del servidor, es posible que queden nodos de procesamiento sin eliminar. Esta configuración define un período de tiempo durante el cual estos nodos de procesamiento pueden eliminarse de forma segura. El mismo TTL también se usa para el bloqueo del bucket en el modo `Ordered`, que puede mantenerse durante más tiempo que un único nodo de procesamiento, por lo que el valor también debe tener esto en cuenta.
 
 Valor predeterminado: `21600` (6 horas).
 
@@ -514,7 +516,7 @@ Las construcciones con `{}` son similares a la función de tabla [remote](/es/re
 
 * una excepción durante el análisis sintáctico en mitad del procesamiento del archivo y que los reintentos estén habilitados mediante `s3queue_loading_retries`;
 
-* que `S3Queue` esté configurado en varios servidores que apunten a la misma ruta en ZooKeeper y que la sesión de Keeper expire antes de que uno de los servidores consiga confirmar el archivo procesado, lo que podría hacer que otro servidor asuma el procesamiento del archivo, que podría haber sido procesado parcial o totalmente por el primer servidor; sin embargo, esto ya no ocurre a partir de la versión 25.8 si `use_persistent_processing_nodes = 1`.
+* que `S3Queue` esté configurado en varios servidores que apunten a la misma ruta en ZooKeeper y que la sesión de Keeper expire antes de que uno de los servidores consiga confirmar el archivo procesado, lo que podría hacer que otro servidor asuma el procesamiento del archivo, que podría haber sido procesado parcial o totalmente por el primer servidor; sin embargo, esto se evita mediante nodos de procesamiento persistentes, disponibles desde la versión 25.8 y que ahora siempre se utilizan (consulte [`use_persistent_processing_nodes`](#use_persistent_processing_nodes)).
 
 * terminación anómala del servidor.
 

@@ -1170,6 +1170,8 @@ SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 
 Lorsque les Lazy Type Hints sont activés, cette requête ne renvoie aucune ligne, ce qui confirme que l’opération s’est limitée aux métadonnées.
 
+Cela s’applique aux modifications d’indications de type décrites ci-dessus ; consultez les [Limitations](#lazy-type-hints-limitations) pour les cas qui sont plutôt rejetés.
+
 <div id="materializing-type-hints">
   ### Matérialisation des indications de type
 </div>
@@ -1187,6 +1189,14 @@ Pour matérialiser les indications de type dans les données existantes, vous po
 * Cette fonctionnalité est expérimentale et peut évoluer dans de futures versions
 * La conversion de types au moment de la requête peut entraîner un surcoût important en termes de performances par rapport aux types pré-matérialisés, en particulier pour les objets JSON volumineux
 * Cette fonctionnalité s&#39;applique uniquement lors de la modification de `typed_paths` (indications de type) ; les autres paramètres JSON, comme `max_dynamic_paths`, `SKIP` ou `SKIP REGEXP`, nécessitent toujours des mutations
+
+- La modification d’une indication de type (ou la suppression d’un chemin typé) n’est **pas** une opération limitée aux métadonnées et est rejetée lorsque la sous-colonne concernée est utilisée dans une structure persistée positionnellement :
+
+  * la **clé primaire/de tri** ou la **clé de partition** — la modification est interdite, car les valeurs de l’index primaire/de partition sur disque ne peuvent pas être reconstruites par un `ALTER` limité aux métadonnées (comme pour toute autre colonne de clé) ;
+  * un **index de saut de données** explicite — supprimez d’abord l’index ou désactivez `allow_experimental_json_lazy_type_hints` pour exécuter la modification sous la forme d’une mutation complète qui reconstruit l’index.
+  * une **projection dont la clé de tri (`ORDER BY`) lit la sous-colonne** — supprimez d’abord la projection, car un `ALTER` limité aux métadonnées ne peut pas reconstruire l’index primaire de la projection.
+
+  L’ajout d’indications pour des chemins non utilisés dans une telle structure, ou les modifications qui ne changent pas le type sur disque des sous-colonnes utilisées (par exemple, l’ajout d’un chemin typé non lié), restent limités aux métadonnées.
 
 <div id="comparison-between-values-of-the-json-type">
   ## Comparaison entre les valeurs du type JSON

@@ -257,7 +257,7 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 定义了 `model`，则会被拒绝。
 
 可选的 `dimensions` 参数在模型支持时 (例如 OpenAI&#39;s `text-embedding-3-*`)
-会请求返回指定大小的向量；否则将返回该模型的原生大小。
+会请求返回指定大小的向量；否则将返回该模型的原生维度。
 
 **语法**
 
@@ -265,11 +265,13 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 aiEmbed(text, model[, params])
 ```
 
+**别名**：`AIEmbed`
+
 **参数**
 
 * `text` — 要嵌入的文本。[`String`](/zh/reference/data-types/string)
 * `model` — 嵌入模型名称。[`const String`](/zh/reference/data-types/string)
-* `params` — 可选的常量 `Map(String, String)` 参数。此函数特有的键为：`dimensions` (输出向量的目标维数；`0` 或省略表示使用模型的原生维数) 。通用参数 `credentials` 也适用 (请参见 [AI 函数](/zh/reference/functions/regular-functions/ai-functions)) 。[`Map(String, String)`](/zh/reference/data-types/map)
+* `params` — 可选的常量参数映射。此函数特有的键为：`dimensions` (输出向量的目标维度；`0` 或省略表示使用模型的原生维度) 。通用参数 `credentials` 也适用 (请参见 [AI 函数](/zh/reference/functions/regular-functions/ai-functions)) 。[`Map(String, String)`](/zh/reference/data-types/map)
 
 **返回值**
 
@@ -405,6 +407,64 @@ SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials'
 
 ```sql title=Query
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
+```
+
+<div id="aiSimilarity">
+  ## aiSimilarity
+</div>
+
+引入版本：v26.8.0
+
+使用已配置的嵌入向量提供商计算两段文本的语义相似度。
+
+计算两段文本的嵌入向量，并返回这两个向量的余弦相似度，
+取值范围为 `[-1, 1]`：`1` 表示两段文本在语义上完全一致，`0` 表示毫不相关，
+负值表示语义相反。这与基于相同嵌入向量计算的 `cosineDistance` 互为补集
+(`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`) 。
+
+批处理、凭据和 `dimensions` 参数均与 `aiEmbed` 相同，包括
+`ai_function_embedding_default_credentials` 默认凭据设置。
+
+与 `aiEmbed` 一样，`model` 是必需的位置参数 (常量 `String`) ，不会从
+命名集合或参数映射中读取。
+
+**语法**
+
+```sql
+aiSimilarity(text1, text2, model[, params])
+```
+
+**别名**：`AISimilarity`
+
+**参数**
+
+* `text1` — 第一个文本。[`String`](/zh/reference/data-types/string)
+* `text2` — 第二个文本。[`String`](/zh/reference/data-types/string)
+* `model` — 嵌入模型名称。[`const String`](/zh/reference/data-types/string)
+* `params` — 可选的常量参数映射。该函数专用的键：`dimensions` (嵌入向量的目标维度；`0` 或省略时使用模型的原生维度) 。通用参数 `credentials` 也适用 (参见 [AI 函数](/zh/reference/functions/regular-functions/ai-functions)) 。[`Map(String, String)`](/zh/reference/data-types/map)
+
+**返回值**
+
+`[-1, 1]` 范围内的余弦相似度。如果任一文本为 NULL 或为空、嵌入请求失败且禁用了 `ai_function_throw_on_error`，或者超出配额且禁用了 `ai_function_throw_on_quota_exceeded`，则返回 NULL。[`Nullable(Float32)`](/zh/reference/data-types/nullable)
+
+**示例**
+
+**比较两个字符串 (如果设置了 `ai_function_embedding_default_credentials`，则可省略 `credentials`)&#x20;**
+
+```sql title=Query
+SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
+```
+
+**按与查询的相似度对评论排序**
+
+```sql title=Query
+SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
+```
+
+**通过自连接实现语义去重**
+
+```sql title=Query
+SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
 <div id="aiTranslate">

@@ -34,7 +34,7 @@ false(기본값)로 설정하면 AI 함수는 프롬프트와 API Key를 암호�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "새로운 설정"}]}]} />
 
-호출에서 매개변수 맵으로 `credentials`를 전달하지 않을 때 `aiEmbed`가 사용하는 명명된 컬렉션의 이름입니다. 비어 있으면 기본값이 없다는 뜻이며, 이런 호출에서는 `credentials`를 명시적으로 전달해야 합니다. `aiEmbed`는 `model`을 필수 위치 인수로 받으며, 명명된 컬렉션에서 가져오지 않습니다. 임베딩 엔드포인트는 채팅 엔드포인트와 다르므로 `ai_function_text_default_credentials`와는 별도로 유지됩니다.
+호출에서 매개변수 맵으로 `credentials`를 전달하지 않을 때 임베딩 함수(`aiEmbed`, `aiSimilarity`)가 사용하는 명명된 컬렉션의 이름입니다. 비어 있으면 기본값이 없다는 뜻이며, 이런 호출에서는 `credentials`를 명시적으로 전달해야 합니다. 이 함수들은 `model`을 필수 위치 인수로 받으며, 명명된 컬렉션에서 가져오지 않습니다. 임베딩 엔드포인트는 채팅 엔드포인트와 다르므로 `ai_function_text_default_credentials`와는 별도로 유지됩니다.
 
 <div id="ai_function_embedding_max_batch_size">
   ## ai_function_embedding_max_batch_size
@@ -46,7 +46,7 @@ false(기본값)로 설정하면 AI 함수는 프롬프트와 API Key를 암호�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "100"},{"label": "새로운 설정"}]}]} />
 
-`aiEmbed`가 수행하는 단일 HTTP 요청에 포함할 수 있는 최대 텍스트 수입니다. API 호출 오버헤드를 줄이기 위해 텍스트는 이 크기의 배치로 묶입니다. 예를 들어 서로 다른 텍스트 500개와 배치 크기 100을 사용하면 HTTP 요청이 5회 발생합니다.
+임베딩 함수(`aiEmbed`, `aiSimilarity`)가 수행하는 단일 HTTP 요청에 포함할 수 있는 최대 텍스트 수입니다. API 호출 오버헤드를 줄이기 위해 텍스트는 이 크기의 배치로 묶입니다. 예를 들어 서로 다른 텍스트 500개와 배치 크기 100을 사용하면 HTTP 요청이 5회 발생합니다.
 
 <div id="ai_function_max_api_calls_per_query">
   ## ai_function_max_api_calls_per_query
@@ -86,7 +86,7 @@ AI 함수가 쿼리당 전송할 수 있는 HTTP 요청의 최대 개수입니�
 
 단일 쿼리에서 수행되는 모든 AI 함수 API 호출에 대해, 전체 출력(completion) 토큰의 총합으로 허용되는 최대값입니다. 이 값은 provider의 응답을 기준으로 누적 추적됩니다. 호출의 출력 토큰 수는 사전에 알 수 없으므로, 이 제한은 한 번의 호출에서 생성된 출력 토큰 수만큼 초과될 수 있습니다. 비활성화하려면 0으로 설정하십시오.
 
-이 제한은 응답에 `usage` 객체를 포함해 보고하는 provider(OpenAI, Anthropic, vLLM)에만 적용됩니다. 임베딩 함수(특히 aiEmbed)에는 적용되지 않으며, 이러한 함수는 출력 토큰을 생성하지 않습니다.
+이 제한은 응답에 `usage` 객체를 포함해 보고하는 provider(OpenAI, Anthropic, vLLM)에만 적용됩니다. 임베딩 함수(`aiEmbed`, `aiSimilarity`)에는 적용되지 않으며, 이러한 함수는 출력 토큰을 생성하지 않습니다.
 
 <div id="ai_function_max_retries">
   ## ai_function_max_retries

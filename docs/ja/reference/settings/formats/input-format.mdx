@@ -218,7 +218,9 @@ CSV から Array を読み取る際、要素はネストされた CSV として�
 
 true に設定すると、CSVフォーマットで記述された個別のカラムを Tuple カラムにデシリアライズできます。
 
-これは素の `Tuple` にのみ適用されます。`Nullable(Tuple)` は常に単一の CSV フィールドとして書き込まれ ([output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns](/ja/reference/settings/formats/output-format#output_format_csv_serialize_tuple_into_separate_columns) を参照) 、同様に単一のフィールドからのみ読み戻されます。この設定にかかわらず、個別のカラムから読み取られることはありません。先頭の `\N` フィールドが曖昧になるため、`Nullable(Tuple)` では個別カラムからのパースはサポートされません (タプル全体の外側の NULL を表す場合もあれば、最初の要素の NULL を表す場合もあるためです) 。
+これは単体の `Tuple` にのみ適用されます。`Nullable(Tuple)` は常に単一の CSV フィールドとして書き込まれ ([output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns](/ja/reference/settings/formats/output-format#output_format_csv_serialize_tuple_into_separate_columns) を参照) 、同様に単一のフィールドからのみ読み戻されます。この設定にかかわらず、個別のカラムから読み取られることはありません。先頭の `\N` フィールドが曖昧になるため、`Nullable(Tuple)` では個別カラムからのパースはサポートされません (タプル全体の外側の NULL を表す場合もあれば、最初の要素の NULL を表す場合もあるためです) 。
+
+単体の `Tuple` では各要素が 1 つのフィールドを占めるため、直接の最上位要素のフィールドにある `\N` はカラム全体ではなくその要素を表します。したがって、[input&#95;format&#95;null&#95;as&#95;default](/ja/reference/settings/formats/input-format#input_format_null_as_default) はその要素に適用されます。タプル全体に単一のフィールドを指定する行は、残りの要素が不足しているため、カラムのデフォルト値を使用するのではなく拒否されます。このようなフィールドを再びカラム全体として読み取るには、この設定を `0` にします。ネストされた `Tuple` の要素のフィールドにある `\N` は、引き続きそのネストされた要素全体として読み取られます。
 
 <div id="input_format_csv_detect_header">
   ## input_format_csv_detect_header

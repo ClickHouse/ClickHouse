@@ -220,6 +220,8 @@ ClickHouse 便可只读取所需的字节范围，从而减少内存使用。
 
 这仅适用于裸 `Tuple`。`Nullable(Tuple)` 始终会被写为单个 CSV 字段 (参见 [output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns](/zh/reference/settings/formats/output-format#output_format_csv_serialize_tuple_into_separate_columns)) ，并且也始终从单个字段读回，而不会从独立列中读取，无论此设置如何。`Nullable(Tuple)` 不支持按独立列解析，因为前导 `\N` 字段存在歧义 (它既可能表示元组外层的 NULL，也可能表示其第一个元素的 NULL) 。
 
+由于裸 `Tuple` 的每个元素各占一个字段，直接顶层元素字段中的 `\N` 表示该元素，而非整个列，因此 [input&#95;format&#95;null&#95;as&#95;default](/zh/reference/settings/formats/input-format#input_format_null_as_default) 会应用于该元素。若一行仅为整个元组提供单个字段，则会缺少其余元素的字段，并会被拒绝，而不会采用列默认值。将此设置设为 `0`，可再次将此类字段作为整个列读取。嵌套 `Tuple` 元素字段中的 `\N` 仍会被读取为整个嵌套元素。
+
 <div id="input_format_csv_detect_header">
   ## input_format_csv_detect_header
 </div>

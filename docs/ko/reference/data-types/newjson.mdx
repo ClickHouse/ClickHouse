@@ -1164,7 +1164,9 @@ SELECT json.user_id, toTypeName(json.user_id), json.score, toTypeName(json.score
 SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 ```
 
-Lazy Type Hints가 활성화된 상태에서는 이 쿼리가 아무 행도 반환하지 않으므로, 작업이 메타데이터에만 적용되었음을 확인할 수 있습니다.
+Lazy 타입 힌트가 활성화된 상태에서는 이 쿼리가 아무 행도 반환하지 않으므로, 작업이 메타데이터 전용이었음을 확인할 수 있습니다.
+
+이는 위에서 설명한 타입 힌트 변경 사항에 적용됩니다. 대신 거부되는 경우는 [제한 사항](#lazy-type-hints-limitations)을 참조하십시오.
 
 <div id="materializing-type-hints">
   ### 타입 힌트 구체화하기
@@ -1183,6 +1185,14 @@ Lazy Type Hints가 활성화된 상태에서는 이 쿼리가 아무 행도 반�
 * 이 기능은 실험적이며 향후 버전에서 변경될 수 있습니다
 * 쿼리 시점의 타입 변환은 미리 구체화된 타입에 비해 상당한 성능 오버헤드를 유발할 수 있으며, 특히 큰 JSON 객체에서 그렇습니다
 * 이 기능은 `typed_paths`(type hints)를 수정할 때만 적용되며, `max_dynamic_paths`, `SKIP`, `SKIP REGEXP` 같은 다른 JSON 매개변수는 여전히 뮤테이션이 필요합니다
+
+- 타입 힌트를 수정하거나 타입이 지정된 경로를 제거할 때, 영향을 받는 서브컬럼이 위치 기반으로 영속화된 구조에 사용되면 **메타데이터 전용이 아니며** 변경이 거부됩니다.
+
+  * **프라이머리/정렬 키** 또는 **파티션 키** — 디스크상의 프라이머리 인덱스/파티션 값은 메타데이터 전용 `ALTER`로 다시 빌드할 수 없으므로(다른 모든 키 컬럼과 마찬가지로) 변경이 금지됩니다.
+  * 명시적인 **데이터 스키핑 인덱스** — 먼저 인덱스를 삭제하거나, `allow_experimental_json_lazy_type_hints`를 비활성화하여 인덱스를 다시 빌드하는 전체 뮤테이션으로 변경을 실행하십시오.
+  * **정렬 키(`ORDER BY`)에서 서브컬럼을 읽는 프로젝션** — 메타데이터 전용 `ALTER`로는 프로젝션의 프라이머리 인덱스를 다시 빌드할 수 없으므로 먼저 프로젝션을 삭제하십시오.
+
+  이러한 구조에 사용되지 않는 경로에 힌트를 추가하거나, 사용되는 서브컬럼의 디스크상 타입을 변경하지 않는 변경(예: 관련 없는 타입이 지정된 경로 추가)은 계속 메타데이터 전용으로 처리됩니다.
 
 <div id="comparison-between-values-of-the-json-type">
   ## JSON 타입 값 간 비교

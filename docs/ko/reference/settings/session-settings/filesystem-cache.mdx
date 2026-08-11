@@ -114,6 +114,16 @@ stateless 테이블 엔진이나 데이터 레이크에서 사용할 파일 시�
 
 쿼리 캐시 크기 제한을 초과하면 원격 파일 시스템에서의 다운로드를 건너뜁니다
 
+<div id="filesystem_cache_verbose_logging">
+  ## filesystem_cache_verbose_logging
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "이전에는 로그 레벨이 허용하면 항상 출력되던 파일 시스템 캐시 읽기 버퍼의 버퍼 리필당 TEST 수준 로그 메시지를 제어하는 새로운 설정입니다."}]}]} />
+
+파일 시스템 캐시 버퍼를 리필할 때마다 `TEST` 수준의 로그 메시지(읽기 상태, 남은 읽기 크기, 읽은 바이트 수)를 출력합니다. 디버깅 용도로만 사용하십시오. 메시지는 읽기마다 한 번 포맷되므로, 작은 캐시 읽기를 많이 수행하는 쿼리에서 이 설정을 활성화하면 로깅 오버헤드가 크게 증가합니다. 메시지는 어차피 로그 레벨이 `test`일 때만 표시됩니다(`send_logs_level` 참조).
+
 <div id="filesystem_cache_wait_for_concurrent_download_timeout_milliseconds">
   ## filesystem_cache_wait_for_concurrent_download_timeout_milliseconds
 </div>

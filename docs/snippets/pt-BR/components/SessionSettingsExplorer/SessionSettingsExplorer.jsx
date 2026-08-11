@@ -1032,7 +1032,7 @@ const SessionSettingsExplorer = () => {
     },
     {
       label: "filesystem_cache_*",
-      count: 11,
+      count: 12,
       settings: [
         { name: "filesystem_cache_allow_background_download", href: "/reference/settings/session-settings/filesystem-cache#filesystem_cache_allow_background_download", default: "1" },
         { name: "filesystem_cache_boundary_alignment", href: "/reference/settings/session-settings/filesystem-cache#filesystem_cache_boundary_alignment", default: "0" },
@@ -1060,6 +1060,7 @@ const SessionSettingsExplorer = () => {
           href: "/reference/settings/session-settings/filesystem-cache#filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit",
           default: "1"
         },
+        { name: "filesystem_cache_verbose_logging", href: "/reference/settings/session-settings/filesystem-cache#filesystem_cache_verbose_logging", default: "0" },
         {
           name: "filesystem_cache_wait_for_concurrent_download_timeout_milliseconds",
           href: "/reference/settings/session-settings/filesystem-cache#filesystem_cache_wait_for_concurrent_download_timeout_milliseconds",
@@ -1561,9 +1562,10 @@ const SessionSettingsExplorer = () => {
     },
     {
       label: "materialized_views_*",
-      count: 2,
+      count: 3,
       settings: [
         { name: "materialized_views_ignore_errors", href: "/reference/settings/session-settings/materialized-views#materialized_views_ignore_errors", default: "0" },
+        { name: "materialized_views_populate_atomically", href: "/reference/settings/session-settings/materialized-views#materialized_views_populate_atomically", default: "1" },
         { name: "materialized_views_squash_parallel_inserts", href: "/reference/settings/session-settings/materialized-views#materialized_views_squash_parallel_inserts", default: "1" }
       ],
       children: []
@@ -2452,7 +2454,7 @@ const SessionSettingsExplorer = () => {
     },
     {
       label: "query_plan_*",
-      count: 45,
+      count: 46,
       settings: [
         { name: "query_plan_aggregation_in_order", href: "/reference/settings/session-settings/query-plan#query_plan_aggregation_in_order", default: "1" },
         { name: "query_plan_convert_any_join_to_semi_or_anti_join", href: "/reference/settings/session-settings/query-plan#query_plan_convert_any_join_to_semi_or_anti_join", default: "1" },
@@ -2489,6 +2491,11 @@ const SessionSettingsExplorer = () => {
         { name: "query_plan_optimize_join_order_randomize", href: "/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_randomize", default: "0" },
         { name: "query_plan_optimize_lazy_final", href: "/reference/settings/session-settings/query-plan#query_plan_optimize_lazy_final", default: "0" },
         { name: "query_plan_optimize_lazy_materialization", href: "/reference/settings/session-settings/query-plan#query_plan_optimize_lazy_materialization", default: "1" },
+        {
+          name: "query_plan_optimize_lazy_materialization_for_object_storage",
+          href: "/reference/settings/session-settings/query-plan#query_plan_optimize_lazy_materialization_for_object_storage",
+          default: "1"
+        },
         { name: "query_plan_optimize_prewhere", href: "/reference/settings/session-settings/query-plan#query_plan_optimize_prewhere", default: "1" },
         { name: "query_plan_push_down_limit", href: "/reference/settings/session-settings/query-plan#query_plan_push_down_limit", default: "1" },
         { name: "query_plan_push_limit_by_into_sort", href: "/reference/settings/session-settings/query-plan#query_plan_push_limit_by_into_sort", default: "1" },
@@ -3424,7 +3431,7 @@ const SessionSettingsExplorer = () => {
   const renderGroup = (entry, continuations = [], isLast = false, path = []) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
-    const items = [...entry.settings.map((setting) => ({ type: "configuração", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
+    const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
     const countLabel = `${entry.count} ${entry.count === 1 ? "configuração" : "configurações"}`
 
     return (
@@ -3516,13 +3523,13 @@ const SessionSettingsExplorer = () => {
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            {matchingCount} {matchingCount === 1 ? "configuração encontrada" : "configurações encontradas"}
+            {matchingCount} correspondentes {matchingCount === 1 ? "configuração" : "configurações"}
           </span>
         </div>
       )}
       <div className="mt-3 w-full overflow-x-auto rounded-xl border border-gray-200 bg-gray-50/50 px-4 py-3 font-mono text-sm leading-6 dark:border-white/10 dark:bg-transparent">
         <div className="flex min-w-full items-center justify-between gap-4">
-          <div className="min-w-max font-semibold">/session-settings</div>
+          <div className="min-w-max font-semibold">/session-configurações</div>
           <button
             type="button"
             aria-label={allGroupsExpanded ? "Recolher tudo" : "Expandir tudo"}

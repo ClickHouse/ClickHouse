@@ -929,7 +929,6 @@ SETTINGS index_granularity = 8192 │
 При включении автоматически корректируются настройки, управляющие возможностями, которые пока не поддерживаются распределёнными планами запросов:
 
 * `enable_parallel_replicas = 0` и `automatic_parallel_replicas_mode = 0` — распределённый план самостоятельно распределяет работу;
-* `rewrite_in_to_join = 1` — преобразует `IN (subquery)` в `JOIN`, чтобы запрос можно было выполнить в распределённом режиме (только при включённой настройке `allow_experimental_correlated_subqueries`);
 * `correlated_subqueries_use_in_memory_buffer = 0`;
 * `use_skip_indexes_on_data_read = 0`;
 * `compile_expressions = 0`;

@@ -919,7 +919,6 @@ Cloud 기본값: `1`.
 활성화하면 아직 분산 쿼리 계획에서 지원하지 않는 기능을 제어하는 설정이 자동으로 조정됩니다.
 
 * `enable_parallel_replicas = 0` 및 `automatic_parallel_replicas_mode = 0` — 분산 계획이 작업을 자체적으로 분배합니다.
-* `rewrite_in_to_join = 1` — 분산할 수 있도록 `IN (subquery)`를 `JOIN`으로 재작성합니다(`allow_experimental_correlated_subqueries`가 활성화된 경우에만 적용).
 * `correlated_subqueries_use_in_memory_buffer = 0`;
 * `use_skip_indexes_on_data_read = 0`;
 * `compile_expressions = 0`;

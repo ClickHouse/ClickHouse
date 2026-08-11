@@ -274,7 +274,12 @@ ClickHouse Cloud
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "sainte_lague"},{"label": "Включить распределение Sainte-Lague по умолчанию."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "water_filling"},{"label": "Новая настройка, которая определяет, какой алгоритм координатор слияний использует для распределения слияний между репликами"}]}]} />
 
-Алгоритм, который поток координатора слияний будет использовать для распределения слияний между репликами
+Алгоритм, используемый потоком координатора слияний для распределения слияний между репликами.
+
+Возможные значения:
+
+* `water_filling`
+* `sainte_lague`
 
 <div id="shared_merge_tree_merge_coordinator_election_check_period_ms">
   ## shared_merge_tree_merge_coordinator_election_check_period_ms

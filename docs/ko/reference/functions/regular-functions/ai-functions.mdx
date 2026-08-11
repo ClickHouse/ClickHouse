@@ -243,7 +243,7 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 구성된 AI 프로바이더를 사용하여 지정된 텍스트의 임베딩 벡터를 생성합니다.
 
 이 함수는 텍스트를 구성된 임베딩 엔드포인트로 전송하고, 결과 벡터를 `Array(Float32)`로 반환합니다.
-단일 block의 행 내에서는 호출별 overhead를 줄이기 위해 입력이 HTTP request당 최대
+단일 block의 행 내에서는 호출별 overhead를 줄이기 위해 입력이 HTTP 요청당 최대
 [`ai_function_embedding_max_batch_size`](/ko/reference/settings/session-settings/ai-function#ai_function_embedding_max_batch_size)
 개 항목의 batch로 그룹화됩니다.
 
@@ -265,15 +265,17 @@ chat 엔드포인트와 다르므로 `aiEmbed`는 텍스트 함수와 별도의 
 aiEmbed(text, model[, params])
 ```
 
+**별칭**: `AIEmbed`
+
 **인수**
 
 * `text` — 임베딩할 텍스트입니다. [`String`](/ko/reference/data-types/string)
 * `model` — 임베딩 모델 이름입니다. [`const String`](/ko/reference/data-types/string)
-* `params` — 선택적 상수 `Map(String, String)` 파라미터입니다. 함수별 키는 `dimensions`입니다(출력 벡터의 대상 차원 수이며, `0`이거나 생략하면 모델의 네이티브 크기를 의미합니다). 공통 매개변수 `credentials`도 적용됩니다([AI 함수](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
+* `params` — 선택적 상수 `Map(String, String)` 매개변수입니다. 함수별 키는 `dimensions`입니다(출력 벡터의 대상 차원 수이며, `0`이거나 생략하면 모델의 네이티브 크기를 의미합니다). 공통 매개변수 `credentials`도 적용됩니다([AI 함수](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
 
 **반환 값**
 
-임베딩 벡터 또는 빈 배열을 반환합니다. 입력이 NULL이거나 비어 있는 경우, 요청이 실패했지만 `ai_function_throw_on_error`가 비활성화된 경우, 또는 할당량을 초과했지만 `ai_function_throw_on_quota_exceeded`가 비활성화된 경우에는 빈 배열이 반환됩니다. [`Array(Float32)`](/ko/reference/data-types/array)
+임베딩 벡터 또는 빈 배열을 반환합니다. 입력이 NULL이거나 비어 있는 경우, 요청이 실패했지만 `ai_function_throw_on_error`가 비활성화된 경우, 또는 QUOTA를 초과했지만 `ai_function_throw_on_quota_exceeded`가 비활성화된 경우에는 빈 배열이 반환됩니다. [`Array(Float32)`](/ko/reference/data-types/array)
 
 **예시**
 
@@ -406,6 +408,64 @@ SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials'
 
 ```sql title=Query
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
+```
+
+<div id="aiSimilarity">
+  ## aiSimilarity
+</div>
+
+도입 버전: v26.8.0
+
+구성된 임베딩 제공자를 사용하여 두 텍스트의 의미적 유사도를 계산합니다.
+
+두 텍스트의 임베딩을 계산하고 두 벡터 간 코사인 유사도를 `[-1, 1]` 범위의 값으로 반환합니다.
+`1`은 텍스트가 의미적으로 동일함을, `0`은 서로 관련이 없음을, 음수 값은 서로 반대임을 의미합니다.
+이는 동일한 임베딩에 대한 `cosineDistance`의 보수입니다
+(`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
+
+배칭, 자격 증명 및 `dimensions` 매개변수는
+`ai_function_embedding_default_credentials` 기본 자격 증명 설정을 포함하여 `aiEmbed`와 동일합니다.
+
+`aiEmbed`와 마찬가지로 `model`은 명명된 컬렉션이나 매개변수 맵에서 읽어 오지 않는
+필수 위치 인수(상수 `String`)입니다.
+
+**구문**
+
+```sql
+aiSimilarity(text1, text2, model[, params])
+```
+
+**별칭**: `AISimilarity`
+
+**인수**
+
+* `text1` — 첫 번째 텍스트입니다. [`String`](/ko/reference/data-types/string)
+* `text2` — 두 번째 텍스트입니다. [`String`](/ko/reference/data-types/string)
+* `model` — 임베딩 모델 이름입니다. [`const String`](/ko/reference/data-types/string)
+* `params` — 선택적 상수 `Map(String, String)` 매개변수입니다. 함수별 키는 `dimensions`입니다(임베딩의 대상 차원 수이며, `0` 또는 생략 시 모델의 네이티브 크기를 사용합니다). 공통 매개변수 `credentials`도 적용됩니다([AI 함수](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
+
+**반환 값**
+
+`[-1, 1]` 범위의 코사인 유사도입니다. 두 텍스트 중 하나가 NULL이거나 비어 있는 경우, 임베딩 요청이 실패했고 `ai_function_throw_on_error`가 비활성화된 경우 또는 QUOTA를 초과했고 `ai_function_throw_on_quota_exceeded`가 비활성화된 경우에는 NULL을 반환합니다. [`Nullable(Float32)`](/ko/reference/data-types/nullable)
+
+**예시**
+
+**두 문자열 비교(`ai_function_embedding_default_credentials` 설정이 지정되어 있으면 `credentials`를 생략할 수 있음)**
+
+```sql title=Query
+SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
+```
+
+**쿼리와의 유사도에 따라 리뷰 순위 지정**
+
+```sql title=Query
+SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
+```
+
+**self-join을 통한 의미 기반 중복 제거**
+
+```sql title=Query
+SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
 <div id="aiTranslate">

@@ -1281,9 +1281,15 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_SharedMergeTreeReplicaSetUpdatesFromZooKeeperRequests` ([UInt64](/zh/reference/data-types/int-uint)) — 为更新副本集而发起的 ZooKeeper 请求总数
 * `ProfileEvent_SharedMergeTreeReplicaSetUpdatesFromZooKeeperMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 更新副本集所花费的时间
 * `ProfileEvent_KeeperLogsEntryReadFromLatestCache` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 中从最新日志缓存读取的日志条目数
-* `ProfileEvent_KeeperLogsEntryReadFromCommitCache` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 中从提交日志缓存读取的日志条目数
 * `ProfileEvent_KeeperLogsEntryReadFromFile` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 中直接从更新日志文件读取的日志条目数
-* `ProfileEvent_KeeperLogsPrefetchedEntries` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 中从更新日志文件预取的日志条目数
+* `ProfileEvent_KeeperLogsReadAheadFillReopens` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 预读填充重新打开或寻道更新日志文件的次数
+* `ProfileEvent_KeeperLogsReadAheadFillDecodedEntries` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 预读填充任务解码的日志条目数
+* `ProfileEvent_KeeperLogsReadAheadCursorsInstalled` ([UInt64](/zh/reference/data-types/int-uint)) — 排入 Keeper 更新日志预读读取器 (peer 或 commit) 的新填充游标数量，且填充任务此前未覆盖这些游标
+* `ProfileEvent_KeeperLogsReadAheadPlanEpochMismatches` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 更新日志读取计划因并发 write&#95;at 截断而在提供服务前失效并被丢弃的次数
+* `ProfileEvent_KeeperLogsReadAheadScheduleRejected` ([UInt64](/zh/reference/data-types/int-uint)) — 因预读线程池队列已满而无法创建 Keeper 更新日志预读读取器的次数；调用方会回退到直接读取
+* `ProfileEvent_KeeperLogsReadAheadReadersCreated` ([UInt64](/zh/reference/data-types/int-uint)) — 创建的 Keeper 更新日志预读读取器 (及其填充任务) 数量；跨文件边界时该值保持不变，表示读取器被复用而非销毁后重新创建
+* `ProfileEvent_KeeperLogsReadAheadTimeoutFallbacks` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 更新日志预读服务请求等待填充任务超时，继而回退为直接读取剩余尾部的次数
+* `ProfileEvent_KeeperLogsEntryReadFromCommitReadAhead` ([UInt64](/zh/reference/data-types/int-uint)) — 提交线程从提交预读读取器的已解码窗口获取的日志条目数 (快速路径弹出或窗口首项排空弹出)
 * `ProfileEvent_KeeperChangelogWrittenBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 写入 Keeper 更新日志的字节数
 * `ProfileEvent_KeeperChangelogFileSyncMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 更新日志执行 fsync 所花费的时间 (仅未压缩日志)
 * `ProfileEvent_KeeperSnapshotWrittenBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 写入 Keeper 快照文件的字节数

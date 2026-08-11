@@ -34,7 +34,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新增设置"}]}]} />
 
-当调用未在其参数映射中传递 `credentials` 时，`aiEmbed` 使用的命名集合名称。留空表示没有默认值：此类调用必须显式传递 `credentials`。`aiEmbed` 将 `model` 作为必需的位置参数传入，而不是从命名集合中获取。之所以与 `ai_function_text_default_credentials` 分开，是因为嵌入向量端点与聊天端点不同。
+当调用未在其参数映射中传递 `credentials` 时，嵌入向量函数 (`aiEmbed`、`aiSimilarity`) 使用的命名集合名称。留空表示没有默认值：此类调用必须显式传递 `credentials`。这些函数将 `model` 作为必需的位置参数传入，而不是从命名集合中获取。之所以与 `ai_function_text_default_credentials` 分开，是因为嵌入向量端点与聊天端点不同。
 
 <div id="ai_function_embedding_max_batch_size">
   ## ai_function_embedding_max_batch_size
@@ -46,7 +46,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "100"},{"label": "新增设置"}]}]} />
 
-单个由 `aiEmbed` 发起的 HTTP 请求中最多可包含的文本数量。文本会按该大小分成批次，以减少 API 调用开销。例如，500 条唯一文本在批次大小为 100 时，会产生 5 个 HTTP 请求。
+单个由嵌入向量函数 (`aiEmbed`、`aiSimilarity`) 发起的 HTTP 请求中最多可包含的文本数量。文本会按该大小分成批次，以减少 API 调用开销。例如，500 条唯一文本在批次大小为 100 时，会产生 5 个 HTTP 请求。
 
 <div id="ai_function_max_api_calls_per_query">
   ## ai_function_max_api_calls_per_query
@@ -84,9 +84,9 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "500000"},{"label": "新增设置"}]}]} />
 
-单个查询中，所有 AI 函数 API 调用产生的输出 (completion) 标记总数上限。该值会根据提供商响应中的数据进行累计统计。请注意，由于单次调用的输出标记数无法预先得知，因此实际输出可能会超出该限制一个调用的输出量。设置为 0 可禁用此限制。
+单个查询中，所有 AI 函数 API 调用产生的输出 (补全) 标记总数上限。该值会根据提供商响应中的数据进行累计统计。请注意，由于单次调用的输出标记数无法预先得知，因此实际输出可能会超出该限制一个调用的输出量。设置为 0 可禁用此限制。
 
-此限制仅对在响应中返回 `usage` 对象的提供商生效 (OpenAI、Anthropic、vLLM) 。它不适用于 embedding 函数 (尤其是 aiEmbed) ，因为这类函数不会产生输出标记。
+此限制仅对在响应中返回 `usage` 对象的提供商生效 (OpenAI、Anthropic、vLLM) 。它不适用于嵌入向量函数 (`aiEmbed`、`aiSimilarity`) ，因为这类函数不会产生输出标记。
 
 <div id="ai_function_max_retries">
   ## ai_function_max_retries

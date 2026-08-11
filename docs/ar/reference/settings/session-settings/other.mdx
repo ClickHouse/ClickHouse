@@ -928,7 +928,6 @@ SETTINGS index_granularity = 8192 │
 يؤدي تمكينه إلى ضبط الإعدادات التي تتحكم في الميزات التي لا تدعمها خطط الاستعلامات الموزعة بعد تلقائيًا:
 
 * `enable_parallel_replicas = 0` و`automatic_parallel_replicas_mode = 0` — تتولى الخطة الموزعة توزيع العمل بنفسها؛
-* `rewrite_in_to_join = 1` — يعيد كتابة `IN (subquery)` إلى `JOIN` لكي يمكن توزيعه (فقط عند تمكين `allow_experimental_correlated_subqueries`)؛
 * `correlated_subqueries_use_in_memory_buffer = 0`;
 * `use_skip_indexes_on_data_read = 0`;
 * `compile_expressions = 0`;

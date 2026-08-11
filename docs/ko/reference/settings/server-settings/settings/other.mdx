@@ -554,12 +554,16 @@ HSTS의 만료 기간(초)입니다.
   ## ignore_empty_sql_security_in_create_view_query
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="아니요" />
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
-true인 경우, ClickHouse는 `CREATE VIEW` 쿼리에서 비어 있는 SQL SECURITY 구문에 대한 기본값을 기록하지 않습니다.
+true이면 `DEFINER`와 `SQL SECURITY`를 모두 지정하지 않은 `CREATE VIEW` 또는 `CREATE MATERIALIZED VIEW` 쿼리는 작성된 그대로 저장되며, 뷰의 SQL 보안 유형은 비어 있게 됩니다. `DEFINER`만 지정해도 `SQL SECURITY DEFINER`를 지정한 것으로 간주되므로, 이러한 쿼리는 이 설정의 영향을 받지 않습니다. SQL 보안 유형이 비어 있는 일반 뷰는 호출자의 권한으로 실행됩니다. 대상 테이블을 명시적으로 지정한 materialized view에서는 대상 테이블에 대한 액세스 검사가 생략됩니다. 즉, 원본 테이블에 삽입할 때 대상 테이블에 대한 `INSERT` privilege가 필요하지 않으며, 뷰에서 읽을 때도 대상 테이블에 대한 `SELECT` privilege가 필요하지 않습니다.
+
+false이면 [`default_normal_view_sql_security`](/ko/reference/settings/session-settings#default_normal_view_sql_security), [`default_materialized_view_sql_security`](/ko/reference/settings/session-settings#default_materialized_view_sql_security), [`default_view_definer`](/ko/reference/settings/session-settings#default_view_definer) 설정의 기본값이 생성 시 뷰 정의에 기록됩니다. 이러한 설정의 기본값을 사용하면, 어떤 절도 지정하지 않고 생성한 materialized view는 생성한 사용자를 정의자로 기록하고 해당 사용자의 권한으로 실행됩니다.
+
+갱신 가능 구체화 뷰에는 이 설정과 관계없이 항상 기본값이 적용됩니다.
 
 <Note>
-  이 설정은 마이그레이션 기간에만 필요하며, 24.4부터는 더 이상 사용되지 않습니다.
+  이 설정을 변경해도 이후에 생성되는 뷰에만 영향을 미치며, 기존 뷰의 저장된 정의는 변경되지 않습니다.
 </Note>
 
 <div id="include_from">

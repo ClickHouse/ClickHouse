@@ -1281,9 +1281,15 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_SharedMergeTreeReplicaSetUpdatesFromZooKeeperRequests` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي عدد طلبات ZooKeeper التي أرسلناها لتحديث مجموعة النسخ المتماثلة
 * `ProfileEvent_SharedMergeTreeReplicaSetUpdatesFromZooKeeperMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — مقدار الوقت المستغرَق لتحديث مجموعة النسخ المتماثلة
 * `ProfileEvent_KeeperLogsEntryReadFromLatestCache` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إدخالات السجل في Keeper التي تمت قراءتها من ذاكرة التخزين المؤقت لأحدث السجلات
-* `ProfileEvent_KeeperLogsEntryReadFromCommitCache` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إدخالات السجل في Keeper التي تمت قراءتها من ذاكرة التخزين المؤقت لسجلات commit
 * `ProfileEvent_KeeperLogsEntryReadFromFile` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إدخالات السجل في Keeper التي تمت قراءتها مباشرةً من ملف سجل التغييرات
-* `ProfileEvent_KeeperLogsPrefetchedEntries` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إدخالات السجل في Keeper التي جرى جلبها مسبقًا من ملف سجل التغييرات
+* `ProfileEvent_KeeperLogsReadAheadFillReopens` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي أعادت فيها مهمة ملء القراءة الاستباقية في Keeper فتح ملف سجل التغييرات أو غيّرت موضع القراءة فيه
+* `ProfileEvent_KeeperLogsReadAheadFillDecodedEntries` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إدخالات السجل التي فكّت مهمة ملء القراءة الاستباقية في Keeper ترميزها
+* `ProfileEvent_KeeperLogsReadAheadCursorsInstalled` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مؤشرات الملء الجديدة المُضافة إلى قارئ القراءة الاستباقية لسجل تغييرات Keeper (النظير أو commit) التي لم تكن مهمة الملء تغطيها بالفعل
+* `ProfileEvent_KeeperLogsReadAheadPlanEpochMismatches` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي أُهملت فيها خطة قراءة سجل تغييرات Keeper لأن اقتطاعًا متزامنًا بواسطة write&#95;at أبطلها قبل أن يمكن خدمتها
+* `ProfileEvent_KeeperLogsReadAheadScheduleRejected` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي تعذر فيها إنشاء قارئ قراءة استباقية لسجل تغييرات Keeper بسبب امتلاء طابور مجمّع خيوط القراءة الاستباقية؛ فيرجع المستدعي إلى قراءة مباشرة
+* `ProfileEvent_KeeperLogsReadAheadReadersCreated` ([UInt64](/ar/reference/data-types/int-uint)) — عدد قارئات القراءة الاستباقية لسجل تغييرات Keeper (ومهام الملء الخاصة بها) التي أُنشئت؛ يشير ثبات العدد عبر حدود الملفات إلى إعادة استخدام قارئ بدلًا من تفكيكه وإعادة إنشائه
+* `ProfileEvent_KeeperLogsReadAheadTimeoutFallbacks` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي انتهت فيها مهلة طلب خدمة القراءة الاستباقية لسجل تغييرات Keeper أثناء انتظار مهمة الملء، ثم رجع إلى قراءة مباشرة للذيل المتبقي
+* `ProfileEvent_KeeperLogsEntryReadFromCommitReadAhead` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إدخالات السجل المقدَّمة إلى خيط commit من النافذة المفككة الترميز لقارئ القراءة الاستباقية لـ commit (سحب المسار السريع أو سحب الاستنزاف لأول عنصر في النافذة)
 * `ProfileEvent_KeeperChangelogWrittenBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المكتوبة إلى سجل التغييرات في Keeper
 * `ProfileEvent_KeeperChangelogFileSyncMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في `fsync` لسجل التغييرات في Keeper (السجلات غير المضغوطة فقط)
 * `ProfileEvent_KeeperSnapshotWrittenBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المكتوبة إلى ملفات اللقطة في Keeper

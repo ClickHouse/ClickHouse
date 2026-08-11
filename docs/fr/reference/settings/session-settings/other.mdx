@@ -929,7 +929,6 @@ Créer un plan de requête distribuée.
 Son activation ajuste automatiquement les paramètres qui contrôlent les fonctionnalités pas encore prises en charge par les plans de requêtes distribuées :
 
 * `enable_parallel_replicas = 0` et `automatic_parallel_replicas_mode = 0` — le plan distribué assure sa propre répartition du travail ;
-* `rewrite_in_to_join = 1` — réécrit `IN (subquery)` en `JOIN` afin de pouvoir le distribuer (uniquement lorsque `allow_experimental_correlated_subqueries` est activé) ;
 * `correlated_subqueries_use_in_memory_buffer = 0` ;
 * `use_skip_indexes_on_data_read = 0` ;
 * `compile_expressions = 0` ;

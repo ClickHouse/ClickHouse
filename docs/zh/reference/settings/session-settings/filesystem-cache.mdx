@@ -114,6 +114,16 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 如果会超过查询缓存大小，则跳过从远程文件系统下载
 
+<div id="filesystem_cache_verbose_logging">
+  ## filesystem_cache_verbose_logging
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置，用于控制文件系统缓存读取缓冲区每次重新填充时的 TEST 级别日志消息；此前，只要日志级别允许，就会无条件发出这些消息。"}]}]} />
+
+每次重新填充文件系统缓存缓冲区时，发出 `TEST` 级别的日志消息 (读取状态、剩余待读取大小、已读取字节数) 。仅用于调试：每次读取时都会格式化这些消息，因此，对执行大量小规模缓存读取的查询启用此设置会显著增加日志开销。无论如何，这些消息仅在日志级别为 `test` 时可见 (请参阅 `send_logs_level`) 。
+
 <div id="filesystem_cache_wait_for_concurrent_download_timeout_milliseconds">
   ## filesystem_cache_wait_for_concurrent_download_timeout_milliseconds
 </div>

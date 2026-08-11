@@ -748,13 +748,13 @@ ClickHouse Keeper의 평균 요청 지연 시간.
   ### KeeperCommitLogsCacheEntries
 </div>
 
-다음에 커밋될 로그에 대해 인메모리 캐시에 저장된 항목 수
+changelog 사전 읽기 reader가 커밋 스레드보다 앞서 현재 buffer에 보관 중인 디코딩된 로그 항목 수
 
 <div id="keepercommitlogscachesize">
   ### KeeperCommitLogsCacheSize
 </div>
 
-다음에 커밋될 로그를 저장하는 인메모리 캐시의 전체 크기
+changelog 사전 읽기 reader가 커밋 스레드에 앞서 버퍼링한 디코딩된 로그 항목의 전체 크기
 
 <div id="keeperephemeralscount">
   ### KeeperEphemeralsCount

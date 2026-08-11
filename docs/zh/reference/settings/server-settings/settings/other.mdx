@@ -556,10 +556,14 @@ HSTS 的过期时间，单位为秒。
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
-如果为 true，ClickHouse 不会在 `CREATE VIEW` 查询中为留空的 SQL security 语句写入默认值。
+如果为 true，未指定 `DEFINER` 或 `SQL SECURITY` 的 `CREATE VIEW` 或 `CREATE MATERIALIZED VIEW` 查询将按原样存储，视图的 SQL security 类型为空。仅指定 `DEFINER` 视为指定 `SQL SECURITY DEFINER`，因此此类查询不受此设置影响。SQL security 类型为空的普通视图将以调用者的权限运行。对于显式指定目标表的 materialized view，将跳过对目标表的访问检查：向源表 insert 时无需拥有目标表的 `INSERT` privilege，从该视图读取时也无需拥有其 `SELECT` privilege。
+
+如果为 false，则在创建时会将 [`default_normal_view_sql_security`](/zh/reference/settings/session-settings#default_normal_view_sql_security)、[`default_materialized_view_sql_security`](/zh/reference/settings/session-settings#default_materialized_view_sql_security) 和 [`default_view_definer`](/zh/reference/settings/session-settings#default_view_definer) 设置的默认值写入视图定义。使用这些设置的默认值时，未指定任何子句创建的 materialized view 会将创建该视图的用户记录为 definer，并以该用户的权限运行。
+
+可刷新materialized view 始终采用默认值，不受此设置影响。
 
 <Note>
-  此设置仅在迁移期间才需要，并将在 24.4 中弃用
+  更改此设置仅影响之后创建的视图；现有视图已存储的定义保持不变。
 </Note>
 
 <div id="include_from">

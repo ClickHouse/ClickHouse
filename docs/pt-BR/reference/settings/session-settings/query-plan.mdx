@@ -407,6 +407,16 @@ Otimiza a leitura com FINAL no ReplacingMergeTree criando um conjunto de chaves 
 
 Usar o plano de consulta na otimização de materialização lazy.
 
+<div id="query_plan_optimize_lazy_materialization_for_object_storage">
+  ## query_plan_optimize_lazy_materialization_for_object_storage
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração para usar a materialização lazy em consultas `ORDER BY ... LIMIT n` que leem arquivos Parquet do armazenamento de objetos (incluindo tabelas Iceberg)."}]}]} />
+
+Use a otimização de materialização lazy para ler arquivos Parquet do armazenamento de objetos (incluindo tabelas Iceberg): em consultas `ORDER BY ... LIMIT n`, as colunas desnecessárias para ordenação e filtragem são lidas apenas para as `n` linhas que permanecem após o `LIMIT`. Só tem efeito se `query_plan_optimize_lazy_materialization` estiver habilitada.
+
 <div id="query_plan_optimize_prewhere">
   ## query_plan_optimize_prewhere
 </div>

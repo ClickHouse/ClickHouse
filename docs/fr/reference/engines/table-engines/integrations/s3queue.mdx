@@ -388,13 +388,15 @@ Pour le mode &#39;Ordered&#39;. Disponible à partir de la version `24.6`. S&#39
   ### `use_persistent_processing_nodes`
 </div>
 
-Par défaut, la table S3Queue a toujours utilisé des nœuds de traitement éphémères, ce qui pouvait entraîner des doublons dans les données si la session ZooKeeper expirait après le début du traitement, mais avant que S3Queue n’enregistre les fichiers traités dans ZooKeeper. Ce paramètre oblige le serveur à éliminer tout risque de doublons en cas d’expiration de la session Keeper.
+Les nœuds de traitement persistants éliminent le risque de doublons lorsqu&#39;une session Keeper expire une fois le traitement commencé, mais avant que S3Queue ne valide le fichier traité. Les versions antérieures utilisaient des nœuds de traitement éphémères, susceptibles de produire des doublons dans ce cas.
+
+Ce paramètre est obsolète et sa valeur est ignorée : les nœuds de traitement persistants sont toujours utilisés. Une table créée avec `use_persistent_processing_nodes = 0` les utilise malgré tout, et l&#39;introspection des paramètres, y compris `SHOW CREATE TABLE`, indique `1` quelle que soit la valeur fournie.
 
 <div id="persistent_processing_node_ttl_seconds">
   ### `persistent_processing_node_ttl_seconds`
 </div>
 
-En cas d’arrêt brutal du serveur, si `use_persistent_processing_nodes` est activé, il est possible que certains nœuds de traitement n’aient pas été supprimés. Ce paramètre définit la durée pendant laquelle ces nœuds de traitement peuvent être supprimés en toute sécurité. Le même TTL est également utilisé pour le verrou du bucket en mode `Ordered`, qui peut être conservé plus longtemps qu’un seul nœud de traitement ; la valeur doit donc aussi en tenir compte.
+En cas d’arrêt brutal du serveur, il est possible que certains nœuds de traitement n’aient pas été supprimés. Ce paramètre définit la durée pendant laquelle ces nœuds de traitement peuvent être supprimés en toute sécurité. Le même TTL est également utilisé pour le verrou du bucket en mode `Ordered`, qui peut être conservé plus longtemps qu’un seul nœud de traitement ; la valeur doit donc aussi en tenir compte.
 
 Valeur par défaut : `21600` (6 heures).
 
@@ -513,7 +515,7 @@ Les constructions avec `{}` sont similaires à la fonction de table [remote](/fr
 
 * une exception se produit pendant l&#39;analyse, au milieu du traitement du fichier, et les tentatives sont activées via `s3queue_loading_retries` ;
 
-* `S3Queue` est configuré sur plusieurs serveurs pointant vers le même chemin dans ZooKeeper, et la session Keeper expire avant qu&#39;un serveur ait pu valider le fichier traité, ce qui peut conduire un autre serveur à reprendre le traitement du fichier, alors que celui-ci a déjà pu être partiellement ou entièrement traité par le premier serveur ; toutefois, ce n&#39;est plus le cas depuis la version 25.8 si `use_persistent_processing_nodes = 1`.
+* `S3Queue` est configuré sur plusieurs serveurs pointant vers le même chemin dans ZooKeeper, et la session Keeper expire avant qu&#39;un serveur ait pu valider le fichier traité, ce qui peut conduire un autre serveur à reprendre le traitement du fichier, alors que celui-ci a déjà pu être partiellement ou entièrement traité par le premier serveur ; toutefois, cela est empêché par les nœuds de traitement persistants, disponibles depuis la version 25.8 et désormais toujours utilisés (voir [`use_persistent_processing_nodes`](#use_persistent_processing_nodes)).
 
 * arrêt anormal du serveur.
 

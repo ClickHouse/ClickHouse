@@ -558,10 +558,14 @@ HSTS の有効期間 (秒) 。
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
-true の場合、ClickHouse は `CREATE VIEW` クエリ内で SQL SECURITY ステートメントが空のときに、デフォルト値を書き込みません。
+true の場合、`DEFINER` と `SQL SECURITY` のいずれも指定しない `CREATE VIEW` または `CREATE MATERIALIZED VIEW` クエリは、記述されたとおりに保存され、ビューの SQL security type は空になります。`DEFINER` のみを指定した場合は `SQL SECURITY DEFINER` と見なされるため、このようなクエリはこの設定の影響を受けません。SQL security type が空の normal view は、呼び出し元の権限で実行されます。ターゲットテーブルを明示的に指定した materialized view では、ターゲットテーブルに対するアクセスチェックはスキップされます。ソーステーブルへの insert にターゲットテーブルに対する `INSERT` privilege は必要なく、ビューからの読み取りにもターゲットテーブルに対する `SELECT` privilege は必要ありません。
+
+false の場合、作成時に [`default_normal_view_sql_security`](/ja/reference/settings/session-settings#default_normal_view_sql_security)、[`default_materialized_view_sql_security`](/ja/reference/settings/session-settings#default_materialized_view_sql_security)、[`default_view_definer`](/ja/reference/settings/session-settings#default_view_definer) 設定のデフォルト値が view definition に書き込まれます。これらの設定のデフォルト値では、いずれの clause も指定せずに作成された materialized view は、作成ユーザーを definer として記録し、そのユーザーの権限で実行されます。
+
+リフレッシャブルmaterialized view には、この設定にかかわらず常にデフォルト値が適用されます。
 
 <Note>
-  この設定が必要なのは移行期間中のみであり、24.4 で廃止されます
+  この設定を変更しても、その後に作成されるビューにのみ影響し、既存のビューの保存済み定義は変更されません。
 </Note>
 
 <div id="include_from">

@@ -1168,7 +1168,9 @@ Você pode verificar se o `ALTER` foi concluído sem gerar uma mutação consult
 SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 ```
 
-Com o Lazy Type Hints ativado, esta consulta não retorna nenhuma linha, confirmando que a operação afetou apenas os metadados.
+Com o Lazy Type Hints ativado, esta consulta não retorna nenhuma linha, confirmando que a operação foi somente de metadados.
+
+Isso se aplica às alterações de type hints descritas acima; consulte [Limitações](#lazy-type-hints-limitations) para os casos que são rejeitados.
 
 <div id="materializing-type-hints">
   ### Materializando type hints
@@ -1187,6 +1189,14 @@ Para materializar type hints em dados existentes, você pode:
 * Este recurso é experimental e pode mudar em versões futuras
 * A conversão de tipos no momento da consulta pode ter um impacto significativo no desempenho em comparação com tipos pré-materializados, especialmente para objetos JSON grandes
 * O recurso se aplica apenas à modificação de `typed_paths` (type hints); outros parâmetros de JSON, como `max_dynamic_paths`, `SKIP` ou `SKIP REGEXP`, ainda exigem mutações
+
+- Modificar uma type hint (ou remover um caminho tipado) **não** é uma operação somente de metadados e é rejeitado quando a subcoluna afetada é usada em uma estrutura persistida por posição:
+
+  * na **chave primária/de ordenação** ou **chave de partição** — a alteração é proibida, pois os valores do índice primário/da partição em disco não podem ser reconstruídos por um `ALTER` somente de metadados (como ocorre com qualquer outra coluna-chave);
+  * em um **skip index de dados** explícito — primeiro remova o índice ou desative `allow_experimental_json_lazy_type_hints` para executar a alteração como uma mutação completa que reconstrói o índice.
+  * em uma **projeção cuja chave de ordenação (`ORDER BY`) lê a subcoluna** — primeiro remova a projeção, pois um `ALTER` somente de metadados não pode reconstruir o índice primário da projeção.
+
+  Adicionar hints a caminhos não usados em nenhuma dessas estruturas, ou fazer alterações que não modifiquem o tipo em disco das subcolunas usadas (por exemplo, adicionar um caminho tipado não relacionado), continua sendo uma operação somente de metadados.
 
 <div id="comparison-between-values-of-the-json-type">
   ## Comparação entre valores do tipo JSON

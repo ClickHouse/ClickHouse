@@ -114,6 +114,16 @@ ClickHouse Cloud でのみ有効です。ファイルシステムキャッシュ
 
 クエリキャッシュのサイズ制限を超える場合、リモートファイルシステムからのダウンロードをスキップします
 
+<div id="filesystem_cache_verbose_logging">
+  ## filesystem_cache_verbose_logging
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "ログレベルが許可していれば以前は無条件に出力されていた、ファイルシステムキャッシュの読み取りバッファの再充填ごとのTESTレベルのログメッセージを制御する新しい設定。"}]}]} />
+
+ファイルシステムキャッシュのバッファ再充填ごとに、`TEST` レベルのログメッセージ (読み取りの状態、残りの読み取りサイズ、読み取ったバイト数) を出力します。デバッグ専用です。メッセージは読み取りごとに一度整形されるため、多数の小さなキャッシュ済み読み取りを行うクエリで有効にすると、大きなロギングオーバーヘッドが発生します。メッセージが表示されるのは、いずれにしてもログレベルが `test` の場合のみです (`send_logs_level` を参照) 。
+
 <div id="filesystem_cache_wait_for_concurrent_download_timeout_milliseconds">
   ## filesystem_cache_wait_for_concurrent_download_timeout_milliseconds
 </div>

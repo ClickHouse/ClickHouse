@@ -929,7 +929,6 @@ Cria o plano de consulta distribuída.
 Ao ativá-la, as configurações que controlam recursos ainda não compatíveis com planos de consulta distribuída são ajustadas automaticamente:
 
 * `enable_parallel_replicas = 0` e `automatic_parallel_replicas_mode = 0` — o plano distribuído faz sua própria distribuição de trabalho;
-* `rewrite_in_to_join = 1` — reescreve `IN (subquery)` como um `JOIN` para que possa ser distribuído (somente quando `allow_experimental_correlated_subqueries` está habilitada);
 * `correlated_subqueries_use_in_memory_buffer = 0`;
 * `use_skip_indexes_on_data_read = 0`;
 * `compile_expressions = 0`;

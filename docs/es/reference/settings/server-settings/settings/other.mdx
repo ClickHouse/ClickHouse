@@ -556,10 +556,14 @@ Tiempo de caducidad de HSTS en segundos.
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
-Si es true, ClickHouse no escribe los valores predeterminados para una sentencia SQL SECURITY vacía en las consultas `CREATE VIEW`.
+Si es true, una consulta `CREATE VIEW` o `CREATE MATERIALIZED VIEW` que no especifica ni `DEFINER` ni `SQL SECURITY` se almacena tal como se escribió y la vista recibe un tipo de seguridad SQL vacío. Especificar únicamente `DEFINER` equivale a `SQL SECURITY DEFINER`, por lo que dicha consulta no se ve afectada por esta configuración. Una vista normal con un tipo de seguridad SQL vacío se ejecuta con los permisos del invocador. En el caso de una vista materializada con una tabla de destino especificada explícitamente, se omiten las comprobaciones de acceso a la tabla de destino: insertar en la tabla de origen no requiere el privilegio `INSERT` sobre la tabla de destino, y leer de la vista no requiere el privilegio `SELECT` sobre ella.
+
+Si es false, los valores predeterminados de las configuraciones [`default_normal_view_sql_security`](/es/reference/settings/session-settings#default_normal_view_sql_security), [`default_materialized_view_sql_security`](/es/reference/settings/session-settings#default_materialized_view_sql_security) y [`default_view_definer`](/es/reference/settings/session-settings#default_view_definer) se escriben en la definición de la vista al crearla. Con los valores predeterminados de esas configuraciones, una vista materializada creada sin ninguna de las cláusulas registra como definidor al usuario que la crea y se ejecuta con los permisos de dicho usuario.
+
+Las vistas materializadas actualizables siempre reciben los valores predeterminados, independientemente de esta configuración.
 
 <Note>
-  Esta configuración solo es necesaria durante el período de migración y quedará obsoleta en la versión 24.4
+  Cambiar esta configuración solo afecta a las vistas creadas posteriormente; las definiciones almacenadas de las vistas existentes no cambian.
 </Note>
 
 <div id="include_from">

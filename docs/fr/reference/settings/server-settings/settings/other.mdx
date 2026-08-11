@@ -554,12 +554,16 @@ Durée d&#39;expiration de HSTS, en secondes.
   ## ignore_empty_sql_security_in_create_view_query
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Non" />
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
-Si la valeur est true, ClickHouse n’écrit pas les valeurs par défaut lorsqu’une instruction SQL security est vide dans les requêtes `CREATE VIEW`.
+Si la valeur est true, une requête `CREATE VIEW` ou `CREATE MATERIALIZED VIEW` qui ne spécifie ni `DEFINER` ni `SQL SECURITY` est stockée telle quelle, et la vue reçoit un type de sécurité SQL vide. Spécifier uniquement `DEFINER` équivaut à `SQL SECURITY DEFINER` ; une telle requête n&#39;est donc pas affectée par ce paramètre. Une vue ordinaire avec un type de sécurité SQL vide s&#39;exécute avec les permissions de l&#39;appelant. Pour une vue matérialisée avec une table cible explicitement spécifiée, les contrôles d&#39;accès à la table cible sont ignorés : l&#39;insertion dans la table source ne nécessite pas le privilège `INSERT` sur la table cible, et la lecture de la vue ne nécessite pas le privilège `SELECT` sur celle-ci.
+
+Si la valeur est false, les valeurs par défaut des paramètres [`default_normal_view_sql_security`](/fr/reference/settings/session-settings#default_normal_view_sql_security), [`default_materialized_view_sql_security`](/fr/reference/settings/session-settings#default_materialized_view_sql_security) et [`default_view_definer`](/fr/reference/settings/session-settings#default_view_definer) sont écrites dans la définition de la vue lors de sa création. Avec les valeurs par défaut de ces paramètres, une vue matérialisée créée sans aucune de ces clauses enregistre l&#39;utilisateur qui l&#39;a créée comme définisseur et s&#39;exécute avec les permissions de cet utilisateur.
+
+Les vues matérialisées actualisables reçoivent toujours les valeurs par défaut, indépendamment de ce paramètre.
 
 <Note>
-  Ce paramètre n’est nécessaire que durant la période de migration et deviendra obsolète à partir de la version 24.4
+  La modification de ce paramètre n&#39;affecte que les vues créées ultérieurement ; les définitions stockées des vues existantes restent inchangées.
 </Note>
 
 <div id="include_from">

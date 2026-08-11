@@ -266,6 +266,8 @@ demande un vecteur de la taille indiquée ; sinon, la taille native du modèle 
 aiEmbed(text, model[, params])
 ```
 
+**Alias** : `AIEmbed`
+
 **Arguments**
 
 * `text` — Texte à encoder. [`String`](/fr/reference/data-types/string)
@@ -407,6 +409,64 @@ SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials'
 
 ```sql title=Query
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
+```
+
+<div id="aiSimilarity">
+  ## aiSimilarity
+</div>
+
+Introduite dans : v26.8.0
+
+Calcule la similarité sémantique entre deux textes à l’aide du fournisseur d’embeddings configuré.
+
+Calcule l’embedding des deux textes et renvoie la similarité cosinus entre les deux vecteurs
+dans la plage `[-1, 1]` : `1` signifie que les textes sont sémantiquement identiques, `0` qu’ils ne sont pas liés,
+et des valeurs négatives qu’ils sont opposés. Il s’agit du complément de `cosineDistance` pour les
+mêmes embeddings (`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
+
+Le batching, les identifiants et le paramètre `dimensions` sont identiques à ceux d’`aiEmbed`, y compris le
+paramètre d’identifiant par défaut `ai_function_embedding_default_credentials`.
+
+Comme pour `aiEmbed`, `model` est un argument positionnel obligatoire (un `String` constant) et n’est pas lu depuis la
+collection nommée ni la map de paramètres.
+
+**Syntaxe**
+
+```sql
+aiSimilarity(text1, text2, model[, params])
+```
+
+**Alias** : `AISimilarity`
+
+**Arguments**
+
+* `text1` — Premier texte. [`String`](/fr/reference/data-types/string)
+* `text2` — Deuxième texte. [`String`](/fr/reference/data-types/string)
+* `model` — Nom du modèle d’embedding. [`const String`](/fr/reference/data-types/string)
+* `params` — `Map(String, String)` constant facultatif de paramètres. Clé propre à la fonction : `dimensions` (dimension cible des embeddings ; `0` ou l’absence de valeur utilise la taille native du modèle). Le paramètre commun `credentials` s’applique également (voir [Fonctions d’IA](/fr/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/fr/reference/data-types/map)
+
+**Valeur renvoyée**
+
+La similarité cosinus dans `[-1, 1]`, ou NULL si l’un des textes est NULL ou vide, si une requête d’embedding a échoué alors que `ai_function_throw_on_error` est désactivé, ou si un quota a été dépassé alors que `ai_function_throw_on_quota_exceeded` est désactivé. [`Nullable(Float32)`](/fr/reference/data-types/nullable)
+
+**Exemples**
+
+**Comparer deux chaînes (`credentials` peut être omis si le paramètre `ai_function_embedding_default_credentials` est défini)**
+
+```sql title=Query
+SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
+```
+
+**Classer les avis selon leur similarité avec une requête**
+
+```sql title=Query
+SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
+```
+
+**Déduplication sémantique via une auto-jointure**
+
+```sql title=Query
+SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
 <div id="aiTranslate">

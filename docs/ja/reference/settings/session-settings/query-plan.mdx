@@ -407,6 +407,16 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 
 遅延マテリアライゼーションの最適化でクエリプランを使用します。
 
+<div id="query_plan_optimize_lazy_materialization_for_object_storage">
+  ## query_plan_optimize_lazy_materialization_for_object_storage
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "オブジェクトストレージから Parquet ファイル（Iceberg テーブルを含む）を読み取る `ORDER BY ... LIMIT n` クエリで遅延マテリアライゼーションを使用するための新しい設定。"}]}]} />
+
+オブジェクトストレージから Parquet ファイル (Iceberg テーブルを含む) を読み取る際に、遅延マテリアライゼーションの最適化を使用します。`ORDER BY ... LIMIT n` クエリでは、ソートやフィルタリングに不要なカラムは、`LIMIT` の結果として残った `n` 行についてのみ読み取られます。`query_plan_optimize_lazy_materialization` が有効な場合にのみ有効です。
+
 <div id="query_plan_optimize_prewhere">
   ## query_plan_optimize_prewhere
 </div>

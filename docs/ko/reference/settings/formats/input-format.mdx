@@ -218,7 +218,9 @@ CSV에서 배열을 읽을 때는 해당 원소가 중첩 CSV로 직렬화된 �
 
 true로 설정하면 CSV 형식으로 기록된 개별 컬럼을 Tuple 컬럼으로 역직렬화할 수 있습니다.
 
-이는 순수 `Tuple`에만 적용됩니다. `Nullable(Tuple)`은 항상 단일 CSV 필드로 기록되며([output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns](/ko/reference/settings/formats/output-format#output_format_csv_serialize_tuple_into_separate_columns) 참조), 마찬가지로 단일 필드에서만 다시 읽어 오며, 이 설정과 관계없이 개별 컬럼에서는 읽지 않습니다. `Nullable(Tuple)`에서는 선행 `\N` 필드가 모호할 수 있으므로 개별 컬럼 파싱이 지원되지 않습니다(튜플 자체의 바깥쪽 NULL일 수도 있고 첫 번째 요소의 NULL일 수도 있습니다).
+이는 순수 `Tuple`에만 적용됩니다. `Nullable(Tuple)`은 항상 단일 CSV 필드로 기록되며([output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns](/ko/reference/settings/formats/output-format#output_format_csv_serialize_tuple_into_separate_columns) 참조), 마찬가지로 단일 필드에서만 다시 읽어 오며, 이 설정과 관계없이 개별 컬럼에서는 읽지 않습니다. `Nullable(Tuple)`에서는 선행 `\N` 필드가 모호할 수 있으므로 개별 컬럼 파싱이 지원되지 않습니다(튜플 자체의 바깥쪽 NULL일 수도 있고 첫 번째 원소의 NULL일 수도 있습니다).
+
+순수 `Tuple`은 각 원소마다 하나의 필드를 차지하므로, 직접적인 최상위 원소의 필드에 있는 `\N`은 전체 컬럼이 아니라 해당 원소를 의미하며 [input&#95;format&#95;null&#95;as&#95;default](/ko/reference/settings/formats/input-format#input_format_null_as_default)가 해당 원소에 적용됩니다. 전체 튜플에 단일 필드를 제공하는 행은 나머지 원소가 부족하므로 컬럼 기본값을 사용하는 대신 거부됩니다. 이러한 필드를 다시 전체 컬럼으로 읽으려면 이 설정을 `0`으로 설정하십시오. 중첩된 `Tuple`의 원소 필드에 있는 `\N`은 여전히 해당 중첩 원소 전체로 읽힙니다.
 
 <div id="input_format_csv_detect_header">
   ## input_format_csv_detect_header

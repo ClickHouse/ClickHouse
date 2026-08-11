@@ -407,6 +407,16 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 使用查询计划进行惰性物化优化。
 
+<div id="query_plan_optimize_lazy_materialization_for_object_storage">
+  ## query_plan_optimize_lazy_materialization_for_object_storage
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "新增设置：对从对象存储（包括 Iceberg 表）读取 Parquet 文件的 `ORDER BY ... LIMIT n` 查询使用惰性物化。"}]}]} />
+
+对从对象存储 (包括 Iceberg 表) 读取 Parquet 文件时使用惰性物化优化：对于 `ORDER BY ... LIMIT n` 查询，仅对经 `LIMIT` 保留的 `n` 行读取排序和筛选不需要的列。仅当启用 `query_plan_optimize_lazy_materialization` 时生效。
+
 <div id="query_plan_optimize_prewhere">
   ## query_plan_optimize_prewhere
 </div>

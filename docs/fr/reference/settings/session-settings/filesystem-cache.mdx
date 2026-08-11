@@ -114,6 +114,16 @@ Limite de taille d’un lot unique de segments de fichier qu’un tampon de lect
 
 Ne pas télécharger depuis le système de fichiers distant si la taille du cache de requête est dépassée
 
+<div id="filesystem_cache_verbose_logging">
+  ## filesystem_cache_verbose_logging
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nouveau paramètre qui contrôle les messages de journal de niveau TEST émis pour chaque remplissage du tampon de lecture du cache du système de fichiers, auparavant émis sans condition dès que le niveau de journalisation le permettait."}]}]} />
+
+Émet des messages de journal de niveau `TEST` pour chaque remplissage du tampon du cache du système de fichiers (état de la lecture, taille restante à lire, octets lus). À utiliser uniquement à des fins de débogage : les messages sont formatés une fois par lecture. L’activer pour une requête effectuant de nombreuses petites lectures mises en cache entraîne donc une surcharge de journalisation importante. Les messages ne sont de toute façon visibles que lorsque le niveau de journalisation est `test` (voir `send_logs_level`).
+
 <div id="filesystem_cache_wait_for_concurrent_download_timeout_milliseconds">
   ## filesystem_cache_wait_for_concurrent_download_timeout_milliseconds
 </div>

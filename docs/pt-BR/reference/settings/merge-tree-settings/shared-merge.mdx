@@ -277,7 +277,12 @@ as novas tentativas de insert. Disponível apenas no ClickHouse Cloud
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "sainte_lague"},{"label": "Ativa a distribuição Sainte-Lague por padrão."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "water_filling"},{"label": "Nova configuração que controla qual algoritmo é usado pelo coordenador de merge para distribuir merges entre réplicas"}]}]} />
 
-Qual algoritmo será usado pela thread do coordenador de merge para distribuir merges entre réplicas
+O algoritmo usado pela thread do coordenador de merge para distribuir merges entre réplicas.
+
+Valores possíveis:
+
+* `water_filling`
+* `sainte_lague`
 
 <div id="shared_merge_tree_merge_coordinator_election_check_period_ms">
   ## shared_merge_tree_merge_coordinator_election_check_period_ms

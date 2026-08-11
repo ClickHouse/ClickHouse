@@ -556,10 +556,14 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
-إذا كانت القيمة true، فلن يكتب ClickHouse القيم الافتراضية لعبارة SQL security إذا كانت فارغة في استعلامات `CREATE VIEW`.
+إذا كانت القيمة true، يُخزَّن استعلام `CREATE VIEW` أو `CREATE MATERIALIZED VIEW` الذي لا يحدد `DEFINER` ولا `SQL SECURITY` كما كُتب، ويُعيَّن للعرض نوع أمان SQL فارغ. ويُعد تحديد `DEFINER` وحده بمثابة `SQL SECURITY DEFINER`، لذا لا يتأثر هذا الاستعلام بهذا الإعداد. يُنفَّذ العرض العادي ذي نوع أمان SQL الفارغ باستخدام أذونات المستدعي. أما العرض المادي الذي يحدد جدولًا هدفًا صراحةً، فتُتجاوز عمليات التحقق من الوصول إلى الجدول الهدف: إذ لا يتطلب إدراج البيانات في الجدول المصدر امتياز `INSERT` على الجدول الهدف، كما لا تتطلب القراءة من العرض امتياز `SELECT` عليه.
+
+إذا كانت القيمة false، تُكتب القيم الافتراضية لإعدادات [`default_normal_view_sql_security`](/ar/reference/settings/session-settings#default_normal_view_sql_security) و[`default_materialized_view_sql_security`](/ar/reference/settings/session-settings#default_materialized_view_sql_security) و[`default_view_definer`](/ar/reference/settings/session-settings#default_view_definer) في تعريف العرض عند إنشائه. ومع القيم الافتراضية لهذه الإعدادات، يسجل العرض المادي المنشأ من دون أي من العبارتين المستخدم الذي أنشأه بوصفه معرِّفه، ويُنفَّذ باستخدام أذونات ذلك المستخدم.
+
+تتلقى العروض المادية القابلة للتحديث القيم الافتراضية دائمًا، بغض النظر عن هذا الإعداد.
 
 <Note>
-  لا يلزم هذا الإعداد إلا خلال فترة الترحيل، وسيصبح متقادماً في الإصدار 24.4
+  لا يؤثر تغيير هذا الإعداد إلا في العروض التي تُنشأ لاحقًا؛ أما التعريفات المخزنة للعروض الحالية فتبقى دون تغيير.
 </Note>
 
 <div id="include_from">

@@ -240,7 +240,7 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 
 Добавленный в: v26.6.0
 
-Генерирует эмбеддинг-вектор для заданного текста с использованием настроенного ИИ-провайдера.
+Генерирует эмбеддинг-вектор для заданного текста с использованием настроенного AI-провайдера.
 
 Функция отправляет текст в настроенную конечную точку эмбеддингов и возвращает полученный вектор как `Array(Float32)`.
 В пределах одного блока строк входные данные группируются в батчи до
@@ -265,6 +265,8 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 ```sql
 aiEmbed(text, model[, params])
 ```
+
+**Псевдонимы**: `AIEmbed`
 
 **Аргументы**
 
@@ -407,6 +409,64 @@ SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials'
 
 ```sql title=Query
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
+```
+
+<div id="aiSimilarity">
+  ## aiSimilarity
+</div>
+
+Добавлено в: v26.8.0
+
+Вычисляет семантическое сходство двух текстов с помощью настроенного провайдера эмбеддингов.
+
+Вычисляет эмбеддинги обоих текстов и возвращает косинусное сходство двух векторов
+в диапазоне `[-1, 1]`: `1` означает, что тексты семантически идентичны, `0` — что они не связаны,
+а отрицательные значения указывают на противоположность. Это дополнение `cosineDistance` для
+тех же эмбеддингов (`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
+
+Батчинг, учетные данные и параметр `dimensions` соответствуют `aiEmbed`, включая настройку
+учетных данных по умолчанию `ai_function_embedding_default_credentials`.
+
+Как и в `aiEmbed`, `model` — обязательный позиционный аргумент (константный `String`), который не считывается из
+именованной коллекции или карты параметров.
+
+**Синтаксис**
+
+```sql
+aiSimilarity(text1, text2, model[, params])
+```
+
+**Псевдонимы**: `AISimilarity`
+
+**Аргументы**
+
+* `text1` — Первый текст. [`String`](/ru/reference/data-types/string)
+* `text2` — Второй текст. [`String`](/ru/reference/data-types/string)
+* `model` — Имя модели эмбеддингов. [`const String`](/ru/reference/data-types/string)
+* `params` — Необязательный константный `Map(String, String)` параметров. Ключ, специфичный для этой функции: `dimensions` (целевая размерность эмбеддингов; `0` или отсутствие значения означает собственную размерность модели). Также применяется общий параметр `credentials` (см. [функции ИИ](/ru/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ru/reference/data-types/map)
+
+**Возвращаемое значение**
+
+Косинусное сходство в диапазоне `[-1, 1]` или NULL, если один из текстов имеет значение NULL или пуст, запрос на создание эмбеддинга завершился ошибкой при отключённом `ai_function_throw_on_error` либо квота была превышена при отключённом `ai_function_throw_on_quota_exceeded`. [`Nullable(Float32)`](/ru/reference/data-types/nullable)
+
+**Примеры**
+
+**Сравнение двух строк (`credentials` можно не указывать, если задана настройка `ai_function_embedding_default_credentials`)**
+
+```sql title=Query
+SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
+```
+
+**Ранжируйте отзывы по схожести с запросом**
+
+```sql title=Query
+SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
+```
+
+**Семантическая дедупликация с использованием self-join**
+
+```sql title=Query
+SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
 <div id="aiTranslate">

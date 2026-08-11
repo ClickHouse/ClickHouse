@@ -1169,6 +1169,8 @@ SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 
 启用惰性类型提示后，此查询不会返回任何行，这表明该操作仅修改了元数据。
 
+上述类型提示变更均适用此规则；对于会被拒绝的情况，请参阅[限制](#lazy-type-hints-limitations)。
+
 <div id="materializing-type-hints">
   ### 物化类型提示
 </div>
@@ -1184,8 +1186,15 @@ SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 </div>
 
 * 此功能处于 Experimental 阶段，未来版本中可能会发生变化
-* 与预先 materialized 的类型相比，查询时进行类型转换可能会带来显著的性能开销，尤其是在处理大型 JSON object 时
+* 与预先 materialized 的类型相比，查询时进行类型转换可能会带来显著的性能开销，尤其是在处理大型 JSON 对象 时
 * 该功能仅在修改 `typed_paths` (类型提示) 时适用；其他 JSON 参数 (如 `max_dynamic_paths`、`SKIP` 或 `SKIP REGEXP`) 仍然需要变更
+* 当受影响的子列用于按位置持久化的结构时，修改类型提示 (或移除已类型化路径) **并非**仅元数据操作，并且会被拒绝：
+
+  * **主键/排序键**或**分区键** — 禁止此更改，因为无法通过仅元数据的 `ALTER` 重建磁盘上的主索引/分区值 (与任何其他键列一样)；
+  * 显式的**数据跳过索引** — 请先删除该索引，或者禁用 `allow_experimental_json_lazy_type_hints`，以将此更改作为重建索引的完整变更运行。
+  * **排序键 (`ORDER BY`) 读取该子列的投影** — 请先删除该投影，因为仅元数据的 `ALTER` 无法重建投影的主索引。
+
+  对未用于任何此类结构的路径添加提示，或不会改变所用子列磁盘上类型的更改 (例如添加不相关的已类型化路径)，仍然是仅元数据操作。
 
 <div id="comparison-between-values-of-the-json-type">
   ## JSON 类型的值比较

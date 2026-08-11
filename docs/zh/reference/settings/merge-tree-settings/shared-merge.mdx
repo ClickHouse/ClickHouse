@@ -277,7 +277,12 @@ SMT 中所有损坏 parts 的最大总大小；如果超过该值，则禁止自
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "sainte_lague"},{"label": "默认启用 Sainte-Lague 分配算法。"}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "water_filling"},{"label": "新增设置，用于控制 merge coordinator 在副本之间分发合并时所使用的算法"}]}]} />
 
-merge coordinator 线程在副本之间分发合并时使用的算法
+merge coordinator 线程在副本之间分发合并时使用的算法。
+
+可能的值：
+
+* `water_filling`
+* `sainte_lague`
 
 <div id="shared_merge_tree_merge_coordinator_election_check_period_ms">
   ## shared_merge_tree_merge_coordinator_election_check_period_ms

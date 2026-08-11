@@ -407,6 +407,16 @@ Optimiza la lectura con FINAL en ReplacingMergeTree creando un conjunto de clave
 
 Usar el plan de consulta para la optimización de materialización diferida.
 
+<div id="query_plan_optimize_lazy_materialization_for_object_storage">
+  ## query_plan_optimize_lazy_materialization_for_object_storage
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nueva configuración para usar la materialización diferida en consultas `ORDER BY ... LIMIT n` que leen archivos Parquet desde el almacenamiento de objetos (incluidas las tablas Iceberg)."}]}]} />
+
+Utiliza la optimización de materialización diferida al leer archivos Parquet desde el almacenamiento de objetos (incluidas las tablas Iceberg): en las consultas `ORDER BY ... LIMIT n`, las columnas que no son necesarias para ordenar ni filtrar solo se leen para las `n` filas que permanecen tras aplicar `LIMIT`. Solo tiene efecto si `query_plan_optimize_lazy_materialization` está habilitada.
+
 <div id="query_plan_optimize_prewhere">
   ## query_plan_optimize_prewhere
 </div>

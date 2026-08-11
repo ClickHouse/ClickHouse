@@ -748,13 +748,13 @@ Latencia media de las solicitudes de ClickHouse Keeper.
   ### KeeperCommitLogsCacheEntries
 </div>
 
-Número de entradas almacenadas en la caché en memoria para los siguientes logs pendientes de ser confirmados
+Número de entradas de log decodificadas actualmente almacenadas temporalmente en el búfer antes del hilo de commit por el lector de lectura anticipada del changelog
 
 <div id="keepercommitlogscachesize">
   ### KeeperCommitLogsCacheSize
 </div>
 
-Tamaño total de la caché en memoria para los próximos logs pendientes de commit
+Tamaño total de las entradas de log decodificadas almacenadas temporalmente en el búfer, por delante del hilo de commit, por el lector de lectura anticipada del changelog
 
 <div id="keeperephemeralscount">
   ### KeeperEphemeralsCount

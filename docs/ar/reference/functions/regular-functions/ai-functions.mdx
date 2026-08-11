@@ -238,7 +238,7 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
   ## aiEmbed
 </div>
 
-استُحدث في: v26.6.0
+أُضيف في: v26.6.0
 
 ينشئ متجه تضمين للنص المُعطى باستخدام موفّر الذكاء الاصطناعي المُعَدّ.
 
@@ -266,11 +266,13 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 aiEmbed(text, model[, params])
 ```
 
+**اسم بديل**: `AIEmbed`
+
 **الوسيطات**
 
 * `text` — النص المراد تحويله إلى تضمين. [`String`](/ar/reference/data-types/string)
 * `model` — اسم نموذج التضمين. [`const String`](/ar/reference/data-types/string)
-* `params` — `Map(String, String)` ثابت اختياري للمعلمات. مفتاح خاص بهذه الدالة: `dimensions` (عدد أبعاد متجه الإخراج المطلوب؛ تعني القيمة `0` أو عدم تحديده استخدام الحجم الأصلي للنموذج). وينطبق أيضًا المعامل العام `credentials` (راجع [دوال الذكاء الاصطناعي](/ar/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ar/reference/data-types/map)
+* `params` — `Map(String, String)` ثابت اختياري للمعلمات. مفتاح خاص بهذه الدالة: `dimensions` (عدد أبعاد متجه الإخراج المطلوب؛ تعني القيمة `0` أو عدم تحديده استخدام الحجم الأصلي للنموذج). وينطبق أيضًا المعلمة العامة `credentials` (راجع [دوال الذكاء الاصطناعي](/ar/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ar/reference/data-types/map)
 
 **القيمة المُعادة**
 
@@ -407,6 +409,64 @@ SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials'
 
 ```sql title=Query
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
+```
+
+<div id="aiSimilarity">
+  ## aiSimilarity
+</div>
+
+أُضيف في: v26.8.0
+
+يحسب التشابه الدلالي بين نصّين باستخدام موفّر التضمين المُهيّأ.
+
+يحسب تضمين كلٍّ من النصّين ويُرجع تشابه جيب التمام بين المتجهين
+ضمن النطاق `[-1, 1]`: تعني `1` أن النصّين متطابقان دلاليًا، وتعني `0` أنهما غير مرتبطين،
+وتعني القيم السالبة أنهما متعاكسان. وهو مكمّل `cosineDistance` للتضمينات
+نفسها (`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
+
+تتطابق عملية التجميع على دفعات وبيانات الاعتماد والمعلمة `dimensions` مع `aiEmbed`، بما في ذلك
+إعداد بيانات الاعتماد الافتراضية `ai_function_embedding_default_credentials`.
+
+كما في `aiEmbed`، يُعدّ `model` وسيطًا موضعيًا مطلوبًا (قيمة ثابتة من نوع `String`) ولا يُقرأ من
+المجموعة المُسمّاة أو خريطة المعلمات.
+
+**البنية**
+
+```sql
+aiSimilarity(text1, text2, model[, params])
+```
+
+**اسم بديل**: `AISimilarity`
+
+**الوسائط**
+
+* `text1` — النص الأول. [`String`](/ar/reference/data-types/string)
+* `text2` — النص الثاني. [`String`](/ar/reference/data-types/string)
+* `model` — اسم نموذج التضمين. [`const String`](/ar/reference/data-types/string)
+* `params` — `Map(String, String)` ثابت اختياري للمعلمات. المفتاح الخاص بالدالة هو: `dimensions` (عدد الأبعاد المستهدف للتضمينات؛ تشير القيمة `0` أو عدم تحديده إلى الحجم الأصلي للنموذج). ينطبق أيضًا المعلمة العامة `credentials` (راجع [دوال الذكاء الاصطناعي](/ar/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ar/reference/data-types/map)
+
+**القيمة المُعادة**
+
+تشابه جيب التمام ضمن `[-1, 1]`، أو NULL إذا كان أحد النصين NULL أو فارغًا، أو إذا فشل طلب تضمين وكانت `ai_function_throw_on_error` معطّلة، أو إذا تم تجاوز حصة وكانت `ai_function_throw_on_quota_exceeded` معطّلة. [`Nullable(Float32)`](/ar/reference/data-types/nullable)
+
+**أمثلة**
+
+**قارن بين سلسلتين (`credentials` يمكن حذفها إذا كان الإعداد `ai_function_embedding_default_credentials` مضبوطًا)**
+
+```sql title=Query
+SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
+```
+
+**رتّب المراجعات حسب مدى تشابهها مع استعلام**
+
+```sql title=Query
+SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
+```
+
+**إزالة التكرار الدلالي باستخدام ربط ذاتي**
+
+```sql title=Query
+SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
 <div id="aiTranslate">

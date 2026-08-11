@@ -274,7 +274,12 @@ ClickHouse Cloud でのみ利用できます
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "sainte_lague"},{"label": "デフォルトでSainte-Lague分散を有効にする。"}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "water_filling"},{"label": "マージコーディネーターがレプリカ間でマージを分散する際に使用するアルゴリズムを制御する新しい設定"}]}]} />
 
-マージコーディネータースレッドが、レプリカ間でマージを分散する際に使用するアルゴリズム
+マージコーディネータースレッドが、レプリカ間でマージを分散する際に使用するアルゴリズム。
+
+設定可能な値:
+
+* `water_filling`
+* `sainte_lague`
 
 <div id="shared_merge_tree_merge_coordinator_election_check_period_ms">
   ## shared_merge_tree_merge_coordinator_election_check_period_ms

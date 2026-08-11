@@ -407,6 +407,16 @@ primary key 집합을 구성하고 이를 인덱스 분석에 활용하여 Repla
 
 지연 머티리얼라이즈 최적화에 쿼리 계획을 사용합니다.
 
+<div id="query_plan_optimize_lazy_materialization_for_object_storage">
+  ## query_plan_optimize_lazy_materialization_for_object_storage
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "객체 스토리지에서 Parquet 파일(Iceberg 테이블 포함)을 읽는 `ORDER BY ... LIMIT n` 쿼리에 지연 머티리얼라이즈를 사용하기 위한 새로운 설정"}]}]} />
+
+객체 스토리지에서 Parquet 파일(Iceberg 테이블 포함)을 읽을 때 지연 머티리얼라이즈 최적화를 사용합니다. `ORDER BY ... LIMIT n` 쿼리에서는 정렬 및 필터링에 필요하지 않은 컬럼을 `LIMIT`를 통과한 `n`개의 행에 대해서만 읽습니다. `query_plan_optimize_lazy_materialization`이 활성화된 경우에만 적용됩니다.
+
 <div id="query_plan_optimize_prewhere">
   ## query_plan_optimize_prewhere
 </div>

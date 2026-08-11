@@ -216,9 +216,11 @@ Al leer Array desde CSV, se espera que sus elementos se hayan serializado como C
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "1"},{"label": "Se añadió una nueva forma de interpretar las tuplas en formato CSV."}]}, {"id": "row-2","items": [{"label": "24.3"},{"label": "1"},{"label": "Se añadió una nueva forma de interpretar las tuplas en formato CSV."}]}]} />
 
-Si se establece en true, las columnas independientes escritas en formato CSV pueden deserializarse en una columna Tuple.
+Si se establece en true, las columnas independientes escritas en formato CSV pueden deserializarse en una columna tupla.
 
 Esto se aplica solo a `Tuple` simple. Un `Nullable(Tuple)` siempre se escribe como un único campo CSV (consulte [output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns](/es/reference/settings/formats/output-format#output_format_csv_serialize_tuple_into_separate_columns)) y, del mismo modo, se vuelve a leer desde un único campo, nunca desde columnas independientes, independientemente de esta configuración. El análisis de columnas independientes no es compatible con `Nullable(Tuple)` porque un campo inicial `\N` es ambiguo (puede ser el NULL externo de la tupla o el NULL de su primer elemento).
+
+Como una `Tuple` simple ocupa entonces un campo por elemento, un `\N` en el campo de un elemento directo de nivel superior corresponde a ese elemento y no a toda la columna, por lo que [input&#95;format&#95;null&#95;as&#95;default](/es/reference/settings/formats/input-format#input_format_null_as_default) se aplica a ese elemento. Una fila que proporciona un único campo para toda la tupla carece de los elementos restantes y se rechaza en lugar de usar el valor predeterminado de la columna. Establezca esta configuración en `0` para volver a leer dicho campo como toda la columna. Un `\N` en el campo de un elemento de una `Tuple` anidada sigue leyéndose como todo ese elemento anidado.
 
 <div id="input_format_csv_detect_header">
   ## input_format_csv_detect_header

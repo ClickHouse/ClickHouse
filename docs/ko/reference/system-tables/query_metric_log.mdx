@@ -85,7 +85,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_PageCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — 사용자 공간 페이지 캐시에서 데이터 블록을 찾은 횟수입니다.
 * `ProfileEvent_PageCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — 사용자 공간 페이지 캐시에서 데이터 블록을 찾지 못한 횟수입니다.
 * `ProfileEvent_PageCacheWeightLost` ([UInt64](/ko/reference/data-types/int-uint)) — 사용자 공간 페이지 캐시에서 축출된 바이트 수입니다
-* `ProfileEvent_PageCacheResized` ([UInt64](/ko/reference/data-types/int-uint)) — 사용자 공간 페이지 캐시 크기가 자동으로 조정된 횟수입니다(일반적으로 초당 몇 차례 발생하며, `memory_worker_period_ms`로 제어됩니다).
+* `ProfileEvent_PageCacheResized` ([UInt64](/ko/reference/data-types/int-uint)) — 사용자 공간 페이지 캐시 크기가 자동으로 조정된 횟수입니다(일반적으로 초당 몇 차례 발생하며, `memory&#95;worker&#95;period&#95;ms`로 제어됩니다).
 * `ProfileEvent_PageCacheOvercommitResize` ([UInt64](/ko/reference/data-types/int-uint)) — 메모리 할당 중 메모리를 확보하기 위해 사용자 공간 페이지 캐시 크기가 자동으로 조정된 횟수입니다.
 * `ProfileEvent_PageCacheReadBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 사용자 공간 페이지 캐시에서 읽은 바이트 수입니다.
 * `ProfileEvent_MMappedFileCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — MMap 캐시(`mmap` read&#95;method용)에서 파일을 찾은 횟수로, 다시 mmap할 필요가 없었던 경우입니다.
@@ -1280,9 +1280,15 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_SharedMergeTreeReplicaSetUpdatesFromZooKeeperRequests` ([UInt64](/ko/reference/data-types/int-uint)) — 레플리카 세트를 업데이트하기 위해 수행한 전체 ZooKeeper 요청 수
 * `ProfileEvent_SharedMergeTreeReplicaSetUpdatesFromZooKeeperMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 레플리카 세트 업데이트에 소요된 시간
 * `ProfileEvent_KeeperLogsEntryReadFromLatestCache` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper에서 최신 로그 캐시로부터 읽은 로그 항목 수
-* `ProfileEvent_KeeperLogsEntryReadFromCommitCache` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper에서 커밋 로그 캐시로부터 읽은 로그 항목 수
 * `ProfileEvent_KeeperLogsEntryReadFromFile` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper에서 changelog 파일로부터 직접 읽은 로그 항목 수
-* `ProfileEvent_KeeperLogsPrefetchedEntries` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper에서 changelog 파일로부터 프리페치한 로그 항목 수
+* `ProfileEvent_KeeperLogsReadAheadFillReopens` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper 선행 읽기 채우기가 changelog 파일을 다시 열거나 seek한 횟수
+* `ProfileEvent_KeeperLogsReadAheadFillDecodedEntries` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper 선행 읽기 채우기 작업이 디코딩한 로그 항목 수
+* `ProfileEvent_KeeperLogsReadAheadCursorsInstalled` ([UInt64](/ko/reference/data-types/int-uint)) — 채우기 작업이 아직 처리하지 않은 Keeper changelog 선행 읽기 리더(peer 또는 commit)에 큐잉된 새 채우기 커서 수
+* `ProfileEvent_KeeperLogsReadAheadPlanEpochMismatches` ([UInt64](/ko/reference/data-types/int-uint)) — 동시 write&#95;at 절단으로 인해 제공되기 전에 무효화되어 Keeper changelog 읽기 계획이 폐기된 횟수
+* `ProfileEvent_KeeperLogsReadAheadScheduleRejected` ([UInt64](/ko/reference/data-types/int-uint)) — 선행 읽기 스레드 풀 큐가 가득 차 Keeper changelog 선행 읽기 리더를 생성할 수 없었던 횟수입니다. 호출자는 직접 읽기로 폴백합니다.
+* `ProfileEvent_KeeperLogsReadAheadReadersCreated` ([UInt64](/ko/reference/data-types/int-uint)) — 생성된 Keeper changelog 선행 읽기 리더(및 해당 채우기 작업) 수입니다. 파일 경계를 넘어서도 값이 증가하지 않으면 리더를 종료하고 다시 생성하는 대신 재사용하고 있음을 나타냅니다.
+* `ProfileEvent_KeeperLogsReadAheadTimeoutFallbacks` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper changelog 선행 읽기 제공 요청이 채우기 작업을 기다리다 timeout되어 남은 tail을 직접 읽기로 폴백한 횟수
+* `ProfileEvent_KeeperLogsEntryReadFromCommitReadAhead` ([UInt64](/ko/reference/data-types/int-uint)) — commit 선행 읽기 리더의 디코딩된 윈도우에서 commit 스레드에 제공된 로그 항목 수(빠른 경로 pop 또는 윈도우 첫 drain pop)
 * `ProfileEvent_KeeperChangelogWrittenBytes` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper의 changelog에 기록된 바이트 수
 * `ProfileEvent_KeeperChangelogFileSyncMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper changelog에 대해 fsync에 소요된 시간(미압축 로그만 해당)
 * `ProfileEvent_KeeperSnapshotWrittenBytes` ([UInt64](/ko/reference/data-types/int-uint)) — Keeper의 스냅샷 파일에 기록된 바이트 수

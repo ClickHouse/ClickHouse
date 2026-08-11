@@ -388,13 +388,15 @@ ZooKeeper 中队列元数据的路径。如果未显式指定，ClickHouse 会�
   ### `use_persistent_processing_nodes`
 </div>
 
-默认情况下，S3Queue 表始终使用临时处理节点。如果 ZooKeeper 会话在 S3Queue 将已处理文件提交到 ZooKeeper 之前过期，而它又已经开始处理这些文件，就可能导致数据重复。此设置会强制 server 在 Keeper 会话过期时消除出现重复数据的可能性。
+持久化处理节点可避免在处理已开始、但 S3Queue 尚未提交已处理文件时 Keeper 会话过期所导致的重复处理。早期版本使用临时处理中节点，在这种情况下可能会产生重复项。
+
+此设置已弃用，其值会被忽略：始终使用持久化处理节点。即使使用 `use_persistent_processing_nodes = 0` 创建表，仍会使用持久化处理节点；设置内部信息 (包括 `SHOW CREATE TABLE`) 也会始终报告 `1`，无论提供的值为何。
 
 <div id="persistent_processing_node_ttl_seconds">
   ### `persistent_processing_node_ttl_seconds`
 </div>
 
-如果服务器发生非正常终止，并且启用了 `use_persistent_processing_nodes`，则可能会遗留未被移除的处理中节点。此设置定义了一个时间段，超过该时间后，可以安全地清理这些处理中节点。同样的生存时间 (TTL) 也用于 `Ordered` 模式下的存储桶锁，而该锁的持有时间可能会长于单个处理中节点，因此设置该值时也应将这一点考虑在内。
+如果服务器发生非正常终止，则可能会遗留未被移除的处理中节点。此设置定义了一个时间段，超过该时间后，可以安全地清理这些处理中节点。同样的生存时间 (TTL) 也用于 `Ordered` 模式下的存储桶锁，而该锁的持有时间可能会长于单个处理中节点，因此设置该值时也应将这一点考虑在内。
 
 默认值：`21600` (6 小时) 。
 
@@ -513,7 +515,7 @@ CREATE MATERIALIZED VIEW consumer TO stats
 
 * 在文件处理过程中，解析在中途发生异常，且已通过 `s3queue_loading_retries` 启用重试；
 
-* `S3Queue` 配置在多个服务器上，并指向 zookeeper 中的同一路径，而某台服务器尚未来得及提交已处理文件时，keeper 会话就已过期，这可能导致另一台服务器接手处理该文件，而该文件可能已经被第一台服务器部分或全部处理；不过，如果设置了 `use_persistent_processing_nodes = 1`，则从 25.8 版本起不再存在这一问题。
+* `S3Queue` 配置在多个服务器上，并指向 zookeeper 中的同一路径，而某台服务器尚未来得及提交已处理文件时，keeper 会话就已过期，这可能导致另一台服务器接手处理该文件，而该文件可能已经被第一台服务器部分或全部处理；不过，持久化处理节点可防止这一问题，该功能自 25.8 版本起可用，现已始终启用 (参见 [`use_persistent_processing_nodes`](#use_persistent_processing_nodes)) 。
 
 * 服务器异常终止。
 

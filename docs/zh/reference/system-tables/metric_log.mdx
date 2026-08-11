@@ -1275,9 +1275,15 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_SharedMergeTreeReplicaSetUpdatesFromZooKeeperRequests` ([UInt64](/zh/reference/data-types/int-uint)) — 为更新副本集而发起的 ZooKeeper 请求总数
 * `ProfileEvent_SharedMergeTreeReplicaSetUpdatesFromZooKeeperMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 更新副本集所花费的时间
 * `ProfileEvent_KeeperLogsEntryReadFromLatestCache` ([UInt64](/zh/reference/data-types/int-uint)) — 从最新日志缓存中读取的 Keeper 日志条目数
-* `ProfileEvent_KeeperLogsEntryReadFromCommitCache` ([UInt64](/zh/reference/data-types/int-uint)) — 从提交日志缓存中读取的 Keeper 日志条目数
 * `ProfileEvent_KeeperLogsEntryReadFromFile` ([UInt64](/zh/reference/data-types/int-uint)) — 直接从更新日志文件中读取的 Keeper 日志条目数
-* `ProfileEvent_KeeperLogsPrefetchedEntries` ([UInt64](/zh/reference/data-types/int-uint)) — 从更新日志文件中预拉取的 Keeper 日志条目数
+* `ProfileEvent_KeeperLogsReadAheadFillReopens` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 预读取填充任务重新打开或对更新日志文件寻道的次数
+* `ProfileEvent_KeeperLogsReadAheadFillDecodedEntries` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 预读取填充任务解码的日志条目数
+* `ProfileEvent_KeeperLogsReadAheadCursorsInstalled` ([UInt64](/zh/reference/data-types/int-uint)) — 加入 Keeper 更新日志预读取读取器 (peer 或 commit) 队列、且填充任务尚未覆盖的新填充游标数量
+* `ProfileEvent_KeeperLogsReadAheadPlanEpochMismatches` ([UInt64](/zh/reference/data-types/int-uint)) — 因并发 write&#95;at 截断在服务前使其失效而被丢弃的 Keeper 更新日志读取计划数量
+* `ProfileEvent_KeeperLogsReadAheadScheduleRejected` ([UInt64](/zh/reference/data-types/int-uint)) — 由于预读取线程池队列已满而无法创建 Keeper 更新日志预读取读取器的次数；调用方会回退到直接读取
+* `ProfileEvent_KeeperLogsReadAheadReadersCreated` ([UInt64](/zh/reference/data-types/int-uint)) — 创建的 Keeper 更新日志预读取读取器 (及其填充任务) 数量；跨文件边界保持不变表示读取器被复用，而非销毁后重新创建
+* `ProfileEvent_KeeperLogsReadAheadTimeoutFallbacks` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 更新日志预读取服务请求等待填充任务超时后，回退为直接读取剩余尾部的次数
+* `ProfileEvent_KeeperLogsEntryReadFromCommitReadAhead` ([UInt64](/zh/reference/data-types/int-uint)) — 从 commit 预读取读取器的解码窗口提供给 commit 线程的日志条目数 (快速路径弹出或窗口首项排空弹出)
 * `ProfileEvent_KeeperChangelogWrittenBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 写入 Keeper 更新日志的字节数
 * `ProfileEvent_KeeperChangelogFileSyncMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 更新日志执行 fsync 所花费的时间 (仅限未压缩日志)
 * `ProfileEvent_KeeperSnapshotWrittenBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 写入 Keeper 快照文件的字节数
@@ -1732,6 +1738,9 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `CurrentMetric_KeeperReadThreads` ([Int64](/zh/reference/data-types/int-uint)) — Keeper server 读取线程池中的线程数。
 * `CurrentMetric_KeeperReadThreadsActive` ([Int64](/zh/reference/data-types/int-uint)) — Keeper server 读取线程池中的活跃线程数。
 * `CurrentMetric_KeeperReadThreadsScheduled` ([Int64](/zh/reference/data-types/int-uint)) — Keeper server 读取线程池中已排队或处于活跃状态的作业数。该指标没有实际意义，因为此线程池中的实际读取任务是通过另一种机制调度的。
+* `CurrentMetric_KeeperChangelogReadAheadThreads` ([Int64](/zh/reference/data-types/int-uint)) — 用于 Keeper 更新日志预读填充任务的线程池中的线程数。
+* `CurrentMetric_KeeperChangelogReadAheadThreadsActive` ([Int64](/zh/reference/data-types/int-uint)) — 用于 Keeper 更新日志预读填充任务的线程池中的活跃线程数。
+* `CurrentMetric_KeeperChangelogReadAheadThreadsScheduled` ([Int64](/zh/reference/data-types/int-uint)) — 用于 Keeper 更新日志预读填充任务的线程池中已排队或处于活跃状态的作业数。
 * `CurrentMetric_KeeperBlockCacheBytes` ([Int64](/zh/reference/data-types/int-uint)) — Keeper 存储块缓存中所有块的总大小 (以字节为单位) 。
 * `CurrentMetric_KeeperBlockCacheBlocks` ([Int64](/zh/reference/data-types/int-uint)) — Keeper 存储块缓存中的块数量。
 * `CurrentMetric_DistributedBytesToInsert` ([Int64](/zh/reference/data-types/int-uint)) — Distributed 表异步插入中待处理的字节数。会汇总每个分片的字节数。

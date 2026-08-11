@@ -919,7 +919,6 @@ Possible values:
 启用后，会自动调整控制分布式查询计划暂不支持功能的相关设置：
 
 * `enable_parallel_replicas = 0` 和 `automatic_parallel_replicas_mode = 0` — 分布式计划自行分配工作；
-* `rewrite_in_to_join = 1` — 将 `IN (subquery)` 重写为 `JOIN`，以便进行分布式执行 (仅当启用 `allow_experimental_correlated_subqueries` 时) ；
 * `correlated_subqueries_use_in_memory_buffer = 0`；
 * `use_skip_indexes_on_data_read = 0`；
 * `compile_expressions = 0`；

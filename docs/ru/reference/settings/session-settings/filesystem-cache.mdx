@@ -114,6 +114,16 @@ import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnly
 
 Пропускать загрузку из удалённой файловой системы, если превышен размер кэша запросов
 
+<div id="filesystem_cache_verbose_logging">
+  ## filesystem_cache_verbose_logging
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Новая настройка, управляющая сообщениями лога уровня TEST при каждом пополнении буфера чтения файлового кэша, которые ранее выводились безусловно, как только уровень логирования позволял их выводить."}]}]} />
+
+Выводить сообщения лога уровня `TEST` при каждом пополнении буфера файлового кэша (состояние чтения, оставшийся объём данных для чтения, количество прочитанных байтов). Только для отладки: сообщения форматируются один раз для каждого чтения, поэтому включение этой настройки для запроса, выполняющего множество небольших кэшированных чтений, создаёт значительные накладные расходы на логирование. Сообщения всё равно видны только при уровне логирования `test` (см. `send_logs_level`).
+
 <div id="filesystem_cache_wait_for_concurrent_download_timeout_milliseconds">
   ## filesystem_cache_wait_for_concurrent_download_timeout_milliseconds
 </div>
