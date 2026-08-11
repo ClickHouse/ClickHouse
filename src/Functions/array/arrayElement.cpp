@@ -2793,7 +2793,7 @@ Operator `[n]` provides the same functionality.
         {"arr", "The array to search. [`Array(T)`](/sql-reference/data-types/array)."},
         {"n", "Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Array((U)Int*)`](/sql-reference/data-types/array)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"When `n` is a scalar, returns the element of type `T`. When `n` is an array, returns `Array(T)`.", {"Any", "Array(T)"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"When `n` is a scalar, returns the element of type `T`. When `n` is an array, returns `Array(Nullable(T))` if the index elements are nullable and `T` can be wrapped in `Nullable`, otherwise `Array(T)`.", {"Any", "Array(T)", "Array(Nullable(T))"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT arrayElement(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElement(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
@@ -2812,9 +2812,10 @@ Gets the element of the provided array with index `n` where `n` can be any integ
 If the index falls outside of the bounds of an array, `NULL` is returned instead of a default value.
 
 When `n` is an array of integers, returns an array of the elements at the specified positions.
-Out-of-bounds positions produce `NULL` values in the result array.
 This is equivalent to `arrayMap(i -> arrayElementOrNull(arr, i), n)`, but has a separate, more efficient implementation.
-The index elements may be nullable, and a `NULL` index produces `NULL`, the same as for a scalar index.
+Out-of-bounds positions and `NULL` indexes produce `NULL` values in the result array when the element type can be wrapped in `Nullable`;
+for element types that cannot be inside `Nullable` (such as `Array`, `Tuple`, `Map`), they produce the default value instead.
+This is the same behavior as for a scalar index.
 
 :::note
 Arrays in ClickHouse are one-indexed.
@@ -2827,7 +2828,7 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
         {"arr", "The array to search. [`Array(T)`](/sql-reference/data-types/array)."},
         {"n", "Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Array((U)Int*)`](/sql-reference/data-types/array)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_null = {"When `n` is a scalar, returns `Nullable(T)`. When `n` is an array, returns `Array(Nullable(T))`.", {"Nullable(T)", "Array(Nullable(T))"}};
+    FunctionDocumentation::ReturnedValue returned_value_null = {"When `n` is a scalar, returns `Nullable(T)` if `T` can be wrapped in `Nullable`, otherwise `T`. When `n` is an array, returns `Array(Nullable(T))` if `T` can be wrapped in `Nullable`, otherwise `Array(T)`.", {"Nullable(T)", "Array(Nullable(T))"}};
     FunctionDocumentation::Examples examples_null = {
         {"Usage example", "SELECT arrayElementOrNull(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElementOrNull(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
