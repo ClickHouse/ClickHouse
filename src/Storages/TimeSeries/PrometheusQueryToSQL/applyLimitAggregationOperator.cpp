@@ -183,10 +183,8 @@ SQLQueryPiece applyLimitAggregationOperator(
     auto res = vector_arg;
     res.node = operator_node;
 
-    /// The vector grid becomes a named subquery because Steps 1 and 3 both read it: Step 1
-    /// aggregates it to choose which series to keep, and Step 3 joins it with the chosen series
-    /// to build the result rows.
-    context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(vector_arg.select_query), SQLSubqueryType::MATERIALIZED_TABLE});
+    /// The vector grid becomes a named subquery because Steps 1 and 3 both read it: recomputing the grid twice keeps every step of this plan streaming, never collecting all series into one row.
+    context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(vector_arg.select_query), SQLSubqueryType::TABLE});
     String vector_grid = context.subqueries.back().name;
 
     /// Step 1: choose up to k series to keep at each time step within each aggregation group.
@@ -277,9 +275,7 @@ SQLQueryPiece applyLimitAggregationOperator(
             make_intrusive<ASTIdentifier>(ColumnNames::StepsMask)));
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
-        /// If the grid is not materialized (the setting `enable_materialized_cte` is disabled), it's evaluated
-        /// here a second time, which is still correct because group ids are the same within one query,
-        /// and so are the sampling keys used by `limitk`.
+        /// Reading the grid a second time here is correct because every vector construct is deterministic within one query (per-query group ids, deterministic tie-breaking).
         builder.from_table = vector_grid;
 
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(step2_query), SQLSubqueryType::TABLE});
