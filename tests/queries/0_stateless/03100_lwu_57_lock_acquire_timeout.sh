@@ -209,6 +209,27 @@ function run()
         wait
     done
 
+    # Cancellation is polled between wait chunks, so a waiter whose max_execution_time is shorter
+    # than both the hold and lock_acquire_timeout must die of its own time limit rather than of the
+    # lock timeout. Which error ends the wait is a fact about where the query got to, so this does
+    # not read a clock; an uninterruptible wait reports the lock timeout instead.
+    start_parked_holder "$table_name" "$mode"
+
+    tag="$run_id-$mode-cancel"
+    error=$($CLICKHOUSE_CLIENT --query "
+        SET enable_lightweight_update = 1;
+        UPDATE $table_name SET v = 500 WHERE s = 'xx'
+        SETTINGS update_parallel_mode = '$mode', lock_acquire_timeout = 30,
+                 max_execution_time = 2, timeout_overflow_mode = 'throw', log_comment = '$tag';
+    " 2>&1 >/dev/null) && error=""
+
+    cancelled=0
+    if [[ "$error" == *"maximum: 2000 ms"* ]]; then cancelled=1; fi
+    echo "$mode cancelled-in-wait $cancelled"
+
+    release_holder
+    wait
+
     # An uncontended update must still be granted with lock_acquire_timeout = 0, which is the
     # current behaviour of both Keeper modes and is intentionally left unchanged.
     $CLICKHOUSE_CLIENT --query "
