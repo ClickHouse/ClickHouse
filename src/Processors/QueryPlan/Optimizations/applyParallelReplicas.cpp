@@ -90,6 +90,15 @@ static bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
     if (read.getContext()->getRefreshSet().tryGetTaskForInnerTable(mergetree_data.getStorageID()))
         return false;
 
+    /// Top-K filtering puts an internal `__topKFilter` function into the read's PREWHERE and shares a runtime
+    /// `TopKThresholdTracker` with the sorting step. The function is created on demand and is not registered
+    /// in `FunctionFactory`, so a replica deserializing the fragment fails with `Unknown function
+    /// __topKFilter`. Keeping such a read local is what `tryOptimizeTopK` does for `make_distributed_plan`,
+    /// except that the decision has to be made here: enabling plan-based parallel replicas does not by itself
+    /// mean the plan gets shipped, so suppressing Top-K up front would lose it for queries that stay local.
+    if (read.isSelectedForTopKFilterOptimization())
+        return false;
+
     /// A non-replicated table can hold different data on each replica, so reading it remotely is opt-in.
     return mergetree_data.supportsReplication()
         || read.getContext()->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];

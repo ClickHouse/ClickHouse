@@ -5,8 +5,8 @@
 -- `tryOptimizeTopK` injects an internal `__topKFilter` function that is created on demand with a runtime
 -- threshold tracker and is never registered in `FunctionFactory`. Plan-based parallel replicas serializes a
 -- fragment of the plan to the replicas, so a `__topKFilter` left in that fragment made the replica fail with
--- `Unknown function __topKFilter`. The optimization is now suppressed while the fragment can still be cut,
--- and re-applied per replica afterwards.
+-- `Unknown function __topKFilter`. A read carrying Top-K is now kept out of the fragment instead, so the
+-- query runs locally with Top-K rather than being distributed.
 --
 -- The trigger is an `ORDER BY ... LIMIT` on a column that is *not* the primary key, which is what makes
 -- dynamic filtering worthwhile in the first place.
@@ -48,5 +48,27 @@ SELECT 'where', b, a FROM t_pr_top_k WHERE a % 7 = 0 ORDER BY b, a LIMIT 5 SETTI
 -- Skip-index-on-data-read Top-K uses the same shared threshold tracker, so exercise it too.
 SELECT 'skip idx', b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5
 SETTINGS parallel_replicas_plan_based = 1, use_skip_indexes_on_data_read = 1, use_skip_indexes_for_top_k = 1;
+
+-- The shape assertions below pin every knob that decides whether Top-K applies at all: CI randomizes
+-- `use_top_k_dynamic_filtering`, `use_skip_indexes_for_top_k` and `query_plan_max_limit_for_top_k_optimization`
+-- (which can be 0 or 1, both of which disable it for this query), and without Top-K the read simply
+-- distributes as usual.
+SET use_top_k_dynamic_filtering = 1;
+SET use_skip_indexes_for_top_k = 1;
+SET query_plan_max_limit_for_top_k_optimization = 1000;
+SET parallel_replicas_plan_based = 1;
+
+-- Top-K wins over distributing this read: the `__topKFilter` cannot be serialized, so the read is kept out
+-- of the shipped fragment and the query runs locally with Top-K still applied.
+SELECT 'top_k_kept', countIf(explain LIKE '%topKFilter%') > 0 AS has_top_k
+FROM (EXPLAIN actions = 1 SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5);
+SELECT 'not_distributed', countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS has_remote_read
+FROM (EXPLAIN SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5);
+
+-- Top-K is not lost merely because the setting is on: with Top-K disabled the same read distributes as usual,
+-- so the exclusion above is scoped to reads that actually carry the filter.
+SELECT 'distributed_without_top_k', countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS has_remote_read
+FROM (EXPLAIN SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5)
+SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
 
 DROP TABLE t_pr_top_k;

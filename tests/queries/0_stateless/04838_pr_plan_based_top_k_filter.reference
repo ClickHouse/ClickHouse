@@ -43,3 +43,6 @@ skip idx	0	1000
 skip idx	0	2000
 skip idx	0	3000
 skip idx	0	4000
+top_k_kept	1
+not_distributed	0
+distributed_without_top_k	1

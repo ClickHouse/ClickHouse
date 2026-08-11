@@ -71,13 +71,6 @@ struct Optimization
         /// Neither can survive serialization to remote workers, so we suppress the
         /// optimization when the plan is going to be distributed.
         bool make_distributed_plan = false;
-
-        /// Mirrors `QueryPlanOptimizationSettings::enable_parallel_replicas`: plan-based parallel replicas
-        /// clones a fragment out of this plan and serializes it to the replicas, so anything unserializable
-        /// added here would reach them. This is the plan-based counterpart of `make_distributed_plan`, and it
-        /// only has to hold while the fragment can still be cut: the local and remote halves are re-optimized
-        /// afterwards with the flag off, so per-replica Top-K still applies there.
-        bool enable_parallel_replicas = false;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);
