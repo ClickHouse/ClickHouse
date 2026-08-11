@@ -239,13 +239,26 @@ FETCHES_SERVER_ROOT_RE = re.compile(
     r"(?i)\bvalue\b[^\"`|;]{0,100}?\bfrom\s+system\.server_settings\b"
     r"[^\"`|;]{0,100}?\bname\s*=\s*'path'"
 )
+# Wrapper commands that can precede the actual mutation verb without changing what it does,
+# their options and numeric arguments (`sudo -n rm ...`, `timeout 60 rm ...`), and leading
+# variable assignments (`FOO=1 rm ...`). All of these must be skipped over, otherwise the
+# mutation verb is not recognized and the check is trivially bypassed.
+MUTATION_CMD_WRAPPER = (
+    r"(?:sudo|command|builtin|exec|env|time|nice|ionice|nohup|stdbuf|timeout|xargs)"
+)
+MUTATION_CMD_WRAPPER_ARG = r"(?:-{1,2}[\w-]+|[0-9]+(?:\.[0-9]+)?[smhd]?)"
+MUTATION_CMD_PREFIX = (
+    r"(?:[A-Za-z_]\w*=[^\s;|&]*\s+"
+    rf"|{MUTATION_CMD_WRAPPER}\s+(?:{MUTATION_CMD_WRAPPER_ARG}\s+)*)*"
+)
 # Shell commands that create, modify, or delete files, at the start of a line or after
 # anything that can precede a command: a pipe / & / ; / subshell / group / backtick /
 # `case` branch delimiter, or a shell keyword (`if true; then rm ...; fi` compressed onto
-# one line must not slip through).
+# one line must not slip through), optionally behind benign wrappers and assignments.
 FILE_MUTATION_CMD_RE = re.compile(
     r"(?:^|[|&;(){)`]|\b(?:if|then|elif|else|do|while|until)\b)\s*"
-    r"(?:sudo\s+)?(?:rm|cp|mv|dd|truncate|ln|chmod|touch|mkdir|tar|install|shred)\s"
+    + MUTATION_CMD_PREFIX
+    + r"(?:rm|cp|mv|dd|truncate|ln|chmod|touch|mkdir|tar|install|shred)\s"
 )
 SED_IN_PLACE_RE = re.compile(r"\bsed\s+(?:-\w+\s+)*-i\b")
 # Redirection into a path built from a shell variable, except well-known test scratch areas.

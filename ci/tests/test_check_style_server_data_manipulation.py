@@ -62,6 +62,29 @@ def test_mutation_in_group_is_flagged(tmp_path):
     assert _run(tmp_path, FETCH_PART_PATH + '{ rm -f "$path/data.bin"; }\n')
 
 
+def test_mutation_behind_command_wrapper_is_flagged(tmp_path):
+    # Regression case from the review of #114070: only a bare verb (optionally after
+    # `sudo`) was recognized, so any wrapper word in front of it bypassed the check.
+    assert _run(tmp_path, FETCH_PART_PATH + 'command rm -f "$path/data.bin"\n')
+
+
+def test_mutation_behind_time_wrapper_is_flagged(tmp_path):
+    assert _run(tmp_path, FETCH_PART_PATH + 'time rm -f "$path/data.bin"\n')
+
+
+def test_mutation_behind_leading_assignment_is_flagged(tmp_path):
+    assert _run(tmp_path, FETCH_PART_PATH + 'FOO=1 rm -f "$path/data.bin"\n')
+
+
+def test_mutation_behind_wrapper_with_arguments_is_flagged(tmp_path):
+    assert _run(tmp_path, FETCH_PART_PATH + 'timeout 60 rm -f "$path/data.bin"\n')
+    assert _run(tmp_path, FETCH_PART_PATH + 'sudo -n rm -f "$path/data.bin"\n')
+
+
+def test_mutation_behind_nested_wrappers_is_flagged(tmp_path):
+    assert _run(tmp_path, FETCH_PART_PATH + 'FOO=1 env time rm -f "$path/data.bin"\n')
+
+
 def test_redirect_into_server_path_is_flagged(tmp_path):
     assert _run(tmp_path, FETCH_PART_PATH + 'echo broken > "$path/data.bin"\n')
 
