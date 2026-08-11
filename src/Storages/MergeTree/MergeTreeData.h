@@ -2161,13 +2161,9 @@ private:
     /// the "too many parts" check in its constructor, while the insert chain is being built, so a
     /// single rejected `INSERT` reaches the throw path once per sink stream. The event, however,
     /// counts rejected inserts, so the sibling sinks of one query must bump it only once.
-    void countRejectedInsert(const ContextPtr & query_context) const;
-
-    /// The query for which `countRejectedInsert` was called last. The address of the `QueryStatus`
-    /// is part of the key - it is only compared, never dereferenced - so that a retry of a query
-    /// which reuses its `query_id` is still counted.
-    mutable std::mutex last_rejected_insert_mutex;
-    mutable std::pair<String, const void *> last_rejected_insert TSA_GUARDED_BY(last_rejected_insert_mutex);
+    /// The "already counted" flag lives on the query's `QueryStatus`, so concurrent rejected
+    /// inserts into the same table are each counted independently.
+    static void countRejectedInsert(const ContextPtr & query_context);
 
     // Get partition matcher for FREEZE / UNFREEZE queries.
     MatcherFn getPartitionMatcher(const ASTPtr & partition, ContextPtr context) const;

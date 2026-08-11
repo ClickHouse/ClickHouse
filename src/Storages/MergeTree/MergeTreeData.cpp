@@ -57,6 +57,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
@@ -6994,18 +6995,12 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 }
 
 
-void MergeTreeData::countRejectedInsert(const ContextPtr & query_context) const
+void MergeTreeData::countRejectedInsert(const ContextPtr & query_context)
 {
-    std::pair<String, const void *> query{query_context->getCurrentQueryId(), query_context->getProcessListElement().get()};
-
     /// Without a process list element there is nothing to identify the query by, so count every rejection.
-    if (query.second)
-    {
-        std::lock_guard lock(last_rejected_insert_mutex);
-        if (last_rejected_insert == query)
+    if (QueryStatusPtr process_list_element = query_context->getProcessListElement())
+        if (!process_list_element->tryCountRejectedInsert())
             return;
-        last_rejected_insert = std::move(query);
-    }
 
     ProfileEvents::increment(ProfileEvents::RejectedInserts);
 }

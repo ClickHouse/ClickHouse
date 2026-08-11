@@ -30,3 +30,26 @@ $CLICKHOUSE_CLIENT --query "
     ORDER BY event_time_microseconds DESC
     LIMIT 1;
 "
+
+# Concurrent rejected inserts must each be counted once - the "already counted" state is
+# per query, so one query's rejection must not be masked or double-counted by another.
+
+for i in 1 2 3 4; do
+    $CLICKHOUSE_CLIENT --query_id "${QUERY_ID}_concurrent_$i" --async_insert 0 --max_insert_threads 16 \
+        --query "INSERT INTO t_rejected_inserts VALUES ($i)" 2>/dev/null &
+done
+wait
+
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
+
+# Grouping by `query_id` keeps the check stable if the test is rerun with the same query ids.
+$CLICKHOUSE_CLIENT --query "
+    SELECT count(), min(rejected), max(rejected)
+    FROM
+    (
+        SELECT query_id, max(ProfileEvents['RejectedInserts']) AS rejected
+        FROM system.query_log
+        WHERE current_database = currentDatabase() AND query_id LIKE '${QUERY_ID}_concurrent_%' AND type = 'ExceptionWhileProcessing'
+        GROUP BY query_id
+    );
+"

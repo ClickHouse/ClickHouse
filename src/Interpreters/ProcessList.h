@@ -142,6 +142,11 @@ protected:
     /// Including EndOfStream or Exception.
     std::atomic<bool> is_all_data_sent { false };
 
+    /// Whether this query's rejection has already been counted in the `RejectedInserts` profile
+    /// event. A rejected `INSERT` reaches the "too many parts" throw path once per parallel sink
+    /// stream, but the event counts rejected inserts, so only the first sink may bump it.
+    std::atomic<bool> rejected_insert_counted { false };
+
     /// Number of threads for the query that are waiting for load jobs
     std::atomic<UInt64> waiting_threads{0};
 
@@ -273,6 +278,9 @@ public:
     std::shared_ptr<ProcessListEntry> getProcessListEntry() const;
 
     void setAllDataSent() { is_all_data_sent = true; }
+
+    /// Returns true for exactly one caller per query. See `rejected_insert_counted`.
+    bool tryCountRejectedInsert() { return !rejected_insert_counted.exchange(true); }
 
     /// Adds a pipeline to the QueryStatus
     void addPipelineExecutor(PipelineExecutor * e);
