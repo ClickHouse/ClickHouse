@@ -2664,8 +2664,8 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     {
         try
         {
-            /// On the final attempt loadDataPart must settle the outcome itself (mark the part
-            /// broken) rather than rethrow, because there is no attempt left to absorb it.
+            /// The final attempt has nothing left to absorb a not-found, so loadDataPart's
+            /// part-reading catches settle it there instead of rethrowing into this loop.
             bool retry_not_found = try_no + 1 < max_tries;
             return loadDataPart(part_info, part_name, part_disk_ptr, to_state, part_loading_mutex, retry_not_found);
         }
