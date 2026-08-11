@@ -2369,17 +2369,20 @@ ColumnPtr FunctionArrayElement<mode>::executeReplicated(
         && replicated_array->getIndexesColumn().get() == replicated_index->getIndexesColumn().get()
         && replicated_array->getNestedColumn()->size() == replicated_index->getNestedColumn()->size())
     {
-        /// Compute on the compact nested columns and stay lazy. The nested size check makes the equal-length
-        /// precondition of `executeImpl` explicit
-        size_t nested_rows_count = replicated_array->getNestedColumn()->size();
+        /// Compute on the compact nested columns and stay lazy.(Remove unused indexes)
+        auto compact = replicated_array->getIndexes().buildCompactIndexedColumns(
+            {replicated_array->getNestedColumn(), replicated_index->getNestedColumn()});
+
+        /// Now recurse on the internal rows
+        size_t nested_rows_count = compact.compact_indexed_columns[0]->size();
         ColumnsWithTypeAndName nested_args
-            = {{replicated_array->getNestedColumn(), args[0].type, args[0].name},
-               {replicated_index->getNestedColumn(), args[1].type, args[1].name}};
-        /// Recurse on the internal rows
+            = {{compact.compact_indexed_columns[0], args[0].type, args[0].name},
+               {compact.compact_indexed_columns[1], args[1].type, args[1].name}};
         auto nested_res = executeImpl(nested_args, result_type, nested_rows_count);
-        /// Wrap the result in a new ColumnReplicated sharing the original indexes column
+        
+        /// Wrap the result in a new ColumnReplicated with the compacted indexes column
         return convertToFullColumnIfReplicationNotUseful(
-            ColumnReplicated::create(std::move(nested_res), replicated_array->getIndexesColumn()));
+            ColumnReplicated::create(std::move(nested_res), compact.compact_indexes));
     }
 
     /// The index argument is a per-row number and when it is replicated independently of the array,
@@ -2405,16 +2408,18 @@ ColumnPtr FunctionArrayElement<mode>::executeReplicated(
     if (isColumnConst(*args[1].column))
     {
         /// A constant index gives one value per nested row: execute on the compact nested array and replicate the result lazily.
-        size_t nested_rows_count = col_array->size();
+        /// Compact away nested rows the indexes never reference, so the nested work is proportional to the used rows.
+        auto compact = replicated_array->getIndexes().buildCompactIndexedColumns({replicated_array->getNestedColumn()});
+        size_t nested_rows_count = compact.compact_indexed_columns[0]->size();
         ColumnsWithTypeAndName nested_args
-            = {{replicated_array->getNestedColumn(), args[0].type, args[0].name},
+            = {{compact.compact_indexed_columns[0], args[0].type, args[0].name},
                {args[1].column->cloneResized(nested_rows_count), args[1].type, args[1].name}};
 
         /// Recurse on the internal rows
         auto nested_res = executeImpl(nested_args, result_type, nested_rows_count);
-        /// Wrap the result in a new ColumnReplicated sharing the original indexes column
+        /// Wrap the result in a new ColumnReplicated with the compacted indexes column
         return convertToFullColumnIfReplicationNotUseful(
-            ColumnReplicated::create(std::move(nested_res), replicated_array->getIndexesColumn()));
+            ColumnReplicated::create(std::move(nested_res), compact.compact_indexes));
     }
 
     const auto & offsets = col_array->getOffsets();

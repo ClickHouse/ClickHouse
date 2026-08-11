@@ -73,6 +73,15 @@ SELECT x, big[idx], arraySlice(big, idx, 2), range(x + 3)[idx]
 FROM (SELECT range(10 + number) AS big, number + 2 AS idx, [1, 2, 5] AS r FROM numbers(2)) ARRAY JOIN r AS x
 SETTINGS enable_lazy_columns_replication = {{ i }};
 {% endfor %}
+SELECT '-- unused nested rows are compacted away before the recursion on nested columns';
+-- Only 2 of the 20 source rows have a non-empty `r`, so the shared replication indexes reference
+-- only those nested rows: the compute-on-nested path must compact the unused ones away
+-- and adjust the indexes, for both a replicated (`big[idx]`) and a constant (`big[2]`) index.
+{% for i in range(2) -%}
+SELECT x, big[idx], big[2], arraySlice(big, idx, 2)
+FROM (SELECT range(10 + number) AS big, intDiv(number, 10) + 1 AS idx, if(number % 10 = 0, [1, 2], []) AS r FROM numbers(20)) ARRAY JOIN r AS x
+SETTINGS enable_lazy_columns_replication = {{ i }};
+{% endfor %}
 SELECT '-- large array is not materialized per joined row';
 {% for i in range(2) -%}
 SELECT sum(length(arraySlice(big, x, 2))) + sum(length(big[x]))
