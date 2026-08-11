@@ -4771,6 +4771,31 @@ Possible values:
    - 0 — Optimization disabled.
    - 1 — Optimization enabled.
 )", 0) \
+    DECLARE(Bool, optimize_group_by_limit_to_distinct, false, R"(
+Rewrites `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` into `SELECT DISTINCT key_expr FROM table LIMIT n` when the query has no aggregate functions, no `HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/window clauses, no `GROUP BY` modifiers, and the projection is exactly the set of `GROUP BY` keys. The two forms are semantically identical (the order of the emitted groups is unspecified, so any `n` distinct groups are a valid result), but `DISTINCT` with `LIMIT` stops reading the input as soon as `n` distinct rows are produced and streams the results, while the aggregation processes the whole input.
+
+The rewrite applies only when `LIMIT + OFFSET` is a constant not exceeding [optimize_group_by_limit_to_distinct_max_limit](#optimize_group_by_limit_to_distinct_max_limit): for large limits `DISTINCT` is weaker than aggregation on high-cardinality data (the final distinct transform runs on a single stream, and the `DISTINCT` set cannot spill to disk).
+
+The rewrite does not change which size limits apply to the query: `max_rows_in_distinct` and `max_bytes_in_distinct` are cleared for the rewritten query (the user did not write `DISTINCT`, and the distinct set is bounded by `LIMIT + OFFSET` rows anyway) unless the original query already had `DISTINCT`.
+
+The rewrite is suppressed whenever it could drop a contract of the original query or change its memory footprint:
+
+- `max_rows_to_group_by` is not above `LIMIT + OFFSET`, or `group_by_overflow_mode` was explicitly set to something other than `any` — the `GROUP BY` overflow contract would otherwise be dropped together with the aggregation;
+- external aggregation is possible (`max_bytes_before_external_group_by` or `max_bytes_ratio_before_external_group_by` is set) and the `GROUP BY` keys are of unbounded width (`String`, `Array`, `Map`, ...), or their worst-case size exceeds `max_bytes_before_external_group_by` — unlike aggregation, `DISTINCT` cannot spill to disk, so bounding the number of rows in the distinct set does not bound its bytes;
+- `group_by_use_nulls` is enabled.
+
+Disabled by default: the rewrite takes the query off the aggregation path, which changes observable query statistics — `rows_before_limit_at_least` and the number of rows read by a distributed query — and supersedes [optimize_trivial_group_by_limit_query](#optimize_trivial_group_by_limit_query) for the queries it matches.
+
+Possible values:
+
+- 0 — Optimization disabled.
+- 1 — Optimization enabled.
+)", 0) \
+    DECLARE(UInt64, optimize_group_by_limit_to_distinct_max_limit, 1000, R"(
+The maximum value of `LIMIT + OFFSET` for which [optimize_group_by_limit_to_distinct](#optimize_group_by_limit_to_distinct) rewrites `GROUP BY ... LIMIT` into `SELECT DISTINCT ... LIMIT`. The threshold bounds the size of the `DISTINCT` set by `min(key cardinality, LIMIT + OFFSET)`, so even when the key cardinality is below the limit and the input is fully consumed, the rewritten query costs about the same as the aggregation it replaces. Larger limits would route high-cardinality data through the single-stream final distinct transform, which is slower than parallel aggregation and cannot spill to disk.
+
+Setting the value to 0 effectively disables the rewrite.
+)", 0) \
     DECLARE(Bool, optimize_trivial_group_by_limit_query, true, R"(
 Enables or disables the optimization of a trivial query `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` (with no aggregate functions in the projection, no `HAVING`/`ORDER BY`/`LIMIT BY`/window clauses, and no `GROUP BY` modifiers) by setting `max_rows_to_group_by = n + offset` with `group_by_overflow_mode = 'any'`. The aggregation stops once `n + offset` distinct keys are produced.
 

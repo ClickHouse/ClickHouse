@@ -79,6 +79,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_text_index_negative_tokens_cache", false, true, "New setting to cache absent text index tokens and avoid repeated dictionary lookups."},
             {"filesystem_cache_wait_for_concurrent_download_timeout_milliseconds", 60000, 1000, "New setting to bound how long a read waits for a file segment being downloaded to the filesystem cache by a concurrent query; on timeout the read bypasses the cache instead of waiting indefinitely. The previous value 60000 corresponds to the old behavior (one full 60 s wait cycle on the downloader)."},
             {"text_index_posting_list_apply_mode", "materialize", "lazy", "Text index queries now decode posting lists on demand with a cursor instead of materializing them into Roaring Bitmaps, which reduces memory usage and CPU time for selective queries."},
+            {"optimize_group_by_limit_to_distinct", false, false, "New setting (opt-in) that rewrites aggregate-free `SELECT key_expr FROM t GROUP BY key_expr LIMIT n` queries into `SELECT DISTINCT key_expr FROM t LIMIT n`, which stops reading the input once `n` distinct groups are produced and streams the results (https://github.com/ClickHouse/ClickHouse/issues/110047)."},
+            {"optimize_group_by_limit_to_distinct_max_limit", 1000, 1000, "New setting: the maximum LIMIT + OFFSET for which `optimize_group_by_limit_to_distinct` applies. Large limits would route high-cardinality data through the single-stream final distinct transform, which is slower than parallel aggregation and cannot spill to disk."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {

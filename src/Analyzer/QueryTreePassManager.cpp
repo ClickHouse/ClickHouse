@@ -29,6 +29,7 @@
 #include <Analyzer/Passes/DisableParallelReplicasPass.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
 #include <Analyzer/Passes/FuseFunctionsPass.h>
+#include <Analyzer/Passes/GroupByLimitToDistinctPass.h>
 #include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
 #include <Analyzer/Passes/IfChainToMultiIfPass.h>
 #include <Analyzer/Passes/IfConstantConditionPass.h>
@@ -313,6 +314,11 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<InverseDictionaryLookupPass>());
     manager.addPass(std::make_unique<OptimizeDateOrDateTimeConverterWithPreimagePass>());
     manager.addPass(std::make_unique<ComparisonTupleEliminationPass>());
+
+    /// Must run after AggregateFunctionOfGroupByKeysPass (which can remove the last aggregate
+    /// functions from the projection) and before the passes that prune GROUP BY keys below
+    /// (a projection matching the original set of keys should still be recognized).
+    manager.addPass(std::make_unique<GroupByLimitToDistinctPass>());
 
     manager.addPass(std::make_unique<OptimizeGroupByFunctionKeysPass>());
     manager.addPass(std::make_unique<OptimizeGroupByInjectiveFunctionsPass>());
