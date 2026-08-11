@@ -623,35 +623,35 @@ bool applyGroup(PushdownGroup & group)
 /// table expression and the column name in it.
 using CanonicalColumn = std::pair<const IQueryTreeNode *, String>;
 
-/// Map each exported column name of the subquery to the underlying column its projection
-/// expression trivially resolves to. The same physical column can be exported under several
-/// names: `SELECT tup AS x, tup FROM t`, or a trivial ALIAS storage column next to its base
-/// column. Names whose projection expression is not a column (or is a non-trivial ALIAS)
-/// are not mapped.
-/// The leftmost leaf query of a target: the query itself, or the first branch of a union
-/// followed transitively. The exported column names of a union are the names of its leftmost
-/// leaf query (UnionNode::computeProjectionColumns).
-const QueryNode * getLeftmostLeafQuery(const IQueryTreeNode * source)
+/// The leaf queries of a query-or-union target, in branch order: the leftmost leaf comes
+/// first, and its projection column names are the exported names of the target
+/// (UnionNode::computeProjectionColumns takes the names from the first branch transitively).
+void collectLeafQueries(const IQueryTreeNode * source, std::vector<const QueryNode *> & leaves)
 {
-    while (const auto * union_node = source->as<UnionNode>())
+    if (const auto * union_node = source->as<UnionNode>())
     {
-        const auto & branches = union_node->getQueries().getNodes();
-        if (branches.empty())
-            return nullptr;
-        source = branches.front().get();
+        for (const auto & branch : union_node->getQueries().getNodes())
+            collectLeafQueries(branch.get(), leaves);
+        return;
     }
 
-    return source->as<QueryNode>();
+    if (const auto * query_node = source->as<QueryNode>())
+        leaves.push_back(query_node);
 }
 
-std::unordered_map<String, CanonicalColumn> collectCanonicalExports(const QueryNode & subquery)
+/// Map each exported column name of the target to the underlying column the corresponding
+/// projection expression of the leaf trivially resolves to. The same physical column can be
+/// exported under several names: `SELECT tup AS x, tup FROM t`, or a trivial ALIAS storage
+/// column next to its base column. Names whose projection expression is not a column (or is
+/// a non-trivial ALIAS) are not mapped. The exported names correspond to the leaf's
+/// projection slots positionally (for a union, every branch exports under the same names).
+std::unordered_map<String, CanonicalColumn> collectCanonicalExports(const QueryNode & subquery, const Names & exported_names)
 {
     std::unordered_map<String, CanonicalColumn> result;
 
-    const auto & projection_columns = subquery.getProjectionColumns();
     const auto & projection_nodes = subquery.getProjection().getNodes();
 
-    for (size_t i = 0; i < projection_nodes.size() && i < projection_columns.size(); ++i)
+    for (size_t i = 0; i < projection_nodes.size() && i < exported_names.size(); ++i)
     {
         auto * column = projection_nodes[i]->as<ColumnNode>();
         if (column && column->hasExpression())
@@ -661,8 +661,31 @@ std::unordered_map<String, CanonicalColumn> collectCanonicalExports(const QueryN
 
         auto column_source = column->getColumnSourceOrNull();
         if (column_source)
-            result.emplace(projection_columns[i].name, CanonicalColumn{column_source.get(), column->getColumnName()});
+            result.emplace(exported_names[i], CanonicalColumn{column_source.get(), column->getColumnName()});
     }
+
+    return result;
+}
+
+/// The canonical exports of every leaf query of the target, keyed by the exported names of
+/// the target. The aliasing structure can differ between the branches of a union: the same
+/// two exported names can be distinct columns in one branch and the same physical column in
+/// another, so every branch is collected.
+std::vector<std::unordered_map<String, CanonicalColumn>> collectCanonicalExportsPerLeaf(const IQueryTreeNode * source)
+{
+    std::vector<const QueryNode *> leaves;
+    collectLeafQueries(source, leaves);
+    if (leaves.empty())
+        return {};
+
+    Names exported_names;
+    for (const auto & projection_column : leaves.front()->getProjectionColumns())
+        exported_names.push_back(projection_column.name);
+
+    std::vector<std::unordered_map<String, CanonicalColumn>> result;
+    result.reserve(leaves.size());
+    for (const auto * leaf : leaves)
+        result.push_back(collectCanonicalExports(*leaf, exported_names));
 
     return result;
 }
@@ -773,7 +796,7 @@ void processQuery(
     });
 
     bool any_group_applied = false;
-    std::unordered_map<const IQueryTreeNode *, std::unordered_map<String, CanonicalColumn>> canonical_exports_by_source;
+    std::unordered_map<const IQueryTreeNode *, std::vector<std::unordered_map<String, CanonicalColumn>>> canonical_exports_by_source;
 
     for (auto & group : state.groups)
     {
@@ -788,27 +811,29 @@ void processQuery(
         /// physical column can be exported under several names, so the counts of every name
         /// resolving to the same underlying column as the group's column are combined: while any
         /// of them stays alive, the whole column is read from the table anyway.
-        /// For a union target the exported names come from its leftmost leaf query, whose
-        /// aliasing structure is used for the combining. Aliasing that exists only in other
-        /// branches is not detected; the guard is a cost heuristic, so at worst those branches
-        /// read both the whole column and the subcolumn.
+        /// For a union target two names are combined when they resolve to the same underlying
+        /// column in ANY leaf branch: the pushdown is applied to all branches or to none, so a
+        /// single branch keeping the whole column alive through an alias-equivalent name is
+        /// enough for that branch to read both the whole column and the subcolumn.
         auto [exports_it, exports_inserted] = canonical_exports_by_source.try_emplace(group.source.get());
         if (exports_inserted)
-        {
-            if (const auto * leaf_query = getLeftmostLeafQuery(group.source.get()))
-                exports_it->second = collectCanonicalExports(*leaf_query);
-        }
-        const auto & canonical_exports = exports_it->second;
+            exports_it->second = collectCanonicalExportsPerLeaf(group.source.get());
+        const auto & canonical_exports_per_leaf = exports_it->second;
 
-        auto group_canonical_it = canonical_exports.find(group.column_name);
         auto is_same_underlying_column = [&](const String & column_name)
         {
             if (column_name == group.column_name)
                 return true;
-            if (group_canonical_it == canonical_exports.end())
-                return false;
-            auto other_it = canonical_exports.find(column_name);
-            return other_it != canonical_exports.end() && other_it->second == group_canonical_it->second;
+            for (const auto & canonical_exports : canonical_exports_per_leaf)
+            {
+                auto group_it = canonical_exports.find(group.column_name);
+                if (group_it == canonical_exports.end())
+                    continue;
+                auto other_it = canonical_exports.find(column_name);
+                if (other_it != canonical_exports.end() && other_it->second == group_it->second)
+                    return true;
+            }
+            return false;
         };
 
         size_t references = 0;
@@ -847,8 +872,10 @@ void processQuery(
 /// export is unused in the parents too and is removed together with it, so when no name of such
 /// an alias-equivalent class has references remaining, every name of the class is dead — keying
 /// only by the exported name would keep the sibling slots, and the whole-column references
-/// inside them would block pushdown through the deeper levels. The aliasing structure is taken
-/// from the leftmost leaf query, whose names are the exported names of the target.
+/// inside them would block pushdown through the deeper levels. The aliasing structure of every
+/// leaf branch of the target contributes its own classes (they can differ between the branches
+/// of a union); a name marked dead through the class of one branch can complete a class of
+/// another branch, so the expansion runs to a fixpoint.
 std::unordered_set<String> collectDeadExports(
     const std::unordered_map<String, size_t> & replaced_columns,
     const std::unordered_map<String, size_t> & alive_columns,
@@ -871,29 +898,41 @@ std::unordered_set<String> collectDeadExports(
     if (dead.empty())
         return dead;
 
-    const auto * leaf_query = getLeftmostLeafQuery(node);
-    if (!leaf_query)
-        return dead;
-
-    std::map<CanonicalColumn, std::vector<String>> alias_classes;
-    for (const auto & [column_name, canonical] : collectCanonicalExports(*leaf_query))
-        alias_classes[canonical].push_back(column_name);
-
-    for (const auto & [canonical, column_names] : alias_classes)
+    std::vector<std::vector<String>> alias_classes;
+    for (const auto & canonical_exports : collectCanonicalExportsPerLeaf(node))
     {
-        if (column_names.size() < 2)
-            continue;
+        std::map<CanonicalColumn, std::vector<String>> leaf_classes;
+        for (const auto & [column_name, canonical] : canonical_exports)
+            leaf_classes[canonical].push_back(column_name);
 
-        bool any_dead = false;
-        bool any_alive = false;
-        for (const auto & column_name : column_names)
+        for (auto & [canonical, column_names] : leaf_classes)
         {
-            any_dead |= dead.contains(column_name);
-            any_alive |= alive_count(column_name) > 0;
+            if (column_names.size() >= 2)
+                alias_classes.push_back(std::move(column_names));
         }
+    }
 
-        if (any_dead && !any_alive)
-            dead.insert(column_names.begin(), column_names.end());
+    bool changed = true;
+    while (changed)
+    {
+        changed = false;
+
+        for (const auto & column_names : alias_classes)
+        {
+            bool any_dead = false;
+            bool any_alive = false;
+            for (const auto & column_name : column_names)
+            {
+                any_dead |= dead.contains(column_name);
+                any_alive |= alive_count(column_name) > 0;
+            }
+
+            if (!any_dead || any_alive)
+                continue;
+
+            for (const auto & column_name : column_names)
+                changed |= dead.insert(column_name).second;
+        }
     }
 
     return dead;
