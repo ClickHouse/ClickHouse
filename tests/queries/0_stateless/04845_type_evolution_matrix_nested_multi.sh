@@ -49,10 +49,17 @@ function pending_check()
 # blocked, a Wide part still has the column's files and per-file presence resurfaces the old
 # values (`['s1','s2']`), while a Compact part treats the re-added column as absent and
 # synthesizes defaults onto the group's shared offsets (`['','']`).
+#
+# `flatten_nested = 1` is pinned because the per-member ALTERs only exist in the flattened
+# representation. All cells are accumulated into one `clickhouse-client` invocation: client
+# startup dominates under sanitizers, and the flaky check runs the test many times in parallel
+# with itself, so per-cell invocations can push a run past the per-test time limit.
+queries="
+    SET flatten_nested = 1;
+"
 for state in compact wide; do
     table="t_matrix_multi_${state}"
-    $CLICKHOUSE_CLIENT -q "
-        SET flatten_nested = 1;
+    queries+="
         DROP TABLE IF EXISTS $table;
         CREATE TABLE $table (id UInt8, arr Nested(n String, i UInt64, s String))
         ENGINE = MergeTree ORDER BY id
@@ -82,8 +89,7 @@ done
 # Two diverged members in one group, read in both orders.
 for state in compact wide; do
     table="t_matrix_multi2_${state}"
-    $CLICKHOUSE_CLIENT -q "
-        SET flatten_nested = 1;
+    queries+="
         DROP TABLE IF EXISTS $table;
         CREATE TABLE $table (id UInt8, arr Nested(n String, i UInt64))
         ENGINE = MergeTree ORDER BY id
@@ -116,8 +122,7 @@ done
 # `length`, which reads only offsets of one member.
 for state in compact wide; do
     table="t_matrix_multi3_${state}"
-    $CLICKHOUSE_CLIENT -q "
-        SET flatten_nested = 1;
+    queries+="
         DROP TABLE IF EXISTS $table;
         CREATE TABLE $table (id UInt8, arr Nested(n String, i UInt64))
         ENGINE = MergeTree ORDER BY id
@@ -134,3 +139,5 @@ for state in compact wide; do
         DROP TABLE $table;
     "
 done
+
+$CLICKHOUSE_CLIENT -q "$queries"

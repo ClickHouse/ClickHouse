@@ -19,6 +19,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #   mixed - one unrewritten part plus one part inserted after the ALTER, read in one query.
 # The CREATE pins `min_*_for_wide_part` and `share_nested_offsets` because the test runner
 # randomizes them and each cell needs exactly one part kind and one offsets mode.
+#
+# All cells are accumulated into one `clickhouse-client` invocation: client startup dominates
+# under sanitizers, and the flaky check runs the test many times in parallel with itself, so
+# per-cell invocations can push a run past the per-test time limit.
 
 function state_settings()
 {
@@ -60,6 +64,8 @@ function state_check()
 
 STATES="compact wide noshare rewritten mixed"
 
+queries=""
+
 # A dotted member of a flattened Nested group, with a sibling member sharing the offsets.
 for state in $STATES; do
     table="t_matrix_nullable_dotted_${state}"
@@ -71,7 +77,7 @@ for state in $STATES; do
         post_insert="INSERT INTO $table VALUES (2, [NULL, 'c'], [30, 40]);"
         ord="ORDER BY ALL"
     fi
-    $CLICKHOUSE_CLIENT -q "
+    queries+="
         DROP TABLE IF EXISTS $table;
         CREATE TABLE $table (id UInt8, \`arr.n\` Array(String), \`arr.i\` Array(UInt64))
         ENGINE = MergeTree ORDER BY id
@@ -101,6 +107,9 @@ done
 
 # The same member spelled as a declared Nested type. `flatten_nested = 1` is pinned because the
 # per-member ALTER below only exists in the flattened representation.
+queries+="
+    SET flatten_nested = 1;
+"
 for state in $STATES; do
     table="t_matrix_nullable_nested_${state}"
     post_insert=""
@@ -109,8 +118,7 @@ for state in $STATES; do
         post_insert="INSERT INTO $table VALUES (2, [NULL, 'c'], [30, 40]);"
         ord="ORDER BY ALL"
     fi
-    $CLICKHOUSE_CLIENT -q "
-        SET flatten_nested = 1;
+    queries+="
         DROP TABLE IF EXISTS $table;
         CREATE TABLE $table (id UInt8, arr Nested(n String, i UInt64))
         ENGINE = MergeTree ORDER BY id
@@ -142,7 +150,7 @@ done
 # unrewritten-part conversion is exercised.
 for state in compact wide; do
     table="t_matrix_nullable_plain_${state}"
-    $CLICKHOUSE_CLIENT -q "
+    queries+="
         DROP TABLE IF EXISTS $table;
         CREATE TABLE $table (id UInt8, plain Array(String))
         ENGINE = MergeTree ORDER BY id
@@ -164,7 +172,7 @@ done
 # Control: a dotted column that is not an Array never joins a group either.
 for state in compact wide; do
     table="t_matrix_nullable_scalar_${state}"
-    $CLICKHOUSE_CLIENT -q "
+    queries+="
         DROP TABLE IF EXISTS $table;
         CREATE TABLE $table (id UInt8, \`grp.v\` UInt8)
         ENGINE = MergeTree ORDER BY id
@@ -180,3 +188,5 @@ for state in compact wide; do
         DROP TABLE $table;
     "
 done
+
+$CLICKHOUSE_CLIENT -q "$queries"
