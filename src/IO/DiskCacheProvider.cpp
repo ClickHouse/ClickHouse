@@ -450,13 +450,14 @@ ChainedBuffers DiskCacheWriter::waitAndReadSiblingLed(ByteRange subrange)
                 && st != FileSegmentState::DOWNLOADING)
                 continue;
 
-            /// `wait(offset)` blocks until `offset < getCurrentWriteOffset()`, i.e. the
-            /// segment has committed strictly past `offset`. We need bytes through `hi`
-            /// (object-local `want_obj_end`), so wait on `want_obj_end - 1`.
+            /// `wait(offset, timeout)` blocks until `offset < getCurrentWriteOffset()`, i.e. the
+            /// segment has committed strictly past `offset`, or the timeout expires. We need bytes
+            /// through `hi` (object-local `want_obj_end`), so wait on `want_obj_end - 1`. On a
+            /// timeout `read` below serves only the committed prefix, so the read can be short.
             chassert(hi >= object_file_offset);
             const size_t want_obj_end = hi - object_file_offset;
             if (want_obj_end > 0)
-                segment.wait(want_obj_end - 1);
+                segment.wait(want_obj_end - 1, cache_settings.wait_for_concurrent_download_timeout_milliseconds);
         }
     }
 

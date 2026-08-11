@@ -127,8 +127,9 @@ public:
         return c;
     }
 
-    /// Wait until `subrange`'s bytes are committed by the sibling downloader, then serve them
-    /// from this writer's own held segments (cache file). Default: plain read (no wait).
+    /// Wait (bounded by `wait_for_concurrent_download_timeout_milliseconds`) until `subrange`'s
+    /// bytes are committed by the sibling downloader, then serve them from this writer's own held
+    /// segments (cache file). On a timeout the read can be short. Default: plain read (no wait).
     virtual ChainedBuffers waitAndReadSiblingLed(ByteRange subrange) { return read(subrange); }
 };
 
