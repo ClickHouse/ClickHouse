@@ -75,7 +75,7 @@ zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
             lock_event->tryWait(lock_acquire_timeout);
     }
 
-    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to get lock with {} tries for lightwegiht update in sync mode", max_tries);
+    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to get lock with {} tries for lightweight update in sync mode", max_tries);
 }
 
 zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
@@ -157,7 +157,7 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
         return zkutil::EphemeralNodeHolder::existing(created_path, *zookeeper);
     }
 
-    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to get lock with {} tries for lightwegiht update in auto mode", max_tries);
+    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to get lock with {} tries for lightweight update in auto mode", max_tries);
 }
 
 }
@@ -287,7 +287,7 @@ void PlainLightweightUpdatesSync::lockColumns(const UpdateAffectedColumns & affe
     });
 
     if (!res)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to get lock in {} ms for lightwegiht update with auto mode", timeout_ms);
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to get lock in {} ms for lightweight update with auto mode", timeout_ms);
 
     in_progress_columns.add(affected_columns);
 }
