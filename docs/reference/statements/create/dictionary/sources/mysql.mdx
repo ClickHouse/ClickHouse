@@ -87,7 +87,7 @@ The `table` or `where` fields cannot be used together with the `query` field. An
 </Note>
 
 <Note>
-`ssl_ca`, `ssl_cert` and `ssl_key` name files that the server opens with its own privileges, so they are only accepted for a dictionary defined in a server configuration file, or through a named collection defined there. A dictionary created with a `CREATE DICTIONARY` query must pass the contents instead, in `ssl_ca_pem`, `ssl_cert_pem` and `ssl_key_pem`. Those values are masked in logs and in `SHOW` queries, the same way passwords are.
+`ssl_ca`, `ssl_cert` and `ssl_key` name files that the server opens with its own privileges, so they are only accepted for a dictionary defined in a server configuration file, or through a named collection defined there. A `CREATE DICTIONARY` query that specifies the TLS credentials directly must pass their contents instead, in `ssl_ca_pem`, `ssl_cert_pem` and `ssl_key_pem`. Those values are masked in logs and in `SHOW` queries, the same way passwords are.
 </Note>
 
 <Note>
