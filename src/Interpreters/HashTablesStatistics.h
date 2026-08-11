@@ -69,7 +69,7 @@ struct HashJoinEntry
 
 struct HashJoinMatchEntry
 {
-    bool shouldBeUpdated(const HashJoinMatchEntry & new_entry) const { return new_entry.matches < matches / 2 || new_entry.matches > matches * 2; }
+    bool shouldBeUpdated(const HashJoinMatchEntry & new_entry) const { return new_entry.matches * 2 < matches || new_entry.matches > matches * 2; }
 
     std::string dump() const { return fmt::format("matches={}", matches); }
 
