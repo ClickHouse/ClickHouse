@@ -196,18 +196,20 @@ TEST(MemoryTracker, ParentLimitFailurePreservesExistingUsage)
     });
 }
 
-TEST(MemoryTracker, ParentLimitFailureNotifiesOvercommitTracker)
+TEST(MemoryTracker, ParentLimitFailureDoesNotReleaseOvercommitWaiters)
 {
     MemoryTrackerHierarchy hierarchy;
+    runInThread(hierarchy, [&](MemoryTracker &)
+    {
+        std::ignore = CurrentMemoryTracker::alloc(OVER_LIMIT);
+    });
     hierarchy.user.setHardLimit(LIMIT);
 
     DB::ProcessList process_list;
     DB::ProcessListForUser user_process_list(&process_list);
     UserOvercommitTrackerForTest overcommit_tracker(&process_list, &user_process_list);
-    hierarchy.process.setOvercommitTracker(&overcommit_tracker);
-
-    MemoryTracker candidate;
-    overcommit_tracker.setCandidate(&candidate);
+    overcommit_tracker.setCandidate(&hierarchy.process);
+    hierarchy.user.setOvercommitTracker(&overcommit_tracker);
 
     MemoryTracker waiting;
     waiting.setOvercommitWaitingTime(4'000'000);
@@ -223,6 +225,11 @@ TEST(MemoryTracker, ParentLimitFailureNotifiesOvercommitTracker)
         expectMemoryLimitExceeded(OVER_LIMIT);
     });
 
+    EXPECT_EQ(wait_result.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+    runInThread(hierarchy, [&](MemoryTracker &)
+    {
+        std::ignore = CurrentMemoryTracker::free(OVER_LIMIT);
+    });
     EXPECT_EQ(wait_result.get(), OvercommitResult::MEMORY_FREED);
     expectUsage(hierarchy, 0);
 }

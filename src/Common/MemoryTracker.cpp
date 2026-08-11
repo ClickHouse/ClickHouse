@@ -507,9 +507,6 @@ Int64 MemoryTracker::decrementLocalUsage(Int64 size) noexcept
         }
     }
 
-    if (auto * overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed))
-        overcommit_tracker_ptr->tryContinueQueryExecutionAfterFree(accounted_size);
-
     return accounted_size;
 }
 
@@ -682,6 +679,8 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
     }
 
     Int64 accounted_size = decrementLocalUsage(size);
+    if (auto * overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed))
+        overcommit_tracker_ptr->tryContinueQueryExecutionAfterFree(accounted_size);
 
     /// free should never throw, we can update metric early.
     auto metric_loaded = metric.load(std::memory_order_relaxed);
