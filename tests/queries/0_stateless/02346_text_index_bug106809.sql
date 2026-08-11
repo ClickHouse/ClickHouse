@@ -9,7 +9,7 @@ SET min_filtered_ratio_for_lazy_final = 0;     -- avoid fallback to regular FINA
 SET query_plan_direct_read_from_text_index = 1; -- exercise the direct read (randomized in CI)
 SET use_skip_indexes_if_final = 1;             -- the direct read needs skip indexes under FINAL
 SET use_skip_indexes_if_final_exact_mode = 1;  -- must stay in sync with the setting above
-SET enable_analyzer = 1;                       -- lazy FINAL requires the new analyzer
+SET enable_analyzer = 1;                       -- lazy FINAL requires the analyzer
 
 DROP TABLE IF EXISTS tab;
 
