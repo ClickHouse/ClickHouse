@@ -65,6 +65,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
     extern const int ACCESS_DENIED;
+    extern const int ILLEGAL_PREWHERE;
 }
 
 namespace FailPoints
@@ -750,7 +751,41 @@ void StorageObjectStorage::read(
 
 
     if (query_info.prewhere_info || query_info.row_level_filter)
+    {
+        /// The contract was answered before the metadata resolved, so it could not name the
+        /// identity-partition columns. Their value is backfilled after the reader, so a filter on
+        /// one of them below the backfill reads a default and drops rows.
+        if (configuration->isDataLakeConfiguration())
+        {
+            NameSet identity_partition_names;
+            for (const auto & column :
+                 configuration->getIdentityPartitionColumns(local_context, storage_snapshot->metadata->datalake_table_state))
+                identity_partition_names.insert(column.name);
+
+            if (!identity_partition_names.empty())
+            {
+                Names filter_columns;
+                if (query_info.prewhere_info)
+                    filter_columns = query_info.prewhere_info->prewhere_actions.getRequiredColumnsNames();
+                if (query_info.row_level_filter)
+                {
+                    auto row_level_columns = query_info.row_level_filter->actions.getRequiredColumnsNames();
+                    filter_columns.insert(filter_columns.end(), row_level_columns.begin(), row_level_columns.end());
+                }
+
+                for (const auto & name : filter_columns)
+                    if (identity_partition_names.contains(name))
+                        throw Exception(
+                            ErrorCodes::ILLEGAL_PREWHERE,
+                            "Table {} does not support column {} in PREWHERE or in a row policy: it is an identity "
+                            "partition column of a data lake table whose metadata was not available during query analysis",
+                            getStorageID().getNameForLogs(),
+                            name);
+            }
+        }
+
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+    }
 
     const bool need_only_count = (query_info.optimize_trivial_count
                                   || (read_from_format_info.requested_columns.empty()
