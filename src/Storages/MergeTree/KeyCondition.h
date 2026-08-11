@@ -272,6 +272,11 @@ public:
     ///  - `(x < 10 AND x % 2 = 0) OR (x < 20 AND x % 3 = 0)` -> { "(-Inf, +Inf)" } (no partial extraction across OR branches)
     Ranges extractBounds() const;
 
+    /// Same stack algorithm as extractPlainRanges, but for a multi-column key: logical ops apply
+    /// as usual, while atoms that constrain other key columns become the universe for `column_index`.
+    /// Returns false if the RPN contains unsupported atoms for this extraction (same as extractPlainRanges).
+    bool extractPlainRangesForColumn(size_t column_index, Ranges & ranges) const;
+
     /// The expression is stored as Reverse Polish Notation.
     struct RPNElement
     {
