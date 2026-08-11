@@ -279,7 +279,7 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
         if (is_query_on_shard && !select_query_options.is_create_view)
         {
             QueryTreePassManager function_to_subcolumns_pass_manager(context);
-            function_to_subcolumns_pass_manager.addPass(std::make_shared<FunctionToSubcolumnsPass>(/*only_filter_clauses=*/ true));
+            function_to_subcolumns_pass_manager.addPass(std::make_unique<FunctionToSubcolumnsPass>(/*only_filter_clauses=*/ true));
             function_to_subcolumns_pass_manager.run(query_tree);
         }
     }
