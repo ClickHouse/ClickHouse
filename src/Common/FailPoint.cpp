@@ -260,6 +260,7 @@ static struct InitFiu
     REGULAR(datalake_try_get_table_throw) \
     REGULAR(datalake_get_tables_throw) \
     REGULAR(datalake_simulate_missing_table_state) \
+    REGULAR(datalake_simulate_unresolved_prewhere_metadata) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
     REGULAR(atomic_populate_fail_before_subscription) \

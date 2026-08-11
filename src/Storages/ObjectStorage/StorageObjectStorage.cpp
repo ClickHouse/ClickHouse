@@ -71,6 +71,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char datalake_simulate_missing_table_state[];
+    extern const char datalake_simulate_unresolved_prewhere_metadata[];
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -425,10 +426,13 @@ std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns(const Stor
         {
             tryLogCurrentException(log, "Failed to resolve data lake metadata for the PREWHERE exclusion");
         }
+        bool metadata_resolved = configuration->hasInitializedMetadata();
+        fiu_do_on(FailPoints::datalake_simulate_unresolved_prewhere_metadata, { metadata_resolved = false; });
+
         /// Unresolved metadata leaves the identity-partition list unknown. The answer must stay
         /// per-table: `Merge` intersects every regex-matched child's contract before filtering by
         /// `_table` and access, so an empty set here also constrains reachable siblings.
-        if (!configuration->hasInitializedMetadata())
+        if (!metadata_resolved)
             return metadata_snapshot->getColumnsWithoutDefaultExpressions(
                 /*exclude=*/ hive_partition_columns_to_read_from_file_path);
 

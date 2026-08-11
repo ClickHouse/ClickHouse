@@ -1,0 +1,10 @@
+-- filter on the identity column returns its rows
+1
+3
+-- an identity-partition filter that escaped the analysis-time contract is refused
+1
+-- a filter on a physical column is still allowed
+2
+3
+-- the identity column is excluded again once the contract can name it
+1
