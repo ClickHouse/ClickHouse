@@ -580,6 +580,26 @@ bool collectPlanDependencies(
 
 }
 
+static UInt64 combineSemanticsFingerprint(Int64 metadata_version, const IASTHash & row_policy_hash)
+{
+    SipHash hash;
+    hash.update(metadata_version);
+    hash.update(row_policy_hash.low64);
+    hash.update(row_policy_hash.high64);
+    return hash.get64();
+}
+
+UInt64 computeQueryPlanCacheSemanticsFingerprint(
+    const StorageMetadataPtr & metadata, const String & database, const String & table, const ContextPtr & context)
+{
+    return combineSemanticsFingerprint(getMetadataVersionOrSchemaHash(metadata), getRowPolicyInfo(context, database, table).hash);
+}
+
+UInt64 computeQueryPlanCacheSemanticsFingerprint(const QueryPlanCacheDependency & dep)
+{
+    return combineSemanticsFingerprint(dep.metadata_version, dep.row_policy_hash);
+}
+
 bool astContainsFunctionsUnsafeForQueryPlanCache(const ASTPtr & ast, const ContextPtr & context)
 {
     if (const auto * function = ast->as<ASTFunction>())

@@ -84,6 +84,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/Cache/QueryPlanCacheUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
@@ -1865,6 +1866,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 /// query plan cache can bind both the stored dependencies and the execution of the plan
                 /// to exactly the storages that were analyzed here - a name can start resolving to a
                 /// different table right after this point (see `Context::PlanCacheStorageIdentities`).
+                /// Besides the UUID, the identity carries a fingerprint of the semantics the plan bakes
+                /// in from the analysis-time metadata snapshot (schema, row policy): an in-place
+                /// `ALTER` keeps the UUID but changes what the plan means, and dependency collection
+                /// runs only after the whole plan is built (see
+                /// `computeQueryPlanCacheSemanticsFingerprint`).
                 /// The collector pointer is set only while a cacheable logical plan is being built, but
                 /// it is deliberately not gated on `select_query_options.cacheable_logical_plan` here:
                 /// scalar subqueries are executed during that same analysis through a nested regular
@@ -1872,9 +1878,21 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 /// that share the pointer. Their results are baked into the plan as constants, so the
                 /// tables they read are analyzed storages in exactly the same sense.
                 /// Temporary tables are never cacheable dependencies, so they are not recorded.
-                if (table_node && table_node->getTemporaryTableName().empty())
+                /// The preliminary filter-collection pass (see `collectFiltersForAnalysis`) plans
+                /// over `StorageDummy` stand-ins that carry the real storage's `StorageID` but a
+                /// columns-only metadata (no view `select`, no constraints), so recording them
+                /// would pin a wrong semantics fingerprint for the name; only the real pass
+                /// records.
+                if (table_node && table_node->getTemporaryTableName().empty()
+                    && !typeid_cast<const StorageDummy *>(storage.get()))
                     if (auto identities = query_context->getPlanCacheStorageIdentities())
-                        identities->add(table_node->getStorageID());
+                        identities->add(
+                            table_node->getStorageID(),
+                            computeQueryPlanCacheSemanticsFingerprint(
+                                storage_snapshot->metadata,
+                                table_node->getStorageID().getDatabaseName(),
+                                table_node->getStorageID().table_name,
+                                query_context));
 
                 if (!select_query_options.build_logical_plan || expand_view_in_logical_plan)
                 {

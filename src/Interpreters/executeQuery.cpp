@@ -1303,9 +1303,14 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     /// storage that was analyzed, the entry would fingerprint one table while the plan carries the
     /// semantics of another, and executing the plan here would run the swapped table with the old
     /// table's row policies or schema - or, for a table read only inside a scalar subquery, keep
-    /// serving a constant folded from the old table while validating against the new one. Neither
-    /// store nor execute such a plan: fall back to the normal interpreter, which analyzes the
-    /// current tables from scratch.
+    /// serving a constant folded from the old table while validating against the new one. The
+    /// same applies to an in-place `ALTER` of the analyzed storage itself (`MODIFY COLUMN`,
+    /// `ALTER VIEW ... MODIFY QUERY`, `CREATE`/`ALTER ROW POLICY`): the UUID stays, but the
+    /// dependency records the post-alter schema or row-policy fingerprint while the plan bakes in
+    /// the pre-alter semantics, so a stored entry would validate successfully on every hit yet
+    /// keep executing stale semantics. The semantics fingerprint recorded at analysis time
+    /// detects both. Neither store nor execute such a plan: fall back to the normal interpreter,
+    /// which analyzes the current tables from scratch.
     /// Scalar subqueries execute during analysis and record the storages they read into the same
     /// collector (see `PlannerJoinTree.cpp`), so their sources are covered by this check too. A
     /// dependency that is not among the analyzed identities is a name the raw AST walk
@@ -1315,10 +1320,12 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     for (const auto & dep : *dependencies)
     {
         auto it = analyzed_identities.find({dep.database, dep.table});
-        if (it != analyzed_identities.end() && it->second != dep.uuid)
+        if (it != analyzed_identities.end()
+            && (it->second.uuid != dep.uuid
+                || it->second.semantics_fingerprint != computeQueryPlanCacheSemanticsFingerprint(dep)))
         {
             LOG_DEBUG(getLogger("QueryPlanCache"),
-                "Not caching plan: table {}.{} was replaced while the plan was being built", dep.database, dep.table);
+                "Not caching plan: table {}.{} was replaced or altered while the plan was being built", dep.database, dep.table);
             return nullptr;
         }
     }
@@ -1361,9 +1368,12 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     /// plan's baked semantics; that is reported as `INCORRECT_DATA` and handled by falling back to
     /// the normal interpreter, exactly like a stale cache entry is.
     auto plan = std::move(*analyzer_interpreter).extractQueryPlan();
+    QueryPlan::ExpectedStorageIdentities expected_identities;
+    for (const auto & [name, identity] : analyzed_identities)
+        expected_identities.emplace(name, identity.uuid);
     try
     {
-        plan.resolveStorages(context, &analyzed_identities);
+        plan.resolveStorages(context, &expected_identities);
     }
     catch (const Exception & e)
     {

@@ -41,6 +41,22 @@ std::optional<std::vector<QueryPlanCacheDependency>> collectQueryPlanCacheDepend
     const ContextPtr & context,
     bool allow_scalar_subqueries);
 
+/// Fingerprint of the storage semantics a cacheable logical plan bakes in: the schema
+/// (metadata version / schema hash) and the reading user's row-policy filter. It is recorded per
+/// analyzed storage while the plan is built - from the analysis-time metadata snapshot - and
+/// compared against the dependencies collected after the build, before an entry is stored. The
+/// UUID comparison alone cannot detect an in-place `ALTER` (`MODIFY COLUMN`,
+/// `ALTER VIEW ... MODIFY QUERY`, `CREATE`/`ALTER ROW POLICY`) between analysis and dependency
+/// collection: the dependency would record the post-alter schema or row policy while the plan
+/// carries the pre-alter semantics, producing an entry that validates successfully on every hit
+/// yet keeps executing the stale semantics.
+UInt64 computeQueryPlanCacheSemanticsFingerprint(
+    const StorageMetadataPtr & metadata, const String & database, const String & table, const ContextPtr & context);
+
+/// The same fingerprint computed from a collected dependency record, for comparison with the
+/// analysis-time value above.
+UInt64 computeQueryPlanCacheSemanticsFingerprint(const QueryPlanCacheDependency & dep);
+
 /// Revalidates a cached entry against the current state of the database: every dependency
 /// must still resolve to the same storage (UUID), with the same schema (metadata version /
 /// schema hash) and the same row policy. Returns false if the entry is stale.

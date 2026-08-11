@@ -502,20 +502,34 @@ public:
     /// planning context, and the pointer is shared by those copies, so all of it is recorded here.
     struct PlanCacheStorageIdentities
     {
-        void add(const StorageID & storage_id)
+        /// The identity of one analyzed storage: which table object the name resolved to, and a
+        /// fingerprint of the semantics the plan bakes in from it (schema and row policy, see
+        /// `computeQueryPlanCacheSemanticsFingerprint`) as of the analysis-time metadata snapshot.
+        /// The UUID alone detects a `DROP`/`CREATE` swap but not an in-place `ALTER`
+        /// (`MODIFY COLUMN`, `ALTER VIEW ... MODIFY QUERY`, `ALTER ROW POLICY`) between analysis
+        /// and dependency collection, which changes the semantics under the same UUID.
+        struct StorageIdentity
+        {
+            UUID uuid;
+            UInt64 semantics_fingerprint;
+        };
+
+        void add(const StorageID & storage_id, UInt64 semantics_fingerprint)
         {
             std::lock_guard lock(mutex);
-            identities.emplace(std::pair{storage_id.getDatabaseName(), storage_id.table_name}, storage_id.uuid);
+            identities.emplace(
+                std::pair{storage_id.getDatabaseName(), storage_id.table_name},
+                StorageIdentity{storage_id.uuid, semantics_fingerprint});
         }
 
-        std::map<std::pair<String, String>, UUID> get() const
+        std::map<std::pair<String, String>, StorageIdentity> get() const
         {
             std::lock_guard lock(mutex);
             return identities;
         }
 
         mutable std::mutex mutex;
-        std::map<std::pair<String, String>, UUID> identities TSA_GUARDED_BY(mutex);
+        std::map<std::pair<String, String>, StorageIdentity> identities TSA_GUARDED_BY(mutex);
     };
     using PlanCacheStorageIdentitiesPtr = std::shared_ptr<PlanCacheStorageIdentities>;
 
