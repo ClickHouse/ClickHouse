@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <limits>
+
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
@@ -28,6 +30,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 
@@ -276,9 +279,58 @@ ColumnStatisticsPtr buildNullableInt32Stats(
     return stats;
 }
 
+ColumnStatisticsPtr buildInt32Stats(
+    const std::vector<StatisticsType> & types,
+    const std::vector<Int32> & values)
+{
+    auto data_type = std::make_shared<DataTypeInt32>();
+    MutableColumnPtr col = data_type->createColumn();
+    for (Int32 value : values)
+        col->insert(value);
+
+    auto stats = createTestStats(types, data_type);
+    stats->build(std::move(col));
+    return stats;
+}
+
+ColumnStatisticsPtr buildInt64Stats(
+    const std::vector<StatisticsType> & types,
+    const std::vector<Int64> & values)
+{
+    auto data_type = std::make_shared<DataTypeInt64>();
+    MutableColumnPtr col = data_type->createColumn();
+    for (Int64 value : values)
+        col->insert(value);
+
+    auto stats = createTestStats(types, data_type);
+    stats->build(std::move(col));
+    return stats;
+}
+
+ColumnStatisticsPtr buildFloat64Stats(
+    const std::vector<StatisticsType> & types,
+    const std::vector<Float64> & values)
+{
+    auto data_type = std::make_shared<DataTypeFloat64>();
+    MutableColumnPtr col = data_type->createColumn();
+    for (Float64 value : values)
+        col->insert(value);
+
+    auto stats = createTestStats(types, data_type);
+    stats->build(std::move(col));
+    return stats;
+}
+
+StorageMetadataPtr makeStorageMetadata(std::initializer_list<ColumnDescription> columns)
+{
+    auto metadata = std::make_shared<StorageInMemoryMetadata>();
+    metadata->setColumns(ColumnsDescription(columns));
+    return metadata;
+}
+
 /// Estimate the row count for a SQL boolean expression evaluated against `estimator`.
 template <class Estimator>
-Float64 estimateRowsFor(Estimator & estimator, const String & expression)
+Float64 estimateRowsFor(Estimator & estimator, const String & expression, const StorageMetadataPtr & metadata = nullptr)
 {
     ParserExpressionWithOptionalAlias exp_parser(false);
     ContextPtr context = getContext().context;
@@ -288,9 +340,224 @@ Float64 estimateRowsFor(Estimator & estimator, const String & expression)
         {});
     ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
     RPNBuilderTreeNode node(ast.get(), tree_context);
-    return static_cast<Float64>(estimator->estimateRelationProfile(nullptr, node).rows);
+    return static_cast<Float64>(estimator->estimateRelationProfile(metadata, node).rows);
 }
 
+}
+
+TEST(Statistics, ColumnToColumnComparisons)
+{
+    tryRegisterAggregateFunctions();
+
+    auto int32_type = std::make_shared<DataTypeInt32>();
+    auto float64_type = std::make_shared<DataTypeFloat64>();
+    auto nullable_int32_type = std::make_shared<DataTypeNullable>(int32_type);
+    auto metadata = makeStorageMetadata({
+        ColumnDescription("a", int32_type),
+        ColumnDescription("b", int32_type),
+        ColumnDescription("basic_only", int32_type),
+        ColumnDescription("x", int32_type),
+        ColumnDescription("y", int32_type),
+        ColumnDescription("z", int32_type),
+        ColumnDescription("f", float64_type),
+        ColumnDescription("na", nullable_int32_type),
+        ColumnDescription("nb", nullable_int32_type),
+    });
+
+    std::vector<Int32> unique_values;
+    std::vector<Int32> hundred_distinct_values;
+    std::vector<Int32> low_range_values;
+    std::vector<Int32> high_range_values;
+    std::vector<Int32> overlapping_range_values;
+    std::vector<Float64> nan_values;
+    unique_values.reserve(1000);
+    hundred_distinct_values.reserve(1000);
+    low_range_values.reserve(1000);
+    high_range_values.reserve(1000);
+    overlapping_range_values.reserve(1000);
+    nan_values.reserve(1000);
+    for (Int32 i = 0; i < 1000; ++i)
+    {
+        unique_values.push_back(i);
+        hundred_distinct_values.push_back(i % 100);
+        low_range_values.push_back(i % 100);
+        high_range_values.push_back(200 + (i % 100));
+        overlapping_range_values.push_back(50 + (i % 100));
+        nan_values.push_back(std::numeric_limits<Float64>::quiet_NaN());
+    }
+
+    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.addStatistics("a", buildInt32Stats({StatisticsType::Basic, StatisticsType::Uniq}, unique_values));
+    builder.addStatistics("b", buildInt32Stats({StatisticsType::Basic, StatisticsType::Uniq}, hundred_distinct_values));
+    builder.addStatistics("basic_only", buildInt32Stats({StatisticsType::Basic}, hundred_distinct_values));
+    builder.addStatistics("x", buildInt32Stats({StatisticsType::Basic}, low_range_values));
+    builder.addStatistics("y", buildInt32Stats({StatisticsType::Basic}, high_range_values));
+    builder.addStatistics("z", buildInt32Stats({StatisticsType::Basic}, overlapping_range_values));
+    builder.addStatistics("f", buildFloat64Stats({StatisticsType::Basic}, nan_values));
+    builder.addStatistics("na", buildNullableInt32Stats({StatisticsType::Basic}, /*total=*/1000, /*null_every=*/5));
+    builder.addStatistics("nb", buildNullableInt32Stats({StatisticsType::Basic}, /*total=*/1000, /*null_every=*/10));
+    builder.incrementRowCount(1000);
+    auto estimator = builder.getEstimator();
+
+    auto check = [&](const String & expression, Float64 expected, Float64 eps = 1.0)
+    {
+        Float64 actual = estimateRowsFor(estimator, expression, metadata);
+        EXPECT_NEAR(actual, expected, eps) << "Expression: " << expression;
+    };
+
+    /// Same-column comparisons are exact, with NULL results on NULL inputs.
+    check("a = a", 1000.0, 1e-6);
+    check("a != a", 0.0, 1e-6);
+    check("a < a", 0.0, 1e-6);
+    check("a <= a", 1000.0, 1e-6);
+    check("na = na", 800.0, 1e-6);
+    check("na != na", 0.0, 1e-6);
+    check("na < na", 0.0, 1e-6);
+    check("na <= na", 800.0, 1e-6);
+
+    /// Float same-column comparisons involving NaN are not deterministic on all
+    /// non-NULL rows, so they use the unknown-condition fallback instead of the
+    /// exact same-column shortcut. Strict self-inequalities remain exact.
+    check("f = f", 330.0, 1e-6);
+    check("f <= f", 330.0, 1e-6);
+    check("f < f", 0.0, 1e-6);
+
+    /// Equality uses real NDV statistics only. If one side lacks real NDV, it falls
+    /// back to the equality default instead of ColumnStatistics::estimateCardinality().
+    check("a = b", 1.0, 1e-6);             /// 1 / max(1000, 100)
+    check("a != b", 999.0, 1e-6);          /// complement on non-NULL rows
+    check("a = basic_only", 10.0, 1e-6);   /// default_cond_equal_factor * 1000
+
+    /// Min/max disjoint proofs and overlap heuristic for ranges.
+    check("x < y", 1000.0, 1e-6);
+    check("y < x", 0.0, 1e-6);
+    check("x < z", 500.0, 1e-6);
+
+    /// Nullable cross-column comparisons apply the heuristic only to rows where both
+    /// operands are non-NULL: 0.5 * 0.8 * 0.9 * 1000.
+    check("na < nb", 360.0, 1e-6);
+
+    /// NULL checks on operands of finalized column comparisons are correlated with
+    /// the comparison NULL result and must not be combined independently.
+    check("na < nb AND na IS NULL", 0.0, 1e-6);
+    check("na = nb AND na IS NULL", 0.0, 1e-6);
+    check("na = nb AND na IS NOT NULL", 10.0, 1e-6);
+    check("not((na = nb AND na IS NOT NULL) AND na IS NULL)", 1000.0, 1e-6);
+    check("na <= na OR na IS NULL", 1000.0, 1e-6);
+    check("not(na <= na)", 0.0, 1e-6);
+}
+
+TEST(Statistics, ExpressionDerivedRanges)
+{
+    tryRegisterAggregateFunctions();
+    tryRegisterFunctions();
+
+    auto int32_type = std::make_shared<DataTypeInt32>();
+    auto int64_type = std::make_shared<DataTypeInt64>();
+    auto metadata = makeStorageMetadata({ColumnDescription("a", int32_type), ColumnDescription("big", int64_type)});
+
+    std::vector<Int32> values;
+    std::vector<Int64> big_values;
+    values.reserve(1000);
+    big_values.reserve(1000);
+    for (Int32 i = 0; i < 1000; ++i)
+    {
+        values.push_back(i);
+        big_values.push_back(std::numeric_limits<Int64>::max() - (i % 2));
+    }
+
+    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.addStatistics("a", buildInt32Stats({StatisticsType::Basic}, values));
+    builder.addStatistics("big", buildInt64Stats({StatisticsType::Basic}, big_values));
+    builder.incrementRowCount(1000);
+    auto estimator = builder.getEstimator();
+
+    auto estimate = [&](const String & expression)
+    {
+        return estimateRowsFor(estimator, expression, metadata);
+    };
+
+    auto check_same_as = [&](const String & rewritten_expression, const String & simple_expression)
+    {
+        EXPECT_NEAR(estimate(rewritten_expression), estimate(simple_expression), 1.0)
+            << "Rewritten expression: " << rewritten_expression << ", simple expression: " << simple_expression;
+    };
+
+    /// Safe widening casts are estimated through the underlying column when the
+    /// constant can be converted back to the source type exactly.
+    check_same_as("CAST(a, 'Int64') < 500", "a < 500");
+    check_same_as("CAST(a, 'Int64') = 42", "a = 42");
+
+    /// Checked integer arithmetic rewrites normalize simple column +/- constant forms.
+    check_same_as("a + 1 < 500", "a < 499");
+    check_same_as("1 + a < 500", "a < 499");
+    check_same_as("a - 1 < 500", "a < 501");
+
+    /// Unsupported or unsafe expression forms keep the pre-existing expression fallback.
+    EXPECT_EQ(estimate("CAST(a, 'Float64') < 500"), 330.0);
+    EXPECT_EQ(estimate("a + 0.0 < 500"), 330.0);
+    EXPECT_EQ(estimate("0.0 + a < 500"), 330.0);
+    EXPECT_EQ(estimate("a + -1 < 9223372036854775807"), 330.0);
+    EXPECT_EQ(estimate("big + 1 < 0"), 330.0);
+}
+
+TEST(Statistics, TupleInComparisons)
+{
+    tryRegisterAggregateFunctions();
+
+    auto int32_type = std::make_shared<DataTypeInt32>();
+    auto nullable_int32_type = std::make_shared<DataTypeNullable>(int32_type);
+    auto metadata = makeStorageMetadata({
+        ColumnDescription("a", int32_type),
+        ColumnDescription("b", int32_type),
+        ColumnDescription("na", nullable_int32_type),
+    });
+
+    std::vector<Int32> a_values;
+    std::vector<Int32> b_values;
+    a_values.reserve(10000);
+    b_values.reserve(10000);
+    for (Int32 i = 0; i < 10000; ++i)
+    {
+        a_values.push_back(i % 10);
+        b_values.push_back((i / 10) % 10);
+    }
+
+    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.addStatistics("a", buildInt32Stats({StatisticsType::Basic, StatisticsType::Uniq}, a_values));
+    builder.addStatistics("b", buildInt32Stats({StatisticsType::Basic, StatisticsType::Uniq}, b_values));
+    builder.addStatistics("na", buildNullableInt32Stats({StatisticsType::Basic, StatisticsType::Uniq}, /*total=*/10000, /*null_every=*/5));
+    builder.incrementRowCount(10000);
+    auto estimator = builder.getEstimator();
+
+    auto check = [&](const String & expression, Float64 expected, Float64 eps = 1.0)
+    {
+        Float64 actual = estimateRowsFor(estimator, expression, metadata);
+        EXPECT_NEAR(actual, expected, eps) << "Expression: " << expression;
+    };
+
+    check("(a, b) = (1, 2)", 100.0, 1e-6);
+    check("(1, 2) = (a, b)", 100.0, 1e-6);
+    check("(1, 2) != (a, b)", 9900.0, 1e-6);
+    check("(a, b) IN ((1, 2), (3, 4))", 200.0, 1e-6);
+    check("(a, b) IN ((1, 2), (1, 2))", 100.0, 1e-6);
+    check("(a, b) NOT IN ((1, 2), (3, 4))", 9800.0, 1e-6);
+
+    /// Scalar predicates on tuple columns are correlated with tuple alternatives.
+    check("(a, b) = (1, 2) AND a = 1", 100.0, 1e-6);
+    check("(a, b) = (1, 2) AND a = 3", 0.0, 1e-6);
+    check("(a, b) IN ((1, 2), (3, 4)) AND a = 3", 100.0, 1e-6);
+    check("(a, b) IN ((1, 2), (3, 4)) AND a = 5", 0.0, 1e-6);
+
+    /// Repeated LHS columns are correlated, not independent scalar predicates.
+    check("(a, a) = (1, 1)", 1000.0, 1e-6);
+    check("(a, a) = (1, 2)", 0.0, 1e-6);
+    check("(a, a) IN ((1, 1), (2, 3))", 1000.0, 1e-6);
+    check("(a, a) NOT IN ((1, 2))", 10000.0, 1e-6);
+
+    /// Nullable tuple components are deliberately left to the old expression fallback
+    /// until their SQL NULL semantics are modeled explicitly.
+    check("(na, b) IN ((1, 2), (3, 4))", 100.0, 1e-6);
 }
 
 TEST(Statistics, NullableEstimatorWithBasic)

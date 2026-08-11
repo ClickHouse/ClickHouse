@@ -93,6 +93,19 @@ public:
         std::unordered_set<String> null_check_columns;
         /// columns checked with IS NOT NULL predicate
         std::unordered_set<String> not_null_check_columns;
+        /// For finalized predicates that evaluate to NULL whenever one of these
+        /// columns is NULL, keep the column null shares so later NULL checks on
+        /// the same columns are not combined by an independence assumption.
+        std::unordered_map<String, Float64> null_sensitive_column_null_shares;
+        struct TupleAlternative
+        {
+            std::vector<std::pair<String, Field>> equalities;
+            Float64 selectivity = 0.0;
+        };
+        /// Positive tuple predicates keep their alternatives so later scalar
+        /// predicates on the same columns can be applied without assuming independence.
+        std::vector<TupleAlternative> tuple_alternatives;
+        bool tuple_negated = false;
         bool finalized = false;
         Selectivity selectivity;
 
@@ -117,6 +130,32 @@ private:
 
     RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;
     bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
+    bool tryExtractColumnComparison(
+        const StorageMetadataPtr & metadata,
+        const String & function_name,
+        const RPNBuilderTreeNode & lhs,
+        const RPNBuilderTreeNode & rhs,
+        RPNElement & out) const;
+    bool tryExtractTupleComparison(
+        const StorageMetadataPtr & metadata,
+        const String & function_name,
+        const RPNBuilderTreeNode & lhs,
+        const RPNBuilderTreeNode & rhs,
+        RPNElement & out) const;
+    bool tryExtractExpressionDerivedRange(
+        const StorageMetadataPtr & metadata,
+        const String & function_name,
+        const RPNBuilderTreeNode & expression,
+        const Field & const_value,
+        const DataTypePtr & const_type,
+        RPNElement & out) const;
+    bool tryBuildColumnConstantAtom(
+        const StorageMetadataPtr & metadata,
+        const String & function_name,
+        const String & column_name,
+        Field const_value,
+        DataTypePtr const_type,
+        RPNElement & out) const;
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.
