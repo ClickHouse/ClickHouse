@@ -72,6 +72,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char materialized_postgresql_fail_nested_table_drop[];
+    extern const char materialized_postgresql_fail_nested_drop_on_detach[];
     extern const char materialized_postgresql_fail_database_startup[];
     extern const char materialized_postgresql_pause_after_stop_replication[];
 }
@@ -679,6 +680,36 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             tables_to_replicate = getFormattedTablesList(table_name);
         }
 
+        auto * materialized_storage = table_to_delete->as<StorageMaterializedPostgreSQL>();
+        if (!materialized_storage->getNested())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Inner table `{}` does not exist", table_name);
+
+        /// The detach becomes durable only once the local nested drop succeeds: everything committed
+        /// before that - the persisted tables-list setting and the publication / consumer removal - is
+        /// rolled back on failure, mirroring `attachTable`. Otherwise a throw from the nested drop left
+        /// a live nested table stranded outside the logical database while the setting and the publication
+        /// no longer knew it: the failed `DETACH` was silently half-applied, and neither retrying it
+        /// (the wrapper was gone) nor `ATTACH`-ing the table back (the leaked nested table collides with
+        /// the one the attach creates) could recover.
+        const auto original_tables_list = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
+        auto rollback_tables_list = [&]
+        {
+            try
+            {
+                auto rollback_context = Context::createCopy(getContext()->getGlobalContext());
+                rollback_context->setInternalQuery(true);
+                auto rollback_query = createAlterSettingsQuery(
+                    SettingChange("materialized_postgresql_tables_list", original_tables_list));
+                InterpreterAlterQuery(rollback_query, rollback_context).execute();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format(
+                    "Failed to restore materialized_postgresql_tables_list after a failed detach of table `{}`",
+                    table_name));
+            }
+        };
+
         /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
         SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate);
         auto alter_query = createAlterSettingsQuery(new_setting);
@@ -689,36 +720,74 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             InterpreterAlterQuery(alter_query, current_context).execute();
         }
 
-        auto nested = table_to_delete->as<StorageMaterializedPostgreSQL>()->getNested();
-        if (!nested)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Inner table `{}` does not exist", table_name);
-
-        std::lock_guard lock(handler_mutex);
-        if (!replication_handler)
-            throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
-                "Cannot remove table `{}` from replication: the replication handler is gone. Retry later", table_name);
-        replication_handler->removeTableFromReplication(table_name);
+        try
+        {
+            /// Scoped tightly: the rollback ALTER below reaches `applySettingsChanges`, which takes
+            /// `handler_mutex`, so it must run only after the guard is destroyed during unwinding.
+            std::lock_guard lock(handler_mutex);
+            if (!replication_handler)
+                throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                    "Cannot remove table `{}` from replication: the replication handler is gone. Retry later", table_name);
+            replication_handler->removeTableFromReplication(table_name);
+        }
+        catch (...)
+        {
+            /// Nothing besides the tables-list setting is committed yet - restore it and propagate.
+            rollback_tables_list();
+            throw;
+        }
 
         try
         {
+            fiu_do_on(FailPoints::materialized_postgresql_fail_nested_drop_on_detach,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED,
+                    "Injected failure while dropping the nested table of detached table `{}`", table_name);
+            });
+
             auto current_context = Context::createCopy(getContext()->getGlobalContext());
             current_context->makeQueryContext();
             DatabaseAtomic::dropTable(current_context, table_name, true);
         }
         catch (Exception & e)
         {
-            /// We already removed this table from replication and adding it back will be an overkill..
-            /// TODO: this is bad, we leave a table lying somewhere not dropped, and if user will want
-            /// to move it back into replication, he will fail to do so because there is undropped nested with the same name.
-            /// This can also happen if we crash after removing table from replication and before dropping nested.
-            /// As a solution, we could drop a table if it already exists and add a fresh one instead for these two cases.
-            /// TODO: sounds good.
+            /// The table is already out of the publication and the consumer, and the WAL that PostgreSQL
+            /// sent past that point no longer carries its changes, so merely re-registering the consumer
+            /// state would lose data. Re-add through `addTableToReplication`: it reloads the surviving
+            /// nested table from a fresh snapshot (the `ReplacingMergeTree` collapses the re-inserted
+            /// rows) and restores the publication and the consumer state. On success the wrapper stays
+            /// published and the setting is restored, so the failed `DETACH` was a no-op and can be
+            /// retried.
+            bool table_readded = false;
+            try
             {
+                std::lock_guard lock(handler_mutex);
+                if (!replication_handler)
+                    throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                        "The replication handler is gone");
+                replication_handler->addTableToReplication(materialized_storage, table_name);
+                table_readded = true;
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format(
+                    "Failed to re-add table `{}` to replication after a failed detach", table_name));
+            }
+
+            if (table_readded)
+            {
+                rollback_tables_list();
+            }
+            else
+            {
+                /// Degraded fallback: the table is out of replication and the nested table could not be
+                /// dropped. The committed tables-list already matches the publication, so keep it, and
+                /// unpublish the wrapper so the database stops claiming a table that no longer replicates.
                 std::lock_guard tables_lock(tables_mutex);
                 materialized_tables.erase(table_name);
             }
 
-            e.addMessage("while removing table `" + table_name + "` from replication");
+            e.addMessage("while dropping the nested table of detached table `" + table_name + "`");
             throw;
         }
 

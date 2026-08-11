@@ -726,6 +726,66 @@ def test_drop_of_individual_table_is_rejected(started_cluster):
     pg_manager.drop_materialized_db()
 
 
+def test_failed_detach_rolls_back_and_table_keeps_replicating(started_cluster):
+    # A throw from the local nested-table drop used to leave DETACH TABLE ... PERMANENTLY half-applied:
+    # the tables-list setting and the publication had already been committed without the table, so a live
+    # nested table was stranded outside the logical database and silently stopped replicating, and neither
+    # retrying the DETACH (the wrapper was gone) nor ATTACH-ing the table back (the leaked nested table
+    # collides with the one the attach creates) could recover. The detach must be transactional like
+    # ATTACH: on failure the table is re-added to replication through a fresh snapshot and the setting is
+    # restored, so the failed DETACH is a no-op that can simply be retried.
+    table_name = "postgresql_replica_detach_rollback"
+    other_table_name = "postgresql_replica_detach_rollback_other"
+    for name in (table_name, other_table_name):
+        pg_manager.create_postgres_table(name)
+        instance.query(
+            f"INSERT INTO postgres_database.{name} SELECT number, number FROM numbers(50)"
+        )
+
+    tables_list = f"{table_name},{other_table_name}"
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{tables_list}'"],
+    )
+    check_tables_are_synchronized(instance, table_name)
+    check_tables_are_synchronized(instance, other_table_name)
+
+    instance.query(
+        "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_nested_drop_on_detach"
+    )
+    try:
+        error = instance.query_and_get_error(
+            f"DETACH TABLE test_database.{table_name} PERMANENTLY"
+        )
+        assert "Injected failure" in error
+    finally:
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_nested_drop_on_detach"
+        )
+
+    # The failed detach was rolled back completely: the table is still published ...
+    assert table_name in instance.query("SHOW TABLES FROM test_database").split()
+    # ... the persisted tables-list setting was restored ...
+    assert tables_list in instance.query("SHOW CREATE DATABASE test_database")
+    # ... and the table still replicates (it was re-added to the publication and the consumer).
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(50, 50)"
+    )
+    check_tables_are_synchronized(instance, table_name)
+    assert int(instance.query(f"SELECT count() FROM test_database.{table_name}")) == 100
+
+    # A retry of the DETACH starts from a clean state and succeeds.
+    instance.query(f"DETACH TABLE test_database.{table_name} PERMANENTLY")
+    assert table_name not in instance.query("SHOW TABLES FROM test_database").split()
+    instance.query(
+        f"INSERT INTO postgres_database.{other_table_name} SELECT number, number FROM numbers(50, 50)"
+    )
+    check_tables_are_synchronized(instance, other_table_name)
+
+    pg_manager.drop_materialized_db()
+
+
 def test_count_does_not_include_deleted_rows(started_cluster):
     # A `SELECT count()` needs no particular column, so the planner reads the cheapest column of the
     # nested table - which is the one-byte `_sign` column itself. The `_sign = 1` filter of the wrapped
