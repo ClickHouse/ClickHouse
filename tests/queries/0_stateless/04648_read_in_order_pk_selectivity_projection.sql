@@ -1,6 +1,8 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
 -- The read-in-order PK-selectivity guard (`read_in_order_max_primary_key_ratio`) is deliberately
--- exempt when the read comes from a projection: `optimizeUseNormalProjection` picks a normal
+-- exempt when the read comes from a projection with more than one selected part (the single-part
+-- case is covered by `04843_read_in_order_pk_selectivity_projection_single_part`):
+-- `optimizeUseNormalProjection` picks a normal
 -- projection precisely because its own sorting key satisfies the outer `ORDER BY`, so the only
 -- alternative plan is to read the same projection parts unordered and sort globally — the sort the
 -- projection was chosen to remove. Measurements backing this exemption are in the setting
@@ -48,7 +50,7 @@ SELECT count() > 0 FROM (
 
 -- A leading-wildcard `LIKE` gives the projection's own primary key no pruning at all, so the
 -- selectivity ratio is 1.0 and the guard would fire on a plain (non-projection) read. Reading from
--- a projection is exempt, so read-in-order is kept and no global sort is inserted: the pipeline has
+-- a projection with more than one part (two here) is exempt, so read-in-order is kept and no global sort is inserted: the pipeline has
 -- no `PartialSortingTransform`. The strictest threshold (`0.0`, guard always on), the default-like
 -- `0.5` and `1.0` (guard fully off) must all agree.
 SELECT 'projection_exempt_from_guard';

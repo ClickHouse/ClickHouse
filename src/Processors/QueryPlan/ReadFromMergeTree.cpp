@@ -3304,7 +3304,8 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// read-in-order changes the underlying algorithm to a streaming one (memory bound),
     /// so we never disable it based on PK selectivity.
     /// Also skip for parallel replicas to avoid coordination mismatches, when reading from
-    /// a projection (see `analysis_result.readFromProjection()` below), and when the query has a
+    /// a projection that still has more than one selected part (see
+    /// `analysis_result.readFromProjection()` below), and when the query has a
     /// LIMIT that can let read-in-order finish early (with virtual row optimization, parts
     /// can be skipped entirely).
     /// Finally, only fire when the query actually has a filter the primary key might have
@@ -3389,27 +3390,32 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
         /// whenever read-time pruning may happen (`mayPruneRangesOnDataRead`); a mark count that is known
         /// to be an upper bound cannot justify replacing a streaming read with a global sort.
         ///
-        /// Projection-backed reads are exempt (`readFromProjection`), and unlike the base-table case
-        /// this is backed by measurement rather than by the argument above. `optimizeUseNormalProjection`
-        /// picks a normal projection for a query whose `ORDER BY` it already satisfies, so the only
-        /// alternative plan is "read the same projection parts unordered, then sort globally" — the very
-        /// sort the projection was selected to remove; the projection read itself keeps full parallelism
-        /// (`ReadPoolInOrder` spreads its parts over all read streams), so there is no per-part
-        /// serialization for the fallback to recover. Measured on 60M rows / 10 parts,
-        /// `max_threads = 32`, table `ORDER BY ts` with a projection `ORDER BY path`, filtering with
-        /// `path LIKE '%...'` so the primary key prunes nothing:
-        ///   - projection plan, bulk output (59.4M rows): read-in-order 2.30 s / 1.4 GiB peak versus
-        ///     2.95 s / 3.2 GiB for the parallel-read-and-sort fallback — 28% slower and 2.2x the memory;
-        ///   - projection plan, selective output (618K rows): 0.28 s versus 0.27 s, i.e. no gain;
-        ///   - base-table plan on the same data (`WHERE path LIKE '%...' ORDER BY ts`): read-in-order
-        ///     0.63 s versus 0.50 s for the fallback — 21% faster to reject, which is the case this
-        ///     guard exists for.
-        /// So firing the guard on a projection read is never better and is clearly worse once the sort
-        /// is large. Note that the exemption is load-bearing on its own: `optimizeUseNormalProjection`
-        /// propagates `index_analysis_had_filter` to the projection reading step, so without this check
-        /// the guard would reach and reject those plans.
+        /// Projection-backed reads with more than one selected part are exempt
+        /// (`readFromProjection`), and unlike the base-table case this is backed by measurement
+        /// rather than by the argument above. `optimizeUseNormalProjection` picks a normal
+        /// projection for a query whose `ORDER BY` it already satisfies, so the only alternative
+        /// plan is "read the same projection parts unordered, then sort globally" — the very sort
+        /// the projection was selected to remove. The in-order read's parallelism is the number of
+        /// selected parts (`ReadPoolInOrder` assigns each part to one stream and never splits a
+        /// part), so the exemption requires more than one part: once background merges collapse the
+        /// projection to a single part, the in-order read degenerates to one stream while the
+        /// fallback still parallelizes mark ranges inside the part, and the guard should fire as it
+        /// does for base tables. Measured on 60M rows, `max_threads = 32`, table `ORDER BY ts` with
+        /// a projection `ORDER BY path`, filtering with `path LIKE '%...'` so the primary key
+        /// prunes nothing, bulk output (all 60M rows), best of 3:
+        ///   - 1 part: read-in-order 1.59 s versus 0.88 s for the fallback — 1.8x slower, the
+        ///     single-stream case the guard exists for;
+        ///   - 2 parts: 1.03 s versus 1.05 s — parity already;
+        ///   - 4 parts: 0.92 s versus 1.00 s; 10 parts: 0.92 s versus 1.05 s — in-order wins, and
+        ///     rejecting it also cost 2.2x the peak memory in earlier 10-part measurements.
+        /// So the crossover sits between one and two parts, far below the read-stream count (32
+        /// here): even two in-order streams beat full-width parallel reading because the fallback
+        /// pays a global sort of the whole result. Note that the exemption is load-bearing on its
+        /// own: `optimizeUseNormalProjection` propagates `index_analysis_had_filter` to the
+        /// projection reading step, so without this check the guard would reach and reject those
+        /// plans.
         if (read_streams > 1
-            && !analysis_result.readFromProjection()
+            && !(analysis_result.readFromProjection() && analysis_result.parts_with_ranges.size() > 1)
             && !mayPruneRangesOnDataRead()
             && analysis_result.total_marks_pk > read_streams
             && static_cast<double>(analysis_result.selected_marks_pk)

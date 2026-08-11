@@ -4222,14 +4222,16 @@ previous read-in-order behavior regardless of primary key selectivity.
 
 Even on the query-plan path the guard is deliberately exempt in the following cases, where it keeps
 read-in-order regardless of this setting:
-- reading from a projection: a projection is selected precisely because its own sorting key satisfies
-  the `ORDER BY`, so the only alternative plan is to read the same projection parts unordered and then
-  sort globally — the sort the projection was chosen to remove — while the projection read itself keeps
-  full parallelism, leaving no per-part serialization for the fallback to recover. Measured on 60M rows
-  in 10 parts with `max_threads = 32` and a filter the primary key cannot use, rejecting read-in-order
-  on the projection plan is 28% slower and uses 2.2x the peak memory for a bulk result and neither
-  faster nor slower for a selective one, while on the base-table plan over the same data it is 21%
-  faster — which is the case this setting exists for;
+- reading from a projection with more than one selected part: a projection is selected precisely
+  because its own sorting key satisfies the `ORDER BY`, so the only alternative plan is to read the
+  same projection parts unordered and then sort globally — the sort the projection was chosen to
+  remove. The in-order read's parallelism is the number of selected parts (each part is read by one
+  stream), and measurements on 60M rows with `max_threads = 32` and a filter the primary key cannot
+  use put the crossover between one and two parts: with a single part the in-order read is one
+  stream and rejecting it is 1.8x faster, while already with two parts the plans are at parity and
+  from four parts up rejecting read-in-order is slower and uses more memory. A projection read whose
+  parts were merged into a single part therefore obeys the guard like a base-table read, and any
+  multi-part projection read keeps read-in-order regardless of this setting;
 - reads where range pruning happens during the read rather than during index analysis, namely the
   `use_skip_indexes_on_data_read` path, join runtime filter granule pruning, and projection-index
   pruning (whose bitmap is applied during reading regardless of `use_projection_index_in_read_pools`;
