@@ -2828,6 +2828,7 @@ void registerStorageDistributed(StorageFactory & factory)
                 /// target does not depend on the current database of whatever session queries the table
                 /// later: expand CTEs, qualify unqualified table identifiers (and the table name argument
                 /// of `dictGet` and `joinGet`) with the current database, and replace `currentDatabase()`
+                /// (including its SQL-standard aliases `DATABASE()`, `SCHEMA()`, `current_database()`)
                 /// with its value.
                 /// This is the same normalization `CREATE VIEW` applies to its stored `SELECT`, and the
                 /// table-function analogue of how the classic form freezes its `database` argument (e.g.
@@ -2930,12 +2931,22 @@ void registerStorageDistributed(StorageFactory & factory)
                         /// access-checked) at create time. Empty cached columns make the execution eager
                         /// instead of deferred behind a lazy `StorageTableFunctionProxy`. The temporary-table
                         /// grant is not required: this is an internal probe, not a user-visible temporary table.
+                        /// The probe runs with the analyzer forced on: the legacy path of
+                        /// `evaluateConstantExpressionAsColumn` cannot execute a scalar subquery in a table
+                        /// function argument outside of a `SELECT` rewrite ("result column not found"), so the
+                        /// probe (and with it the `CREATE`, including its `DatabaseReplicated` replay) would
+                        /// spuriously fail for a session with the analyzer disabled - while an access-checked
+                        /// evaluation must still happen, because a later read may run with the analyzer
+                        /// enabled. The probe's result is discarded and the access checks run under the same
+                        /// creator's context, so the forced setting changes no user-visible semantics.
                         if (has_local_shard)
                         {
+                            auto probe_context = Context::createCopy(local_context);
+                            probe_context->setSetting("allow_experimental_analyzer", true);
                             TableFunctionPtr target_function
-                                = TableFunctionFactory::instance().get(remote_table_function_ptr, local_context);
+                                = TableFunctionFactory::instance().get(remote_table_function_ptr, probe_context);
                             target_function->execute(
-                                remote_table_function_ptr, local_context, target_function->getName(),
+                                remote_table_function_ptr, probe_context, target_function->getName(),
                                 /*cached_columns=*/ {}, /*use_global_context=*/ false, /*is_insert_query=*/ false,
                                 /*check_create_temporary_table=*/ false);
                         }
@@ -3076,7 +3087,7 @@ CREATE TABLE distributed_numbers ENGINE = Distributed(logs, numbers(100));
 
 The second argument is treated as a table function only when it is a call to a registered table function (such as `numbers`, `remote`, or `merge`); any other expression is interpreted as a database name, so the existing `Distributed(cluster, database, table, ...)` form is unaffected.
 
-The table function is bound to the current database at `CREATE` time: unqualified table identifiers and the table name argument of `dictGet` and `joinGet` inside it are qualified with the current database, `currentDatabase()` is replaced with its value, and an omitted database of a table function that would otherwise resolve it at query time (`dictionary`, the single-argument `merge`, `loop`, `timeSeriesSamples`/`timeSeriesData`/`timeSeriesTags`/`timeSeriesMetrics`, `timeSeriesSelector`, `prometheusQuery`, `prometheusQueryRange`, and an empty database argument of `remote`/`remoteSecure`/`cluster`/`clusterAllReplicas`, positional or a named-collection `database`/`db` override, e.g. `remote('127.0.0.1', '', 'table')` or `remote(collection, database = '', table = 'table')`, and likewise an empty database stored inside the named collection itself, which is frozen by injecting a literal `database` override) is filled in with the current database. A named collection that is not defined on this server cannot be resolved at `CREATE` time, so its stored database can neither be read nor frozen, and such a target is rejected unless the database is named explicitly with a `database`/`db` argument. The qualified form is stored in the table metadata. Queries therefore read the same target regardless of the current database of the querying session, in the same way as the `database` argument of the classic form is evaluated once at `CREATE` time.
+The table function is bound to the current database at `CREATE` time: unqualified table identifiers and the table name argument of `dictGet` and `joinGet` inside it are qualified with the current database, `currentDatabase()` (including its SQL-standard aliases `DATABASE()`, `SCHEMA()`, and `current_database()`) is replaced with its value, and an omitted database of a table function that would otherwise resolve it at query time (`dictionary`, the single-argument `merge`, `loop`, `timeSeriesSamples`/`timeSeriesData`/`timeSeriesTags`/`timeSeriesMetrics`, `timeSeriesSelector`, `prometheusQuery`, `prometheusQueryRange`, and an empty database argument of `remote`/`remoteSecure`/`cluster`/`clusterAllReplicas`, positional or a named-collection `database`/`db` override, e.g. `remote('127.0.0.1', '', 'table')` or `remote(collection, database = '', table = 'table')`, and likewise an empty database stored inside the named collection itself, which is frozen by injecting a literal `database` override) is filled in with the current database. A named collection that is not defined on this server cannot be resolved at `CREATE` time, so its stored database can neither be read nor frozen, and such a target is rejected unless the database is named explicitly with a `database`/`db` argument. The qualified form is stored in the table metadata. Queries therefore read the same target regardless of the current database of the querying session, in the same way as the `database` argument of the classic form is evaluated once at `CREATE` time.
 
 :::note Read-only
 A `Distributed` table over a table function can only be queried, not written to. There is no concrete remote table to route the rows to, so every `INSERT` into this form fails with `NOT_IMPLEMENTED`. The `sharding_key` and the `INSERT`-related settings and behaviour described below therefore do not apply to it, and the `policy_name` parameter is not accepted for this form (it would only be used to store temporary files for background `INSERT`s).
@@ -3411,7 +3422,8 @@ void registerStorageRemote(StorageFactory & factory)
         /// Bind a table-function target to the current database at CREATE time, exactly as the
         /// `Distributed(cluster, table_function())` form does in `registerStorageDistributed`: expand CTEs,
         /// qualify unqualified table identifiers (and the table name argument of `dictGet` / `joinGet`)
-        /// with the current database, replace `currentDatabase()` with its value, and bind a database
+        /// with the current database, replace `currentDatabase()` (including its SQL-standard aliases
+        /// `DATABASE()`, `SCHEMA()`, `current_database()`) with its value, and bind a database
         /// argument the function would otherwise resolve against the current database of the querying
         /// session (`dictionary('d')`, `loop(t)`, the single-argument `merge('^regexp$')`, ...).
         /// Without this the persisted metadata keeps session-dependent spellings, so the same table would
@@ -3468,13 +3480,18 @@ void registerStorageRemote(StorageFactory & factory)
                 /// argument is evaluated (and access-checked) at create time. Empty cached columns make the
                 /// execution eager instead of deferred behind a lazy `StorageTableFunctionProxy`. The
                 /// temporary-table grant is not required: this is an internal probe, not a user-visible
-                /// temporary table.
+                /// temporary table. The probe runs with the analyzer forced on, exactly as the `Distributed`
+                /// branch does: the legacy path of `evaluateConstantExpressionAsColumn` cannot execute a
+                /// scalar subquery in a table function argument, so the probe would spuriously fail for a
+                /// session with the analyzer disabled, while a later read may run with it enabled.
                 if (analyze_table_function_target)
                 {
+                    auto probe_context = Context::createCopy(args.getLocalContext());
+                    probe_context->setSetting("allow_experimental_analyzer", true);
                     TableFunctionPtr target_function
-                        = TableFunctionFactory::instance().get(parsed.remote_table_function_ptr, args.getLocalContext());
+                        = TableFunctionFactory::instance().get(parsed.remote_table_function_ptr, probe_context);
                     target_function->execute(
-                        parsed.remote_table_function_ptr, args.getLocalContext(), target_function->getName(),
+                        parsed.remote_table_function_ptr, probe_context, target_function->getName(),
                         /*cached_columns=*/ {}, /*use_global_context=*/ false, /*is_insert_query=*/ false,
                         /*check_create_temporary_table=*/ false);
                 }

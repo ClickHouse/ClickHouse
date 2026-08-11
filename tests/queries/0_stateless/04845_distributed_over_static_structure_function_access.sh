@@ -46,7 +46,9 @@ echo "-- 1. explicit columns over numbers((SELECT ... FROM secret)), with access
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.secret TO $user"
 ${CLICKHOUSE_CLIENT} --user "$user" --query \
     "CREATE TABLE $db.dist_static (n UInt64) ENGINE = Distributed(test_shard_localhost, numbers(assumeNotNull((SELECT count() FROM $db.secret))))"
-${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT count() FROM $db.dist_static"
+# The read is pinned to the analyzer: the legacy path cannot evaluate a scalar subquery in a table
+# function argument at read time (see 04817_distributed_over_remote_table_function_binding).
+${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT count() FROM $db.dist_static SETTINGS enable_analyzer = 1"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE $db.dist_static"
 ${CLICKHOUSE_CLIENT} --query "REVOKE SELECT ON $db.secret FROM $user"
 
@@ -59,7 +61,7 @@ echo "-- 2. Remote engine analogue, with access: allowed and readable"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.secret TO $user"
 ${CLICKHOUSE_CLIENT} --user "$user" --query \
     "CREATE TABLE $db.remote_static (n UInt64) ENGINE = Remote('127.0.0.1', numbers(assumeNotNull((SELECT count() FROM $db.secret))))"
-${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT count() FROM $db.remote_static"
+${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT count() FROM $db.remote_static SETTINGS enable_analyzer = 1"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE $db.remote_static"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user"
