@@ -1443,12 +1443,17 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
                     {
                         code = getZooKeeper()->tryRemove(remove_requests[i]->getPath());
                     });
-                    if (code == Coordination::Error::ZOK)
+                    if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE)
                     {
+                        /// ZOK: retry succeeded. ZNONODE: first attempt already deleted the node
+                        /// before the multi aborted. Either way, the node is gone - clear cache.
                         local_file_statuses.remove(getMetadataCacheKey(batch_file_paths[i]));
 
                         if (node_limit)
                             --nodes_to_remove;
+
+                        if (code == Coordination::Error::ZNONODE)
+                            LOG_TRACE(log, "Node `{}` already removed (likely by first attempt before multi aborted)", remove_requests[i]->getPath());
                     }
                     else
                     {
@@ -1651,7 +1656,14 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
                 /// with bounded polling to avoid indefinite hangs.
                 LOG_INFO(log, "Another replica is executing SYSTEM DROP S3QUEUE FAILED FILES, waiting for completion");
 
-                static constexpr size_t max_iterations = 50; /// 5 seconds total (50 * 100ms)
+                /// Timeout is proportional to failed_file_ttl_sec: larger TTL implies larger
+                /// expected /failed subtrees that take longer to clean. Formula:
+                /// max(5, min(60, 10 * failed_file_ttl_sec)) seconds. Floor ensures reasonable
+                /// responsiveness for small cleanups; ceiling prevents indefinite waits.
+                const UInt64 ttl_sec = table_metadata.failed_files_ttl_sec.load();
+                const size_t timeout_seconds = std::max<size_t>(5, std::min<size_t>(60, 10 * ttl_sec));
+                const size_t max_iterations = timeout_seconds * 10; /// Poll every 100ms
+
                 for (size_t i = 0; i < max_iterations; ++i)
                 {
                     sleepForMilliseconds(100);
@@ -1665,11 +1677,54 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
                     {
                         if (poll_e.code == Coordination::Error::ZNONODE)
                         {
-                            /// Lock was released, cleanup completed by the other replica.
-                            /// Reconcile local cache to match Keeper state.
-                            LOG_INFO(log, "Cleanup lock was released after {}ms, reconciling cache", (i + 1) * 100);
-                            reconcileFailedFilesCache();
-                            return;
+                            /// Lock was released. Verify the cleanup actually succeeded by checking
+                            /// that no terminal failed nodes remain (the cleanup only removes terminal
+                            /// nodes, preserving .retriable ones). The winner could have partially
+                            /// failed (e.g., some batches succeeded, later batch threw KEEPER_EXCEPTION),
+                            /// so "lock released" does not guarantee "cleanup succeeded".
+                            LOG_INFO(log, "Cleanup lock was released after {}ms, verifying cleanup succeeded", (i + 1) * 100);
+
+                            const std::string failed_path = zookeeper_path / "failed";
+                            Strings remaining_failed_nodes;
+                            Coordination::Error check_code = zk_client->tryGetChildren(failed_path, remaining_failed_nodes);
+
+                            if (check_code != Coordination::Error::ZOK && check_code != Coordination::Error::ZNONODE)
+                            {
+                                /// Transient Keeper error during verification; safe to treat as unknown state
+                                throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+                                    "Failed to verify cleanup completion (Keeper error: {}). Please retry the command.",
+                                    magic_enum::enum_name(check_code));
+                            }
+
+                            /// Count only terminal failed nodes (exclude .retriable suffix nodes, which are preserved)
+                            size_t terminal_failed_count = 0;
+                            for (const auto & node : remaining_failed_nodes)
+                            {
+                                if (!node.ends_with(".retriable"))
+                                    ++terminal_failed_count;
+                            }
+
+                            if (terminal_failed_count == 0)
+                            {
+                                /// Cleanup succeeded: no terminal failed nodes remain
+                                reconcileFailedFilesCache();
+                                LOG_INFO(log, "Verified cleanup completed successfully");
+                                return;
+                            }
+                            else
+                            {
+                                /// Terminal failed nodes remain. This could mean:
+                                /// (a) the winner genuinely left nodes behind due to partial failure, OR
+                                /// (b) a new unrelated file failed during our wait window.
+                                /// We cannot distinguish these cases without tracking the original node set,
+                                /// so we conservatively throw and ask the caller to retry. This is safe
+                                /// (no false success) even if occasionally overly cautious on case (b),
+                                /// and a retry naturally resolves case (b) by cleaning the new nodes.
+                                throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+                                    "Failed file cleanup verification found {} terminal failed nodes remaining in /failed. "
+                                    "This may indicate partial failure or new concurrent failures. Please retry the command.",
+                                    terminal_failed_count);
+                            }
                         }
                         /// Other errors during polling are transient - retry on next iteration
                     }
@@ -1677,8 +1732,8 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
                     if (i == max_iterations - 1)
                     {
                         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-                            "Failed file cleanup lock held by another replica for more than 5 seconds. "
-                            "Please retry in a moment.");
+                            "Failed file cleanup lock held by another replica for more than {} seconds. "
+                            "Please retry in a moment.", timeout_seconds);
                     }
                 }
             }
