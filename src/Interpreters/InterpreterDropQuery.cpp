@@ -896,6 +896,12 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
         if (ignore_sync_setting)
             drop_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
         drop_context->setDDLOrOnClusterInternal(true);
+
+        /// The copy of the global context has no process list element. Attach the calling query's
+        /// element so that the synchronous wait for the inner table to be finally dropped
+        /// (`sync == true`) can be interrupted by `KILL QUERY` of the calling query
+        /// (see `waitForTableToBeActuallyDroppedOrDetached`).
+        drop_context->setProcessListElement(current_context->getProcessListElementSafe());
         if (auto txn = current_context->getZooKeeperMetadataTransaction())
         {
             /// For Replicated database
