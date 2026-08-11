@@ -1,4 +1,4 @@
-export const Glossary = ({ entries = [] }) => {
+export const Glossary = ({ children, metadata = {} }) => {
   const nodeText = (node) => {
     if (node === null || node === undefined || typeof node === 'boolean') return '';
     if (typeof node === 'string' || typeof node === 'number') return String(node);
@@ -6,11 +6,51 @@ export const Glossary = ({ entries = [] }) => {
     return nodeText(node.props && node.props.children);
   };
 
+  const entries = [];
+  const childNodes = Array.isArray(children) ? children : [children];
+  let currentEntry;
+
+  childNodes.forEach(node => {
+    const id = node && node.props && node.props.id;
+    if (id) {
+      currentEntry = {
+        id,
+        term: nodeText(node),
+        content: [],
+        ...(metadata[id] || {}),
+      };
+      entries.push(currentEntry);
+    } else if (currentEntry && node !== null && node !== undefined) {
+      currentEntry.content.push(node);
+    }
+  });
+
   const [query, setQuery] = useState('');
+  const [activeId, setActiveId] = useState('');
+  useEffect(() => {
+    const syncHash = () => {
+      const id = window.location.hash.slice(1);
+      setActiveId(id);
+
+      if (id) {
+        setQuery('');
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            document.getElementById(id)?.scrollIntoView({ block: 'start' });
+          });
+        });
+      }
+    };
+
+    syncHash();
+    window.addEventListener('hashchange', syncHash);
+    return () => window.removeEventListener('hashchange', syncHash);
+  }, []);
+
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const visibleEntries = entries.filter(entry => {
     if (!normalizedQuery) return true;
-    const searchableText = `${entry.term} ${nodeText(entry.description)}`.toLocaleLowerCase();
+    const searchableText = `${entry.term} ${(entry.aliases || []).join(' ')} ${nodeText(entry.content)}`.toLocaleLowerCase();
     return searchableText.includes(normalizedQuery);
   });
 
@@ -39,11 +79,15 @@ export const Glossary = ({ entries = [] }) => {
       {visibleEntries.length > 0 ? (
         <div className="glossary-grid">
           {visibleEntries.map(entry => (
-            <article key={entry.id} id={entry.id} className="glossary-entry scroll-mt-24">
+            <article
+              key={entry.id}
+              className={`glossary-entry${activeId === entry.id ? ' glossary-entry--target' : ''}`}
+            >
               <h2 className="glossary-entry-title">
                 {entry.code ? <code>{entry.term}</code> : entry.term}
               </h2>
-              <div className="glossary-entry-description">{entry.description}</div>
+              <span id={entry.id} className="glossary-entry-anchor" aria-hidden="true" />
+              <div className="glossary-entry-description">{entry.content}</div>
               {entry.learnMore && (
                 <a className="glossary-entry-link" href={entry.learnMore}>
                   Learn more <span aria-hidden="true">→</span>
@@ -70,9 +114,10 @@ export const Glossary = ({ entries = [] }) => {
         .glossary-count { flex: none; min-width: 4.5rem; color: #6b7280; font-size: .8rem; text-align: right; }
         .dark .glossary-count { color: #9ca3af; }
         .glossary-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: .85rem; }
-        .glossary-entry { scroll-margin-top: 6rem; padding: 1.15rem 1.25rem; background: var(--background-light, #fff); border: 1px solid rgb(156 163 175 / .3); border-radius: .65rem; }
+        .glossary-entry { position: relative; padding: 1.15rem 1.25rem; background: var(--background-light, #fff); border: 1px solid rgb(156 163 175 / .3); border-radius: .65rem; }
+        .glossary-entry-anchor { position: absolute; top: -6rem; }
         .dark .glossary-entry { background: var(--background-dark, #151515); border-color: rgb(107 114 128 / .35); }
-        .glossary-entry:target { border-color: #eab308; box-shadow: 0 0 0 3px rgb(253 255 117 / .3); }
+        .glossary-entry--target { border-color: #eab308; box-shadow: 0 0 0 3px rgb(253 255 117 / .3); }
         .glossary-entry-title { margin: 0 0 .55rem; font-size: 1.05rem; line-height: 1.35; }
         .glossary-entry-title code { font-size: .95em; }
         .glossary-entry-description { color: #4b5563; font-size: .9rem; line-height: 1.55; }
