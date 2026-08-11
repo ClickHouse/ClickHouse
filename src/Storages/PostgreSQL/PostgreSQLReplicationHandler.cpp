@@ -92,6 +92,7 @@ namespace FailPoints
     extern const char materialized_postgresql_fail_load_from_snapshot[];
     extern const char materialized_postgresql_fail_add_table_to_replication[];
     extern const char materialized_postgresql_pause_before_register_replica[];
+    extern const char materialized_postgresql_pause_in_non_last_teardown[];
     extern const char materialized_postgresql_pause_before_marking_snapshot_completed[];
     extern const char materialized_postgresql_pause_before_redo_snapshot_truncate[];
 }
@@ -335,7 +336,7 @@ namespace
     ///
     /// A value containing `/` (for example `'{shard}/{replica}'`) would silently turn the registration into a
     /// nested path `<keeper_path>/replicas/<shard>/<replica>`. `unregisterReplicaAndCheckLast` removes only the
-    /// leaf node and then wins the last-replica fence by removing the now-empty `/replicas` parent, so with an
+    /// leaf node and wins the last-replica fence by removing the then-empty `/replicas` parent, so with an
     /// intermediate level in between, `/replicas` would never become empty and the fence could never fire: the
     /// shared replication slot, publication and `snapshot_completed` marker would leak forever, even after the
     /// last replica is dropped. An empty name would make the registration collide with the `/replicas` node
@@ -2279,8 +2280,8 @@ void PostgreSQLReplicationHandler::registerReplicaInKeeper()
     /// decision. With a blind createIfNotExists two same-named replicas would collapse onto one node - then a
     /// failed join rollback (or a DROP) on one of them removes the other live replica's registration, and a
     /// later last-replica teardown removes the shared slot/publication/snapshot_completed marker around a
-    /// replica that still holds data. Re-registering an own node (server restart, ATTACH, teardown re-register)
-    /// stays idempotent because the owner identity is stable.
+    /// replica that still holds data. Re-registering an own node (server restart, ATTACH) stays idempotent
+    /// because the owner identity is stable.
     ///
     /// The registration is also where the <keeper_path>/teardown ownership token becomes an authoritative
     /// fence. The token check in ensureCoordinatedNamingCompatible alone is only advisory: between that check
@@ -2451,7 +2452,7 @@ void PostgreSQLReplicationHandler::coordinatedTeardownBeforeDataDrop()
         /// Make the fail-close last-replica decision first: unregisterReplicaAndCheckLast throws if Keeper is
         /// unreachable, which aborts the drop before any nested table is removed (and, importantly, before the
         /// consumer below is stopped, so a transient Keeper outage does not disturb an otherwise-healthy replica).
-        const bool is_last = unregisterReplicaAndCheckLast();
+        const bool is_last = unregisterReplicaAndCheckLast(/* keep_registration_when_not_last */ true);
 
         /// Record the decision so shutdownFinal (the post-data teardown) does not re-run the race-free check: if this
         /// replica was the last one it has already removed the shared /replicas node here, and re-checking there
@@ -2460,28 +2461,26 @@ void PostgreSQLReplicationHandler::coordinatedTeardownBeforeDataDrop()
 
         if (!is_last)
         {
-            /// Not the last replica: the shared state must stay. We had to remove /replicas/<name> to make the
-            /// last-replica decision race-free, so re-register it - this replica keeps counting as a live data
-            /// holder until its nested tables have actually been dropped. The authoritative removal then happens
-            /// in shutdownFinal, AFTER the caller has dropped the nested tables, so a failure while dropping them
-            /// never leaves this replica unregistered while it still holds a copy of the shared data. Re-register
-            /// BEFORE stopping the consumer below: this is the teardown's last refusable Keeper write, so a
+            /// Not the last replica: the shared state must stay - and so must this replica's /replicas/<name>
+            /// registration, which unregisterReplicaAndCheckLast deliberately left untouched (removing it and
+            /// winning the last-replica fence is one atomic multi-request, so a non-last decision removes
+            /// nothing). The registration is the crash-persistent record that this replica still holds a copy
+            /// of the shared data: a server killed at any point of this teardown - or of the nested-table drop
+            /// that follows it - stays visible to every peer's last-replica check, so no peer can tear down the
+            /// shared slot, publication and Keeper subtrees around the surviving local data. The registration
+            /// is removed in shutdownFinal, AFTER the caller has actually dropped the nested tables. The
+            /// non-last path therefore performs no Keeper write at all before the shutdown() below, so a
             /// refused (thrown) drop leaves the live replication handler untouched.
             ///
-            /// Do not create ancestors here: a missing /replicas parent means a concurrent dropper on a peer has
-            /// won the last-replica fence in the meantime and removed the shared coordination state. Re-creating
-            /// the node would resurrect a tree that peer is tearing down, and throwing would refuse this
-            /// otherwise-valid drop; proceed unregistered instead - the re-check in shutdownFinal then reads the
-            /// parent's absence as "another replica was last" and correctly skips the shared cleanup.
-            auto zookeeper = getContext()->getZooKeeper();
-            const String replica_path = coordination_keeper_path + "/replicas/" + coordination_replica_name;
-            const auto code = zookeeper->tryCreate(replica_path, coordination_replica_owner, zkutil::CreateMode::Persistent);
-            if (code == Coordination::Error::ZNONODE)
-                LOG_INFO(log,
-                    "Not re-registering replica '{}': the shared /replicas node was removed by a concurrent last-replica teardown",
-                    coordination_replica_name);
-            else if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
-                throw zkutil::KeeperException::fromPath(code, replica_path);
+            /// Holds the teardown right after the non-last decision, so a test can hard-kill the server here
+            /// and verify that the still-registered replica keeps the shared state alive through a peer's drop
+            /// and resumes replicating after a restart.
+            fiu_do_on(FailPoints::materialized_postgresql_pause_in_non_last_teardown,
+            {
+                LOG_INFO(log, "Pausing the non-last coordinated teardown until failpoint "
+                         "materialized_postgresql_pause_in_non_last_teardown is disabled");
+                FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_in_non_last_teardown);
+            });
         }
 
         shutdown();
@@ -2536,9 +2535,10 @@ void PostgreSQLReplicationHandler::restartCoordinatedReplicationAfterFailedTeard
     /// idempotent, and the shared snapshot_completed marker decides (as always) whether the elected worker
     /// resumes from confirmed_flush_lsn or redoes the initial snapshot.
     ///
-    /// The failed teardown had already made its last-replica decision and re-registered this replica (or, for the
-    /// last replica, removed the shared coordination nodes, which the rebuilt startup then recreates). Clear that
-    /// stale decision so a later drop re-runs the race-free last-replica check from scratch instead of reusing
+    /// The failed teardown had already made its last-replica decision, keeping this replica's registration in
+    /// place (or, for the last replica, removed the shared coordination nodes, which the rebuilt startup then
+    /// recreates). Clear that stale decision so a later drop re-runs the race-free last-replica check from
+    /// scratch instead of reusing
     /// `coordinated_teardown_was_last` (which a retried drop that skips the teardown would otherwise trust).
     coordinated_teardown_was_last = false;
     stop_synchronization.store(false);
@@ -2563,22 +2563,33 @@ void PostgreSQLReplicationHandler::restartReplicationAfterFailedDrop()
 }
 
 
-bool PostgreSQLReplicationHandler::unregisterReplicaAndCheckLast()
+bool PostgreSQLReplicationHandler::unregisterReplicaAndCheckLast(bool keep_registration_when_not_last)
 {
     auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::unregisterReplicaAndCheckLast");
 
     auto zookeeper = getContext()->getZooKeeper();
     const String replicas_path = coordination_keeper_path + "/replicas";
+    const String replica_path = replicas_path + "/" + coordination_replica_name;
+    const String teardown_path = coordination_keeper_path + "/teardown";
 
     /// The last-replica decision must be race-free across replicas dropping concurrently. A plain "remove my
     /// node, then list the parent" lets two droppers both delete their node before either lists it, so both
     /// observe an empty list and both conclude they are the last replica - and then both tear down the shared
     /// slot/publication/snapshot_completed marker, potentially around a replica whose nested-table drop later
     /// fails and still holds a copy of the data. Instead, fence the transition on the /replicas parent node:
-    /// remove this replica's node, then try to remove the (now possibly empty) parent. Removing an empty node
-    /// succeeds for exactly one caller - the last one out - and every other concurrent dropper then gets ZNONODE
-    /// (the parent was already removed by that last replica) or ZNOTEMPTY (other replicas are still registered),
-    /// so at most one replica can ever observe itself as the last one.
+    /// removing this replica's node and the (then empty) parent is submitted as one atomic multi-request, and
+    /// removing the empty parent succeeds for exactly one caller - the last one out. Every other caller gets
+    /// ZNOTEMPTY (other replicas are still registered; nothing was removed, the multi-request is atomic) or
+    /// ZNONODE (the parent was already removed by the last replica), so at most one replica can ever observe
+    /// itself as the last one.
+    ///
+    /// The atomicity also makes the decision crash-persistent for the non-last replica: its registration is
+    /// removed only together with winning the fence, never separately, so a process death at any point leaves
+    /// either the registration in place (peers keep counting this replica as a live data holder) or a won
+    /// fence with the teardown token below. The registration of a replica that is NOT the last one is kept
+    /// while `keep_registration_when_not_last` is set (the pre-data teardown: the caller still holds the
+    /// data), and removed - followed by re-running the fence, since removing it may make this replica the
+    /// last one out after all - once the caller has actually dropped the local nested tables (shutdownFinal).
     ///
     /// This is also fail-close: the caller (DROP DATABASE / DROP TABLE) is about to remove this replica's local
     /// nested tables, so any Keeper error other than the expected ZNONODE/ZNOTEMPTY codes propagates rather than
@@ -2588,60 +2599,109 @@ bool PostgreSQLReplicationHandler::unregisterReplicaAndCheckLast()
     /// The removal is ownership-checked: when this replica's name is held by another replica (this replica's
     /// own registration was rejected for the duplicate materialized_postgresql_replica_name), it is not
     /// registered at all - it must not remove the peer's node and cannot be the last replica.
-    if (!tryRemoveOwnReplicaRegistration(zookeeper))
-        return false;
-
-    /// Removing the parent succeeds only when this replica's node was its last child, which atomically
-    /// designates this caller - and only this caller - as the last replica. The <keeper_path>/teardown
-    /// ownership token is created in the same multi-request, so winning the last-replica fence and fencing
-    /// the keeper path against fresh CREATEs is one atomic step: from this moment until the token is removed
-    /// (after the shared PostgreSQL slot/publication have been dropped, see shutdownFinal), no fresh setup
-    /// can be built on this path, so the pending by-name drops can never delete a new setup's objects.
-    const String teardown_path = coordination_keeper_path + "/teardown";
-    Coordination::Requests ops;
-    ops.emplace_back(zkutil::makeRemoveRequest(replicas_path, -1));
-    ops.emplace_back(zkutil::makeCreateRequest(teardown_path, coordination_replica_owner, zkutil::CreateMode::Persistent));
-    Coordination::Responses responses;
-    const auto multi_code = zookeeper->tryMulti(ops, responses);
-
-    if (multi_code == Coordination::Error::ZOK)
+    while (true)
     {
-        LOG_INFO(log, "Unregistered the last replica '{}'", coordination_replica_name);
-        return true;
-    }
+        Coordination::Stat replica_stat;
+        String registered_owner;
+        const bool registered = zookeeper->tryGet(replica_path, registered_owner, &replica_stat);
 
-    if (responses.empty() || (responses[0]->error != Coordination::Error::ZNOTEMPTY && responses[0]->error != Coordination::Error::ZNONODE))
+        if (registered && registered_owner != coordination_replica_owner)
+        {
+            LOG_WARNING(log,
+                "Not removing the replica registration node {}: it belongs to another replica that resolved "
+                "materialized_postgresql_replica_name to the same value '{}'",
+                replica_path, coordination_replica_name);
+            return false;
+        }
+
+        /// Removing the parent succeeds only when this replica's node was its last child, which atomically
+        /// designates this caller - and only this caller - as the last replica. The <keeper_path>/teardown
+        /// ownership token is created in the same multi-request, so winning the last-replica fence and fencing
+        /// the keeper path against fresh CREATEs is one atomic step: from this moment until the token is removed
+        /// (after the shared PostgreSQL slot/publication have been dropped, see shutdownFinal), no fresh setup
+        /// can be built on this path, so the pending by-name drops can never delete a new setup's objects.
+        Coordination::Requests ops;
+        if (registered)
+            ops.emplace_back(zkutil::makeRemoveRequest(replica_path, replica_stat.version));
+        ops.emplace_back(zkutil::makeRemoveRequest(replicas_path, -1));
+        ops.emplace_back(zkutil::makeCreateRequest(teardown_path, coordination_replica_owner, zkutil::CreateMode::Persistent));
+        Coordination::Responses responses;
+        const auto multi_code = zookeeper->tryMulti(ops, responses);
+
+        if (multi_code == Coordination::Error::ZOK)
+        {
+            LOG_INFO(log, "Unregistered the last replica '{}'", coordination_replica_name);
+            return true;
+        }
+
+        const size_t failed_op = zkutil::getFailedOpIndex(multi_code, responses);
+        const size_t parent_op = registered ? 1 : 0;
+
+        /// This replica's registration node changed or disappeared between the read above and the
+        /// multi-request (for example a concurrent purge of a registration this replica published under an
+        /// earlier name, or a peer's recursive teardown of the whole /replicas subtree). Re-read and retry.
+        if (registered && failed_op == 0)
+            continue;
+
+        if (failed_op == parent_op && multi_code == Coordination::Error::ZNOTEMPTY)
+        {
+            if (registered && keep_registration_when_not_last)
+            {
+                /// Pre-data teardown: this replica still holds a copy of the shared data, and its
+                /// registration - untouched, the failed multi-request removed nothing - is the
+                /// crash-persistent record of that fact.
+                LOG_INFO(log,
+                    "Replica '{}' is not the last registered one; keeping its registration until its local "
+                    "nested tables have been dropped",
+                    coordination_replica_name);
+                return false;
+            }
+
+            if (registered)
+            {
+                /// Post-data teardown: the local nested tables are already gone, so the registration must go
+                /// too. Remove it and re-run the fence: a concurrent dropper may be doing the same, and
+                /// removing this node may leave the parent empty, making this replica the last one out.
+                if (const auto remove_code = zookeeper->tryRemove(replica_path, replica_stat.version);
+                    remove_code != Coordination::Error::ZOK && remove_code != Coordination::Error::ZNONODE
+                    && remove_code != Coordination::Error::ZBADVERSION)
+                    throw zkutil::KeeperException::fromPath(remove_code, replica_path);
+                continue;
+            }
+
+            LOG_INFO(log,
+                "Replica '{}' is not registered and other replica(s) still are; keeping the shared replication "
+                "slot and publication",
+                coordination_replica_name);
+            return false;
+        }
+
+        if (failed_op == parent_op && multi_code == Coordination::Error::ZNONODE)
+        {
+            /// The /replicas parent is already gone: either a concurrent dropper removed it as the last replica
+            /// (and is tearing down the shared state, so this replica must not repeat that teardown), or this
+            /// replica's OWN earlier refused drop did - its pre-data teardown won the fence and left its teardown
+            /// token behind, and this call is the retried drop resuming it. The token's owner distinguishes the
+            /// two; resuming matters, because reading "not last" here would skip the shared PostgreSQL cleanup and
+            /// leak the slot/publication while the token keeps rejecting recreates.
+            String teardown_owner;
+            if (zookeeper->tryGet(teardown_path, teardown_owner) && teardown_owner == coordination_replica_owner)
+            {
+                LOG_INFO(log,
+                    "Replica '{}' resumes the last-replica teardown of its own earlier refused drop",
+                    coordination_replica_name);
+                return true;
+            }
+
+            LOG_INFO(log,
+                "The shared /replicas node was already removed by a concurrent last-replica teardown; replica "
+                "'{}' is not the last one",
+                coordination_replica_name);
+            return false;
+        }
+
         throw zkutil::KeeperMultiException(multi_code, ops, responses);
-
-    const auto parent_code = responses[0]->error;
-
-    if (parent_code == Coordination::Error::ZNOTEMPTY)
-    {
-        LOG_INFO(log,
-            "Unregistered replica '{}'; other replica(s) still registered, keeping the shared replication slot and publication",
-            coordination_replica_name);
-        return false;
     }
-
-    /// The /replicas parent is already gone: either a concurrent dropper removed it as the last replica
-    /// (and is tearing down the shared state, so this replica must not repeat that teardown), or this
-    /// replica's OWN earlier refused drop did - its pre-data teardown won the fence and left its teardown
-    /// token behind, and this call is the retried drop resuming it. The token's owner distinguishes the
-    /// two; resuming matters, because reading "not last" here would skip the shared PostgreSQL cleanup and
-    /// leak the slot/publication while the token keeps rejecting recreates.
-    String teardown_owner;
-    if (zookeeper->tryGet(teardown_path, teardown_owner) && teardown_owner == coordination_replica_owner)
-    {
-        LOG_INFO(log,
-            "Replica '{}' resumes the last-replica teardown of its own earlier refused drop",
-            coordination_replica_name);
-        return true;
-    }
-
-    LOG_INFO(log,
-        "Unregistered replica '{}'; the shared /replicas node was already removed by a concurrent last-replica teardown",
-        coordination_replica_name);
-    return false;
 }
 
 
@@ -3054,15 +3114,14 @@ void PostgreSQLReplicationHandler::shutdownFinal()
         }
         else
         {
-            /// This replica re-registered /replicas/<name> in the pre-data teardown (it was not the last one
-            /// then; if a concurrent last-replica teardown had removed the /replicas parent by that point, the
-            /// re-registration was skipped and the re-check below reads the parent's absence as "another
-            /// replica was last") and has since dropped its local nested tables. Remove that registration now
-            /// and re-run the race-free check: a peer that dropped concurrently may have left this the actual last replica. If
-            /// it is still not the last one, another replica holds the shared data, so keep the shared
-            /// slot/publication and coordination nodes for the peers and let the caller drop only this replica's
-            /// local nested tables.
-            if (!unregisterReplicaAndCheckLast())
+            /// This replica kept its /replicas/<name> registration through the pre-data teardown (it was not
+            /// the last one then, and the registration is the crash-persistent record that it still held a
+            /// copy of the shared data) and has since dropped its local nested tables. Remove the registration
+            /// now and re-run the race-free check: a peer that dropped concurrently may have left this the
+            /// actual last replica. If it is still not the last one, another replica holds the shared data, so
+            /// keep the shared slot/publication and coordination nodes for the peers and let the caller drop
+            /// only this replica's local nested tables.
+            if (!unregisterReplicaAndCheckLast(/* keep_registration_when_not_last */ false))
                 return;
 
             /// Now the last replica: remove the coordination nodes (including the snapshot_completed marker)

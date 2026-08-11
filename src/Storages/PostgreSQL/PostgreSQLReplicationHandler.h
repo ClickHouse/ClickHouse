@@ -117,9 +117,11 @@ public:
     ///     snapshot_completed marker) now, so that even if the subsequent nested-table drop (or the process)
     ///     fails, a later recreate on the same keeper path redoes the initial snapshot instead of resuming
     ///     from confirmed_flush_lsn into empty tables;
-    ///   * if this is not the last replica, it re-registers /replicas/<name> so this replica keeps counting as
-    ///     a live data holder until its nested tables have actually been dropped - the authoritative removal
-    ///     then happens in shutdownFinal, AFTER the caller has dropped the nested tables.
+    ///   * if this is not the last replica, its /replicas/<name> registration stays untouched (the decision is
+    ///     one atomic Keeper multi-request that removes the registration only together with winning the
+    ///     last-replica fence), so even across a process death this replica keeps counting as a live data
+    ///     holder until its nested tables have actually been dropped - the authoritative removal then happens
+    ///     in shutdownFinal, AFTER the caller has dropped the nested tables.
     /// A Keeper error propagates (aborting the drop before any table is removed). Every refusable (throwing)
     /// step runs before the handler is stopped, except the last replica's removal of the shared coordination
     /// nodes; if that step fails, the caller must recover the stopped handler (see `isStopped` /
@@ -305,11 +307,15 @@ private:
     /// replicated data). Used on the register-first error path to decide whether the registration may be undone.
     bool hasAnyNestedTable() const;
 
-    /// Unregister this replica from <keeper_path>/replicas. Returns true when it was the last registered
-    /// replica: only then may the caller drop the shared PostgreSQL objects and the coordination nodes. The
+    /// Decide whether this replica is the last registered one under <keeper_path>/replicas. Returns true when
+    /// it was: only then may the caller drop the shared PostgreSQL objects and the coordination nodes. The
     /// last-replica decision is fenced on the /replicas parent node (removing the empty parent succeeds for
-    /// exactly one caller), so it is race-free across replicas dropping concurrently.
-    bool unregisterReplicaAndCheckLast();
+    /// exactly one caller), so it is race-free across replicas dropping concurrently; the replica's own
+    /// registration is removed atomically with winning the fence. When the replica is NOT the last one,
+    /// `keep_registration_when_not_last` selects between keeping its registration untouched (the pre-data
+    /// teardown: it is the crash-persistent record that this replica still holds a copy of the shared data)
+    /// and removing it (the post-data teardown, once the local nested tables are actually gone).
+    bool unregisterReplicaAndCheckLast(bool keep_registration_when_not_last);
 
     /// Remove the coordination-owned Keeper nodes (leader, replicas, snapshot marker). Does not touch
     /// <keeper_path>/tables: the nested replicated tables remove their own trees when they are dropped.

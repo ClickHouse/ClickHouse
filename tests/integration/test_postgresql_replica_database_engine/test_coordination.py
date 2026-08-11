@@ -3225,3 +3225,71 @@ def test_stale_registration_of_a_renamed_replica_is_purged(started_cluster):
     pg_manager.drop_materialized_db()
     assert not replication_slot_exists()
     assert not publication_exists()
+
+
+def test_hard_stop_during_non_last_teardown_keeps_replica_registered(started_cluster):
+    # A server killed in the middle of a non-last DROP DATABASE must stay visible to every later
+    # last-replica check: its /replicas/<name> registration is the crash-persistent record that it still
+    # holds a copy of the shared data, and removing the registration and winning the last-replica fence is
+    # a single atomic Keeper operation, so a non-last decision removes nothing. Without that atomicity a
+    # kill between "unregister" and "re-register" would let the peer's drop win the fence and delete the
+    # shared /tables subtree, slot and publication around the surviving local nested data, and the
+    # restarted replica would wedge on a read-only nested table instead of recovering.
+    pause_line = "Pausing the non-last coordinated teardown"
+    failpoint = "materialized_postgresql_pause_in_non_last_teardown"
+
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    create_coordinated_db("test_table")
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+    wait_for_marker(instance)
+
+    # Park the first replica's DROP right after its non-last decision and hard-kill the server there.
+    pause_baseline = count_in_all_logs(instance, pause_line)
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+
+    def drop_first():
+        try:
+            instance.query("DROP DATABASE test_database SYNC")
+        except Exception:  # noqa: BLE001
+            pass  # the server is killed while the query is parked at the failpoint
+
+    drop_thread = threading.Thread(target=drop_first)
+    drop_thread.start()
+    try:
+        wait_for_new_log_occurrence(instance, pause_line, pause_baseline, timeout=90)
+        # The non-last teardown performed no Keeper write: the registration is still in place.
+        assert replica_registered(instance2, "coord_instance1")
+        instance.stop_clickhouse(kill=True)
+    finally:
+        drop_thread.join()
+
+    # The killed replica still holds its local nested data, and its registration keeps recording that. The
+    # peer's own drop must therefore decide it is NOT the last replica and keep the shared state.
+    pg_manager2.drop_materialized_db()
+    assert replica_registered(instance2, "coord_instance1")
+    assert replication_slot_exists()
+    assert publication_exists()
+    assert marker_znode_exists(instance2)
+
+    # The killed replica restarts into the interrupted-drop state: nothing of the database had been dropped
+    # yet, so it comes back registered, re-elects itself and simply resumes replicating - alone now. The
+    # ephemeral leader node of the killed process only disappears when its Keeper session times out, so give
+    # the re-election time.
+    instance.start_clickhouse()
+    wait_for_leader(instance, expected="coord_instance1", timeout=120)
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+    )
+    check_tables_are_synchronized(instance, "test_table")
+    assert int(instance.query("SELECT count() FROM test_database.test_table")) == 200
+
+    # Retrying the drop - now on the last replica - tears the shared state down completely.
+    instance.query("DROP DATABASE test_database SYNC")
+    assert not replication_slot_exists()
+    assert not publication_exists()
+    assert not marker_znode_exists(instance2)
