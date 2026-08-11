@@ -6,5 +6,7 @@
 -- a filter on a physical column is still allowed
 2
 3
+-- a row policy on the identity column is refused too
+1
 -- the identity column is excluded again once the contract can name it
 1

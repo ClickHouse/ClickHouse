@@ -9,8 +9,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TABLE="t_${CLICKHOUSE_DATABASE}_${RANDOM}"
 TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
+POLICY="p_${CLICKHOUSE_DATABASE}_${RANDOM}"
 
-trap "rm -rf \"${TABLE_PATH}\" 2>/dev/null; ${CLICKHOUSE_CLIENT} --query \"SYSTEM DISABLE FAILPOINT datalake_simulate_unresolved_prewhere_metadata\" 2>/dev/null" EXIT
+trap "rm -rf \"${TABLE_PATH}\" 2>/dev/null; ${CLICKHOUSE_CLIENT} --query \"DROP ROW POLICY IF EXISTS ${POLICY} ON ${TABLE}\" 2>/dev/null; ${CLICKHOUSE_CLIENT} --query \"SYSTEM DISABLE FAILPOINT datalake_simulate_unresolved_prewhere_metadata\" 2>/dev/null" EXIT
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
 
@@ -40,6 +41,14 @@ ${CLICKHOUSE_CLIENT} --query "SELECT id FROM ${TABLE} PREWHERE region = 'East' O
 
 echo "-- a filter on a physical column is still allowed"
 ${CLICKHOUSE_CLIENT} --query "SELECT id FROM ${TABLE} PREWHERE val > 15 ORDER BY id"
+
+# The guard covers row policies as well: a policy predicate is pushed to the same place a PREWHERE
+# condition is, so it is refused for the same reason.
+echo "-- a row policy on the identity column is refused too"
+${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY ${POLICY} ON ${TABLE} USING region = 'East' AS PERMISSIVE TO ALL"
+${CLICKHOUSE_CLIENT} --query "SELECT id FROM ${TABLE} ORDER BY id" 2>&1 \
+    | grep -c "ILLEGAL_PREWHERE"
+${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY ${POLICY} ON ${TABLE}"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT datalake_simulate_unresolved_prewhere_metadata"
 
