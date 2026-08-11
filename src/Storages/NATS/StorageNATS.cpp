@@ -11,7 +11,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -43,7 +42,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsNonZeroUInt64 max_insert_block_size;
-    extern const SettingsMilliseconds rabbitmq_max_wait_ms;
     extern const SettingsMilliseconds stream_flush_interval_ms;
     extern const SettingsBool stream_like_engine_allow_direct_select;
     extern const SettingsString stream_like_engine_insert_queue;
@@ -52,11 +50,8 @@ namespace Setting
 
 namespace NATSSetting
 {
-    extern const NATSSettingsString nats_credentials;
     extern const NATSSettingsString nats_credential_file;
     extern const NATSSettingsMilliseconds nats_flush_interval_ms;
-    extern const NATSSettingsBool nats_wait_for_flush_interval;
-    extern const NATSSettingsBool nats_commit_on_select;
     extern const NATSSettingsString nats_format;
     extern const NATSSettingsStreamingHandleErrorMode nats_handle_error_mode;
     extern const NATSSettingsUInt64 nats_max_block_size;
@@ -99,7 +94,7 @@ StorageNATS::StorageNATS(
     const String & comment,
     std::unique_ptr<NATSSettings> nats_settings_,
     LoadingStrictnessLevel mode)
-    : IStreamingStorage(table_id_)
+    : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , nats_settings(std::move(nats_settings_))
     , subjects(parseList(getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_subjects]), ','))
@@ -117,21 +112,6 @@ StorageNATS::StorageNATS(
     auto nats_password = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_password]);
     auto nats_token = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_token]);
     auto nats_credential_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credential_file]);
-    auto nats_credentials = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credentials]);
-
-    /// A credential source specified in the table settings overrides both config-level sources
-    /// (otherwise a table with `nats_credential_file` would silently authenticate with a server-level `nats.credentials`).
-    /// Only when neither is specified in the table settings, fall back to the config,
-    /// where having both sources at once is as ambiguous as in the table settings.
-    if (nats_credential_file.empty() && nats_credentials.empty())
-    {
-        nats_credential_file = getContext()->getConfigRef().getString("nats.credential_file", "");
-        nats_credentials = getContext()->getConfigRef().getString("nats.credentials", "");
-        if (!nats_credential_file.empty() && !nats_credentials.empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "You can specify only one of `nats.credential_file` and `nats.credentials` in the server configuration");
-    }
 
     configuration =
     {
@@ -140,8 +120,7 @@ StorageNATS::StorageNATS(
         .username = nats_username.empty() ? getContext()->getConfigRef().getString("nats.user", "") : nats_username,
         .password = nats_password.empty() ? getContext()->getConfigRef().getString("nats.password", "") : nats_password,
         .token = nats_token.empty() ? getContext()->getConfigRef().getString("nats.token", "") : nats_token,
-        .credential_file = nats_credential_file,
-        .credentials = nats_credentials,
+        .credential_file = nats_credential_file.empty() ? getContext()->getConfigRef().getString("nats.credential_file", "") : nats_credential_file,
         .max_connect_tries = static_cast<UInt64>((*nats_settings)[NATSSetting::nats_startup_connect_tries].value),
         .reconnect_wait = static_cast<int>((*nats_settings)[NATSSetting::nats_reconnect_wait].value),
         .secure = (*nats_settings)[NATSSetting::nats_secure].value
@@ -173,10 +152,10 @@ StorageNATS::StorageNATS(
         tryLogCurrentException(log);
     }
 
-    streaming_task = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), "NATSStreamingTask", [this] { threadFunc(); });
+    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "NATSStreamingTask", [this] { streamingToViewsFunc(); });
     streaming_task->deactivate();
 
-    initialize_consumers_task = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), "NATSInitializeConsumersTask", [this] { initializeConsumersFunc(); });
+    initialize_consumers_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "NATSInitializeConsumersTask", [this] { initializeConsumersFunc(); });
     initialize_consumers_task->deactivate();
 }
 StorageNATS::~StorageNATS()
@@ -287,10 +266,10 @@ void StorageNATS::initializeConsumersFunc()
     size_t num_views = DatabaseCatalog::instance().getDependentViews(getStorageID()).size();
     if (num_views == 0)
     {
-        stream_control.claimCycle(last_seen_refresh_epoch);
         initialize_consumers_task->scheduleAfter(RESCHEDULE_MS);
         return;
     }
+    mv_attached.store(true);
 
     if (!subscribeConsumers())
     {
@@ -337,7 +316,6 @@ bool StorageNATS::subscribeConsumers()
     {
         try
         {
-            consumer->dropBuffered();
             consumer->subscribe();
             ++num_initialized;
         }
@@ -350,10 +328,7 @@ bool StorageNATS::subscribeConsumers()
 
     const bool are_consumers_initialized = num_initialized == num_created_consumers;
     if (are_consumers_initialized)
-    {
         consumers_ready.store(true);
-        subscription_stale.store(false);
-    }
 
     return are_consumers_initialized;
 }
@@ -362,10 +337,7 @@ void StorageNATS::unsubscribeConsumers()
 {
     std::lock_guard lock(consumers_mutex);
     for (auto & consumer : consumers)
-    {
-        consumer->unsubscribe(/*finish_queue=*/true);
-        consumer->dropBuffered();
-    }
+        consumer->unsubscribe();
 
     consumers_ready.store(false);
 }
@@ -406,7 +378,7 @@ void StorageNATS::read(
         throw Exception(
             ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
 
-    if (!DatabaseCatalog::instance().getDependentViews(getStorageID()).empty())
+    if (mv_attached)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageNATS with attached materialized views");
 
     if (!getStreamName().empty() && getConsumerName().empty())
@@ -424,9 +396,6 @@ void StorageNATS::read(
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto nats_source = std::make_shared<NATSSource>(*this, storage_snapshot, modified_context, column_names, 1, (*nats_settings)[NATSSetting::nats_handle_error_mode]);
-        nats_source->setCommitOnSelect((*nats_settings)[NATSSetting::nats_commit_on_select]);
-        nats_source->setTimeLimit(modified_context->getSettingsRef()[Setting::rabbitmq_max_wait_ms]);
-        nats_source->setWaitForFlushInterval(true);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             nats_source->getPort().getHeader().getColumnsWithTypeAndName(),
@@ -495,19 +464,6 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
 void StorageNATS::startup()
 {
     initialize_consumers_task->activateAndSchedule();
-}
-
-void StorageNATS::scheduleStreamingTasksImpl()
-{
-    streaming_task->schedule();
-}
-
-ActionLock StorageNATS::getActionLock(StorageActionBlockType action_type)
-{
-    auto lock = IStreamingStorage::getActionLock(action_type);
-    if (action_type == ActionLocks::StreamConsume)
-        subscription_stale.store(true);
-    return lock;
 }
 
 
@@ -649,40 +605,22 @@ bool StorageNATS::checkDependencies(const StorageID & table_id)
     return !DatabaseCatalog::instance().getReadyDependentViews(table_id, getContext()).empty();
 }
 
-void StorageNATS::threadFunc()
+void StorageNATS::streamingToViewsFunc()
 {
     auto table_id = getStorageID();
 
     bool consumers_queues_are_empty = false;
 
-    if (consumers_ready && subscription_stale.exchange(false))
-        unsubscribeConsumers();
-
-    const size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-    const bool is_connected = consumers_connection && consumers_connection->isConnected();
-    const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
-    const UInt64 refresh_epoch = last_seen_refresh_epoch.load();
-    const bool deps_ready = num_views == 0 || checkDependencies(table_id);
-    const bool run_cycle = is_connected && deps_ready && stream_control.claimCycle(last_seen_refresh_epoch);
-
     try
     {
-        if (num_views && run_cycle)
+        if (consumers_connection && consumers_connection->isConnected())
         {
-            if (!consumers_ready && !subscribeConsumers())
-            {
-                /// Give back a REFRESH permit consumed by `claimCycle`, so the refresh still
-                /// runs once subscribing succeeds, even if the table is stopped by then.
-                last_seen_refresh_epoch.store(refresh_epoch);
-                unsubscribeConsumers();
-                streaming_task->scheduleAfter(RESCHEDULE_MS);
-                return;
-            }
-
             auto start_time = std::chrono::steady_clock::now();
 
+            mv_attached.store(true);
+
             // Keep streaming as long as there are attached views and streaming is not cancelled
-            while (consumers_ready && !shutdown_called && num_created_consumers > 0)
+            while (!shutdown_called && num_created_consumers > 0)
             {
                 if (!checkDependencies(table_id))
                 {
@@ -690,17 +628,14 @@ void StorageNATS::threadFunc()
                     break;
                 }
 
-                LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
+                LOG_DEBUG(log, "Started streaming to attached views");
 
-                if (streamToViews(cycle_epoch))
+                if (streamToViews())
                 {
                     /// Reschedule with backoff.
                     consumers_queues_are_empty = true;
                     break;
                 }
-
-                if (stream_control.isBlocked() || stream_control.isCancelRequested(cycle_epoch))
-                    break;
 
                 auto end_time = std::chrono::steady_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
@@ -721,14 +656,11 @@ void StorageNATS::threadFunc()
     if (shutdown_called)
         return;
 
+    size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
+
     if (num_views != 0)
     {
-        if (stream_control.isBlocked() && consumers_ready)
-            unsubscribeConsumers();
-
-        /// While paused/stopped/views unready the loop above does no work, so reschedule with a delay to avoid
-        /// busy-looping; SYSTEM START reschedules it promptly via `scheduleStreamingTasks`.
-        if (consumers_queues_are_empty || stream_control.isBlocked() || !deps_ready)
+        if (consumers_queues_are_empty)
             streaming_task->scheduleAfter(RESCHEDULE_MS);
         else
             streaming_task->schedule();
@@ -738,11 +670,18 @@ void StorageNATS::threadFunc()
     else if (consumers_ready)
         unsubscribeConsumers();
 
+    if (!consumers_queues_are_empty)
+    {
+        streaming_task->schedule();
+        return;
+    }
+
     initialize_consumers_task->schedule();
+    mv_attached.store(false);
 }
 
 
-bool StorageNATS::streamToViews(UInt64 cycle_epoch)
+bool StorageNATS::streamToViews()
 {
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -784,19 +723,15 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, new_context, column_names, block_size, (*nats_settings)[NATSSetting::nats_handle_error_mode], cycle_epoch);
+        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, new_context, column_names, block_size, (*nats_settings)[NATSSetting::nats_handle_error_mode]);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
-        const bool flush_interval_set = (*nats_settings)[NATSSetting::nats_flush_interval_ms].changed;
-        Poco::Timespan max_execution_time = flush_interval_set
+        Poco::Timespan max_execution_time = (*nats_settings)[NATSSetting::nats_flush_interval_ms].changed
             ? (*nats_settings)[NATSSetting::nats_flush_interval_ms]
             : getContext()->getSettingsRef()[Setting::stream_flush_interval_ms];
 
         source->setTimeLimit(max_execution_time);
-        /// Only hold blocks open for the whole flush interval when `nats_wait_for_flush_interval` is set.
-        source->setWaitForFlushInterval(
-            (*nats_settings)[NATSSetting::nats_wait_for_flush_interval] && max_execution_time.totalMicroseconds() > 0);
     }
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
@@ -804,14 +739,6 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
     {
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();
-    }
-
-    for (auto & source : sources)
-    {
-        if (source->wasConsumptionAborted())
-            continue;
-        if (auto source_consumer = source->getConsumer())
-            source_consumer->ackConsumed();
     }
 
     if (!consumers_connection || !consumers_connection->isConnected())
@@ -847,74 +774,20 @@ String StorageNATS::getConsumerName() const
     return getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_consumer_name]);
 }
 
-namespace
-{
-
-/// `nats_credential_file` and `nats_credentials` are two ways to provide the same credentials, so only one
-/// of them may be specified. A source specified in the query (in the `SETTINGS` clause or as a named-collection
-/// override) is more specific than one stored in the named collection, so it replaces it instead of conflicting
-/// with it - otherwise a named collection with one of the sources could not be reused by a table which provides
-/// the other one.
-void resolveCredentialSource(NATSSettings & nats_settings, bool credential_file_from_collection, bool credentials_from_collection)
-{
-    const bool credential_file_set = !nats_settings[NATSSetting::nats_credential_file].value.empty();
-    const bool credentials_set = !nats_settings[NATSSetting::nats_credentials].value.empty();
-
-    const bool credential_file_from_query = credential_file_set && !credential_file_from_collection;
-    const bool credentials_from_query = credentials_set && !credentials_from_collection;
-
-    if (credential_file_from_query && credentials_from_query)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "You can specify only one of `nats_credential_file` and `nats_credentials`");
-
-    if (credential_file_from_collection && credentials_from_collection)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "The named collection can specify only one of `nats_credential_file` and `nats_credentials`");
-
-    if (credential_file_from_query && credentials_from_collection)
-        nats_settings[NATSSetting::nats_credentials] = String{};
-    else if (credentials_from_query && credential_file_from_collection)
-        nats_settings[NATSSetting::nats_credential_file] = String{};
-}
-
-}
-
 void registerStorageNATS(StorageFactory & factory);
 void registerStorageNATS(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         auto nats_settings = std::make_unique<NATSSettings>();
-        /// Whether a credential source comes from the named collection itself rather than from a query override.
-        bool credential_file_from_collection = false;
-        bool credentials_from_collection = false;
         if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
         {
             nats_settings->loadFromNamedCollection(named_collection);
-
-            credential_file_from_collection = !(*nats_settings)[NATSSetting::nats_credential_file].value.empty()
-                && !named_collection->isQueryOverridden("nats_credential_file");
-            credentials_from_collection = !(*nats_settings)[NATSSetting::nats_credentials].value.empty()
-                && !named_collection->isQueryOverridden("nats_credentials");
         }
         else if (!args.storage_def->settings)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "NATS engine must have settings");
 
         nats_settings->loadFromQuery(*args.storage_def);
-
-        /// A credential source assigned in the `SETTINGS` clause is query-level even when the named
-        /// collection provides the same key: the clause is applied on top of the collection values,
-        /// so the final value no longer comes from the collection.
-        if (args.storage_def->settings)
-        {
-            for (const auto & change : args.storage_def->settings->changes)
-            {
-                if (change.name == "nats_credential_file")
-                    credential_file_from_collection = false;
-                else if (change.name == "nats_credentials")
-                    credentials_from_collection = false;
-            }
-        }
 
         if (!(*nats_settings)[NATSSetting::nats_url].changed && !(*nats_settings)[NATSSetting::nats_server_list].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify either `nats_url` or `nats_server_list` settings");
@@ -924,8 +797,6 @@ void registerStorageNATS(StorageFactory & factory)
 
         if (!(*nats_settings)[NATSSetting::nats_subjects].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_subjects` setting");
-
-        resolveCredentialSource(*nats_settings, credential_file_from_collection, credentials_from_collection);
 
         if ((*nats_settings)[NATSSetting::nats_consumer_name].changed && !(*nats_settings)[NATSSetting::nats_stream].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "To use NATS jet stream, you must specify `nats_stream` setting");
@@ -976,10 +847,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
     [nats_credential_file = '/var/nats_credentials',]
-    [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
-    [nats_commit_on_select = false,]
     [nats_handle_error_mode = 'default']
 ```
 
@@ -987,7 +856,7 @@ Required parameters:
 
 - `nats_url` – host:port (for example, `localhost:4222`)..
 - `nats_subjects` – List of subject for NATS table to subscribe/publish to. Supports wildcard subjects like `foo.*.bar` or `baz.>`
-- `nats_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](/reference/formats/index) section.
+- `nats_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](../../../interfaces/formats.md) section.
 
 Optional parameters:
 
@@ -1000,17 +869,14 @@ Optional parameters:
 - `nats_reconnect_wait` – Amount of time in milliseconds to sleep between each reconnect attempt. Default: `2000`.
 - `nats_server_list` - Server list for connection. Can be specified to connect to NATS cluster.
 - `nats_skip_broken_messages` - NATS message parser tolerance to schema-incompatible messages per block. Default: `0`. If `nats_skip_broken_messages = N` then the engine skips *N* NATS messages that cannot be parsed (a message equals a row of data).
-- `nats_max_block_size` - Number of row collected by poll(s) for flushing data from NATS. Default: [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size).
-- `nats_flush_interval_ms` - Timeout for flushing data read from NATS. Default: [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms).
-- `nats_wait_for_flush_interval` - If `true`, a background streaming cycle stays open for the whole flush interval (`nats_flush_interval_ms`, or `stream_flush_interval_ms` otherwise) instead of finishing as soon as the consumer queue drains, letting more messages accumulate into a single block at the cost of up to one flush interval of extra ingestion latency. Default: `false` (low-latency drain-and-go behaviour).
+- `nats_max_block_size` - Number of row collected by poll(s) for flushing data from NATS. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
+- `nats_flush_interval_ms` - Timeout for flushing data read from NATS. Default: [stream_flush_interval_ms](/operations/settings/settings#stream_flush_interval_ms).
 - `nats_username` - NATS username.
 - `nats_password` - NATS password.
 - `nats_token` - NATS auth token.
 - `nats_credential_file` - Path to a NATS credentials file.
-- `nats_credentials` - NATS credentials content (the same payload as in a `.creds` file with user JWT and seed).
 - `nats_startup_connect_tries` - Number of connect tries at startup. Default: `5`.
 - `nats_max_rows_per_message` — The maximum number of rows written in one NATS message for row-based formats. (default : `1`).
-- `nats_commit_on_select` - Commit messages when query is made. Applies to JetStream only; core NATS has no acknowledgements. Default: `0`.
 - `nats_handle_error_mode` — How to handle errors for NATS engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`).
 
 SSL connection:
@@ -1069,7 +935,7 @@ More specifically you can add your password for the NATS engine:
 
 ## Description {#description}
 
-`SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
+`SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
 
 1.  Use the engine to create a NATS consumer and consider it a data stream.
 2.  Create a table with the desired structure.
@@ -1121,11 +987,11 @@ Note: `_raw_message` and `_error` virtual columns are filled only in case of exc
 
 ## Data formats support {#data-formats-support}
 
-NATS engine supports all [formats](/reference/formats/index) supported in ClickHouse.
+NATS engine supports all [formats](../../../interfaces/formats.md) supported in ClickHouse.
 The number of rows in one NATS message depends on whether the format is row-based or block-based:
 
 - For row-based formats the number of rows in one NATS message can be controlled by setting `nats_max_rows_per_message`.
-- For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](/reference/settings/session-settings/max#max_block_size).
+- For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](/operations/settings/settings#max_block_size).
 
 ## Using JetStream {#using-jetstream}
 
@@ -1242,8 +1108,6 @@ CREATE TABLE nats_jet_stream (
               nats_subjects = 'stream_subject',
               nats_format = 'JSONEachRow';
 ```
-
-JetStream tables give at-least-once delivery: a message is acknowledged only after it has been inserted into the dependent materialized views, so a message whose insert fails or is interrupted stays unacknowledged and is redelivered. Core NATS (without JetStream) has no acknowledgement or replay, so it is at-most-once and an interrupted message is lost.
 )DOCS_MD",
             .syntax = "ENGINE = NATS() SETTINGS nats_url = 'host:port', nats_subjects = 'subject', nats_format = 'format', ...",
             .related = {"Kafka", "RabbitMQ", "FileLog"}});

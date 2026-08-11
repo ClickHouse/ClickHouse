@@ -11,7 +11,6 @@
 namespace ProfileEvents
 {
     extern const Event AggregationPreallocatedElementsInHashTables;
-    extern const Event AggregationConvertedToTwoLevel;
 }
 
 namespace DB
@@ -162,8 +161,6 @@ bool AggregatedDataVariants::isConvertibleToTwoLevel() const
 
 void AggregatedDataVariants::convertToTwoLevel()
 {
-    ProfileEvents::increment(ProfileEvents::AggregationConvertedToTwoLevel);
-
     if (aggregator)
         LOG_TRACE(aggregator->log, "Converting aggregation data to two-level.");
 
@@ -422,14 +419,12 @@ AggregatedDataVariants::Type AggregatedDataVariants::chooseMethod(
             return Type::keys256;
     }
 
-    /// If single string key - will use hash table with 16-byte packed string references. Strings that do not fit
-    /// inline are stored separately in Arena. The Aggregator may remap this to the legacy `key_string` method
-    /// (see `Params::enable_packed_string_keys`).
+    /// If single string key - will use hash table with references to it. Strings itself are stored separately in Arena.
     if (keys_size == 1 && isString(types_removed_nullable[0]))
     {
         if (has_low_cardinality)
             return Type::low_cardinality_key_string;
-        return Type::key_packed_string;
+        return Type::key_string;
     }
 
     if (keys_size > 1 && all_keys_are_numbers_or_strings)

@@ -1,12 +1,8 @@
 #pragma once
 
 #include <cstddef>
-#include <base/unit.h>
 #include <Core/Defines.h>
-#include <Core/Types.h>
-#if ENABLE_DISTRIBUTED_CACHE
 #include <IO/DistributedCacheSettings.h>
-#endif
 #include <IO/ReadMethod.h>
 #include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Common/Priority.h>
@@ -104,9 +100,6 @@ struct PageCacheSettings
 struct FilesystemCacheSettings
 {
     bool read_if_exists_otherwise_bypass = false;
-    /// Cache-only mode for data with no backing storage (distributed-cache temporary data):
-    /// a miss is an error, never a remote-FS bypass. Takes precedence over `read_if_exists_otherwise_bypass`.
-    bool temp_cache_only = false;
     size_t segments_batch_size = 20;
     std::optional<size_t> boundary_alignment;
     bool allow_background_download = true;
@@ -118,9 +111,6 @@ struct FilesystemCacheSettings
     /// the sister `DistributedCacheSettings::prefer_bigger_buffer_size`.
     bool prefer_bigger_buffer_size = true;
     size_t reserve_space_wait_lock_timeout_milliseconds = 1000;
-    /// How long a read may wait for a file segment which is being downloaded by a concurrent query
-    /// before bypassing the cache and reading directly from remote storage.
-    size_t wait_for_concurrent_download_timeout_milliseconds = 1000;
     size_t max_download_size_per_query = (128UL * 1024 * 1024 * 1024);
     bool skip_download_if_exceeds_per_query_cache_write_limit = true;
     bool enable_log = false;
@@ -151,20 +141,11 @@ struct ReadSettings
     bool use_page_cache_for_object_storage = false;
     PageCacheSettings page_cache_settings;
 
-    /// Experimental pipeline read executor. When `enabled`, `ReadPipeline::build` routes supported
-    /// reads through `ReaderExecutor` instead of the legacy matryoshka of read buffers (reading in
-    /// blocks of `buffer_size`). The long-connection knobs apply only on the executor path: reuse a
-    /// held source connection across sequential windows (`use_long_connections`), the forward gap
-    /// bridged on it rather than reopening (`min_bytes_for_seek`), and the tail drained to complete a
-    /// dropped connection (`max_tail_for_drain`).
-    struct ReaderExecutorSettings
-    {
-        bool enabled = false;
-        bool use_long_connections = true;
-        size_t min_bytes_for_seek = 2 * 1_MiB;
-        size_t max_tail_for_drain = 1_MiB;
-    };
-    ReaderExecutorSettings reader_executor;
+    /// Experimental pipeline read executor (`use_reader_executor`). When set,
+    /// `ReadPipeline::build` routes supported reads through `ReaderExecutor`
+    /// instead of the legacy matryoshka of read buffers. The executor reads in
+    /// blocks of `buffer_size` bytes.
+    bool use_reader_executor = false;
 
     /// Bandwidth throttler to use during reading
     ThrottlerPtr remote_throttler;
@@ -176,9 +157,7 @@ struct ReadSettings
     HTTPReadSettings http_settings;
 
     bool read_through_distributed_cache = false;
-#if ENABLE_DISTRIBUTED_CACHE
     DistributedCacheSettings distributed_cache_settings;
-#endif
 
     ReadSettings adjustBufferSize(size_t file_size) const;
 

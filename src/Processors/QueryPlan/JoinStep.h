@@ -21,14 +21,6 @@ struct LogicalJoinInfo
 class JoinStep : public IQueryPlanStep
 {
 public:
-
-    enum class JoinStage : size_t
-    {
-        Default = 0,
-        Build = 1,
-        Probe = 2,
-    };
-
     JoinStep(
         const SharedHeader & left_header_,
         const SharedHeader & right_header_,
@@ -45,14 +37,6 @@ public:
     String getName() const override { return "Join"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
-
-    /// A JoinStep never reads, so it has no meaningful input-byte stats of its own;
-    /// also it is not clear whether a Join is ever the top of a replicas plan,
-    /// i.e. not followed by an ExpressionStep.
-    /// Output-byte collection is nevertheless supported here for completeness, but only on the
-    /// analyzer path: `updatePipeline` appends the collector only there, so claiming support
-    /// otherwise would silently report zero output bytes.
-    bool supportsDataflowStatisticsCollection() const override { return use_new_analyzer; }
 
     void describePipeline(FormatSettings & settings) const override;
 
@@ -85,9 +69,6 @@ public:
 
     bool isOptimized() const { return optimized; }
     void setOptimized() { optimized = true; }
-
-    std::vector<size_t> getStepGroups() const override;
-    String getStepGroupName(size_t group) const override;
 
 private:
     bool optimized = false;

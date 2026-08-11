@@ -38,13 +38,11 @@ namespace DB::Parquet
 
 SchemaConverter::SchemaConverter(
     const parq::FileMetaData & file_metadata_, const ReadOptions & options_,
-    const Block * sample_block_, std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns)
+    const Block * sample_block_)
     : file_metadata(file_metadata_), options(options_), sample_block(sample_block_)
     , levels {LevelInfo {.def = 0, .rep = 0, .is_array = true}}
 {
-    if (precomputed_geo_columns.has_value())
-        geo_columns = std::move(*precomputed_geo_columns);
-    else if (options.format.parquet.allow_geoparquet_parser)
+    if (options.format.parquet.allow_geoparquet_parser)
     {
         for (const auto & kv : file_metadata.key_value_metadata)
         {
@@ -118,7 +116,6 @@ void SchemaConverter::prepareForReading()
         missing_output.output_type = missing_output.input_type;
         missing_output.is_missing_column = true;
     }
-
 }
 
 NamesAndTypesList SchemaConverter::inferSchema()
@@ -155,21 +152,7 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
     }
     auto it = map.find(element.field_id);
     if (it == map.end())
-    {
-        /// Iceberg reserves field ids greater than 2147483447 (Integer.MAX_VALUE - 200) for metadata
-        /// columns, e.g. the v3 row-lineage fields _row_id (2147483540) and
-        /// _last_updated_sequence_number (2147483539). Spec-compliant Iceberg writers physically
-        /// write these into data files, but they are not part of the table schema. Per the Iceberg
-        /// spec (https://iceberg.apache.org/spec/#reserved-field-ids), readers must ignore
-        /// reserved-range field ids they don't recognize rather than failing. Such a column is
-        /// never requested, so returning its physical name lets the existing "unrequested column"
-        /// path skip it.
-        static constexpr Int64 iceberg_max_user_field_id = 2147483447; /// Integer.MAX_VALUE - 200; ids above this are reserved
-        if (element.field_id > iceberg_max_user_field_id)
-            return element.name;
-
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parquet file has column {} with field_id {} that is not in datalake metadata", element.name, element.field_id);
-    }
 
     /// At top level (empty path), return the full mapped name. For nested
     /// elements, strip the parent path prefix to get the child name.
@@ -1024,15 +1007,15 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type of GeoParquet column: {}", thriftToString(type));
 
         out_inferred_type = getGeoDataType(geo_metadata->type);
-        out_decoder.string_converter = std::make_shared<GeoConverter>(*geo_metadata, options.format.precise_float_parsing);
+        out_decoder.string_converter = std::make_shared<GeoConverter>(*geo_metadata);
         return;
     }
 
     if (type_hint && type_hint->getName() == "Geometry" && type == parq::Type::BYTE_ARRAY)
     {
-        GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed, std::nullopt};
+        GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed};
         out_inferred_type = getGeoDataType(GeoType::Mixed);
-        out_decoder.string_converter = std::make_shared<GeoConverter>(iceberg_geo, options.format.precise_float_parsing);
+        out_decoder.string_converter = std::make_shared<GeoConverter>(iceberg_geo);
         return;
     }
 

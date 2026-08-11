@@ -33,7 +33,7 @@ class ColumnReplicated;
 class IDataType;
 class Block;
 class ReadBuffer;
-struct StoredBlock;
+struct ColumnsInfo;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using IColumnPermutation = PaddedPODArray<size_t>;
 using IColumnFilter = PaddedPODArray<UInt8>;
@@ -85,7 +85,7 @@ struct ColumnCheckpointWithMultipleNested : public ColumnCheckpoint
 struct ColumnsWithRowNumbers
 {
     /// `columns` and `row_numbers` must have same size
-    VectorWithMemoryTracking<const StoredBlock *> columns;
+    VectorWithMemoryTracking<const ColumnsInfo *> columns;
     VectorWithMemoryTracking<UInt32> row_numbers;
 };
 
@@ -132,23 +132,19 @@ public:
     /// If column is ColumnReplicated, transforms it to full column.
     [[nodiscard]] virtual Ptr convertToFullColumnIfReplicated() const { return getPtr(); }
 
-    /// Recursively strip internal representation wrappers (Const, Replicated, Sparse)
-    /// from this column and all its subcolumns. Does NOT strip LowCardinality — that is
-    /// a semantic type, not a representation wrapper. Callers that also need LowCardinality
-    /// removed should chain ->convertToFullColumnIfLowCardinality() for top-level removal,
-    /// or use recursiveRemoveLowCardinality for recursive removal.
-    [[nodiscard]] virtual Ptr convertToFullIfWrapped() const
+    [[nodiscard]] virtual Ptr convertToFullIfNeeded() const
     {
         Ptr converted = convertToFullColumnIfConst()
             ->convertToFullColumnIfReplicated()
-            ->convertToFullColumnIfSparse();
+            ->convertToFullColumnIfSparse()
+            ->convertToFullColumnIfLowCardinality();
 
         Columns new_subcolumns;
         bool any_changed = false;
 
         converted->forEachSubcolumn([&](const WrappedPtr & subcolumn)
         {
-            auto new_sub = subcolumn->convertToFullIfWrapped();
+            auto new_sub = subcolumn->convertToFullIfNeeded();
             any_changed |= (new_sub.get() != subcolumn.get());
             new_subcolumns.push_back(std::move(new_sub));
         });
@@ -367,25 +363,6 @@ public:
     /// in a single step. For more details, refer to the HashMethodSerialized implementation.
     virtual void collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
 
-    /// Append byte-comparable encoding of row n to `out`.
-    /// memcmp on the output preserves the same ordering as compareAt.
-    virtual void serializeAsComparable(size_t n, String & out) const;
-
-    /// Batch serialize rows: append the encoding of row `src` (where
-    /// `src = permutation ? (*permutation)[r] : r`) to `out[r]`. `out` is
-    /// grown to `num_rows` if needed; existing contents are preserved.
-    /// When `null_map` is non-null, rows with `null_map[src]` set are skipped.
-    ///
-    /// Precondition: `num_rows <= size()`; `permutation` (if non-null) has
-    /// `num_rows` entries each < `size()`; `null_map` (if non-null) has at
-    /// least `size()` elements. The caller must validate; no bounds checking.
-    using Permutation = IColumnPermutation;
-    virtual void batchSerializeAsComparable(
-        size_t num_rows,
-        VectorWithMemoryTracking<String> & out,
-        const Permutation * permutation,
-        const UInt8 * null_map) const;
-
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
     /// Note that it needs to deal with user input
     virtual void deserializeAndInsertFromArena(ReadBuffer & in, const SerializationSettings * settings) = 0;
@@ -461,6 +438,7 @@ public:
 
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
+    using Permutation = IColumnPermutation;
     [[nodiscard]] virtual Ptr permute(const Permutation & perm, size_t limit) const = 0;
 
     /// Creates new column with values column[indexes[:limit]]. If limit is 0, all indexes are used.
@@ -496,15 +474,6 @@ public:
       * The main reason for the function is compareAt() devirtualization.
       */
     [[nodiscard]] virtual Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const;
-
-    /** Returns the end (exclusive) of the run of values equal to the value at `begin`, i.e. the smallest
-      * r in (begin, end] with compareAt(r, begin, ...) != 0, or `end` if all values in [begin, end) equal
-      * the value at `begin`. Returns `begin` if begin >= end. Equality is by value (`compareAt`), not collation-aware.
-      *
-      * PRECONDITION: [begin, end) is sorted so that equal values are contiguous. Only contiguity matters:
-      * the sort direction (ascending or descending) is irrelevant.
-      */
-    [[nodiscard]] virtual size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const;
 
 #if USE_EMBEDDED_COMPILER
 
@@ -761,18 +730,9 @@ public:
         return getPtr();
     }
 
-    /// Fills column values from encoded join row refs (see RowRef / RowRefList in Interpreters/RowRefs.h).
-    /// `block_columns[block_no]` is the resolved source column for this output column in that block, and
-    /// `block_replicated[block_no]` is that column as ColumnReplicated* if it is one (else nullptr). Both
-    /// are pre-resolved per block by `StoredColumnsIndex::resolveEmitColumns`, so the inner loop is one indexed load.
-    /// If row_refs_are_ranges is true, then each entry represents >= 1 consecutive rows of one block
-    virtual void fillFromRowRefs(
-        const DataTypePtr & type,
-        const UInt64 * row_refs_begin,
-        const UInt64 * row_refs_end,
-        bool row_refs_are_ranges,
-        const IColumn * const * block_columns,
-        const ColumnReplicated * const * block_replicated);
+    /// Fills column values from RowRefList
+    /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
+    virtual void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges);
 
     /// Fills column values from list of blocks and row numbers
     /// A nullptr in the list is interpreted as a default value
@@ -1052,15 +1012,9 @@ private:
     /// Devirtualize updateAt.
     void updateInplaceFrom(const IColumn::Patch & patch) override;
 
-    /// Fills column values from encoded join row refs
-    /// If row_refs_are_ranges is true, then each entry represents >= 1 consecutive rows of one block
-    void fillFromRowRefs(
-        const DataTypePtr & type,
-        const UInt64 * row_refs_begin,
-        const UInt64 * row_refs_end,
-        bool row_refs_are_ranges,
-        const IColumn * const * block_columns,
-        const ColumnReplicated * const * block_replicated) override;
+    /// Fills column values from RowRefList
+    /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
+    void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges) override;
 
     /// Fills column values from list of columns and row numbers
     /// A nullptr in the list is interpreted as a default value

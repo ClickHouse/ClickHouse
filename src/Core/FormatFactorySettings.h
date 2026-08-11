@@ -40,21 +40,10 @@ Possible values:
 - 0 — Disabled.
 )", 0) \
     DECLARE(Bool, output_format_csv_serialize_tuple_into_separate_columns, true, R"(
-If it set to true, then bare `Tuple` columns in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost).
-
-This flattening applies only to bare `Tuple`. A `Nullable(Tuple)` is always serialized as a single CSV field (so that NULL and non-null rows occupy the same number of fields), regardless of this setting.
-)", 0) \
-    DECLARE(Bool, output_format_csv_header_serialize_tuple_into_separate_columns, true, R"(
-When [output_format_csv_serialize_tuple_into_separate_columns](#output_format_csv_serialize_tuple_into_separate_columns) is enabled, the header rows of `CSVWithNames` and `CSVWithNamesAndTypes` flatten each bare `Tuple` column into its leaf fields (dotted names like `t.a`, `t.b`, and the leaf type names), so the header has the same number of columns as the data. A `Nullable(Tuple)` column is never flattened (its data stays a single CSV field), so its header keeps the single top-level column name and type. For `CustomSeparated*` this flattening applies only when `format_custom_escaping_rule = 'CSV'` and `format_custom_field_delimiter` is a single character equal to `format_csv_delimiter`; otherwise (for example the default tab delimiter or `format_custom_field_delimiter = '|'`) the header stays unflattened so it still matches the data. Set it to `0` to keep the previous behavior where the header keeps the single top-level Tuple name and type.
-
-Note: a flattened header is not read back into a Tuple by name when `input_format_with_names_use_header = 1`. To read such data back into a Tuple, either set this setting to `0` on output, or read with `input_format_with_names_use_header = 0` (and, for the `*WithNamesAndTypes` formats `CSVWithNamesAndTypes` and `CustomSeparatedWithNamesAndTypes`, also `input_format_with_types_use_header = 0`, since the flattened types row is otherwise validated against the single top-level Tuple input field and rejected).
+If it set to true, then Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost)
 )", 0) \
     DECLARE(Bool, input_format_csv_deserialize_separate_columns_into_tuple, true, R"(
 If it set to true, then separate columns written in CSV format can be deserialized to Tuple column.
-
-This applies only to bare `Tuple`. A `Nullable(Tuple)` is always written as a single CSV field (see [output_format_csv_serialize_tuple_into_separate_columns](#output_format_csv_serialize_tuple_into_separate_columns)) and is likewise read back from a single field, never from separate columns, regardless of this setting. Separate-columns parsing is not supported for `Nullable(Tuple)` because a leading `\N` field is ambiguous (it may be the outer NULL of the tuple or the NULL of its first element).
-
-Because a bare `Tuple` then occupies one field per element, a `\N` in the field of a direct top-level element is that element and not the whole column, so [input_format_null_as_default](#input_format_null_as_default) applies to that element. A row that supplies a single field for the whole tuple is short by the remaining elements and is rejected instead of taking the column default. Set this setting to `0` to read such a field as the whole column again. A `\N` in the field of an element of a nested `Tuple` is still read as that whole nested element.
 )", 0) \
     DECLARE(Bool, output_format_csv_crlf_end_of_line, false, R"(
 If it is set true, end of line in CSV format will be \\r\\n instead of \\n.
@@ -160,9 +149,6 @@ Possible values:
     DECLARE(Bool, input_format_csv_empty_as_default, true, R"(
 Treat empty fields in CSV input as default values.
 )", 0) \
-    DECLARE(Bool, input_format_csv_missing_nullable_as_empty_string, false, R"(
-Controls how `Nullable(String)` is read from a missing value in CSV. A missing value is an empty space between/before/after commas, not surrounded by quotes. If this setting is enabled, regardless of the value of `input_format_csv_empty_as_default`, the missing value of `Nullable(String)` will be interpreted as an empty `String`, not as NULL.
-)", 0) \
     DECLARE(Bool, input_format_tsv_empty_as_default, false, R"(
 Treat empty fields in TSV input as default values.
 )", 0) \
@@ -206,9 +192,6 @@ When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE ex
     DECLARE(Bool, input_format_parquet_bloom_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE expressions and bloom filter in the Parquet metadata.
 )", 0) \
-    DECLARE(UInt64, input_format_parquet_dictionary_filter_push_down, 1024 * 1024, R"(
-When reading Parquet files (with reader v3), skip whole row groups based on the WHERE/PREWHERE expressions and the dictionary page contents, when all data pages of a column chunk are dictionary-encoded. The value is the maximum dictionary page size (in bytes) for which this optimization is applied; set to 0 to disable. This takes precedence over the bloom filter when both are available.
-)", 0) \
     DECLARE(Bool, input_format_parquet_enable_json_parsing, true, R"(
 When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
 )", 0) \
@@ -220,9 +203,6 @@ Approximate memory limit for Parquet reader v3. Limits how many row groups or co
 )", 0) \
     DECLARE(Bool, input_format_parquet_page_filter_push_down, true, R"(
 Skip pages using min/max values from column index.
-)", 0) \
-    DECLARE(Bool, input_format_parquet_spatial_filter_push_down, true, R"(
-When reading GeoParquet files, skip whole row groups and, together with `input_format_parquet_page_filter_push_down`, individual pages based on spatial predicates in the WHERE clause and the geometry bounding box statistics (`geospatial_statistics.bbox` or `covering.bbox` columns) in the Parquet metadata.
 )", 0) \
     DECLARE(Bool, input_format_parquet_use_offset_index, true, R"(
 Minor tweak to how pages are read from parquet file when no page filtering is used.
@@ -243,6 +223,9 @@ Enabled by default.
 )", 0) \
     DECLARE(Bool, input_format_orc_allow_missing_columns, true, R"(
 Allow missing columns while reading ORC input formats
+)", 0) \
+    DECLARE(Bool, input_format_orc_use_fast_decoder, true, R"(
+Use a faster ORC decoder implementation.
 )", 0) \
     DECLARE(Bool, input_format_orc_filter_push_down, true, R"(
 When reading ORC files, skip whole stripes or row groups based on the WHERE/PREWHERE expressions, min/max statistics or bloom filter in the ORC metadata.
@@ -276,9 +259,6 @@ Delimiter between a pair of map key/values in Hive Text File
 )", 0) \
     DECLARE(Bool, input_format_hive_text_allow_variable_number_of_columns, true, R"(
 Ignore extra columns in Hive Text input (if file has more columns than expected) and treat missing fields in Hive Text input as default values
-)", 0) \
-    DECLARE(Char, format_hive_text_rows_delimiter, '\n', R"(
-Delimiter at the end of each row in the Hive Text output format
 )", 0) \
     DECLARE(UInt64, input_format_msgpack_number_of_columns, 0, R"(
 The number of columns in inserted MsgPack data. Used for automatic schema inference from data.
@@ -572,7 +552,7 @@ Enabled by default.
 Ignore unnecessary fields and not parse them. Enabling this may not throw exceptions on json strings of invalid format or with duplicated fields
 )", 0) \
     DECLARE(Bool, input_format_try_infer_variants, false, R"(
-If enabled, ClickHouse will try to infer type [`Variant`](/reference/data-types/variant) in schema inference for text formats when there is more than one possible type for column/array elements.
+If enabled, ClickHouse will try to infer type [`Variant`](../../sql-reference/data-types/variant.md) in schema inference for text formats when there is more than one possible type for column/array elements.
 
 Possible values:
 
@@ -696,16 +676,16 @@ Possible values: non-negative numbers. Note that if the value is too small or to
 Write data types in binary format instead of type names in Native output format
 )", 0) \
     DECLARE(Bool, output_format_native_write_json_as_string, false, R"(
-Write data of [JSON](/reference/data-types/newjson) column as [String](/reference/data-types/string) column containing JSON strings instead of default native JSON serialization.
+Write data of [JSON](../../sql-reference/data-types/newjson.md) column as [String](../../sql-reference/data-types/string.md) column containing JSON strings instead of default native JSON serialization.
 )", 0) \
     DECLARE(Bool, output_format_native_use_flattened_dynamic_and_json_serialization, false, R"(
-Write data of [JSON](/reference/data-types/newjson) and [Dynamic](/reference/data-types/dynamic) columns in a flattened format (all types/paths as separate subcolumns).
+Write data of [JSON](../../sql-reference/data-types/newjson.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) columns in a flattened format (all types/paths as separate subcolumns).
 )", 0) \
     \
     DECLARE(DateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::BestEffort, R"(
 Allows choosing a parser of the text representation of date and time.
 
-The setting does not apply to [date and time functions](/reference/functions/regular-functions/date-time-functions).
+The setting does not apply to [date and time functions](../../sql-reference/functions/date-time-functions.md).
 
 Possible values:
 
@@ -713,7 +693,7 @@ Possible values:
 
     ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
 
-- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](/reference/functions/regular-functions/type-conversion-functions#parseDateTimeBestEffortUS)
+- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parseDateTimeBestEffortUS)
 
 - `'basic'` — Use basic parser.
 
@@ -721,8 +701,8 @@ Possible values:
 
 See also:
 
-- [DateTime data type.](/reference/data-types/datetime)
-- [Functions for working with dates and times.](/reference/functions/regular-functions/date-time-functions)
+- [DateTime data type.](../../sql-reference/data-types/datetime.md)
+- [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
 )", 0) \
     DECLARE(DateTimeOutputFormat, date_time_output_format, FormatSettings::DateTimeOutputFormat::Simple, R"(
 Allows choosing different output formats of the text representation of date and time.
@@ -743,8 +723,8 @@ Possible values:
 
 See also:
 
-- [DateTime data type.](/reference/data-types/datetime)
-- [Functions for working with dates and times.](/reference/functions/regular-functions/date-time-functions)
+- [DateTime data type.](../../sql-reference/data-types/datetime.md)
+- [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
 )", 0) \
     DECLARE(IntervalOutputFormat, interval_output_format, FormatSettings::IntervalOutputFormat::Numeric, R"(
 Allows choosing different output formats of the text representation of interval types.
@@ -761,32 +741,12 @@ Possible values:
 
 See also:
 
--   [Interval](/reference/data-types/special-data-types/interval)
+-   [Interval](../../sql-reference/data-types/special-data-types/interval.md)
 )", 0) \
     \
     DECLARE(Bool, date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands, false, R"(
 Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to [0, 3, 6],
 corresponding to 'seconds', 'milliseconds', and 'microseconds')", 0) \
-    DECLARE(Bool, input_format_read_datetime_number_as_raw_value, false, R"(
-Read a bare unquoted integer for a `DateTime`/`DateTime64` column as the raw underlying value — seconds for
-`DateTime`, ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds.
-
-Disabled by default: an unquoted number is a Unix timestamp in seconds (with optional sub-second precision),
-consistent with the `Values` format, `CAST` and `toDateTime64`. Enable it (or `SET compatibility = '26.7'`) to
-restore the behavior of versions up to and including 26.7, where a bare unquoted integer fed to a `DateTime64`
-column was interpreted as the raw scaled value (ticks). The legacy path accepts only such a bare integer:
-with the setting enabled, a number with a fractional or exponent part is rejected by the row input paths
-(as before 26.8), while in `JSONExtract` and the typed `JSON` type a fractional number is still read as
-seconds for `DateTime64` and rejected for `DateTime` (also as before 26.8). In the `Values` format itself,
-a number the streaming parser rejects then falls back to SQL expression evaluation and is read as seconds,
-both before 26.8 and with this setting enabled — so the `Values` behavior for a fractional number is the
-same in every configuration.
-
-This setting governs only the `JSON`, `Values`/`Quoted` and `JSONExtract`/typed `JSON` paths (the `Quoted` path
-covers every format parsing fields with the `Quoted` escaping rule: `Values`, `MySQLDump`, and
-`Template`/`CustomSeparated`/`Regexp` configured with `Quoted` field escaping). The tab-separated, CSV and other
-escaped/whole-text formats are unaffected: there a large unquoted `DateTime64` number is still read as ticks.
-)", 0) \
     DECLARE(Bool, input_format_ipv4_default_on_conversion_error, false, R"(
 Deserialization of IPv4 will use default values instead of throwing exception on conversion error.
 
@@ -879,14 +839,14 @@ For AvroConfluent format: maximum number of retries for transient failures when 
 For AvroConfluent format: initial backoff in milliseconds before retrying a failed Confluent Schema Registry request. The backoff doubles on each subsequent retry, capped at 10 seconds. Must be greater than 0 and less than or equal to 60000.
 )", 0) \
     DECLARE(Bool, input_format_binary_read_json_as_string, false, R"(
-Read values of [JSON](/reference/data-types/newjson) data type as JSON [String](/reference/data-types/string) values in RowBinary input format.
+Read values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary input format.
 )", 0) \
     DECLARE(Bool, output_format_binary_write_json_as_string, false, R"(
-Write values of [JSON](/reference/data-types/newjson) data type as JSON [String](/reference/data-types/string) values in RowBinary output format.
+Write values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary output format.
 )", 0) \
     \
     DECLARE(Bool, output_format_json_quote_64bit_integers, false, R"(
-Controls quoting of 64-bit or bigger [integers](/reference/data-types/int-uint) (like `UInt64` or `Int128`) when they are output in a [JSON](/interfaces/formats/JSON) format.
+Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](/interfaces/formats/JSON) format.
 Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations.
 
 Possible values:
@@ -996,7 +956,7 @@ Controls quoting of decimals in JSON output formats.
 Disabled by default.
 )", 0) \
     DECLARE(Bool, output_format_json_quote_64bit_floats, false, R"(
-Controls quoting of 64-bit [floats](/reference/data-types/float) when they are output in JSON* formats.
+Controls quoting of 64-bit [floats](../../sql-reference/data-types/float.md) when they are output in JSON* formats.
 
 Disabled by default.
 )", 0) \
@@ -1326,22 +1286,13 @@ If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` ar
 Path of the file used to record errors while reading text formats (CSV, TSV).
 )", 0) \
     DECLARE(GeoJSONUnsupportedGeometryHandling, input_format_geojson_unsupported_geometry_handling, FormatSettings::UnsupportedGeometryHandling::Throw, R"(
-Controls what happens when a valid `GeoJSON` geometry type that cannot be represented in ClickHouse's `Geometry` type (such as `GeometryCollection`) must be stored in the `geometry` column while reading `GeoJSON` input.
+Controls what happens when a valid `GeoJSON` geometry type that cannot be represented in ClickHouse's `Geometry` type (such as `GeometryCollection` or `MultiPoint`) must be stored in the `geometry` column while reading `GeoJSON` input.
 
 Possible values:
 - `'throw'` (default) — throw an exception.
 - `'null'` — insert a `NULL` value for the `geometry` column and continue parsing.
 
 This applies only when the `geometry` column is materialized. When it is not a requested output column, such a geometry is validated for well-formedness but does not trigger the handling.
-)", 0) \
-    DECLARE(Bool, format_geojson_validate_geometry, true, R"(
-Controls whether the `GeoJSON` format enforces RFC 7946 geometry validity, in both directions.
-
-When enabled (default), a geometry that violates the GeoJSON shape rules is rejected: a `LineString` (or a line of a `MultiLineString`) with fewer than two points; a `Polygon` or `MultiPolygon` ring with fewer than four points or whose first and last points differ (an unclosed ring); or an empty `MultiLineString`, `Polygon`, or `MultiPolygon`. This applies both when reading (such a document is rejected) and when writing (such a ClickHouse value is rejected instead of producing a document the input format would reject).
-
-When disabled, these shape rules are not enforced: such geometries are read as-is and written as-is, so degenerate geometries round-trip, but a written document may not be valid GeoJSON.
-
-The validation is structural only: it checks point counts and ring closure. It does not inspect the geometric correctness of a shape — ring orientation (the right-hand rule / winding order) is not enforced, and structurally valid but geometrically degenerate geometries are accepted, such as a zero-area polygon, a self-intersecting ring, or a polygon whose holes lie outside its outer ring. Non-finite coordinates (`NaN`, `Inf`) are always rejected regardless of this setting, because they cannot be represented as JSON numbers.
 )", 0) \
     DECLARE(String, errors_output_format, "CSV", R"(
 Method to write Errors to text output.
@@ -1571,7 +1522,7 @@ Enables or disables showing secrets in `SHOW` and `SELECT` queries for tables, d
 table functions, and dictionaries.
 
 User wishing to see secrets must also have
-[`display_secrets_in_show_and_select` server setting](/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select)
+[`display_secrets_in_show_and_select` server setting](../server-configuration-parameters/settings#display_secrets_in_show_and_select)
 turned on and a
 [`displaySecretsInShowAndSelect`](/sql-reference/statements/grant#displaysecretsinshowandselect) privilege.
 
@@ -1580,11 +1531,11 @@ Possible values:
 -   0 — Disabled.
 -   1 — Enabled.
 )", IMPORTANT) \
-    DECLARE(Bool, precise_float_parsing, true, R"(
-Use the precise float parsing algorithm, which always returns the closest representable value to the input. When disabled, a faster but less accurate algorithm is used that may differ from the precise result by the least significant bits.
+    DECLARE(Bool, precise_float_parsing, false, R"(
+Prefer more precise (but slower) float parsing algorithm
 )", 0) \
     DECLARE(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", R"(
-Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
+Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
 
 Possible values:
 
@@ -1667,7 +1618,7 @@ Enabling this option disables parallel parsing and makes deduplication impossibl
 Indicate which field of protobuf oneof was found by means of setting enum value in a special column
 )", 0) \
     DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
-Use geo column parser to convert Array(UInt8) into Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon types
+Use geo column parser to convert Array(UInt8) into Point/Linestring/Polygon/MultiLineString/MultiPolygon types
 )", 0) \
     DECLARE(Bool, output_format_parquet_geometadata, true, R"(
 Allow to write information about geo columns in parquet metadata and encode columns in WKB format.
@@ -1694,9 +1645,6 @@ Supported modes:
     MAKE_OBSOLETE(M, Bool, output_format_enable_streaming, false) \
     MAKE_OBSOLETE(M, Bool, input_format_parquet_use_native_reader, false) \
     MAKE_OBSOLETE(M, Bool, input_format_parquet_use_native_reader_v3, true) \
-    MAKE_OBSOLETE(M, Bool, input_format_orc_use_fast_decoder, true) \
-    MAKE_OBSOLETE(M, Bool, input_format_arrow_use_native_reader, true) \
-    MAKE_OBSOLETE(M, Bool, output_format_arrow_use_native_writer, true) \
     MAKE_OBSOLETE(M, Bool, output_format_parquet_use_custom_encoder, true) \
     MAKE_OBSOLETE(M, ParquetVersion, output_format_parquet_version, "2.latest") \
     MAKE_OBSOLETE(M, Bool, output_format_parquet_compliant_nested_types, true) \
