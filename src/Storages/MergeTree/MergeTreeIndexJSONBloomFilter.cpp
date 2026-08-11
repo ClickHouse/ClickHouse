@@ -719,8 +719,8 @@ bool appendTypedProbe(
 
 bool comparisonUsesExactConversion(const IDataType & left, const IDataType & right)
 {
-    /// A failed strict conversion proves inequality for numeric comparisons and for constant strings,
-    /// which comparison execution converts to the left-hand type with the same format settings.
+    /// A failed strict conversion proves inequality only inside the numeric comparison domain.
+    /// Other type pairs need a presence probe because execution can match or throw.
     const auto is_number = [](const IDataType & type)
     {
         return isBool(type.getPtr()) || isNativeNumber(type) || WhichDataType(type).isDecimal();
@@ -729,7 +729,6 @@ bool comparisonUsesExactConversion(const IDataType & left, const IDataType & rig
         || (WhichDataType(right).isDecimal() && WhichDataType(left).isNativeFloat()))
         return false;
     return left.equals(right)
-        || WhichDataType(right).isStringOrFixedString()
         || (is_number(left) && is_number(right));
 }
 
@@ -797,7 +796,8 @@ std::vector<UInt64> makeValueProbes(
         return hashes;
 
     const auto unwrapped_source_type = removeJSONBloomWrappers(source_type);
-    if (!comparisonUsesExactConversion(*target_type, *unwrapped_source_type))
+    if (!comparisonUsesExactConversion(*target_type, *unwrapped_source_type)
+        && !WhichDataType(unwrapped_source_type).isStringOrFixedString())
         return hashes;
 
     appendTypedProbe(hashes, path, role, value, source_type, target_type, format_settings);
