@@ -266,8 +266,7 @@ const IPostingListCodec & PostingsSerialization::resolveCodec(UInt64 header)
     if (!posting_list_codec)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "No posting list codec is configured");
 
-    /// An uncompressed posting list is a plain serialized roaring bitmap, whatever
-    /// the codec configured for the part is, so it is always decoded by the None codec.
+    /// An uncompressed posting list is always a plain serialized roaring bitmap.
     if (!(header & IsCompressed))
     {
         static const PostingListCodecNone codec_none;
