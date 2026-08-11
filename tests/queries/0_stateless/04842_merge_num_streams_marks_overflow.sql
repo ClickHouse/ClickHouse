@@ -7,7 +7,7 @@
 -- `ReadFromMergeTree` unchanged, both directly and through a `Merge` table.
 DROP TABLE IF EXISTS t_marks_overflow;
 CREATE TABLE t_marks_overflow (id Int32) ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
+SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 INSERT INTO t_marks_overflow SELECT number FROM numbers(10);
 
 SET max_threads = 4;
