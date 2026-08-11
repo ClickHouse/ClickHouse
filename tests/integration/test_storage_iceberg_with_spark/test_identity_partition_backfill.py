@@ -94,9 +94,8 @@ def test_identity_partition_backfill(started_cluster_iceberg_with_spark, storage
         )
 
     # The exclusion must be selective, not a blanket "no column is PREWHERE-safe": in a mixed
-    # predicate the physical column still has to move down while the identity column stays above the
-    # backfill. Asserting rows alone would also accept the fail-closed set that
-    # StorageObjectStorage::supportedPrewhereColumns returns for cold metadata.
+    # predicate the physical column still has to move down while the identity column stays above
+    # the backfill. Asserting rows alone would also accept a blanket refusal.
     plan = instance.query(
         f"SELECT trim(explain) FROM (EXPLAIN actions = 1"
         f" SELECT id FROM {table_function} WHERE region = 'East' AND val = 'a')"
@@ -178,8 +177,8 @@ def test_identity_partition_backfill_spec_evolution(
             == "1\ta\n3\tc"
         )
 
-    # Rows alone cannot separate the all-spec exclusion from the fail-closed empty set, which keeps
-    # the filter above the backfill too. Assert the split directly for the multi-spec cache path.
+    # Rows alone cannot separate the all-spec exclusion from a blanket refusal, which keeps the
+    # filter above the backfill too. Assert the split directly for the multi-spec cache path.
     plan = instance.query(
         f"SELECT trim(explain) FROM (EXPLAIN actions = 1"
         f" SELECT id FROM {table_function} WHERE region = 'East' AND val = 'a')"
@@ -343,3 +342,15 @@ def test_identity_partition_backfill_rename_time_travel(
         )
         == 1
     )
+
+    # The rows above are also what a blanket refusal on the pinned-snapshot path would return, so
+    # assert the split: `val` moves into PREWHERE while the old schema's `region` stays above the
+    # backfill.
+    plan = instance.query(
+        f"SELECT trim(explain) FROM (EXPLAIN actions = 1"
+        f" SELECT id FROM {TABLE_NAME} WHERE region = 'East' AND val = 'a')"
+        f" WHERE explain ILIKE '%Prewhere filter column%'"
+        f" SETTINGS iceberg_snapshot_id = {old_snapshot}, optimize_move_to_prewhere = 1"
+    )
+    assert "val" in plan, plan
+    assert "region" not in plan, plan
