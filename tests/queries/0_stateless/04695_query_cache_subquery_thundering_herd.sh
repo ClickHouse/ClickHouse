@@ -15,7 +15,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # 20M rows is the largest scan allowed by the `max_rows_to_read` limit of the test configuration.
 
 SUBQUERY="SELECT sum(number) AS x FROM numbers(20000000)"
-SETTINGS="use_query_cache=1, query_cache_for_subqueries=1, query_cache_min_query_runs=0, query_cache_min_query_duration=0"
+# Subquery caching (and hence the subquery herd) only exists with the analyzer, so force it: the test would see
+# no `is_subquery = 1` entries at all in a run configured with the old analyzer.
+SETTINGS="enable_analyzer=1, use_query_cache=1, query_cache_for_subqueries=1, query_cache_min_query_runs=0, query_cache_min_query_duration=0"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP QUERY CACHE"
 
