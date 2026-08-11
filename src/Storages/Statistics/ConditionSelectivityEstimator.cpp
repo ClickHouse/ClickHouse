@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -21,6 +22,12 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Formats/ParseError.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event SelectivityEstimatorInSetNotBuilt;
+    extern const Event SelectivityEstimatorInSetEstimatedFromSize;
+}
 
 namespace DB
 {
@@ -312,7 +319,10 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 /// became a `ColumnConst` and made these sets visible here.
                 auto prepared_set = future_set->getOrderedSetIfAlreadyBuilt(rhs.getTreeContext().getQueryContext());
                 if (!prepared_set || !prepared_set->hasExplicitSetElements())
+                {
+                    ProfileEvents::increment(ProfileEvents::SelectivityEstimatorInSetNotBuilt);
                     return false;
+                }
 
                 Columns columns = prepared_set->getSetElements();
                 if (columns.size() != 1)
@@ -327,6 +337,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     [Setting::statistics_max_set_size_for_exact_selectivity_estimation];
                 if (max_set_size && columns[0]->size() > max_set_size)
                 {
+                    ProfileEvents::increment(ProfileEvents::SelectivityEstimatorInSetEstimatedFromSize);
                     out.selectivity = estimateSelectivityFromSetSize(
                         metadata, func.getArgumentAt(0).getColumnName(), *columns[0], func_name != "in");
                     out.finalized = true;
