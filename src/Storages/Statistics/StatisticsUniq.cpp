@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 StatisticsUniq::StatisticsUniq(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
     : IStatistics(description)
 {
@@ -36,6 +41,10 @@ void StatisticsUniq::build(const ColumnPtr & column)
 void StatisticsUniq::merge(const StatisticsPtr & other_stats)
 {
     const StatisticsUniq * other = typeid_cast<const StatisticsUniq *>(other_stats.get());
+    /// Callers route incompatible statistics (e.g. the assumed-all-distinct materialization of the
+    /// same logical type) through the ColumnStatistics::merge policy, so this should never fire.
+    if (!other)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot merge uniq statistics with {}", other_stats->getNameForLogs());
     collector->merge(data, other->data, arena.get());
 }
 
@@ -89,9 +98,7 @@ UInt64 StatisticsUniq::estimateCardinality() const
 
 bool uniqStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
-    DataTypePtr inner_data_type = removeNullable(data_type);
-    inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type);
+    return dataTypeSupportsUniqStatistics(data_type);
 }
 
 StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)

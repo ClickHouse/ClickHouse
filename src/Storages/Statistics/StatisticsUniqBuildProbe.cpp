@@ -1,10 +1,12 @@
-#include <Storages/Statistics/StatisticsUniqBuildProbe.h>
 #include <Storages/Statistics/Statistics.h>
+#include <Storages/Statistics/StatisticsUniqBuildProbe.h>
 
 #include <algorithm>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <Common/typeid_cast.h>
 
@@ -25,8 +27,18 @@ ColumnPtr getRawColumnForUniqBuild(const ColumnPtr & column)
 bool canUseAssumedAllDistinctForUniqBuild(const ColumnPtr & column)
 {
     /// LowCardinality and Sparse columns intentionally store fewer physical values than
-    /// logical rows. Do not use those physical counts for an all-distinct assumption.
+    /// logical rows: their representation alone signals repeated values, so an all-distinct
+    /// assumption is inappropriate. Note that this is a representation check only; the
+    /// decision code additionally applies a data-based default-ratio guard, because on the
+    /// insert path a default-dominated column arrives as a full (not yet sparse) column.
     return !typeid_cast<const ColumnLowCardinality *>(column.get()) && !typeid_cast<const ColumnSparse *>(column.get());
+}
+
+bool dataTypeSupportsUniqStatistics(const DataTypePtr & data_type)
+{
+    DataTypePtr inner_data_type = removeNullable(data_type);
+    inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
+    return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type);
 }
 
 bool StatisticsUniqStringProbe::canProbe(

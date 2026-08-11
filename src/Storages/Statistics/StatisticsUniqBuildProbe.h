@@ -11,6 +11,10 @@ struct StatisticsBuildOptions;
 ColumnPtr getRawColumnForUniqBuild(const ColumnPtr & column);
 bool canUseAssumedAllDistinctForUniqBuild(const ColumnPtr & column);
 
+/// Shared predicate for all uniq-like statistics (real sketches and the assumed-all-distinct
+/// materialization): supported for types whose values are represented by numbers, and for strings.
+bool dataTypeSupportsUniqStatistics(const DataTypePtr & data_type);
+
 struct StatisticsUniqStringProbeResult
 {
     ColumnPtr unprobed_column_tail;

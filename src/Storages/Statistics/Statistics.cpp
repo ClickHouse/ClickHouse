@@ -162,16 +162,6 @@ std::optional<Float64> StatisticsUtils::interpolateLessLinear(
     return interpolateLessLinearTyped<Float64>(Field(*val_as_float), Field(*min_as_float), Field(*max_as_float), row_count);
 }
 
-/// Returns the first available cardinality estimator (prefers real sketches over assumed cardinality).
-static const IStatistics * findCardinalityStats(const ColumnStatistics::StatsMap & m)
-{
-    if (auto it = m.find(StatisticsType::Uniq); it != m.end())
-        return it->second.get();
-    if (auto it = m.find(StatisticsType::UniqV2); it != m.end())
-        return it->second.get();
-    return nullptr;
-}
-
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
     : stat(stat_)
 {
@@ -180,11 +170,6 @@ IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
 ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_)
     : stats_desc(stats_desc_)
 {
-}
-
-void ColumnStatistics::build(const ColumnPtr & column)
-{
-    build(column, StatisticsBuildOptions{});
 }
 
 void ColumnStatistics::build(const ColumnPtr & column, const StatisticsBuildOptions & options)
@@ -200,12 +185,13 @@ void ColumnStatistics::build(const ColumnPtr & column, const StatisticsBuildOpti
         ColumnPtr build_column = column;
         if (build_decision && build_decision->replaces(type))
         {
-            if (!build_decision->build_column_override)
+            /// The probe already accounted for every row of this block.
+            if (!build_decision->rows_to_count)
                 continue;
-            build_column = *build_decision->build_column_override;
+            build_column = build_decision->rows_to_count;
         }
 
-        stat_ptr->build(build_column, options);
+        stat_ptr->build(build_column);
     }
 }
 
@@ -213,10 +199,13 @@ void ColumnStatistics::merge(const ColumnStatisticsPtr & other)
 {
     if (rows == 0 && !structureEquals(*other))
     {
-        stats_desc = other->stats_desc;
-        stats = other->stats;
-        rows = other->rows;
-        return;
+        /// Adopt the other side's structure, but with freshly created statistics objects:
+        /// sharing `other`'s StatisticsPtr instances would let subsequent merges into `this`
+        /// mutate `other`'s statistics. The fresh empty statistics are filled by the regular
+        /// merge below.
+        auto fresh = other->cloneEmpty();
+        stats_desc = std::move(fresh->stats_desc);
+        stats = std::move(fresh->stats);
     }
 
     auto merge_decision = UniqAssumedAllDistinctPolicy::decideMerge(stats, other->stats);
@@ -288,9 +277,9 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::cloneEmpty() const
     return MergeTreeStatisticsFactory::instance().get(stats_desc);
 }
 
-void IStatistics::build(const ColumnPtr & column, const StatisticsBuildOptions & /*options*/)
+bool ColumnStatistics::hasStaleAssumedStatistics(const ColumnStatistics & part_stats, const StatisticsBuildOptions & options) const
 {
-    build(column);
+    return UniqAssumedAllDistinctPolicy::hasStaleAssumedStatistics(stats_desc, part_stats.stats, options);
 }
 
 UInt64 IStatistics::estimateCardinality() const
@@ -364,7 +353,7 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
         if (auto estimate = it->second->estimateEqual(val))
             return estimate;
 
-    const IStatistics * uniq_stats = findCardinalityStats(stats);
+    const IStatistics * uniq_stats = findPreferredCardinalityStatistics(stats);
     if (stats_desc.data_type->isValueRepresentedByNumber() && uniq_stats != nullptr && stats.contains(StatisticsType::TDigest))
     {
         /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.
@@ -418,7 +407,7 @@ std::optional<Float64> ColumnStatistics::estimateRange(const Range & range) cons
 
 UInt64 ColumnStatistics::estimateCardinality() const
 {
-    if (const IStatistics * uniq_stats = findCardinalityStats(stats))
+    if (const IStatistics * uniq_stats = findPreferredCardinalityStatistics(stats))
     {
         return uniq_stats->estimateCardinality();
     }
@@ -500,7 +489,7 @@ Estimate ColumnStatistics::getEstimate() const
     for (const auto & [type, _] : stats)
         info.types.insert(type);
 
-    if (const IStatistics * uniq_stats = findCardinalityStats(stats))
+    if (const IStatistics * uniq_stats = findPreferredCardinalityStatistics(stats))
         info.estimated_cardinality = uniq_stats->estimateCardinality();
 
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
@@ -742,11 +731,6 @@ void checkColumnTypeMatchesStatistics(const String & column_name, const ColumnSt
 
 }
 
-void ColumnsStatistics::build(const Block & block)
-{
-    build(block, StatisticsBuildOptions{});
-}
-
 void ColumnsStatistics::build(const Block & block, const StatisticsBuildOptions & options)
 {
     for (const auto & [column_name, stat] : *this)
@@ -755,11 +739,6 @@ void ColumnsStatistics::build(const Block & block, const StatisticsBuildOptions 
         checkColumnTypeMatchesStatistics(column_name, stat, col.type);
         stat->build(col.column, options);
     }
-}
-
-void ColumnsStatistics::buildIfExists(const Block & block)
-{
-    buildIfExists(block, StatisticsBuildOptions{});
 }
 
 void ColumnsStatistics::buildIfExists(const Block & block, const StatisticsBuildOptions & options)

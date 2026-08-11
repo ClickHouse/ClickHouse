@@ -5,15 +5,16 @@
 #include <DataTypes/IDataType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Storages/Statistics/StatisticsUniqV2.h>
 #include <Storages/Statistics/StatisticsUniqBuildProbe.h>
+#include <Storages/Statistics/StatisticsUniqV2.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_STATISTICS;
+extern const int ILLEGAL_STATISTICS;
+extern const int LOGICAL_ERROR;
 }
 
 /// Use uniqCombined64 with K=12: Small(16 exact) → HashSet(up to 256) → HLL(~3 KB).
@@ -46,6 +47,10 @@ void StatisticsUniqV2::build(const ColumnPtr & column)
 void StatisticsUniqV2::merge(const StatisticsPtr & other_stats)
 {
     const StatisticsUniqV2 * other = typeid_cast<const StatisticsUniqV2 *>(other_stats.get());
+    /// Callers route incompatible statistics (e.g. the assumed-all-distinct materialization of the
+    /// same logical type) through the ColumnStatistics::merge policy, so this should never fire.
+    if (!other)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot merge uniq_v2 statistics with {}", other_stats->getNameForLogs());
     collector->merge(data, other->data, arena.get());
 }
 
@@ -78,7 +83,8 @@ void StatisticsUniqV2::deserialize(ReadBuffer & buf, StatisticsFileVersion /*ver
             ErrorCodes::ILLEGAL_STATISTICS,
             "uniq_v2 statistics nullability ({}) does not match the current column type ({}); "
             "rebuild with ALTER TABLE ... MATERIALIZE STATISTICS.",
-            is_null, collector_is_nullable);
+            is_null,
+            collector_is_nullable);
 
     collector->deserialize(data, buf);
 }
@@ -96,9 +102,7 @@ UInt64 StatisticsUniqV2::estimateCardinality() const
 
 bool uniqV2StatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
-    DataTypePtr inner_data_type = removeNullable(data_type);
-    inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type);
+    return dataTypeSupportsUniqStatistics(data_type);
 }
 
 StatisticsPtr uniqV2StatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)

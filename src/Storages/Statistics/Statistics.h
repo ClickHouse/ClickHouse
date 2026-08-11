@@ -1,13 +1,13 @@
 #pragma once
 
-#include <boost/core/noncopyable.hpp>
 #include <optional>
 #include <Core/Range.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
-#include <Storages/StatisticsDescription.h>
 #include <Storages/Statistics/StatisticsFwd.h>
 #include <Storages/Statistics/UniqAssumedAllDistinctPolicy.h>
+#include <Storages/StatisticsDescription.h>
+#include <boost/core/noncopyable.hpp>
 
 namespace DB
 {
@@ -23,13 +23,13 @@ enum class StatisticsFileVersion : UInt16
     V1 = 1, /// modified the format of uniq, https://github.com/ClickHouse/ClickHouse/pull/90311
     V2 = 2, /// minmax statistics now serialize Field type and use Field instead of Float64
     V3 = 3, /// reserved — never use this value. PR #102356 briefly wrote V3 before being reverted.
-            /// The deserializer rejects V3 to avoid attempting to read incompatible reverted-format files.
+    /// The deserializer rejects V3 to avoid attempting to read incompatible reverted-format files.
     V4 = 4, /// per-statistic size prefix added (`stat_size: UInt64` precedes each stat payload),
-            /// so unknown statistics types can be skipped on deserialize.
-            /// Also stores the column type name (`stored_type_name: String`) immediately after
-            /// the version field; deserialization returns nullptr if the stored type differs from
-            /// the current column type, so stale statistics from a pending MODIFY COLUMN mutation
-            /// are never used.
+    /// so unknown statistics types can be skipped on deserialize.
+    /// Also stores the column type name (`stored_type_name: String`) immediately after
+    /// the version field; deserialization returns nullptr if the stored type differs from
+    /// the current column type, so stale statistics from a pending MODIFY COLUMN mutation
+    /// are never used.
 };
 
 class Field;
@@ -47,8 +47,8 @@ struct StatisticsUtils
     /// same integer type so that values near `2^53` are not collapsed by the Float64 conversion;
     /// falls back to Float64 otherwise. Returns std::nullopt if the Fields cannot be brought to
     /// a common numeric representation.
-    static std::optional<Float64> interpolateLessLinear(
-        const Field & val, const Field & min, const Field & max, UInt64 row_count, const DataTypePtr & data_type);
+    static std::optional<Float64>
+    interpolateLessLinear(const Field & val, const Field & min, const Field & max, UInt64 row_count, const DataTypePtr & data_type);
 
     /// Returns true iff two aggregate functions have the same state size and identical argument
     /// types. Statistics implementations use this to decide whether states from two parts can be
@@ -63,6 +63,11 @@ struct StatisticsBuildOptions
     bool assume_long_strings_distinct = false;
     UInt64 long_string_distinct_min_length = 64;
     UInt64 long_string_distinct_probe_rows = 1000;
+    /// Columns whose ratio of default-valued rows reaches this threshold keep real sketches:
+    /// repeated defaults obviously violate the all-distinct assumption. Sourced from the table's
+    /// `ratio_of_defaults_for_sparse_serialization` so the data-based guard matches the
+    /// representation-based ColumnSparse guard used on the merge/mutation read paths.
+    Float64 max_default_ratio_for_assumed_distinct = 1.0;
 };
 
 /// Interface for a single statistics object for a column within a part.
@@ -76,7 +81,6 @@ public:
     virtual ~IStatistics() = default;
 
     virtual void build(const ColumnPtr & column) = 0;
-    virtual void build(const ColumnPtr & column, const StatisticsBuildOptions & options);
     virtual void merge(const StatisticsPtr & other_stats) = 0;
 
     virtual void serialize(WriteBuffer & buf) = 0;
@@ -132,8 +136,7 @@ public:
     void serialize(WriteBuffer & buf) const;
     static std::shared_ptr<ColumnStatistics> deserialize(ReadBuffer & buf, const DataTypePtr & data_type);
 
-    void build(const ColumnPtr & column);
-    void build(const ColumnPtr & column, const StatisticsBuildOptions & options);
+    void build(const ColumnPtr & column, const StatisticsBuildOptions & options = {});
     void merge(const ColumnStatisticsPtr & other);
 
     UInt64 getNumRows() const { return rows; }
@@ -166,11 +169,14 @@ public:
 
     const StatsMap & getStats() const { return stats; }
     bool structureEquals(const ColumnStatistics & other) const;
+    /// True when `part_stats` carries assumed-all-distinct uniq statistics that neither this
+    /// (metadata-derived) description nor the current build options would produce anymore, so
+    /// merges should rebuild them from data instead of propagating the stale assumption.
+    bool hasStaleAssumedStatistics(const ColumnStatistics & part_stats, const StatisticsBuildOptions & options) const;
     std::shared_ptr<ColumnStatistics> cloneEmpty() const;
 
 private:
-    void mergeRegularStatistics(
-        const ColumnStatisticsPtr & other, const std::optional<AssumedAllDistinctMergeDecision> & merge_decision);
+    void mergeRegularStatistics(const ColumnStatisticsPtr & other, const std::optional<AssumedAllDistinctMergeDecision> & merge_decision);
 
     friend class MergeTreeStatisticsFactory;
     ColumnStatisticsDescription stats_desc;
@@ -191,10 +197,8 @@ public:
     explicit ColumnsStatistics(const ColumnsDescription & columns);
     ColumnsStatistics cloneEmpty() const;
 
-    void build(const Block & block);
-    void build(const Block & block, const StatisticsBuildOptions & options);
-    void buildIfExists(const Block & block);
-    void buildIfExists(const Block & block, const StatisticsBuildOptions & options);
+    void build(const Block & block, const StatisticsBuildOptions & options = {});
+    void buildIfExists(const Block & block, const StatisticsBuildOptions & options = {});
     void merge(const ColumnsStatistics & other);
     Estimates getEstimates() const;
 };
@@ -212,14 +216,16 @@ public:
     /// only when the current CREATE/ALTER does not newly introduce `minmax`, so unrelated ALTERs of
     /// such old tables are not rejected.
     void validate(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type, bool allow_deprecated_minmax = false) const;
-    ColumnStatisticsDescription cloneWithSupportedStatistics(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const;
+    ColumnStatisticsDescription
+    cloneWithSupportedStatistics(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const;
 
     using Validator = std::function<bool(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
     using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
 
     ColumnStatisticsPtr get(const ColumnDescription & column_desc) const;
     ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats_desc) const;
-    ColumnStatisticsDescription::StatisticsTypeDescMap get(const std::vector<StatisticsType> & stat_types, const DataTypePtr & data_type) const;
+    ColumnStatisticsDescription::StatisticsTypeDescMap
+    get(const std::vector<StatisticsType> & stat_types, const DataTypePtr & data_type) const;
     /// Create a single statistics object by type. Returns `nullptr` if the type is unknown
     /// or unsupported for `data_type`. Used by the V4 deserializer to instantiate statistics
     /// types one at a time (and to silently skip types the current build doesn't know about).

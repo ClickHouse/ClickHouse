@@ -56,7 +56,6 @@ TEST(Statistics, TDigestLessThan)
                              const std::vector<double> & answers,
                              const std::vector<double> & eps)
     {
-
         DB::QuantileTDigest<Int64> t_digest;
 
         for (Int64 i : data1)
@@ -64,7 +63,7 @@ TEST(Statistics, TDigestLessThan)
 
         t_digest.compress();
 
-        for (int i = 0; i < v.size(); i ++)
+        for (int i = 0; i < v.size(); i++)
         {
             auto value = v[i];
             auto result = t_digest.getCountLessThan(value);
@@ -93,8 +92,7 @@ TEST(Statistics, TryConvertToFloat64)
     EXPECT_DOUBLE_EQ(*converted_string, 1.25);
 
     const auto decimal_type = std::make_shared<DataTypeDecimal64>(18, 2);
-    auto converted_decimal = StatisticsUtils::tryConvertToFloat64(
-        Field(DecimalField<Decimal64>(Decimal64(12345), 2)), decimal_type);
+    auto converted_decimal = StatisticsUtils::tryConvertToFloat64(Field(DecimalField<Decimal64>(Decimal64(12345), 2)), decimal_type);
     ASSERT_TRUE(converted_decimal.has_value());
     EXPECT_DOUBLE_EQ(*converted_decimal, 123.45);
 
@@ -124,16 +122,17 @@ TEST(Statistics, Estimator)
     Int32 c_value[] = {-100000, -1000, -100, -10, -1, 1, 10, 100};
     for (Int32 i = 0; i < 10000; i++)
     {
-        a->insert(i+1);
+        a->insert(i + 1);
         b->insert(i % 2 == 0 ? 500 : 600);
-        c->insert(i < 8 ? c_value[i]: 1000+i);
+        c->insert(i < 8 ? c_value[i] : 1000 + i);
     }
 
     auto mock_statistics = [&](const String & column_name)
     {
         ColumnStatisticsDescription mock_description;
         mock_description.data_type = data_type;
-        std::vector<StatisticsType> stats_type_to_create({StatisticsType::TDigest, /*StatisticsType::Uniq,*/ StatisticsType::CountMinSketch});
+        std::vector<StatisticsType> stats_type_to_create(
+            {StatisticsType::TDigest, /*StatisticsType::Uniq,*/ StatisticsType::CountMinSketch});
         for (auto stats_type : stats_type_to_create)
         {
             mock_description.types_to_desc.emplace(stats_type, SingleStatisticsDescription(stats_type, nullptr, false));
@@ -163,11 +162,12 @@ TEST(Statistics, Estimator)
     {
         ParserExpressionWithOptionalAlias exp_parser(false);
         ContextPtr context = getContext().context;
-        RPNBuilderTreeContext tree_context(context, Block{{ DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }}, {});
+        RPNBuilderTreeContext tree_context(
+            context, Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}}, {});
         ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
         RPNBuilderTreeNode node(ast.get(), tree_context);
         auto estimate_result = estimator->estimateRelationProfile(nullptr, node);
-        std::cout << expression << " " << real_result << " "<< estimate_result.rows << std::endl;
+        std::cout << expression << " " << real_result << " " << estimate_result.rows << std::endl;
         EXPECT_LT(std::abs(real_result - static_cast<Int64>(estimate_result.rows)), 10000 * eps);
     };
 
@@ -175,17 +175,17 @@ TEST(Statistics, Estimator)
     {
         test_impl(expression, real_result, eps);
         /// Let's test 'not expression'
-        test_impl("not(" + expression + ")", 10000-real_result, eps);
+        test_impl("not(" + expression + ")", 10000 - real_result, eps);
     };
     ///
     test_f("a in (1,2,3,4,5)", 5);
-    test_f("a not in (1,2,3,4,5)", 10000-5);
+    test_f("a not in (1,2,3,4,5)", 10000 - 5);
     test_f("a < '3'", 2); /// Quoted numeric literal reaches statistics as a String Field.
     test_f("b in (2, 500, 500)", 5000);
     test_f("a < 3 and b = 500", 1);
     test_f("a < 3 and b = 500 and a < b", 1); /// unknown condition 'a < b' assumes 100% selectivity
     test_f("a < 3 or b = 600", 5001);
-    test_f("not (a < 3 and b = 500)", 10000-1);
+    test_f("not (a < 3 and b = 500)", 10000 - 1);
     test_f("c between -1000 and -10", 3);
     test_f("b != 500 and b != 600", 0);
     test_f("not (b != 500 and b != 600)", 10000);
@@ -216,20 +216,20 @@ TEST(Statistics, MinMaxEstimateLess)
     };
 
     /// UInt64: interpolation over [0, 9] with 10 rows
-    test_minmax(UInt64(0), UInt64(9), 10, UInt64(0),  0.0);           /// at min    → (0/9)*10 = 0
-    test_minmax(UInt64(0), UInt64(9), 10, UInt64(9),  10.0);          /// at max    → (9/9)*10 = 10
-    test_minmax(UInt64(0), UInt64(9), 10, UInt64(10), 10.0);          /// above max → all rows
-    test_minmax(UInt64(0), UInt64(9), 10, UInt64(5),  5.0/9.0*10.0); /// midpoint
+    test_minmax(UInt64(0), UInt64(9), 10, UInt64(0), 0.0); /// at min    → (0/9)*10 = 0
+    test_minmax(UInt64(0), UInt64(9), 10, UInt64(9), 10.0); /// at max    → (9/9)*10 = 10
+    test_minmax(UInt64(0), UInt64(9), 10, UInt64(10), 10.0); /// above max → all rows
+    test_minmax(UInt64(0), UInt64(9), 10, UInt64(5), 5.0 / 9.0 * 10.0); /// midpoint
 
     /// Int64: negative range [-100, 100] with 201 rows
-    test_minmax(Int64(-100), Int64(100), 201, Int64(-200), 0.0);               /// below min
-    test_minmax(Int64(-100), Int64(100), 201, Int64(200),  201.0);             /// above max
-    test_minmax(Int64(-100), Int64(100), 201, Int64(0),    100.0/200.0*201.0); /// midpoint
+    test_minmax(Int64(-100), Int64(100), 201, Int64(-200), 0.0); /// below min
+    test_minmax(Int64(-100), Int64(100), 201, Int64(200), 201.0); /// above max
+    test_minmax(Int64(-100), Int64(100), 201, Int64(0), 100.0 / 200.0 * 201.0); /// midpoint
 
     /// All rows have the same value: min == max
     test_minmax(UInt64(42), UInt64(42), 50, UInt64(42), 50.0); /// v == min == max → all rows
     test_minmax(UInt64(42), UInt64(42), 50, UInt64(43), 50.0); /// v > max         → all rows
-    test_minmax(UInt64(42), UInt64(42), 50, UInt64(41), 0.0);  /// v < min         → 0 rows
+    test_minmax(UInt64(42), UInt64(42), 50, UInt64(41), 0.0); /// v < min         → 0 rows
 
     /// Precision: UInt64 values near 2^53 where Float64 loses consecutive integers.
     /// Float64(2^53 + 1) rounds to Float64(2^53), so naive conversion gives numerator = 0.
@@ -259,13 +259,17 @@ ColumnStatisticsPtr createTestStats(
     return MergeTreeStatisticsFactory::instance().get(desc);
 }
 
-TEST(Statistics, AssumedCardinalityPolicyReplacesUniqLikeImplementation)
+
+TEST(Statistics, AssumedCardinalityPolicyReplacesOnlyImplicitUniqStatistics)
 {
+    tryRegisterAggregateFunctions();
+
     auto data_type = std::make_shared<DataTypeFloat64>();
 
     StatisticsBuildOptions options;
     options.assume_floats_distinct = true;
 
+    /// Implicit statistics (auto_statistics_types) are converted to the assumed materialization.
     auto implicit_stats = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/true);
     auto implicit_column = data_type->createColumn();
     for (UInt64 i = 0; i < 100; ++i)
@@ -276,6 +280,7 @@ TEST(Statistics, AssumedCardinalityPolicyReplacesUniqLikeImplementation)
     EXPECT_TRUE(isAssumedAllDistinctStatistics(*implicit_stats->getStats().at(StatisticsType::UniqV2)));
     EXPECT_EQ(implicit_stats->estimateCardinality(), 100);
 
+    /// An explicit STATISTICS(uniq_v2) clause is a request for a real sketch and is left alone.
     auto explicit_stats = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/false);
     auto explicit_column = data_type->createColumn();
     for (UInt64 i = 0; i < 100; ++i)
@@ -283,12 +288,37 @@ TEST(Statistics, AssumedCardinalityPolicyReplacesUniqLikeImplementation)
 
     explicit_stats->build(static_cast<const IColumn &>(*explicit_column).getPtr(), options);
     ASSERT_TRUE(explicit_stats->getStats().contains(StatisticsType::UniqV2));
-    EXPECT_TRUE(isAssumedAllDistinctStatistics(*explicit_stats->getStats().at(StatisticsType::UniqV2)));
-    EXPECT_EQ(explicit_stats->estimateCardinality(), 100);
+    EXPECT_FALSE(isAssumedAllDistinctStatistics(*explicit_stats->getStats().at(StatisticsType::UniqV2)));
+    EXPECT_EQ(explicit_stats->estimateCardinality(), 5);
+}
+
+TEST(Statistics, AssumedFloatPolicySkipsDefaultDominatedColumns)
+{
+    tryRegisterAggregateFunctions();
+
+    auto data_type = std::make_shared<DataTypeFloat64>();
+
+    StatisticsBuildOptions options;
+    options.assume_floats_distinct = true;
+    options.max_default_ratio_for_assumed_distinct = 0.5;
+
+    /// 90% zeros: repeated defaults contradict the all-distinct assumption even though the column
+    /// arrives as a full (not sparse) column on the insert path, so the real sketch is kept.
+    auto stats = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/true);
+    auto column = data_type->createColumn();
+    for (UInt64 i = 0; i < 1000; ++i)
+        column->insert(i % 10 == 0 ? static_cast<Float64>(i) : 0.0);
+
+    stats->build(static_cast<const IColumn &>(*column).getPtr(), options);
+    ASSERT_TRUE(stats->getStats().contains(StatisticsType::UniqV2));
+    EXPECT_FALSE(isAssumedAllDistinctStatistics(*stats->getStats().at(StatisticsType::UniqV2)));
+    EXPECT_LT(stats->estimateCardinality(), 500);
 }
 
 TEST(Statistics, AssumedLongStringPolicyStopsBuildingUniqAfterProbeThreshold)
 {
+    tryRegisterAggregateFunctions();
+
     auto data_type = std::make_shared<DataTypeString>();
     auto stats = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/true);
 
@@ -315,8 +345,10 @@ TEST(Statistics, AssumedLongStringPolicyStopsBuildingUniqAfterProbeThreshold)
     EXPECT_EQ(stats->estimateCardinality(), 15);
 }
 
-TEST(Statistics, AssumedCardinalityMergeConvertsAllLogicalUniqVariants)
+TEST(Statistics, AssumedCardinalityMergeConvertsOnlyAssumedVariants)
 {
+    tryRegisterAggregateFunctions();
+
     auto data_type = std::make_shared<DataTypeUInt64>();
 
     auto uniq_stats = createTestStats({StatisticsType::Uniq, StatisticsType::UniqV2}, data_type);
@@ -332,12 +364,76 @@ TEST(Statistics, AssumedCardinalityMergeConvertsAllLogicalUniqVariants)
         assumed_column->insert(i);
     assumed_stats->build(static_cast<const IColumn &>(*assumed_column).getPtr());
 
+    /// UniqV2 has an assumed side, so it merges into an assumed statistic with the summed
+    /// cardinality (the side lacking assumed contributes its sketch estimate). Uniq has no
+    /// assumed side and keeps its real sketch.
     uniq_stats->merge(assumed_stats);
     ASSERT_TRUE(uniq_stats->getStats().contains(StatisticsType::Uniq));
     ASSERT_TRUE(uniq_stats->getStats().contains(StatisticsType::UniqV2));
-    EXPECT_TRUE(isAssumedAllDistinctStatistics(*uniq_stats->getStats().at(StatisticsType::Uniq)));
+    EXPECT_FALSE(isAssumedAllDistinctStatistics(*uniq_stats->getStats().at(StatisticsType::Uniq)));
     EXPECT_TRUE(isAssumedAllDistinctStatistics(*uniq_stats->getStats().at(StatisticsType::UniqV2)));
-    EXPECT_EQ(uniq_stats->estimateCardinality(), 12);
+    EXPECT_EQ(uniq_stats->getStats().at(StatisticsType::Uniq)->estimateCardinality(), 5);
+    EXPECT_EQ(uniq_stats->getStats().at(StatisticsType::UniqV2)->estimateCardinality(), 12);
+}
+
+TEST(Statistics, MergeIntoEmptyDoesNotAliasOtherStatistics)
+{
+    tryRegisterAggregateFunctions();
+
+    auto data_type = std::make_shared<DataTypeUInt64>();
+
+    /// Empty accumulator with a different structure than the parts being merged.
+    auto accumulator = createTestStats({StatisticsType::UniqV2}, data_type);
+
+    auto first_part = createTestStats({StatisticsType::Uniq}, data_type);
+    auto first_column = data_type->createColumn();
+    for (UInt64 i = 0; i < 5; ++i)
+        first_column->insert(i);
+    first_part->build(static_cast<const IColumn &>(*first_column).getPtr());
+
+    auto second_part = createTestStats({StatisticsType::Uniq}, data_type);
+    auto second_column = data_type->createColumn();
+    for (UInt64 i = 5; i < 12; ++i)
+        second_column->insert(i);
+    second_part->build(static_cast<const IColumn &>(*second_column).getPtr());
+
+    accumulator->merge(first_part);
+    accumulator->merge(second_part);
+
+    EXPECT_EQ(accumulator->estimateCardinality(), 12);
+    /// Merging the second part into the accumulator must not have mutated the first part's
+    /// statistics through shared pointers.
+    EXPECT_EQ(first_part->estimateCardinality(), 5);
+    EXPECT_EQ(second_part->estimateCardinality(), 7);
+}
+
+TEST(Statistics, StaleAssumedStatisticsDetection)
+{
+    tryRegisterAggregateFunctions();
+
+    auto data_type = std::make_shared<DataTypeFloat64>();
+
+    StatisticsBuildOptions assume_options;
+    assume_options.assume_floats_distinct = true;
+
+    /// A part whose implicit uniq statistics were materialized with the assumption.
+    auto part_stats = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/true);
+    auto column = data_type->createColumn();
+    for (UInt64 i = 0; i < 100; ++i)
+        column->insert(static_cast<Float64>(i));
+    part_stats->build(static_cast<const IColumn &>(*column).getPtr(), assume_options);
+    ASSERT_TRUE(isAssumedAllDistinctStatistics(*part_stats->getStats().at(StatisticsType::UniqV2)));
+
+    auto metadata_stats = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/true);
+
+    /// While the setting is enabled the assumption is not stale; after disabling it, it is.
+    EXPECT_FALSE(metadata_stats->hasStaleAssumedStatistics(*part_stats, assume_options));
+    EXPECT_TRUE(metadata_stats->hasStaleAssumedStatistics(*part_stats, StatisticsBuildOptions{}));
+
+    /// An explicitly declared assumed materialization is never stale.
+    auto explicit_assumed_metadata
+        = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/false, StatisticsMaterialization::AssumedAllDistinct);
+    EXPECT_FALSE(explicit_assumed_metadata->hasStaleAssumedStatistics(*part_stats, StatisticsBuildOptions{}));
 }
 
 TEST(Statistics, AssumedAllDistinctRoundTripPreservesLogicalType)
@@ -376,10 +472,7 @@ TEST(Statistics, AssumedAllDistinctRoundTripPreservesLogicalType)
 
 /// Build a `Nullable(Int32)` column with `total` rows where every `null_every`-th row is NULL.
 /// Non-NULL row `i` carries value `static_cast<Int32>(i)`. Returns built statistics.
-ColumnStatisticsPtr buildNullableInt32Stats(
-    const std::vector<StatisticsType> & types,
-    size_t total,
-    size_t null_every)
+ColumnStatisticsPtr buildNullableInt32Stats(const std::vector<StatisticsType> & types, size_t total, size_t null_every)
 {
     auto data_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
     MutableColumnPtr col = data_type->createColumn();
@@ -403,9 +496,7 @@ Float64 estimateRowsFor(Estimator & estimator, const String & expression)
     ParserExpressionWithOptionalAlias exp_parser(false);
     ContextPtr context = getContext().context;
     RPNBuilderTreeContext tree_context(
-        context,
-        Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}},
-        {});
+        context, Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}}, {});
     ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
     RPNBuilderTreeNode node(ast.get(), tree_context);
     return static_cast<Float64>(estimator->estimateRelationProfile(nullptr, node).rows);
@@ -443,15 +534,15 @@ TEST(Statistics, NullableEstimatorWithBasic)
     };
 
     /// Single column — plain ranges (NULL rows are excluded).
-    check("a > 500",       400.0, 1.0);
-    check("a < 500",       400.0, 1.0);
-    check("b > 500",       450.0, 1.0);
-    check("b < 500",       450.0, 1.0);
+    check("a > 500", 400.0, 1.0);
+    check("a < 500", 400.0, 1.0);
+    check("b > 500", 450.0, 1.0);
+    check("b < 500", 450.0, 1.0);
 
     /// Single column — IS NULL / IS NOT NULL.
-    check("a IS NULL",     200.0, 1e-6);
+    check("a IS NULL", 200.0, 1e-6);
     check("a IS NOT NULL", 800.0, 1e-6);
-    check("b IS NULL",     100.0, 1e-6);
+    check("b IS NULL", 100.0, 1e-6);
     check("b IS NOT NULL", 900.0, 1e-6);
 
     /// Single column — IS NULL AND range → contradiction (the range is FALSE on NULL rows).
@@ -459,8 +550,8 @@ TEST(Statistics, NullableEstimatorWithBasic)
     check("b IS NULL AND b < 500", 0.0, 1e-6);
 
     /// Single column — IS NULL OR range → null rows ∪ matching range rows.
-    check("a IS NULL OR a > 500", 600.0, 1.0);   /// 200 + 400
-    check("b IS NULL OR b < 500", 550.0, 1.0);   /// 100 + 450
+    check("a IS NULL OR a > 500", 600.0, 1.0); /// 200 + 400
+    check("b IS NULL OR b < 500", 550.0, 1.0); /// 100 + 450
 
     /// Single column — IS NOT NULL AND range → equals the range (NULL filtering is implicit).
     check("a IS NOT NULL AND a > 500", 400.0, 1.0);
@@ -501,7 +592,7 @@ TEST(Statistics, NullableEstimatorWithBasic)
     check("a IS NOT NULL AND a > 500 AND b IS NULL", 40.0, 2.0);
 
     /// Contradictions spanning two columns.
-    check("a > 500 AND b > 500 AND b IS NULL", 0.0, 1e-6);  /// b > 500 contradicts b IS NULL
+    check("a > 500 AND b > 500 AND b IS NULL", 0.0, 1e-6); /// b > 500 contradicts b IS NULL
     check("a IS NULL AND a > 500 AND b IS NULL", 0.0, 1e-6); /// a IS NULL contradicts a > 500
 }
 
@@ -536,7 +627,8 @@ TEST(Statistics, LikeSelectivity)
     {
         ParserExpressionWithOptionalAlias exp_parser(false);
         ContextPtr context = getContext().context;
-        RPNBuilderTreeContext tree_context(context, Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}}, {});
+        RPNBuilderTreeContext tree_context(
+            context, Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}}, {});
         ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
         RPNBuilderTreeNode node(ast.get(), tree_context);
         return estimator->estimateRelationProfile(nullptr, node).rows;
@@ -783,12 +875,12 @@ TEST(Statistics, BasicDefaultCountFixedString)
     auto data_type = std::make_shared<DataTypeFixedString>(4);
     MutableColumnPtr col = data_type->createColumn();
     /// 6 rows: 3 all-zero (default), 3 non-zero.
-    col->insertDefault();                           /// "\0\0\0\0"
-    col->insertDefault();                           /// "\0\0\0\0"
-    col->insertDefault();                           /// "\0\0\0\0"
-    col->insert(Field(String("abc\0", 4)));         /// non-default
-    col->insert(Field(String("xyz\0", 4)));         /// non-default
-    col->insert(Field(String("hi\0\0", 4)));        /// non-default
+    col->insertDefault(); /// "\0\0\0\0"
+    col->insertDefault(); /// "\0\0\0\0"
+    col->insertDefault(); /// "\0\0\0\0"
+    col->insert(Field(String("abc\0", 4))); /// non-default
+    col->insert(Field(String("xyz\0", 4))); /// non-default
+    col->insert(Field(String("hi\0\0", 4))); /// non-default
     auto stats = createTestStats({StatisticsType::Basic}, data_type);
     stats->build(std::move(col));
 
@@ -812,15 +904,15 @@ TEST(Statistics, BasicDefaultCountEnum)
     /// Insert via raw integer values — ColumnVector<Int8> does not accept String fields directly.
     {
         MutableColumnPtr col = enum_zero->createColumn();
-        col->insert(Field(Int64(0)));  /// 'a'
-        col->insert(Field(Int64(1)));  /// 'b'
-        col->insert(Field(Int64(0)));  /// 'a'
-        col->insert(Field(Int64(0)));  /// 'a'
-        col->insert(Field(Int64(1)));  /// 'b'
+        col->insert(Field(Int64(0))); /// 'a'
+        col->insert(Field(Int64(1))); /// 'b'
+        col->insert(Field(Int64(0))); /// 'a'
+        col->insert(Field(Int64(0))); /// 'a'
+        col->insert(Field(Int64(1))); /// 'b'
         auto stats = createTestStats({StatisticsType::Basic}, enum_zero);
         stats->build(std::move(col));
 
-        EXPECT_EQ(stats->estimateDefaults(), 3u);  /// 3 rows with raw value 0 ('a')
+        EXPECT_EQ(stats->estimateDefaults(), 3u); /// 3 rows with raw value 0 ('a')
 
         /// col = 'a' — 'a' maps to raw 0, which is the column default → exact count.
         auto eq_a = stats->estimateEqual(Field(String("a")));
@@ -838,11 +930,11 @@ TEST(Statistics, BasicDefaultCountEnum)
     {
         MutableColumnPtr col = enum_nonzero->createColumn();
         for (int i = 0; i < 100; ++i)
-            col->insert(Field(Int64(1)));  /// 100 rows of 'a' (raw 1)
+            col->insert(Field(Int64(1))); /// 100 rows of 'a' (raw 1)
         auto stats = createTestStats({StatisticsType::Basic}, enum_nonzero);
         stats->build(std::move(col));
 
-        EXPECT_EQ(stats->estimateDefaults(), 0u);  /// no rows with raw value 0
+        EXPECT_EQ(stats->estimateDefaults(), 0u); /// no rows with raw value 0
 
         /// col = 'a' — 'a' is the first enumerator but maps to raw 1, not the column default.
         /// Must return nullopt, not 0 (which would suppress `col = 'a'` predicates entirely).
@@ -887,10 +979,10 @@ TEST(Statistics, BasicDefaultCountArray)
     EXPECT_TRUE(basicStatisticsValidator(SingleStatisticsDescription(StatisticsType::Basic, nullptr, false), data_type));
 
     MutableColumnPtr col = data_type->createColumn();
-    col->insert(Field(Array{}));                                     /// empty (default)
-    col->insert(Field(Array{Field(UInt64(1))}));                     /// non-empty
-    col->insert(Field(Array{}));                                     /// empty (default)
-    col->insert(Field(Array{Field(UInt64(2)), Field(UInt64(3))}));   /// non-empty
+    col->insert(Field(Array{})); /// empty (default)
+    col->insert(Field(Array{Field(UInt64(1))})); /// non-empty
+    col->insert(Field(Array{})); /// empty (default)
+    col->insert(Field(Array{Field(UInt64(2)), Field(UInt64(3))})); /// non-empty
     auto stats = createTestStats({StatisticsType::Basic}, data_type);
     stats->build(std::move(col));
 
@@ -899,4 +991,3 @@ TEST(Statistics, BasicDefaultCountArray)
     ASSERT_TRUE(eq_empty.has_value());
     EXPECT_DOUBLE_EQ(*eq_empty, 2.0);
 }
-

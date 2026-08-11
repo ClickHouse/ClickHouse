@@ -2,8 +2,8 @@ float assume
 x	1	900
 float disabled
 x	1	1
-explicit float assume
-x	1	1000
+explicit float stays exact
+x	1	1
 explicit declared assume
 x	1	1000
 long string assume
@@ -14,7 +14,14 @@ long string disabled
 s	1	1
 low cardinality float normal
 x	1	5
+default heavy float normal
+x	1	1
 materialize assume
 x	1	900
 merge assume
 x	1	1800
+before disable
+x	1	1000
+x	1	1000
+after disable and merge
+x	1	1

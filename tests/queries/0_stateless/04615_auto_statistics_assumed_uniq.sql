@@ -6,8 +6,10 @@ DROP TABLE IF EXISTS t_auto_stats_long_string_assume;
 DROP TABLE IF EXISTS t_auto_stats_short_string_normal;
 DROP TABLE IF EXISTS t_auto_stats_long_string_disabled;
 DROP TABLE IF EXISTS t_auto_stats_low_cardinality_float_normal;
+DROP TABLE IF EXISTS t_auto_stats_default_heavy_float_normal;
 DROP TABLE IF EXISTS t_auto_stats_materialize_assume;
 DROP TABLE IF EXISTS t_auto_stats_merge_assume;
+DROP TABLE IF EXISTS t_auto_stats_disable_rebuild;
 
 SET allow_statistics = 1;
 SET allow_suspicious_low_cardinality_types = 1;
@@ -51,6 +53,7 @@ FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_auto_stats_float_normal' AND active AND column = 'x'
 ORDER BY name;
 
+-- An explicit STATISTICS(uniq_v2) clause requests a real sketch: the auto_* setting must not degrade it.
 CREATE TABLE t_auto_stats_explicit_float_exact
 (
     x Float64 STATISTICS(uniq_v2)
@@ -64,8 +67,8 @@ SETTINGS
 INSERT INTO t_auto_stats_explicit_float_exact
 SELECT toFloat64(number % 5) FROM numbers(1000);
 
-SELECT 'explicit float assume';
-SELECT column, has(statistics, 'UniqV2') AS has_uniq_v2, estimates.cardinality
+SELECT 'explicit float stays exact';
+SELECT column, has(statistics, 'UniqV2') AS has_uniq_v2, estimates.cardinality < 100 AS normal_cardinality
 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_auto_stats_explicit_float_exact' AND active AND column = 'x'
 ORDER BY name;
@@ -175,6 +178,28 @@ FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_auto_stats_low_cardinality_float_normal' AND active AND column = 'x'
 ORDER BY name;
 
+-- A column dominated by repeated default values contradicts the all-distinct assumption
+-- (ratio_of_defaults_for_sparse_serialization is the threshold), so the real sketch is kept.
+CREATE TABLE t_auto_stats_default_heavy_float_normal
+(
+    x Float64
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS
+    auto_statistics_types = 'basic, uniq_v2',
+    auto_statistics_assume_floats_distinct = 1,
+    ratio_of_defaults_for_sparse_serialization = 0.5;
+
+INSERT INTO t_auto_stats_default_heavy_float_normal
+SELECT if(number % 10 = 0, toFloat64(number), 0.) FROM numbers(10000);
+
+SELECT 'default heavy float normal';
+SELECT column, has(statistics, 'UniqV2') AS has_uniq_v2, estimates.cardinality < 5000 AS normal_cardinality
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_auto_stats_default_heavy_float_normal' AND active AND column = 'x'
+ORDER BY name;
+
 SET materialize_statistics_on_insert = 0;
 
 CREATE TABLE t_auto_stats_materialize_assume
@@ -220,6 +245,41 @@ FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_auto_stats_merge_assume' AND active AND column = 'x'
 ORDER BY name;
 
+-- After disabling the assumption setting, merges rebuild the statistics from data
+-- (with materialize_statistics_on_merge) instead of propagating the stale assumption.
+SET materialize_statistics_on_insert = 1;
+
+CREATE TABLE t_auto_stats_disable_rebuild
+(
+    x Float64
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS
+    auto_statistics_types = 'basic, uniq_v2',
+    auto_statistics_assume_floats_distinct = 1,
+    materialize_statistics_on_merge = 1;
+
+INSERT INTO t_auto_stats_disable_rebuild
+SELECT toFloat64(number % 5) FROM numbers(1000);
+INSERT INTO t_auto_stats_disable_rebuild
+SELECT toFloat64(number % 5) FROM numbers(1000);
+
+SELECT 'before disable';
+SELECT column, has(statistics, 'UniqV2') AS has_uniq_v2, estimates.cardinality
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_auto_stats_disable_rebuild' AND active AND column = 'x'
+ORDER BY name;
+
+ALTER TABLE t_auto_stats_disable_rebuild MODIFY SETTING auto_statistics_assume_floats_distinct = 0;
+OPTIMIZE TABLE t_auto_stats_disable_rebuild FINAL;
+
+SELECT 'after disable and merge';
+SELECT column, has(statistics, 'UniqV2') AS has_uniq_v2, estimates.cardinality < 100 AS normal_cardinality
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_auto_stats_disable_rebuild' AND active AND column = 'x'
+ORDER BY name;
+
 DROP TABLE t_auto_stats_float_assume;
 DROP TABLE t_auto_stats_float_normal;
 DROP TABLE t_auto_stats_explicit_float_exact;
@@ -228,5 +288,7 @@ DROP TABLE t_auto_stats_long_string_assume;
 DROP TABLE t_auto_stats_short_string_normal;
 DROP TABLE t_auto_stats_long_string_disabled;
 DROP TABLE t_auto_stats_low_cardinality_float_normal;
+DROP TABLE t_auto_stats_default_heavy_float_normal;
 DROP TABLE t_auto_stats_materialize_assume;
 DROP TABLE t_auto_stats_merge_assume;
+DROP TABLE t_auto_stats_disable_rebuild;

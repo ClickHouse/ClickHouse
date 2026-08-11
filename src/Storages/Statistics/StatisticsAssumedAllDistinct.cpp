@@ -1,12 +1,13 @@
 #include <Storages/Statistics/StatisticsAssumedAllDistinct.h>
 
-#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/Statistics/Statistics.h>
+#include <Storages/Statistics/StatisticsUniqBuildProbe.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -69,12 +70,7 @@ StatisticsType getSerializedStatisticsType(const IStatistics & statistics)
 
 bool supportsAssumedAllDistinctStatistics(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
 {
-    if (!isUniqLikeStatisticsType(description.type))
-        return false;
-
-    DataTypePtr inner_data_type = removeNullable(data_type);
-    inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type);
+    return isUniqLikeStatisticsType(description.type) && dataTypeSupportsUniqStatistics(data_type);
 }
 
 }
