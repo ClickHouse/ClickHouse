@@ -4,11 +4,18 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Poco/Exception.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
+}
 
 BackupReaderDefault::BackupReaderDefault(const ReadSettings & read_settings_, const WriteSettings & write_settings_, LoggerPtr log_)
     : log(log_)
@@ -65,22 +72,31 @@ BackupWriterDefault::BackupWriterDefault(const ReadSettings & read_settings_, co
 }
 
 bool BackupWriterDefault::fileContentsEqual(const String & file_name, const String & expected_file_contents, String & actual_file_contents)
+try
 {
     if (!fileExists(file_name))
         return false;
 
-    try
-    {
-        auto in = readFile(file_name, expected_file_contents.size());
-        actual_file_contents = String(expected_file_contents.size(), ' ');
-        return (in->read(actual_file_contents.data(), actual_file_contents.size()) == actual_file_contents.size())
-            && (actual_file_contents == expected_file_contents) && in->eof();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
-    }
+    auto in = readFile(file_name, expected_file_contents.size());
+    actual_file_contents = String(expected_file_contents.size(), ' ');
+    return (in->read(actual_file_contents.data(), actual_file_contents.size()) == actual_file_contents.size())
+        && (actual_file_contents == expected_file_contents) && in->eof();
+}
+catch (const Exception &)
+{
+    throw;
+}
+catch (const Poco::Exception & ex)
+{
+    throw Exception(
+        ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
+        "Failed to check file {} contents: {}", file_name, ex.message());
+}
+catch (const std::exception & ex)
+{
+    throw Exception(
+        ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
+        "Failed to check file {} contents: {}", file_name, ex.what());
 }
 
 void BackupWriterDefault::copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length)
