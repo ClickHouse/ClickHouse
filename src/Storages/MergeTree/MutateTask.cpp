@@ -1,9 +1,4 @@
 #include <Interpreters/TreeRewriter.h>
-
-#include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTAssignment.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MutateTask.h>
 
 #include <Disks/SingleDiskVolume.h>
