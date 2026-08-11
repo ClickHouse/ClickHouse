@@ -1362,6 +1362,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_merge_coordinator_distribution_algorithm", "water_filling", "sainte_lague", "Enable Sainte-Lague distribution by default."},
             {"text_index_max_processed_tokens_before_flush", 100000000, 100000000, "New setting"},
             {"text_index_max_memory_usage_before_flush", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"},
+            {"auto_statistics_assume_floats_distinct", false, false, "New setting to materialize Float cardinality statistics with an all-distinct assumption."},
+            {"auto_statistics_assume_long_strings_distinct", false, false, "New setting to materialize long String cardinality statistics with an all-distinct assumption."},
+            {"auto_statistics_long_string_distinct_min_length", 64, 64, "New setting controlling the average string length threshold for all-distinct cardinality statistics."},
+            {"auto_statistics_long_string_distinct_probe_rows", 1000, 1000, "New setting controlling how many rows are probed for long-string all-distinct cardinality statistics."},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
@@ -1372,10 +1376,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_virtual_parts_partition_atomic_discovery", false, true, "New setting"},
             {"allow_minmax_index_for_json", true, false, "Forbid creating minmax skip index on JSON columns by default because the index serialization cannot handle heterogeneous Field values"},
             {"auto_statistics_types", "minmax, uniq", "basic, uniq_v2", "Deprecate the `minmax` statistics type and replace it with `basic` (a superset of `minmax`) in the default auto statistics; also replace `uniq` with `uniq_v2` for less overhead on inserts and memory"},
-            {"auto_statistics_assume_floats_distinct", false, false, "New setting to materialize Float cardinality statistics with an all-distinct assumption."},
-            {"auto_statistics_assume_long_strings_distinct", false, false, "New setting to materialize long String cardinality statistics with an all-distinct assumption."},
-            {"auto_statistics_long_string_distinct_min_length", 64, 64, "New setting controlling the average string length threshold for all-distinct cardinality statistics."},
-            {"auto_statistics_long_string_distinct_probe_rows", 1000, 1000, "New setting controlling how many rows are probed for long-string all-distinct cardinality statistics."},
             {"allow_dimensions_outside_sorting_key", true, false, "AggregatingMergeTree now rejects, at table creation, schemas where a column is neither part of the sorting key nor an aggregate-state measure; previously such schemas were accepted (the old behavior corresponds to the value 'true')."},
             {"deduplication_hashes_cache_update_wait_ms", 100, 100, "New setting. The properly-named replacement for async_block_ids_cache_update_wait_ms; controls how long an insert waits for the unified deduplication_hashes cache to refresh."},
             {"dead_blobs_to_delay_insert", 0, 100000, "New setting to artificially slow down inserts when the dead blobs queues of the table's disks accumulate too many blobs pending removal."},
