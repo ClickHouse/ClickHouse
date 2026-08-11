@@ -2499,7 +2499,7 @@ public:
             }
 
             reader.reset();
-            pipeline.reset();
+            pipeline = nullptr;
             input_format.reset();
             read_buf.reset();
         }
