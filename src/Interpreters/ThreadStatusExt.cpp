@@ -143,8 +143,8 @@ bool ThreadGroup::hasLiveAsyncCallbackCompanions() const
 ThreadGroup::~ThreadGroup()
 {
     /// Only async-callback companions have an accounting chain.
-    for (const auto & group : companion_accounting_chain)
-        group->live_async_callback_companions.fetch_sub(1);
+    for (size_t i = 0; i < companion_counted_groups; ++i)
+        companion_accounting_chain[i]->live_async_callback_companions.fetch_sub(1);
 }
 
 ThreadGroupPtr ThreadGroup::getAsyncCallbackGroup(const ThreadGroupPtr & borrowed)
@@ -161,8 +161,20 @@ ThreadGroupPtr ThreadGroup::getAsyncCallbackGroup(const ThreadGroupPtr & borrowe
     /// Collect the accounting chain the companion parents into: the borrowed group itself, then every
     /// group its raw accounting pointers hop through, up to the owning query group. Async work may
     /// outlive all of them, so the companion has to keep the whole chain alive.
+    ///
+    /// The chain serves two purposes with different extents. Lifetime: `performance_counters` are never
+    /// re-pointed, so their raw parent chain always traverses every construction-time parent - the whole
+    /// chain must be held. Accounting bookkeeping (`live_async_callback_companions`, which defers user
+    /// memory-tracker resets - see `ProcessListForUser::lingering_query_groups`): `ProcessList::insert`
+    /// may re-point a group's `memory_tracker` away from its construction-time parent
+    /// (`createForFlushAsyncInsertQueue`: the flush registers its own process-list entry, and from then
+    /// on charges that entry's user, not the outer caller that triggered the flush). Counting a group
+    /// the live memory-tracker chain no longer traverses would keep the wrong user's limits lingering,
+    /// so only the prefix still on the live chain is counted.
     std::vector<ThreadGroupPtr> accounting_chain{borrowed};
-    for (const ThreadGroup * group = borrowed.get(); group->isBorrowed();)
+    size_t counted_groups = 1;
+    bool on_live_memory_tracker_chain = true;
+    for (ThreadGroup * group = borrowed.get(); group->isBorrowed();)
     {
         /// Async work is scheduled from inside the borrowed scope, and a borrowed scope is nested in the
         /// scope it borrows from - so every group of the chain must still be lockable here.
@@ -170,14 +182,18 @@ ThreadGroupPtr ThreadGroup::getAsyncCallbackGroup(const ThreadGroupPtr & borrowe
         chassert(parent);
         if (!parent)
             return nullptr;
+        if (group->memory_tracker.getParent() != &parent->memory_tracker)
+            on_live_memory_tracker_chain = false;
         group = parent.get();
         accounting_chain.push_back(std::move(parent));
+        if (on_live_memory_tracker_chain)
+            ++counted_groups;
     }
 
     /// Constructed outside the lock: the constructor copies `getSharedData` of the borrowed group.
     /// `new` (not `make_shared`): the companion constructor is private.
-    ThreadGroupPtr companion(
-        new ThreadGroup(borrowed->getSharedData(), std::move(accounting_chain), AsyncCallbackCompanionTag{}));
+    ThreadGroupPtr companion(new ThreadGroup(
+        borrowed->getSharedData(), std::move(accounting_chain), counted_groups, AsyncCallbackCompanionTag{}));
 
     std::lock_guard lock(borrowed->mutex);
     if (auto existing = borrowed->async_callback_group.lock())
@@ -242,7 +258,8 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
 /// never dereferencing a group it does not own. Query metadata is copied, and the cancellation
 /// predicates capture only a weak pointer to the query context (never a `this` of another group), so
 /// they stay valid after the query finishes.
-ThreadGroup::ThreadGroup(SharedData borrowed_shared_data, std::vector<ThreadGroupPtr> accounting_chain, AsyncCallbackCompanionTag)
+ThreadGroup::ThreadGroup(
+    SharedData borrowed_shared_data, std::vector<ThreadGroupPtr> accounting_chain, size_t counted_groups, AsyncCallbackCompanionTag)
     : master_thread_id(accounting_chain.front()->master_thread_id)
     , query_context(accounting_chain.front()->query_context)
     , global_context(accounting_chain.front()->global_context)
@@ -252,14 +269,17 @@ ThreadGroup::ThreadGroup(SharedData borrowed_shared_data, std::vector<ThreadGrou
     , performance_counters(VariableContext::Process, &accounting_chain.front()->performance_counters)
     , shared_data(std::move(borrowed_shared_data))
     , companion_accounting_chain(std::move(accounting_chain))
+    , companion_counted_groups(counted_groups)
 {
     memory_tracker.setDescription("Async callback (borrowed scope)");
     memory_tracker.setParent(&companion_accounting_chain.front()->memory_tracker);
 
     /// While this companion lives, none of the groups it charges may be considered gone: their user
     /// trackers must keep the query's limits (see `ProcessListForUser::lingering_query_groups`).
-    for (const auto & group : companion_accounting_chain)
-        group->live_async_callback_companions.fetch_add(1);
+    /// Only the prefix of the chain that the live memory-tracker chain traverses is counted - the rest
+    /// is held for lifetime only and is not charged by this companion (see `getAsyncCallbackGroup`).
+    for (size_t i = 0; i < companion_counted_groups; ++i)
+        companion_accounting_chain[i]->live_async_callback_companions.fetch_add(1);
 
     /// The predicates copied with `shared_data` capture the `this` of the parent query group, which the
     /// companion may outlive. Replace them with self-contained ones.

@@ -233,6 +233,12 @@ private:
     /// charge them. Ordered from the borrowed group to the owner.
     std::vector<ThreadGroupPtr> companion_accounting_chain;
 
+    /// Set only for async-callback companions: how many leading groups of `companion_accounting_chain`
+    /// the live memory-tracker chain traverses. Only they get `live_async_callback_companions` bumped;
+    /// the rest of the chain is held for lifetime only (`performance_counters` are never re-pointed,
+    /// but `ProcessList::insert` may re-point `memory_tracker` - see `getAsyncCallbackGroup`).
+    size_t companion_counted_groups = 0;
+
     /// Number of live async-callback companions whose accounting chain includes this group.
     std::atomic<size_t> live_async_callback_companions = 0;
 
@@ -242,7 +248,8 @@ private:
 
     /// Constructor for the async-callback companion of a borrowed group (see `getAsyncCallbackGroup`).
     struct AsyncCallbackCompanionTag {};
-    ThreadGroup(SharedData borrowed_shared_data, std::vector<ThreadGroupPtr> accounting_chain, AsyncCallbackCompanionTag);
+    ThreadGroup(
+        SharedData borrowed_shared_data, std::vector<ThreadGroupPtr> accounting_chain, size_t counted_groups, AsyncCallbackCompanionTag);
 
     static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
 };

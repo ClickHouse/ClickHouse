@@ -125,4 +125,143 @@ TEST(BorrowedThreadGroupLifetime, AsyncWorkAfterLastQueryOfUserObeysUserMemoryLi
     t.join();
 }
 
+/// A flush of the async-insert queue runs under its own process-list entry, which may belong to a
+/// different user than the caller that triggered the flush (`SYSTEM FLUSH ASYNC INSERT QUEUE` by
+/// user A flushing inserts of user B). From `ProcessList::insert` on, the flush scope charges user
+/// B's memory tracker - so late async work of the flush must (1) keep obeying user B's limits after
+/// B's last query left the process list, and (2) NOT keep user A's trackers lingering: A's next
+/// query must be able to lower `max_memory_usage_for_user` while the flush's async work is still
+/// running.
+TEST(BorrowedThreadGroupLifetime, FlushForAnotherUserDoesNotPinFlushingUsersLimits)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+
+        /// User A: triggers the flush; generous user limit.
+        auto context_a = Context::createCopy(getContext().context);
+        context_a->makeQueryContext();
+        ClientInfo client_info_a = context_a->getClientInfo();
+        client_info_a.current_user = "borrowed_scope_flushing_user";
+        context_a->setClientInfo(client_info_a);
+        context_a->setCurrentQueryId("borrowed_scope_flushing_user_query");
+        context_a->setSetting("max_memory_usage_for_user", UInt64(1 << 30));
+        context_a->setSetting("memory_overcommit_ratio_denominator_for_user", UInt64(0));
+        context_a->setSetting("memory_usage_overcommit_max_wait_microseconds", UInt64(0));
+
+        /// User B: owns the flushed inserts; small enough limit for the async allocation to exceed.
+        auto context_b = Context::createCopy(getContext().context);
+        context_b->makeQueryContext();
+        ClientInfo client_info_b = context_b->getClientInfo();
+        client_info_b.current_user = "borrowed_scope_inserting_user";
+        context_b->setClientInfo(client_info_b);
+        context_b->setCurrentQueryId("borrowed_scope_inserting_user_query");
+        context_b->setSetting("max_memory_usage_for_user", UInt64(16 << 20));
+        context_b->setSetting("memory_overcommit_ratio_denominator_for_user", UInt64(0));
+        context_b->setSetting("memory_usage_overcommit_max_wait_microseconds", UInt64(0));
+
+        auto pool = std::make_unique<ThreadPool>(
+            CurrentMetrics::LocalThread,
+            CurrentMetrics::LocalThreadActive,
+            CurrentMetrics::LocalThreadScheduled,
+            /*max_threads=*/ 1,
+            /*max_free_threads=*/ 1,
+            /*queue_size=*/ 10);
+
+        ProcessList process_list;
+
+        /// User A's query, the outer scope the flush group is created from.
+        auto root_a = std::make_shared<ThreadGroup>(context_a, 0);
+        CurrentThread::attachToGroupIfDetached(root_a);
+        auto entry_a = process_list.insert(
+            "SYSTEM FLUSH ASYNC INSERT QUEUE", /*normalized_query_hash*/ 0, /*ast*/ nullptr, context_a,
+            /*watch_start_nanoseconds*/ 0, /*is_internal*/ true);
+
+        auto borrowed = ThreadGroup::createForFlushAsyncInsertQueue(context_b, root_a);
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        /// The flush registers its own process-list entry for user B - this re-points the flush
+        /// group's memory tracker from user A's accounting onto user B's and applies B's limits.
+        CurrentThread::attachToGroupIfDetached(borrowed);
+        auto entry_b = process_list.insert(
+            "INSERT INTO t VALUES", /*normalized_query_hash*/ 0, /*ast*/ nullptr, context_b,
+            /*watch_start_nanoseconds*/ 0, /*is_internal*/ true);
+
+        /// Late async work of the flush, gated to run only after both queries left the process list.
+        std::promise<void> queries_finished;
+        std::shared_future<void> queries_finished_future = queries_finished.get_future().share();
+        auto runner = threadPoolCallbackRunnerUnsafe<bool>(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        auto allocation_threw = runner([queries_finished_future]
+        {
+            queries_finished_future.wait();
+
+            constexpr Int64 allocation = 64 << 20;
+            try
+            {
+                std::ignore = CurrentMemoryTracker::alloc(allocation);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+                    throw;
+                return true;
+            }
+            std::ignore = CurrentMemoryTracker::free(allocation);
+            return false;
+        }, Priority{});
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        /// Both queries leave the process list while the flush's async work is still pending.
+        entry_b.reset();
+        entry_a.reset();
+
+        /// User A's next query lowers `max_memory_usage_for_user`. The pending flush work no longer
+        /// charges user A, so it must not defer the reset of A's trackers - the lowered limit has to
+        /// take effect immediately.
+        auto context_a2 = Context::createCopy(getContext().context);
+        context_a2->makeQueryContext();
+        ClientInfo client_info_a2 = context_a2->getClientInfo();
+        client_info_a2.current_user = "borrowed_scope_flushing_user";
+        context_a2->setClientInfo(client_info_a2);
+        context_a2->setCurrentQueryId("borrowed_scope_flushing_user_next_query");
+        context_a2->setSetting("max_memory_usage_for_user", UInt64(16 << 20));
+        context_a2->setSetting("memory_overcommit_ratio_denominator_for_user", UInt64(0));
+        context_a2->setSetting("memory_usage_overcommit_max_wait_microseconds", UInt64(0));
+
+        auto root_a2 = std::make_shared<ThreadGroup>(context_a2, 0);
+        CurrentThread::attachToGroupIfDetached(root_a2);
+        auto entry_a2 = process_list.insert(
+            "SELECT 1", /*normalized_query_hash*/ 0, /*ast*/ nullptr, context_a2,
+            /*watch_start_nanoseconds*/ 0, /*is_internal*/ true);
+
+        bool lowered_limit_enforced = false;
+        constexpr Int64 allocation = 64 << 20;
+        try
+        {
+            std::ignore = CurrentMemoryTracker::alloc(allocation);
+            std::ignore = CurrentMemoryTracker::free(allocation);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+                throw;
+            lowered_limit_enforced = true;
+        }
+        EXPECT_TRUE(lowered_limit_enforced)
+            << "a lowered `max_memory_usage_for_user` must take effect for the flushing user even "
+               "while async work of a flush it triggered for another user is still running";
+
+        entry_a2.reset();
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        /// The flush's late async work must still obey the inserting user's limits.
+        queries_finished.set_value();
+        EXPECT_TRUE(allocation_threw.get())
+            << "async allocation from a flush scope must still obey the inserting user's "
+               "`max_memory_usage_for_user` after that user's last query left the process list";
+        pool->wait();
+    });
+    t.join();
+}
+
 }
