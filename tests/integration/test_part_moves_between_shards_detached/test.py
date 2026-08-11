@@ -31,7 +31,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def create_tables(prefix, dst_settings=""):
+def create_tables(prefix, dst_settings="", columns="k UInt64, v String"):
     """Two INDEPENDENT tables, so the destination only ever receives the part through the
     MOVE PART TO SHARD under test. Both start empty, so both name their first part all_0_0_0.
 
@@ -42,7 +42,7 @@ def create_tables(prefix, dst_settings=""):
         node.query(
             f"""
             DROP TABLE IF EXISTS {name} SYNC;
-            CREATE TABLE {name} (k UInt64, v String)
+            CREATE TABLE {name} ({columns})
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/{name}_{shard}', 'r1')
             ORDER BY k SETTINGS old_parts_lifetime = 100000{settings}
         """
@@ -256,6 +256,100 @@ def test_move_refuses_conflict_on_a_disk_attach_cannot_see(started_cluster):
         s1.exec_in_container(["bash", "-c", f"cd {occupant} && md5sum * | sort"])
         == s1.exec_in_container(["bash", "-c", f"cd /tmp/{PART} && md5sum * | sort"])
     )
+
+    drop_tables(name)
+
+
+@pytest.mark.parametrize(
+    "prefix, columns, insert, unchecked_file, edit",
+    [
+        # A different declared type: the data files read as something else.
+        (
+            "t_columns", "k UInt64, v String", "SELECT 1, 'from_s0'",
+            "columns.txt", "s/`k` UInt64/`k` Int64/",
+        ),
+        # A different AggregateFunction serialization version: same type, other state encoding.
+        # `AggregateFunction(1, ...)` and `AggregateFunction(...)` parse to types that compare
+        # equal, because `IDataType::equals` drops the version - so only the bytes tell them
+        # apart, and version 0 of groupBitmap omits the leading flag version 1 writes.
+        (
+            "t_version",
+            "k UInt64, v String, s AggregateFunction(1, groupBitmap, UInt32)",
+            "SELECT 1, 'from_s0', groupBitmapState(toUInt32(1))",
+            "columns.txt", "s/AggregateFunction(1, groupBitmap/AggregateFunction(0, groupBitmap/",
+        ),
+        # A different substream order: a Compact part's marks are indexed by the positions this
+        # file records, so reordering two of them makes the same bytes read as other subcolumns.
+        # The edit is a permutation, not a rename, so the file stays valid.
+        (
+            "t_substreams", "k UInt64, v String, t Tuple(a String, b String)",
+            "SELECT 1, 'from_s0', ('x', 'y')",
+            "columns_substreams.txt",
+            "/^\\tt%2Ea$/{h;d};/^\\tt%2Eb\\.size$/{G}",
+        ),
+        # The same, one level down: what the parent's checksums roll up for a projection is the
+        # projection's own total checksum, which excludes its columns.txt as the parent's does.
+        (
+            "t_projection",
+            "k UInt64, v String, PROJECTION p (SELECT v, count() GROUP BY v)",
+            "SELECT 1, 'from_s0'",
+            "p.proj/columns.txt", "s/`v` String/`v` FixedString(7)/",
+        ),
+        # A different metadata version: it decides which ALTER conversions count as applied to
+        # this data, so the same bytes are read through a different schema.
+        (
+            "t_metadata_version", "k UInt64, v String", "SELECT 1, 'from_s0'",
+            "metadata_version.txt", "s/^0$/1/",
+        ),
+    ],
+)
+def test_move_refuses_occupant_with_same_checksum_and_other_metadata(
+    started_cluster, prefix, columns, insert, unchecked_file, edit
+):
+    """The occupant's data files are byte-identical, but the metadata describing them is not.
+
+    Neither `columns.txt` nor `columns_substreams.txt` is part of the checksums, so such an
+    occupant shares the incoming part's total checksum. `ATTACH_PART` filters detached candidates
+    by that checksum alone, so accepting it here attaches a part whose data reads differently and
+    `SOURCE_DROP` then deletes the only correct copy."""
+    name = create_tables(prefix, columns=columns)
+
+    s0.query(f"INSERT INTO {name} {insert}")
+    # An interrupted attempt of this very clone is what the reuse branch exists for, so start from
+    # exactly that - then change only the unchecked file, leaving the checksums identical.
+    s1.query(f"ALTER TABLE {name} FETCH PART '{PART}' FROM '/clickhouse/tables/{name}_s0'")
+    occupant = s1.query(
+        f"SELECT path FROM system.detached_parts WHERE database = currentDatabase()"
+        f" AND table = '{name}' AND name = '{PART}'"
+    ).strip().rstrip("/")
+    before_checksums = s1.exec_in_container(["bash", "-c", f"cd {occupant} && md5sum checksums.txt"])
+    before = s1.exec_in_container(["bash", "-c", f"cat {occupant}/{unchecked_file}"])
+    s1.exec_in_container(["bash", "-c", f"sed -i '{edit}' {occupant}/{unchecked_file}"])
+    edited = s1.exec_in_container(["bash", "-c", f"cat {occupant}/{unchecked_file}"])
+    # The premise: the file really changed, and checksums.txt - which is what the total checksum
+    # is computed from - did not, so the checksums still match on both sides.
+    assert edited != before, f"the edit did not change {unchecked_file}"
+    assert s1.exec_in_container(["bash", "-c", f"cd {occupant} && md5sum checksums.txt"]) == before_checksums
+
+    move_to_shard(name)
+    wait_for_clone_outcome(s1, name)
+
+    assert not reused_detached_part(s1, name), "an occupant with other metadata was reused"
+    assert not published_to_detached(s1, name), "clone published over an occupied name"
+    assert "DIRECTORY_ALREADY_EXISTS" in s1.query(
+        f"SELECT last_exception FROM system.replication_queue"
+        f" WHERE database = currentDatabase() AND table = '{name}'"
+        f" AND type = 'CLONE_PART_FROM_SHARD'"
+    ), "the refusal has to name the conflict on this entry"
+    assert s1.exec_in_container(["bash", "-c", f"cat {occupant}/{unchecked_file}"]) == edited
+
+    # Recoverable: dropping the occupant lets the retried entry finish the move with the part the
+    # source actually holds.
+    s1.query(
+        f"ALTER TABLE {name} DROP DETACHED PART '{PART}'", settings={"allow_drop_detached": 1}
+    )
+    wait_for_move_state(s0, name, "DONE")
+    assert s1.query(f"SELECT k, v FROM {name} ORDER BY k").strip() == "1\tfrom_s0"
 
     drop_tables(name)
 
