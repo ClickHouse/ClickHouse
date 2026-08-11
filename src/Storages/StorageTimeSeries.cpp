@@ -268,23 +268,31 @@ void StorageTimeSeries::drop()
 
 void StorageTimeSeries::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 {
-    if (!hasInnerTables())
-        return;
+    for (const auto & inner_table_id : getInnerTableIds(local_context))
+    {
+        /// Best-effort to make them work: the inner table name is almost always less than the TimeSeries name (so it's safe to lock DDLGuard).
+        /// (See the comment in StorageMaterializedView::dropInnerTableIfAny.)
+        bool may_lock_ddl_guard = getStorageID().getQualifiedName() < inner_table_id.getQualifiedName();
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id,
+                                               sync, /* ignore_sync_setting= */ true, may_lock_ddl_guard, /* skip_sync_wait= */ true);
+    }
+}
 
+std::vector<StorageID> StorageTimeSeries::getInnerTableIds(ContextPtr local_context) const
+{
+    if (!hasInnerTables())
+        return {};
+
+    std::vector<StorageID> inner_table_ids;
     for (auto target_kind : getTargetKinds())
     {
         if (isInnerTable(target_kind))
         {
             if (auto inner_table_id = tryGetTargetTableID(target_kind, local_context))
-            {
-                /// Best-effort to make them work: the inner table name is almost always less than the TimeSeries name (so it's safe to lock DDLGuard).
-                /// (See the comment in StorageMaterializedView::dropInnerTableIfAny.)
-                bool may_lock_ddl_guard = getStorageID().getQualifiedName() < inner_table_id.getQualifiedName();
-                InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id,
-                                                    sync, /* ignore_sync_setting= */ true, may_lock_ddl_guard);
-            }
+                inner_table_ids.push_back(inner_table_id);
         }
     }
+    return inner_table_ids;
 }
 
 void StorageTimeSeries::checkTableSizeBelowDropLimit(ContextPtr query_context) const

@@ -490,6 +490,9 @@ public:
 
     virtual void dropInnerTableIfAny(bool /* sync */, ContextPtr /* context */) {}
 
+    /// Returns the ids of the inner tables which `dropInnerTableIfAny` would drop.
+    virtual std::vector<StorageID> getInnerTableIds(ContextPtr /* context */) const { return {}; }
+
     /// Return true if the storage supports TRUNCATE operation.
     /// Storages without their own data (e.g. View) return false.
     virtual bool supportsTruncate() const { return true; }

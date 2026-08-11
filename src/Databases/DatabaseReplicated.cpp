@@ -1699,6 +1699,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     size_t moved_tables = 0;
     std::vector<UUID> dropped_tables;
+    std::vector<UUID> dropped_inner_tables;
     size_t dropped_dictionaries = 0;
 
     for (const auto & table_name : tables_to_detach)
@@ -1743,6 +1744,15 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 /// available: the deferred drop runs without one, so the inner DROP would be re-routed into the
                 /// replicated DDL log, rejected, and retried forever, and waitTableFinallyDropped never returns.
                 /// Yep, I hate inner tables of materialized views.
+                /// `dropInnerTableIfAny` does not wait for the inner tables to be finally dropped
+                /// (see the comment for `InterpreterDropQuery::executeDropQuery`), and their UUIDs
+                /// (and `store/` directories) must be free before the tables are re-created from
+                /// the metadata in ZooKeeper - so they are waited on below like the dropped tables.
+                for (const auto & inner_table_id : table->getInnerTableIds(getContext()))
+                {
+                    if (inner_table_id.hasUUID())
+                        dropped_inner_tables.push_back(inner_table_id.uuid);
+                }
                 auto mv_drop_inner_table_context = make_query_context();
                 table->dropInnerTableIfAny(/* sync */ true, mv_drop_inner_table_context);
                 mv_drop_inner_table_context->getZooKeeperMetadataTransaction()->commit();
@@ -1811,6 +1821,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     LOG_DEBUG(log, "Renames completed successfully");
 
     for (const auto & id : dropped_tables)
+        DatabaseCatalog::instance().waitTableFinallyDropped(id);
+    for (const auto & id : dropped_inner_tables)
         DatabaseCatalog::instance().waitTableFinallyDropped(id);
 
     /// Create all needed tables in a proper order
@@ -2515,7 +2527,9 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     {
         /// Drop inner tables here while the metadata transaction is available, so the background
         /// dropTableFinally task does not re-route the inner DROP through the replicated DDL log.
-        /// Avoid recursive locking of metadata_mutex
+        /// Avoid recursive locking of metadata_mutex.
+        /// The inner tables are dropped without waiting for them to be finally dropped - see the
+        /// comment in `DatabaseAtomic::dropTable`.
         table->dropInnerTableIfAny(sync, local_context);
     }
 

@@ -195,7 +195,9 @@ void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_na
     waitDatabaseStarted();
     auto table = tryGetTable(table_name, local_context);
     /// Remove the inner table (if any) to avoid deadlock
-    /// (due to attempt to execute DROP from the worker thread)
+    /// (due to attempt to execute DROP from the worker thread).
+    /// The inner tables are dropped without waiting for them to be finally dropped
+    /// (see the comment for `InterpreterDropQuery::executeDropQuery`).
     if (table)
         table->dropInnerTableIfAny(sync, local_context);
     else

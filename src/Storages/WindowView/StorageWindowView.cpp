@@ -1804,15 +1804,37 @@ void StorageWindowView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
     try
     {
         InterpreterDropQuery::executeDropQuery(
-            ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, sync);
+            ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, sync,
+            /* ignore_sync_setting */ false, /* need_ddl_guard */ false, /* skip_sync_wait */ true);
 
         if (has_inner_target_table)
-            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, sync, /* ignore_sync_setting */ true);
+            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, sync,
+                                                   /* ignore_sync_setting */ true, /* need_ddl_guard */ false, /* skip_sync_wait */ true);
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+}
+
+std::vector<StorageID> StorageWindowView::getInnerTableIds(ContextPtr local_context) const
+{
+    if (!has_inner_table)
+        return {};
+
+    /// `inner_table_id` and `target_table_id` are constructed by name and carry no UUID,
+    /// so they are resolved through the catalog here.
+    std::vector<StorageID> candidates = {inner_table_id};
+    if (has_inner_target_table)
+        candidates.push_back(target_table_id);
+
+    std::vector<StorageID> inner_table_ids;
+    for (const StorageID & candidate : candidates)
+    {
+        if (auto table = DatabaseCatalog::instance().tryGetTable(candidate, local_context))
+            inner_table_ids.push_back(table->getStorageID());
+    }
+    return inner_table_ids;
 }
 
 Block StorageWindowView::getInputHeader() const

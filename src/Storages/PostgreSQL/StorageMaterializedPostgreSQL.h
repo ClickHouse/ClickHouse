@@ -88,6 +88,7 @@ public:
 
     /// Used only for single MaterializedPostgreSQL storage.
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
+    std::vector<StorageID> getInnerTableIds(ContextPtr local_context) const override;
 
     /// Forward the size guard onto the nested table that `dropInnerTableIfAny` will
     /// actually drop, so `CREATE OR REPLACE` cannot delete an over-limit nested table

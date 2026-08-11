@@ -84,6 +84,7 @@ public:
 
     void drop() override;
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
+    std::vector<StorageID> getInnerTableIds(ContextPtr local_context) const override;
 
     /// Forward the size guard onto every inner target table that `dropInnerTableIfAny`
     /// will actually drop.

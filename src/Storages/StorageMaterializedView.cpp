@@ -537,14 +537,7 @@ void StorageMaterializedView::drop()
 
 void StorageMaterializedView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 {
-    if (!has_inner_table)
-        return;
-
-    std::vector<StorageID> to_drop = {getTargetTableId()};
-    if (!fixed_uuid)
-        to_drop.push_back(StorageID(to_drop[0].getDatabaseName(), ".tmp" + to_drop[0].getTableName()));
-
-    for (const StorageID & inner_table_id : to_drop)
+    for (const StorageID & inner_table_id : getInnerTableIds(local_context))
     {
         /// We will use `sync` argument when this function is called from a DROP query
         /// and will ignore database_atomic_wait_for_drop_and_detach_synchronously when it's called from drop task.
@@ -558,11 +551,27 @@ void StorageMaterializedView::dropInnerTableIfAny(bool sync, ContextPtr local_co
         /// (I'm not the author of this code and don't know for sure, just commenting).
         /// (Why not reverse DDLGuard locking order everywhere? Because in another place we lock
         /// DDLGuard for table "<name><suffix>" while holding DDLGuard for table "<name>".)
-        auto table_exists = DatabaseCatalog::instance().tryGetTable(inner_table_id, getContext()) != nullptr;
-        if (table_exists)
-            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id,
-                                                   sync, /* ignore_sync_setting */ true, /*need_ddl_guard*/ false);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id,
+                                               sync, /* ignore_sync_setting */ true, /*need_ddl_guard*/ false, /* skip_sync_wait */ true);
     }
+}
+
+std::vector<StorageID> StorageMaterializedView::getInnerTableIds(ContextPtr local_context) const
+{
+    if (!has_inner_table)
+        return {};
+
+    std::vector<StorageID> candidates = {getTargetTableId()};
+    if (!fixed_uuid)
+        candidates.push_back(StorageID(candidates[0].getDatabaseName(), ".tmp" + candidates[0].getTableName()));
+
+    std::vector<StorageID> inner_table_ids;
+    for (const StorageID & candidate : candidates)
+    {
+        if (auto table = DatabaseCatalog::instance().tryGetTable(candidate, local_context))
+            inner_table_ids.push_back(table->getStorageID());
+    }
+    return inner_table_ids;
 }
 
 void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
@@ -578,20 +587,14 @@ void StorageMaterializedView::checkTableSizeBelowDropLimit(ContextPtr query_cont
     if (!has_inner_table)
         return;
 
-    /// Mirror `dropInnerTableIfAny`: it builds `to_drop` from `getTargetTableId()` and,
-    /// when `!fixed_uuid` (refreshable / non-append), additionally from the `.tmp` inner
-    /// table name. We must size-check every table that the implicit drop could delete,
-    /// otherwise the zeroed `max_table_size_to_drop` context would silently bypass the
-    /// guard for a non-empty `.tmp.inner...` produced by a previous refresh.
-    auto target_id = getTargetTableId();
-    std::vector<StorageID> to_check = {target_id};
-    if (!fixed_uuid)
-        to_check.push_back(StorageID(target_id.getDatabaseName(), ".tmp" + target_id.getTableName()));
-
-    for (const StorageID & inner_id : to_check)
+    /// We must size-check every table that the implicit drop could delete (see
+    /// `getInnerTableIds`: the main inner table and, for a refreshable / non-append view,
+    /// the `.tmp` inner table), otherwise the zeroed `max_table_size_to_drop` context would
+    /// silently bypass the guard for a non-empty `.tmp.inner...` produced by a previous refresh.
+    for (const StorageID & inner_id : getInnerTableIds(getContext()))
     {
-        /// On a race (e.g. `SYSTEM RESTART REPLICA` detached the inner table),
-        /// `dropInnerTableIfAny` is a no-op too, so we mirror its tolerance.
+        /// `tryGetTable` covers only the tiny window between the lookup in `getInnerTableIds`
+        /// and this one (e.g. a concurrent `SYSTEM RESTART REPLICA` detaching the inner table).
         if (auto inner = DatabaseCatalog::instance().tryGetTable(inner_id, getContext()))
             inner->checkTableSizeBelowDropLimit(query_context);
     }

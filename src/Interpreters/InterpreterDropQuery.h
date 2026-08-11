@@ -24,8 +24,15 @@ public:
     /// Drop table or database.
     BlockIO execute() override;
 
+    /// `skip_sync_wait` executes a synchronous drop (`sync == true` also makes the dropped table
+    /// eligible for the final drop immediately) without waiting for the table to be finally
+    /// dropped. It is used for dropping inner tables: the caller waits for them after the DDL
+    /// guard of the parent table is released (see `IStorage::getInnerTableIds`), because waiting
+    /// under that guard can deadlock with a query which holds references to the inner tables
+    /// and blocks on the guard.
     static void executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context,
-                                 const StorageID & target_table_id, bool sync, bool ignore_sync_setting = false, bool need_ddl_guard = false);
+                                 const StorageID & target_table_id, bool sync, bool ignore_sync_setting = false, bool need_ddl_guard = false,
+                                 bool skip_sync_wait = false);
 
     bool supportsTransactions() const override;
 
@@ -36,12 +43,15 @@ private:
     ASTPtr query_ptr;
     ASTPtr current_query_ptr;
 
+    /// See the comment for `executeDropQuery`.
+    bool skip_sync_wait = false;
+
     BlockIO executeSingleDropQuery(const ASTPtr & drop_query_ptr);
     BlockIO executeToDatabase(const ASTDropQuery & query);
     BlockIO executeToDatabaseImpl(const ASTDropQuery & query, DatabasePtr & database, std::vector<UUID> & uuids_to_wait);
 
     BlockIO executeToTable(ASTDropQuery & query);
-    BlockIO executeToTableImpl(const ContextPtr& context_, ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait);
+    BlockIO executeToTableImpl(const ContextPtr& context_, ASTDropQuery & query, DatabasePtr & db, std::vector<UUID> & uuids_to_wait);
 
     static void waitForTableToBeActuallyDroppedOrDetached(const ASTDropQuery & query, const DatabasePtr & db, const UUID & uuid_to_wait, ContextPtr context_);
 

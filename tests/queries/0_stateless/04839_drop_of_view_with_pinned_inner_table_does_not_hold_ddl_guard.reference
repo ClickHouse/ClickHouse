@@ -1,0 +1,9 @@
+materialized view: concurrent CREATE with the same name succeeded while drop was waiting
+materialized view: drop is still waiting for the pinned inner table
+materialized view: drop finished with code 0
+time series: concurrent CREATE with the same name succeeded while drop was waiting
+time series: drop is still waiting for the pinned inner table
+time series: drop finished with code 0
+window view: concurrent CREATE with the same name succeeded while drop was waiting
+window view: drop is still waiting for the pinned inner table
+window view: drop finished with code 0

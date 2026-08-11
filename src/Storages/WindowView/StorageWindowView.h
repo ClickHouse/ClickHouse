@@ -128,6 +128,7 @@ public:
     void checkTableSizeBelowDropLimit(ContextPtr query_context) const override;
 
     void dropInnerTableIfAny(bool sync, ContextPtr context) override;
+    std::vector<StorageID> getInnerTableIds(ContextPtr local_context) const override;
 
     void drop() override;
 

@@ -146,14 +146,17 @@ void InterpreterDropQuery::waitForTableToBeActuallyDroppedOrDetached(const ASTDr
 BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
 {
     DatabasePtr database;
-    UUID table_to_wait_on = UUIDHelpers::Nil;
-    auto res = executeToTableImpl(getContext(), query, database, table_to_wait_on);
-    if (query.sync)
-        waitForTableToBeActuallyDroppedOrDetached(query, database, table_to_wait_on, getContext());
+    std::vector<UUID> tables_to_wait_on;
+    auto res = executeToTableImpl(getContext(), query, database, tables_to_wait_on);
+    if (query.sync && !skip_sync_wait)
+    {
+        for (const auto & uuid_to_wait : tables_to_wait_on)
+            waitForTableToBeActuallyDroppedOrDetached(query, database, uuid_to_wait, getContext());
+    }
     return res;
 }
 
-BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait)
+BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, ASTDropQuery & query, DatabasePtr & db, std::vector<UUID> & uuids_to_wait)
 {
     if (query.kind == ASTDropQuery::Kind::Detach && query.isTemporary())
         throw Exception(ErrorCodes::SYNTAX_ERROR, "DETACH of TEMPORARY tables are not supported");
@@ -361,9 +364,23 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             if (database->getUUID() == UUIDHelpers::Nil)
                 table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
 
+            /// The inner tables (if any) are dropped by `database->dropTable` without waiting for
+            /// them to be finally dropped (see the comment for `executeDropQuery`). Their ids are
+            /// remembered before the drop, and the caller waits for them after the DDL guard is
+            /// released, together with the table itself.
+            std::vector<StorageID> inner_table_ids;
+            if (query.sync)
+                inner_table_ids = table->getInnerTableIds(context_);
+
             DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
             NamedCollectionFactory::instance().removeDependencies(table_id);
             database->dropTable(context_, table_id.table_name, query.sync);
+
+            for (const auto & inner_table_id : inner_table_ids)
+            {
+                if (inner_table_id.hasUUID())
+                    uuids_to_wait.push_back(inner_table_id.uuid);
+            }
 
             /// We have to clear mmapio cache when dropping table from Ordinary database
             /// to avoid reading old data if new table with the same name is created
@@ -374,7 +391,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         db = database;
         /// Truncate does not enqueue the table for dropping.
         if (query.kind != ASTDropQuery::Kind::Truncate)
-            uuid_to_wait = table_id.uuid;
+            uuids_to_wait.push_back(table_id.uuid);
     }
 
     return {};
@@ -670,11 +687,9 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 query_for_table.kind = original_kind;
                 query_for_table.sync = original_sync;
                 DatabasePtr db;
-                UUID table_to_wait = UUIDHelpers::Nil;
                 /// Note: if this throws exception, the remaining tables won't be dropped and will stay in a
                 /// limbo state where flushAndPrepareForShutdown() was called but no shutdown() followed. Not ideal.
-                executeToTableImpl(table_context, query_for_table, db, table_to_wait);
-                uuids_to_wait.push_back(table_to_wait);
+                executeToTableImpl(table_context, query_for_table, db, uuids_to_wait);
             }
         }
     }
@@ -763,13 +778,13 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 sub_query.children.push_back(make_intrusive<ASTIdentifier>(table_id.table_name));
 
                 DatabasePtr dummy_db;
-                UUID table_uuid = UUIDHelpers::Nil;
-                executeToTableImpl(table_context, sub_query, dummy_db, table_uuid);
+                std::vector<UUID> table_uuids;
+                executeToTableImpl(table_context, sub_query, dummy_db, table_uuids);
 
                 if (query.sync)
                 {
                     std::lock_guard<std::mutex> lock(mutex_for_uuids);
-                    uuids_to_wait.push_back(table_uuid);
+                    uuids_to_wait.insert(uuids_to_wait.end(), table_uuids.begin(), table_uuids.end());
                 }
             });
         }
@@ -870,7 +885,8 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
 }
 
 void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context,
-                                            const StorageID & target_table_id, bool sync, bool ignore_sync_setting, bool need_ddl_guard)
+                                            const StorageID & target_table_id, bool sync, bool ignore_sync_setting, bool need_ddl_guard,
+                                            bool skip_sync_wait)
 {
     auto ddl_guard = (need_ddl_guard ? DatabaseCatalog::instance().getDDLGuard(target_table_id.database_name, target_table_id.table_name, nullptr) : nullptr);
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
@@ -910,6 +926,7 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
             drop_context->initZooKeeperMetadataTransaction(txn, true);
         }
         InterpreterDropQuery drop_interpreter(ast_drop_query, drop_context);
+        drop_interpreter.skip_sync_wait = skip_sync_wait;
         drop_interpreter.execute();
     }
 }

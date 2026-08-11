@@ -277,7 +277,20 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
 
     auto nested_table = tryGetNested() != nullptr;
     if (nested_table)
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), sync, /* ignore_sync_setting */ true);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), sync,
+                                               /* ignore_sync_setting */ true, /* need_ddl_guard */ false, /* skip_sync_wait */ true);
+}
+
+std::vector<StorageID> StorageMaterializedPostgreSQL::getInnerTableIds(ContextPtr /* local_context */) const
+{
+    /// If it is a table with database engine MaterializedPostgreSQL, the deletion of
+    /// the internal tables is managed there.
+    if (is_materialized_postgresql_database)
+        return {};
+
+    if (auto nested_table = tryGetNested())
+        return {nested_table->getStorageID()};
+    return {};
 }
 
 
