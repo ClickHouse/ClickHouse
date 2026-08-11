@@ -261,7 +261,7 @@ public:
         /// Predicates with such literals are normally not pushed down (`isCompatible` rejects them), so
         /// reaching here means we are about to emit a literal that cannot match: fail explicitly rather
         /// than silently produce wrong results.
-        if (x.find('\0') != String::npos)
+        if (x.contains('\0'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Cannot push down a predicate to PostgreSQL: a string literal contains a NUL byte, "
                 "which cannot be represented in a PostgreSQL string value");
@@ -286,7 +286,7 @@ public:
         /// Predicates with such literals are normally not pushed down (`isCompatible` rejects them), so
         /// reaching here means we are about to emit a literal that cannot match: fail explicitly rather
         /// than silently produce wrong results.
-        if (x.find('\0') != String::npos)
+        if (x.contains('\0'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Cannot push down a predicate to SQLite: a string literal contains a NUL byte, "
                 "which cannot be represented in a SQLite string literal");
