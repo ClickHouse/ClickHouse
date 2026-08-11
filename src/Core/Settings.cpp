@@ -6499,7 +6499,7 @@ Allow to merge filter into `JOIN` condition and convert `CROSS JOIN` to `INNER`.
 Allow to merge expressions into JOIN step during join reordering optimization.
 )", 0) \
     DECLARE(Bool, query_plan_convert_join_to_in, false, R"(
-Allow to convert `JOIN` to subquery with `IN` if output columns tied to only left table. May cause wrong results with non-ANY JOINs (e.g. ALL JOINs which is the default).
+Allow to convert `SEMI LEFT JOIN` to subquery with `IN` if output columns tied to only left table.
 )", 0) \
     DECLARE(Bool, query_plan_optimize_prewhere, true, R"(
 Allow to push down filter to PREWHERE expression for supported storages

@@ -13,8 +13,7 @@ INSERT INTO t2 VALUES (2, 'AAA', 'AAA'),(2, 'AAA', 'a'),(3, 'BBB', 'BBB'),(4, 'C
 
 EXPLAIN actions = 1, optimize = 1, header = 1
 SELECT t1.id
-FROM t1, t2
-WHERE t1.id = t2.id
+FROM t1 SEMI LEFT JOIN t2 ON t1.id = t2.id
 SETTINGS query_plan_convert_join_to_in = true;
 
 SELECT
@@ -31,7 +30,7 @@ SYSTEM FLUSH LOGS system.query_log;
 EXPLAIN
 SELECT hostName() AS hostName
 FROM system.query_log AS a
-INNER JOIN system.processes AS b ON (a.query_id = b.query_id) AND (type = 'QueryStart')
+SEMI LEFT JOIN system.processes AS b ON (a.query_id = b.query_id) AND (type = 'QueryStart')
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
 SETTINGS query_plan_convert_join_to_in = true;
 

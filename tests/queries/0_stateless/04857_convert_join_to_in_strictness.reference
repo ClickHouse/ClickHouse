@@ -1,0 +1,25 @@
+-- ALL INNER JOIN, duplicated right key: each left row is emitted once per right match
+1	a
+1	a
+2	b
+1	a
+1	a
+2	b
+-- ANY INNER JOIN, duplicated left key, unique right key: left side is deduplicated
+1	a
+2	b
+1	a
+2	b
+-- SEMI LEFT JOIN is convertible: each matching left row is emitted exactly once
+a
+a2
+b
+a
+a2
+b
+-- and it does convert
+1
+-- while ALL and ANY do not
+0
+0
+-- a Join engine table keeps its declared strictness check

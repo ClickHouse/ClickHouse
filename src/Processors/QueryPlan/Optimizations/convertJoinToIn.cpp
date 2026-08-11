@@ -155,12 +155,18 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     const auto & join_operator = join->getJoinOperator();
 
-    /// Let's allow Strictness::All with a wrong result for now.
-    if (join_operator.strictness != JoinStrictness::Any && join_operator.strictness != JoinStrictness::All)
+    /// Membership filtering emits each matching left row exactly once: ALL replicates such a row
+    /// per right match, ANY deduplicates the left side.
+    if (join_operator.strictness != JoinStrictness::Semi)
         return 0;
 
-    /// TODO: support left in the future
-    if (!isInner(join_operator.kind)/*&& !isLeft(join_operator.kind) && !isRight(join_operator.kind)*/)
+    if (!isInnerOrLeft(join_operator.kind))
+        return 0;
+
+    /// The Join engine validates the query's kind and strictness against its declared ones, and
+    /// replacing the join with IN skips that check.
+    if (auto * lookup = typeid_cast<JoinStepLogicalLookup *>(parent_node->children.back()->step.get());
+        lookup && lookup->getPreparedJoinStorage().storage_join)
         return 0;
 
     /// Do not support many condition for now.
