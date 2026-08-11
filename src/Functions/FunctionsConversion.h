@@ -4133,11 +4133,9 @@ struct ToStringMonotonicity
 
         /// `DateTime` is formatted in the time zone of the type, and local time decreases when the clocks are
         /// turned back, so the order is preserved only if the time zone never changes its offset.
-        if (const auto * date_time_type = checkAndGetDataType<DataTypeDateTime>(type_ptr))
+        if (checkAndGetDataType<DataTypeDateTime>(type_ptr))
         {
-            if (!date_time_type->getTimeZone().hasFixedOffset())
-                return not_monotonic;
-            return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+            return not_monotonic;
         }
 
         /// `Time` and `Time64` are formatted with a sign and a variable number of digits for hours,
