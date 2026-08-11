@@ -380,6 +380,7 @@ static void splitAndModifyMutationCommands(
         NameSet dropped_columns;
         NameSet ignored_columns;
         NameSet extra_columns_for_indices_and_projections;
+        bool recompress_via_whole_part_rewrite = false;
         auto storage_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
 
         for (const auto & command : commands)
@@ -492,6 +493,7 @@ static void splitAndModifyMutationCommands(
                 /// column cannot be recompressed without deserializing. The column is left out of
                 /// `mutated_columns`, so it is picked up by the READ_COLUMN back-fill below and
                 /// re-serialized (with its current codec) as part of the whole-part rewrite.
+                recompress_via_whole_part_rewrite = true;
             }
             else if (bool share_nested = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets],
                           has_column = part_columns.has(command.column_name),
@@ -550,6 +552,34 @@ static void splitAndModifyMutationCommands(
                 });
 
                 part_columns.rename(rename_from, rename_to);
+            }
+        }
+
+        /// The whole-part rewrite re-serializes every stored column with its current codec from the
+        /// table metadata, not only the recompression target, so a metadata-only `MODIFY COLUMN ...
+        /// CODEC(...)` of another column piggybacks on the rewrite. The lossy-codec dependency guard
+        /// ran only for the target column when the `ALTER` was accepted (and again in
+        /// `MutateTask::prepare` right before this runs); run it here for every column this rewrite
+        /// re-serializes, or a lossy codec queued on a non-target column would rewrite that column
+        /// while its dependents (or the partition / sorting key) keep describing the pre-rewrite
+        /// values. Runs after the pending renames were applied to `part_columns`, so a renamed
+        /// column is validated under the name it is written with. A failure leaves the mutation
+        /// failed and retried, the same as the re-validation of the target in `prepare`.
+        if (recompress_via_whole_part_rewrite)
+        {
+            for (const auto & column : part_columns)
+            {
+                try
+                {
+                    part->storage.checkLossyRecompressionIsPossible(column.name, metadata_snapshot);
+                }
+                catch (Exception & e)
+                {
+                    e.addMessage("Part {} does not support in-place recompression, so RECOMPRESS COLUMN "
+                        "rewrites it as a whole and re-serializes every stored column, including `{}`, "
+                        "with its current codec", part->name, column.name);
+                    throw;
+                }
             }
         }
 

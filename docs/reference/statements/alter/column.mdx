@@ -392,6 +392,8 @@ A dependent that reads the column only through a structural subcolumn -- one who
 
 Because the codec is resolved again when the mutation executes, this check runs both when the `ALTER` is accepted and again at execution time: if the codec was switched to a lossy one (or a dependent was added) while the mutation was queued, the mutation fails instead of rewriting the data -- the failure reason is visible in [`system.mutations`](/reference/system-tables/mutations), and the mutation proceeds once the conflicting metadata is reverted, or can be cancelled with `KILL MUTATION`.
 
+On a part that cannot be recompressed in place (a `Compact` part, or the other whole-part rewrite cases described above), the rewrite re-serializes every stored column of the part with its current codec, not only the recompressed one. The execution-time check therefore covers every column such a rewrite re-serializes: if a pending `MODIFY COLUMN ... CODEC(...)` made the codec of *another* column lossy while that column has dependents (or is in the partition or sorting key), the mutation fails in the same way instead of silently rewriting that column lossily.
+
 Syntax:
 
 ```sql
