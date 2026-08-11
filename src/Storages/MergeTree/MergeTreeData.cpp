@@ -5449,13 +5449,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 const auto & new_columns = new_metadata.getColumns();
                 for (const String & subcolumn : it->second)
                 {
-                    /// The subcolumn is still present after the ALTER: removing it would break the key
-                    /// expression and fail earlier when the new metadata is validated.
                     auto old_subcolumn = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, subcolumn);
+                    chassert(old_subcolumn.has_value());
                     auto new_subcolumn = new_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, subcolumn);
-                    chassert(old_subcolumn.has_value() && new_subcolumn.has_value());
 
-                    if (!isSafeForKeyConversion(old_subcolumn->type.get(), new_subcolumn->type.get()))
+                    /// A missing new subcolumn means the ALTER removes it (e.g. drops a Tuple element);
+                    /// a changed type must be safe for the key representation, same as a top-level key column.
+                    if (!new_subcolumn || !isSafeForKeyConversion(old_subcolumn->type.get(), new_subcolumn->type.get()))
                         throw Exception(
                             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                             "ALTER of column {} is forbidden because its subcolumn {} is part of a key expression and the ALTER "
@@ -5463,7 +5463,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                             backQuoteIfNeed(command.column_name),
                             backQuoteIfNeed(subcolumn),
                             old_subcolumn->type->getName(),
-                            new_subcolumn->type->getName());
+                            new_subcolumn ? new_subcolumn->type->getName() : "(removed)");
                 }
             }
 

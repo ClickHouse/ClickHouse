@@ -26,6 +26,7 @@ change non-key subcolumn only -> allowed:
 2	2	2
 3	3	3
 change key subcolumn unsafely -> reject:
+remove key subcolumn -> reject:
 widen key subcolumn enum (safe) -> allowed:
 1	x	10
 2	y	20

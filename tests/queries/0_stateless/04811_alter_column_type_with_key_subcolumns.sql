@@ -75,6 +75,10 @@ SELECT id, t.a, t.b FROM t_alter_key_sub ORDER BY id;
 SELECT 'change key subcolumn unsafely -> reject:';
 ALTER TABLE t_alter_key_sub MODIFY COLUMN t Tuple(a Int64, b Int64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
+-- Removing a key subcolumn is rejected: the sorting key can no longer resolve it.
+SELECT 'remove key subcolumn -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN t Tuple(b Int32); -- { serverError UNKNOWN_IDENTIFIER }
+
 DROP TABLE t_alter_key_sub;
 
 -- ============================================================
