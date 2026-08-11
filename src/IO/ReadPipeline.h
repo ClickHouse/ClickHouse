@@ -160,13 +160,13 @@ public:
     /// read from the encryption header. It must return the decryption key.
     void needDecryption(String path, size_t buffer_size, KeyFinderFunc key_finder);
 
-    /// Let the `ReaderExecutor` path reuse held source connections, bounded by this limit
-    /// (the executor takes the stateless one-shot path when it is unset).
+    /// Let the `ReaderExecutor` path reuse held source connections, bounded by this limit. When it is
+    /// not set, the executor uses the stateless one-shot path.
     void needLongConnectionLimit(std::shared_ptr<LongConnectionLimit> limit);
 
-    /// Let the executor cache this file's encryption headers in `cache`. Set only for encrypted disks
-    /// on random-object-key backends (see `DiskEncrypted::prepareRead`); deterministic-path backends
-    /// and url / external reads leave it null, so a reused key can't serve a stale header.
+    /// Let the executor cache this file's encryption headers in `cache`. Set it only for encrypted
+    /// disks on random-object-key backends (see `DiskEncrypted::prepareRead`). Deterministic-path
+    /// backends and url or external reads leave it null, so a reused key cannot serve a stale header.
     void needEncryptionHeaderCache(std::shared_ptr<EncryptionHeaderCache> cache) { encryption_header_cache = std::move(cache); }
 
     /// -- Build the final ReadBuffer chain --
@@ -240,19 +240,18 @@ private:
 
     LoggerPtr log = getLogger("ReadPipeline");
 
-    /// Experimental `ReaderExecutor` path (gated by `use_reader_executor`).
-    /// Returns nullptr when the setting is off, the source variant is not
-    /// supported, or a stage the executor can't handle (the page cache, the
-    /// distributed cache, or async prefetch) is configured — so the caller falls
-    /// back to the legacy matryoshka pipeline. When it returns a buffer, `build`
-    /// must NOT apply the `wrap*` stages.
+    /// Experimental `ReaderExecutor` path (gated by `use_reader_executor`). Returns nullptr when the
+    /// setting is off, the source variant is not supported, or a stage the executor cannot handle is
+    /// configured (the page cache, the distributed cache, or async prefetch). The caller then falls
+    /// back to the legacy nested-buffer pipeline. When it returns a buffer, `build` must NOT apply the
+    /// `wrap*` stages.
     std::unique_ptr<ReadBufferFromFileBase> tryBuildReaderExecutor() const;
 
-    /// Whether the memory (page) cache stage will actually be applied. It is requested via
-    /// `needMemoryCache`, but is skipped for objects of unknown size: the page cache addresses
-    /// the file by absolute offset and reads `getFileSize()` up front, which is impossible for an
-    /// object served without `Content-Length`. The source stages gate `use_external_buffer` on
-    /// this so the inner reader is not left in external-buffer mode without a driver.
+    /// Whether the memory (page) cache stage will actually run. `needMemoryCache` requests it, but it
+    /// is skipped for objects of unknown size: the page cache addresses the file by absolute offset
+    /// and reads `getFileSize()` up front, which an object served without `Content-Length` cannot
+    /// provide. The source stages gate `use_external_buffer` on this, so the inner reader is not left
+    /// in external-buffer mode without a driver.
     bool usesMemoryCache() const;
 
     /// build() helpers: one per logical stage group.

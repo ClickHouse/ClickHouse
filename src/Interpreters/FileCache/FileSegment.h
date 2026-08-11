@@ -200,8 +200,8 @@ public:
 
     void completePartAndResetDownloader();
 
-    /// Wake `wait`ers (e.g. a reader streaming a partially-downloaded prefix) after the downloader
-    /// advanced the write offset, without giving up the downloader role or changing the state.
+    /// Wake the `wait`ers after the downloader moves the write offset forward. Keep the downloader role
+    /// and the state unchanged. Example waiter: a reader that streams a partially-downloaded prefix.
     void notifyDownloadProgress();
 
     void resetDownloader();

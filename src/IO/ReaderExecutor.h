@@ -39,9 +39,9 @@ using CacheChain = VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>;
 class ReaderExecutor
 {
 public:
-    /// Tunables the caller fills from settings. `long_connection_limit` null disables connection
-    /// reuse; `cache_chain` empty disables caching; `encryption_header_cache` null disables it.
-    /// Defaults live in `Core/Defines.h` (shared with the `reader_executor_*` settings).
+    /// Tunables the caller fills from settings. A null `long_connection_limit` disables connection
+    /// reuse. An empty `cache_chain` disables caching. A null `encryption_header_cache` disables the
+    /// header cache. Defaults live in `Core/Defines.h`, shared with the `reader_executor_*` settings.
     struct Options
     {
         size_t window_size = DEFAULT_READER_EXECUTOR_WINDOW_SIZE;
@@ -90,8 +90,8 @@ public:
     void initDecryption();
 
 private:
-    /// Per-instance read-path counters. `add` is the only mutator and the single place a counter
-    /// maps to its ProfileEvent and modeled-cost contribution.
+    /// Per-instance read-path counters. `add` is the only mutator. It is also the single place a
+    /// counter maps to its `ProfileEvent` and its modeled-cost contribution.
     struct Stats
     {
         enum Counter : size_t
@@ -169,8 +169,8 @@ private:
         DrainResult drainTail(size_t max_tail, size_t block_bytes, LoggerPtr log) noexcept;
     };
 
-    /// EOF is `position >= totalSize` (known size) or a latched `reached_eof` (unknown size, cleared
-    /// by a backward `seek`); a `read_until` bound caps it earlier.
+    /// EOF is `position >= totalSize` for a known size, or a latched `reached_eof` for an unknown size
+    /// (a backward `seek` clears it). A `read_until` bound caps it earlier.
     bool atEnd() const
     {
         if (reached_eof || (read_until && position >= *read_until))
@@ -186,9 +186,9 @@ private:
     /// The single source-read entry point; spans object boundaries via `OffsetMap::map`. A
     /// known-size short read is truncation and throws.
     ChainedBuffers readSource(size_t file_offset, size_t want);
-    /// Serve the window through the cache chain: the cached prefix, else claim and fetch the miss
-    /// cells and populate. A cell a sibling already downloads is fetched through from source.
-    /// Precondition: `!cache_chain.empty()`.
+    /// Serve the window through the cache chain: serve the cached prefix, then claim and fetch the
+    /// miss segments and populate them. A segment another thread is already downloading is fetched
+    /// through from source. Precondition: `!cache_chain.empty()`.
     ChainedBuffers readThroughCaches(size_t window_offset, size_t max_serve);
     void dropLongConnection();
 

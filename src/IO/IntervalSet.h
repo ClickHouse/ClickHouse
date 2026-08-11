@@ -7,9 +7,9 @@ namespace DB
 {
 
 /// A set of disjoint (non-intersecting), sorted byte intervals. `ReaderExecutor` tracks window
-/// coverage with one: every byte appended to the result is `add`-ed first, and
-/// reads only fill what `subtract` reports as uncovered - so the assembled chain
-/// is disjoint by construction regardless of overlapping cache tiers.
+/// coverage with one. It `add`-s every byte before it appends the byte to the result, and it fills
+/// only what `subtract` reports as uncovered. So the assembled chain stays disjoint by construction,
+/// even when cache tiers overlap.
 class IntervalSet
 {
 public:
@@ -20,7 +20,7 @@ public:
     /// increasing-offset order.
     VectorWithMemoryTracking<ByteRange> subtract(ByteRange range) const;
 
-    /// Remove `range`'s bytes from the set, trimming/splitting any overlapping intervals.
+    /// Remove `range`'s bytes from the set, trimming or splitting any overlapping interval.
     void remove(ByteRange range);
 
     /// Total bytes held (sum of the disjoint intervals' sizes).

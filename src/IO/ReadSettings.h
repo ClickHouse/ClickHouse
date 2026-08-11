@@ -152,12 +152,11 @@ struct ReadSettings
     bool use_page_cache_for_object_storage = false;
     PageCacheSettings page_cache_settings;
 
-    /// Experimental pipeline read executor. When `enabled`, `ReadPipeline::build` routes supported
-    /// reads through `ReaderExecutor` instead of the legacy matryoshka of read buffers (reading in
-    /// blocks of `buffer_size`). The long-connection knobs apply only on the executor path: reuse a
-    /// held source connection across sequential windows (`use_long_connections`), the forward gap
-    /// bridged on it rather than reopening (`min_bytes_for_seek`), and the tail drained to complete a
-    /// dropped connection (`max_tail_for_drain`).
+    /// Experimental pipeline read executor. When `enabled`, `ReadPipeline::build` sends supported reads
+    /// through `ReaderExecutor` instead of the legacy stack of read buffers. The long-connection knobs
+    /// apply only on the executor path. `use_long_connections` reuses one held source connection across
+    /// sequential windows. `min_bytes_for_seek` bridges a small forward gap on that connection instead
+    /// of reopening. `max_tail_for_drain` drains the tail to finish a dropped connection.
     struct ReaderExecutorSettings
     {
         bool enabled = false;

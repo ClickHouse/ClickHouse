@@ -8,10 +8,10 @@
 namespace DB
 {
 
-/// Maps FILE offsets (the executor's physical, header-inclusive space) to
-/// (object, offset-within-object): a "file" is the concatenation of its
-/// stored objects. Encryption is invisible here — the payload/header split
-/// (logical vs physical) is the executor's business, above this map.
+/// Maps FILE offsets (the executor's physical, header-inclusive space) to (object,
+/// offset-within-object). A "file" is the concatenation of its stored objects. Encryption is
+/// invisible here. The payload/header split (logical vs physical) is the executor's business, above
+/// this map.
 class OffsetMap
 {
 public:
