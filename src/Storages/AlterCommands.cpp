@@ -1971,7 +1971,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 {
                     /// Check if we are going to DROP a column that some other columns depend on. A dependency
                     /// on any column of a dropped Nested group is a dependency on the dropped name.
-                    auto is_dropped_column = [&](const String & name_in_storage) {
+                    auto is_dropped_column = [&](const String & name_in_storage)
+                    {
                         return name_in_storage == command.column_name
                             || (share_nested && startsWith(name_in_storage, command.column_name + "."));
                     };
