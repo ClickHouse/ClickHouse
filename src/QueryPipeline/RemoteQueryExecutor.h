@@ -347,6 +347,11 @@ private:
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
 
+    /// The failover pool the connections are taken from, if any. Used to penalize a replica
+    /// whose established connection failed with a network error, so that the retry of the
+    /// query prefers another replica even under deterministic `load_balancing` policies.
+    ConnectionPoolWithFailoverPtr failover_pool;
+
     LoggerPtr log = getLogger("RemoteQueryExecutor");
 
     UnavailableShardTrackerPtr unavailable_shard_tracker;

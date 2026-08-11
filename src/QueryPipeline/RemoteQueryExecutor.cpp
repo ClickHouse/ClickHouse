@@ -300,6 +300,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     GetPriorityForLoadBalancing::Func priority_func_)
     : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_, priority_func_)
 {
+    failover_pool = pool;
     create_connections = [this, pool, throttler](AsyncCallback async_callback)->std::unique_ptr<IConnections>
     {
         const Settings & current_settings = context->getSettingsRef();
@@ -837,6 +838,13 @@ bool RemoteQueryExecutor::mayRetryAfterNetworkError() const
     if (extension || task_iterator)
         return false;
 
+    /// With `PoolMode::GET_MANY` (offset parallel replicas) one executor owns several replicas, each
+    /// executing its own slice of the query. One replica may finish (flushing the deferred progress
+    /// of the whole executor) before another replica fails, and a retry would re-send every slice,
+    /// so the finished replica's work would be replayed and counted twice.
+    if (pool_mode != PoolMode::GET_ONE)
+        return false;
+
     return network_error_retries_count < context->getSettingsRef()[Setting::distributed_query_retries];
 }
 
@@ -871,7 +879,17 @@ void RemoteQueryExecutor::prepareRetryAfterNetworkError(const Exception & e)
         LockAndBlocker lock(was_cancelled_mutex);
 
         if (connections)
+        {
+            /// Penalize the replica that failed mid-query, so that the retry connects to another
+            /// available replica even under deterministic `load_balancing` policies (e.g. `in_order`,
+            /// which would otherwise reconnect to the same host and burn all the retries there).
+            /// The connection failures during establishment are already counted by the pool itself.
+            if (failover_pool)
+                for (const auto & address : connections->getReplicaAddresses())
+                    failover_pool->incrementErrorCount(address.host, address.port);
+
             connections->disconnect();
+        }
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
         packet_in_progress = false;

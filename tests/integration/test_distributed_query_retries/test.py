@@ -179,6 +179,43 @@ def test_deferred_progress_not_lost_when_shard_cancelled_by_limit(started_cluste
     assert rows2 == rows0
 
 
+def test_retry_prefers_another_replica(started_cluster):
+    """A replica that failed mid-query must be penalized in the connection pool, so the retry
+    connects to another replica even under `load_balancing = 'in_order'` and even when the failed
+    replica is reachable again by the time of the retry (e.g. after a transient network error)."""
+
+    prepare_initiator()
+    node1.query("SYSTEM ENABLE FAILPOINT remote_query_executor_prepare_retry_pause")
+
+    query_id = "dq_retry_prefers_another_replica"
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(
+            lambda: node1.query(QUERY, settings={**SETTINGS, "distributed_query_retries": 2}, query_id=query_id)
+        )
+        try:
+            wait_query_started_on(node2)
+            node2.stop_clickhouse(kill=True)
+            # The retry is paused after the failed replica has been penalized but before the query
+            # is re-sent. Bring node2 back up, so both replicas are available for the retry.
+            node1.query("SYSTEM WAIT FAILPOINT remote_query_executor_prepare_retry_pause PAUSE", timeout=60)
+            node2.start_clickhouse()
+            node1.query("SYSTEM DISABLE FAILPOINT remote_query_executor_prepare_retry_pause")
+
+            assert future.result(timeout=120).strip() == "45"
+            assert node1.contains_in_log("will retry (1/2)")
+            # The retry must run on node3: `in_order` alone would reconnect to node2, which is up
+            # again, but its mid-query failure must have moved it to the back of the failover order.
+            assert remote_read_rows(node3, query_id) == 10
+            assert remote_read_rows(node2, query_id) == 0
+        finally:
+            future.cancel()
+            try:
+                node1.query("SYSTEM DISABLE FAILPOINT remote_query_executor_prepare_retry_pause")
+            except Exception:
+                pass
+
+
 def test_no_resend_after_finish_during_prepare_retry_pause(started_cluster):
     """finish() during prepare-retry (after sent_query cleared) must not re-send; query completes
     from the other shard while the killed shard stays down."""

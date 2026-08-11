@@ -56,6 +56,18 @@ public:
     /// Get the replica addresses as a string.
     virtual std::string dumpAddresses() const = 0;
 
+    struct ReplicaAddress
+    {
+        String host;
+        UInt16 port;
+    };
+
+    /// Addresses (host, port) of the replicas these connections are established to.
+    /// Used to penalize the replicas of a query that failed with a network error before
+    /// it is retried on another replica. Implementations that manage failover themselves
+    /// may return an empty list.
+    virtual std::vector<ReplicaAddress> getReplicaAddresses() const { return {}; }
+
     struct ReplicaInfo
     {
         size_t number_of_current_replica{0};
