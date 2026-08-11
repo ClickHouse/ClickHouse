@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/Exception.h>
 #include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <limits>
 
@@ -127,7 +128,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
         }
         /// A codec resolved without a data type is one chain, and so is a type whose substreams all
         /// refuse a special codec.
-        std::vector<Codecs> codec_chains(num_substreams ? num_substreams : 1);
+        VectorWithMemoryTracking<Codecs> codec_chains(num_substreams ? num_substreams : 1);
 
         bool with_compression_codec = false;
         bool with_none_codec = false;
