@@ -22,6 +22,16 @@ ALTER TABLE test CLEAR COLUMN a; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 ALTER TABLE test DROP COLUMN b;
 DROP TABLE test;
 
+-- Dropping the common prefix of Nested columns drops every column of the group, so a key column
+-- inside the group forbids the drop. Without a key column inside, the drop of the group is allowed
+CREATE TABLE test (`n.a` UInt64, `n.b` UInt64, x UInt64) ENGINE = MergeTree ORDER BY `n.a`;
+ALTER TABLE test DROP COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test CLEAR COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE test;
+CREATE TABLE test (`n.a` UInt64, `n.b` UInt64, x UInt64) ENGINE = MergeTree ORDER BY x;
+ALTER TABLE test DROP COLUMN n;
+DROP TABLE test;
+
 -- A special column of the engine that is a key column as well
 CREATE TABLE test (a UInt64, s Int8, b UInt64) ENGINE = CollapsingMergeTree(s) ORDER BY (a, s);
 ALTER TABLE test DROP COLUMN s; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }

@@ -5155,6 +5155,32 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 backQuoteIfNeed(command.column_name),
                 boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
         }
+
+        /// The dropped name can also refer to a whole Nested group rather than a single column. Dropping
+        /// the group removes all of its columns and clearing it rewrites their data, so a key column
+        /// inside the group forbids the operation, the same as dropping that column directly. A column
+        /// with this exact name takes precedence over the group and is fully covered by the checks above.
+        if (!old_columns.has(command.column_name))
+        {
+            const String nested_prefix = command.column_name + ".";
+            Names keyed_children;
+            for (const auto & name : columns_in_keys)
+                if (startsWith(name, nested_prefix))
+                    keyed_children.push_back(backQuoteIfNeed(name));
+            for (const auto & [parent, subcolumns] : column_to_subcolumns_used_in_keys)
+                if (startsWith(parent, nested_prefix))
+                    keyed_children.push_back(backQuoteIfNeed(parent));
+
+            if (!keyed_children.empty())
+            {
+                std::sort(keyed_children.begin(), keyed_children.end());
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER DROP column {} whose subcolumns ({}) are part of key expression",
+                    backQuoteIfNeed(command.column_name),
+                    boost::join(keyed_children, ", "));
+            }
+        }
     }
 
     removeImplicitStatistics(new_metadata.columns);
