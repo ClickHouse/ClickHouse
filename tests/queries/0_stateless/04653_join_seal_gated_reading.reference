@@ -27,13 +27,15 @@
 49996	1249875000
 5
 5
-1	1
-0	1
-1
-1	1
-1
-1
-1	1
-1	1
-1	1
-1	0
+seal_empty_build	0	1	0	0
+seal_final	0	0	0	0
+seal_gated_in_order	1	1	0	0
+seal_gated_join	1	1	0	0
+seal_gated_pk_prefix	1	1	0	0
+seal_gated_prefetched	1	1	0	0
+seal_gated_reverse_key	1	1	0	0
+seal_gated_reverse_order	1	1	0	0
+seal_gated_single_stream	1	1	0	0
+seal_gated_suppresses_read_time	1	1	0	0
+seal_join_by_shards	1	1	0	0
+seal_ungated_join	0	0	1	0

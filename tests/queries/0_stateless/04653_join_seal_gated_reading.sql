@@ -1,3 +1,8 @@
+-- Tags: long
+-- long: the test itself takes about a second, but it covers many scenarios (each with its
+-- own DDL and a fill), and the flaky check runs several instances of it in parallel against
+-- one debug server; the tag lifts the flaky-check run-time cap which such runners exceed.
+
 -- Test for enable_join_seal_gated_reading: the probe side of a hash JOIN is read through
 -- SealGatedReadTransforms which start reading only after the build side completes its runtime
 -- filter, and the filter then prunes whole mark ranges by the primary key at task-cut time.
@@ -25,7 +30,6 @@ DROP TABLE IF EXISTS t_seal_build;
 CREATE TABLE t_seal_probe (k UInt64, v String) ENGINE = MergeTree ORDER BY k
     SETTINGS index_granularity = 8;
 INSERT INTO t_seal_probe SELECT number, toString(number) FROM numbers(50000);
-OPTIMIZE TABLE t_seal_probe FINAL;
 
 CREATE TABLE t_seal_build (k UInt64) ENGINE = MergeTree ORDER BY k;
 -- 5 keys spread over the probe primary key range: almost all of the ~6250 marks are prunable.
@@ -64,8 +68,9 @@ SELECT /* seal_gated_prefetched */ count(), sum(p.k) FROM t_seal_probe AS p JOIN
     SETTINGS allow_prefetched_read_pool_for_local_filesystem = 1, local_filesystem_read_method = 'pread_threadpool';
 
 -- Ungatable reads fall back to plain reading with row-level filtering (correct results):
--- parallel replicas (the seal cannot cross replicas)...
-SELECT /* seal_parallel_replicas */ count(), sum(p.k) FROM t_seal_probe AS p JOIN t_seal_build AS b ON p.k = b.k
+-- parallel replicas (the seal cannot cross replicas; no query-log marker, the read counters
+-- of the initiator depend on the work distribution between the replicas)...
+SELECT count(), sum(p.k) FROM t_seal_probe AS p JOIN t_seal_build AS b ON p.k = b.k
     SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree = 1,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 
@@ -88,7 +93,6 @@ DROP TABLE IF EXISTS t_seal_probe_desc;
 CREATE TABLE t_seal_probe_desc (k UInt64, v String) ENGINE = MergeTree ORDER BY (k DESC)
     SETTINGS index_granularity = 8;
 INSERT INTO t_seal_probe_desc SELECT number, toString(number) FROM numbers(50000);
-OPTIMIZE TABLE t_seal_probe_desc FINAL;
 SELECT /* seal_gated_reverse_key */ count(), sum(p.k) FROM t_seal_probe_desc AS p JOIN t_seal_build AS b ON p.k = b.k;
 DROP TABLE t_seal_probe_desc;
 
@@ -129,7 +133,6 @@ DROP TABLE IF EXISTS t_seal_build_ab;
 CREATE TABLE t_seal_probe_ab (a UInt64, b UInt64, v String) ENGINE = MergeTree ORDER BY (a, b)
     SETTINGS index_granularity = 8;
 INSERT INTO t_seal_probe_ab SELECT number % 100, intDiv(number, 100), toString(number) FROM numbers(50000);
-OPTIMIZE TABLE t_seal_probe_ab FINAL;
 CREATE TABLE t_seal_build_ab (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY (a, b);
 INSERT INTO t_seal_build_ab SELECT number * 20, number * 100 FROM numbers(5);
 SELECT count() FROM t_seal_probe_ab AS p JOIN t_seal_build_ab AS q ON p.b = q.b;
@@ -153,108 +156,36 @@ SELECT count() FROM t_seal_probe AS p JOIN t_seal_build AS b ON cityHash64(p.k) 
 
 SYSTEM FLUSH LOGS query_log;
 
--- The probe part has ~6250 marks and the 5 join keys live in at most 10 of them, so almost
--- all marks must be dropped at task-cut time and only a few granules may be read.
+-- One pass over the query log for all the marked queries. Per marker:
+--   dropped_most: the refiner dropped almost all of the ~6250 marks at task-cut time (the 5
+--                 join keys live in at most a few granules); expected for every gated query
+--                 including the LIMIT ones (with only a few surviving granules the in-order
+--                 pool drains and drops the rest of its queue), 0 for the ungated/fail-open
+--                 shapes and for the empty build side (an empty inner hash table
+--                 short-circuits the probe before anything is cut). A join sharded by
+--                 primary key ranges keeps its plain-hash-join plan for this tiny build side,
+--                 so its row matches the plainly gated one.
+--   few_rows/all_rows: the read volume contrast (gated reads touch a few granules; the
+--                 ungated shape reads the whole probe table; FINAL reads its own 40k-row
+--                 table, so both flags are 0 there).
+--   read_time_considered: granules examined by the read-time index analysis; stays 0 for
+--                 seal_gated_suppresses_read_time because the gated read skips it as
+--                 redundant (and for the rest because the analysis is disabled).
 -- Do not assert on ReadPoolRangeRefinerDroppedCuts: whether a cut is dropped as a whole
 -- depends on the task sizing regime, which is environment-dependent and randomized in CI.
 SELECT
-    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 6000 AS dropped_marks,
-    read_rows < 20000 AS read_few_rows
+    extract(query, '/\\* (seal_[a-z_]+) \\*/') AS marker,
+    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 6000 AS dropped_most,
+    read_rows < 20000 AS few_rows,
+    read_rows >= 50000 AS all_rows,
+    ProfileEvents['RuntimeFilterGranulesConsidered'] AS read_time_considered
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
-    AND query LIKE '%seal_gated_join%'
-    AND query NOT LIKE '%query_log%';
-
--- Without gating nothing is dropped by the refiner and the whole table is read.
-SELECT
-    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] AS dropped_marks,
-    read_rows >= 50000 AS read_all_rows
-FROM system.query_log
-WHERE current_database = currentDatabase()
-    AND type = 'QueryFinish'
-    AND query LIKE '%seal_ungated_join%'
-    AND query NOT LIKE '%query_log%';
-
--- The empty build side prunes every mark of the probe side.
-SELECT
-    read_rows < 20000 AS read_few_rows
-FROM system.query_log
-WHERE current_database = currentDatabase()
-    AND type = 'QueryFinish'
-    AND query LIKE '%seal_empty_build%'
-    AND query NOT LIKE '%query_log%';
-
--- The single-stream read prunes just like the multi-threaded one.
-SELECT
-    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 6000 AS dropped_marks,
-    read_rows < 20000 AS read_few_rows
-FROM system.query_log
-WHERE current_database = currentDatabase()
-    AND type = 'QueryFinish'
-    AND query LIKE '%seal_gated_single_stream%'
-    AND query NOT LIKE '%query_log%';
-
--- Reading in order terminates early because of the LIMIT, so only assert that the marks
--- before the matching ones were cut and dropped.
-SELECT
-    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 0 AS dropped_marks
-FROM system.query_log
-WHERE current_database = currentDatabase()
-    AND type = 'QueryFinish'
-    AND query LIKE '%seal_gated_in_order%'
-    AND query NOT LIKE '%query_log%';
-
--- Same for the reverse order.
-SELECT
-    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 0 AS dropped_marks
-FROM system.query_log
-WHERE current_database = currentDatabase()
-    AND type = 'QueryFinish'
-    AND query LIKE '%seal_gated_reverse_order%'
-    AND query NOT LIKE '%query_log%';
-
--- The prefetched pool drops the same marks as the default pool.
-SELECT
-    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 6000 AS dropped_marks,
-    read_rows < 20000 AS read_few_rows
-FROM system.query_log
-WHERE current_database = currentDatabase()
-    AND type = 'QueryFinish'
-    AND query LIKE '%seal_gated_prefetched%'
-    AND query NOT LIKE '%query_log%';
-
--- The reverse-sorted key prunes just like the ascending one (and the matching rows,
--- checked above, prove the surviving marks are the right ones).
-SELECT
-    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 6000 AS dropped_marks,
-    read_rows < 20000 AS read_few_rows
-FROM system.query_log
-WHERE current_database = currentDatabase()
-    AND type = 'QueryFinish'
-    AND query LIKE '%seal_gated_reverse_key%'
-    AND query NOT LIKE '%query_log%';
-
--- The prefix-covering filters prune together at task-cut time.
-SELECT
-    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 6000 AS dropped_marks,
-    read_rows < 20000 AS read_few_rows
-FROM system.query_log
-WHERE current_database = currentDatabase()
-    AND type = 'QueryFinish'
-    AND query LIKE '%seal_gated_pk_prefix%'
-    AND query NOT LIKE '%query_log%';
-
--- The gated read pruned at task-cut time and the read-time pruning by the same filter was
--- skipped as redundant: no granules were even considered by it.
-SELECT
-    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 6000 AS dropped_marks,
-    ProfileEvents['RuntimeFilterGranulesConsidered'] AS read_time_granules_considered
-FROM system.query_log
-WHERE current_database = currentDatabase()
-    AND type = 'QueryFinish'
-    AND query LIKE '%seal_gated_suppresses_read_time%'
-    AND query NOT LIKE '%query_log%';
+    AND is_initial_query
+    AND query LIKE '%/* seal_%'
+    AND query NOT LIKE '%query_log%'
+ORDER BY marker;
 
 DROP TABLE t_seal_probe;
 DROP TABLE t_seal_build;
