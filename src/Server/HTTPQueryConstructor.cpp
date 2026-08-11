@@ -329,7 +329,7 @@ String parseURLParameterAsFilter(const String & name, const String & value)
     auto has_compare_op = [&](const String & s)
     {
         for (const char * op : compare_ops)
-            if (s.find(op) != String::npos)
+            if (s.contains(op))
                 return true;
         return false;
     };
@@ -360,9 +360,9 @@ bool isBinaryOutputFormat(const String & format_name)
         /// Heuristic: any content type that starts with "application/" but isn't json/xml/x-www-form is binary-ish.
         if (startsWith(content_type, "application/"))
         {
-            if (content_type.find("json") != String::npos)
+            if (content_type.contains("json"))
                 return false;
-            if (content_type.find("xml") != String::npos)
+            if (content_type.contains("xml"))
                 return false;
             return true;
         }

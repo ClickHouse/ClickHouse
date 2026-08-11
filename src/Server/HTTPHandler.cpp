@@ -865,7 +865,7 @@ void HTTPHandler::processQuery(
                                  || request.getMethod() == HTTPRequest::HTTP_PUT)
                               && (request.getChunkedTransferEncoding() || request.getContentLength64() > 0);
         const String table_db = path_info.database.empty() ? context->getCurrentDatabase() : path_info.database;
-        bool table_name_is_simple = path_info.table.find('.') == String::npos;
+        bool table_name_is_simple = !path_info.table.contains('.');
         if (table_name_is_simple && !table_db.empty() && raw_query.empty() && !request_has_body)
         {
             StorageID table_id(table_db, path_info.table);
