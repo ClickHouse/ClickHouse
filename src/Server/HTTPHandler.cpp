@@ -255,7 +255,21 @@ void HTTPHandler::processQuery(
     /// via `currentRequestURL()` / `currentHandler()` and the query_log.
     context->setHTTPRequestURL(request.getURI());
     if (!introspection_handler_name.empty())
+    {
         context->setHTTPHandlerName(introspection_handler_name);
+
+        /// The query a SQL-defined handler executes is the server's own stored text, parsed and validated
+        /// when the handler was created (possibly in a session with raised parser limits) and re-parsed
+        /// with unlimited limits on every reload (see `SQLDefinedHandlersMetadataStorage::readHandler`).
+        /// Parse it with unlimited depth and backtracks (`0` disables the limit) here too, so a handler
+        /// that was accepted at creation stays invokable under ordinary session limits instead of failing
+        /// each request until the caller raises `max_parser_depth` / `max_parser_backtracks` themselves.
+        /// The client controls only the typed query parameters, never the query text, and could raise
+        /// these settings per-request anyway (they are changeable under `readonly = 2`); `parseQuery`
+        /// still guards against stack overflow via `checkStackSize`.
+        context->setSetting("max_parser_depth", Field(0));
+        context->setSetting("max_parser_backtracks", Field(0));
+    }
 
     auto roles = params.getAll("role");
     if (!roles.empty())
