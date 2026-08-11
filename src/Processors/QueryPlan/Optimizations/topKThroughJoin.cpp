@@ -454,7 +454,10 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         /// `buildInputOrderInfo(SortingStep &, ...)` installs the through-`JOIN` read-in-order
         /// plan for all three. Probing only `ReadFromMergeTree` would keep the pushed-down
         /// `Sort` + `Limit` for a preserved side reading from a `Merge` table or from object
-        /// storage even though pass 2 could have streamed it in order.
+        /// storage even though pass 2 could have streamed it in order. The probe also mirrors
+        /// each reader's `requestReadingInOrder` rejections (reverse order with `FINAL` for
+        /// `MergeTree` and `Merge`, unsorted configuration for object storage), so a positive
+        /// probe means pass 2 will actually commit, not merely that the sort keys match.
         SortingStep probe_sort_step(
             preserved_input_node->step->getOutputHeader(),
             description,
@@ -466,21 +469,7 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
             settings.read_in_order_through_join,
             settings.read_in_order_through_spilling_join);
 
-        /// The probe is unaware of `FINAL`-time gating: even when the sort description matches
-        /// the storage's sorting key, pass 2's `ReadFromMergeTree::requestReadingInOrder`
-        /// returns `false` for `direction != 1 && query_info.isFinal()`. If we deferred here on
-        /// the strength of the column match, both optimizations would silently disable.
-        /// Guard conservatively: when reading `FINAL`, only defer if all sort columns are
-        /// ascending, since a single descending column is enough for the eventual read
-        /// direction to be -1 in the common case (storage key without reverse flags). This may
-        /// miss the rare reverse-storage-key case where pass 2 would have succeeded, but never
-        /// silently disables both passes.
-        const auto * merge_tree_read = findMergeTreeRead(preserved_input_node);
-        const bool any_desc = std::ranges::any_of(
-            description, [](const SortColumnDescription & c) { return c.direction != 1; });
-        const bool final_blocks_pass2 = merge_tree_read && merge_tree_read->isQueryWithFinal() && any_desc;
-
-        if (read_in_order_useful && !final_blocks_pass2)
+        if (read_in_order_useful)
             return 0;
     }
 

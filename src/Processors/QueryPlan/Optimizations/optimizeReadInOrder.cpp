@@ -1649,12 +1649,38 @@ bool wouldReadInOrderBeUseful(
         if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
             return false;
 
-        return buildInputOrderFromSortDescription(reading, fixed_columns, dag, description, limit).input_order != nullptr;
+        auto order_info = buildInputOrderFromSortDescription(reading, fixed_columns, dag, description, limit);
+        if (!order_info.input_order)
+            return false;
+
+        /// Mirror `ReadFromMergeTree::requestReadingInOrder`: it rejects reverse order
+        /// with `FINAL`, because the `FINAL` implementation relies on direct read order.
+        return order_info.input_order->direction == 1 || !reading->isQueryWithFinal();
     }
     if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
-        return buildInputOrderFromSortDescription(merge, fixed_columns, dag, description, limit).input_order != nullptr;
+    {
+        auto order_info = buildInputOrderFromSortDescription(merge, fixed_columns, dag, description, limit);
+        if (!order_info.input_order)
+            return false;
+
+        /// Mirror `ReadFromMerge::requestReadingInOrder`: it rejects reverse order with
+        /// `FINAL` up front, and then forwards the request to every child `ReadFromMergeTree`,
+        /// where the only rejection is again reverse order with `FINAL` - and the children
+        /// inherit `FINAL` from this same query.
+        return order_info.input_order->direction == 1
+            || !InterpreterSelectQuery::isQueryWithFinal(merge->getQueryInfo());
+    }
     if (auto * object_storage_step = typeid_cast<ReadFromObjectStorageStep *>(reading_node->step.get()))
-        return buildInputOrderFromSortDescription(object_storage_step, fixed_columns, dag, description, limit).input_order != nullptr;
+    {
+        auto order_info = buildInputOrderFromSortDescription(object_storage_step, fixed_columns, dag, description, limit);
+        if (!order_info.input_order)
+            return false;
+
+        /// `ReadFromObjectStorageStep::requestReadingInOrder` is non-mutating (it only checks
+        /// whether the configuration guarantees data sorted by the declared sorting key), so
+        /// the probe can evaluate the commit-path condition directly.
+        return object_storage_step->requestReadingInOrder();
+    }
 
     return false;
 }
