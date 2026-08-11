@@ -2530,6 +2530,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     {
         ContextMutablePtr drop_context = Context::createCopy(current_context);
         drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
+        /// Steps of one user statement, not user DROPs: `ignore_drop_queries_probability` must not skip them.
+        drop_context->setDDLOrOnClusterInternal(true);
         /// Bypass = "the size guard was already enforced upstream; do not re-check or consume `force_drop_table` twice".
         if (bypass_size_guard)
         {

@@ -1,0 +1,13 @@
+-- failure path: the temporary table must be cleaned up, not stranded
+0
+10
+-- success path: the replaced table must be dropped, not left behind
+0
+3
+-- no leak accumulates across repeated replaces
+0
+-- a view temporary is not MergeTree, so its internal DROP would be rewritten to TRUNCATE
+0
+100
+-- a user DROP is still skipped: the setting keeps doing what it is for
+1
