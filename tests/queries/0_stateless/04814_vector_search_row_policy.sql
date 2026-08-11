@@ -61,3 +61,28 @@ SELECT id FROM t_04814 ORDER BY cosineDistance(vec, [0., 1.]) LIMIT 1
 
 DROP ROW POLICY rp_04814 ON t_04814;
 DROP TABLE t_04814;
+
+-- The same, but with FINAL. With `apply_row_policy_after_final = 1` (the default), a policy that is not part of
+-- the sorting key is deferred until after the final merge, moving out of `row_level_filter` before the
+-- non-rescoring rewrite runs, so the rewrite must inspect the deferred filter as well.
+DROP ROW POLICY IF EXISTS rp_04814_final ON t_04814_final;
+DROP TABLE IF EXISTS t_04814_final;
+
+CREATE TABLE t_04814_final (id UInt32, vec Array(Float32),
+    INDEX idx vec TYPE vector_similarity('hnsw', 'cosineDistance', 2))
+ENGINE = ReplacingMergeTree ORDER BY id SETTINGS index_granularity = 4;
+
+INSERT INTO t_04814_final SELECT number, [toFloat32(number), toFloat32(number + 1)] FROM numbers(64);
+
+CREATE ROW POLICY rp_04814_final ON t_04814_final FOR SELECT USING length(vec) > 0 TO ALL;
+
+SELECT 'policy on the vector column, FINAL, no rescoring: correct result';
+SELECT id FROM t_04814_final FINAL ORDER BY cosineDistance(vec, [0., 1.]) LIMIT 1
+    SETTINGS vector_search_with_rescoring = 0;
+
+SELECT 'policy on the vector column, FINAL, rescoring: correct result';
+SELECT id FROM t_04814_final FINAL ORDER BY cosineDistance(vec, [0., 1.]) LIMIT 1
+    SETTINGS vector_search_with_rescoring = 1;
+
+DROP ROW POLICY rp_04814_final ON t_04814_final;
+DROP TABLE t_04814_final;
