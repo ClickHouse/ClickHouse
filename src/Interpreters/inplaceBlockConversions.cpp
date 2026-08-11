@@ -20,6 +20,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
+#include <Columns/ColumnQBit.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
@@ -29,6 +30,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -409,6 +411,14 @@ static bool columnMatchesTypeStructure(const IColumn & column, const IDataType &
         }
 
         return true;
+    }
+
+    /// `SerializationQBit::enumerateStreams` pairs the type's nested tuple with the column's
+    /// nested tuple, so they have to match structurally.
+    if (const auto * type_qbit = typeid_cast<const DataTypeQBit *>(&type))
+    {
+        const auto * column_qbit = typeid_cast<const ColumnQBit *>(&column);
+        return column_qbit && columnMatchesTypeStructure(*column_qbit->getTuple(), *type_qbit->getNestedType());
     }
 
     /// The internal structure of a `Dynamic` column is data-dependent: `enumerateStreams` takes
