@@ -293,8 +293,8 @@ public:
 
     JoinAnalyzeMode analyzeMode() const { return analyze_mode; }
 
-    bool collectAnalyzeStats() const { return collectsAnalyzeStats(analyze_mode); }
-    bool collectExactMatches() const { return collectsExactMatches(analyze_mode); }
+    bool collectAnalyzeStats() const { return analyze_mode != JoinAnalyzeMode::None; }
+    bool collectExactMatches() const { return analyze_mode == JoinAnalyzeMode::Exact; }
 
     TemporaryDataOnDiskScopePtr getTempDataOnDisk();
 

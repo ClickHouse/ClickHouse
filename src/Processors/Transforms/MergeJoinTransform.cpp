@@ -881,20 +881,26 @@ struct AnyJoinImpl
 
                 if constexpr (isLeftOrFull(kind))
                 {
-                    size_t lnum = consumeEqualRange(left_cursor, any_join_state.matched.left, matched_rows.left);
+                    size_t lnum = nextDistinct(left_cursor);
+                    matched_rows.left += lnum;
                     right_map.resize_fill(right_map.size() + lnum, rpos);
                 }
 
                 if constexpr (isRightOrFull(kind))
                 {
-                    size_t rnum = consumeEqualRange(right_cursor, any_join_state.matched.right, matched_rows.right);
+                    size_t rnum = nextDistinct(right_cursor);
+                    matched_rows.right += rnum;
                     left_map.resize_fill(left_map.size() + rnum, lpos);
                 }
 
                 if constexpr (isInner(kind))
                 {
-                    consumeEqualRange(left_cursor, any_join_state.matched.left, matched_rows.left);
-                    consumeEqualRange(right_cursor, any_join_state.matched.right, matched_rows.right);
+                    size_t lnum = nextDistinct(left_cursor);
+                    size_t rnum = nextDistinct(right_cursor);
+
+                    matched_rows.left += lnum;
+                    matched_rows.right += rnum;
+
                     left_map.emplace_back(lpos);
                     right_map.emplace_back(rpos);
                 }
@@ -994,7 +1000,8 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin()
     PaddedPODArray<UInt64> idx_map[2];
     size_t prev_pos[] = {current_left.getRow(), current_right.getRow()};
 
-    dispatchKind<AnyJoinImpl>(kind, cursors[0], cursors[1], idx_map[0], idx_map[1], any_join_state, null_direction_hint, stat.matched_rows, collectsAnalyzeStats(analyze_mode));
+    bool analyze_stats = analyze_mode != JoinAnalyzeMode::None;
+    dispatchKind<AnyJoinImpl>(kind, cursors[0], cursors[1], idx_map[0], idx_map[1], any_join_state, null_direction_hint, stat.matched_rows, analyze_stats);
 
     chassert(idx_map[0].empty() || idx_map[1].empty() || idx_map[0].size() == idx_map[1].size());
     size_t num_result_rows = std::max(idx_map[0].size(), idx_map[1].size());
@@ -1267,7 +1274,8 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
     /// dropped equal range that continues an already matched one. Only `ANY` needs it: it is the
     /// only strictness that carries such a range in `any_join_state.matched`, while `ALL` and
     /// `ASOF` close theirs in handleAllJoinState/handleAsofJoinState right above.
-    const bool count_discarded_matches = collectsAnalyzeStats(analyze_mode) && strictness == JoinStrictness::Any;
+    const bool analyze_stats = analyze_mode != JoinAnalyzeMode::None;
+    const bool count_discarded_matches = analyze_stats && strictness == JoinStrictness::Any;
 
     if (cursors[0].fullyCompleted() || cursors[1].fullyCompleted())
     {

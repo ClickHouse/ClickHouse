@@ -17,7 +17,7 @@ MatchedRowsStats::MatchedRowsStats(JoinKind kind, JoinStrictness strictness, Joi
 
 void MatchedRowsStats::prepareRightFlagsIfNeeded(const HashJoin::StoredBlocksList & stored_blocks)
 {
-    if (collectsExactMatches(analyze_mode) && rightMatchedSource(join_kind, join_strictness) == RightMatchedSource::RefsFlags)
+    if (analyze_mode == JoinAnalyzeMode::Exact && rightMatchedSource(join_kind, join_strictness) == RightMatchedSource::RefsFlags)
         prepareRightFlags(stored_blocks);
 }
 

@@ -158,8 +158,4 @@ enum class JoinAnalyzeMode : uint8_t
     Derived,
     Exact,
 };
-
-constexpr bool collectsAnalyzeStats(JoinAnalyzeMode mode) { return mode != JoinAnalyzeMode::None; }
-constexpr bool collectsExactMatches(JoinAnalyzeMode mode) { return mode == JoinAnalyzeMode::Exact; }
-
 }
