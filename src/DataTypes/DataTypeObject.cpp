@@ -2190,7 +2190,7 @@ When a JSON path is absent from a granule, the subcolumn evaluates to:
 - `NULL` for `Dynamic` type (e.g., `json.path`) and `Nullable` typed subcolumns (e.g., `json.path.:Int64`) — comparisons with `NULL` always return false, so skipping is safe.
 - The type's default value for non-`Nullable` CAST expressions (e.g., `json.path::Int64` produces `0` when the path is missing) — skipping is safe only when the compared value differs from the default. The index automatically handles this distinction.
 
-### Type-aware Bloom filter with jsonbf_v1 {#json-indexes-jsonbf-v1}
+### Type-aware Bloom filter with `jsonbf_v1` {#json-indexes-jsonbf-v1}
 
 The `jsonbf_v1` index covers the scalar leaves of one direct `JSON` column while keeping values at different paths separate. It indexes array elements, typed `Map` values by key, and named `Tuple` fields. Whole containers are not stringified.
 

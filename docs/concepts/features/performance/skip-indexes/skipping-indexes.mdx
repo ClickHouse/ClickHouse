@@ -154,7 +154,7 @@ There are four Data Skipping Index types based on Bloom filters:
 
 * The basic **bloom_filter** which takes a single optional parameter of the allowed "false positive" rate between 0 and 1 (if unspecified, .025 is used).
 
-* The specialized **jsonbf_v1** indexes scalar leaves of one direct `JSON` column. Paths, container roles, runtime types, and values are hashed separately, so values at different paths do not match each other. Arrays are indexed by element, typed `Map` values by key, and `Tuple` values by field. Whole containers are not stringified. The optional `tokenizer = ngrams(N)` argument also indexes path-qualified ngrams for positive string predicates such as `LIKE`, `startsWith`, `endsWith`, `multiSearchAny`, and `match`.
+* The specialized **`jsonbf_v1`** indexes scalar leaves of one direct `JSON` column. Paths, container roles, runtime types, and values are hashed separately, so values at different paths do not match each other. Arrays are indexed by element, typed `Map` values by key, and `Tuple` values by field. Whole containers are not stringified. The optional `tokenizer = ngrams(N)` argument also indexes path-qualified ngrams for positive string predicates such as `LIKE`, `startsWith`, `endsWith`, `multiSearchAny`, and `match`.
 
   ```sql
   INDEX json_values data TYPE jsonbf_v1(false_positive_rate = 0.025) GRANULARITY 1
