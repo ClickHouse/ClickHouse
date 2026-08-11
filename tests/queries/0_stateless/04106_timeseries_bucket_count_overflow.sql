@@ -93,5 +93,15 @@ FROM ts_data_overflow_idx;
 SELECT timeSeriesResampleToGridWithStaleness(-9223372036854775808, 9223372036854775807, 1, 1)(timestamp, value)
 FROM ts_data_overflow_idx FORMAT Null;  -- { serverError BAD_ARGUMENTS }
 
+-- Case 9: Native Int64 ceil-division at the positive offset boundary.
+-- The epoch sample has `timestamp - start_timestamp = INT64_MAX`, so the checked subtraction
+-- succeeds and the sample must land in the second grid bucket.
+WITH
+    [toDateTime64(0, 0)] AS timestamps,
+    [1.0] AS values
+SELECT arrayFirstIndex(x -> x IS NOT NULL,
+    timeSeriesResampleToGridWithStaleness(-9223372036854775807, 0, 9223372036854775807, 9223372036854775807)(timestamps, values)
+) AS first_non_null_1idx_int64_boundary;
+
 DROP TABLE ts_data_overflow_idx;
 DROP TABLE ts_data_overflow_idx_u32;
