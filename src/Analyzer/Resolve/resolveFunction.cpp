@@ -790,9 +790,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// it with `ILLEGAL_PREWHERE`). Keeping the plain `IN` there makes `PREWHERE x IN (subquery)`
     /// behave exactly like its `WHERE` spelling instead of failing.
     /// See https://github.com/ClickHouse/ClickHouse/issues/114026.
+    /// Also skip when `transform_null_in` is enabled, because the `EXISTS` rewrite is not null-aware
+    /// and would make `WHERE` diverge from `PREWHERE` (which keeps the null-aware `nullIn` path).
     if (is_special_function_in &&
         (function_name == "in" || function_name == "notIn") &&
         scope.context->getSettingsRef()[Setting::rewrite_in_to_join] &&
+        !scope.context->getSettingsRef()[Setting::transform_null_in] &&
         !scope.in_prewhere)
     {
         if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
