@@ -78,6 +78,7 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Parsers/ASTSystemQuery.h>
@@ -147,7 +148,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_json_ast_dialect;
+    extern const SettingsBool enable_json_ast_dialect;
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
@@ -1530,7 +1531,7 @@ static BlockIO executeQueryImpl(
             /// Allow `SET` queries in plain SQL so users can switch back to another dialect
             /// without being locked into JSON-only input. The experimental gate must be
             /// applied only to the JSON-deserialization branch — otherwise a session with
-            /// `dialect = clickhouse_json` and `allow_experimental_json_ast_dialect = 0`
+            /// `dialect = clickhouse_json` and `enable_json_ast_dialect = 0`
             /// cannot execute `SET dialect = 'clickhouse'` to recover.
             if (isClickHouseJSONSetEscape(begin, end, settings[Setting::max_query_size]))
             {
@@ -1539,10 +1540,10 @@ static BlockIO executeQueryImpl(
             }
             else
             {
-                if (!settings[Setting::allow_experimental_json_ast_dialect])
+                if (!settings[Setting::enable_json_ast_dialect])
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "Support for clickhouse_json dialect is disabled "
-                        "(turn on setting 'allow_experimental_json_ast_dialect')");
+                        "(turn on setting 'enable_json_ast_dialect')");
 
                 if (max_query_size != 0 && static_cast<size_t>(end - begin) > max_query_size)
                     throw Exception(ErrorCodes::SYNTAX_ERROR,
@@ -2269,9 +2270,6 @@ static BlockIO executeQueryImpl(
 
         /// Hold element of process list till end of query execution.
         res.process_list_entries.push_back(process_list_entry);
-
-        /// Hold query metadata cache till end of query execution.
-        res.query_metadata_cache = std::move(query_metadata_cache);
 
         if (query_plan)
         {

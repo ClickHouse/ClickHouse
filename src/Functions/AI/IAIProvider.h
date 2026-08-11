@@ -140,4 +140,7 @@ using AIProviderPtr = std::unique_ptr<IAIProvider>;
 
 AIProviderPtr createAIProvider(const String & provider_name, const String & endpoint, const String & api_key, const String & api_version);
 
+/// Build an error message from a provider's non-200 HTTP response, for use in an exception that is logged.
+String formatProviderError(int status_code, const String & response_body);
+
 }
