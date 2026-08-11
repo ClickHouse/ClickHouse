@@ -164,7 +164,9 @@ bool isObjectStorageNotFoundException(std::exception_ptr exception_ptr)
 #if USE_AZURE_BLOB_STORAGE
     catch (const Azure::Core::RequestFailedException & e)
     {
-        return e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound;
+        /// Azure answers 404 for a missing container too, which is a whole-storage condition
+        /// rather than a per-object one, so exclude it just like S3's `NO_SUCH_BUCKET`.
+        return e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound && e.ErrorCode != "ContainerNotFound";
     }
 #endif
     catch (...)
