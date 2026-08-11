@@ -88,4 +88,44 @@ TEST(AIQueryValidation, RejectsSandboxSettingOverrides)
     EXPECT_TRUE(isAllowed("SELECT 1 SETTINGS max_threads = 1"));
 }
 
+TEST(AIQueryValidation, RejectsExternalAccess)
+{
+    /// `readonly = 1` only blocks writes: a SELECT over an external table function can still
+    /// read files or the network, so it must go through the confirmed run_query tool.
+    EXPECT_FALSE(isAllowed("SELECT * FROM file('/etc/passwd', 'LineAsString')"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM url('http://127.0.0.1/', 'CSV', 'x String')"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM s3('http://bucket.example.com/x', 'CSV')"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM remote('127.0.0.1', system.one)"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM cluster('default', system.one)"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM executable('script.sh', 'CSV', 'x UInt8')"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM mysql('127.0.0.1:3306', 'db', 't', 'user', 'password')"));
+
+    /// The names of some of these functions are registered case-insensitively.
+    EXPECT_FALSE(isAllowed("SELECT * FROM FILE('/etc/passwd', 'LineAsString')"));
+
+    /// Nested and non-obvious positions.
+    EXPECT_FALSE(isAllowed("SELECT (SELECT count() FROM file('x', 'CSV'))"));
+    EXPECT_FALSE(isAllowed("SELECT 1 FROM (SELECT * FROM url('http://x', 'CSV', 'x String'))"));
+    EXPECT_FALSE(isAllowed("WITH t AS (SELECT * FROM file('x', 'CSV')) SELECT * FROM t"));
+    EXPECT_FALSE(isAllowed("SELECT 1 WHERE 1 IN remote('127.0.0.1', system.one)"));
+    EXPECT_FALSE(isAllowed("SELECT 1 UNION ALL SELECT * FROM file('x', 'CSV')"));
+    EXPECT_FALSE(isAllowed("EXPLAIN SELECT * FROM file('x', 'CSV')"));
+    /// Schema inference of DESCRIBE opens the resource.
+    EXPECT_FALSE(isAllowed("DESCRIBE file('x', 'CSV')"));
+
+    /// The scalar functions reading external resources.
+    EXPECT_FALSE(isAllowed("SELECT file('/etc/passwd')"));
+    EXPECT_FALSE(isAllowed("SELECT catboostEvaluate('/path/model.bin', 1, 2)"));
+
+    /// Table functions generating data locally are allowed.
+    EXPECT_TRUE(isAllowed("SELECT * FROM numbers(10)"));
+    EXPECT_TRUE(isAllowed("SELECT number FROM numbers_mt(10)"));
+    EXPECT_TRUE(isAllowed("SELECT * FROM generateSeries(1, 10)"));
+    EXPECT_TRUE(isAllowed("SELECT * FROM generateRandom('x UInt8') LIMIT 1"));
+    EXPECT_TRUE(isAllowed("SELECT * FROM values('x UInt8', 1, 2)"));
+    EXPECT_TRUE(isAllowed("SELECT 1 IN (1, 2, 3)"));
+    EXPECT_TRUE(isAllowed("SELECT 1 IN (SELECT 1)"));
+    EXPECT_TRUE(isAllowed("SELECT number IN numbers(3) FROM numbers(5)"));
+}
+
 #endif

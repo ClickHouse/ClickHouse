@@ -379,7 +379,7 @@ To answer a question, the assistant uses a set of tools:
 - **Recent queries** — it is given the last queries you ran in this session, with their results truncated to the first and last rows and any error messages, and it can read further back from the [`system.user_query_log`](/reference/system-tables/user_query_log) table. When you say "my query" or "that error", it knows what you mean.
 - **Schema exploration** — it lists databases and tables and reads `CREATE TABLE` statements instead of guessing column names.
 - **Documentation** — it looks entities up in the embedded documentation (the [`system.documentation`](/operations/system-tables/documentation) table), the same source as the `help` command.
-- **Read-only queries without confirmation** — it runs `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`, `EXISTS` and `CHECK` statements under a sandbox: `readonly = 1`, a 30-second time limit and a 10 GiB memory limit. These are displayed and executed on your connection without asking.
+- **Read-only queries without confirmation** — it runs `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`, `EXISTS` and `CHECK` statements under a sandbox: `readonly = 1`, a 30-second time limit and a 10 GiB memory limit. Table functions that reach outside of the server's tables (`file`, `url`, `s3`, `remote`, `executable`, ...) are not allowed here. These queries are displayed and executed on your connection without asking.
 - **Any query, with confirmation** — for writes, DDL, `SET`, or heavier read queries, it asks you to confirm before running. The query is shown at the prompt before you decide.
 
 ### Example {#ai-sql-generation-example}
@@ -574,7 +574,7 @@ ai:
 
 - API keys are never sent to the ClickHouse server; they are read by the client from its configuration or environment.
 - The assistant runs on your connection, so it acts with exactly your permissions and cannot do anything you could not do yourself.
-- Read-only queries run under `readonly = 1` with a 30-second and a 10 GiB limit; every other query requires your explicit confirmation, with the query shown before you decide.
+- Read-only queries run under `readonly = 1` with a 30-second and a 10 GiB limit, and may not use table functions that read external files or servers (`file`, `url`, `s3`, `remote`, `executable`, ...); every other query requires your explicit confirmation, with the query shown before you decide. If the session cannot be constrained to these limits (for example, a `readonly` settings profile forbids changing them), the unconfirmed query fails instead of running without the limits.
 - For the embedded client (the SSH and WebSocket protocols), client-side AI providers are disabled, because they would read API keys from the server process environment; only the server-side `aiGenerate` backend is used there.
 
 ## Connection string {#connection_string}
