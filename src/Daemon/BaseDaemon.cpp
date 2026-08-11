@@ -71,6 +71,7 @@ namespace DB
     {
         extern const int SYSTEM_ERROR;
         extern const int LOGICAL_ERROR;
+        extern const int NOT_IMPLEMENTED;
     }
 }
 
@@ -138,8 +139,10 @@ BaseDaemon::~BaseDaemon()
 {
     try
     {
+#if defined(OS_HAS_SIGNAL_HANDLERS)
         writeSignalIDtoSignalPipe(SignalListener::StopThread);
         signal_listener_thread.join();
+#endif
         HandledSignals::instance().reset();
     }
     catch (...)
@@ -479,13 +482,19 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     static KillingErrorHandler killing_error_handler;
     Poco::ErrorHandler::set(&killing_error_handler);
 
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+    /// Without signals nothing ever writes to the signal pipe, so there is nothing to listen
+    /// for - and the blocking read of that pipe is all the listener thread does.
     signal_listener = std::make_unique<SignalListener>(this, getLogger("BaseDaemon"), [this](int, bool) { onTerminateRequestSignal(); });
+#endif
 
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     build_id = SymbolIndex::instance().getBuildIDHex();
 #endif
 
+#if defined(OS_HAS_SIGNAL_HANDLERS)
     signal_listener_thread.start(*signal_listener);
+#endif
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
@@ -544,8 +553,16 @@ void BaseDaemon::onTerminateRequestSignal()
 
 void BaseDaemon::waitForTerminationRequest()
 {
+#if defined(OS_HAS_SIGNAL_HANDLERS)
     /// NOTE: as we already process signals via pipe, we don't have to block them with sigprocmask in threads
     signal_listener->waitForTerminationRequest();
+#else
+    /// There is no listener without signals, and nothing could deliver a termination request to it
+    /// anyway: waiting here would block forever. Daemon-style entry points are not supported on
+    /// such a platform, so say so instead of hanging or dereferencing a null listener.
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED, "Waiting for a termination request requires POSIX signals, which this platform does not have");
+#endif
 }
 
 

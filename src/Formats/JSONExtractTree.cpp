@@ -247,6 +247,28 @@ bool tryGetNumericValueFromJSONElement(
 namespace
 {
 
+/// Reserve capacity for a chars buffer that is grown incrementally (one document per call). Keeps the
+/// default power-of-two doubling (amortized O(1) appends) until a single growth increment would exceed
+/// `max_growth_step`, after which it grows by exact step-sized chunks. This bounds the over-allocation
+/// for large buffers (e.g. shared-data path names) without reallocating on every row, which a plain
+/// per-row `reserve_exact` would cause. `max_growth_step == 0` keeps pure power-of-two growth.
+void reserveCharsWithGrowthCap(ColumnString::Chars & chars, size_t required, size_t max_growth_step)
+{
+    if (required <= chars.capacity())
+        return;
+
+    if (max_growth_step == 0)
+    {
+        chars.reserve(required);
+        return;
+    }
+
+    size_t new_capacity = chars.capacity() * 2;
+    if (new_capacity - chars.capacity() > max_growth_step)
+        new_capacity = chars.capacity() + max_growth_step;
+    chars.reserve_exact(std::max(new_capacity, required));
+}
+
 template <typename JSONParser>
 String jsonElementToString(const typename JSONParser::Element & element, const FormatSettings & format_settings)
 {
@@ -395,7 +417,7 @@ public:
             auto & col_str = assert_cast<ColumnString &>(column);
             auto & chars = col_str.getChars();
             {
-                WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
+                WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag(), format_settings.json_max_string_column_growth_step);
                 jsonElementToString<JSONParser>(element, buf, format_settings);
             }
             col_str.getOffsets().push_back(chars.size());
@@ -1976,7 +1998,7 @@ public:
             new_paths_total_size += path.size();
 
         auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
-        shared_data_paths->getChars().reserve(shared_data_paths->getChars().size() + new_paths_total_size);
+        reserveCharsWithGrowthCap(shared_data_paths->getChars(), shared_data_paths->getChars().size() + new_paths_total_size, format_settings.json_max_string_column_growth_step);
         shared_data_paths->getOffsets().reserve(shared_data_paths->getOffsets().size() + paths_and_values_for_shared_data.size());
         auto & shared_data_values_chars = shared_data_values->getChars();
         auto & shared_data_values_offsets = shared_data_values->getOffsets();
@@ -1998,7 +2020,7 @@ public:
             else
             {
                 /// Serialize value directly into shared data chars.
-                WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag());
+                WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag(), format_settings.json_max_string_column_growth_step);
                 if (!insertIntoSharedData(value_buf, value, insert_settings, format_settings, error, tmp_dynamic_column))
                 {
                     error += fmt::format(" (while reading path {})", path);
