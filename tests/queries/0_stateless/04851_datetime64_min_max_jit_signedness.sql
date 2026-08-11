@@ -3,6 +3,8 @@
 SET compile_aggregate_expressions = 1;
 SET min_count_to_compile_aggregate_expression = 0;
 
+-- The GROUP BY key is what reaches the compiled path at all (aggregation without a key never
+-- compiles), and it must be wider than 8 bits or the 8-bit lookup table bypasses the compiled add.
 DROP TABLE IF EXISTS t_jit_dt64;
 CREATE TABLE t_jit_dt64 (k Int64, dt0 DateTime64(0), dt3 DateTime64(3), dt9 DateTime64(9))
 ENGINE = MergeTree ORDER BY tuple();
@@ -23,7 +25,10 @@ CREATE TABLE t_jit_dt64_merge (k Int64, dt DateTime64(3)) ENGINE = MergeTree ORD
 INSERT INTO t_jit_dt64_merge
 SELECT number % 8, toDateTime64('1970-01-01 00:00:00', 3) + toIntervalSecond(number - 5000) FROM numbers(10000);
 
-SELECT 'merge', countIf(mn > mx), min(mn) = toDateTime64('1969-12-31 22:36:40', 3), max(mx) = toDateTime64('1970-01-01 01:23:19', 3)
+WITH toDateTime64('1970-01-01 00:00:00', 3) AS epoch
+SELECT 'merge', countIf(mn > mx),
+       min(mn) = epoch - toIntervalSecond(5000),
+       max(mx) = epoch + toIntervalSecond(4999)
 FROM
 (
     SELECT k, min(dt) AS mn, max(dt) AS mx FROM t_jit_dt64_merge GROUP BY k
