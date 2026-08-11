@@ -677,8 +677,10 @@ SELECT '-- nullIf: row 2 (preprocessed to NULL) and row 4 (source NULL) are both
 SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id;
 SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
 
-SELECT '-- nullIf: direct read is not used for a preprocessor-rewritten function';
-SELECT countIf(explain LIKE '%INPUT%\_\_text_index%') FROM
+-- The NULLs come from the rewritten haystack rather than from a null map, which costs a read of the
+-- column but keeps the index answering the predicate.
+SELECT '-- nullIf: direct read is kept, with the NULLs taken from the rewritten haystack';
+SELECT countIf(explain LIKE '%INPUT%\_\_text_index%') > 0, countIf(explain LIKE '%isNull(nullIf(str, %') > 0 FROM
 (
     EXPLAIN actions = 1 SELECT id FROM tab WHERE NOT hasToken(str, 'hello')
     SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1, explain_query_plan_default = 'legacy'
@@ -736,7 +738,7 @@ DROP TABLE tab;
 
 SELECT 'String with a null-producing preprocessor and a Nullable needle';
 -- The source column is not Nullable, but the preprocessor still makes row 2 NULL and the Nullable needle
--- makes that NULL observable. Nothing in the source describes it, so direct read is not used here either.
+-- makes that NULL observable, so it is restored from the rewritten haystack.
 -- (With a non-Nullable needle the rewritten predicate is cast back to UInt8 and the row-level path raises
 -- CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, which is a separate pre-existing problem and left alone.)
 
@@ -755,8 +757,8 @@ SELECT '-- row 2 is NULL for the rewritten predicate, so only row 3 is kept';
 SELECT id FROM tab WHERE NOT hasToken(str, toNullable('hello')) ORDER BY id;
 SELECT id FROM tab WHERE NOT hasToken(str, toNullable('hello')) ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
 
-SELECT '-- direct read is not used for it';
-SELECT countIf(explain LIKE '%INPUT%\_\_text_index%') FROM
+SELECT '-- direct read is kept for it too';
+SELECT countIf(explain LIKE '%INPUT%\_\_text_index%') > 0 FROM
 (
     EXPLAIN actions = 1 SELECT id FROM tab WHERE NOT hasToken(str, toNullable('hello'))
     SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1, explain_query_plan_default = 'legacy'

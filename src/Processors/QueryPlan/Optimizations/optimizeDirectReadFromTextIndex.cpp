@@ -449,6 +449,8 @@ private:
     struct NodeReplacement
     {
         const ActionsDAG::Node * node = nullptr;
+        /// Haystack of the rewritten predicate, i.e. after the preprocessor. Set by processTextIndexFunction.
+        const ActionsDAG::Node * rewritten_haystack = nullptr;
         std::unordered_map<String, VirtualColumnDescription> added_virtual_columns;
     };
 
@@ -572,11 +574,11 @@ private:
         const bool preprocessed = needApplyPreprocessor(function_name)
             && isNullableOrLowCardinalityNullable(function_node.result_type);
 
-        /// A preprocessor that can turn a non-NULL row into NULL (e.g. `nullIf(str, '')`) puts NULLs in the
-        /// index that the argument's null map cannot see, so materialized and unmaterialized parts would
-        /// disagree. Leave the predicate alone; every part then takes the same row-level path.
-        bool use_direct_read = direct_read_from_text_index
-            && !(preprocessed && anyPreprocessor(selected_conditions, [](const auto & p) { return p.canIntroduceNull(); }));
+        /// A preprocessor that can turn a non-NULL row into NULL (e.g. `nullIf(str, '')`) makes NULLs that
+        /// the argument's own null map does not describe. Only the rewritten haystack does, so restore them
+        /// from there instead.
+        const bool preprocessor_makes_nulls
+            = preprocessed && anyPreprocessor(selected_conditions, [](const auto & p) { return p.canIntroduceNull(); });
 
         /// A preprocessor that strips the nullability (e.g. `ifNull(str, '')`) makes the predicate over a
         /// NULL row a plain 0, so there is no NULL to restore.
@@ -586,7 +588,14 @@ private:
         if (need_transform_function)
             processTextIndexFunction(replacement, selected_conditions, context);
 
-        if (use_direct_read)
+        if (preprocessor_makes_nulls)
+            nullable_argument = replacement.rewritten_haystack;
+
+        /// Without a rewritten haystack there is nothing those NULLs can be restored from, so keep the
+        /// original predicate: every part then takes the same row-level path.
+        const bool can_restore_nulls = !preprocessor_makes_nulls || nullable_argument;
+
+        if (direct_read_from_text_index && can_restore_nulls)
             replaceFunctionsToVirtualColumns(replacement, selected_conditions, virtual_column_to_node, nullable_argument, context);
 
         return replacement;
@@ -788,6 +797,8 @@ private:
         /// Recreate an argument with needles.
         auto needles_column = needles_type->createColumnConst(0, needles_field);
         new_children[1] = &actions_dag.addColumn(std::move(needles_column), needles_type, applyVisitor(FieldVisitorToString(), needles_field));
+
+        replacement.rewritten_haystack = new_children[0];
 
         /// Recreate a function object because we have modified the arguments.
         FunctionOverloadResolverPtr new_function_base = FunctionFactory::instance().get(function_name, context);

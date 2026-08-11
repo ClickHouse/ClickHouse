@@ -269,8 +269,8 @@ Nullable(String) with a null-producing preprocessor
 -- nullIf: row 2 (preprocessed to NULL) and row 4 (source NULL) are both filtered out
 3
 3
--- nullIf: direct read is not used for a preprocessor-rewritten function
-0
+-- nullIf: direct read is kept, with the NULLs taken from the rewritten haystack
+1	1
 -- nullIf: endsWith keeps direct read and still excludes the NULL rows
 1
 2
@@ -288,5 +288,5 @@ String with a null-producing preprocessor and a Nullable needle
 -- row 2 is NULL for the rewritten predicate, so only row 3 is kept
 3
 3
--- direct read is not used for it
-0
+-- direct read is kept for it too
+1
