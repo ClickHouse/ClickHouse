@@ -1,3 +1,33 @@
+==== enable_analyzer=0 ====
+-- non-key filter must not be pushed to the right side
+  Filter column: equals(v, 1) (removed)
+    Type: INNER
+    Strictness: ANY
+        ReadType: Default
+        ReadType: Default
+-- non-key filter may change the output set if pushed
+1
+-- equi-key filter on the right column is still pushed to both sides
+  Type: INNER
+  Strictness: ANY
+      ReadType: Default
+        Prewhere filter column: equals(k, 1) (removed)
+      ReadType: Default
+        Prewhere filter column: equals(t2.k, 1) (removed)
+-- equi-key filter on the left column is still pushed to both sides
+  Type: INNER
+  Strictness: ANY
+      ReadType: Default
+        Prewhere filter column: equals(k, 1) (removed)
+      ReadType: Default
+        Prewhere filter column: equals(t2.k, 1) (removed)
+-- left-side filter is still pushed
+  Type: INNER
+  Strictness: ANY
+      ReadType: Default
+        Prewhere filter column: greater(a, 1) (removed)
+      ReadType: Default
+==== enable_analyzer=1 ====
 -- non-key filter must not be pushed to the right side
   Filter column: equals(__table2.v, 1_UInt8) (removed)
       Type: INNER
