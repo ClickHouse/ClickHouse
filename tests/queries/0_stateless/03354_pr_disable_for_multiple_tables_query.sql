@@ -76,10 +76,35 @@ select count() from (explain select * from (select id from X union all (select i
 set parallel_replicas_for_queries_with_multiple_tables=0;
 select count() from (explain select * from (select id from X union all (select id from X union all select id from X)) as u inner join Y as j on u.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
 
+-- An `IN` subquery is collected into a prepared set before the join kill switch runs, and it is later
+-- planned by an independent `Planner` built from the subquery's own context, so the switch must be
+-- propagated into the prepared-set subqueries as well, or the set would still be built with parallel
+-- replicas inside `CreatingSets`. `EXPLAIN` does not print the plans of the set subqueries, so the
+-- check is on the secondary queries the parallel replicas protocol spawns: there must be none when
+-- the setting is disabled, and, as a control that the probe is not vacuous, some when it is enabled.
+-- The `log_comment` is propagated to the secondary queries, and they are counted by `QueryStart`
+-- because a secondary query may legitimately end with `ExceptionWhileProcessing` when the initiator
+-- has already got the whole result and resets the connections.
+set parallel_replicas_for_queries_with_multiple_tables=1;
+select count() from (select * from X as s inner join Y as j on s.id = j.id where s.id in (select id from Y)) settings log_comment='03354_in_subquery_kill_switch_on' format Null;
+set parallel_replicas_for_queries_with_multiple_tables=0;
+select count() from (select * from X as s inner join Y as j on s.id = j.id where s.id in (select id from Y)) settings log_comment='03354_in_subquery_kill_switch_off' format Null;
+system flush logs query_log;
+select count() > 0 from system.query_log
+    where type = 'QueryStart' and not is_initial_query and event_date >= yesterday()
+        and log_comment = '03354_in_subquery_kill_switch_on';
+select count() from system.query_log
+    where type = 'QueryStart' and not is_initial_query and event_date >= yesterday()
+        and log_comment = '03354_in_subquery_kill_switch_off';
+
 -- The legacy (pre-analyzer) interpreter must respect the setting as well: with
 -- parallel_replicas_only_with_analyzer = 0 task-based parallel replicas are allowed on that path,
 -- and the kill switch is applied in InterpreterSelectQuery before the storage read.
 set enable_analyzer = 0, parallel_replicas_only_with_analyzer = 0;
+-- On the legacy path a JOIN can use parallel replicas only after the predicate optimizer has rewritten
+-- the joined table into a subquery (`GlobalSubqueriesMatcher`: JOIN with parallel replicas is only
+-- supported with subqueries), so pin `enable_optimize_predicate_expression` against the randomizer.
+set enable_optimize_predicate_expression = 1;
 set parallel_replicas_for_queries_with_multiple_tables=1;
 select count() > 0 from (explain select X.*, Y.* from X inner join Y on X.id = Y.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
 set parallel_replicas_for_queries_with_multiple_tables=0;

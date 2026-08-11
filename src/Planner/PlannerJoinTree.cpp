@@ -90,6 +90,7 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/TableJoin.h>
@@ -2764,6 +2765,14 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     {
         LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because parallel_replicas_for_queries_with_multiple_tables is disabled and the query joins multiple tables");
         planner_context->getMutableQueryContext()->setSetting("enable_parallel_replicas", Field{0});
+
+        /// The `IN` subqueries were collected into the prepared sets before this point (see `collectSets`),
+        /// and each of them is later planned by an independent `Planner` built from the subquery's own
+        /// context (see `addBuildSubqueriesForSetsStepIfNeeded`), so updating the query context above is
+        /// not enough: the switch must reach the contexts of the set subqueries as well.
+        for (const auto & set_subquery : planner_context->getPreparedSets().getSubqueries())
+            if (const auto & set_query_tree = set_subquery->getQueryTree())
+                disableParallelReplicasForSubqueryTableExpression(set_query_tree);
     }
 
     auto should_disable_parallel_replicas = [&]() -> bool
