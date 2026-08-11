@@ -288,3 +288,92 @@ def test_reason_only_edit_of_a_block_that_keeps_its_header_is_still_ignored():
         "         });\n"
     )
     assert parse_settings_history_changes(patch, HEADER_EDIT_FILE_LINES) == []
+
+
+RENAME_FILE_LINES = [
+    "        addSettingsChanges(settings_changes_history, \"26.8\",",
+    "        {",
+    "            {\"new_name\", false, false, \"New setting.\"},",
+    "        });",
+    "        addSettingsChanges(settings_changes_history, \"26.7\",",
+    "        {",
+    "            {\"renamed_in_an_older_block\", false, false, \"New setting.\"},",
+    "        });",
+]
+
+
+def test_pure_rename_in_place_reports_only_the_new_name():
+    # Renaming a setting means renaming its record. The recorded values and the block stay the
+    # same, so nothing is misattributed to another release - and the OLD name must not be
+    # required under the current version block, because a record naming it cannot exist:
+    # 03999_stateless_settings_history rejects a documented name that is no longer a setting.
+    # The NEW name is reported, so the record still has to sit under the current version block.
+    patch = (
+        "@@ -1,4 +1,4 @@\n"
+        " addSettingsChanges(settings_changes_history, \"26.8\",\n"
+        " {\n"
+        '-            {"old_name", false, false, "New setting."},\n'
+        '+            {"new_name", false, false, "New setting."},\n'
+        " });\n"
+    )
+    assert parse_settings_history_changes(patch, RENAME_FILE_LINES) == [
+        {"namespace": "Session", "name": "new_name"}
+    ]
+
+
+def test_rename_that_also_changes_the_recorded_values_reports_both_names():
+    # Not a pure rename: the values differ, so this is a value change wearing a new name. Both
+    # sides are reported and the current-block rule applies to each.
+    patch = (
+        "@@ -1,4 +1,4 @@\n"
+        " addSettingsChanges(settings_changes_history, \"26.8\",\n"
+        " {\n"
+        '-            {"old_name", false, true, "New setting."},\n'
+        '+            {"new_name", false, false, "New setting."},\n'
+        " });\n"
+    )
+    assert parse_settings_history_changes(patch, RENAME_FILE_LINES) == [
+        {"namespace": "Session", "name": "new_name"},
+        {"namespace": "Session", "name": "old_name"},
+    ]
+
+
+def test_unrelated_records_sharing_a_value_shape_are_both_reported():
+    # `{"s", false, false, "New setting."}` is the most common record there is, so matching on
+    # the values alone would read any deleted record plus any added record in the same block as
+    # a rename of one another. The reason text must match too - here it does not, so the removal
+    # is still reported and cannot be smuggled through behind an unrelated addition.
+    patch = (
+        "@@ -1,4 +1,4 @@\n"
+        " addSettingsChanges(settings_changes_history, \"26.8\",\n"
+        " {\n"
+        '-            {"old_name", false, false, "Some other reason"},\n'
+        '+            {"new_name", false, false, "New setting."},\n'
+        " });\n"
+    )
+    assert parse_settings_history_changes(patch, RENAME_FILE_LINES) == [
+        {"namespace": "Session", "name": "new_name"},
+        {"namespace": "Session", "name": "old_name"},
+    ]
+
+
+def test_rename_across_version_blocks_reports_both_names():
+    # The record is renamed AND lands in a different block than the one it was removed from, so
+    # the release it is attributed to changed. That is the misattribution the check exists for,
+    # so both names are reported.
+    patch = (
+        "@@ -1,4 +1,3 @@\n"
+        " addSettingsChanges(settings_changes_history, \"26.8\",\n"
+        " {\n"
+        '-            {"old_name", false, false, "New setting."},\n'
+        " });\n"
+        "@@ -5,3 +4,4 @@\n"
+        " addSettingsChanges(settings_changes_history, \"26.7\",\n"
+        " {\n"
+        '+            {"renamed_in_an_older_block", false, false, "New setting."},\n'
+        " });\n"
+    )
+    assert parse_settings_history_changes(patch, RENAME_FILE_LINES) == [
+        {"namespace": "Session", "name": "renamed_in_an_older_block"},
+        {"namespace": "Session", "name": "old_name"},
+    ]
