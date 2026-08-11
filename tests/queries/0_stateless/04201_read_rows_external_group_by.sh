@@ -17,16 +17,28 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 QUERY="SELECT count() FROM (SELECT number FROM numbers(100000) GROUP BY number) SETTINGS max_bytes_before_external_group_by = 1, max_bytes_ratio_before_external_group_by = 0"
 
-# A run that never spilled would satisfy the read_rows assertion trivially, so require the spill first.
-SPILLED=$(${CLICKHOUSE_CLIENT} --print-profile-events -q "${QUERY}" 2>&1 | grep -c "ExternalAggregationMerge")
-if [[ "$SPILLED" -lt 1 ]]; then
+QID="04201_read_rows_${CLICKHOUSE_DATABASE}"
+
+${CLICKHOUSE_CLIENT} --query_id "$QID" -q "${QUERY}" > /dev/null
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+
+# Both facts come from that one execution: the query produces exactly group_by_two_level_threshold
+# keys, so whether it spills is decided per run, and a run that did not spill satisfies the
+# read_rows assertion trivially. LIMIT 1 rather than an aggregate, so that no row at all leaves both
+# values empty and fails loudly.
+read -r SPILLED READ_ROWS <<<"$(${CLICKHOUSE_CLIENT} -q "
+    SELECT ProfileEvents['ExternalAggregationMerge'], read_rows
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase()
+        AND query_id = '${QID}' AND type = 'QueryFinish'
+    ORDER BY event_time_microseconds DESC LIMIT 1")"
+
+if [[ "${SPILLED:-0}" -lt 1 ]]; then
     echo "spill_did_not_happen"
 else
     echo "spill_happened"
 fi
-
-SUMMARY=$(${CLICKHOUSE_CURL} -sS -i "${CLICKHOUSE_URL}" --data-binary "${QUERY}" 2>&1 | grep -i '^X-ClickHouse-Summary:' | head -1)
-READ_ROWS=$(echo "$SUMMARY" | grep -oP '"read_rows":"\K[0-9]+')
 
 if [[ "$READ_ROWS" == "100000" ]]; then
     echo "read_rows_correct"

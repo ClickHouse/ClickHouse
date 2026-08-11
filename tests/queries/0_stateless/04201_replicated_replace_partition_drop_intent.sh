@@ -57,11 +57,14 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT ${FAILPOINT} PAUSE"
 # The intent is installed and the REPLACE is parked, so this mutation's entry meets the guard.
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE dst UPDATE y = y + 1 WHERE p = 1"
 
+# The guard runs before any entry-type branch in shouldExecuteLogEntry, so a fetch or merge entry
+# producing a part in the replaced range writes the same reason. The claim here is about the
+# mutation, so the entry type is named.
 postponed=no
 for _ in {1..120}; do
     if ${CLICKHOUSE_CLIENT} -q "
         SELECT postpone_reason FROM system.replication_queue
-        WHERE database = currentDatabase() AND table = 'dst' FORMAT TSVRaw" 2>/dev/null \
+        WHERE database = currentDatabase() AND table = 'dst' AND type = 'MUTATE_PART' FORMAT TSVRaw" 2>/dev/null \
         | grep -qF "because there is a drop or replace intent with part name"; then
         postponed=yes
         break
@@ -76,12 +79,16 @@ wait $REPLACE_PID 2>/dev/null ||:
 cat "$REPLACE_OUT"
 rm -f "$REPLACE_OUT"
 
+# The row assertion below is satisfied by the REPLACE alone, so a mutation that never settles must
+# say so rather than fall through to it. Silent on success, so the reference is unchanged.
+settled=no
 for _ in {1..120}; do
     [ "$(${CLICKHOUSE_CLIENT} -q "
         SELECT count() FROM system.mutations
-        WHERE database = currentDatabase() AND table = 'dst' AND is_done = 0")" = "0" ] && break
+        WHERE database = currentDatabase() AND table = 'dst' AND is_done = 0")" = "0" ] && { settled=yes; break; }
     sleep 0.5
 done
+[ "$settled" = "yes" ] || echo "mutation did not settle"
 
 # Partition 1 must be exactly src's 10 rows: no dst row survives, and none is resurrected by the
 # postponed mutation.
