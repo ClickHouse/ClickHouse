@@ -233,10 +233,12 @@ FETCHES_SERVER_PATH_RE = re.compile(
 FETCHES_SERVER_ROOT_RE = re.compile(
     r"(?i)\bfrom\s+system\.server_settings\b[^\"'`|;]{0,100}?\bname\s*=\s*'path'"
 )
-# Shell commands that create, modify, or delete files, at the start of a line or after a
-# pipe / && / ; separator.
+# Shell commands that create, modify, or delete files, at the start of a line or after
+# anything that can precede a command: a pipe / & / ; / subshell / group / backtick, or a
+# shell keyword (`if true; then rm ...; fi` compressed onto one line must not slip through).
 FILE_MUTATION_CMD_RE = re.compile(
-    r"(?:^|\||&&|;)\s*(?:sudo\s+)?(?:rm|cp|mv|dd|truncate|ln|chmod|touch|mkdir|tar|install|shred)\s"
+    r"(?:^|[|&;({`]|\b(?:if|then|elif|else|do|while|until)\b)\s*"
+    r"(?:sudo\s+)?(?:rm|cp|mv|dd|truncate|ln|chmod|touch|mkdir|tar|install|shred)\s"
 )
 SED_IN_PLACE_RE = re.compile(r"\bsed\s+(?:-\w+\s+)*-i\b")
 # Redirection into a path built from a shell variable, except well-known test scratch areas.
