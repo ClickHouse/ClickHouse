@@ -167,5 +167,19 @@
 4	0	1	3	[0,1]
 7	0	1	6	[0,1]
 9	2	1	8	[2,3]
+-- constant index over a replicated array that survives a LIMIT (const-index compute-on-nested branch)
+1	10
+1	10
+1	10
+1	10
+1	10
+1	10
+-- array and index lazily indexed by a JOIN under LIMIT (shared-indexes compute-on-nested branch)
+0	1
+0	1
+2	1
+0	1
+0	1
+2	1
 -- large array is not materialized per joined row
 1
