@@ -28,3 +28,16 @@ id = 1022, name = _float8
 id = 1182, name = _date
 id = 1231, name = _numeric
 id = 2951, name = _uuid
+id = 3904, name = int4range
+id = 3906, name = numrange
+id = 3910, name = tsrange
+id = 3912, name = tstzrange
+id = 3914, name = daterange
+id = 3926, name = int8range
+id = 3905, name = int4multirange
+id = 3907, name = nummultirange
+id = 3911, name = tsmultirange
+id = 3913, name = tstzmultirange
+id = 3915, name = datemultirange
+id = 3927, name = int8multirange
+id = 40000, name = mood

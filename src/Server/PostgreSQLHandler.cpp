@@ -2123,13 +2123,15 @@ void PostgreSQLHandler::initializeSystemTables(ContextMutablePtr query_context)
     };
 
     /// Every type OID this handler can hand out must resolve here: the OIDs emitted from `pg_attribute`
-    /// below (including the built-in catalog rows, which use `oid` columns of type 26) and the range
-    /// subtypes of `pg_range`, because the standard introspection path of a PostgreSQL client is the join
-    /// `pg_attribute.atttypid = pg_type.oid`, and a missing row silently drops the column from the result.
+    /// below (including the built-in catalog rows, which use `oid` columns of type 26), the range and
+    /// multirange type OIDs of `pg_range` (`rngtypid` / `rngmultitypid`), and the enum type OID of
+    /// `pg_enum` (`enumtypid`), because the standard introspection path of a PostgreSQL client is a join
+    /// against `pg_type.oid`, and a missing row silently drops the column or type from the result.
     /// An array type carries the OID of its element type in `typelem` (`typcategory` = 'A'), as in
-    /// PostgreSQL; all array types share one `typreceive`, mirroring PostgreSQL's single `array_recv`.
-    /// The `typreceive` values are synthetic - clients only test them against zero to probe for binary
-    /// I/O support - and the names and categories match `pg_catalog` proper.
+    /// PostgreSQL; all array types share one `typreceive`, mirroring PostgreSQL's single `array_recv`,
+    /// and likewise the range, multirange and enum types share one `range_recv` / `multirange_recv` /
+    /// `enum_recv` each. The `typreceive` values are synthetic - clients only test them against zero to
+    /// probe for binary I/O support - and the names and categories match `pg_catalog` proper.
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_type AS
 SELECT * FROM VALUES(
     'oid UInt32, typnamespace UInt32, typname String, typrelid UInt32, typnotnull UInt8, typtype String, typreceive UInt32, typelem UInt32, typbasetype UInt32, typcategory String',
@@ -2159,7 +2161,20 @@ SELECT * FROM VALUES(
     (1022, 11, '_float8',     0, 0, 'b', 260, 701,  0, 'A'),
     (1182, 11, '_date',       0, 0, 'b', 260, 1082, 0, 'A'),
     (1231, 11, '_numeric',    0, 0, 'b', 260, 1700, 0, 'A'),
-    (2951, 11, '_uuid',       0, 0, 'b', 260, 2950, 0, 'A')
+    (2951, 11, '_uuid',       0, 0, 'b', 260, 2950, 0, 'A'),
+    (3904, 11, 'int4range',      0, 0, 'r', 261, 0, 0, 'R'),
+    (3906, 11, 'numrange',       0, 0, 'r', 261, 0, 0, 'R'),
+    (3910, 11, 'tsrange',        0, 0, 'r', 261, 0, 0, 'R'),
+    (3912, 11, 'tstzrange',      0, 0, 'r', 261, 0, 0, 'R'),
+    (3914, 11, 'daterange',      0, 0, 'r', 261, 0, 0, 'R'),
+    (3926, 11, 'int8range',      0, 0, 'r', 261, 0, 0, 'R'),
+    (3905, 11, 'int4multirange', 0, 0, 'm', 262, 0, 0, 'R'),
+    (3907, 11, 'nummultirange',  0, 0, 'm', 262, 0, 0, 'R'),
+    (3911, 11, 'tsmultirange',   0, 0, 'm', 262, 0, 0, 'R'),
+    (3913, 11, 'tstzmultirange', 0, 0, 'm', 262, 0, 0, 'R'),
+    (3915, 11, 'datemultirange', 0, 0, 'm', 262, 0, 0, 'R'),
+    (3927, 11, 'int8multirange', 0, 0, 'm', 262, 0, 0, 'R'),
+    (40000, 11, 'mood',          0, 0, 'e', 263, 0, 0, 'E')
 ))");
 
     /// `pg_namespace`, `pg_class` and `pg_attribute` combine a fixed set of built-in catalog rows (used by
@@ -2348,7 +2363,7 @@ SELECT * FROM VALUES(
     (3910, 1114, 3911),
     (3912, 1184, 3913),
     (3914, 1082, 3915),
-    (3926, 21,   3927)
+    (3926, 20,   3927)
 ))");
 
     /// The built-in rows describe each emulated catalog view with exactly the columns, order and types the
