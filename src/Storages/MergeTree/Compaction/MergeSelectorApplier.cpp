@@ -210,11 +210,13 @@ MergeSelectorChoices tryChooseRegularMerge(const ChooseContext & ctx)
 MergeSelectorApplier::MergeSelectorApplier(
     std::vector<MergeConstraint> && merge_constraints_,
     bool merge_with_ttl_allowed_,
+    bool ttl_clear_index_merge_allowed_,
     bool aggressive_,
     IMergeSelector::RangeFilter range_filter_,
     StorageID storage_id_)
     : merge_constraints(std::move(merge_constraints_))
     , merge_with_ttl_allowed(merge_with_ttl_allowed_)
+    , ttl_clear_index_merge_allowed(ttl_clear_index_merge_allowed_)
     , aggressive(aggressive_)
     , range_filter(std::move(range_filter_))
     , storage_id(std::move(storage_id_))
@@ -252,7 +254,7 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
         .next_recompress_times = next_recompress_times,
         .current_time = current_time,
         .aggressive = aggressive,
-        .can_generate_ttl_clear_index_merges = can_generate_ttl_clear_index_merges,
+        .can_generate_ttl_clear_index_merges = can_generate_ttl_clear_index_merges && ttl_clear_index_merge_allowed,
     };
 
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && can_use_ttl_merges)

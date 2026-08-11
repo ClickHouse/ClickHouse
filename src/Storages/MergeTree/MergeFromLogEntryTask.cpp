@@ -33,6 +33,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool always_fetch_merged_part;
     extern const MergeTreeSettingsBool detach_not_byte_identical_parts;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
+    extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
     extern const MergeTreeSettingsUInt64 prefer_fetch_merged_part_size_threshold;
     extern const MergeTreeSettingsSeconds prefer_fetch_merged_part_time_threshold;
     extern const MergeTreeSettingsSeconds try_fetch_recompressed_part_timeout;
@@ -356,21 +357,34 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         }
     }
 
-    /// Account TTL merge
-    if (isTTLMergeType(future_merged_part->merge_type))
-        storage.getContext()->getMergeList().bookMergeWithTTL();
-
     auto table_id = storage.getStorageID();
 
     task_context = Context::createCopy(storage.getContext()->getBackgroundContext());
     task_context->makeQueryContextForMerge(*storage.getSettings());
     task_context->setCurrentQueryId(getQueryId());
 
-    /// Add merge to list
-    merge_mutate_entry = storage.getContext()->getMergeList().insert(
-        storage.getStorageID(),
-        future_merged_part,
-        task_context);
+    /// All fetch decisions are complete. Reserve only for a merge this replica will execute.
+    auto & merge_list = storage.getContext()->getMergeList();
+    if (isTTLMergeType(future_merged_part->merge_type))
+    {
+        auto reservation = merge_list.tryReserveMergeWithTTL(
+            future_merged_part->merge_type,
+            (*storage_settings_ptr)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool]);
+        if (!reservation)
+        {
+            return PrepareResult{
+                .prepared_successfully = false,
+                .need_to_check_missing_part_in_fetch = false,
+                .part_log_writer = part_log_writer,
+                .postpone_reason = "No global capacity for this TTL merge type",
+            };
+        }
+
+        merge_mutate_entry = merge_list.insertWithTTLReservation(
+            std::move(*reservation), storage.getStorageID(), future_merged_part, task_context);
+    }
+    else
+        merge_mutate_entry = merge_list.insert(storage.getStorageID(), future_merged_part, task_context);
 
     storage.writePartLog(
         PartLogElement::MERGE_PARTS_START, {}, 0,

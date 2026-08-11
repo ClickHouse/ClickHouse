@@ -1583,7 +1583,10 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
         UInt64 max_source_parts_bytes_for_merge = CompactionStatistics::getMaxSourcePartsBytesForMerge(*this);
         UInt64 max_result_part_rows = CompactionStatistics::getMaxResultPartRowsCount(*this);
-        bool merge_with_ttl_allowed = getTotalMergesWithTTLInMergeList() < (*getSettings())[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool];
+        const size_t ttl_merge_count = getTotalMergesWithTTLInMergeList();
+        const size_t maximum_ttl_merge_count = (*getSettings())[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool];
+        const bool merge_with_ttl_allowed = canReserveMergeWithTTL(ttl_merge_count, maximum_ttl_merge_count, MergeType::TTLDelete);
+        const bool ttl_clear_index_merge_allowed = canReserveMergeWithTTL(ttl_merge_count, maximum_ttl_merge_count, MergeType::TTLClearIndex);
 
         /// TTL requirements is much more strict than for regular merge, so
         /// if regular not possible, than merge with ttl is also not possible.
@@ -1601,6 +1604,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             MergeSelectorApplier(
                 /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows}},
                 /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
+                /*ttl_clear_index_merge_allowed=*/ttl_clear_index_merge_allowed,
                 /*aggressive=*/aggressive,
                 /*range_filter_=*/nullptr,
                 /*storage_id_=*/getStorageID()
@@ -1672,24 +1676,30 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
     const auto construct_merge_select_entry = [&](FutureMergedMutatedPartPtr future_part) -> std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure>
     {
-        /// Account TTL merge here to avoid exceeding the max_number_of_merges_with_ttl_in_pool limit
+        std::optional<TTLMergeReservation> ttl_merge_reservation;
         if (isTTLMergeType(future_part->merge_type))
-            getContext()->getMergeList().bookMergeWithTTL();
-
-        try
         {
-            uint64_t needed_disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts, true);
-            auto tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, needed_disk_space, *this, metadata_snapshot, false);
-
-            return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
+            ttl_merge_reservation = getContext()->getMergeList().tryReserveMergeWithTTL(
+                future_part->merge_type, (*getSettings())[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool]);
+            if (!ttl_merge_reservation)
+            {
+                return std::unexpected(SelectMergeFailure{
+                    .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                    .explanation = PreformattedMessage::create("No global capacity for this TTL merge type"),
+                });
+            }
         }
-        catch (...)
-        {
-            if (isTTLMergeType(future_part->merge_type))
-                getContext()->getMergeList().cancelMergeWithTTL();
 
-            throw;
-        }
+        uint64_t needed_disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts, true);
+        auto tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, needed_disk_space, *this, metadata_snapshot, false);
+
+        return std::make_shared<MergeMutateSelectedEntry>(
+            future_part,
+            std::move(tagger),
+            std::make_shared<MutationCommands>(),
+            NO_TRANSACTION_PTR,
+            Strings{},
+            std::move(ttl_merge_reservation));
     };
 
     if (partition_id.empty())
@@ -2097,10 +2107,6 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         }
 
         bool scheduled = assignee.scheduleMergeMutateTask(task);
-        /// The problem that we already booked a slot for TTL merge, but a merge list entry will be created only in a prepare method
-        /// in MergePlainMergeTreeTask. So, this slot will never be freed.
-        if (!scheduled && isTTLMergeType(merge_entry->future_part->merge_type))
-            getContext()->getMergeList().cancelMergeWithTTL();
 
         fiu_do_on(FailPoints::storage_merge_tree_background_schedule_merge_fail,
         {

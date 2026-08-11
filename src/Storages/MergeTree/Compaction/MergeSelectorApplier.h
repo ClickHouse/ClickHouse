@@ -29,6 +29,7 @@ class MergeSelectorApplier
 public:
     const std::vector<MergeConstraint> merge_constraints;
     const bool merge_with_ttl_allowed = false;
+    const bool ttl_clear_index_merge_allowed = false;
     const bool aggressive = false;
     const IMergeSelector::RangeFilter range_filter = nullptr;
     const StorageID storage_id;
@@ -36,6 +37,7 @@ public:
     MergeSelectorApplier(
         std::vector<MergeConstraint> && merge_constraints_,
         bool merge_with_ttl_allowed_,
+        bool ttl_clear_index_merge_allowed_,
         bool aggressive_,
         IMergeSelector::RangeFilter range_filter_,
         StorageID storage_id_);

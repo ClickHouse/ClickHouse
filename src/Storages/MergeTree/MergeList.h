@@ -12,6 +12,8 @@
 #include <boost/noncopyable.hpp>
 #include <memory>
 #include <mutex>
+#include <optional>
+#include <utility>
 #include <atomic>
 
 
@@ -72,6 +74,24 @@ using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
 struct Settings;
 
+class MergeList;
+
+class TTLMergeReservation
+{
+public:
+    TTLMergeReservation(const TTLMergeReservation &) = delete;
+    TTLMergeReservation & operator=(const TTLMergeReservation &) = delete;
+    TTLMergeReservation(TTLMergeReservation && other) noexcept;
+    TTLMergeReservation & operator=(TTLMergeReservation && other) noexcept;
+    ~TTLMergeReservation();
+
+private:
+    explicit TTLMergeReservation(MergeList & merge_list_) : merge_list(&merge_list_) {}
+    void adopt() { merge_list = nullptr; }
+
+    MergeList * merge_list;
+    friend class MergeList;
+};
 
 struct MergeListElement : boost::noncopyable
 {
@@ -151,6 +171,13 @@ struct MergeListElement : boost::noncopyable
     ~MergeListElement();
 };
 
+/// `TTLClearIndex` must leave one configured TTL allowance for other TTL work.
+constexpr bool canReserveMergeWithTTL(size_t current_count, size_t maximum_count, MergeType merge_type)
+{
+    const size_t reserved_count = merge_type == MergeType::TTLClearIndex ? 1 : 0;
+    return maximum_count > reserved_count && current_count < maximum_count - reserved_count;
+}
+
 /** Maintains a list of currently running merges.
   * For implementation of system.merges table.
   */
@@ -202,17 +229,36 @@ public:
         }
     }
 
-    /// Merge consists of two parts: assignment and execution. We add merge to
-    /// merge list on execution, but checking merge list during merge
-    /// assignment. This lead to the logical race condition (we can assign more
-    /// merges with TTL than allowed). So we "book" merge with ttl during
-    /// assignment, and remove from list after merge execution.
-    ///
-    /// NOTE: Not important for replicated merge tree, we check count of merges twice:
-    /// in assignment and in queue before execution.
-    void bookMergeWithTTL()
+    /// The counter is process-global, like the existing TTL merge accounting. This assumes
+    /// the usual consistent `max_number_of_merges_with_ttl_in_pool` across tables.
+    std::optional<TTLMergeReservation> tryReserveMergeWithTTL(MergeType merge_type, size_t maximum_count)
     {
-        ++merges_with_ttl_counter;
+        size_t current_count = merges_with_ttl_counter.load(std::memory_order_relaxed);
+        while (canReserveMergeWithTTL(current_count, maximum_count, merge_type))
+        {
+            if (merges_with_ttl_counter.compare_exchange_weak(
+                    current_count, current_count + 1, std::memory_order_relaxed))
+                return TTLMergeReservation(*this);
+        }
+        return std::nullopt;
+    }
+
+    template <typename... Args>
+    typename Parent::EntryPtr insertWithTTLReservation(TTLMergeReservation && reservation, Args &&... args)
+    {
+        std::lock_guard lock{mutex};
+        auto it = entries.emplace(entries.end(), std::forward<Args>(args)...);
+        try
+        {
+            auto entry = std::make_unique<typename Parent::Entry>(*this, it, metric);
+            reservation.adopt();
+            return entry;
+        }
+        catch (...)
+        {
+            entries.erase(it);
+            throw;
+        }
     }
 
     void cancelMergeWithTTL()
@@ -225,5 +271,27 @@ public:
         return merges_with_ttl_counter;
     }
 };
+
+inline TTLMergeReservation::TTLMergeReservation(TTLMergeReservation && other) noexcept
+    : merge_list(std::exchange(other.merge_list, nullptr))
+{
+}
+
+inline TTLMergeReservation & TTLMergeReservation::operator=(TTLMergeReservation && other) noexcept
+{
+    if (this != &other)
+    {
+        if (merge_list)
+            merge_list->cancelMergeWithTTL();
+        merge_list = std::exchange(other.merge_list, nullptr);
+    }
+    return *this;
+}
+
+inline TTLMergeReservation::~TTLMergeReservation()
+{
+    if (merge_list)
+        merge_list->cancelMergeWithTTL();
+}
 
 }

@@ -95,10 +95,17 @@ void MergePlainMergeTreeTask::prepare()
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
     task_context = createTaskContext();
-    merge_list_entry = storage.getContext()->getMergeList().insert(
-        storage.getStorageID(),
-        future_part,
-        task_context);
+    auto & merge_list = storage.getContext()->getMergeList();
+    if (merge_mutate_entry->ttl_merge_reservation)
+    {
+        merge_list_entry = merge_list.insertWithTTLReservation(
+            std::move(*merge_mutate_entry->ttl_merge_reservation),
+            storage.getStorageID(),
+            future_part,
+            task_context);
+    }
+    else
+        merge_list_entry = merge_list.insert(storage.getStorageID(), future_part, task_context);
 
     storage.writePartLog(
         PartLogElement::MERGE_PARTS_START, {}, 0,

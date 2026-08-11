@@ -420,7 +420,9 @@ public:
         ReplicatedMergeTreeQueue::LogEntryPtr log_entry;
         CurrentlyExecutingPtr currently_executing_holder;
 
-        SelectedEntry(const ReplicatedMergeTreeQueue::LogEntryPtr & log_entry_, CurrentlyExecutingPtr && currently_executing_holder_)
+        SelectedEntry(
+            const ReplicatedMergeTreeQueue::LogEntryPtr & log_entry_,
+            CurrentlyExecutingPtr && currently_executing_holder_)
             : log_entry(log_entry_)
             , currently_executing_holder(std::move(currently_executing_holder_))
         {}

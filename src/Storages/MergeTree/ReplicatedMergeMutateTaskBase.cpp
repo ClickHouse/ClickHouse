@@ -37,7 +37,7 @@ StorageID ReplicatedMergeMutateTaskBase::getStorageID() const
 void ReplicatedMergeMutateTaskBase::onCompleted()
 {
     bool successfully_executed = state == State::SUCCESS;
-    task_result_callback(successfully_executed);
+    task_result_callback(successfully_executed || postpone_on_completion);
 }
 
 
@@ -197,6 +197,17 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
             auto prepare_result = prepare();
 
             part_log_writer = prepare_result.part_log_writer;
+
+            if (!prepare_result.postpone_reason.empty())
+            {
+                LOG_DEBUG(log, "Postponing log entry: {}", prepare_result.postpone_reason);
+                std::lock_guard lock(storage.queue.state_mutex);
+                ++entry.num_postponed;
+                entry.last_postpone_time = time(nullptr);
+                entry.postpone_reason = std::move(prepare_result.postpone_reason);
+                postpone_on_completion = true;
+                return false;
+            }
 
             /// Avoid rescheduling, execute fetch here, in the same thread.
             if (!prepare_result.prepared_successfully)
