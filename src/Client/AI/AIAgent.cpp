@@ -135,7 +135,7 @@ void AIAgent::chat(const String & user_text)
         {
             /// The transports report failures as `step.error`, but if one ever throws, the
             /// thinking animation thread must not be left repainting the terminal.
-            display.startThinking();
+            display.startThinking(step_index + 1);
             SCOPE_EXIT(display.stopThinking());
             step = transport->step(system_prompt, messages, tools);
         }

@@ -29,7 +29,11 @@ public:
         stopThinking();
     }
 
-    void startThinking()
+    /// `step_number` (1-based, 0 = unknown) is the agent step this call belongs to. The indicator
+    /// shows it together with the elapsed seconds so the animation reflects the turn's progress
+    /// (a new step, and time ticking) rather than an identical dot loop - the model call itself is
+    /// blocking and non-streaming, so this is the only live signal available during it.
+    void startThinking(size_t step_number = 0)
     {
         stopThinking();
 
@@ -39,12 +43,20 @@ public:
 
         thinking_active = true;
         thinking_thread = std::thread(
-            [this]
+            [this, step_number]
             {
+                const auto start = std::chrono::steady_clock::now();
                 size_t dot_count = 0;
                 while (thinking_active)
                 {
-                    output_stream << "\r\033[K\033[36m✧ thinking" << std::string(dot_count, '.') << "\033[0m" << std::flush;
+                    const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                        std::chrono::steady_clock::now() - start).count();
+                    output_stream << "\r\033[K\033[36m✧ thinking";
+                    if (step_number > 0)
+                        output_stream << " · step " << step_number;
+                    /// The trailing dots animate; keeping them last means the step/elapsed text
+                    /// before them does not shift as their count changes.
+                    output_stream << " · " << elapsed << "s" << std::string(dot_count, '.') << "\033[0m" << std::flush;
                     std::this_thread::sleep_for(std::chrono::milliseconds(400));
                     dot_count = (dot_count + 1) % 4;
                 }
