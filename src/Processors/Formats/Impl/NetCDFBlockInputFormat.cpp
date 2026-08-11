@@ -259,7 +259,10 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
             /// A coordinate variable already provides the values along its dimension. It is a
             /// variable that has the name of the dimension and is one-dimensional over it - a
             /// variable that merely shares the name says nothing about the axis, and then the index
-            /// along the dimension is only available as a column of its own.
+            /// along the dimension is only available as a column of its own. The shape is judged
+            /// after the string-length dimension of a `char` variable has been stripped: such a
+            /// variable, as in `char station(station, nchar)`, is read as one string per index of
+            /// the dimension, which are exactly the values along the axis.
             auto it = variable_ids.find(dimension.name);
             bool has_coordinate_variable = it != variable_ids.end()
                 && effective_dimensions[it->second] == std::vector<size_t>{dimension_id};
