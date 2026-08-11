@@ -1,6 +1,8 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-darwin
 -- no-parallel -- enables failpoint
 -- no-random-settings -- depend on type of part, should always fail
+-- no-darwin -- there is no preadv2 on Darwin, so local reads with local_filesystem_read_method = 'pread_threadpool'
+--   are performed with pread in the calling thread and never reach the prefetched reader (and its failpoint)
 drop table if exists prefetched_table;
 
 CREATE TABLE prefetched_table(key UInt64, s String) Engine = MergeTree() order by key;
