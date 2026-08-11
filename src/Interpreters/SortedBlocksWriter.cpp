@@ -1,4 +1,5 @@
 #include <Core/SortCursor.h>
+#include <Interpreters/QueryJoinsCounters.h>
 #include <Interpreters/SortedBlocksWriter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -26,6 +27,7 @@ TemporaryBlockStreamHolder flushBlockToFile(const TemporaryDataOnDiskScopePtr & 
 {
     TemporaryBlockStreamHolder stream_holder(std::make_shared<const Block>(block.cloneEmpty()), tmp_data);
     stream_holder->write(block);
+    QueryJoinsCounters::markJoinAsSpilled();
     stream_holder.finishWriting();
     return stream_holder;
 }
@@ -40,7 +42,10 @@ TemporaryBlockStreamHolder flushToFile(const TemporaryDataOnDiskScopePtr & tmp_d
 
     Block block;
     while (executor.pull(block))
+    {
         stream_holder->write(block);
+        QueryJoinsCounters::markJoinAsSpilled();
+    }
 
     stream_holder.finishWriting();
     return stream_holder;

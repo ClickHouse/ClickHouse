@@ -1,6 +1,7 @@
--- `used_number_of_joins` counts the physical joins of the executed pipeline, while `used_join_kinds`
--- and `used_join_strictness` report their kind and strictness, so all of them are checked with both
--- analyzers: they build the join steps in different places.
+-- `used_number_of_joins` counts the physical joins of the executed pipeline, `used_join_kinds` and
+-- `used_join_strictness` describe them, and `join_spilled_to_disk` tells whether any of them wrote
+-- temporary data. The first three are checked with both analyzers: they build the join steps in
+-- different places.
 
 SET log_queries = 1;
 
@@ -33,12 +34,12 @@ SELECT count() FROM t1 FORMAT Null SETTINGS log_comment = '04654_join_count_none
 SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04654_join_count_inner_new', enable_analyzer = 1;
 SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04654_join_count_inner_old', enable_analyzer = 0;
 
--- Three tables, so two physical joins. Both are of the same kind and strictness, and the arrays hold
--- distinct values, so they report a single element while the count is 2.
+-- Three tables, so two physical joins. Both joins have the same kind and strictness, and the two
+-- arrays hold distinct pairs, so they report a single element while the count is 2.
 SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t2.a = t3.a FORMAT Null SETTINGS log_comment = '04654_join_count_two_new', enable_analyzer = 1;
 SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t2.a = t3.a FORMAT Null SETTINGS log_comment = '04654_join_count_two_old', enable_analyzer = 0;
 
--- CROSS JOIN. Strictness is meaningless for it, so it is reported as `UNSPECIFIED`.
+-- CROSS JOIN, for which the strictness is meaningless.
 SELECT count() FROM t1, t2 FORMAT Null SETTINGS log_comment = '04654_join_count_cross_new', enable_analyzer = 1;
 SELECT count() FROM t1, t2 FORMAT Null SETTINGS log_comment = '04654_join_count_cross_old', enable_analyzer = 0;
 
@@ -50,13 +51,23 @@ SELECT count() FROM t1 ANY LEFT JOIN tj USING (a) FORMAT Null SETTINGS log_comme
 SELECT count() FROM ta ASOF LEFT JOIN tb USING (a, t) FORMAT Null SETTINGS log_comment = '04654_join_count_asof_new', enable_analyzer = 1;
 SELECT count() FROM ta ASOF LEFT JOIN tb USING (a, t) FORMAT Null SETTINGS log_comment = '04654_join_count_asof_old', enable_analyzer = 0;
 
--- PASTE JOIN, which has no `ON` clause and no meaningful strictness either.
+-- PASTE JOIN, which has neither an `ON` clause nor a strictness.
 SELECT count() FROM (SELECT number AS a FROM numbers(10)) p1 PASTE JOIN (SELECT number AS a FROM numbers(10)) p2 FORMAT Null SETTINGS log_comment = '04654_join_count_paste_new', enable_analyzer = 1;
 SELECT count() FROM (SELECT number AS a FROM numbers(10)) p1 PASTE JOIN (SELECT number AS a FROM numbers(10)) p2 FORMAT Null SETTINGS log_comment = '04654_join_count_paste_old', enable_analyzer = 0;
 
+-- `grace_hash` with many buckets writes the buckets it is not currently joining to disk.
+SELECT count() FROM (SELECT number AS a FROM numbers(10000)) g1 JOIN (SELECT number AS a FROM numbers(10000)) g2 ON g1.a = g2.a
+FORMAT Null
+SETTINGS log_comment = '04654_join_count_grace_spill', join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 32, grace_hash_join_max_buckets = 32;
+
+-- `partial_merge` over its memory limit sorts the right table into temporary files.
+SELECT count() FROM (SELECT number AS a FROM numbers(10000)) m1 JOIN (SELECT number AS a FROM numbers(10000)) m2 ON m1.a = m2.a
+FORMAT Null
+SETTINGS log_comment = '04654_join_count_merge_spill', join_algorithm = 'partial_merge', default_max_bytes_in_join = 0, max_bytes_in_join = 1024;
+
 SYSTEM FLUSH LOGS query_log;
 
-SELECT log_comment, used_number_of_joins, used_join_kinds, used_join_strictness
+SELECT log_comment, used_number_of_joins, used_join_kinds, used_join_strictness, join_spilled_to_disk
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND type = 'QueryFinish'

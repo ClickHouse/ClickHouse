@@ -452,10 +452,12 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         add_counter("total_prefetch_tasks", async_read_counters->total_prefetch_tasks.load(std::memory_order_relaxed));
     }
 
-    if (auto query_joins_counters = context_ptr->getQueryJoinsCounters()) {
-        element.used_number_of_joins = query_joins_counters->number_of_joins.load(std::memory_order_relaxed);
+    if (auto query_joins_counters = context_ptr->getQueryJoinsCounters())
+    {
+        element.used_number_of_joins = query_joins_counters->getNumberOfJoins();
         element.used_join_kinds = query_joins_counters->getJoinKinds();
         element.used_join_strictness = query_joins_counters->getJoinStrictness();
+        element.join_spilled_to_disk = query_joins_counters->getJoinSpilledToDisk();
     }
 
     addPrivilegesInfoToQueryLogElement(element, context_ptr);

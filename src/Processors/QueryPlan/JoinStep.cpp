@@ -83,8 +83,6 @@ void countExecutedJoin(const JoinPtr & join)
     if (!counters)
         return;
 
-    counters->number_of_joins.fetch_add(1, std::memory_order_relaxed);
-
     const auto & table_join = join->getTableJoin();
     auto kind = table_join.kind();
     auto strictness = table_join.strictness();

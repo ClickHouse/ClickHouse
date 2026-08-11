@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/QueryJoinsCounters.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/FnTraits.h>
@@ -191,6 +192,7 @@ private:
             is_empty = false;
 
         writer->write(block);
+        QueryJoinsCounters::markJoinAsSpilled();
         return true;
     }
 
