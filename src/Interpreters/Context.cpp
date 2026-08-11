@@ -308,6 +308,7 @@ namespace Setting
     extern const SettingsBool enable_blob_storage_log_for_read_operations;
     extern const SettingsUInt64 filesystem_cache_max_download_size;
     extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+    extern const SettingsUInt64 filesystem_cache_wait_for_concurrent_download_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_segments_batch_size;
     extern const SettingsBool filesystem_cache_allow_background_download;
     extern const SettingsBool filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage;
@@ -8443,6 +8444,8 @@ ReadSettings Context::getReadSettings() const
     res.filesystem_cache_settings.segments_batch_size = settings_ref[Setting::filesystem_cache_segments_batch_size];
     res.filesystem_cache_settings.reserve_space_wait_lock_timeout_milliseconds
         = settings_ref[Setting::filesystem_cache_reserve_space_wait_lock_timeout_milliseconds];
+    res.filesystem_cache_settings.wait_for_concurrent_download_timeout_milliseconds
+        = settings_ref[Setting::filesystem_cache_wait_for_concurrent_download_timeout_milliseconds];
     res.filesystem_cache_settings.allow_background_download = settings_ref[Setting::filesystem_cache_allow_background_download];
     res.filesystem_cache_settings.allow_background_download_for_metadata_files_in_packed_storage
         = settings_ref[Setting::filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage];
@@ -8680,6 +8683,17 @@ PartitionIdToMaxBlockPtr Context::getPartitionIdToMaxBlock(const UUID & table_uu
 {
     auto it = partition_id_to_max_block.find(table_uuid);
     return it != partition_id_to_max_block.end() ? it->second : nullptr;
+}
+
+void Context::setPinnedStorageSnapshot(const UUID & table_uuid, StorageSnapshotPtr snapshot)
+{
+    pinned_storage_snapshots[table_uuid] = std::move(snapshot);
+}
+
+StorageSnapshotPtr Context::getPinnedStorageSnapshot(const UUID & table_uuid) const
+{
+    auto it = pinned_storage_snapshots.find(table_uuid);
+    return it != pinned_storage_snapshots.end() ? it->second : nullptr;
 }
 
 const ServerSettings & Context::getServerSettings() const
