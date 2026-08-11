@@ -113,9 +113,13 @@ std::optional<std::string> chooseDelimitedListingStartPrefix(
     if (!is_prefix_allowed(widened_prefix))
         return std::nullopt;
 
-    /// The walk parallelizes over the "directory" levels below its start prefix, so it needs at least one:
-    /// the glob must have a segment below the widened prefix in addition to the file-name segment.
-    if (splitPathComponents(widened_prefix).size() + 1 >= splitPathComponents(glob_path).size())
+    /// The walk parallelizes over the "directory" levels below its start prefix, so it needs at least one
+    /// in addition to the segment matching the keys themselves. For a trailing-slash glob the final segment
+    /// names the matching directory markers and is itself such a level (`makeShouldDescendPredicate`
+    /// descends one extra level to surface the markers), so one segment below the widened prefix is enough;
+    /// otherwise the file-name segment does not count and a separate directory segment must remain.
+    const size_t min_segments_below = glob_path.ends_with('/') ? 1 : 2;
+    if (splitPathComponents(widened_prefix).size() + min_segments_below > splitPathComponents(glob_path).size())
         return std::nullopt;
 
     return widened_prefix;

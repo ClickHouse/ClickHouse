@@ -46,6 +46,8 @@ std::function<bool(const std::string & common_prefix)> makeShouldDescendPredicat
 /// none left (e.g. `data_??.csv`, whose prefix `data_` widens to the bucket root), the walk would list a
 /// single flat range — serially on exactly the endpoints that need the widening, since they also reject
 /// the keyspace split — over a wider prefix than the serial iterator uses, so the serial iterator wins.
+/// For a trailing-slash glob (`root/year=*/`) the final segment names the matching directory markers and
+/// counts as such a level itself: the predicate descends one extra level to surface the markers.
 std::optional<std::string> chooseDelimitedListingStartPrefix(
     const std::string & glob_path,
     const std::string & key_prefix,

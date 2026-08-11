@@ -882,6 +882,13 @@ TEST(ObjectStorageParallelListing, DirectoryBucketStartsWalkFromPathBoundary)
     EXPECT_EQ(chooseDelimitedListingStartPrefix("data_??.csv", "data_", directory_bucket), std::nullopt);
     EXPECT_EQ(chooseDelimitedListingStartPrefix("root/data_??.csv", "root/data_", directory_bucket), std::nullopt);
 
+    /// For a trailing-slash glob the final segment names the matching directory markers and is itself a
+    /// "directory" level of the walk, so one segment below the widened prefix is enough to keep the walk.
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("root/year=*/", "root/year=", directory_bucket), "root/");
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("year=*/", "year=", directory_bucket), "");
+    /// Without the trailing slash the same shape matches regular keys at that level: no level to walk.
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("root/year=*", "root/year=", directory_bucket), std::nullopt);
+
     /// End to end on such an endpoint: the widened walk must produce every key of the matching sub-tree
     /// exactly once, prune the non-matching siblings the wider prefix exposes, and never send a `StartAfter`.
     FakeS3 s3;
@@ -923,6 +930,62 @@ TEST(ObjectStorageParallelListing, DirectoryBucketStartsWalkFromPathBoundary)
         auto got = drain(iterator);
         std::sort(got.begin(), got.end());
         EXPECT_EQ(got, expected) << "threads=" << threads;
+    }
+    EXPECT_EQ(s3.requests_with_start_after.load(), 0u);
+}
+
+TEST(ObjectStorageParallelListing, DirectoryBucketKeepsWalkForTrailingSlashGlob)
+{
+    /// Regression: for a trailing-slash glob (`root/year=*/`) on a directory bucket the fixed prefix
+    /// (`root/year=`) ends mid-component, and the matching keys are the directory markers themselves —
+    /// there is no file-name segment below them. The widened walk from `root/` must still be chosen
+    /// (the descend predicate descends one extra level to surface the markers), prune the non-matching
+    /// siblings the wider prefix exposes, and never send a `StartAfter`.
+    auto directory_bucket = [](const std::string & prefix) { return prefix.empty() || prefix.ends_with('/'); };
+
+    FakeS3 s3;
+    s3.page_size = 7;
+    s3.reject_start_after = true;
+    for (int y = 2020; y <= 2022; ++y)
+    {
+        s3.add(fmt::format("root/year={}/", y));               /// directory-marker objects: the matches
+        for (int f = 0; f < 5; ++f)
+            s3.add(fmt::format("root/year={}/data_{:03}.csv", y, f));
+    }
+    for (int i = 0; i < 20; ++i)
+        s3.add(fmt::format("root/other={:02}/data.csv", i));   /// siblings the wider prefix exposes
+    s3.finalize();
+
+    const std::string glob = "root/year=*/";
+    const auto start_prefix = chooseDelimitedListingStartPrefix(glob, "root/year=", directory_bucket);
+    ASSERT_EQ(start_prefix, "root/");
+
+    const re2::RE2 matcher(makeRegexpPatternFromGlobs(glob));
+    ASSERT_TRUE(matcher.ok());
+    const std::vector<std::string> expected{"root/year=2020/", "root/year=2021/", "root/year=2022/"};
+
+    for (size_t threads : {1, 2, 4, 16})
+    {
+        ObjectStorageParallelListingIterator iterator(
+            *start_prefix, threads, /* max_buffered_keys */ 128, makeListLevel(s3), makeProbeLevel(s3),
+            makeShouldDescendPredicate(glob),
+            /* allow_keyspace_split */ false, /* check_cancellation */ {},
+            /* max_pending_range_bytes */ ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES,
+            /* max_buffered_object_bytes */ ObjectStorageParallelListingIterator::DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
+            /* allow_start_after */ false);
+        auto listed = drain(iterator);
+
+        /// The walk may emit extra non-matching keys (the downstream per-file matcher drops them);
+        /// every glob-matching key must be produced exactly once and the pruned siblings stay unlisted.
+        std::vector<std::string> matched;
+        for (const auto & key : listed)
+        {
+            EXPECT_FALSE(key.starts_with("root/other=")) << "scanned pruned sibling: " << key << " threads=" << threads;
+            if (re2::RE2::FullMatch(key, matcher))
+                matched.push_back(key);
+        }
+        std::sort(matched.begin(), matched.end());
+        EXPECT_EQ(matched, expected) << "threads=" << threads;
     }
     EXPECT_EQ(s3.requests_with_start_after.load(), 0u);
 }
