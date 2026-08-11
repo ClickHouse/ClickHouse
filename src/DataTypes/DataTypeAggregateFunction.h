@@ -34,6 +34,10 @@ public:
 
     size_t getVersion() const;
 
+    /// The version exactly as it was set (parsed from AST or assigned), without collapsing
+    /// std::nullopt to the function's default. Empty means "no explicit version".
+    std::optional<size_t> getVersionIfExplicit() const { return version; }
+
     String getFunctionName() const;
     AggregateFunctionPtr getFunction() const { return function; }
 
