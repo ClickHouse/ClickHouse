@@ -29,6 +29,7 @@
 #include <Storages/StorageFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ErrnoException.h>
@@ -103,7 +104,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     ast_create_query.setDatabase(database_name);
 
     if (ast_create_query.select && ast_create_query.isView())
-        ApplyWithSubqueryVisitor(context).visit(*ast_create_query.select);
+        ApplyWithSubqueryVisitor::visit(*ast_create_query.select);
 
     if (ast_create_query.as_table_function)
     {
@@ -115,6 +116,12 @@ std::pair<String, StoragePtr> createTableFromAST(
             columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, mode);
         StoragePtr storage = table_function->execute(table_function_ast, context, ast_create_query.getTable(), std::move(columns));
         storage->renameInMemory(ast_create_query);
+
+        /// Re-establish the named collection dependency (if any) that `CREATE TABLE ... AS f(...)`
+        /// registered, so that `DROP NAMED COLLECTION` stays blocked after a server restart.
+        if (const auto collection_name = table_function->getUsedNamedCollectionName(); !collection_name.empty())
+            NamedCollectionFactory::instance().addDependency(collection_name, storage->getStorageID());
+
         return {ast_create_query.getTable(), storage};
     }
 

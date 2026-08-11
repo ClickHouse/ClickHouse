@@ -75,6 +75,37 @@ def kafka_setup_teardown():
 
 
 # Tests
+def test_kafka_no_kerberos_kinit_warning(kafka_cluster):
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_{suffix}"
+
+    instance.rotate_logs()
+    instance.query(f"""
+        CREATE TABLE test.{kafka_table} (key UInt64)
+            ENGINE = Kafka()
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'no_kerberos_kinit_warning_{suffix}',
+                     kafka_group_name = 'no_kerberos_kinit_warning_{suffix}',
+                     kafka_format = 'JSONEachRow';
+    """)
+
+    instance.query(f"""
+        CREATE MATERIALIZED VIEW test.{kafka_table}_view
+        ENGINE = MergeTree
+        ORDER BY tuple()
+        AS SELECT * FROM test.{kafka_table}
+    """)
+    instance.wait_for_log_line(f"{kafka_table}.*Created #0 consumer")
+
+    instance.query(f"DROP TABLE test.{kafka_table}_view")
+    instance.query(f"INSERT INTO test.{kafka_table} VALUES (1)")
+
+    assert instance.contains_in_log(f"{kafka_table}.*Kafka producer created")
+    assert not instance.contains_in_log(
+        f"{kafka_table}.*sasl.kerberos.kinit.cmd configuration parameter is ignored."
+    )
+
+
 @pytest.mark.parametrize(
     "create_query_generator",
     [
@@ -2259,10 +2290,19 @@ def test_kafka_flush_by_time(kafka_cluster, create_query_generator):
 
         cancel = threading.Event()
 
+        # Reuse one producer: `k.kafka_produce` opens a new connection per call,
+        # and a single broker-version probe there can cost seconds, which is
+        # enough to miss the row count asserted below.
+        producer = k.get_kafka_producer(
+            kafka_cluster.kafka_port, k.producer_serializer, retries=15
+        )
+
         def produce():
             while not cancel.is_set():
-                messages = [json.dumps({"key": 0, "value": 0})]
-                k.kafka_produce(kafka_cluster, topic_name, messages)
+                producer.send(
+                    topic=topic_name, value=json.dumps({"key": 0, "value": 0})
+                )
+                producer.flush()
                 time.sleep(0.8)
 
         kafka_thread = threading.Thread(target=produce)
@@ -2280,6 +2320,7 @@ def test_kafka_flush_by_time(kafka_cluster, create_query_generator):
 
         cancel.set()
         kafka_thread.join()
+        producer.close()
 
         instance.query(f"""
             DROP TABLE test.{kafka_table}_consumer;
