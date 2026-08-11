@@ -30,8 +30,15 @@ public:
 
         enum EmpiricalStatus { Ok, Unsupported, Disabled };
         EmpiricalStatus empirical_status = Disabled;
-        String estimate_source; /// "empirical", "statistical", "applicability_only"
+        /// Why the empirical estimate could not run, set only when empirical_status == Unsupported
+        String empirical_unsupported_reason;
 
+        enum EstimateSource { Empirical, Statistical, ApplicabilityOnly };
+        EstimateSource estimate_source = ApplicabilityOnly;
+
+        /// Both pairs come from the same analysis, so a merge finishing mid-estimate cannot make
+        /// a sampled count exceed its total. The totals are what the query could have read after
+        /// partition pruning, which is also the denominator sampling will divide
         UInt64 sampled_parts = 0;
         UInt64 total_parts = 0;
         UInt64 sampled_marks = 0;

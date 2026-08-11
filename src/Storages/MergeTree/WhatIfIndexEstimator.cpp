@@ -143,8 +143,10 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     WhatIfIndexEstimator::IndexResult result;
     result.index_name = index_desc.name;
     result.index_type = index_desc.type;
-    result.total_parts = data.getActivePartsCount();
-    result.total_marks = data.getTotalMarksCount();
+    /// Taken from the analysis, not from the live table counters: those are read at a different
+    /// instant, so a concurrent merge could report more sampled parts or marks than the total
+    result.total_parts = analysis.parts_before_pk;
+    result.total_marks = analysis.total_marks_pk;
 
     /// `context` already has the inner-SELECT settings applied, so these checks match a real read
     if (!context->getSettingsRef()[Setting::use_skip_indexes])
@@ -278,7 +280,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     if (tryEstimateWithStatistics(result, index_helper, read_step, analysis, saved_parts, predicate, context))
         return result;
 
-    result.estimate_source = "applicability_only";
+    result.estimate_source = WhatIfIndexEstimator::IndexResult::ApplicabilityOnly;
     result.estimated_marks = analysis.selected_marks;
     result.skip_ratio = 0.0;
 
@@ -465,7 +467,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
             index_desc, read_step, analysis, baseline_parts, settings, want_combined ? &surviving_marks : nullptr, plan_context);
 
         /// push empirically-evaluated candidates in a per-mark survival set we can intersect
-        if (want_combined && index_result.status == IndexResult::Applicable && index_result.estimate_source == "empirical")
+        if (want_combined && index_result.status == IndexResult::Applicable && index_result.estimate_source == IndexResult::Empirical)
         {
             if (!combined_started)
             {
@@ -500,7 +502,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         combined.index_name = "(combined: " + joined + ")";
         combined.status = IndexResult::Applicable;
         combined.empirical_status = IndexResult::Ok;
-        combined.estimate_source = "empirical";
+        combined.estimate_source = IndexResult::Empirical;
         combined.estimated_marks = survivors;
         combined.skip_ratio = static_cast<double>(result.baseline_marks - survivors) / static_cast<double>(result.baseline_marks);
         combined.sampled_parts = analysis.selected_parts;
