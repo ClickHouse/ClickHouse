@@ -135,6 +135,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int TOO_DEEP_RECURSION;
 }
 
@@ -1744,6 +1745,26 @@ Chain InsertDependenciesBuilder::createRetry(const std::vector<StorageIDMaybeEmp
 
     LOG_DEBUG(logger, "Creating retry chain for path {}, partition <{}> starting from {}", fmt::join(path, "/"), partition, start_from);
 
+    /// Behind a table with the `Alias` engine the deduplication info travels into a nested insert
+    /// chain, and its visited views belong to the outer chain's builder, so this builder cannot
+    /// rebuild them. A foreign element can appear anywhere in the path: at its end (a direct
+    /// insert into the source table), at its start (a direct insert into a materialized view
+    /// keeps the view as `start_from`), or in the middle (a regular-table root keeps an empty
+    /// `start_from`, which every builder "owns" because `inner_tables` always contains the
+    /// empty root, while the intermediate views of the outer chain are still foreign — and
+    /// skipping them would silently drop their transformations from the retried rows). Require
+    /// every element to be owned by this builder and refuse loudly otherwise, instead of
+    /// failing with a bare `std::out_of_range` or losing rows below.
+    auto foreign = std::find_if(path.begin(), path.end(), [this](const auto & id) { return !isView(id); });
+    if (foreign != path.end() || !isView(start_from))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot rebuild the deduplication retry chain for '{}': it does not belong to this insert chain. "
+            "This happens when deduplicated rows have to be recalculated after a table with the `Alias` engine. "
+            "Retry path: {}",
+            foreign != path.end() ? *foreign : start_from,
+            fmt::join(path, "/"));
+
     Chain result;
 
     auto it = std::find(path.begin(), path.end(), start_from);
@@ -1763,10 +1784,6 @@ Chain InsertDependenciesBuilder::createRetry(const std::vector<StorageIDMaybeEmp
 
     for (; it != path.end(); ++it)
     {
-        // build nodes only for views in path
-        if (!isView(*it))
-            continue;
-
         const auto & view_id = *it;
         chassert(isView(view_id));
 
