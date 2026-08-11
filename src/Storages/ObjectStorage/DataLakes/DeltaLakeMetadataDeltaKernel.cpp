@@ -439,6 +439,23 @@ static DataTypePtr replaceTypeNamesToPhysicalRecursively(
     return std::make_shared<DataTypeTuple>(result_elements, result_element_names);
 }
 
+/// Recover the subcolumn split for a flattened dotted name like `data.keys`, which is not a Delta Lake field path.
+static NameAndTypePair resolveFlattenedSubcolumn(
+    const NameAndTypePair & column,
+    const StorageSnapshotPtr & storage_snapshot)
+{
+    if (column.isSubcolumn())
+        return column;
+
+    auto resolved = storage_snapshot->metadata->getColumns().tryGetColumnOrSubcolumn(
+        GetColumnsOptions::All, column.name);
+
+    if (resolved && resolved->isSubcolumn())
+        return *resolved;
+
+    return column;
+}
+
 /// Returns physical column and whether it is readable from data file.
 /// We do not change given column actual type,
 /// but can only change names inside the type (in case of Tuple).
@@ -592,7 +609,7 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     for (auto & name_and_type : columns_to_read_desc)
     {
         auto [result_name_and_type, readable] = getPhysicalNameAndType(
-            name_and_type,
+            resolveFlattenedSubcolumn(name_and_type, storage_snapshot),
             readable_columns_with_subcolumns,
             physical_names_map,
             log);
@@ -601,10 +618,23 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             info.format_header.insert(ColumnWithTypeAndName{result_name_and_type.type, result_name_and_type.name});
     }
 
-    for (const auto & name_and_type : info.columns_description)
-        info.columns_description.rename(
-            name_and_type.name,
-            DeltaLake::getPhysicalName(name_and_type.name, physical_names_map));
+    /// Collect first, because renaming invalidates the iterated container.
+    std::vector<std::pair<String, String>> renames;
+    renames.reserve(info.columns_description.size());
+    for (const auto & column : info.columns_description)
+    {
+        auto [result_name_and_type, _] = getPhysicalNameAndType(
+            resolveFlattenedSubcolumn(NameAndTypePair(column.name, column.type), storage_snapshot),
+            readable_columns_with_subcolumns,
+            physical_names_map,
+            log);
+
+        if (result_name_and_type.name != column.name)
+            renames.emplace_back(column.name, result_name_and_type.name);
+    }
+
+    for (const auto & [logical_name, physical_name] : renames)
+        info.columns_description.rename(logical_name, physical_name);
 
     LOG_TEST(log, "Format header: {}", info.format_header.dumpStructure());
     LOG_TEST(log, "Source header: {}", info.source_header.dumpStructure());
