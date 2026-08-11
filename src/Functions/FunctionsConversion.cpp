@@ -15,6 +15,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_CONVERT_TYPE;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
+    extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -656,6 +657,82 @@ FunctionCast::WrapperType FunctionCast::createIntervalWrapper(const DataTypePtr 
 
 #undef GENERATE_INTERVAL_CASE
 
+namespace
+{
+
+/** Conversion of a number to Nullable(DateTime64) or Nullable(Time64) with the accurate-cast contract:
+  * a value outside the representable range of the result type produces NULL instead of saturation or
+  * an exception, regardless of the `date_time_overflow_behavior` setting. `ConvertImpl` cannot be reused
+  * here: its DateTime64/Time64 transforms saturate or throw according to the overflow behavior even with
+  * the accurate conversion additions (see `convertIntegerToDateTime64OrNull` in FunctionsConversion.h).
+  */
+template <typename FromDataType, typename ToDataType>
+ColumnPtr convertNumberToDateTime64OrTime64OrNull(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, UInt32 scale)
+{
+    using FromFieldType = typename FromDataType::FieldType;
+    using ToFieldType = typename ToDataType::FieldType;
+
+    const auto * col_from = checkAndGetColumn<typename FromDataType::ColumnType>(arguments[0].column.get());
+    if (!col_from)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of conversion to {}",
+            arguments[0].column->getName(), TypeName<typename ToDataType::FieldType>);
+
+    const auto & vec_from = col_from->getData();
+
+    auto col_to = ToDataType::ColumnType::create(input_rows_count, scale);
+    auto & vec_to = col_to->getData();
+
+    auto col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+    auto & vec_null_map_to = col_null_map_to->getData();
+
+    const auto scale_multiplier = DecimalUtils::scaleMultiplier<typename ToFieldType::NativeType>(scale);
+
+    Int64 min_whole = 0;
+    Int64 max_whole = 0;
+    if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+    {
+        /// The bounds are scale-dependent because the ticks are stored in an Int64 (see maxWholeSecondsForDateTime64).
+        min_whole = minWholeSecondsForDateTime64(scale_multiplier);
+        max_whole = maxWholeSecondsForDateTime64(scale_multiplier);
+    }
+    else
+    {
+        max_whole = MAX_TIME_TIMESTAMP;
+        min_whole = -MAX_TIME_TIMESTAMP;
+    }
+
+    for (size_t i = 0; i < input_rows_count; ++i)
+    {
+        const FromFieldType from = vec_from[i];
+
+        bool is_out_of_range = false;
+        if constexpr (is_floating_point<FromFieldType>)
+            /// Compare in the `Float64` domain: it represents every narrower floating-point value and the
+            /// whole-second bounds exactly. A non-finite value is not representable in the result type either.
+            is_out_of_range = !isFinite(from)
+                || static_cast<Float64>(from) < static_cast<Float64>(min_whole)
+                || static_cast<Float64>(from) > static_cast<Float64>(max_whole);
+        else if constexpr (is_signed_v<FromFieldType>)
+            is_out_of_range = from < min_whole || from > max_whole;
+        else
+            is_out_of_range = from > static_cast<UInt64>(max_whole);
+
+        if (is_out_of_range)
+        {
+            vec_to[i] = ToFieldType(0);
+            vec_null_map_to[i] = true;
+        }
+        else if constexpr (is_floating_point<FromFieldType>)
+            vec_to[i] = convertToDecimal<FromDataType, ToDataType>(from, scale);
+        else
+            vec_to[i] = DecimalUtils::decimalFromComponentsWithMultiplier<ToFieldType>(static_cast<Int64>(from), 0, scale_multiplier);
+    }
+
+    return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
+}
+
+}
+
 template <typename ToDataType>
 requires IsDataTypeDecimal<ToDataType>
 FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const
@@ -722,6 +799,24 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
 
             if constexpr (std::is_same_v<RightDataType, DataTypeDateTime64> || std::is_same_v<RightDataType, DataTypeTime64>)
             {
+                if constexpr (IsDataTypeNumber<LeftDataType>)
+                {
+                    /// `accurateCast` and `accurateCastOrNull` must enforce the accurate-cast contract for
+                    /// numeric sources: a value that is not representable in the result type throws or yields
+                    /// NULL. The `date_time_overflow_behavior` setting governs only plain `CAST`.
+                    if (cast_type == CastType::accurate)
+                    {
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(
+                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
+                        return true;
+                    }
+                    if (cast_type == CastType::accurateOrNull)
+                    {
+                        result_column = convertNumberToDateTime64OrTime64OrNull<LeftDataType, RightDataType>(arguments, input_rows_count, scale);
+                        return true;
+                    }
+                }
+
                 switch (settings.date_time_overflow_behavior)
                 {
                     case FormatSettings::DateTimeOverflowBehavior::Throw:
