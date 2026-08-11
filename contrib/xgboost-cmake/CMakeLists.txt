@@ -164,7 +164,9 @@ endif()
 target_compile_options(_dmlc_core PRIVATE ${DMLC_CORE_COMPILE_OPTIONS})
 
 # On Linux `clock_gettime` lives in librt (older glibc) or libc; linking rt is safe.
-if (OS_LINUX)
+# musl has no `librt` at all - it keeps `clock_gettime` in libc - so asking for it
+# there fails the link with `unable to find library -lrt`.
+if (OS_LINUX AND NOT USE_MUSL)
     target_link_libraries(_dmlc_core PRIVATE rt)
 endif()
 

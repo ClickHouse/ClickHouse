@@ -1,5 +1,7 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel-replicas
 -- no-fasttest: needs the XGBoost contrib, which is not built in the fast test.
+-- no-parallel-replicas: the dictionary exists only on the initiator, so a query spread
+-- over the replicas fails with `Dictionary (model_04509_xgb) not found` on the others.
 
 -- The XGBoost integration is experimental and must be enabled explicitly.
 SET enable_xgboost = 1;
