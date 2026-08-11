@@ -46,6 +46,12 @@ ${CLICKHOUSE_CLIENT} --query="SELECT id, val FROM sqlite('${DB_PATH}', (SELECT i
 echo "--- tuple of predicates in WHERE is lowered to a conjunction"
 ${CLICKHOUSE_CLIENT} --query="SELECT id, val FROM sqlite('${DB_PATH}', (SELECT id, val FROM t WHERE (id > 1, val = 'y'))) ORDER BY id"
 
+echo "--- PREWHERE is lowered into WHERE"
+${CLICKHOUSE_CLIENT} --query="SELECT id, val FROM sqlite('${DB_PATH}', (SELECT id, val FROM t PREWHERE val = 'x')) ORDER BY id"
+
+echo "--- PREWHERE merges with an existing WHERE via AND"
+${CLICKHOUSE_CLIENT} --query="SELECT id, val FROM sqlite('${DB_PATH}', (SELECT id, val FROM t PREWHERE id > 1 WHERE val = 'y')) ORDER BY id"
+
 echo "--- tuple in the SELECT list is rejected by ClickHouse (SQLite: row value misused)"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM sqlite('${DB_PATH}', (SELECT tuple(id, val) FROM t))" 2>&1 | grep -q "BAD_ARGUMENTS" && echo "rejected"
 

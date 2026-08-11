@@ -159,7 +159,7 @@ bool fieldHasStringWithNulByte(const Field & field)
     switch (field.getType())
     {
         case Field::Types::String:
-            return field.safeGet<String>().find('\0') != String::npos;
+            return field.safeGet<String>().contains('\0');
         case Field::Types::Tuple:
             for (const auto & element : field.safeGet<Tuple>())
                 if (fieldHasStringWithNulByte(element))
@@ -940,13 +940,23 @@ static void normalizeSubqueryForExternalDatabaseImpl(ASTPtr & node, LiteralEscap
     }
     if (auto * select = node->as<ASTSelectQuery>())
     {
+        /// `PREWHERE` is ClickHouse-only syntax that no external database can parse; for the
+        /// external database it is an ordinary filter, so lower it into `WHERE`, merging with
+        /// an existing `WHERE` via `AND`.
+        if (select->prewhere())
+        {
+            ASTPtr filter = select->prewhere();
+            select->setExpression(ASTSelectQuery::Expression::PREWHERE, {});
+            if (auto where = select->where())
+                filter = makeASTOperator("and", std::move(filter), std::move(where));
+            select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(filter));
+        }
         /// The filtering clauses of the subquery are boolean positions: a tuple there is
         /// ClickHouse's list-of-predicates form, not a row value (no external database accepts
         /// a row value as a condition).
         for (auto & child : node->children)
         {
-            const bool is_boolean_clause = (select->prewhere() && child == select->prewhere())
-                || (select->where() && child == select->where())
+            const bool is_boolean_clause = (select->where() && child == select->where())
                 || (select->having() && child == select->having())
                 || (select->qualify() && child == select->qualify());
             normalizeSubqueryForExternalDatabaseImpl(

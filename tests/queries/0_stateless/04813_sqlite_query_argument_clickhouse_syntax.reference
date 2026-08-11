@@ -6,6 +6,10 @@
 2	y
 --- tuple of predicates in WHERE is lowered to a conjunction
 2	y
+--- PREWHERE is lowered into WHERE
+1	x
+--- PREWHERE merges with an existing WHERE via AND
+2	y
 --- tuple in the SELECT list is rejected by ClickHouse (SQLite: row value misused)
 rejected
 --- tuple literal in the SELECT list is rejected by ClickHouse

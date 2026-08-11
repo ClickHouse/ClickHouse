@@ -750,3 +750,29 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentBooleanPredicate)
             IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field, value FROM test."table" WHERE (a > 0) AND ((field, value) = ('foo', 'bar')))");
 }
+
+TEST(TransformQueryForExternalDatabase, QueryTableArgumentPrewhere)
+{
+    const State & state = State::instance();
+
+    /// `PREWHERE` is ClickHouse-only syntax that no external database can parse; for the external
+    /// database it is an ordinary filter, so it is lowered into `WHERE` ...
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT field FROM test.table PREWHERE field = 'foo')",
+            IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular),
+        "SELECT field FROM test.`table` WHERE field = 'foo'");
+    /// ... merging with an existing `WHERE` via `AND` ...
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT field FROM test.table PREWHERE field = 'foo' WHERE value = 'bar')",
+            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT field FROM test."table" WHERE (field = 'foo') AND (value = 'bar'))");
+    /// ... and the lowered filter is a boolean position: a tuple-of-predicates `PREWHERE`
+    /// becomes a conjunction, the same way it does in `WHERE`.
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT field, value FROM test.table PREWHERE (a > 0, value > 10))",
+            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT field, value FROM test."table" WHERE (a > 0) AND (value > 10))");
+}
