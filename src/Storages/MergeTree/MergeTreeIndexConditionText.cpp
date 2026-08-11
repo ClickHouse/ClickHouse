@@ -130,6 +130,7 @@ std::shared_ptr<TextSearchQuery> TextSearchQuery::deserialize(ReadBuffer & in)
 
     UInt8 direct_read_mode = 0;
     readBinary(direct_read_mode, in);
+
     if (direct_read_mode > static_cast<UInt8>(TextIndexDirectReadMode::Hint))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid direct read mode {} in a serialized text search query", static_cast<UInt32>(direct_read_mode));
 
@@ -137,6 +138,7 @@ std::shared_ptr<TextSearchQuery> TextSearchQuery::deserialize(ReadBuffer & in)
     readVarUInt(num_tokens, in);
     VectorWithMemoryTracking<String> tokens;
     tokens.reserve(num_tokens);
+
     for (size_t i = 0; i < num_tokens; ++i)
     {
         String token;
@@ -148,6 +150,7 @@ std::shared_ptr<TextSearchQuery> TextSearchQuery::deserialize(ReadBuffer & in)
     readVarUInt(num_patterns, in);
     std::vector<TextSearchPatternSource> pattern_sources;
     pattern_sources.reserve(num_patterns);
+
     for (size_t i = 0; i < num_patterns; ++i)
     {
         TextSearchPatternSource pattern_source;
@@ -160,6 +163,7 @@ std::shared_ptr<TextSearchQuery> TextSearchQuery::deserialize(ReadBuffer & in)
     readVarUInt(num_phrase_tokens, in);
     VectorWithMemoryTracking<String> phrase_tokens;
     phrase_tokens.reserve(num_phrase_tokens);
+
     for (size_t i = 0; i < num_phrase_tokens; ++i)
     {
         String token;
@@ -190,25 +194,15 @@ void TextSearchQuery::initializeHash()
         hash_state.update(token);
     }
 
-    if (!patterns.empty())
+    /// Hash the source form: `patterns` is derived from it, and a trivial pattern keeps no RE2 to hash.
+    if (!pattern_sources.empty())
     {
-        hash_state.update(patterns.size());
-        for (const auto & pattern : patterns)
+        hash_state.update(pattern_sources.size());
+        for (const auto & pattern_source : pattern_sources)
         {
-            if (const auto & re2 = pattern.getRE2())
-            {
-                hash_state.update(re2->pattern());
-            }
-            else
-            {
-                std::string required_substring;
-                bool is_trivial = false;
-                bool required_substring_is_prefix = false;
-                pattern.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
-                hash_state.update(required_substring);
-                hash_state.update(is_trivial);
-                hash_state.update(required_substring_is_prefix);
-            }
+            hash_state.update(pattern_source.like_pattern.size());
+            hash_state.update(pattern_source.like_pattern);
+            hash_state.update(pattern_source.case_insensitive);
         }
     }
 
@@ -226,7 +220,6 @@ void TextSearchQuery::initializeHash()
 }
 
 MergeTreeIndexConditionText::MergeTreeIndexConditionText(
-    const ActionsDAG::Node * predicate,
     ContextPtr context_,
     const Block & index_sample_block,
     const std::optional<String> & normalized_index_column_name_,
@@ -244,6 +237,19 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , postprocessor(postprocessor_)
     , has_postprocessor(postprocessor && postprocessor->hasActions())
     , has_positions(has_positions_)
+{
+}
+
+MergeTreeIndexConditionText::MergeTreeIndexConditionText(
+    const ActionsDAG::Node * predicate,
+    ContextPtr context_,
+    const Block & index_sample_block,
+    const std::optional<String> & normalized_index_column_name_,
+    TokenizerPtr tokenizer_,
+    MergeTreeIndexTextPreprocessorPtr preprocessor_,
+    MergeTreeIndexTextPostprocessorPtr postprocessor_,
+    bool has_positions_)
+    : MergeTreeIndexConditionText(context_, index_sample_block, normalized_index_column_name_, tokenizer_, preprocessor_, postprocessor_, has_positions_)
 {
     if (!predicate)
     {
@@ -275,7 +281,41 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
             global_search_mode = TextSearchMode::Any;
     }
 
-    all_search_tokens = Names(all_search_tokens_set.begin(), all_search_tokens_set.end());
+    finalizeSearchTokens(all_search_tokens_set);
+}
+
+MergeTreeIndexConditionText::MergeTreeIndexConditionText(
+    TextSearchMode global_search_mode_,
+    std::unordered_map<String, TextSearchQueryPtr> virtual_column_to_search_query_,
+    ContextPtr context_,
+    const Block & index_sample_block,
+    const std::optional<String> & normalized_index_column_name_,
+    TokenizerPtr tokenizer_,
+    MergeTreeIndexTextPreprocessorPtr preprocessor_,
+    MergeTreeIndexTextPostprocessorPtr postprocessor_,
+    bool has_positions_)
+    : MergeTreeIndexConditionText(context_, index_sample_block, normalized_index_column_name_, tokenizer_, preprocessor_, postprocessor_, has_positions_)
+{
+    /// The queries are reached through the virtual columns, so the RPN never analyzes granules.
+    rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
+    initializeCaches();
+    global_search_mode = global_search_mode_;
+    virtual_column_to_search_query = std::move(virtual_column_to_search_query_);
+
+    NameSet all_search_tokens_set;
+
+    for (const auto & [_, search_query] : virtual_column_to_search_query)
+    {
+        all_search_tokens_set.insert(search_query->getTokens().begin(), search_query->getTokens().end());
+        all_search_queries[search_query->getHash()] = search_query;
+    }
+
+    finalizeSearchTokens(all_search_tokens_set);
+}
+
+void MergeTreeIndexConditionText::finalizeSearchTokens(const NameSet & tokens)
+{
+    all_search_tokens = Names(tokens.begin(), tokens.end());
     std::ranges::sort(all_search_tokens); /// Technically not necessary but leads to nicer read patterns on sorted dictionary blocks
     cardinalities_cache = std::make_shared<TokensCardinalitiesCache>(all_search_tokens);
 }
@@ -284,11 +324,11 @@ void MergeTreeIndexConditionText::initializeCaches()
 {
     const auto & settings = getContext()->getSettingsRef();
     static constexpr auto cache_policy = "SLRU";
+
     /// Local caches: ~10% of the query memory budget, capped at 100 MiB; max_memory_usage == 0 (unlimited) uses the cap, not a 0-size cache.
     static constexpr size_t local_cache_size_cap = 100ULL * 1024 * 1024;
     const size_t query_memory_limit = settings[Setting::max_memory_usage];
-    const size_t local_cache_max_size
-        = query_memory_limit == 0 ? local_cache_size_cap : std::min<size_t>(query_memory_limit / 10, local_cache_size_cap);
+    const size_t local_cache_max_size = query_memory_limit == 0 ? local_cache_size_cap : std::min<size_t>(query_memory_limit / 10, local_cache_size_cap);
 
     /// If usage of global text index caches is disabled, create local
     /// one to share them between threads that read the same data parts.
@@ -307,31 +347,6 @@ void MergeTreeIndexConditionText::initializeCaches()
         postings_cache = getContext()->getTextIndexPostingsCache();
     else
         postings_cache = std::make_shared<TextIndexPostingsCache>(cache_policy, local_cache_max_size, 0, 1.0);
-}
-
-void MergeTreeIndexConditionText::setSearchQueriesForVirtualColumns(
-    TextSearchMode global_search_mode_,
-    const std::map<String, TextSearchQueryPtr> & queries_by_virtual_column)
-{
-    /// Only a condition created without a predicate (a fresh one on the receiving node
-    /// of a distributed plan) may be populated this way.
-    if (!all_search_queries.empty() || !virtual_column_to_search_query.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index condition already has search queries");
-
-    initializeCaches();
-    global_search_mode = global_search_mode_;
-
-    NameSet all_search_tokens_set;
-    for (const auto & [column_name, search_query] : queries_by_virtual_column)
-    {
-        all_search_tokens_set.insert(search_query->getTokens().begin(), search_query->getTokens().end());
-        all_search_queries[search_query->getHash()] = search_query;
-        virtual_column_to_search_query[column_name] = search_query;
-    }
-
-    all_search_tokens = Names(all_search_tokens_set.begin(), all_search_tokens_set.end());
-    std::ranges::sort(all_search_tokens);
-    cardinalities_cache = std::make_shared<TokensCardinalitiesCache>(all_search_tokens);
 }
 
 bool MergeTreeIndexConditionText::requiresReadingAllTokens(const RPNElement & element)

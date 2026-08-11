@@ -5804,7 +5804,7 @@ ReadFromMergeTree::SerializedTextIndexReadTasks ReadFromMergeTree::deserializeTe
     return tasks;
 }
 
-void ReadFromMergeTree::restoreIndexReadTasksForTextIndex(const SerializedTextIndexReadTasks & tasks)
+void ReadFromMergeTree::restoreTextIndexReadTasks(const SerializedTextIndexReadTasks & tasks)
 {
     const auto & metadata_snapshot = storage_snapshot->metadata;
     const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
@@ -5823,20 +5823,16 @@ void ReadFromMergeTree::restoreIndexReadTasksForTextIndex(const SerializedTextIn
         }
 
         auto index_helper = MergeTreeIndexFactory::instance().get(metadata_snapshot, *index_it, *data.getSettings());
-        if (!index_helper->isTextIndex())
+        const auto * text_index = typeid_cast<const MergeTreeIndexText *>(index_helper.get());
+        if (!text_index)
         {
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Index {} required by a distributed plan is not a text index in table {}",
                 task.index_name, data.getStorageID().getNameForLogs());
         }
 
-        auto condition = index_helper->createIndexCondition(/*predicate=*/ nullptr, context);
-        auto * condition_text = typeid_cast<MergeTreeIndexConditionText *>(condition.get());
-        if (!condition_text)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Condition for text index {} is not a text index condition", task.index_name);
-
         IndexReadTask index_read_task;
-        std::map<String, TextSearchQueryPtr> queries_by_virtual_column;
+        std::unordered_map<String, TextSearchQueryPtr> queries_by_virtual_column;
 
         for (const auto & column : task.columns)
         {
@@ -5844,11 +5840,10 @@ void ReadFromMergeTree::restoreIndexReadTasksForTextIndex(const SerializedTextIn
             index_read_task.columns.emplace_back(column.name, std::make_shared<DataTypeUInt8>());
         }
 
-        condition_text->setSearchQueriesForVirtualColumns(task.global_search_mode, queries_by_virtual_column);
+        auto condition = text_index->createIndexConditionForVirtualColumns(task.global_search_mode, std::move(queries_by_virtual_column), context);
 
         auto factory = [condition](const ActionsDAG *, const ActionsDAG::Node *) { return condition; };
-        auto condition_template = std::make_shared<ConditionTemplate<MergeTreeIndexConditionPtr>>(
-            /*dag=*/ nullptr, std::move(factory), metadata_snapshot, context, /*skip_folding=*/ false);
+        auto condition_template = std::make_shared<ConditionTemplate<MergeTreeIndexConditionPtr>>(/*dag=*/ nullptr, std::move(factory), metadata_snapshot, context, /*skip_folding=*/ false);
 
         index_read_task.index = MergeTreeIndexWithCondition(std::move(index_helper), std::move(condition_template));
         index_read_tasks.emplace(task.index_name, std::move(index_read_task));
@@ -5936,7 +5931,7 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
 
     /// Direct reads from a text index: the shipped filter references `__text_index_*` virtual columns
     /// instead of the original text-search functions, and only the state below lets the receiving node
-    /// materialize them (see `restoreIndexReadTasksForTextIndex`).
+    /// materialize them (see `restoreTextIndexReadTasks`).
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_TEXT_INDEX_READ_TASKS)
     {
         serializeTextIndexReadTasks(ctx);
@@ -6034,24 +6029,29 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
 
     auto metadata_snapshot = table.getInMemoryMetadataPtr(ctx.context, false);
 
-    /// Register the shipped `__text_index_*` virtual columns before the step is built: the shipped
-    /// column list and filters reference them, and resolving either against a snapshot that does not
-    /// know them fails with NOT_FOUND_COLUMN_IN_BLOCK.
+    /// Register the shipped `__text_index_*` virtual columns before the step is built.
     if (!text_index_read_tasks.empty())
     {
         auto new_metadata = StorageInMemoryMetadata::clone(metadata_snapshot);
+
         for (const auto & task : text_index_read_tasks)
         {
             for (const auto & column : task.columns)
             {
                 VirtualColumnDescription virtual_column(
-                    column.name, std::make_shared<DataTypeUInt8>(), /*codec=*/ nullptr, task.index_name,
-                    VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader);
+                    column.name,
+                    std::make_shared<DataTypeUInt8>(),
+                    /*codec=*/ nullptr,
+                    task.index_name,
+                    VirtualsKind::Ephemeral,
+                    VirtualsMaterializationPlace::Reader);
+
                 virtual_column.default_desc.kind = ColumnDefaultKind::Default;
                 virtual_column.default_desc.expression = column.default_expression;
                 new_metadata->virtuals.add(std::move(virtual_column));
             }
         }
+
         metadata_snapshot = std::move(new_metadata);
     }
 
@@ -6087,7 +6087,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
             read_from_merge_tree_step->setDistributedRead(distributed_read_bucket_count);
 
         if (!text_index_read_tasks.empty())
-            read_from_merge_tree_step->restoreIndexReadTasksForTextIndex(text_index_read_tasks);
+            read_from_merge_tree_step->restoreTextIndexReadTasks(text_index_read_tasks);
     }
 
     /// Need to keep shared pointer to MergeTree table till the end of plan execution

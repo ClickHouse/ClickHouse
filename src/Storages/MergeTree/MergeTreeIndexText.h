@@ -552,6 +552,12 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
+    /// Builds a condition from the search queries shipped in a distributed plan instead of from a predicate.
+    MergeTreeIndexConditionPtr createIndexConditionForVirtualColumns(
+        TextSearchMode global_search_mode,
+        std::unordered_map<String, TextSearchQueryPtr> queries_by_virtual_column,
+        ContextPtr context) const;
+
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
     static DataTypePtr getNestedDataType(const DataTypePtr & data_type);
 

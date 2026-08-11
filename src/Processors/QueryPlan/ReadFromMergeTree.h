@@ -421,18 +421,16 @@ public:
     /// Removes physical text columns that were eliminated by direct read from text index.
     void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns);
 
-    /// Text-index direct-read state shipped with a serialized plan: everything the receiving node of
-    /// a distributed query needs to rebuild `index_read_tasks` against its own copy of the table.
-    /// It cannot be re-derived there because the shipped filter references the `__text_index_*`
-    /// virtual columns instead of the original text-search functions.
+    /// State shipped with a serialized plan to rebuild `index_read_tasks` on the receiving node.
+    /// It cannot be re-derived there: the shipped filter references `__text_index_*` virtual columns.
     struct SerializedTextIndexReadTask
     {
         struct Column
         {
             String name;
             TextSearchQueryPtr search_query;
-            /// Default expression of the virtual column (null if none). The reader evaluates it for
-            /// parts where the index is not materialized and for abandoned pattern scans.
+            /// Default expression of the virtual column (null if none).
+            /// The reader evaluates it for parts where the index is not materialized.
             ASTPtr default_expression;
         };
 
@@ -535,8 +533,7 @@ private:
     void serializeTextIndexReadTasks(Serialization & ctx) const;
     static SerializedTextIndexReadTasks deserializeTextIndexReadTasks(Deserialization & ctx);
     /// Rebuilds `index_read_tasks` from the shipped state against this node's own metadata.
-    /// The `__text_index_*` virtual columns must already be present in the storage snapshot.
-    void restoreIndexReadTasksForTextIndex(const SerializedTextIndexReadTasks & tasks);
+    void restoreTextIndexReadTasks(const SerializedTextIndexReadTasks & tasks);
 
     MergeTreeSettingsPtr data_settings;
     MergeTreeReaderSettings reader_settings;
