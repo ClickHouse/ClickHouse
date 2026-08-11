@@ -82,6 +82,7 @@ function shared_native_and_http_tests()
     local set_id="set_${run}_${CLICKHOUSE_DATABASE}"
     $run "SET max_threads = 4" "$set_id"
     wait_for "count() = 1 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$set_id' AND exception_code != 0"
+    wait_for "count() = 1 FROM system.background_queries WHERE query_id = '$set_id' AND status = 'Failed' AND exception_code != 0 AND exception != ''"
     echo "failed asynchronously"
 }
 

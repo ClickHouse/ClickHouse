@@ -2623,24 +2623,6 @@ void executeQueryInBackground(std::string_view query, ContextMutablePtr context)
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Queries that receive data from the client cannot be run in the background");
                     }
                 }
-
-                try
-                {
-                    io.onFinish();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("executeQueryInBackground");
-                }
-
-                try
-                {
-                    handle->onFinish();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("executeQueryInBackground");
-                }
             }
             catch (...)
             {
@@ -2653,26 +2635,29 @@ void executeQueryInBackground(std::string_view query, ContextMutablePtr context)
                     tryLogCurrentException("executeQueryInBackground");
                 }
 
-                try
-                {
-                    handle->onException(
-                        getCurrentExceptionCode(),
-                        wipeSensitiveDataAndCutToLength(
-                            getCurrentExceptionMessage(true),
-                            context->getServerSettings()[ServerSetting::background_queries_registry_max_error_length],
-                            true));
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("executeQueryInBackground");
-                }
-
                 throw;
             }
+
+            io.onFinish();
+            handle->onFinish();
         }
         catch (...)
         {
             tryLogCurrentException("executeQueryInBackground");
+
+            try
+            {
+                handle->onException(
+                    getCurrentExceptionCode(),
+                    wipeSensitiveDataAndCutToLength(
+                        getCurrentExceptionMessage(true),
+                        context->getServerSettings()[ServerSetting::background_queries_registry_max_error_length],
+                        true));
+            }
+            catch (...)
+            {
+                tryLogCurrentException("executeQueryInBackground");
+            }
         }
     };
 
