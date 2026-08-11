@@ -978,6 +978,11 @@ inline void writeDateTimeUnixTimestamp(DateTime64 datetime64, UInt32 scale, Writ
     scale = scale > MaxScale ? MaxScale : scale;
 
     auto components = DecimalUtils::split(datetime64, scale);
+    if (components.fractional < 0)
+    {
+        buf.write('-');
+        components.fractional = -components.fractional;
+    }
     writeIntText(components.whole, buf);
 
     if (scale > 0)

@@ -43,8 +43,6 @@ bool csvDelimiterConflictsWithDateTime64(
         case FormatSettings::DateTimeOutputFormat::ISO:
             return delimiter == '-' || delimiter == ':' || delimiter == 'T' || delimiter == 'Z' || (scale > 0 && delimiter == '.');
         case FormatSettings::DateTimeOutputFormat::UnixTimestamp:
-            if (value.value < 0 && DecimalUtils::split(value, scale).whole == 0)
-                return true;
             return delimiter == '-' || (scale > 0 && delimiter == '.');
     }
 }

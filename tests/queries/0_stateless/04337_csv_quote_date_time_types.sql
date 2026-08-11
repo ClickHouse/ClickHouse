@@ -66,9 +66,19 @@ FROM format(
 FORMAT CSV
 SETTINGS output_format_csv_quote_date_time_types = 0, format_csv_delimiter = '1', date_time_output_format = 'unix_timestamp';
 
-SELECT 'negative subsecond DateTime64 Unix timestamp remains quoted' FORMAT TSVRaw;
-SELECT startsWith(formatRow('CSV', toDateTime64(-0.456, 3, 'UTC')), '"')
-SETTINGS output_format_csv_quote_date_time_types = 0, date_time_output_format = 'unix_timestamp';
+SELECT 'negative subsecond DateTime64 Unix timestamp is unquoted with safe delimiter' FORMAT TSVRaw;
+SELECT formatRow('CSV', toDateTime64(-0.456, 3, 'UTC')) = '-0.456\n'
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    date_time_output_format = 'unix_timestamp',
+    format_csv_delimiter = '|';
+
+SELECT 'negative subsecond DateTime64 Unix timestamp is quoted with conflicting delimiter' FORMAT TSVRaw;
+SELECT formatRow('CSV', toDateTime64(-0.456, 3, 'UTC')) = '"-0.456"\n'
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    date_time_output_format = 'unix_timestamp',
+    format_csv_delimiter = '-';
 
 SELECT 'DateTime64 dot quoting follows trimmed fractional output' FORMAT TSVRaw;
 SELECT
