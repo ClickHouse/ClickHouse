@@ -72,42 +72,22 @@ def _stateless_flaky_jobs(workflow):
 def test_every_merge_queue_flaky_check_also_runs_in_pr_ci():
     # A flaky check that exists only in the merge queue can only ever report a
     # bad test once the merge is already in progress. Pin that each merge-queue
-    # flaky check has a PR-side counterpart with the same build and runner, so
-    # the PR sees the same configuration first (and with the larger iteration
-    # count and time budget - see `is_merge_queue_event` in functional_tests.py).
-    # The counterpart is matched by `command`, not by name: the two lanes run
-    # the same job with the same options but must keep distinct names (see
-    # `test_pr_and_merge_queue_lanes_have_distinct_cache_identity`).
+    # flaky check also runs in PR CI - as the same job config, sharing name,
+    # build, and runner - so the PR sees the same configuration first (and with
+    # the larger iteration count and time budget - see `is_merge_queue_event`
+    # in functional_tests.py). Sharing the job name (hence the praktika cache
+    # identity) between the workflows is deliberate: a cache hit means the PR
+    # changed neither source code nor tests, so skipping the flaky check is
+    # correct regardless of which workflow produced the record.
     from ci.workflows.merge_queue import workflow as mq_workflow
     from ci.workflows.pull_request import workflow as pr_workflow
 
     mq_jobs = _stateless_flaky_jobs(mq_workflow)
-    pr_jobs = _stateless_flaky_jobs(pr_workflow)
+    pr_jobs_by_name = {job.name: job for job in _stateless_flaky_jobs(pr_workflow)}
     assert mq_jobs, "merge queue lost its stateless flaky check"
     for mq_job in mq_jobs:
-        counterparts = [job for job in pr_jobs if job.command == mq_job.command]
-        assert (
-            counterparts
-        ), f"{mq_job.name} runs in the merge queue but not in PR CI"
-        for pr_job in counterparts:
-            assert pr_job.runs_on == mq_job.runs_on
-            assert pr_job.requires == mq_job.requires
-
-
-def test_pr_and_merge_queue_lanes_have_distinct_cache_identity():
-    # Praktika keys a cache record by `normalize_string(job_name)` plus the job
-    # digest, and the digest has no workflow/event in it, so two identically
-    # named jobs in different workflows share one record. The merge-queue lane
-    # runs fewer iterations with a smaller time budget than the PR lane, so
-    # sharing a record would let the weaker run satisfy the stronger one.
-    from ci.workflows.merge_queue import workflow as mq_workflow
-    from ci.workflows.pull_request import workflow as pr_workflow
-
-    mq_names = {job.name for job in _stateless_flaky_jobs(mq_workflow)}
-    pr_names = {job.name for job in _stateless_flaky_jobs(pr_workflow)}
-    assert mq_names
-    assert pr_names
-    assert not (mq_names & pr_names), (
-        "PR and merge-queue stateless flaky checks share a job name, hence a "
-        f"praktika cache identity: {sorted(mq_names & pr_names)}"
-    )
+        pr_job = pr_jobs_by_name.get(mq_job.name)
+        assert pr_job is not None, f"{mq_job.name} runs in the merge queue but not in PR CI"
+        assert pr_job.runs_on == mq_job.runs_on
+        assert pr_job.requires == mq_job.requires
+        assert pr_job.command == mq_job.command

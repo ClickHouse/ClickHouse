@@ -58,7 +58,6 @@ FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
     "Stateless tests (amd_msan, flaky check)",
     "Stateless tests (amd_debug, flaky check)",
     "Stateless tests (amd_binary, flaky check)",
-    "Stateless tests (amd_binary, flaky check, pr)",
 ]
 
 # Must match ci.workflows.pull_request.KEEPER_STRESS_PR_NAME

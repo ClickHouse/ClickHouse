@@ -641,33 +641,6 @@ class JobConfigs:
             runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
-        # Same build and runner as the merge-queue drift guard below, so the
-        # configuration that can bounce a PR from the merge queue also runs in
-        # the PR itself. Without it the only non-sanitizer flaky check lives in
-        # the queue, and a test that is only too slow (or only flaky) without a
-        # sanitizer is first reported when the merge is already in progress. The
-        # PR-side run is the stricter of the two: full iteration count and time
-        # budget, while the merge-queue run is reduced (see
-        # `ci/jobs/functional_tests.py`).
-        #
-        # The `, pr` suffix exists to keep the two lanes on separate cache
-        # records. Praktika keys a cache record by `normalize_string(job_name)`
-        # plus the job digest (`ci/praktika/cache.py`), and the digest contains
-        # no workflow or event (`ci/praktika/digest.py`), so a PR lane named
-        # exactly like the merge-queue lane would share its cache identity: a
-        # reduced merge-queue success (20 iterations / 20 minutes) could then
-        # satisfy this stricter PR run (50 iterations / 45 minutes), and the
-        # stronger pre-merge signal this job exists for would silently not run.
-        # The suffix is a name only - `command` below passes the same
-        # `--options` as the merge-queue lane, so the job itself is configured
-        # identically (the option string is validated token by token in
-        # `functional_tests.py`, which is why the suffix cannot be part of it).
-        Job.ParamSet(
-            parameter="amd_binary, flaky check, pr",
-            runs_on=RunnerLabels.AMD_MEDIUM,
-            requires=[ArtifactNames.CH_AMD_BINARY],
-            command='python3 ./ci/jobs/functional_tests.py --options "amd_binary, flaky check"',
-        ),
     )
     # Merge-queue drift guard: reruns the PR's new/changed stateless tests on
     # the merge group state (the PR merged with the current `master`), so a PR
@@ -677,6 +650,14 @@ class JobConfigs:
     # merge queue produces anyway; merge-queue runs use a reduced iteration
     # count and time budget (see `ci/jobs/functional_tests.py`) to keep queue
     # latency bounded.
+    #
+    # The same job config also runs in PR CI (see `ci/workflows/pull_request.py`),
+    # so the configuration that can bounce a PR from the merge queue is seen in
+    # the PR first, with the full iteration count and time budget. Sharing the
+    # config (and hence the praktika cache identity) between the two workflows
+    # is deliberate: a cache hit means the PR changed neither source code nor
+    # tests, so the flaky check has nothing new to exercise and skipping it is
+    # correct regardless of which workflow produced the record.
     stateless_tests_flaky_mq_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_binary, flaky check",
