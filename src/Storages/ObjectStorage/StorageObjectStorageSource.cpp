@@ -934,7 +934,18 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             && object_info->getObjectMetadata()->is_size_known)
             continue;
 
-        if (query_condition_cache && !object_info->file_bucket_info)
+        /// Applying cached matching marks skips row groups without reading them, so it is only
+        /// correct if the bytes the reader opens are the generation the marks were computed on.
+        /// The cache key carries the listed etag, but a plain `GET` is not pinned to it: only S3
+        /// with `s3_validate_etag_on_read` guarantees the opened bytes match the listed etag (see
+        /// `read_is_pinned_to_etag` below). Data-lake data files are immutable, so the path alone
+        /// pins the generation. In every other case the cache-derived bucket would carry no exact
+        /// generation token (`footer_digest` stays 0 - the marks describe row groups, not a
+        /// footer), and `checkFileMatchesBucketAssignment` could accept a same-row-group-count
+        /// rewrite; fail close by not pruning at all.
+        const bool marks_generation_is_pinned = configuration->isDataLakeConfiguration()
+            || (context_->getSettingsRef()[Setting::s3_validate_etag_on_read] && object_storage->getType() == ObjectStorageType::S3);
+        if (query_condition_cache && !object_info->file_bucket_info && marks_generation_is_pinned)
         {
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
             std::optional<QueryConditionCache::MatchingMarks> matching_marks;
