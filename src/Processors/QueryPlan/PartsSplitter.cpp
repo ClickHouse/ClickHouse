@@ -1223,8 +1223,15 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 /// the primary key.
 static void applyRangeFilterFromAST(Pipe & pipe, ASTPtr & filter_function, const String & description, const KeyDescription & primary_key, ContextPtr context)
 {
-    /// An empty pipe has no header at all, and there is nothing to filter in it anyway: the consumers
-    /// drop empty pipes (`Pipe::unitePipes` starts with `removeEmptyPipes`).
+    /// An empty pipe has no header at all, and there is nothing to filter in it anyway. Skipping it here
+    /// is safe: the only step getters that can return an empty pipe are the merging-pipe getters (the
+    /// `ReadType::InOrder` getters in `ReadFromMergeTree::spreadMarkRangesAmongStreams` and
+    /// `spreadMarkRangesAmongStreamsFinal`), and their consumers unite the per-layer pipes with
+    /// `Pipe::unitePipes`, which starts with `removeEmptyPipes`, so the empty pipe is dropped anyway.
+    /// The join-by-shards path, where an empty layer must keep occupying its output port to preserve
+    /// positional shard pairing, never passes an empty pipe here: in `ReadFromMergeTree::readByLayers`
+    /// the in-order getter substitutes a `NullSource` placeholder, and the default getter reads through
+    /// `readFromPool`, which creates one source per thread regardless of the number of parts.
     if (!filter_function || pipe.empty())
         return;
 
