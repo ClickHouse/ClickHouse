@@ -356,9 +356,26 @@ void SQLDefinedHandlersFactory::removeReplicated(const ASTDropHandlerQuery & que
     /// changes and re-arm the update watch. This matters in the stale-cache direction too: if this replica
     /// still held the handler in `loaded_handlers` but Keeper had already removed it, the erase above already
     /// stopped serving it; this reload brings in everything else another replica may have changed.
-    loaded_handlers = metadata_storage->getAll();
-    rebuildSnapshot(lock);
-    metadata_storage->commitReload();
+    ///
+    /// The reload is best-effort: the drop has already committed in the source of truth and the erase above
+    /// has already fail-closed this replica, so a transient read error here must not turn a committed drop
+    /// into a client-visible failure - a retry would only report `HANDLER_DOESNT_EXIST`, and `ON CLUSTER`
+    /// DDL would mark the query failed on replicas that have in fact applied it. Log and let the background
+    /// update task bring in whatever else changed.
+    try
+    {
+        loaded_handlers = metadata_storage->getAll();
+        rebuildSnapshot(lock);
+        metadata_storage->commitReload();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, fmt::format(
+            "Could not re-read the handlers after dropping handler `{}`. "
+            "The drop has committed and the handler is no longer served by this replica; "
+            "the background update task will pick up any other concurrent changes",
+            query.handler_name));
+    }
 
     if (!removed && !query.if_exists)
         throw Exception(ErrorCodes::HANDLER_DOESNT_EXIST, "Cannot drop handler `{}`, because it doesn't exist", query.handler_name);
