@@ -24,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace Setting
@@ -250,20 +251,13 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
         expected_cardinality_u64,
         static_cast<UInt64>(data_file_record_count));
 
+    /// Empty etag is the only reason `tryCreateKey` returns nullopt; that case is handled above.
     if (!cache_key)
     {
-        LOG_TRACE(log, "Not using Puffin files cache for '{}', because etag is empty", puffin_path);
-        return loadDeletionVectorUncached(
-            object_storage,
-            puffin_path,
-            content_offset,
-            content_size_in_bytes,
-            expected_data_file,
-            expected_cardinality_u64,
-            data_file_record_count,
-            context,
-            log,
-            false);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "PuffinFilesCache::tryCreateKey returned nullopt for non-empty etag on '{}'",
+            puffin_path);
     }
 
     return cache->getOrSetDeletionVector(*cache_key, [&]()
