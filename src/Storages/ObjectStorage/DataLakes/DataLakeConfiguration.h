@@ -365,17 +365,25 @@ public:
             || (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Don't use deprecated settings storage_catalog_type, storage_catalog_url, storage_aws_access_key_id");
-        const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase();
-        /// Having no associated `DataLakeDatabase` is a valid state (e.g. an `Iceberg` table in a
-        /// regular `Atomic`/`Ordinary` database, or a database not currently registered during
-        /// async load), so return nullptr rather than throwing. Callers treat a null catalog as
-        /// "no catalog integration", the same as the base-class default.
-        auto datalake_database = std::dynamic_pointer_cast<DatabaseDataLake>(DatabaseCatalog::instance().tryGetDatabase(db_name));
+        auto datalake_database = tryGetDataLakeDatabase(table_id, context);
         if (!datalake_database)
             return nullptr;
         return datalake_database->getCatalog();
 #else
         return nullptr;
+#endif
+    }
+
+    ASTs completeEngineArgsFromCatalog(
+        [[maybe_unused]] const StorageID & table_id, [[maybe_unused]] ContextPtr context) const override
+    {
+#if USE_AVRO && USE_PARQUET
+        auto datalake_database = tryGetDataLakeDatabase(table_id, context);
+        if (!datalake_database)
+            return {};
+        return datalake_database->getEngineArgsForNewTable(table_id.table_name, this->getType());
+#else
+        return {};
 #endif
     }
 
@@ -414,6 +422,14 @@ private:
     ObjectStoragePtr ready_object_storage;
     DataLakeMetadataPtr current_metadata;
     LoggerPtr log = getLogger("DataLakeConfiguration");
+
+#if USE_AVRO && USE_PARQUET
+    static std::shared_ptr<DatabaseDataLake> tryGetDataLakeDatabase(const StorageID & table_id, const ContextPtr & context)
+    {
+        const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase();
+        return std::dynamic_pointer_cast<DatabaseDataLake>(DatabaseCatalog::instance().tryGetDatabase(db_name));
+    }
+#endif
 
     void assertLocalPathCorrect(ObjectStoragePtr object_storage, ContextPtr local_context)
     {

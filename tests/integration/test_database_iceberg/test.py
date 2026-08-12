@@ -992,6 +992,65 @@ def test_create(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
+def test_create_without_engine_arguments(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_without_engine_arguments_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String) ENGINE = Iceberg",
+        settings={
+            "allow_experimental_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+    catalog = load_catalog_impl(started_cluster)
+    metadata_location = catalog.load_table(f"{root_namespace}.{table_name}").metadata_location
+    assert f"/{root_namespace}/{table_name}/metadata/" in metadata_location, metadata_location
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+
+def test_create_without_engine_arguments_storage_mismatch(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_without_engine_arguments_storage_mismatch_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    with pytest.raises(QueryRuntimeException) as exc:
+        node.query(
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergLocal",
+            settings={
+                "allow_experimental_database_iceberg": 1,
+                "write_full_path_in_iceberg_metadata": 1,
+            },
+        )
+    assert "while its table engine writes to Local" in str(exc.value), str(exc.value)
+
+
+def test_create_without_engine_arguments_outside_catalog(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    table_name = f"test_create_without_engine_arguments_outside_catalog_{uuid.uuid4().hex}"
+
+    with pytest.raises(QueryRuntimeException) as exc:
+        node.query(f"CREATE TABLE default.{table_name} (x String) ENGINE = IcebergS3")
+    assert "requires 1 to" in str(exc.value), str(exc.value)
+
+
 def test_create_gzip_metadata(started_cluster):
     # Catalog-backed CREATE TABLE from ClickHouse with gzip metadata
     # compression exercises IcebergMetadata::createInitial and the
@@ -1027,8 +1086,11 @@ def test_create_gzip_metadata(started_cluster):
 
     # The initial metadata ClickHouse registered with the catalog must use the
     # spec `gz` extension, and the catalog must point at the file that exists.
+    catalog = load_catalog_impl(started_cluster)
+    metadata_location = catalog.load_table(f"{root_namespace}.{table_name}").metadata_location
+    metadata_bucket, metadata_key = metadata_location[len("s3://"):].split("/", 1)
     metadata_objects = list_s3_objects(
-        started_cluster.minio_client, "warehouse-rest", f"{table_name}/metadata/"
+        started_cluster.minio_client, metadata_bucket, metadata_key.rsplit("/", 1)[0] + "/"
     )
     assert any(obj.endswith(".gz.metadata.json") for obj in metadata_objects), metadata_objects
     assert not any(obj.endswith(".gzip.metadata.json") for obj in metadata_objects), metadata_objects

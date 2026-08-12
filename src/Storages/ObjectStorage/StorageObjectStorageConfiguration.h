@@ -282,6 +282,11 @@ public:
         return nullptr;
     }
 
+    virtual ASTs completeEngineArgsFromCatalog(const StorageID & /*table_id*/, ContextPtr /*context*/) const
+    {
+        return {};
+    }
+
     virtual bool optimize(ObjectStoragePtr /*object_storage*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
     {
         return false;

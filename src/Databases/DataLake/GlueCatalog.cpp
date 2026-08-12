@@ -9,6 +9,7 @@
 #include <aws/glue/GlueClient.h>
 #include <aws/glue/model/GetTablesRequest.h>
 #include <aws/glue/model/GetTableRequest.h>
+#include <aws/glue/model/GetDatabaseRequest.h>
 #include <aws/glue/model/GetDatabasesRequest.h>
 #include <aws/glue/model/CreateTableRequest.h>
 #include <aws/glue/model/DeleteTableRequest.h>
@@ -635,6 +636,29 @@ void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
     create_request.SetDatabaseInput(db_input);
 
     glue_client->CreateDatabase(create_request);
+}
+
+std::optional<std::string> GlueCatalog::getDefaultTableLocation(
+    const std::string & namespace_name,
+    const std::string & table_name) const
+{
+    Aws::Glue::Model::GetDatabaseRequest request;
+    request.SetName(namespace_name);
+
+    auto outcome = glue_client->GetDatabase(request);
+    if (!outcome.IsSuccess())
+    {
+        LOG_DEBUG(
+            log, "Cannot get database {} from glue catalog: {}",
+            namespace_name, outcome.GetError().GetMessage());
+        return std::nullopt;
+    }
+
+    const auto & location_uri = outcome.GetResult().GetDatabase().GetLocationUri();
+    if (location_uri.empty())
+        return std::nullopt;
+
+    return std::string(std::filesystem::path(location_uri) / table_name);
 }
 
 void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*metadata_content*/) const

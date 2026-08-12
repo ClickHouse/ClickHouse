@@ -7,6 +7,7 @@
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Disks/DiskType.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Common/MultiVersion.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
@@ -85,6 +86,8 @@ public:
     void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const;
+
+    ASTs getEngineArgsForNewTable(const String & name, ObjectStorageType engine_storage_type) const;
 protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
@@ -140,6 +143,20 @@ private:
         DataLakeStorageSettingsPtr storage_settings) const;
 
     std::string getStorageEndpointForTable(const DataLake::TableMetadata & table_metadata) const;
+
+    struct TableEngineArgs
+    {
+        ASTs args;
+        DatabaseDataLakeStorageType storage_type = DatabaseDataLakeStorageType::Other;
+        bool static_credentials_applied = false;
+    };
+
+    TableEngineArgs buildTableEngineArgs(
+        const DatabaseDataLakeSettings & settings,
+        const DataLake::ICatalog & catalog,
+        const DataLake::TableMetadata & table_metadata,
+        bool lightweight) const;
+
 
     /// Shared implementation of getTablesIterator / getTablesIteratorWithHint.
     /// keep_unresolved_tables controls what happens when a single table's metadata cannot

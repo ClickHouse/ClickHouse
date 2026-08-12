@@ -1480,7 +1480,8 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     }
     {
         Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
-        properties->set("location", location);
+        if (!location.empty())
+            properties->set("location", location);
         request_body->set("properties", properties);
     }
 
@@ -1492,6 +1493,58 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     {
         DB::tryLogCurrentException(log);
     }
+}
+
+std::optional<std::string> RestCatalog::getNamespaceLocation(const std::string & namespace_name) const
+{
+    const auto state_snapshot = state.get();
+    const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name);
+
+    String json_str;
+    try
+    {
+        auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint);
+        readJSONObjectPossiblyInvalid(json_str, *buf);
+    }
+    catch (const DB::HTTPException & ex)
+    {
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+        {
+            LOG_DEBUG(log, "Namespace {} does not exist: {}", namespace_name, ex.displayText());
+            return std::nullopt;
+        }
+        throw;
+    }
+
+    Poco::JSON::Parser parser;
+    Poco::Dynamic::Var json = parser.parse(json_str);
+    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+    if (!object->has("properties"))
+        return std::nullopt;
+
+    auto properties = object->get("properties").extract<Poco::JSON::Object::Ptr>();
+    if (!properties || !properties->has("location"))
+        return std::nullopt;
+
+    return properties->get("location").extract<String>();
+}
+
+std::optional<std::string> RestCatalog::getDefaultTableLocation(
+    const std::string & namespace_name,
+    const std::string & table_name) const
+{
+    auto namespace_location = getNamespaceLocation(namespace_name);
+    if (!namespace_location)
+    {
+        createNamespaceIfNotExists(namespace_name, /* location */ "");
+        namespace_location = getNamespaceLocation(namespace_name);
+    }
+
+    if (!namespace_location)
+        return std::nullopt;
+
+    return std::string(std::filesystem::path(*namespace_location) / table_name);
 }
 
 void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr metadata_content) const

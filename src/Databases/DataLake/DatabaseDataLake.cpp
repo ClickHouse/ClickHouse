@@ -11,6 +11,7 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/DataLake/StaticStorageCredentials.h>
 #include <Common/Exception.h>
+#include <Common/quoteString.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBuffer.h>
@@ -616,6 +617,140 @@ std::string DatabaseDataLake::getStorageEndpointForTable(const DataLake::TableMe
     return table_metadata.getLocationWithEndpoint(endpoint_from_settings, settings[DatabaseDataLakeSetting::storage_uri_style]);
 }
 
+bool DatabaseDataLake::catalogManagesProviderChain(const DataLake::ICatalog & catalog)
+{
+    return catalog.getCatalogType() == DatabaseDataLakeCatalogType::GLUE;
+}
+
+DatabaseDataLake::TableEngineArgs DatabaseDataLake::buildTableEngineArgs(
+    const DatabaseDataLakeSettings & settings,
+    const DataLake::ICatalog & catalog,
+    const DataLake::TableMetadata & table_metadata,
+    bool lightweight) const
+{
+    TableEngineArgs result;
+
+    /// Take database engine definition AST as base.
+    ASTStorage * storage = table_engine_definition->as<ASTStorage>();
+    result.args = storage->engine->arguments->children;
+
+    if (table_metadata.hasLocation())
+    {
+        auto table_endpoint = getStorageEndpointForTable(table_metadata);
+        LOG_DEBUG(log, "Table endpoint {}", table_endpoint);
+        if (table_endpoint.starts_with(DataLake::FILE_PATH_PREFIX))
+            table_endpoint = table_endpoint.substr(DataLake::FILE_PATH_PREFIX.length());
+        if (result.args.empty())
+            result.args.emplace_back(make_intrusive<ASTLiteral>(table_endpoint));
+        else
+            result.args[0] = make_intrusive<ASTLiteral>(table_endpoint);
+    }
+
+    auto storage_type_from_catalog = catalog.getStorageType();
+    if (storage_type_from_catalog.has_value())
+    {
+        result.storage_type = storage_type_from_catalog.value();
+    }
+    else
+    {
+        if (table_metadata.hasLocation() || !lightweight)
+            result.storage_type = table_metadata.getStorageType();
+    }
+
+    if (result.args.size() == 1)
+    {
+        std::array<DatabaseDataLakeCatalogType, 3> vended_credentials_catalogs = {DatabaseDataLakeCatalogType::ICEBERG_ONELAKE, DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE, DatabaseDataLakeCatalogType::PAIMON_REST};
+
+        std::shared_ptr<DataLake::IStorageCredentials> static_credentials;
+        if (!catalogManagesProviderChain(catalog))
+            static_credentials = DataLake::tryGetStaticStorageCredentials(result.storage_type, settings);
+
+        if (table_metadata.hasStorageCredentials())
+        {
+            LOG_DEBUG(log, "Getting credentials");
+            auto storage_credentials = table_metadata.getStorageCredentials();
+            if (storage_credentials)
+            {
+                LOG_DEBUG(log, "Has credentials");
+                storage_credentials->addCredentialsToEngineArgs(result.args);
+            }
+            else
+            {
+                LOG_DEBUG(log, "Has no credentials");
+            }
+        }
+        else if (static_credentials)
+        {
+            LOG_TRACE(log, "Using static credentials from database settings");
+            static_credentials->addCredentialsToEngineArgs(result.args);
+            result.static_credentials_applied = true;
+        }
+        else if (!lightweight && table_metadata.requiresCredentials() && std::find(vended_credentials_catalogs.begin(), vended_credentials_catalogs.end(), catalog.getCatalogType()) == vended_credentials_catalogs.end())
+        {
+            throw Exception(
+               ErrorCodes::BAD_ARGUMENTS,
+               "Either vended credentials need to be enabled "
+               "or storage credentials need to be specified in database engine arguments in CREATE query");
+        }
+    }
+
+    return result;
+}
+
+static DatabaseDataLakeStorageType toDataLakeStorageType(ObjectStorageType type)
+{
+    switch (type)
+    {
+        case ObjectStorageType::S3:
+            return DatabaseDataLakeStorageType::S3;
+        case ObjectStorageType::Azure:
+            return DatabaseDataLakeStorageType::Azure;
+        case ObjectStorageType::HDFS:
+            return DatabaseDataLakeStorageType::HDFS;
+        case ObjectStorageType::Local:
+            return DatabaseDataLakeStorageType::Local;
+        case ObjectStorageType::None:
+        case ObjectStorageType::Web:
+        case ObjectStorageType::Max:
+            return DatabaseDataLakeStorageType::Other;
+    }
+}
+
+ASTs DatabaseDataLake::getEngineArgsForNewTable(const String & name, ObjectStorageType engine_storage_type) const
+{
+    const auto settings_version = database_settings.get();
+    const DatabaseDataLakeSettings & settings = *settings_version;
+
+    auto catalog = getCatalog();
+    const auto [namespace_name, table_name] = DataLake::parseTableName(name);
+
+    auto location = catalog->getDefaultTableLocation(namespace_name, table_name);
+    if (!location)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Catalog of database {} cannot tell where table {} has to be created. "
+            "Specify the location in the table engine arguments explicitly",
+            backQuoteIfNeed(getDatabaseName()), name);
+
+    LOG_DEBUG(log, "Location assigned by the catalog for new table {}: {}", name, *location);
+
+    auto table_metadata = DataLake::TableMetadata().withLocation();
+    if (settings[DatabaseDataLakeSetting::force_add_bucket])
+        table_metadata.withForceAddBucket();
+    table_metadata.setLocation(*location);
+
+    const auto location_storage_type = table_metadata.getStorageType();
+    if (toDataLakeStorageType(engine_storage_type) != location_storage_type)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Catalog of database {} places table {} in {} ({}), while its table engine writes to {}. "
+            "Use the table engine variant for {}",
+            backQuoteIfNeed(getDatabaseName()), name, location_storage_type, *location,
+            toDataLakeStorageType(engine_storage_type), location_storage_type);
+
+    return buildTableEngineArgs(settings, *catalog, table_metadata, /* lightweight */false).args;
+}
+
 bool DatabaseDataLake::empty() const
 {
     return getCatalog()->empty();
@@ -677,91 +812,14 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         throw Exception::createRuntime(ErrorCodes::DATALAKE_DATABASE_ERROR, table_metadata.getReasonWhyTableIsUnreadable());
     }
 
-    /// Take database engine definition AST as base.
-    ASTStorage * storage = table_engine_definition->as<ASTStorage>();
-    ASTs args = storage->engine->arguments->children;
-
-    if (table_metadata.hasLocation())
-    {
-        /// Replace Iceberg Catalog endpoint with storage path endpoint of requested table.
-        auto table_endpoint = getStorageEndpointForTable(table_metadata);
-        LOG_DEBUG(log, "Table endpoint {}", table_endpoint);
-        if (table_endpoint.starts_with(DataLake::FILE_PATH_PREFIX))
-            table_endpoint = table_endpoint.substr(DataLake::FILE_PATH_PREFIX.length());
-        if (args.empty())
-            args.emplace_back(make_intrusive<ASTLiteral>(table_endpoint));
-        else
-            args[0] = make_intrusive<ASTLiteral>(table_endpoint);
-    }
+    auto table_engine_args = buildTableEngineArgs(settings, *catalog, table_metadata, lightweight);
+    ASTs & args = table_engine_args.args;
+    const auto storage_type = table_engine_args.storage_type;
+    const bool static_credentials_applied = table_engine_args.static_credentials_applied;
 
     const auto columns = ColumnsDescription(table_metadata.getSchema());
 
-    DatabaseDataLakeStorageType storage_type = DatabaseDataLakeStorageType::Other;
-    auto storage_type_from_catalog = catalog->getStorageType();
-    if (storage_type_from_catalog.has_value())
-    {
-        storage_type = storage_type_from_catalog.value();
-    }
-    else
-    {
-        if (table_metadata.hasLocation() || !lightweight)
-            storage_type = table_metadata.getStorageType();
-    }
-
-    /// We either fetch storage credentials from catalog
-    /// or get storage credentials from database settings
-    /// or get storage credentials from database engine arguments
-    /// in CREATE query (e.g. in `args`).
-    /// Vended credentials can be disabled in catalog itself,
-    /// so we have a separate setting to know whether we should even try to fetch them.
-    /// Some catalogs manage their own AWS credential provider chain (e.g. Glue uses the
-    /// database `aws_*` settings to authenticate to the catalog API and to drive STS
-    /// assume-role / instance-profile / web-identity providers, refreshed via
-    /// `getCredentialsConfigurationCallback`). For such catalogs the `aws_*` settings are
-    /// not authoritative static table-storage credentials: consuming them here would build
-    /// the S3 client from the raw key pair without the assumed-role/session-token identity
-    /// and would also suppress the provider-chain refresh callback below. So we only fall
-    /// back to static credentials for catalogs whose refresh callback vends storage
-    /// credentials (Unity/REST), which is exactly the case this fallback targets.
-    const bool catalog_manages_provider_chain = catalog->getCatalogType() == DatabaseDataLakeCatalogType::GLUE;
-
-    bool static_credentials_applied = false;
-    if (args.size() == 1)
-    {
-        std::array<DatabaseDataLakeCatalogType, 3> vended_credentials_catalogs = {DatabaseDataLakeCatalogType::ICEBERG_ONELAKE, DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE, DatabaseDataLakeCatalogType::PAIMON_REST};
-
-        std::shared_ptr<DataLake::IStorageCredentials> static_credentials;
-        if (!catalog_manages_provider_chain)
-            static_credentials = DataLake::tryGetStaticStorageCredentials(storage_type, settings);
-
-        if (table_metadata.hasStorageCredentials())
-        {
-            LOG_DEBUG(log, "Getting credentials");
-            auto storage_credentials = table_metadata.getStorageCredentials();
-            if (storage_credentials)
-            {
-                LOG_DEBUG(log, "Has credentials");
-                storage_credentials->addCredentialsToEngineArgs(args);
-            }
-            else
-            {
-                LOG_DEBUG(log, "Has no credentials");
-            }
-        }
-        else if (static_credentials)
-        {
-            LOG_TRACE(log, "Using static credentials from database settings");
-            static_credentials->addCredentialsToEngineArgs(args);
-            static_credentials_applied = true;
-        }
-        else if (!lightweight && table_metadata.requiresCredentials() && std::find(vended_credentials_catalogs.begin(), vended_credentials_catalogs.end(), catalog->getCatalogType()) == vended_credentials_catalogs.end())
-        {
-            throw Exception(
-               ErrorCodes::BAD_ARGUMENTS,
-               "Either vended credentials need to be enabled "
-               "or storage credentials need to be specified in database engine arguments in CREATE query");
-        }
-    }
+    const bool catalog_manages_provider_chain = catalogManagesProviderChain(*catalog);
 
     LOG_TEST(log, "Using table endpoint: {}", args[0]->as<ASTLiteral>()->value.safeGet<String>());
 

@@ -109,6 +109,9 @@ void StorageObjectStorageConfiguration::initialize(
             ? storage_settings[DataLakeStorageSetting::disk].value
             : "";
     }
+    if (disk_name.empty() && engine_args.empty() && table_id)
+        engine_args = configuration_to_initialize.completeEngineArgsFromCatalog(*table_id, local_context);
+
     if (!disk_name.empty())
         configuration_to_initialize.fromDisk(disk_name, engine_args, local_context, with_table_structure);
     else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context, true, nullptr, table_id))
