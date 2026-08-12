@@ -57,7 +57,7 @@ Normalmente no es necesario aplicar una sobrescritura a un formato de escritura,
 | Float64               | float                   |                       |                                                                                                                                                          |
 | Decimal               | decimal.Decimal         |                       |                                                                                                                                                          |
 | String                | str or bytes            |                       | Una columna debe contener siempre texto o bytes de forma consistente.                                                                                    |
-| FixedString           | bytes                   | string                | Si se inserta como una cadena, los bytes adicionales se establecerán en cero                                                                             |
+| FixedString           | bytes                   | string                | Los valores de cadena se rellenan con bytes cero. Los bytes vacíos se escriben como bytes completamente cero.                                            |
 | Enum[8,16]            | str or int              |                       | Inserte las etiquetas como cadenas o como sus valores enteros subyacentes.                                                                               |
 | Date                  | datetime.date           | int                   | Los valores enteros se interpretan como días desde 1970-01-01.                                                                                           |
 | Date32                | datetime.date           | int                   | Los valores enteros se interpretan como desplazamientos de días con signo.                                                                               |
@@ -217,14 +217,34 @@ assert [row[0].hour for row in results.result_rows] == [1, 10, 16]
 </Note>
 
 <div id="timezone-naive-datetime-objects">
-  #### Objetos `datetime` sin información de zona horaria
+  #### Objetos datetime sin zona horaria
 </div>
 
-Python interpreta un `datetime` sin información de zona horaria en la zona horaria local del sistema cuando se llama a `.timestamp()`. Esto hace que las inserciones dependan del entorno. Se recomienda una de estas opciones:
+La configuración global `naive_datetime_insert` controla la inserción de objetos nativos de Python con valores `datetime` sin zona horaria. También se aplica a las cadenas ISO sin zona horaria aceptadas por las columnas `DateTime64`.
 
-1. Use objetos `datetime` con zona horaria.
-2. Asegúrese de que la zona horaria del proceso sea UTC.
-3. Asigne la zona horaria deseada o conviértalo explícitamente en un entero de época.
+* `"local"` es el valor predeterminado en 1.x. Python interpreta el valor en la zona horaria del proceso al llamar a `.timestamp()`. Esto conserva el comportamiento existente.
+* `"server"` interpreta el valor como hora local en la zona horaria declarada por la columna `DateTime` o `DateTime64`. Si la columna no tiene zona horaria, utiliza la zona horaria del servidor indicada cuando se conectó el Client.
+
+Configure la opción antes de realizar una inserción. Se lee al serializar cada columna de inserción nativa que contiene objetos `datetime` de Python o cadenas ISO `DateTime64`, por lo que el cambio se aplica a los Clients existentes y a los contextos de inserción reutilizables.
+
+```python
+from datetime import datetime
+
+from clickhouse_connect import common
+
+common.set_setting("naive_datetime_insert", "server")
+
+naive_time = datetime(2023, 6, 15, 10, 30)
+client.insert("events", [[naive_time]], column_names=["event_time"])
+```
+
+Con `"server"`, ClickHouse Connect asigna el `tzinfo` de destino antes de convertir el valor a una época. Para las zonas horarias IANA, sigue las reglas de la biblioteca estándar para las transiciones de horario de verano. En una superposición de otoño se usa el valor `fold` de `datetime`. El valor predeterminado `fold=0` selecciona el desplazamiento anterior a la transición, mientras que `fold=1` selecciona el posterior. En un salto de primavera se usa la misma selección de desplazamiento, y no se rechaza ni se normaliza.
+
+Las horas de reloj inexistentes durante un salto de primavera pueden no conservarse en un recorrido de ida y vuelta mediante un parámetro de consulta en modo de reloj, ya que el análisis de texto de ClickHouse puede seleccionar un desplazamiento diferente. Use un `datetime` con zona horaria o una hora de reloj válida cuando el instante sea importante.
+
+La opción solo se aplica a inserciones nativas de objetos Python de valores `datetime` y cadenas ISO sin zona horaria aceptadas por `DateTime64`. Las columnas de NumPy y Pandas con dtype `datetime64` sin zona horaria conservan su conversión actual de hora de reloj UTC.
+
+Para representar un instante específico independientemente de cualquiera de los modos, asigne la zona horaria deseada o proporcione explícitamente un entero de época.
 
 ```python
 from datetime import datetime, timezone
@@ -237,13 +257,15 @@ epoch_timestamp = int(naive_time.replace(tzinfo=timezone.utc).timestamp())
 client.insert("events", [[epoch_timestamp]], column_names=["event_time"])
 ```
 
+Los parámetros de consulta `datetime` sin zona horaria usan la configuración independiente `naive_datetime_binding`. De forma predeterminada, el modo `"wall"` envía los campos de hora local sin conversión a la hora local del host. Consulte la sección [Argumento Parameters](/es/integrations/language-clients/python/driver-api#parameters-argument).
+
 <div id="datetime-columns-with-timezone-metadata">
   #### Columnas DateTime con metadatos de zona horaria
 </div>
 
 Las columnas de ClickHouse pueden declarar metadatos de zona horaria, por ejemplo `DateTime('America/Denver')` o `DateTime64(3, 'Asia/Tokyo')`. Estos metadatos controlan cómo se presentan los valores al consultarlos.
 
-Al insertar en una columna de este tipo, ClickHouse Connect convierte el valor de Python según su propio `tzinfo`. Al consultar, el resultado usa la zona horaria de la columna, a menos que se proporcione una sobrescritura por columna con el argumento `column_tzs`. El argumento `query_tz` no sobrescribe la zona horaria declarada de la columna.
+Al insertar un valor con zona horaria, ClickHouse Connect conserva el instante representado. Para un valor sin zona horaria, la configuración `naive_datetime_insert` controla si se usa la zona horaria del proceso o la de la columna. Al consultar, el resultado usa la zona horaria de la columna, a menos que se proporcione una sobrescritura por columna con el argumento `column_tzs`. El argumento `query_tz` no sobrescribe la zona horaria declarada de la columna.
 
 ```python
 from datetime import datetime

@@ -13,7 +13,7 @@ ClickHouse Connect 提供了许多适用于高级用例的其他选项。
   ## 全局设置
 </div>
 
-有少量设置可在全局范围内控制 ClickHouse Connect 的行为。可通过顶层 `common` 包访问这些设置：
+有少量设置可用于全局控制 ClickHouse Connect 的行为。这些设置可通过顶层 `common` 包访问：
 
 ```python
 from clickhouse_connect import common
@@ -24,25 +24,27 @@ print(common.get_setting("invalid_setting_action"))
 ```
 
 <Note>
-  请先配置通用设置，再创建客户端。创建客户端时，会将生成的 session/query ID 和产品标识等设置复制到客户端专属状态中，因此之后对全局设置的更改不会更新已有客户端。
+  请在创建客户端前配置客户端创建设置。生成的会话/查询 ID、产品标识等设置会被复制到客户端专属状态中，因此之后对全局设置的更改不会更新现有客户端。绑定和插入设置则不同：绑定参数时会读取 `naive_datetime_binding` 和 `dict_parameter_format`；序列化包含 Python `datetime` 对象或 `DateTime64` ISO 字符串的原生插入列时，会读取 `naive_datetime_insert`。更改这些设置会影响现有客户端。可复用的插入上下文会在每次插入时使用当前的 `naive_datetime_insert` 值。
 </Note>
 
 当前定义了以下全局设置：
 
-| Setting name              | Default    | Options                       | Description                                                                               |
-| ------------------------- | ---------- | ----------------------------- | ----------------------------------------------------------------------------------------- |
-| `autogenerate_session_id` | `True`     | `True`, `False`               | 除非显式提供 session ID，否则会为每个同步客户端生成一个 UUID session ID。async 工厂默认会将其重写为 `False`。               |
-| `autogenerate_query_id`   | `True`     | `True`, `False`               | 除非显式提供 query ID，否则会为每个 request 生成一个 UUID query ID。                                        |
-| `dict_parameter_format`   | `"json"`   | `"json"`, `"map"`             | 将用于 client-side 参数绑定的 Python 字典格式化为 JSON 或 ClickHouse map 字面量。                            |
-| `invalid_setting_action`  | `"error"`  | `"drop"`, `"send"`, `"error"` | 对于 server 无法识别或为 readonly 的设置，可选择丢弃、发送或拒绝。`"error"` 会引发 `ProgrammingError`。               |
-| `max_connection_age`      | `600`      | 任意秒数                          | 可复用的 HTTP keep-alive connection 的最大存活时间。轮换有助于将 connections 分散到 load balancer 后面的各个节点。     |
-| `product_name`            | `""`       | 任意字符串                         | 添加到 client 信息中的产品标识。可使用 `"my-product/1.0"` 这样的值。                                          |
-| `readonly`                | `0`        | `0`, `1`                      | 针对非常旧的 ClickHouse 服务器上 `readonly` 设置的兼容性提示。                                               |
-| `send_os_user`            | `True`     | `True`, `False`               | 在 client 信息中包含检测到的操作系统用户名。                                                                |
-| `send_integration_tags`   | `True`     | `True`, `False`               | 在 HTTP user-agent 中包含 client 使用的 integrations，例如 Pandas 或 SQLAlchemy。                     |
-| `use_protocol_version`    | `True`     | `True`, `False`               | 协商 Native 格式功能使用的客户端协议版本，例如 `DateTime` 列的时区元数据。对于会拒绝 `client_protocol_version` 的代理，请禁用此项。 |
-| `max_error_size`          | `1024`     | 任意非负整数                        | client error 中包含的最大字符数。使用 `0` 表示完整消息。                                                     |
-| `http_buffer_size`        | `10485760` | 字节                            | 流式 HTTP queries 的 in-memory buffer size，默认值为 10 MiB。                                      |
+| 设置名称                      | 默认值        | 选项                            | 描述                                                                                                                                                                                     |
+| ------------------------- | ---------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `autogenerate_session_id` | `True`     | `True`, `False`               | 除非提供了会话 ID，否则为每个同步客户端生成 UUID 会话 ID。异步工厂默认会将其覆盖为 `False`。                                                                                                                               |
+| `autogenerate_query_id`   | `True`     | `True`, `False`               | 除非提供了查询 ID，否则为每个请求生成 UUID 查询 ID。                                                                                                                                                       |
+| `dict_parameter_format`   | `"json"`   | `"json"`, `"map"`             | 将参数绑定中使用的 Python 字典格式化为 JSON 或 ClickHouse Map 字面量。                                                                                                                                     |
+| `invalid_setting_action`  | `"error"`  | `"drop"`, `"send"`, `"error"` | 针对服务器报告为只读的设置采取的操作。`drop` 会忽略该设置，`send` 会将其转发，`error` 会引发 `ProgrammingError`。对于当前用户在 `system.settings` 中不存在的设置，例如在角色中设为 `CHANGEABLE_IN_READONLY` 的设置，除非操作为 `drop`，否则会将其转发，由服务器决定接受或拒绝。 |
+| `naive_datetime_binding`  | `"wall"`   | `"wall"`, `"legacy"`          | 控制朴素 `datetime` 查询参数的绑定方式。`wall` 会原样格式化朴素日期时间。`legacy` 会恢复旧版的主机本地时间转换行为。请附加 `tzinfo` 以保留时间点。                                                                                           |
+| `naive_datetime_insert`   | `"local"`  | `"local"`, `"server"`         | 控制插入朴素 `datetime` 值以及 `DateTime64` 接受的朴素 ISO 字符串这两类 Python 对象的方式。`local` 为兼容性使用进程时区。`server` 使用声明的列时区，其次使用服务器时区。`datetime64`-dtype 的 NumPy 和 Pandas 列不受影响。                             |
+| `max_connection_age`      | `600`      | 任意秒数                          | 可复用 HTTP keep-alive 连接的最长存活时间。轮换连接有助于将连接分散到负载均衡器后的各节点。                                                                                                                                 |
+| `product_name`            | `""`       | 任意字符串                         | 添加到客户端信息中的产品标识符。使用类似 `"my-product/1.0"` 的值。                                                                                                                                            |
+| `readonly`                | `0`        | `0`, `1`                      | 为兼容 1.x 而保留的已弃用空操作设置。客户端会直接读取服务器的 `readonly` 设置。                                                                                                                                       |
+| `send_os_user`            | `True`     | `True`, `False`               | 在客户端信息中包含检测到的操作系统用户。                                                                                                                                                                   |
+| `send_integration_tags`   | `True`     | `True`, `False`               | 在 HTTP User-Agent 中包含客户端使用的集成信息，例如 Pandas 或 SQLAlchemy。                                                                                                                                |
+| `use_protocol_version`    | `True`     | `True`, `False`               | 协商 Native 格式功能 (例如 `DateTime` 列时区元数据) 所使用的客户端协议版本。对于拒绝 `client_protocol_version` 的代理，请禁用此设置。                                                                                           |
+| `max_error_size`          | `1024`     | 任意非负整数                        | 客户端错误中包含的最大字符数。使用 `0` 可获取完整消息。                                                                                                                                                         |
+| `http_buffer_size`        | `10485760` | 字节                            | 用于流式 HTTP 查询的内存中缓冲区大小，默认值为 10 MiB。                                                                                                                                                     |
 
 <div id="compression">
   ## 压缩

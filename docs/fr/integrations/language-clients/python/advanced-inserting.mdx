@@ -57,7 +57,7 @@ Il n&#39;est généralement pas nécessaire de remplacer un format d&#39;écritu
 | Float64               | float                   |                        |                                                                                                                                                                    |
 | Decimal               | decimal.Decimal         |                        |                                                                                                                                                                    |
 | String                | str or bytes            |                        | Une colonne doit contenir de manière cohérente soit du texte, soit des octets.                                                                                     |
-| FixedString           | bytes                   | string                 | Si elle est insérée sous forme de chaîne, les octets supplémentaires seront mis à zéro                                                                             |
+| FixedString           | bytes                   | string                 | Les valeurs de chaîne sont complétées par des octets nuls. Les octets vides sont écrits comme des octets tous nuls.                                                |
 | Enum[8,16]            | str or int              |                        | Insérez les libellés sous forme de chaînes ou leurs valeurs entières sous-jacentes.                                                                                |
 | Date                  | datetime.date           | int                    | Les valeurs entières sont interprétées comme des jours depuis 1970-01-01.                                                                                          |
 | Date32                | datetime.date           | int                    | Les valeurs entières sont interprétées comme des décalages signés en jours.                                                                                        |
@@ -217,14 +217,34 @@ assert [row[0].hour for row in results.result_rows] == [1, 10, 16]
 </Note>
 
 <div id="timezone-naive-datetime-objects">
-  #### Objets datetime sans fuseau horaire
+  #### Objets `datetime` sans fuseau horaire
 </div>
 
-Python interprète un `datetime` naïf dans le fuseau horaire local du système lorsque `.timestamp()` est appelé. Les insertions dépendent donc de l’environnement. Privilégiez l’une des approches suivantes :
+Le paramètre global `naive_datetime_insert` contrôle l&#39;insertion d&#39;objets Python natifs contenant des valeurs `datetime` sans fuseau horaire. Il s&#39;applique également aux chaînes ISO sans fuseau horaire acceptées par les colonnes `DateTime64`.
 
-1. Utilisez des objets datetime avec fuseau horaire.
-2. Assurez-vous que le fuseau horaire du processus est UTC.
-3. Associez le fuseau horaire voulu ou convertissez explicitement en entier époque Unix.
+* `"local"` est la valeur par défaut dans la version 1.x. Python interprète la valeur dans le fuseau horaire du processus lors de l&#39;appel à `.timestamp()`. Cela préserve le comportement existant.
+* `"server"` interprète la valeur comme une heure locale dans le fuseau horaire déclaré par la colonne `DateTime` ou `DateTime64`. Si la colonne n&#39;a pas de fuseau horaire, le fuseau horaire du serveur communiqué lors de la connexion du client est utilisé.
+
+Définissez l&#39;option avant une insertion. Elle est lue lors de la sérialisation de chaque colonne d&#39;insertion native contenant des objets Python `datetime` ou des chaînes ISO `DateTime64` ; la modification s&#39;applique donc aux clients existants et aux contextes d&#39;insertion réutilisables.
+
+```python
+from datetime import datetime
+
+from clickhouse_connect import common
+
+common.set_setting("naive_datetime_insert", "server")
+
+naive_time = datetime(2023, 6, 15, 10, 30)
+client.insert("events", [[naive_time]], column_names=["event_time"])
+```
+
+Avec `"server"`, ClickHouse Connect associe le `tzinfo` cible avant de convertir la valeur en époque Unix. Pour les fuseaux horaires IANA, il suit les règles de la bibliothèque standard pour les transitions vers ou depuis l’heure d’été. En cas de chevauchement à l’automne, la valeur `fold` du `datetime` est utilisée. Par défaut, `fold=0` sélectionne le décalage avant la transition, tandis que `fold=1` sélectionne celui après la transition. En cas de lacune au printemps, la même sélection de décalage est utilisée, sans rejet ni normalisation.
+
+Les heures locales inexistantes lors d’une lacune printanière peuvent ne pas effectuer d’aller-retour via un paramètre de requête en mode wall, car l’analyse de texte de ClickHouse peut sélectionner un décalage différent. Utilisez un `datetime` avec fuseau horaire ou une heure locale valide lorsque l’instant est important.
+
+L’option s’applique uniquement aux insertions natives d’objets Python `datetime` et aux chaînes ISO sans fuseau horaire acceptées par `DateTime64`. Les colonnes NumPy et Pandas de type `datetime64` sans fuseau horaire conservent leur conversion existante des heures locales UTC.
+
+Pour représenter un instant précis indépendamment de l’un ou l’autre mode, associez le fuseau horaire souhaité ou fournissez explicitement un entier époque Unix.
 
 ```python
 from datetime import datetime, timezone
@@ -237,13 +257,15 @@ epoch_timestamp = int(naive_time.replace(tzinfo=timezone.utc).timestamp())
 client.insert("events", [[epoch_timestamp]], column_names=["event_time"])
 ```
 
+Les paramètres de requête `datetime` sans fuseau horaire utilisent le paramètre distinct `naive_datetime_binding`. Son mode par défaut, `"wall"`, envoie les champs tels quels, sans conversion vers le fuseau horaire local de l&#39;hôte. Consultez la section [Argument Parameters](/fr/integrations/language-clients/python/driver-api#parameters-argument).
+
 <div id="datetime-columns-with-timezone-metadata">
   #### Colonnes DateTime avec métadonnées de fuseau horaire
 </div>
 
 Les colonnes ClickHouse peuvent déclarer des métadonnées de fuseau horaire, par exemple `DateTime('America/Denver')` ou `DateTime64(3, 'Asia/Tokyo')`. Ces métadonnées déterminent la manière dont les valeurs sont affichées lors de l’exécution d’une requête.
 
-Lors de l’insertion dans une telle colonne, ClickHouse Connect convertit la valeur Python en fonction de son propre `tzinfo`. Lors d’une requête, le résultat utilise le fuseau horaire de la colonne, sauf si une substitution par colonne est fournie via l’argument `column_tzs`. L’argument `query_tz` ne remplace pas le fuseau horaire déclaré pour une colonne.
+Lors de l’insertion d’une valeur avec fuseau horaire, ClickHouse Connect préserve l’instant représenté. Pour une valeur sans fuseau horaire, le paramètre `naive_datetime_insert` détermine si le fuseau horaire du processus ou celui de la colonne est utilisé. Lors d’une requête, le résultat utilise le fuseau horaire de la colonne, sauf si une substitution par colonne est fournie via l’argument `column_tzs`. L’argument `query_tz` ne remplace pas le fuseau horaire déclaré pour une colonne.
 
 ```python
 from datetime import datetime

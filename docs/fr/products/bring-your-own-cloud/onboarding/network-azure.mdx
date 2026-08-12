@@ -2,26 +2,114 @@
 title: 'Configuration du réseau privé BYOC sur Azure'
 slug: /cloud/reference/byoc/onboarding/network-azure
 sidebarTitle: 'Configuration du réseau privé Azure'
-keywords: ['BYOC', 'cloud', 'Bring Your Own Cloud', 'Azure', 'Private Link']
-description: 'Configurer Private Link pour BYOC sur Azure'
+keywords: ['BYOC', 'cloud', 'Bring Your Own Cloud', 'Azure', 'peering VNet', 'Private Link']
+description: 'Configurer le peering VNet ou Private Link pour BYOC sur Azure'
 doc_type: 'référence'
 ---
 
 import { Image } from "/snippets/fr/components/Image.jsx";
 
-ClickHouse BYOC on Azure prend en charge la connectivité privée via Azure Private Link.
+ClickHouse BYOC on Azure prend en charge deux options de connexion privée : le [peering de réseau virtuel Azure](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview) et [Azure Private Link](https://learn.microsoft.com/azure/private-link/private-link-overview). Ces deux options maintiennent le trafic sur le réseau fédérateur Azure afin qu&#39;il ne transite jamais par Internet public.
 
 <div id="common-prerequisites">
   ## Prérequis
 </div>
 
+Étapes communes requises pour le peering de VNet et Private Link.
+
 <div id="step-enable-private-load-balancer-for-clickhouse-byoc">
   ### Activer le répartiteur de charge privé pour ClickHouse BYOC
 </div>
 
-Dans la console ClickHouse Cloud, activez le **répartiteur de charge privé** pour votre infrastructure BYOC.
+Dans la console ClickHouse Cloud, activez le **répartiteur de charge privé** pour votre infrastructure BYOC. Les deux options de connexion passent par ce répartiteur de charge interne, et aucune ne fonctionne tant qu’il n’est pas activé.
 
-<Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC – Activer le répartiteur de charge privé" border />
+<Image img="/images/cloud/reference/byoc-private-load-balancer-azure.webp" size="md" alt="BYOC – Activer le répartiteur de charge privé" border />
+
+Notez le **Spoken name** de l’infrastructure. ClickHouse déploie votre infrastructure BYOC dans votre propre abonnement Azure, dans un groupe de ressources géré nommé `clickhouse-cloud-<spoken-name>-default`. C’est dans ce groupe de ressources que vous trouverez le VNet BYOC aux étapes ci-dessous.
+
+<div id="azure-vnet-peering">
+  ## Configurer le peering de VNet
+</div>
+
+Familiarisez-vous avec le [peering de réseaux virtuels Azure](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview) et ses [exigences et contraintes](https://learn.microsoft.com/azure/virtual-network/virtual-network-manage-peering#requirements-and-constraints) avant de commencer. ClickHouse BYOC utilise un répartiteur de charge privé pour permettre la connectivité réseau avec les services ClickHouse via le peering.
+
+<Note>
+  Les étapes données en exemple correspondent à un scénario simple : l’un de vos VNets est directement appairé au VNet BYOC. Pour les scénarios avancés, tels que les topologies en étoile ou la connectivité sur site, certains ajustements sont nécessaires — consultez les [Limitations](#vnet-peering-limitations).
+</Note>
+
+<div id="vnet-peering-prerequisites">
+  ### Prérequis supplémentaires pour le peering
+</div>
+
+**Espaces d’adressage non chevauchants.** Les réseaux virtuels appairés ne peuvent pas avoir de plages d’adresses IP qui se chevauchent. Comparez l’espace d’adressage de votre VNet à celui du VNet BYOC, indiqué sur la page **Overview** du portail Azure. En cas de chevauchement, utilisez plutôt Private Link.
+
+**Autorisations.** La création d’un peering requiert les autorisations `Microsoft.Network/virtualNetworks/virtualNetworkPeerings/write` et `Microsoft.Network/virtualNetworks/peer/action` sur *les deux* réseaux virtuels. Le rôle intégré **Network Contributor** les inclut. Consultez les [autorisations de peering de réseau virtuel](https://learn.microsoft.com/azure/virtual-network/virtual-network-manage-peering#permissions).
+
+<Steps>
+  <Step title="Créer le peering depuis le réseau virtuel BYOC" id="step-1-create-peering-from-byoc-vnet">
+    1. Connectez-vous au [portail Azure](https://portal.azure.com) et basculez vers l’**abonnement BYOC**.
+    2. Recherchez **Réseaux virtuels** et sélectionnez le VNet BYOC, situé dans le groupe de ressources `clickhouse-cloud-<spoken-name>-default`.
+    3. Sous **Paramètres**, sélectionnez **Peerings**, puis **+ Ajouter**.
+
+    <Image img="/images/cloud/reference/byoc-vnetpeering-azure-1.webp" size="lg" alt="BYOC Créer un peering de VNet" border />
+
+    4. Renseignez les deux côtés du peering :
+
+    <Image img="/images/cloud/reference/byoc-vnetpeering-azure-2.webp" size="md" alt="BYOC Configurer un peering de VNet" border />
+
+    5. Cliquez sur **Ajouter**.
+  </Step>
+
+  <Step title="Créer le peering inverse s’il n’a pas été créé automatiquement" id="step-2-create-reverse-peering">
+    Le peering Azure se compose de deux côtés, un dans chaque direction, et le trafic ne circule que lorsque les deux existent. Si le portail a créé les deux côtés à l’étape précédente, ignorez cette étape.
+
+    Si vous avez créé uniquement le côté BYOC — parce que votre VNet se trouve dans un autre abonnement ou tenant — son état est **Initiated**. Créez le côté correspondant depuis votre propre VNet :
+
+    1. Basculez vers l’abonnement auquel appartient votre VNet et connectez-vous avec un compte disposant du rôle **Network Contributor** sur celui-ci.
+    2. Sélectionnez votre VNet, puis **Peerings** → **+ Ajouter**.
+    3. Sélectionnez **Je connais mon ID de ressource**, collez l’**ID de ressource du VNet BYOC**, puis choisissez l’**Annuaire** auquel appartient l’abonnement BYOC. Sélectionnez **Authentifier** si vous y êtes invité.
+    4. Sélectionnez **Ajouter**.
+  </Step>
+
+  <Step title="Vérifier que les deux côtés sont connectés" id="step-3-verify-peering">
+    Ouvrez **Peerings** sur l’un ou l’autre réseau virtuel. L’**état du peering** doit afficher **Connected** des deux côtés. Un côté qui reste à l’état **Initiated** signifie que son homologue est manquant ; un côté affichant **Disconnected** signifie que son homologue a été supprimé.
+
+    Aucune modification de table de routage n’est nécessaire. Azure installe automatiquement des routes système pour l’espace d’adressage appairé des deux côtés. Vous pouvez le vérifier sur n’importe quelle interface réseau de votre VNet, sous **Itinéraires effectifs**, où l’espace d’adressage BYOC apparaît avec **Peering de VNet** comme type de tronçon suivant.
+
+    <Image img="/images/cloud/reference/byoc-vnetpeering-azure-3.webp" size="lg" alt="BYOC Vérifier le peering de VNet" border />
+  </Step>
+
+  <Step title="Autoriser l’accès du VNet appairé via le groupe de sécurité réseau" id="step-4-allow-address-space-through-nsg">
+    Les sous-réseaux BYOC sont protégés par un [groupe de sécurité réseau](https://learn.microsoft.com/azure/virtual-network/network-security-groups-overview) géré par ClickHouse, qui bloque par défaut le trafic interne au VNet. Étant donné que le [tag de service `VirtualNetwork`](https://learn.microsoft.com/azure/virtual-network/service-tags-overview#available-service-tags) couvre l’espace d’adressage des VNets appairés, le trafic arrivant via le peering est bloqué jusqu’à l’ajout d’une règle entrante l’autorisant.
+
+    Contactez ClickHouse Support pour demander l’ajout de règles entrantes incluant les plages CIDR de votre VNet appairé. Sans cette étape, le peering affiche l’état **Connected**, mais les connexions expirent.
+  </Step>
+
+  <Step title="Accéder au service ClickHouse via le peering" id="step-5-access-ch-service-via-peering">
+    Pour accéder à ClickHouse de façon privée, un répartiteur de charge privé et un endpoint sont provisionnés afin de fournir une connectivité sécurisée depuis votre VNet appairé. L’endpoint privé reprend le format de l’endpoint public, avec le suffixe `-private`. Par exemple :
+
+    * **Endpoint public** : `h5ju65kv87.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`
+    * **Endpoint privé** : `h5ju65kv87-private.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`
+  </Step>
+</Steps>
+
+<div id="vnet-peering-limitations">
+  ### Limitations
+</div>
+
+**Le peering n&#39;est pas transitif.** Seul le VNet directement appairé au VNet BYOC peut accéder à vos services. Les clients d&#39;un VNet spoke derrière un hub, ou les clients on-premise qui arrivent via ExpressRoute ou une passerelle VPN, ne sont pas couverts par un seul peering. Ces topologies nécessitent une configuration supplémentaire, notamment **Autoriser le trafic transféré** et le transit de passerelle — consultez [les passerelles et la connectivité on-premise](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview#gateways-and-on-premises-connectivity) — ou utilisez plutôt Private Link.
+
+**Le peering interrégional fonctionne, mais coûte plus cher.** Un peering entre des VNets situés dans différentes régions est un peering global. Il permet d&#39;accéder normalement à ClickHouse — le répartiteur de charge privé BYOC est un load balancer interne Standard SKU, et la restriction d&#39;Azure concernant l&#39;accès aux frontends des load balancers via un peering global ne s&#39;applique qu&#39;aux load balancers Basic SKU. En revanche, vous payez une latence aller-retour supplémentaire et des [frais de transfert de données interrégional](https://azure.microsoft.com/pricing/details/virtual-network). Préférez un peering dans la même région pour les workloads sensibles à la latence. Si un peering interrégional affiche **Connected**, mais que les connexions échouent toujours, la région n&#39;est pas en cause — la raison la plus fréquente est l&#39;absence de règle entrante de groupe de sécurité réseau pour votre espace d’adressage ; contactez donc ClickHouse Support.
+
+**Les modifications de l’espace d’adressage nécessitent une resynchronisation.** Si vous redimensionnez l’espace d’adressage de votre VNet après la création du peering, [synchronisez le peering](https://learn.microsoft.com/azure/virtual-network/update-virtual-network-peering-address-space) afin que les nouvelles plages soient annoncées, puis contactez ClickHouse Support pour étendre la règle entrante de groupe de sécurité réseau afin de les couvrir.
+
+**Le trafic de peering est facturé.** Azure facture l&#39;ingress et l&#39;egress via un peering. Consultez la [tarification des réseaux virtuels](https://azure.microsoft.com/pricing/details/virtual-network).
+
+<div id="delete-vnet-peering">
+  ### Supprimer le peering
+</div>
+
+Supprimez le peering de l’un ou l’autre côté. La suppression d’une moitié rompt la connexion et laisse l’autre à l’état **Disconnected** ; supprimez donc les deux moitiés pour tout nettoyer. Consultez [supprimer un peering](https://learn.microsoft.com/azure/virtual-network/virtual-network-manage-peering#delete-a-peering).
 
 <div id="setup-privatelink">
   ## Configurer Azure Private Link

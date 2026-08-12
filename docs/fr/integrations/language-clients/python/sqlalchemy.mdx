@@ -54,6 +54,23 @@ with engine.connect() as conn:
     value = conn.execute(stmt).scalar_one()
 ```
 
+<div id="sqlalchemy-per-query-read-formats">
+  ### Formats de lecture par requête
+</div>
+
+Définissez les formats de lecture ClickHouse pour un moteur, une connexion ou une instruction à l’aide des options d’exécution SQLAlchemy et de `query_formats`. Les formats définis au niveau de l’instruction sont appliqués en premier et remplacent les keys et wildcards correspondants définis au niveau de la connexion ou du moteur.
+
+```python
+from sqlalchemy import text
+
+stmt = text("SELECT user_uuid FROM users").execution_options(
+    query_formats={"UUID": "string"}
+)
+
+with engine.connect() as conn:
+    rows = conn.execute(stmt).all()
+```
+
 <div id="sqlalchemy-server-side-parameters">
   ### Paramètres côté serveur
 </div>
@@ -104,6 +121,54 @@ with engine.connect() as conn:
     conn.execute(stmt)
 ```
 
+<div id="sqlalchemy-json-subcolumns">
+  ### Sous-colonnes JSON
+</div>
+
+Pour une colonne déclarée ou représentée en `JSON` ClickHouse, utilisez des crochets pour sélectionner un segment à la fois dans le chemin d&#39;une sous-colonne stockée :
+
+```python
+from sqlalchemy import Column, MetaData, Table, select
+
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import JSON, UInt32
+
+events = Table(
+    "events",
+    MetaData(),
+    Column("payload", JSON),
+)
+
+request_id = events.c.payload["context"]["request"].subcolumn(
+    "id",
+    type_=UInt32,
+)
+
+stmt = select(
+    events.c.payload["severity"].label("severity"),
+    request_id.label("request_id"),
+)
+```
+
+`payload["severity"]` est compilé selon la syntaxe d’identifiant pointé de ClickHouse. Chaque partie est entourée de guillemets séparément, par exemple `` `events`.`payload`.`severity` ``. Cette syntaxe lit la sous-colonne JSON stockée dans ClickHouse et n’appelle pas `getSubcolumn`. Chaînez `[]` ou `.subcolumn()` une fois pour chaque segment du chemin. Chaque segment doit être une chaîne non vide.
+
+Passer `type_` à `.subcolumn()` encapsule le chemin pointé dans un `CAST` SQL et affecte ce type à l’expression SQLAlchemy. Sans `type_`, `.subcolumn("segment")` se comporte comme `["segment"]`.
+
+Un chemin non typé a le type `Dynamic` de ClickHouse. ClickHouse n’autorise pas les valeurs `Dynamic` directement dans `ORDER BY` ou `GROUP BY`. Passez `type_` lorsqu’une sous-colonne y est utilisée.
+
+Pour du code à typage statique, importez `json_subcolumn` depuis `clickhouse_connect.cc_sqlalchemy`. Cet assistant accepte également un segment à la fois et préserve le type de résultat Python de `type_` :
+
+```python
+from clickhouse_connect.cc_sqlalchemy import json_subcolumn
+
+context = json_subcolumn(events.c.payload, "context")
+request = json_subcolumn(context, "request")
+request_id = json_subcolumn(request, "id", type_=UInt32)
+```
+
+Dans cet exemple, les vérificateurs de types considèrent `request_id` comme un `ColumnElement[int]`.
+
+Chaque segment est entouré de guillemets individuellement, y compris les noms contenant des espaces ou des accents graves. Les accents graves ne font pas d’un point un caractère littéral pour le traitement des chemins JSON par ClickHouse. Lorsque `json_type_escape_dots_in_keys` est activé, utilisez l’encodage `%2E` de ClickHouse pour les points littéraux dans les clés. Accédez à une clé nommée `a.b` avec `payload["a%2Eb"]`, et non `payload["a.b"]`.
+
 <div id="sqlalchemy-query-extensions">
   ### Extensions des requêtes ClickHouse
 </div>
@@ -133,6 +198,7 @@ Les méthodes `Select` de ClickHouse sont :
 | `.array_join(...)`                       | `ARRAY JOIN`                                                                           |
 | `.left_array_join(...)`                  | `LEFT ARRAY JOIN`                                                                      |
 | `.ch_join(...)`                          | jointures ClickHouse avec les options `strictness`, `distribution`, `using` et `cross` |
+| `.cte(name, materialized=True)`          | `WITH name AS MATERIALIZED (...)`                                                      |
 
 Par exemple, un `GLOBAL ANY LEFT JOIN` ClickHouse peut être chaîné sans avoir à imbriquer une `FromClause` personnalisée :
 
@@ -165,7 +231,51 @@ stmt = select(
 )
 ```
 
-La construction standard SQLAlchemy `values()` est compilée vers la syntaxe de fonction de table `VALUES` de ClickHouse, y compris lorsqu&#39;elle est utilisée dans une expression de table commune (la forme CTE nécessite SQLAlchemy 2.x, où `Values.cte()` a été ajoutée).
+La construction standard SQLAlchemy `values()` est compilée vers la syntaxe de fonction de table `VALUES` de ClickHouse, y compris lorsqu&#39;elle est utilisée dans une expression de table commune. La forme CTE nécessite SQLAlchemy 2.0.42 ou version ultérieure, où `Values.cte()` a été ajoutée.
+
+<div id="sqlalchemy-materialized-ctes">
+  ### CTE matérialisées
+</div>
+
+Par défaut, ClickHouse intègre une expression de table commune ; ainsi, le corps d’une CTE référencée plusieurs fois est exécuté une fois par référence. Passez `materialized=True` à `.cte()` pour générer `WITH <name> AS MATERIALIZED (...)`, ce qui calcule le corps une seule fois :
+
+```python
+from sqlalchemy import func
+
+from clickhouse_connect.cc_sqlalchemy import select
+
+ranked = (
+    select(book.c.book_id, func.row_number().over(order_by=book.c.score.desc()).label("result_rank"))
+    .where(book.c.genre == "sci-fi")
+    .order_by(book.c.score.desc())
+    .limit(100)
+    .cte("ranked", materialized=True)
+)
+
+stmt = (
+    select(book.c.book_id, ranked.c.result_rank)
+    .select_from(book)
+    .ch_join(ranked, book.c.book_id == ranked.c.book_id, strictness="ANY")
+    .where(book.c.book_id.in_(select(ranked.c.book_id)))
+    .execution_options(settings={"enable_materialized_cte": 1, "enable_analyzer": 1})
+)
+```
+
+Le serveur ne matérialise la CTE que si le mot-clé est présent, si `enable_materialized_cte=1` et si l’analyseur est activé. Définissez `enable_materialized_cte` au niveau de l’instruction, de la connexion ou du moteur, comme indiqué dans [Paramètres par requête](#sqlalchemy-per-query-settings). L’analyseur est activé par défaut sur tous les serveurs prenant en charge cette fonctionnalité. Définir explicitement `enable_analyzer=1` constitue donc une mesure de précaution. `enable_materialized_cte` est un paramètre ClickHouse expérimental. Avec `enable_materialized_cte=0` ou `enable_analyzer=0`, la requête aboutit et renvoie les mêmes lignes. ClickHouse ignore silencieusement `MATERIALIZED` et intègre de nouveau la CTE, de sorte qu’un paramètre oublié dégrade les performances sans générer d’erreur. Les CTE matérialisées nécessitent ClickHouse 26.3 ou une version ultérieure. Les serveurs plus anciens rejettent le mot-clé avec une erreur de syntaxe.
+
+Pour une instruction construite avec le `sqlalchemy.select` standard, utilisez plutôt `cte()` au niveau du module. Cette fonction prend l’instruction comme premier argument et correspond par ailleurs à `Select.cte()` :
+
+```python
+from sqlalchemy import select as sa_select
+
+from clickhouse_connect.cc_sqlalchemy import cte
+
+ranked = cte(sa_select(book.c.book_id), "ranked", materialized=True)
+```
+
+Le mot-clé est généré uniquement avec le dialecte ClickHouse. Une instruction partagée avec un autre backend y est donc compilée sans modification.
+
+ClickHouse ne prend pas en charge les CTE matérialisées récursives. Les helpers SQLAlchemy lèvent une `ValueError` lorsque `recursive=True` et `materialized=True` sont tous deux définis.
 
 <div id="sqlalchemy-ddl-reflection">
   ## DDL et introspection

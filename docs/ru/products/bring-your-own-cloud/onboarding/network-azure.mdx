@@ -2,26 +2,114 @@
 title: 'Настройка частной сети для BYOC на Azure'
 slug: /cloud/reference/byoc/onboarding/network-azure
 sidebarTitle: 'Настройка частной сети Azure'
-keywords: ['BYOC', 'cloud', 'собственное облако', 'azure', 'private link']
-description: 'Настройка Private Link для BYOC на Azure'
+keywords: ['BYOC', 'cloud', 'собственное облако', 'azure', 'vnet peering', 'private link']
+description: 'Настройка пиринга VNet или Private Link для BYOC на Azure'
 doc_type: 'reference'
 ---
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 
-ClickHouse BYOC on Azure поддерживает частное подключение через Azure Private Link.
+ClickHouse BYOC on Azure поддерживает два варианта частного подключения: [пиринг виртуальных сетей Azure](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview) и [Azure Private Link](https://learn.microsoft.com/azure/private-link/private-link-overview). Оба варианта обеспечивают передачу трафика по магистральной сети Azure без выхода в публичный интернет.
 
 <div id="common-prerequisites">
   ## Предварительные требования
 </div>
 
+Общие шаги, необходимые как для пиринга VNet, так и для Private Link.
+
 <div id="step-enable-private-load-balancer-for-clickhouse-byoc">
-  ### Включите private load balancer для ClickHouse BYOC
+  ### Включите частный балансировщик нагрузки для ClickHouse BYOC
 </div>
 
-В консоли ClickHouse Cloud включите **Private load balancer** для инфраструктуры BYOC.
+В консоли ClickHouse Cloud включите **Частный балансировщик нагрузки** для инфраструктуры BYOC. Оба варианта подключения проходят через этот внутренний load balancer, поэтому ни один из них не будет работать, пока он не включен.
 
-<Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC: включение Private Load Balancer" border />
+<Image img="/images/cloud/reference/byoc-private-load-balancer-azure.webp" size="md" alt="BYOC: включение Частного балансировщика нагрузки" border />
+
+Запишите **Spoken name** инфраструктуры. ClickHouse развертывает инфраструктуру BYOC в вашей собственной подписке Azure, в управляемой группе ресурсов с именем `clickhouse-cloud-<spoken-name>-default`. В этой группе ресурсов вы найдете VNet BYOC на следующих шагах.
+
+<div id="azure-vnet-peering">
+  ## Настройка пиринга VNet
+</div>
+
+Перед началом ознакомьтесь с [пирингом виртуальных сетей Azure](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview) и его [требованиями и ограничениями](https://learn.microsoft.com/azure/virtual-network/virtual-network-manage-peering#requirements-and-constraints). ClickHouse BYOC использует частный балансировщик нагрузки для обеспечения сетевого подключения к сервисам ClickHouse через пиринг.
+
+<Note>
+  Приведённые шаги подходят для простого сценария: одна из ваших VNet напрямую связана пирингом с VNet BYOC. Для расширенных сценариев, таких как топологии «хаб и лучи» или подключение из собственной инфраструктуры, требуются дополнительные изменения — см. раздел [Ограничения](#vnet-peering-limitations).
+</Note>
+
+<div id="vnet-peering-prerequisites">
+  ### Дополнительные требования для настройки пиринга
+</div>
+
+**Неперекрывающиеся адресные пространства.** Виртуальные сети, объединяемые пирингом, не могут иметь перекрывающиеся диапазоны IP-адресов. Сравните адресное пространство вашей VNet с адресным пространством VNet BYOC, указанным на странице **Overview** VNet BYOC на портале Azure. Если они перекрываются, используйте Private Link.
+
+**Разрешения.** Для создания пиринга необходимы разрешения `Microsoft.Network/virtualNetworks/virtualNetworkPeerings/write` и `Microsoft.Network/virtualNetworks/peer/action` для *обеих* виртуальных сетей. Встроенная роль **Network Contributor** включает эти разрешения. См. [разрешения для пиринга виртуальных сетей](https://learn.microsoft.com/azure/virtual-network/virtual-network-manage-peering#permissions).
+
+<Steps>
+  <Step title="Создайте пиринг из виртуальной сети BYOC" id="step-1-create-peering-from-byoc-vnet">
+    1. Войдите на [портал Azure](https://portal.azure.com) и переключитесь на **подписку BYOC**.
+    2. Найдите **Virtual networks** и выберите VNet BYOC в группе ресурсов `clickhouse-cloud-<spoken-name>-default`.
+    3. В разделе **Settings** выберите **Peerings**, затем **+ Add**.
+
+    <Image img="/images/cloud/reference/byoc-vnetpeering-azure-1.webp" size="lg" alt="BYOC Создание пиринга VNet" border />
+
+    4. Заполните обе части настройки пиринга:
+
+    <Image img="/images/cloud/reference/byoc-vnetpeering-azure-2.webp" size="md" alt="BYOC Настройка пиринга VNet" border />
+
+    5. Нажмите **Add**.
+  </Step>
+
+  <Step title="Создайте обратный пиринг, если он не был создан автоматически" id="step-2-create-reverse-peering">
+    Пиринг Azure состоит из двух частей — по одной в каждом направлении, — и трафик не передаётся, пока не созданы обе. Если на предыдущем шаге портал создал обе части, пропустите этот шаг.
+
+    Если была создана только часть со стороны BYOC — поскольку ваша VNet находится в другой подписке или тенанте, — её состояние будет **Initiated**. Создайте соответствующую часть из своей VNet:
+
+    1. Переключитесь на подписку, которой принадлежит ваша VNet, и войдите под аккаунтом с ролью **Network Contributor** для этой VNet.
+    2. Выберите свою VNet, затем **Peerings** → **+ Add**.
+    3. Выберите **I know my resource ID**, вставьте **Resource ID VNet BYOC** и выберите **Directory**, которому принадлежит подписка BYOC. При появлении запроса выберите **Authenticate**.
+    4. Выберите **Add**.
+  </Step>
+
+  <Step title="Убедитесь, что обе части подключены" id="step-3-verify-peering">
+    Откройте **Peerings** в любой из виртуальных сетей. В поле **Peering status** с обеих сторон должно отображаться **Connected**. Если часть остаётся в состоянии **Initiated**, значит соответствующая ей часть отсутствует; если отображается **Disconnected**, значит соответствующая часть была удалена.
+
+    Изменять таблицы маршрутизации не требуется. Azure автоматически устанавливает системные маршруты для адресного пространства пиринговых сетей с обеих сторон. Это можно проверить на любом сетевом интерфейсе в вашей VNet в разделе **Effective routes**: адресное пространство BYOC отображается с типом следующего перехода **VNet peering**.
+
+    <Image img="/images/cloud/reference/byoc-vnetpeering-azure-3.webp" size="lg" alt="BYOC Проверка пиринга VNet" border />
+  </Step>
+
+  <Step title="Разрешите доступ из пиринговой VNet через группу безопасности сети" id="step-4-allow-address-space-through-nsg">
+    Подсети BYOC защищены управляемой ClickHouse [группой безопасности сети](https://learn.microsoft.com/azure/virtual-network/network-security-groups-overview), которая по умолчанию запрещает внутренний трафик VNet. Поскольку [тег службы `VirtualNetwork`](https://learn.microsoft.com/azure/virtual-network/service-tags-overview#available-service-tags) охватывает адресное пространство пиринговых VNet, трафик, поступающий через пиринг, отбрасывается, пока не будет добавлено входящее разрешающее правило.
+
+    Обратитесь в ClickHouse Support, чтобы запросить добавление входящих правил для диапазонов CIDR вашей пиринговой VNet. Без этого шага пиринг будет отображаться как **Connected**, но при подключении будет возникать тайм-аут.
+  </Step>
+
+  <Step title="Получите доступ к сервису ClickHouse через пиринг" id="step-5-access-ch-service-via-peering">
+    Для частного доступа к ClickHouse предоставляются частный балансировщик нагрузки и конечная точка, обеспечивающие защищённое подключение из вашей пиринговой VNet. Формат частной конечной точки соответствует формату публичной конечной точки с суффиксом `-private`. Например:
+
+    * **Публичная конечная точка**: `h5ju65kv87.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`
+    * **Частная конечная точка**: `h5ju65kv87-private.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`
+  </Step>
+</Steps>
+
+<div id="vnet-peering-limitations">
+  ### Ограничения
+</div>
+
+**Пиринг не транзитивен.** Доступ к вашим сервисам имеет только VNet, напрямую связанная пирингом с VNet BYOC. Клиенты в VNet-спице за хабом, а также клиенты в собственной инфраструктуре, подключающиеся через ExpressRoute или VPN-шлюз, не получают доступ через один пиринг. Для таких топологий требуется дополнительная настройка, например **Разрешить перенаправленный трафик** и транзит через шлюз — см. [шлюзы и подключение к локальной инфраструктуре](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview#gateways-and-on-premises-connectivity) — либо используйте Private Link.
+
+**Межрегиональный пиринг работает, но стоит дороже.** Пиринг между VNet в разных регионах является глобальным пирингом. Доступ к ClickHouse через него работает как обычно: частный балансировщик нагрузки BYOC — это внутренний балансировщик нагрузки Standard SKU, а ограничение Azure на доступ к внешним интерфейсам балансировщика нагрузки через глобальный пиринг распространяется только на балансировщики нагрузки Basic SKU. Однако при этом увеличиваются задержка кругового пути и [расходы на межрегиональную передачу данных](https://azure.microsoft.com/pricing/details/virtual-network). Для рабочих нагрузок, чувствительных к задержкам, предпочтителен пиринг в одном регионе. Если межрегиональный пиринг отображается как **Connected**, но подключения по-прежнему не устанавливаются, причина не в регионе — чаще всего отсутствует правило входящей группы безопасности сети для вашего адресного пространства. В этом случае обратитесь в ClickHouse Support.
+
+**Изменения адресного пространства требуют повторной синхронизации.** Если после создания пиринга вы изменили размер адресного пространства VNet, [синхронизируйте пиринг](https://learn.microsoft.com/azure/virtual-network/update-virtual-network-peering-address-space), чтобы объявить новые диапазоны, и обратитесь в ClickHouse Support, чтобы расширить правило входящей группы безопасности сети и включить их.
+
+**Трафик через пиринг тарифицируется.** Azure взимает плату за входящий и исходящий трафик через пиринг. См. [цены на виртуальные сети](https://azure.microsoft.com/pricing/details/virtual-network).
+
+<div id="delete-vnet-peering">
+  ### Удаление пиринга
+</div>
+
+Удалите пиринг с любой стороны. Удаление одной из его частей разрывает соединение, а другая остаётся в состоянии **Disconnected**, поэтому для полной очистки удалите обе части. См. [удаление пиринга](https://learn.microsoft.com/azure/virtual-network/virtual-network-manage-peering#delete-a-peering).
 
 <div id="setup-privatelink">
   ## Настройка Azure Private Link

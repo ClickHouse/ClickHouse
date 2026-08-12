@@ -84,7 +84,7 @@ with client.query_row_block_stream(
 
 请注意，如果不使用 `with` 语句就尝试使用 `StreamContext`，将会引发错误。使用 Python 上下文可以确保 stream (此处指流式 HTTP 响应) 被正确关闭，即使没有消费完所有数据和/或在处理过程中引发了异常也是如此。此外，`StreamContext` 只能用于消费一次 stream。在 `StreamContext` 退出后再次尝试使用它，会产生 `StreamClosedError`。
 
-如果在读取结果时 connection 失败，则会引发 `StreamFailureError`，而不是静默返回截断的结果。如果 ClickHouse 报告了错误，该异常还会携带 server-side 错误消息。
+如果在读取结果时 connection 失败，则会引发 `StreamFailureError`，而不是静默返回截断的结果。其消息遵循 client 的 `show_clickhouse_errors` 设置。
 
 你可以使用 `StreamContext` 的 `source` 属性来访问父结果对象，其中包含列名和类型。对于大多数 stream，该对象是 `QueryResult`；但 `query_np_stream` 和 `query_df_stream` 方法返回的则是 `NumpyResult`。
 

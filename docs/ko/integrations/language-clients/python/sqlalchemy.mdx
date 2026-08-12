@@ -54,6 +54,23 @@ with engine.connect() as conn:
     value = conn.execute(stmt).scalar_one()
 ```
 
+<div id="sqlalchemy-per-query-read-formats">
+  ### 쿼리별 읽기 포맷
+</div>
+
+SQLAlchemy 실행 옵션에서 `query_formats`를 사용해 엔진, 연결 또는 statement에 ClickHouse 읽기 포맷을 설정합니다. statement 포맷이 먼저 적용되므로 일치하는 연결 또는 엔진 키와 와일드카드보다 우선합니다.
+
+```python
+from sqlalchemy import text
+
+stmt = text("SELECT user_uuid FROM users").execution_options(
+    query_formats={"UUID": "string"}
+)
+
+with engine.connect() as conn:
+    rows = conn.execute(stmt).all()
+```
+
 <div id="sqlalchemy-server-side-parameters">
   ### 서버 측 매개변수
 </div>
@@ -104,6 +121,54 @@ with engine.connect() as conn:
     conn.execute(stmt)
 ```
 
+<div id="sqlalchemy-json-subcolumns">
+  ### JSON 서브컬럼
+</div>
+
+ClickHouse `JSON`으로 선언되었거나 반영된 컬럼에서 스토리지 기반 서브컬럼 경로의 세그먼트를 한 번에 하나씩 선택하려면 대괄호를 사용합니다:
+
+```python
+from sqlalchemy import Column, MetaData, Table, select
+
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import JSON, UInt32
+
+events = Table(
+    "events",
+    MetaData(),
+    Column("payload", JSON),
+)
+
+request_id = events.c.payload["context"]["request"].subcolumn(
+    "id",
+    type_=UInt32,
+)
+
+stmt = select(
+    events.c.payload["severity"].label("severity"),
+    request_id.label("request_id"),
+)
+```
+
+`payload["severity"]`는 ClickHouse의 점 표기 식별자 구문으로 컴파일됩니다. 각 부분은 개별적으로 인용되며, 예를 들어 `` `events`.`payload`.`severity` ``와 같습니다. ClickHouse에 저장된 JSON 하위 컬럼을 읽으며 `getSubcolumn`은 호출하지 않습니다. 각 경로 세그먼트에 대해 `[]` 또는 `.subcolumn()`을 한 번씩 연결하십시오. 각 세그먼트는 비어 있지 않은 문자열이어야 합니다.
+
+`.subcolumn()`에 `type_`을 전달하면 점 표기 경로가 SQL `CAST`로 감싸지고 해당 타입이 SQLAlchemy 표현식에 할당됩니다. `type_`이 없으면 `.subcolumn("segment")`는 `["segment"]`와 동일하게 동작합니다.
+
+타입이 지정되지 않은 경로는 ClickHouse의 `Dynamic` 타입을 갖습니다. ClickHouse에서는 `Dynamic` 값을 `ORDER BY` 또는 `GROUP BY`에 직접 사용할 수 없습니다. 이러한 위치에서 하위 컬럼을 사용하려면 `type_`을 전달하십시오.
+
+정적으로 타입이 지정된 코드에서는 `clickhouse_connect.cc_sqlalchemy`에서 `json_subcolumn`을 가져오십시오. 이 도우미 함수도 한 번에 하나의 세그먼트를 받으며 `type_`의 Python 결과 타입을 유지합니다:
+
+```python
+from clickhouse_connect.cc_sqlalchemy import json_subcolumn
+
+context = json_subcolumn(events.c.payload, "context")
+request = json_subcolumn(context, "request")
+request_id = json_subcolumn(request, "id", type_=UInt32)
+```
+
+이 예시에서 타입 검사기는 `request_id`를 `ColumnElement[int]`로 봅니다.
+
+공백이나 백틱이 포함된 이름을 비롯해 각 세그먼트는 각각 따옴표로 묶습니다. 백틱을 사용해도 ClickHouse JSON 경로 처리에서 점이 리터럴로 해석되지는 않습니다. `json_type_escape_dots_in_keys`가 활성화된 경우 키의 리터럴 점에는 ClickHouse의 `%2E` 인코딩을 사용하십시오. `a.b`라는 키에는 `payload["a%2Eb"]`로 접근하고, `payload["a.b"]`는 사용하지 마십시오.
+
 <div id="sqlalchemy-query-extensions">
   ### ClickHouse 쿼리 확장 기능
 </div>
@@ -133,6 +198,7 @@ ClickHouse `Select` 메서드는 다음과 같습니다:
 | `.array_join(...)`                       | `ARRAY JOIN`                                                          |
 | `.left_array_join(...)`                  | `LEFT ARRAY JOIN`                                                     |
 | `.ch_join(...)`                          | `strictness`, `distribution`, `using`, `cross` 옵션을 지원하는 ClickHouse 조인 |
+| `.cte(name, materialized=True)`          | `WITH name AS MATERIALIZED (...)`                                     |
 
 예를 들어, ClickHouse `GLOBAL ANY LEFT JOIN`은 사용자 정의 `FromClause`를 중첩하지 않고 체이닝할 수 있습니다:
 
@@ -165,7 +231,51 @@ stmt = select(
 )
 ```
 
-표준 SQLAlchemy `values()` 구문은 공통 테이블 표현식(CTE)에서 사용할 때를 포함해 ClickHouse의 `VALUES` 테이블 함수 구문으로 컴파일됩니다(CTE 형식은 SQLAlchemy 2.x에서만 지원되며, 이 버전에서 `Values.cte()`가 추가되었습니다).
+표준 SQLAlchemy `values()` 구문은 공통 테이블 표현식(CTE)에서 사용할 때를 포함해 ClickHouse의 `VALUES` 테이블 함수 구문으로 컴파일됩니다. CTE 형식에는 `Values.cte()`가 추가된 SQLAlchemy 2.0.42 이상이 필요합니다.
+
+<div id="sqlalchemy-materialized-ctes">
+  ### 구체화된 CTE
+</div>
+
+기본적으로 ClickHouse는 공통 테이블 표현식(CTE)을 인라인하므로, CTE를 두 번 이상 참조하면 참조할 때마다 본문이 한 번씩 실행됩니다. `.cte()`에 `materialized=True`를 전달하면 `WITH <name> AS MATERIALIZED (...)`가 생성되어 본문을 한 번만 계산합니다:
+
+```python
+from sqlalchemy import func
+
+from clickhouse_connect.cc_sqlalchemy import select
+
+ranked = (
+    select(book.c.book_id, func.row_number().over(order_by=book.c.score.desc()).label("result_rank"))
+    .where(book.c.genre == "sci-fi")
+    .order_by(book.c.score.desc())
+    .limit(100)
+    .cte("ranked", materialized=True)
+)
+
+stmt = (
+    select(book.c.book_id, ranked.c.result_rank)
+    .select_from(book)
+    .ch_join(ranked, book.c.book_id == ranked.c.book_id, strictness="ANY")
+    .where(book.c.book_id.in_(select(ranked.c.book_id)))
+    .execution_options(settings={"enable_materialized_cte": 1, "enable_analyzer": 1})
+)
+```
+
+서버는 키워드가 있고 `enable_materialized_cte=1`로 설정되어 있으며 분석기가 활성화된 경우에만 CTE를 구체화합니다. [쿼리별 설정](#sqlalchemy-per-query-settings)에 나온 대로 statement, connection 또는 engine에 `enable_materialized_cte`를 설정하십시오. 이 기능을 지원하는 모든 서버에서는 분석기가 기본적으로 활성화되므로 `enable_analyzer=1`을 명시적으로 설정하는 것은 방어적 조치입니다. `enable_materialized_cte`는 Experimental ClickHouse 설정입니다. `enable_materialized_cte=0` 또는 `enable_analyzer=0`이면 쿼리는 성공하고 동일한 행을 반환합니다. ClickHouse는 아무런 알림 없이 `MATERIALIZED`를 무시하고 CTE를 다시 인라인 처리하므로, 설정을 빠뜨리면 오류 없이 성능이 저하됩니다. Materialized CTE를 사용하려면 ClickHouse 26.3 이상이 필요합니다. 이전 서버에서는 해당 키워드를 구문 오류로 처리합니다.
+
+표준 `sqlalchemy.select`로 작성한 statement에는 모듈 수준의 `cte()`를 대신 사용하십시오. 이 함수는 첫 번째 인수로 statement를 받고, 그 외에는 `Select.cte()`와 동일하게 동작합니다:
+
+```python
+from sqlalchemy import select as sa_select
+
+from clickhouse_connect.cc_sqlalchemy import cte
+
+ranked = cte(sa_select(book.c.book_id), "ranked", materialized=True)
+```
+
+이 키워드는 ClickHouse 방언에서만 렌더링되므로, 다른 backend와 공유되는 statement는 해당 backend에서 변경 없이 컴파일됩니다.
+
+ClickHouse는 재귀적 구체화된 CTE를 지원하지 않습니다. `recursive=True`와 `materialized=True`가 모두 설정되면 SQLAlchemy 헬퍼에서 `ValueError`를 발생시킵니다.
 
 <div id="sqlalchemy-ddl-reflection">
   ## DDL 및 리플렉션

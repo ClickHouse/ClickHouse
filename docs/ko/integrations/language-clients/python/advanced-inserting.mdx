@@ -57,7 +57,7 @@ assert qr.first_row[0] == 113
 | Float64               | float                   |                   |                                                                                                        |
 | Decimal               | decimal.Decimal         |                   |                                                                                                        |
 | String                | str or bytes            |                   | 하나의 컬럼에는 텍스트 또는 bytes 중 하나만 일관되게 포함되어야 합니다.                                                            |
-| FixedString           | bytes                   | string            | 문자열로 삽입하면 남는 바이트는 0으로 채워집니다                                                                            |
+| FixedString           | bytes                   | string            | String 값은 0 바이트로 채워집니다. 빈 bytes는 모두 0 바이트로 기록됩니다.                                                      |
 | Enum[8,16]            | str or int              |                   | 레이블은 문자열 또는 해당 내부 정수 값으로 삽입합니다.                                                                        |
 | Date                  | datetime.date           | int               | 정수 값은 1970-01-01 이후 경과한 일수로 해석됩니다.                                                                     |
 | Date32                | datetime.date           | int               | 정수 값은 부호 있는 일 오프셋으로 해석됩니다.                                                                             |
@@ -220,11 +220,31 @@ assert [row[0].hour for row in results.result_rows] == [1, 10, 16]
   #### 시간대 정보가 없는 datetime 객체
 </div>
 
-Python에서는 `.timestamp()`를 호출하면 naive `datetime`을 시스템의 로컬 시간대로 해석합니다. 따라서 삽입 동작이 실행 환경에 종속됩니다. 다음 방법 중 하나를 사용하는 것이 좋습니다.
+전역 `naive_datetime_insert` 설정은 시간대 정보가 없는 `datetime` 값의 네이티브 Python 객체 삽입 방식을 제어합니다. 또한 `DateTime64` 컬럼에서 허용하는 시간대 정보가 없는 ISO 문자열에도 적용됩니다.
 
-1. 시간대 정보가 있는 datetime 객체를 사용합니다.
-2. 프로세스의 시간대가 UTC가 되도록 합니다.
-3. 의도한 시간대를 지정하거나, 명시적으로 epoch 정수로 변환합니다.
+* `"local"`은 1.x의 기본값입니다. Python은 `.timestamp()`가 호출될 때 프로세스 시간대에 따라 값을 해석합니다. 이 설정은 기존 동작을 유지합니다.
+* `"server"`는 `DateTime` 또는 `DateTime64` 컬럼에 선언된 시간대의 실제 시각으로 값을 해석합니다. 컬럼에 시간대가 없으면 클라이언트 연결 시 보고된 서버 시간대를 사용합니다.
+
+삽입 전에 옵션을 설정하십시오. Python `datetime` 객체 또는 `DateTime64` ISO 문자열이 포함된 각 네이티브 삽입 컬럼을 직렬화할 때 이 옵션을 읽으므로, 변경 사항은 기존 클라이언트와 재사용 가능한 삽입 컨텍스트에도 적용됩니다.
+
+```python
+from datetime import datetime
+
+from clickhouse_connect import common
+
+common.set_setting("naive_datetime_insert", "server")
+
+naive_time = datetime(2023, 6, 15, 10, 30)
+client.insert("events", [[naive_time]], column_names=["event_time"])
+```
+
+`"server"`를 사용하면 ClickHouse Connect는 값을 epoch로 변환하기 전에 대상 `tzinfo`를 적용합니다. IANA 시간대에는 일광 절약 시간 전환에 관한 표준 라이브러리 규칙을 따릅니다. 가을철 중복 구간에서는 datetime&#39;s `fold` 값을 사용합니다. 기본값인 `fold=0`은 전환 전 오프셋을 선택하고, `fold=1`은 전환 후 오프셋을 선택합니다. 봄철 공백 구간에도 동일한 오프셋 선택이 적용되며, 거부되거나 정규화되지 않습니다.
+
+존재하지 않는 봄철 공백 구간의 wall time은 ClickHouse 텍스트 파싱에서 다른 오프셋이 선택될 수 있으므로 wall-mode 쿼리 매개변수를 거치면 왕복 변환되지 않을 수 있습니다. 특정 시점이 중요하다면 시간대 정보를 포함하는 `datetime` 또는 유효한 wall time을 사용하십시오.
+
+이 옵션은 `datetime` 값의 네이티브 Python 객체 삽입과 `DateTime64`에서 허용하는 시간대 정보가 없는 ISO 문자열에만 적용됩니다. 시간대 정보가 없는 `datetime64`-dtype NumPy 및 Pandas 컬럼은 기존 UTC wall time 변환을 유지합니다.
+
+두 모드와 관계없이 특정 시점을 나타내려면 의도한 시간대를 적용하거나 epoch 정수를 명시적으로 제공하십시오.
 
 ```python
 from datetime import datetime, timezone
@@ -237,13 +257,15 @@ epoch_timestamp = int(naive_time.replace(tzinfo=timezone.utc).timestamp())
 client.insert("events", [[epoch_timestamp]], column_names=["event_time"])
 ```
 
+시간대 정보가 없는 `datetime` 쿼리 매개변수에는 별도의 `naive_datetime_binding` 설정이 사용됩니다. 기본 `"wall"` 모드에서는 호스트 로컬 시간으로 변환하지 않고 wall 필드를 전송합니다. [매개변수 인수](/ko/integrations/language-clients/python/driver-api#parameters-argument) 섹션을 참조하십시오.
+
 <div id="datetime-columns-with-timezone-metadata">
   #### 시간대 메타데이터가 있는 DateTime 컬럼
 </div>
 
 ClickHouse 컬럼은 `DateTime('America/Denver')` 또는 `DateTime64(3, 'Asia/Tokyo')`처럼 시간대 메타데이터를 선언할 수 있습니다. 이 메타데이터는 쿼리 시 값이 어떻게 표시되는지를 제어합니다.
 
-이러한 컬럼에 삽입할 때 ClickHouse Connect는 자체 `tzinfo`에 따라 Python 값을 변환합니다. 쿼리하면 `column_tzs` 인수로 컬럼별 재정의를 지정하지 않는 한 해당 컬럼의 시간대가 결과에 적용됩니다. `query_tz` 인수는 컬럼에 선언된 시간대를 재정의하지 않습니다.
+시간대 인식 값을 삽입할 때 ClickHouse Connect는 해당 값이 나타내는 시점을 유지합니다. 시간대 정보가 없는 값의 경우 `naive_datetime_insert` 설정이 프로세스 시간대와 컬럼 시간대 중 어느 것을 사용할지 제어합니다. 쿼리하면 `column_tzs` 인수로 컬럼별 재정의를 지정하지 않는 한 해당 컬럼의 시간대가 결과에 적용됩니다. `query_tz` 인수는 컬럼에 선언된 시간대를 재정의하지 않습니다.
 
 ```python
 from datetime import datetime

@@ -13,7 +13,7 @@ ClickHouse Connect는 고급 활용 사례를 위한 다양한 추가 옵션을 
   ## 전역 설정
 </div>
 
-ClickHouse Connect의 동작을 전역적으로 제어하는 몇 가지 설정이 있습니다. 이러한 설정은 최상위 `common` package에서 사용할 수 있습니다.
+ClickHouse Connect의 동작을 전역적으로 제어하는 몇 가지 설정이 있습니다. 이러한 설정은 최상위 `common` package에서 액세스할 수 있습니다:
 
 ```python
 from clickhouse_connect import common
@@ -24,25 +24,27 @@ print(common.get_setting("invalid_setting_action"))
 ```
 
 <Note>
-  클라이언트를 생성하기 전에 공통 설정을 구성하십시오. 클라이언트를 생성할 때 생성된 session ID/query ID 및 제품 식별과 같은 설정이 클라이언트별 상태에 복사되므로, 이후 전역 설정을 변경해도 기존 클라이언트에는 반영되지 않습니다.
+  클라이언트를 생성하기 전에 클라이언트 생성 설정을 구성하십시오. 생성된 session/query ID 및 제품 식별과 같은 설정은 클라이언트별 상태에 복사되므로, 이후 전역적으로 변경해도 기존 클라이언트에는 반영되지 않습니다. 바인딩 및 삽입 설정은 이와 다릅니다. `naive_datetime_binding` 및 `dict_parameter_format`은 매개변수를 바인딩할 때 읽습니다. `naive_datetime_insert`는 Python `datetime` 객체 또는 `DateTime64` ISO 문자열이 포함된 네이티브 삽입 컬럼을 직렬화할 때 읽습니다. 이러한 설정을 변경하면 기존 클라이언트에도 영향을 미칩니다. 재사용 가능한 삽입 컨텍스트는 삽입할 때마다 현재 `naive_datetime_insert` 값을 사용합니다.
 </Note>
 
-현재 정의된 전역 설정은 다음과 같습니다.
+현재 다음 전역 설정이 정의되어 있습니다.
 
-| 설정 이름                     | 기본값        | 옵션                            | 설명                                                                                                                       |
-| ------------------------- | ---------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `autogenerate_session_id` | `True`     | `True`, `False`               | session ID가 제공되지 않으면 각 동기 클라이언트에 UUID session ID를 생성합니다. async 팩토리는 기본적으로 이 값을 `False`로 재정의합니다.                          |
-| `autogenerate_query_id`   | `True`     | `True`, `False`               | 쿼리 ID가 제공되지 않으면 각 요청에 UUID 쿼리 ID를 생성합니다.                                                                                 |
-| `dict_parameter_format`   | `"json"`   | `"json"`, `"map"`             | 클라이언트 측 매개변수 바인딩에 사용되는 Python 딕셔너리의 포맷을 JSON 또는 ClickHouse 맵 리터럴로 지정합니다.                                                 |
-| `invalid_setting_action`  | `"error"`  | `"drop"`, `"send"`, `"error"` | 서버가 인식하지 못하거나 `readonly`인 설정을 삭제, 전송 또는 거부합니다. `"error"`는 `ProgrammingError`를 발생시킵니다.                                    |
-| `max_connection_age`      | `600`      | 초 단위의 임의 숫자                   | 재사용되는 HTTP keep-alive 연결의 최대 유지 시간입니다. 교체를 사용하면 로드 밸런서 뒤에 있는 노드 전반에 연결을 분산하는 데 도움이 됩니다.                                  |
-| `product_name`            | `""`       | 임의 문자열                        | 클라이언트 정보에 추가되는 제품 식별자입니다. `"my-product/1.0"`와 같은 값을 사용하십시오.                                                              |
-| `readonly`                | `0`        | `0`, `1`                      | 매우 오래된 ClickHouse 서버의 `readonly` 설정을 위한 호환성 힌트입니다.                                                                       |
-| `send_os_user`            | `True`     | `True`, `False`               | 감지된 운영 체제 사용자를 클라이언트 정보에 포함합니다.                                                                                          |
-| `send_integration_tags`   | `True`     | `True`, `False`               | Pandas 또는 SQLAlchemy와 같이 클라이언트가 사용하는 통합 정보를 HTTP User-Agent에 포함합니다.                                                      |
-| `use_protocol_version`    | `True`     | `True`, `False`               | `DateTime` 컬럼 시간대 메타데이터와 같은 네이티브 포맷 기능에 사용되는 클라이언트 프로토콜 버전을 협상합니다. `client_protocol_version`을 거부하는 프록시에서는 이 값을 비활성화하십시오. |
-| `max_error_size`          | `1024`     | 0 이상의 임의 정수                   | 클라이언트 오류에 포함되는 최대 문자 수입니다. 전체 메시지를 사용하려면 `0`을 사용하십시오.                                                                    |
-| `http_buffer_size`        | `10485760` | 바이트                           | 스트리밍 HTTP 쿼리를 위한 인메모리 버퍼 크기이며, 기본값은 10 MiB입니다.                                                                           |
+| 설정 이름                     | 기본값        | 옵션                            | 설명                                                                                                                                                                                                                          |
+| ------------------------- | ---------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `autogenerate_session_id` | `True`     | `True`, `False`               | session ID가 제공되지 않으면 각 동기 클라이언트에 UUID session ID를 생성합니다. 비동기 팩토리는 기본적으로 이를 `False`로 재정의합니다.                                                                                                                                 |
+| `autogenerate_query_id`   | `True`     | `True`, `False`               | 제공되지 않으면 각 요청에 UUID 쿼리 ID를 생성합니다.                                                                                                                                                                                           |
+| `dict_parameter_format`   | `"json"`   | `"json"`, `"map"`             | 매개변수 바인딩에 사용하는 Python 딕셔너리를 JSON 또는 ClickHouse 맵 리터럴로 포맷합니다.                                                                                                                                                                |
+| `invalid_setting_action`  | `"error"`  | `"drop"`, `"send"`, `"error"` | 서버에서 readonly로 보고된 설정에 적용할 동작입니다. `drop`은 해당 설정을 무시하고, `send`는 전달하며, `error`는 `ProgrammingError`를 발생시킵니다. 역할에서 `CHANGEABLE_IN_READONLY`로 설정된 항목처럼 현재 사용자의 `system.settings`에 없는 설정은 동작이 `drop`이 아닌 한 서버가 수락하거나 거부하도록 전달됩니다. |
+| `naive_datetime_binding`  | `"wall"`   | `"wall"`, `"legacy"`          | naive `datetime` 쿼리 매개변수의 바인딩 방식을 제어합니다. `wall`은 naive datetime을 있는 그대로 포맷합니다. `legacy`는 이전의 호스트 로컬 변환 동작을 복원합니다. 특정 시점을 보존하려면 `tzinfo`를 지정하십시오.                                                                            |
+| `naive_datetime_insert`   | `"local"`  | `"local"`, `"server"`         | naive `datetime` 값과 `DateTime64`에서 허용하는 naive ISO 문자열의 Python 객체 삽입을 제어합니다. `local`은 호환성을 위해 프로세스 시간대를 사용합니다. `server`는 선언된 컬럼 시간대를 사용하고, 없으면 서버 시간대를 사용합니다. `datetime64`-dtype NumPy 및 Pandas 컬럼은 변경되지 않습니다.               |
+| `max_connection_age`      | `600`      | 임의의 초 단위 숫자                   | 재사용되는 HTTP keep-alive 연결의 최대 수명입니다. 연결을 교체하면 로드 밸런서 뒤의 노드에 연결을 분산하는 데 도움이 됩니다.                                                                                                                                              |
+| `product_name`            | `""`       | 임의의 문자열                       | 클라이언트 정보에 추가되는 제품 식별자입니다. `"my-product/1.0"`과 같은 값을 사용하십시오.                                                                                                                                                                 |
+| `readonly`                | `0`        | `0`, `1`                      | 1.x 호환성을 위해 유지되는 Deprecated 무작동 설정입니다. 클라이언트는 서버의 `readonly` 설정을 직접 읽습니다.                                                                                                                                                   |
+| `send_os_user`            | `True`     | `True`, `False`               | 감지된 운영 체제 사용자를 클라이언트 정보에 포함합니다.                                                                                                                                                                                             |
+| `send_integration_tags`   | `True`     | `True`, `False`               | Pandas 또는 SQLAlchemy와 같이 클라이언트가 사용하는 통합 정보를 HTTP User-Agent에 포함합니다.                                                                                                                                                         |
+| `use_protocol_version`    | `True`     | `True`, `False`               | `DateTime` 컬럼 시간대 메타데이터와 같은 네이티브 포맷 기능에서 사용하는 클라이언트 protocol version을 협상합니다. `client_protocol_version`을 거부하는 프록시에서는 이를 비활성화하십시오.                                                                                          |
+| `max_error_size`          | `1024`     | 임의의 음이 아닌 정수                  | 클라이언트 오류에 포함할 최대 문자 수입니다. 전체 메시지를 표시하려면 `0`을 사용하십시오.                                                                                                                                                                        |
+| `http_buffer_size`        | `10485760` | 바이트                           | 스트리밍 HTTP 쿼리를 위한 인메모리 버퍼 크기이며, 기본값은 10 MiB입니다.                                                                                                                                                                              |
 
 <div id="compression">
   ## 압축

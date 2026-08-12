@@ -84,7 +84,7 @@ with client.query_row_block_stream(
 
 `with` 문과 함께 사용하지 않고 `StreamContext`를 사용하려고 하면 오류가 발생한다는 점에 유의하십시오. Python 컨텍스트를 사용하면 스트림(이 경우 스트리밍 HTTP 응답)이 모든 데이터가 소비되지 않거나 처리 중 예외가 발생하더라도 올바르게 닫히도록 보장됩니다. 또한 `StreamContext`는 스트림 소비에 한 번만 사용할 수 있습니다. `StreamContext`가 종료된 후 다시 사용하려고 하면 `StreamClosedError`가 발생합니다.
 
-결과를 읽는 동안 연결이 실패하면 잘린 결과를 조용히 반환하는 대신 `StreamFailureError`가 발생합니다. ClickHouse가 서버 측 오류 메시지를 보고한 경우 예외에 해당 메시지가 포함됩니다.
+결과를 읽는 동안 연결이 실패하면 잘린 결과를 조용히 반환하는 대신 `StreamFailureError`가 발생합니다. 해당 메시지는 클라이언트의 `show_clickhouse_errors` 설정을 따릅니다.
 
 `StreamContext`의 `source` 속성을 사용하면 상위 결과 객체에 접근할 수 있으며, 여기에는 컬럼 이름과 타입이 포함됩니다. 대부분의 스트림에서는 이것이 `QueryResult`이며, `query_np_stream` 및 `query_df_stream` 메서드는 대신 `NumpyResult`를 노출합니다.
 

@@ -54,6 +54,23 @@ with engine.connect() as conn:
     value = conn.execute(stmt).scalar_one()
 ```
 
+<div id="sqlalchemy-per-query-read-formats">
+  ### 按查询设置读取格式
+</div>
+
+通过 SQLAlchemy 的执行选项 `query_formats`，可为引擎、连接或语句设置 ClickHouse 读取格式。语句级格式会优先应用，并覆盖匹配的连接级或引擎级键及通配符。
+
+```python
+from sqlalchemy import text
+
+stmt = text("SELECT user_uuid FROM users").execution_options(
+    query_formats={"UUID": "string"}
+)
+
+with engine.connect() as conn:
+    rows = conn.execute(stmt).all()
+```
+
 <div id="sqlalchemy-server-side-parameters">
   ### 服务器端参数
 </div>
@@ -104,6 +121,54 @@ with engine.connect() as conn:
     conn.execute(stmt)
 ```
 
+<div id="sqlalchemy-json-subcolumns">
+  ### JSON 子列
+</div>
+
+对于声明为或映射为 ClickHouse `JSON` 的列，请使用方括号逐段选择由存储支持的子列路径：
+
+```python
+from sqlalchemy import Column, MetaData, Table, select
+
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import JSON, UInt32
+
+events = Table(
+    "events",
+    MetaData(),
+    Column("payload", JSON),
+)
+
+request_id = events.c.payload["context"]["request"].subcolumn(
+    "id",
+    type_=UInt32,
+)
+
+stmt = select(
+    events.c.payload["severity"].label("severity"),
+    request_id.label("request_id"),
+)
+```
+
+`payload["severity"]` 会被编译为 ClickHouse 的点分标识符语法。每个部分都会分别加引号，例如 `` `events`.`payload`.`severity` ``。它读取 ClickHouse 存储的 JSON 子列，不会调用 `getSubcolumn`。对路径中的每个分段依次使用 `[]` 或 `.subcolumn()`。每个分段都必须是非空字符串。
+
+向 `.subcolumn()` 传入 `type_` 会将点分路径包装为 SQL `CAST`，并将该类型赋予 SQLAlchemy 表达式。未传入 `type_` 时，`.subcolumn("segment")` 的行为与 `["segment"]` 相同。
+
+未指定类型的路径具有 ClickHouse 的 `Dynamic` 类型。ClickHouse 不允许在 `ORDER BY` 或 `GROUP BY` 中直接使用 `Dynamic` 值。当在这些位置使用子列时，请传入 `type_`。
+
+对于静态类型代码，请从 `clickhouse_connect.cc_sqlalchemy` 导入 `json_subcolumn`。该辅助函数同样每次只接受一个分段，并保留 `type_` 指定的 Python 结果类型：
+
+```python
+from clickhouse_connect.cc_sqlalchemy import json_subcolumn
+
+context = json_subcolumn(events.c.payload, "context")
+request = json_subcolumn(context, "request")
+request_id = json_subcolumn(request, "id", type_=UInt32)
+```
+
+在此示例中，类型检查器会将 `request_id` 识别为 `ColumnElement[int]`。
+
+每个片段都会分别加引号，包括包含空格或反引号的名称。对于 ClickHouse JSON 路径处理，反引号不会使点号成为字面量。启用 `json_type_escape_dots_in_keys` 后，键名中的字面点号应使用 ClickHouse 的 `%2E` 编码。对于名为 `a.b` 的键，应通过 `payload["a%2Eb"]` 而非 `payload["a.b"]` 访问。
+
 <div id="sqlalchemy-query-extensions">
   ### ClickHouse 查询扩展
 </div>
@@ -133,6 +198,7 @@ ClickHouse `Select` 方法如下：
 | `.array_join(...)`                       | `ARRAY JOIN`                                                            |
 | `.left_array_join(...)`                  | `LEFT ARRAY JOIN`                                                       |
 | `.ch_join(...)`                          | 带有 `strictness`、`distribution`、`using` 和 `cross` 选项的 ClickHouse JOIN 操作 |
+| `.cte(name, materialized=True)`          | `WITH name AS MATERIALIZED (...)`                                       |
 
 例如，ClickHouse `GLOBAL ANY LEFT JOIN` 可以链式调用，无需嵌套自定义 `FromClause`：
 
@@ -165,7 +231,51 @@ stmt = select(
 )
 ```
 
-标准的 SQLAlchemy `values()` 构造会被编译为 ClickHouse 的 `VALUES` 表函数语法，即使在公共表表达式中使用时也是如此 (CTE 形式需要 SQLAlchemy 2.x，因为 `Values.cte()` 是在该版本中新增的) 。
+标准的 SQLAlchemy `values()` 构造会被编译为 ClickHouse 的 `VALUES` 表函数语法，包括在公共表表达式中使用时。CTE 形式需要 SQLAlchemy 2.0.42 或更高版本，其中新增了 `Values.cte()`。
+
+<div id="sqlalchemy-materialized-ctes">
+  ### Materialized CTE
+</div>
+
+默认情况下，ClickHouse 会内联公共表表达式，因此被多次引用的 CTE 的主体会针对每次引用执行一次。向 `.cte()` 传入 `materialized=True`，即可生成 `WITH <name> AS MATERIALIZED (...)`，使主体只计算一次：
+
+```python
+from sqlalchemy import func
+
+from clickhouse_connect.cc_sqlalchemy import select
+
+ranked = (
+    select(book.c.book_id, func.row_number().over(order_by=book.c.score.desc()).label("result_rank"))
+    .where(book.c.genre == "sci-fi")
+    .order_by(book.c.score.desc())
+    .limit(100)
+    .cte("ranked", materialized=True)
+)
+
+stmt = (
+    select(book.c.book_id, ranked.c.result_rank)
+    .select_from(book)
+    .ch_join(ranked, book.c.book_id == ranked.c.book_id, strictness="ANY")
+    .where(book.c.book_id.in_(select(ranked.c.book_id)))
+    .execution_options(settings={"enable_materialized_cte": 1, "enable_analyzer": 1})
+)
+```
+
+仅当指定该关键字、`enable_materialized_cte=1` 且启用 analyzer 时，服务器 才会 materialize CTE。如[每个查询的设置](#sqlalchemy-per-query-settings)所示，可在语句、连接 或 引擎 上设置 `enable_materialized_cte`。在所有支持此功能的服务器 上，analyzer 默认启用，因此显式设置 `enable_analyzer=1` 是一种防御性措施。`enable_materialized_cte` 是一项 Experimental ClickHouse 设置。使用 `enable_materialized_cte=0` 或 `enable_analyzer=0` 时，查询仍会成功执行并返回相同的行。ClickHouse 会静默忽略 `MATERIALIZED` 并重新内联 CTE，因此漏设该选项只会影响性能，不会报错。Materialized CTEs 需要 ClickHouse 26.3 或更高版本。旧版服务器 会将该关键字视为语法错误而拒绝。
+
+对于使用标准 `sqlalchemy.select` 构建的语句，请改用模块级的 `cte()`。它将语句 作为第一个 argument，其他行为与 `Select.cte()` 一致：
+
+```python
+from sqlalchemy import select as sa_select
+
+from clickhouse_connect.cc_sqlalchemy import cte
+
+ranked = cte(sa_select(book.c.book_id), "ranked", materialized=True)
+```
+
+该关键字仅在 ClickHouse 方言下生效，因此与其他后端共享的语句在该方言下可原样编译。
+
+ClickHouse 不支持递归 materialized CTE。若同时设置 `recursive=True` 和 `materialized=True`，SQLAlchemy helpers 将引发 `ValueError`。
 
 <div id="sqlalchemy-ddl-reflection">
   ## DDL 与反射

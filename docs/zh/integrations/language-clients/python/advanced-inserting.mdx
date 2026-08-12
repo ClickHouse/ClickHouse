@@ -57,7 +57,7 @@ assert qr.first_row[0] == 113
 | Float64               | float                   |                   |                                                                                       |
 | Decimal               | decimal.Decimal         |                   |                                                                                       |
 | String                | str or bytes            |                   | 同一列中的值必须始终统一为文本或字节类型。                                                                 |
-| FixedString           | bytes                   | string            | 如果以字符串插入，额外的字节将被填充为零                                                                  |
+| FixedString           | bytes                   | string            | 字符串值会以零字节填充。空字节会写入为全零字节。                                                              |
 | Enum[8,16]            | str or int              |                   | 可将标签作为字符串插入，或插入其底层整数值。                                                                |
 | Date                  | datetime.date           | int               | 整数值会被解释为自 1970-01-01 起的天数。                                                            |
 | Date32                | datetime.date           | int               | 整数值会被解释为有符号的天数偏移。                                                                     |
@@ -217,14 +217,34 @@ assert [row[0].hour for row in results.result_rows] == [1, 10, 16]
 </Note>
 
 <div id="timezone-naive-datetime-objects">
-  #### 不带时区信息的 datetime 对象
+  #### 不带时区的 datetime 对象
 </div>
 
-调用 `.timestamp()` 时，Python 会按系统本地时区来解释不带时区信息的 `datetime`。这会使插入操作依赖运行环境。建议优先采用以下方法之一：
+全局 `naive_datetime_insert` 设置用于控制插入不带时区的原生 Python `datetime` 对象。它也适用于 `DateTime64` 列接受的不带时区的 ISO 字符串。
 
-1. 使用带时区信息的 datetime 对象。
-2. 确保进程时区为 UTC。
-3. 显式指定预期的时区，或将其显式转换为纪元整数。
+* `"local"` 是 1.x 中的默认值。调用 `.timestamp()` 时，Python 会根据进程时区解释该值，从而保持现有行为。
+* `"server"` 会将该值解释为 `DateTime` 或 `DateTime64` 列所声明时区中的墙钟时间。如果该列未指定时区，则使用客户端连接时获取的服务器时区。
+
+请在插入前设置该选项。序列化每个包含 Python `datetime` 对象或 `DateTime64` ISO 字符串的原生插入列时，都会读取此选项，因此更改会应用于现有客户端和可复用的插入上下文。
+
+```python
+from datetime import datetime
+
+from clickhouse_connect import common
+
+common.set_setting("naive_datetime_insert", "server")
+
+naive_time = datetime(2023, 6, 15, 10, 30)
+client.insert("events", [[naive_time]], column_names=["event_time"])
+```
+
+使用 `"server"` 时，ClickHouse Connect 会先附加目标 `tzinfo`，再将值转换为纪元时间。对于 IANA 时区，它遵循标准库处理夏令时切换的规则。秋季重叠时段使用 datetime 的 `fold` 值。默认的 `fold=0` 选择切换前的偏移量，而 `fold=1` 选择切换后的偏移量。春季间隙采用相同的偏移量选择方式，不会被拒绝或归一化。
+
+不存在的春季间隙墙钟时间可能无法通过墙钟模式查询参数往返转换，因为 ClickHouse 的文本解析可能会选择不同的偏移量。当具体时刻很重要时，请使用带时区信息的 `datetime` 或有效的墙钟时间。
+
+该选项仅适用于原生 Python `datetime` 对象的插入，以及 `DateTime64` 接受的不带时区的 ISO 字符串。不带时区的 `datetime64`-dtype 的 NumPy 和 Pandas 列会保留其现有的 UTC 墙钟时间转换方式。
+
+若要表示不依赖于任一模式的特定时刻，请附加预期的时区，或显式提供纪元整数。
 
 ```python
 from datetime import datetime, timezone
@@ -237,13 +257,15 @@ epoch_timestamp = int(naive_time.replace(tzinfo=timezone.utc).timestamp())
 client.insert("events", [[epoch_timestamp]], column_names=["event_time"])
 ```
 
+不含时区信息的 `datetime` 查询参数使用独立的 `naive_datetime_binding` 设置。默认的 `"wall"` 模式会按原样发送日期时间字段，不进行主机本地时区转换。请参阅[参数 argument](/zh/integrations/language-clients/python/driver-api#parameters-argument)部分。
+
 <div id="datetime-columns-with-timezone-metadata">
   #### 带有时区元数据的 DateTime 列
 </div>
 
 ClickHouse 列可以声明时区元数据，例如 `DateTime('America/Denver')` 或 `DateTime64(3, 'Asia/Tokyo')`。这些元数据决定了值在查询时的显示方式。
 
-向这类列中插入数据时，ClickHouse Connect 会根据 Python 值自身的 `tzinfo` 进行转换。查询时，结果会使用该列的时区，除非通过 `column_tzs` 参数为特定列提供覆盖设置。`query_tz` 参数不会覆盖列中已声明的时区。
+插入带时区信息的值时，ClickHouse Connect 会保留其所表示的时刻。对于不带时区信息的值，`naive_datetime_insert` 设置决定使用进程时区还是列时区。查询时，结果会使用该列的时区，除非通过 `column_tzs` 参数为特定列提供覆盖设置。`query_tz` 参数不会覆盖列中已声明的时区。
 
 ```python
 from datetime import datetime

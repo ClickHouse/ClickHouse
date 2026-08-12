@@ -46,11 +46,64 @@ Lorsque plusieurs clés correspondent avec des casses différentes, la première
   Ces fonctions peuvent être moins performantes que leurs équivalents sensibles à la casse. Utilisez donc les fonctions JSONExtract standard si possible.
 </Note>
 
+<div id="jsonpath-syntax">
+  ## Syntaxe JSONPath
+</div>
+
+Les fonctions `JSON_EXISTS`, `JSON_VALUE` et `JSON_QUERY` acceptent une expression
+JSONPath comme deuxième argument. ClickHouse implémente un sous-ensemble limité de
+JSONPath, librement inspiré de la norme SQL/JSON (ISO/IEC TR 19075-6),
+et intentionnellement plus restreint que la [RFC 9535](https://www.rfc-editor.org/rfc/rfc9535)
+et d&#39;autres implémentations populaires. Les opérateurs pris en charge sont répertoriés ci-dessous.
+
+L&#39;implémentation de référence se trouve dans
+[`src/Functions/JSONPath/Parsers`](https://github.com/ClickHouse/ClickHouse/tree/master/src/Functions/JSONPath/Parsers).
+
+<div id="supported-operators">
+  ### Opérateurs pris en charge
+</div>
+
+| Syntaxe       | Description                                                                                                                                                                                     | Exemple                           |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `$`           | Élément racine. Chaque chemin doit commencer par cet élément.                                                                                                                                   | `$`                               |
+| `.key`        | Accès à un membre en notation pointée, sans guillemets. La clé peut commencer par des chiffres ou être composée uniquement de chiffres.                                                         | `$.store.book`, `$.1key`, `$.123` |
+| `."key"`      | Accès à un membre en notation pointée, entre guillemets. À utiliser pour les clés contenant des espaces ou des caractères spéciaux. Les guillemets doubles ou les accents graves sont acceptés. | `$."foo bar"`                     |
+| `[key]`       | Accès à un membre en notation entre crochets, sans guillemets.                                                                                                                                  | `$[hello]`                        |
+| `['key']`     | Accès à un membre en notation entre crochets, entre guillemets. Les guillemets simples, les guillemets doubles ou les accents graves sont acceptés.                                             | `$['foo bar']`                    |
+| `[n]`         | Accès à un élément de tableau par index (à partir de 0).                                                                                                                                        | `$.items[0]`                      |
+| `[n, m, ...]` | Accès à plusieurs éléments de tableau.                                                                                                                                                          | `$.items[0, 2, 4]`                |
+| `[n to m]`    | Plage d&#39;éléments de tableau. L&#39;index de fin `m` est exclu.                                                                                                                              | `$.items[0 to 3]`                 |
+| `[*]`         | Caractère générique correspondant à tous les éléments d&#39;un tableau.                                                                                                                         | `$.items[*]`                      |
+
+Remarques :
+
+* Les index et les plages peuvent être combinés dans une même paire de crochets (par exemple, `[0 to 2, 4]`).
+* Les plages d&#39;index et le caractère générique ne peuvent pas être combinés dans une même paire de crochets (par exemple, `[* , 0]` n&#39;est pas valide).
+* Dans une plage `[n to m]`, le début `n` doit être strictement inférieur à la fin `m`, sinon une exception est levée.
+* Un index seul `[n]` est équivalent à la plage `[n to n+1]`.
+
+<div id="unsupported-operators">
+  ### Opérateurs non pris en charge
+</div>
+
+Les opérateurs JSONPath suivants, disponibles dans la RFC 9535 ou dans d&#39;autres
+implémentations, ne sont **pas** pris en charge par ClickHouse :
+
+| Syntaxe                 | Description                                                                                              |
+| ----------------------- | -------------------------------------------------------------------------------------------------------- |
+| `..`                    | Descente récursive.                                                                                      |
+| `?(@.expr)`             | Expressions de filtrage.                                                                                 |
+| `[start:end:step]`      | Notation de tranche. Utilisez plutôt `[n to m]`.                                                         |
+| `@`                     | Référence au nœud courant.                                                                               |
+| `[-n]`                  | Indices négatifs de tableau (à partir de la fin).                                                        |
+| Expressions de script   | Expressions arithmétiques ou de fonction dans un chemin.                                                 |
+| `ON ERROR` / `ON EMPTY` | Clauses SQL/JSON standard permettant de contrôler le comportement en cas d&#39;erreur ou de valeur vide. |
+
 {/* 
-  Le contenu entre les balises ci-dessous est remplacé, lors de la génération du framework de documentation, par 
-  la documentation générée à partir de system.functions. Veuillez ne pas modifier ni supprimer ces balises.
-  Voir : https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
-  */}
+    Le contenu entre les balises ci-dessous est remplacé, lors de la génération du framework de documentation, par 
+    la documentation générée à partir de system.functions. Veuillez ne pas modifier ni supprimer ces balises.
+    Voir : https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+    */}
 
 {/*AUTOGENERATED_START*/}
 

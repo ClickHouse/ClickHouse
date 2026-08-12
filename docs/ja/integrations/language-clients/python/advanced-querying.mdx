@@ -84,7 +84,7 @@ with client.query_row_block_stream(
 
 `with` ステートメントを使わずに `StreamContext` を使用しようとすると、エラーが発生する点に注意してください。Python のコンテキストを使うことで、ストリーム (この場合はストリーミング HTTP レスポンス) は、すべてのデータが消費されなかった場合や、処理中に例外が発生した場合でも、適切にクローズされます。また、`StreamContext` はストリームの消費に一度しか使用できません。終了後の `StreamContext` を使用しようとすると、`StreamClosedError` が発生します。
 
-結果の読み取り中に接続が失敗した場合、切り詰められた結果が暗黙的に返されるのではなく、`StreamFailureError` が発生します。ClickHouse がエラーを報告していた場合、この例外にはサーバー側のエラーメッセージが含まれます。
+結果の読み取り中に接続が失敗した場合、切り詰められた結果が暗黙的に返されるのではなく、`StreamFailureError` が発生します。そのメッセージはクライアントの `show_clickhouse_errors` 設定に従います。
 
 `StreamContext` の `source` プロパティを使うと、カラム名と型を含む親の結果オブジェクトにアクセスできます。ほとんどのストリームではこれは `QueryResult` ですが、`query_np_stream` と `query_df_stream` メソッドでは代わりに `NumpyResult` が公開されます。
 

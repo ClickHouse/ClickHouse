@@ -2,26 +2,114 @@
 title: 'Configuración de red privada de BYOC en Azure'
 slug: /cloud/reference/byoc/onboarding/network-azure
 sidebarTitle: 'Configuración de red privada de Azure'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'azure', 'private link']
-description: 'Configura Private Link para BYOC en Azure'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'azure', 'vnet peering', 'private link']
+description: 'Configura el emparejamiento de VNet o Private Link para BYOC en Azure'
 doc_type: 'reference'
 ---
 
 import { Image } from "/snippets/es/components/Image.jsx";
 
-ClickHouse BYOC en Azure admite la conectividad privada mediante Azure Private Link.
+ClickHouse BYOC en Azure admite dos opciones de conectividad privada: [emparejamiento de redes virtuales de Azure](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview) y [Azure Private Link](https://learn.microsoft.com/azure/private-link/private-link-overview). Ambas mantienen el tráfico en la red troncal de Azure, por lo que nunca atraviesa la internet pública.
 
 <div id="common-prerequisites">
   ## Requisitos previos
 </div>
 
+Pasos comunes necesarios tanto para el emparejamiento de VNet como para Private Link.
+
 <div id="step-enable-private-load-balancer-for-clickhouse-byoc">
   ### Habilite el balanceador de carga privado para ClickHouse BYOC
 </div>
 
-En la consola de ClickHouse Cloud, habilite el **balanceador de carga privado** para su infraestructura BYOC.
+En la consola de ClickHouse Cloud, habilite el **balanceador de carga privado** para su infraestructura BYOC. Ambas opciones de conexión se enrutan a través de este balanceador de carga interno, por lo que ninguna funcionará hasta que se habilite.
 
-<Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC: habilitar el balanceador de carga privado" border />
+<Image img="/images/cloud/reference/byoc-private-load-balancer-azure.webp" size="md" alt="BYOC: habilitar el balanceador de carga privado" border />
+
+Anote el **nombre hablado** de la infraestructura. ClickHouse despliega su infraestructura BYOC en su propia suscripción de Azure, en un grupo de recursos administrado llamado `clickhouse-cloud-<spoken-name>-default`. En ese grupo de recursos encontrará la VNet de BYOC en los pasos siguientes.
+
+<div id="azure-vnet-peering">
+  ## Configurar el emparejamiento de VNet
+</div>
+
+Antes de comenzar, familiarícese con el [emparejamiento de VNet de Azure](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview) y sus [requisitos y restricciones](https://learn.microsoft.com/azure/virtual-network/virtual-network-manage-peering#requirements-and-constraints). ClickHouse BYOC utiliza un balanceador de carga privado para permitir la conectividad de red con los servicios de ClickHouse mediante el emparejamiento de VNet.
+
+<Note>
+  Los pasos de ejemplo corresponden a un escenario sencillo: una de sus VNets emparejada directamente con la VNet de BYOC. En escenarios avanzados, como topologías de concentrador y radio o conectividad local, se requieren algunos ajustes; consulte [Limitaciones](#vnet-peering-limitations).
+</Note>
+
+<div id="vnet-peering-prerequisites">
+  ### Requisitos previos adicionales para el emparejamiento
+</div>
+
+**Espacios de direcciones no superpuestos.** Las redes virtuales emparejadas no pueden tener rangos de direcciones IP superpuestos. Compare el espacio de direcciones de su VNet con el de la VNet de BYOC, que se muestra en la página **Overview** de la VNet de BYOC en Azure Portal. Si se superponen, use Private Link en su lugar.
+
+**Permisos.** Para crear un emparejamiento, se requieren los permisos `Microsoft.Network/virtualNetworks/virtualNetworkPeerings/write` y `Microsoft.Network/virtualNetworks/peer/action` en *ambas* redes virtuales. El rol integrado **Colaborador de red** los incluye. Consulte los [permisos para el emparejamiento de redes virtuales](https://learn.microsoft.com/azure/virtual-network/virtual-network-manage-peering#permissions).
+
+<Steps>
+  <Step title="Cree el emparejamiento desde la red virtual de BYOC" id="step-1-create-peering-from-byoc-vnet">
+    1. Inicie sesión en el [portal de Azure](https://portal.azure.com) y cambie a la **suscripción de BYOC**.
+    2. Busque **Redes virtuales** y seleccione la VNet de BYOC, ubicada en el grupo de recursos `clickhouse-cloud-<spoken-name>-default`.
+    3. En **Configuración**, seleccione **Emparejamientos** y, a continuación, **+ Agregar**.
+
+    <Image img="/images/cloud/reference/byoc-vnetpeering-azure-1.webp" size="lg" alt="BYOC Crear emparejamiento de VNet" border />
+
+    4. Complete ambas partes del emparejamiento:
+
+    <Image img="/images/cloud/reference/byoc-vnetpeering-azure-2.webp" size="md" alt="BYOC Configurar emparejamiento de VNet" border />
+
+    5. Haga clic en **Agregar**.
+  </Step>
+
+  <Step title="Cree el emparejamiento inverso si no se creó automáticamente" id="step-2-create-reverse-peering">
+    El emparejamiento de Azure consta de dos partes, una en cada dirección, y el tráfico no fluye hasta que ambas existen. Si el portal creó ambas partes en el paso anterior, omita este paso.
+
+    Si solo creó la parte del lado de BYOC —porque su VNet está en otra suscripción o tenant—, su estado será **Iniciado**. Cree la parte correspondiente desde su propia VNet:
+
+    1. Cambie a la suscripción propietaria de su VNet e inicie sesión con una cuenta que tenga el rol **Colaborador de red** en ella.
+    2. Seleccione su VNet y, a continuación, **Emparejamientos** → **+ Agregar**.
+    3. Seleccione **Conozco mi ID de recurso**, pegue el **ID de recurso de la VNet de BYOC** y elija el **Directorio** propietario de la suscripción de BYOC. Seleccione **Autenticar** si se le solicita.
+    4. Seleccione **Agregar**.
+  </Step>
+
+  <Step title="Verifique que ambas partes estén conectadas" id="step-3-verify-peering">
+    Abra **Emparejamientos** en cualquiera de las redes virtuales. El **Estado de emparejamiento** debe mostrar **Conectado** en ambos lados. Si una parte permanece en **Iniciado**, falta su contraparte; si muestra **Desconectado**, su contraparte se eliminó.
+
+    No es necesario modificar la tabla de rutas. Azure instala automáticamente rutas del sistema para el espacio de direcciones emparejado en ambos lados. Puede comprobarlo en cualquier interfaz de red de su VNet, en **Rutas efectivas**, donde el espacio de direcciones de BYOC aparece con un tipo de siguiente salto de **Emparejamiento de VNet**.
+
+    <Image img="/images/cloud/reference/byoc-vnetpeering-azure-3.webp" size="lg" alt="BYOC Verificar emparejamiento de VNet" border />
+  </Step>
+
+  <Step title="Permita el acceso de la VNet emparejada a través del grupo de seguridad de red" id="step-4-allow-address-space-through-nsg">
+    Las subredes de BYOC están protegidas por un [grupo de seguridad de red](https://learn.microsoft.com/azure/virtual-network/network-security-groups-overview) administrado por ClickHouse que, de forma predeterminada, deniega el tráfico interno de la VNet. Dado que la [etiqueta de servicio `VirtualNetwork`](https://learn.microsoft.com/azure/virtual-network/service-tags-overview#available-service-tags) abarca el espacio de direcciones de las VNet emparejadas, el tráfico que llega a través del emparejamiento se descarta hasta que se agregue una regla de entrada que lo permita.
+
+    Póngase en contacto con el soporte de ClickHouse para solicitar la adición de reglas de entrada que incluyan los rangos CIDR de su VNet emparejada. Sin este paso, el emparejamiento mostrará **Conectado**, pero las conexiones agotarán el tiempo de espera.
+  </Step>
+
+  <Step title="Acceda al servicio de ClickHouse mediante el emparejamiento" id="step-5-access-ch-service-via-peering">
+    Para acceder a ClickHouse de forma privada, se aprovisionan un balanceador de carga privado y un endpoint que permiten una conectividad segura desde su VNet emparejada. El endpoint privado sigue el formato del endpoint público con el sufijo `-private`. Por ejemplo:
+
+    * **Endpoint público**: `h5ju65kv87.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`
+    * **Endpoint privado**: `h5ju65kv87-private.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`
+  </Step>
+</Steps>
+
+<div id="vnet-peering-limitations">
+  ### Limitaciones
+</div>
+
+**El emparejamiento no es transitivo.** Solo la VNet emparejada directamente con la VNet de BYOC puede acceder a sus servicios. Los clientes de una VNet de radio conectada detrás de un concentrador, o los clientes locales que llegan a través de ExpressRoute o de una puerta de enlace VPN, no están cubiertos por un único emparejamiento. Estas topologías requieren configuración adicional, como **Permitir tráfico redirigido** y tránsito de puerta de enlace; consulte [puertas de enlace y conectividad local](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview#gateways-and-on-premises-connectivity), o use Private Link.
+
+**El emparejamiento entre regiones funciona, pero cuesta más.** Un emparejamiento entre VNets de distintas regiones es un emparejamiento global. Permite acceder a ClickHouse con normalidad: el balanceador de carga privado de BYOC es un balanceador de carga interno con SKU Standard, y la restricción de Azure sobre el acceso a los frontends de los balanceadores de carga mediante un emparejamiento global solo se aplica a los balanceadores de carga con SKU Basic. El coste adicional se debe a la latencia de ida y vuelta y a los [cargos por transferencia de datos entre regiones](https://azure.microsoft.com/pricing/details/virtual-network). Prefiera un emparejamiento en la misma región para cargas de trabajo sensibles a la latencia. Si un emparejamiento entre regiones muestra **Conectado** pero las conexiones siguen fallando, la región no es la causa; el motivo más habitual es que falta la regla de entrada del grupo de seguridad de red para su espacio de direcciones. Póngase en contacto con el soporte de ClickHouse.
+
+**Los cambios en el espacio de direcciones requieren una resincronización.** Si cambia el tamaño del espacio de direcciones de su VNet después de crear el emparejamiento, [sincronice el emparejamiento](https://learn.microsoft.com/azure/virtual-network/update-virtual-network-peering-address-space) para que se anuncien los nuevos rangos y póngase en contacto con el soporte de ClickHouse para ampliar la regla de entrada del grupo de seguridad de red de modo que los cubra.
+
+**El tráfico de emparejamiento se factura.** Azure cobra por el ingreso y la salida a través de un emparejamiento. Consulte [Precios de redes virtuales](https://azure.microsoft.com/pricing/details/virtual-network).
+
+<div id="delete-vnet-peering">
+  ### Eliminar el emparejamiento
+</div>
+
+Elimine el emparejamiento desde cualquiera de los dos lados. Al eliminar una de las mitades, se desconecta el vínculo y la otra queda en estado **Desconectado**. Para completar la limpieza, elimine ambas mitades. Consulte [eliminar un emparejamiento](https://learn.microsoft.com/azure/virtual-network/virtual-network-manage-peering#delete-a-peering).
 
 <div id="setup-privatelink">
   ## Configurar Azure Private Link

@@ -84,7 +84,7 @@ with client.query_row_block_stream(
 
 Notez qu’essayer d’utiliser un StreamContext sans bloc `with` provoquera une erreur. L’utilisation d’un contexte Python garantit que le flux (dans ce cas, une réponse HTTP en streaming) sera correctement fermé, même si toutes les données ne sont pas consommées et/ou si une exception est levée pendant le traitement. De plus, les `StreamContext` ne peuvent être utilisés qu’une seule fois pour consommer le flux. Essayer d’utiliser un `StreamContext` après avoir quitté son contexte produira une `StreamClosedError`.
 
-Si la connexion échoue pendant la lecture d’un résultat, une `StreamFailureError` est levée au lieu de renvoyer silencieusement un résultat tronqué. L’exception contient le message d’erreur côté serveur lorsque ClickHouse en a signalé un.
+Si la connexion échoue pendant la lecture d’un résultat, une `StreamFailureError` est levée au lieu de renvoyer silencieusement un résultat tronqué. Son message respecte le paramètre `show_clickhouse_errors` du client.
 
 Vous pouvez utiliser la propriété `source` du `StreamContext` pour accéder à l’objet résultat parent, qui inclut les noms de colonnes et les types. Pour la plupart des flux, il s’agit d’un `QueryResult` ; les méthodes `query_np_stream` et `query_df_stream` exposent à la place un `NumpyResult`.
 

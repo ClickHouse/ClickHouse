@@ -13,7 +13,7 @@ ClickHouse Connect には、より高度な用途に対応する追加オプシ�
   ## グローバル設定
 </div>
 
-ClickHouse Connect の動作をグローバルに制御する設定がいくつかあります。これらの設定には、最上位の `common` パッケージからアクセスできます。
+ClickHouse Connect の動作全体を制御する設定がいくつかあります。これらの設定には、トップレベルの `common` パッケージからアクセスできます。
 
 ```python
 from clickhouse_connect import common
@@ -24,25 +24,27 @@ print(common.get_setting("invalid_setting_action"))
 ```
 
 <Note>
-  クライアントを作成する前に、共通設定を行ってください。クライアントの作成時に、生成された session/query ID や製品識別情報などの設定がクライアント固有の状態にコピーされるため、後からグローバル設定を変更しても既存のクライアントには反映されません。
+  クライアントを作成する前に、クライアント作成設定を構成してください。生成されるセッション ID／クエリ ID や製品識別情報などの設定はクライアント固有の状態にコピーされるため、後からグローバル設定を変更しても既存のクライアントには反映されません。バインディングと insert に関する設定は異なります。`naive_datetime_binding` と `dict_parameter_format` は、パラメータのバインド時に読み取られます。`naive_datetime_insert` は、Python の `datetime` オブジェクトまたは `DateTime64` の ISO 文字列を含むネイティブ insert カラムをシリアル化する際に読み取られます。これらの設定を変更すると、既存のクライアントにも影響します。再利用可能な insert コンテキストでは、insert ごとに現在の `naive_datetime_insert` 値が使用されます。
 </Note>
 
 現在定義されているグローバル設定は次のとおりです。
 
-| 設定名                       | デフォルト      | オプション                         | 説明                                                                                                                                             |
-| ------------------------- | ---------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `autogenerate_session_id` | `True`     | `True`, `False`               | session ID が指定されていない場合、各同期クライアントに UUID の session ID を生成します。async ファクトリーでは、デフォルトでこれを `False` に上書きします。                                           |
-| `autogenerate_query_id`   | `True`     | `True`, `False`               | 指定されていない場合、各リクエストに UUID の query ID を生成します。                                                                                                     |
-| `dict_parameter_format`   | `"json"`   | `"json"`, `"map"`             | クライアント側の parameter バインディングで使用する Python 辞書を、JSON または ClickHouse の map リテラルとしてフォーマットします。                                                         |
-| `invalid_setting_action`  | `"error"`  | `"drop"`, `"send"`, `"error"` | server が認識できない、または `readonly` の setting を、破棄・送信・拒否のいずれにするかを指定します。`"error"` の場合は `ProgrammingError` が発生します。                                     |
-| `max_connection_age`      | `600`      | 任意の秒数                         | 再利用される HTTP keep-alive connection の最大有効期間です。rotation により、load balancer の背後にあるノード間に connections を分散しやすくなります。                                    |
-| `product_name`            | `""`       | 任意の文字列                        | クライアント情報に追加される製品識別子です。`"my-product/1.0"` のような値を使用してください。                                                                                       |
-| `readonly`                | `0`        | `0`, `1`                      | 非常に古い ClickHouse servers における `readonly` setting のための互換性ヒントです。                                                                                 |
-| `send_os_user`            | `True`     | `True`, `False`               | 検出されたオペレーティングシステムのユーザーをクライアント情報に含めます。                                                                                                          |
-| `send_integration_tags`   | `True`     | `True`, `False`               | Pandas や SQLAlchemy など、クライアントが使用するインテグレーションを HTTP ユーザーエージェントに含めます。                                                                             |
-| `use_protocol_version`    | `True`     | `True`, `False`               | `DateTime` カラムの timezone メタデータなど、Native フォーマットの機能で使用される client protocol version をネゴシエートします。`client_protocol_version` を拒否するプロキシでは、これを無効にしてください。 |
-| `max_error_size`          | `1024`     | 任意の 0 以上の整数                   | クライアント error に含める最大文字数です。完全なメッセージを含めるには `0` を使用してください。                                                                                         |
-| `http_buffer_size`        | `10485760` | バイト                           | streaming HTTP queries 用のインメモリのバッファサイズです。デフォルトは 10 MiB です。                                                                                     |
+| 設定名                       | デフォルト      | オプション                         | 説明                                                                                                                                                                                                                                     |
+| ------------------------- | ---------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `autogenerate_session_id` | `True`     | `True`, `False`               | セッション ID が指定されていない場合、同期クライアントごとに UUID セッション ID を生成します。非同期ファクトリーでは、デフォルトでこれを `False` に上書きします。                                                                                                                                           |
+| `autogenerate_query_id`   | `True`     | `True`, `False`               | 指定されていない場合、リクエストごとに UUID クエリ ID を生成します。                                                                                                                                                                                                |
+| `dict_parameter_format`   | `"json"`   | `"json"`, `"map"`             | パラメータバインディングで使用する Python 辞書を、JSON または ClickHouse の map リテラルとしてフォーマットします。                                                                                                                                                               |
+| `invalid_setting_action`  | `"error"`  | `"drop"`, `"send"`, `"error"` | サーバーが readonly と報告する設定に対する動作です。`drop` は無視し、`send` は送信し、`error` は `ProgrammingError` を発生させます。ロールで `CHANGEABLE_IN_READONLY` に設定されたものなど、現在のユーザーの `system.settings` に存在しない設定は、アクションが `drop` でない限り、サーバー側で受け入れるか拒否できるよう送信されます。               |
+| `naive_datetime_binding`  | `"wall"`   | `"wall"`, `"legacy"`          | naive `datetime` クエリパラメータのバインディングを制御します。`wall` は naive datetime をそのままフォーマットします。`legacy` は従来のホストローカル変換動作に戻します。特定の時点を保持するには `tzinfo` を付加してください。                                                                                          |
+| `naive_datetime_insert`   | `"local"`  | `"local"`, `"server"`         | naive `datetime` 値および `DateTime64` で受け付けられる naive ISO 文字列を Python オブジェクトとして insert する際の動作を制御します。`local` は互換性のためにプロセスのタイムゾーンを使用します。`server` は宣言されたカラムのタイムゾーンを使用し、次にサーバーのタイムゾーンを使用します。`datetime64`-dtype の NumPy および Pandas カラムは変更されません。 |
+| `max_connection_age`      | `600`      | 任意の秒数                         | 再利用される HTTP keep-alive 接続の最大存続時間です。接続をローテーションすることで、load balancer 配下のノード間に接続を分散できます。                                                                                                                                                    |
+| `product_name`            | `""`       | 任意の文字列                        | クライアント情報に追加する製品識別子です。`"my-product/1.0"` のような値を使用してください。                                                                                                                                                                                |
+| `readonly`                | `0`        | `0`, `1`                      | 1.x との互換性のために残されている非推奨の無効設定です。クライアントはサーバーの `readonly` 設定を直接読み取ります。                                                                                                                                                                     |
+| `send_os_user`            | `True`     | `True`, `False`               | 検出された OS ユーザーをクライアント情報に含めます。                                                                                                                                                                                                           |
+| `send_integration_tags`   | `True`     | `True`, `False`               | Pandas や SQLAlchemy など、クライアントで使用されるインテグレーションを HTTP User-Agent に含めます。                                                                                                                                                                   |
+| `use_protocol_version`    | `True`     | `True`, `False`               | `DateTime` カラムのタイムゾーンメタデータなど、Native フォーマット機能で使用するクライアントプロトコルバージョンをネゴシエートします。`client_protocol_version` を拒否するプロキシでは、これを無効にしてください。                                                                                                        |
+| `max_error_size`          | `1024`     | 任意の非負整数                       | クライアントエラーに含める最大文字数です。完全なメッセージを取得するには `0` を使用してください。                                                                                                                                                                                    |
+| `http_buffer_size`        | `10485760` | バイト                           | ストリーミング HTTP クエリ用のインメモリバッファサイズです。デフォルトは 10 MiB です。                                                                                                                                                                                     |
 
 <div id="compression">
   ## 圧縮

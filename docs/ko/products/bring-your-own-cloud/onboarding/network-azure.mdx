@@ -2,26 +2,114 @@
 title: 'Azure용 BYOC 프라이빗 네트워킹 설정'
 slug: /cloud/reference/byoc/onboarding/network-azure
 sidebarTitle: 'Azure 프라이빗 네트워킹 설정'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'azure', 'private link']
-description: 'Azure용 BYOC의 Private Link 설정'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'azure', 'vnet peering', 'private link']
+description: 'Azure용 BYOC의 VNet 피어링 또는 Private Link 설정'
 doc_type: 'reference'
 ---
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-Azure용 ClickHouse BYOC는 Azure Private Link를 통한 프라이빗 연결을 지원합니다.
+Azure용 ClickHouse BYOC는 [Azure Virtual Network 피어링](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview)과 [Azure Private Link](https://learn.microsoft.com/azure/private-link/private-link-overview)라는 두 가지 프라이빗 연결 옵션을 지원합니다. 두 옵션 모두 트래픽이 Azure 백본을 통해 전송되므로 공용 인터넷을 거치지 않습니다.
 
 <div id="common-prerequisites">
   ## 사전 요구 사항
 </div>
 
+VNet 피어링 및 Private Link에 공통으로 필요한 단계입니다.
+
 <div id="step-enable-private-load-balancer-for-clickhouse-byoc">
   ### ClickHouse BYOC용 private load balancer 활성화
 </div>
 
-ClickHouse Cloud 콘솔에서 BYOC infrastructure의 **Private load balancer**를 활성화합니다.
+ClickHouse Cloud 콘솔에서 BYOC infrastructure의 **Private load balancer**를 활성화합니다. 두 연결 옵션 모두 이 내부 load balancer를 거치므로, 활성화하기 전에는 어느 쪽도 작동하지 않습니다.
 
-<Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC Private Load Balancer 활성화" border />
+<Image img="/images/cloud/reference/byoc-private-load-balancer-azure.webp" size="md" alt="BYOC Private Load Balancer 활성화" border />
+
+infrastructure의 **Spoken name**을 기록해 둡니다. ClickHouse는 사용자의 Azure subscription에 있는 `clickhouse-cloud-<spoken-name>-default`라는 관리형 리소스 그룹에 BYOC infrastructure를 배포합니다. 아래 단계에서 BYOC VNet은 해당 리소스 그룹에서 찾을 수 있습니다.
+
+<div id="azure-vnet-peering">
+  ## VNet 피어링 설정
+</div>
+
+시작하기 전에 [Azure Virtual Network 피어링](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview)과 [요구 사항 및 제약 조건](https://learn.microsoft.com/azure/virtual-network/virtual-network-manage-peering#requirements-and-constraints)을 숙지하십시오. ClickHouse BYOC는 private load balancer를 사용하여 피어링을 통한 ClickHouse 서비스와의 네트워크 연결을 지원합니다.
+
+<Note>
+  예시 단계는 VNet 하나가 BYOC VNet과 직접 피어링하는 단순한 시나리오를 대상으로 합니다. 허브 앤 스포크 토폴로지나 온프레미스 연결과 같은 고급 시나리오에서는 일부 조정이 필요합니다. [제한 사항](#vnet-peering-limitations)을 참조하십시오.
+</Note>
+
+<div id="vnet-peering-prerequisites">
+  ### 피어링을 위한 추가 사전 요구 사항
+</div>
+
+**주소 공간이 겹치지 않아야 합니다.** 피어링되는 가상 네트워크의 IP 주소 범위는 겹칠 수 없습니다. Azure Portal의 BYOC VNet **Overview** 페이지에 표시된 BYOC VNet 주소 공간과 VNet 주소 공간을 비교하십시오. 겹치는 경우에는 Private Link를 사용하십시오.
+
+**권한.** 피어링을 생성하려면 *두* 가상 네트워크 모두에 대해 `Microsoft.Network/virtualNetworks/virtualNetworkPeerings/write` 및 `Microsoft.Network/virtualNetworks/peer/action` 권한이 필요합니다. 기본 제공 **Network Contributor** 역할에는 이러한 권한이 포함되어 있습니다. [가상 네트워크 피어링 권한](https://learn.microsoft.com/azure/virtual-network/virtual-network-manage-peering#permissions)을 참조하십시오.
+
+<Steps>
+  <Step title="BYOC 가상 네트워크에서 피어링 생성" id="step-1-create-peering-from-byoc-vnet">
+    1. [Azure Portal](https://portal.azure.com)에 로그인한 후 **BYOC subscription**으로 전환합니다.
+    2. **Virtual networks**를 검색하고 `clickhouse-cloud-<spoken-name>-default` 리소스 그룹에 있는 BYOC VNet을 선택합니다.
+    3. **Settings**에서 **Peerings**를 선택한 다음 **+ Add**를 선택합니다.
+
+    <Image img="/images/cloud/reference/byoc-vnetpeering-azure-1.webp" size="lg" alt="BYOC VNet 피어링 생성" border />
+
+    4. 피어링의 양쪽 구성을 모두 입력합니다.
+
+    <Image img="/images/cloud/reference/byoc-vnetpeering-azure-2.webp" size="md" alt="BYOC VNet 피어링 구성" border />
+
+    5. **Add**를 클릭합니다.
+  </Step>
+
+  <Step title="자동으로 생성되지 않은 경우 반대 방향 피어링 생성" id="step-2-create-reverse-peering">
+    Azure 피어링은 각 방향에 하나씩 총 두 부분으로 구성되며, 두 부분이 모두 생성되어야 트래픽이 흐릅니다. 이전 단계에서 포털이 두 부분을 모두 생성했다면 이 단계를 건너뛰십시오.
+
+    VNet이 다른 subscription 또는 테넌트에 있어 BYOC 측 피어링만 생성한 경우 상태는 **Initiated**로 표시됩니다. 자체 VNet에서 반대쪽 피어링을 생성합니다.
+
+    1. VNet을 소유한 subscription으로 전환하고, 해당 subscription에 대한 **Network Contributor** 권한이 있는 계정으로 로그인합니다.
+    2. VNet을 선택한 다음 **Peerings** → **+ Add**를 선택합니다.
+    3. **I know my resource ID**를 선택하고 **BYOC VNet Resource ID**를 붙여넣은 후 BYOC subscription을 소유한 **Directory**를 선택합니다. 메시지가 표시되면 **Authenticate**를 선택합니다.
+    4. **Add**를 선택합니다.
+  </Step>
+
+  <Step title="양쪽 피어링이 모두 연결되었는지 확인" id="step-3-verify-peering">
+    두 가상 네트워크 중 하나에서 **Peerings**를 엽니다. 양쪽 모두에서 **Peering status**가 **Connected**로 표시되어야 합니다. 계속 **Initiated** 상태로 남아 있는 피어링은 반대쪽 피어링이 없음을 의미하며, **Disconnected**로 표시되면 반대쪽 피어링이 삭제된 것입니다.
+
+    라우팅 테이블을 변경할 필요는 없습니다. Azure가 양쪽의 피어링된 주소 공간에 대한 시스템 경로를 자동으로 추가합니다. VNet의 모든 네트워크 인터페이스에서 **Effective routes**를 확인하면 다음 홉 유형이 **VNet peering**인 BYOC 주소 공간을 확인할 수 있습니다.
+
+    <Image img="/images/cloud/reference/byoc-vnetpeering-azure-3.webp" size="lg" alt="BYOC VNet 피어링 확인" border />
+  </Step>
+
+  <Step title="네트워크 보안 그룹을 통해 피어링된 VNet 액세스 허용" id="step-4-allow-address-space-through-nsg">
+    BYOC 서브넷은 기본적으로 VNet 내부 트래픽을 거부하는 ClickHouse 관리형 [네트워크 보안 그룹](https://learn.microsoft.com/azure/virtual-network/network-security-groups-overview)으로 보호됩니다. [`VirtualNetwork` 서비스 태그](https://learn.microsoft.com/azure/virtual-network/service-tags-overview#available-service-tags)는 피어링된 VNet의 주소 공간을 포함하므로, 인바운드 허용 규칙을 추가하기 전까지 피어링을 통해 들어오는 트래픽이 삭제됩니다.
+
+    피어링된 VNet의 CIDR 범위를 포함하는 인바운드 규칙 추가를 요청하려면 ClickHouse 지원팀에 문의하십시오. 이 단계를 수행하지 않으면 피어링은 **Connected**로 표시되지만 연결 시간이 초과됩니다.
+  </Step>
+
+  <Step title="피어링을 통해 ClickHouse 서비스에 액세스" id="step-5-access-ch-service-via-peering">
+    ClickHouse에 비공개로 액세스할 수 있도록 피어링된 VNet에서 안전하게 연결할 수 있는 private load balancer와 endpoint가 프로비저닝됩니다. private endpoint는 public endpoint 형식에 `-private` 접미사를 추가한 형태입니다. 예를 들면 다음과 같습니다.
+
+    * **Public endpoint**: `h5ju65kv87.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`
+    * **Private endpoint**: `h5ju65kv87-private.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`
+  </Step>
+</Steps>
+
+<div id="vnet-peering-limitations">
+  ### 제한 사항
+</div>
+
+**피어링은 전이되지 않습니다.** BYOC VNet과 직접 피어링된 VNet만 서비스에 연결할 수 있습니다. 허브 뒤에 있는 스포크 VNet의 클라이언트나 ExpressRoute 또는 VPN gateway를 통해 연결되는 온프레미스 클라이언트는 단일 피어링으로 연결할 수 없습니다. 이러한 토폴로지에는 **전달된 트래픽 허용** 및 gateway transit과 같은 추가 구성이 필요합니다. 자세한 내용은 [gateway 및 온프레미스 연결](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview#gateways-and-on-premises-connectivity)을 참조하거나 Private Link를 사용하십시오.
+
+**리전 간 피어링은 작동하지만 비용이 더 듭니다.** 서로 다른 리전의 VNet 간 피어링은 글로벌 피어링입니다. ClickHouse에는 정상적으로 연결됩니다. BYOC private load balancer는 Standard SKU 내부 load balancer이며, 글로벌 피어링을 통해 load balancer 프런트엔드에 연결하는 Azure의 제한은 Basic SKU load balancer에만 적용됩니다. 추가로 발생하는 비용은 왕복 지연 시간과 [리전 간 데이터 전송 요금](https://azure.microsoft.com/pricing/details/virtual-network)입니다. 지연 시간에 민감한 워크로드에는 동일 리전 피어링을 우선적으로 사용하십시오. 리전 간 피어링이 **Connected**로 표시되지만 연결이 계속 실패한다면 리전이 원인은 아닙니다. 가장 일반적인 원인은 주소 공간에 대한 인바운드 네트워크 보안 그룹 규칙이 누락된 경우이므로 ClickHouse 지원팀에 문의하십시오.
+
+**주소 공간을 변경하면 resync가 필요합니다.** 피어링을 생성한 후 VNet의 주소 공간 크기를 조정했다면 새 범위가 공지되도록 [피어링을 동기화](https://learn.microsoft.com/azure/virtual-network/update-virtual-network-peering-address-space)하고, 해당 범위를 포함하도록 인바운드 네트워크 보안 그룹 규칙을 확장하기 위해 ClickHouse 지원팀에 문의하십시오.
+
+**피어링 트래픽에는 요금이 부과됩니다.** Azure는 피어링을 통한 ingress 및 egress에 요금을 부과합니다. [가상 네트워크 가격](https://azure.microsoft.com/pricing/details/virtual-network)을 참조하십시오.
+
+<div id="delete-vnet-peering">
+  ### 피어링 삭제
+</div>
+
+피어링의 어느 쪽에서든 삭제할 수 있습니다. 한쪽을 삭제하면 연결이 끊기고 반대쪽은 **Disconnected** 상태로 남으므로, 완전히 정리하려면 양쪽의 피어링을 모두 삭제하십시오. [피어링 삭제](https://learn.microsoft.com/azure/virtual-network/virtual-network-manage-peering#delete-a-peering)를 참조하십시오.
 
 <div id="setup-privatelink">
   ## Private Link 설정

@@ -2,26 +2,114 @@
 title: 'BYOC on Azure 私有网络设置'
 slug: /cloud/reference/byoc/onboarding/network-azure
 sidebarTitle: 'Azure 私有网络设置'
-keywords: ['BYOC', 'cloud', '自备 Cloud', 'azure', 'Private Link']
-description: '为 BYOC on Azure 配置 Private Link'
+keywords: ['BYOC', 'cloud', '自备 Cloud', 'azure', 'vnet 对等互连', 'Private Link']
+description: '为 BYOC on Azure 配置 VNet 对等互连或 Private Link'
 doc_type: 'reference'
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-Azure 上的 ClickHouse BYOC 支持通过 Azure Private Link 实现私有连接。
+Azure 上的 ClickHouse BYOC 支持两种私有连接选项：[Azure 虚拟网络对等互连](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview)和 [Azure Private Link](https://learn.microsoft.com/azure/private-link/private-link-overview)。两者均可确保流量始终通过 Azure 骨干网络传输，不会经过公网。
 
 <div id="common-prerequisites">
   ## 前置条件
 </div>
 
+VNet 对等互连和 Private Link 共用的步骤。
+
 <div id="step-enable-private-load-balancer-for-clickhouse-byoc">
   ### 为 ClickHouse BYOC 启用私网负载均衡器
 </div>
 
-在 ClickHouse Cloud 控制台中，为您的 BYOC 基础设施启用**私网负载均衡器**。
+在 ClickHouse Cloud 控制台中，为您的 BYOC 基础设施启用**私网负载均衡器**。两种连接选项都会经由此内部负载均衡器，因此在启用它之前均无法使用。
 
-<Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC 启用私网负载均衡器" border />
+<Image img="/images/cloud/reference/byoc-private-load-balancer-azure.webp" size="md" alt="BYOC 启用私网负载均衡器" border />
+
+记下基础设施的**易读名称**。ClickHouse 会将您的 BYOC 基础设施部署到您自己的 Azure 订阅中，部署在名为 `clickhouse-cloud-<spoken-name>-default` 的托管资源组内。您可在该资源组中找到以下步骤所需的 BYOC VNet。
+
+<div id="azure-vnet-peering">
+  ## 配置 VNet 对等互连
+</div>
+
+开始前，请先了解 [Azure 虚拟网络对等互连](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview)及其[要求和约束](https://learn.microsoft.com/azure/virtual-network/virtual-network-manage-peering#requirements-and-constraints)。ClickHouse BYOC 使用私网负载均衡器，使网络可通过对等互连连接到 ClickHouse 服务。
+
+<Note>
+  示例步骤适用于简单场景：您的一个 VNet 直接与 BYOC VNet 建立对等互连。对于中心辐射型拓扑或本地部署连接等高级场景，需要进行一些调整——请参阅[限制](#vnet-peering-limitations)。
+</Note>
+
+<div id="vnet-peering-prerequisites">
+  ### 对等互连的其他前置条件
+</div>
+
+**地址空间不能重叠。** 对等互连的虚拟网络不能使用重叠的 IP 地址范围。请将您的 VNet 地址空间与 Azure 门户中 BYOC VNet **Overview** 页面显示的 BYOC VNet 地址空间进行比较。如果两者重叠，请改用 Private Link。
+
+**权限。** 创建对等互连需要在*两个*虚拟网络上拥有 `Microsoft.Network/virtualNetworks/virtualNetworkPeerings/write` 和 `Microsoft.Network/virtualNetworks/peer/action` 权限。内置 **网络参与者** 角色包含这些权限。请参阅[虚拟网络对等互连权限](https://learn.microsoft.com/azure/virtual-network/virtual-network-manage-peering#permissions)。
+
+<Steps>
+  <Step title="从 BYOC 虚拟网络发起对等互连" id="step-1-create-peering-from-byoc-vnet">
+    1. 登录 [Azure 门户](https://portal.azure.com)，并切换到 **BYOC 订阅**。
+    2. 搜索 **虚拟网络**，然后选择位于 `clickhouse-cloud-<spoken-name>-default` 资源组中的 BYOC VNet。
+    3. 在 **设置** 下，选择 **对等互连**，然后选择 **+ 添加**。
+
+    <Image img="/images/cloud/reference/byoc-vnetpeering-azure-1.webp" size="lg" alt="BYOC 创建 VNet 对等互连" border />
+
+    4. 填写对等互连的两端：
+
+    <Image img="/images/cloud/reference/byoc-vnetpeering-azure-2.webp" size="md" alt="BYOC 配置 VNet 对等互连" border />
+
+    5. 单击 **添加**。
+  </Step>
+
+  <Step title="如果系统未自动创建，请创建反向对等互连" id="step-2-create-reverse-peering">
+    Azure 对等互连由两个部分组成，每个方向各一个；只有两个部分都创建完成后，流量才能流通。如果门户已在上一步中创建了两个部分，请跳过此步骤。
+
+    如果您仅创建了 BYOC 侧的部分 (因为您的 VNet 位于其他订阅或租户中) ，其状态将为 **已启动**。请从您自己的 VNet 创建对应的部分：
+
+    1. 切换到拥有您的 VNet 的订阅，并使用在该订阅中具有 **网络参与者** 角色的账户登录。
+    2. 选择您的 VNet，然后选择 **对等互连** → **+ 添加**。
+    3. 选择 **我知道我的资源 ID**，粘贴 **BYOC VNet 资源 ID**，并选择拥有 BYOC 订阅的 **目录**。如果出现提示，请选择 **身份验证**。
+    4. 选择 **添加**。
+  </Step>
+
+  <Step title="验证两端均已连接" id="step-3-verify-peering">
+    在任一虚拟网络中打开 **对等互连**。两侧的 **对等互连状态** 都必须显示为 **已连接**。某一端持续处于 **已启动** 状态，表示另一端尚未创建；显示 **已断开连接** 则表示另一端已被删除。
+
+    无需更改路由表。Azure 会自动在两侧为对等互连地址空间安装系统路由。您可以在 VNet 中任一网络接口的 **有效路由** 下进行确认，其中 BYOC 地址空间的下一跳类型应显示为 **VNet 对等互连**。
+
+    <Image img="/images/cloud/reference/byoc-vnetpeering-azure-3.webp" size="lg" alt="BYOC 验证 VNet 对等互连" border />
+  </Step>
+
+  <Step title="通过网络安全组允许已对等互连 VNet 的访问" id="step-4-allow-address-space-through-nsg">
+    BYOC 子网受 ClickHouse 管理的[网络安全组](https://learn.microsoft.com/azure/virtual-network/network-security-groups-overview)保护，该安全组默认拒绝 VNet 内部流量。由于 [`VirtualNetwork` 服务标签](https://learn.microsoft.com/azure/virtual-network/service-tags-overview#available-service-tags)涵盖已对等互连 VNet 的地址空间，因此在添加允许入站流量的规则之前，通过对等互连到达的流量会被丢弃。
+
+    请联系 ClickHouse 支持团队，请求添加包含已对等互连 VNet CIDR 范围的入站规则。若不执行此步骤，对等互连会显示为 **已连接**，但连接将超时。
+  </Step>
+
+  <Step title="通过对等互连访问 ClickHouse 服务" id="step-5-access-ch-service-via-peering">
+    要私密访问 ClickHouse，系统会预配私网负载均衡器和端点，以便从已对等互连的 VNet 安全连接。私网端点遵循公网端点的格式，并带有 `-private` 后缀。例如：
+
+    * **公网端点**：`h5ju65kv87.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`
+    * **私网端点**：`h5ju65kv87-private.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`
+  </Step>
+</Steps>
+
+<div id="vnet-peering-limitations">
+  ### 限制
+</div>
+
+**对等互连不具备传递性。** 只有与 BYOC VNet 直接建立对等互连的 VNet 才能访问您的服务。中心辐射型拓扑中位于中心 VNet 后方的辐射 VNet 客户端，以及通过 ExpressRoute 或 VPN 网关接入的本地客户端，均无法通过单个对等互连访问服务。这些拓扑需要额外配置，例如 **允许转发流量** 和网关传输 — 请参阅[网关和本地连接](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview#gateways-and-on-premises-connectivity) — 或改用 Private Link。
+
+**跨区域对等互连可用，但成本更高。** 不同区域中 VNet 之间的对等互连属于全局对等互连，可正常访问 ClickHouse — BYOC 私网负载均衡器为 Standard SKU 内部负载均衡器，而 Azure 对通过全局对等互连访问负载均衡器前端的限制仅适用于 Basic SKU 负载均衡器。您需要承担额外的往返延迟和[跨区域数据传输费用](https://azure.microsoft.com/pricing/details/virtual-network)。对于延迟敏感型工作负载，建议使用同区域对等互连。如果跨区域对等互连显示为 **已连接**，但连接仍然失败，则并非区域导致的问题 — 最常见的原因是缺少允许您地址空间入站流量的网络安全组规则，因此请联系 ClickHouse 支持团队。
+
+**地址空间变更需要重新同步。** 如果在建立对等互连后调整 VNet 的地址空间，请[同步对等互连](https://learn.microsoft.com/azure/virtual-network/update-virtual-network-peering-address-space)，以通告新的地址范围，并联系 ClickHouse 支持团队扩展入站网络安全组规则，使其涵盖这些范围。
+
+**对等互连流量需计费。** Azure 会对通过对等互连的入口和出口流量收费。请参阅[虚拟网络定价](https://azure.microsoft.com/pricing/details/virtual-network)。
+
+<div id="delete-vnet-peering">
+  ### 删除对等互连
+</div>
+
+可从任一端删除对等互连。删除其中一端会断开连接，并使另一端处于 **已断开连接** 状态，因此请删除两端以彻底清理。请参阅[删除对等互连](https://learn.microsoft.com/azure/virtual-network/virtual-network-manage-peering#delete-a-peering)。
 
 <div id="setup-privatelink">
   ## 设置 Private Link

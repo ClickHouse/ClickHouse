@@ -54,6 +54,23 @@ with engine.connect() as conn:
     value = conn.execute(stmt).scalar_one()
 ```
 
+<div id="sqlalchemy-per-query-read-formats">
+  ### تنسيقات القراءة لكل استعلام
+</div>
+
+عيّن تنسيقات قراءة ClickHouse على مستوى المحرك أو الاتصال أو التعليمة عبر خيارات تنفيذ SQLAlchemy باستخدام `query_formats`. تُطبَّق تنسيقات التعليمة أولًا، لذا تتجاوز المفاتيح وأحرف البدل المطابقة على مستوى الاتصال أو المحرك.
+
+```python
+from sqlalchemy import text
+
+stmt = text("SELECT user_uuid FROM users").execution_options(
+    query_formats={"UUID": "string"}
+)
+
+with engine.connect() as conn:
+    rows = conn.execute(stmt).all()
+```
+
 <div id="sqlalchemy-server-side-parameters">
   ### معلمات من جهة الخادم
 </div>
@@ -104,6 +121,54 @@ with engine.connect() as conn:
     conn.execute(stmt)
 ```
 
+<div id="sqlalchemy-json-subcolumns">
+  ### الأعمدة الفرعية لـ JSON
+</div>
+
+بالنسبة إلى عمود مُعرَّف أو ممثَّل في ClickHouse بصفته `JSON`، استخدم الأقواس المربعة لاختيار مقطع واحد في كل مرة من مسار عمود فرعي مدعوم بالتخزين:
+
+```python
+from sqlalchemy import Column, MetaData, Table, select
+
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import JSON, UInt32
+
+events = Table(
+    "events",
+    MetaData(),
+    Column("payload", JSON),
+)
+
+request_id = events.c.payload["context"]["request"].subcolumn(
+    "id",
+    type_=UInt32,
+)
+
+stmt = select(
+    events.c.payload["severity"].label("severity"),
+    request_id.label("request_id"),
+)
+```
+
+يُحوَّل `payload["severity"]` إلى صياغة المعرّف المنقّط في ClickHouse. يُقتبس كل جزء على حدة، على سبيل المثال `` `events`.`payload`.`severity` ``. يقرأ العمود الفرعي JSON المخزّن في ClickHouse ولا يستدعي `getSubcolumn`. استخدم `[]` أو `.subcolumn()` بشكل متسلسل، مرة واحدة لكل مقطع من المسار. يجب أن يكون كل مقطع سلسلة غير فارغة.
+
+يؤدي تمرير `type_` إلى `.subcolumn()` إلى تغليف المسار المنقّط بعملية `CAST` في SQL وإسناد هذا النوع إلى تعبير SQLAlchemy. من دون `type_`، تتصرف `.subcolumn("segment")` مثل `["segment"]`.
+
+يكون نوع المسار غير المحدد `Dynamic` في ClickHouse. لا يسمح ClickHouse باستخدام قيم `Dynamic` مباشرةً في `ORDER BY` أو `GROUP BY`. مرّر `type_` عند استخدام عمود فرعي في هذه المواضع.
+
+بالنسبة إلى الشيفرة ذات الأنواع الثابتة، استورد `json_subcolumn` من `clickhouse_connect.cc_sqlalchemy`. تقبل الدالة المساعدة أيضًا مقطعًا واحدًا في كل مرة وتحافظ على نوع نتيجة بايثون المحدد بواسطة `type_`:
+
+```python
+from clickhouse_connect.cc_sqlalchemy import json_subcolumn
+
+context = json_subcolumn(events.c.payload, "context")
+request = json_subcolumn(context, "request")
+request_id = json_subcolumn(request, "id", type_=UInt32)
+```
+
+في هذا المثال، تتعامل أدوات التحقق من الأنواع مع `request_id` على أنه `ColumnElement[int]`.
+
+يُقتبس كل مقطع بشكل مستقل، بما في ذلك الأسماء التي تحتوي على مسافات أو علامات اقتباس خلفية. لا تجعل علامات الاقتباس الخلفية النقطة قيمة حرفية في معالجة مسارات JSON في ClickHouse. عند تمكين `json_type_escape_dots_in_keys`، استخدم ترميز ClickHouse `%2E` للنقاط الحرفية في المفاتيح. للوصول إلى مفتاح باسم `a.b`، استخدم `payload["a%2Eb"]`، وليس `payload["a.b"]`.
+
 <div id="sqlalchemy-query-extensions">
   ### امتدادات استعلام ClickHouse
 </div>
@@ -133,6 +198,7 @@ stmt = (
 | `.array_join(...)`                       | `ARRAY JOIN`                                                                         |
 | `.left_array_join(...)`                  | `LEFT ARRAY JOIN`                                                                    |
 | `.ch_join(...)`                          | عمليات `JOIN` في ClickHouse مع خيارات `strictness` و`distribution` و`using` و`cross` |
+| `.cte(name, materialized=True)`          | `WITH name AS MATERIALIZED (...)`                                                    |
 
 على سبيل المثال، يمكن ربط `GLOBAL ANY LEFT JOIN` في ClickHouse دون الحاجة إلى تداخل `FromClause` مخصّص:
 
@@ -165,7 +231,51 @@ stmt = select(
 )
 ```
 
-تُحوَّل بنية SQLAlchemy القياسية `values()` عند الترجمة إلى صياغة دالة الجدول `VALUES` في ClickHouse، بما في ذلك عند استخدامها في تعبير الجدول الشائع (يتطلب شكل CTE استخدام SQLAlchemy 2.x، إذ أُضيفت `Values.cte()`).
+تُحوَّل بنية SQLAlchemy القياسية `values()` عند الترجمة إلى صياغة دالة الجدول `VALUES` في ClickHouse، بما في ذلك عند استخدامها في تعبير الجدول الشائع. يتطلب شكل CTE استخدام SQLAlchemy 2.0.42 أو إصدار أحدث، إذ أُضيفت `Values.cte()`.
+
+<div id="sqlalchemy-materialized-ctes">
+  ### تعبيرات الجدول الشائعة المُجسَّدة
+</div>
+
+يُضمّن ClickHouse تعبير الجدول الشائع تلقائيًا، لذا إذا أُشير إلى CTE أكثر من مرة، يُنفَّذ محتواه مرةً لكل مرجع. مرّر `materialized=True` إلى `.cte()` لإنتاج `WITH <name> AS MATERIALIZED (...)`، بحيث يُحسب المحتوى مرةً واحدة:
+
+```python
+from sqlalchemy import func
+
+from clickhouse_connect.cc_sqlalchemy import select
+
+ranked = (
+    select(book.c.book_id, func.row_number().over(order_by=book.c.score.desc()).label("result_rank"))
+    .where(book.c.genre == "sci-fi")
+    .order_by(book.c.score.desc())
+    .limit(100)
+    .cte("ranked", materialized=True)
+)
+
+stmt = (
+    select(book.c.book_id, ranked.c.result_rank)
+    .select_from(book)
+    .ch_join(ranked, book.c.book_id == ranked.c.book_id, strictness="ANY")
+    .where(book.c.book_id.in_(select(ranked.c.book_id)))
+    .execution_options(settings={"enable_materialized_cte": 1, "enable_analyzer": 1})
+)
+```
+
+لا يُجسِّد الخادم تعبير الجدول الشائع إلا عند وجود الكلمة المفتاحية وتعيين `enable_materialized_cte=1` وتمكين المحلِّل. عيّن `enable_materialized_cte` على التعليمة أو الاتصال أو المحرك كما هو موضح في [إعدادات خاصة بكل استعلام](#sqlalchemy-per-query-settings). يكون المحلِّل مُمكّنًا افتراضيًا على كل خادم يدعم هذه الميزة، لذا يُعد تعيين `enable_analyzer=1` صراحةً إجراءً احترازيًا. يُعد `enable_materialized_cte` إعدادًا تجريبيًا في ClickHouse. عند استخدام `enable_materialized_cte=0` أو `enable_analyzer=0`، ينجح الاستعلام ويُرجع الصفوف نفسها. يتجاهل ClickHouse قيمة `MATERIALIZED` بصمت ويضمّن تعبير الجدول الشائع مجددًا، لذا فإن نسيان الإعداد يؤثر في الأداء دون ظهور أي تنبيه. تتطلب تعبيرات الجدول الشائع المُجسَّدة ClickHouse 26.3 أو إصدارًا أحدث. ترفض الخوادم الأقدم الكلمة المفتاحية باعتبارها خطأً نحويًا.
+
+بالنسبة إلى تعليمة مُنشأة باستخدام `sqlalchemy.select` القياسي، استخدم `cte()` على مستوى الوحدة بدلًا من ذلك. تأخذ التعليمة كوسيط أول، وتكافئ `Select.cte()` فيما عدا ذلك:
+
+```python
+from sqlalchemy import select as sa_select
+
+from clickhouse_connect.cc_sqlalchemy import cte
+
+ranked = cte(sa_select(book.c.book_id), "ranked", materialized=True)
+```
+
+لا تظهر الكلمة المحجوزة إلا في لهجة ClickHouse، لذا يُترجم التعليمة المشتركة مع backend آخر فيها دون تغيير.
+
+لا يدعم ClickHouse تعبيرات الجدول الشائع المادية التعاودية. تثير helpers الخاصة بـ SQLAlchemy الخطأ `ValueError` عند تعيين كلٍّ من `recursive=True` و`materialized=True`.
 
 <div id="sqlalchemy-ddl-reflection">
   ## DDL واستكشاف البنية

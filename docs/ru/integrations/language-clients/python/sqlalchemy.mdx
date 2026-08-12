@@ -54,6 +54,23 @@ with engine.connect() as conn:
     value = conn.execute(stmt).scalar_one()
 ```
 
+<div id="sqlalchemy-per-query-read-formats">
+  ### Форматы чтения для отдельных запросов
+</div>
+
+Задавайте форматы чтения ClickHouse для движка, соединения или оператора с помощью параметра выполнения SQLAlchemy `query_formats`. Форматы оператора применяются первыми и переопределяют соответствующие ключи и подстановочные шаблоны соединения или движка.
+
+```python
+from sqlalchemy import text
+
+stmt = text("SELECT user_uuid FROM users").execution_options(
+    query_formats={"UUID": "string"}
+)
+
+with engine.connect() as conn:
+    rows = conn.execute(stmt).all()
+```
+
 <div id="sqlalchemy-server-side-parameters">
   ### Серверные параметры
 </div>
@@ -104,6 +121,54 @@ with engine.connect() as conn:
     conn.execute(stmt)
 ```
 
+<div id="sqlalchemy-json-subcolumns">
+  ### Подстолбцы JSON
+</div>
+
+Для столбца, объявленного или представленного как `JSON` в ClickHouse, используйте квадратные скобки, чтобы выбирать по одному сегменту пути к подстолбцу, хранящемуся в базе:
+
+```python
+from sqlalchemy import Column, MetaData, Table, select
+
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import JSON, UInt32
+
+events = Table(
+    "events",
+    MetaData(),
+    Column("payload", JSON),
+)
+
+request_id = events.c.payload["context"]["request"].subcolumn(
+    "id",
+    type_=UInt32,
+)
+
+stmt = select(
+    events.c.payload["severity"].label("severity"),
+    request_id.label("request_id"),
+)
+```
+
+`payload["severity"]` компилируется в синтаксис точечного идентификатора ClickHouse. Каждая часть заключается в кавычки отдельно, например `` `events`.`payload`.`severity` ``. При этом считывается сохранённый подстолбец JSON ClickHouse без вызова `getSubcolumn`. Для каждого сегмента пути последовательно применяйте `[]` или `.subcolumn()`. Каждый сегмент должен быть непустой строкой.
+
+Передача `type_` в `.subcolumn()` оборачивает точечный путь в SQL `CAST` и назначает этот тип выражению SQLAlchemy. Без `type_` `.subcolumn("segment")` работает так же, как `["segment"]`.
+
+Нетипизированный путь имеет тип `Dynamic` ClickHouse. ClickHouse не допускает использование значений `Dynamic` непосредственно в `ORDER BY` или `GROUP BY`. Передавайте `type_`, если подстолбец используется в них.
+
+Для статически типизированного кода импортируйте `json_subcolumn` из `clickhouse_connect.cc_sqlalchemy`. Эта вспомогательная функция также принимает по одному сегменту за раз и сохраняет тип результата Python из `type_`:
+
+```python
+from clickhouse_connect.cc_sqlalchemy import json_subcolumn
+
+context = json_subcolumn(events.c.payload, "context")
+request = json_subcolumn(context, "request")
+request_id = json_subcolumn(request, "id", type_=UInt32)
+```
+
+В этом примере средства проверки типов определяют `request_id` как `ColumnElement[int]`.
+
+Каждый сегмент заключается в кавычки отдельно, в том числе имена с пробелами или обратными кавычками. Обратные кавычки не делают точку литеральной при обработке JSON-путей в ClickHouse. Если включен `json_type_escape_dots_in_keys`, используйте кодирование ClickHouse `%2E` для литеральных точек в ключах. Обращайтесь к ключу с именем `a.b` через `payload["a%2Eb"]`, а не через `payload["a.b"]`.
+
 <div id="sqlalchemy-query-extensions">
   ### Расширения запросов к ClickHouse
 </div>
@@ -133,6 +198,7 @@ stmt = (
 | `.array_join(...)`                       | `ARRAY JOIN`                                                                    |
 | `.left_array_join(...)`                  | `LEFT ARRAY JOIN`                                                               |
 | `.ch_join(...)`                          | JOIN в ClickHouse с параметрами `strictness`, `distribution`, `using` и `cross` |
+| `.cte(name, materialized=True)`          | `WITH name AS MATERIALIZED (...)`                                               |
 
 Например, `GLOBAL ANY LEFT JOIN` в ClickHouse можно вызывать по цепочке без вложения пользовательского `FromClause`:
 
@@ -165,7 +231,51 @@ stmt = select(
 )
 ```
 
-Стандартная конструкция SQLAlchemy `values()` компилируется в синтаксис табличной функции ClickHouse `VALUES`, в том числе при использовании в CTE (для формы CTE требуется SQLAlchemy 2.x, в которой был добавлен `Values.cte()`).
+Стандартная конструкция SQLAlchemy `values()` компилируется в синтаксис табличной функции ClickHouse `VALUES`, в том числе при использовании в общем табличном выражении (CTE). Для формы CTE требуется SQLAlchemy 2.0.42 или более поздней версии, в которой был добавлен `Values.cte()`.
+
+<div id="sqlalchemy-materialized-ctes">
+  ### Материализованные CTE
+</div>
+
+По умолчанию ClickHouse подставляет тело общего табличного выражения (CTE), поэтому при каждом обращении к CTE его тело выполняется заново. Передайте `materialized=True` в `.cte()`, чтобы сгенерировать `WITH <name> AS MATERIALIZED (...)`, при котором тело вычисляется один раз:
+
+```python
+from sqlalchemy import func
+
+from clickhouse_connect.cc_sqlalchemy import select
+
+ranked = (
+    select(book.c.book_id, func.row_number().over(order_by=book.c.score.desc()).label("result_rank"))
+    .where(book.c.genre == "sci-fi")
+    .order_by(book.c.score.desc())
+    .limit(100)
+    .cte("ranked", materialized=True)
+)
+
+stmt = (
+    select(book.c.book_id, ranked.c.result_rank)
+    .select_from(book)
+    .ch_join(ranked, book.c.book_id == ranked.c.book_id, strictness="ANY")
+    .where(book.c.book_id.in_(select(ranked.c.book_id)))
+    .execution_options(settings={"enable_materialized_cte": 1, "enable_analyzer": 1})
+)
+```
+
+Сервер материализует CTE только при наличии ключевого слова `MATERIALIZED`, значении `enable_materialized_cte=1` и включенном analyzer. Установите `enable_materialized_cte` для оператора, подключения или движка, как показано в разделе [Настройки для отдельных запросов](#sqlalchemy-per-query-settings). Analyzer по умолчанию включен на всех серверах, поддерживающих эту возможность, поэтому явная установка `enable_analyzer=1` служит дополнительной мерой предосторожности. `enable_materialized_cte` — экспериментальная настройка ClickHouse. При `enable_materialized_cte=0` или `enable_analyzer=0` запрос успешно выполняется и возвращает те же строки. ClickHouse молча игнорирует `MATERIALIZED` и снова разворачивает CTE, поэтому пропущенная настройка снижает производительность без каких-либо сообщений. Для материализованных CTE требуется ClickHouse 26.3 или более поздней версии. Более старые серверы отклоняют ключевое слово с синтаксической ошибкой.
+
+Для оператора, построенного с помощью стандартного `sqlalchemy.select`, вместо этого используйте `cte()` уровня модуля. В качестве первого аргумента она принимает оператор, а в остальном повторяет `Select.cte()`:
+
+```python
+from sqlalchemy import select as sa_select
+
+from clickhouse_connect.cc_sqlalchemy import cte
+
+ranked = cte(sa_select(book.c.book_id), "ranked", materialized=True)
+```
+
+Ключевое слово применяется только в диалекте ClickHouse, поэтому оператор, используемый с другим backend-соединением, компилируется там без изменений.
+
+ClickHouse не поддерживает рекурсивные материализованные CTE. Вспомогательные функции SQLAlchemy вызывают `ValueError`, если одновременно заданы `recursive=True` и `materialized=True`.
 
 <div id="sqlalchemy-ddl-reflection">
   ## DDL и рефлексия
