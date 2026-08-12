@@ -253,6 +253,47 @@ SELECT x FROM ((SELECT 1 AS x) JOIN numbers(1) ON true) JOIN (SELECT 2 AS x) AS 
 -- Disabling the setting keeps the pre-existing permissive behavior for the nested case as well.
 SELECT rhs.x FROM (SELECT 1 AS x), numbers(1) JOIN (SELECT 2 AS x) AS rhs ON true SETTINGS joined_subquery_requires_alias = 0;
 
+-- `Nested` columns carry a dot in their name but are real, bindable columns, not sub-columns: a compound
+-- identifier `n.x` binds to them just like a bare identifier binds to an ordinary column. When both sides
+-- of the join expose `n.x` the reference is genuinely ambiguous, so the alias is required.
+DROP TABLE IF EXISTS nested_t;
+DROP TABLE IF EXISTS nested_t2;
+CREATE TABLE nested_t (id UInt8, n Nested(x UInt8)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE nested_t2 (id UInt8, n Nested(x UInt8)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO nested_t (id, `n.x`) VALUES (1, [10, 20]);
+INSERT INTO nested_t2 (id, `n.x`) VALUES (2, [71, 72]);
+
+SELECT n.x FROM nested_t2, (SELECT n.x FROM nested_t); -- { serverError ALIAS_REQUIRED }
+
+-- With an alias both `n.x` are qualifiable, so the query is allowed.
+SELECT sub.n.x FROM nested_t2, (SELECT n.x FROM nested_t) AS sub;
+
+-- ... or when the restriction is disabled entirely.
+SELECT n.x FROM nested_t2, (SELECT n.x FROM nested_t) SETTINGS joined_subquery_requires_alias = 0;
+
+-- Without a sibling exposing `n.x` the dotted name does not collide and the missing alias stays harmless.
+SELECT n.x FROM (SELECT n.x FROM nested_t), numbers(1);
+
+-- A sub-column of a subquery projection is bindable through a compound identifier too: a projected
+-- `Tuple` exposes its elements, so its `n.x` collides with the sibling's `Nested` column `n.x`.
+SELECT id FROM nested_t2, (SELECT CAST(tuple(1), 'Tuple(x UInt8)') AS n); -- { serverError ALIAS_REQUIRED }
+
+-- The `_table` virtual of an unaliased table function collides with a sibling's real (non-virtual) column
+-- of the same name, even when that sibling is aliased: the aliased sibling exits the validation early, so
+-- this orientation is the only one that can catch the shadowing that makes `_table` of `merge(...)`
+-- unreachable.
+SELECT _table FROM (SELECT '' AS _table) AS rhs, merge(currentDatabase(), '^nested_t$'); -- { serverError ALIAS_REQUIRED }
+
+-- With an alias the table function's `_table` is reachable again.
+SELECT m._table FROM (SELECT '' AS _table) AS rhs, merge(currentDatabase(), '^nested_t$') AS m;
+
+-- The ubiquitous `_table` / `_database` virtuals still do not collide with each other (every table
+-- expression exposes them), so an unaliased table function with otherwise disjoint columns stays allowed.
+SELECT id, number FROM nested_t2, numbers(1);
+
+DROP TABLE nested_t;
+DROP TABLE nested_t2;
+
 DROP TABLE item;
 DROP TABLE sales;
 DROP TABLE with_number;

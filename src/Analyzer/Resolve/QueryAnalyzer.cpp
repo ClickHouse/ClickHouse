@@ -915,7 +915,8 @@ static bool getColumnsFromTableExpression(
     NameSet & existing_columns,
     JoinVirtualColumnsPolicy virtuals_policy = JoinVirtualColumnsPolicy::Exclude,
     GetColumnsOptions::Kind table_function_columns_kind = GetColumnsOptions::AllPhysical,
-    bool collect_array_join_columns = false);
+    bool collect_array_join_columns = false,
+    bool collect_projection_subcolumns = false);
 
 void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
     const QueryTreeNodePtr & join_node,
@@ -1007,11 +1008,18 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
       *
       * Virtual columns participate on both sides, because a bare identifier can bind to a virtual column
       * too: `SELECT _part FROM mt, (SELECT '' AS _part)` and `SELECT _path FROM file(...), (SELECT '' AS
-      * _path) AS rhs` are both genuinely ambiguous and must force the alias. The only exception is the
-      * ubiquitous `_table` / `_database` virtuals of the unaliased expression itself: they are exposed by
-      * every table expression, so counting them would make an unaliased table function collide with every
-      * sibling (`SELECT number FROM t, numbers(3)`). We therefore drop only those two from the unaliased
-      * side; siblings still contribute them, so the reverse orientation stays covered.
+      * _path) AS rhs` are both genuinely ambiguous and must force the alias. The ubiquitous `_table` /
+      * `_database` virtuals need special handling: they are exposed by essentially every table expression,
+      * so counting a virtual-vs-virtual collision on them would make an unaliased table function collide
+      * with every sibling (`SELECT number FROM t, numbers(3)`). But dropping them from the unaliased side
+      * entirely would miss the genuine ambiguity with a sibling's *non-virtual* column of the same name:
+      * in `SELECT _table FROM (SELECT '' AS _table) AS rhs, merge(...)` the merge storage's meaningful
+      * `_table` virtual is shadowed by the sibling's real column, and only an alias on the table function
+      * makes it reachable again (the aliased sibling itself exits this validation early, so this
+      * orientation is the only one that can catch it). The unaliased side's `_table` / `_database`
+      * virtuals therefore collide only with sibling non-virtual columns; a sibling's virtuals of those
+      * names (which every sibling has) do not count. A *real* column of the unaliased expression that
+      * happens to be named `_table` / `_database` participates fully, like any other column.
       *
       * Sibling table expressions are not the only bare-identifier binders: in-scope expression aliases
       * (`WITH` and projection aliases, pre-registered before the join tree is resolved) shadow join-tree
@@ -1055,17 +1063,26 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
       * deferred to a later call, once more siblings are resolved.
       */
     NameSet table_expression_columns;
+    NameSet table_expression_columns_with_universal_virtuals;
     NameSet sibling_columns;
+    NameSet sibling_non_virtual_columns;
     bool columns_are_known = getColumnsFromTableExpression(
         table_expression_node, table_expression_columns, JoinVirtualColumnsPolicy::ExcludeUniversal, GetColumnsOptions::All,
-        true /*collect_array_join_columns*/);
+        true /*collect_array_join_columns*/, true /*collect_projection_subcolumns*/);
+    columns_are_known &= getColumnsFromTableExpression(
+        table_expression_node, table_expression_columns_with_universal_virtuals, JoinVirtualColumnsPolicy::Include,
+        GetColumnsOptions::All, true /*collect_array_join_columns*/, true /*collect_projection_subcolumns*/);
 
     for (const auto & sibling : resolved_sibling_table_expressions)
     {
         if (sibling.get() == table_expression_node.get())
             continue;
         columns_are_known &= getColumnsFromTableExpression(
-            sibling, sibling_columns, JoinVirtualColumnsPolicy::Include, GetColumnsOptions::All, true /*collect_array_join_columns*/);
+            sibling, sibling_columns, JoinVirtualColumnsPolicy::Include, GetColumnsOptions::All,
+            true /*collect_array_join_columns*/, true /*collect_projection_subcolumns*/);
+        columns_are_known &= getColumnsFromTableExpression(
+            sibling, sibling_non_virtual_columns, JoinVirtualColumnsPolicy::Exclude, GetColumnsOptions::All,
+            true /*collect_array_join_columns*/, true /*collect_projection_subcolumns*/);
     }
 
     for (const auto & array_join_alias_names : enclosing_array_join_alias_names_stack)
@@ -1104,15 +1121,32 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
         bool has_name_collision = false;
         for (const auto & column_name : table_expression_columns)
         {
-            /// Sub-columns (e.g. `x.size0`) are addressed with a dot and cannot collide with a bare identifier.
-            if (column_name.find('.') != std::string::npos)
-                continue;
+            /// Dotted names participate too: a compound identifier binds to a `Nested` column (`n.x`), a
+            /// sub-column (`x.size0`) or a `Tuple` element just like a bare identifier binds to an ordinary
+            /// column, so `SELECT n.x FROM t2, (SELECT n.x FROM t)` is genuinely ambiguous when both sides
+            /// expose `n.x` and must force the alias.
             if (sibling_columns.contains(column_name)
                 || (check_scope_aliases && scope_alias_shadows_column(column_name))
                 || collides_with_enclosing_array_join_alias(column_name))
             {
                 has_name_collision = true;
                 break;
+            }
+        }
+
+        /// The `_table` / `_database` virtuals of the unaliased expression collide only with sibling
+        /// non-virtual columns (see the explanation above).
+        if (!has_name_collision)
+        {
+            for (const auto & column_name : table_expression_columns_with_universal_virtuals)
+            {
+                if (table_expression_columns.contains(column_name))
+                    continue;
+                if (sibling_non_virtual_columns.contains(column_name))
+                {
+                    has_name_collision = true;
+                    break;
+                }
             }
         }
 
@@ -5451,8 +5485,21 @@ static bool getColumnsFromTableExpression(
     NameSet & existing_columns,
     JoinVirtualColumnsPolicy virtuals_policy,
     GetColumnsOptions::Kind table_function_columns_kind,
-    bool collect_array_join_columns)
+    bool collect_array_join_columns,
+    bool collect_projection_subcolumns)
 {
+    /// A projection column of a derived table contributes its sub-column names too when the caller asks
+    /// for them: a compound identifier can bind to a `Tuple` element or an `Array` sub-column of a
+    /// subquery output (`n.x` for a projected `n Tuple(x UInt8)`), so the join-alias validation needs
+    /// those names in its collision set. Other callers keep the historical plain-name set.
+    auto collect_projection_column = [&](const NameAndTypePair & column)
+    {
+        existing_columns.insert(column.name);
+        if (collect_projection_subcolumns)
+            for (const auto & subcolumn_name : column.type->getSubcolumnNames())
+                existing_columns.insert(column.name + "." + subcolumn_name);
+    };
+
     /// Insert the storage's real columns (per `base_options`) and, unless virtuals are excluded, its virtual
     /// columns on top. Real columns are collected first so a real column that happens to be named like a
     /// universal virtual (`_table`) is kept even when `ExcludeUniversal` drops the virtual of the same name.
@@ -5514,7 +5561,7 @@ static bool getColumnsFromTableExpression(
                 chassert(query_node);
 
                 for (const auto & column : query_node->getProjectionColumns())
-                    existing_columns.insert(column.name);
+                    collect_projection_column(column);
 
                 break;
             }
@@ -5524,7 +5571,7 @@ static bool getColumnsFromTableExpression(
                 chassert(union_node);
 
                 for (const auto & column : union_node->computeProjectionColumns())
-                    existing_columns.insert(column.name);
+                    collect_projection_column(column);
                 break;
             }
             case QueryTreeNodeType::JOIN:
