@@ -90,7 +90,7 @@ public:
     void appendToKindStack(ISerialization::Kind kind) { kind_stack.push_back(kind); }
     const SerializationInfoSettings & getSettings() const { return settings; }
     const Data & getData() const { return data; }
-    ISerialization::KindStack getKindStack() const { return kind_stack; }
+    const ISerialization::KindStack & getKindStack() const { return kind_stack; }
 
     static ISerialization::KindStack chooseKindStack(const Data & data, const SerializationInfoSettings & settings);
 

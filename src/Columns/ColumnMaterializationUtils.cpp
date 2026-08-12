@@ -11,9 +11,9 @@
 namespace DB
 {
 
-ColumnPtr convertToSerialization(const ColumnPtr & column, const IDataType & type, const ISerialization::KindStack & kind_stack)
+ColumnPtr convertToSerialization(const ColumnPtr & column, const IDataType & type, bool low_cardinality)
 {
-    if (!ISerialization::hasKind(kind_stack, ISerialization::Kind::LOW_CARDINALITY))
+    if (!low_cardinality)
         return recursiveRemoveNonNativeLowCardinality(column);
 
     /// The column is written with non-native LowCardinality serialization, which requires a
@@ -29,8 +29,15 @@ ColumnPtr convertToSerialization(const ColumnPtr & column, const IDataType & typ
 
 void convertToSerializations(Block & block, const SerializationInfoByName & infos)
 {
+    /// This runs for every written block, so look the kinds up without copying them.
     for (auto & column : block)
-        column.column = convertToSerialization(column.column, *column.type, infos.getKindStack(column.name));
+    {
+        auto it = infos.find(column.name);
+        const bool low_cardinality
+            = it != infos.end() && ISerialization::hasKind(it->second->getKindStack(), ISerialization::Kind::LOW_CARDINALITY);
+
+        column.column = convertToSerialization(column.column, *column.type, low_cardinality);
+    }
 }
 
 }
