@@ -33,7 +33,8 @@ ColumnsDescription StorageSystemObjectStorageQueueMetadata<type>::getColumnsDesc
     auto map_string_string = std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
     return ColumnsDescription
     {
-        {"zookeeper_path", std::make_shared<DataTypeString>(), "Path in zookeeper to metadata"},
+        {"zookeeper_path", std::make_shared<DataTypeString>(),
+            "Path in zookeeper to metadata. For a queue on an auxiliary zookeeper this is the factory key `<zookeeper_name>:<path>`, not the raw keeper path."},
         {"processed_nodes_count", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Number of nodes in the `processed` folder in keeper. Only set for `unordered` mode: in `ordered` mode there are no per-file processed nodes (see `processed_path` instead), so the value is NULL."},
         {"processing_nodes_count", std::make_shared<DataTypeUInt64>(), "Number of nodes in the `processing` folder in keeper"},

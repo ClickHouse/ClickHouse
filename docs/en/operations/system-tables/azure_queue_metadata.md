@@ -14,7 +14,7 @@ The `processed_nodes`, `processing_nodes`, `failed_nodes` and `processed_path` m
 
 ## Columns {#columns}
 
-- `zookeeper_path` ([String](/sql-reference/data-types/string)) — Path in zookeeper to metadata
+- `zookeeper_path` ([String](/sql-reference/data-types/string)) — Path in zookeeper to metadata. For a queue on an auxiliary zookeeper this is the factory key `<zookeeper_name>:<path>`, not the raw keeper path.
 - `processed_nodes_count` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — Number of nodes in the `processed` folder in keeper. Only set for `unordered` mode: in `ordered` mode there are no per-file processed nodes (see `processed_path` instead), so the value is NULL.
 - `processing_nodes_count` ([UInt64](/sql-reference/data-types/int-uint)) — Number of nodes in the `processing` folder in keeper
 - `failed_nodes_count` ([UInt64](/sql-reference/data-types/int-uint)) — Number of nodes in the `failed` folder in keeper

@@ -5,8 +5,9 @@
 namespace DB
 {
 
-/// Shows, for each registered ObjectStorageQueue metadata object, the current
-/// number of processed/processing/failed nodes stored in Keeper.
+/// Shows, for each registered ObjectStorageQueue metadata object, the state
+/// stored in Keeper: the number of processed/processing/failed nodes, their
+/// contents on demand, and (in ordered mode) the last-processed pointers.
 template <ObjectStorageType type>
 class StorageSystemObjectStorageQueueMetadata final : public IStorageSystemOneBlock
 {
