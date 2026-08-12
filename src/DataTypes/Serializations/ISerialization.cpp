@@ -458,6 +458,38 @@ String ISerialization::getFileNameForStream(const String & name_in_storage, cons
     return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true, false, settings.escape_variant_substreams);
 }
 
+/// `getFileNameForStream` under the column's stable id, so a metadata-only RENAME leaves every
+/// stream file name alone. A column with no id resolves exactly as the name-based form does:
+/// `getColumnId()` falls back to the name, and the two agree whenever id and name are equal.
+String ISerialization::getFileNameForStreamByColumnId(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings)
+{
+    const String column_id = column.getColumnId().value();
+    const String & logical_name = column.getNameInStorage();
+
+    String stream_name;
+    if (settings.share_nested_offsets && isPossibleOffsetsOfNested(path))
+    {
+        /// Flattened Nested siblings ("n.x", "n.y") share one offsets stream, under the Nested
+        /// parent's prefix -- taken from the id ("n.x" -> "n", "5.7" -> "5") because a rename cannot
+        /// move that. A counter id with no dot ("5") has no parent in it, so the name supplies one.
+        const auto nested_from_id = Nested::extractTableName(column_id);
+        const auto nested_from_logical = Nested::extractTableName(logical_name);
+        const bool id_is_nested = (column_id != nested_from_id);
+        const bool logical_is_nested = (logical_name != nested_from_logical);
+
+        if (id_is_nested)
+            stream_name = escapeForFileName(nested_from_id);
+        else if (logical_is_nested)
+            stream_name = escapeForFileName(nested_from_logical);
+        else
+            stream_name = escapeForFileName(column_id);
+    }
+    else
+        stream_name = escapeForFileName(column_id);
+
+    return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true, false, settings.escape_variant_substreams);
+}
+
 String ISerialization::getFileNameForRenamedColumnStream(const String & name_from, const String & name_to, const String & file_name)
 {
     auto name_from_escaped = escapeForFileName(name_from);

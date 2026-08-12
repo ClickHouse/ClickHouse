@@ -246,7 +246,9 @@ public:
     /// any locks.
     void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_)
     {
-        metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
+        auto new_metadata = std::make_unique<StorageInMemoryMetadata>(metadata_);
+        new_metadata->syncColumnIdsFromMapping();
+        metadata.set(std::move(new_metadata));
     }
 
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override;

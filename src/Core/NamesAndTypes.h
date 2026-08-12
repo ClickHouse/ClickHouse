@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/ColumnId.h>
 #include <Core/Names.h>
 #include <DataTypes/IDataType.h>
 #include <base/types.h>
@@ -29,10 +30,19 @@ public:
     NameAndTypePair(const String & name_, const DataTypePtr & type_)
         : name(name_), type(type_), type_in_storage(type_) {}
 
+    NameAndTypePair(const String & name_, const DataTypePtr & type_, ColumnId column_id_)
+        : name(name_), type(type_), column_id(std::move(column_id_)), type_in_storage(type_) {}
+
     NameAndTypePair(const String & name_in_storage_, const String & subcolumn_name_,
         const DataTypePtr & type_in_storage_, const DataTypePtr & subcolumn_type_);
 
     String getNameInStorage() const;
+    /// Key for the part's whole-column-keyed maps -- `getColumnPosition`, `getColumnSize`,
+    /// `tryGetColumn` -- so a subcolumn reports its parent's id: it has no entry of its own there.
+    ColumnId getColumnId() const;
+    /// Key for `getSerialization`, the one part map that also holds subcolumn entries: the id for a
+    /// whole column, `"<id>.<subpath>"` for a subcolumn. A pure read -- the id must already be stamped.
+    ColumnId getStorageKey() const;
     String getSubcolumnName() const;
 
     bool isSubcolumn() const { return subcolumn_delimiter_position != std::nullopt; }
@@ -46,9 +56,14 @@ public:
     /// Can be used to convert "t.a.b.c" from meaning "column `t` in storage, subcolumn `a.b.c` inside it"
     /// to meaning "column `t.a.b` in storage, subcolumn `c` inside it".
     void setDelimiterAndTypeInStorage(const String & name_in_storage_, DataTypePtr type_in_storage_);
+    void setColumnId(ColumnId column_id_) { column_id = std::move(column_id_); }
 
     String name;
     DataTypePtr type;
+
+    /// Stable key of this column's on-disk files, stamped from the table's ColumnIdMapping
+    /// (see ColumnIdMapping.h). Empty means those files are named after `name` instead.
+    ColumnId column_id;
 
 private:
     DataTypePtr type_in_storage;
@@ -88,8 +103,12 @@ public:
     template <typename Iterator>
     NamesAndTypesList(Iterator begin, Iterator end) : ListWithMemoryTracking<NameAndTypePair>(begin, end) {}
 
-    void readText(ReadBuffer & buf, bool check_eof = true);
-    void writeText(WriteBuffer & buf) const;
+    static constexpr UInt64 FORMAT_VERSION_WITH_NAMES = 1;
+    static constexpr UInt64 FORMAT_VERSION_WITH_COLUMN_IDS = 2;
+
+    /// Returns the format version read, so the caller can check it against its own state.
+    UInt64 readText(ReadBuffer & buf, bool check_eof = true);
+    void writeText(WriteBuffer & buf, bool use_column_ids = false) const;
 
     String toString() const;
     static NamesAndTypesList parse(const String & s);

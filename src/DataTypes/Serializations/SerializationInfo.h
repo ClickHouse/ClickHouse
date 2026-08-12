@@ -125,10 +125,20 @@ public:
     MutableSerializationInfoPtr tryGet(const String & name);
     ISerialization::KindStack getKindStack(const String & column_name) const;
 
+    /// Serialization of a part's column, from its own record if there is one.
+    SerializationPtr getSerialization(const NameAndTypePair & column) const;
+    SerializationPtr getSerialization(const NameAndTypePair & column, const String & record_key) const;
+
     /// Takes data from @other, but keeps current serialization kinds.
     /// If column exists in @other infos, but not in current infos,
     /// it's cloned to current infos.
     void replaceData(const SerializationInfoByName & other);
+
+    /// Re-keys records produced under logical names (write paths accumulate per-block
+    /// stats keyed by name) to the columns' stamped IDs — the canonical key of a part's
+    /// records (matches the on-disk key). The map must be name-keyed: on an ID-keyed map
+    /// a key that is one column's ID and another column's name would be re-bound wrongly.
+    void reKeyToColumnIds(const NamesAndTypesList & columns);
 
     void writeJSON(WriteBuffer & out) const;
 
@@ -141,6 +151,11 @@ public:
     bool needsPersistence() const;
 
     static SerializationInfoByName readJSON(const NamesAndTypesList & columns, ReadBuffer & in);
+
+    /// Reads infos of a part written with column IDs active: on-disk records are keyed by the same
+    /// token as that part's columns.txt, and stay keyed by column ID in memory. `columns` is the
+    /// part's stamped column list; a record no column of it claims (an orphan) is skipped.
+    static SerializationInfoByName readJSONWithColumnIds(const NamesAndTypesList & columns, ReadBuffer & in);
 
     static SerializationInfoByName readJSONFromString(const NamesAndTypesList & columns, const std::string & str);
 

@@ -18,6 +18,7 @@
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -69,6 +70,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , comment(other.comment)
     , metadata_version(other.metadata_version)
     , datalake_table_state(other.datalake_table_state)
+    , column_id_mapping(other.column_id_mapping)
 {
 }
 
@@ -110,8 +112,25 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     comment = other.comment;
     metadata_version = other.metadata_version;
     datalake_table_state = other.datalake_table_state;
+    column_id_mapping = other.column_id_mapping;
 
     return *this;
+}
+
+ColumnIdMappingPtr StorageInMemoryMetadata::getActiveColumnIdMapping() const
+{
+    if (column_id_mapping && column_id_mapping->isActive())
+        return column_id_mapping;
+    return nullptr;
+}
+
+void StorageInMemoryMetadata::syncColumnIdsFromMapping()
+{
+    /// The single chokepoint that keeps the schema's per-column IDs in step with the mapping, so
+    /// every derived `NamesAndTypesList` speaks IDs without a separate mapping consult. No-op for
+    /// tables without an active mapping (columns keep an empty ID -> fall back to name).
+    if (column_id_mapping && column_id_mapping->isActive())
+        columns.setColumnIds(*column_id_mapping);
 }
 
 void StorageInMemoryMetadata::setComment(const String & comment_)
