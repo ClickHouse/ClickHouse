@@ -16,7 +16,7 @@ export const BetaBadge = ({ link, galaxyTrack, galaxyEvent }) => {
 
     return (
         <a
-            href="/docs/reference/settings/beta-and-experimental-features#beta-features"
+            href="https://clickhouse.com/docs/ko/reference/settings/beta-and-experimental-features#beta-features"
             className="betaBadge"
         >
             <span>베타 기능</span>
