@@ -64,6 +64,16 @@ SET log_queries = 0;
 SET query_profiler_real_time_period_ns = 0;
 SYSTEM FLUSH LOGS trace_log, query_log;
 
+-- The serverwide profilers (1 second period in the test harness) also produce `trace_log` rows and
+-- `QueryProfiler*` counters for this query, so the `trace_log` check below alone cannot prove that
+-- the per-query 1ms profiler ran. Require the same counter threshold as the sleep sub-test first:
+-- the serverwide profilers contribute at most ~1 tick per thread per second, far below 64, while
+-- the per-query profiler delivers thousands of signals here (1ms period, 16 CPU-bound threads).
+SELECT ProfileEvents['QueryProfilerRuns'] + ProfileEvents['QueryProfilerSignalOverruns'] + ProfileEvents['QueryProfilerConcurrencyOverruns'] > 64
+FROM system.query_log
+WHERE current_database = currentDatabase() AND query LIKE '%test real time query profiler numbers_mt%' AND query NOT LIKE '%system%' AND type = 'QueryFinish'
+ORDER BY event_time DESC LIMIT 1;
+
 -- Symbolize a bounded sample of the rows instead of all of them. The 1ms period above makes this
 -- query produce tens of thousands of samples on a slow sanitizer runner, and symbolization costs
 -- about a millisecond per row there (`addressToLine` walks DWARF), so symbolizing every sample made
@@ -72,7 +82,8 @@ SYSTEM FLUSH LOGS trace_log, query_log;
 -- 1000 rows keep the work bounded without weakening the check: about 70% of this query's samples
 -- carry a `Source` frame (measured locally: 281 of 410), and when fewer than 1000 samples were
 -- delivered the `LIMIT` takes all of them, exactly as before. The `query_id` filter sits inside the
--- `LIMIT` subquery, so other queries' samples are never symbolized either.
+-- `LIMIT` subquery, so other queries' samples are never symbolized either. Filter `trace_type` so
+-- only real time profiler samples count.
 SELECT count() > 0 FROM
 (
     SELECT addressToLine(arrayJoin(trace) AS addr) || '#' || demangle(addressToSymbol(addr)) AS symbol
@@ -81,6 +92,7 @@ SELECT count() > 0 FROM
         SELECT trace
         FROM system.trace_log
         WHERE event_date >= yesterday() AND event_time >= now() - 600
+            AND trace_type = 'Real'
             AND query_id = (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%test real time query profiler numbers_mt%' AND query NOT LIKE '%system%' ORDER BY event_time DESC LIMIT 1)
         LIMIT 1000
     )
@@ -95,7 +107,15 @@ SET log_queries = 0;
 SET query_profiler_cpu_time_period_ns = 0;
 SYSTEM FLUSH LOGS trace_log, query_log;
 
--- Bounded the same way as the sub-test above.
+-- Guarded by the same counter threshold as the sub-tests above: the serverwide profilers cannot
+-- reach 64, so this proves the per-query 1ms CPU profiler fired.
+SELECT ProfileEvents['QueryProfilerRuns'] + ProfileEvents['QueryProfilerSignalOverruns'] + ProfileEvents['QueryProfilerConcurrencyOverruns'] > 64
+FROM system.query_log
+WHERE current_database = currentDatabase() AND query LIKE '%test cpu time query profiler%' AND query NOT LIKE '%system%' AND type = 'QueryFinish'
+ORDER BY event_time DESC LIMIT 1;
+
+-- Bounded the same way as the sub-test above, and filtered to CPU profiler samples: without the
+-- `trace_type` filter even a serverwide real time sample could satisfy this check.
 SELECT count() > 0 FROM
 (
     SELECT addressToLine(arrayJoin(trace) AS addr) || '#' || demangle(addressToSymbol(addr)) AS symbol
@@ -104,6 +124,7 @@ SELECT count() > 0 FROM
         SELECT trace
         FROM system.trace_log
         WHERE event_date >= yesterday() AND event_time >= now() - 600
+            AND trace_type = 'CPU'
             AND query_id = (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%test cpu time query profiler%' AND query NOT LIKE '%system%' ORDER BY event_time DESC LIMIT 1)
         LIMIT 1000
     )
