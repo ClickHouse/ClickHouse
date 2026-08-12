@@ -1,0 +1,8 @@
+Template
+('2024-01-17 08:30:00',1)	42
+CustomSeparated
+('2024-01-17 08:30:00',1)	42
+CustomSeparated replays a failed flattened tuple parse
+('value','2024-01-17 08:30:00',1)	42
+CustomSeparated preserves an ambiguous flattened tuple boundary
+('(\'y\',-5,\'2024-01-17 08:30:00\')',-5,'2024-01-17 08:30:00')	7
