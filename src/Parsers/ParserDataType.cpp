@@ -157,7 +157,7 @@ private:
     }
 };
 
-/// Parser of Object type argument. For example: JSON(some_parameter=N, some.path SomeType, SKIP skip.path, SHARED REGEXP 'some\.path\..*', ...)
+/// Parser of `Object` type arguments. For example: `JSON(some_parameter=N, some.path SomeType, SKIP skip.path, SHARED REGEXP 'some\.path\..*', ...)`.
 class ObjectArgumentParser : public IParserBase
 {
 private:
@@ -195,14 +195,13 @@ private:
             return true;
         }
 
-        /// SHARED REGEXP '<some_regexp>'
-        if (ParserKeyword(Keyword::SHARED).ignore(pos))
+        /// `SHARED REGEXP [FULL] '<some_regexp>'`. Only consume `SHARED` when it is followed by
+        /// REGEXP: `JSON(shared UInt32)` has always been a valid typed-path declaration.
+        auto shared_pos = pos;
+        if (ParserKeyword(Keyword::SHARED).ignore(shared_pos) && ParserKeyword(Keyword::REGEXP).ignore(shared_pos))
         {
-            if (!ParserKeyword(Keyword::REGEXP).ignore(pos))
-            {
-                expected.add(pos, "REGEXP");
-                return false;
-            }
+            pos = shared_pos;
+            argument->shared_path_regexp_full_match = ParserKeyword(Keyword::FULL).ignore(pos);
 
             ParserStringLiteral literal_parser;
             ASTPtr literal;
@@ -220,16 +219,24 @@ private:
         if (!compound_identifier_parser.parse(pos, identifier, expected))
             return false;
 
-        /// some_parameter=N
+        /// `some_parameter=N`. The internal `shared_regexp_path_prefix` parameter is a string because
+        /// it preserves root-relative matching for derived JSON sub-object types.
         if (pos->type == TokenType::Equals)
         {
             ++pos;
-            ASTPtr number;
+            ASTPtr value;
+            auto value_pos = pos;
             ParserNumber number_parser;
-            if (!number_parser.parse(pos, number, expected))
-                return false;
+            if (!number_parser.parse(value_pos, value, expected))
+            {
+                value_pos = pos;
+                ParserStringLiteral string_parser;
+                if (!string_parser.parse(value_pos, value, expected))
+                    return false;
+            }
+            pos = value_pos;
 
-            argument->parameter = makeASTOperator("equals", identifier, number);
+            argument->parameter = makeASTOperator("equals", identifier, value);
             argument->children.push_back(argument->parameter);
             node = argument;
             return true;

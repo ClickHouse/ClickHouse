@@ -30,8 +30,7 @@ To declare a column of `JSON` type, you can use the following syntax:
     max_dynamic_types=M,
     some.path TypeName,
     SKIP path.to.skip,
-    SKIP REGEXP 'paths_regexp',
-    SHARED REGEXP 'paths_regexp'
+    SKIP REGEXP 'paths_regexp'
 )
 ```
 Where the parameters in the syntax above are defined as:
@@ -43,7 +42,6 @@ Where the parameters in the syntax above are defined as:
 | `some.path TypeName`        | An optional type hint for particular path in the JSON. Such paths will be always stored as sub-columns with specified type.                                                                                                                                                                                                                                                                                                                                                                                  |               |
 | `SKIP path.to.skip`         | An optional hint for particular path that should be skipped during JSON parsing. Such paths will never be stored in the JSON column. If specified path is a nested JSON object, the whole nested object will be skipped.                                                                                                                                                                                                                                                                                     |               |
 | `SKIP REGEXP 'path_regexp'` | An optional hint with a regular expression that is used to skip paths during JSON parsing. All paths that match this regular expression will never be stored in the JSON column.                                                                                                                                                                                                                                                                                                                             |               |
-| `SHARED REGEXP 'path_regexp'` | An optional hint with a regular expression for paths that must always be stored in [shared data](#shared-data-structure). All paths that match this regular expression are never promoted to a dedicated dynamic-path sub-column, regardless of `max_dynamic_paths` or how frequently they occur. Useful to prevent high-cardinality path prefixes (for example `output.ConfigMap.*`) from ever competing for a dynamic-path slot.                                                                                                                                                                                                                                                                                                                          |               |
 
 <WhenToUseJson />
 

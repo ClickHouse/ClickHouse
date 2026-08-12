@@ -165,6 +165,7 @@ static struct InitFiu
     REGULAR(refresh_mv_skip_execution) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
     ONCE(space_saving_copy_arena_throw) \
+    ONCE(json_shared_regexp_force_combined_compile_failure) \
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(keeper_fault_on_watch_request) \
     REGULAR(keeper_shutdown_delay_before_queue_check) \

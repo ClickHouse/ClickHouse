@@ -54,6 +54,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <fmt/ranges.h>
 #include <Common/DimensionalMetrics.h>
@@ -127,6 +128,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool allow_json_shared_data_paths_repromotion;
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
     extern const MergeTreeSettingsBool allow_vertical_merges_from_compact_to_wide_parts;
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
@@ -667,6 +669,99 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
 
+    /// Build rename conversions once per source part and reuse them for the provenance and
+    /// expiration checks below. The final reader conversions are rebuilt after patch parts are
+    /// added to the snapshot because those conversions also carry patch readers.
+    std::vector<AlterConversionsPtr> rename_conversions;
+    rename_conversions.reserve(global_ctx->future_part->parts.size());
+    for (const auto & part : global_ctx->future_part->parts)
+    {
+        rename_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context
+#if CLICKHOUSE_CLOUD
+            , nullptr
+#endif
+            ));
+    }
+
+    /// Each source part's JSON type records the policy that placed paths in shared data. Preserve
+    /// that policy in the output part by default so removing a rule does not silently re-promote
+    /// existing paths during a later merge. Resolve pending renames back to each source name.
+    if (!(*global_ctx->data_settings)[MergeTreeSetting::allow_json_shared_data_paths_repromotion])
+    {
+        std::vector<AlterConversionsPtr> patch_conversions;
+        patch_conversions.reserve(global_ctx->future_part->patch_parts.size());
+        for (const auto & patch_part : global_ctx->future_part->patch_parts)
+        {
+            patch_conversions.push_back(MergeTreeData::getAlterConversionsForPart(patch_part, mutations_snapshot, global_ctx->context
+#if CLICKHOUSE_CLOUD
+                , nullptr
+#endif
+                ));
+        }
+
+        for (auto & storage_column : global_ctx->storage_columns)
+        {
+            for (size_t part_index = 0; part_index != global_ctx->future_part->parts.size(); ++part_index)
+            {
+                const auto & part = global_ctx->future_part->parts[part_index];
+                String source_name = storage_column.name;
+                const auto & conversions = rename_conversions[part_index];
+                for (const auto & rename : conversions->getRenameMap())
+                {
+                    if (rename.rename_to == storage_column.name)
+                    {
+                        source_name = rename.rename_from;
+                        break;
+                    }
+                }
+
+                if (auto source_column = part->tryGetColumn(source_name))
+                    storage_column.type = mergeJSONSharedDataPathRules(storage_column.type, source_column->type);
+            }
+
+            for (size_t patch_index = 0; patch_index != global_ctx->future_part->patch_parts.size(); ++patch_index)
+            {
+                const auto & patch_part = global_ctx->future_part->patch_parts[patch_index];
+                String source_name = storage_column.name;
+                if (patch_conversions[patch_index]->isColumnRenamed(source_name))
+                    source_name = patch_conversions[patch_index]->getColumnOldName(source_name);
+
+                if (auto source_column = patch_part->tryGetColumn(source_name))
+                    storage_column.type = mergeJSONSharedDataPathRules(storage_column.type, source_column->type);
+            }
+        }
+    }
+
+    /// Readers and merge transforms take their result types from the storage snapshot rather
+    /// than from the new part metadata. Give this merge a private metadata copy carrying the
+    /// accumulated per-part placement provenance, without changing the live table metadata.
+    std::shared_ptr<StorageInMemoryMetadata> merge_metadata;
+    std::optional<ColumnsDescription> merge_columns;
+    const auto & metadata_columns = global_ctx->metadata_snapshot->getColumns();
+    for (const auto & storage_column : global_ctx->storage_columns)
+    {
+        if (auto column = metadata_columns.tryGet(storage_column.name); column && !column->type->equals(*storage_column.type))
+        {
+            if (!merge_metadata)
+            {
+                merge_metadata = std::make_shared<StorageInMemoryMetadata>(*global_ctx->metadata_snapshot);
+                merge_columns.emplace(merge_metadata->getColumns());
+            }
+
+            merge_columns->modify(storage_column.name, [&](ColumnDescription & description)
+            {
+                description.type = storage_column.type;
+                if (!description.statistics.empty())
+                    description.statistics.data_type = storage_column.type;
+            });
+        }
+    }
+    if (merge_metadata)
+    {
+        merge_metadata->setColumns(std::move(*merge_columns));
+        global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, std::move(merge_metadata));
+    }
+
     /// Determine columns that are absent in all source parts—either fully expired or never written—and mark them as
     /// expired to avoid unnecessary reads or writes during merges.
     ///
@@ -715,13 +810,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /// rename is pending), the physical data will belong to `new` only after the rename
         /// materializes, so fall back to expiring `new` and let the rename mutation re-derive it.
         NameSet renamed_column_targets;
-        for (const auto & part : global_ctx->future_part->parts)
+        for (size_t part_index = 0; part_index != global_ctx->future_part->parts.size(); ++part_index)
         {
-            auto conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context
-#if CLICKHOUSE_CLOUD
-                , nullptr
-#endif
-                );
+            const auto & conversions = rename_conversions[part_index];
             for (const auto & rename : conversions->getRenameMap())
             {
                 if ((columns_present_in_parts.contains(rename.rename_from)
@@ -839,7 +930,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     if ((*merge_tree_settings)[MergeTreeSetting::materialize_statistics_on_merge])
     {
-        global_ctx->gathered_data.statistics = ColumnsStatistics(global_ctx->metadata_snapshot->getColumns());
+        global_ctx->gathered_data.statistics = ColumnsStatistics(global_ctx->storage_snapshot->metadata->getColumns());
     }
 
     if (global_ctx->merge_may_reduce_rows)
@@ -1840,7 +1931,7 @@ public:
         , max_dynamic_subcolumns(max_dynamic_subcolumns_)
         , is_result_sparse(is_result_sparse_)
         /// The header has exactly 1 column: this step gathers a single column from all source parts.
-        , path_regexps_shared_data(tryGetPathRegexpsSharedDataForMerge(input_header_->getByPosition(0).type))
+        , result_type(input_header_->getByPosition(0).type)
     {}
 
     String getName() const override { return "ColumnGatherer"; }
@@ -1863,7 +1954,7 @@ public:
             merge_block_size_bytes,
             max_dynamic_subcolumns,
             is_result_sparse,
-            path_regexps_shared_data);
+            result_type);
 
         pipeline.addTransform(std::move(transform));
     }
@@ -1895,9 +1986,7 @@ private:
     const UInt64 merge_block_size_bytes;
     const std::optional<size_t> max_dynamic_subcolumns;
     const bool is_result_sparse;
-    /// SHARED REGEXP patterns from the column's DataTypeObject, if this is a JSON column with such
-    /// patterns; empty otherwise.
-    const std::vector<String> path_regexps_shared_data;
+    const DataTypePtr result_type;
 };
 
 MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline

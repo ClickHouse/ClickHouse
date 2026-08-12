@@ -82,10 +82,9 @@ void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, Column
     std::map<std::string_view, ColumnPtr> paths_for_shared_data;
     for (size_t i = 0; i != flattened_paths.size(); ++i)
     {
-        if (object_column.canAddNewDynamicPath())
-            object_column.addNewDynamicPath(flattened_paths[i], IColumn::mutate(std::move(flattened_columns[i])));
-        else
-            paths_for_shared_data.emplace(flattened_paths[i], std::move(flattened_columns[i]));
+        auto mutable_column = IColumn::mutate(std::move(flattened_columns[i]));
+        if (!object_column.tryToAddNewDynamicPath(flattened_paths[i], mutable_column))
+            paths_for_shared_data.emplace(flattened_paths[i], std::move(mutable_column));
     }
 
     auto [shared_data_paths, shared_data_values] = object_column.getSharedDataPathsAndValues();

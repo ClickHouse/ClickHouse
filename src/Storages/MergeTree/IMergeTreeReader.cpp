@@ -9,11 +9,13 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnObject.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/Context.h>
@@ -450,6 +452,13 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
             const auto & column_in_part = columns_to_read[pos];
             if (column_in_part.type->equals(*name_and_type->type))
                 continue;
+            if (isJSONSharedDataPathPolicyOnlyChange(column_in_part.type.get(), name_and_type->type.get()))
+            {
+                auto mutable_column = IColumn::mutate(std::move(res_columns[pos]));
+                setSharedDataPathMatcherRecursively(*mutable_column, name_and_type->type);
+                res_columns[pos] = std::move(mutable_column);
+                continue;
+            }
             copy_block.insert({res_columns[pos], column_in_part.type, name_and_type->name});
         }
 

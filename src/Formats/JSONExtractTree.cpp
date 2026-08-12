@@ -1904,7 +1904,6 @@ public:
         std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
-        const std::vector<String> & path_regexps_shared_data_,
         const DataTypePtr & type_of_nested_objects)
         : typed_paths_types(typed_paths_types_)
         , typed_path_nodes(std::move(typed_path_nodes_))
@@ -1916,8 +1915,6 @@ public:
         std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
         for (const auto & regexp : path_regexps_to_skip_)
             path_regexps_to_skip.emplace_back(regexp);
-        for (const auto & regexp : path_regexps_shared_data_)
-            path_regexps_shared_data.emplace_back(regexp);
     }
 
     bool insertResultToColumn(IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const override
@@ -2165,14 +2162,6 @@ private:
         {
             paths_and_values_for_shared_data.emplace_back(current_path, element);
         }
-        /// Path matches a SHARED REGEXP rule from the type declaration: it must always be stored in
-        /// shared data and must never be promoted to a dynamic-path subcolumn. Since this rule is a
-        /// fixed property of the column's type and is checked here before any dynamic path can be
-        /// added for this path, no occurrence of this path can already be a dynamic path at this point.
-        else if (shouldForceSharedData(current_path, insert_settings))
-        {
-            paths_and_values_for_shared_data.emplace_back(current_path, element);
-        }
         /// Check if we have this path in dynamic paths.
         else if (auto dynamic_it = dynamic_paths_ptrs.find(current_path); dynamic_it != dynamic_paths_ptrs.end())
         {
@@ -2235,27 +2224,6 @@ private:
         }
 
         for (const auto & regexp : path_regexps_to_skip)
-        {
-            if (insert_settings.use_partial_match_to_skip_paths_by_regexp)
-            {
-                if (re2::RE2::PartialMatch(path, regexp))
-                    return true;
-            }
-            else
-            {
-                if (re2::RE2::FullMatch(path, regexp))
-                    return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// Returns true if the path matches one of the SHARED REGEXP patterns and must therefore always
-    /// be stored in shared data, never promoted to a dedicated dynamic-path subcolumn.
-    bool shouldForceSharedData(const String & path, const JSONExtractInsertSettings & insert_settings) const
-    {
-        for (const auto & regexp : path_regexps_shared_data)
         {
             if (insert_settings.use_partial_match_to_skip_paths_by_regexp)
             {
@@ -2532,9 +2500,6 @@ private:
     std::unordered_set<String> paths_to_skip;
     std::vector<String> sorted_paths_to_skip;
     std::list<re2::RE2> path_regexps_to_skip;
-    /// Paths matching one of these regexps are always stored in shared data and are never
-    /// promoted to a dedicated dynamic-path subcolumn.
-    std::list<re2::RE2> path_regexps_shared_data;
     std::unique_ptr<DynamicNode<JSONParser>> dynamic_node;
     SerializationPtr dynamic_serialization;
     const DateLUTImpl & time_zone_for_schema_inference = DateLUT::instance();
@@ -2739,7 +2704,6 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
                         std::move(typed_path_nodes),
                         object_type.getPathsToSkip(),
                         object_type.getPathRegexpsToSkip(),
-                        object_type.getPathRegexpsSharedData(),
                         object_type.getTypeOfNestedObjects());
             }
         }

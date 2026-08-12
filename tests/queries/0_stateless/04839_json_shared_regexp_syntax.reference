@@ -1,0 +1,12 @@
+JSON(`shared` UInt32)
+JSON(`shared.foo` UInt32)
+JSON(SHARED REGEXP \'^a\', SHARED REGEXP \'^z\')
+1	1
+partial ambient=0	['keep']	['foo','foobar']
+partial ambient=1	['keep']	['foo','foobar']
+full ambient=0	['foobar','keep']	['foo']
+full ambient=1	['foobar','keep']	['foo']
+7	[]	[]
+1
+['forced','outer.forced','outer.inner.keep']	['outer.inner.forced']	['forced','inner.keep']	['inner.forced']	['keep']	['forced']
+1	1

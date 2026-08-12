@@ -63,7 +63,7 @@ public:
         size_t block_preferred_size_bytes_,
         std::optional<size_t> max_dynamic_subcolumns_,
         bool is_result_sparse_,
-        std::vector<String> path_regexps_shared_data_ = {});
+        DataTypePtr result_type_);
 
     const char * getName() const override { return "ColumnGathererStream"; }
     void initialize(Inputs inputs) override;
@@ -98,9 +98,7 @@ private:
     const size_t block_preferred_size_bytes;
     const std::optional<size_t> max_dynamic_subcolumns;
     const bool is_result_sparse;
-    /// SHARED REGEXP patterns from the column's DataTypeObject, if this is a JSON column with such
-    /// patterns. Applied to the result column before `chooseDynamicStructureForMerge`.
-    const std::vector<String> path_regexps_shared_data;
+    const DataTypePtr result_type;
 
     Source * source_to_fully_copy = nullptr;
 
@@ -121,7 +119,7 @@ public:
         size_t block_preferred_size_bytes_,
         std::optional<size_t> max_dynamic_subcolumns_,
         bool is_result_sparse_,
-        std::vector<String> path_regexps_shared_data_ = {});
+        DataTypePtr result_type_);
 
     String getName() const override { return "ColumnGathererTransform"; }
 

@@ -171,6 +171,9 @@ protected:
     size_t current_mark = 0;
 
     Block block_sample;
+    /// Positions whose input types differ from the destination type only by `JSON` shared-data
+    /// policy. Determined from the first block to avoid repeating recursive type checks.
+    std::vector<bool> use_target_type_for_dynamic_columns;
 
     bool streams_initialized = false;
 

@@ -71,7 +71,6 @@ public:
         const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
-        const std::vector<String> & path_regexps_shared_data_,
         const DataTypePtr & dynamic_type_,
         const SerializationPtr & dynamic_serialization_);
 
@@ -172,10 +171,6 @@ private:
 protected:
     bool shouldSkipPath(const String & path) const;
 
-    /// Returns true if the path matches one of the SHARED REGEXP patterns and must therefore always
-    /// be stored in shared data, never promoted to a dedicated dynamic-path subcolumn.
-    bool shouldForceSharedData(const String & path) const;
-
     void updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings) const;
 
     std::unordered_map<String, DataTypePtr> typed_paths_types;
@@ -183,7 +178,6 @@ protected:
     std::unordered_set<String> paths_to_skip;
     std::vector<String> sorted_paths_to_skip;
     std::list<re2::RE2> path_regexps_to_skip;
-    std::list<re2::RE2> path_regexps_shared_data;
     DataTypePtr dynamic_type;
     SerializationPtr dynamic_serialization;
 
