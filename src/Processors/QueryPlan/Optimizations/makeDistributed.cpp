@@ -28,7 +28,6 @@
 #include <Processors/QueryPlan/ShuffleExchangeStep.h>
 #include <Processors/QueryPlan/BroadcastExchangeStep.h>
 #include <Processors/QueryPlan/GatherExchangeStep.h>
-#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <fmt/ranges.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
