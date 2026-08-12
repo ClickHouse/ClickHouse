@@ -215,7 +215,12 @@ labelName
     ;
 
 labelNameList
-    : LEFT_PAREN (labelName (COMMA labelName)*)? RIGHT_PAREN
+    : LEFT_PAREN (groupingLabel (COMMA groupingLabel)*)? RIGHT_PAREN
+    ;
+
+groupingLabel
+    : labelName
+    | STRING
     ;
 
 metricName

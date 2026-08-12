@@ -90,6 +90,8 @@ public:
 
     virtual std::any visitLabelNameList(PromQLParser::LabelNameListContext *context) = 0;
 
+    virtual std::any visitGroupingLabel(PromQLParser::GroupingLabelContext *context) = 0;
+
     virtual std::any visitMetricName(PromQLParser::MetricNameContext *context) = 0;
 
     virtual std::any visitKeyword(PromQLParser::KeywordContext *context) = 0;

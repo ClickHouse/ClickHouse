@@ -33,7 +33,7 @@ public:
     RuleFunction_ = 22, RuleParameter = 23, RuleParameterList = 24, RuleAggregation = 25, 
     RuleBy = 26, RuleWithout = 27, RuleGrouping = 28, RuleOn_ = 29, RuleIgnoring = 30, 
     RuleGroupLeft = 31, RuleGroupRight = 32, RuleLabelName = 33, RuleLabelNameList = 34, 
-    RuleMetricName = 35, RuleKeyword = 36, RuleLiteral = 37
+    RuleGroupingLabel = 35, RuleMetricName = 36, RuleKeyword = 37, RuleLiteral = 38
   };
 
   explicit PromQLParser(antlr4::TokenStream *input);
@@ -88,6 +88,7 @@ public:
   class GroupRightContext;
   class LabelNameContext;
   class LabelNameListContext;
+  class GroupingLabelContext;
   class MetricNameContext;
   class KeywordContext;
   class LiteralContext; 
@@ -691,8 +692,8 @@ public:
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *LEFT_PAREN();
     antlr4::tree::TerminalNode *RIGHT_PAREN();
-    std::vector<LabelNameContext *> labelName();
-    LabelNameContext* labelName(size_t i);
+    std::vector<GroupingLabelContext *> groupingLabel();
+    GroupingLabelContext* groupingLabel(size_t i);
     std::vector<antlr4::tree::TerminalNode *> COMMA();
     antlr4::tree::TerminalNode* COMMA(size_t i);
 
@@ -704,6 +705,22 @@ public:
   };
 
   LabelNameListContext* labelNameList();
+
+  class  GroupingLabelContext : public antlr4::ParserRuleContext {
+  public:
+    GroupingLabelContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    LabelNameContext *labelName();
+    antlr4::tree::TerminalNode *STRING();
+
+    virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
+    virtual void exitRule(antlr4::tree::ParseTreeListener *listener) override;
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  GroupingLabelContext* groupingLabel();
 
   class  MetricNameContext : public antlr4::ParserRuleContext {
   public:

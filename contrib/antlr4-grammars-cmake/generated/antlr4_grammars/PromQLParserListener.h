@@ -121,6 +121,9 @@ public:
   virtual void enterLabelNameList(PromQLParser::LabelNameListContext *ctx) = 0;
   virtual void exitLabelNameList(PromQLParser::LabelNameListContext *ctx) = 0;
 
+  virtual void enterGroupingLabel(PromQLParser::GroupingLabelContext *ctx) = 0;
+  virtual void exitGroupingLabel(PromQLParser::GroupingLabelContext *ctx) = 0;
+
   virtual void enterMetricName(PromQLParser::MetricNameContext *ctx) = 0;
   virtual void exitMetricName(PromQLParser::MetricNameContext *ctx) = 0;
 

@@ -157,6 +157,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitGroupingLabel(PromQLParser::GroupingLabelContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitMetricName(PromQLParser::MetricNameContext *ctx) override {
     return visitChildren(ctx);
   }

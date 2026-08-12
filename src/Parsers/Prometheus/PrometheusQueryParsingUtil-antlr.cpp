@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/isValidUTF8.h>
 
 #include "config.h"
 
@@ -310,14 +311,37 @@ namespace
         /// Extracts a label name.
         String getLabelName(antlr4_grammars::PromQLParser::LabelNameContext * ctx) const { return ctx->getText(); }
 
-        /// Extracts multiple label names separated by comma.
-        Strings getLabelNameList(antlr4_grammars::PromQLParser::LabelNameListContext * ctx) const
+        /// Extracts a grouping label name, unquoting quoted names.
+        String getGroupingLabelName(antlr4_grammars::PromQLParser::GroupingLabelContext * ctx)
+        {
+            if (auto * label_name_ctx = ctx->labelName())
+                return getLabelName(label_name_ctx);
+
+            auto * string_ctx = ctx->STRING();
+            if (!string_ctx)
+                throwInconsistentSchema("GroupingLabel", ctx->getText());
+
+            String label_name;
+            if (!parseStringLiteral(string_ctx, label_name))
+                return {};
+
+            if (label_name.empty() || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(label_name.data()), label_name.size()))
+            {
+                error_listener.setError("invalid label name for grouping", getStartPos(string_ctx));
+                return {};
+            }
+
+            return label_name;
+        }
+
+        /// Extracts multiple grouping label names separated by comma.
+        Strings getLabelNameList(antlr4_grammars::PromQLParser::LabelNameListContext * ctx)
         {
             Strings label_name_list;
 
-            antlr4_grammars::PromQLParser::LabelNameContext * label_name_ctx = nullptr;
-            for (size_t i = 0; (label_name_ctx = ctx->labelName(i)) != nullptr; ++i)
-                label_name_list.push_back(getLabelName(label_name_ctx));
+            antlr4_grammars::PromQLParser::GroupingLabelContext * grouping_label_ctx = nullptr;
+            for (size_t i = 0; (grouping_label_ctx = ctx->groupingLabel(i)) != nullptr; ++i)
+                label_name_list.push_back(getGroupingLabelName(grouping_label_ctx));
 
             return label_name_list;
         }

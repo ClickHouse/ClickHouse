@@ -21,6 +21,65 @@ namespace
 {
     using Node = PrometheusQueryTree::Node;
 
+    String quotePromQLString(std::string_view str)
+    {
+        static constexpr char hex_digits[] = "0123456789abcdef";
+
+        String result;
+        result.reserve(str.size() + 2);
+        result.push_back('"');
+
+        for (unsigned char c : str)
+        {
+            if (c == '"' || c == '\\')
+            {
+                result.push_back('\\');
+                result.push_back(static_cast<char>(c));
+            }
+            else if (c < 0x20 || c == 0x7F)
+            {
+                result.append("\\x");
+                result.push_back(hex_digits[c >> 4]);
+                result.push_back(hex_digits[c & 0x0F]);
+            }
+            else
+            {
+                result.push_back(static_cast<char>(c));
+            }
+        }
+
+        result.push_back('"');
+        return result;
+    }
+
+    bool isLegacyLabelName(std::string_view label)
+    {
+        if (label.empty())
+            return false;
+
+        auto is_alpha = [](char c)
+        {
+            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+        };
+        auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
+
+        if (!is_alpha(label.front()) && label.front() != '_')
+            return false;
+
+        for (char c : label.substr(1))
+        {
+            if (!is_alpha(c) && !is_digit(c) && c != '_')
+                return false;
+        }
+
+        return true;
+    }
+
+    String formatLabelName(const String & label)
+    {
+        return isLegacyLabelName(label) ? label : quotePromQLString(label);
+    }
+
     template <typename NodeType>
     NodeType * cloneNodeImpl(const NodeType * node, std::vector<std::unique_ptr<Node>> & node_list)
     {
@@ -272,14 +331,6 @@ bool PrometheusQueryTree::tryParse(std::string_view promql_query_, UInt32 timest
 }
 
 
-namespace
-{
-    String quotePromQLString(std::string_view str)
-    {
-        return doubleQuoteString(str);
-    }
-}
-
 String PrometheusQueryTree::Scalar::toString(const PrometheusQueryTree &) const
 {
     if (std::isfinite(scalar))
@@ -465,7 +516,7 @@ String PrometheusQueryTree::BinaryOperator::toString(const PrometheusQueryTree &
         {
             if (need_comma)
                 str += ", ";
-            str += label;
+            str += formatLabelName(label);
             need_comma = true;
         }
         str += ") ";
@@ -486,7 +537,7 @@ String PrometheusQueryTree::BinaryOperator::toString(const PrometheusQueryTree &
             {
                 if (need_comma)
                     str += ", ";
-                str += label;
+                str += formatLabelName(label);
                 need_comma = true;
             }
             str += ")";
@@ -559,7 +610,7 @@ String PrometheusQueryTree::AggregationOperator::toString(const PrometheusQueryT
         {
             if (need_comma)
                 str += ", ";
-            str += label;
+            str += formatLabelName(label);
             need_comma = true;
         }
         str += ") ";
