@@ -1,14 +1,21 @@
 import pytest
 
-from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
+from helpers.cluster import (
+    CLICKHOUSE_CI_PRE_ARRAY_COUNT_UINT64_VERSION,
+    ClickHouseCluster,
+)
 
 cluster = ClickHouseCluster(__file__)
 new_node = cluster.add_instance("new_node", with_zookeeper=False)
+# The old node is pinned to the last release before the `26.8` `arrayCount`
+# result-type change rather than to `CLICKHOUSE_CI_MIN_TESTED_VERSION`: this
+# test guards the type-change boundary, so it must keep running a pre-`26.8`
+# coordinator even after the CI minimum tested version moves past `26.8`.
 old_node = cluster.add_instance(
     "old_node",
     with_zookeeper=False,
     image="clickhouse/clickhouse-server",
-    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
+    tag=CLICKHOUSE_CI_PRE_ARRAY_COUNT_UINT64_VERSION,
     stay_alive=True,
     with_installed_binary=True,
 )
