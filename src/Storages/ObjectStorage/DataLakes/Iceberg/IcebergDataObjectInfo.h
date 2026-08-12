@@ -32,6 +32,13 @@ struct IcebergObjectSerializableInfo
     std::optional<Int64> record_count;
     std::optional<Int64> file_size_in_bytes;
 
+    bool hasDeletionVector() const
+    {
+         /// A deletion vector replaces all position delete files and blocks later ones,
+        /// so when present it is the only entry.
+        return position_deletes_objects.size() == 1 && position_deletes_objects.front().isDeletionVector();
+    }
+
     void serializeForClusterFunctionProtocol(WriteBuffer & out, size_t protocol_version) const;
     void deserializeForClusterFunctionProtocol(ReadBuffer & in, size_t protocol_version);
 
