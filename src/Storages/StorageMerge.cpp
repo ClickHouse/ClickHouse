@@ -1279,7 +1279,16 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     auto storage_columns = storage_metadata_snapshot->getColumns();
     auto needed_columns = storage_columns.getAll();
 
-    ASTPtr expr = row_policy_filter_ptr->expression;
+    /// `RowPolicyFilter::expression` is the parsed policy condition owned by `RowPolicyCache`. That AST is
+    /// shared: every query of every user reading this table gets the same nodes, and a policy defined on a
+    /// whole database is shared by all its tables. `TreeRewriter` and `ExpressionAnalyzer` rewrite the AST
+    /// they are given in place - they normalize identifiers, substitute the results of scalar subqueries for
+    /// the subqueries themselves, and record `ASTLiteral::unique_column_name` - so they must be handed a
+    /// private copy. Analyzing the shared AST is both a data race against concurrent readers of the same
+    /// policy and a correctness bug: a scalar subquery such as `USING x <= (SELECT max(v) FROM limits)` gets
+    /// replaced by its value in the cache and is then frozen for the rest of the server's lifetime.
+    /// `generateFilterActions` in `InterpreterSelectQuery` clones for the same reason.
+    ASTPtr expr = row_policy_filter_ptr->expression->clone();
 
     auto syntax_result = TreeRewriter(local_context).analyze(expr, needed_columns);
     auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
