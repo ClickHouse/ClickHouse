@@ -868,13 +868,11 @@ def main():
     # step already failed, so a failed publish leaves the branch un-bumped and
     # recoverable. ("new" bumps earlier, above, because the merge step below
     # merges the master bump PR it opens.)
-    # Gated on `not is_late_recovery` so an un-bumped recovery still completes
-    # the bump, while a superseded (late) recovery never rewrites the version.
-    if (
-        not is_late_recovery
-        and args.release_type == "patch"
-        and not (args.skip_repo or args.skip_docker)
-    ):
+    # Gated on `not is_late_recovery` so any current-release recovery still
+    # completes the bump — including a skip-repo / skip-docker rerun that finishes
+    # the other publish half — while a superseded (late) recovery never rewrites
+    # the version.
+    if not is_late_recovery and args.release_type == "patch":
         step(
             name="Bump CH Version and Update Contributors' List",
             command=[
