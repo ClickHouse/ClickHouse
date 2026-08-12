@@ -1,7 +1,7 @@
 04654_join_count_asof_new	1	['HASH']	['LEFT']	['ASOF']	0
 04654_join_count_asof_old	1	['HASH']	['LEFT']	['ASOF']	0
-04654_join_count_cross_new	1	['HASH']	['CROSS']	['UNSPECIFIED']	0
-04654_join_count_cross_old	1	['HASH']	['CROSS']	['UNSPECIFIED']	0
+04654_join_count_cross_new	1	['CONSTANT']	['CROSS']	['UNSPECIFIED']	0
+04654_join_count_cross_old	1	['CONSTANT']	['CROSS']	['UNSPECIFIED']	0
 04654_join_count_filled_new	1	['HASH']	['LEFT']	['ANY']	0
 04654_join_count_filled_old	1	['HASH']	['LEFT']	['ANY']	0
 04654_join_count_fsm	1	['FULL_SORTING_MERGE']	['INNER']	['ALL']	0

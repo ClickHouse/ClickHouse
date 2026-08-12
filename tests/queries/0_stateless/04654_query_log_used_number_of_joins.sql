@@ -42,7 +42,10 @@ SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment =
 SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t2.a = t3.a FORMAT Null SETTINGS log_comment = '04654_join_count_two_new', enable_analyzer = 1, join_algorithm = 'hash';
 SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t2.a = t3.a FORMAT Null SETTINGS log_comment = '04654_join_count_two_old', enable_analyzer = 0, join_algorithm = 'hash';
 
--- CROSS JOIN, for which the strictness is meaningless.
+-- CROSS JOIN, for which the strictness is meaningless. It has no `ON` clause, so its condition is
+-- a constant and it is executed by `ConstantJoin` rather than by the requested `hash` algorithm.
+-- That is why every join reports an algorithm of its own: otherwise a plain CROSS JOIN would show
+-- one executed join and an empty list of algorithms.
 SELECT count() FROM t1, t2 FORMAT Null SETTINGS log_comment = '04654_join_count_cross_new', enable_analyzer = 1, join_algorithm = 'hash';
 SELECT count() FROM t1, t2 FORMAT Null SETTINGS log_comment = '04654_join_count_cross_old', enable_analyzer = 0, join_algorithm = 'hash';
 
@@ -73,10 +76,13 @@ FORMAT Null
 SETTINGS log_comment = '04654_join_count_merge_spill', join_algorithm = 'partial_merge', default_max_bytes_in_join = 0, max_bytes_in_join = 1024;
 
 -- A hash join that exceeds `max_bytes_before_external_join` is replaced by `grace_hash` while the
--- query is already running, so both algorithms are reported for the one join.
+-- query is already running, so both algorithms are reported for the one join. The threshold has to
+-- be well above zero: `grace_hash` keeps doubling the number of buckets to get each of them under
+-- the threshold, and a threshold of a few bytes is unreachable, so it hits
+-- `grace_hash_join_max_buckets` and the query fails instead.
 SELECT count() FROM (SELECT number AS a FROM numbers(10000)) s1 JOIN (SELECT number AS a FROM numbers(10000)) s2 ON s1.a = s2.a
 FORMAT Null
-SETTINGS log_comment = '04654_join_count_switch', join_algorithm = 'hash', max_bytes_before_external_join = 1;
+SETTINGS log_comment = '04654_join_count_switch', join_algorithm = 'hash', max_bytes_before_external_join = 65536;
 
 SYSTEM FLUSH LOGS query_log;
 
