@@ -2777,7 +2777,7 @@ When `n` is an array of integers, returns an array of the elements at the specif
 This is equivalent to `arrayMap(i -> arr[i], n)`, but has a separate, more efficient implementation.
 Out-of-bounds positions produce the default value, the same as for a scalar index.
 The index elements may be nullable. A `NULL` index produces `NULL` (and makes the result element type nullable) when the element type can be
-wrapped in `Nullable`; for element types that cannot be inside `Nullable` (such as `Array`, `Tuple`, `Map`), a `NULL` index produces the
+wrapped in `Nullable`; for element types that cannot be inside `Nullable` (such as `Array`, `Map`), a `NULL` index produces the
 default value instead. This is the same behavior as for a scalar `NULL` index.
 
 :::note
@@ -2814,7 +2814,7 @@ If the index falls outside of the bounds of an array, `NULL` is returned instead
 When `n` is an array of integers, returns an array of the elements at the specified positions.
 This is equivalent to `arrayMap(i -> arrayElementOrNull(arr, i), n)`, but has a separate, more efficient implementation.
 Out-of-bounds positions and `NULL` indexes produce `NULL` values in the result array when the element type can be wrapped in `Nullable`;
-for element types that cannot be inside `Nullable` (such as `Array`, `Tuple`, `Map`), they produce the default value instead.
+for element types that cannot be inside `Nullable` (such as `Array`, `Map`), they produce the default value instead.
 This is the same behavior as for a scalar index.
 
 :::note
