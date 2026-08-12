@@ -1,6 +1,7 @@
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
@@ -75,9 +76,16 @@ namespace
         return true;
     }
 
+    bool canPrintGroupingLabelUnquoted(std::string_view label)
+    {
+        return isLegacyLabelName(label)
+            && !equalsCaseInsensitive(label, "inf")
+            && !equalsCaseInsensitive(label, "nan");
+    }
+
     String formatLabelName(const String & label)
     {
-        return isLegacyLabelName(label) ? label : quotePromQLString(label);
+        return canPrintGroupingLabelUnquoted(label) ? label : quotePromQLString(label);
     }
 
     template <typename NodeType>

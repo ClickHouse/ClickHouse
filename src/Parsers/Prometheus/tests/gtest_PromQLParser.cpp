@@ -83,13 +83,20 @@ PrometheusQueryTree(INSTANT_VECTOR):
 
 TEST(PromQLParser, QuotedGroupingLabelsRoundTrip)
 {
-    const auto input = R"(sum by ("a\x00b") (up))";
+    for (const auto input : {
+             R"(sum by ("a\x00b") (up))",
+             R"(sum by ("Inf") (up))",
+             R"(sum by ("NaN") (up))",
+             R"(sum by ("iNf") (up))",
+             R"(sum by ("nAn") (up))",
+         })
+    {
+        PrometheusQueryTree query_tree{input};
+        EXPECT_EQ(query_tree.toString(), input);
 
-    PrometheusQueryTree query_tree{input};
-    EXPECT_EQ(query_tree.toString(), input);
-
-    PrometheusQueryTree reparsed_query_tree{query_tree.toString()};
-    EXPECT_EQ(reparsed_query_tree.toString(), input);
+        PrometheusQueryTree reparsed_query_tree{query_tree.toString()};
+        EXPECT_EQ(reparsed_query_tree.toString(), input);
+    }
 }
 
 
