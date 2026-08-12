@@ -172,8 +172,12 @@ void ColumnLowCardinality::doInsertFrom(const IColumn & src, size_t n)
 
     if (!low_cardinality_src)
     {
-        /// Source is a full (non-LowCardinality) column. This happens for non-native
-        /// LowCardinality columns when inserting from a materialized column.
+        /// A non-native LowCardinality column is the in-memory representation of a column whose data type
+        /// is not LowCardinality, so a full column is a legitimate source. For a genuine LowCardinality(T)
+        /// column it is not, and silently converting would hide the bug.
+        if (is_native)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
+
         insertFromFullColumn(src, n);
         return;
     }
@@ -209,8 +213,10 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
 
     if (!low_cardinality_src)
     {
-        /// Source is a full (non-LowCardinality) column. This happens for non-native
-        /// LowCardinality columns when inserting from a materialized column.
+        /// See the comment in `doInsertFrom`.
+        if (is_native)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
+
         insertRangeFromFullColumn(src, start, length);
         return;
     }
@@ -631,7 +637,7 @@ ColumnLowCardinality::MutablePtr ColumnLowCardinality::cutAndCompact(size_t star
 {
     auto sub_indexes = IColumn::mutate(idx.getIndexes()->cut(start, length));
     auto new_column_unique = Dictionary::compact(getDictionary(), sub_indexes);
-    return ColumnLowCardinality::create(std::move(new_column_unique), std::move(sub_indexes), /*is_shared=*/false);
+    return ColumnLowCardinality::create(std::move(new_column_unique), std::move(sub_indexes), /*is_shared=*/false, is_native);
 }
 
 void ColumnLowCardinality::compactInplace()

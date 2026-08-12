@@ -115,7 +115,13 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
         return {column.type->getSerialization(*info), info, result_column};
     }
 
-    return {column.type->getDefaultSerialization(), nullptr, recursiveRemoveSparse(column.column->convertToFullColumnIfReplicated())};
+    /// The client is too old to be told about custom serializations, so every special in-memory
+    /// representation - including a non-native LowCardinality one (automatic LowCardinality
+    /// serialization) - has to be materialized before writing it with the default serialization.
+    return {
+        column.type->getDefaultSerialization(),
+        nullptr,
+        recursiveRemoveNonNativeLowCardinality(recursiveRemoveSparse(column.column->convertToFullColumnIfReplicated()))};
 }
 
 size_t NativeWriter::write(const Block & block)
