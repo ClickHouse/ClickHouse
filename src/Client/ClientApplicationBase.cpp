@@ -55,7 +55,8 @@ void interruptSignalHandler(int signum)
     if (auto * instance = ClientApplicationBase::instanceRawPtr(); instance)
         if (auto * base = dynamic_cast<ClientApplicationBase *>(instance); base)
             if (base->tryStopQuery())
-                /// Signal context, and the leak check deadlocks if the interrupt landed under the allocator lock.
+                /// No leak check: in signal context it deadlocks if the interrupt landed under
+                /// the allocator lock. Quiet, because here stderr is program output, not a log.
                 safeExit(128 + signum, LeakCheck::SkipQuietly);
 }
 

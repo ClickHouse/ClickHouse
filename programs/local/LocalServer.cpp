@@ -906,8 +906,8 @@ void LocalServer::cleanup()
             /// `cleanup` can run from `SCOPE_EXIT` in `main` while the stack is unwinding from a
             /// failed query. Force-exiting here bypasses the surrounding `catch`, so preserve a
             /// nonzero status in that case instead of always reporting success.
-            /// Reached before `server_pool->joinAll()` below. Quiet, unlike the server: stderr is
-            /// not redirected here, so anything written to it is program output.
+            /// No leak check: handlers below `server_pool->joinAll()` still own memory it would
+            /// report as leaked. Quiet, because here stderr is program output, not a log.
             safeExit(std::uncaught_exceptions() ? 1 : 0, LeakCheck::SkipQuietly);
         }
 
