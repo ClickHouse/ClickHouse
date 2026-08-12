@@ -11,8 +11,11 @@ const Icon = () => {
 }
 export const ExperimentalBadge = () => {
     return (
-        <div className="experimentalBadge">
-            <Icon />실험적 기능입니다.&nbsp;<u><a href='/docs/beta-and-experimental-features#experimental-features'>자세히 알아보세요.</a></u>
-        </div>
+        <a
+            href="/docs/ko/reference/settings/beta-and-experimental-features#experimental-features"
+            className="experimentalBadge"
+        >
+            <Icon />실험적 기능입니다
+        </a>
     )
 }

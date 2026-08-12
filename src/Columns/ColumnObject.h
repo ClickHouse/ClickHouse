@@ -321,7 +321,7 @@ public:
             size_t row{};
         };
 
-        SortedPathsIterator(const ColumnObject & column_object_, size_t row_);
+        SortedPathsIterator(const ColumnObject & column_object_, size_t row_, bool skip_typed_nulls_ = false);
 
         void next();
         bool end();
@@ -332,9 +332,23 @@ public:
 
         PathInfo getCurrentPathInfo() const;
 
+        /// Path string of the current entry.
+        std::string_view getCurrentPath() const;
+
+        /// Serialize the current path's value into `buf`.
+        ///
+        /// For TYPED paths, writes the bare value using the declared serialization from
+        /// `typed_path_serializations` (no type tag). For DYNAMIC paths, writes Dynamic binary
+        /// (encodeDataType + value). For SHARED_DATA, copies the bytes verbatim.
+        ///
+        /// All path types are serialized as atomic leaves — Map and JSON typed paths are
+        /// never flattened into child paths.
+        void serializeCurrentValueBinary(
+            const UnorderedMapWithMemoryTracking<String, SerializationPtr> & typed_path_serializations,
+            WriteBuffer & buf) const;
+
     private:
         void setCurrentPath();
-        std::string_view getCurrentPath() const;
         std::pair<ColumnPtr, size_t> getCurrentPathColumnAndRow() const;
 
         const ColumnObject & column_object;
@@ -348,6 +362,7 @@ public:
         const ColumnString * shared_data_values{};
         PathType current_path_type{};
         size_t row;
+        bool skip_typed_nulls;
     };
 
 private:

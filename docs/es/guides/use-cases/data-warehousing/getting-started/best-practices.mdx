@@ -1,0 +1,374 @@
+---
+title: 'Buenas prácticas del lago de datos'
+sidebarTitle: 'Buenas prácticas'
+slug: /use-cases/data-lake/best-practices
+description: 'Recomendaciones para entornos de producción sobre la consulta de formatos de tabla abiertos en ClickHouse: patrones de integración, optimización del rendimiento, configuración del catálogo y depuración.'
+keywords: ['lago de datos', 'lakehouse', 'Iceberg', 'Delta Lake', 'DataLakeCatalog', 'poda de particiones', 'caché de metadatos', 'Delta Kernel', 'flujo de cambios de datos', 'Parquet']
+doc_type: 'guide'
+---
+
+La [guía de primeros pasos](/use-cases/data-lake/getting-started) le muestra cómo consultar [Apache Iceberg](/engines/table-engines/integrations/iceberg), [Delta Lake](/engines/table-engines/integrations/deltalake), [Apache Hudi](/engines/table-engines/integrations/hudi) y [Apache Paimon](/sql-reference/table-functions/paimon) por primera vez. Una vez completada la configuración inicial, use esta página para elegir el patrón de acceso adecuado, optimizar el rendimiento de las consultas y depurar consultas sobre el lago de datos en producción.
+
+<div id="choose-access-method">
+  ## Elija un método de acceso
+</div>
+
+| Método de acceso                         | Cuándo usarlo                                                                         | Ejemplos                                                                                                                                                                                                         |
+| ---------------------------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Función de tabla                         | Consultas ad hoc sobre una ruta conocida                                              | [icebergS3()](/sql-reference/table-functions/iceberg), [deltaLake()](/sql-reference/table-functions/deltalake), [hudi()](/sql-reference/table-functions/hudi), [paimon()](/sql-reference/table-functions/paimon) |
+| Motor de tabla                           | Consultas recurrentes sobre la misma ruta sin catálogo                                | [IcebergS3](/engines/table-engines/integrations/iceberg), [DeltaLake](/engines/table-engines/integrations/deltalake), [Hudi](/engines/table-engines/integrations/hudi)                                           |
+| `DataLakeCatalog` motor de base de datos | Cargas de trabajo de producción con catálogo; consultas federadas sobre muchas tablas | [AWS Glue](/use-cases/data-lake/glue-catalog), [Unity Catalog](/use-cases/data-lake/unity-catalog), [catálogo REST](/use-cases/data-lake/rest-catalog)                                                           |
+
+<div id="table-functions">
+  ### Funciones de tabla
+</div>
+
+Pasa la ruta de almacenamiento y las credenciales directamente cuando conozcas la ubicación y no necesites una definición persistente de la tabla.
+
+```sql
+SELECT count()
+FROM icebergS3('https://my-bucket.s3.amazonaws.com/warehouse/my_table/')
+WHERE event_date >= today() - 7
+```
+
+Utiliza la variante S3 para AWS S3 y GCS. Azure y el sistema de archivos local tienen variantes específicas (`icebergAzure`, `icebergLocal` y sus equivalentes para otros formatos). Consulta [Consultar directamente](/use-cases/data-lake/getting-started/querying-directly) para ver la lista completa.
+
+[Paimon](/sql-reference/table-functions/paimon) solo admite funciones de tabla.
+
+<div id="table-engines">
+  ### Motores de tabla
+</div>
+
+Cree una tabla con un motor de tabla si va a consultar la misma ruta repetidamente. ClickHouse almacena la ruta y las credenciales en los metadatos de la tabla, por lo que puede consultar un nombre de tabla normal en lugar de reconstruir la llamada a la función cada vez.
+
+```sql
+CREATE TABLE events
+    ENGINE = IcebergS3('https://my-bucket.s3.amazonaws.com/warehouse/events/')
+
+SELECT count() FROM events WHERE event_date = today()
+```
+
+Los motores de tabla admiten las mismas capacidades de lectura que las funciones de tabla, incluidas la [caché de datos](/engines/table-engines/integrations/iceberg#data-cache) y la [caché de metadatos](/engines/table-engines/integrations/iceberg#metadata-cache). Los datos nunca se duplican en ClickHouse. Un motor de tabla resulta útil cuando se comparte el acceso con un equipo o se ejecutan trabajos programados sobre la misma tabla.
+
+<div id="datalakecatalog">
+  ### Motor de base de datos `DataLakeCatalog`
+</div>
+
+Conecte ClickHouse una sola vez cuando las tablas estén registradas en un [catálogo de datos](/use-cases/data-lake/getting-started/connecting-catalogs). Todas las tablas del catálogo aparecerán automáticamente como tablas de ClickHouse, incluidas las que se añadan en el origen después de crear la conexión.
+
+```sql
+CREATE DATABASE my_lake
+ENGINE = DataLakeCatalog
+SETTINGS
+    catalog_type = 'glue',
+    region = 'us-east-1',
+    aws_access_key_id = '<key>',
+    aws_secret_access_key = '<secret>'
+
+SELECT count() FROM my_lake.`analytics.events`
+```
+
+Esta opción escala mejor que crear definiciones de tablas individuales cuando administras muchas tablas o varios catálogos. Consulta [Conectarse a catálogos](/use-cases/data-lake/getting-started/connecting-catalogs) y las [guías de catálogos](/use-cases/data-lake/reference).
+
+<Note>
+  **Comillas invertidas en nombres de tabla de varias partes**
+
+  Los catálogos suelen usar la nomenclatura `database.table`. Encierra entre comillas invertidas el nombre calificado con la base de datos, como en el ejemplo anterior.
+</Note>
+
+<div id="required-settings">
+  ## Configuración requerida
+</div>
+
+Muchas integraciones requieren activar una flag de función antes del primer uso. Comprueba la versión de tu servicio si `CREATE DATABASE` falla con un error de permisos.
+
+En las conexiones a catálogos, cada tipo de catálogo tiene su propia flag. Consulta [Conexión a catálogos](/use-cases/data-lake/getting-started/connecting-catalogs) para obtener una visión general y la [referencia de DataLakeCatalog](/engines/database-engines/datalakecatalog) para ver los detalles de configuración. La configuración específica de cada catálogo se encuentra en las [guías de catálogos](/use-cases/data-lake/reference).
+
+Para las operaciones de escritura, Iceberg requiere [allow&#95;insert&#95;into&#95;iceberg](/operations/settings/settings#allow_insert_into_iceberg) (25.7+, Beta desde 26.2). Consulta [Escritura en lagos de datos](/use-cases/data-lake/getting-started/writing-data). Delta Lake requiere [allow&#95;delta&#95;lake&#95;writes](/operations/settings/settings#allow_experimental_delta_lake_writes) (25.9+). La [matriz de compatibilidad](/use-cases/data-lake/support-matrix) indica qué flags se aplican a cada formato y operación.
+
+<div id="query-performance">
+  ## Mejorar el rendimiento de las consultas
+</div>
+
+Los números de versión de esta página coinciden con las versiones de lanzamiento de ClickHouse (Cloud y autogestionado). Compruebe la versión de su servicio antes de habilitar una configuración o función.
+
+El rendimiento de las consultas en Lake depende de la cantidad de metadatos y de archivos [Parquet](/interfaces/formats/Parquet) que ClickHouse lee del almacenamiento de objetos. Como con cualquier tabla de ClickHouse, el rendimiento de las consultas mejora al filtrar por columnas de partición y seleccionar menos columnas.
+
+<div id="query-habits">
+  ### Hábitos de consulta
+</div>
+
+Filtre por columnas de partición en `WHERE`. Iceberg y Delta Lake almacenan metadatos de partición que permiten a ClickHouse omitir archivos irrelevantes durante la planificación de la consulta. Si el filtro apunta a una columna fuera de la especificación de partición, ClickHouse examina todos los archivos coincidentes.
+
+Para tablas Iceberg con [particionamiento oculto](https://iceberg.apache.org/docs/latest/partitioning/), filtre por la **columna de origen** en el esquema de la tabla, no por una columna de partición independiente ni por un nombre de campo transformado. Si la tabla está particionada por `day(event_time)`, añada un predicado sobre `event_time`. ClickHouse obtiene la poda de particiones a partir de ese filtro mediante la especificación de partición de Iceberg. Consulte [Poda de particiones](/engines/table-engines/integrations/iceberg#partition-pruning) y la [especificación de Iceberg](https://iceberg.apache.org/spec/#partitioning).
+
+```sql
+SELECT count()
+FROM my_lake.`logs.application`
+WHERE event_time >= '2026-03-01'
+  AND event_time < '2026-03-02'
+```
+
+Indica solo las columnas que necesitas en lugar de `SELECT *`. ClickHouse lee [Parquet](/interfaces/formats/Parquet) columna por columna desde el almacenamiento de objetos, por lo que las consultas SELECT más específicas reducen los bytes transferidos y descomprimidos.
+
+Coloca los filtros selectivos en `WHERE`. A partir de ClickHouse 26.2+, [PREWHERE](/optimize/prewhere) también es compatible con las lecturas de tablas Iceberg y otras tablas de data lake, donde filtra en la capa Parquet antes de leer las columnas restantes. La poda de particiones sigue dependiendo del filtrado de las columnas de origen de la partición, no solo de PREWHERE.
+
+Las tablas Iceberg con muchas [position or equality deletes](/engines/table-engines/integrations/iceberg#deleted-rows) aplican filtrado merge-on-read durante los escaneos. Espera más trabajo por archivo de lo que sugiere por sí sola la poda de manifiestos.
+
+En despliegues multinodo, usa [cluster table functions](#parallel-cluster-reads) para distribuir las lecturas de archivos entre réplicas.
+
+<div id="parallel-cluster-reads">
+  ### Lecturas en paralelo en clústeres multinodo
+</div>
+
+En ClickHouse Cloud y en los servicios multinodo autogestionados, las variantes para clúster de las funciones de tabla de lake distribuyen las lecturas de archivos [Parquet](/interfaces/formats/Parquet) entre las réplicas. El nodo iniciador reparte los archivos entre los workers en paralelo. Use las variantes para clúster para lecturas por lotes y cargas programadas sobre tablas grandes. En implementaciones de un solo nodo, la función de tabla estándar es suficiente.
+
+Pase el nombre de su clúster como primer argumento (`'default'` en ClickHouse Cloud). Existen variantes para clúster para todos los formatos compatibles:
+
+| Formato    | Funciones de clúster                                                                                                                              |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Iceberg    | [icebergS3Cluster()](/sql-reference/table-functions/icebergCluster), [icebergAzureCluster()](/sql-reference/table-functions/icebergCluster)       |
+| Delta Lake | [deltaLakeCluster()](/sql-reference/table-functions/deltalakeCluster), [deltaLakeAzureCluster()](/sql-reference/table-functions/deltalakeCluster) |
+| Hudi       | [hudiCluster()](/sql-reference/table-functions/hudiCluster)                                                                                       |
+| Paimon     | [paimonS3Cluster()](/sql-reference/table-functions/paimonCluster)                                                                                 |
+
+Puede combinar las lecturas en clúster con otros ajustes de rendimiento.
+
+<div id="snapshot-bounds">
+  ### Limite las lecturas por lotes a instantáneas
+</div>
+
+Para cargas por lotes repetidas desde tablas de lago, limite cada ejecución a un rango de instantáneas en lugar de volver a leer la tabla completa. Sin estos límites, ClickHouse puede examinar todas las versiones y archivos en cada ejecución, lo que aumenta las lecturas desde el almacenamiento de objetos y el tiempo de consulta.
+
+Guarde el identificador de la instantánea de la última carga completada correctamente y úselo como límite inferior en la siguiente ejecución.
+
+* Para Iceberg, lea una vista en un momento concreto con [iceberg&#95;snapshot&#95;id](/operations/settings/settings#iceberg_snapshot_id) o [iceberg&#95;timestamp&#95;ms](/operations/settings/settings#iceberg_timestamp_ms) (25.4+). En tablas de solo anexado, combine la configuración de instantáneas con filtros de partición en `WHERE`. Use [system.iceberg&#95;history](/operations/system-tables/iceberg_history) (25.6+) para buscar IDs de instantánea entre ejecuciones.
+* Para Delta Lake, lea los cambios entre dos versiones con [delta&#95;lake&#95;snapshot&#95;start&#95;version](/operations/settings/settings#delta_lake_snapshot_start_version) y [delta&#95;lake&#95;snapshot&#95;end&#95;version](/operations/settings/settings#delta_lake_snapshot_end_version) (25.12+). Lea una sola instantánea con [delta&#95;lake&#95;snapshot&#95;version](/operations/settings/settings#delta_lake_snapshot_version) (25.8+). Consulte [Delta change data feed](#delta-incremental-sync) para ver un ejemplo de CDF.
+
+<div id="filesystem-cache">
+  ### Almacenar archivos Parquet en caché localmente
+</div>
+
+Ambos formatos respetan [enable&#95;filesystem&#95;cache](/operations/settings/settings#enable_filesystem_cache) para mantener en el disco local los archivos [Parquet](/interfaces/formats/Parquet) de uso frecuente entre consultas. En implementaciones autogestionadas, configure un [disco de caché del sistema de archivos](/operations/storing-data#using-local-cache) en la configuración del servidor para que este ajuste tenga almacenamiento donde escribir. ClickHouse Cloud gestiona el almacenamiento en caché automáticamente. Establezca `enable_filesystem_cache = 0` al realizar benchmarking para que los aciertos de la caché no oculten los cambios entre ejecuciones.
+
+<div id="iceberg-settings">
+  ### Apache Iceberg
+</div>
+
+La mayoría de las optimizaciones de lectura de Iceberg están habilitadas de forma predeterminada. Los siguientes ajustes controlan la poda de particiones, la caché de metadatos y las idas y vueltas al catálogo.
+
+<div id="iceberg-read-settings">
+  #### Configuración de lectura
+</div>
+
+| Configuración                                                                                                      | Desde | Predeterminado | Notas                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------ | ----- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| [use&#95;iceberg&#95;partition&#95;pruning](/operations/settings/settings#use_iceberg_partition_pruning)           | 25.1  | `1` desde 25.6 | Omite archivos de datos mediante metadatos de partición en los manifiestos                                                                   |
+| [use&#95;iceberg&#95;metadata&#95;files&#95;cache](/operations/settings/settings#use_iceberg_metadata_files_cache) | 25.4  | `1`            | Almacena en caché en memoria las listas de manifiestos y el JSON de metadatos                                                                |
+| [iceberg&#95;metadata&#95;staleness&#95;ms](/operations/settings/settings#iceberg_metadata_staleness_ms)           | 26.3  | `0`            | Configuración de consulta. Usa metadatos en caché cuando son más recientes que esta ventana, en lugar de llamar al catálogo en cada consulta |
+| [iceberg&#95;use&#95;version&#95;hint](/sql-reference/table-functions/iceberg#writes-into-iceberg-table)           | 25.6  | —              | Lee `version-hint.text` para resolver los metadatos más rápido en el acceso directo mediante ruta                                            |
+
+<div id="iceberg-catalog-latency">
+  #### Reduce la latencia del catálogo
+</div>
+
+Las tablas Iceberg conectadas a un catálogo obtienen metadatos en cada consulta, a menos que los almacenes en caché. Combina estas dos configuraciones (26.4+):
+
+1. Define [iceberg&#95;metadata&#95;async&#95;prefetch&#95;period&#95;ms](/engines/table-engines/integrations/iceberg#async-metadata-prefetch) al crear la tabla para precargar metadatos en segundo plano.
+2. Define [iceberg&#95;metadata&#95;staleness&#95;ms](/operations/settings/settings#iceberg_metadata_staleness_ms) (26.3+) en las consultas para aceptar metadatos ligeramente desactualizados a cambio de evitar la ida y vuelta al catálogo.
+
+```sql
+CREATE TABLE events
+    ENGINE = IcebergS3('https://my-bucket.s3.amazonaws.com/warehouse/events/')
+SETTINGS iceberg_metadata_async_prefetch_period_ms = 60000;
+
+SELECT count()
+FROM events
+SETTINGS iceberg_metadata_staleness_ms = 60000;
+```
+
+Un valor de obsolescencia de `0` siempre recupera los metadatos más recientes. Aumente la ventana en cargas de trabajo con muchas lecturas, donde las tablas cambian con poca frecuencia.
+
+Cuando ClickHouse elige el archivo de metadatos incorrecto (varios archivos `.metadata.json` en la ruta de la tabla), fije la resolución con [iceberg&#95;metadata&#95;file&#95;path](/engines/table-engines/integrations/iceberg#metadata-file-resolution) (25.4+) o [iceberg&#95;metadata&#95;table&#95;uuid](/engines/table-engines/integrations/iceberg#metadata-file-resolution) durante la creación de la tabla. Consulte [Resolución del archivo de metadatos](/engines/table-engines/integrations/iceberg#metadata-file-resolution).
+
+<div id="iceberg-time-travel">
+  #### Viaje temporal
+</div>
+
+Lea una instantánea histórica con [iceberg&#95;timestamp&#95;ms](/operations/settings/settings#iceberg_timestamp_ms) o [iceberg&#95;snapshot&#95;id](/operations/settings/settings#iceberg_snapshot_id) (ambos en la versión 25.4+). No establezca ambos en la misma consulta. Inspeccione el linaje de las instantáneas en [system.iceberg&#95;history](/operations/system-tables/iceberg_history) (25.6+) antes de elegir un ID. Para cargas por lotes repetidas, consulte [Limitar las lecturas por lotes a instantáneas](#snapshot-bounds).
+
+```sql
+SELECT count()
+FROM my_iceberg_table
+SETTINGS iceberg_timestamp_ms = 1714636800000
+```
+
+<div id="iceberg-write-settings">
+  #### Escrituras en Iceberg
+</div>
+
+Además de [allow&#95;insert&#95;into&#95;iceberg](/operations/settings/settings#allow_insert_into_iceberg) (25.7+, Beta desde 26.2), puede controlar el tamaño del archivo de salida y el número de particiones durante la inserción:
+
+| Configuración                                                                                                                        | Desde | Propósito                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ----- | ---------------------------------------------------- |
+| [iceberg&#95;insert&#95;max&#95;rows&#95;in&#95;data&#95;file](/operations/settings/settings#iceberg_insert_max_rows_in_data_file)   | 25.9  | Límite de filas por archivo de datos de salida       |
+| [iceberg&#95;insert&#95;max&#95;bytes&#95;in&#95;data&#95;file](/operations/settings/settings#iceberg_insert_max_bytes_in_data_file) | 25.9  | Límite de bytes por archivo de datos de salida       |
+| [iceberg&#95;insert&#95;max&#95;partitions](/operations/settings/settings#iceberg_insert_max_partitions)                             | 25.12 | Límite de particiones escritas en una sola inserción |
+
+Consulte [Escritura en lagos de datos](/use-cases/data-lake/getting-started/writing-data) y la [referencia del motor Iceberg](/engines/table-engines/integrations/iceberg).
+
+<div id="delta-lake-settings">
+  ### Delta Lake
+</div>
+
+Desde la versión 25.6, ClickHouse lee Delta Lake en S3 y GCS mediante el kernel de Rust de Delta Lake ([allow&#95;experimental&#95;delta&#95;kernel&#95;rs](/operations/settings/settings#allow_experimental_delta_kernel_rs), 25.5+). En Azure Blob Storage, use [deltaLakeAzure()](/sql-reference/table-functions/deltalake) con el lector heredado, ya que allí el kernel está deshabilitado. Sin el kernel, no están disponibles la poda de particiones, el change data feed ni la lectura de versiones de snapshots.
+
+<div id="delta-kernel">
+  #### Delta Kernel
+</div>
+
+[allow&#95;experimental&#95;delta&#95;kernel&#95;rs](/operations/settings/settings#allow_experimental_delta_kernel_rs) debe estar habilitado para la poda de particiones, el flujo de cambios de datos y la lectura de versiones de instantáneas. Está activado de forma predeterminada en S3 y GCS a partir de la versión 25.5. Habilítelo explícitamente en versiones anteriores o para la resolución de problemas:
+
+```sql
+SET allow_experimental_delta_kernel_rs = 1;
+```
+
+<div id="delta-read-settings">
+  #### Ajustes de lectura
+</div>
+
+| Ajuste                                                                                                                                                                                                                                  | Desde | Predeterminado | Notas                                                                                                 |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | -------------- | ----------------------------------------------------------------------------------------------------- |
+| [delta&#95;lake&#95;enable&#95;engine&#95;predicate](/operations/settings/settings#delta_lake_enable_engine_predicate)                                                                                                                  | 25.8  | `1`            | Pasa los filtros al kernel para la poda de particiones. Requiere [Delta Kernel](#delta-kernel)        |
+| [delta&#95;lake&#95;reload&#95;schema&#95;for&#95;consistency](/operations/settings/settings#delta_lake_reload_schema_for_consistency)                                                                                                  | 26.3  | `0`            | Recarga el esquema antes de cada consulta cuando escritores concurrentes hacen evolucionar el esquema |
+| [delta&#95;lake&#95;snapshot&#95;start&#95;version](/operations/settings/settings#delta_lake_snapshot_start_version) / [delta&#95;lake&#95;snapshot&#95;end&#95;version](/operations/settings/settings#delta_lake_snapshot_end_version) | 25.12 | `-1`           | Lee cambios de CDF entre dos versiones de instantánea. Requiere que CDF esté habilitado en upstream   |
+| [delta&#95;lake&#95;snapshot&#95;version](/operations/settings/settings#delta_lake_snapshot_version)                                                                                                                                    | 25.8  | `-1`           | Lee una única instantánea histórica. Establece `-1` para la más reciente (`0` es válido)              |
+
+Las tablas con [deletion vectors](https://docs.delta.io/latest/delta-deletion-vectors.html) (26.2+) aplican filtrado a nivel de fila durante la lectura. ClickHouse gestiona esto automáticamente, pero los escaneos en tablas con muchas DV requieren más trabajo por archivo.
+
+<div id="delta-incremental-sync">
+  #### Fuente de cambios de datos de Delta
+</div>
+
+Para leer solo las filas que cambiaron entre dos snapshots de Delta, establezca [delta&#95;lake&#95;snapshot&#95;start&#95;version](/operations/settings/settings#delta_lake_snapshot_start_version) y [delta&#95;lake&#95;snapshot&#95;end&#95;version](/operations/settings/settings#delta_lake_snapshot_end_version) (25.12+). La tabla debe tener activada en origen la fuente de cambios de datos (`delta.enableChangeDataFeed`). Establezca tanto la versión inicial como la versión final en los ajustes de consulta. Establecer solo la versión final produce un error.
+
+```sql
+SELECT *
+FROM deltaLake('s3://my-bucket/warehouse/ga4_events/')
+SETTINGS
+    delta_lake_snapshot_start_version = 42,
+    delta_lake_snapshot_end_version = 47
+```
+
+Almacene la versión final después de cada carga exitosa y pásela como versión inicial en la siguiente ejecución. El resultado incluye columnas de CDF (`_change_type`, `_commit_version`, `_commit_timestamp`). Procese estas columnas antes de cargarlas en su tabla de destino. Para el patrón general de instantáneas, consulte [Acotar las lecturas por lotes a instantáneas](#snapshot-bounds).
+
+<div id="delta-write-settings">
+  #### Escrituras en Delta Lake
+</div>
+
+Además de [allow&#95;delta&#95;lake&#95;writes](/operations/settings/settings#allow_experimental_delta_lake_writes) (25.9+), controle el tamaño del archivo de salida al insertar:
+
+| Configuración                                                                                                                                  | Desde | Propósito                                      |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ---------------------------------------------- |
+| [delta&#95;lake&#95;insert&#95;max&#95;rows&#95;in&#95;data&#95;file](/operations/settings/settings#delta_lake_insert_max_rows_in_data_file)   | 25.9  | Límite de filas por archivo de datos de salida |
+| [delta&#95;lake&#95;insert&#95;max&#95;bytes&#95;in&#95;data&#95;file](/operations/settings/settings#delta_lake_insert_max_bytes_in_data_file) | 25.9  | Límite de bytes por archivo de datos de salida |
+
+```sql
+SET allow_delta_lake_writes = 1;
+
+INSERT INTO my_delta_table
+SETTINGS
+    delta_lake_insert_max_rows_in_data_file = 1000000,
+    delta_lake_insert_max_bytes_in_data_file = 134217728
+SELECT * FROM source_table
+```
+
+Las operaciones de escritura requieren Delta Kernel en S3 o GCS. Consulta la [referencia del motor DeltaLake](/engines/table-engines/integrations/deltalake) para ver ejemplos.
+
+<div id="debug-system-tables">
+  ## Depurar consultas del data lake
+</div>
+
+Las consultas del data lake que son lentas o devuelven resultados inesperados suelen deberse a lecturas de metadatos, poda de particiones o problemas de conectividad con el catálogo. Empiece por las comprobaciones siguientes y, si es necesario, use registros de metadatos específicos del formato.
+
+<div id="debug-catalog">
+  ### Verificar la conectividad del catálogo
+</div>
+
+`CREATE DATABASE` con `DataLakeCatalog` no valida las credenciales. Una base de datos puede existir aunque la conexión con el catálogo esté interrumpida. A partir de ClickHouse 26.4, ejecute una comprobación de estado ligera:
+
+```sql
+CHECK DATABASE my_lake;
+```
+
+En versiones anteriores, confirma la conectividad con `SHOW TABLES FROM my_lake` e inspecciona el mensaje de error. Usa `SHOW CREATE TABLE` con un nombre de tabla entre comillas invertidas para verificar la ruta de almacenamiento resuelta y el tipo de motor:
+
+```sql
+SHOW CREATE TABLE my_lake.`db.table`;
+```
+
+Si las tablas del catálogo no aparecen en `system.tables`, habilite [show&#95;remote&#95;databases&#95;in&#95;system&#95;tables](/operations/settings/settings#show_remote_databases_in_system_tables) (25.8+). De forma predeterminada, las tablas del catálogo están ocultas para la introspección del sistema. En las versiones anteriores a 26.6, use su nombre anterior, `show_data_lake_catalogs_in_system_tables`.
+
+<div id="debug-files">
+  ### Ver qué archivos se leen
+</div>
+
+Iceberg y Delta Lake exponen [columnas virtuales](/sql-reference/table-functions/iceberg#virtual-columns) (`_path`, `_file`, `_size`, `_time`, `_etag`) en cada lectura. Agrupa por `_path` para comprobar si la poda de particiones está funcionando o si una consulta está analizando más archivos de los esperados. En las tablas Iceberg con particionamiento oculto, filtra por la columna de origen (por ejemplo, `event_time`), no por una columna de partición independiente:
+
+```sql
+SELECT _path, count() AS rows
+FROM my_lake.`logs.application`
+WHERE event_time >= '2026-03-01'
+  AND event_time < '2026-03-02'
+GROUP BY _path
+ORDER BY rows DESC;
+```
+
+<div id="debug-query-log">
+  ### Comprobar el volumen de escaneo
+</div>
+
+Compare `read_rows` y `read_bytes` en [system.query&#95;log](/operations/system-tables/query_log) antes y después de añadir filtros o ajustar la configuración. ProfileEvents como `ReadBufferFromS3Bytes` y `CachedReadBufferReadFromCacheBytes` muestran cuántos datos provinieron del almacenamiento de objetos frente a la caché local. Consulte [Optimización de consultas](/optimize/query-optimization) para obtener una guía completa sobre query&#95;log y EXPLAIN.
+
+Desactive [enable&#95;filesystem&#95;cache](/operations/settings/settings#enable_filesystem_cache) durante el benchmark para que los aciertos de la caché no oculten los cambios entre ejecuciones.
+
+<div id="debug-metadata-logs">
+  ### Registros de metadatos
+</div>
+
+ClickHouse expone tres tablas del sistema para depurar a nivel de metadatos. Habilite el registro solo al ejecutar la consulta. No están pensadas para la monitorización continua.
+
+| Tabla del sistema                                                                               | Formato    | Desde | Habilitar con                                                                                                     | Úsela para                                                                        |
+| ----------------------------------------------------------------------------------------------- | ---------- | ----- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| [system.iceberg&#95;metadata&#95;log](/operations/system-tables/iceberg_metadata_log)           | Iceberg    | 25.9  | [iceberg&#95;metadata&#95;log&#95;level](/operations/settings/settings#iceberg_metadata_log_level) en la consulta | Rastrear los archivos de metadatos leídos y las decisiones de poda de particiones |
+| [system.iceberg&#95;history](/operations/system-tables/iceberg_history)                         | Iceberg    | 25.6  | Se pobla automáticamente para las tablas Iceberg de ClickHouse                                                    | Inspeccionar el linaje de snapshots antes de las consultas de viaje en el tiempo  |
+| [system.delta&#95;lake&#95;metadata&#95;log](/operations/system-tables/delta_lake_metadata_log) | Delta Lake | 25.10 | [delta&#95;lake&#95;log&#95;metadata](/operations/settings/settings#delta_lake_log_metadata) = `1` en la consulta | Rastrear los archivos de metadatos de Delta y la resolución de snapshots          |
+
+Ejecute una consulta con el registro habilitado, vacíe el registro y luego inspeccione las entradas de ese `query_id`:
+
+```sql
+SELECT count() FROM my_iceberg_table
+SETTINGS iceberg_metadata_log_level = 'manifest_file_entry';
+
+SYSTEM FLUSH LOGS iceberg_metadata_log;
+
+SELECT content_type, file_path, pruning_status
+FROM system.iceberg_metadata_log
+WHERE query_id = '<previous_query_id>';
+```
+
+En ClickHouse Cloud, los datos de registro son locales a cada nodo. Usa `clusterAllReplicas` para ver el panorama completo en todas las réplicas.
+
+Los niveles de log detallados de Iceberg deshabilitan la caché de metadatos para las manifest lists y los archivos, lo que ralentiza las consultas posteriores sobre la misma tabla. Usa una verbosidad alta solo mientras investigas activamente. Para problemas de predicados en Delta Lake, habilita [delta&#95;lake&#95;throw&#95;on&#95;engine&#95;predicate&#95;error](/operations/settings/settings#delta_lake_throw_on_engine_predicate_error) (25.8+) para fallar de inmediato cuando el kernel no pueda aplicar un filtro en el origen.
+
+Consulta las páginas de referencia de [iceberg&#95;metadata&#95;log](/operations/system-tables/iceberg_metadata_log) y [delta&#95;lake&#95;metadata&#95;log](/operations/system-tables/delta_lake_metadata_log) para ver los detalles de las columnas y las opciones de verbosidad.
+
+<div id="next-steps">
+  ## Próximos pasos
+</div>
+
+* [Primeros pasos](/use-cases/data-lake/getting-started) — Guía completa desde la consulta directa hasta la escritura en destino
+* [Consulta directa](/use-cases/data-lake/getting-started/querying-directly) — Funciones de tabla, motores y variantes de clúster para los cuatro formatos
+* [Conectarse a catálogos](/use-cases/data-lake/getting-started/connecting-catalogs) — Configuración de `DataLakeCatalog` con Unity Catalog
+* [Escribir en lagos de datos](/use-cases/data-lake/getting-started/writing-data) — Escritura de datos en Iceberg y Delta Lake
+* [Matriz de compatibilidad](/use-cases/data-lake/support-matrix) — Comparación de características entre formatos, catálogos y backends de almacenamiento

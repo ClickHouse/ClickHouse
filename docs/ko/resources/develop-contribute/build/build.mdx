@@ -134,15 +134,16 @@ ninja -j 1 clickhouse
 
 <Note>
   `clickhouse-server`, `clickhouse-client` 및 이와 유사한 바이너리는 빌드 완료 후 `clickhouse` 실행 파일을 가리키는 `programs/` 디렉터리의 심볼릭 링크입니다.
+</Note>
 
-  :::tip
-  CMake는 위 명령어에 대한 단축 구문을 제공합니다.
+<Tip>
+  CMake는 위 명령어에 대한 단축 구문을 제공합니다:
 
   ```sh
   cmake -S . -B build  # 빌드 구성, 리포지토리 최상위 디렉터리에서 실행
   cmake --build build  # 컴파일
   ```
-</Note>
+</Tip>
 
 <div id="running-the-clickhouse-executable">
   ## ClickHouse 실행 파일 실행하기

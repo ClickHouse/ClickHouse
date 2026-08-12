@@ -31,26 +31,27 @@ Todas as configurações do ClickPipe original são mantidas no ClickPipe de res
 
 Aqui estão alguns cenários:
 
-1. Pode ser necessário fazer alterações significativas de schema nas tabelas de origem que tornariam o ClickPipe existente inutilizável, exigindo uma reinicialização. Nesse caso, basta clicar em Ressincronização após concluir as alterações.
-2. Especificamente no ClickHouse, talvez seja necessário alterar as chaves de ORDER BY nas tabelas de destino. Você pode usar Ressincronização para repovoar os dados na nova tabela com a chave de ordenação correta.
+1. Pode ser necessário fazer alterações significativas de schema nas tabelas de origem que tornariam o ClickPipe existente inutilizável, exigindo uma reinicialização. Nesse caso, basta clicar em Resync após concluir as alterações.
+2. Especificamente no ClickHouse, talvez tenha sido necessário atualizar os valores nas colunas usadas no ORDER BY das tabelas de destino. Você pode usar Resync para repovoar os dados na nova tabela com a chave de ordenação correta.
 
 <Note>
-  Você pode executar a ressincronização várias vezes; no entanto, considere a carga no banco de dados de origem ao fazer isso.
+  Você pode executar a ressincronização várias vezes; no entanto, considere a carga no banco de dados de origem ao fazer isso,
+  já que a carga inicial com threads paralelas está envolvida todas as vezes.
 </Note>
 
 <div id="guide-mysql-resync">
-  ### Guia de ressincronização do ClickPipe
+  ### Guia de Resync do ClickPipe
 </div>
 
 1. Na aba Data Sources, clique no MySQL ClickPipe que deseja ressincronizar.
 2. Vá até a aba **Settings**.
-3. Clique no botão **Ressincronização**.
+3. Clique no botão **Resync**.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md" />
 
-4. Uma caixa de diálogo de confirmação deve aparecer. Clique em **Ressincronização** novamente.
+4. Uma caixa de diálogo de confirmação deve aparecer. Clique em **Resync** novamente.
 5. Vá até a aba **Metrics**.
 6. Em cerca de 5 segundos (e também ao atualizar a página), o status do pipe deverá ser **Setup** ou **Snapshot**.
-7. A carga inicial da ressincronização pode ser acompanhada na aba **Tables**, na seção **Initial Load Stats**.
-8. Quando a carga inicial for concluída, o pipe fará a troca atômica das tabelas `_resync` pelas tabelas originais. Durante essa troca, o status será **Ressincronização**.
+7. A carga inicial do Resync pode ser acompanhada na aba **Tables**, na seção **Initial Load Stats**.
+8. Quando a carga inicial for concluída, o pipe fará a troca atômica das tabelas `_resync` pelas tabelas originais. Durante essa troca, o status será **Resync**.
 9. Quando a troca for concluída, o pipe entrará no estado **Running** e executará CDC, se estiver habilitado.

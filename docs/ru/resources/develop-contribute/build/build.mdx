@@ -134,15 +134,16 @@ ninja -j 1 clickhouse
 
 <Note>
   `clickhouse-server`, `clickhouse-client` и другие подобные бинарные файлы представляют собой символические ссылки в каталоге `programs/`, указывающие на исполняемый файл `clickhouse` после завершения сборки.
+</Note>
 
-  :::tip
+<Tip>
   CMake предоставляет сокращённые варианты приведённых выше команд:
 
   ```sh
   cmake -S . -B build  # настроить сборку, запускать из корневого каталога репозитория
   cmake --build build  # скомпилировать
   ```
-</Note>
+</Tip>
 
 <div id="running-the-clickhouse-executable">
   ## исполняемый файл ClickHouse

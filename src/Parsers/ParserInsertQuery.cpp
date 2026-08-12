@@ -58,6 +58,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_format(Keyword::FORMAT);
     ParserKeyword s_settings(Keyword::SETTINGS);
     ParserKeyword s_select(Keyword::SELECT);
+    ParserKeyword s_from(Keyword::FROM);
     ParserKeyword s_partition_by(Keyword::PARTITION_BY);
     ParserKeyword s_with(Keyword::WITH);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
@@ -207,10 +208,12 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         tryGetIdentifierNameInto(format, format_str);
     }
-    else if (s_select.ignore(pos, expected) || s_with.ignore(pos, expected) || s_lparen.ignore(pos, expected))
+    else if (s_select.ignore(pos, expected) || s_with.ignore(pos, expected) || s_from.ignore(pos, expected) || s_lparen.ignore(pos, expected))
     {
         /// If SELECT is defined (possibly in parentheses), return to position before select and parse
         /// rest of query as SELECT query. Parentheses are handled by ParserSelectWithUnionQuery.
+        /// The query can also start with the FROM clause: INSERT INTO t2 FROM t1 |> WHERE x.
+        /// Note that FROM INFILE was already parsed before, so FROM at this position starts a SELECT query.
         pos = before_values;
         ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, select, expected);
@@ -364,9 +367,12 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserInsertElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    /// ParserQualifiedColumnsMatcher must precede ParserCompoundIdentifier, which would otherwise
+    /// consume the `<qualifier>.COLUMNS` prefix as a plain identifier and leave `(...)` unparsed.
     return ParserColumnsMatcher().parse(pos, node, expected)
         || ParserQualifiedAsterisk().parse(pos, node, expected)
         || ParserAsterisk().parse(pos, node, expected)
+        || ParserQualifiedColumnsMatcher().parse(pos, node, expected)
         || ParserCompoundIdentifier().parse(pos, node, expected);
 }
 

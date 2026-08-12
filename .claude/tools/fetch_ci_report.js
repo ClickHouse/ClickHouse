@@ -33,7 +33,6 @@
 const https = require('https');
 const http = require('http');
 const { URL } = require('url');
-const fs = require('fs');
 const { execSync, execFileSync } = require('child_process');
 const zlib = require('zlib');
 
@@ -50,9 +49,31 @@ function normalizeTaskName(name) {
 /**
  * Fetch a URL and return the response body
  */
+// Transparently decompress object-level compression (not HTTP transfer-encoding): CI stores text
+// artifacts above a size threshold as zstd (see ci/praktika/s3.py). Detected by magic bytes, so it
+// works whether the object is served plain, as `.zst`, or gzip.
+function maybeDecompress(buf) {
+  if (buf.length >= 4 && buf[0] === 0x28 && buf[1] === 0xb5 && buf[2] === 0x2f && buf[3] === 0xfd) {
+    if (typeof zlib.zstdDecompressSync === 'function') return zlib.zstdDecompressSync(buf);
+    const { execFileSync } = require('child_process');
+    // Bound the child: a wedged zstd would otherwise block the whole helper indefinitely.
+    return execFileSync('zstd', ['-dcq'], { input: buf, maxBuffer: 2 * 1024 * 1024 * 1024, timeout: 120000 });
+  }
+  if (buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b) {
+    return zlib.gunzipSync(buf);
+  }
+  return buf;
+}
+
 function fetchUrl(urlString, credentials = null) {
   return new Promise((resolve, reject) => {
-    const parsedUrl = new URL(urlString);
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(urlString);
+    } catch (e) {
+      reject(e);
+      return;
+    }
     const protocol = parsedUrl.protocol === 'https:' ? https : http;
 
     const options = {
@@ -69,6 +90,13 @@ function fetchUrl(urlString, credentials = null) {
       if (res.statusCode === 301 || res.statusCode === 302) {
         // Follow redirect
         return fetchUrl(res.headers.location, credentials).then(resolve).catch(reject);
+      }
+
+      // A missing/expired plain artifact may exist only as a zstd-compressed sibling: CI
+      // compresses text artifacts over a size threshold (see ci/praktika/s3.py).
+      if ((res.statusCode === 403 || res.statusCode === 404) && !urlString.endsWith('.zst')) {
+        res.resume();
+        return fetchUrl(urlString + '.zst', credentials).then(resolve).catch(reject);
       }
 
       if (res.statusCode === 403) {
@@ -93,8 +121,14 @@ function fetchUrl(urlString, credentials = null) {
       const chunks = [];
       stream.on('data', chunk => chunks.push(chunk));
       stream.on('end', () => {
-        const body = Buffer.concat(chunks).toString('utf8');
-        resolve(body);
+        // maybeDecompress may throw (missing zstd binary, corrupt archive); a throw from this
+        // async handler would escape the Promise as an uncaught exception, so surface it as a
+        // normal rejection instead.
+        try {
+          resolve(maybeDecompress(Buffer.concat(chunks)).toString('utf8'));
+        } catch (err) {
+          reject(err);
+        }
       });
       stream.on('error', reject);
     });
@@ -111,7 +145,12 @@ function fetchUrl(urlString, credentials = null) {
  * Parse the HTML URL to extract parameters and construct JSON URLs
  */
 async function parseReportUrl(htmlUrl, credentials = null) {
-  const url = new URL(htmlUrl);
+  let url;
+  try {
+    url = new URL(htmlUrl);
+  } catch (e) {
+    throw new Error(`Invalid report URL: ${e.message}`);
+  }
   const params = url.searchParams;
 
   const PR = params.get('PR');
@@ -158,7 +197,12 @@ async function parseReportUrl(htmlUrl, credentials = null) {
   if (sha === 'latest') {
     const commitsUrl = `${baseUrl}/${suffix}/commits.json`;
     const commitsText = await fetchUrl(commitsUrl, credentials);
-    const commits = JSON.parse(commitsText);
+    let commits;
+    try {
+      commits = JSON.parse(commitsText);
+    } catch (e) {
+      throw new Error(`Invalid JSON in commits.json: ${e.message}`);
+    }
     if (!commits || commits.length === 0) {
       throw new Error('No commits found in commits.json');
     }
@@ -179,9 +223,78 @@ function constructJsonUrl(baseUrl, suffix, sha, taskName) {
 /**
  * Check if a status represents a failure
  */
+/**
+ * Extract the meaningful failure reason from result.info.
+ *
+ * result.info for stateless/functional tests has this structure:
+ *   Reason: <category>:
+ *   <actual error output, exceptions, or diff>
+ *
+ *   /path/to/test.sh.debuglog:
+ *   + [timestamp] [:line] bash-command ...
+ *   + [timestamp] [:line] bash-command ...
+ *
+ * The actionable part is the top section before the bash xtrace.
+ * Showing the tail (as we used to) gives only useless bash commands.
+ */
+function extractFailureReason(info, maxLines = 40) {
+  if (!info) return [];
+  const allLines = info.split('\n');
+  // Bash debug-trace lines ('+ [timestamp] [line] cmd') are pure noise — strip everything
+  // from the first xtrace line (or the '.debuglog:' section header) to the end.
+  const sepIdx = allLines.findIndex(
+    l => /^\+\+? \[/.test(l) || /\.(?:debug)?log:$/.test(l.trim())
+  );
+  const meaningful = (sepIdx >= 0 ? allLines.slice(0, sepIdx) : allLines)
+    .filter(l => l.trim());
+  if (meaningful.length === 0) return [];
+  // Short enough to show in full.
+  if (meaningful.length <= maxLines) return meaningful;
+  // Too long: show head + tail so both 'Reason: ...' (stateless tests, always at top)
+  // and build errors / 'ninja: stopped' (always at bottom) are visible.
+  const half = Math.floor(maxLines / 2);
+  return [
+    ...meaningful.slice(0, half),
+    `--- (${meaningful.length - maxLines} lines omitted) ---`,
+    ...meaningful.slice(-half),
+  ];
+}
+
 function isFailureStatus(status) {
   return status === 'failed' || status === 'FAIL' || status === 'failure' ||
          status === 'error' || status === 'ERROR';
+}
+
+/**
+ * Apply ext labels / CIDB links from a result node onto a test object.
+ * Shared by the normal leaf path and the synthesized job-level entry.
+ */
+function applyExtToTest(test, ext) {
+  if (!ext) return;
+  const byName = new Map();
+  const upsert = (name, link) => {
+    if (!name) return;
+    const prev = byName.get(name) || {};
+    byName.set(name, { name, link: link || prev.link });
+  };
+  if (Array.isArray(ext.labels)) {
+    for (const item of ext.labels) {
+      if (typeof item === 'string') upsert(item);
+      else if (item && typeof item === 'object' && item.name) upsert(item.name, item.link);
+    }
+  }
+  if (Array.isArray(ext.hlabels)) {
+    for (const item of ext.hlabels) {
+      if (Array.isArray(item) && item[0]) upsert(item[0], item[1]);
+    }
+  }
+  const cidbLinks = [], labels = [];
+  for (const { name, link } of byName.values()) {
+    if (name === 'cidb') { if (link) cidbLinks.push(link); }
+    else labels.push(link ? `${name} (${link})` : name);
+  }
+  if (cidbLinks.length > 0) test.cidbLinks = cidbLinks;
+  if (labels.length > 0) test.labels = labels;
 }
 
 /**
@@ -190,7 +303,21 @@ function isFailureStatus(status) {
 function parseTestResults(jsonData) {
   const tests = [];
 
-  if (!jsonData || !jsonData.results) {
+  if (!jsonData || !jsonData.results || jsonData.results.length === 0) {
+    // Job-level failure with no child results (e.g. status: "ERROR" for the whole job).
+    // Synthesize a single leaf so the top-level info and links are still surfaced.
+    if (jsonData && isFailureStatus(jsonData.status)) {
+      const test = {
+        name: jsonData.name || 'Job',
+        status: jsonData.status,
+        duration: jsonData.duration || 0,
+        jobLevel: true,
+      };
+      if (jsonData.info) test.info = jsonData.info;
+      if (jsonData.links && jsonData.links.length > 0) test.links = jsonData.links;
+      applyExtToTest(test, jsonData.ext);
+      tests.push(test);
+    }
     return tests;
   }
 
@@ -212,7 +339,7 @@ function parseTestResults(jsonData) {
           duration: result.duration || 0
         };
 
-        // Include info field (contains build log tail for build failures)
+        // Include info field (failure reason + optional bash debug trace)
         if (result.info) {
           test.info = result.info;
         }
@@ -222,51 +349,8 @@ function parseTestResults(jsonData) {
           test.links = result.links;
         }
 
-        // Extract CIDB links and other labels, mirroring ci/praktika/json.html `normalizeLabels`:
-        // `ext.labels` entries are either bare strings (legacy) or {name, link} objects, and
-        // `ext.hlabels` entries are [name, link] pairs; all are merged by name (a link wins over a
-        // bare occurrence). Non-cidb labels (e.g. `issue`, `retry_ok`) mirror how CI attributes a
-        // failure: an `issue` label means CI matched a tracking issue; `retry_ok` etc. are the flags
-        // an infrastructure issue matches on via `Failure flags:`.
-        if (result.ext) {
-          const byName = new Map();
-          const upsert = (name, link) => {
-            if (!name) return;
-            const prev = byName.get(name) || {};
-            byName.set(name, { name, link: link || prev.link });
-          };
-          if (Array.isArray(result.ext.labels)) {
-            for (const item of result.ext.labels) {
-              if (typeof item === 'string') {
-                upsert(item);
-              } else if (item && typeof item === 'object' && item.name) {
-                upsert(item.name, item.link);
-              }
-            }
-          }
-          if (Array.isArray(result.ext.hlabels)) {
-            for (const item of result.ext.hlabels) {
-              if (Array.isArray(item) && item[0]) {
-                upsert(item[0], item[1]);
-              }
-            }
-          }
-          const cidbLinks = [];
-          const labels = [];
-          for (const { name, link } of byName.values()) {
-            if (name === 'cidb') {
-              if (link) cidbLinks.push(link);
-            } else {
-              labels.push(link ? `${name} (${link})` : name);
-            }
-          }
-          if (cidbLinks.length > 0) {
-            test.cidbLinks = cidbLinks;
-          }
-          if (labels.length > 0) {
-            test.labels = labels;
-          }
-        }
+        // Extract CIDB links and other labels (see applyExtToTest for format details).
+        applyExtToTest(test, result.ext);
 
         tests.push(test);
       }
@@ -274,6 +358,47 @@ function parseTestResults(jsonData) {
   }
 
   extractTests(jsonData.results);
+
+  // The top-level node may itself be FAIL/ERROR even when all leaf results passed
+  // (Praktika sets result.set_status(ERROR) in the non-zero-exit path after the subtree
+  // is already populated). If no child captures the failure, synthesize one from the
+  // top-level node so --failed never prints "Total: 0" for a truly failed job.
+  if (isFailureStatus(jsonData.status)) {
+    const hasFailing = tests.some(t => isFailureStatus(t.status));
+    if (!hasFailing) {
+      // No failing leaves — synthesize from root.
+      const test = {
+        name: jsonData.name || 'Job',
+        status: jsonData.status,
+        duration: jsonData.duration || 0,
+        jobLevel: true,
+      };
+      if (jsonData.info) test.info = jsonData.info;
+      if (jsonData.links && jsonData.links.length > 0) test.links = jsonData.links;
+      applyExtToTest(test, jsonData.ext);
+      tests.push(test);
+    } else if (
+      jsonData.info && jsonData.info.trim() &&
+      !tests.some(t => t.info === jsonData.info) &&
+      !/^Failures:\s/.test(jsonData.info) &&
+      !/^Failed:\s/.test(jsonData.info)
+    ) {
+      // Root has additional error context (e.g. "Test execution was interrupted") not captured
+      // by any failing leaf. Synthesize an aggregate entry so the interrupt context is visible
+      // alongside the normal test failures.
+      const test = {
+        name: '[job error]',
+        status: jsonData.status,
+        duration: jsonData.duration || 0,
+        info: jsonData.info,
+        jobLevel: true,
+      };
+      if (jsonData.links && jsonData.links.length > 0) test.links = jsonData.links;
+      applyExtToTest(test, jsonData.ext);
+      tests.push(test);
+    }
+  }
+
   return tests;
 }
 
@@ -316,12 +441,18 @@ function extractArtifactLinks(jsonData) {
 
   extractFromResults(jsonData.results);
 
-  // Filter to artifact/log links; exclude json.html navigation links and raw binaries
+  // Filter to artifact/log links and the ClickHouse binary; exclude json.html navigation links.
   return links.filter(link => {
     const h = link.href;
+    const name = h.split('/').pop();
     // Exclude CI navigation/report links
     if (h.includes('json.html')) return false;
-    // Include all log and archive formats
+    // ClickHouse binary: starts with 'clickhouse' and has no dots (no file extension).
+    // Matches 'clickhouse', 'clickhouse-stripped', etc. but not log/config files.
+    if (name.startsWith('clickhouse') && !name.includes('.')) return true;
+    // Installable packages
+    if (name.endsWith('.deb') || name.endsWith('.rpm')) return true;
+    // Log and archive formats
     if (h.includes('.log') || h.includes('.log.zst')) return true;
     if (h.includes('.tar.gz') || h.includes('.tar.zst') || h.includes('.tgz')) return true;
     if (h.includes('.zst')) return true;
@@ -405,10 +536,41 @@ function childReportUrlsForFailedJobs(topLevelUrl, jsonData) {
 }
 
 /**
+ * Return the per-job report URL for every job in a workflow-index, regardless of status.
+ * Used by --report N to let the user pick any concrete job from a workflow-index URL.
+ */
+function allChildReportUrls(topLevelUrl, jsonData) {
+  const jobs = (jsonData && Array.isArray(jsonData.results)) ? jsonData.results : [];
+  return jobs.map(j => topLevelUrl.replace(/&name_1=[^&]*/, '') + `&name_1=${encodeURIComponent(j.name)}`);
+}
+
+/**
+ * Return true when a URL is a concrete job report (name_1 present, or name_0 is not a
+ * workflow-level aggregator). Workflow-index URLs (name_0=PR|MasterCI|REF|master with no
+ * name_1) return false so they can be filtered out before --report N selection.
+ */
+function isConcreteJobUrl(u) {
+  const m = u.match(/[?&]name_0=([^&]+)/);
+  if (!m) return true;
+  const name0 = decodeURIComponent(m[1]);
+  return !/^(PR|MasterCI|REF|master)$/i.test(name0) || /[?&]name_1=/.test(u);
+}
+
+/**
  * Render a set of report URLs as a multi-report summary (one row per report, failures under each).
  * Shared by the GitHub-PR path and the direct top-level-index path.
  */
 async function renderMultiReport(ciUrls, options) {
+  // --binary only works for a single concrete build report (name_1=Build (...)).
+  // PR and top-level index URLs fan out here and never reach the binary-download block.
+  if (options.binary) {
+    process.stderr.write(
+      'Error: --binary requires a concrete build report URL, e.g.:\n' +
+      '  ...json.html?PR=...&sha=...&name_0=PR&name_1=Build%20(amd_binary)\n' +
+      'PR URLs and top-level index URLs do not carry binary artifacts.\n'
+    );
+    process.exit(1);
+  }
   console.log(`Fetching all reports...\n`);
   const allResults = [];
 
@@ -494,7 +656,7 @@ async function renderMultiReport(ciUrls, options) {
     // the sole report (otherwise skip it to avoid duplicating the nested job reports).
     if (failed.length > 0 && options.failedOnly && (!result.isPRLevel || onlyPRLevel)) {
       for (const test of failed) {
-        console.log(`      ❌ FAIL: ${test.name}`);
+        console.log(test.jobLevel ? `      ⚙️ JOB: ${test.name}` : `      ❌ FAIL: ${test.name}`);
         if (test.labels && test.labels.length > 0) {
           console.log(`         🏷️  labels: ${test.labels.join(', ')}`);
         }
@@ -509,10 +671,9 @@ async function renderMultiReport(ciUrls, options) {
           }
         }
         if (test.info) {
-          const lines = test.info.split('\n').filter(l => l.trim());
-          const tail = lines.slice(-30);
-          console.log('         --- log tail ---');
-          for (const line of tail) {
+          const reason = extractFailureReason(test.info);
+          console.log('         --- failure reason ---');
+          for (const line of reason) {
             console.log(`         ${line}`);
           }
           console.log('         --- end ---');
@@ -560,11 +721,27 @@ async function fetchReport(inputUrl, options = {}) {
           }
           if (childUrls.length > 0) {
             console.log(`Top-level PR report is an index — descending into ${childUrls.length} failed job report(s).`);
+          } else {
+            // No failures (all-green PR): expand to ALL concrete children so the display list
+            // and --report N indices are consistent with each other.
+            const allChildren = allChildReportUrls(topLevelUrl, top.jsonData).filter(isConcreteJobUrl);
+            if (allChildren.length > 0) {
+              for (const childUrl of allChildren) {
+                if (!ciUrls.includes(childUrl)) ciUrls.push(childUrl);
+              }
+              console.log(`Top-level PR report is all-green — expanded into ${allChildren.length} concrete job report(s).`);
+            }
           }
         } catch (e) {
           console.log(`Note: could not expand the top-level PR report into job reports (${e.message}); showing job-level failures only.`);
         }
       }
+
+      // Remove workflow-index entries (name_0=PR|MasterCI|REF|master with no name_1) so that
+      // --report N and the displayed numbering only count concrete job reports, not the
+      // top-level aggregation URL that would be mishandled as a concrete job when selected.
+      const concreteUrls = ciUrls.filter(isConcreteJobUrl);
+      if (concreteUrls.length > 0) ciUrls.splice(0, ciUrls.length, ...concreteUrls);
 
       console.log(`Found ${ciUrls.length} CI report(s)\n`);
 
@@ -602,6 +779,12 @@ async function fetchReport(inputUrl, options = {}) {
       // Direct JSON URL - fetch it directly
       if (!options.isSingleReport) {
         console.log(`Fetching JSON directly: ${inputUrl}\n`);
+        // Extract SHA from the URL path (e.g. .../PRs/<pr>/<40-hex-sha>/result_*.json)
+        // and print it for consistency with the HTML-URL path.
+        const shaInPath = inputUrl.match(/\/([0-9a-f]{40})\//i);
+        if (shaInPath) {
+          console.log(`SHA: ${shaInPath[1]}\n`);
+        }
       }
       const jsonText = await fetchUrl(inputUrl, options.credentials);
       jsonData = JSON.parse(jsonText);
@@ -628,9 +811,26 @@ async function fetchReport(inputUrl, options = {}) {
       // JOB (e.g. name_0=Stateless tests (...)) — those must stay on the single-report path below,
       // so gate on the workflow name, not merely nameParams.length.
       const isWorkflowIndex = /^(PR|MasterCI|REF|master)$/i.test(nameParams[0]);
-      if (isWorkflowIndex && nameParams.length === 1 && !options.isSingleReport && !options.reportIndex) {
+      if (isWorkflowIndex && nameParams.length === 1 && !options.isSingleReport) {
         const topJson = JSON.parse(await fetchUrl(jsonUrl, options.credentials));
-        const childUrls = childReportUrlsForFailedJobs(inputUrl, topJson);
+
+        // Build the display list once — shared by both the summary and --report N selection.
+        // Use failed concrete children only (UX: show what matters). Fall back to all concrete
+        // children when there are no failures (all-passed scenario) so --report N still works.
+        const failedChildren = childReportUrlsForFailedJobs(inputUrl, topJson);
+        const allConcreteChildren = allChildReportUrls(inputUrl, topJson).filter(isConcreteJobUrl);
+        const displayList = failedChildren.length > 0 ? failedChildren : allConcreteChildren;
+
+        if (options.reportIndex) {
+          const idx = parseInt(options.reportIndex) - 1;
+          if (idx < 0 || idx >= displayList.length) {
+            throw new Error(`Invalid report index. Choose 1-${displayList.length}`);
+          }
+          console.log(`Found ${displayList.length} CI report(s)\n`);
+          console.log(`Fetching report #${options.reportIndex}...\n`);
+          return await fetchReport(displayList[idx], { ...options, reportIndex: undefined });
+        }
+
         if (options.downloadLogs) {
           const failedNames = (topJson.results || []).filter(j => isFailureStatus(j.status)).map(j => j.name);
           throw new Error(
@@ -639,8 +839,9 @@ async function fetchReport(inputUrl, options = {}) {
             `&name_1=<job>. Failed jobs: ${failedNames.join(', ') || '(none)'}.`
           );
         }
-        console.log(`Top-level '${nameParams[0]}' index — expanding into ${childUrls.length} failed job report(s).\n`);
-        return await renderMultiReport([inputUrl, ...childUrls], options);
+        const listDesc = failedChildren.length > 0 ? `${displayList.length} failed` : `all ${displayList.length}`;
+        console.log(`Top-level '${nameParams[0]}' index — expanding into ${listDesc} job report(s).\n`);
+        return await renderMultiReport(displayList, options);
       }
 
       // Fetch name_0 JSON data, and name_1 separately if present (matching json.html behavior)
@@ -711,6 +912,27 @@ async function fetchReport(inputUrl, options = {}) {
       return { testResults, artifactLinks, jsonData };
     }
 
+    // When --binary is requested, print only the binary URL to stdout and exit.
+    if (options.binary) {
+      const binaryLinks = artifactLinks.filter(l => {
+        const name = l.href.split('/').pop();
+        return (name.startsWith('clickhouse') && !name.includes('.')) ||
+               name.endsWith('.deb') || name.endsWith('.rpm');
+      });
+      if (binaryLinks.length > 0) {
+        for (const l of binaryLinks) process.stdout.write(l.href + '\n');
+      } else {
+        process.stderr.write(
+          'No binary artifacts found in this report.\n' +
+          '--binary only works with a concrete Build (...) report URL.\n' +
+          'If you have a test-job report, replace name_1=<test-job> with\n' +
+          'name_1=Build%20(amd_binary) (or the appropriate build variant).\n'
+        );
+        process.exit(1);
+      }
+      return { testResults, artifactLinks, jsonData };
+    }
+
     // Print results for standalone report
     console.log('=== Test Results ===\n');
 
@@ -723,7 +945,7 @@ async function fetchReport(inputUrl, options = {}) {
     if (failed.length > 0) {
       console.log('--- Failures ---');
       for (const test of failed) {
-        console.log(`❌ FAIL  ${test.name}  (${test.duration}s)`);
+        console.log(test.jobLevel ? `⚙️ JOB  ${test.name}  (${test.duration}s)` : `❌ FAIL  ${test.name}  (${test.duration}s)`);
         if (test.labels && test.labels.length > 0) {
           console.log(`   🏷️  labels: ${test.labels.join(', ')}`);
         }
@@ -738,11 +960,9 @@ async function fetchReport(inputUrl, options = {}) {
           }
         }
         if (test.info) {
-          // Show last 30 non-empty lines of info (build log tail with actual errors)
-          const lines = test.info.split('\n').filter(l => l.trim());
-          const tail = lines.slice(-30);
-          console.log('   --- log tail ---');
-          for (const line of tail) {
+          const reason = extractFailureReason(test.info);
+          console.log('   --- failure reason ---');
+          for (const line of reason) {
             console.log(`   ${line}`);
           }
           console.log('   --- end ---');
@@ -819,6 +1039,7 @@ Options:
   --failed         Show failed test names in PR summary
   --all            Show all test results (not just summary)
   --links          Show artifact links
+  --binary         Print the clickhouse binary URL to stdout (only); suitable for shell capture
   --cidb           Show CIDB links for failed tests
   --download-logs [path]  Download logs to path (default: /tmp/ci_logs.tar.{gz,zst})
   --report <number> For PR URLs: fetch only one specific report (default: fetch all)
@@ -830,6 +1051,7 @@ Examples:
   node fetch_ci_report.js "https://github.com/ClickHouse/ClickHouse/pull/97171" --report 2
   node fetch_ci_report.js "https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=94537&sha=abc123&name_0=Integration%20tests"
   node fetch_ci_report.js "<url>" --test peak_memory --links
+  node fetch_ci_report.js "<url>" --binary
   node fetch_ci_report.js "<url>" --failed --download-logs
 `);
     process.exit(0);
@@ -841,6 +1063,7 @@ Examples:
     failedOnly: false,
     showAll: false,
     showLinks: false,
+    binary: false,
     showCidb: false,
     downloadLogs: false,
     reportIndex: null,
@@ -860,6 +1083,9 @@ Examples:
         break;
       case '--links':
         options.showLinks = true;
+        break;
+      case '--binary':
+        options.binary = true;
         break;
       case '--cidb':
         options.showCidb = true;
@@ -891,7 +1117,16 @@ Examples:
     }
   }
 
+  // When --binary is set, all diagnostic output goes to stderr so stdout is clean for capture.
+  if (options.binary) {
+    console.log = (...args) => process.stderr.write(args.map(String).join(' ') + '\n');
+  }
+
   await fetchReport(url, options);
 }
 
-main().catch(console.error);
+if (require.main === module) {
+  main().catch(console.error);
+} else {
+  module.exports = { parseTestResults, isFailureStatus, applyExtToTest };
+}

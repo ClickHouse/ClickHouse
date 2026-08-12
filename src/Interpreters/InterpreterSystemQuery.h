@@ -100,6 +100,9 @@ private:
     std::optional<String> getDetachedDatabaseFromKeeperPath(const ASTSystemQuery & query_);
 
     RefreshTaskList getRefreshTasks();
+    RefreshTaskList getAccessibleRefreshTasks();
+    std::vector<StoragePtr> getAccessibleStreamingStorages();
+    void controlBackgroundActivity(const ASTSystemQuery & query);
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);

@@ -134,6 +134,7 @@ possible_properties = {
         0.2, 0.2, 0.0, 1.0
     ),
     "background_schedule_pool_size": no_zero_threads_lambda,
+    "background_streaming_schedule_pool_size": no_zero_threads_lambda,
     "backup_threads": no_zero_threads_lambda,
     "backups_io_thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "bcrypt_workfactor": threshold_generator(0.2, 0.2, 0, 20, 31),
@@ -194,6 +195,9 @@ possible_properties = {
     "enable_azure_sdk_logging": true_false_lambda,
     "enable_system_unfreeze": true_false_lambda,
     "enable_webterminal": true_false_lambda,
+    "encryption_header_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "encryption_header_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
+    "encryption_header_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "format_parsing_thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "global_profiler_cpu_time_period_ns": threshold_generator(0.2, 0.2, 0, 1000000000),
     "global_profiler_real_time_period_ns": threshold_generator(0.2, 0.2, 0, 1000000000),
@@ -288,6 +292,8 @@ possible_properties = {
         0.2, 0.2, 0, 1000
     ),
     "max_prefixes_deserialization_thread_pool_size": threads_lambda,
+    # 0 disables ReaderExecutor connection reuse
+    "max_remote_read_connections": threshold_generator(0.2, 0.2, 0, 1000),
     "max_remote_read_network_bandwidth_for_server": threshold_generator(
         0.2, 0.2, 0, 1000
     ),
@@ -361,6 +367,10 @@ possible_properties = {
     "page_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "page_cache_shards": threshold_generator(0.2, 0.2, 0, 10),
     "page_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    "paimon_metadata_files_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
+    "paimon_metadata_files_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "paimon_metadata_files_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
+    "paimon_metadata_files_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "parquet_metadata_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
     "parquet_metadata_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "parquet_metadata_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
@@ -401,9 +411,11 @@ possible_properties = {
     "query_condition_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "remap_executable": true_false_lambda,
     "restore_threads": no_zero_threads_lambda,
+    "s3_allow_server_credentials_for_system_table_disks": true_false_lambda,
     "s3_credentials_provider_max_cache_size": threshold_generator(
         0.2, 0.2, 0, 104857600
     ),
+    "s3_load_table_anonymously_if_credentials_restricted": true_false_lambda,
     "s3queue_disable_streaming": true_false_lambda,
     "show_license_expiration_warnings": true_false_lambda,  # Cloud setting
     "shutdown_wait_backups_and_restores": true_false_lambda,
@@ -467,6 +479,7 @@ possible_properties = {
     "unique_key_index_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "use_separate_cache_arena": true_false_lambda,
     "use_shared_merge_tree_log_pipeline": true_false_lambda,  # Cloud setting
+    "user_profile_events_per_cpu": true_false_lambda,
     "validate_tcp_client_information": true_false_lambda,
     "vector_similarity_index_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
     "vector_similarity_index_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
@@ -1203,6 +1216,34 @@ class TransactionsPropertiesGroup(PropertiesGroup):
         property_element.text = "1"
 
 
+class EncryptionCodecsPropertiesGroup(PropertiesGroup):
+
+    def apply_properties(
+        self,
+        top_root: ET.Element,
+        property_element: ET.Element,
+        args,
+        cluster: ClickHouseCluster,
+        is_private_binary: bool,
+    ):
+        # Keys for the `AES_128_GCM_SIV` and `AES_256_GCM_SIV` codecs BuzzHouse
+        # generates; without them any CREATE using these codecs fails
+        for method, key_bytes in (("aes_128_gcm_siv", 16), ("aes_256_gcm_siv", 32)):
+            method_xml = ET.SubElement(property_element, method)
+            nkeys = random.randint(1, 3)
+            for i in range(nkeys):
+                key_xml = ET.SubElement(method_xml, "key_hex")
+                key_xml.set("id", str(i))
+                key_xml.text = random.randbytes(key_bytes).hex()
+            # Mandatory with multiple keys, optional with a single id=0 key
+            if nkeys > 1 or random.randint(1, 2) == 1:
+                current_key_id_xml = ET.SubElement(method_xml, "current_key_id")
+                current_key_id_xml.text = str(random.randint(0, nkeys - 1))
+            if random.randint(1, 2) == 1:
+                nonce_xml = ET.SubElement(method_xml, "nonce_hex")
+                nonce_xml.text = random.randbytes(12).hex()
+
+
 class DistributedDDLPropertiesGroup(PropertiesGroup):
 
     def apply_properties(
@@ -1358,11 +1399,22 @@ class LogTablePropertiesGroup(PropertiesGroup):
 
         log_table_properties = {
             "buffer_size_rows_flush_threshold": threshold_generator(0.2, 0.2, 0, 10000),
+            "flush_interval_milliseconds": threshold_generator(0.2, 0.2, 1, 10000),
             "flush_on_crash": true_false_lambda,
             # Setting these may crash the server
             # "max_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
             # "reserved_size_rows": threshold_generator(0.2, 0.2, 1, 10000),
         }
+        if self.log_table == "text_log":
+            log_table_properties["level"] = lambda: random.choice(
+                ["trace", "debug", "information", "warning", "error"]
+            )
+        if self.log_table == "trace_log":
+            log_table_properties["symbolize"] = true_false_lambda
+        if self.log_table == "transposed_metric_log":
+            # Created only with this `schema_type`; the default ("wide") makes the section a no-op
+            schema_type_xml = ET.SubElement(property_element, "schema_type")
+            schema_type_xml.text = "transposed"
         # Can't use this without the engine parameter?
         # number_policies = 0
         # storage_configuration_xml = top_root.find("storage_configuration")
@@ -1586,6 +1638,10 @@ def modify_server_settings(
             TransactionsPropertiesGroup()
         )
 
+    # Add encryption codec keys
+    if args.add_encryption_codecs and root.find("encryption_codecs") is None:
+        selected_properties["encryption_codecs"] = EncryptionCodecsPropertiesGroup()
+
     # Add distributed_ddl
     if args.add_distributed_ddl and root.find("distributed_ddl") is None:
         selected_properties["distributed_ddl"] = DistributedDDLPropertiesGroup()
@@ -1607,6 +1663,8 @@ def modify_server_settings(
             ("crash_log", 1024, 1024),
             ("dead_letter_queue", 1048576, 8192),
             ("delta_lake_metadata_log", 1048576, 8192),
+            ("distributed_cache_log", 1048576, 8192),
+            ("distributed_cache_server_log", 1048576, 8192),
             ("error_log", 1048576, 8192),
             ("filesystem_cache_log", 1048576, 8192),
             ("filesystem_read_prefetches_log", 1048576, 8192),
@@ -1795,9 +1853,6 @@ keeper_settings = {
         "async_replication": true_false_lambda,
         "auto_forwarding": true_false_lambda,
         "check_node_acl_on_remove": true_false_lambda,
-        "commit_logs_cache_entry_count_threshold": threshold_generator(
-            0.2, 0.2, 0, 500000
-        ),
         "commit_logs_cache_size_threshold": threshold_generator(
             0.2, 0.2, 0, 1000 * 1024 * 1024
         ),
@@ -1814,15 +1869,20 @@ keeper_settings = {
         "force_sync": true_false_lambda,
         "fresh_log_gap": threshold_generator(0.2, 0.2, 0, 200),
         "heart_beat_interval_ms": threshold_generator(0.2, 0.2, 100, 1500),
-        "latest_logs_cache_entry_count_threshold": threshold_generator(
-            0.2, 0.2, 0, 500000
-        ),
         "latest_logs_cache_size_threshold": threshold_generator(
             0.2, 0.2, 0, 2 * 1024 * 1024 * 1024
         ),
         "leadership_expiry_ms": threshold_generator(0.2, 0.2, 0, 1999),
         "log_file_overallocate_size": threshold_generator(
             0.2, 0.2, 0, 100 * 1024 * 1024
+        ),
+        "log_readahead_chunk_size": threshold_generator(0.2, 0.2, 1, 64),
+        "log_readahead_commit_window_bytes": threshold_generator(
+            0.2, 0.2, 0, 1000 * 1024 * 1024
+        ),
+        "log_readahead_enabled": true_false_lambda,
+        "log_readahead_window_bytes": threshold_generator(
+            0.2, 0.2, 1, 64 * 1024 * 1024
         ),
         "log_slow_connection_operation_threshold_ms": threshold_generator(
             0.2, 0.2, 0, 10000
@@ -1844,17 +1904,18 @@ keeper_settings = {
         "max_requests_append_bytes_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
-        "max_requests_append_size": threshold_generator(0.2, 0.2, 0, 200),
+        "max_requests_append_size": threshold_generator(0.2, 0.2, 1, 200),
         "max_requests_batch_bytes_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
-        "max_requests_batch_size": threshold_generator(0.2, 0.2, 0, 100),
+        "max_requests_batch_size": threshold_generator(0.2, 0.2, 1, 100),
         "max_requests_quick_batch_size": threshold_generator(0.2, 0.2, 0, 200),
         "max_response_queue_bytes_size": threshold_generator(
             0.2, 0.2, 0, 100 * 1024 * 1024
         ),
         "min_request_size_for_cache": threshold_generator(0.2, 0.2, 0, 100 * 1024),
         "min_session_timeout_ms": threshold_generator(0.2, 0.2, 1000, 10000),
+        "min_time_between_fsyncs_ms": threshold_generator(0.2, 0.2, 0, 100),
         "nuraft_append_entries_backward_probe_throttle_threshold": threshold_generator(
             0.2, 0.2, 0, 128
         ),
@@ -1886,11 +1947,16 @@ keeper_settings = {
         "startup_timeout": threshold_generator(0.2, 0.2, 1000, 600000),
         "stream_in_flight_drain_timeout_ms": threshold_generator(0.2, 0.2, 0, 10000),
         "stream_suspect_retry_delay_ms": threshold_generator(0.2, 0.2, 0, 5000),
+        "container_gc_batch_size": threshold_generator(0.2, 0.2, 1, 4096),
+        "container_gc_max_never_used_interval_ms": threshold_generator(
+            0.2, 0.2, 0, 60000
+        ),
+        "container_gc_period_ms": threshold_generator(0.2, 0.2, 1, 60000),
         "ttl_gc_batch_size": threshold_generator(0.2, 0.2, 1, 4096),
         "ttl_gc_period_ms": threshold_generator(0.2, 0.2, 1, 10000),
         "use_new_dispatcher": true_false_lambda,
         "use_xid_64": true_false_lambda,
-        "write_snapshot_version": lambda: random.choice([6, 7, 8]),
+        "write_snapshot_version": lambda: random.choice([6, 7, 8, 9]),
     },
     "create_snapshot_on_exit": true_false_lambda,
     "digest_enabled": true_false_lambda,
@@ -1899,6 +1965,7 @@ keeper_settings = {
     "feature_flags": {
         "check_not_exists": true_false_lambda,
         "check_stat": true_false_lambda,
+        "create_container": true_false_lambda,
         "create_if_not_exists": true_false_lambda,
         "create_ttl": true_false_lambda,
         "create_with_stats": true_false_lambda,
@@ -1980,13 +2047,16 @@ def modify_keeper_settings(args, is_private_binary: bool) -> list[str]:
                 multi_read_xml = ET.SubElement(feature_flags_xml, "multi_read")
             multi_read_xml.text = "1"
 
-        # The `create_ttl` feature flag requires `write_snapshot_version` >= 8,
-        # otherwise the server refuses to start
+        # The `create_ttl` feature flag requires `write_snapshot_version` >= 8 and
+        # `create_container` requires >= 9, otherwise the server refuses to start
         feature_flags_xml = keeper_server_xml.find("feature_flags")
-        if (
-            feature_flags_xml is not None
-            and feature_flags_xml.findtext("create_ttl") == "1"
-        ):
+        min_snapshot_version = 0
+        if feature_flags_xml is not None:
+            if feature_flags_xml.findtext("create_ttl") == "1":
+                min_snapshot_version = 8
+            if feature_flags_xml.findtext("create_container") == "1":
+                min_snapshot_version = 9
+        if min_snapshot_version > 0:
             write_snapshot_version_xml = coordination_settings_xml.find(
                 "write_snapshot_version"
             )
@@ -1996,9 +2066,9 @@ def modify_keeper_settings(args, is_private_binary: bool) -> list[str]:
                 )
             if (
                 write_snapshot_version_xml.text is None
-                or int(write_snapshot_version_xml.text) < 8
+                or int(write_snapshot_version_xml.text) < min_snapshot_version
             ):
-                write_snapshot_version_xml.text = "8"
+                write_snapshot_version_xml.text = str(min_snapshot_version)
 
         ET.indent(tree, space="    ", level=0)
         with tempfile.NamedTemporaryFile(

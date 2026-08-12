@@ -173,9 +173,9 @@ WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
 <Image img="/images/bestpractices/primary_key.webp" size="lg" alt="기본 키" />
 
 <Note>
-  테이블의 모든 컬럼은 키 자체에 포함되는지 여부와 관계없이 지정된 정렬 키(순서 지정 키)의 값을 기준으로 정렬됩니다. 예를 들어 `CreationDate`가 키로 사용되면 다른 모든 컬럼의 값 순서도 `CreationDate` 컬럼의 값 순서를 따릅니다. 여러 개의 정렬 키를 지정할 수도 있으며, 이 경우 `SELECT` 쿼리의 `ORDER BY` 절과 동일한 의미로 정렬됩니다.
+  테이블의 모든 컬럼은 키 자체에 포함되는지 여부와 관계없이 지정된 순서 지정 키의 값을 기준으로 정렬됩니다. 예를 들어 `CreationDate`가 키로 사용되면 다른 모든 컬럼의 값 순서도 `CreationDate` 컬럼의 값 순서를 따릅니다. 여러 개의 순서 지정 키를 지정할 수도 있으며, 이 경우 `SELECT` 쿼리의 `ORDER BY` 절과 동일한 의미로 정렬됩니다.
 </Note>
 
 기본 키(기본 키) 선택에 대한 완전한 고급 가이드는 [여기](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)에서 확인할 수 있습니다.
 
-정렬 키가 압축을 개선하고 저장소를 더욱 최적화하는 방식에 대해 더 자세히 알아보려면 [ClickHouse의 Compression](/ko/guides/clickhouse/data-modelling/compression/compression-in-clickhouse) 및 [컬럼 Compression 코덱](/ko/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec)에 대한 공식 가이드를 살펴보십시오.
+순서 지정 키가 압축을 개선하고 저장소를 더욱 최적화하는 방식에 대해 더 자세히 알아보려면 [ClickHouse의 Compression](/ko/guides/clickhouse/data-modelling/compression/compression-in-clickhouse) 및 [컬럼 Compression 코덱](/ko/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec)에 대한 공식 가이드를 살펴보십시오.
