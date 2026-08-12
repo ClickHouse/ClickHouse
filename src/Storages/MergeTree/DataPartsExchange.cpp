@@ -14,6 +14,7 @@
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
@@ -69,6 +70,7 @@ namespace DataPartsExchange
 
 namespace
 {
+
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE = 1;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS = 2;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE = 3;
@@ -78,6 +80,7 @@ constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY = 6;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION = 7;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION = 8;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS = 9;
+constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_INVALIDATED_SYSTEM_COLUMNS = 10;
 
 std::string getEndpointId(const std::string & node_id)
 {
@@ -114,7 +117,7 @@ struct ReplicatedFetchReadCallback
 bool isProjectionNameSafe(const std::string & projection_name)
 {
     return !projection_name.empty()
-        && projection_name.find('/') == std::string::npos;
+        && !projection_name.contains('/');
 }
 
 }
@@ -145,7 +148,7 @@ void Service::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuf
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
 
     /// We pretend to work as older server version, to be sure that client will correctly process our version
-    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS))});
+    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_INVALIDATED_SYSTEM_COLUMNS))});
 
     LOG_TRACE(log, "Sending part {}", part_name);
 
@@ -264,6 +267,10 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
 
         if (client_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS
             && name == IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME)
+            continue;
+
+        if (client_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_INVALIDATED_SYSTEM_COLUMNS
+            && name == IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME)
             continue;
 
         files_to_replicate.insert(name);
@@ -454,7 +461,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     {
         {"endpoint",                endpoint_id},
         {"part",                    part_name},
-        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS)},
+        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_INVALIDATED_SYSTEM_COLUMNS)},
         {"compress",                "false"}
     });
 
@@ -753,7 +760,8 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
             file_name != "columns.txt" &&
             file_name != IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME &&
             file_name != IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME &&
-            file_name != IMergeTreeDataPart::METADATA_VERSION_FILE_NAME)
+            file_name != IMergeTreeDataPart::METADATA_VERSION_FILE_NAME &&
+            file_name != IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME)
             checksums.addFile(file_name, file_size, expected_hash);
     }
 
@@ -821,8 +829,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         return std::pair{std::move(v), std::move(s)};
     }();
 
-    part_storage_for_loading->beginTransaction();
+    if (!to_remote_disk)
+        part_storage_for_loading->beginTransaction();
 
+    /// Not `MergeTreeData::reclaimStaleTemporaryPartDirectory`: that one only handles directories
+    /// directly under the table data path, while a fetch with `to_detached` writes under `detached/`.
     if (part_storage_for_loading->exists())
     {
         LOG_WARNING(log, "Directory {} already exists, probably result of a failed fetch. Will remove it before fetching part.",
@@ -882,7 +893,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         if (e.code() == ErrorCodes::ABORTED)
         {
             part_storage_for_loading->removeSharedRecursive(true);
-            part_storage_for_loading->commitTransaction();
+            if (part_storage_for_loading->hasActiveTransaction())
+                part_storage_for_loading->commitTransaction();
         }
         throw;
     }
@@ -891,9 +903,10 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     MergeTreeData::MutableDataPartPtr new_data_part;
     try
     {
-        part_storage_for_loading->commitTransaction();
+        if (part_storage_for_loading->hasActiveTransaction())
+            part_storage_for_loading->commitTransaction();
 
-        MergeTreeDataPartBuilder builder(data, part_name, volume, part_relative_path, part_dir, getReadSettings());
+        MergeTreeDataPartBuilder builder(data, part_name, volume, part_relative_path, part_dir, getReadSettings(), PartDirIntent::OpenExisting);
         new_data_part = builder.withPartFormatFromDisk().build();
 
         new_data_part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);

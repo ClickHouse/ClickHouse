@@ -1,17 +1,17 @@
 ---
 title: 'Replica-aware routing'
 slug: /manage/replica-aware-routing
-description: 'Route related requests to the same ClickHouse Cloud replica for temporary tables, sessions, and cache reuse'
-keywords: ['cloud', 'sticky endpoints', 'sticky', 'endpoints', 'sticky routing', 'routing', 'replica aware routing', 'session_id', 'session affinity', 'temporary tables']
+description: 'Route related requests to the same ClickHouse Cloud replica for temporary tables, sessions, cache reuse, and read-after-write consistency'
+keywords: ['cloud', 'sticky endpoints', 'sticky', 'endpoints', 'sticky routing', 'routing', 'replica aware routing', 'session_id', 'session affinity', 'temporary tables', 'read-after-write consistency']
 doc_type: 'guide'
 noindex: true
 ---
 
-import PrivatePreviewBadge from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 <PrivatePreviewBadge/>
 
-Replica-aware routing (also known as sticky sessions, sticky routing, or session affinity) routes related requests to the same ClickHouse replica. Use it when you need [temporary tables](/sql-reference/statements/create/table#temporary-tables) or [named session state](/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) to stay reachable across queries, or when you want related queries to reuse the same replica's local caches.
+Replica-aware routing (also known as sticky sessions, sticky routing, or session affinity) routes related requests to the same ClickHouse replica. Use it when you need [temporary tables](/reference/statements/create/table/temporary-table) or [named session state](/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) to stay reachable across queries, when you want related queries to reuse the same replica's local caches, or when you need [read-after-write consistency](#read-after-write-consistency) across a write and its follow-up reads.
 
 It's best-effort and doesn't guarantee isolation. Scaling, upgrades, and restarts can remap which replica a given `session_id` lands on.
 
@@ -30,7 +30,7 @@ Replica-aware routing is applied at the proxy layer over the [HTTP/HTTPS interfa
 
 ## Configuring replica-aware routing {#configuring-replica-aware-routing}
 
-Open a [support](https://clickhouse.com/support/program) ticket and ask to enable HTTP-based sticky replica routing. Include your service ID and why you need it (temporary tables, session state, or cache reuse). After it's enabled, start sending `?session_id=` on HTTPS requests. No restart is required.
+Open a [support](https://clickhouse.com/support/program) ticket and ask to enable HTTP-based sticky replica routing. Include your service ID and why you need it (temporary tables, session state, cache reuse, or read-after-write consistency). After it's enabled, start sending `?session_id=` on HTTPS requests. No restart is required.
 
 ## HTTP-based routing (session_id) {#http-based-routing}
 
@@ -49,7 +49,11 @@ Every request carrying `session_id=my-workload-1` lands on the same replica. A d
 
 `session_id` is any string you choose (application name, user id, or workload label). Requests without `session_id` keep normal load balancing.
 
-Any HTTP client that can add a query parameter works, including `curl`, [clickhouse-connect](/integrations/python), JDBC/ODBC, and others. For `clickhouse-go` (v2), use HTTP mode as noted above.
+### Read-after-write consistency {#read-after-write-consistency}
+
+On a multi-replica service, a write on one replica may not be visible on the others until replication catches up. Send your write with a `session_id`, then reuse that same value on follow-up reads. The proxy routes both to the same replica, so you read your own write even while other replicas are still behind. This pattern works for workloads that write and then immediately read back the same data, such as interactive applications or ETL jobs that validate inserts before moving on.  
+
+For broader guarantees across all replicas, you can also set [`select_sequential_consistency`](/operations/settings/settings#select_sequential_consistency) to `1` on ClickHouse Cloud.
 
 ### Check which replica you hit {#check-which-replica}
 

@@ -124,6 +124,15 @@ std::vector<std::optional<std::string>> readNodeDataBatched(
 /// Read a `processed`/`processing`/`failed` folder of per-file nodes. When only
 /// the count is needed, reading the stat is enough; the children are listed and
 /// fetched only when the contents are requested.
+///
+/// These folders are mandatory: they are created up front by
+/// `ObjectStorageQueueUnorderedFileMetadata::getMetadataPaths` and
+/// `ObjectStorageQueueOrderedFileMetadata::getMetadataPaths` (which omits only
+/// the ordered-mode `processed` pointers, read by `readProcessedPointers`). A
+/// missing one means the queue metadata layout in Keeper is broken and the
+/// queue will start failing its own updates, so it is reported as an error
+/// instead of an empty folder - otherwise this table would make a broken queue
+/// look healthy.
 void readFolder(
     const ObjectStorageQueueMetadata & metadata,
     ZooKeeperRetriesControl & zk_retries,
@@ -145,18 +154,15 @@ void readFolder(
         bool exists = false;
         zk_retries.resetFailures();
         zk_retries.retryLoop([&] { exists = metadata.getZooKeeper()->exists(folder_path, &stat); });
-        count_out = exists ? stat.numChildren : 0;
+        if (!exists)
+            throw zkutil::KeeperException::fromPath(Coordination::Error::ZNONODE, folder_path);
+        count_out = stat.numChildren;
         return;
     }
 
     Strings nodes;
-    Coordination::Error code = Coordination::Error::ZOK;
     zk_retries.resetFailures();
-    zk_retries.retryLoop([&] { code = metadata.getZooKeeper()->tryGetChildren(folder_path, nodes); });
-    if (code == Coordination::Error::ZNONODE)
-        return;
-    if (code != Coordination::Error::ZOK)
-        throw zkutil::KeeperException::fromPath(code, folder_path);
+    zk_retries.retryLoop([&] { nodes = metadata.getZooKeeper()->getChildren(folder_path); });
 
     count_out = nodes.size();
 
@@ -180,6 +186,12 @@ void readFolder(
 /// (buckets > 1), or one per partition (HIVE/REGEX) - and any combination of
 /// the two. Collect them all as (relative pointer path -> last processed file
 /// path).
+///
+/// Unlike the folders read by `readFolder`, these roots are deliberately not
+/// created up front (see the comment in
+/// `ObjectStorageQueueOrderedFileMetadata::getMetadataPaths`) - they appear
+/// only once something is processed, so `ZNONODE` here is expected and means
+/// "nothing processed yet", not a broken layout.
 NodeContents readProcessedPointers(
     const ObjectStorageQueueMetadata & metadata,
     ZooKeeperRetriesControl & zk_retries,

@@ -2,6 +2,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -36,6 +37,26 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+namespace
+{
+
+/// Read a required String literal argument as a value, without materializing a `Field`.
+String getStringConstArgument(const ASTPtr & arg, const ContextPtr & context, std::string_view arg_name)
+{
+    auto [column, type] = evaluateConstantExpressionAsColumn(arg, context);
+    /// Accept `Nullable`/`LowCardinality` wrappers: the previous `Field`-based code read the value
+    /// via `operator[]`, which flattens wrappers, so a non-NULL `Nullable(String)`/
+    /// `LowCardinality(String)` constant passed the String check. Preserve that, and still reject a
+    /// NULL value as before.
+    if (!isStringOrFixedString(removeLowCardinalityAndNullable(type)))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got {}", arg_name, type->getName());
+    if (column->isNullAt(0))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got NULL", arg_name);
+    return String(column->getDataAt(0));
+}
+
 }
 
 namespace TimeSeriesSetting
@@ -82,27 +103,13 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
         if (args.size() == min_num_args)
         {
             /// timeSeriesSelector( 'my_time_series_table', ... )
-            auto table_name_field = evaluateConstantExpression(args[argument_index++], context).first;
-
-            if (table_name_field.getType() != Field::Types::String)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'table_name' must be a literal with type String, got {}", table_name_field.getType());
-
-            time_series_storage_id.table_name = table_name_field.safeGet<String>();
+            time_series_storage_id.table_name = getStringConstArgument(args[argument_index++], context, "table_name");
         }
         else
         {
             /// timeSeriesSelector( 'mydb', 'my_time_series_table', ... )
-            auto database_name_field = evaluateConstantExpression(args[argument_index++], context).first;
-            auto table_name_field = evaluateConstantExpression(args[argument_index++], context).first;
-
-            if (database_name_field.getType() != Field::Types::String)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'database_name' must be a literal with type String, got {}", database_name_field.getType());
-
-            if (table_name_field.getType() != Field::Types::String)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'table_name' must be a literal with type String, got {}", table_name_field.getType());
-
-            time_series_storage_id.database_name = database_name_field.safeGet<String>();
-            time_series_storage_id.table_name = table_name_field.safeGet<String>();
+            time_series_storage_id.database_name = getStringConstArgument(args[argument_index++], context, "database_name");
+            time_series_storage_id.table_name = getStringConstArgument(args[argument_index++], context, "table_name");
         }
     }
 
@@ -118,11 +125,7 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
-    auto selector_field = evaluateConstantExpression(args[argument_index++], context).first;
-    if (selector_field.getType() != Field::Types::String)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'selector' must be a literal with type String, got {}", selector_field.getType());
-
-    PrometheusQueryTree selector{selector_field.safeGet<String>()};
+    PrometheusQueryTree selector{getStringConstArgument(args[argument_index++], context, "selector")};
 
     auto [min_time_field, min_time_type] = evaluateConstantExpression(args[argument_index++], context);
     auto [max_time_field, max_time_type] = evaluateConstantExpression(args[argument_index++], context);

@@ -7,7 +7,7 @@ keywords: ['managed postgres', 'быстрый старт', 'начало раб
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ru/components/Image.jsx";
 import QuickstartCLI from "/snippets/ru/managed-postgres/_quickstart_cli.mdx";
 
@@ -16,14 +16,6 @@ import QuickstartCLI from "/snippets/ru/managed-postgres/_quickstart_cli.mdx";
 </Visibility>
 
 <Visibility for="humans">
-  <View title="CLI">
-    <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-cli-beta" />
-
-    Вы можете пройти этот путь самостоятельно, автоматизировать его с помощью скрипта или передать ИИ-агенту. Для версии в консоли переключитесь в режим **интерфейса Cloud**.
-
-    <QuickstartCLI />
-  </View>
-
   <View title="Интерфейс Cloud">
     <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-beta" />
 
@@ -418,5 +410,13 @@ import QuickstartCLI from "/snippets/ru/managed-postgres/_quickstart_cli.mdx";
 
     1. Сначала удалите интеграцию ClickPipe из сервиса ClickHouse
     2. Затем удалите инстанс Managed Postgres из Cloud Console
+  </View>
+
+  <View title="CLI">
+    <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-cli-beta" />
+
+    Вы можете пройти этот путь самостоятельно, автоматизировать его с помощью скрипта или передать ИИ-агенту. Для версии в консоли переключитесь в режим **интерфейса Cloud**.
+
+    <QuickstartCLI />
   </View>
 </Visibility>

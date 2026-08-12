@@ -1267,3 +1267,60 @@ def test_system_queue_metadata_filter_pushdown(started_cluster):
     assert list_ops("zookeeper_path = '/no/such/queue/path'") == 0
 
     node.query(f"DROP TABLE {table_name} SYNC")
+
+
+def test_system_queue_metadata_broken_mandatory_folder(started_cluster):
+    # `processed` (unordered mode), `processing` and `failed` are created up
+    # front together with the queue metadata, so their absence means the layout
+    # in keeper is broken and the queue will start failing its own updates.
+    # The table must surface that as an error rather than report an empty
+    # folder, which would make a broken queue look healthy.
+    node = started_cluster.instances["instance"]
+    table_name = f"test_system_queue_metadata_broken_{generate_random_string()}"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+
+    # No materialized view: nothing streams, so the folders stay as created.
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+    )
+
+    def select(columns):
+        return node.query_and_get_error(
+            f"""
+            SELECT {columns}
+            FROM system.s3_queue_metadata
+            WHERE zookeeper_path ilike '%{keeper_path}%'
+            """
+        )
+
+    # While the layout is intact, both the count and the contents are readable.
+    assert (
+        node.query(
+            f"""
+            SELECT failed_nodes_count, length(failed_nodes)
+            FROM system.s3_queue_metadata
+            WHERE zookeeper_path ilike '%{keeper_path}%'
+            """
+        ).strip()
+        == "0\t0"
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    zk.delete(f"{keeper_path}/failed")
+
+    # Both the count-only path (stat) and the contents path (list) must fail.
+    for columns in ["failed_nodes_count", "failed_nodes"]:
+        error = select(columns)
+        assert "No node" in error, error
+        assert f"{keeper_path}/failed" in error, error
+
+    # Restore the layout so the table can be dropped normally.
+    zk.create(f"{keeper_path}/failed")
+    node.query(f"DROP TABLE {table_name} SYNC")
