@@ -1050,58 +1050,12 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
-_LLDB_INSTALL_ATTEMPTED = False
-
-
-def _ensure_lldb_installed():
-    """Make sure `lldb` is on PATH, installing it on the fly if not.
-
-    TEMPORARY scaffolding: the CI base images currently ship `gdb` (from the
-    `clickhouse/cctools` layer), not `lldb`. While the switch to `lldb` is in
-    flight, install it at runtime so `print_c_stacktraces` keeps working.
-    Once `ci/docker/cctools/Dockerfile` (and the images that copy from it)
-    install `lldb` permanently, this helper and its single call site below
-    should be removed.
-
-    Never raise: `print_c_stacktraces` is a best-effort diagnostic. If the
-    install fails (no sudo, no network, no `brew`, ...), let
-    `shell_get_output` return "" so the surrounding diagnostic flow keeps
-    going instead of crashing during an already-broken run.
-
-    Bounded and idempotent: each subprocess call has a hard timeout so a
-    stalled package mirror cannot wedge stacktrace collection for minutes,
-    and a process-wide flag ensures only the first call attempts the
-    install — `print_c_stacktraces` iterates over every server PID, and we
-    must not pay the install cost (or timeout) for each one if the first
-    attempt already failed.
-    """
-    global _LLDB_INSTALL_ATTEMPTED
-    if shutil.which("lldb"):
-        return
-    if _LLDB_INSTALL_ATTEMPTED:
-        return
-    _LLDB_INSTALL_ATTEMPTED = True
-    try:
-        if platform.system() == "Darwin":
-            subprocess.run(["brew", "install", "llvm"], check=True, timeout=180)
-        else:
-            env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
-            subprocess.run(["apt-get", "update"], check=True, env=env, timeout=60)
-            subprocess.run(
-                ["apt-get", "install", "-y", "lldb"],
-                check=True, env=env, timeout=120,
-            )
-    except Exception as e:
-        print(f"Could not install lldb on the fly: {e}", file=sys.stderr)
-
-
 # collect server stacktraces using lldb (used uniformly on Linux and macOS)
 def get_stacktraces_from_lldb(pid):
     # 30s ceiling: `thread backtrace all` should finish in seconds even on a
     # debug build with many threads; anything beyond that means lldb itself
     # is wedged (e.g. signal-handler deadlock on the inferior). Killing lldb
     # leaves the server process untouched.
-    _ensure_lldb_installed()  # TEMPORARY: see _ensure_lldb_installed docstring.
     # macOS restricts task_for_pid(): in --batch mode a non-root lldb cannot
     # attach to the server on a CI runner (the user is not in the _developer
     # group and there is no interactive authorization), so it exits 1. The
@@ -1126,6 +1080,11 @@ def get_stacktraces_from_clickhouse(args, timeout: float = 30):
     settings_str = " ".join(
         [
             get_additional_client_options(args),
+            # The options above can repeat: they come from both the environment
+            # and `--client-option`. `add_effective_settings` adds this flag only
+            # while a test runs, and this collector runs from the hung check and
+            # the per-test timeout handler, where it may not be set.
+            "--allow_repeated_settings",
             "--allow_introspection_functions=1",
             "--skip_unavailable_shards=1",
         ]
@@ -1711,7 +1670,7 @@ class SettingsRandomizer:
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
-        "use_projection_index_in_read_pools": lambda: random.randint(0, 1),
+        "use_indexes_refiner_in_read_pools": lambda: random.randint(0, 1),
         "enable_join_runtime_filters_index_analysis": lambda: random.randint(0, 1),
         "optimize_trivial_count_with_sparsity_filter": lambda: random.randint(0, 1),
         "optimize_rewrite_like_perfect_affix": lambda: random.randint(0, 1),
@@ -2334,6 +2293,23 @@ class TestCase:
     def http_format_settings(settings_list) -> str:
         return urllib.parse.urlencode(settings_list)
 
+    # A `no-<feature>` tag means the test does not work with that feature, so the feature
+    # must be off unless the test itself turns it on.
+    FEATURE_TAG_OVERRIDES = {
+        "no-parallel-replicas": "enable_parallel_replicas",
+        "no-async-insert": "async_insert",
+    }
+
+    def feature_tag_overrides(self) -> str:
+        tags = self.tags or set()
+        return self.cli_format_settings(
+            {
+                setting: 0
+                for tag, setting in self.FEATURE_TAG_OVERRIDES.items()
+                if tag in tags
+            }
+        )
+
     def has_show_create_table_in_test(self):
         return not subprocess.call(["grep", "-iq", "show create", self.case_file])
 
@@ -2383,6 +2359,14 @@ class TestCase:
 
         current_value = os.environ.get("CLICKHOUSE_CLIENT_OPT", "")
         os.environ["CLICKHOUSE_CLIENT_OPT"] = f"{current_value} --allow_repeated_settings".strip()
+
+        # Last, so that it beats an externally supplied --client-option that enabled the
+        # feature: with --allow_repeated_settings the last occurrence takes effect. A SET
+        # or SETTINGS clause inside the test still wins over any command line value.
+        overrides = self.feature_tag_overrides()
+        if overrides:
+            os.environ["CLICKHOUSE_CLIENT_OPT"] += f" {overrides}"
+            return f"{new_options} {client_options} {overrides}"
 
         return new_options + " " + client_options
 
@@ -6194,7 +6178,10 @@ ORDER BY (test_name, callee_offset)
                     "\nFound hung queries in processlist:", args, "red", attrs=["bold"]
                 )
             )
-            print(processlist.decode())
+            # The processlist may contain arbitrary bytes: under the AST fuzzer, query
+            # texts (e.g. of KILL QUERY attempts) can carry invalid UTF-8 sequences,
+            # and a strict decode would crash the hung check instead of reporting it.
+            print(processlist.decode(errors="replace"))
             print(get_transactions_list(args))
 
             # `processlist` above already shows per-thread stacks for
