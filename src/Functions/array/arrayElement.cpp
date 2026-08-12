@@ -906,16 +906,6 @@ struct ArrayElementGenericImpl
 }
 
 template <ArrayElementExceptionMode mode>
-<<<<<<< HEAD
-FunctionPtr FunctionArrayElement<mode>::create(ContextPtr context_)
-{
-    return std::make_shared<FunctionArrayElement>(std::move(context_));
-}
-
-
-template <ArrayElementExceptionMode mode>
-=======
->>>>>>> 39de108dc0744788c3576374ba170981b2600e11
 template <typename DataType>
 ColumnPtr FunctionArrayElement<mode>::executeNumberConst(
     const ColumnsWithTypeAndName & arguments,
@@ -2275,7 +2265,6 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
 }
 
 template <ArrayElementExceptionMode mode>
-<<<<<<< HEAD
 DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
     if (const auto * object_type = checkAndGetDataType<DataTypeObject>(arguments[0].type.get()))
@@ -2310,7 +2299,9 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const ColumnsWithTypeA
     for (size_t i = 0; i < arguments.size(); ++i)
         data_types[i] = arguments[i].type;
     return getReturnTypeImpl(data_types);
-=======
+}
+
+template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::tryExecuteLowCardinality(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
@@ -2366,7 +2357,6 @@ ColumnPtr FunctionArrayElement<mode>::tryExecuteLowCardinality(
         return nullptr;
 
     return recursiveRemoveLowCardinality(executeMap(arguments, result_type, input_rows_count));
->>>>>>> 39de108dc0744788c3576374ba170981b2600e11
 }
 
 template <ArrayElementExceptionMode mode>
