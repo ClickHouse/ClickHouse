@@ -309,6 +309,10 @@ struct IMergeTreeIndex
     virtual bool isVectorSimilarityIndex() const { return false; }
     virtual bool isTextIndex() const { return false; }
 
+    /// Some indexes consume source columns directly instead of materializing the index expression.
+    virtual bool requiresExpressionEvaluationForBuild() const { return true; }
+    virtual Names getColumnsRequiredForBuild() const { return index.column_names; }
+
     /// An inert index holds no on-disk data and cannot be (re)computed. It exists only so old
     /// tables that still reference a removed index type stay attachable. Merge and mutation must
     /// never schedule it for recalculation, otherwise those operations get wedged.

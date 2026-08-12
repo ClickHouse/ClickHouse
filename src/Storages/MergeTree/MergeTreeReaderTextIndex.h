@@ -60,10 +60,19 @@ private:
 
     /// Returns combined postings per column for the given mark, clipped to `slice_range`
     /// (the actual read window, which may be narrower than the mark on partial-mark reads).
-    std::vector<PostingList> buildPostingsForMark(size_t mark, const RowsRange & slice_range, PostingList & range_posting);
+    std::vector<PostingList> buildPostingsForMark(
+        size_t mark,
+        const RowsRange & slice_range,
+        PostingList & range_posting,
+        std::vector<PostingList> & dynamic_fallback_postings);
     /// Returns combined posting list for a single query by taking the prebuilt
     /// postings from the analyzer and reading large postings blocks as needed.
     PostingList buildPostingsForQuery(const TextSearchQuery & query, const TextIndexAnalyzer & analyzer, const RowsRange & range, PostingList & range_posting);
+    PostingList buildDynamicFallbackPostingsForQuery(
+        const TextSearchQuery & query,
+        const TextIndexAnalyzer & analyzer,
+        const RowsRange & range,
+        PostingList & range_posting);
     /// Reads and unions all posting list blocks for a large-posting token within the given range.
     std::vector<PostingListPtr> readPostingsBlocksForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range);
     /// Removes blocks with max value less than the given range.
@@ -81,11 +90,23 @@ private:
     void fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
     void fillColumnLazy(IColumn & column, size_t column_idx, size_t row_offset, size_t num_rows, PostingList & range_posting);
 
-    /// Fills a virtual column for an abandoned pattern query by evaluating the virtual column's
-    /// default expression (the original search predicate) on the physical columns.
-    /// Used when the dictionary scan was cut short and pattern tokens are incomplete.
+    /// Fills a virtual column by evaluating its default expression (the original search predicate)
+    /// on the physical columns.
     void fillColumnFallback(
         IColumn & column,
+        const String & column_name,
+        const Block & physical_block,
+        size_t offset,
+        size_t num_rows) const;
+    void applyDynamicFallback(
+        IColumn & column,
+        const String & column_name,
+        const PostingList & dynamic_fallback_postings,
+        const Block & physical_block,
+        size_t physical_offset,
+        size_t row_offset,
+        size_t num_rows);
+    ColumnPtr evaluateFallback(
         const String & column_name,
         const Block & physical_block,
         size_t offset,
@@ -117,6 +138,10 @@ private:
     /// Per-virtual-column flag: true if this column's query was abandoned during the scan
     /// and the predicate must be evaluated directly via fallback_expressions.
     std::vector<bool> use_fallback;
+    /// Per-virtual-column flag: validate only rows selected by dynamic fallback tokens.
+    std::vector<bool> use_dynamic_fallback;
+    /// Absolute row after the last dynamic fallback read, used to keep contiguous reads streaming.
+    std::optional<size_t> fallback_reader_next_row;
     /// Small postings stream — kept as a class member because cached lazy cursors
     /// hold a reference to it for on-demand segment reads.
     std::unique_ptr<MergeTreeReaderStream> small_postings_stream;

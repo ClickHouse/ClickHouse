@@ -1,6 +1,7 @@
 array
 asciiCJK
 icu
+jsonPathValues
 ngrambf_v1
 ngrams
 sparseGrams

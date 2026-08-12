@@ -27,6 +27,33 @@ static String extractPathFromSubcolumn(std::string_view subcolumn_name)
     return String(subcolumn_name.substr(0, pos));
 }
 
+std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumn(
+    const String & column_name,
+    const String & json_column_name,
+    size_t header_position)
+{
+    for (auto [candidate_col, subcolumn_part] : Nested::getAllColumnAndSubcolumnPairs(column_name))
+    {
+        if (candidate_col != json_column_name)
+            continue;
+
+        if (subcolumn_part.starts_with("^"))
+            return std::nullopt;
+
+        String path = extractPathFromSubcolumn(subcolumn_part);
+        if (path.empty())
+            return std::nullopt;
+
+        return JSONSubcolumnIndexInfo{
+            .json_column_name = String(candidate_col),
+            .path = std::move(path),
+            .header_position = header_position,
+        };
+    }
+
+    return std::nullopt;
+}
+
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const String & column_name,
     const Block & header,

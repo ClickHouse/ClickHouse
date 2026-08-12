@@ -1,0 +1,16 @@
+signed zero
+[1,2]
+[1,2]
+nonzero float
+[1]
+structured float equality fallback
+[1,2]
+1
+[1,2]
+1
+signed zero direct read plan
+1
+[1]
+1
+[1]
+1

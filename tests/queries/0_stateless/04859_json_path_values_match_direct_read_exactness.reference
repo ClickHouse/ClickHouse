@@ -1,0 +1,7 @@
+direct read with hint
+['https://posthog.com/project/123/web']
+1
+direct read without hint
+['https://posthog.com/project/123/web']
+direct read disabled
+['https://posthog.com/project/123/web']

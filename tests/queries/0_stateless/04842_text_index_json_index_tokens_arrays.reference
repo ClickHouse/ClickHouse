@@ -1,0 +1,35 @@
+typed arrays
+[1]
+[1]
+[1,2]
+[2]
+[2]
+nullable and float arrays
+[1]
+[1,2]
+[1,2]
+[1]
+1
+path isolation and array equality
+[]
+[1]
+shared Dynamic arrays
+[1]
+[1]
+[2]
+[1]
+[1,2]
+[1]
+Dynamic path arrays
+[1]
+[1]
+[2]
+[1]
+[1,2]
+[1]
+direct read plan
+1
+merged arrays
+[1]
+[1]
+[1,2]

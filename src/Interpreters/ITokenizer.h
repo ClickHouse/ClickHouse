@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <Common/assert_cast.h>
+#include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Columns/IColumn_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -22,6 +23,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 /// Interface for string parsers.
 struct ITokenizer
 {
@@ -32,6 +38,7 @@ public:
         Ngrams,
         SplitByString,
         Array,
+        JSONPathValues,
         SparseGrams,
         AsciiCJK,
 #if USE_ICU
@@ -347,6 +354,38 @@ struct ArrayTokenizer final : public ITokenizerHelper<ArrayTokenizer>
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 };
 
+/// Configuration carrier for the specialized `JSON` text-index tokenizer. Text-index builds feed
+/// the raw column to the path/value extractor; the no-op string methods satisfy the common
+/// tokenizer interface and are not used for `JSON` values.
+struct JSONPathValuesTokenizer final : public ITokenizerHelper<JSONPathValuesTokenizer>
+{
+    explicit JSONPathValuesTokenizer(size_t max_token_bytes_)
+        : ITokenizerHelper(Type::JSONPathValues)
+        , max_token_bytes(max_token_bytes_)
+    {
+    }
+
+    static const char * getName() { return "jsonPathValues"; }
+    static const char * getExternalName() { return getName(); }
+    String getDescription() const override { return fmt::format("{}({})", getName(), max_token_bytes); }
+
+    bool nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const override;
+    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(
+        const char * data,
+        size_t length,
+        VectorWithMemoryTracking<String> & tokens,
+        bool is_prefix,
+        bool is_suffix) const override;
+
+    bool supportsStringLike() const override { return false; }
+    size_t getMaxTokenBytes() const { return max_token_bytes; }
+
+private:
+    size_t max_token_bytes;
+};
+
 /// Parser extracting sparse grams (the same as function sparseGrams).
 /// See sparseGramsImpl.h for more details.
 struct SparseGramsTokenizer final : public ITokenizerHelper<SparseGramsTokenizer>
@@ -551,6 +590,8 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
             callback(data, length);
             return;
         }
+        case ITokenizer::Type::JSONPathValues:
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Tokenizer `jsonPathValues` requires a raw `JSON` column");
         case ITokenizer::Type::SparseGrams:
         {
             const auto & sparse_grams_tokenizer = assert_cast<const SparseGramsTokenizer &>(tokenizer);

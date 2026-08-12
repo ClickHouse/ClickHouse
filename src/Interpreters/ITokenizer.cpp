@@ -344,6 +344,28 @@ void ArrayTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTra
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenizer::substringToTokens is not implemented");
 }
 
+bool JSONPathValuesTokenizer::nextInString(
+    const char *, size_t, size_t &, size_t &, size_t &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSONPathValuesTokenizer::nextInString is not implemented");
+}
+
+bool JSONPathValuesTokenizer::nextInStringLike(const char *, size_t, size_t &, String &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSONPathValuesTokenizer::nextInStringLike is not implemented");
+}
+
+void JSONPathValuesTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSONPathValuesTokenizer::substringToBloomFilter is not implemented");
+}
+
+void JSONPathValuesTokenizer::substringToTokens(
+    const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSONPathValuesTokenizer::substringToTokens is not implemented");
+}
+
 SparseGramsTokenizer::SparseGramsTokenizer(size_t min_length, size_t max_length, std::optional<size_t> min_cutoff_length_)
     : ITokenizerHelper(Type::SparseGrams)
     , min_gram_length(min_length)

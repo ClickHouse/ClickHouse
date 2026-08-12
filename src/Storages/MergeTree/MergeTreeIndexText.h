@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Functions/JSONPathValues.h>
 #include <Columns/IColumn.h>
 #include <Common/BitPackedStringArray.h>
 #include <Common/BitPackedUInt64Array.h>
@@ -445,6 +446,12 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 struct ITokenizer;
 using TokenizerPtr = const ITokenizer *;
 
+struct JSONPathValuesBuildInfo
+{
+    String source_column_name;
+    UInt64 max_token_bytes;
+};
+
 class MergeTreeIndexTextPostprocessor;
 struct MergeTreeIndexTextInlineFilter;
 
@@ -457,11 +464,14 @@ struct MergeTreeIndexTextGranuleBuilder
 
     /// Extracts tokens from the document and adds them to the granule.
     void addDocument(std::string_view document);
-    // Adds a document to the granule. The document is inserted directly as a single token.
-    void addToken(std::string_view token, UInt32 token_position);
+    /// Adds a document to the granule as a single token.
+    void addToken(std::string_view token, UInt32 token_position = 0);
+    void addTokenForRow(std::string_view token, UInt32 row, UInt32 token_position = 0);
 
     void incrementCurrentRow();
+    void advanceRows(size_t rows);
     void setCurrentRow(size_t row) { current_row = row; }
+    UInt64 getCurrentRow() const { return current_row; }
 
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
     bool empty() const { return is_empty; }
@@ -502,7 +512,8 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
         TokenizerPtr tokenizer_,
         const IPostingListCodec * posting_list_codec_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
-        MergeTreeIndexTextPostprocessorPtr postprocessor_);
+        MergeTreeIndexTextPostprocessorPtr postprocessor_,
+        std::optional<JSONPathValuesBuildInfo> json_path_values_);
 
     ~MergeTreeIndexAggregatorText() override = default;
 
@@ -528,6 +539,7 @@ private:
     MergeTreeIndexTextPostprocessorPtr postprocessor;
     /// True when the postprocessor is an IN/NOT IN filter handled by the per-distinct-token drop fast path.
     bool use_postprocessor_drop_fast_path = false;
+    std::optional<JSONPathValuesBuildInfo> json_path_values;
 };
 
 class MergeTreeIndexText final : public IMergeTreeIndex
@@ -544,6 +556,8 @@ public:
 
     MergeTreeIndexTextParams getParams() const { return params; }
     bool isTextIndex() const override { return true; }
+    bool requiresExpressionEvaluationForBuild() const override { return !json_path_values; }
+    Names getColumnsRequiredForBuild() const override;
 
     MergeTreeIndexSubstreams getSubstreams() const override;
     MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;
@@ -562,6 +576,7 @@ public:
     MergeTreeIndexTextPostprocessorPtr postprocessor;
     /// Name of the index expression rewritten as `optimize_empty_string_comparisons` rewrites queries.
     std::optional<String> normalized_index_column_name;
+    std::optional<JSONPathValuesBuildInfo> json_path_values;
 };
 
 }

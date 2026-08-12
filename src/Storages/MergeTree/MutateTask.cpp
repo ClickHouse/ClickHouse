@@ -3481,7 +3481,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             else
                 inserted = ctx->indices_to_recalc.insert(index_ptr).second;
 
-            if (inserted)
+            if (inserted && index_ptr->requiresExpressionEvaluationForBuild())
             {
                 ASTPtr expr_list = index.expression_list_ast->clone();
                 for (const auto & expr : expr_list->children)
@@ -3666,7 +3666,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         }
     }
 
-    if ((!ctx->indices_to_recalc.empty() || !ctx->text_indices_to_recalc.empty()) && builder.initialized())
+    if (!indices_recalc_expr_list->children.empty() && builder.initialized())
     {
         auto indices_recalc_syntax
             = TreeRewriter(ctx->context).analyze(indices_recalc_expr_list, builder.getHeader().getNamesAndTypesList());

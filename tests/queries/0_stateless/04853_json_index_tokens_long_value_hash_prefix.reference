@@ -1,0 +1,14 @@
+long equality
+[1]
+exact bounded prefixes
+[1,2]
+[1,2]
+[1,2,3]
+validated prefixes beyond retained bytes
+[1,2]
+[1,2,3]
+case-insensitive prefix direct read
+1
+sparse typed paths
+[2]
+1

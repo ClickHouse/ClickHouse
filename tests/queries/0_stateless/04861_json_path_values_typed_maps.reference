@@ -1,0 +1,26 @@
+key existence
+[1,2]
+[1]
+[1]
+[1]
+[1]
+[1]
+keyed equality
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+[1]
+[]
+[1]
+direct read
+1
+1
+planner rejection
+[1,2,3]
+[1]
+merged
+[1,2]
+[1]

@@ -18,6 +18,12 @@ struct JSONSubcolumnIndexInfo
     size_t header_position;        /// position of JSONAllPaths column in the index header
 };
 
+/// Match a JSON subcolumn name against a known JSON base column.
+std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumn(
+    const String & column_name,
+    const String & json_column_name,
+    size_t header_position = 0);
+
 /// Try to match a column name from the filter DAG to a JSON index column in the header.
 /// Iterates all dot positions in `column_name` to handle JSON columns whose names contain dots
 /// (e.g., `my.json` JSON or `t Tuple(json JSON)` with index on `JSONAllPaths(t.json)`).

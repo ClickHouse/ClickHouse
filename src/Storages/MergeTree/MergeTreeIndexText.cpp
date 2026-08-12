@@ -16,14 +16,19 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
+#include <Functions/JSONPathValues.h>
+#include <Functions/JSONPathValuesExtractor.h>
+#include <Functions/JSONValueEnumerator.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -45,6 +50,7 @@
 
 namespace ProfileEvents
 {
+    extern const Event JSONPathValuesTextIndexInputRows;
     extern const Event TextIndexReadDictionaryBlocks;
     extern const Event TextIndexReadSparseIndexBlocks;
     extern const Event TextIndexReadGranulesMicroseconds;
@@ -636,6 +642,13 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
     std::vector<size_t> matched_indices;
     for (size_t block_idx = 0; block_idx < sparse_index.size(); ++block_idx)
     {
+        const std::string_view block_begin = sparse_index.getToken(block_idx);
+        const std::optional<std::string_view> block_end = block_idx + 1 < sparse_index.size()
+            ? std::optional<std::string_view>(sparse_index.getToken(block_idx + 1))
+            : std::nullopt;
+        if (!analyzer->mayMatchPatternsInRange(block_begin, block_end))
+            continue;
+
         /// TODO(ahmadov): Include the byte size of token infos into dictionary block to avoid multi-seek.
         UInt64 offset_in_file = sparse_index.getOffsetInFile(block_idx);
         dictionary_stream.seekToMark({offset_in_file, 0});
@@ -645,14 +658,7 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
         const auto & block_tokens = assert_cast<const ColumnString &>(*tokens_column);
         size_t num_tokens = block_tokens.size();
 
-        matched_indices.clear();
-
-        for (size_t token_idx = 0; token_idx < num_tokens; ++token_idx)
-        {
-            const auto & token = block_tokens.getDataAt(token_idx);
-            if (analyzer->addTokenToPatterns(token))
-                matched_indices.emplace_back(token_idx);
-        }
+        matched_indices = analyzer->addTokensToPatterns(block_tokens);
 
         if (matched_indices.empty())
             continue;
@@ -1579,6 +1585,11 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
 
 void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position)
 {
+    addTokenForRow(token, static_cast<UInt32>(current_row), token_position);
+}
+
+void MergeTreeIndexTextGranuleBuilder::addTokenForRow(std::string_view token, UInt32 row, UInt32 token_position)
+{
     if (postprocessor_drop_filter && postprocessor_drop_filter->shouldDrop(token))
         return;
 
@@ -1588,14 +1599,14 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
     tokens_map.emplace(key_holder, it, inserted);
 
     PostingListBuilder & posting_list_builder = it->getMapped();
-    posting_list_builder.add(static_cast<UInt32>(current_row), posting_lists);
+    posting_list_builder.add(row, posting_lists);
 
     if (position_map)
     {
         TokenToPositionListMap::LookupResult pos_it;
         position_map->emplace(key_holder, pos_it, inserted);
         auto & positions_builder = pos_it->getMapped();
-        positions_builder.add(static_cast<UInt32>(current_row), token_position);
+        positions_builder.add(row, token_position);
     }
 
     ++num_processed_tokens;
@@ -1603,8 +1614,13 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
 
 void MergeTreeIndexTextGranuleBuilder::incrementCurrentRow()
 {
+    advanceRows(1);
+}
+
+void MergeTreeIndexTextGranuleBuilder::advanceRows(size_t rows)
+{
     is_empty = false;
-    ++current_row;
+    current_row += rows;
 }
 
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()
@@ -1670,13 +1686,28 @@ void MergeTreeIndexTextGranuleBuilder::reset()
         position_map.reset();
 }
 
+static std::optional<JSONPathValuesBuildInfo> getJSONPathValuesBuildInfo(
+    const IndexDescription & index, const ITokenizer & tokenizer)
+{
+    if (tokenizer.getType() != ITokenizer::Type::JSONPathValues)
+        return std::nullopt;
+
+    const auto required_columns = index.expression->getRequiredColumns();
+    if (required_columns.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tokenizer `jsonPathValues` requires exactly one source column");
+
+    const auto & json_tokenizer = assert_cast<const JSONPathValuesTokenizer &>(tokenizer);
+    return JSONPathValuesBuildInfo{required_columns.front(), json_tokenizer.getMaxTokenBytes()};
+}
+
 MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
     String index_column_name_,
     MergeTreeIndexTextParams params_,
     TokenizerPtr tokenizer_,
     const IPostingListCodec * posting_list_codec_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
-    MergeTreeIndexTextPostprocessorPtr postprocessor_)
+    MergeTreeIndexTextPostprocessorPtr postprocessor_,
+    std::optional<JSONPathValuesBuildInfo> json_path_values_)
     : index_column_name(std::move(index_column_name_))
     , params(std::move(params_))
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
@@ -1684,6 +1715,7 @@ MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
     , granule_builder(params, tokenizer, posting_list_codec_)
     , preprocessor(preprocessor_)
     , postprocessor(postprocessor_)
+    , json_path_values(std::move(json_path_values_))
 {
     /// Fast path for IN/NOT IN filter-only postprocessors only: drops are decided per distinct token in
     /// addToken so dropped tokens never build postings. Positions must be disabled (phrase search needs
@@ -1696,6 +1728,30 @@ MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
             use_postprocessor_drop_fast_path = true;
         }
     }
+}
+
+namespace
+{
+
+class JSONPathValuesTextIndexConsumer
+{
+public:
+    explicit JSONPathValuesTextIndexConsumer(MergeTreeIndexTextGranuleBuilder & granule_builder_)
+        : granule_builder(granule_builder_)
+        , first_row(granule_builder.getCurrentRow())
+    {
+    }
+
+    void setRow(size_t row) { current_row = first_row + row; }
+    void addToken(std::string_view token) { granule_builder.addTokenForRow(token, static_cast<UInt32>(current_row)); }
+    void finishRows(size_t rows) { granule_builder.advanceRows(rows); }
+
+private:
+    MergeTreeIndexTextGranuleBuilder & granule_builder;
+    UInt64 first_row;
+    UInt64 current_row = 0;
+};
+
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorText::getGranuleAndReset()
@@ -1724,6 +1780,20 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     const size_t rows_read = std::min(limit, block.rows() - *pos);
     if (rows_read == 0)
         return;
+
+    if (json_path_values)
+    {
+        const auto source = block.getColumnOrSubcolumnByName(json_path_values->source_column_name);
+        const auto source_column = source.column->convertToFullColumnIfConst();
+        const auto & column_object = assert_cast<const ColumnObject &>(*source_column);
+        const auto & type_object = assert_cast<const DataTypeObject &>(*source.type);
+        JSONPathValuesTextIndexConsumer consumer(granule_builder);
+        JSONPathValues::Extractor<JSONPathValuesTextIndexConsumer> extractor(json_path_values->max_token_bytes, consumer);
+        enumerateJSONValues<true>(column_object, type_object, extractor, *pos, rows_read);
+        ProfileEvents::increment(ProfileEvents::JSONPathValuesTextIndexInputRows, rows_read);
+        *pos += rows_read;
+        return;
+    }
 
     const auto & index_column = block.getByName(index_column_name);
     auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
@@ -1856,7 +1926,15 @@ MergeTreeIndexText::MergeTreeIndexText(
     , preprocessor(std::make_shared<MergeTreeIndexTextPreprocessor>(params.preprocessor, index_))
     , postprocessor(std::make_shared<MergeTreeIndexTextPostprocessor>(params.postprocessor, index_))
     , normalized_index_column_name(getNormalizedIndexColumnName(index_))
+    , json_path_values(getJSONPathValuesBuildInfo(index_, *tokenizer))
 {
+}
+
+Names MergeTreeIndexText::getColumnsRequiredForBuild() const
+{
+    if (json_path_values)
+        return {json_path_values->source_column_name};
+    return index.column_names;
 }
 
 MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
@@ -1907,12 +1985,13 @@ MergeTreeIndexGranulePtr MergeTreeIndexText::createIndexGranule() const
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorText>(index.column_names[0], params, tokenizer.get(), posting_list_codec.get(), preprocessor, postprocessor);
+    return std::make_shared<MergeTreeIndexAggregatorText>(
+        index.column_names[0], params, tokenizer.get(), posting_list_codec.get(), preprocessor, postprocessor, json_path_values);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, normalized_index_column_name, tokenizer.get(), preprocessor, postprocessor, params.positions);
+    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index, normalized_index_column_name, tokenizer.get(), preprocessor, postprocessor, params.positions);
 }
 
 DataTypePtr MergeTreeIndexText::getNestedDataType(const DataTypePtr & data_type)
@@ -2071,7 +2150,19 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     auto tokenizer_ast = extractASTOption(options, ARGUMENT_TOKENIZER, true);
     auto preprocessor_ast = extractASTOption(options, ARGUMENT_PREPROCESSOR, false);
     auto postprocessor_ast = extractASTOption(options, ARGUMENT_POSTPROCESSOR, false);
-    TokenizerFactory::instance().get(tokenizer_ast);
+    auto tokenizer = TokenizerFactory::instance().get(tokenizer_ast);
+    const bool is_json_path_values = tokenizer->getType() == ITokenizer::Type::JSONPathValues;
+
+    if (is_json_path_values)
+    {
+        const auto * declaration = index.definition_ast->as<ASTIndexDeclaration>();
+        if (!declaration || !declaration->getExpression()->as<ASTIdentifier>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tokenizer `jsonPathValues` requires a direct `JSON` column");
+        if (preprocessor_ast)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tokenizer `jsonPathValues` does not support a preprocessor");
+        if (postprocessor_ast)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tokenizer `jsonPathValues` does not support a postprocessor");
+    }
 
     UInt64 dictionary_block_size = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_dictionary_block_size]);
@@ -2094,6 +2185,8 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     UInt64 positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(DEFAULT_POSITIONS);
     if (positions > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_POSITIONS, positions);
+    if (is_json_path_values && positions)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tokenizer `jsonPathValues` does not support `positions = 1`");
 
     if (positions && !settings[MergeTreeSetting::allow_experimental_text_index_phrase_search])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2112,14 +2205,22 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Text index must be created on a single column");
 
     DataTypePtr index_data_type = index.data_types[0];
-    WhichDataType which_data_type(MergeTreeIndexText::getNestedDataType(index_data_type));
-
-    if (!which_data_type.isString() && !which_data_type.isFixedString())
+    if (is_json_path_values)
     {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Text index must be created on columns of type with base type of String or FixedString, got: {}",
-            index_data_type->getName());
+        if (index_data_type->getTypeId() != TypeIndex::Object)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Tokenizer `jsonPathValues` requires a `JSON` column, got: {}",
+                index_data_type->getName());
+    }
+    else
+    {
+        WhichDataType which_data_type(MergeTreeIndexText::getNestedDataType(index_data_type));
+        if (!which_data_type.isString() && !which_data_type.isFixedString())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Text index must be created on columns of type with base type of String or FixedString, got: {}",
+                index_data_type->getName());
     }
 
     /// Create the preprocessor for validation.

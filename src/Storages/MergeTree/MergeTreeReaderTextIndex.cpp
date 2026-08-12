@@ -140,8 +140,10 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
             search_queries,
             [](const auto & search_query)
             {
-                return search_query && search_query->getSearchMode() == TextSearchMode::Phrase
-                    && search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact;
+                return search_query
+                    && (search_query->getJSONPayload()
+                        || (search_query->getSearchMode() == TextSearchMode::Phrase
+                            && search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact));
             });
 
     if (!has_fallback_candidates)
@@ -171,7 +173,8 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
         if (!search_query)
             continue;
 
-        bool needs_fallback = !search_query->getPatterns().empty()
+        bool needs_fallback = search_query->hasPatternLookup()
+            || search_query->getJSONPayload()
             || (search_query->getSearchMode() == TextSearchMode::Phrase && search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact);
         if (!needs_fallback)
             continue;
@@ -219,6 +222,7 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
 void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
 {
     IMergeTreeReader::updateAllMarkRanges(ranges);
+    fallback_reader_next_row.reset();
 
     if (fallback_reader)
     {
@@ -273,6 +277,7 @@ void MergeTreeReaderTextIndex::classifyVirtualColumns()
 {
     is_always_true.resize(columns_to_read.size(), false);
     use_fallback.resize(columns_to_read.size(), false);
+    use_dynamic_fallback.resize(columns_to_read.size(), false);
 
     const auto & analyzer = granule->getAnalyzer();
 
@@ -282,7 +287,7 @@ void MergeTreeReaderTextIndex::classifyVirtualColumns()
         const auto & search_query = search_queries[i];
         const auto & query_builder = analyzer.getQueryBuilder(*search_query);
 
-        if (search_query->getTokens().empty() && search_query->getPatterns().empty())
+        if (search_query->getTokens().empty() && !search_query->hasPatternLookup())
         {
             /// Token and phrase searches with no search tokens never match (row-level returns 0, e.g. when a
             /// postprocessor maps every needle token to empty). Encode this as an explicit no-match so direct
@@ -316,6 +321,12 @@ void MergeTreeReaderTextIndex::classifyVirtualColumns()
 
                 use_fallback[i] = true;
             }
+        }
+        else if (const auto & payload = search_query->getJSONPayload())
+        {
+            use_dynamic_fallback[i] = std::ranges::any_of(
+                query_builder.tokens,
+                [&](const auto & entry) { return payload->requiresValidation(entry.first); });
         }
         else if (
             search_query->getSearchMode() == TextSearchMode::Phrase
@@ -428,7 +439,10 @@ size_t MergeTreeReaderTextIndex::readRows(
         /// forward-only (their `linearOr` / `linearAnd` / `advance` walk segments from
         /// `current_segment_idx` onward), so they cannot serve an earlier `row_offset`.
         if (from_mark < current_mark)
+        {
             resetCursors();
+            fallback_reader_next_row.reset();
+        }
 
         from_row = index_granularity.getMarkStartingRow(from_mark) + rows_offset;
     }
@@ -463,7 +477,7 @@ size_t MergeTreeReaderTextIndex::readRows(
         initializePositionsStream();
     }
 
-    const bool any_use_fallback = !use_fallback.empty() && std::ranges::any_of(use_fallback, [](bool b) { return b; });
+    const bool any_use_fallback = std::ranges::any_of(use_fallback, [](bool value) { return value; });
 
     /// If any column needs the fallback evaluation, read the physical columns upfront.
     /// We pass the same mark/continue_reading/offset arguments so the fallback reader stays
@@ -490,9 +504,76 @@ size_t MergeTreeReaderTextIndex::readRows(
         /// In lazy mode skip per-mark Roaring Bitmap materialization — cursors decode on demand.
         PostingList range_posting;
         std::vector<PostingList> mark_postings;
+        std::vector<PostingList> dynamic_fallback_postings(columns_to_read.size());
 
         if (!use_lazy_mode)
-            mark_postings = buildPostingsForMark(from_mark, RowsRange(from_row, from_row + rows_to_read - 1), range_posting);
+            mark_postings = buildPostingsForMark(
+                from_mark,
+                RowsRange(from_row, from_row + rows_to_read - 1),
+                range_posting,
+                dynamic_fallback_postings);
+        else
+        {
+            auto mark_range = getRowsRangeForMark(from_mark);
+            auto effective_range = mark_range ? mark_range->intersectWith(RowsRange(from_row, from_row + rows_to_read - 1)) : std::nullopt;
+            if (effective_range)
+            {
+                range_posting.addRangeClosed(
+                    static_cast<UInt32>(effective_range->begin),
+                    static_cast<UInt32>(effective_range->end));
+                const auto & analyzer = granule->getAnalyzer();
+                for (size_t i = 0; i < columns_to_read.size(); ++i)
+                {
+                    if (use_dynamic_fallback[i])
+                        dynamic_fallback_postings[i] = buildDynamicFallbackPostingsForQuery(
+                            *search_queries[i], analyzer, *effective_range, range_posting);
+                }
+            }
+        }
+
+        bool mark_requires_dynamic_fallback_reader = false;
+        for (size_t i = 0; i < dynamic_fallback_postings.size(); ++i)
+        {
+            if (!dynamic_fallback_postings[i].isEmpty()
+                && search_queries[i]->getDirectReadMode() != TextIndexDirectReadMode::Hint)
+            {
+                mark_requires_dynamic_fallback_reader = true;
+                break;
+            }
+        }
+
+        Block mark_fallback_block;
+        const Block * current_fallback_block = &fallback_block;
+        size_t current_fallback_offset = fallback_offset;
+        if (!any_use_fallback && mark_requires_dynamic_fallback_reader)
+        {
+            Columns fallback_cols(fallback_columns_list.size(), nullptr);
+            const size_t mark_start_row = index_granularity.getMarkStartingRow(from_mark);
+            const size_t mark_offset = from_row - mark_start_row;
+            const bool continue_fallback_reading = fallback_reader_next_row == from_row;
+            const size_t fallback_rows = fallback_reader->readRows(
+                from_mark,
+                continue_fallback_reading,
+                rows_to_read,
+                continue_fallback_reading ? 0 : mark_offset,
+                fallback_cols);
+            if (fallback_rows != rows_to_read)
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Fallback reader returned {} rows, expected {}",
+                    fallback_rows,
+                    rows_to_read);
+            }
+            fallback_reader_next_row = from_row + fallback_rows;
+
+            size_t col_idx = 0;
+            for (const auto & col_name_type : fallback_columns_list)
+                mark_fallback_block.insert({fallback_cols[col_idx++], col_name_type.type, col_name_type.name});
+
+            current_fallback_block = &mark_fallback_block;
+            current_fallback_offset = 0;
+        }
 
         for (size_t i = 0; i < res_columns.size(); ++i)
         {
@@ -512,6 +593,34 @@ size_t MergeTreeReaderTextIndex::readRows(
                     fallback_block,
                     fallback_offset,
                     rows_to_read);
+            }
+            else if (use_dynamic_fallback[i] && !dynamic_fallback_postings[i].isEmpty())
+            {
+                if (use_lazy_mode)
+                    fillColumnLazy(column_mutable, i, from_row, rows_to_read, range_posting);
+                else
+                    fillColumn(column_mutable, mark_postings[i], from_row, rows_to_read);
+
+                if (search_queries[i]->getDirectReadMode() == TextIndexDirectReadMode::Hint)
+                {
+                    indices_buffer.resize(dynamic_fallback_postings[i].cardinality());
+                    dynamic_fallback_postings[i].toUint32Array(indices_buffer.data());
+                    auto & column_data = assert_cast<ColumnUInt8 &>(column_mutable).getData();
+                    const size_t column_offset = column_data.size() - rows_to_read;
+                    for (const auto row : indices_buffer)
+                        column_data[column_offset + row - from_row] = 1;
+                }
+                else
+                {
+                    applyDynamicFallback(
+                        column_mutable,
+                        columns_to_read[i].name,
+                        dynamic_fallback_postings[i],
+                        *current_fallback_block,
+                        current_fallback_offset,
+                        from_row,
+                        rows_to_read);
+                }
             }
             else if (const auto & search_query = search_queries[i];
                      search_query && search_query->getSearchMode() == TextSearchMode::Phrase)
@@ -582,9 +691,14 @@ std::optional<RowsRange> MergeTreeReaderTextIndex::getRowsRangeForMark(size_t ma
     return RowsRange(row_begin, row_end - 1);
 }
 
-std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t mark, const RowsRange & slice_range, PostingList & range_posting)
+std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(
+    size_t mark,
+    const RowsRange & slice_range,
+    PostingList & range_posting,
+    std::vector<PostingList> & dynamic_fallback_postings)
 {
     std::vector<PostingList> result(columns_to_read.size());
+    dynamic_fallback_postings.resize(columns_to_read.size());
     auto mark_range = getRowsRangeForMark(mark);
 
     if (!mark_range.has_value())
@@ -605,7 +719,7 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t m
             continue;
 
         const auto & search_query = search_queries[i];
-        if (search_query->getTokens().empty() && search_query->getPatterns().empty())
+        if (search_query->getTokens().empty() && !search_query->hasPatternLookup())
             continue;
 
         /// Phrase queries are resolved from positional data (.pos) in applyPostingsPhrase,
@@ -614,9 +728,46 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t m
             continue;
 
         result[i] = buildPostingsForQuery(*search_query, analyzer, *effective_range, range_posting);
+        if (use_dynamic_fallback[i])
+            dynamic_fallback_postings[i] = buildDynamicFallbackPostingsForQuery(
+                *search_query, analyzer, *effective_range, range_posting);
     }
 
     return result;
+}
+
+PostingList MergeTreeReaderTextIndex::buildDynamicFallbackPostingsForQuery(
+    const TextSearchQuery & query,
+    const TextIndexAnalyzer & analyzer,
+    const RowsRange & range,
+    PostingList & range_posting)
+{
+    const auto & query_builder = analyzer.getQueryBuilder(query);
+    std::optional<PostingList> result;
+    if (query_builder.dynamic_fallback_postings)
+        result = *query_builder.dynamic_fallback_postings & range_posting;
+
+    const auto & payload = query.getJSONPayload();
+    if (!payload)
+        return result.value_or(PostingList{});
+
+    for (const auto & [token, token_info] : query_builder.tokens)
+    {
+        if (!payload->requiresValidation(token) || analyzer.hasReadPostings(token))
+            continue;
+
+        auto read_blocks = readPostingsBlocksForToken(token, *token_info, range);
+        for (const auto & block : read_blocks)
+        {
+            const PostingList postings = *block & range_posting;
+            if (result)
+                *result |= postings;
+            else
+                result = postings;
+        }
+    }
+
+    return result.value_or(PostingList{});
 }
 
 PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
@@ -939,21 +1090,7 @@ void MergeTreeReaderTextIndex::fillColumnFallback(
     size_t offset,
     size_t num_rows) const
 {
-    auto it = fallback_expressions.find(column_name);
-    chassert(it != fallback_expressions.end());
-
-    /// Build a block slice for this granule: cut [offset, offset + num_rows) from each physical column.
-    Block slice;
-    for (const auto & col : physical_block)
-        slice.insert({col.column->cut(offset, num_rows), col.type, col.name});
-
-    /// Execute the virtual column's default expression (the original search predicate) on the slice.
-    /// After execution the block contains both the physical columns and the computed virtual column.
-    it->second->execute(slice);
-
-    /// The predicate result can be sparse/const (inputs may be sparse), so make it full before the dense cast.
-    const auto & result_col = slice.getByName(column_name);
-    auto result_full = result_col.column->convertToFullIfWrapped();
+    auto result_full = evaluateFallback(column_name, physical_block, offset, num_rows);
     const auto & result_data = assert_cast<const ColumnUInt8 &>(*result_full).getData();
     chassert(result_data.size() == num_rows);
 
@@ -961,6 +1098,55 @@ void MergeTreeReaderTextIndex::fillColumnFallback(
     const size_t old_size = column_data.size();
     column_data.resize(old_size + num_rows);
     memcpy(&column_data[old_size], result_data.data(), num_rows);
+}
+
+void MergeTreeReaderTextIndex::applyDynamicFallback(
+    IColumn & column,
+    const String & column_name,
+    const PostingList & dynamic_fallback_postings,
+    const Block & physical_block,
+    size_t physical_offset,
+    size_t row_offset,
+    size_t num_rows)
+{
+    indices_buffer.resize(dynamic_fallback_postings.cardinality());
+    dynamic_fallback_postings.toUint32Array(indices_buffer.data());
+
+    auto selector = ColumnUInt64::create();
+    auto & selector_data = selector->getData();
+    selector_data.resize(indices_buffer.size());
+    for (size_t i = 0; i != indices_buffer.size(); ++i)
+        selector_data[i] = physical_offset + indices_buffer[i] - row_offset;
+
+    Block selected_block;
+    for (const auto & physical_column : physical_block)
+        selected_block.insert({physical_column.column->index(*selector, 0), physical_column.type, physical_column.name});
+
+    const auto result_full = evaluateFallback(column_name, selected_block, 0, selector_data.size());
+    const auto & result_data = assert_cast<const ColumnUInt8 &>(*result_full).getData();
+    auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
+    const size_t column_offset = column_data.size() - num_rows;
+    for (size_t i = 0; i != indices_buffer.size(); ++i)
+        column_data[column_offset + indices_buffer[i] - row_offset] = result_data[i];
+}
+
+ColumnPtr MergeTreeReaderTextIndex::evaluateFallback(
+    const String & column_name,
+    const Block & physical_block,
+    size_t offset,
+    size_t num_rows) const
+{
+    auto it = fallback_expressions.find(column_name);
+    chassert(it != fallback_expressions.end());
+
+    Block slice;
+    for (const auto & column : physical_block)
+        slice.insert({column.column->cut(offset, num_rows), column.type, column.name});
+    it->second->execute(slice);
+
+    auto result = slice.getByName(column_name).column->convertToFullIfWrapped();
+    chassert(result->size() == num_rows);
+    return result;
 }
 
 void MergeTreeReaderTextIndex::setPrecomputedGranule(const IndexGranulesMap & granules)

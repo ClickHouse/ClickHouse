@@ -87,6 +87,7 @@ CREATE TABLE table
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
+                                            | jsonPathValues[(max_token_bytes)]
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
@@ -106,7 +107,7 @@ Text indexes can be defined on columns of these types:
 - [String](/reference/data-types/string) and [FixedString](/reference/data-types/fixedstring),
 - [Array(String)](/reference/data-types/array) and [Array(FixedString)](/reference/data-types/array),
 - [Map](/reference/data-types/map) (via [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapKeys) and [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapValues) functions), and
-- [JSON](/reference/data-types/newjson) (via [JSONAllPaths](/reference/functions/regular-functions/json-functions#JSONAllPaths) and [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues) functions).
+- [JSON](/reference/data-types/newjson) (directly with the `jsonPathValues` tokenizer, or via [JSONAllPaths](/reference/functions/regular-functions/json-functions#JSONAllPaths) and [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues) functions).
 
 Columns of type [Nullable(T)](/reference/data-types/nullable) and [LowCardinality()](/reference/data-types/lowcardinality) are also supported, including `Array(Nullable(String or FixedString))`.
 
@@ -124,6 +125,7 @@ ALTER TABLE table
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
+                                            | jsonPathValues[(max_token_bytes)]
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
@@ -981,11 +983,12 @@ SELECT * FROM logs WHERE mapContainsValueLike(attributes, '% error %'); -- fast
 
 ### Indexing JSON columns {#text-index-example-json}
 
-Text indexes can be used with `JSON` columns in three ways:
+Text indexes can be used with `JSON` columns in four ways:
 
 1. **Indexes on specific subcolumns** — create a text index on a known JSON path, just like on a regular column. This indexes the *values* at that path.
 2. **Path-based indexes with [JSONAllPaths](/reference/functions/regular-functions/json-functions#JSONAllPaths)** — indexes *all paths* present in each granule to skip granules that cannot contain the queried path. Similar to `Map` columns.
 3. **Value-based indexes with [JSONAllValues](/reference/functions/regular-functions/json-functions#JSONAllValues)** — indexes *all values* across all JSON paths to accelerate full-text search on any JSON subcolumn with a single index.
+4. **Bounded path/value indexes with the `jsonPathValues` tokenizer** — indexes path-qualified values directly from one `JSON` column while bounding token size.
 
 #### Indexes on specific subcolumns {#json-indexes-on-subcolumns}
 
@@ -1177,6 +1180,33 @@ SELECT * FROM events WHERE hasAllTokens(data.message::String, 'connection timeou
 SELECT * FROM events WHERE data.status_code::UInt64 = 404;
 SELECT * FROM events WHERE has(data.tags::Array(String), 'bug')
 ```
+
+#### Bounded path/value indexes with `jsonPathValues` {#json-indexes-jsonpathvalues}
+
+The `jsonPathValues` tokenizer creates opaque, path-qualified tokens for exact and fuzzy searches on JSON subcolumns. Nulls and empty strings are omitted. The token-size limit must be between 1 byte and 1 MiB. Specify it in production schemas so the schema does not depend on the default.
+
+Its signature is `jsonPathValues([max_token_bytes])`; `max_token_bytes` defaults to `1024`.
+
+```sql
+CREATE TABLE events
+(
+    id UInt64,
+    data JSON,
+    INDEX json_tokens data TYPE text(tokenizer = jsonPathValues(1024))
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+The index supports equality, `IN` on String subcolumns, `has` on array subcolumns, `startsWith`, `endsWith`, prefix `LIKE` patterns such as `LIKE 'error%'`, simple substring `LIKE` and `ILIKE` predicates, `match`, `multiSearchAny`, and `multiSearchAnyUTF8`. Elements of concrete arrays are indexed individually on both declared and dynamic paths. Use an explicit array type when querying a dynamic path, for example `has(data.tags.:\`Array(Nullable(String))\`, 'bug')`. Declared paths of type `JSON` are traversed recursively: their leaf paths are indexed, but the whole subdocument is not. Scalar leaves below one level of `Array(JSON)` are also indexed as array elements, so predicates such as `has(data.items[].price, 10)` can use the index. Null leaves, nested arrays, maps, and tuples below `Array(JSON)` are not indexed. Whole-array equality, whole-`JSON`-subdocument equality, and casts such as `CAST(data.tags AS Array(String))` are not optimized.
+
+Declared paths of type `Map(String, String)`, including `LowCardinality(String)` keys or values, are indexed by key and first value. The index accelerates `has`, `mapContains`, and `mapContainsKey` with a constant key, and equality such as `data.attributes['service'] = 'api'` when the compared value is not empty. Missing map keys produce the default empty String, so equality with an empty value is not optimized. Whole-map equality, keyed `IN`, pattern predicates on keyed values, nonconstant keys, dynamic maps, and other map types are not optimized.
+
+Prefixes that fit in the limit use ordered dictionary lookups and can use direct reads. Longer scalar, array-element, and map values store a bounded prefix and hash. Queries that match a hash or truncated token evaluate the original predicate only for the candidate rows, so truncation cannot cause false-negative results. Untyped `Dynamic` equality and `IN` use exact tokens for common scalar conversions and validate rows containing other runtime types. `CAST(Dynamic AS String)` and `toString(Dynamic)` are not optimized. Because the token encoding is an implementation detail, indexes materialized by an older experimental `jsonPathValues` implementation must be rebuilt after upgrading to this version.
+
+Empty scalar and array strings and null array elements are not indexed, so predicates that search for them read the source column. Map entries with an empty value are retained because the entry token also represents key existence; keyed equality with an empty value is still not optimized because missing keys produce the same default empty String.
+
+`jsonPathValues` accepts exactly one direct `JSON` column and does not support a preprocessor, postprocessor, or `positions = 1`. Its dictionary tokens are an implementation detail and should not be parsed by queries.
 
 `IN` operator:
 

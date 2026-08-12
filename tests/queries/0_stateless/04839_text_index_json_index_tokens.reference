@@ -1,0 +1,53 @@
+equality direct read off
+[1]
+equality complete
+[1]
+equality empty string
+[3,5]
+empty string predicates
+[1,3,5]
+[1,2,3,4,5]
+[1,2,3,4,5]
+[3,5]
+[1,2,4]
+equality typed values
+[1]
+[1]
+equality truncated
+[2]
+in
+[1,4]
+startsWith bounded prefix
+[1,2,5]
+like prefix
+[1,2,5]
+startsWith fallback
+[1,2,5]
+startsWith beyond stored prefix
+[2]
+like
+[1,4]
+like after stored prefix
+[5]
+like dictionary fallback
+[1,4]
+ilike
+[1,2,4]
+endsWith
+[1]
+[5]
+match hint
+[1]
+multiSearchAny
+[1,4]
+path isolation
+[3]
+direct read plan
+1
+dictionary scan plan
+1
+lazy patterns
+[1,4]
+[5]
+[5]
+[1,4]

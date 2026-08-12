@@ -6,6 +6,8 @@
 namespace DB
 {
 
+class ColumnString;
+
 /// Drives text-index analysis during a granule's dictionary scan: folds per-query
 /// token postings and row ranges, then bypasses queries that have failed or are no
 /// longer worth evaluating (low-selectivity hints, pattern bypass).
@@ -37,6 +39,8 @@ public:
         std::optional<RowsRange> rows_range;
         /// Posting list folded across materialized tokens by the query search mode.
         std::optional<PostingList> postings;
+        /// Rows selected by tokens that require validation with the original predicate.
+        std::optional<PostingList> dynamic_fallback_postings;
 
         /// Query can never match (e.g. missing token in `All` mode, empty intersection).
         bool is_failed = false;
@@ -52,7 +56,7 @@ public:
         void addMissingToken(std::string_view token);
         void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range);
         void addRowsRange(RowsRange token_rows_range);
-        void addPostings(const PostingList & token_postings);
+        void addPostings(std::string_view token, const PostingList & token_postings);
         bool needReadPostings() const { return num_read_postings < tokens.size(); }
     };
 
@@ -74,9 +78,10 @@ public:
 
     /// Pushes the row ranges still readable after the analysis of the primary key and prior skip indexes.
     void setReadableRows(std::vector<RowsRange> readable_ranges);
-    /// Attaches a scan-discovered `token` to every pattern query whose regex matches it.
-    /// Returns true if any pattern matched.
-    bool addTokenToPatterns(std::string_view token);
+    /// Finds matching dictionary tokens, attaching them to their prefix or regex queries.
+    std::vector<size_t> addTokensToPatterns(const ColumnString & tokens);
+    /// Returns true if a dictionary block can contain a token in any pattern query's prefix range.
+    bool mayMatchPatternsInRange(std::string_view begin, std::optional<std::string_view> end) const;
     /// Marks all pattern queries as bypassed (e.g. dictionary scan budget exhausted).
     void bypassPatternQueries();
 
@@ -105,6 +110,8 @@ private:
     absl::flat_hash_map<String, QueryHashes> queries_by_token;
     /// Pattern queries grouped by their compiled regex; static for the analyzer's lifetime.
     absl::flat_hash_map<const OptimizedRegularExpression *, QueryHashes> queries_by_pattern;
+    /// JSON pattern queries grouped by their dictionary-token prefix.
+    absl::flat_hash_map<String, QueryHashes> queries_by_prefix;
 
     /* Fields updated dynamically during text index analysis. */
 

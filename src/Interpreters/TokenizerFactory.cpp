@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <Common/Exception.h>
+#include <Functions/JSONPathValues.h>
 #include <Interpreters/ITokenizer.h>
 #if USE_MECAB
 #include <Interpreters/JapaneseTokenizer.h>
@@ -223,6 +224,28 @@ static void registerTokenizers(TokenizerFactory & factory)
     };
 
     factory.registerTokenizer(ArrayTokenizer::getName(), ITokenizer::Type::Array, array_creator);
+
+    auto json_path_values_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
+    {
+        const auto * tokenizer_name = JSONPathValuesTokenizer::getExternalName();
+        assertParamsCount(args.size(), 1, tokenizer_name);
+
+        const UInt64 max_token_bytes = args.empty()
+            ? JSONPathValues::DEFAULT_MAX_TOKEN_BYTES
+            : castAs<UInt64>(args[0], "max_token_bytes");
+        if (!JSONPathValues::isValidMaxTokenBytes(max_token_bytes))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Tokenizer '{}' argument 'max_token_bytes' must be between 1 and {}, got {}",
+                tokenizer_name,
+                JSONPathValues::MAX_TOKEN_BYTES,
+                max_token_bytes);
+
+        return std::make_unique<JSONPathValuesTokenizer>(max_token_bytes);
+    };
+
+    factory.registerTokenizer(
+        JSONPathValuesTokenizer::getName(), ITokenizer::Type::JSONPathValues, json_path_values_creator);
 
     auto sparse_grams_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {

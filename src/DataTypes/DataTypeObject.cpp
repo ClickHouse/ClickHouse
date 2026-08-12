@@ -2034,11 +2034,12 @@ SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
 
 ## Data skipping indexes for JSON {#data-skipping-indexes-for-json}
 
-[Data skipping indexes](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) can be used with `JSON` columns in three ways:
+[Data skipping indexes](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) can be used with `JSON` columns in four ways:
 
 1. **Indexes on specific subcolumns** — create a standard skip index on a known JSON path, just like on a regular column. This indexes the *values* at that path.
 2. **Path-based indexes with `JSONAllPaths`** — index the *set of paths* present in each granule to skip granules that cannot contain the queried path.
 3. **Value-based indexes with `JSONAllValues`** — index *all values* across all JSON paths using a [text index](/reference/engines/table-engines/mergetree-family/textindexes) to accelerate full-text search on any JSON subcolumn with a single index.
+4. **Bounded path/value indexes with the `jsonPathValues` tokenizer** — preserve path/value correlation for exact and fuzzy subcolumn filtering while bounding token size.
 
 ### Indexes on specific subcolumns {#json-indexes-on-subcolumns}
 
@@ -2196,6 +2197,12 @@ When a JSON path is absent from a granule, the subcolumn evaluates to:
 A single index on `JSONAllValues(json_column)` covers all JSON paths, enabling full-text search on any subcolumn without creating separate indexes for each path.
 
 See [Value-based indexes with JSONAllValues](/reference/engines/table-engines/mergetree-family/textindexes#json-indexes-jsonallvalues) in the text indexes documentation for details and examples.
+
+### Bounded path/value search with `jsonPathValues` {#json-indexes-jsonpathvalues}
+
+The `jsonPathValues` text-index tokenizer creates bounded, path-qualified tokens directly from one `JSON` column. It supports scalar equality and search predicates, `has` on concrete array elements, and constant-key existence or nonempty keyed equality on declared `Map(String, String)` paths. Whole-array and whole-map equality, type-changing `Dynamic` casts, and unsupported `Dynamic` runtime types are validated from the real column rather than represented as type-erased values.
+
+See [Bounded path/value indexes with `jsonPathValues`](/reference/engines/table-engines/mergetree-family/textindexes#json-indexes-jsonpathvalues) for the index definition and behavior.
 
 ## Tips for better usage of the JSON type {#tips-for-better-usage-of-the-json-type}
 

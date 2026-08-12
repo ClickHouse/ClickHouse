@@ -7,9 +7,12 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/JSONPathValues.h>
 #include <Functions/MultiSearchImpl.h>
 #include <Functions/checkHyperscanRegexp.h>
 #include <Functions/hasAnyAllTokens.h>
@@ -30,6 +33,7 @@
 #include <absl/container/inlined_vector.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Functions/FunctionHelpers.h>
@@ -74,6 +78,60 @@ TextSearchQuery::TextSearchQuery(
 {
     std::sort(tokens.begin(), tokens.end());
     initializeHash();
+}
+
+TextSearchQuery::TextSearchQuery(
+    String function_name_,
+    TextSearchMode search_mode_,
+    TextIndexDirectReadMode direct_read_mode_,
+    VectorWithMemoryTracking<String> tokens_,
+    std::vector<OptimizedRegularExpression> patterns_,
+    std::optional<JSONTextQueryPayload> json_payload_)
+    : TextSearchQuery(
+        std::move(function_name_),
+        search_mode_,
+        direct_read_mode_,
+        std::move(tokens_),
+        std::move(patterns_))
+{
+    json_payload = std::move(json_payload_);
+    if (json_payload)
+    {
+        std::ranges::sort(json_payload->pattern_token_prefixes);
+        std::ranges::sort(json_payload->pattern_token_excluded_prefixes);
+        std::ranges::sort(json_payload->validation_tokens);
+        std::ranges::sort(json_payload->validation_pattern_prefixes);
+        std::ranges::sort(json_payload->pattern_token_kinds);
+        std::ranges::sort(json_payload->validation_pattern_kinds);
+    }
+    initializeHash();
+}
+
+bool JSONTextQueryPayload::matchesPatternToken(std::string_view token) const
+{
+    if (!pattern_token_prefixes.empty()
+        && !std::ranges::any_of(pattern_token_prefixes, [token](const String & prefix) { return token.starts_with(prefix); }))
+        return false;
+    if (std::ranges::any_of(pattern_token_excluded_prefixes, [token](const String & prefix) { return token.starts_with(prefix); }))
+        return false;
+    if (pattern_token_kinds.empty())
+        return true;
+    const auto kind = JSONPathValues::tryGetKind(token);
+    return kind && std::ranges::binary_search(pattern_token_kinds, *kind);
+}
+
+bool JSONTextQueryPayload::requiresValidation(std::string_view token) const
+{
+    if (std::ranges::binary_search(validation_tokens, token))
+        return true;
+    if (std::ranges::any_of(pattern_token_excluded_prefixes, [token](const String & prefix) { return token.starts_with(prefix); }))
+        return false;
+    if (!std::ranges::any_of(validation_pattern_prefixes, [token](const String & prefix) { return token.starts_with(prefix); }))
+        return false;
+    if (validation_pattern_kinds.empty())
+        return true;
+    const auto kind = JSONPathValues::tryGetKind(token);
+    return kind && std::ranges::binary_search(validation_pattern_kinds, *kind);
 }
 
 void TextSearchQuery::initializeHash()
@@ -122,20 +180,48 @@ void TextSearchQuery::initializeHash()
         }
     }
 
+    if (json_payload)
+    {
+        hash_state.update("JSONPathValues");
+        hash_state.update(json_payload->missing_tokens_are_absent);
+        hash_state.update(json_payload->match_patterns_by_prefix);
+
+        auto hash_strings = [&](const auto & strings)
+        {
+            hash_state.update(strings.size());
+            for (const auto & value : strings)
+            {
+                hash_state.update(value.size());
+                hash_state.update(value);
+            }
+        };
+        hash_strings(json_payload->validation_tokens);
+        hash_strings(json_payload->pattern_token_prefixes);
+        hash_strings(json_payload->pattern_token_excluded_prefixes);
+        hash_strings(json_payload->validation_pattern_prefixes);
+
+        hash_state.update(json_payload->pattern_token_kinds.size());
+        for (const auto kind : json_payload->pattern_token_kinds)
+            hash_state.update(kind);
+        hash_state.update(json_payload->validation_pattern_kinds.size());
+        for (const auto kind : json_payload->validation_pattern_kinds)
+            hash_state.update(kind);
+    }
+
     hash = hash_state.get128();
 }
 
 MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     const ActionsDAG::Node * predicate,
     ContextPtr context_,
-    const Block & index_sample_block,
+    const IndexDescription & index_description,
     const std::optional<String> & normalized_index_column_name_,
     TokenizerPtr tokenizer_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
     bool has_positions_)
     : WithContext(context_)
-    , header(index_sample_block)
+    , header(index_description.sample_block)
     , normalized_index_column_name(normalized_index_column_name_)
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
@@ -145,6 +231,20 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , has_postprocessor(postprocessor && postprocessor->hasActions())
     , has_positions(has_positions_)
 {
+    if (tokenizer->getType() == ITokenizer::Type::JSONPathValues)
+    {
+        const auto required_columns = index_description.expression->getRequiredColumns();
+        if (required_columns.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tokenizer `jsonPathValues` index does not have exactly one source column");
+
+        const auto & json_tokenizer = assert_cast<const JSONPathValuesTokenizer &>(*tokenizer);
+        json_path_values_configuration = JSONPathValuesConfiguration{
+            .column_name = required_columns.front(),
+            .max_token_bytes = json_tokenizer.getMaxTokenBytes(),
+            .json_type = index_description.data_types.front(),
+        };
+    }
+
     if (!predicate)
     {
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
@@ -328,7 +428,7 @@ TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const Acti
 
 std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
 {
-    if (query.getTokens().empty() && query.getPatterns().empty() && query.getDirectReadMode() == TextIndexDirectReadMode::Hint)
+    if (query.getTokens().empty() && !query.hasPatternLookup() && query.getDirectReadMode() == TextIndexDirectReadMode::Hint)
         return std::nullopt;
 
     auto query_hash = query.getHash();
@@ -387,7 +487,7 @@ bool queryMayBeTrueInRange(
         return false;
 
     /// Pattern bypass means analysis is incomplete, so conservatively return true.
-    if (query_builder.is_bypassed && !query.getPatterns().empty())
+    if (query_builder.is_bypassed && query.hasPatternLookup())
         return true;
 
     if (!current_range.has_value())
@@ -424,7 +524,7 @@ bool hasAnyTokensInRange(const TextSearchQuery & query, const TextIndexAnalyzer:
 
 bool hasAnyPatternsInRange(const TextSearchQuery & query, const TextIndexAnalyzer::QueryBuilder & query_builder, const std::optional<RowsRange> & current_range)
 {
-    if (query.getPatterns().empty())
+    if (!query.hasPatternLookup())
         return false;
 
     return queryMayBeTrueInRange(query, query_builder, current_range, TextSearchMode::Any);
@@ -596,7 +696,7 @@ std::string MergeTreeIndexConditionText::getDescription() const
 
 bool MergeTreeIndexConditionText::hasSearchPatterns() const
 {
-    return std::ranges::any_of(all_search_queries, [](const auto & query) { return !query.second->getPatterns().empty(); });
+    return std::ranges::any_of(all_search_queries, [](const auto & query) { return query.second->hasPatternLookup(); });
 }
 
 bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const
@@ -646,10 +746,165 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         auto lhs_argument = function.getArgumentAt(0);
         auto rhs_argument = function.getArgumentAt(1);
 
-        if ((function_name == "in" || function_name == "globalIn")
-            && tryPrepareSetForTextSearch(lhs_argument, rhs_argument, function_name, out))
+        auto traverse_null_replacement = [&](size_t replacement_position)
         {
-            out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
+            std::optional<RPNBuilderTreeNode> argument(function.getArgumentAt(replacement_position));
+            const auto needle = function.getArgumentAt(1 - replacement_position);
+            Field needle_value;
+            DataTypePtr needle_type;
+            if (!needle.tryGetConstant(needle_value, needle_type))
+                return false;
+
+            bool unwrapped = false;
+            while (argument->isFunction())
+            {
+                const auto wrapper = argument->toFunctionNode();
+                const auto & wrapper_name = wrapper.getFunctionName();
+
+                if (wrapper_name == "toString" && wrapper.getArgumentsSize() == 1)
+                {
+                    const auto source = wrapper.getArgumentAt(0);
+                    const auto * source_dag_node = source.getDAGNode();
+                    if (!source_dag_node
+                        || !WhichDataType(removeNullable(source_dag_node->result_type)).isStringOrFixedString())
+                        break;
+                    argument.emplace(source);
+                    unwrapped = true;
+                    continue;
+                }
+
+                if ((wrapper_name != "ifNull" && wrapper_name != "coalesce" && wrapper_name != "nullIf")
+                    || wrapper.getArgumentsSize() != 2)
+                    break;
+
+                const auto fallback = wrapper.getArgumentAt(1);
+                Field fallback_value;
+                DataTypePtr fallback_type;
+                if (!fallback.tryGetConstant(fallback_value, fallback_type)
+                    || fallback_type->getTypeId() != TypeIndex::String)
+                    return false;
+
+                ColumnsWithTypeAndName fallback_arguments(2);
+                fallback_arguments[replacement_position] = fallback.getConstantColumn();
+                fallback_arguments[1 - replacement_position] = needle.getConstantColumn();
+                for (auto & fallback_argument : fallback_arguments)
+                    fallback_argument.column = fallback_argument.column->cloneResized(1);
+
+                const auto fallback_function = FunctionFactory::instance().get(function_name, getContext())->build(fallback_arguments);
+                const auto fallback_predicate = fallback_function->prepare(fallback_arguments)->execute(
+                    fallback_arguments, fallback_function->getResultType(), 1, true);
+                if (!fallback_predicate->isNullAt(0) && fallback_predicate->getBool(0))
+                    return false;
+
+                argument.emplace(wrapper.getArgumentAt(0));
+                unwrapped = true;
+            }
+
+            return unwrapped && traverseFunctionNode(function, *argument, needle_type, needle_value, out);
+        };
+
+        const bool supports_left_null_replacement = function_name == "equals"
+            || function_name == "like"
+            || function_name == "ilike"
+            || function_name == "startsWith"
+            || function_name == "endsWith"
+            || function_name == "match";
+        if ((supports_left_null_replacement && traverse_null_replacement(0))
+            || (function_name == "equals" && traverse_null_replacement(1)))
+            return true;
+
+        if (function_name == "has")
+        {
+            Field values_field;
+            DataTypePtr values_type;
+            if (lhs_argument.tryGetConstant(values_field, values_type)
+                && values_field.getType() == Field::Types::Array
+                && WhichDataType(values_type).isArray())
+            {
+                const auto * array_type = typeid_cast<const DataTypeArray *>(values_type.get());
+                const auto nested_type = removeNullable(array_type->getNestedType());
+                if (WhichDataType(nested_type).isStringOrFixedString())
+                {
+                    std::optional<RPNBuilderTreeNode> index_argument(rhs_argument);
+                    bool safe = true;
+                    while (index_argument->isFunction())
+                    {
+                        const auto wrapper = index_argument->toFunctionNode();
+                        const auto & wrapper_name = wrapper.getFunctionName();
+                        if (wrapper_name == "toString" && wrapper.getArgumentsSize() == 1)
+                        {
+                            const auto source = wrapper.getArgumentAt(0);
+                            const auto * source_dag_node = source.getDAGNode();
+                            if (!source_dag_node
+                                || !WhichDataType(removeNullable(source_dag_node->result_type)).isStringOrFixedString())
+                                break;
+                            index_argument.emplace(source);
+                            continue;
+                        }
+
+                        if ((wrapper_name != "ifNull" && wrapper_name != "coalesce" && wrapper_name != "nullIf")
+                            || wrapper.getArgumentsSize() != 2)
+                            break;
+
+                        const auto fallback = wrapper.getArgumentAt(1);
+                        Field fallback_value;
+                        DataTypePtr fallback_type;
+                        if (!fallback.tryGetConstant(fallback_value, fallback_type)
+                            || fallback_type->getTypeId() != TypeIndex::String)
+                        {
+                            safe = false;
+                            break;
+                        }
+
+                        ColumnsWithTypeAndName fallback_arguments{
+                            lhs_argument.getConstantColumn(),
+                            fallback.getConstantColumn(),
+                        };
+                        for (auto & fallback_argument : fallback_arguments)
+                            fallback_argument.column = fallback_argument.column->cloneResized(1);
+
+                        const auto fallback_function = FunctionFactory::instance().get(function_name, getContext())->build(fallback_arguments);
+                        const auto fallback_predicate = fallback_function->prepare(fallback_arguments)->execute(
+                            fallback_arguments, fallback_function->getResultType(), 1, true);
+                        if (!fallback_predicate->isNullAt(0) && fallback_predicate->getBool(0))
+                        {
+                            safe = false;
+                            break;
+                        }
+
+                        index_argument.emplace(wrapper.getArgumentAt(0));
+                    }
+
+                    std::vector<String> values;
+                    for (const auto & value : values_field.safeGet<Array>())
+                    {
+                        if (value.getType() != Field::Types::String)
+                        {
+                            values.clear();
+                            break;
+                        }
+                        values.emplace_back(value.safeGet<String>());
+                    }
+
+                    if (safe
+                        && !values.empty()
+                        && tryPrepareJSONPathValuesSet(*index_argument, function_name, values, out))
+                    {
+                        out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
+                        return true;
+                    }
+                }
+            }
+        }
+
+        const bool is_global_in = function_name == "globalIn" || function_name == "globalNullIn";
+        if ((function_name == "in" || function_name == "nullIn" || is_global_in)
+            && tryPrepareSetForTextSearch(lhs_argument, rhs_argument, is_global_in ? "globalIn" : "in", out))
+        {
+            out.function = out.text_search_queries.size() == 1
+                    && out.text_search_queries.front()->getSearchMode() == TextSearchMode::Any
+                ? RPNElement::FUNCTION_HAS_ANY_TOKENS
+                : RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
             return true;
         }
         else if (isSupportedFunction(function_name))
@@ -892,6 +1147,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     RPNElement & out) const
 {
     const String function_name = function_node.getFunctionName();
+
+    if (traverseJSONPathValuesFunction(function_node, index_column_node, value_type, value_field, out))
+        return true;
+
     auto direct_read_mode = getDirectReadMode(function_name);
 
     auto index_column_name = index_column_node.getColumnName();
@@ -1653,18 +1912,81 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     const String & function_name,
     RPNElement & out) const
 {
+    auto future_set = rhs.tryGetPreparedSet();
+    if (!future_set)
+        return false;
+
+    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
+    if (!prepared_set || !prepared_set->hasExplicitSetElements())
+        return false;
+
+    Columns columns = prepared_set->getSetElements();
+    if (columns.size() == 1 && isTuple(columns.front()->getDataType()))
+        columns = typeid_cast<const ColumnTuple &>(*columns.front()).getColumnsCopy();
+
+    std::optional<RPNBuilderTreeNode> normalized_lhs(lhs);
+    if (!(lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
+        && columns.size() == 1
+        && WhichDataType(columns.front()->getDataType()).isStringOrFixedString())
+    {
+        while (normalized_lhs->isFunction())
+        {
+            const auto wrapper = normalized_lhs->toFunctionNode();
+            const auto & wrapper_name = wrapper.getFunctionName();
+
+            if (wrapper_name == "toString" && wrapper.getArgumentsSize() == 1)
+            {
+                const auto source = wrapper.getArgumentAt(0);
+                const auto * source_dag_node = source.getDAGNode();
+                if (!source_dag_node
+                    || !WhichDataType(removeNullable(source_dag_node->result_type)).isStringOrFixedString())
+                    break;
+                normalized_lhs.emplace(source);
+                continue;
+            }
+
+            if ((wrapper_name != "ifNull" && wrapper_name != "coalesce" && wrapper_name != "nullIf")
+                || wrapper.getArgumentsSize() != 2)
+                break;
+
+            Field fallback_value;
+            DataTypePtr fallback_type;
+            if (!wrapper.getArgumentAt(1).tryGetConstant(fallback_value, fallback_type)
+                || fallback_type->getTypeId() != TypeIndex::String)
+                return false;
+
+            const auto & fallback = fallback_value.safeGet<String>();
+            for (size_t row = 0; row < prepared_set->getTotalRowCount(); ++row)
+            {
+                if (columns.front()->getDataAt(row) == fallback)
+                    return false;
+            }
+
+            normalized_lhs.emplace(wrapper.getArgumentAt(0));
+        }
+    }
+
     std::optional<size_t> set_key_position;
+    std::optional<JSONPathValuesNodeInfo> json_index_info;
+    std::optional<RPNBuilderTreeNode> json_index_node;
 
     auto has_index = [&](const RPNBuilderTreeNode & node)
     {
+        if (auto info = tryMatchJSONPathValuesNode(node))
+        {
+            json_index_info = std::move(info);
+            json_index_node.emplace(node);
+            return true;
+        }
+
         return hasIndexForColumn(node.getColumnName())
             || hasIndexForMapElementValue(node)
             || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
     };
 
-    if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
+    if (normalized_lhs->isFunction() && normalized_lhs->toFunctionNode().getFunctionName() == "tuple")
     {
-        const auto function = lhs.toFunctionNode();
+        const auto function = normalized_lhs->toFunctionNode();
         auto arguments_size = function.getArgumentsSize();
 
         for (size_t i = 0; i < arguments_size; ++i)
@@ -1683,38 +2005,45 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     }
     else
     {
-        if (has_index(lhs))
+        if (has_index(*normalized_lhs))
             set_key_position = 0;
     }
 
     if (!set_key_position.has_value())
         return false;
 
-    auto future_set = rhs.tryGetPreparedSet();
-    if (!future_set)
-        return false;
-
-    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
-    if (!prepared_set || !prepared_set->hasExplicitSetElements())
-        return false;
-
-    Columns columns = prepared_set->getSetElements();
-    /// Set columns with tuple may be unpacked. Unpack them here to get the correct column index.
-    if (columns.size() == 1 && isTuple(columns.front()->getDataType()))
-        columns = typeid_cast<const ColumnTuple &>(*columns.front()).getColumnsCopy();
-
     if (*set_key_position >= columns.size())
         return false;
 
-    const auto & set_column = *columns[*set_key_position];
-    if (!WhichDataType(set_column.getDataType()).isStringOrFixedString())
+    const auto * set_column = columns[*set_key_position].get();
+    if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(set_column))
+    {
+        for (const auto is_null : nullable_column->getNullMapData())
+        {
+            if (is_null)
+                return false;
+        }
+        set_column = &nullable_column->getNestedColumn();
+    }
+
+    if (!WhichDataType(set_column->getDataType()).isStringOrFixedString())
         return false;
 
     size_t total_row_count = prepared_set->getTotalRowCount();
 
+    if (json_index_info)
+    {
+        std::vector<String> values;
+        values.reserve(total_row_count);
+        for (size_t row = 0; row < total_row_count; ++row)
+            values.emplace_back(set_column->getDataAt(row));
+        chassert(json_index_node);
+        return tryPrepareJSONPathValuesSet(*json_index_node, function_name, values, out);
+    }
+
     for (size_t row = 0; row < total_row_count; ++row)
     {
-        auto ref = set_column.getDataAt(row);
+        auto ref = set_column->getDataAt(row);
 
         /// Reject the index usage when there is an empty string in the set.
         /// The condition with such a predicate will be always true on granule.
