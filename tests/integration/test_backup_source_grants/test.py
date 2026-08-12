@@ -188,6 +188,39 @@ def test_azure_destination_requires_the_matching_direction(started_cluster):
     node.query("DROP TABLE d67785.r9 SYNC")
 
 
+def test_azure_filtered_grant_matches_the_blob_path(started_cluster):
+    # The whole-source case above would still pass if the hook returned an empty URI, which is what
+    # a filtered grant distinguishes: an empty URI can only be satisfied whole-source. It also pins
+    # WHICH string the filter is matched against - the blob path inside the container, the same one
+    # the `azureBlobStorage` table function authorizes, not a URL carrying account and container.
+    node.query(f"GRANT WRITE ON AZURE('backups/.*') TO {USER}")
+
+    node.query(f"BACKUP TABLE d67785.secrets TO {azure('backups/az_ok')} FORMAT Null", user=USER)
+
+    error = node.query_and_get_error(
+        f"BACKUP TABLE d67785.secrets TO {azure('other/az_denied')}", user=USER
+    )
+    assert "ACCESS_DENIED" in error, error
+    assert "WRITE ON AZURE" in error, error
+
+
+def test_archive_locator_is_authorized_with_the_archive_name(started_cluster):
+    # The locator is captured before a trailing archive filename is stripped from it, so the grant
+    # must match the path WITH the archive name. A filter for the containing directory alone must
+    # not be enough, otherwise the pre-split field has silently regressed to the stripped path.
+    node.query(f"GRANT WRITE ON S3('{ALLOWED}/arc/b.tar.gz') TO {USER}")
+
+    node.query(
+        f"BACKUP TABLE d67785.secrets TO {s3(ALLOWED + '/arc/b.tar.gz')} FORMAT Null", user=USER
+    )
+
+    error = node.query_and_get_error(
+        f"BACKUP TABLE d67785.secrets TO {s3(ALLOWED + '/arc/other.tar.gz')}", user=USER
+    )
+    assert "ACCESS_DENIED" in error, error
+    assert "WRITE ON S3" in error, error
+
+
 def test_create_database_on_cluster_is_authorized_on_the_initiator(started_cluster):
     # `is_create_database` returns from executeQueryOnCluster before DatabaseFactory runs, so
     # only the initiator preflight can gate this; worker legs have no user by default.
