@@ -712,7 +712,12 @@ struct JoinPlanningContext
     bool is_storage_join{};
 };
 
-static void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & right_node, const JoinSettings & join_settings, const JoinPlanningContext & planning_context)
+static void predicateOperandsToCommonType(
+    JoinActionRef & left_node,
+    JoinActionRef & right_node,
+    const JoinSettings & join_settings,
+    const JoinPlanningContext & planning_context,
+    std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors)
 {
     const auto & left_type = left_node.getType();
     const auto & right_type = right_node.getType();
@@ -759,20 +764,35 @@ static void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionR
     if (!left_type->equals(*common_type))
         left_node = JoinActionRef::transform({left_node}, cast_transform);
 
+    auto cast_right_node = [&]
+    {
+        /// The build-side key name is the rendezvous between the shared runtime filter descriptors
+        /// registered by the joinRuntimeFilter optimization and `HashJoin::publishSharedRuntimeFilters`;
+        /// keep the descriptors pointing at the cast key the join clause will use.
+        String name_before_cast = right_node.getColumnName();
+        right_node = JoinActionRef::transform({right_node}, cast_transform);
+        for (auto & descriptor : shared_runtime_filter_descriptors)
+        {
+            if (descriptor.second == name_before_cast)
+                descriptor.second = right_node.getColumnName();
+        }
+    };
+
     if (planning_context.is_storage_join)
     {
         if (!right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
-            right_node = JoinActionRef::transform({right_node}, cast_transform);
+            cast_right_node();
     }
     else
     {
         if (!right_type->equals(*common_type))
-            right_node = JoinActionRef::transform({right_node}, cast_transform);
+            cast_right_node();
     }
 }
 
 static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
-    std::vector<JoinActionRef> & used_expressions, const JoinSettings & join_settings, const JoinPlanningContext & planning_context)
+    std::vector<JoinActionRef> & used_expressions, const JoinSettings & join_settings, const JoinPlanningContext & planning_context,
+    std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors)
 {
     bool has_join_predicates = false;
     std::vector<JoinActionRef> new_predicates;
@@ -789,7 +809,7 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
         else if (!lhs.fromLeft() || !rhs.fromRight())
             continue;
 
-        predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context);
+        predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context, shared_runtime_filter_descriptors);
         bool null_safe_comparison = JoinConditionOperator::NullSafeEquals == predicate_op;
         if (null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType()))
         {
@@ -907,7 +927,7 @@ tryGetIEJoinKeyCondition(const JoinActionRef & condition)
 /// not dropped).
 static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
     std::vector<JoinActionRef> & join_expression,
-    const JoinOperator & join_operator,
+    JoinOperator & join_operator,
     std::vector<JoinActionRef> & used_expressions,
     const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context)
@@ -939,7 +959,7 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
     for (size_t i = 0; i < keys.size(); ++i)
     {
         auto & [predicate_op, lhs, rhs] = keys[i];
-        predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context);
+        predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context, join_operator.shared_runtime_filter_descriptors);
 
         description.operators[i] = predicate_op;
         description.key_names_left.push_back(lhs.getColumnName());
@@ -1024,6 +1044,7 @@ static bool tryAddDisjunctiveConditions(
     std::vector<JoinActionRef> & used_expressions,
     const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context,
+    std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors,
     bool throw_on_error)
 {
     if (join_expressions.size() != 1)
@@ -1043,7 +1064,8 @@ static bool tryAddDisjunctiveConditions(
             join_condition = expr.getArguments();
 
         auto & table_join_clause = table_join_clauses.emplace_back();
-        bool has_keys = addJoinPredicatesToTableJoin(join_condition, table_join_clause, used_expressions, join_settings, planning_context);
+        bool has_keys = addJoinPredicatesToTableJoin(
+            join_condition, table_join_clause, used_expressions, join_settings, planning_context, shared_runtime_filter_descriptors);
         if (!has_keys)
         {
             table_join_clauses.resize(initial_clauses_num);
@@ -1387,7 +1409,9 @@ static QueryPlanNode buildPhysicalJoinImpl(
                 join_expression, join_operator, used_expressions, join_settings, planning_context);
 
         bool has_keys = !ie_join_description
-            && addJoinPredicatesToTableJoin(join_expression, table_join_clauses.emplace_back(), used_expressions, join_settings, planning_context);
+            && addJoinPredicatesToTableJoin(
+                join_expression, table_join_clauses.emplace_back(), used_expressions, join_settings, planning_context,
+                join_operator.shared_runtime_filter_descriptors);
 
         if (!ie_join_description && !has_keys && join_operator.strictness != JoinStrictness::Asof)
         {
@@ -1406,7 +1430,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
                     && join_operator.strictness == JoinStrictness::All;
 
                 is_disjunctive_condition = tryAddDisjunctiveConditions(
-                    join_expression, table_join_clauses, used_expressions, join_settings, planning_context, !can_convert_to_cross);
+                    join_expression, table_join_clauses, used_expressions, join_settings, planning_context,
+                    join_operator.shared_runtime_filter_descriptors, !can_convert_to_cross);
 
                 if (!is_disjunctive_condition)
                 {
@@ -1454,7 +1479,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
                 throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join does not support multiple inequality predicates in JOIN ON expression");
             found_asof_predicate_it = it;
 
-            predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context);
+            predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context, join_operator.shared_runtime_filter_descriptors);
 
             used_expressions.push_back(lhs);
             used_expressions.push_back(rhs);
@@ -1825,31 +1850,151 @@ void JoinStepLogical::buildPhysicalJoin(
     node = std::move(new_node);
 }
 
-std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterActions(JoinTableSide side, const SharedHeader & stream_header)
+using NameToColumnMap = std::unordered_map<std::string_view, ColumnWithTypeAndName>;
+
+static const ColumnConst * findInlinableConstant(const ActionsDAG::Node * node, const NameToColumnMap & constants)
+{
+    if (node->type != ActionsDAG::ActionType::INPUT)
+        return nullptr;
+
+    auto it = constants.find(node->result_name);
+    if (it == constants.end() || !it->second.type->equals(*node->result_type))
+        return nullptr;
+
+    return typeid_cast<const ColumnConst *>(it->second.column.get());
+}
+
+static void inlineConstantInputs(ActionsDAG & dag, const NameToColumnMap & constants)
+{
+    std::unordered_set<const ActionsDAG::Node *> bound_inputs(dag.getInputs().begin(), dag.getInputs().end());
+
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::INPUT || bound_inputs.contains(&node))
+            continue;
+
+        const auto * constant = findInlinableConstant(&node, constants);
+        if (!constant)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Cannot evaluate condition, column {} is neither available in the stream nor a known constant",
+                node.result_name);
+
+        ActionsDAG::Node const_node;
+        const_node.type = ActionsDAG::ActionType::COLUMN;
+        const_node.result_name = node.result_name;
+        const_node.result_type = node.result_type;
+        const_node.column = ColumnConst::create(constant->getDataColumnPtr(), 0);
+
+        const_cast<ActionsDAG::Node &>(node) = std::move(const_node);
+    }
+}
+
+static bool areOppositeJoinSides(const JoinActionRef & lhs, const JoinActionRef & rhs)
+{
+    return (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
+}
+
+static bool canBeEvaluatedOnSide(
+    const JoinActionRef & condition, JoinTableSide side, const NameToColumnMap & constants)
+{
+    if (side == JoinTableSide::Left && (condition.fromLeft() || condition.fromNone()))
+        return true;
+    if (side == JoinTableSide::Right && condition.fromRight())
+        return true;
+
+    if (constants.empty())
+        return false;
+
+    /// Skip evalutation of equiality conditions, since it's used for join key extraction
+    auto [op, lhs, rhs] = condition.asBinaryPredicate();
+    bool is_equality = op == JoinConditionOperator::Equals || op == JoinConditionOperator::NullSafeEquals;
+    if (is_equality && areOppositeJoinSides(lhs, rhs))
+        return false;
+
+    bool reads_own_column = false;
+    std::stack<JoinActionRef> stack;
+    stack.push(condition);
+
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    while (!stack.empty())
+    {
+        auto action = stack.top();
+        stack.pop();
+
+        const auto * raw_node = action.getNode();
+        if (!visited.insert(raw_node).second)
+            continue;
+
+        if (raw_node->type == ActionsDAG::ActionType::INPUT)
+        {
+            if (side == JoinTableSide::Left ? action.fromLeft() : action.fromRight())
+                reads_own_column = true;
+            else if (!findInlinableConstant(raw_node, constants))
+                return false;
+        }
+        else if (raw_node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            for (const auto & argument : action.getArguments())
+                stack.push(argument);
+        }
+        else if (raw_node->type == ActionsDAG::ActionType::FUNCTION
+            && raw_node->function_base
+            && raw_node->function_base->isDeterministic())
+        {
+            for (const auto & argument : action.getArguments())
+                stack.push(argument);
+        }
+        else if (raw_node->type == ActionsDAG::ActionType::COLUMN)
+        {
+            /// Column represent a constant value, so it can be evaluated on any side
+            continue;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    return reads_own_column;
+}
+
+std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterActions(
+    JoinTableSide side, const SharedHeader & left_header, const SharedHeader & right_header)
 {
     if (!canPushDownFromOn(join_operator, side))
         return {};
 
-    auto & join_expression = join_operator.expression;
+    const auto & stream_header = side == JoinTableSide::Left ? left_header : right_header;
+    const auto & opposite_header = side == JoinTableSide::Right ? left_header : right_header;
 
-    auto belongs_to_side = [side](const JoinActionRef & condition)
+    NameToColumnMap header_constants;
     {
-        return side == JoinTableSide::Left ? condition.fromLeft() || condition.fromNone() : condition.fromRight();
-    };
+        for (const auto & column : opposite_header->getColumnsWithTypeAndName())
+            if (column.column && isColumnConst(*column.column))
+                header_constants.emplace(column.name, column);
+    }
 
-    auto conditions = std::ranges::to<std::vector>(join_expression | std::views::filter(belongs_to_side));
-    if (conditions.empty())
+    ActionsDAG::NodeRawConstPtrs extracted;
+    std::vector<JoinActionRef> kept;
+    kept.reserve(join_operator.expression.size());
+    for (const auto & condition : join_operator.expression)
+    {
+        if (canBeEvaluatedOnSide(condition, side, header_constants))
+            extracted.push_back(toBoolIfNeeded(condition).getNode());
+        else
+            kept.push_back(condition);
+    }
+
+    if (extracted.empty())
         return {};
 
-    auto condition = conditions.size() == 1
-        ? toBoolIfNeeded(conditions.front())
-        : toBoolIfNeeded(JoinActionRef::transform(conditions, JoinActionRef::AddFunction(JoinConditionOperator::And)));
-
-    auto filter_actions = ActionsDAG::createActionsForConjunction({condition.getNode()}, stream_header->getColumnsWithTypeAndName());
+    auto filter_actions = ActionsDAG::createActionsForConjunction(extracted, stream_header->getColumnsWithTypeAndName());
     if (!filter_actions)
         return {};
 
-    std::erase_if(join_expression, belongs_to_side);
+    inlineConstantInputs(filter_actions->dag, header_constants);
+
+    join_operator.expression = std::move(kept);
     return filter_actions;
 }
 
