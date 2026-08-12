@@ -3,7 +3,6 @@
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-#include <base/getThreadId.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -155,8 +154,8 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
                 if (throw_in_fast_path)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "RWLockImpl::getLock(): RWLock is already locked in exclusive mode "
-                        "(requested by query_id '{}' from thread {}; this query_id already holds {} lock(s); current owners: {})",
-                        query_id, getThreadId(), owner_query_it->second, formatOwnerQueryIds(owner_queries));
+                        "(requested for query_id '{}', which already holds {} lock(s); current owners: {})",
+                        query_id, owner_query_it->second, formatOwnerQueryIds(owner_queries));
                 return nullptr;
             }
 
@@ -166,8 +165,8 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
                 if (throw_in_fast_path)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "RWLockImpl::getLock(): Cannot acquire exclusive lock while RWLock is already locked "
-                        "(requested by query_id '{}' from thread {}; this query_id already holds {} read lock(s); current owners: {})",
-                        query_id, getThreadId(), owner_query_it->second, formatOwnerQueryIds(owner_queries));
+                        "(requested for query_id '{}', which already holds {} read lock(s); current owners: {})",
+                        query_id, owner_query_it->second, formatOwnerQueryIds(owner_queries));
                 return nullptr;
             }
 
