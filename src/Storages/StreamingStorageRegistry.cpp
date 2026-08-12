@@ -260,4 +260,10 @@ std::unordered_map<std::string, ObjectStorageQueueMetadataFactory::FilesMetadata
     return result;
 }
 
+bool ObjectStorageQueueMetadataFactory::isRegistered(const std::string & key)
+{
+    std::lock_guard lock(mutex);
+    return metadata_by_path.contains(key);
+}
+
 }

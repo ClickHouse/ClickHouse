@@ -13,6 +13,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/StreamingStorageRegistry.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/assert_cast.h>
@@ -332,15 +333,30 @@ void StorageSystemObjectStorageQueueMetadata<type>::fillData(
         NodeContents failed_contents;
         NodeContents processed_path;
 
-        readFolder(*metadata, zk_retries, batch_size, base_path, "processing",
-                   columns_mask[PROCESSING_NODES_COUNT], columns_mask[PROCESSING_NODES], processing_count, processing_contents);
-        readFolder(*metadata, zk_retries, batch_size, base_path, "failed",
-                   columns_mask[FAILED_NODES_COUNT], columns_mask[FAILED_NODES], failed_count, failed_contents);
-        if (unordered)
-            readFolder(*metadata, zk_retries, batch_size, base_path, "processed",
-                       columns_mask[PROCESSED_NODES_COUNT], columns_mask[PROCESSED_NODES], processed_count, processed_contents);
-        else if (columns_mask[PROCESSED_PATH])
-            processed_path = readProcessedPointers(*metadata, zk_retries, batch_size, base_path);
+        try
+        {
+            readFolder(*metadata, zk_retries, batch_size, base_path, "processing",
+                       columns_mask[PROCESSING_NODES_COUNT], columns_mask[PROCESSING_NODES], processing_count, processing_contents);
+            readFolder(*metadata, zk_retries, batch_size, base_path, "failed",
+                       columns_mask[FAILED_NODES_COUNT], columns_mask[FAILED_NODES], failed_count, failed_contents);
+            if (unordered)
+                readFolder(*metadata, zk_retries, batch_size, base_path, "processed",
+                           columns_mask[PROCESSED_NODES_COUNT], columns_mask[PROCESSED_NODES], processed_count, processed_contents);
+            else if (columns_mask[PROCESSED_PATH])
+                processed_path = readProcessedPointers(*metadata, zk_retries, batch_size, base_path);
+        }
+        catch (const Coordination::Exception &)
+        {
+            /// The queue may have been dropped concurrently after the factory
+            /// snapshot was taken; its Keeper nodes then disappear as part of the
+            /// normal drop, which `readFolder` reports as missing metadata. Skip
+            /// such a row - but a still-registered queue with missing nodes is
+            /// genuinely broken, so keep surfacing the error for it. No result
+            /// column has been written yet at this point, so skipping is safe.
+            if (ObjectStorageQueueMetadataFactory::instance().isRegistered(zookeeper_path))
+                throw;
+            continue;
+        }
 
         size_t src_index = 0;
         size_t res_index = 0;
