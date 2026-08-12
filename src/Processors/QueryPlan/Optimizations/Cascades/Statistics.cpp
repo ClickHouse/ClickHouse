@@ -192,7 +192,7 @@ std::unordered_map<String, Float64> estimateReadColumnWidths(const ReadFromMerge
     const auto & storage = read_step.getStorageSnapshot()->storage;
     const auto total_rows_opt = storage.totalRows(nullptr);
     /// `getColumnSizes(names)` also includes the requested subcolumns' sizes (`Map`/`JSON` reads).
-    const auto column_sizes = storage.getColumnSizes(read_step.getAllColumnNames());
+    const auto column_sizes = storage.getColumnSizes(read_step.getAllColumnNames(), /*calculate_subcolumn_sizes=*/ true);
     const Float64 total_rows = (total_rows_opt && *total_rows_opt > 0) ? Float64(*total_rows_opt) : 0;
 
     /// Compact parts count in the row count and in the parts' column-data totals, but carry no
