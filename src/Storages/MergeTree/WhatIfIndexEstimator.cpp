@@ -192,7 +192,6 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
         return result;
     }
 
-    /// CREATE rejects unsupported types, this is defense in depth for whatever is in the store
     if (!isIndexTypeSupportedByWhatIf(fresh_index_desc.type))
     {
         result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
@@ -204,8 +203,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     MergeTreeIndexPtr index_helper;
     try
     {
-        /// validate() before get(), same as the CREATE path: creators read their arguments
-        /// unguarded, so an unvalidated description can dereference absent arguments
+        /// validate before get, same as CREATE: creators read their arguments unguarded
         const auto & merge_tree_settings = *data.getSettings();
         MergeTreeIndexFactory::instance().validate(fresh_index_desc, /* attach = */ false, merge_tree_settings);
         index_helper = MergeTreeIndexFactory::instance().get(read_step->getStorageMetadata(), fresh_index_desc, merge_tree_settings);

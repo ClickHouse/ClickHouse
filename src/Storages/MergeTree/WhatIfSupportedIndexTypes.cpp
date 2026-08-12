@@ -6,7 +6,7 @@ namespace DB
 namespace
 {
 
-/// `IndexDescription::getIndexFromAST` lowercases the type, so these are compared as they are
+/// getIndexFromAST lowercases the type, so compare as-is
 const char * const supported_index_types[]
 {
     "bloom_filter",

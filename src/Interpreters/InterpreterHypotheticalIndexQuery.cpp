@@ -108,9 +108,6 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     /// so calling get() on an unvalidated user AST can dereference absent arguments.
     MergeTreeIndexFactory::instance().validate(index_desc, /* attach = */ false, *merge_tree->getSettings());
 
-    /// Well-formed but unsupported types are rejected here (validate accepts them). The allowlist
-    /// is fail-closed, so a newly registered index type is rejected until it has been checked
-    /// against the estimator's pipeline.
     if (!isIndexTypeSupportedByWhatIf(index_desc.type))
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
@@ -118,7 +115,6 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
             index_desc.type,
             getIndexTypesSupportedByWhatIf());
 
-    /// Construction can still fail for a well-formed description, surface that at CREATE time
     MergeTreeIndexFactory::instance().get(metadata, index_desc, *merge_tree->getSettings());
 
     /// Old-syntax MergeTree rejects `ALTER TABLE ... ADD INDEX`, so reject it here too.
