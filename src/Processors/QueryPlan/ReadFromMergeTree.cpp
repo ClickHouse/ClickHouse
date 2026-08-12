@@ -63,7 +63,7 @@
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
-#include <Storages/MergeTree/ProjectionIndexReadRangesRefiner.h>
+#include <Storages/MergeTree/IndexReadRangesRefiner.h>
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicasInOrder.h>
@@ -286,7 +286,7 @@ namespace Setting
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_skip_indexes_on_data_read;
-    extern const SettingsBool use_projection_index_in_read_pools;
+    extern const SettingsBool use_indexes_refiner_in_read_pools;
     extern const SettingsUInt64 join_runtime_filter_exact_values_limit;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_top_k_dynamic_filtering;
@@ -294,7 +294,6 @@ namespace Setting
     extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsUInt64 predicate_statistics_sample_rate;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
-    extern const SettingsBool enable_shared_storage_snapshot_in_query;
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool apply_row_policy_after_final;
     extern const SettingsBool apply_prewhere_after_final;
@@ -490,7 +489,6 @@ ReadFromMergeTree::ReadFromMergeTree(
     , log(std::move(log_))
     , analyzed_result_ptr(analyzed_result_ptr_)
     , is_parallel_reading_from_replicas(enable_parallel_reading_)
-    , enable_remove_parts_from_snapshot_optimization(!context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query] && query_info_.merge_tree_enable_remove_parts_from_snapshot_optimization)
     , number_of_current_replica(number_of_current_replica_)
 {
     if (is_parallel_reading_from_replicas)
@@ -573,19 +571,24 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     return parallel_replicas_step;
 }
 
-/// Returns nullptr when no part is filtered by a projection index or the feature is disabled.
-static MergeTreeReadRangesRefinerPtr createProjectionIndexRangesRefiner(
+/// Returns nullptr when no index is applied at data-read time or the feature is disabled.
+static MergeTreeReadRangesRefinerPtr createIndexReadRangesRefiner(
     const MergeTreeIndexBuildContextPtr & index_build_context,
     const StorageMetadataPtr & metadata_snapshot,
     const Settings & settings)
 {
-    if (!index_build_context || index_build_context->projection_read_ranges.empty())
+    if (!index_build_context)
         return nullptr;
 
-    if (!settings[Setting::use_projection_index_in_read_pools])
+    if (!settings[Setting::use_indexes_refiner_in_read_pools])
         return nullptr;
 
-    return std::make_shared<ProjectionIndexReadRangesRefiner>(index_build_context, metadata_snapshot);
+    /// Refining at task-cut time could snapshot JOIN runtime filters before they are published.
+    /// Keep the build at reader initialization instead.
+    if (index_build_context->index_reader_pool->hasRuntimeFilters())
+        return nullptr;
+
+    return std::make_shared<IndexReadRangesRefiner>(index_build_context, metadata_snapshot);
 }
 
 Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
@@ -619,7 +622,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         block_size,
         context);
 
-    pool->setReadRangesRefiner(createProjectionIndexRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
+    pool->setReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
 
     /// Default pool ignores the announcement response. The latter is relevant only to InOrder
     /// reading where we split the table into multiple streams.
@@ -720,7 +723,7 @@ Pipe ReadFromMergeTree::readFromPool(
             context,
             dataflow_cache_updater);
 
-        prefetched_pool->setReadRangesRefiner(createProjectionIndexRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
+        prefetched_pool->setReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
         pool = std::move(prefetched_pool);
     }
     else
@@ -741,7 +744,7 @@ Pipe ReadFromMergeTree::readFromPool(
             context,
             dataflow_cache_updater);
 
-        read_pool->setReadRangesRefiner(createProjectionIndexRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
+        read_pool->setReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
         pool = std::move(read_pool);
     }
 
@@ -849,7 +852,7 @@ Pipe ReadFromMergeTree::readInOrder(
             context);
 
         in_order_pool->setReadRangesRefiner(
-            createProjectionIndexRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
+            createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
 
         /// The response tells us exactly which parts this stream owns: phantom parts are skipped
         /// during source construction below, so the pool never sees `getTask` for them.
@@ -890,7 +893,7 @@ Pipe ReadFromMergeTree::readInOrder(
             dataflow_cache_updater);
 
         in_order_pool->setReadRangesRefiner(
-            createProjectionIndexRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
+            createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
         pool = std::move(in_order_pool);
     }
 
@@ -3979,7 +3982,14 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
             result_projection);
     }
 
-    if (!result.split_parts.layers.empty())
+    /// `split_parts` is a static pre-split of the parts into primary-key layers made by
+    /// `optimizeJoinByShards` for the single-node plan, where the join steps above consume one
+    /// output port per layer. It must be ignored for a read coordinated across parallel replicas:
+    /// automatic parallel replicas (`considerEnablingParallelReplicas`) reuses the single-node
+    /// analysis for the replicas plan, whose fresh join does not expect layered output, and each
+    /// layer would create its own reading pool announcing to the coordinator, which rejects the
+    /// second announcement from the same replica with a "Duplicate announcement received" exception.
+    if (!result.split_parts.layers.empty() && !is_parallel_reading_from_replicas)
         return readByLayers(
             result.parts_with_ranges,
             std::move(result.split_parts),
@@ -4068,13 +4078,26 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     if (analyzed_result_ptr)
         analysis_result_copy = std::make_shared<AnalysisResult>(*analyzed_result_ptr);
 
+    /// Filter DAGs can be modified by optimizations.
+    SelectQueryInfo query_info_copy = query_info;
+    if (query_info_copy.prewhere_info)
+        query_info_copy.prewhere_info = std::make_shared<PrewhereInfo>(query_info_copy.prewhere_info->clone());
+    if (query_info_copy.row_level_filter)
+    {
+        auto row_level_filter_copy = std::make_shared<FilterDAGInfo>();
+        row_level_filter_copy->actions = query_info_copy.row_level_filter->actions.clone();
+        row_level_filter_copy->column_name = query_info_copy.row_level_filter->column_name;
+        row_level_filter_copy->do_remove_column = query_info_copy.row_level_filter->do_remove_column;
+        query_info_copy.row_level_filter = std::move(row_level_filter_copy);
+    }
+
     auto cloned_step = std::make_unique<ReadFromMergeTree>(
         prepared_parts,
         mutations_snapshot,
         all_column_names,
         data,
         data_settings,
-        query_info,
+        query_info_copy,
         storage_snapshot,
         context,
         block_size.max_block_size_rows,
@@ -4087,7 +4110,6 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         read_task_callback,
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
-    cloned_step->enable_remove_parts_from_snapshot_optimization = enable_remove_parts_from_snapshot_optimization;
     /// Carry over the TopK marker. `tryOptimizeTopK` runs in the first optimization pass, so a clone
     /// made later (`materializeQueryPlanReferences` for a common subplan reference, `cloneSubtree` for a
     /// parallel-replicas plan fragment) clones a subtree whose filter still contains `__topKFilter` and
@@ -4497,12 +4519,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         reader_settings.use_query_condition_cache = false;
     }
 
-    if (enable_remove_parts_from_snapshot_optimization || query_info.isStream())
+    /// Do not keep data parts in snapshot.
     {
-        /// Do not keep data parts in snapshot.
-        /// They are stored separately, and some could be released after PK analysis.
-        /// Keep the underlying storage alive because part teardown still reaches
-        /// `data_part->storage.getContext()`.
         auto stripped_snapshot_data = std::make_unique<MergeTreeData::SnapshotData>();
         if (const auto * snapshot_data = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
         {
@@ -4510,8 +4528,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             stripped_snapshot_data->mutations_snapshot = snapshot_data->mutations_snapshot;
         }
 
-        /// The snapshot object may be shared with other parts of the query
-        /// (see `enable_shared_storage_snapshot_in_query`), which may read its data concurrently.
+        /// The snapshot object may be shared with other query plan steps.
         /// So replace our own pointer with a stripped clone instead of mutating the shared object in place.
         storage_snapshot = storage_snapshot->clone(std::move(stripped_snapshot_data));
     }
