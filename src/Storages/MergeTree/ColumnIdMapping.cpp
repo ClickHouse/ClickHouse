@@ -346,22 +346,16 @@ void ColumnIdMapping::stampColumnIds(NamesAndTypesList & columns) const
 
     for (auto & column : columns)
     {
-        /// A read caller can pass a column already stamped with the part's real id (e.g.
-        /// getListOfStreamsForColumn, for subcolumn sizes); re-stamping from the live mapping would
-        /// clobber it after a DROP + re-ADD name reuse. Write-path columns arrive id-less.
+        /// An id already on the pair is the part's own, and the mapping may hold a different one
+        /// for that name by now; the part's wins.
         if (!column.column_id.empty())
             continue;
 
         const auto name_in_storage = column.getNameInStorage();
         if (auto id = tryGetColumnId(name_in_storage))
             column.setColumnId(*id);
-        /// Virtual columns are not id-managed: persistent ones are stored by name, ephemeral
-        /// ones (e.g. `_part_offset`, `_part_data_version`) are materialized by the reader.
-        /// Leave them UNSTAMPED (empty id ≡ name-keyed on disk) for the name-resolution path.
+        /// A virtual column is outside the mapping by design, and stays name-keyed.
         else if (!isVirtualColumn(name_in_storage))
-            /// A real physical column absent from the active mapping is a schema/mapping
-            /// desync — a torn snapshot would otherwise stamp ids that no reader resolves
-            /// (write) or mis-resolve by a stale name (read). Fail loud instead.
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Column '{}' is absent from the active column-ID mapping while stamping a part; "
                 "the table schema and column-ID mapping have desynced", name_in_storage);
@@ -375,12 +369,11 @@ void ColumnIdMapping::stampColumnIdsLenient(NamesAndTypesList & columns) const
 
     for (auto & column : columns)
     {
+        /// Anything outside the mapping -- a projection aggregate, a column an ALTER has not
+        /// applied yet -- stays unstamped rather than throwing.
         const auto name_in_storage = column.getNameInStorage();
         if (auto id = tryGetColumnId(name_in_storage))
             column.setColumnId(*id);
-        /// Everything else (synthetic projection aggregates, not-yet-applied ALTER columns,
-        /// a projection part's parent-mapping-stamped columns) is left UNSTAMPED
-        /// (empty id ≡ name-keyed on disk). No throw.
     }
 }
 
