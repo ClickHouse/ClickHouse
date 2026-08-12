@@ -59,7 +59,7 @@ Strings MergeTreeDataPartWide::getPreferredFileOrder() const
 
     /// First column's marks file is used for loadIndexGranularity, so it is better to have it first.
     const auto & part_columns = getColumns();
-    auto first_column_file = getFileNameForColumn(part_columns.front());
+    auto first_column_file = getFirstFileNameForColumn(part_columns.front());
     if (first_column_file)
         preferred_order.push_back(*first_column_file + getMarksFileExtension());
 
@@ -78,7 +78,7 @@ Strings MergeTreeDataPartWide::getPreferredFileOrder() const
     /// Move all marks for the rest of columns before all data files.
     for (auto column_it = std::next(part_columns.begin()); column_it != part_columns.end(); ++column_it)
     {
-        auto column_file = getFileNameForColumn(*column_it);
+        auto column_file = getFirstFileNameForColumn(*column_it);
         if (column_file)
             preferred_order.push_back(*column_file + getMarksFileExtension());
     }
@@ -615,9 +615,10 @@ std::optional<time_t> MergeTreeDataPartWide::getColumnModificationTime(const Str
 
 std::optional<String> MergeTreeDataPartWide::getFirstFileNameForColumn(const NameAndTypePair & column) const
 {
-    if (!columns_substreams.empty())
+    const auto & part_columns_substreams = getColumnsSubstreams();
+    if (!part_columns_substreams.empty())
     {
-        const auto * substreams = columns_substreams.tryGetColumnSubstreams(column.name);
+        const auto * substreams = part_columns_substreams.tryGetColumnSubstreams(column.name);
         if (!substreams || substreams->empty())
             return std::nullopt;
 
