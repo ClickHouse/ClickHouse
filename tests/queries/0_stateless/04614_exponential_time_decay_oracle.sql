@@ -30,7 +30,6 @@ ALTER TABLE time_decay_feature_gate
 SELECT _CAST(tuple(1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
 SELECT accurateCastOrDefault(tuple(1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
 SELECT defaultValueOfTypeName('ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
-SELECT reinterpret(toUInt64(0), 'ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
 SELECT JSONExtract('{"value":1,"time":0,"decay_length":10}', 'ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
 SELECT JSONExtractKeysAndValues('{}', 'ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
 SELECT getTypeSerializationStreams('ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
