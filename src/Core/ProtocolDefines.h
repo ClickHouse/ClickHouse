@@ -78,11 +78,17 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// unknown name (`QueryPlanSerializationSettings::readBinary` throws), so towards such a peer the name is
 /// written only when omitting it could corrupt two-level distributed merging - failing closed on an explicit
 /// error instead of silently mixing the two hash methods, whose two-level bucket numbering differs.
-/// Version 6 adds the per-step security-barrier flag that keeps plan optimizations from crossing the
+/// Version 6 lets a `PARTITION BY` window's feeding sort be shipped under `make_distributed_plan`:
+/// `SortingStep` now serializes a non-empty `partition_by_description` plus a trailing flags byte that
+/// carries a `FinishSorting` conversion, and `GatherSendStep` now serializes `maintain_sort_description`
+/// and merge-sorts its input streams instead of an unordered `resize(1)` when set. Both steps check the
+/// version in their serialize and deserialize, since an older peer would misparse the stream, not merely
+/// reject an unknown step name as with version 4.
+/// Version 7 adds the per-step security-barrier flag that keeps plan optimizations from crossing the
 /// filtering of a `SQL SECURITY DEFINER` / `SQL SECURITY NONE` view. An older worker does not read the
 /// flag and would optimize the fragment as if the view were an ordinary subquery, which is exactly the
 /// row disclosure the flag prevents, so the serializer fails closed on a plan that carries a barrier.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 6;
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 7;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -98,7 +104,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRI
 /// First query-plan serialization version that carries the per-step security-barrier flag. Used to fail
 /// closed when a plan containing a `SQL SECURITY DEFINER` / `SQL SECURITY NONE` view is about to be sent
 /// to a peer that would silently optimize the barrier away.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SECURITY_BARRIER = 6;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SECURITY_BARRIER = 7;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;
