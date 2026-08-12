@@ -631,7 +631,7 @@ bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage) noexcept
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
-        DB::tryLogCurrentException("MemoryTracker", "Failed to log peak memory usage");
+        DB::tryLogCurrentException("MemoryTracker");
     }
 
     return true;
