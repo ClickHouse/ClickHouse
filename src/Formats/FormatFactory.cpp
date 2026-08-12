@@ -54,10 +54,6 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
     extern const SettingsBool allow_experimental_nullable_tuple_type;
-    extern const SettingsBool allow_suspicious_fixed_string_types;
-    extern const SettingsBool allow_suspicious_low_cardinality_types;
-    extern const SettingsBool allow_suspicious_variant_types;
-    extern const SettingsBool enable_time_time64_type;
 
     extern SettingsGeoJSONUnsupportedGeometryHandling input_format_geojson_unsupported_geometry_handling;
     extern SettingsBool format_geojson_validate_geometry;
@@ -388,13 +384,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.sql_insert.use_replace = settings[Setting::output_format_sql_insert_use_replace];
     format_settings.sql_insert.quote_names = settings[Setting::output_format_sql_insert_quote_names];
     format_settings.sql_insert.include_table_schema = settings[Setting::output_format_sql_insert_include_table_schema];
-    auto & sql_insert_type_validation = format_settings.sql_insert.data_type_validation;
-    sql_insert_type_validation.allow_suspicious_low_cardinality_types = settings[Setting::allow_suspicious_low_cardinality_types];
-    sql_insert_type_validation.allow_suspicious_fixed_string_types = settings[Setting::allow_suspicious_fixed_string_types];
-    sql_insert_type_validation.allow_suspicious_variant_types = settings[Setting::allow_suspicious_variant_types];
-    sql_insert_type_validation.validate_nested_types = settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types];
-    sql_insert_type_validation.enable_time_time64_type = settings[Setting::enable_time_time64_type];
-    sql_insert_type_validation.allow_experimental_nullable_tuple_type = settings[Setting::allow_experimental_nullable_tuple_type];
     format_settings.precise_float_parsing = settings[Setting::precise_float_parsing];
     format_settings.try_infer_integers = settings[Setting::input_format_try_infer_integers];
     format_settings.try_infer_dates = settings[Setting::input_format_try_infer_dates];

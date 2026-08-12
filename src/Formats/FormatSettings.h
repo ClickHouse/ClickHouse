@@ -603,18 +603,8 @@ struct FormatSettings
         String terminal_mode;
     } image{};
 
-    struct SQLInsert
+    struct
     {
-        struct DataTypeValidation
-        {
-            bool allow_suspicious_low_cardinality_types = false;
-            bool allow_suspicious_fixed_string_types = false;
-            bool allow_suspicious_variant_types = false;
-            bool validate_nested_types = true;
-            bool enable_time_time64_type = true;
-            bool allow_experimental_nullable_tuple_type = false;
-        } data_type_validation{};
-
         UInt64 max_batch_size = DEFAULT_BLOCK_SIZE;
         String table_name = "table";
         bool include_column_names = true;

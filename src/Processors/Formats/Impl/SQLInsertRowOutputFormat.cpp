@@ -1,4 +1,5 @@
 #include <Core/Names.h>
+#include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatFactory.h>
@@ -20,6 +21,22 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
 }
 
+namespace
+{
+
+const DataTypeValidationSettings & getDefaultDataTypeValidationSettings()
+{
+    static const DataTypeValidationSettings settings = []
+    {
+        Settings default_settings;
+        return DataTypeValidationSettings(default_settings);
+    }();
+
+    return settings;
+}
+
+}
+
 SQLInsertRowOutputFormat::SQLInsertRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_), column_names(header_->getNames()), format_settings(format_settings_)
 {
@@ -37,17 +54,8 @@ SQLInsertRowOutputFormat::SQLInsertRowOutputFormat(WriteBuffer & out_, SharedHea
                 throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} already exists", backQuoteIfNeed(column_name));
         }
 
-        const auto & type_validation = format_settings.sql_insert.data_type_validation;
-        DataTypeValidationSettings validation_settings;
-        validation_settings.allow_suspicious_low_cardinality_types = type_validation.allow_suspicious_low_cardinality_types;
-        validation_settings.allow_suspicious_fixed_string_types = type_validation.allow_suspicious_fixed_string_types;
-        validation_settings.allow_suspicious_variant_types = type_validation.allow_suspicious_variant_types;
-        validation_settings.validate_nested_types = type_validation.validate_nested_types;
-        validation_settings.enable_time_time64_type = type_validation.enable_time_time64_type;
-        validation_settings.allow_experimental_nullable_tuple_type = type_validation.allow_experimental_nullable_tuple_type;
-
         for (const auto & type : types)
-            validateDataType(type, validation_settings);
+            validateDataType(type, getDefaultDataTypeValidationSettings());
 
         checkAllTypesAreAllowedInTable(header_->getNamesAndTypesList());
     }
