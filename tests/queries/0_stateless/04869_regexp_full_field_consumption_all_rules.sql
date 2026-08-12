@@ -32,6 +32,7 @@ SELECT * FROM format(Regexp, 'v Nullable(UInt64)', unhex('763D31200A')) SETTINGS
 SELECT * FROM format(Regexp, 'v Nullable(UInt64)', unhex('763D31090A')) SETTINGS format_regexp = '^v=(.+)$', format_regexp_escaping_rule = 'CSV';
 SELECT * FROM format(Regexp, 'v Nullable(UInt64)', unhex('763D31090A')) SETTINGS format_regexp = '^v=(.+)$', format_regexp_escaping_rule = 'JSON';
 SELECT * FROM format(Regexp, 'v Nullable(UInt64)', unhex('763D310D0A')) SETTINGS format_regexp = '^v=(.+)$', format_regexp_escaping_rule = 'JSON';
+SELECT * FROM format(Regexp, 'v Nullable(UInt64)', unhex('763D31200A')) SETTINGS format_regexp = '^v=(.+)$', format_regexp_escaping_rule = 'CSV', input_format_csv_allow_whitespace_or_tab_as_delimiter = 1; -- { serverError INCORRECT_DATA }
 
 SELECT '-- whitespace is not an amnesty for what follows it';
 SELECT * FROM format(Regexp, 'v Nullable(UInt64)', unhex('763D31206162630A')) SETTINGS format_regexp = '^v=(.+)$', format_regexp_escaping_rule = 'CSV'; -- { serverError INCORRECT_DATA }
@@ -70,6 +71,12 @@ SELECT isNull(v), hex(v) FROM format(Regexp, 'v LowCardinality(Nullable(String))
 SELECT isNull(v), hex(v) FROM format(Regexp, 'v LowCardinality(Nullable(String))', unhex('763D4E554C4C0A')) SETTINGS format_regexp = '^v=(.+)$';
 SELECT isNull(v), hex(v) FROM format(Regexp, 'v LowCardinality(Nullable(String))', unhex('763D58595A0A')) SETTINGS format_regexp = '^v=(.+)$', format_tsv_null_representation = 'XYZ';
 SELECT isNull(v), hex(v) FROM format(Regexp, 'v LowCardinality(Nullable(String))', unhex('763D5C4E0A')) SETTINGS format_regexp = '^v=(.+)$', format_tsv_null_representation = 'XYZ';
+
+SELECT '-- Raw: a tab-containing null token is a value where null handling is off';
+SELECT hex(v) FROM format(Regexp, 'v String', unhex('763D6109620A')) SETTINGS format_regexp = '^v=(.+)$', format_tsv_null_representation = 'a\tb', input_format_null_as_default = 0;
+SELECT isNull(v), hex(v) FROM format(Regexp, 'v Nullable(String)', unhex('763D6109620A')) SETTINGS format_regexp = '^v=(.+)$', format_tsv_null_representation = 'a\tb', input_format_null_as_default = 0;
+SELECT hex(v) FROM format(Regexp, 'v String', unhex('763D6109620A')) SETTINGS format_regexp = '^v=(.+)$', format_tsv_null_representation = 'a\tb';
+SELECT isNull(v), hex(v) FROM format(Regexp, 'v LowCardinality(Nullable(String))', unhex('763D6109620A')) SETTINGS format_regexp = '^v=(.+)$', format_tsv_null_representation = 'a\tb', input_format_null_as_default = 0;
 
 SELECT '-- Raw: a null token followed by a tab is a value, not a null';
 SELECT isNull(v), hex(v) FROM format(Regexp, 'v Nullable(String)', unhex('763D5C4E09780A')) SETTINGS format_regexp = '^v=(.+)$';

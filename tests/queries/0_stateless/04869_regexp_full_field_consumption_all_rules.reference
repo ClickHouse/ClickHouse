@@ -31,6 +31,11 @@
 0	4E554C4C
 1	XYZ
 0	5C4E
+-- Raw: a tab-containing null token is a value where null handling is off
+610962
+1	a	b
+
+1	a	b
 -- Raw: a null token followed by a tab is a value, not a null
 0	5C4E0978
 0	5C4E0978
