@@ -1690,3 +1690,141 @@ def test_glue_catalog_user_attach_under_restriction_is_rejected(started_cluster)
 
     # With the opt-in the database is usable again, so it can be cleaned up.
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC", settings=allow)
+
+
+def test_listing_tolerates_missing_namespace(started_cluster):
+    # A Glue table listing must treat a database that is absent from Glue as contributing no tables, instead
+    # of failing the whole query. `name = 'ns.table'` is pushed down to a single-namespace listing, so naming a
+    # namespace that does not exist reaches the GetTables error branch with no race.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_missing_namespace_{uuid.uuid4().hex}"
+    namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_table"
+    missing_namespace = f"{test_ref}_absent_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    table = create_table(catalog, namespace, table_name)
+    table.append(generate_arrow_data(10))
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    # T1: the missing namespace yields an empty listing, not an error.
+    assert (
+        ""
+        == node.query(
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            f"AND name = '{missing_namespace}.no_such_table' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = true"
+        ).strip()
+    )
+
+    # T1 is only meaningful if the absent namespace really was listed. Without the pushdown the query
+    # degrades to listing the namespaces Glue reports, which excludes this one, so nothing would reach
+    # the code under test and T1 would pass unpatched.
+    assert node.contains_in_log(f"Getting tables for database '{missing_namespace}'")
+
+    # T2: the same pushdown still resolves a table in a namespace that does exist.
+    assert (
+        f"{namespace}.{table_name}"
+        == node.query(
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            f"AND name = '{namespace}.{table_name}' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = true"
+        ).strip()
+    )
+
+    # T3: the unfiltered listing still reports the table.
+    assert table_name in node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+
+
+def test_listing_propagates_non_not_found_error(started_cluster):
+    # The tolerance above must stay narrow: only Glue's `EntityNotFoundException` may be read as "this
+    # database contributes no tables". Any other failure -- here an endpoint whose host does not resolve
+    # -- must still fail the listing loudly, so a misconfigured or unreachable catalog is never silently
+    # reported as empty.
+    node = started_cluster.instances["node1"]
+
+    db_name = f"glue_unreachable_{uuid.uuid4().hex}"
+    missing_namespace = f"glue_unreachable_ns_{uuid.uuid4().hex}"
+    # ATTACH is lazy, so the unreachable endpoint is only contacted by the listing below.
+    node.query(
+        f"""
+        ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-glue:1')
+        SETTINGS catalog_type = 'glue', region = 'us-east-1', storage_endpoint = 'http://fake-glue:1/x',
+                 aws_access_key_id = '{minio_access_key}', aws_secret_access_key = '{minio_secret_key}'
+        """
+    )
+    try:
+        # `name = 'ns.table'` is pushed down, so the failing call is the single-namespace listing -- the
+        # same code path the previous test exercises -- rather than the enclosing database enumeration.
+        error = node.query_and_get_error(
+            f"SELECT name FROM system.tables WHERE database = '{db_name}' "
+            f"AND name = '{missing_namespace}.some_table' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = true"
+        )
+        assert "DATALAKE_DATABASE_ERROR" in error, error
+        assert "Exception calling GetTables" in error, error
+
+        # The error above is only evidence about the changed branch if the single-namespace listing is what
+        # failed. The database enumeration throws with a byte-identical message from an unmodified function,
+        # so without this the arm would also pass on a degraded pushdown -- and then a guard widened to
+        # swallow every error type would still be reported as caught.
+        assert node.contains_in_log(
+            f"Getting tables for database '{missing_namespace}'"
+        )
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_exists_table_answers_only_from_not_found(started_cluster):
+    # `EXISTS TABLE` must answer "absent" only when Glue reports the table as not found. Any other failure
+    # has to propagate, otherwise an outage makes an existing table look dropped, and the DDL paths that
+    # share this probe act on that answer.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_exists_table_{uuid.uuid4().hex}"
+    namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    create_table(catalog, namespace, table_name)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    assert (
+        "1"
+        == node.query(f"EXISTS TABLE {CATALOG_NAME}.`{namespace}.{table_name}`").strip()
+    )
+    assert (
+        "0"
+        == node.query(
+            f"EXISTS TABLE {CATALOG_NAME}.`{namespace}.no_such_table`"
+        ).strip()
+    )
+
+    # Reusing the name of the table created above is what makes the arm below an assertion about error
+    # handling rather than about absence: the table is known to exist, so answering "0" is the misreport.
+    db_name = f"{test_ref}_unreachable"
+    # ATTACH is lazy, so the unreachable endpoint is only contacted by the probe below.
+    node.query(
+        f"""
+        ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-glue:1')
+        SETTINGS catalog_type = 'glue', region = 'us-east-1', storage_endpoint = 'http://fake-glue:1/x',
+                 aws_access_key_id = '{minio_access_key}', aws_secret_access_key = '{minio_secret_key}'
+        """
+    )
+    try:
+        error = node.query_and_get_error(
+            f"EXISTS TABLE {db_name}.`{namespace}.{table_name}`"
+        )
+        assert "DATALAKE_DATABASE_ERROR" in error, error
+        # This per-table message has a single emitter, so it pins the failure to the GetTable probe rather
+        # than to a listing: the error alone would also be satisfied by an unrelated failing call.
+        assert (
+            f"Exception calling GetTable for table {namespace}.{table_name}" in error
+        ), error
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")

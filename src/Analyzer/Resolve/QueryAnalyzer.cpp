@@ -1853,6 +1853,12 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
         additional_column_qualification_parts = {table_node->getStorageID().getDatabaseName(), table_node->getStorageID().getTableName()};
         if (!table_node->getTemporaryTableName().empty())
             additional_column_qualification_parts = {table_node->getTemporaryTableName()};
+        /** A materialized CTE is stored under a randomly generated internal temporary table name.
+          * The user refers to it by its visible name, so qualify the columns with that name -
+          * otherwise the result header would leak an unstable implementation detail.
+          */
+        if (table_node->isMaterializedCTE())
+            additional_column_qualification_parts = {table_node->getMaterializedCTE()->cte_name};
     }
     else if (auto * query_node = table_expression_node->as<QueryNode>(); query_node && query_node->isCTE())
         additional_column_qualification_parts = {query_node->getCTEName()};
@@ -1880,7 +1886,11 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
             forced_qualifier = table_expression_node->getAlias();
         else if (auto * table_node = table_expression_node->as<TableNode>())
         {
-            if (!table_node->getTemporaryTableName().empty())
+            /// Same as above: a materialized CTE must be qualified with its visible name,
+            /// not the internal temporary table name it is stored under.
+            if (table_node->isMaterializedCTE())
+                forced_qualifier = table_node->getMaterializedCTE()->cte_name;
+            else if (!table_node->getTemporaryTableName().empty())
                 forced_qualifier = table_node->getTemporaryTableName();
             else
                 forced_qualifier = table_node->getStorageID().getTableName();
@@ -2169,6 +2179,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     chassert(matcher_node_typed.isQualified());
 
     auto expression_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::EXPRESSION};
+    expression_identifier_lookup.is_matcher_qualifier = true;
     auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope);
     auto expression_query_tree_node = expression_identifier_resolve_result.resolved_identifier;
 
