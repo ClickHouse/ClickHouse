@@ -215,7 +215,7 @@ labelName
     ;
 
 labelNameList
-    : LEFT_PAREN (labelName (COMMA labelName)*)? RIGHT_PAREN
+    : LEFT_PAREN (labelName (COMMA labelName)* COMMA?)? RIGHT_PAREN
     ;
 
 metricName

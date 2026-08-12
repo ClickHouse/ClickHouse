@@ -1187,6 +1187,22 @@ PrometheusQueryTree(INSTANT_VECTOR):
 }
 
 
+TEST(PromQLParser, TrailingCommasInGroupingLabelLists)
+{
+    for (const auto query : {
+             "sum by (job,) (up)",
+             "sum without (instance,) (up)",
+             "up + on(job,) up",
+             "up + ignoring(instance,) up",
+             "up + on(job,) group_left(instance,) up",
+             "up + on(job,) group_right(instance,) up",
+         })
+    {
+        EXPECT_NO_THROW(PrometheusQueryTree{query}) << query;
+    }
+}
+
+
 TEST(PromQLParser, DurationUnitOrder)
 {
     for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
