@@ -76,6 +76,10 @@ using namespace DB;
 
 static constexpr auto TEST_LOG_LEVEL = "debug";
 
+/// For waits which must observe the concurrent download finishing, so they cannot use the
+/// (much smaller) timeout a query would pass.
+static constexpr size_t TEST_WAIT_FOR_DOWNLOAD_TIMEOUT_MS = 60000;
+
 namespace DB::ErrorCodes
 {
     extern const int FILECACHE_ACCESS_DENIED;
@@ -717,7 +721,7 @@ TEST_F(FileCacheTest, LRUPolicy)
                 }
                 cv.notify_one();
 
-                file_segment2->wait(file_segment2->range().right);
+                file_segment2->wait(file_segment2->range().right, TEST_WAIT_FOR_DOWNLOAD_TIMEOUT_MS);
                 ASSERT_EQ(file_segment2->getDownloadedSize(), file_segment2->range().size());
             });
 
@@ -782,7 +786,7 @@ TEST_F(FileCacheTest, LRUPolicy)
                 }
                 cv.notify_one();
 
-                file_segment2->wait(file_segment2->range().left);
+                file_segment2->wait(file_segment2->range().left, TEST_WAIT_FOR_DOWNLOAD_TIMEOUT_MS);
                 ASSERT_EQ(file_segment2->state(), DB::FileSegment::State::EMPTY);
                 ASSERT_EQ(file_segment2->getOrSetDownloader(), DB::FileSegment::getCallerId());
                 download(file_segment2);
