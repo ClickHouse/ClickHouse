@@ -261,6 +261,10 @@ public:
     /// E.g. one of S3, Azure, Local, HDFS.
     virtual std::optional<StorageType> getStorageType() const = 0;
 
+    virtual std::optional<std::string> getDefaultTableLocation(
+        const std::string & namespace_name,
+        const std::string & table_name) const;
+
     /// Creates new table in catalog. Callers must ensure the namespace exists before
     /// writing any table files to storage: a catalog that shares its storage view with
     /// the data refuses to create a namespace over a plain directory those files create.

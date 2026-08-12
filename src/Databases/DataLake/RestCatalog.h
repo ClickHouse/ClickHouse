@@ -68,6 +68,10 @@ public:
     /// Inherited by every catalog based on the Iceberg REST protocol.
     DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::ICEBERG; }
 
+    std::optional<std::string> getDefaultTableLocation(
+        const std::string & namespace_name,
+        const std::string & table_name) const override;
+
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
@@ -140,6 +144,8 @@ protected:
         DB::ContextPtr context_);
 
     void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
+
+    std::optional<std::string> getNamespaceLocation(const std::string & namespace_name) const;
 
     const std::filesystem::path base_url;
     const LoggerPtr log;
