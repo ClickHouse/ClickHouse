@@ -2791,7 +2791,8 @@ private:
             /*blocks_are_granules_size=*/ false,
             ctx->context->getWriteSettings(),
             static_cast<WrittenOffsetSubstreams *>(nullptr),
-            /*try_adaptive_codec=*/ !is_explicit_recompression);
+            /*try_adaptive_codec=*/ !is_explicit_recompression,
+            /*reconsider_json_shared_data_placement=*/ (*ctx->data->getSettings())[MergeTreeSetting::allow_json_shared_data_paths_repromotion]);
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -3155,7 +3156,9 @@ private:
                 ctx->source_part->index_granularity,
                 ctx->source_part->getBytesUncompressedOnDisk(),
                 static_cast<WrittenOffsetSubstreams *>(nullptr),
-                /*try_adaptive_codec=*/ !is_explicit_recompression);
+                /*try_adaptive_codec=*/ !is_explicit_recompression,
+                /*external_packed_skip_indices_writer=*/ nullptr,
+                /*reconsider_json_shared_data_placement=*/ (*ctx->data->getSettings())[MergeTreeSetting::allow_json_shared_data_paths_repromotion]);
 
             /// Carry surviving in-archive entries that aren't being recomputed into the writer's
             /// PackedFilesWriter before any block lands. Without this, the new archive would

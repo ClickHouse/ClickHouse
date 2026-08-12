@@ -190,3 +190,98 @@ SELECT
 FROM alter_04839;
 
 DROP TABLE alter_04839;
+
+-- With re-promotion opted in, a mutation rewrite must also re-decide placement: paths that an
+-- already-removed rule forced into shared data move back to dynamic paths, like OPTIMIZE ... FINAL.
+DROP TABLE IF EXISTS mutation_repromotion_compact_04839;
+
+CREATE TABLE mutation_repromotion_compact_04839
+(
+    id UInt64,
+    j JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_')
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS
+    min_rows_for_wide_part=1000000,
+    min_bytes_for_wide_part=1000000000,
+    max_bytes_to_merge_at_max_space_in_pool=1;
+
+INSERT INTO mutation_repromotion_compact_04839 VALUES (1, '{"tag_a":1,"keep":1}'), (2, '{"tag_b":2,"keep":2}');
+
+SELECT
+    'compact mutation repromotion before',
+    id,
+    arraySort(JSONDynamicPaths(j)),
+    arraySort(JSONSharedDataPaths(j))
+FROM mutation_repromotion_compact_04839
+ORDER BY id;
+
+ALTER TABLE mutation_repromotion_compact_04839 MODIFY COLUMN j JSON(max_dynamic_paths=5);
+ALTER TABLE mutation_repromotion_compact_04839 MODIFY SETTING allow_json_shared_data_paths_repromotion=1;
+ALTER TABLE mutation_repromotion_compact_04839 UPDATE j = j WHERE 1 SETTINGS mutations_sync=2;
+
+SELECT
+    'compact mutation repromotion provenance',
+    count(),
+    countIf(position(type, 'SHARED REGEXP') > 0),
+    any(part_type)
+FROM system.parts_columns
+WHERE database=currentDatabase() AND table='mutation_repromotion_compact_04839' AND column='j' AND active;
+
+SELECT
+    'compact mutation repromotion',
+    id,
+    arraySort(JSONDynamicPaths(j)),
+    arraySort(JSONSharedDataPaths(j))
+FROM mutation_repromotion_compact_04839
+ORDER BY id;
+
+DROP TABLE mutation_repromotion_compact_04839;
+
+-- The same re-promotion through the wide-part mutation path, which rewrites only the updated column.
+DROP TABLE IF EXISTS mutation_repromotion_wide_04839;
+
+CREATE TABLE mutation_repromotion_wide_04839
+(
+    id UInt64,
+    j JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_')
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS
+    min_rows_for_wide_part=0,
+    min_bytes_for_wide_part=0,
+    max_bytes_to_merge_at_max_space_in_pool=1;
+
+INSERT INTO mutation_repromotion_wide_04839 VALUES (1, '{"tag_a":1,"keep":1}'), (2, '{"tag_b":2,"keep":2}');
+
+SELECT
+    'wide mutation repromotion before',
+    id,
+    arraySort(JSONDynamicPaths(j)),
+    arraySort(JSONSharedDataPaths(j))
+FROM mutation_repromotion_wide_04839
+ORDER BY id;
+
+ALTER TABLE mutation_repromotion_wide_04839 MODIFY COLUMN j JSON(max_dynamic_paths=5);
+ALTER TABLE mutation_repromotion_wide_04839 MODIFY SETTING allow_json_shared_data_paths_repromotion=1;
+ALTER TABLE mutation_repromotion_wide_04839 UPDATE j = j WHERE 1 SETTINGS mutations_sync=2;
+
+SELECT
+    'wide mutation repromotion provenance',
+    count(),
+    countIf(position(type, 'SHARED REGEXP') > 0),
+    any(part_type)
+FROM system.parts_columns
+WHERE database=currentDatabase() AND table='mutation_repromotion_wide_04839' AND column='j' AND active;
+
+SELECT
+    'wide mutation repromotion',
+    id,
+    arraySort(JSONDynamicPaths(j)),
+    arraySort(JSONSharedDataPaths(j))
+FROM mutation_repromotion_wide_04839
+ORDER BY id;
+
+DROP TABLE mutation_repromotion_wide_04839;
