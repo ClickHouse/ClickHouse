@@ -1,3 +1,4 @@
-create failed: 1
+subscribed before kill: 1
+create cancelled: 1
 view left behind:	0
 source has dependents:	0
