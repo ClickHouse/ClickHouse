@@ -366,35 +366,42 @@ UInt32 MergeTextIndexesTask::adjustPartOffset(size_t part_index, UInt32 row_id) 
     return static_cast<UInt32>(new_offset);
 }
 
-void MergeTextIndexesTask::adjustPartOffsets(size_t source_num, PaddedPODArray<UInt32> & row_ids) const
+void MergeTextIndexesTask::appendPostings(size_t source_num, std::span<const UInt32> row_ids)
 {
-    if (merged_part_offsets)
-    {
-        for (auto & row_id : row_ids)
-            row_id = adjustPartOffset(segments[source_num].part_index, row_id);
-    }
-}
+    bool append_to_array = output_postings_array.size() + row_ids.size() <= MAX_CARDINALITY_FOR_RAW_POSTINGS;
 
-void MergeTextIndexesTask::appendRawPostings(size_t source_num, std::span<const UInt32> row_ids)
-{
     if (!merged_part_offsets)
     {
-        output_postings_array.insert(row_ids.begin(), row_ids.end());
+        if (append_to_array)
+            output_postings_array.insert(row_ids.begin(), row_ids.end());
+        else
+            output_postings_bitmap.addMany(row_ids.size(), row_ids.data());
         return;
     }
 
     size_t part_index = segments[source_num].part_index;
-    output_postings_array.reserve(output_postings_array.size() + row_ids.size());
 
-    for (UInt32 row_id : row_ids)
-        output_postings_array.push_back(adjustPartOffset(part_index, row_id));
+    if (append_to_array)
+    {
+        output_postings_array.reserve(output_postings_array.size() + row_ids.size());
+
+        for (UInt32 row_id : row_ids)
+            output_postings_array.push_back(adjustPartOffset(part_index, row_id));
+    }
+    else
+    {
+        roaring::BulkContext context;
+
+        for (UInt32 row_id : row_ids)
+            output_postings_bitmap.addBulk(context, adjustPartOffset(part_index, row_id));
+    }
 }
 
-void MergeTextIndexesTask::appendPostings(size_t source_num, const TokenPostingsInfo & token_info)
+void MergeTextIndexesTask::readAndAppendPostings(size_t source_num, const TokenPostingsInfo & token_info)
 {
     if (!token_info.embedded_postings.empty())
     {
-        appendRawPostings(source_num, token_info.embedded_postings);
+        appendPostings(source_num, token_info.embedded_postings);
         return;
     }
 
@@ -405,27 +412,18 @@ void MergeTextIndexesTask::appendPostings(size_t source_num, const TokenPostings
     /// Bitpacked and raw postings are stored as plain row ids: decode them into an array,
     /// adjust in place and add to the output postings, without materializing an intermediate
     /// posting list. Roaring postings are decoded into an array only if they must be adjusted.
-    bool decode_to_array = merged_part_offsets
+    bool deserialize_to_array = merged_part_offsets
         || token_info.header & (PostingsSerialization::Flags::IsCompressed | PostingsSerialization::Flags::RawPostings);
 
     for (const auto offset_in_file : token_info.offsets)
     {
         stream->seekToMark({offset_in_file, 0});
 
-        if (decode_to_array)
+        if (deserialize_to_array)
         {
             row_ids_buffer.clear();
             serialization.deserializeToArray(*data_buffer, token_info.header, token_info.cardinality, row_ids_buffer);
-
-            if (output_postings_array.size() + row_ids_buffer.size() <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
-            {
-                appendRawPostings(source_num, row_ids_buffer);
-            }
-            else
-            {
-                adjustPartOffsets(source_num, row_ids_buffer);
-                output_postings_bitmap.addMany(row_ids_buffer.size(), row_ids_buffer.data());
-            }
+            appendPostings(source_num, row_ids_buffer);
         }
         else
         {
@@ -435,7 +433,7 @@ void MergeTextIndexesTask::appendPostings(size_t source_num, const TokenPostings
     }
 }
 
-void MergeTextIndexesTask::appendPositions(size_t source_num, const TokenPostingsInfo & token_info)
+void MergeTextIndexesTask::readAndAppendPositions(size_t source_num, const TokenPostingsInfo & token_info)
 {
     auto * stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
     auto * data_buffer = stream->getDataBuffer();
@@ -473,7 +471,9 @@ void MergeTextIndexesTask::flushPostingList()
     else
     {
         if (!output_postings_array.empty())
+        {
             output_postings_bitmap.addMany(output_postings_array.size(), output_postings_array.data());
+        }
 
         PostingListBuilder builder(&output_postings_bitmap);
         token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, postings_serialization);
@@ -575,9 +575,9 @@ bool MergeTextIndexesTask::executeStep()
 
         /// Write marks for compatibility with other skip indexes.
         /// An empty part carries no marks at all, exactly like every other skip index on an empty part.
-        chassert(new_data_part);
         if (num_rows != 0)
         {
+            chassert(new_data_part);
             bool can_use_adaptive_granularity = new_data_part->index_granularity_info.mark_type.adaptive;
             writeMarks(output_streams, can_use_adaptive_granularity);
         }
@@ -619,10 +619,10 @@ bool MergeTextIndexesTask::executeStep()
             }
 
             const auto & token_info = source_block.token_infos[row];
-            appendPostings(source_num, token_info);
+            readAndAppendPostings(source_num, token_info);
 
             if (params.positions && (token_info.header & PostingsSerialization::Flags::HasPositions))
-                appendPositions(source_num, token_info);
+                readAndAppendPositions(source_num, token_info);
         }
 
         if (!current->isLast(batch_size))
