@@ -46,6 +46,7 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/QueryParameterVisitor.h>
 #include <Parsers/parseQuery.h>
 
 #include <Storages/MaterializedView/RefreshSet.h>
@@ -1083,6 +1084,16 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     }
 
     const auto & settings = getContext()->getSettingsRef();
+
+    /// A parameterized view can carry a user-supplied type which is not visible
+    /// in its output columns. Validate those type names independently of the
+    /// analyzer used to infer the view structure.
+    if (!create.attach && create.is_view && create.select)
+    {
+        const auto validation_settings = DataTypeValidationSettings::forRuntimeTypeNames(settings);
+        for (const auto & [name, type_name] : analyzeReceiveQueryParamsWithType(create.select))
+            validateDataType(DataTypeFactory::instance().get(type_name), validation_settings);
+    }
 
     /// If it's not attach and not materialized view to existing table,
     /// we need to validate data types (check for experimental or suspicious types).
