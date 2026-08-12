@@ -18,6 +18,7 @@
 #include <Common/PODArray.h>
 #include <Common/ErrorCodes.h>
 #include <Common/SipHash.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/StorageIDMaybeEmpty.h>
@@ -151,6 +152,58 @@ DeduplicationInfo::FilterResult DeduplicationInfo::deduplicateSelf(bool deduplic
 }
 
 
+DeduplicationInfo::Ptr DeduplicationInfo::filterToPartition(const PaddedPODArray<UInt64> & row_to_partition, size_t partition_index, bool deduplication_enabled) const
+{
+    /// An empty selector means the block was not split (single partition); with dedup off or a
+    /// single token there is nothing to attribute. Every token then belongs to this partition.
+    /// When the sink does not deduplicate at all (`deduplication_enabled` is false, e.g. the
+    /// deduplication window of the table is 0), the tokens are never registered, so there is
+    /// nothing to attribute either - and the consistency check below must not reject the insert.
+    if (disabled || !deduplication_enabled || row_to_partition.empty() || getCount() <= 1)
+        return cloneSelf();
+
+    /// Attributing tokens to partitions walks each token's row range over the selector, which is
+    /// only possible while the offsets still describe the block that was split. Behind an `Alias`
+    /// hop over a row-count-changing view the deduplication info is re-anchored to the view-output
+    /// chunks and there is no mapping from the tokens' source rows to the selector anymore. Refuse
+    /// loudly instead of reading out of the selector's bounds (see filterImpl).
+    if (row_to_partition.size() != getRows())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot attribute {} deduplication tokens to the partitions of the insert: the deduplication info "
+            "describes {} rows, but the block was split into partitions over {} rows because a materialized view "
+            "with a row-count-changing inner query was processed before a table with the `Alias` engine. "
+            "Debug: {}",
+            getCount(),
+            getRows(),
+            row_to_partition.size(),
+            debug());
+
+    /// Keep only tokens that have at least one row in this partition.
+    std::set<size_t> absent_offsets;
+    for (size_t i = 0; i < offsets.size(); ++i)
+    {
+        bool present = false;
+        for (size_t row = getTokenBegin(i); row < getTokenEnd(i); ++row)
+        {
+            if (row_to_partition[row] == partition_index)
+            {
+                present = true;
+                break;
+            }
+        }
+        if (!present)
+            absent_offsets.insert(i);
+    }
+
+    if (absent_offsets.empty())
+        return cloneSelf();
+
+    /// filterImpl drops the absent tokens and keeps the block/offsets consistent.
+    return filterImpl(absent_offsets).deduplication_info;
+}
+
+
 DeduplicationInfo::FilterResult DeduplicationInfo::recalculateBlock(DeduplicationInfo::FilterResult && filtered, const std::string & partition_id, ContextPtr context) const
 {
     if (filtered.removed_rows == 0)
@@ -176,12 +229,10 @@ std::set<size_t> DeduplicationInfo::filterSelf(const String & partition_id) cons
     if (getCount() <= 1)
         return {};
 
-    auto block_id_to_offsets = buildBlockIdToOffsetsMap(partition_id);
-
     std::set<size_t> fitered_offsets;
     /// fitered_offsets will contain all but first offsets for each block id
     /// so that only first occurrence of each block id will remain
-    for (auto & [_, block_offsets] : block_id_to_offsets)
+    for (const auto & [_, block_offsets] : buildOffsetsMapImpl(partition_id))
     {
         if (block_offsets.size() > 1)
             fitered_offsets.insert(block_offsets.begin() + 1, block_offsets.end());
@@ -238,10 +289,15 @@ DeduplicationInfo::FilterResult DeduplicationInfo::filterImpl(const std::set<siz
     if (collision_offsets.empty())
         return {};
 
-    if (!is_async_insert && getCount() == 1)
+    /// All tokens collided: the whole block is a duplicate, drop it without row-level slicing.
+    /// This path must not touch the rows: for a single sync token the block may already be
+    /// released by getDeduplicationHashes, and behind an `Alias` hop over a row-count-changing
+    /// view the block is re-anchored to the view-output chunks and no longer matches the rows
+    /// the offsets describe (see cacheDataHashes).
+    if (collision_offsets.size() == getCount())
     {
-        chassert(collision_offsets.size() == 1 && collision_offsets.contains(0));
-        LOG_TEST(logger, "The only token is filtered, collision offsets: {}, debug: {}", fmt::join(collision_offsets, ", "), debug());
+        chassert(original_block);
+        LOG_TEST(logger, "All tokens are filtered, collision offsets: {}, debug: {}", fmt::join(collision_offsets, ", "), debug());
 
         Ptr new_tokens = cloneSelfFilterImpl();
         new_tokens->original_block = std::make_shared<Block>(original_block->cloneEmpty());
@@ -249,14 +305,32 @@ DeduplicationInfo::FilterResult DeduplicationInfo::filterImpl(const std::set<siz
         return {
             .filtered_block = new_tokens->original_block,
             .deduplication_info = new_tokens,
-            .removed_rows = getTokenRows(0),
-            .removed_tokens = 1,
+            .removed_rows = original_block->rows() > 0 ? original_block->rows() : getRows(),
+            .removed_tokens = getCount(),
         };
     }
 
     chassert(original_block && !original_block->empty() && original_block->rows() > 0);
 
     auto & block = *original_block;
+
+    /// A partial collision requires slicing the collided tokens' rows out of the block, which is
+    /// only possible while the offsets still describe the block. Behind an `Alias` hop over a
+    /// row-count-changing view the block is re-anchored to the view-output chunks and there is no
+    /// mapping from the tokens' source rows to the block's rows anymore. Refuse loudly instead of
+    /// reading out of the block's bounds; full-block deduplication is handled above.
+    if (block.rows() != getRows())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot filter {} of {} deduplicated blocks out of the insert: the deduplication info describes {} rows, "
+            "but the block has {} rows because a materialized view with a row-count-changing inner query "
+            "was processed before a table with the `Alias` engine. Only the whole insert can be deduplicated on this path. "
+            "Debug: {}",
+            collision_offsets.size(),
+            getCount(),
+            getRows(),
+            block.rows(),
+            debug());
 
     Ptr new_tokens = cloneSelfFilterImpl();
 
@@ -420,6 +494,26 @@ DeduplicationHash DeduplicationInfo::getBlockUnifiedHash(size_t offset, const st
 }
 
 
+std::vector<std::pair<UInt128, std::vector<size_t>>> DeduplicationInfo::buildOffsetsMapImpl(const std::string & partition_id) const
+{
+    /// (hash, offset) pairs sorted by hash, then offset; runs of equal hashes are the groups.
+    std::vector<std::pair<UInt128, size_t>> sorted;
+    sorted.reserve(offsets.size());
+    for (size_t offset = 0; offset < offsets.size(); ++offset)
+        sorted.emplace_back(getBlockUnifiedHash(offset, partition_id).hash, offset);
+    std::sort(sorted.begin(), sorted.end());
+
+    std::vector<std::pair<UInt128, std::vector<size_t>>> result;
+    for (const auto & [hash, offset] : sorted)
+    {
+        if (result.empty() || result.back().first != hash)
+            result.emplace_back(hash, std::vector<size_t>{});
+        result.back().second.push_back(offset);
+    }
+    return result;
+}
+
+
 DeduplicationHash DeduplicationInfo::getBlockHash(size_t offset, const std::string & partition_id) const
 {
     // if user token is empty we calculate by_data_hash
@@ -532,6 +626,63 @@ std::vector<DeduplicationHash> DeduplicationInfo::getDeduplicationHashes(const s
         original_block = std::make_shared<Block>(original_block->cloneEmpty());
 
     return result;
+}
+
+
+void DeduplicationInfo::cacheDataHashes() const
+{
+    if (disabled)
+        return;
+
+    for (size_t offset = 0; offset < offsets.size(); ++offset)
+    {
+        if (!tokens[offset].by_user.empty() || tokens[offset].data_hash_batch.has_value())
+            continue;
+
+        chassert(original_block);
+        calculateDataHashColumnWise(offset, *original_block);
+    }
+}
+
+
+void DeduplicationInfo::cacheDataHashes(DataHashCache & cache) const
+{
+    if (disabled)
+        return;
+
+    /// A cache hit: this info is a sibling clone of the one that filled the cache (same source
+    /// block, same token boundaries). Copy the already-computed hashes instead of re-hashing.
+    if (cache.block && cache.block.get() == original_block.get() && cache.offsets == offsets)
+    {
+        chassert(cache.hashes.size() == tokens.size());
+        for (size_t offset = 0; offset < tokens.size(); ++offset)
+            if (!tokens[offset].data_hash_batch.has_value())
+                tokens[offset].data_hash_batch = cache.hashes[offset];
+        return;
+    }
+
+    cacheDataHashes();
+
+    /// Remember the computed hashes so the sibling clones of this source block reuse them.
+    cache.block = original_block;
+    cache.offsets = offsets;
+    cache.hashes.resize(tokens.size());
+    for (size_t offset = 0; offset < tokens.size(); ++offset)
+        cache.hashes[offset] = tokens[offset].data_hash_batch;
+}
+
+
+void DeduplicationInfo::prewarmDataHashes() const
+{
+    if (!original_block || !original_block->rows())
+        return;
+
+    for (size_t i = 0; i < tokens.size(); ++i)
+    {
+        if (!tokens[i].by_user.empty())
+            continue;
+        calculateDataHashColumnWise(i, *original_block);
+    }
 }
 
 
@@ -840,7 +991,15 @@ void DeduplicationInfo::truncateTokensForRetry()
 
 Block DeduplicationInfo::goRetry(SharedHeader && header, Chunk && filtered_data, Ptr filtered_info, const std::string & partition_id, ContextPtr context) const
 {
-    bool is_empty = !filtered_data || filtered_data.getNumRows() == 0;
+    // in case all rows are filtered out
+    // we should not run the pipeline
+    // because no data no results
+    // otherwise we can end up in a cycle when all data is filtered by inner query return not empty aggregate result
+    /// Do not even build the retry chain: the callers only check that the result is empty, and
+    /// behind a table with the `Alias` engine the visited views belong to the outer insert chain,
+    /// so `insert_dependencies` of the nested chain cannot rebuild them (see createRetry).
+    if (!filtered_data || filtered_data.getNumRows() == 0)
+        return header->cloneEmpty();
 
     auto builder = QueryPipelineBuilder();
     builder.init(Pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(filtered_data))));
@@ -850,13 +1009,6 @@ Block DeduplicationInfo::goRetry(SharedHeader && header, Chunk && filtered_data,
     chassert(pipeline.pulling());
 
     auto result_header = pipeline.getSharedHeader();
-
-    // in case all rows are filtered out
-    // we should not run the pipeline
-    // because no data no results
-    // otherwise we can end up in a cycle when all data is filtered by inner query return not empty aggregate result
-    if (is_empty)
-        return result_header->cloneEmpty();
 
     auto filter =[this, filtered_info] (const Chunk & chunk) -> bool
     {
@@ -1296,7 +1448,20 @@ void DeduplicationInfo::TokenDefinition::doExtend(const TokenDefinition & right)
         return;
 
     data_hash.reset(); // invalidate data hash as token is changed
-    data_hash_batch.reset();
+
+    /// A VIEW_NUMBER range extension merges chunks a view produced from the same source block:
+    /// `canBeExtended` required all preceding extras (including SOURCE_NUMBER) to be equal, and the
+    /// cached hash is computed over the source block's token range, not over the view-output chunks.
+    /// So when both sides carry the same cached hash, it is still valid for the merged token — and it
+    /// must be kept: after the merge the info may be re-anchored to a block whose rows no longer
+    /// match the offsets (e.g. the nested INSERT behind an Alias hop), and recomputing would read
+    /// out of the block's bounds. For any other extension the token covers new data — invalidate.
+    const bool keep_cached_hash = left_last_extra.type == Extra::Type::VIEW_NUMBER
+        && data_hash_batch.has_value()
+        && right.data_hash_batch == data_hash_batch;
+
+    if (!keep_cached_hash)
+        data_hash_batch.reset(); // invalidate cached data hash as the token's data has changed
 
     // type is equal but values are different
     switch (left_last_extra.type)
