@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
 title: 'OpenAPI de ClickHouse Managed Postgres'
 description: 'Gérez vos services ClickHouse Managed Postgres avec notre OpenAPI'
-keywords: ['managed postgres', 'openapi', 'API', 'curl', 'tutoriel', 'ligne de commande', 'query insights', 'requêtes lentes']
+keywords: ['managed postgres', 'openapi', 'API', 'curl', 'tutoriel', 'ligne de commande', 'query insights', 'requêtes lentes', 'journaux du serveur', 'journaux']
 doc_type: 'guide'
 ---
 
@@ -13,7 +13,7 @@ import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 Utilisez la [ClickHouse OpenAPI](/fr/products/cloud/features/admin-features/api/api-overview) pour gérer par programmation
 vos services ClickHouse Managed Postgres, comme vous le feriez avec des services ClickHouse. La
-même API expose également un [endpoint Prometheus] pour collecter les métriques du service.
+même API expose également un [point de terminaison Prometheus] pour collecter les métriques du service.
 Vous connaissez déjà [OpenAPI] ? Récupérez vos [clés API] et accédez directement à la
 [référence de l’API ClickHouse Managed Postgres][pg-openapi]. Sinon, suivez ce guide pour une
 brève présentation.
@@ -432,6 +432,58 @@ CPU utilisateur et système, workers parallèles, JIT et WAL — les mêmes comp
 L&#39;exemple tronque les deux objets pour plus de concision ; l&#39;API renvoie le jeu complet
 de compteurs documenté dans [per-execution counters].
 
+<div id="server-logs">
+  ## Journaux du serveur
+</div>
+
+Les journaux du serveur PostgreSQL affichés dans la visionneuse de journaux de la console cloud sont également
+accessibles par programmation. L&#39;[API des journaux] renvoie des entrées de journal individuelles pour un
+service sur une fenêtre temporelle. Comme pour Query insights, cette fenêtre est obligatoire ; transmettez donc
+`from_date` et `to_date` sous forme d&#39;horodatages RFC 3339. La plage ne doit pas dépasser
+30 jours et `to_date` doit être postérieur à `from_date` :
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/logs?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+Les entrées sont renvoyées de la plus récente à la plus ancienne ; inversez l’ordre avec `sort_order` (`asc` ou
+`desc`). Filtrez sur un seul niveau de gravité avec `severity` (par exemple `ERROR`,
+`WARNING` ou `LOG`), recherchez une sous-chaîne du corps du log sensible à la casse avec
+`body_contains`, et parcourez les résultats avec `limit` et `offset`.
+
+Chaque entrée contient son `timestamp`, sa `severity` et son `body` brut. Le corps est
+toujours une chaîne : les lignes de log structurées sont renvoyées encodées en JSON, les lignes simples
+telles quelles :
+
+```json
+{
+  "result": [
+    {
+      "timestamp": "2026-05-25T16:42:09.512844Z",
+      "severity": "ERROR",
+      "body": "{\"message\":\"deadlock detected\",\"detail\":\"Process 42 waits for ShareLock\"}"
+    },
+    {
+      "timestamp": "2026-05-25T16:41:58.004120Z",
+      "severity": "LOG",
+      "body": "connection received: host=10.0.0.7 port=54210 user=orders_service database=sales"
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "requestId": "b0d5c3a1-9f2e-4a7c-8b1d-3e6f0a2c4d55",
+  "status": 200
+}
+```
+
+Le point de terminaison pagine les résultats à l&#39;aide de `limit` et `offset`, sans renvoyer le nombre total
+d&#39;entrées ; incrémentez `offset` jusqu&#39;à ce qu&#39;une page renvoie moins de `limit` entrées.
+
 [ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/api-overview "Cloud API"
 
 [OpenAPI]: https://www.openapis.org "Initiative OpenAPI"
@@ -471,3 +523,5 @@ de compteurs documenté dans [per-execution counters].
 [slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Lister les modèles de requêtes lentes Postgres"
 
 [slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "Obtenir un modèle de requête lente Postgres avec les exécutions récentes"
+
+[API des journaux]: /products/cloud/api-reference/postgres/postgres-logs-get-list "Lister les journaux du serveur Postgres"

@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
 title: 'ClickHouse Managed Postgres OpenAPI'
 description: 'OpenAPI로 ClickHouse Managed Postgres 서비스를 관리합니다'
-keywords: ['managed postgres', 'openapi', 'api', 'curl', 'tutorial', 'command line', '쿼리 인사이트', '느린 쿼리']
+keywords: ['managed postgres', 'openapi', 'api', 'curl', 'tutorial', 'command line', '쿼리 인사이트', '느린 쿼리', '서버 로그', '로그']
 doc_type: 'guide'
 ---
 
@@ -387,7 +387,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-응답에는 목록 endpoint의 `aggregate`에 있는 것과 동일한 집계와
+응답에는 목록 엔드포인트의 `aggregate`에 있는 것과 동일한 집계와
 `recentExecutions` 배열이 포함됩니다. 각 실행에는 실행별 전체 카운터,
 즉 공유 및 임시 블록 I/O, CPU 사용자 및 시스템 시간, 병렬 workers,
 JIT, WAL이 포함되며, 이는 콘솔의
@@ -431,6 +431,59 @@ JIT, WAL이 포함되며, 이는 콘솔의
 이 예시에서는 간결하게 보여주기 위해 두 객체를 모두 일부만 표시했으며, API는 [per-execution counters]에 문서화된 전체
 카운터 세트를 반환합니다.
 
+<div id="server-logs">
+  ## 서버 로그
+</div>
+
+Cloud Console의 로그 뷰어에서 제공되는 PostgreSQL 서버 로그는
+프로그래밍 방식으로도 사용할 수 있습니다. [logs API]는
+지정된 시간 구간 동안 서비스의 개별 로그 항목을 반환합니다. 쿼리 인사이트와 마찬가지로
+윈도우는 필수이므로 `from_date`와 `to_date`를 RFC 3339 타임스탬프로 전달하십시오. 범위는
+30일을 초과할 수 없으며, `to_date`는 `from_date` 이후여야 합니다:
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/logs?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+항목은 최신순으로 반환됩니다. `sort_order`(`asc` 또는
+`desc`)로 정렬 방향을 바꿀 수 있습니다. `severity`(`ERROR`,
+`WARNING`, `LOG` 등)로 특정 심각도만 필터링하고, `body_contains`로
+로그 본문에서 대소문자를 구분하는 부분 문자열을 찾으며, `limit` 및 `offset`으로
+결과를 페이지 단위로 조회합니다.
+
+각 항목에는 `timestamp`, `severity`, 원시 `body`가 포함됩니다. 본문은
+항상 문자열입니다. 구조화된 로그 줄은 JSON으로 인코딩되어 반환되고, 일반 줄은
+있는 그대로 반환됩니다:
+
+```json
+{
+  "result": [
+    {
+      "timestamp": "2026-05-25T16:42:09.512844Z",
+      "severity": "ERROR",
+      "body": "{\"message\":\"deadlock detected\",\"detail\":\"Process 42 waits for ShareLock\"}"
+    },
+    {
+      "timestamp": "2026-05-25T16:41:58.004120Z",
+      "severity": "LOG",
+      "body": "connection received: host=10.0.0.7 port=54210 user=orders_service database=sales"
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "requestId": "b0d5c3a1-9f2e-4a7c-8b1d-3e6f0a2c4d55",
+  "status": 200
+}
+```
+
+엔드포인트는 총 개수를 반환하지 않고 `limit`과 `offset`을 사용해 페이지를 나눕니다.
+페이지에서 `limit`보다 적은 항목이 반환될 때까지 `offset`을 늘리십시오.
+
 [ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/api-overview "Cloud API"
 
 [OpenAPI]: https://www.openapis.org "OpenAPI Initiative"
@@ -470,3 +523,5 @@ JIT, WAL이 포함되며, 이는 콘솔의
 [slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "느린 쿼리 패턴 API"
 
 [느린 패턴 API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "최근 실행 내역이 포함된 Postgres 느린 쿼리 패턴 조회"
+
+[logs API]: /products/cloud/api-reference/postgres/postgres-logs-get-list "Postgres 서버 로그 나열"

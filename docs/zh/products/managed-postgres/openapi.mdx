@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
 title: 'ClickHouse Managed Postgres OpenAPI'
 description: '通过我们的 OpenAPI 管理您的 ClickHouse Managed Postgres 服务'
-keywords: ['managed postgres', 'openapi', 'api', 'curl', '教程', '命令行', 'query insights', '慢查询']
+keywords: ['managed postgres', 'openapi', 'api', 'curl', '教程', '命令行', 'query insights', '慢查询', '服务器日志', '日志']
 doc_type: 'guide'
 ---
 
@@ -422,6 +422,57 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 该示例为简洁起见对这两个对象都进行了裁剪；API 返回的是
 [per-execution counters]中记录的完整计数器集合。
 
+<div id="server-logs">
+  ## 服务器日志
+</div>
+
+云控制台中日志查看器所显示的 PostgreSQL 服务器日志也可通过
+编程方式获取。[日志 API] 会返回某项服务在指定时间窗口内的各条日志记录。
+与 Query Insights 一样，必须指定时间窗口，因此请将 `from_date` 和
+`to_date` 作为 RFC 3339 时间戳传递。该时间范围不得超过 30 天，且
+`to_date` 必须晚于 `from_date`：
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/logs?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+条目默认按时间从新到旧返回；可通过 `sort_order` (`asc` 或
+`desc`) 切换排序方向。使用 `severity` 筛选单个严重级别 (例如 `ERROR`、
+`WARNING` 或 `LOG`) ，使用 `body_contains` 匹配日志正文中区分大小写的
+子串，并使用 `limit` 和 `offset` 对结果分页。
+
+每个条目都包含其 `timestamp`、`severity` 和原始 `body`。正文始终是
+字符串：结构化日志行以 JSON 编码形式返回，普通行则按原样返回：
+
+```json
+{
+  "result": [
+    {
+      "timestamp": "2026-05-25T16:42:09.512844Z",
+      "severity": "ERROR",
+      "body": "{\"message\":\"deadlock detected\",\"detail\":\"Process 42 waits for ShareLock\"}"
+    },
+    {
+      "timestamp": "2026-05-25T16:41:58.004120Z",
+      "severity": "LOG",
+      "body": "connection received: host=10.0.0.7 port=54210 user=orders_service database=sales"
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "requestId": "b0d5c3a1-9f2e-4a7c-8b1d-3e6f0a2c4d55",
+  "status": 200
+}
+```
+
+该端点通过 `limit` 和 `offset` 进行分页，不返回总数；
+不断增加 `offset`，直到某页返回的条目数少于 `limit`。
+
 [ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/api-overview "Cloud API"
 
 [OpenAPI]: https://www.openapis.org "OpenAPI Initiative"
@@ -461,3 +512,5 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 [slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "列出 Postgres 慢查询模式"
 
 [slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "获取包含最近执行记录的 Postgres 慢查询模式"
+
+[logs API]: /products/cloud/api-reference/postgres/postgres-logs-get-list "列出 Postgres 服务器日志"

@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
 title: 'OpenAPI de ClickHouse Managed Postgres'
 description: 'Gestiona tus servicios de ClickHouse Managed Postgres con nuestra OpenAPI'
-keywords: ['managed postgres', 'openapi', 'api', 'curl', 'tutorial', 'línea de comandos', 'query insights', 'consultas lentas']
+keywords: ['managed postgres', 'openapi', 'api', 'curl', 'tutorial', 'línea de comandos', 'query insights', 'consultas lentas', 'registros del servidor', 'registros']
 doc_type: 'guide'
 ---
 
@@ -435,6 +435,58 @@ tiempo de CPU en modo usuario y de sistema, workers paralelos, JIT y WAL —, lo
 
 El ejemplo recorta ambos objetos por brevedad; la API devuelve el conjunto completo de contadores documentado en [per-execution counters].
 
+<div id="server-logs">
+  ## Logs del servidor
+</div>
+
+Los logs del servidor PostgreSQL disponibles en el visor de logs de la consola de la nube también están
+disponibles mediante programación. La [API de logs] devuelve entradas de log individuales de un
+servicio durante una ventana de tiempo. Al igual que con Query Insights, la ventana es obligatoria, por lo que
+pase `from_date` y `to_date` como marcas de tiempo RFC 3339. El intervalo no debe superar
+los 30 días y `to_date` debe ser posterior a `from_date`:
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/logs?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+Las entradas se devuelven en orden de más reciente a más antigua; invierta el orden con `sort_order` (`asc` o
+`desc`). Filtre por un único nivel de gravedad con `severity` (por ejemplo, `ERROR`,
+`WARNING` o `LOG`), busque una subcadena del cuerpo del log que distinga entre mayúsculas y minúsculas con
+`body_contains` y pagine los resultados con `limit` y `offset`.
+
+Cada entrada contiene su `timestamp`, `severity` y `body` sin procesar. El cuerpo es
+siempre una cadena: las líneas de log estructuradas se devuelven codificadas en JSON y las líneas sin formato,
+literalmente:
+
+```json
+{
+  "result": [
+    {
+      "timestamp": "2026-05-25T16:42:09.512844Z",
+      "severity": "ERROR",
+      "body": "{\"message\":\"deadlock detected\",\"detail\":\"Process 42 waits for ShareLock\"}"
+    },
+    {
+      "timestamp": "2026-05-25T16:41:58.004120Z",
+      "severity": "LOG",
+      "body": "connection received: host=10.0.0.7 port=54210 user=orders_service database=sales"
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "requestId": "b0d5c3a1-9f2e-4a7c-8b1d-3e6f0a2c4d55",
+  "status": 200
+}
+```
+
+El endpoint se pagina con `limit` y `offset` en lugar de devolver un recuento
+total; avance `offset` hasta que una página devuelva menos entradas que `limit`.
+
 [ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/api-overview "API de Cloud"
 
 [OpenAPI]: https://www.openapis.org "Iniciativa OpenAPI"
@@ -474,3 +526,5 @@ El ejemplo recorta ambos objetos por brevedad; la API devuelve el conjunto compl
 [API de patrones lentos]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Listar patrones de consultas lentas de Postgres"
 
 [API de patrones lentos]: /products/cloud/api-reference/postgres/slow-query-pattern-get "Obtener un patrón de consulta lenta de Postgres con ejecuciones recientes"
+
+[API de logs]: /products/cloud/api-reference/postgres/postgres-logs-get-list "Listar logs del servidor Postgres"

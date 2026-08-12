@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
 title: 'ClickHouse Managed Postgres OpenAPI'
 description: 'OpenAPI で ClickHouse Managed Postgres サービスを操作する'
-keywords: ['Managed Postgres', 'openapi', 'api', 'curl', 'チュートリアル', 'コマンドライン', 'クエリインサイト', 'スロークエリ']
+keywords: ['Managed Postgres', 'openapi', 'api', 'curl', 'チュートリアル', 'コマンドライン', 'クエリインサイト', 'スロークエリ', 'サーバーログ', 'ログ']
 doc_type: 'guide'
 ---
 
@@ -373,7 +373,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 </div>
 
 リストレスポンスの `queryId` を [低速クエリパターン API] に渡すと、その
-パターンの集計メトリクスと、直近の個別実行結果を取得できます。
+パターンの集約メトリクスと、直近の個別実行結果を取得できます。
 パターンの識別に必要な `db_name`、`db_user`、`db_operation` は
 必須です。
 
@@ -430,6 +430,59 @@ time、並列 worker 数、JIT、WAL — が含まれます。これらは、
 この例では簡潔にするため、両方のオブジェクトをトリムしています。API は
 [per-execution counters] に記載されている完全なカウンター セットを返します。
 
+<div id="server-logs">
+  ## サーバーログ
+</div>
+
+Cloud Console のログビューアで表示される PostgreSQL サーバーログは、
+プログラムからも利用できます。[logs API] は、指定した期間内のサービスの個々のログエントリを
+返します。クエリインサイトと同様に、この期間の指定は必須のため、
+`from_date` と `to_date` を RFC 3339 形式のタイムスタンプとして渡します。期間は
+30 日を超えることはできず、`to_date` は `from_date` より後でなければなりません。
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/logs?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+エントリは新しい順に返されます。`sort_order` (`asc` または
+`desc`) で順序を反転できます。`severity` (例: `ERROR`、
+`WARNING`、`LOG`) で単一の重大度に絞り込み、`body_contains` で
+ログボディ内の大文字・小文字を区別する部分文字列を検索し、`limit` と `offset` で
+結果をページングできます。
+
+各エントリには `timestamp`、`severity`、生データの `body` が含まれます。ボディは
+常に文字列です。構造化ログ行は JSON エンコードされて返され、プレーンな行は
+そのまま返されます。
+
+```json
+{
+  "result": [
+    {
+      "timestamp": "2026-05-25T16:42:09.512844Z",
+      "severity": "ERROR",
+      "body": "{\"message\":\"deadlock detected\",\"detail\":\"Process 42 waits for ShareLock\"}"
+    },
+    {
+      "timestamp": "2026-05-25T16:41:58.004120Z",
+      "severity": "LOG",
+      "body": "connection received: host=10.0.0.7 port=54210 user=orders_service database=sales"
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "requestId": "b0d5c3a1-9f2e-4a7c-8b1d-3e6f0a2c4d55",
+  "status": 200
+}
+```
+
+エンドポイントでは合計件数を返すのではなく、`limit` と `offset` を使用してページ分割します。
+ページが `limit` 未満のエントリを返すまで、`offset` を増やしてください。
+
 [ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/api-overview "Cloud API"
 
 [OpenAPI]: https://www.openapis.org "OpenAPI Initiative"
@@ -456,16 +509,18 @@ time、並列 worker 数、JIT、WAL — が含まれます。これらは、
 
 [password reset]: /products/cloud/api-reference/postgres/postgres-service-set-password "Postgres サービスの superuser パスワードをリセット"
 
-[Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "ClickHouse Managed Postgres Prometheus エンドポイント"
+[Prometheus エンドポイント]: /products/managed-postgres/monitoring/prometheus "ClickHouse Managed Postgres Prometheus エンドポイント"
 
-[metrics reference]: /products/managed-postgres/monitoring/metrics "ClickHouse Managed Postgres メトリクス リファレンス"
+[メトリクス リファレンス]: /products/managed-postgres/monitoring/metrics "ClickHouse Managed Postgres メトリクス リファレンス"
 
-[Query Insights]: /products/managed-postgres/monitoring/query-insights "Postgres クエリインサイト"
+[クエリインサイト]: /products/managed-postgres/monitoring/query-insights "Postgres クエリインサイト"
 
 [detail flyout]: /products/managed-postgres/monitoring/query-insights#detail "クエリインサイトの詳細フライアウト"
 
 [per-execution counters]: /products/managed-postgres/monitoring/query-insights#counters "クエリインサイトの実行ごとのカウンター"
 
-[slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Postgres の低速クエリパターンを一覧表示"
+[スローパターン API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Postgres の低速クエリパターンを一覧表示"
 
-[slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "最近の実行結果を含む Postgres の低速クエリパターンを取得"
+[低速クエリパターン API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "最近の実行結果を含む Postgres の低速クエリパターンを取得"
+
+[logs API]: /products/cloud/api-reference/postgres/postgres-logs-get-list "Postgres サーバーログを一覧表示"

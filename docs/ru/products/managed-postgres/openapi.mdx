@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
 title: 'ClickHouse Managed Postgres OpenAPI'
 description: 'Управляйте сервисами ClickHouse Managed Postgres с помощью нашего OpenAPI'
-keywords: ['managed postgres', 'openapi', 'api', 'curl', 'руководство', 'командная строка', 'query insights', 'медленные запросы']
+keywords: ['managed postgres', 'openapi', 'api', 'curl', 'руководство', 'командная строка', 'query insights', 'медленные запросы', 'серверные журналы', 'журналы']
 doc_type: 'guide'
 ---
 
@@ -442,11 +442,62 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 В примере оба объекта сокращены для краткости; API возвращает полный
 набор счётчиков, описанный в разделе [счётчики по каждому выполнению].
 
+<div id="server-logs">
+  ## Серверные журналы
+</div>
+
+Серверные журналы PostgreSQL, доступные в средстве просмотра журналов в облачной
+консоли, также доступны программно. [API журналов] возвращает отдельные записи журнала для
+сервиса за временной интервал. Как и в Query Insights, указание интервала обязательно, поэтому
+передайте `from_date` и `to_date` в виде временных меток RFC 3339. Интервал не должен превышать
+30 дней, а `to_date` должен быть позже `from_date`:
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/logs?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+Записи возвращаются от новых к старым; измените порядок с помощью `sort_order` (`asc` или
+`desc`). Чтобы отфильтровать записи по одному уровню серьёзности, используйте `severity` (например, `ERROR`,
+`WARNING` или `LOG`); для поиска подстроки в теле журнала с учётом регистра — `body_contains`; для постраничного просмотра результатов — `limit` и `offset`.
+
+Каждая запись содержит `timestamp`, `severity` и необработанное `body`. Тело
+всегда представляет собой строку: структурированные строки журнала возвращаются в кодировке JSON, обычные строки —
+без изменений:
+
+```json
+{
+  "result": [
+    {
+      "timestamp": "2026-05-25T16:42:09.512844Z",
+      "severity": "ERROR",
+      "body": "{\"message\":\"deadlock detected\",\"detail\":\"Process 42 waits for ShareLock\"}"
+    },
+    {
+      "timestamp": "2026-05-25T16:41:58.004120Z",
+      "severity": "LOG",
+      "body": "connection received: host=10.0.0.7 port=54210 user=orders_service database=sales"
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "requestId": "b0d5c3a1-9f2e-4a7c-8b1d-3e6f0a2c4d55",
+  "status": 200
+}
+```
+
+Конечная точка возвращает результаты постранично с помощью `limit` и `offset`, а не общее
+количество; увеличивайте `offset`, пока страница не вернёт меньше `limit` записей.
+
 [ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/api-overview "Cloud API"
 
 [OpenAPI]: https://www.openapis.org "Инициатива OpenAPI"
 
-[API keys]: /products/cloud/features/admin-features/api/openapi "Управление ключами API"
+[ключ API]: /products/cloud/features/admin-features/api/openapi "Управление ключами API"
 
 [pg-openapi]: /products/cloud/api-reference/postgres/postgres-service-create "Справочник ClickHouse Cloud API: Postgres"
 
@@ -464,20 +515,22 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 
 [config API]: /products/cloud/api-reference/postgres/postgres-instance-config-post "Заменить конфигурацию сервиса Postgres"
 
-[delete API]: /products/cloud/api-reference/postgres/postgres-service-delete "Удалить сервис PostgreSQL"
+[API удаления]: /products/cloud/api-reference/postgres/postgres-service-delete "Удалить сервис PostgreSQL"
 
 [password reset]: /products/cloud/api-reference/postgres/postgres-service-set-password "Сбросить пароль суперпользователя сервиса Postgres"
 
-[Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "Конечная точка Prometheus для ClickHouse Managed Postgres"
+[конечная точка Prometheus]: /products/managed-postgres/monitoring/prometheus "Конечная точка Prometheus для ClickHouse Managed Postgres"
 
 [metrics reference]: /products/managed-postgres/monitoring/metrics "Справочник метрик ClickHouse Managed Postgres"
 
 [Query Insights]: /products/managed-postgres/monitoring/query-insights "Query Insights для Postgres"
 
-[detail flyout]: /products/managed-postgres/monitoring/query-insights#detail "Выдвижная панель сведений Query Insights"
+[выдвижная панель сведений]: /products/managed-postgres/monitoring/query-insights#detail "Выдвижная панель сведений Query Insights"
 
 [счётчики по каждому выполнению]: /products/managed-postgres/monitoring/query-insights#counters "Счётчики Query Insights по каждому выполнению"
 
-[slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Список шаблонов медленных запросов Postgres"
+[API шаблонов медленных запросов]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Список шаблонов медленных запросов Postgres"
 
-[slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "Получить шаблон медленного запроса Postgres с последними выполнениями"
+[API шаблона медленного запроса]: /products/cloud/api-reference/postgres/slow-query-pattern-get "Получить шаблон медленного запроса Postgres с последними выполнениями"
+
+[API журналов]: /products/cloud/api-reference/postgres/postgres-logs-get-list "Получить список серверных журналов Postgres"

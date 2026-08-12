@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
 title: 'OpenAPI لـ ClickHouse Managed Postgres'
 description: 'أدِر خدمات ClickHouse Managed Postgres لديك باستخدام OpenAPI الخاص بنا'
-keywords: ['Managed Postgres', 'OpenAPI', 'واجهة برمجة تطبيقات', 'curl', 'دليل عملي', 'سطر الأوامر', 'Query Insights', 'الاستعلامات البطيئة']
+keywords: ['Managed Postgres', 'OpenAPI', 'واجهة برمجة تطبيقات', 'curl', 'دليل عملي', 'سطر الأوامر', 'Query Insights', 'الاستعلامات البطيئة', 'سجلات الخادم', 'السجلات']
 doc_type: 'guide'
 ---
 
@@ -436,6 +436,57 @@ CPU للمستخدم والنظام، والعمّال المتوازيون، و
 يختصر المثال كلا الكائنين مراعاةً للإيجاز؛ وتُرجع واجهة برمجة تطبيقات
 مجموعة العدادات الكاملة الموثقة ضمن [per-execution counters].
 
+<div id="server-logs">
+  ## سجلات الخادم
+</div>
+
+تتوفر سجلات خادم PostgreSQL المعروضة في عارض السجلات ضمن الكونسول السحابي أيضًا برمجيًا. تُرجع [واجهة برمجة تطبيقات السجلات] إدخالات سجل فردية لخدمة
+خلال نافذة زمنية. وكما هو الحال مع Query Insights، يلزم تحديد النافذة، لذا
+مرّر `from_date` و`to_date` كطوابع زمنية بتنسيق RFC 3339. يجب ألا يتجاوز النطاق
+30 يومًا، ويجب أن يكون `to_date` بعد `from_date`:
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/logs?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+تُعاد الإدخالات بحيث يكون الأحدث أولًا؛ اعكس الترتيب باستخدام `sort_order` (`asc` أو
+`desc`). رشّح حسب مستوى خطورة واحد باستخدام `severity` (مثل `ERROR` أو
+`WARNING` أو `LOG`)، وطابِق سلسلة فرعية حساسة لحالة الأحرف في متن السجل باستخدام
+`body_contains`، وتصفّح النتائج باستخدام `limit` و`offset`.
+
+يتضمن كل إدخال `timestamp` و`severity` و`body` الخام. ويكون المتن
+دائمًا سلسلة نصية: تُعاد أسطر السجل المهيكلة بتنسيق JSON، بينما تُعاد الأسطر العادية
+كما هي:
+
+```json
+{
+  "result": [
+    {
+      "timestamp": "2026-05-25T16:42:09.512844Z",
+      "severity": "ERROR",
+      "body": "{\"message\":\"deadlock detected\",\"detail\":\"Process 42 waits for ShareLock\"}"
+    },
+    {
+      "timestamp": "2026-05-25T16:41:58.004120Z",
+      "severity": "LOG",
+      "body": "connection received: host=10.0.0.7 port=54210 user=orders_service database=sales"
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "requestId": "b0d5c3a1-9f2e-4a7c-8b1d-3e6f0a2c4d55",
+  "status": 200
+}
+```
+
+تقسّم نقطة النهاية النتائج إلى صفحات باستخدام `limit` و`offset` بدلاً من إرجاع
+عدد إجمالي؛ زِد `offset` حتى تُرجع الصفحة عددًا من الإدخالات أقل من `limit`.
+
 [ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/api-overview "Cloud API"
 
 [OpenAPI]: https://www.openapis.org "مبادرة OpenAPI"
@@ -468,10 +519,12 @@ CPU للمستخدم والنظام، والعمّال المتوازيون، و
 
 [Query Insights]: /products/managed-postgres/monitoring/query-insights "Query Insights لاستعلامات Postgres"
 
-[detail flyout]: /products/managed-postgres/monitoring/query-insights#detail "اللوحة الجانبية التفصيلية في Query Insights"
+[detail flyout]: /products/managed-postgres/monitoring/query-insights#detail "اللوحة الجانبية للتفاصيل في Query Insights"
 
 [per-execution counters]: /products/managed-postgres/monitoring/query-insights#counters "عدادات Query Insights لكل تنفيذ"
 
 [slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "إدراج أنماط الاستعلامات البطيئة لـ Postgres"
 
 [slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "الحصول على نمط استعلام بطيء لـ Postgres مع أحدث عمليات التنفيذ"
+
+[logs API]: /products/cloud/api-reference/postgres/postgres-logs-get-list "سرد سجلات خادم Postgres"
