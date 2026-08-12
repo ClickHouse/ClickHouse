@@ -120,7 +120,7 @@ namespace
         return {ShardSelectorKind::Fixed, shard_num};
     }
 
-    /// Both operands are unbounded user settings, so the sum can wrap.
+    /// `max_queue_size` has no upper bound, so the sum can wrap.
     size_t saturatingAdd(size_t a, size_t b)
     {
         size_t result = 0;

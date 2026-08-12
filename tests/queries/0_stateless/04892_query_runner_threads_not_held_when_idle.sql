@@ -20,17 +20,17 @@ SYSTEM WAIT QUERY RUNNER runner;
 SELECT count() <= 4 FROM dst;
 
 -- A table accepts at most threads + max_queue_size queries at a time, here 1 + 1, and refuses the
--- surplus. Every refused query is still accounted for, so the INSERT returns and SYSTEM WAIT does
--- not block forever. Each accepted query sleeps for a second while the remaining 30 are submitted,
--- so no capacity is freed during submission. The upper bound is the engine's promise and is exact;
--- the lower bound stays loose because starting a thread can also fail when the whole server is
--- saturated, which is not what this arm is about. tests/integration/test_query_runner pins the
--- accepted count exactly, on a server no other test is using.
+-- surplus. Every refused query is still accounted for, which is what this arm asserts: the INSERT
+-- returns and SYSTEM WAIT does not block, so no submission was lost. The count is bounded above
+-- only. It has no lower bound because starting a thread also fails when the whole server's pool is
+-- saturated, and every submission here needs a new thread, so all 32 can legitimately be refused.
+-- test_capacity_bound in tests/integration/test_query_runner pins the accepted count exactly, on a
+-- server no other test is using.
 CREATE TABLE refused_dst (x UInt64) ENGINE = Memory;
 CREATE TABLE tiny_runner (query String, database String) ENGINE = QueryRunner SETTINGS mode = 'synchronous', threads = 1, max_queue_size = 1;
 INSERT INTO tiny_runner SELECT 'INSERT INTO refused_dst SELECT sleep(1)', {CLICKHOUSE_DATABASE:String} FROM numbers(32);
 SYSTEM WAIT QUERY RUNNER tiny_runner;
-SELECT count() <= 1 + 1 AND count() > 0 FROM refused_dst;
+SELECT count() <= 1 + 1 FROM refused_dst;
 
 -- A failing query does not disable the table: later submissions are still accepted and accounted
 -- for. That they also run is pinned by test_failing_query_leaves_table_usable.
