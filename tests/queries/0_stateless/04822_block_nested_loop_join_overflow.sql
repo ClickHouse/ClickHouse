@@ -4,8 +4,8 @@
 -- it stays in memory or spills to a temporary file, so `join_overflow_mode` means the same either
 -- way: spilling relieves memory pressure, it is not a way around the limit.
 
-SET cross_to_inner_join_rewrite = 0;
-SET join_algorithm = 'partial_merge';
+-- No algorithm is enabled, so every join below is answered by the operator, `INNER` included.
+SET join_algorithm = '';
 SET query_plan_join_swap_table = 'false';
 
 SELECT 'throw';

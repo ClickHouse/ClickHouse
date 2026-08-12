@@ -83,3 +83,4 @@ allow_unrestricted_reads_from_keeper
 enable_vector_similarity_index
 allow_nullable_tuple_in_extracted_subcolumns
 allow_lossy_numeric_supertype
+allow_block_nested_loop_join

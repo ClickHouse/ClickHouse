@@ -1,5 +1,4 @@
 INNER
-routed	1
 probe=1 build=1
 1	1	11	2
 1	1	12	3
@@ -7,7 +6,6 @@ probe=0 build=1
 probe=1 build=0
 probe=0 build=0
 LEFT
-routed	1
 probe=1 build=1
 1	1	11	2
 1	1	12	3
@@ -18,7 +16,6 @@ probe=1 build=0
 2	40	0	0
 probe=0 build=0
 RIGHT
-routed	1
 probe=1 build=1
 1	1	11	2
 1	1	12	3
@@ -28,7 +25,6 @@ probe=0 build=1
 probe=1 build=0
 probe=0 build=0
 FULL
-routed	1
 probe=1 build=1
 1	1	11	2
 1	1	12	3
@@ -40,6 +36,21 @@ probe=1 build=0
 1	1	0	0
 2	40	0	0
 probe=0 build=0
+constant condition
+routed	1
+INNER false	0
+INNER true	4
+LEFT false	2
+LEFT true	4
+RIGHT false	2
+RIGHT true	4
+FULL false	4
+FULL true	4
+LEFT SEMI false	0
+LEFT SEMI true	2
+LEFT ANTI false	2
+LEFT ANTI true	0
+padded	2	2
 join_use_nulls
 1	1	\N	\N
 2	40	\N	\N

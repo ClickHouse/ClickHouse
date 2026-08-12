@@ -54,12 +54,18 @@ SELECT 'compressed',
 {% endfor -%}
 
 -- The build side really did go to disk: without this the comparisons above would hold vacuously.
+-- What it wrote is accounted as a join's external data, the way `GraceHashJoin` accounts for its
+-- own - the store opens a child temporary-data scope carrying the `ExternalJoin*` events, and
+-- without that scope the spill is invisible in them.
 SELECT count() FROM bnl_spill_probe l FULL JOIN bnl_spill_build r ON l.x < r.y
 SETTINGS max_bytes_before_external_join = 1, max_block_size = 17, log_comment = '04821_bnl_spilled';
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT 'wrote temporary files', ProfileEvents['ExternalJoinWritePart'] > 0, ProfileEvents['ExternalJoinCompressedBytes'] > 0
+SELECT 'wrote temporary files',
+    ProfileEvents['ExternalJoinWritePart'] > 0,
+    ProfileEvents['ExternalJoinCompressedBytes'] > 0,
+    ProfileEvents['ExternalJoinUncompressedBytes'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '04821_bnl_spilled'
 ORDER BY event_time_microseconds DESC LIMIT 1;

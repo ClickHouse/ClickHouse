@@ -1,5 +1,9 @@
-unlimited	1
-rows	111
-bytes	1
-result	124751	41541750
-result	124751	41541750
+matched, unlimited	1
+matched, rows	111
+matched, bytes	1
+unmatched probe rows, unlimited	500
+unmatched probe rows, bytes	1
+unmatched build rows, unlimited	500
+unmatched build rows, bytes	1
+matched result same	1
+padded result same	1

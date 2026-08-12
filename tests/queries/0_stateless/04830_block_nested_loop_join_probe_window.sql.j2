@@ -6,9 +6,8 @@
 -- is silently missing from the result.
 
 SET enable_analyzer = 1;
--- `partial_merge` keeps `INNER` from taking the `CROSS JOIN` + filter route, so every kind below is
--- answered by the operator.
-SET join_algorithm = 'partial_merge';
+-- No algorithm is enabled, so every kind below is answered by the operator, `INNER` included.
+SET join_algorithm = '';
 -- One probe chunk of the whole table, so that `max_block_size` below decides the number of windows.
 SET max_threads = 1;
 

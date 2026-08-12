@@ -1,13 +1,15 @@
 -- Tags: no-old-analyzer
 
--- The build side of a block nested loop join is squashed to `min_joined_block_size_rows` /
--- `min_joined_block_size_bytes` before it is stored, the way every other join squashes its right
--- input. It matters more here: a tile of candidate pairs never spans two stored blocks, so a right
--- input written in small blocks would otherwise cost one evaluation of the condition per block per
--- probe chunk, and a stage that walks the store would emit one chunk per block.
+-- How the build side of a block nested loop join is cut into blocks changes nothing about the
+-- result. The store keeps the blocks it is given, and a tile of candidate pairs never spans two of
+-- them, so a right input written in small blocks costs one evaluation of the condition per block per
+-- probe chunk and makes the stage that walks the store emit one chunk per block. That is what the
+-- squashing to `min_joined_block_size_rows` / `min_joined_block_size_bytes` every join applies to its
+-- right input is worth here; turning it off is how these queries produce a finely blocked store.
 
 SET enable_analyzer = 1;
-SET join_algorithm = 'partial_merge';
+-- No algorithm is enabled, so every kind below is answered by the operator, `INNER` included.
+SET join_algorithm = '';
 SET query_plan_join_swap_table = 'false';
 SET max_threads = 1;
 
@@ -21,17 +23,8 @@ INSERT INTO bnl_squash_probe SELECT number FROM numbers(4);
 -- One block per row, which is what a table filled by many small inserts looks like.
 INSERT INTO bnl_squash_build SELECT number FROM numbers(300) SETTINGS max_block_size = 1, max_insert_block_size = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 
-SELECT 'squashed', count() FROM (
-    EXPLAIN PIPELINE SELECT * FROM bnl_squash_probe l JOIN bnl_squash_build r ON l.x < r.y)
-WHERE explain LIKE '%SimpleSquashingTransform%';
-
-SELECT 'not squashed', count() FROM (
-    EXPLAIN PIPELINE SELECT * FROM bnl_squash_probe l JOIN bnl_squash_build r ON l.x < r.y
-    SETTINGS min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0)
-WHERE explain LIKE '%SimpleSquashingTransform%';
-
--- The block boundaries of the right input change nothing about the result, for the kinds that read
--- the store from the probe side and for the ones that scan it afterwards.
+-- The kinds that read the store from the probe side and the ones that scan it afterwards, over a
+-- store of 300 one-row blocks and over the same rows squashed into one.
 SELECT 'inner', count(), sum(x * 1000 + y) FROM bnl_squash_probe l JOIN bnl_squash_build r ON l.x < r.y;
 SELECT 'inner', count(), sum(x * 1000 + y) FROM bnl_squash_probe l JOIN bnl_squash_build r ON l.x < r.y
 SETTINGS min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;

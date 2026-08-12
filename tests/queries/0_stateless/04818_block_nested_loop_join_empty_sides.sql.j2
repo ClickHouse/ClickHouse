@@ -1,9 +1,10 @@
 -- Tags: no-old-analyzer
 
--- Every join kind evaluated by the block nested loop operator with each side in turn empty. An
--- empty build side leaves nothing to match, so only the kinds that keep unmatched probe rows
--- produce anything; an empty probe side likewise leaves only the kinds that keep unmatched build
--- rows, which those emit from the match-flag scan with every flag still unset.
+-- Every join kind evaluated by the block nested loop operator against a degenerate condition: with
+-- each side in turn empty, and with a condition that is the same for every pair. An empty build side
+-- leaves nothing to match, so only the kinds that keep unmatched probe rows produce anything; an
+-- empty probe side likewise leaves only the kinds that keep unmatched build rows, which those emit
+-- from the match-flag scan with every flag still unset.
 
 -- `hash` is left out of the list so that `INNER` goes to the operator too, instead of keeping its
 -- cross-join-with-a-filter plan.
@@ -22,8 +23,6 @@ INSERT INTO bnl_es_r VALUES (11, 2), (12, 3);
 {% for kind in ['INNER', 'LEFT', 'RIGHT', 'FULL'] -%}
 
 SELECT '{{ kind }}';
-SELECT 'routed', count() FROM (EXPLAIN SELECT count() FROM bnl_es_l l {{ kind }} JOIN bnl_es_r r ON l.x < r.y)
-WHERE explain LIKE '%BlockNestedLoopJoin%';
 
 {% for probe_rows, build_rows in [(1, 1), (0, 1), (1, 0), (0, 0)] -%}
 SELECT 'probe={{ probe_rows }} build={{ build_rows }}';
@@ -33,6 +32,22 @@ ORDER BY ALL;
 {% endfor -%}
 
 {% endfor -%}
+
+-- A condition that only becomes constant once it is evaluated. `ignore` returns a `Const` column
+-- without being constant-foldable itself, so the condition reaches the operator instead of being
+-- claimed by `ConstantJoin` while the join is still logical - which is what this one routing check
+-- is for; a foldable `ON 1` never gets here.
+SELECT 'constant condition';
+SELECT 'routed', count() FROM (EXPLAIN SELECT count() FROM bnl_es_l l LEFT JOIN bnl_es_r r ON ignore(l.x, r.y))
+WHERE explain LIKE '%BlockNestedLoopJoin%';
+
+{% for kind in ['INNER', 'LEFT', 'RIGHT', 'FULL', 'LEFT SEMI', 'LEFT ANTI'] -%}
+SELECT '{{ kind }} false', count() FROM bnl_es_l l {{ kind }} JOIN bnl_es_r r ON ignore(l.x, r.y);
+SELECT '{{ kind }} true', count() FROM bnl_es_l l {{ kind }} JOIN bnl_es_r r ON ignore(l.x, r.y) = 0;
+{% endfor -%}
+
+-- Nothing matched, so the build columns of the kept probe rows are padded with their defaults.
+SELECT 'padded', count(), countIf(r.id = 0 AND r.y = 0) FROM bnl_es_l l LEFT JOIN bnl_es_r r ON ignore(l.x, r.y);
 
 -- With `join_use_nulls` the padded side of an unmatched row is NULL rather than the type's default,
 -- whichever side the emptiness is on.

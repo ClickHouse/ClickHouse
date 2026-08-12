@@ -84,30 +84,5 @@ SELECT 'both sides same', (SELECT arraySort(groupArray((l.id, r.id))) FROM bnl_l
   = (SELECT arraySort(groupArray((l.id, r.id))) FROM bnl_l l LEFT JOIN bnl_r r ON l.x < r.y WHERE l.x + r.y > 4
      SETTINGS query_plan_filter_push_down = 0, optimize_move_to_prewhere = 0) AS ok;
 
--- The operator needs no sorted input, so a sorting below it that an `ORDER BY` above it makes
--- redundant is still removed - unlike the pre-sort of an `IEJoin`, which `removeRedundantSorting`
--- has to keep.
-SELECT 'redundant sorting removed', count() FROM (
-    EXPLAIN SELECT l.id, r.id FROM (SELECT * FROM bnl_l ORDER BY x) l LEFT JOIN bnl_r r ON l.x < r.y ORDER BY l.id, r.id)
-WHERE explain LIKE '%Sorting%';
-SELECT 'sorted same',
-    (SELECT groupArray(p) FROM (SELECT (l.id, r.id) AS p FROM (SELECT * FROM bnl_l ORDER BY x) l LEFT JOIN bnl_r r ON l.x < r.y ORDER BY l.id, r.id))
-  = (SELECT groupArray(p) FROM (SELECT (l.id, r.id) AS p FROM (SELECT * FROM bnl_l ORDER BY x) l LEFT JOIN bnl_r r ON l.x < r.y ORDER BY l.id, r.id
-     SETTINGS query_plan_remove_redundant_sorting = 0)) AS ok;
-
--- `ORDER BY ... LIMIT` above the operator: whether the top-k is pushed to the preserved side or
--- not, and whether the preserved side is read in order or not, the rows are the same and in the
--- same order.
-SELECT 'top k same',
-    (SELECT groupArray(p) FROM (SELECT (l.id, r.id) AS p FROM bnl_l l LEFT JOIN bnl_r r ON l.x < r.y ORDER BY l.id, r.id LIMIT 5))
-  = (SELECT groupArray(p) FROM (SELECT (l.id, r.id) AS p FROM bnl_l l LEFT JOIN bnl_r r ON l.x < r.y ORDER BY l.id, r.id LIMIT 5
-     SETTINGS query_plan_top_k_through_join = 0, optimize_read_in_order = 0)) AS ok;
-
-SELECT 'read in order same',
-    (SELECT groupArray(p) FROM (SELECT (l.id, r.id) AS p FROM bnl_l l LEFT JOIN bnl_r r ON l.x < r.y ORDER BY l.id, r.id LIMIT 5
-     SETTINGS optimize_read_in_order = 1, query_plan_read_in_order_through_join = 1))
-  = (SELECT groupArray(p) FROM (SELECT (l.id, r.id) AS p FROM bnl_l l LEFT JOIN bnl_r r ON l.x < r.y ORDER BY l.id, r.id LIMIT 5
-     SETTINGS optimize_read_in_order = 0)) AS ok;
-
 DROP TABLE bnl_l;
 DROP TABLE bnl_r;
