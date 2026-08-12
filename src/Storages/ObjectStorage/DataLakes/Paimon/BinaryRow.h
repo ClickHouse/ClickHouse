@@ -34,6 +34,10 @@ public:
     using BinaryReaderPtr = std::shared_ptr<Poco::BinaryReader>;
     explicit BinaryRow(const String & bytes_);
 
+    /// Number of fields the row was encoded with. It is stored in the row header, so it is the only
+    /// self-describing part of the layout and the only way to tell how many columns the row covers.
+    Int32 getArity() const { return arity; }
+
     bool isNullAt(Int32 pos);
 
     bool getBoolean(Int32 pos);

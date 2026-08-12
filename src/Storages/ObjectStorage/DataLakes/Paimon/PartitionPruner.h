@@ -20,6 +20,22 @@ struct PaimonManifestEntry;
 
 namespace Paimon
 {
+    /// Whether a legacy value-stats row - one written without the `_VALUE_STATS_COLS` column list - may be
+    /// indexed by table-schema field position.
+    ///
+    /// A legacy row carries no column names, so the only mapping available is "stats position i describes
+    /// schema field i". That mapping holds when the row covers the whole table schema, and breaks when the
+    /// file was written with a projected write schema (for example write columns `[f0, f2]` of a table whose
+    /// schema is `[f0, f1, f2]`): a predicate on `f1` would then read `f2`'s bounds and could prune a file
+    /// that still contains matching rows. A projection is a subset of the schema, so it is detectable by its
+    /// cardinality - a stats row that covers every field must be the full schema, in schema order.
+    ///
+    /// `stats_arity` is the arity encoded in the `BinaryRow` header of the min (or max) row, and
+    /// `null_counts_size` is the length of the parallel `_NULL_COUNTS` array; both must agree with the
+    /// schema, otherwise the layout is unknown and pruning has to be skipped (the file is then read in
+    /// full, which is always correct).
+    bool legacyValueStatsArePositional(Int32 stats_arity, size_t null_counts_size, size_t schema_field_count);
+
     class PartitionPruner
     {
     public:
@@ -59,6 +75,9 @@ namespace Paimon
         /// data file's own schema field order, so positional pruning is only valid for files written with
         /// this same schema (see `canBePruned`).
         Int64 schema_id = -1;
+        /// Number of fields in the schema this pruner was built from, used to validate the layout of legacy
+        /// (positional) value stats - see `legacyValueStatsArePositional`.
+        size_t schema_field_count = 0;
         LoggerPtr log;
     };
 }

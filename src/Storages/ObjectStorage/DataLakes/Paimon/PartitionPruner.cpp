@@ -60,6 +60,13 @@ namespace Paimon
         }
     }
 
+    bool legacyValueStatsArePositional(Int32 stats_arity, size_t null_counts_size, size_t schema_field_count)
+    {
+        return stats_arity >= 0
+            && static_cast<size_t>(stats_arity) == schema_field_count
+            && null_counts_size == schema_field_count;
+    }
+
     static boost::intrusive_ptr<DB::IAST> createPartitionKeyAST(const DB::PaimonTableSchema & table_schema)
     {
         auto partition_key_ast = DB::make_intrusive<DB::ASTFunction>();
@@ -136,6 +143,7 @@ namespace Paimon
         const DB::ActionsDAG & filter_dag,
         DB::ContextPtr context)
         : schema_id(table_schema_.id)
+        , schema_field_count(table_schema_.fields.size())
         , log(getLogger("MinMaxIndexPruner"))
     {
         if (filter_dag.getOutputs().empty())
@@ -220,16 +228,51 @@ namespace Paimon
         if (file.schema_id != schema_id)
             return false;
 
+        const auto & null_counts = file.value_stats.null_counts;
+
         std::unordered_map<String, Int32> col_to_pos;
-        if (!legacy_mode)
+        if (legacy_mode)
+        {
+            /// A legacy stats row carries no column list, so the only mapping available is positional. It is
+            /// trustworthy only when the row covers the whole schema; a file written with a projected write
+            /// schema would silently shift every position and could prune a file that still matches.
+            /// Fail closed and read such a file in full - see `legacyValueStatsArePositional`.
+            if (!legacyValueStatsArePositional(min_row.getArity(), null_counts.size(), schema_field_count)
+                || !legacyValueStatsArePositional(max_row.getArity(), null_counts.size(), schema_field_count))
+            {
+                LOG_TRACE(
+                    log,
+                    "Skipping min/max pruning for file {}: legacy value statistics cover {} column(s) "
+                    "(null counts: {}) but the table schema has {} field(s)",
+                    file.file_name,
+                    min_row.getArity(),
+                    null_counts.size(),
+                    schema_field_count);
+                return false;
+            }
+        }
+        else
         {
             const auto & stats_cols = *file.value_stats_cols;
+            /// The column list and the stats row describe the same tuple, so a length mismatch means the
+            /// positions derived from the list do not address the row. Fail closed as well.
+            if (static_cast<size_t>(min_row.getArity()) != stats_cols.size()
+                || static_cast<size_t>(max_row.getArity()) != stats_cols.size())
+            {
+                LOG_TRACE(
+                    log,
+                    "Skipping min/max pruning for file {}: `_VALUE_STATS_COLS` lists {} column(s) but the "
+                    "statistics rows have arity {}/{}",
+                    file.file_name,
+                    stats_cols.size(),
+                    min_row.getArity(),
+                    max_row.getArity());
+                return false;
+            }
             col_to_pos.reserve(stats_cols.size());
             for (size_t i = 0; i < stats_cols.size(); ++i)
                 col_to_pos[stats_cols[i].safeGet<String>()] = static_cast<Int32>(i);
         }
-
-        const auto & null_counts = file.value_stats.null_counts;
 
         for (const auto & col_cond : column_conditions)
         {
