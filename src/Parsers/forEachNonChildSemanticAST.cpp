@@ -2,10 +2,12 @@
 
 #include <Core/Field.h>
 #include <Parsers/ASTBackupQuery.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTShowColumnsQuery.h>
 #include <Parsers/ASTShowIndexesQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
+#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
@@ -79,6 +81,21 @@ namespace
         {
             visit_if(masking_policy->update_assignments);
             visit_if(masking_policy->where_condition);
+        }
+        else if (auto * apply_transformer = node.template as<ASTColumnsApplyTransformer>())
+        {
+            /// `APPLY (func(params))` keeps the parameter list, and `APPLY (x -> expr)` the whole
+            /// lambda, outside `children` (`ASTColumnsApplyTransformer::parameters` / `lambda`).
+            /// The tree hash folds both subtrees in, so the walks must reach them too.
+            visit_if(apply_transformer->parameters);
+            visit_if(apply_transformer->lambda);
+        }
+        else if (auto * auth_data = node.template as<ASTAuthenticationData>())
+        {
+            /// The `VALID UNTIL` expression of a per-method authentication clause is kept in the
+            /// `valid_until` member, outside `children` (only the query-level `VALID UNTIL` of
+            /// `ASTCreateUserQuery` goes into the query's `children`).
+            visit_if(auth_data->valid_until);
         }
         else if (auto * create_user = node.template as<ASTCreateUserQuery>())
         {
