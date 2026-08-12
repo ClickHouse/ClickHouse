@@ -197,6 +197,7 @@ protected:
     void findAzureBlobStorageTableEngineSecretArguments();
     void findRedisFunctionSecretArguments();
     void findYTsaurusStorageTableEngineSecretArguments();
+    void findBigQuerySecretArguments();
     void findNATSTableEngineSecretArguments();
     void findDatabaseEngineSecretArguments();
     void findMySQLDatabaseSecretArguments();
