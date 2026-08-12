@@ -2280,7 +2280,8 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         /// `INSERT`: the second sink waits out `lock_acquire_timeout`.
         if (const auto * create = fuzzed_ast->as<ASTCreateQuery>(); create && create->is_materialized_view_with_external_target())
         {
-            bool skip = false;
+            using Verdict = InsertDependenciesBuilder::DuplicateNonParallelSinkVerdict;
+            auto verdict = Verdict::Undecided;
             try
             {
                 /// Both ids come from the extractor that registers the dependency edges this question is
@@ -2291,15 +2292,18 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
                     fuzzed_ast,
                     context->getCurrentDatabase());
                 if (deps.mv_from_dependency && deps.mv_to_dependency)
-                    skip = InsertDependenciesBuilder::insertWouldDuplicateNonParallelSink(
+                    verdict = InsertDependenciesBuilder::insertWouldDuplicateNonParallelSink(
                         *deps.mv_from_dependency, *deps.mv_to_dependency, context);
             }
             catch (...) // Ok: an undecided check must not suppress fuzzing
             {
-                ProfileEvents::increment(ProfileEvents::ASTFuzzerSkipCheckFailed);
+                verdict = Verdict::Undecided;
             }
 
-            if (skip)
+            if (verdict == Verdict::Undecided)
+                ProfileEvents::increment(ProfileEvents::ASTFuzzerSkipCheckFailed);
+
+            if (verdict == Verdict::Hazardous)
             {
                 /// The name was recorded before this point and later mutations retarget table references
                 /// to the recorded names, so a name no table backs has to be withdrawn.

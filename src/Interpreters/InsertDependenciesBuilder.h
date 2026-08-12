@@ -169,17 +169,28 @@ public:
     /// insert single-stream when this probe reports true and that setting is disabled.
     static bool forwardedInsertHidesDependentView(const StoragePtr & storage, size_t depth = 0);
 
+    enum class DuplicateNonParallelSinkVerdict : uint8_t
+    {
+        NotHazardous,
+        Hazardous,
+        Undecided,
+    };
+
     /// Whether adding a materialized view from `source` to `new_view_target` would make one
     /// `INSERT INTO source` build two sinks for the same storage while that storage accepts only one
     /// `write()` per `INSERT` (`IStorage::supportsParallelInsert() == false`). Both the graph already
     /// reachable from `source` and the branch `new_view_target` starts are walked over the edges
     /// `collectAllDependencies` follows (a view's own target plus `getDependentViews`), validating each
     /// view hop against a stale dependency the way `observePath` does. Capability is tested only on
-    /// concrete sinks - a view is written *through*, never *to* - `Alias` and proxy hops are resolved to
-    /// their target, and a `Buffer` or a `Distributed` ends a branch because it forwards the write into
-    /// a separate `INSERT` whose sinks do not belong to this query. Returns false whenever the answer is
-    /// not known here: an unresolvable table, or a cycle.
-    static bool insertWouldDuplicateNonParallelSink(const StorageID & source, const StorageID & new_view_target, ContextPtr context);
+    /// concrete sinks - a view is written *through*, never *to* - and `Alias` and proxy hops are resolved
+    /// to the storage they hand the write to, which materializes and starts up a lazily loaded one.
+    /// A `Buffer` or a `Distributed` ends a branch: the write it forwards runs as an `INSERT` of its own,
+    /// whose sinks this walk does not model, so a topology mixing a forwarded and a direct branch into one
+    /// such storage is outside the answer. `Undecided` is reported instead of `NotHazardous` whenever a
+    /// branch could not be resolved (an unresolvable table, a cycle, or a chain deeper than
+    /// `max_insert_forwarding_depth`) and no duplicated sink was proven.
+    static DuplicateNonParallelSinkVerdict
+    insertWouldDuplicateNonParallelSink(const StorageID & source, const StorageID & new_view_target, ContextPtr context);
 
     /// Whether inserting into `storage` reaches a `Buffer` or a `Distributed`, whose final write runs in a
     /// context other than this query's, so this query's deduplication settings (`deduplicate_insert` /

@@ -937,47 +937,75 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentView(const StorageP
 }
 
 
-bool InsertDependenciesBuilder::insertWouldDuplicateNonParallelSink(
+InsertDependenciesBuilder::DuplicateNonParallelSinkVerdict InsertDependenciesBuilder::insertWouldDuplicateNonParallelSink(
     const StorageID & source, const StorageID & new_view_target, ContextPtr context)
 {
     const auto & catalog = DatabaseCatalog::instance();
 
-    /// A cycle leaves the reachable set unknown, so the whole answer is unknown.
-    bool cyclic = false;
+    /// Set whenever a branch cannot be resolved, so that an otherwise negative answer is reported as
+    /// unknown instead of as safe.
+    bool undecided = false;
 
     StorageIDSet active;
     /// Keyed on the edge, not on the node: whether a view is pushed to depends on which parent it was
     /// reached from, so memoizing a view by name alone would carry the verdict for a stale edge over to
     /// the live one.
     std::unordered_set<String> walked_edges;
+    /// Length-prefixed, because a database or table name may itself contain any separator.
+    auto edge_key = [](const StorageIDMaybeEmpty & node)
+    { return fmt::format("{}:{}:{}:{}:", node.database_name.size(), node.database_name, node.table_name.size(), node.table_name); };
+
+    /// `parent` is empty at the root of a pipeline, where there is no edge to validate. `resolved`
+    /// carries a storage that must be walked as handed over rather than looked up: a proxy renames the
+    /// storage it wraps to the proxy's own id, so a lookup would return the proxy again. `insert_root`
+    /// marks a storage an `INSERT` itself targets, the only position at which
+    /// `noPushingToViewsOnInserts()` suppresses the dependent views.
+    struct Node
+    {
+        StorageIDMaybeEmpty id;
+        StorageIDMaybeEmpty parent;
+        StoragePtr resolved = nullptr;
+        bool insert_root = false;
+        size_t depth = 0;
+    };
 
     /// Collects into `sinks` the storages that accept a single `write()` per `INSERT` and for which a write
-    /// into `id` builds a sink, over the edges `collectAllDependencies` follows. `parent` is the node `id`
-    /// was reached from; it is empty at the root of a pipeline, where there is no edge to validate.
-    std::function<void(const StorageIDMaybeEmpty &, const StorageIDMaybeEmpty &, StorageIDSet &)> collect
-        = [&](const StorageIDMaybeEmpty & id, const StorageIDMaybeEmpty & parent, StorageIDSet & sinks)
+    /// into `node.id` builds a sink, over the edges `collectAllDependencies` follows.
+    std::function<void(const Node &, StorageIDSet &)> collect = [&](const Node & node, StorageIDSet & sinks)
     {
         /// A view chain is bounded only by the catalog.
         checkStackSize();
 
-        if (active.contains(id))
+        if (node.depth > max_insert_forwarding_depth)
         {
-            cyclic = true;
+            undecided = true;
             return;
         }
-        /// Length-prefixed, because a database or table name may itself contain any separator.
-        auto edge_key = [](const StorageIDMaybeEmpty & node)
-        {
-            return fmt::format("{}:{}:{}:{}:", node.database_name.size(), node.database_name, node.table_name.size(), node.table_name);
-        };
-        if (!walked_edges.insert(edge_key(id) + edge_key(parent)).second)
-            return;
-        active.insert(id);
-        SCOPE_EXIT({ active.erase(id); });
 
-        auto storage = catalog.tryGetTable(id, context);
+        StoragePtr storage = node.resolved;
+        bool holds_active_entry = false;
         if (!storage)
-            return;
+        {
+            if (active.contains(node.id))
+            {
+                undecided = true;
+                return;
+            }
+            if (!walked_edges.insert(edge_key(node.id) + edge_key(node.parent)).second)
+                return;
+            storage = catalog.tryGetTable(node.id, context);
+            if (!storage)
+            {
+                undecided = true;
+                return;
+            }
+            active.insert(node.id);
+            holds_active_entry = true;
+        }
+        SCOPE_EXIT({
+            if (holds_active_entry)
+                active.erase(node.id);
+        });
 
         if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(storage.get()))
         {
@@ -985,11 +1013,11 @@ bool InsertDependenciesBuilder::insertWouldDuplicateNonParallelSink(
             /// hold; a view reached over such an edge is not pushed to by this `INSERT`.
             auto metadata = storage->getInMemoryMetadataPtr(context, false);
             StorageIDMaybeEmpty select_table_id = metadata->getSelectQuery().select_table_id;
-            if (!parent.empty() && select_table_id != parent)
+            if (!node.parent.empty() && select_table_id != node.parent)
                 return;
 
             /// A view is written *through* to its target, never *to*.
-            collect(materialized_view->getTargetTableId(), id, sinks);
+            collect({materialized_view->getTargetTableId(), node.id}, sinks);
             return;
         }
 
@@ -998,13 +1026,17 @@ bool InsertDependenciesBuilder::insertWouldDuplicateNonParallelSink(
         if (dynamic_cast<const StorageWindowView *>(storage.get()))
             return;
 
-        /// Dependent views are registered against the table the view's `SELECT` named, so they are looked
-        /// up before any forwarding hop is resolved.
-        for (const auto & view_id : catalog.getDependentViews(id))
-            collect(view_id, id, sinks);
+        /// Dependent views belong to the id, and a proxy hop revisits an id whose views were already
+        /// taken. A storage that consumes from a queue is written by its background consumer, so a
+        /// direct `INSERT` into it builds the root sink alone.
+        if (!node.resolved && (!node.insert_root || !storage->noPushingToViewsOnInserts()))
+        {
+            for (const auto & view_id : catalog.getDependentViews(node.id))
+                collect({view_id, node.id}, sinks);
+        }
 
-        /// A `Buffer` accumulates the rows and a `Distributed` sends them on: the write that reaches the
-        /// destination is a separate `INSERT`, whose sinks are not part of this one.
+        /// A `Buffer` and a `Distributed` forward the rows into an `INSERT` of their own, whose sinks this
+        /// walk does not model: a branch that reaches one of them ends here.
         if (dynamic_cast<const StorageBuffer *>(storage.get()) || dynamic_cast<const StorageDistributed *>(storage.get()))
             return;
 
@@ -1013,13 +1045,18 @@ bool InsertDependenciesBuilder::insertWouldDuplicateNonParallelSink(
         if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
         {
             if (auto target = alias->tryGetTargetTable())
-                collect(target->getStorageID(), {}, sinks);
+                collect({target->getStorageID(), {}, nullptr, true, node.depth + 1}, sinks);
+            else
+                undecided = true;
             return;
         }
         if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
         {
+            /// Resolving a lazy proxy materializes and starts up the storage it wraps.
             if (auto nested = proxy->getNested())
-                collect(nested->getStorageID(), {}, sinks);
+                collect({node.id, node.parent, nested, node.insert_root, node.depth + 1}, sinks);
+            else
+                undecided = true;
             return;
         }
 
@@ -1028,20 +1065,21 @@ bool InsertDependenciesBuilder::insertWouldDuplicateNonParallelSink(
     };
 
     StorageIDSet reachable_now;
-    collect(source, {}, reachable_now);
-    if (cyclic || reachable_now.empty())
-        return false;
+    collect({source, {}, nullptr, true}, reachable_now);
+    if (reachable_now.empty())
+        return undecided ? DuplicateNonParallelSinkVerdict::Undecided : DuplicateNonParallelSinkVerdict::NotHazardous;
 
     walked_edges.clear();
     StorageIDSet reachable_from_new_view;
-    collect(new_view_target, {}, reachable_from_new_view);
-    if (cyclic)
-        return false;
+    collect({new_view_target, {}}, reachable_from_new_view);
 
+    /// Every collected sink was reached over live edges, so a sink in both sets is positive proof even
+    /// when some other branch stayed unresolved.
     for (const auto & sink_id : reachable_from_new_view)
         if (reachable_now.contains(sink_id))
-            return true;
-    return false;
+            return DuplicateNonParallelSinkVerdict::Hazardous;
+
+    return undecided ? DuplicateNonParallelSinkVerdict::Undecided : DuplicateNonParallelSinkVerdict::NotHazardous;
 }
 
 

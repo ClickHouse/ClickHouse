@@ -1,0 +1,10 @@
+hazardous_clone_skipped	1
+insert_completed	1
+safe_target_not_skipped	1
+safe_target_executed	1
+lazy_proxy_engine	TableProxy
+lazy_proxy_clone_skipped	1
+lazy_proxy_insert_completed	1
+undecided_counted	1
+undecided_not_skipped	1
+alive
