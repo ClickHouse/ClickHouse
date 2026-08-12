@@ -138,7 +138,7 @@ TEST(StringSerialization, WithSizeStreamFaithfulRoundTripIsConsistent)
     {
         ISerialization::SerializeBinaryBulkSettings settings;
         ISerialization::SerializeBinaryBulkStatePtr state;
-        settings.position_independent_encoding = false;
+        settings.position_independent_encoding = true;
         settings.getter = makeSizeStreamGetter<WriteBuffer *>(sizes_out, data_out);
         serialization->serializeBinaryBulkWithMultipleStreams(*src, 0, src->size(), settings, state);
     }
@@ -151,7 +151,7 @@ TEST(StringSerialization, WithSizeStreamFaithfulRoundTripIsConsistent)
 
         ISerialization::DeserializeBinaryBulkSettings settings;
         ISerialization::DeserializeBinaryBulkStatePtr state;
-        settings.position_independent_encoding = false;
+        settings.position_independent_encoding = true;
         settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
         serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
 
