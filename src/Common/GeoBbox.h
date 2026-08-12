@@ -171,13 +171,19 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
     using namespace GeoBboxDetail;
     const auto type = field.getType();
 
-    /// Tuple with at least two numeric elements — a single point.
+    /// Tuple with exactly two numeric elements — a single point, matching the `Point`
+    /// domain type's own (Float64, Float64) contract. A wider tuple is not a point: it's
+    /// opaque to bbox extraction (e.g. a `isSpatialPredicate()` WASM UDF could take a
+    /// constant `Tuple(Float64, Float64, Float64, Float64)` bbox/rect argument with entirely
+    /// different semantics). Silently reading just its first two elements as (x, y) would
+    /// derive a bogus, too-small bbox and wrongly prune granules the predicate can still
+    /// match on -- fail the extraction instead so pruning is disabled for it.
     /// SQL integer literals produce Int64/UInt64 fields, so we coerce all numeric
     /// field types to double rather than accepting only Float64.
     if (type == Field::Types::Tuple)
     {
         const auto & tuple = field.safeGet<Tuple>();
-        if (tuple.size() >= 2)
+        if (tuple.size() == 2)
         {
             auto x = fieldToDouble(tuple[0]);
             auto y = fieldToDouble(tuple[1]);
