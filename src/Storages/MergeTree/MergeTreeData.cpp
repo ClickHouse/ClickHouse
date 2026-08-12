@@ -8972,6 +8972,16 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
     String part_name = part_info.getPartNameAndCheckFormat(format_version);
     auto backup = restored_parts_holder->getBackup();
 
+    /// The data restore tasks run asynchronously, long after `restoreDataFromBackup` admitted
+    /// the command, and each of them copies a whole part into a `tmp_restore_*` directory under
+    /// the table's data path. Under `leader_election` that path is shared with the other nodes,
+    /// so re-check leadership per part: a lease lost meanwhile must stop the copying instead of
+    /// writing the rest of the backup into a prefix another node now owns.
+    if (!mayMutateSharedStorage())
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+            "Cannot restore part {} into shared storage: this node is not the leader anymore (leader_election)",
+            part_name);
+
     /// Find all files of this part in the backup.
     Strings filenames = backup->listFiles(part_path_in_backup, /* recursive= */ true);
 
@@ -10647,6 +10657,41 @@ void MergeTreeData::Transaction::undoPublishedRenames()
     published_parts_pending_commit.clear();
 }
 
+void MergeTreeData::Transaction::validateCommitPreconditions()
+{
+    if (publish_fence_epoch)
+    {
+        /// The parts of this transaction were published under the leadership epoch that
+        /// admitted the operation. A plain leadership check would let a node that lost and
+        /// reacquired the lease commit parts prepared under the previous epoch, racing the
+        /// writes the interim leader may have made. And when the check fails, the published
+        /// renames must be undone: everything this transaction renamed is already visible
+        /// under a persistent name on shared storage, where the next leader would load it
+        /// even though the client gets an exception.
+        try
+        {
+            /// Test hook: deterministically simulate a leadership loss between the publishing
+            /// rename(s) and the commit, which is exactly the window this fence closes.
+            fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_before_commit,
+            {
+                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                    "Simulated leadership loss between the publishing renames and the commit (leader_election)");
+            });
+
+            data.assertWritableLeaderAtEpoch(*publish_fence_epoch);
+        }
+        catch (...)
+        {
+            undoPublishedRenames();
+            throw;
+        }
+    }
+    else
+        data.assertCanCommitTransaction();
+
+    commit_preconditions_validated = true;
+}
+
 MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(bool is_refresh)
 {
     auto lock = data.lockParts();
@@ -10659,38 +10704,8 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
     /// shared storage to the local in-memory index; they do not produce new data. Followers
     /// under `leader_election` must be able to run this path to keep their part view fresh,
     /// so the leadership assertion is skipped in that case.
-    if (!is_refresh)
-    {
-        if (publish_fence_epoch)
-        {
-            /// The parts of this transaction were published under the leadership epoch that
-            /// admitted the operation. A plain leadership check would let a node that lost and
-            /// reacquired the lease commit parts prepared under the previous epoch, racing the
-            /// writes the interim leader may have made. And when the check fails, the published
-            /// renames must be undone: everything this transaction renamed is already visible
-            /// under a persistent name on shared storage, where the next leader would load it
-            /// even though the client gets an exception.
-            try
-            {
-                /// Test hook: deterministically simulate a leadership loss between the publishing
-                /// rename(s) and the commit, which is exactly the window this fence closes.
-                fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_before_commit,
-                {
-                    throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
-                        "Simulated leadership loss between the publishing renames and the commit (leader_election)");
-                });
-
-                data.assertWritableLeaderAtEpoch(*publish_fence_epoch);
-            }
-            catch (...)
-            {
-                undoPublishedRenames();
-                throw;
-            }
-        }
-        else
-            data.assertCanCommitTransaction();
-    }
+    if (!is_refresh && !commit_preconditions_validated)
+        validateCommitPreconditions();
 
     DataPartsVector total_covered_parts;
 

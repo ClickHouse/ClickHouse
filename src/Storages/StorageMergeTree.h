@@ -109,6 +109,12 @@ public:
     /// Makes backup entries to backup the data of the storage.
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
+    /// Restores the data of the storage from a backup. Fenced at admission under
+    /// `leader_election`: restoring copies every file of every part into `tmp_restore_*`
+    /// directories under the table's (shared) data path long before `attachRestoredParts`
+    /// publishes anything, so a follower must be rejected here rather than only at publish time.
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+
     void drop() override;
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 

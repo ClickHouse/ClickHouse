@@ -392,6 +392,18 @@ public:
         /// same undo journal in `preparePartForCommit`.
         void setPublishFenceEpoch(UInt64 admission_epoch) { publish_fence_epoch = admission_epoch; }
 
+        /// Run the commit-time leadership checks (the armed publish fence, or the plain
+        /// `assertCanCommitTransaction` otherwise) ahead of `commit`, and remember that they
+        /// passed so that `commit` does not repeat them. Needed by two-table operations
+        /// (`MOVE PARTITION TO TABLE`): they commit two transactions in a row, and a check that
+        /// fails inside the SECOND `commit` only undoes that transaction's own publish, leaving
+        /// the first one committed — the moved partition would stay visible in both tables even
+        /// though the command returned an exception. Validating both sides first makes the two
+        /// commits unable to fail independently on the leadership fence, and a failure here is
+        /// still undone for the whole command (each transaction undoes its own published
+        /// renames, and the caller rolls both of them back).
+        void validateCommitPreconditions();
+
         /// Rename the parts already published by `renameParts` back to the temporary directories
         /// they came from. For two-table operations (`MOVE PARTITION TO TABLE`) that publish
         /// through two transactions: when one side's batch has fully published and the other
@@ -430,6 +442,10 @@ public:
 
         /// Set by `setPublishFenceEpoch` under `leader_election`; empty otherwise.
         std::optional<UInt64> publish_fence_epoch;
+
+        /// Set by `validateCommitPreconditions`: the commit-time leadership checks have already
+        /// been made by the caller, so `commit` must not repeat them.
+        bool commit_preconditions_validated = false;
 
         /// Parts published by `renameParts`, with the temporary directory each of them came
         /// from, kept until `commit` so that an abort after a fully-published batch (see

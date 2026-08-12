@@ -102,6 +102,7 @@ namespace FailPoints
     extern const char merge_tree_leader_election_stale_lease_cleanup[];
     extern const char merge_tree_leader_election_stale_lease_before_clear_empty[];
     extern const char merge_tree_leader_election_stale_lease_between_move_publishes[];
+    extern const char merge_tree_leader_election_stale_lease_between_move_commits[];
 }
 
 namespace Setting
@@ -4341,6 +4342,28 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
                 });
 
                 src_transaction.renameParts();
+
+                /// Run the commit-time checks of BOTH transactions before committing either of
+                /// them. `commit` enforces the publish fence itself and undoes only its OWN
+                /// published renames when it fails: with the two commits back to back, a source
+                /// side rejected after the destination has already committed would leave the
+                /// moved partition visible in the destination while it is still present in the
+                /// source, even though the command returns an exception. Checking both here
+                /// makes the commits below unable to fail independently on the leadership fence,
+                /// and a failure of either check is undone for the whole command by the handler
+                /// below.
+                dest_transaction.validateCommitPreconditions();
+
+                /// Test hook for the window between the two commits: the destination side has
+                /// passed its commit-time fence (and, before this fence was hoisted, would have
+                /// been committed already), and the source side is about to be rejected.
+                fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_between_move_commits,
+                {
+                    throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                        "Simulated leadership loss between the two commits of MOVE PARTITION TO TABLE (leader_election)");
+                });
+
+                src_transaction.validateCommitPreconditions();
             }
             catch (...)
             {
@@ -4550,6 +4573,18 @@ BackupEntries StorageMergeTree::backupMutations(UInt64 version, const String & d
     return backup_entries;
 }
 
+
+void StorageMergeTree::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+{
+    /// Fail closed at admission: `restorePartFromBackup` streams every file of the backup into
+    /// `tmp_restore_<part>-…` directories under the table's data path — which is the SHARED
+    /// object storage prefix under `leader_election` — and only `attachRestoredParts` below is
+    /// fenced. Without this check a follower could write the whole backup into another node's
+    /// shared prefix and be rejected only at the final publish.
+    assertNotReadonly();
+
+    MergeTreeData::restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+}
 
 void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> &)
 {
