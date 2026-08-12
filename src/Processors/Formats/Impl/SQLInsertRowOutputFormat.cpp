@@ -1,10 +1,13 @@
+#include <Core/Names.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/Impl/SQLInsertRowOutputFormat.h>
 #include <Processors/Port.h>
+#include <Storages/StorageFactory.h>
 #include <Common/Exception.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -13,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int DUPLICATE_COLUMN;
 }
 
 SQLInsertRowOutputFormat::SQLInsertRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
@@ -22,6 +26,18 @@ SQLInsertRowOutputFormat::SQLInsertRowOutputFormat(WriteBuffer & out_, SharedHea
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Settings `output_format_sql_insert_include_table_schema` and `output_format_sql_insert_use_replace` cannot be enabled at the same time");
+
+    if (format_settings.sql_insert.include_table_schema)
+    {
+        NameSet unique_column_names;
+        for (const auto & column_name : column_names)
+        {
+            if (!unique_column_names.emplace(column_name).second)
+                throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} already exists", backQuoteIfNeed(column_name));
+        }
+
+        checkAllTypesAreAllowedInTable(header_->getNamesAndTypesList());
+    }
 }
 
 void SQLInsertRowOutputFormat::writePrefix()
