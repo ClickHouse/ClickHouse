@@ -3648,7 +3648,14 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
             result_projection);
     }
 
-    if (!result.split_parts.layers.empty())
+    /// `split_parts` is a static pre-split of the parts into primary-key layers made by
+    /// `optimizeJoinByShards` for the single-node plan, where the join steps above consume one
+    /// output port per layer. It must be ignored for a read coordinated across parallel replicas:
+    /// automatic parallel replicas (`considerEnablingParallelReplicas`) reuses the single-node
+    /// analysis for the replicas plan, whose fresh join does not expect layered output, and each
+    /// layer would create its own reading pool announcing to the coordinator, which rejects the
+    /// second announcement from the same replica with a "Duplicate announcement received" exception.
+    if (!result.split_parts.layers.empty() && !is_parallel_reading_from_replicas)
         return readByLayers(
             result.parts_with_ranges,
             std::move(result.split_parts),
