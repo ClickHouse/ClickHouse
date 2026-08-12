@@ -135,6 +135,13 @@ stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_reposit
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 
+# The full server stacktrace dumps must survive the removal of the phase
+# output folder below.
+for stacktrace_log in tmp_stress_output/sql_stacktraces.log tmp_stress_output/c_stacktraces.log; do
+    if [ -f "$stacktrace_log" ]; then
+        mv "$stacktrace_log" /test_output/
+    fi
+done
 rm -rf tmp_stress_output
 
 # We experienced deadlocks in this command in very rare cases. Let's debug it:
