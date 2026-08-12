@@ -362,14 +362,16 @@ static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, co
     /// arithmetic of an INTERVAL step clamps back into the calendar from them. A bound in that gap fits the
     /// storage type but is out of range of the *column type*, so the representability check below has to test
     /// the calendar window, not just the storage range. (For Date and DateTime the whole storage range maps
-    /// into the calendar, so the storage check is enough there.)
+    /// into the calendar, so the storage check is enough there. For Date32 `convertFieldToType` rejects the
+    /// gap as well, but the window is needed here in its own right: the INTERVAL-step check below reports it
+    /// with a dedicated message, and DateTime64 is not covered there.)
     /// Returns whether the value lies within the calendar window, or true when the check does not apply.
     auto within_calendar = [&](const Field & value)
     {
         if (which.isDate32() && value.getType() == Field::Types::Int64)
         {
             const Int64 day_num = value.safeGet<Int64>();
-            return day_num >= DateLUTImpl::getMinRepresentableDayNum() && day_num <= DateLUTImpl::getMaxRepresentableDayNum();
+            return day_num >= DATE_LUT_MIN_EXTEND_DAY_NUM && day_num <= DATE_LUT_MAX_EXTEND_DAY_NUM;
         }
 
         if (which.isDateTime64() && value.getType() == Field::Types::Decimal64)
