@@ -408,6 +408,17 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
             /// incoming query never carries a placeholder of its own — only the rule template
             /// does — and an equal-hash subtree therefore has no placeholder to bind here.
         }
+        /// The loop ends when the query side runs out of nodes, but the template side may still
+        /// have unmatched nodes queued: a structural descent (equal node hashes, differing tree
+        /// hashes) pushes each side's children without comparing counts, so a template node with
+        /// MORE children than the paired query node — e.g. the template `CREATE USER u IDENTIFIED
+        /// WITH no_password` against the query `CREATE USER u`, where the `IDENTIFIED` clause is
+        /// the template root's only child — leaves the extra template children pending. Those
+        /// unmatched template parts mean the query does NOT have the shape the template spells
+        /// out, so the rule must not fire. (The converse — extra query nodes when the template
+        /// side runs out — is caught by the size check at the top of the loop.)
+        if (!queue_rule.empty())
+            is_template = false;
         if (is_template)
         {
             applied_rules.push_back(name);
