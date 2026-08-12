@@ -33,6 +33,31 @@ html:not(.dark) .ch-usecase-arrow {
 .dark .ch-usecase-arrow {
     color: #FCFF74;
 }
+
+/* Restore the layout and appearance of the legacy Docusaurus VersionBadge. */
+.versionBadge {
+    background-color: #F6F7FA;
+    border-radius: 16px;
+    margin-top: 15px;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    display: inline-flex;
+}
+
+.dark .versionBadge {
+    background-color: #282828;
+    color: white;
+}
+
+/* Highlight the `View` selector above the table of contents with theme accents. */
+html:not(.dark) .multi-view-dropdown-trigger {
+    border-color: #135BE6 !important;
+}
+.dark .multi-view-dropdown-trigger {
+    border-color: #FDFF75 !important;
+}
 /* Homepage content hidden until React has mounted and child effects have settled.
    Double-RAF in PageWrapper ensures FullWidthDivider's own RAF fires first. */
 .ch-page-hidden {
@@ -818,25 +843,19 @@ html:not(.dark) .pagination-prev:hover {
     max-width: none !important;
 }
 
-/* Fix code block text alignment: JetBrains Mono renders box-drawing characters
-   (─, ┌, ┐, │, etc.) at ~13.6px vs ASCII at ~8.6px because it falls back to a
-   system font for box-drawing. Monaco renders both at equal width. Target the
-   pre.shiki and code elements directly since Mintlify overrides .font-mono. */
+/* Match the monospace stack used by the server's built-in documentation. */
 [data-component-part="code-block-root"] pre.shiki,
 [data-component-part="code-block-root"] code,
 [data-component-part="code-block-root"] .line,
 [data-component-part="code-block-root"] .line span {
-    font-family: "Monaco", "Menlo", "Consolas", "Ubuntu Mono", monospace !important;
-    font-variant-ligatures: none !important;
-    font-feature-settings: "kern" 0 !important;
+    font-family: "DejaVu Sans Mono", "Liberation Mono", "MonoLisa", "Consolas", monospace !important;
 }
 
-/* Slightly reduce the code-block font size to limit horizontal scrolling.
-   Tighten line-height to match monospace table output while ensuring
-   box-drawing characters render fully. */
 [data-component-part="code-block-root"] .font-mono {
+    font-variant-ligatures: none !important;
+    font-feature-settings: "kern" 0 !important;
     font-size: 0.8125rem !important;
-    line-height: 1.5 !important;
+    line-height: 1.25 !important;
 }
 
 
@@ -1903,6 +1922,12 @@ html.dark .prose a.betaBadge:not(.card):not(.card *),
     margin-right: 8px;
 }
 
+html:not(.dark) .prose a.cloudNotSupportedBadge:not(.card):not(.card *),
+a.cloudNotSupportedBadge {
+    color: #660099 !important;
+    text-decoration: none !important;
+}
+
 .cloudNotSupportedIcon svg path {
     stroke: #660099;
 }
@@ -1910,6 +1935,12 @@ html.dark .prose a.betaBadge:not(.card):not(.card *),
 .dark .cloudNotSupportedBadge {
     background-color: #33004D;
     color: #EECCFF;
+}
+
+html.dark .prose a.cloudNotSupportedBadge:not(.card):not(.card *),
+.dark a.cloudNotSupportedBadge {
+    color: #EECCFF !important;
+    text-decoration: none !important;
 }
 
 .dark .cloudNotSupportedIcon svg path {

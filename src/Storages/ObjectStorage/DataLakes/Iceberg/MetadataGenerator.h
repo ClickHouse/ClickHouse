@@ -26,6 +26,12 @@ public:
         Iceberg::IcebergPathFromMetadata manifest_list_path;
     };
 
+    enum class SnapshotOperation
+    {
+        Append,
+        Replace,
+    };
+
     /// Fails close on a live parent snapshot that cannot be found in `snapshots`,
     /// except when `tolerate_missing_parent_snapshot` is set: compaction replays a
     /// filtered history where a record's parent may be a legitimately skipped snapshot.
@@ -41,6 +47,7 @@ public:
         Int64 num_deleted_rows,
         std::optional<Int64> user_defined_snapshot_id = std::nullopt,
         std::optional<Int64> user_defined_timestamp = std::nullopt,
+        SnapshotOperation operation = SnapshotOperation::Append,
         bool tolerate_missing_parent_snapshot = false);
 
     /// Throws if `parent_snapshot_id` is a live snapshot (>= 0) absent from the metadata's
