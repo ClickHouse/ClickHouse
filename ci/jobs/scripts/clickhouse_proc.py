@@ -40,7 +40,7 @@ CLICKHOUSE_CI_LOGS_USER = "ci"
 
 
 class ClickHouseProc:
-    MINIO_LOG = f"{temp_dir}/minio.log"
+    SEAWEEDFS_LOG = f"{temp_dir}/seaweedfs.log"
     AZURITE_LOG = f"{temp_dir}/azurite.log"
     KAFKA_LOG = f"{temp_dir}/kafka.log"
     LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_rows_to_read=0 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
@@ -71,6 +71,15 @@ class ClickHouseProc:
         self.run_path0 = f"{temp_dir}/run_r0"
         self.run_path1 = f"{temp_dir}/run_r1"
         self.run_path2 = f"{temp_dir}/run_r2"
+        # Directory the job runs `clickhouse-test` from, if it wants cores of
+        # crashed client processes collected. A client started by a `.sh` test
+        # inherits this directory unless the test changes directory itself, and a
+        # relative `kernel.core_pattern` (the one CI runners use) writes the core
+        # into the dumping process's cwd, so this is where a client core lands.
+        # Jobs differ - `functional_tests.py` runs from the repository root while
+        # `fast_test.py` prefixes `cd {temp_dir}` - so the job declares it instead
+        # of it being guessed here.
+        self.client_core_path = None
         self.log_dir = f"{temp_dir}/var/log/clickhouse-server"
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
         self.config_file = f"{self.ch_config_dir}/config.xml"
@@ -102,7 +111,7 @@ class ClickHouseProc:
         self.proc_2 = None
         self.pid = 0
         int(Utils.cpu_count() / 2)
-        self.minio_proc = None
+        self.seaweedfs_proc = None
         self.azurite_proc = None
         self.kafka_proc = None
         # The failing sub-command + its ClickHouse error tail from
@@ -148,37 +157,51 @@ class ClickHouseProc:
 </clickhouse>
 """)
 
-    def start_minio(self, test_type):
+    def start_seaweedfs(self, test_type):
         os.environ["TEMP_DIR"] = f"{Utils.cwd()}/ci/tmp"
         command = [
-            "./ci/jobs/scripts/functional_tests/setup_minio.sh",
+            "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
             test_type,
             "./tests",
         ]
-        with open(self.MINIO_LOG, "w") as log_file:
-            self.minio_proc = subprocess.Popen(
+        with open(self.SEAWEEDFS_LOG, "w") as log_file:
+            self.seaweedfs_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT
             )
-        print(f"Started setup_minio.sh asynchronously with PID {self.minio_proc.pid}")
+        print(
+            f"Started setup_seaweedfs.sh asynchronously with PID {self.seaweedfs_proc.pid}"
+        )
 
-        # Wait for setup_minio.sh to fully exit, not just for the bucket to be
-        # listable: the server's S3 disks authenticate at startup and need the
-        # whole user/policy/ACL setup in place. The minio server is nohup'd and
-        # outlives the script, so waiting on the script is safe. Its internal
-        # waits are bounded (wait_for_it caps at 60s), so pad the timeout.
+        # Wait for setup_seaweedfs.sh to fully exit, not just for the bucket to
+        # be listable: the server's S3 disks authenticate at startup and need
+        # the whole identity/bucket setup in place. The seaweedfs server is
+        # nohup'd and outlives the script, so waiting on the script is safe.
+        # Its internal waits are bounded (60s each), so pad the timeout.
         try:
-            returncode = self.minio_proc.wait(timeout=120)
+            returncode = self.seaweedfs_proc.wait(timeout=240)
         except subprocess.TimeoutExpired:
-            print("Failed to start minio: setup_minio.sh did not finish in time")
-            self.minio_proc.kill()
+            print(
+                "Failed to start seaweedfs: setup_seaweedfs.sh did not finish in time"
+            )
+            self.seaweedfs_proc.kill()
             return False
         if returncode != 0:
-            print(f"setup_minio.sh exited with code {returncode}")
+            print(f"setup_seaweedfs.sh exited with code {returncode}")
             return False
 
-        # wait_for_it can exit 0 even if minio is down, so confirm the bucket.
-        if not Shell.check("/mc ls clickminio/test", verbose=False, retries=3):
-            print("Failed to start minio: bucket clickminio/test not reachable")
+        # pass the credentials explicitly: the setup script no longer writes
+        # ~/.aws, and without them the aws cli would sign with the runner's
+        # instance-role credentials, which SeaweedFS does not know
+        access_key = os.environ.get("SEAWEEDFS_ACCESS_KEY", "clickhouse")
+        secret_key = os.environ.get("SEAWEEDFS_SECRET_KEY", "clickhouse")
+        if not Shell.check(
+            f"AWS_ACCESS_KEY_ID={access_key} AWS_SECRET_ACCESS_KEY={secret_key} "
+            "AWS_DEFAULT_REGION=us-east-1 "
+            "aws --endpoint-url http://localhost:11111 s3 ls s3://test",
+            verbose=False,
+            retries=3,
+        ):
+            print("Failed to start seaweedfs: bucket test not reachable")
             return False
         return True
 
@@ -740,10 +763,10 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         """Gracefully stop only the ClickHouse server processes.
 
         Unlike `terminate`, this leaves the auxiliary services (Redpanda/Kafka,
-        MinIO) running. It is used between bugfix-validation iterations so the
+        SeaweedFS) running. It is used between bugfix-validation iterations so the
         server binary can be swapped and restarted without tearing down the
         rest of the test environment: otherwise a changed test relying on
-        Kafka or MinIO would pass under the first build type and spuriously
+        Kafka or SeaweedFS would pass under the first build type and spuriously
         "reproduce" a bug under the next one.
         """
         print("Stop ClickHouse processes")
@@ -809,8 +832,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res += self._collect_core_dumps()
                 res += self._collect_diagnostic_reports()
                 res += self._get_logs_archive_coordination()
-                if Path(self.MINIO_LOG).exists():
-                    res.append(self.MINIO_LOG)
+                if Path(self.SEAWEEDFS_LOG).exists():
+                    res.append(self.SEAWEEDFS_LOG)
                 if Path(self.AZURITE_LOG).exists():
                     res.append(self.AZURITE_LOG)
                 if Path(self.KAFKA_LOG).exists():
@@ -832,9 +855,37 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return res
 
     def _collect_core_dumps(self) -> List[str]:
+        # Server cores land in `run_r*` because each server is started with
+        # `cwd=run_path` (see `start`) and is not a daemon, so
+        # `BaseDaemon`'s `chdir` into a `core_path` directory is skipped. Setting
+        # `--daemon` or a `core_path` would move them into `run_rN/cores/` and this
+        # glob would stop finding them.
         result = []
+        # One AES key for the whole job. Artifacts are uploaded under their
+        # basename alone, so a key per directory would emit several different
+        # `aes.key.rsa` files that overwrite each other in the report, leaving the
+        # cores of every directory but the last one undecryptable.
+        aes_key_path = f"{temp_dir}/aes.key"
         for run_dir in sorted(p_temp_dir.glob("run_r*")):
-            result.extend(ClickHouseService.collect_cores(run_dir))
+            result.extend(
+                ClickHouseService.collect_cores(
+                    run_dir,
+                    aes_key_path=aes_key_path,
+                    # `core.<comm>.<pid>` collides across replicas running the
+                    # same thread; keep the basenames distinct.
+                    name_prefix=f"{Path(run_dir).name}.",
+                )
+            )
+        # `Path.glob` yields nothing for a missing directory, so a declared path
+        # that does not exist needs no separate guard.
+        if self.client_core_path:
+            result.extend(
+                ClickHouseService.collect_cores(
+                    self.client_core_path,
+                    aes_key_path=aes_key_path,
+                    name_prefix="client.",
+                )
+            )
         return result
 
     @staticmethod
@@ -1388,10 +1439,10 @@ if __name__ == "__main__":
                 res = ch.stop_log_exports()
             else:
                 res = True
-        elif command == "start_minio":
+        elif command == "start_seaweedfs":
             param = sys.argv[2]
             assert param in ["stateless"]
-            res = ch.start_minio(param)
+            res = ch.start_seaweedfs(param)
         elif command == "start_azurite":
             res = ch.start_azurite()
         else:

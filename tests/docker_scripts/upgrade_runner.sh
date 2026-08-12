@@ -20,7 +20,7 @@ ln -s /repo/tests/ci/get_previous_release_tag.py /usr/bin/get_previous_release_t
 source /repo/tests/docker_scripts/stress_tests.lib
 
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_azurite || { echo "Failed to start azurite"; exit 1; }
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 ) # to have a proper environment
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_seaweedfs stateless || ( echo "Failed to start seaweedfs" && exit 1 ) # to have a proper environment
 
 bash /repo/ci/jobs/scripts/functional_tests/setup_kafka.sh || { echo "Failed to start Kafka (Redpanda)"; exit 1; }
 
@@ -135,6 +135,13 @@ stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_reposit
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 
+# The full server stacktrace dumps must survive the removal of the phase
+# output folder below.
+for stacktrace_log in tmp_stress_output/sql_stacktraces.log tmp_stress_output/c_stacktraces.log; do
+    if [ -f "$stacktrace_log" ]; then
+        mv "$stacktrace_log" /test_output/
+    fi
+done
 rm -rf tmp_stress_output
 
 # We experienced deadlocks in this command in very rare cases. Let's debug it:
@@ -360,9 +367,6 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       `MergeTreeBackgroundExecutor` line of the replicated case in a single entry.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
-# `Unknown tokenizer: 'unicode_word'` appears because the `unicode_word` tokenizer was renamed to `asciiCJK`
-#       (with `unicodeWord` as a transitional alias). Tables from old versions using `unicode_word` trigger this
-#       on attach. Narrowed to the exact legacy name so genuinely unsupported tokenizer names are not masked.
 # `Azure::Storage::StorageException.*Not found address of host` is a transient Azure blob DNS resolution failure
 #       for `openbucketforpublicci.blob.core.windows.net`. Filtered via regex in the secondary pipe below to match
 #       both the Azure SDK exception type AND the DNS error together, so non-Azure DNS errors are not masked.
@@ -536,7 +540,6 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot parse projection test_projection" \
            -e "Key expressions cannot contain subqueries" \
            -e "Expression must be deterministic but it contains non-deterministic part" \
-           -e "Unknown tokenizer: 'unicode_word'" \
            -e "This engine is deprecated and is not supported in transactions" \
            -e "Prevent converting Nullable type to non-Nullable type inside mutation" \
            -e "e.what() = failed to parse response body" \
