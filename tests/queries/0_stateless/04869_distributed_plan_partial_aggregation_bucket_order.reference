@@ -1,0 +1,14 @@
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (default.t_bucket_order)
+0
+0
+0
+0
+0
+0
+0
+0

@@ -112,6 +112,10 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
+    /// Copy that runs as the partial aggregation under a distributed merge: not final, and when
+    /// the merge is memory-efficient the copy produces its result in bucket order.
+    QueryPlanStepPtr cloneAsPartial(bool produce_results_in_order_of_bucket_number) const;
+
     void enableMemoryBoundMerging() { memory_bound_merging_of_aggregation_results_enabled = true; }
 
     /// AggregatingStep does not contain any ActionDAGs.

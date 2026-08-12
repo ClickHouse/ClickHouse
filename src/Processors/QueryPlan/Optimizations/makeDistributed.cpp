@@ -463,10 +463,15 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         const bool memory_bound_merging_of_aggregation_results_enabled = aggregating_step->usingMemoryBoundMerging();
         const bool original_step_was_final = aggregating_step->getFinal();   /// Save whether the original AggregatingStep was final or partial
 
-        /// Convert Aggregation step to partial aggregation
+        /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
+        const bool use_memory_efficient_merge = optimization_settings.distributed_aggregation_memory_efficient && !has_grouping_sets;
+
+        /// The memory-efficient merge consumes each input as a stream of buckets in ascending
+        /// order, so the partial aggregation must produce its result in bucket order; without
+        /// that its multi-stream output would reach the exchange in arbitrary order and the
+        /// merge would emit duplicated groups for buckets that arrive late.
         auto & partial_aggregation_node = nodes.emplace_back();
-        partial_aggregation_node.step = aggregating_step->clone();
-        typeid_cast<AggregatingStep *>(partial_aggregation_node.step.get())->setFinal(false);
+        partial_aggregation_node.step = aggregating_step->cloneAsPartial(use_memory_efficient_merge);
         partial_aggregation_node.step->setStepDescription("partial");
         partial_aggregation_node.children = {&exchange_scatter_node};
 
@@ -482,8 +487,7 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
             aggregator_params,
             grouping_sets_params,
             /* final */ original_step_was_final,
-            /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
-            optimization_settings.distributed_aggregation_memory_efficient && !has_grouping_sets,
+            use_memory_efficient_merge,
             aggregating_step->getTemporaryDataMergeThreads(),
             should_produce_results_in_order_of_bucket_number,
             aggregating_step->getMaxBlockSize(),
