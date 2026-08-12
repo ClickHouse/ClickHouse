@@ -696,7 +696,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                 {
                     throw Exception(
                         ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                        "Can't cast primitive type to the complex type, field id is {}, old schema id is {}, new schema id is {}",
+                        "Can't cast complex type to the primitive type, field id is {}, old schema id is {}, new schema id is {}",
                         id,
                         old_id,
                         new_id);
