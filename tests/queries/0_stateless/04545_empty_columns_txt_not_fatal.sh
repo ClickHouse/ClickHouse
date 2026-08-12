@@ -32,6 +32,7 @@ run_case()
     local data_path
     ${CLICKHOUSE_CLIENT} --query "SELECT throwIf(count() != 1, 'Expected exactly one active part in ${table}') FROM system.parts WHERE database = currentDatabase() AND table = '${table}' AND active" > /dev/null || exit 1
     ${CLICKHOUSE_CLIENT} --query "SELECT throwIf(part_type != 'Wide', 'Expected a Wide part in ${table}') FROM system.parts WHERE database = currentDatabase() AND table = '${table}' AND active LIMIT 1" > /dev/null || exit 1
+    ${CLICKHOUSE_CLIENT} --query "SELECT throwIf(part_storage_type != 'Full', 'Expected Full part storage in ${table}') FROM system.parts WHERE database = currentDatabase() AND table = '${table}' AND active LIMIT 1" > /dev/null || exit 1
     data_path=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${table}' AND active LIMIT 1")
     ${CLICKHOUSE_CLIENT} --query "SELECT throwIf(substring('${data_path}', 1, 1) != '/', 'Path is relative: ${data_path}')" > /dev/null || exit 1
 
@@ -71,6 +72,7 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_empty_columns (a UInt64, s String)
     ENGINE = MergeTree ORDER BY a
     SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+             min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0,
              enable_block_number_column = 0, enable_block_offset_column = 0;
 "
 ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES t_empty_columns"
@@ -85,6 +87,7 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_empty_columns_bn (a UInt64, s String)
     ENGINE = MergeTree ORDER BY a
     SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+             min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0,
              enable_block_number_column = 1, enable_block_offset_column = 1;
 "
 # Two inserts + OPTIMIZE FINAL produce a merged part that physically writes _block_number/_block_offset.
@@ -103,6 +106,7 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_empty_columns_ld (a UInt64, s String)
     ENGINE = MergeTree ORDER BY a
     SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+             min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0,
              enable_block_number_column = 0, enable_block_offset_column = 0;
 "
 ${CLICKHOUSE_CLIENT} --max_insert_threads 1 --min_insert_block_size_rows 100000 --min_insert_block_size_bytes 0 --max_block_size 100000 --query "INSERT INTO t_empty_columns_ld SELECT number, toString(number) FROM numbers(1000)"
@@ -125,6 +129,7 @@ run_case_col()
     local data_path
     ${CLICKHOUSE_CLIENT} --query "SELECT throwIf(count() != 1, 'Expected exactly one active part in ${table}') FROM system.parts WHERE database = currentDatabase() AND table = '${table}' AND active" > /dev/null || exit 1
     ${CLICKHOUSE_CLIENT} --query "SELECT throwIf(part_type != 'Wide', 'Expected a Wide part in ${table}') FROM system.parts WHERE database = currentDatabase() AND table = '${table}' AND active LIMIT 1" > /dev/null || exit 1
+    ${CLICKHOUSE_CLIENT} --query "SELECT throwIf(part_storage_type != 'Full', 'Expected Full part storage in ${table}') FROM system.parts WHERE database = currentDatabase() AND table = '${table}' AND active LIMIT 1" > /dev/null || exit 1
     data_path=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${table}' AND active LIMIT 1")
     ${CLICKHOUSE_CLIENT} --query "SELECT throwIf(substring('${data_path}', 1, 1) != '/', 'Path is relative: ${data_path}')" > /dev/null || exit 1
 
@@ -155,6 +160,7 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_empty_columns_tuple (a UInt64, t Tuple(x UInt64, y String))
     ENGINE = MergeTree ORDER BY a
     SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+             min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0,
              enable_block_number_column = 0, enable_block_offset_column = 0;
 "
 ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES t_empty_columns_tuple"
@@ -167,6 +173,7 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_empty_columns_map (a UInt64, m Map(String, UInt64))
     ENGINE = MergeTree ORDER BY a
     SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+             min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0,
              enable_block_number_column = 0, enable_block_offset_column = 0;
 "
 ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES t_empty_columns_map"
@@ -183,6 +190,7 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_empty_columns_map_bucketed (a UInt64, m Map(String, UInt64))
     ENGINE = MergeTree ORDER BY a
     SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+             min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0,
              enable_block_number_column = 0, enable_block_offset_column = 0,
              map_serialization_version = 'with_buckets',
              map_serialization_version_for_zero_level_parts = 'with_buckets',
@@ -204,6 +212,7 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_empty_columns_nested (id UInt64, \`n.a\` Array(UInt64))
     ENGINE = MergeTree ORDER BY id
     SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+             min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0,
              share_nested_offsets = 1,
              enable_block_number_column = 0, enable_block_offset_column = 0;
 "
@@ -239,6 +248,7 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_empty_columns_fallback (a UInt64, t Tuple(x UInt64, y String))
     ENGINE = MergeTree ORDER BY a
     SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+             min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0,
              enable_block_number_column = 0, enable_block_offset_column = 0;
 "
 ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES t_empty_columns_fallback"
