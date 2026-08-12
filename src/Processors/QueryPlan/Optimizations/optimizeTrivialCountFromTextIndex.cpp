@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <set>
 
 /// Trivial count from the text index: answers `SELECT count() FROM t WHERE <text predicate>` from the index instead of reading data.
 /// The pass only rewrites the plan; the index is read at execution time by `ReadFromTextIndexCount`.
@@ -189,15 +190,29 @@ bool guardsHold(const ReadFromMergeTree & reading)
     if (context->getSettingsRef()[Setting::serialize_query_plan])
         return false;
 
-    /// Skip when a read limit is configured, so the reader's `checkLimits` enforces it instead.
+    /// The rewrite bypasses the reader's `checkLimits`, so mirror its decision here: bail on `max_concurrent_queries`
+    /// (it needs an execution-lifetime holder we cannot keep) and when the read exceeds `max_partitions_to_read`
+    /// (the reader would then throw `TOO_MANY_PARTITIONS`); an under-limit read still uses the optimization.
     {
         const auto & data_settings = *reading.getMergeTreeData().getSettings();
+
+        if (data_settings[MergeTreeSetting::max_concurrent_queries] > 0)
+            return false;
+
         const Int64 max_partitions_to_read = context->getSettingsRef()[Setting::max_partitions_to_read].changed
             ? context->getSettingsRef()[Setting::max_partitions_to_read]
             : data_settings[MergeTreeSetting::max_partitions_to_read];
 
-        if (max_partitions_to_read > 0 || data_settings[MergeTreeSetting::max_concurrent_queries] > 0)
-            return false;
+        if (max_partitions_to_read > 0)
+        {
+            std::set<String> partitions;
+            for (const auto & part_with_ranges : reading.getParts())
+            {
+                partitions.insert(part_with_ranges.data_part->info.getPartitionId());
+                if (partitions.size() > static_cast<size_t>(max_partitions_to_read))
+                    return false;
+            }
+        }
     }
 
     /// A transaction may see Outdated parts that the cardinalities do not reflect.

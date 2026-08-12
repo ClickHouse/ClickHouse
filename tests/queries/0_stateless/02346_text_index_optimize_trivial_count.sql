@@ -70,7 +70,7 @@ SELECT count(explain) FROM (EXPLAIN SELECT id FROM tab WHERE hasToken(text, 'alp
 
 DROP TABLE tab;
 
-SELECT 'Read limits (max_partitions_to_read / max_concurrent_queries) fall back to the reader';
+SELECT 'Read limits: an over-limit or concurrency-capped query falls back to the reader';
 
 CREATE TABLE tab_limits (
 	id UInt64,
@@ -87,9 +87,13 @@ INSERT INTO tab_limits SELECT number, number % 4, if(number % 2 = 0, 'alpha beta
 SELECT '-- fires without a limit';
 SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab_limits WHERE hasToken(text, 'alpha')) WHERE explain LIKE '%Trivial count from text index%';
 
-SELECT '-- does not fire when max_partitions_to_read is set; count still correct';
-SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab_limits WHERE hasToken(text, 'alpha') SETTINGS max_partitions_to_read = 1) WHERE explain LIKE '%Trivial count from text index%';
+SELECT '-- within max_partitions_to_read (4 partitions <= 100): still fires, count correct';
+SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab_limits WHERE hasToken(text, 'alpha') SETTINGS max_partitions_to_read = 100) WHERE explain LIKE '%Trivial count from text index%';
 SELECT count() FROM tab_limits WHERE hasToken(text, 'alpha') SETTINGS max_partitions_to_read = 100;
+
+SELECT '-- exceeds max_partitions_to_read (4 partitions > 1): declines, reader enforces the limit';
+SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab_limits WHERE hasToken(text, 'alpha') SETTINGS max_partitions_to_read = 1) WHERE explain LIKE '%Trivial count from text index%';
+SELECT count() FROM tab_limits WHERE hasToken(text, 'alpha') SETTINGS max_partitions_to_read = 1; -- { serverError TOO_MANY_PARTITIONS }
 
 DROP TABLE tab_limits;
 

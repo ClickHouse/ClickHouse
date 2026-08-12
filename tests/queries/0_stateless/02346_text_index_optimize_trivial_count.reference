@@ -35,12 +35,14 @@ Inject trivial count optimization from the text index into the query plan
 741
 -- does not fire: not a bare count()
 0
-Read limits (max_partitions_to_read / max_concurrent_queries) fall back to the reader
+Read limits: an over-limit or concurrency-capped query falls back to the reader
 -- fires without a limit
 1
--- does not fire when max_partitions_to_read is set; count still correct
-0
+-- within max_partitions_to_read (4 partitions <= 100): still fires, count correct
+1
 500
+-- exceeds max_partitions_to_read (4 partitions > 1): declines, reader enforces the limit
+0
 -- does not fire when the table sets max_concurrent_queries; count still correct
 0
 500
