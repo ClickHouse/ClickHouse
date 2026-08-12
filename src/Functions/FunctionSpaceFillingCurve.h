@@ -72,19 +72,16 @@ public:
     /// `mortonEncode`/`hilbertEncode` accept either (a) one to eight `NativeUInt`s
     /// (encoded as a single space-filling-curve key), or (b) a leading `Tuple` of
     /// size N whose elements are all `NativeUInt`, followed by exactly N
-    /// `NativeUInt` "mask" arguments. The `Tuple(NativeUInt, …)` matcher
-    /// enforces both the arity equality and the per-element type at type-check
-    /// time. `max_dimensions` for these encoders is 8.
+    /// `NativeUInt` "mask" arguments. The mask alternatives are spelled out per
+    /// arity because the `Tuple(NativeUInt, …)` matcher enforces both the arity
+    /// equality and the per-element type at type-check time, and the DSL cannot
+    /// yet correlate the `Tuple` size with the number of mask arguments (that
+    /// would need a shared count variable, e.g.
+    /// `(Tuple(NativeUInt...{N}), NativeUInt...{N})`).
+    /// `max_dimensions` for these encoders is 8.
     String getSignatureString() const override
     {
-        return "(NativeUInt) -> UInt64"
-               " OR (NativeUInt, NativeUInt) -> UInt64"
-               " OR (NativeUInt, NativeUInt, NativeUInt) -> UInt64"
-               " OR (NativeUInt, NativeUInt, NativeUInt, NativeUInt) -> UInt64"
-               " OR (NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt) -> UInt64"
-               " OR (NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt) -> UInt64"
-               " OR (NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt) -> UInt64"
-               " OR (NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt) -> UInt64"
+        return "(NativeUInt...{1..8}) -> UInt64"
                " OR (Tuple(NativeUInt), NativeUInt) -> UInt64"
                " OR (Tuple(NativeUInt, NativeUInt), NativeUInt, NativeUInt) -> UInt64"
                " OR (Tuple(NativeUInt, NativeUInt, NativeUInt), NativeUInt, NativeUInt, NativeUInt) -> UInt64"

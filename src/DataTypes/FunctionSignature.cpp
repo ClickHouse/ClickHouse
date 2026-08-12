@@ -421,8 +421,21 @@ struct ArgumentsGroup
         NoType,
         Fixed,      /// As is.
         Optional,   /// Zero or one time.
-        Ellipsis    /// Zero or any number of times.
+        Ellipsis    /// Repeated; the repetition count is limited by `min_repeats`/`max_repeats`.
     } type = NoType;
+
+    /// Sentinel for "no upper bound on the repetition count".
+    static constexpr size_t unbounded_repeats = std::numeric_limits<size_t>::max();
+
+    /// For `Ellipsis` groups: bounds on the repetition count. The trailing form
+    /// (`T1, ...`) is always unbounded; the attached form (`T...{a..b}`) carries the
+    /// parsed bounds, and the count is the total number of occurrences of the element.
+    size_t min_repeats = 0;
+    size_t max_repeats = unbounded_repeats;
+
+    /// Whether the group was written attached to its own element (`T...{a..b}`)
+    /// rather than repeating the preceding group (`T1, ...`).
+    bool standalone = false;
 
     bool match(const ColumnsWithTypeAndName & args, Variables & vars, size_t offset, size_t iteration, std::string & out_reason) const
     {
@@ -443,13 +456,33 @@ struct ArgumentsGroup
         return true;
     }
 
+    std::string repeatBoundsToString() const
+    {
+        if (max_repeats == unbounded_repeats)
+            return "range [" + DB::toString(min_repeats) + ", inf)";
+        return "range [" + DB::toString(min_repeats) + ", " + DB::toString(max_repeats) + "]";
+    }
+
     std::string toString() const
     {
         WriteBufferFromOwnString out;
 
         if (type == Ellipsis)
         {
-            out << "...";
+            if (standalone)
+            {
+                writeList(elems, [&](const auto & elem){ out << elem.toString(); }, [&]{ out << ", "; });
+                out << "...";
+                if (min_repeats != 0 || max_repeats != unbounded_repeats)
+                {
+                    out << "{" << DB::toString(min_repeats);
+                    if (max_repeats != min_repeats)
+                        out << ".." << DB::toString(max_repeats);
+                    out << "}";
+                }
+            }
+            else
+                out << "...";
             return out.str();
         }
 
@@ -487,27 +520,38 @@ public:
     /// Sentinel for "no upper bound" (a variadic / ellipsis position).
     static constexpr size_t unbounded = std::numeric_limits<size_t>::max();
 
-    /// Smallest number of arguments this signature can accept: only `Fixed` groups are
-    /// mandatory; `Optional` and `Ellipsis` groups can match zero arguments.
+    /// Smallest number of arguments this signature can accept: `Fixed` groups are
+    /// mandatory, an `Ellipsis` group contributes its lower repetition bound, and
+    /// `Optional` groups can match zero arguments.
     size_t minArgs() const
     {
         size_t result = 0;
         for (const auto & group : groups)
+        {
             if (group.type == ArgumentsGroup::Fixed)
                 result += group.elems.size();
+            else if (group.type == ArgumentsGroup::Ellipsis)
+                result += group.elems.size() * group.min_repeats;
+        }
         return result;
     }
 
     /// Largest number of arguments this signature can accept; `unbounded` when an
-    /// `Ellipsis` group is present. `Fixed` and `Optional` groups both contribute their size.
+    /// `Ellipsis` group with no upper repetition bound is present. `Fixed` and
+    /// `Optional` groups both contribute their size.
     size_t maxArgs() const
     {
         size_t result = 0;
         for (const auto & group : groups)
         {
             if (group.type == ArgumentsGroup::Ellipsis)
-                return unbounded;
-            result += group.elems.size();
+            {
+                if (group.max_repeats == ArgumentsGroup::unbounded_repeats)
+                    return unbounded;
+                result += group.elems.size() * group.max_repeats;
+            }
+            else
+                result += group.elems.size();
         }
         return result;
     }
@@ -612,6 +656,11 @@ private:
             {
                 if (ellipsis_size)
                 {
+                    if (*ellipsis_size < group.min_repeats || *ellipsis_size > group.max_repeats)
+                    {
+                        out_reason = "number of repetitions (" + DB::toString(*ellipsis_size) + ") is out of " + group.repeatBoundsToString();
+                        return false;
+                    }
                     for (size_t i = 0; i < *ellipsis_size; ++i)
                         if (!group.match(args, vars, args_offset + group_size * i, iteration + 1 + i, out_reason))
                             return false;
@@ -622,12 +671,21 @@ private:
                     size_t repeat_count = 0;
                     while (true)
                     {
-                        /// Ellipsis is ended, match from next group.
-                        ellipsis_size = repeat_count;
-                        if (matchAt(args, vars, group_offset + 1, args_offset, iteration, ellipsis_size, out_reason))
-                            return true;
-                        else
-                            ellipsis_size.reset();
+                        if (repeat_count >= group.min_repeats)
+                        {
+                            /// Ellipsis is ended, match from next group.
+                            ellipsis_size = repeat_count;
+                            if (matchAt(args, vars, group_offset + 1, args_offset, iteration, ellipsis_size, out_reason))
+                                return true;
+                            else
+                                ellipsis_size.reset();
+                        }
+
+                        if (repeat_count >= group.max_repeats)
+                        {
+                            out_reason = "number of repetitions is out of " + group.repeatBoundsToString();
+                            return false;
+                        }
 
                         /// Repeat group for ellipsis.
                         if (!group.match(args, vars, args_offset, iteration + repeat_count + 1, out_reason))
@@ -987,6 +1045,67 @@ static bool consumeEllipsis(TokenIterator & pos)
     ++probe;
     if (probe->type != TokenType::Dot) return false;
     ++probe;
+    pos = probe;
+    return true;
+}
+
+/// Parse repetition bounds after an attached ellipsis: `{a}` (exactly `a` times) or
+/// `{a..b}` (`a` to `b` times, inclusive). The bounds are extracted from the raw text
+/// between the braces rather than from the token stream, because the SQL lexer splits
+/// `1..8` into unnatural tokens (`1.`, `.`, `8`).
+static bool parseRepeatBounds(TokenIterator & pos, size_t & min_repeats, size_t & max_repeats)
+{
+    TokenIterator probe = pos;
+    if (probe->type != TokenType::OpeningCurlyBrace)
+        return false;
+    const char * text_begin = probe->end;
+    ++probe;
+    while (!probe->isEnd() && probe->type != TokenType::ClosingCurlyBrace)
+        ++probe;
+    if (probe->type != TokenType::ClosingCurlyBrace)
+        return false;
+    const char * text_end = probe->begin;
+    ++probe;
+
+    /// A bound large enough for any real signature; also guards against overflow below.
+    static constexpr size_t max_reasonable_repeats = 1000000;
+
+    const char * p = text_begin;
+    auto skip_whitespace = [&] { while (p < text_end && isWhitespaceASCII(*p)) ++p; };
+    auto parse_number = [&](size_t & res)
+    {
+        if (p >= text_end || !isNumericASCII(*p))
+            return false;
+        res = 0;
+        while (p < text_end && isNumericASCII(*p))
+        {
+            res = res * 10 + (*p - '0');
+            if (res > max_reasonable_repeats)
+                return false;
+            ++p;
+        }
+        return true;
+    };
+
+    skip_whitespace();
+    if (!parse_number(min_repeats))
+        return false;
+    skip_whitespace();
+    if (p == text_end)
+    {
+        max_repeats = min_repeats;
+        pos = probe;
+        return true;
+    }
+    if (text_end - p < 2 || p[0] != '.' || p[1] != '.')
+        return false;
+    p += 2;
+    skip_whitespace();
+    if (!parse_number(max_repeats))
+        return false;
+    skip_whitespace();
+    if (p != text_end || min_repeats > max_repeats)
+        return false;
     pos = probe;
     return true;
 }
@@ -1378,31 +1497,76 @@ static bool parseSimpleArgumentsDescription(TokenIterator & pos, ArgumentsDescri
         });
 }
 
-static bool parseArgumentsGroup(TokenIterator & pos, ArgumentsGroup & res, const ArgumentsGroup & prev_group)
+/// Parses one comma-separated segment of the arguments list and appends the resulting
+/// group(s) to `groups`. A segment usually produces a single group, but an attached
+/// ellipsis (`T...{a..b}`) splits the elements before it into a fixed group plus a
+/// repeated group of its own.
+static bool parseArgumentsGroup(TokenIterator & pos, ArgumentsGroups & groups)
 {
+    ArgumentsGroup res;
     if (consumeToken(pos, TokenType::OpeningSquareBracket)
         && parseSimpleArgumentsDescription(pos, res.elems)
         && consumeToken(pos, TokenType::ClosingSquareBracket))
     {
         res.type = ArgumentsGroup::Optional;
+        groups.emplace_back(std::move(res));
         return true;
     }
 
     if (parseSimpleArgumentsDescription(pos, res.elems))
     {
         res.type = ArgumentsGroup::Fixed;
+
+        /// Attached ellipsis, e.g. `T...`, `T...{3}` or `T...{1..8}`: the element directly
+        /// before the ellipsis repeats as its own group (with the parsed bounds on the
+        /// total number of occurrences); any preceding elements stay a fixed group.
+        TokenIterator probe = pos;
+        if (consumeEllipsis(probe))
+        {
+            ArgumentsGroup repeated;
+            repeated.type = ArgumentsGroup::Ellipsis;
+            repeated.standalone = true;
+            repeated.elems.emplace_back(res.elems.back());
+            res.elems.pop_back();
+
+            /// Iteration numbering inside a repeated group starts at 1, so the return-side
+            /// ellipsis expansion assumes an extra iteration-0 occurrence in a preceding
+            /// fixed group. An attached group has no such occurrence, and captures inside
+            /// it would be off by one — reject them outright.
+            const ArgumentDescription & unit = repeated.elems.front();
+            if (!unit.argument_name.name.empty()
+                || (unit.type_matcher
+                    && (unit.type_matcher->getIndex() != 0
+                        || dynamic_cast<const AssignTypeMatcher *>(unit.type_matcher.get()))))
+                throw Exception(ErrorCodes::BAD_FUNCTION_SIGNATURE,
+                    "Variable captures inside a quantified group (`T...{{a..b}}`) are not supported");
+
+            if (probe->type == TokenType::OpeningCurlyBrace
+                && !parseRepeatBounds(probe, repeated.min_repeats, repeated.max_repeats))
+                return false;
+
+            pos = probe;
+            if (!res.elems.empty())
+                groups.emplace_back(std::move(res));
+            groups.emplace_back(std::move(repeated));
+            return true;
+        }
+
+        groups.emplace_back(std::move(res));
         return true;
     }
 
     if (consumeEllipsis(pos))
     {
         res.type = ArgumentsGroup::Ellipsis;
+        const ArgumentsGroup prev_group = groups.empty() ? ArgumentsGroup() : groups.back();
 
         if (prev_group.type == ArgumentsGroup::NoType)
         {
             ArgumentDescription arg;
             arg.type_matcher = std::make_shared<AnyTypeMatcher>();
             res.elems.emplace_back(std::move(arg));
+            groups.emplace_back(std::move(res));
             return true;
         }
         else if (prev_group.type == ArgumentsGroup::Fixed)
@@ -1434,12 +1598,14 @@ static bool parseArgumentsGroup(TokenIterator & pos, ArgumentsGroup & res, const
 
                 res.elems.emplace(res.elems.begin(), *it);
             }
+            groups.emplace_back(std::move(res));
             return true;
         }
         else if (prev_group.type == ArgumentsGroup::Optional)
         {
             /// Repeat the whole group.
             res.elems = prev_group.elems;
+            groups.emplace_back(std::move(res));
             return true;
         }
         else
@@ -1457,13 +1623,7 @@ static bool parseVariadicFunctionSignature(TokenIterator & pos, VariadicFunction
         return parseList(inner, true,
             [&](TokenIterator & inner2)
             {
-                ArgumentsGroup group;
-                if (parseArgumentsGroup(inner2, group, res.arguments_description.groups.empty() ? ArgumentsGroup() : res.arguments_description.groups.back()))
-                {
-                    res.arguments_description.groups.emplace_back(group);
-                    return true;
-                }
-                return false;
+                return parseArgumentsGroup(inner2, res.arguments_description.groups);
             },
             [](TokenIterator & inner2)
             {

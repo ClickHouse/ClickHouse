@@ -251,6 +251,72 @@ GTEST_TEST(FunctionSignature, Ellipsis)
         "UInt32");
 }
 
+GTEST_TEST(FunctionSignature, QuantifiedRepeats)
+{
+    /// Attached ellipsis with bounds, `T...{a..b}`: the element directly before the
+    /// ellipsis occurs `a` to `b` times (inclusive). This is the `mortonEncode` shape,
+    /// replacing eight spelled-out alternatives.
+    const String sig = "f(NativeUInt...{1..8}) -> UInt64";
+    EXPECT_EQ(checkSignature(sig, {makeColumn("UInt8")}), "UInt64");
+    EXPECT_EQ(
+        checkSignature(sig,
+            {makeColumn("UInt8"), makeColumn("UInt16"), makeColumn("UInt32"), makeColumn("UInt64"),
+             makeColumn("UInt8"), makeColumn("UInt16"), makeColumn("UInt32"), makeColumn("UInt64")}),
+        "UInt64");
+    EXPECT_THAT(checkSignature(sig, {}), ::testing::StartsWith("FAIL:"));
+    EXPECT_THAT(
+        checkSignature(sig,
+            {makeColumn("UInt8"), makeColumn("UInt8"), makeColumn("UInt8"), makeColumn("UInt8"), makeColumn("UInt8"),
+             makeColumn("UInt8"), makeColumn("UInt8"), makeColumn("UInt8"), makeColumn("UInt8")}),
+        ::testing::StartsWith("FAIL:"));
+    EXPECT_THAT(checkSignature(sig, {makeColumn("String")}), ::testing::StartsWith("FAIL:"));
+    EXPECT_THAT(checkSignature(sig, {makeColumn("Int8")}), ::testing::StartsWith("FAIL:"));
+
+    /// The declared bounds are reflected in the arity contract.
+    FunctionSignature checker(sig);
+    EXPECT_EQ(checker.minArguments(), 1u);
+    EXPECT_EQ(checker.maxArguments(), 8u);
+    EXPECT_FALSE(checker.isArgumentCountInRange(0));
+    EXPECT_TRUE(checker.isArgumentCountInRange(8));
+    EXPECT_FALSE(checker.isArgumentCountInRange(9));
+
+    /// Exact count `{n}`, and whitespace inside the bounds.
+    EXPECT_EQ(checkSignature("f(UInt8...{2}) -> UInt64", {makeColumn("UInt8"), makeColumn("UInt8")}), "UInt64");
+    EXPECT_THAT(checkSignature("f(UInt8...{2}) -> UInt64", {makeColumn("UInt8")}), ::testing::StartsWith("FAIL:"));
+    EXPECT_EQ(checkSignature("f(UInt8...{1 .. 2}) -> UInt64", {makeColumn("UInt8")}), "UInt64");
+
+    /// Attached ellipsis without bounds: zero or more (unlike `(T, ...)`, which requires
+    /// at least one occurrence of the fixed element).
+    EXPECT_EQ(checkSignature("f(String, UInt8...) -> UInt64", {makeColumn("String")}), "UInt64");
+    EXPECT_EQ(
+        checkSignature("f(String, UInt8...) -> UInt64", {makeColumn("String"), makeColumn("UInt8"), makeColumn("UInt8")}),
+        "UInt64");
+
+    /// A quantified group composes with fixed and trailing positions.
+    EXPECT_EQ(
+        checkSignature("f(String, UInt8...{1..2}, String) -> UInt64",
+            {makeColumn("String"), makeColumn("UInt8"), makeColumn("String")}),
+        "UInt64");
+    EXPECT_THAT(
+        checkSignature("f(String, UInt8...{1..2}, String) -> UInt64", {makeColumn("String"), makeColumn("String")}),
+        ::testing::StartsWith("FAIL:"));
+
+    /// `toString` round-trips through the parser.
+    FunctionSignature original("f(UInt8...{1..3}) -> UInt64");
+    EXPECT_EQ(checkSignature(original.toString(), {makeColumn("UInt8"), makeColumn("UInt8")}), "UInt64");
+
+    /// Captures inside a quantified group are rejected at parse time: iteration numbering
+    /// inside a repeated group starts at 1, so the return-side ellipsis expansion would be
+    /// off by one for a group with no iteration-0 occurrence.
+    EXPECT_ANY_THROW(FunctionSignature("f(T : Any...{1..2}) -> T"));
+    EXPECT_ANY_THROW(FunctionSignature("f(const n UInt8...{1..2}) -> UInt64"));
+
+    /// Malformed bounds are a parse error.
+    EXPECT_ANY_THROW(FunctionSignature("f(UInt8...{3..1}) -> UInt64"));
+    EXPECT_ANY_THROW(FunctionSignature("f(UInt8...{}) -> UInt64"));
+    EXPECT_ANY_THROW(FunctionSignature("f(UInt8...{a}) -> UInt64"));
+}
+
 /// A bare (suffix-less) capture variable carries index 0. When the ellipsis follows a fixed
 /// group ending in such a variable, the walk-back takes only the single rightmost element as
 /// the repeated unit, so `(T, T, ...)` means "at least two, any count" — NOT "even count only".
@@ -616,16 +682,15 @@ GTEST_TEST(FunctionSignature, ThrowIfExplicitPrefixes)
 
 GTEST_TEST(FunctionSignature, ToStartOfIntervalArgumentShapes)
 {
-    /// The 2/3/4-argument shapes of `toStartOfInterval` are spelled out explicitly so the
-    /// `system.functions.signature` metadata matches the validator, including the four-argument
-    /// `(time, interval, origin, timezone)` overload and the constant interval/origin/timezone
-    /// positions. The result type is computed by the legacy `getReturnTypeImpl`, so the signature is
-    /// documentation-only; here we assert the structural argument-count contract.
-    const String sig =
-        "(DateOrDateTime, const Interval) -> DateOrDateTime"
-        " OR (DateOrDateTime, const Interval, const String) -> DateOrDateTime"
-        " OR (DateOrDateTime, const Interval, const DateOrDateTime) -> DateOrDateTime"
-        " OR (DateOrDateTime, const Interval, const DateOrDateTime, const String) -> DateOrDateTime";
+    /// `toStartOfInterval` expresses its 2/3/4-argument shapes with two independent optional
+    /// groups: the third argument is either a constant `origin` value or a constant timezone
+    /// `String`, and the four-argument form takes both, in that order. Unlike `throwIf` (see
+    /// `ThrowIfExplicitPrefixes`), the two optional tails are independent — a timezone without
+    /// an `origin` is a valid call — and their types do not overlap, so the skip-first optional
+    /// matching binds each extra argument unambiguously. The result type is computed by the
+    /// legacy `getReturnTypeImpl`, so the signature is documentation-only; here we assert the
+    /// structural argument contract.
+    const String sig = "(DateOrDateTime, const Interval, [const DateOrDateTime], [const String]) -> UInt8";
 
     FunctionSignature checker(sig);
     EXPECT_EQ(checker.minArguments(), 2u);
@@ -635,6 +700,25 @@ GTEST_TEST(FunctionSignature, ToStartOfIntervalArgumentShapes)
     EXPECT_TRUE(checker.isArgumentCountInRange(3));
     EXPECT_TRUE(checker.isArgumentCountInRange(4));
     EXPECT_FALSE(checker.isArgumentCountInRange(5));
+
+    const auto value = makeColumn("DateTime");
+    const auto interval = makeConstColumn("IntervalDay", Field(Int64(1)));
+    const auto origin = makeConstColumn("DateTime", Field(UInt64(0)));
+    const auto timezone_arg = makeConstColumn("String", Field(String("UTC")));
+
+    /// (value, interval)
+    EXPECT_EQ(checkSignature(sig, {value, interval}), "UInt8");
+    /// (value, interval, timezone) — the matcher skips the `origin` group.
+    EXPECT_EQ(checkSignature(sig, {value, interval, timezone_arg}), "UInt8");
+    /// (value, interval, origin)
+    EXPECT_EQ(checkSignature(sig, {value, interval, origin}), "UInt8");
+    /// (value, interval, origin, timezone)
+    EXPECT_EQ(checkSignature(sig, {value, interval, origin, timezone_arg}), "UInt8");
+    /// A timezone before an origin is the wrong order, and a duplicated timezone is rejected.
+    EXPECT_THAT(checkSignature(sig, {value, interval, timezone_arg, origin}), ::testing::StartsWith("FAIL:"));
+    EXPECT_THAT(checkSignature(sig, {value, interval, timezone_arg, timezone_arg}), ::testing::StartsWith("FAIL:"));
+    /// The interval is not optional.
+    EXPECT_THAT(checkSignature(sig, {value, timezone_arg}), ::testing::StartsWith("FAIL:"));
 }
 
 GTEST_TEST(FunctionSignature, PointInPolygonPointTupleMustBeNumeric)

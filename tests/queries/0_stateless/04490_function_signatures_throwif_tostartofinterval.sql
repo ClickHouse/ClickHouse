@@ -9,8 +9,10 @@ SET allow_custom_error_code_in_throwif = 1;
 SELECT signature FROM system.functions WHERE name = 'throwIf';
 SET allow_custom_error_code_in_throwif = 0;
 
--- `toStartOfInterval`: all four argument shapes are listed, including the four-argument
--- `(value, interval, origin, timezone)` overload and the constant interval/origin/timezone positions.
+-- `toStartOfInterval`: the third argument is either a constant `origin` value or a constant
+-- timezone `String`, and the four-argument form takes both — expressed as two independent
+-- optional groups (unlike `throwIf`, the optional tails are independent and their types
+-- do not overlap, so the optional-group form advertises exactly the legal shapes).
 SELECT signature FROM system.functions WHERE name = 'toStartOfInterval';
 
 -- The four-argument origin+timezone overload that the signature now documents works.

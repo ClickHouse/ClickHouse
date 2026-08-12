@@ -62,7 +62,11 @@ namespace FunctionSignatures
   *
   * Plus argument-list forms:
   *   - ellipsis `...` (repeat previous argument or numerically-suffixed group),
-  *   - `[...]` optional group.
+  *   - `[...]` optional group,
+  *   - attached ellipsis with repetition bounds: `T...` (zero or more), `T...{n}`
+  *     (exactly n), `T...{m..n}` (m to n occurrences, inclusive), e.g.
+  *     `mortonEncode(NativeUInt...{1..8}) -> UInt64`. Variable captures inside
+  *     such a group are not supported.
   *
   * Goals:
   * - signatures should be comprehensible by non-programmers;
