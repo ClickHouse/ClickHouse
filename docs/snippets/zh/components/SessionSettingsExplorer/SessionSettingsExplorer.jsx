@@ -3468,12 +3468,25 @@ const SessionSettingsExplorer = () => {
               return renderGroup(item.value, childContinuations, itemIsLast, [...path, entry.label])
             }
             return (
-              <div key={item.value.name} className="flex min-w-max items-baseline whitespace-nowrap">
-                <span aria-hidden="true" style={{ display: "inline-block", width: "1rem" }} />
-                {branch(branchPrefix(childContinuations, itemIsLast))}
-                <a href={`https://clickhouse.com/docs${item.value.href}`} className="no-underline hover:underline">
-                  {item.value.name}
-                </a>
+              <div key={item.value.name} className="grid min-w-max items-start gap-x-3 whitespace-nowrap" style={{ gridTemplateColumns: "44ch max-content" }}>
+                <span className="flex min-w-0 items-start">
+                  <span aria-hidden="true" className="w-4 shrink-0" />
+                  {branch(branchPrefix(childContinuations, itemIsLast))}
+                  <a href={`https://clickhouse.com/docs${item.value.href}`} className="min-w-0 whitespace-normal no-underline hover:underline" style={{ overflowWrap: "anywhere" }}>
+                    {item.value.name.split("_").map((part, index, parts) => (
+                      <span key={`${part}-${index}`}>
+                        {part}
+                        {index < parts.length - 1 ? "_" : ""}
+                        {index < parts.length - 1 && <wbr />}
+                      </span>
+                    ))}
+                  </a>
+                </span>
+                {item.value.default !== undefined && (
+                  <span title="默认值" className="whitespace-nowrap text-gray-500 dark:text-gray-400">
+                    （默认值：{item.value.default}）
+                  </span>
+                )}
               </div>
             )
           })}
@@ -3499,27 +3512,27 @@ const SessionSettingsExplorer = () => {
           <path d="m21 21-4.3-4.3" />
         </svg>
         <input
-          aria-label="搜索设置"
+          aria-label="Search settings"
           type="search"
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
-          placeholder="搜索设置，例如：parallel replicas 或 %materialized%"
+          placeholder="搜索设置，例如 parallel replicas 或 %materialized%"
           className="w-full rounded-lg border border-gray-500 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-600 focus:border-gray-600 focus:outline-0 focus-visible:outline-0 dark:border-white/30 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-[#fdff75]"
         />
       </div>
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            {matchingCount} matching {matchingCount === 1 ? "设置项" : "设置"}
+            找到 {matchingCount} 个匹配的设置项
           </span>
         </div>
       )}
       <div className="mt-3 w-full overflow-x-auto rounded-xl border border-gray-200 bg-gray-50/50 px-4 py-3 font-mono text-sm leading-6 dark:border-white/10 dark:bg-transparent">
         <div className="flex min-w-full items-center justify-between gap-4">
-          <div className="min-w-max font-semibold">/session-设置</div>
+          <div className="min-w-max font-semibold">/session-settings</div>
           <button
             type="button"
-            aria-label={allGroupsExpanded ? "全部折叠" : "全部展开"}
+            aria-label={allGroupsExpanded ? "Collapse all" : "Expand all"}
             aria-pressed={allGroupsExpanded}
             disabled={isSearching}
             onClick={toggleAllGroups}
@@ -3528,13 +3541,13 @@ const SessionSettingsExplorer = () => {
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
               {allGroupsExpanded ? <path d="m6 9 6 6 6-6" /> : <path d="m9 18 6-6-6-6" />}
             </svg>
-            <span>{allGroupsExpanded ? "全部折叠" : "全部展开"}</span>
+            <span>{allGroupsExpanded ? "Collapse all" : "Expand all"}</span>
           </button>
         </div>
         {filteredEntries.length > 0 ? (
           filteredEntries.map((entry, index) => renderGroup(entry, [], index === filteredEntries.length - 1))
         ) : (
-          <div className="py-2 text-gray-500 dark:text-gray-400">没有匹配的设置</div>
+          <div className="py-2 text-gray-500 dark:text-gray-400">No matching settings</div>
         )}
       </div>
     </div>

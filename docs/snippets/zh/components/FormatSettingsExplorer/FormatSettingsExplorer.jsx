@@ -1,6 +1,6 @@
 const FormatSettingsExplorer = () => {
-  // Mintlify 的生产渲染器会在不保留模块作用域绑定的情况下评估导出的组件。
-  // 延迟状态会将生成的数据保留在该评估作用域中，同时确保每次挂载时只构建一次。
+  // Mintlify 的生产渲染器在评估导出组件时不会保留模块作用域的绑定。
+  // 延迟状态将在该评估作用域中保存生成的数据，并确保每次挂载仅构建一次。
   const [entries] = useState(() => [
     {
       label: "bool_*",
@@ -638,12 +638,25 @@ const FormatSettingsExplorer = () => {
               return renderGroup(item.value, childContinuations, itemIsLast, [...path, entry.label])
             }
             return (
-              <div key={item.value.name} className="flex min-w-max items-baseline whitespace-nowrap">
-                <span aria-hidden="true" style={{ display: "inline-block", width: "1rem" }} />
-                {branch(branchPrefix(childContinuations, itemIsLast))}
-                <a href={`https://clickhouse.com/docs${item.value.href}`} className="no-underline hover:underline">
-                  {item.value.name}
-                </a>
+              <div key={item.value.name} className="grid min-w-max items-start gap-x-3 whitespace-nowrap" style={{ gridTemplateColumns: "44ch max-content" }}>
+                <span className="flex min-w-0 items-start">
+                  <span aria-hidden="true" className="w-4 shrink-0" />
+                  {branch(branchPrefix(childContinuations, itemIsLast))}
+                  <a href={`https://clickhouse.com/docs${item.value.href}`} className="min-w-0 whitespace-normal no-underline hover:underline" style={{ overflowWrap: "anywhere" }}>
+                    {item.value.name.split("_").map((part, index, parts) => (
+                      <span key={`${part}-${index}`}>
+                        {part}
+                        {index < parts.length - 1 ? "_" : ""}
+                        {index < parts.length - 1 && <wbr />}
+                      </span>
+                    ))}
+                  </a>
+                </span>
+                {item.value.default !== undefined && (
+                  <span title="默认值" className="whitespace-nowrap text-gray-500 dark:text-gray-400">
+                    （默认值：{item.value.default}）
+                  </span>
+                )}
               </div>
             )
           })}

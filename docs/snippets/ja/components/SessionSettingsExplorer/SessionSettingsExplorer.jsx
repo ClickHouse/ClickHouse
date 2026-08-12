@@ -1,7 +1,6 @@
 const SessionSettingsExplorer = () => {
-  // Mintlify の本番レンダラーは、モジュールスコープのバインディングを保持せずに
-  // エクスポートされたコンポーネントを評価します。遅延ステートにより、生成された
-  // データをその評価スコープ内に保持し、マウントごとに一度だけ構築します。
+  // Mintlify の本番レンダラーは、エクスポートされたコンポーネントをモジュールスコープのバインディングを保持せずに評価します。
+  // Lazy state により生成データをその評価スコープ内に保持し、マウントごとに一度だけ構築します。
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -3431,8 +3430,8 @@ const SessionSettingsExplorer = () => {
   const renderGroup = (entry, continuations = [], isLast = false, path = []) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
-    const items = [...entry.settings.map((setting) => ({ type: "設定", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count} ${entry.count === 1 ? "設定" : "設定"}`
+    const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
+    const countLabel = `${entry.count}件の設定`
 
     return (
       <div key={key} className="min-w-max">
@@ -3468,12 +3467,25 @@ const SessionSettingsExplorer = () => {
               return renderGroup(item.value, childContinuations, itemIsLast, [...path, entry.label])
             }
             return (
-              <div key={item.value.name} className="flex min-w-max items-baseline whitespace-nowrap">
-                <span aria-hidden="true" style={{ display: "inline-block", width: "1rem" }} />
-                {branch(branchPrefix(childContinuations, itemIsLast))}
-                <a href={`https://clickhouse.com/docs${item.value.href}`} className="no-underline hover:underline">
-                  {item.value.name}
-                </a>
+              <div key={item.value.name} className="grid min-w-max items-start gap-x-3 whitespace-nowrap" style={{ gridTemplateColumns: "44ch max-content" }}>
+                <span className="flex min-w-0 items-start">
+                  <span aria-hidden="true" className="w-4 shrink-0" />
+                  {branch(branchPrefix(childContinuations, itemIsLast))}
+                  <a href={`https://clickhouse.com/docs${item.value.href}`} className="min-w-0 whitespace-normal no-underline hover:underline" style={{ overflowWrap: "anywhere" }}>
+                    {item.value.name.split("_").map((part, index, parts) => (
+                      <span key={`${part}-${index}`}>
+                        {part}
+                        {index < parts.length - 1 ? "_" : ""}
+                        {index < parts.length - 1 && <wbr />}
+                      </span>
+                    ))}
+                  </a>
+                </span>
+                {item.value.default !== undefined && (
+                  <span title="デフォルト値" className="whitespace-nowrap text-gray-500 dark:text-gray-400">
+                    （デフォルト: {item.value.default}）
+                  </span>
+                )}
               </div>
             )
           })}
@@ -3503,14 +3515,14 @@ const SessionSettingsExplorer = () => {
           type="search"
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
-          placeholder="設定を検索（例：parallel replicas または %materialized%）"
+          placeholder="Search settings, e.g. parallel replicas or %materialized%"
           className="w-full rounded-lg border border-gray-500 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-600 focus:border-gray-600 focus:outline-0 focus-visible:outline-0 dark:border-white/30 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-[#fdff75]"
         />
       </div>
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            一致する設定：{matchingCount}件
+            {matchingCount} 件の{matchingCount === 1 ? "設定" : "設定"}
           </span>
         </div>
       )}
@@ -3519,7 +3531,7 @@ const SessionSettingsExplorer = () => {
           <div className="min-w-max font-semibold">/session-settings</div>
           <button
             type="button"
-            aria-label={allGroupsExpanded ? "すべて折りたたむ" : "すべて展開"}
+            aria-label={allGroupsExpanded ? "Collapse all" : "Expand all"}
             aria-pressed={allGroupsExpanded}
             disabled={isSearching}
             onClick={toggleAllGroups}
@@ -3528,13 +3540,13 @@ const SessionSettingsExplorer = () => {
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
               {allGroupsExpanded ? <path d="m6 9 6 6 6-6" /> : <path d="m9 18 6-6-6-6" />}
             </svg>
-            <span>{allGroupsExpanded ? "すべて折りたたむ" : "すべて展開"}</span>
+            <span>{allGroupsExpanded ? "Collapse all" : "Expand all"}</span>
           </button>
         </div>
         {filteredEntries.length > 0 ? (
           filteredEntries.map((entry, index) => renderGroup(entry, [], index === filteredEntries.length - 1))
         ) : (
-          <div className="py-2 text-gray-500 dark:text-gray-400">一致する設定はありません</div>
+          <div className="py-2 text-gray-500 dark:text-gray-400">No matching settings</div>
         )}
       </div>
     </div>
