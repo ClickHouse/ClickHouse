@@ -1,0 +1,17 @@
+1	a
+rejected
+rejected-again
+alive
+1	(2,'x')
+nested-rejected
+nested-rejected-again
+alive
+delta_kernel_rs_1: AMBIGUOUS_COLUMN_NAME
+5
+delta_kernel_rs_0: AMBIGUOUS_COLUMN_NAME
+5
+alive
+paimon: AMBIGUOUS_COLUMN_NAME
+10
+alive
+OK

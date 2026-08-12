@@ -1,5 +1,6 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -223,6 +224,7 @@ void TableMetadata::setSchema(const DB::NamesAndTypesList & schema_)
     if (!with_schema)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data schema was not requested");
 
+    DB::validateLakeSchemaColumnNames(schema_, "data lake catalog");
     schema = schema_;
 }
 
