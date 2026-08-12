@@ -192,17 +192,27 @@ TEST(ClusterFunctionReadTaskResponse, RejectsPositionDeletesOnProtocolBeforeIceb
     }
 }
 
-TEST(ClusterFunctionReadTaskResponse, AllowsIcebergInfoWithoutDeletesOnProtocolBeforeIcebergMetadata)
+TEST(ClusterFunctionReadTaskResponse, RejectsIcebergInfoWithoutDeletesOnProtocolBeforeIcebergMetadata)
 {
     ClusterFunctionReadTaskResponse response;
     response.path = "/path/file.parquet";
     response.iceberg_info = Iceberg::IcebergObjectSerializableInfo{};
+    response.iceberg_info->underlying_format_read_schema_id = 1;
+    response.iceberg_info->schema_id_relevant_to_iterator = 2;
+    response.iceberg_info->file_format = "PARQUET";
 
     String serialized;
     WriteBufferFromString out(serialized);
-    response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA);
-    out.finalize();
-    EXPECT_FALSE(serialized.empty());
+    try
+    {
+        response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA);
+        FAIL() << "Expected exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_PROTOCOL);
+        EXPECT_NE(e.message().find("iceberg_info"), std::string::npos);
+    }
 }
 
 TEST(ClusterFunctionReadTaskResponse, RoundTripsIcebergDeletesOnSupportedProtocol)
