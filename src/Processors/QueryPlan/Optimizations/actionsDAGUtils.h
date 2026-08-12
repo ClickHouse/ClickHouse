@@ -137,6 +137,34 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     const std::unordered_set<const ActionsDAG::Node *> & allowed_inputs,
     const ActionsDAG::NodeRawConstPtrs & nodes);
 
+struct InputHeaderPositions
+{
+    /// Header position of each input, in the order of `inputs`.
+    std::vector<size_t> matched;
+    /// Header positions no input consumes, ascending.
+    std::vector<size_t> passthrough;
+};
+
+/// Maps every input to the header column it reads. Names can repeat in both, so the n-th input named
+/// `x` takes the n-th header column named `x`, which is the rule `ActionsDAG::updateHeader` follows.
+/// Unlike `ActionsDAG::matchInputPositionsToHeader`, the mapping is per input rather than a plain list
+/// of consumed positions, so a caller holding some subset of the inputs can ask where those inputs -
+/// and no others - read from.
+InputHeaderPositions mapInputsToHeaderPositions(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header);
+
+/// All nodes reachable from `roots`, including the roots themselves. `roots` may hold duplicates.
+/// A node for which `is_barrier` returns true is included, but the walk does not descend into its
+/// children.
+///
+/// Used to answer what `removeUnusedActions` would keep without modifying the DAG: pass the nodes it
+/// treats as roots - the kept outputs, every ARRAY_JOIN (it never drops them, they change the number
+/// of rows), and every input when inputs may not be removed - and, when it may fold constants, a
+/// barrier for the nodes it would fold, because folding clears their children before it collects the
+/// nodes to keep.
+NodeSet findReachableNodes(
+    const ActionsDAG::NodeRawConstPtrs & roots,
+    const std::function<bool(const ActionsDAG::Node *)> & is_barrier = {});
+
 bool isInjectiveFunction(const ActionsDAG::Node * node);
 
 /// Our objective is to replace injective function nodes in `actions` results with its children

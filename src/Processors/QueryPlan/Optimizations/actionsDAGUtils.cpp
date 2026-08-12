@@ -1,6 +1,7 @@
 #include <Common/Exception.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
+#include <Core/Block.h>
 #include <Core/Field.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -653,6 +654,61 @@ std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & a
     for (size_t output_position = 0; output_position < outputs.size(); ++output_position)
         result.push_back({output_position, traced.at(outputs[output_position])});
     return result;
+}
+
+InputHeaderPositions mapInputsToHeaderPositions(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
+{
+    /// Positions are pushed in reverse so that the front-most one is taken first.
+    std::unordered_map<std::string_view, std::vector<size_t>> name_to_positions;
+    for (size_t position = header.columns(); position != 0; --position)
+        name_to_positions[header.getByPosition(position - 1).name].push_back(position - 1);
+
+    InputHeaderPositions result;
+    result.matched.reserve(inputs.size());
+
+    std::vector<bool> is_consumed(header.columns(), false);
+    for (const auto * input : inputs)
+    {
+        auto & positions = name_to_positions[input->result_name];
+        if (positions.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown identifier: '{}'", input->result_name);
+
+        result.matched.push_back(positions.back());
+        is_consumed[positions.back()] = true;
+        positions.pop_back();
+    }
+
+    for (size_t position = 0; position < header.columns(); ++position)
+        if (!is_consumed[position])
+            result.passthrough.push_back(position);
+
+    return result;
+}
+
+NodeSet findReachableNodes(
+    const ActionsDAG::NodeRawConstPtrs & roots,
+    const std::function<bool(const ActionsDAG::Node *)> & is_barrier)
+{
+    NodeSet visited;
+    std::stack<const ActionsDAG::Node *> stack;
+    for (const auto * root : roots)
+        if (visited.insert(root).second)
+            stack.push(root);
+
+    while (!stack.empty())
+    {
+        const auto * current = stack.top();
+        stack.pop();
+
+        if (is_barrier && is_barrier(current))
+            continue;
+
+        for (const auto * child : current->children)
+            if (visited.insert(child).second)
+                stack.push(child);
+    }
+
+    return visited;
 }
 
 bool isInjectiveFunction(const ActionsDAG::Node * node)
