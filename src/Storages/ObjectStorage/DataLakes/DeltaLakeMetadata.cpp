@@ -301,6 +301,7 @@ struct DeltaLakeMetadataImpl
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `fields` field");
 
                 auto current_schema = parseMetadata(fields_object);
+                validatePartitionColumns(metadata_object, fields_object, current_schema);
                 if (file_schema.empty())
                 {
                     file_schema = current_schema;
@@ -407,6 +408,45 @@ struct DeltaLakeMetadataImpl
             schema.push_back({physical_name, DB::DeltaLakeMetadata::getFieldType(field, "type", is_nullable)});
         }
         return schema;
+    }
+
+    /// `partitionColumns` carries logical names, while a parsed schema is keyed by physical
+    /// ones, so the declared set is recovered from the schema fields rather than from it.
+    NameSet getDeclaredLogicalNames(const Poco::JSON::Object::Ptr & schema_json) const
+    {
+        NameSet declared;
+        const auto fields = schema_json->get("fields").extract<Poco::JSON::Array::Ptr>();
+        for (size_t i = 0; i < fields->size(); ++i)
+            declared.insert(fields->getObject(static_cast<UInt32>(i))->getValue<String>("name"));
+        return declared;
+    }
+
+    void validatePartitionColumn(
+        const String & partition_name, const NameSet & declared, const NamesAndTypesList & parsed_schema) const
+    {
+        if (!declared.contains(partition_name))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "No such column in schema: {} (schema: {})",
+                partition_name, parsed_schema.toNamesAndTypesDescription());
+    }
+
+    void validatePartitionColumns(
+        const Poco::JSON::Object::Ptr & metadata_json,
+        const Poco::JSON::Object::Ptr & schema_json,
+        const NamesAndTypesList & parsed_schema) const
+    {
+        if (!metadata_json->isArray("partitionColumns"))
+            return;
+
+        const auto partition_columns = metadata_json->get("partitionColumns").extract<Poco::JSON::Array::Ptr>();
+        if (partition_columns->size() == 0)
+            return;
+
+        const auto declared = getDeclaredLogicalNames(schema_json);
+        for (size_t i = 0; i < partition_columns->size(); ++i)
+            validatePartitionColumn(
+                partition_columns->getElement<String>(static_cast<UInt32>(i)), declared, parsed_schema);
     }
 
 
@@ -543,6 +583,9 @@ struct DeltaLakeMetadataImpl
         auto partition_values_column_raw = res_block.getByName("add.partitionValues").column;
         const auto & partition_values_column = assert_cast<const ColumnMap &>(*partition_values_column_raw);
 
+        /// A checkpoint written before this column existed simply carries no partition names.
+        const auto * partition_columns_column = res_block.findByName("metaData.partitionColumns");
+
         for (size_t i = 0; i < path_column.size(); ++i)
         {
             const auto metadata = String(schema_column.getDataAt(i));
@@ -553,6 +596,19 @@ struct DeltaLakeMetadataImpl
                 const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
                 auto current_schema = parseMetadata(object);
+                if (partition_columns_column)
+                {
+                    Field partition_names;
+                    partition_columns_column->column->get(i, partition_names);
+                    if (!partition_names.isNull())
+                    {
+                        const auto declared = getDeclaredLogicalNames(object);
+                        for (const auto & partition_name : partition_names.safeGet<Array>())
+                            if (!partition_name.isNull())
+                                validatePartitionColumn(
+                                    partition_name.safeGet<String>(), declared, current_schema);
+                    }
+                }
                 if (file_schema.empty())
                 {
                     file_schema = current_schema;

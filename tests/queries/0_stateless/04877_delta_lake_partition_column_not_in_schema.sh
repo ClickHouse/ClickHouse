@@ -22,10 +22,18 @@ for T in good bad; do
         SETTINGS engine_file_truncate_on_insert = 1"
 done
 
-python3 - "$DIR" "$DATA" <<'EOF'
+# "mapped" declares 'p' but stores it under a column-mapping physical name.
+MAPPED_DATA="col_pppp=1/part-00000-c000.snappy.parquet"
+mkdir -p "$DIR/mapped/_delta_log" "$DIR/mapped/col_pppp=1"
+$CLICKHOUSE_LOCAL -q "
+    INSERT INTO FUNCTION file('$DIR/mapped/$MAPPED_DATA', Parquet, 'col_iiii Int64')
+    SELECT number FROM numbers(3)
+    SETTINGS engine_file_truncate_on_insert = 1"
+
+python3 - "$DIR" "$DATA" "$MAPPED_DATA" <<'EOF'
 import json, os, sys
 
-directory, data = sys.argv[1], sys.argv[2]
+directory, data, mapped_data = sys.argv[1], sys.argv[2], sys.argv[3]
 field = lambda name, type_: {"name": name, "type": type_, "nullable": True, "metadata": {}}
 fields = {"good": [field("id", "long"), field("s", "string"), field("p", "string")],
           "bad": [field("id", "long"), field("s", "string")]}
@@ -50,6 +58,46 @@ for table, schema_fields in fields.items():
 
 with open(os.path.join(directory, "bad_schema.json"), "w") as out:
     out.write(json.dumps({"type": "struct", "fields": fields["bad"]}))
+
+# "empty" carries no add action at all, so only a metaData-time check can reject it.
+os.makedirs(os.path.join(directory, "empty", "_delta_log"))
+with open(os.path.join(directory, "empty", "_delta_log", "00000000000000000000.json"), "w") as log:
+    for action in [
+        {"protocol": {"minReaderVersion": 1, "minWriterVersion": 2}},
+        {"metaData": {"id": "114462-empty",
+                      "format": {"provider": "parquet", "options": {}},
+                      "schemaString": json.dumps({"type": "struct", "fields": fields["bad"]}),
+                      "partitionColumns": ["p"],
+                      "configuration": {}, "createdTime": 1600000000000}},
+    ]:
+        log.write(json.dumps(action) + "\n")
+
+# "mapped" is well formed: 'p' is declared, and column mapping stores it as 'col_pppp'.
+# partitionColumns holds the logical name, so a check against physical names would
+# wrongly reject this table.
+mapped_dir = os.path.join(directory, "mapped")
+mapped = lambda name, type_, physical, id_: {
+    "name": name, "type": type_, "nullable": True,
+    "metadata": {"delta.columnMapping.physicalName": physical, "delta.columnMapping.id": id_}}
+with open(os.path.join(mapped_dir, "_delta_log", "00000000000000000000.json"), "w") as log:
+    for action in [
+        {"protocol": {"minReaderVersion": 2, "minWriterVersion": 5,
+                      "readerFeatures": ["columnMapping"], "writerFeatures": ["columnMapping"]}},
+        {"metaData": {"id": "114462-mapped",
+                      "format": {"provider": "parquet", "options": {}},
+                      "schemaString": json.dumps({"type": "struct", "fields": [
+                          mapped("id", "long", "col_iiii", 1),
+                          mapped("p", "string", "col_pppp", 2)]}),
+                      "partitionColumns": ["p"],
+                      "configuration": {"delta.columnMapping.mode": "name",
+                                        "delta.columnMapping.maxColumnId": "2"},
+                      "createdTime": 1600000000000}},
+        {"add": {"path": mapped_data, "partitionValues": {"col_pppp": "1"},
+                 "size": os.path.getsize(os.path.join(mapped_dir, mapped_data)),
+                 "modificationTime": 1600000000000, "dataChange": True,
+                 "stats": json.dumps({"numRecords": 3})}},
+    ]:
+        log.write(json.dumps(action) + "\n")
 EOF
 
 # "ckpt" reaches the legacy reader's checkpoint branch instead of its JSON log branch:
@@ -71,9 +119,24 @@ $CLICKHOUSE_LOCAL -q "
     SETTINGS engine_file_truncate_on_insert = 1"
 echo '{"version":1,"size":1}' > "$DIR/ckpt/_delta_log/_last_checkpoint"
 
+# "ckpt_empty" is the checkpoint counterpart of "empty": its single row carries the
+# malformed metaData and no add action, so only a metaData-time check can reject it.
+mkdir -p "$DIR/ckpt_empty/_delta_log"
+$CLICKHOUSE_LOCAL -q "
+    INSERT INTO FUNCTION file('$DIR/ckpt_empty/_delta_log/00000000000000000001.checkpoint.parquet', Parquet,
+        'add Tuple(path Nullable(String), partitionValues Map(String, Nullable(String)),
+                   size Nullable(Int64), modificationTime Nullable(Int64), dataChange Nullable(Bool)),
+         metaData Tuple(schemaString Nullable(String), partitionColumns Array(Nullable(String)))')
+    SELECT (NULL, map(), NULL, NULL, NULL), tuple('$BAD_SCHEMA', ['p'])
+    SETTINGS engine_file_truncate_on_insert = 1"
+echo '{"version":1,"size":1}' > "$DIR/ckpt_empty/_delta_log/_last_checkpoint"
+
 echo '-- control: a declared partition column reads fine on both readers'
 $CLICKHOUSE_LOCAL -q "SELECT id, s, p FROM deltaLakeLocal('$DIR/good') WHERE id > 3"
 $CLICKHOUSE_LOCAL -q "SELECT id, s, p FROM deltaLakeLocal('$DIR/good') WHERE id > 3 SETTINGS allow_delta_kernel_rs = 0"
+
+echo '-- control: a column-mapped partition column is declared under its logical name'
+$CLICKHOUSE_LOCAL -q "SELECT sum(col_iiii), any(col_pppp) FROM deltaLakeLocal('$DIR/mapped') SETTINGS allow_delta_kernel_rs = 0"
 
 echo '-- delta-kernel reader: rejected with or without a predicate'
 $CLICKHOUSE_LOCAL -q "SELECT * FROM deltaLakeLocal('$DIR/bad') FORMAT Null" 2>&1 | grep -oF "BAD_ARGUMENTS"
@@ -85,5 +148,11 @@ $CLICKHOUSE_LOCAL -q "SELECT * FROM deltaLakeLocal('$DIR/bad') FORMAT Null SETTI
 
 echo '-- legacy reader: checkpoint branch'
 $CLICKHOUSE_LOCAL -q "SELECT * FROM deltaLakeLocal('$DIR/ckpt') FORMAT Null SETTINGS allow_delta_kernel_rs = 0" 2>&1 | grep -oF "INCORRECT_DATA"
+
+echo '-- legacy reader: json log branch, partitionColumns with no add action to resolve'
+$CLICKHOUSE_LOCAL -q "DESCRIBE TABLE deltaLakeLocal('$DIR/empty') SETTINGS allow_delta_kernel_rs = 0" 2>&1 | grep -oF "INCORRECT_DATA"
+
+echo '-- legacy reader: checkpoint branch, partitionColumns with no add action to resolve'
+$CLICKHOUSE_LOCAL -q "DESCRIBE TABLE deltaLakeLocal('$DIR/ckpt_empty') SETTINGS allow_delta_kernel_rs = 0" 2>&1 | grep -oF "INCORRECT_DATA"
 
 rm -rf "$DIR"
