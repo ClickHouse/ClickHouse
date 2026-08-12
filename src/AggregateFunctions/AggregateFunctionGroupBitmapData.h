@@ -592,7 +592,7 @@ public:
         if (isSmall())
         {
             /// The small set holds at most `small_set_size` elements, so no allocation is needed.
-            std::array<T, small_set_size> values;
+            std::array<T, small_set_size> values{};
             size_t num_values = 0;
             for (const auto & x : small)
                 values[num_values++] = x.getValue();
