@@ -3,7 +3,7 @@
 # Tag no-replicated-database: IcebergLocal is non-replicated.
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/114487
-# Three validators in the Iceberg schema path reject spec-violating metadata
+# Four validators in the Iceberg schema path reject spec-violating metadata
 # content. They used to raise LOGICAL_ERROR, which aborts the server in debug and
 # sanitizer builds and under abort_on_logical_error. Each must now raise a clean
 # ICEBERG_SPECIFICATION_VIOLATION, leaving the server up.
@@ -131,7 +131,48 @@ ${CLICKHOUSE_CLIENT} --iceberg_metadata_staleness_ms=0 --query "SELECT * FROM ${
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE3}"
 rm -rf "${PATH3}" 2>/dev/null
 
-# The server must still be alive: none of the three rejections aborted it.
+# --- Arm 4: an old primitive field becomes a struct in the new schema ----------
+
+TABLE4="t4_${CLICKHOUSE_DATABASE}_${RANDOM}"
+PATH4="${USER_FILES_PATH}/${TABLE4}/"
+rm -rf "${PATH4}" 2>/dev/null
+
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE4} (c0 Int32, p Int64) ENGINE = IcebergLocal('${PATH4}')"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INSERT INTO ${TABLE4} VALUES (1, 42)"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE4}"
+
+LATEST4=$(ls "${PATH4}metadata/" | grep -E '^v[0-9]+\.metadata\.json$' | sort -t v -k2 -n | tail -1)
+python3 - "${PATH4}metadata" "${LATEST4}" <<'PY'
+import copy, json, os, re, sys
+
+metadata_dir, latest_file = sys.argv[1], sys.argv[2]
+with open(os.path.join(metadata_dir, latest_file)) as fh:
+    metadata = json.load(fh)
+
+schema = copy.deepcopy(metadata["schemas"][0])
+schema["schema-id"] = 1
+for field in schema["fields"]:
+    if field["name"] == "p":
+        field["type"] = {"type": "struct", "fields": [{"id": 5, "name": "a", "required": False, "type": "long"}]}
+metadata["schemas"].append(schema)
+metadata["current-schema-id"] = 1
+metadata["last-column-id"] = 5
+metadata["last-updated-ms"] = metadata.get("last-updated-ms", 0) + 60000
+
+version = int(re.match(r"v(\d+)\.metadata\.json", latest_file).group(1)) + 1
+tmp_file = os.path.join(metadata_dir, ".tmp_next")
+with open(tmp_file, "w") as fh:
+    json.dump(metadata, fh)
+os.rename(tmp_file, os.path.join(metadata_dir, f"v{version}.metadata.json"))
+PY
+
+${CLICKHOUSE_CLIENT} --iceberg_metadata_staleness_ms=0 --query "SELECT * FROM ${TABLE4}" 2>&1 \
+    | grep -q -F "ICEBERG_SPECIFICATION_VIOLATION" && echo "primitive to complex rejected" || echo "NOT REJECTED"
+
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE4}"
+rm -rf "${PATH4}" 2>/dev/null
+
+# The server must still be alive: none of the four rejections aborted it.
 ${CLICKHOUSE_CLIENT} --query "SELECT 'alive'"
 
 echo "OK"

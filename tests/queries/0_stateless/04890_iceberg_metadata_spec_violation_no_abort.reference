@@ -4,5 +4,7 @@ required column rejected
 complex to primitive rejected
 1
 snapshot schema rebinding rejected
+1
+primitive to complex rejected
 alive
 OK

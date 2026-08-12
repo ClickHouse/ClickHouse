@@ -684,6 +684,15 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                     || field->getObject(f_type)->getValue<std::string>(f_type) == "list"
                     || field->getObject(f_type)->getValue<std::string>(f_type) == "map"))
             {
+                if (!old_json->isObject(f_type))
+                {
+                    throw Exception(
+                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                        "Can't cast primitive type to the complex type, field id is {}, old schema id is {}, new schema id is {}",
+                        id,
+                        old_id,
+                        new_id);
+                }
                 auto old_type = getFieldType(old_json, "type", required);
                 auto transform = std::make_shared<EvolutionFunctionStruct>(DataTypes{type}, DataTypes{old_type}, old_json, field);
                 old_node = &dag->addFunction(transform, std::vector<const Node *>{old_node}, name);
