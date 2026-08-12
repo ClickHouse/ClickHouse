@@ -3,6 +3,7 @@
 #include <Common/ThreadGroupSwitcher.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Interpreters/TransactionLog.h>
@@ -143,6 +144,49 @@ void MergePlainMergeTreeTask::prepare()
     /// Test hook: hold a selected merge here, between selection and execution, so tests can
     /// deterministically let a TTL boundary pass in that window.
     FailPointInjection::pauseFailPoint(FailPoints::plain_merge_task_pause_before_prepare);
+
+    /// Re-price the memory reservation against the destination disk's LIVE multipart upload settings just
+    /// before the merge constructs its writers. Everything else the estimate depends on is pinned at
+    /// selection time (the context, the MergeTree settings, time_of_merge - see below), but the disk's
+    /// request settings cannot be: WriteBufferFromS3 / WriteBufferFromAzureBlobStorage read them from the
+    /// disk's object storage when they are constructed, and a config reload (applyNewSettings) that raises
+    /// *_strict_upload_part_size / *_max_upload_part_size / *_max_inflight_parts_for_one_file while the
+    /// merge waits in the background queue would let the writers outgrow a reservation priced with the old
+    /// values. The replicated path prices its reservation at task start for the same reason
+    /// (MergeFromLogEntryTask::prepare); reserve unconditionally, like it does - the merge is committed to
+    /// run, and the refreshed reservation still throttles selection of further merges. A reload between
+    /// this point and a writer's construction mid-merge is the irreducible remainder, covered by the
+    /// reactive background_memory_tracker. A local destination has no disk-level write buffer settings
+    /// (everything it depends on is pinned), so its selection-time reservation is already exact.
+    const DiskPtr output_disk = merge_mutate_entry->tagger->reserved_space->getDisk();
+    if (output_disk->isRemote())
+    {
+        const auto parts_info = MergeTreeData::getPartsSnapshotInfo(future_part->parts);
+        const MergeTreeData::IMutationsSnapshot::Params mutations_params
+        {
+            .metadata_version = metadata_snapshot->getMetadataVersion(),
+            .min_part_metadata_version = parts_info.min_metadata_version,
+            .min_part_data_versions = nullptr,
+            .max_mutation_versions = nullptr,
+            .need_data_mutations = false,
+            .need_alter_mutations = !future_part->patch_parts.empty(),
+            .need_patch_parts = false,
+            .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
+        };
+        const auto mutations_snapshot = storage.getMutationsSnapshot(mutations_params);
+        merge_mutate_entry->tagger->memory_reservation = MergeMemoryReservation::reserve(
+            CompactionStatistics::estimateNeededMemoryForMerge(
+                *future_part,
+                metadata_snapshot,
+                merge_mutate_entry->merge_context,
+                *merge_mutate_entry->data_settings,
+                mutations_snapshot,
+                merge_mutate_entry->time_of_merge,
+                /*output_on_remote_disk=*/ true,
+                CompactionStatistics::getDiskWriteBufferMemory(output_disk, merge_mutate_entry->merge_context->getWriteSettings()),
+                deduplicate,
+                cleanup));
+    }
 
     /// The merge runs with the timestamp it was SELECTED at, not with a fresh one: its up-front memory
     /// reservation priced the TTL trigger of merge_may_reduce_rows against that clock

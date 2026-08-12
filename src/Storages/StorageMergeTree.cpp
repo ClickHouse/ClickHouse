@@ -1767,6 +1767,25 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             /// same selection-vs-execution drift already pinned for the context and for time_of_merge.
             const MergeTreeSettingsPtr data_settings = getSettings();
 
+            /// Whether the merge runs with CLEANUP. A user-initiated merge (OPTIMIZE ... CLEANUP) passes it
+            /// in; a background merge is selected with cleanup = false, and whether it really runs as a
+            /// ReplacingMergeTree cleanup merge is decided only by the scheduler - historically AFTER
+            /// selection, from the live settings (scheduleDataProcessingJob). A cleanup merge removes
+            /// deleted rows, so it is a row-reducing merge that rebuilds projections; pricing it as an
+            /// ordinary merge would under-reserve exactly the merges min_age_to_force_merge_* schedules in
+            /// bulk. Derive it here instead, from future_part->final and the same settings snapshot the
+            /// estimate uses (the very condition the scheduler applied), and carry it to the scheduler
+            /// through the selected entry - which also pins it against a concurrent ALTER ... MODIFY
+            /// SETTING between selection and scheduling, the same selection-vs-execution drift already
+            /// pinned for the context, the settings and time_of_merge.
+            const bool merge_with_cleanup = user_initiated
+                ? cleanup
+                : (future_part->final
+                   && (*data_settings)[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup]
+                   && (*data_settings)[MergeTreeSetting::enable_replacing_merge_with_cleanup_for_min_age_to_force_merge]
+                   && (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds]
+                   && (*data_settings)[MergeTreeSetting::min_age_to_force_merge_on_partition_only]);
+
             /// Estimate the reservation against the same context the merge will actually run under: a copy of
             /// the background context with the merge query settings applied. A non-default background_profile
             /// can raise the read/upload buffer sizes above the storage/global settings, and the reservation
@@ -1786,7 +1805,13 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             std::optional<CompactionStatistics::DiskWriteBufferMemory> admission_write_buffer_memory;
             for (const auto & disk : getStoragePolicy()->getDisks())
             {
-                if (!disk->isRemote())
+                /// A read-only disk can never be the merge's destination: the disk-space reservation below
+                /// (CurrentlyMergingPartsTagger) goes through StoragePolicy::reserve / VolumeJBOD, which
+                /// skip read-only volumes and disks. Such a disk still appears in getDisks() (a policy
+                /// mixing a writable local disk with a read-only object-storage one is legitimate), and
+                /// letting it mark the output as remote - or contribute its multipart ceiling - would
+                /// reject merges for upload memory on a destination that is impossible to pick.
+                if (disk->isReadOnly() || !disk->isRemote())
                     continue;
                 output_may_be_on_remote_disk = true;
                 const auto disk_write_buffer_memory = CompactionStatistics::getDiskWriteBufferMemory(disk, merge_write_settings);
@@ -1825,7 +1850,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
             const UInt64 needed_memory = CompactionStatistics::estimateNeededMemoryForMerge(
                 *future_part, metadata_snapshot, merge_context, *data_settings, mutations_snapshot, time_of_merge,
-                output_may_be_on_remote_disk, admission_write_buffer_memory, deduplicate, cleanup);
+                output_may_be_on_remote_disk, admission_write_buffer_memory, deduplicate, merge_with_cleanup);
 
             std::optional<MergeMemoryReservation> memory_reservation;
             if (user_initiated)
@@ -1876,7 +1901,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                     CompactionStatistics::estimateNeededMemoryForMerge(
                         *future_part, metadata_snapshot, merge_context, *data_settings, mutations_snapshot, time_of_merge,
                         actual_output_on_remote_disk, CompactionStatistics::getDiskWriteBufferMemory(actual_disk, merge_write_settings),
-                        deduplicate, cleanup));
+                        deduplicate, merge_with_cleanup));
             }
 
             tagger->memory_reservation = std::move(*memory_reservation);
@@ -1885,6 +1910,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             selected_entry->time_of_merge = time_of_merge;
             selected_entry->merge_context = merge_context;
             selected_entry->data_settings = data_settings;
+            selected_entry->cleanup = merge_with_cleanup;
             return selected_entry;
         }
         catch (...)
@@ -2283,11 +2309,13 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         if (is_cancelled(merge_entry))
             return false;
 
-        bool cleanup = merge_entry->future_part->final
-            && (*getSettings())[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup]
-            && (*getSettings())[MergeTreeSetting::enable_replacing_merge_with_cleanup_for_min_age_to_force_merge]
-            && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_seconds]
-            && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_on_partition_only];
+        /// Whether this background merge runs with CLEANUP was decided at selection time
+        /// (selectPartsToMerge derives it from future_part->final and the min_age_to_force_merge_* /
+        /// replacing-merge-with-cleanup settings) and carried on the entry: the up-front memory
+        /// reservation priced the merge with that value - a cleanup merge reduces rows and rebuilds
+        /// projections - so re-deriving it here from the live settings could run a merge the reservation
+        /// priced as an ordinary one as a cleanup merge.
+        const bool cleanup = merge_entry->cleanup;
 
         auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, /* deduplicate */ false, Names{}, cleanup, merge_entry, shared_lock, common_assignee_trigger);
         task->setCurrentTransaction(std::move(transaction_for_merge), std::move(txn));

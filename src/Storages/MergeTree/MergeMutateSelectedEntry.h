@@ -74,6 +74,14 @@ struct MergeMutateSelectedEntry
     /// decisions or the vertical-merge rules after the merge was admitted at the old price. Unset for a
     /// mutation entry.
     MergeTreeSettingsPtr data_settings;
+    /// For a merge entry: whether the merge runs with CLEANUP, decided once at selection time - passed in
+    /// by OPTIMIZE ... CLEANUP for a user-initiated merge, derived from future_part->final and the
+    /// min_age_to_force_merge_* / replacing-merge-with-cleanup settings for a background one (the
+    /// condition StorageMergeTree::scheduleDataProcessingJob used to apply AFTER selection). The up-front
+    /// memory reservation prices a cleanup merge as row-reducing (it rebuilds projections), so the
+    /// scheduler must run the merge with this exact value rather than re-derive it from the live settings.
+    /// Unused (false) for a mutation entry.
+    bool cleanup{false};
     bool finalized{false};
     MergeMutateSelectedEntry(FutureMergedMutatedPartPtr future_part_, CurrentlyMergingPartsTaggerPtr tagger_,
                              MutationCommandsConstPtr commands_, const MergeTreeTransactionPtr & txn_ = NO_TRANSACTION_PTR,
