@@ -235,7 +235,7 @@ size_t DiskCacheWriter::write(ChainedBuffers data)
     const size_t miss_obj_off = aligned_range.offset - object_file_offset;
     const size_t miss_obj_end = miss_obj_off + aligned_range.size;
 
-    /// Append append-only at our one segment's live current write offset (`cwo`), never completing it
+    /// Append append-only at our one segment's live current write offset, never completing it
     /// here (kept appendable across windows; the claim's release / the destructor finalize it). NEVER
     /// throws on the soft skips (unclaimed / no-op).
     FileSegment & seg = segment();
@@ -250,7 +250,7 @@ size_t DiskCacheWriter::write(ChainedBuffers data)
         return 0;
     }
 
-    /// Append-only: start at the live `cwo`.
+    /// Append-only: start at the live current write offset.
     const size_t write_offset = seg.getCurrentWriteOffset();
     const size_t seg_end = seg_range.right + 1;
     const size_t write_end_max = std::min<size_t>(seg_end, miss_obj_end);
@@ -327,11 +327,9 @@ ChainedBuffers DiskCacheWriter::read(ByteRange subrange)
 
 CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
 {
-    /// `window` is FILE-space, clamped to our one segment. `getCurrentWriteOffset` splits the overlap
-    /// into the committed prefix (`available`) and the uncommitted tail; `getOrSetDownloader` decides
-    /// whether that tail is ours (`to_fetch`) or another downloader's (left unlisted). A role NEWLY
-    /// won here enters the release closure - else a leaked DOWNLOADING segment aborts the foreground
-    /// completion on `chassert(!is_last_holder)` (it cannot reset a foreign downloader).
+    /// `window` is FILE-space, clamped to our one segment. Split it into the committed prefix
+    /// (`available`, readable now) and the uncommitted tail we win the role for (`to_fetch`); a tail
+    /// another downloader leads is left unlisted.
     FillClaim c;
     FileSegment & seg = segment();
     const auto & seg_range = seg.range();
@@ -349,20 +347,14 @@ CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
         return c;
     }
 
-    const bool already_mine = seg.isDownloader();
-    /// `getOrSetDownloader` returns the current downloader id; it equals our `getCallerId()` exactly
-    /// when we win the role - so `captured` folds the "did we win it" check into that one call.
-    bool captured = false;
-    if (!already_mine)
-        captured = seg.getOrSetDownloader() == FileSegment::getCallerId();
-    const bool mine = already_mine || captured;
+    /// `claim` is never nested (one claim per write), so we do not already hold the role - assert it.
+    chassert(!seg.isDownloader());
+    const bool role_captured = seg.getOrSetDownloader() == FileSegment::getCallerId();
 
-    /// Arm the release the moment we NEWLY win the role (`captured`), BEFORE the (memory-tracked,
-    /// throwable) reads and pushes below. Winning the role must always pair with a reset: if anything
-    /// below throws, the FillClaim destructor runs `release` on unwind, so the segment never leaks
-    /// DOWNLOADING (which would abort the foreground holder dtor on `chassert(!is_last_holder)`) and
-    /// never self-deadlocks a later `waitAndRead` on this thread. Capture the segment ptr, not the writer.
-    if (!already_mine && captured)
+    /// Arm the release the moment we win the role, BEFORE the throwable pushes below, so a throw on
+    /// unwind never leaks the DOWNLOADING role (which aborts the holder dtor on `!is_last_holder` and
+    /// self-deadlocks a later `waitAndRead`). Capture the segment ptr, not the writer.
+    if (role_captured)
     {
         c.release = [seg_ptr = segment_holder->getSingleFileSegment(), logger = log]() noexcept
         {
@@ -378,18 +370,16 @@ CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
         };
     }
 
-    /// Read the current write offset (`cwo`) after the role decision. If we hold the role, only we
-    /// advance it, so the committed-prefix / tail split is exact; if another downloader holds it,
-    /// `cwo` is a lower bound, so we under-report `available`, never over. `cwo` is object-local;
-    /// shift to file space.
-    const size_t cwo_file = seg.getCurrentWriteOffset() + object_file_offset;
-    const size_t avail_hi = std::min(hi, cwo_file);
+    /// The current write offset after the role decision: exact if we hold the role (only we advance
+    /// it), else a lower bound (we under-report `available`, never over). Shifted to file space.
+    const size_t current_write_offset = seg.getCurrentWriteOffset() + object_file_offset;
+    const size_t avail_hi = std::min(hi, current_write_offset);
     if (avail_hi > lo)
         c.available.push_back(ByteRange{lo, avail_hi - lo});
 
-    if (mine)
+    if (role_captured)
     {
-        const size_t fetch_lo = std::max(lo, cwo_file);
+        const size_t fetch_lo = std::max(lo, current_write_offset);
         if (fetch_lo < hi)
             c.to_fetch.push_back(ByteRange{fetch_lo, hi - fetch_lo});
     }
