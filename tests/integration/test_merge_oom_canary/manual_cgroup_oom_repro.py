@@ -180,11 +180,18 @@ def oom_kill_count():
 _clients = set()
 _clients_lock = threading.Lock()
 
+# The `clickhouse-server` process this run started, tracked the same way as the clients so `cleanup`
+# can kill exactly this run's server by its own session/process group - never a host-wide `pkill -f`
+# over a path derived from `base`, which `pkill` treats as a regex (metacharacters from a `BASE_DIR`
+# override, or even the `.` in the `ch_oom_repro.` prefix, widen the match, and this script runs as
+# root, so a false match would SIGKILL an unrelated process).
+_server = None
 
-def kill_client_group(proc):
-    # SIGKILL the whole session/process group of a client we started, reaping the `sudo` wrapper and the
-    # `clickhouse client` grandchild together (killing `proc` alone would orphan the grandchild). Only
-    # this script's own clients are ever passed here.
+
+def kill_process_group(proc):
+    # SIGKILL the whole session/process group of a process we started, reaping the `sudo`/`runuser`
+    # wrapper and the `clickhouse` grandchild together (killing `proc` alone would orphan the
+    # grandchild). Only this script's own subprocesses are ever passed here.
     #
     # Skip a `Popen` that has already finished and been reaped: `cleanup` can snapshot `_clients` in the
     # window between a worker's `communicate()` reaping the child and its `finally` discarding the entry,
@@ -219,7 +226,7 @@ def client(*args, user=None, timeout=None):
         try:
             out, err = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
-            kill_client_group(proc)
+            kill_process_group(proc)
             proc.communicate()  # reap the killed process group
             raise
         return subprocess.CompletedProcess(proc.args, proc.returncode, out, err)
@@ -236,16 +243,24 @@ def bounded_client(*args, user=None):
 
 
 def cleanup(base):
-    subprocess.run(["pkill", "-9", "-f", f"{base}/cfg"], stderr=subprocess.DEVNULL)
+    # Kill exactly the server this run started, by the session/process group it was launched in (it is
+    # tracked in `_server`, the same way the client subprocesses are tracked in `_clients`) - never a
+    # host-wide `pkill -f` over a path derived from `base` (see `_server` above for why that pattern is
+    # host-destructive). The `cgroup.kill` below is not a substitute: it only reaches processes actually
+    # charged to this run's cgroup, and the one teardown where the server most needs killing is the
+    # fail-closed abort in `main` after its `cgroup.procs` move silently failed - the server is then
+    # still running OUTSIDE the cgroup.
+    if _server is not None:
+        kill_process_group(_server)
     # Also kill any outstanding `clickhouse client` subprocesses this script started: a churn worker
     # may still have one blocked in an `INSERT`/`OPTIMIZE` against a wedged or OOM-killed server, and
-    # those clients do not match the `{base}/cfg` pattern above (they are launched with `--port`, not a
-    # config file), so the server-side kill alone would leave them running. Kill only the tracked client
-    # process groups, never a host-wide `pkill -f` that could hit unrelated sessions on a shared port.
+    # those clients run in their own sessions, so the server-group kill above does not cover them. Kill
+    # only the tracked client process groups, never a host-wide `pkill -f` that could hit unrelated
+    # sessions on a shared port.
     with _clients_lock:
         outstanding = list(_clients)
     for proc in outstanding:
-        kill_client_group(proc)
+        kill_process_group(proc)
     time.sleep(1)
     # Only tear down a cgroup this run created. If `CG` already existed at startup the run aborted
     # without adopting it, and killing its processes here would be exactly the host-destructive act the
@@ -352,9 +367,14 @@ def main():
         # (the socket cannot be handed over to the server). A theft in this gap is caught loudly by
         # the bounded startup probe below, not silently.
         release_port_reservation()
-        server = subprocess.Popen(
+        # `start_new_session=True` makes the `runuser` wrapper a session/process-group leader (its
+        # server child inherits the group), so `cleanup` can SIGKILL exactly this group via the
+        # tracked `_server` handle - the same containment discipline as the client subprocesses.
+        global _server
+        server = _server = subprocess.Popen(
             ["runuser", "-u", RUN_USER, "--", BIN, "server", "--config-file", config_file],
             preexec_fn=enter_cgroup,
+            start_new_session=True,
         )
         # Bound the startup probe too: a half-started server can accept the connection but stall the
         # query, so an unbounded `SELECT 1` would park the "40 tries" loop for minutes. A backstop
