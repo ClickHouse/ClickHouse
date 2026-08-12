@@ -1,6 +1,5 @@
 #include <Parsers/ASTAlterQuery.h>
 
-#include <Core/ServerSettings.h>
 #include <Databases/DataLake/DataLakeConstants.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
@@ -864,6 +863,9 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
                 break;
             case DataDestinationType::VOLUME:
                 ostr << "VOLUME ";
+                break;
+            case DataDestinationType::SHARD:
+                ostr << "SHARD ";
                 break;
             case DataDestinationType::TABLE:
                 ostr << "TABLE ";

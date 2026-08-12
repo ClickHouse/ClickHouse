@@ -93,6 +93,10 @@ uint64_t getLogIdxFromSnapshotPath(const std::string & snapshot_path);
 /// the same logical index under the same key, e.g. "snapshot_100_<uuid>.bin.zstd" -> "snapshot_100.bin.zstd".
 std::string getCanonicalSnapshotS3Name(const std::string & snapshot_path);
 
+/// Narrow a setting to the int32 that most `nuraft::raft_params` fields are, warning instead of
+/// wrapping when it does not fit.
+int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name, LoggerPtr log);
+
 /// `before_file_remove_op` runs after the copy and before the source removal. Returning
 /// `false` rejects the move: the source is kept, the caller cleans up the copied target.
 void moveFileBetweenDisks(
@@ -120,11 +124,11 @@ struct KeeperNodeStats
 {
     /// Flags packed into ctime_and_flags.
     static constexpr uint64_t NUM_FLAGS = 3;
-    static constexpr uint64_t EPHEMERAL = 1ul << 63;
-    static constexpr uint64_t TTL = 1ul << 62;
-    static constexpr uint64_t CONTAINER = 1ul << 61;
+    static constexpr uint64_t EPHEMERAL = 1ull << 63;
+    static constexpr uint64_t TTL = 1ull << 62;
+    static constexpr uint64_t CONTAINER = 1ull << 61;
     static constexpr uint64_t FLAGS_MASK = EPHEMERAL | TTL | CONTAINER;
-    static_assert(FLAGS_MASK == ~(~0ul >> NUM_FLAGS));
+    static_assert(FLAGS_MASK == ~(~0ull >> NUM_FLAGS));
 
     /// ephemeralOwner value for container nodes (matches `CONTAINER_EPHEMERAL_OWNER` in ZooKeeper).
     static constexpr int64_t CONTAINER_EPHEMERAL_OWNER = INT64_MIN;
