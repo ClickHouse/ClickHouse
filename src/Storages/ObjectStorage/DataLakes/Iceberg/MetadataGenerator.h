@@ -47,6 +47,14 @@ public:
     bool generateModifyColumnMetadata(const String & column_name, DataTypePtr type);
     void generateRenameColumnMetadata(const String & column_name, const String & new_column_name);
 
+    /// A commit attempt can land in the catalog even when the client observes a failure
+    /// (the Iceberg "commit state unknown" case, e.g. a proxy returning 5xx after the catalog
+    /// applied the update). These predicates let a retry detect that the requested change is
+    /// already present instead of applying it a second time and failing.
+    bool isAddColumnApplied(const String & column_name, DataTypePtr type) const;
+    bool isDropColumnApplied(const String & column_name) const;
+    bool isRenameColumnApplied(const String & column_name, const String & new_column_name) const;
+
 private:
     Poco::JSON::Object::Ptr metadata_object;
 
@@ -55,6 +63,11 @@ private:
 
     Int64 getMaxSequenceNumber();
     Poco::JSON::Object::Ptr getParentSnapshot(Int64 parent_snapshot_id);
+
+    /// Returns the schema referenced by `current-schema-id`, or nullptr when it is absent.
+    Poco::JSON::Object::Ptr findCurrentSchema() const;
+    /// Returns the schema referenced by `current-schema-id`, throwing when it is absent.
+    Poco::JSON::Object::Ptr getCurrentSchema() const;
 };
 
 #endif

@@ -99,6 +99,28 @@ static Int32 getHighestFieldIdFromType(const Poco::Dynamic::Var & type_var)
     return result;
 }
 
+/// Whether the schema already reflects `command`. Used after a commit attempt whose outcome is
+/// unknown: the catalog may have applied the update and still reported a failure, in which case
+/// re-applying the same command on the refreshed metadata would fail with "Column already exists"
+/// or "Not found column" for an ALTER that actually succeeded.
+static bool alterAlreadyApplied(const MetadataGenerator & generator, const AlterCommand & command)
+{
+    switch (command.type)
+    {
+        case AlterCommand::Type::ADD_COLUMN:
+            return generator.isAddColumnApplied(command.column_name, command.data_type);
+        case AlterCommand::Type::DROP_COLUMN:
+            return generator.isDropColumnApplied(command.column_name);
+        case AlterCommand::Type::RENAME_COLUMN:
+            return generator.isRenameColumnApplied(command.column_name, command.rename_to);
+        case AlterCommand::Type::MODIFY_COLUMN:
+            /// `generateModifyColumnMetadata` already reports an unchanged schema as a no-op.
+            return false;
+        default:
+            return false;
+    }
+}
+
 /// Return the highest field id across all fields in an Iceberg schema object.
 static Int32 getHighestFieldId(Poco::JSON::Object::Ptr schema)
 {
@@ -774,6 +796,8 @@ void alter(
 
     size_t i = 0;
     bool succeeded = false;
+    /// Set once we hand a commit to storage or to the catalog, i.e. once its outcome can be unknown.
+    bool commit_attempted = false;
     while (i < MAX_TRANSACTION_RETRIES)
     {
         if (auto elem = context->getProcessListElement(); elem && elem->isKilled())
@@ -845,6 +869,17 @@ void alter(
 
         auto metadata_json_generator = MetadataGenerator(metadata);
 
+        if (commit_attempted && alterAlreadyApplied(metadata_json_generator, params[0]))
+        {
+            LOG_WARNING(
+                log,
+                "A previous ALTER TABLE commit attempt for {} was reported as failed but is present in the "
+                "table metadata, treating the operation as succeeded",
+                storage_id.getNameForLogs());
+            succeeded = true;
+            break;
+        }
+
         switch (params[0].type)
         {
             case AlterCommand::Type::ADD_COLUMN:
@@ -895,18 +930,21 @@ void alter(
         auto hint_path = filename_generator.generateVersionHint();
 
         const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
-        if (!catalog_writes_metadata_file
-            && !writeMetadataFileAndVersionHint(
-                persistent_table_components.path_resolver,
-                metadata_info,
-                json_representation,
-                hint_path,
-                object_storage,
-                context,
-                data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+        if (!catalog_writes_metadata_file)
         {
-            ++i;
-            continue;
+            commit_attempted = true;
+            if (!writeMetadataFileAndVersionHint(
+                    persistent_table_components.path_resolver,
+                    metadata_info,
+                    json_representation,
+                    hint_path,
+                    object_storage,
+                    context,
+                    data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+            {
+                ++i;
+                continue;
+            }
         }
 
         if (catalog)
@@ -916,6 +954,7 @@ void alter(
             const auto new_last_column_id = std::max(
                 metadata->getValue<Int32>(Iceberg::f_last_column_id),
                 getHighestFieldId(new_schema));
+            commit_attempted = true;
             if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, new_schema, previous_schema_id, new_last_column_id, metadata))
             {
                 ++i;

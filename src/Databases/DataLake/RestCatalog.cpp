@@ -71,6 +71,7 @@ namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
     extern const char iceberg_alter_catalog_update_metadata_fail[];
+    extern const char iceberg_alter_catalog_commit_reported_as_failed[];
 }
 
 namespace DataLake
@@ -1517,6 +1518,11 @@ bool RestCatalog::updateSchema(
         }
         throw;
     }
+
+    /// Simulates the Iceberg "commit state unknown" case: the catalog applied the update but the
+    /// client observes a failure, e.g. because a proxy turned the response into a 5xx.
+    fiu_do_on(DB::FailPoints::iceberg_alter_catalog_commit_reported_as_failed, { return false; });
+
     return true;
 }
 

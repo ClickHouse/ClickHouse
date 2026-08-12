@@ -179,12 +179,14 @@ public:
     void checkMutationIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const MutationCommands & commands) override
     {
         lazyInitializeIfNeeded(object_storage, context);
+        assertInitialized();
         current_metadata->checkMutationIsPossible(commands);
     }
 
     void checkAlterIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const AlterCommands & commands) override
     {
         lazyInitializeIfNeeded(object_storage, context);
+        assertInitialized();
         current_metadata->checkAlterIsPossible(commands);
     }
 
@@ -196,6 +198,7 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog) override
     {
         lazyInitializeIfNeeded(object_storage, context);
+        assertInitialized();
         current_metadata->alter(params, context, storage_id, catalog);
     }
 
@@ -350,6 +353,7 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog) override
     {
         lazyInitializeIfNeeded(object_storage, context);
+        assertInitialized();
         return current_metadata->write(
             sample_block,
             table_id,
@@ -385,11 +389,13 @@ public:
     bool optimize(ObjectStoragePtr object_storage, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override
     {
         lazyInitializeIfNeeded(object_storage, context);
+        assertInitialized();
         return current_metadata->optimize(metadata_snapshot, context, format_settings);
     }
 
     void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, FormatParserSharedResourcesPtr parser_shared_resources, ContextPtr local_context) const override
     {
+        assertInitialized();
         current_metadata->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, local_context);
     }
 

@@ -188,4 +188,57 @@ TEST(IcebergMetadataGenerator, ModifyColumnRejectsIndistinguishableType)
     EXPECT_THROW(gen.generateModifyColumnMetadata("x", std::make_shared<DataTypeUInt32>()), DB::Exception);
 }
 
+
+TEST(IcebergMetadataGenerator, AddColumnAppliedDetectsCommittedColumn)
+{
+    auto metadata = makeMetadataWithGap();
+    MetadataGenerator gen(metadata);
+
+    auto type = makeNullable(std::make_shared<DataTypeInt64>());
+    EXPECT_FALSE(gen.isAddColumnApplied("z", type));
+
+    /// Emulate the commit that the catalog applied while reporting a failure.
+    gen.generateAddColumnMetadata("z", type);
+    EXPECT_TRUE(gen.isAddColumnApplied("z", type));
+}
+
+
+TEST(IcebergMetadataGenerator, AddColumnAppliedRejectsTypeMismatch)
+{
+    auto metadata = makeMetadataWithGap();
+    MetadataGenerator gen(metadata);
+
+    /// `y` exists as an optional Iceberg `string`, so the same name with another type is not the
+    /// column this ALTER asked for and must still be applied.
+    EXPECT_TRUE(gen.isAddColumnApplied("y", makeNullable(std::make_shared<DataTypeString>())));
+    EXPECT_FALSE(gen.isAddColumnApplied("y", makeNullable(std::make_shared<DataTypeInt64>())));
+    EXPECT_FALSE(gen.isAddColumnApplied("y", std::make_shared<DataTypeString>()));
+}
+
+
+TEST(IcebergMetadataGenerator, DropColumnAppliedDetectsCommittedDrop)
+{
+    auto metadata = makeMetadataWithGap();
+    MetadataGenerator gen(metadata);
+
+    EXPECT_FALSE(gen.isDropColumnApplied("y"));
+
+    gen.generateDropColumnMetadata("y");
+    EXPECT_TRUE(gen.isDropColumnApplied("y"));
+}
+
+
+TEST(IcebergMetadataGenerator, RenameColumnAppliedDetectsCommittedRename)
+{
+    auto metadata = makeMetadataWithGap();
+    MetadataGenerator gen(metadata);
+
+    EXPECT_FALSE(gen.isRenameColumnApplied("y", "w"));
+
+    gen.generateRenameColumnMetadata("y", "w");
+    EXPECT_TRUE(gen.isRenameColumnApplied("y", "w"));
+    /// A rename to a different target name is not what this ALTER asked for.
+    EXPECT_FALSE(gen.isRenameColumnApplied("y", "v"));
+}
+
 #endif
