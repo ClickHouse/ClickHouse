@@ -6031,31 +6031,34 @@ void MergeTreeData::checkLossyRecompressionIsPossible(const String & column_name
     /// recompression copies the dependents from the source part unchanged, so `m MATERIALIZED
     /// f(x)` would keep the values computed from `x` as it was before the recompression.
     /// Resolve the expressions the same way `MutationsInterpreter` does when it collects the
-    /// affected `MATERIALIZED` columns: over the physical columns plus the `EPHEMERAL` ones
-    /// (a `MATERIALIZED` expression may reference an `EPHEMERAL` column, and the analysis must
-    /// still resolve it).
-    NamesAndTypesList all_columns_with_ephemeral = columns.getAllPhysical();
+    /// affected `MATERIALIZED` columns: over the physical columns plus the `EPHEMERAL` and
+    /// `ALIAS` ones (a `MATERIALIZED` expression may reference an `EPHEMERAL` or an `ALIAS`
+    /// column, and the analysis must still resolve it).
+    NamesAndTypesList all_columns_with_helpers = columns.getAllPhysical();
     for (const auto & ephemeral_column : columns.getEphemeral())
-        all_columns_with_ephemeral.push_back(ephemeral_column);
+        all_columns_with_helpers.push_back(ephemeral_column);
+    for (const auto & alias_column : columns.getAliases())
+        all_columns_with_helpers.push_back(alias_column);
 
     /// Resolve enumerable subcolumns (`arr.size0`, `val.x`, ...) as first-class columns, so the
     /// required-columns list keeps the subcolumn names and the structural-subcolumn exception
     /// above can apply to them. Dynamic subcolumns (`JSON` paths) cannot be enumerated, so
     /// `replaceSubcolumnsToGetSubcolumnFunctionInQuery` below still collapses them to the owning
     /// column, which conservatively counts as reading its values.
-    NamesAndTypesList analysis_columns = all_columns_with_ephemeral;
-    NameSet physical_and_ephemeral_names;
-    for (const auto & column : all_columns_with_ephemeral)
+    NamesAndTypesList analysis_columns = all_columns_with_helpers;
+    NameSet resolvable_column_names;
+    for (const auto & column : all_columns_with_helpers)
     {
-        physical_and_ephemeral_names.insert(column.name);
+        resolvable_column_names.insert(column.name);
         for (const auto & subcolumn_name : column.type->getSubcolumnNames())
             analysis_columns.emplace_back(column.name, subcolumn_name, column.type, column.type->getSubcolumnType(subcolumn_name));
     }
 
-    /// `requiredSourceColumns` of an expression may name an `EPHEMERAL` column rather than the
-    /// stored columns its default expression reads (`m MATERIALIZED e + 1` with `e EPHEMERAL
-    /// x * 2` requires `e`, not `x`), so expand every `EPHEMERAL` dependency through its default
-    /// expression until only stored columns remain.
+    /// `requiredSourceColumns` of an expression may name an `EPHEMERAL` or an `ALIAS` column
+    /// rather than the stored columns its default expression reads (`m MATERIALIZED e + 1` with
+    /// `e EPHEMERAL x * 2` requires `e`, not `x`, and the same with `e ALIAS x * 2`), so expand
+    /// every `EPHEMERAL` and `ALIAS` dependency through its default expression until only stored
+    /// columns remain.
     auto required_source_columns_expanded = [&](const ASTPtr & expression)
     {
         Names required_columns;
@@ -6071,10 +6074,12 @@ void MergeTreeData::checkLossyRecompressionIsPossible(const String & column_name
             {
                 if (!visited_columns.emplace(required_column).second)
                     continue;
-                /// The required name may be an `EPHEMERAL` column or one of its subcolumns.
-                auto owning_column = Nested::tryGetColumnNameInStorage(required_column, physical_and_ephemeral_names);
+                /// The required name may be an `EPHEMERAL` or an `ALIAS` column or one of their subcolumns.
+                auto owning_column = Nested::tryGetColumnNameInStorage(required_column, resolvable_column_names);
                 const auto * required_column_desc = owning_column ? columns.tryGet(*owning_column) : nullptr;
-                if (required_column_desc && required_column_desc->default_desc.kind == ColumnDefaultKind::Ephemeral
+                if (required_column_desc
+                    && (required_column_desc->default_desc.kind == ColumnDefaultKind::Ephemeral
+                        || required_column_desc->default_desc.kind == ColumnDefaultKind::Alias)
                     && required_column_desc->default_desc.expression)
                     expressions_to_analyze.push_back(required_column_desc->default_desc.expression);
                 else
