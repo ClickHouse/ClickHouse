@@ -15,6 +15,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -177,6 +178,8 @@ StorageBuffer::StorageBuffer(
     , bg_pool(getContext()->getBufferFlushSchedulePool())
 {
     StorageInMemoryMetadata storage_metadata;
+    /// Reached when loading already-validated metadata, which stores no column list for this engine.
+    /// A freshly created table infers its structure in `registerStorageBuffer` under the user's context.
     if (columns_.empty())
     {
         auto dest_table = DatabaseCatalog::instance().getTable(destination_id, context_);
@@ -197,7 +200,7 @@ StorageBuffer::StorageBuffer(
             CurrentMetrics::StorageBufferFlushThreads, CurrentMetrics::StorageBufferFlushThreadsActive, CurrentMetrics::StorageBufferFlushThreadsScheduled,
             num_shards, 0, num_shards);
     }
-    flush_handle = bg_pool.createTask(getStorageID(), log->name() + "/Bg", [this]{ backgroundFlush(); });
+    flush_handle = bg_pool->createTask(getStorageID(), log->name() + "/Bg", [this]{ backgroundFlush(); });
 
     LOG_TRACE(log, "Buffer(flush: ({}), min: ({}), max: ({}))", flush_thresholds.toString(), min_thresholds.toString(), max_thresholds.toString());
 }
@@ -539,6 +542,11 @@ void StorageBuffer::read(
     /// TODO: Find a way to support projections for StorageBuffer
     if (processed_stage > QueryProcessingStage::FetchColumns)
     {
+        /// The buffers plan is united with the table plan in the same process, where nothing
+        /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
+        auto buffers_select_query_options = SelectQueryOptions(processed_stage);
+        buffers_select_query_options.is_local_plan_for_distributed_query = true;
+
         if (enable_analyzer)
         {
             auto storage = std::make_shared<StorageValues>(
@@ -548,7 +556,7 @@ void StorageBuffer::read(
                     storage_snapshot->metadata->virtuals);
 
             auto interpreter
-                = InterpreterSelectQueryAnalyzer(query_info.query, local_context, SelectQueryOptions(processed_stage), storage);
+                = InterpreterSelectQueryAnalyzer(query_info.query, local_context, buffers_select_query_options, storage);
             interpreter.addStorageLimits(*query_info.storage_limits);
             buffers_plan = std::move(interpreter).extractQueryPlan();
         }
@@ -556,7 +564,7 @@ void StorageBuffer::read(
         {
             auto interpreter = InterpreterSelectQuery(
                     query_info.query, local_context, std::move(pipe_from_buffers),
-                    SelectQueryOptions(processed_stage));
+                    buffers_select_query_options);
             interpreter.addStorageLimits(*query_info.storage_limits);
             interpreter.buildQueryPlan(buffers_plan);
         }
@@ -1493,9 +1501,22 @@ void registerStorageBuffer(StorageFactory & factory)
             destination_id.table_name = destination_table;
         }
 
+        /// An omitted structure is inferred here, under the user's context: `StorageBuffer` holds only
+        /// a long-lived context and would read the destination's columns with no user at all. Loading
+        /// of already-validated metadata has no user either, so it keeps inferring in the constructor.
+        ColumnsDescription columns = args.columns;
+        if (columns.empty() && !destination_id.empty()
+            && !(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
+        {
+            args.getLocalContext()->checkAccess(AccessType::SHOW_COLUMNS, destination_id);
+            auto destination = DatabaseCatalog::instance().getTable(destination_id, args.getLocalContext());
+            auto destination_metadata = destination->getInMemoryMetadataPtr(args.getLocalContext(), false);
+            columns = destination_metadata->getColumns();
+        }
+
         return std::make_shared<StorageBuffer>(
             args.table_id,
-            args.columns,
+            columns,
             args.constraints,
             args.comment,
             args.getContext(),
