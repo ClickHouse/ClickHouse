@@ -73,6 +73,7 @@ public:
 
     std::string getName() const override;
     const TableJoin & getTableJoin() const override { return *table_join; }
+    bool anyTakeLastRow() const override { return any_take_last_row; }
 
     bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
@@ -104,6 +105,17 @@ public:
     bool hasDelayedBlocks() const override { return true; }
 
     void onBuildPhaseFinish() override;
+
+    /// Forwarded to the join actually chosen in `onBuildPhaseFinish`, so that an in-memory
+    /// `HashJoin` still gets its post-build optimizations (right-table reranging, conversion to a
+    /// fixed hash map, publishing the shared runtime filter).
+    /// After a spill `chosen_join` is a `GraceHashJoin`, which does not override these methods, so
+    /// forwarding keeps the spilled path exactly as it is today: `GraceHashJoin` itself runs the
+    /// post-build phase only when the right table ended up in a single bucket. Multi-bucket spills
+    /// skip it, because a hash table holding one bucket cannot produce a runtime filter valid for
+    /// the whole right table.
+    bool hasPostBuildPhase() const override;
+    void runPostBuildPhase() override;
 
     void setEnableLazyColumnsIndexing(bool value) override;
 

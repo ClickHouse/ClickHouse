@@ -82,6 +82,53 @@ namespace
 
         return std::pair{key, Field(value)};
     }
+
+    /// A TLS credential can be given either as a path to a file (`ssl_ca`) or as its contents
+    /// (`ssl_ca_pem`) - two spellings of one setting. Only the contents form is accepted from a query
+    /// (see `StorageMySQL::getSSLParams`), where it replaces the path inherited from the collection.
+    /// Returns the path key a contents key replaces, if the key is a contents key.
+    std::optional<std::string> tlsCredentialsPathKeyFor(const std::string & key)
+    {
+        static constexpr std::string_view tls_credentials_path_keys[] = {"ssl_ca", "ssl_cert", "ssl_key"};
+
+        for (const auto & path_key : tls_credentials_path_keys)
+        {
+            if (key == std::string(path_key) + "_pem")
+                return std::string(path_key);
+        }
+
+        return std::nullopt;
+    }
+
+    /// Whether an override of `key` at the point of use is permitted by the collection.
+    /// Returns the key that forbids it - which is not always `key` itself - or nullopt when allowed.
+    ///
+    /// A contents form (`ssl_ca_pem`) is not a brand-new key when the collection defines the
+    /// corresponding path (`ssl_ca`): it replaces it, so the permission is taken from the key it
+    /// replaces. Passing the contents is the only way to supply a TLS credential from SQL at all - a
+    /// path is refused there unconditionally - so the permission is the one the operator states
+    /// explicitly with `<ssl_ca overridable="false">` rather than the value of
+    /// `allow_named_collection_override_by_default`. `StorageMySQL::getSSLParams` re-checks the very
+    /// same condition when the replacement happens; without this the two disagree, and the documented
+    /// SQL-safe form is rejected on exactly the installations that need it.
+    std::optional<std::string> findOverrideForbiddingKey(const NamedCollection & collection, const std::string & key, bool default_value)
+    {
+        if (!collection.has(key))
+        {
+            auto path_key = tlsCredentialsPathKeyFor(key);
+            if (path_key && collection.has(*path_key))
+            {
+                /// The locked key is the path, so name it rather than the contents form the query used.
+                if (collection.isOverridable(*path_key, /* default_value= */ true))
+                    return std::nullopt;
+                return path_key;
+            }
+        }
+
+        if (collection.isOverridable(key, default_value))
+            return std::nullopt;
+        return key;
+    }
 }
 
 std::pair<String, Field> getKeyValueFromAST(ASTPtr ast, ContextPtr context)
@@ -159,8 +206,8 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
             // if allow_override_by_default is false we don't allow extra arguments
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed because setting allow_override_by_default is disabled");
         }
-        if (!collection_copy->isOverridable(value_override->first, allow_override_by_default))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", value_override->first);
+        if (auto forbidding_key = findOverrideForbiddingKey(*collection_copy, value_override->first, allow_override_by_default))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", *forbidding_key);
 
         if (const ASTPtr * value = std::get_if<ASTPtr>(&value_override->second))
         {
@@ -200,10 +247,14 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         if (key == "name")
             continue;
 
-        if (collection_copy->isOverridable(key, allow_override_by_default))
-            collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key), {});
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
+        if (auto forbidding_key = findOverrideForbiddingKey(*collection_copy, key, allow_override_by_default))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", *forbidding_key);
+
+        collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key), {});
+        /// The keys of a dictionary created with a DDL query come from the query, so mark them the
+        /// same way as the AST-based overload above: `StorageMySQL::getSSLParams` distinguishes a
+        /// credential supplied at the point of use from one defined in the collection itself.
+        collection_copy->markQueryOverridden(key);
     }
 
     /// Register the dictionary that uses this named collection as a dependency,

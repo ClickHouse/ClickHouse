@@ -1008,19 +1008,29 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::getGroupByID(con
     size_t num_rows = unwrapped.data->size();
 
     Arena temp_arena;
-    auto keys = serializeIDs(*unwrapped.data, nullptr, temp_arena);
 
     VectorWithMemoryTracking<Group> res;
     res.reserve(num_rows);
 
     SharedLockGuard lock{mutex};
 
+    /// Id columns arrive in long runs of equal values (samples are sorted by id), so reuse the previous row's group.
+    Group prev_group = INVALID_GROUP;
     for (size_t i = 0; i != num_rows; ++i)
     {
-        const auto * it = groups_by_id.find(keys[i]);
+        if (i > 0 && prev_group != INVALID_GROUP
+            && unwrapped.data->compareAt(i, i - 1, *unwrapped.data, /* nan_direction_hint = */ 1) == 0)
+        {
+            res.push_back(prev_group);
+            continue;
+        }
+        const char * begin = nullptr;
+        auto key = unwrapped.data->serializeValueIntoArena(i, temp_arena, begin, /* settings = */ nullptr);
+        const auto * it = groups_by_id.find(key);
         if (!it)
             throwUnknownID(*unwrapped.column, i);
-        res.push_back(it->getMapped());
+        prev_group = it->getMapped();
+        res.push_back(prev_group);
     }
 
     return res;
