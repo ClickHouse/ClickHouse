@@ -207,14 +207,34 @@ private:
     size_t remaining;
 };
 
+class QueryRunnerJobCompletion
+{
+public:
+    QueryRunnerJobCompletion(std::shared_ptr<PrefixLatch> pending_, std::shared_ptr<CountDownLatch> batch_)
+        : pending(std::move(pending_)), batch(std::move(batch_)), seq(pending->issue())
+    {
+    }
+
+    ~QueryRunnerJobCompletion()
+    {
+        if (batch)
+            batch->countDown();
+        pending->retire(seq);
+    }
+
+private:
+    const std::shared_ptr<PrefixLatch> pending;
+    const std::shared_ptr<CountDownLatch> batch;
+    const UInt64 seq;
+};
+
 struct QueryRunnerJob
 {
     String query;
     String database;
     SettingsChanges settings_changes;
     std::shared_ptr<const QueryRunnerJobOrigin> origin;
-    std::shared_ptr<CountDownLatch> batch;
-    UInt64 seq = 0;
+    std::shared_ptr<QueryRunnerJobCompletion> completion;
 };
 
 /// Used to cancel the remote queries and unblock the dispatcher's workers on shutdown.
@@ -315,6 +335,7 @@ public:
               num_threads_,
               0,
               num_threads_ + max_queue_size_)
+        , pending(std::make_shared<PrefixLatch>())
     {
         client_info.client_name = String(client_name);
         client_info.setInitialQuery();
@@ -322,30 +343,20 @@ public:
 
     void submit(QueryRunnerJob job)
     {
-        job.seq = pending.issue();
-        const auto batch = job.batch;
-        const UInt64 seq = job.seq;
-        try
-        {
-            if (pool.trySchedule([this, scheduled_job = std::move(job)] { runJob(scheduled_job); }))
-                return;
-        }
-        catch (...)
-        {
-            finishJob(batch, seq);
-            throw;
-        }
+        if (pool.trySchedule([this, scheduled_job = std::move(job)] { runJob(scheduled_job); }))
+            return;
 
         if (shutdown_called)
             LOG_WARNING(log, "The table is shutting down, discarding the query");
         else
             LOG_ERROR(LogFrequencyLimiter(log, 5), "The queue is full (max_queue_size = {}), discarding the query", max_queue_size);
-        finishJob(batch, seq);
     }
+
+    const std::shared_ptr<PrefixLatch> & getPending() const { return pending; }
 
     void waitForAllPending(const QueryStatusPtr & query_status)
     {
-        pending.waitForAllIssued(query_status);
+        pending->waitForAllIssued(query_status);
     }
 
     void shutdown()
@@ -353,18 +364,12 @@ public:
         if (shutdown_called.exchange(true))
             return;
 
+        pool.finish();
         cluster_executors.cancelAll();
         pool.wait();
     }
 
 private:
-    void finishJob(const std::shared_ptr<CountDownLatch> & batch, UInt64 seq)
-    {
-        if (batch)
-            batch->countDown();
-        pending.retire(seq);
-    }
-
     void runJob(const QueryRunnerJob & job)
     {
         setThreadName(ThreadName::QUERY_RUNNER);
@@ -377,8 +382,6 @@ private:
         {
             tryLogCurrentException(log, "Failed to execute a query");
         }
-
-        finishJob(job.batch, job.seq);
     }
 
     void executeJob(const QueryRunnerJob & job)
@@ -624,7 +627,7 @@ private:
 
     std::atomic<bool> shutdown_called = false;
 
-    PrefixLatch pending;
+    const std::shared_ptr<PrefixLatch> pending;
 
     std::mutex pools_mutex;
     std::map<std::pair<UInt64, String>, ConnectionPoolWithFailoverPtr> pools TSA_GUARDED_BY(pools_mutex);
@@ -691,7 +694,7 @@ public:
             }
 
             job.origin = origin;
-            job.batch = batch;
+            job.completion = std::make_shared<QueryRunnerJobCompletion>(dispatcher.getPending(), batch);
 
             dispatcher.submit(std::move(job));
         }
