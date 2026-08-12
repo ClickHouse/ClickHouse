@@ -48,6 +48,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int DEADLOCK_AVOIDED;
 }
 
 namespace FailPoints
@@ -509,8 +510,36 @@ VirtualColumnsDescription StorageSystemPartsBase::createVirtuals()
 
 bool StoragesInfoStreamBase::tryLockTable(StoragesInfo & info)
 {
-    info.table_lock = info.storage->tryLockForShare(query_id, Poco::Timespan(lock_timeout.count() * 1000));
-    // nullptr means table was dropped while acquiring the lock
-    return info.table_lock != nullptr;
+    /// Acquire the lock in short slices, polling the query status between the attempts,
+    /// so that a killed or soft-timed-out query does not sit inside RWLockImpl::getLock
+    /// for the whole lock_acquire_timeout while a concurrent DDL query holds the drop lock.
+    static constexpr std::chrono::milliseconds cancellation_check_period{100};
+
+    std::chrono::milliseconds remaining = lock_timeout;
+    while (true)
+    {
+        const auto attempt_timeout = query_status ? std::min(remaining, cancellation_check_period) : remaining;
+        try
+        {
+            info.table_lock = info.storage->tryLockForShare(query_id, Poco::Timespan(attempt_timeout.count() * 1000));
+            // nullptr means table was dropped while acquiring the lock
+            return info.table_lock != nullptr;
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::DEADLOCK_AVOIDED)
+                throw;
+
+            remaining -= attempt_timeout;
+            if (remaining.count() <= 0)
+                throw;
+
+            /// Throws if the query is cancelled or the time limit is exceeded in the 'throw' overflow mode.
+            /// In the 'break' mode it returns false instead: give up on this table, and the caller
+            /// finishes with the rows collected so far.
+            if (query_status && !query_status->checkTimeLimit())
+                return false;
+        }
+    }
 }
 }
