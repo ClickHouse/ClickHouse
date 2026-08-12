@@ -1576,6 +1576,44 @@ static void finalizeMutatedPart(
         }
     }
 
+    /// A mutation that does not rewrite the whole part only hardlinks the source part's files, so a
+    /// minmax index the source part never materialized on disk would be silently lost. That is the case
+    /// for the `_block_number` / `_block_offset` ranges of a level-0 part: `MinMaxIndex::load` synthesizes
+    /// them from the part name and the row count instead of reading a file. The mutated part is no longer
+    /// eligible for that synthesis (its `mutation` is not zero, and a mutation may drop rows, so the
+    /// offset range is no longer `[0, rows_count - 1]`), and it would read back the whole universe.
+    /// Materialize the index the new part inherits, for the files that were not carried over, repairing the
+    /// ranges a part mutated before this became the behaviour has already lost.
+    /// The index the new part will carry in memory: the repaired one when it was repaired, so that the
+    /// part prunes correctly right away and not only after the next reload of the table.
+    IMergeTreeDataPart::MinMaxIndexPtr new_minmax_index = source_part->getMinMaxIndex();
+
+    if (source_part->storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING && source_part->rows_count)
+    {
+        auto minmax_index = std::make_shared<IMergeTreeDataPart::MinMaxIndex>(*new_minmax_index);
+        if (minmax_index->initialized)
+        {
+            /// The mutated part keeps the block range of the source part's name, so repairing against the
+            /// source part re-derives exactly the ranges the new part's own name would give.
+            minmax_index->repairInheritedBlockColumns(*source_part, metadata_snapshot);
+
+            auto files = minmax_index->store(
+                metadata_snapshot,
+                new_data_part->getDataPartStorage(),
+                new_data_part->checksums,
+                new_data_part->storage.getSettings());
+
+            for (auto & file : files)
+            {
+                file->finalize();
+                if (sync)
+                    file->sync();
+            }
+
+            new_minmax_index = std::move(minmax_index);
+        }
+    }
+
     {
         /// Write file with checksums.
         auto out_checksums = new_data_part->getDataPartStorage().writeFile("checksums.txt", 4096, context->getWriteSettings());
@@ -1622,7 +1660,7 @@ static void finalizeMutatedPart(
 
     new_data_part->rows_count = source_part->rows_count;
     new_data_part->index_granularity = source_part->index_granularity;
-    new_data_part->setMinMaxIndex(source_part->getMinMaxIndex());
+    new_data_part->setMinMaxIndex(std::move(new_minmax_index));
     new_data_part->modification_time = time(nullptr);
 
     if ((*new_data_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])
