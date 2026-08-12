@@ -241,6 +241,9 @@ bool fieldRequiresClickHouseOnlySyntax(const Field & field)
 /// silently dropping rows.
 bool containsUUIDColumn(const ASTPtr & node, const NamesAndTypesList & available_columns)
 {
+    /// The depth of the AST is user-controlled: fail with TOO_DEEP_RECURSION instead of exhausting the stack.
+    checkStackSize();
+
     if (const auto * identifier = node->as<ASTIdentifier>())
     {
         for (const auto & column : available_columns)
