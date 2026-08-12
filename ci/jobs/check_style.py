@@ -240,13 +240,18 @@ FETCHES_SERVER_ROOT_RE = re.compile(
     r"[^\"`|;]{0,100}?\bname\s*=\s*'path'"
 )
 # Wrapper commands that can precede the actual mutation verb without changing what it does,
-# their options and numeric arguments (`sudo -n rm ...`, `timeout 60 rm ...`), and leading
-# variable assignments (`FOO=1 rm ...`). All of these must be skipped over, otherwise the
-# mutation verb is not recognized and the check is trivially bypassed.
+# their options and numeric arguments (`sudo -n rm ...`, `timeout 60 rm ...`), options that
+# consume a following value (`sudo -u nobody rm ...`, `env -u HOME rm ...`,
+# `timeout -s KILL 60 rm ...`), and leading variable assignments (`FOO=1 rm ...`). All of
+# these must be skipped over, otherwise the mutation verb is not recognized and the check is
+# trivially bypassed. An option's value may not start with `-`, and the regex engine
+# backtracks when the value would swallow the mutation verb itself (`sudo -n rm ...`).
 MUTATION_CMD_WRAPPER = (
     r"(?:sudo|command|builtin|exec|env|time|nice|ionice|nohup|stdbuf|timeout|xargs)"
 )
-MUTATION_CMD_WRAPPER_ARG = r"(?:-{1,2}[\w-]+|[0-9]+(?:\.[0-9]+)?[smhd]?)"
+MUTATION_CMD_WRAPPER_ARG = (
+    r"(?:-{1,2}[\w-]+(?:\s+[^-\s;|&<>`][^\s;|&<>`]*)?|[0-9]+(?:\.[0-9]+)?[smhd]?)"
+)
 MUTATION_CMD_PREFIX = (
     r"(?:[A-Za-z_]\w*=[^\s;|&]*\s+"
     rf"|{MUTATION_CMD_WRAPPER}\s+(?:{MUTATION_CMD_WRAPPER_ARG}\s+)*)*"
@@ -288,6 +293,35 @@ SERVER_DATA_MANIPULATION_EXCLUSIONS = {
 }
 
 
+def strip_shell_comment(line):
+    """
+    Cut a shell line at the first `#` that actually starts a comment: unquoted, not
+    backslash-escaped, and at the start of a word. A naive `line.split("#")[0]` would also
+    chop quoted payloads such as `echo '# broken' > "$path/data.bin"`, truncating the line
+    before the redirection and bypassing the check.
+    """
+    quote = None
+    i = 0
+    while i < len(line):
+        c = line[i]
+        if quote == "'":
+            if c == "'":
+                quote = None
+        elif quote == '"':
+            if c == "\\":
+                i += 1
+            elif c == '"':
+                quote = None
+        elif c == "\\":
+            i += 1
+        elif c in "'\"":
+            quote = c
+        elif c == "#" and (i == 0 or line[i - 1] in " \t;|&(){}"):
+            return line[:i]
+        i += 1
+    return line
+
+
 def check_no_server_data_manipulation(files):
     """
     Stateless tests must not modify the server's on-disk data: part directories, detached
@@ -324,7 +358,7 @@ def check_no_server_data_manipulation(files):
             continue
 
         for line_number, line in enumerate(file_content.splitlines(), 1):
-            code = line.split("#")[0]
+            code = strip_shell_comment(line)
             if (
                 FILE_MUTATION_CMD_RE.search(code)
                 or SED_IN_PLACE_RE.search(code)

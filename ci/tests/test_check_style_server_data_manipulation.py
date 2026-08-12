@@ -81,12 +81,34 @@ def test_mutation_behind_wrapper_with_arguments_is_flagged(tmp_path):
     assert _run(tmp_path, FETCH_PART_PATH + 'sudo -n rm -f "$path/data.bin"\n')
 
 
+def test_mutation_behind_wrapper_option_with_value_is_flagged(tmp_path):
+    # Regression case from the review of #114070: a wrapper option that consumes a
+    # following string value stopped the skipped prefix before the mutation verb.
+    assert _run(tmp_path, FETCH_PART_PATH + 'env -u HOME rm -f "$path/data.bin"\n')
+    assert _run(tmp_path, FETCH_PART_PATH + 'sudo -u nobody rm -f "$path/data.bin"\n')
+    assert _run(
+        tmp_path, FETCH_PART_PATH + 'timeout -s KILL 60 rm -f "$path/data.bin"\n'
+    )
+
+
 def test_mutation_behind_nested_wrappers_is_flagged(tmp_path):
     assert _run(tmp_path, FETCH_PART_PATH + 'FOO=1 env time rm -f "$path/data.bin"\n')
 
 
 def test_redirect_into_server_path_is_flagged(tmp_path):
     assert _run(tmp_path, FETCH_PART_PATH + 'echo broken > "$path/data.bin"\n')
+
+
+def test_quoted_hash_payload_is_flagged(tmp_path):
+    # Regression case from the review of #114070: a `#` inside quotes was treated as a
+    # comment, truncating the line before the redirection into the server path.
+    assert _run(tmp_path, FETCH_PART_PATH + "printf '# broken' > \"$path/data.bin\"\n")
+    assert _run(tmp_path, FETCH_PART_PATH + 'echo "# broken" > "$path/data.bin"\n')
+
+
+def test_commented_out_mutation_is_not_flagged(tmp_path):
+    assert not _run(tmp_path, FETCH_PART_PATH + '# rm -f "$path/data.bin"\n')
+    assert not _run(tmp_path, FETCH_PART_PATH + 'true # rm -f "$path/data.bin"\n')
 
 
 def test_mutation_in_case_branch_is_flagged(tmp_path):
