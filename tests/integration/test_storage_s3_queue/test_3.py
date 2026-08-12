@@ -18,6 +18,22 @@ AVAILABLE_MODES = ["unordered", "ordered"]
 AUXILIARY_ZOOKEEPER_NAME = "zookeeper2"
 
 
+def wait_for_keeper_commit(node, where):
+    # The keeper commit (writing the processed pointer and removing the
+    # processing node) runs *after* the inserted rows become visible in the
+    # destination table, so a row count is not enough to know keeper is settled.
+    # The commit is atomic, so an empty `processing` folder means every file
+    # that finished has also had its processed pointer written.
+    query = (
+        f"SELECT processing_nodes_count FROM system.s3_queue_metadata WHERE {where}"
+    )
+    for _ in range(60):
+        if node.query(query).strip() == "0":
+            return
+        time.sleep(1)
+    assert node.query(query).strip() == "0"
+
+
 @pytest.fixture(autouse=True)
 def s3_queue_setup_teardown(started_cluster):
     instance = started_cluster.instances["instance"]
@@ -551,6 +567,7 @@ def test_system_queue_metadata_ordered(started_cluster):
             break
         time.sleep(1)
     assert files_to_generate == int(node.query(f"SELECT count() FROM {dst_table_name}"))
+    wait_for_keeper_commit(node, f"zookeeper_path ilike '%{keeper_path}%'")
 
     # In ordered mode there are no per-file processed nodes, so
     # processed_nodes_count is NULL and the last processed pointer is exposed
@@ -641,6 +658,7 @@ def test_system_queue_metadata_ordered_buckets(started_cluster):
             break
         time.sleep(1)
     assert files_to_generate == int(node.query(f"SELECT count() FROM {dst_table_name}"))
+    wait_for_keeper_commit(node, f"zookeeper_path ilike '%{keeper_path}%'")
 
     # processed_nodes_count is NULL in ordered mode.
     assert (
@@ -729,6 +747,7 @@ def test_system_queue_metadata_ordered_partitioned(started_cluster):
             break
         time.sleep(1)
     assert len(hostnames) == int(node.query(f"SELECT count() FROM {dst_table_name}"))
+    wait_for_keeper_commit(node, f"zookeeper_path ilike '%{keeper_path}%'")
 
     # processed_nodes_count is NULL in ordered mode.
     assert (
@@ -802,7 +821,7 @@ def test_system_queue_metadata_ordered_partitioned_buckets(started_cluster):
         additional_settings={
             "keeper_path": keeper_path,
             # buckets > 1 together with partitioning exercises the combined
-            # `buckets/<n>/processed/<partition>` layout in read_processed_pointers.
+            # `buckets/<n>/processed/<partition>` layout in readProcessedPointers.
             "s3queue_buckets": buckets,
             "s3queue_processing_threads_num": buckets,
         },
@@ -831,6 +850,7 @@ def test_system_queue_metadata_ordered_partitioned_buckets(started_cluster):
             break
         time.sleep(1)
     assert len(hostnames) == int(node.query(f"SELECT count() FROM {dst_table_name}"))
+    wait_for_keeper_commit(node, f"zookeeper_path ilike '%{keeper_path}%'")
 
     # processed_nodes_count is NULL in ordered mode.
     assert (
@@ -947,6 +967,7 @@ def test_system_queue_metadata_ordered_skips_empty_bucket_roots(started_cluster)
             break
         time.sleep(1)
     assert len(hostnames) == int(node.query(f"SELECT count() FROM {dst_table_name}"))
+    wait_for_keeper_commit(node, f"zookeeper_path ilike '%{keeper_path}%'")
 
     pairs = (
         node.query(
@@ -1068,6 +1089,7 @@ def test_system_queue_metadata_auxiliary_keeper(started_cluster):
             break
         time.sleep(1)
     assert files_to_generate == int(node.query(f"SELECT count() FROM {dst_table_name}"))
+    wait_for_keeper_commit(node, f"zookeeper_path ilike '%{keeper_suffix}%'")
 
     # The display column keeps the auxiliary-keeper-prefixed factory key.
     zookeeper_path = node.query(
