@@ -197,6 +197,14 @@ void ColumnIdMapping::removeColumn(const String & column_name)
     detachColumnName(it);
 }
 
+/// Two phases, because `column_ids.json` and the catalog's metadata cannot be written atomically.
+/// Phase 1 adds the new name beside the old one, both pointing at the same id, and persists; the
+/// metadata commit follows; `finishRename` then drops the old name.
+///     phase 1:  { "b":"b", "name":"b" }    metadata still says "b"
+///     phase 2:  { "name":"b" }             metadata says "name"
+/// On restart, reconciliation drops mapping entries metadata does not name, which lands on the right
+/// state from either crash window: before the commit it keeps "b", after it keeps "name". A
+/// single-step rename would lose the id "b" outright if the crash fell between the two writes.
 void ColumnIdMapping::beginRename(const String & old_column_name, const String & new_column_name)
 {
     auto it = name_to_id.find(old_column_name);
@@ -219,12 +227,9 @@ void ColumnIdMapping::beginRename(const String & old_column_name, const String &
             "Cannot rename column '{}' to '{}': the new name collides with an existing column ID",
             old_column_name, new_column_name);
 
+    /// The reverse map stays on the old name, which is what the uncommitted metadata still says;
+    /// `finishRename` moves it once the commit is confirmed.
     name_to_id.emplace(new_column_name, column_id);
-    /// Do NOT update id_to_name here — keep it pointing to
-    /// old_column_name so the reverse map stays consistent with the
-    /// still-uncommitted metadata.  `reconcileColumnIdMappingWithMetadata`
-    /// resolves any ambiguity on restart.  `finishRename` updates the
-    /// reverse map once the metadata commit is confirmed.
 }
 
 void ColumnIdMapping::finishRename(const String & old_column_name)

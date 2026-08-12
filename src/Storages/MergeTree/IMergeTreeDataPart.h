@@ -209,14 +209,9 @@ public:
     /// shares its parent's id). The result is an id-carrying NameAndTypePair.
     std::optional<NameAndTypePair> tryGetColumn(const ColumnId & column_id) const;
 
-    /// Canonical name -> id -> part bridge: resolve @current_name against the operation @snapshot's
-    /// schema (subcolumn-aware) to its stable id, then return this part's slot carrying that id.
-    /// The part keeps its load-time names after a metadata-only RENAME, so a caller holding a current
-    /// column name must go through the id -- never the part's own (possibly stale) name. A legacy /
-    /// unmapped snapshot column carries an empty id, which getColumnId falls back to the name, so the
-    /// lookup degrades to name-based on the part. `nullopt` if the name is not in the snapshot or the
-    /// part has no such slot. @current_name may name a subcolumn, which resolves to the parent's slot
-    /// -- subcolumns have no position entry -- so the returned `type` is the parent's.
+    /// Resolve @current_name against @snapshot's schema to its stable id, then return this part's slot
+    /// carrying that id. `nullopt` if the snapshot lacks the name or the part lacks the slot; a
+    /// subcolumn resolves to its parent's slot, so the returned `type` is then the parent's.
     std::optional<NameAndTypePair> tryGetColumnBySnapshotName(const String & current_name, const StorageMetadataPtr & snapshot) const;
 
     /// Unsafe: resolve by name off the part's OWN columns. The caller must hold a bare part-own name

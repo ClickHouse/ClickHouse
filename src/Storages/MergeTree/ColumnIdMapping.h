@@ -105,35 +105,8 @@ public:
     void addColumn(const String & column_name, const String & column_id);
     void removeColumn(const String & column_name);
 
-    /// Two-phase rename for crash safety.
-    ///
-    /// RENAME COLUMN b TO name must update two persisted artifacts that cannot
-    /// be written atomically: `column_ids.json` (the mapping) and the table
-    /// metadata in the database catalog.  A naive single-step rename that
-    /// changes the mapping key from "b" to "name" in one write would lose the
-    /// column ID "b" if the server crashes before metadata commits — on
-    /// restart, metadata still has column "b", but the mapping no longer has
-    /// an entry for it, and `reconcileColumnIdMappingWithMetadata` would
-    /// remove the dangling "name" entry.
-    ///
-    /// Phase 1 (`beginRename`): add the NEW column name while keeping the OLD
-    /// one — both point to the same column ID.  Persist the mapping.
-    ///   mapping on disk:  { "b":"b", "name":"b" }    (both present)
-    ///   metadata:         column "b"                  (not yet committed)
-    ///
-    /// Then commit the metadata (column "b" becomes "name").
-    ///
-    /// Phase 2 (`finishRename`): remove the OLD column name and persist.
-    ///   mapping on disk:  { "name":"b" }
-    ///   metadata:         column "name"
-    ///
-    /// Crash scenarios (reconciliation removes mapping entries absent from
-    /// metadata):
-    ///  - Crash before metadata commit: metadata has "b", reconciliation
-    ///    keeps "b"->"b" and removes "name"->"b".  Correct original state.
-    ///  - Crash after metadata commit but before phase 2: metadata has "name",
-    ///    reconciliation keeps "name"->"b" and removes "b"->"b".  Correct
-    ///    renamed state.
+    /// Two-phase rename for crash safety: `beginRename` before the metadata commit, `finishRename`
+    /// after it.  The mechanism and its crash windows are at `beginRename`'s definition.
     void beginRename(const String & old_column_name, const String & new_column_name);
     void finishRename(const String & old_column_name);
 
