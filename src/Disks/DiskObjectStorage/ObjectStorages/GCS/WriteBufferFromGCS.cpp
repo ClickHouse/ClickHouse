@@ -3,6 +3,7 @@
 #if USE_GOOGLE_CLOUD
 
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/GCSCommon.h>
+#include <IO/ReadHelpers.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
@@ -12,6 +13,51 @@ namespace gcs = ::google::cloud::storage;
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+/// A conditional write is a compare-and-swap request; performing an unconditional write instead
+/// would silently discard one of two concurrent writers. GCS expresses both halves through
+/// generation preconditions: `IfGenerationMatch(0)` succeeds only if the object does not exist
+/// (If-None-Match: `*`), and `IfGenerationMatch(generation)` only if the live generation matches
+/// (If-Match, since this backend's etag *is* the generation — see `toObjectMetadata`).
+/// A default-constructed option is not set, so the unconditional path stays a single code path.
+gcs::IfGenerationMatch makeWritePrecondition(const WriteSettings & write_settings, const String & bucket, const String & key)
+{
+    const auto & if_none_match = write_settings.object_storage_write_if_none_match;
+    const auto & if_match = write_settings.object_storage_write_if_match;
+
+    if (!if_none_match.empty() && !if_match.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "If-None-Match and If-Match cannot be used together for object '{}' in bucket '{}'", key, bucket);
+
+    if (!if_none_match.empty())
+    {
+        if (if_none_match != "*")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Native GCS supports only `*` for If-None-Match, got `{}`", if_none_match);
+        return gcs::IfGenerationMatch(0);
+    }
+
+    if (!if_match.empty())
+    {
+        UInt64 generation = 0;
+        if (!tryParse(generation, if_match))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Native GCS write of '{}' got If-Match etag '{}' which is not an object generation", key, if_match);
+        return gcs::IfGenerationMatch(generation);
+    }
+
+    return {};
+}
+
+}
 
 WriteBufferFromGCS::WriteBufferFromGCS(
     std::shared_ptr<gcs::Client> client_,
@@ -29,17 +75,19 @@ WriteBufferFromGCS::WriteBufferFromGCS(
     , blob_log(std::move(blob_log_))
     , attributes(std::move(attributes_))
 {
+    auto precondition = makeWritePrecondition(write_settings, bucket, key);
+
     if (attributes && !attributes->empty())
     {
         gcs::ObjectMetadata object_metadata;
         for (const auto & [name, value] : *attributes)
             object_metadata.upsert_metadata(name, value);
         write_stream = std::make_unique<gcs::ObjectWriteStream>(
-            client->WriteObject(bucket, key, gcs::WithObjectMetadata(std::move(object_metadata))));
+            client->WriteObject(bucket, key, gcs::WithObjectMetadata(std::move(object_metadata)), precondition));
     }
     else
     {
-        write_stream = std::make_unique<gcs::ObjectWriteStream>(client->WriteObject(bucket, key));
+        write_stream = std::make_unique<gcs::ObjectWriteStream>(client->WriteObject(bucket, key, precondition));
     }
 }
 
