@@ -27,7 +27,7 @@ private:
 
     /// Propagates the range of a range selector or a subquery up to its parents until we meet a range-vector function
     /// (e.g. avg_over_time) if any, so such function could user a proper window.
-    void propagateRangeToParents(const PQT::Node * node, Decimal64 range);
+    void propagateRangeToParents(const PrometheusQueryTree::Node * node, Decimal64 range);
 
     std::shared_ptr<const PrometheusQueryTree> promql_tree;
     DataTypePtr timestamp_data_type;

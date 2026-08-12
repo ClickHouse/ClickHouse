@@ -347,7 +347,7 @@ CatalogTables ICatalog::getTables(const TableNameFilter & filter) const
             /// (the fixed prefix is a *necessary* prefix of any match), so no
             /// `system.tables` row is dropped; a looser match only costs an extra
             /// table listing.
-            const String fixed_prefix = std::get<0>(extractFixedPrefixFromLikePattern(filter.value, /*requires_perfect_prefix*/ false));
+            const String fixed_prefix = extractFixedPrefixFromLikePattern(filter.value, /*requires_perfect_prefix*/ false).prefix;
 
             /// A leading wildcard (e.g. `%foo%`) yields an empty prefix, so we must list all namespaces and tables.
             /// Calling getTables() is better as its parallel.
