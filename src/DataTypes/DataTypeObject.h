@@ -133,4 +133,8 @@ DataTypePtr mergeJSONSharedDataPathRules(const DataTypePtr & type, const DataTyp
 /// `policy_source_type`. The same nested containers as mergeJSONSharedDataPathRules are traversed.
 DataTypePtr replaceJSONSharedDataPathPolicy(const DataTypePtr & type, const DataTypePtr & policy_source_type);
 
+/// Returns true if some `JSON` node nested in `type` carries the saturated match-everything policy
+/// that rule unions fall back to, forcing all untyped paths of that node into shared data.
+bool hasSaturatedJSONSharedDataPathPolicy(const IDataType & type);
+
 }

@@ -701,7 +701,8 @@ static bool isDeletedMaskUpdated(const MutationCommand & command, const NameSet 
 static DataTypePtr mergeJSONSharedDataPathRulesFromPatchParts(
     DataTypePtr type,
     const String & column_name,
-    const PatchPartsForReader & patch_parts)
+    const PatchPartsForReader & patch_parts,
+    bool & inputs_saturated)
 {
     for (const auto & patch : patch_parts)
     {
@@ -711,8 +712,56 @@ static DataTypePtr mergeJSONSharedDataPathRulesFromPatchParts(
             patch_source_name = patch_conversions->getColumnOldName(patch_source_name);
 
         if (auto patch_column = patch.part->tryGetColumn(patch_source_name))
+        {
+            inputs_saturated = inputs_saturated || hasSaturatedJSONSharedDataPathPolicy(*patch_column->type);
             type = mergeJSONSharedDataPathRules(type, patch_column->type);
+        }
     }
+
+    return type;
+}
+
+/// Keeps the source part's (and any applicable patch part's) policy as durable placement
+/// provenance for `column_name`, resolving a renamed column back to its physical source name.
+/// When `log` is set, warns if the combination newly saturates to the match-everything policy.
+static DataTypePtr computeJSONProvenanceType(
+    DataTypePtr type,
+    const String & column_name,
+    const MergeTreeData::DataPartPtr & source_part,
+    const PatchPartsForReader & patch_parts,
+    const AlterConversionsPtr & alter_conversions,
+    LoggerPtr log)
+{
+    bool inputs_saturated = hasSaturatedJSONSharedDataPathPolicy(*type);
+
+    String source_name = column_name;
+    if (alter_conversions && alter_conversions->isColumnRenamed(source_name))
+        source_name = alter_conversions->getColumnOldName(source_name);
+
+    if (auto source_column = source_part->tryGetColumn(source_name))
+    {
+        inputs_saturated = inputs_saturated || hasSaturatedJSONSharedDataPathPolicy(*source_column->type);
+        type = mergeJSONSharedDataPathRules(type, source_column->type);
+    }
+
+    /// An applicable lightweight-update patch can contain the only physical value for a
+    /// column, and therefore the only policy that placed that value in shared data. Resolve
+    /// the current logical name through the patch part's own pending renames before retaining
+    /// its policy as provenance in the resulting part.
+    type = mergeJSONSharedDataPathRulesFromPatchParts(std::move(type), column_name, patch_parts, inputs_saturated);
+
+    if (log && !inputs_saturated && hasSaturatedJSONSharedDataPathPolicy(*type))
+        LOG_WARNING(
+            log,
+            "Cannot combine SHARED REGEXP rules of column {} of table {} within the limits ({} rules, {} total pattern bytes). "
+            "The part mutated from {} falls back to SHARED REGEXP '(?s:.*)': all untyped JSON paths will be stored in shared "
+            "data. To recompute the placement, rewrite the column with the allow_json_shared_data_paths_repromotion table "
+            "setting enabled",
+            column_name,
+            source_part->storage.getStorageID().getNameForLogs(),
+            JSONPathRegexpMatcher::MAX_RULES,
+            JSONPathRegexpMatcher::MAX_TOTAL_PATTERN_BYTES,
+            source_part->name);
 
     return type;
 }
@@ -720,9 +769,9 @@ static DataTypePtr mergeJSONSharedDataPathRulesFromPatchParts(
 static void applyJSONSharedDataPathPoliciesForMutation(
     NamesAndTypesList & result_columns,
     const NamesAndTypesList & current_storage_columns,
-    const NamesAndTypesList & source_columns,
+    const MergeTreeData::DataPartPtr & source_part,
     const PatchPartsForReader & patch_parts,
-    const NameToNameMap & renamed_columns_to_from,
+    const AlterConversionsPtr & alter_conversions,
     bool allow_repromotion)
 {
     for (auto & result_column : result_columns)
@@ -735,18 +784,8 @@ static void applyJSONSharedDataPathPoliciesForMutation(
         if (allow_repromotion)
             continue;
 
-        /// Keep the source policy as durable placement provenance by default. Resolve a renamed
-        /// result column back to the physical source column before reading its policy.
-        const auto renamed_it = renamed_columns_to_from.find(result_column.name);
-        const auto & source_name = renamed_it == renamed_columns_to_from.end() ? result_column.name : renamed_it->second;
-        if (auto source_column = source_columns.tryGetByName(source_name))
-            result_column.type = mergeJSONSharedDataPathRules(result_column.type, source_column->type);
-
-        /// An applicable lightweight-update patch can contain the only physical value for a
-        /// column, and therefore the only policy that placed that value in shared data. Resolve
-        /// the current logical name through the patch part's own pending renames before retaining
-        /// its policy as provenance in the resulting part.
-        result_column.type = mergeJSONSharedDataPathRulesFromPatchParts(result_column.type, result_column.name, patch_parts);
+        /// MutateTask::prepare() already logs newly saturated provenance for this part; pass no logger.
+        result_column.type = computeJSONProvenanceType(result_column.type, result_column.name, source_part, patch_parts, alter_conversions, /*log=*/ nullptr);
     }
 }
 
@@ -761,6 +800,7 @@ getColumnsForNewDataPart(
     const MutationCommands & commands_for_interpreter,
     const MutationCommands & commands_for_removes,
     const PatchPartsForReader & patch_parts,
+    const AlterConversionsPtr & alter_conversions,
     bool rewrites_all_columns,
     bool allow_json_shared_data_paths_repromotion)
 {
@@ -966,11 +1006,11 @@ getColumnsForNewDataPart(
         applyJSONSharedDataPathPoliciesForMutation(
             result_columns,
             current_storage_columns,
-            source_part->getColumns(),
+            source_part,
             patch_parts,
-            renamed_columns_to_from,
+            alter_conversions,
             allow_json_shared_data_paths_repromotion);
-        return {std::move(result_columns), new_serialization_infos, {}};
+        return {result_columns, new_serialization_infos, {}};
     }
 
     const auto & source_columns = source_part->getColumns();
@@ -1120,9 +1160,9 @@ getColumnsForNewDataPart(
     applyJSONSharedDataPathPoliciesForMutation(
         storage_columns,
         current_storage_columns,
-        source_columns,
+        source_part,
         patch_parts,
-        renamed_columns_to_from,
+        alter_conversions,
         allow_json_shared_data_paths_repromotion);
 
     return {storage_columns, new_serialization_infos, new_columns_substreams};
@@ -3952,16 +3992,8 @@ bool MutateTask::prepare()
         std::optional<ColumnsDescription> mutation_columns;
         for (const auto & storage_column : ctx->metadata_snapshot->getColumns().getAllPhysical())
         {
-            String source_name = storage_column.name;
-            if (alter_conversions->isColumnRenamed(source_name))
-                source_name = alter_conversions->getColumnOldName(source_name);
-
-            DataTypePtr type_with_provenance = storage_column.type;
-            if (auto source_column = ctx->source_part->tryGetColumn(source_name))
-                type_with_provenance = mergeJSONSharedDataPathRules(type_with_provenance, source_column->type);
-
-            type_with_provenance = MutationHelpers::mergeJSONSharedDataPathRulesFromPatchParts(
-                std::move(type_with_provenance), storage_column.name, patch_parts);
+            DataTypePtr type_with_provenance = MutationHelpers::computeJSONProvenanceType(
+                storage_column.type, storage_column.name, ctx->source_part, patch_parts, alter_conversions, ctx->log);
 
             if (!type_with_provenance->equals(*storage_column.type))
             {
@@ -4063,7 +4095,7 @@ bool MutateTask::prepare()
 
     auto [new_columns, new_infos, new_columns_substreams] = MutationHelpers::getColumnsForNewDataPart(
         ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
-        ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames, patch_parts, rewrites_all_columns,
+        ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames, patch_parts, alter_conversions, rewrites_all_columns,
         (*ctx->data->getSettings())[MergeTreeSetting::allow_json_shared_data_paths_repromotion]);
 
     ctx->new_data_part->setColumns(new_columns, new_infos, ctx->metadata_snapshot->getMetadataVersion());

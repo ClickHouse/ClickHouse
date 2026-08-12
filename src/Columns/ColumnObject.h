@@ -12,6 +12,7 @@
 #include <Common/SetWithMemoryTracking.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB
 {
@@ -285,7 +286,6 @@ public:
     bool tryToAddNewDynamicPath(std::string_view path, MutableColumnPtr & column);
     /// Throws an exception if cannot add.
     void addNewDynamicPath(std::string_view path);
-    void addNewDynamicPath(std::string_view path, MutableColumnPtr column);
     bool canAddNewDynamicPath() const { return dynamic_paths.size() < max_dynamic_paths; }
 
     void setDynamicPaths(const VectorWithMemoryTracking<String> & paths);
@@ -422,8 +422,11 @@ private:
     StatisticsPtr statistics;
     JSONPathRegexpMatcherPtr shared_data_path_matcher;
     String shared_data_path_prefix;
+    /// Paths already decided as force-shared, to avoid re-running the matcher regexp on every occurrence.
+    /// Bounded by the number of distinct force-shared paths; cleared on matcher rebind; not copied to clones.
+    UnorderedSetWithMemoryTracking<String, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal> force_shared_data_paths;
 
-    bool shouldForceSharedData(std::string_view path) const;
+    bool shouldForceSharedData(std::string_view path);
     void copySharedDataPathMatcher(IColumn & to) const;
 };
 

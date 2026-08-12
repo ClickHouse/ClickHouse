@@ -1254,6 +1254,30 @@ DataTypePtr replaceJSONSharedDataPathPolicy(const DataTypePtr & type, const Data
     return applyJSONSharedDataPathPolicyImpl(type, policy_source_type, false);
 }
 
+bool hasSaturatedJSONSharedDataPathPolicy(const IDataType & type)
+{
+    if (const auto * object = typeid_cast<const DataTypeObject *>(&type))
+    {
+        if (isJSONSharedDataPathProvenanceTop(object->getSharedDataPathRules()))
+            return true;
+        return std::ranges::any_of(object->getTypedPaths(), [](const auto & entry) { return hasSaturatedJSONSharedDataPathPolicy(*entry.second); });
+    }
+
+    if (const auto * array = typeid_cast<const DataTypeArray *>(&type))
+        return hasSaturatedJSONSharedDataPathPolicy(*array->getNestedType());
+
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+        return hasSaturatedJSONSharedDataPathPolicy(*nullable->getNestedType());
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type))
+        return std::ranges::any_of(tuple->getElements(), [](const auto & element) { return hasSaturatedJSONSharedDataPathPolicy(*element); });
+
+    if (const auto * map = typeid_cast<const DataTypeMap *>(&type))
+        return hasSaturatedJSONSharedDataPathPolicy(*map->getKeyType()) || hasSaturatedJSONSharedDataPathPolicy(*map->getValueType());
+
+    return false;
+}
+
 static DataTypePtr createJSON(const ASTPtr & arguments)
 {
     return createObject(arguments, DataTypeObject::SchemaFormat::JSON);
@@ -1286,7 +1310,7 @@ To declare a column of `JSON` type, you can use the following syntax:
     some.path TypeName,
     SKIP path.to.skip,
     SKIP REGEXP 'paths_regexp',
-    SHARED REGEXP 'paths_regexp'
+    SHARED REGEXP [FULL] 'paths_regexp'
 )
 ```
 Where the parameters in the syntax above are defined as:
@@ -1301,11 +1325,15 @@ Where the parameters in the syntax above are defined as:
 | `SKIP REGEXP 'path_regexp'` | An optional hint with a regular expression that is used to skip paths during JSON parsing. All paths that match this regular expression will never be stored in the JSON column.                                                                                                                                                                                                                                                                                                                             |               |
 | `SHARED REGEXP 'path_regexp'` | An optional hint with a regular expression for paths that must always be stored in [shared data](#shared-data-structure). Matching paths are never promoted to dedicated dynamic-path sub-columns, regardless of `max_dynamic_paths` or how frequently they occur. This is useful for keeping high-cardinality path families from competing for dynamic-path slots. | |
 
-`SHARED REGEXP` rules are evaluated against the complete, root-relative flattened path. For example, the rule `^field1[.]field2[.]` matches `field1.field2.field3`; the value remains at that original path in shared data. Rules use RE2 partial matching by default, like `SKIP REGEXP`. Use `shared_regexp_use_partial_match=0` in the `JSON` type declaration when every rule must match the full path. Typed paths take precedence over `SHARED REGEXP`, while `SKIP` and `SKIP REGEXP` still discard matching data.
+`SHARED REGEXP` rules are evaluated against the complete, root-relative flattened path. For example, the rule `^field1[.]field2[.]` matches `field1.field2.field3`; the value remains at that original path in shared data. Rules use RE2 partial matching by default, like `SKIP REGEXP`. Use `shared_regexp_use_partial_match=0` in the `JSON` type declaration when every rule must match the full path. A single rule can require a full-string match with `SHARED REGEXP FULL 'pattern'`; full-match and partial rules can be mixed in one declaration, and `SHOW CREATE TABLE` prints `FULL` on individual rules when modes are mixed. Typed paths take precedence over `SHARED REGEXP`, while `SKIP` and `SKIP REGEXP` still discard matching data.
 
 Derived JSON sub-object types can display an internal `shared_regexp_path_prefix` parameter. ClickHouse maintains this parameter automatically so root-relative matching remains stable across Native transport and persisted inferred schemas; it should not be set manually.
 
-Changing only the `SHARED REGEXP` policy with `ALTER TABLE ... MODIFY COLUMN` is metadata-only for a top-level `JSON` column and for `JSON` nested inside `Array`, `Nullable`, `Tuple`, or `Map`. This metadata-only change is not currently supported for `JSON` nested inside `Variant`. Removing a rule does not re-promote data already placed in shared data during later merges by default. To let later merges and rewrites reconsider those paths for dynamic-path promotion, explicitly set the MergeTree table setting `allow_json_shared_data_paths_repromotion=1`.
+Changing only the `SHARED REGEXP` policy with `ALTER TABLE ... MODIFY COLUMN` is metadata-only for a top-level `JSON` column and for `JSON` nested inside `Array`, `Nullable`, `Tuple`, or `Map`. For `JSON` nested inside `Variant`, such an `ALTER` is currently rejected with a `CANNOT_CONVERT_TYPE` error rather than being applied. Removing a rule does not re-promote data already placed in shared data during later merges by default. To let later merges and rewrites reconsider those paths for dynamic-path promotion, explicitly set the MergeTree table setting `allow_json_shared_data_paths_repromotion=1`.
+
+Unless `allow_json_shared_data_paths_repromotion` is enabled, each data part records the `SHARED REGEXP` rules under which its data was written, and a merge combines the recorded rules of all source parts. The combined rules apply to every row of the merged part, so paths matching a rule that was already removed from the table definition can still move to shared data during any later merge — including rows inserted after that rule was removed. The rules recorded in a part are visible in the `type` column of the `system.parts_columns` table.
+
+If the rules recorded across the merged parts cannot be combined exactly — more than 256 distinct rules or more than 1 MiB of patterns accumulated over the history of `SHARED REGEXP` alterations, or a combination that fails to compile — the merged part falls back to the single match-everything rule `SHARED REGEXP '(?s:.*)'` that keeps every untyped path in shared data, and a warning is logged. Later merges preserve this fallback. To undo it, set `allow_json_shared_data_paths_repromotion=1` and rewrite the column, for example with `OPTIMIZE TABLE ... FINAL` or `ALTER TABLE ... UPDATE <column> = <column>`.
 
 <WhenToUseJson />
 

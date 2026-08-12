@@ -701,6 +701,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
         for (auto & storage_column : global_ctx->storage_columns)
         {
+            /// Track whether any input already carried the saturated match-everything policy to
+            /// warn only when this merge introduces it.
+            bool provenance_saturated_on_input = hasSaturatedJSONSharedDataPathPolicy(*storage_column.type);
+
             for (size_t part_index = 0; part_index != global_ctx->future_part->parts.size(); ++part_index)
             {
                 const auto & part = global_ctx->future_part->parts[part_index];
@@ -716,7 +720,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 }
 
                 if (auto source_column = part->tryGetColumn(source_name))
+                {
+                    provenance_saturated_on_input = provenance_saturated_on_input || hasSaturatedJSONSharedDataPathPolicy(*source_column->type);
                     storage_column.type = mergeJSONSharedDataPathRules(storage_column.type, source_column->type);
+                }
             }
 
             for (size_t patch_index = 0; patch_index != global_ctx->future_part->patch_parts.size(); ++patch_index)
@@ -727,8 +734,24 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                     source_name = patch_conversions[patch_index]->getColumnOldName(source_name);
 
                 if (auto source_column = patch_part->tryGetColumn(source_name))
+                {
+                    provenance_saturated_on_input = provenance_saturated_on_input || hasSaturatedJSONSharedDataPathPolicy(*source_column->type);
                     storage_column.type = mergeJSONSharedDataPathRules(storage_column.type, source_column->type);
+                }
             }
+
+            if (!provenance_saturated_on_input && hasSaturatedJSONSharedDataPathPolicy(*storage_column.type))
+                LOG_WARNING(
+                    ctx->log,
+                    "Cannot combine SHARED REGEXP rules of column {} of table {} from the source parts within the limits "
+                    "({} rules, {} total pattern bytes). Part {} falls back to SHARED REGEXP '(?s:.*)': all untyped JSON paths "
+                    "will be stored in shared data. To recompute the placement, rewrite the column with the "
+                    "allow_json_shared_data_paths_repromotion table setting enabled",
+                    storage_column.name,
+                    global_ctx->data->getStorageID().getNameForLogs(),
+                    JSONPathRegexpMatcher::MAX_RULES,
+                    JSONPathRegexpMatcher::MAX_TOTAL_PATTERN_BYTES,
+                    global_ctx->future_part->name);
         }
     }
 
@@ -740,7 +763,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     const auto & metadata_columns = global_ctx->metadata_snapshot->getColumns();
     for (const auto & storage_column : global_ctx->storage_columns)
     {
-        if (auto column = metadata_columns.tryGet(storage_column.name); column && !column->type->equals(*storage_column.type))
+        if (const auto * column = metadata_columns.tryGet(storage_column.name); column && !column->type->equals(*storage_column.type))
         {
             if (!merge_metadata)
             {

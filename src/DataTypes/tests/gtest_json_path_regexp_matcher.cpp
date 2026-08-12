@@ -74,7 +74,7 @@ TEST(JSONPathRegexpMatcher, InvalidRulesAreRejected)
 {
     EXPECT_THROW(JSONPathRegexpMatcher::create(std::vector<JSONPathRegexpRule>{{"", MatchMode::Partial}}), Exception);
     EXPECT_THROW(JSONPathRegexpMatcher::create(std::vector<JSONPathRegexpRule>{{"(", MatchMode::Partial}}), Exception);
-    EXPECT_THROW(JSONPathRegexpMatcher::create(std::vector<JSONPathRegexpRule>{{"valid", static_cast<MatchMode>(255)}}), Exception);
+    EXPECT_THROW(JSONPathRegexpMatcher::create(std::vector<JSONPathRegexpRule>{{"valid", static_cast<MatchMode>(255)}}), Exception); /// NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
 }
 
 TEST(JSONPathRegexpMatcher, SizeLimitsAreEnforcedBeforeDeduplication)
