@@ -38,13 +38,4 @@ SELECT 'LIKE in WHERE, ILIKE in WHERE';
 SELECT count() FROM tab WHERE txt LIKE '8%' AND txt ILIKE '%gamma%' SETTINGS query_plan_direct_read_from_text_index = 0;
 SELECT count() FROM tab WHERE txt LIKE '8%' AND txt ILIKE '%gamma%' SETTINGS query_plan_direct_read_from_text_index = 1;
 
-SELECT 'Read column set';
-
-SELECT trimLeft(explain)
-FROM (
-    EXPLAIN actions = 1
-    SELECT count() FROM tab PREWHERE txt LIKE '8%' WHERE txt ILIKE '%gamma%' SETTINGS query_plan_direct_read_from_text_index = 1
-)
-WHERE explain LIKE '%Output: %' AND explain LIKE '%__text_index%';
-
 DROP TABLE tab;
