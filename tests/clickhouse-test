@@ -210,8 +210,7 @@ CGROUP_VERSION = detect_cgroup_version()
 
 BASH = "/bin/bash"
 
-# Appended to output rescued from a timed-out command, so a consumer that saves
-# or previews it cannot present a partial dump as a complete one.
+# Appended to output rescued from a timed-out command: the dump is incomplete.
 TRUNCATED_ON_TIMEOUT_MARKER = "[output truncated: command timed out]"
 
 def shell_get_output(
@@ -246,10 +245,8 @@ def shell_get_output(
         )
         return ""
     except subprocess.TimeoutExpired as e:
-        # TimeoutExpired is not a CalledProcessError subclass, so without this
-        # branch keep_output_on_error does not apply to a timeout and everything
-        # the child had already written is dropped. Output is bytes here even
-        # under text=True, so decode with the same error policy as the call.
+        # A separate branch because TimeoutExpired is not a CalledProcessError
+        # subclass, and its output is bytes even under text=True.
         output = e.output or b""
         if isinstance(output, bytes):
             output = output.decode("utf-8", errors="replace")
@@ -1069,9 +1066,8 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
-# Per-PID lldb budget for a release build, and for any caller that cannot tell
-# which flavor the server is. `thread backtrace all` on a slow build costs far
-# more than this, so LLDB_SLOW_BUILD_TIMEOUT applies where the flavor is known.
+# Per-PID lldb budget: the release value is also the fallback for a caller that
+# cannot tell which flavor the server is.
 LLDB_TIMEOUT = 30
 LLDB_SLOW_BUILD_TIMEOUT = 120
 
@@ -1293,14 +1289,10 @@ def lldb_timeout_for_build(args) -> float:
     symbolize, the same reason `MergeTreeSettingsRandomizer.get_random_settings`
     raises its granularity bounds on a `slow_build`.
 
-    Reads `args.build_flags`, never the module-level RELEASE_NON_SANITIZED /
-    SANITIZED globals: a spawned worker re-imports the module with those back at
-    their defaults, so a globals-based budget would silently pick the release
-    value on exactly the aarch64 checks that set the spawn start method.
-
-    The flags are absent on the startup-failure path, which calls this before
-    `collect_build_flags` runs; keep the release budget there rather than
-    guessing or paying for a binary probe on an abort path.
+    Must read `args.build_flags`, not the module-level RELEASE_NON_SANITIZED /
+    SANITIZED globals, which a spawned worker re-imports at their defaults while
+    `args` is transferred intact.  A caller reached before `collect_build_flags`
+    has no flags at all and keeps the release budget.
     """
     build_flags = getattr(args, "build_flags", None)
     if build_flags is None:
@@ -1369,8 +1361,7 @@ def print_c_stacktraces(
     for index, pid in enumerate(all_pids):
         remaining = deadline - time()
         if remaining <= 0:
-            # Report the shortfall: a silently truncated loop reads as "these
-            # processes had nothing to dump".
+            # Name the skipped pids: silence here reads as "nothing to dump".
             print(
                 f"Ran out of the {total_timeout:.0f}s lldb budget: "
                 f"skipping {len(all_pids) - index} of {len(all_pids)} processes "
@@ -4912,11 +4903,9 @@ def run_tests_array(
                         # stay around either way and can be captured at
                         # end-of-run.
                         print_sql_stacktraces(args)
-                        # This handler runs after the one-shot alarm fired, so
-                        # the alarm can no longer bound it, and what is left of
-                        # the job's outer timeout has to cover stop_tests() too.
-                        # Hence the tighter pair here than at the abort paths,
-                        # where no outer alarm is pending.
+                        # Explicit budget: this runs from the fired one-shot
+                        # alarm, which cannot bound its own handler, and
+                        # stop_tests() below still needs the outer timeout.
                         print_c_stacktraces(
                             args, per_pid_timeout=LLDB_TIMEOUT, total_timeout=60
                         )
