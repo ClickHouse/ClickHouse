@@ -39,8 +39,6 @@ _DOCKERHUB_SECRET = Secret.Config(
     type=Secret.Type.AWS_SSM_PARAMETER,
 )
 
-_GEESEFS_VERSION = "v0.43.5"
-
 # binfmt is run as a --privileged container in the release job, so pin it by
 # digest (not the mutable `latest` tag) to avoid executing a moved/tampered
 # image with elevated privileges on the self-hosted release runner.
@@ -89,14 +87,14 @@ def parse_args() -> argparse.Namespace:
         help="GitHub login to assign the changelog PR to",
     )
     parser.add_argument(
-        "--only-repo",
+        "--skip-repo",
         action="store_true",
-        help="Run only repo updates (skip tag push, branch push, version bump)",
+        help="Skip repo updates (package export/test)",
     )
     parser.add_argument(
-        "--only-docker",
+        "--skip-docker",
         action="store_true",
-        help="Run only docker builds (skip tag push, branch push, version bump)",
+        help="Skip docker image builds",
     )
     parser.add_argument(
         "--dry-run",
@@ -118,10 +116,10 @@ def parse_args() -> argparse.Namespace:
         args.release_type = _wi("type") or None
     if not args.dry_run:
         args.dry_run = _wi("dry-run").lower() == "true"
-    if not args.only_repo:
-        args.only_repo = _wi("only-repo").lower() == "true"
-    if not args.only_docker:
-        args.only_docker = _wi("only-docker").lower() == "true"
+    if not args.skip_repo:
+        args.skip_repo = _wi("skip-repo").lower() == "true"
+    if not args.skip_docker:
+        args.skip_docker = _wi("skip-docker").lower() == "true"
     if args.assignee is None:
         args.assignee = _wi("assignee")
 
@@ -230,9 +228,9 @@ def main():
     # Authenticate to Docker Hub in the setup phase, before any release
     # mutation (tag push, GitHub release, repo export). Pushing docker images
     # is part of the release contract, so a missing/expired registry token must
-    # stop the run before partial publication. Gated on patch && !dry_run so it
-    # also covers only-repo / only-docker recovery runs.
-    if args.release_type == "patch" and not args.dry_run:
+    # stop the run before partial publication. Gated on the docker phase running
+    # this attempt (patch, not dry-run, docker not skipped).
+    if args.release_type == "patch" and not args.dry_run and not args.skip_docker:
 
         def docker_login():
             Shell.check(
@@ -249,56 +247,21 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if args.release_type == "patch" and not args.only_docker:
-        arch = "amd64" if Shell.get_output("uname -m") == "x86_64" else "arm64"
-        geesefs_bin_dir = os.path.expanduser("~/.local/bin")
-        os.makedirs(geesefs_bin_dir, exist_ok=True)
-        if geesefs_bin_dir not in os.environ.get("PATH", ""):
-            os.environ["PATH"] = geesefs_bin_dir + os.pathsep + os.environ.get("PATH", "")
-        step(
-            name="Install geesefs",
-            command=[
-                f"command -v geesefs && geesefs --version 2>&1 | grep -qF {_GEESEFS_VERSION.lstrip('v')} ||"
-                f" (curl -fsSL https://github.com/yandex-cloud/geesefs/releases/download/{_GEESEFS_VERSION}/geesefs-linux-{arch}"
-                f" -o {geesefs_bin_dir}/geesefs && chmod +x {geesefs_bin_dir}/geesefs)",
-                # `apt-get update` before each install: the runner's apt index can
-                # be stale and point at a superseded package version (e.g.
-                # `libarchive-dev 3.6.0-1ubuntu1.7`) that Ubuntu already removed
-                # from the mirror pool, which makes `apt-get install` fail with a
-                # 404. Refreshing the index first resolves to the current version.
-                "command -v createrepo_c || (sudo apt-get update && sudo apt-get install -y createrepo-c) ||:",
-                # reprepro 5.4.4+ is required for the 'Limit' field in distributions config.
-                # Ubuntu Jammy only has 5.3.0, so build from source if needed.
-                "reprepro --version 2>&1 | grep -qE '5\\.[4-9]' || ("
-                "  sudo apt-get update &&"
-                "  sudo apt-get install -y dpkg-dev fakeroot libgpgme-dev libdb-dev libbz2-dev liblzma-dev libarchive-dev shunit2 db-util debhelper &&"
-                "  git clone https://salsa.debian.org/debian/reprepro.git /tmp/reprepro-src &&"
-                "  cd /tmp/reprepro-src &&"
-                "  dpkg-buildpackage -b --no-sign &&"
-                "  sudo dpkg -i ../reprepro_$(dpkg-parsechangelog --show-field Version)_$(dpkg-architecture -q DEB_HOST_ARCH).deb"
-                ") ||:",
-            ]
-            # The installs above are best-effort (`||:`) so a local dev machine
-            # without sudo/apt is not blocked. For a real release the repo tools
-            # must be present before any mutation (tags, GitHub release, repos),
-            # so verify them here and fail closed. Skipped on dry-run (local
-            # convenience).
-            + (
-                []
-                if args.dry_run
-                else [
-                    # Verify the *version*, not just presence: an older
-                    # distro reprepro (5.3.x) may be installed while the 5.4+
-                    # source build failed under the trailing `||:`. reprepro
-                    # 5.4+ is required (the 'Limit' distributions field).
-                    "command -v createrepo_c >/dev/null"
-                    " && reprepro --version 2>&1 | grep -qE '5\\.[4-9]'"
-                    " || { echo 'ERROR: createrepo_c and reprepro 5.4+ must be"
+    if args.release_type == "patch" and not args.skip_repo:
+        # Skipped on dry-run (local convenience).
+        if not args.dry_run:
+            step(
+                # The tools are baked into the release-maker image; fail closed rather than fetch third-party code on a credentialed host.
+                name="Verify release tools",
+                command=[
+                    "geesefs --version"
+                    " && createrepo_c --version"
+                    " && reprepro --version 2>&1 | grep -qE 'reprepro version 5\\.([4-9]|[1-9][0-9])'"
+                    " || { echo 'ERROR: geesefs, createrepo_c and reprepro 5.4+ must be"
                     " installed for a release' >&2; exit 1; }"
-                ]
-            ),
-            workdir=REPO_PATH,
-        )
+                ],
+                workdir=REPO_PATH,
+            )
 
         def _write_secret_file(path: str, content: str) -> None:
             # These hold R2 package-publishing credentials; create them 0600 so
@@ -365,23 +328,23 @@ def main():
     # Prepare decides whether this run creates a new release (push tag, bump
     # version, changelog PR) or only re-publishes artifacts for an existing /
     # out-of-order ref. The creation steps below run only when it does; a
-    # recovery (only-repo/only-docker) or an out-of-order full run skips them
+    # recovery (skip-repo/skip-docker) or an out-of-order full run skips them
     # without erroring and just re-exports repos / rebuilds docker.
     create_new_release = False
     if ok:
         with open(RELEASE_INFO_FILE) as f:
             create_new_release = json.load(f)["create_new_release"]
 
-    # only-repo / only-docker only re-publish artifacts for an already-created
-    # release (repo/Docker recovery). If the ref resolves to a new release, they
-    # would otherwise fall through to the creation steps below (push tag, bump
-    # version, PRs) and produce a partial new release, so reject that misuse and
-    # require the release tag instead.
-    if ok and create_new_release and (args.only_repo or args.only_docker):
+    # skip-repo / skip-docker mark a partial run that only re-publishes artifacts
+    # for an already-created release (repo/Docker recovery). If the ref resolves
+    # to a new release, they would otherwise fall through to the creation steps
+    # below (push tag, bump version, PRs) and produce a partial new release, so
+    # reject that misuse and require the release tag instead.
+    if ok and create_new_release and (args.skip_repo or args.skip_docker):
 
         def _require_recovery_ref():
             raise RuntimeError(
-                "only-repo/only-docker re-publish an existing release and must be "
+                "skip-repo/skip-docker re-publish an existing release and must be "
                 "run against its release tag (recovery); the given ref resolves to "
                 "a new release. Pass the release tag as the ref."
             )
@@ -394,7 +357,7 @@ def main():
     # already merged. This converges a fresh release and a recovery / rerun after
     # a failed create-or-merge through the same path. These PR operations key off
     # the PR's actual state, not the run mode, so they run regardless of
-    # only-repo/only-docker: a cheap recovery run can create a missing release PR
+    # skip-repo/skip-docker: a cheap recovery run can create a missing release PR
     # or enqueue an open-but-unmerged one (e.g. when the original run's enqueue
     # lost the race with a still-pending `CH Inc sync` required check).
     if args.dry_run:
@@ -428,7 +391,7 @@ def main():
     # Fail-fast: verify the release packages exist (this downloads them) before
     # pushing the tag or opening the changelog PR, so a missing-artifacts run
     # aborts without leaving a tag / PR behind.
-    if args.release_type == "patch" and not args.only_docker:
+    if args.release_type == "patch" and not args.skip_repo:
         step(
             name="Download All Release Artifacts",
             command=[
@@ -660,8 +623,8 @@ def main():
 
     if (
         args.release_type == "patch"
-        and not args.only_repo
-        and not args.only_docker
+        and not args.skip_repo
+        and not args.skip_docker
     ):
         # Restore the working tree after the changelog/version-bump steps, which
         # dirty it. A no-op on recovery / out-of-order runs (they skip the
@@ -685,7 +648,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if args.release_type == "patch" and not args.only_docker:
+    if args.release_type == "patch" and not args.skip_repo:
         for name, flag in (
             ("Export TGZ Packages", "--export-tgz"),
             ("Test TGZ Packages", "--test-tgz"),
@@ -703,7 +666,12 @@ def main():
                 workdir=REPO_PATH,
             )
 
-    if ok and args.release_type == "patch" and not args.dry_run:
+    if (
+        ok
+        and args.release_type == "patch"
+        and not args.dry_run
+        and not args.skip_docker
+    ):
         with open(RELEASE_INFO_FILE) as f:
             release_info = json.load(f)
         release_tag = release_info["release_tag"]

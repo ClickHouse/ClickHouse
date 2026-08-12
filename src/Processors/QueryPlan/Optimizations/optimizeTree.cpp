@@ -181,9 +181,9 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
 
 void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void tryMakeDistributedSorting(const Stack & stack, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-void optimizeExchanges(QueryPlan::Node & root);
+void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
@@ -371,7 +371,7 @@ void optimizeTreeSecondPass(
             {
                 tryMakeDistributedJoin(frame_node, nodes, optimization_settings);
                 tryMakeDistributedAggregation(frame_node, nodes, optimization_settings);
-                tryMakeDistributedSorting(frame_node, nodes, optimization_settings);
+                tryMakeDistributedSorting(stack, frame_node, nodes, optimization_settings);
                 tryMakeDistributedRead(frame_node, nodes, optimization_settings);
             }
         });
@@ -544,7 +544,7 @@ void optimizeTreeSecondPass(
         tryRemoveRedundantSorting(&root);
     /// Optimize exchanges
     if (optimization_settings.make_distributed_plan && optimization_settings.distributed_plan_optimize_exchanges)
-        optimizeExchanges(root);
+        optimizeExchanges(root, optimization_settings);
 
     /// Force set-operation branches to expose full columns so they agree after a fragment is serialized
     /// and constness is re-derived per step.
@@ -625,6 +625,13 @@ void optimizeTreeSecondPass(
         while (!stack.empty())
         {
             auto & frame = stack.back();
+
+            /// A lazy branch must stay within one fragment; below a logical exchange it belongs to another one.
+            if (frame.next_child == 0 && dynamic_cast<const LogicalExchangeStep *>(frame.node->step.get()))
+            {
+                stack.pop_back();
+                continue;
+            }
 
             if (frame.next_child == 0 && optimization_settings.optimize_lazy_materialization)
             {

@@ -106,6 +106,8 @@
             {
               "group": "2026",
               "pages": [
+                "clickstack/demo-days/2026/2026-07-31",
+                "clickstack/demo-days/2026/2026-07-24",
                 "clickstack/demo-days/2026/2026-07-17",
                 "clickstack/demo-days/2026/2026-07-10",
                 "clickstack/demo-days/2026/2026-07-02",
@@ -235,6 +237,7 @@
       "pages": [
         "clickstack/integration-partners/index",
         "clickstack/integration-partners/bindplane",
+        "clickstack/integration-partners/bitdrift",
         "clickstack/integration-partners/odigos"
       ]
     },
