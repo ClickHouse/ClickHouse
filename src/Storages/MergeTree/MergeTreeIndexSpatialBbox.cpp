@@ -180,137 +180,188 @@ MergeTreeIndexConditionSpatialBbox::extractQueryBbox(
     const ActionsDAG::Node * node,
     const String & col_name)
 {
-    if (!node)
+    bool has_bbox = false;
+    bool failed = false;
+    QueryBbox bbox;
+
+    collectConjunctiveBbox(node, col_name, has_bbox, bbox, failed);
+
+    if (failed || !has_bbox)
         return std::nullopt;
+    return bbox;
+}
 
-    if (node->type == ActionsDAG::ActionType::FUNCTION)
+void MergeTreeIndexConditionSpatialBbox::collectConjunctiveBbox(
+    const ActionsDAG::Node * node,
+    const String & col_name,
+    bool & has_bbox,
+    QueryBbox & bbox,
+    bool & failed)
+{
+    if (!node || failed)
+        return;
+
+    /// Only recurse into `and` children: an `or` (or any other function) can be true
+    /// via a branch unrelated to the indexed column, so deriving a bbox from just one
+    /// of its arguments would incorrectly prune granules. Recursing through every `and`
+    /// conjunct (rather than stopping at the first one that yields a bbox) matters because
+    /// with `short_circuit_function_evaluation = 'disable'` every conjunct is always
+    /// evaluated: pruning a granule using only an earlier, valid conjunct's bbox would
+    /// silently skip a later conjunct whose invalid constant geometry is expected to raise
+    /// an exception.
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
+        && node->function_base->getName() == "and")
     {
-        if (node->function_base && node->function_base->isSpatialPredicate()
-            && node->children.size() >= 2)
+        for (const auto * child : node->children)
         {
-            /// `pointInPolygon` is variadic: besides a single Polygon/MultiPolygon argument,
-            /// it also accepts a MultiPolygon spread across several constant polygon
-            /// arguments, e.g. pointInPolygon(geom, poly1, poly2, ...), matching a point
-            /// that falls in ANY of them. The query bbox must therefore be the union of
-            /// all constant geometry children, not just the first one, or granules that
-            /// only match a later argument would be incorrectly pruned.
-            const ActionsDAG::Node * input_child = nullptr;
-            bool has_bbox = false;
-            /// Any argument besides the single indexed-column input and constant
-            /// geometry literals (e.g. a second column, or a non-constant
-            /// expression) means the predicate's truth can depend on something
-            /// the bbox can't see — fail closed and disable pruning, matching
-            /// Parquet::tryExtractSpatialFilterFromNode's "exactly one
-            /// non-constant input" guard.
-            bool has_extra_non_constant = false;
-            /// A constant geometry child that fails to convert to a bbox (e.g. an invalid
-            /// polygon) must not just be skipped: `pointInPolygon` is expected to raise an
-            /// exception for it at execute time, so silently unioning the bbox from the
-            /// remaining valid children could still prune granules that don't overlap them,
-            /// hiding the exception. Matches Parquet::tryExtractSpatialFilterFromNode's
-            /// `any_extraction_failed` guard.
-            bool any_extraction_failed = false;
-            QueryBbox bbox;
-            std::vector<Field> const_fields;
-            for (const auto * child : node->children)
-            {
-                if (child->type == ActionsDAG::ActionType::INPUT)
-                {
-                    if (child->result_name == col_name && !input_child)
-                    {
-                        input_child = child;
-                        continue;
-                    }
-                    has_extra_non_constant = true;
-                    continue;
-                }
-
-                if (child->type != ActionsDAG::ActionType::COLUMN || !child->is_deterministic_constant)
-                {
-                    has_extra_non_constant = true;
-                    continue;
-                }
-
-                Field field;
-                if (!tryExtractConstGeoField(child, field))
-                {
-                    any_extraction_failed = true;
-                    continue;
-                }
-                const_fields.push_back(std::move(field));
-            }
-
-            /// A single constant geometry argument is self-contained (shell + holes, or a full
-            /// MultiPolygon, all in one literal) and is already validated as such by
-            /// tryExtractConstGeoBbox/extractBboxFromFieldValue. Two or more constant arguments
-            /// must be assembled and validated together (see tryExtractBboxFromMultiArgConstGeometry),
-            /// matching how FunctionPointInPolygon combines them at execute time -- validating each
-            /// argument in isolation would miss e.g. a hole entirely outside its shell.
-            if (!const_fields.empty())
-            {
-                double xmin = 0;
-                double ymin = 0;
-                double xmax = 0;
-                double ymax = 0;
-                bool ok = false;
-                if (const_fields.size() == 1)
-                {
-                    BboxAccumulator acc;
-                    ok = extractBboxFromFieldValue(const_fields[0], acc) && acc.valid;
-                    if (ok)
-                    {
-                        xmin = acc.xmin;
-                        ymin = acc.ymin;
-                        xmax = acc.xmax;
-                        ymax = acc.ymax;
-                    }
-                }
-                else
-                {
-                    std::vector<const Field *> field_ptrs;
-                    field_ptrs.reserve(const_fields.size());
-                    for (const auto & f : const_fields)
-                        field_ptrs.push_back(&f);
-                    ok = tryExtractBboxFromMultiArgConstGeometry(field_ptrs, xmin, ymin, xmax, ymax);
-                }
-
-                if (!ok)
-                {
-                    any_extraction_failed = true;
-                }
-                else if (!has_bbox)
-                {
-                    bbox = {xmin, ymin, xmax, ymax};
-                    has_bbox = true;
-                }
-                else
-                {
-                    bbox.xmin = std::min(bbox.xmin, xmin);
-                    bbox.ymin = std::min(bbox.ymin, ymin);
-                    bbox.xmax = std::max(bbox.xmax, xmax);
-                    bbox.ymax = std::max(bbox.ymax, ymax);
-                }
-            }
-
-            if (input_child && has_bbox && !has_extra_non_constant && !any_extraction_failed)
-                return bbox;
+            collectConjunctiveBbox(child, col_name, has_bbox, bbox, failed);
+            if (failed)
+                return;
         }
-
-        /// Only recurse into `and` children: an `or` (or any other function) can be true
-        /// via a branch unrelated to the indexed column, so deriving a bbox from just one
-        /// of its arguments would incorrectly prune granules.
-        if (node->function_base && node->function_base->getName() == "and")
-        {
-            for (const auto * child : node->children)
-            {
-                auto result = extractQueryBbox(child, col_name);
-                if (result)
-                    return result;
-            }
-        }
+        return;
     }
 
-    return std::nullopt;
+    QueryBbox node_bbox;
+    switch (extractNodeBbox(node, col_name, node_bbox))
+    {
+        case NodeBboxStatus::Failed:
+            failed = true;
+            return;
+        case NodeBboxStatus::Ok:
+            if (!has_bbox)
+            {
+                bbox = node_bbox;
+                has_bbox = true;
+            }
+            else
+            {
+                /// All conjuncts must hold simultaneously, so intersect (not union) the
+                /// bboxes: a granule that fails any single conjunct's bbox already fails
+                /// the whole `and`.
+                bbox.xmin = std::max(bbox.xmin, node_bbox.xmin);
+                bbox.ymin = std::max(bbox.ymin, node_bbox.ymin);
+                bbox.xmax = std::min(bbox.xmax, node_bbox.xmax);
+                bbox.ymax = std::min(bbox.ymax, node_bbox.ymax);
+            }
+            return;
+        case NodeBboxStatus::NoInfo:
+        case NodeBboxStatus::NotApplicable:
+            return;
+    }
+}
+
+MergeTreeIndexConditionSpatialBbox::NodeBboxStatus
+MergeTreeIndexConditionSpatialBbox::extractNodeBbox(
+    const ActionsDAG::Node * node,
+    const String & col_name,
+    QueryBbox & out_bbox)
+{
+    if (!node || node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base
+        || !node->function_base->isSpatialPredicate() || node->children.size() < 2)
+        return NodeBboxStatus::NotApplicable;
+
+    /// `pointInPolygon` is variadic: besides a single Polygon/MultiPolygon argument,
+    /// it also accepts a MultiPolygon spread across several constant polygon
+    /// arguments, e.g. pointInPolygon(geom, poly1, poly2, ...), matching a point
+    /// that falls in ANY of them.
+    const ActionsDAG::Node * input_child = nullptr;
+    /// Any argument besides the single indexed-column input and constant
+    /// geometry literals (e.g. a second column, or a non-constant
+    /// expression) means the predicate's truth can depend on something
+    /// the bbox can't see — matching Parquet::tryExtractSpatialFilterFromNode's
+    /// "exactly one non-constant input" guard.
+    bool has_extra_non_constant = false;
+    bool any_extraction_failed = false;
+    std::vector<Field> const_fields;
+    for (const auto * child : node->children)
+    {
+        if (child->type == ActionsDAG::ActionType::INPUT)
+        {
+            if (child->result_name == col_name && !input_child)
+            {
+                input_child = child;
+                continue;
+            }
+            has_extra_non_constant = true;
+            continue;
+        }
+
+        if (child->type != ActionsDAG::ActionType::COLUMN || !child->is_deterministic_constant)
+        {
+            has_extra_non_constant = true;
+            continue;
+        }
+
+        Field field;
+        if (!tryExtractConstGeoField(child, field))
+        {
+            any_extraction_failed = true;
+            continue;
+        }
+        const_fields.push_back(std::move(field));
+    }
+
+    /// This predicate doesn't reference the indexed column at all (e.g. a spatial predicate
+    /// on a different geometry column entirely) -- it carries no pruning information here,
+    /// but it also isn't a reason to fail the whole conjunction closed.
+    if (!input_child)
+        return NodeBboxStatus::NotApplicable;
+
+    if (has_extra_non_constant)
+        return NodeBboxStatus::NoInfo;
+
+    if (const_fields.empty())
+        return any_extraction_failed ? NodeBboxStatus::Failed : NodeBboxStatus::NoInfo;
+
+    /// The multi-constant-argument assembly below (shell + holes, or MultiPolygon components)
+    /// mirrors FunctionPointInPolygon::executeImpl's `is_const_multi_polygon` combination and
+    /// is only valid for `pointInPolygon` itself. Any other `isSpatialPredicate()` function
+    /// (e.g. a WASM UDF opted in via `is_spatial_predicate = 1`) with more than one constant
+    /// geometry argument could combine them under entirely different semantics -- e.g.
+    /// matching if the point is in ANY of several independent polygons -- so assuming
+    /// pointInPolygon's shell/hole assembly for it would produce a bogus bbox. Fall back to
+    /// "no info" rather than guessing.
+    if (const_fields.size() > 1 && node->function_base->getName() != "pointInPolygon")
+        return NodeBboxStatus::NoInfo;
+
+    /// A single constant geometry argument is self-contained (shell + holes, or a full
+    /// MultiPolygon, all in one literal) and is already validated as such by
+    /// extractBboxFromFieldValue. Two or more constant arguments (only reachable for
+    /// `pointInPolygon` past the check above) must be assembled and validated together
+    /// (see tryExtractBboxFromMultiArgConstGeometry), matching how FunctionPointInPolygon
+    /// combines them at execute time -- validating each argument in isolation would miss
+    /// e.g. a hole entirely outside its shell.
+    double xmin = 0;
+    double ymin = 0;
+    double xmax = 0;
+    double ymax = 0;
+    bool ok = false;
+    if (const_fields.size() == 1)
+    {
+        BboxAccumulator acc;
+        ok = extractBboxFromFieldValue(const_fields[0], acc) && acc.valid;
+        if (ok)
+        {
+            xmin = acc.xmin;
+            ymin = acc.ymin;
+            xmax = acc.xmax;
+            ymax = acc.ymax;
+        }
+    }
+    else
+    {
+        std::vector<const Field *> field_ptrs;
+        field_ptrs.reserve(const_fields.size());
+        for (const auto & f : const_fields)
+            field_ptrs.push_back(&f);
+        ok = tryExtractBboxFromMultiArgConstGeometry(field_ptrs, xmin, ymin, xmax, ymax);
+    }
+
+    if (!ok)
+        return NodeBboxStatus::Failed;
+
+    out_bbox = {xmin, ymin, xmax, ymax};
+    return NodeBboxStatus::Ok;
 }
 
 bool MergeTreeIndexConditionSpatialBbox::mayBeTrueOnGranule(

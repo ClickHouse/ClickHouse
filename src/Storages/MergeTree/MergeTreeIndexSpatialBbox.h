@@ -74,6 +74,43 @@ private:
         const ActionsDAG::Node * node,
         const String & col_name);
 
+    /// Outcome of trying to derive a bbox from a single (non-`and`) predicate node.
+    enum class NodeBboxStatus
+    {
+        /// The node isn't a spatial predicate on `col_name` at all (e.g. unrelated function,
+        /// or a spatial predicate on a different column) -- carries no pruning information and
+        /// cannot force a surrounding conjunction to fail closed.
+        NotApplicable,
+        /// The node is a spatial predicate on `col_name`, but no safe bbox could be derived
+        /// from it (e.g. an extra non-constant argument) -- and there's no reason to think
+        /// evaluating it would throw, so a surrounding conjunction may still prune using other
+        /// conjuncts' bboxes.
+        NoInfo,
+        /// The node is a spatial predicate on `col_name` whose constant geometry argument(s)
+        /// failed to validate (e.g. an invalid polygon) -- evaluating it is expected to raise
+        /// an exception, so pruning based on any other conjunct's bbox could silently skip
+        /// that exception.
+        Failed,
+        /// A bbox was successfully derived.
+        Ok,
+    };
+
+    /// Walk `node`, recursing only through `and` children, and intersect the bboxes of every
+    /// same-column spatial predicate conjunct found (all must hold simultaneously). Sets
+    /// `failed` if any conjunct is `NodeBboxStatus::Failed`.
+    void collectConjunctiveBbox(
+        const ActionsDAG::Node * node,
+        const String & col_name,
+        bool & has_bbox,
+        QueryBbox & bbox,
+        bool & failed);
+
+    /// Derive a bbox from a single spatial-predicate node (not itself an `and`).
+    NodeBboxStatus extractNodeBbox(
+        const ActionsDAG::Node * node,
+        const String & col_name,
+        QueryBbox & out_bbox);
+
     String column_name;
     std::optional<QueryBbox> query_bbox;
 };
