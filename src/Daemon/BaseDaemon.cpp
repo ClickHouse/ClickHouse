@@ -71,6 +71,7 @@ namespace DB
     {
         extern const int SYSTEM_ERROR;
         extern const int LOGICAL_ERROR;
+        extern const int NOT_IMPLEMENTED;
     }
 }
 
@@ -478,7 +479,11 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     static KillingErrorHandler killing_error_handler;
     Poco::ErrorHandler::set(&killing_error_handler);
 
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+    /// Without signals nothing ever writes to the signal pipe, so there is nothing to listen
+    /// for - and the blocking read of that pipe is all the listener thread does.
     signal_listener = std::make_unique<SignalListener>(this, getLogger("BaseDaemon"), [this](int, bool) { onTerminateRequestSignal(); });
+#endif
 
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     build_id = SymbolIndex::instance().getBuildIDHex();
@@ -496,6 +501,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
 void BaseDaemon::startSignalListener()
 {
+#if defined(OS_HAS_SIGNAL_HANDLERS)
     /// The signal listener thread only drains the signal pipe; it must never run a signal handler itself.
     /// Poco already blocks `SIGQUIT`, `SIGTERM` and `SIGPIPE` in every thread it starts, but not the rest
     /// of the asynchronously delivered handled signals. Block them here, so that the thread inherits the
@@ -506,10 +512,12 @@ void BaseDaemon::startSignalListener()
     /// see `remapExecutable` in `Server::main`, which unmaps the code of the handlers themselves.
     BlockSignalsScope block_signals(asynchronousHandledSignals());
     signal_listener_thread.start(*signal_listener);
+#endif
 }
 
 void BaseDaemon::stopSignalListener()
 {
+#if defined(OS_HAS_SIGNAL_HANDLERS)
     /// The thread exits only when told to, so `isRunning` going false means it was already stopped and joined
     /// (or never started); a second join would hang on the already-consumed completion event.
     if (!signal_listener_thread.isRunning())
@@ -517,6 +525,7 @@ void BaseDaemon::stopSignalListener()
 
     writeSignalIDtoSignalPipe(SignalListener::StopThread);
     signal_listener_thread.join();
+#endif
 }
 
 void BaseDaemon::logRevision() const
@@ -568,8 +577,16 @@ void BaseDaemon::onTerminateRequestSignal()
 
 void BaseDaemon::waitForTerminationRequest()
 {
+#if defined(OS_HAS_SIGNAL_HANDLERS)
     /// NOTE: as we already process signals via pipe, we don't have to block them with sigprocmask in threads
     signal_listener->waitForTerminationRequest();
+#else
+    /// There is no listener without signals, and nothing could deliver a termination request to it
+    /// anyway: waiting here would block forever. Daemon-style entry points are not supported on
+    /// such a platform, so say so instead of hanging or dereferencing a null listener.
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED, "Waiting for a termination request requires POSIX signals, which this platform does not have");
+#endif
 }
 
 
