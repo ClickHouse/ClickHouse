@@ -4,6 +4,9 @@
 #include <Common/assert_cast.h>
 #include <Core/Joins.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesNumber.h>
+
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -125,11 +128,29 @@ ExpressionSide getExpressionSide(
 
 using JoinConditionParts = std::vector<ActionsDAG>;
 
+/// `and` implicitly converts its arguments to booleans, so a conjunct that is left alone after the other
+/// conjuncts have been moved into the JOIN has to be converted the same way. A cast to the type of the
+/// original predicate does not do it: it maps values like 256 to `false`.
+/// Same approach as `toBoolIfNeeded` in JoinStepLogical.cpp.
+const ActionsDAG::Node & convertToBoolIfNeeded(ActionsDAG & filter_dag, const ActionsDAG::Node * predicate_expr)
+{
+    if (WhichDataType(removeLowCardinalityAndNullable(predicate_expr->result_type)).isUInt8())
+        return *predicate_expr;
+
+    auto uint8_type = std::make_shared<DataTypeUInt8>();
+    const auto & true_node = filter_dag.addColumn(uint8_type->createColumnConst(0, 1), uint8_type, "true");
+
+    FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+    return filter_dag.addFunction(func_builder_and, {predicate_expr, &true_node}, {});
+}
+
 const ActionsDAG::Node & createResultPredicate(
     ActionsDAG & filter_dag,
     const ActionsDAG::Node * original_predicate,
     const ActionsDAG::Node * new_predicate_expr)
 {
+    new_predicate_expr = &convertToBoolIfNeeded(filter_dag, new_predicate_expr);
+
     if (!original_predicate->result_type->equals(*new_predicate_expr->result_type))
     {
         return filter_dag.addCast(*new_predicate_expr, original_predicate->result_type, original_predicate->result_name, nullptr);
