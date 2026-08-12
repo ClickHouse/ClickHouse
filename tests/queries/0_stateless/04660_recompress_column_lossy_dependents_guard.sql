@@ -11,6 +11,10 @@ SET allow_experimental_codecs = 1;
 SET mutations_sync = 2;
 SET check_query_single_value_result = 1;
 
+-- Full part storage is pinned (`min_bytes_for_full_part_storage` may be randomized in tests): a packed
+-- part does not support in-place recompression, so `RECOMPRESS COLUMN key` would rewrite the part as a
+-- whole, re-serialize `val` with its lossy codec, and be rejected because the projection reads `val`.
+-- The in-place path this test exercises requires a wide part with full storage.
 DROP TABLE IF EXISTS t_recompress_lossy_projection;
 CREATE TABLE t_recompress_lossy_projection
 (
@@ -19,7 +23,8 @@ CREATE TABLE t_recompress_lossy_projection
     PROJECTION p (SELECT key, val ORDER BY val)
 )
 ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0;
 
 INSERT INTO t_recompress_lossy_projection SELECT number, sin(number / 1000.) * 100 FROM numbers(1000);
 
