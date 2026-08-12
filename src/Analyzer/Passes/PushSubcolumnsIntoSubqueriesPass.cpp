@@ -51,6 +51,14 @@ enum class ClauseKind
     Interpolate,
 };
 
+/// A pending addition of the subcolumn projection to one leaf query of the pushdown target.
+/// The projection node is null when an identical projection column already exists and is reused.
+struct LeafApplication
+{
+    QueryNode * leaf = nullptr;
+    QueryTreeNodePtr new_projection_node;
+};
+
 struct PushdownGroup
 {
     /// The subquery exporting the column, an element of the JOIN TREE of the query.
@@ -69,8 +77,13 @@ struct PushdownGroup
     /// Number of `getSubcolumn` occurrences matched into this group.
     size_t occurrences = 0;
 
-    /// Set when the group is applied.
+    /// Set when the group is validated: the subcolumn can actually be pushed into the target
+    /// (validateGroup succeeded), and the collected per-leaf additions are ready to commit.
+    bool applicable = false;
+    std::vector<LeafApplication> applications;
     String new_column_name;
+
+    /// Set when the group is applied.
     bool applied = false;
 };
 
@@ -326,6 +339,8 @@ void collectCandidates(const QueryTreeNodePtr & node, ClauseKind clause_kind, bo
                             .subcolumn_type = function_node->getResultType(),
                             .viable = true,
                             .occurrences = 0,
+                            .applicable = false,
+                            .applications = {},
                             .new_column_name = {},
                             .applied = false});
                         group = &state.groups.back();
@@ -498,14 +513,6 @@ std::optional<size_t> findUnambiguousColumnIndex(const NamesAndTypes & exported_
     return result;
 }
 
-/// A pending addition of the subcolumn projection to one leaf query of the pushdown target.
-/// The projection node is null when an identical projection column already exists and is reused.
-struct LeafApplication
-{
-    QueryNode * leaf = nullptr;
-    QueryTreeNodePtr new_projection_node;
-};
-
 /// Validate that the subcolumn projection can be added to the leaf queries of the target at
 /// the given projection column index, recursing into every branch of a union, without mutating
 /// anything: a union must add the subcolumn to all of its branches or to none of them. When
@@ -569,9 +576,14 @@ bool collectLeafApplications(
     return true;
 }
 
-/// Add the subcolumn to the target projection (for a union, to the projection of every leaf
-/// query of every branch, at the same position). Returns false if the pushdown is not possible.
-bool applyGroup(PushdownGroup & group)
+/// Validate that the subcolumn can be pushed into the target projection without mutating
+/// anything, filling the group's new column name and pending per-leaf additions. The whole-column
+/// guard in processQuery must know which sibling groups will actually be replaced before any
+/// group is applied, so validation is a separate dry run: a group that is viable in the outer
+/// query can still fail here (e.g. a shadowing storage column in the subquery, or a branch-local
+/// collision in a UNION ALL leaf), and counting it as replaced would let a pushable sibling
+/// through while the whole parent column stays alive.
+bool validateGroup(PushdownGroup & group)
 {
     auto exported_columns = getExportedColumns(group.source);
 
@@ -607,16 +619,23 @@ bool applyGroup(PushdownGroup & group)
     if (!collectLeafApplications(group, group.source, *column_index, reuse_index, new_column_name, applications))
         return false;
 
-    for (auto & application : applications)
+    group.applications = std::move(applications);
+    group.new_column_name = std::move(new_column_name);
+    return true;
+}
+
+/// Add the subcolumn to the target projection (for a union, to the projection of every leaf
+/// query of every branch, at the same position), as validated by validateGroup.
+void commitGroup(PushdownGroup & group)
+{
+    for (auto & application : group.applications)
     {
         if (application.new_projection_node)
             application.leaf->addProjectionColumn(
-                std::move(application.new_projection_node), NameAndTypePair{new_column_name, group.subcolumn_type});
+                std::move(application.new_projection_node), NameAndTypePair{group.new_column_name, group.subcolumn_type});
     }
 
-    group.new_column_name = std::move(new_column_name);
     group.applied = true;
-    return true;
 }
 
 /// Identity of the underlying column of a trivial projection expression: the source
@@ -795,16 +814,37 @@ void processQuery(
         collectCandidates(clause_node, clause_kind, false /*inside_aggregate_function*/, state);
     });
 
+    /// Dry-run validation: find the groups whose subcolumn can actually be pushed into the
+    /// target, without mutating anything yet. The whole-column guard below must count only
+    /// these groups as replaced.
+    std::unordered_map<const IQueryTreeNode *, std::unordered_set<String>> claimed_new_names;
+    for (auto & group : state.groups)
+    {
+        if (!group.viable || !validateGroup(group))
+            continue;
+
+        /// Two distinct groups can produce the same new column name on the same target
+        /// (e.g. column `t` with path `a.b` and column `t.a` with path `b`). Both were
+        /// validated against the projection before any additions, so committing both would
+        /// export duplicate names; only the first one adding a new projection column is kept.
+        bool adds_new_column = std::ranges::any_of(
+            group.applications, [](const auto & application) { return application.new_projection_node != nullptr; });
+        if (adds_new_column && !claimed_new_names[group.source.get()].emplace(group.new_column_name).second)
+            continue;
+
+        group.applicable = true;
+    }
+
     bool any_group_applied = false;
     std::unordered_map<const IQueryTreeNode *, std::vector<std::unordered_map<String, CanonicalColumn>>> canonical_exports_by_source;
 
     for (auto & group : state.groups)
     {
-        if (!group.viable)
+        if (!group.applicable)
             continue;
 
         /// If the whole column is still referenced outside of the replaced occurrences (either
-        /// directly or by an occurrence of a non-viable group), the parent projection column
+        /// directly or by an occurrence of a non-viable or non-applicable group), the parent projection column
         /// stays, and the subquery would read both the whole column and the subcolumn from the
         /// table. Extracting the subcolumn from the already read column is cheaper, so the
         /// group is not applied. The reference counts are keyed by exported names, but the same
@@ -843,17 +883,21 @@ void processQuery(
                 references += count;
         }
 
+        /// Only the occurrences of groups that are known to be applicable count as replaced:
+        /// a viable but non-applicable sibling keeps its `getSubcolumn` occurrences, and they
+        /// keep the whole parent column alive.
         size_t replaced_references = 0;
         for (const auto & other_group : state.groups)
         {
-            if (other_group.viable && other_group.source == group.source && is_same_underlying_column(other_group.column_name))
+            if (other_group.applicable && other_group.source == group.source && is_same_underlying_column(other_group.column_name))
                 replaced_references += other_group.occurrences;
         }
 
         if (references > replaced_references)
             continue;
 
-        any_group_applied |= applyGroup(group);
+        commitGroup(group);
+        any_group_applied = true;
     }
 
     if (any_group_applied)
