@@ -137,4 +137,7 @@ DataTypePtr replaceJSONSharedDataPathPolicy(const DataTypePtr & type, const Data
 /// that rule unions fall back to, forcing all untyped paths of that node into shared data.
 bool hasSaturatedJSONSharedDataPathPolicy(const IDataType & type);
 
+/// Returns true if `type` is, or wraps (via Array/Nullable/Tuple/Map), a `JSON` (DataTypeObject) node.
+bool containsJSONObjectType(const IDataType & type);
+
 }

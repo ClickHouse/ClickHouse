@@ -657,7 +657,10 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
             {
                 /// Re-promotion: re-decide shared-vs-dynamic placement from the data like merges do
                 /// (see ColumnGathererStream::initialize) instead of preserving the incoming placement.
-                if (settings.reconsider_json_shared_data_placement)
+                /// Restricted to columns that actually contain a JSON node: `reconsider_json_shared_data_placement`
+                /// is a writer-wide flag, but `has_dynamic_structure` is also true for plain `Dynamic`/`Map`
+                /// columns unrelated to any JSON policy, whose structure must not be re-decided here.
+                if (settings.reconsider_json_shared_data_placement && containsJSONObjectType(*sample_type))
                 {
                     setSharedDataPathMatcherRecursively(*mutable_column, sample_type);
                     mutable_column->chooseDynamicStructureForMerge({column.column}, /*max_dynamic_subcolumns=*/ std::nullopt);
