@@ -1969,7 +1969,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 if (query_plan.isInitialized() && !select_query_options.build_logical_plan
                     && parallelReplicasEnabledForStorage(storage, query_context, settings))
                 {
-                    if (query_context->canUseParallelReplicasCustomKey() && query_context->getClientInfo().distributed_depth == 0)
+                    /// The custom-key read below replaces the plan with a remote read at the fixed stage
+                    /// `WithMergeableStateAfterAggregationAndLimit`, so it is only allowed when the requested
+                    /// stage is not below that: a plan built up to a partial stage - e.g. a `Merge` table plans
+                    /// its children up to `WithMergeableState` when one of the underlying tables is read through
+                    /// an interpreter - must not receive finalized (post-aggregation, post-LIMIT) data instead
+                    /// of the partial aggregation states its consumer expects.
+                    const bool to_stage_supports_custom_key = select_query_options.to_stage == QueryProcessingStage::Complete
+                        || select_query_options.to_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+
+                    if (query_context->canUseParallelReplicasCustomKey() && to_stage_supports_custom_key
+                        && query_context->getClientInfo().distributed_depth == 0)
                     {
                         if (auto cluster = query_context->getClusterForParallelReplicas();
                             query_context->canUseParallelReplicasCustomKeyForCluster(*cluster))

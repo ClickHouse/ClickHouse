@@ -103,6 +103,9 @@ public:
     };
     using AtomMap = std::unordered_map<std::string, void(*)(RPNElement & out, const String & column, const Field & value)>;
     static const AtomMap atom_map;
+
+    UInt64 getTotalRows() const { return total_rows; }
+
 private:
     friend class ColumnStatistics;
 

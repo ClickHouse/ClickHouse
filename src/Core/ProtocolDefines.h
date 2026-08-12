@@ -78,11 +78,17 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// unknown name (`QueryPlanSerializationSettings::readBinary` throws), so towards such a peer the name is
 /// written only when omitting it could corrupt two-level distributed merging - failing closed on an explicit
 /// error instead of silently mixing the two hash methods, whose two-level bucket numbering differs.
-/// Version 6 adds the distributed-plan payloads: the bounded-sort limit on `SortingStep`, the
+/// Version 6 lets a `PARTITION BY` window's feeding sort be shipped under `make_distributed_plan`:
+/// `SortingStep` now serializes a non-empty `partition_by_description` plus a trailing flags byte that
+/// carries a `FinishSorting` conversion, and `GatherSendStep` now serializes `maintain_sort_description`
+/// and merge-sorts its input streams instead of an unordered `resize(1)` when set. Both steps check the
+/// version in their serialize and deserialize, since an older peer would misparse the stream, not merely
+/// reject an unknown step name as with version 4.
+/// Version 7 adds the distributed-plan payloads: the bounded-sort limit on `SortingStep`, the
 /// narrowing flag on `UnionStep`, the bucketed-read task parameter name on `ReadFromMergeTree`,
 /// and the in-order aggregation payload on `AggregatingStep`. They carry no per-field version
 /// gates; an older binary rejects the whole stream by its leading version.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 6;
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 7;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a

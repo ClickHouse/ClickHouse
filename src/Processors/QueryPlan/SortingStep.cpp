@@ -703,32 +703,54 @@ void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, U
     sort_settings.updatePlanSettings(settings);
 }
 
+static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING = 6;
+static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SORT_LIMIT = 7;
+
 void SortingStep::serialize(Serialization & ctx) const
 {
-    if (type != Type::Full)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of SortingStep is implemented only for Full sorting");
+    if (type != Type::Full && type != Type::FinishSorting)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Serialization of SortingStep is implemented only for Full and FinishSorting");
 
-    /// Do not serialize type here; Later we can use different names if needed.\
-
-    /// The limit matters for a distributed partial top-N: the sort runs on a worker below a
-    /// sorted gather, and losing the limit would turn it into an unbounded full sort there.
-    /// The field exists only since query plan serialization version 2; a version-1 stream has no
-    /// place for it, so throw for a bounded sort rather than send bytes the other side would
-    /// misread (the deserialize side checks the same).
-    if (ctx.version >= 2)
-        writeVarUInt(limit, ctx.out);
-    else if (limit != 0)
+    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "A bounded sort in a distributed plan requires query plan serialization version >= 2; "
-            "all nodes must run the same version");
+            "Serialization of SortingStep requires query plan serialization version >= {}; "
+            "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING);
 
     serializeSortDescription(result_description, ctx.out);
 
-    /// Later
-    if (!partition_by_description.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of partitioned sorting is not implemented for SortingStep");
+    serializeSortDescription(partition_by_description, ctx.out);
 
-    writeVarUInt(partition_by_description.size(), ctx.out);
+    /// `FinishSorting` arises in distributed plans when `applyOrder` sees the step's input is already
+    /// sorted by a prefix (e.g. the output of a pushed-down window); read-in-order distributed reads
+    /// are rejected earlier, so the buffering/virtual-row flags can only come from that conversion.
+    /// The bits are meaningful only for `FinishSorting` (the reader applies them only when the finish
+    /// bit is set), so a plain full sort always writes a plain 0.
+    UInt8 flags = 0;
+    if (type == Type::FinishSorting)
+    {
+        flags |= 1;
+        if (use_buffering)
+            flags |= 2;
+        if (apply_virtual_row_conversions)
+            flags |= 4;
+    }
+    writeIntBinary(flags, ctx.out);
+
+    if (type == Type::FinishSorting)
+        serializeSortDescription(prefix_description, ctx.out);
+
+    /// The limit matters for a distributed partial top-N: the sort runs on a worker below a
+    /// sorted gather, and losing the limit would turn it into an unbounded full sort there.
+    /// The field exists only since query plan serialization version 7; an older stream has no
+    /// place for it, so throw for a bounded sort rather than send bytes the other side would
+    /// misread (the deserialize side checks the same).
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SORT_LIMIT)
+        writeVarUInt(limit, ctx.out);
+    else if (limit != 0)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "A bounded sort in a distributed plan requires query plan serialization version >= {}; "
+            "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SORT_LIMIT);
 }
 
 QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
@@ -738,22 +760,44 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
 
     SortingStep::Settings sort_settings(ctx.settings);
 
-    /// A version-1 stream has no limit field (see serialize).
-    UInt64 limit = 0;
-    if (ctx.version >= 2)
-        readVarUInt(limit, ctx.in);
+    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Deserialization of SortingStep requires query plan serialization version >= {}; "
+            "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING);
 
     SortDescription result_description;
     deserializeSortDescription(result_description, ctx.in);
 
-    UInt64 partition_desc_size = 0;
-    readVarUInt(partition_desc_size, ctx.in);
+    SortDescription partition_by_description;
+    deserializeSortDescription(partition_by_description, ctx.in);
 
-    if (partition_desc_size)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialization of partitioned sorting is not implemented for SortingStep");
+    UInt8 flags = 0;
+    readIntBinary(flags, ctx.in);
+    bool finish_sorting = flags & 1;
+    bool use_buffering = flags & 2;
+    bool apply_virtual_row_conversions = flags & 4;
 
-    return std::make_unique<SortingStep>(
-        ctx.input_headers.front(), std::move(result_description), limit, std::move(sort_settings));
+    SortDescription prefix_description;
+    if (finish_sorting)
+        deserializeSortDescription(prefix_description, ctx.in);
+
+    /// A stream older than version 7 has no limit field (see serialize).
+    UInt64 limit = 0;
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SORT_LIMIT)
+        readVarUInt(limit, ctx.in);
+
+    std::unique_ptr<SortingStep> step;
+    if (partition_by_description.empty())
+        step = std::make_unique<SortingStep>(
+            ctx.input_headers.front(), std::move(result_description), limit, std::move(sort_settings));
+    else
+        step = std::make_unique<SortingStep>(
+            ctx.input_headers.front(), std::move(result_description), std::move(partition_by_description), limit, sort_settings);
+
+    if (finish_sorting)
+        step->convertToFinishSorting(std::move(prefix_description), use_buffering, apply_virtual_row_conversions);
+
+    return step;
 }
 
 QueryPlanStepPtr SortingStep::clone() const
