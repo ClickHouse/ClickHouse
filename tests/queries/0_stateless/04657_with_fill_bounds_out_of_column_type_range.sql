@@ -88,8 +88,10 @@ SELECT * FROM (SELECT toDateTime64('9998-06-01 00:00:00', 0, 'Etc/GMT+12') AS t 
 SELECT count() FROM (SELECT toDateTime64('9998-12-31 23:59:59', 0, 'Etc/GMT+12') AS t ORDER BY t ASC WITH FILL TO 253402343999 STEP INTERVAL 1 YEAR);
 -- The exclusive TO bound at exactly the calendar boundary is reachable and terminates. Only acceptance and
 -- termination are asserted: an anchor beyond the DateLUT table takes the out-of-range calendar path, whose
--- clamped values are a pre-existing data-dependent artifact (see the pull request description).
-SELECT count() > 0 FROM (SELECT toDate32('9995-06-01') AS d ORDER BY d ASC WITH FILL TO 2932896 STEP INTERVAL 1 YEAR);
+-- clamped values are a pre-existing data-dependent artifact (see the pull request description). The anchor
+-- steps exactly onto the boundary; an anchor whose sequence would step over it instead stagnates there
+-- forever, which is the data-dependent shape that stays unfixed without a FROM.
+SELECT count() > 0 FROM (SELECT toDate32('9995-12-31') AS d ORDER BY d ASC WITH FILL TO 2932896 STEP INTERVAL 1 YEAR);
 -- In-range INTERVAL fills over Date32 and DateTime64 are unchanged.
 SELECT count(), min(d), max(d) FROM (SELECT toDate32('2026-01-01') AS d ORDER BY d ASC WITH FILL FROM toDate32('2020-01-01') TO toDate32('2027-01-01') STEP INTERVAL 1 YEAR);
 SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('2020-01-03 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime64('2020-01-01 00:00:00', 0, 'UTC') TO toDateTime64('2020-01-05 00:00:00', 0, 'UTC') STEP INTERVAL 1 DAY);
