@@ -39,8 +39,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_STRING_SIZE;
-#else
-    extern const int SUPPORT_IS_DISABLED;
 #endif
 }
 
@@ -870,19 +868,19 @@ struct IcuTextBinding
 }
 #endif
 
+#if USE_ICU
 String IcuTokenizer::getDescription() const
 {
     return fmt::format("icu({})", quoteString(locale));
 }
 
 bool IcuTokenizer::nextInString(
-    [[maybe_unused]] const char * data,
-    [[maybe_unused]] size_t length,
-    [[maybe_unused]] size_t & __restrict pos,
-    [[maybe_unused]] size_t & __restrict token_start,
-    [[maybe_unused]] size_t & __restrict token_length) const
+    const char * data,
+    size_t length,
+    size_t & __restrict pos,
+    size_t & __restrict token_start,
+    size_t & __restrict token_length) const
 {
-#if USE_ICU
     /// ICU break iteration exposes only 32-bit offsets, so a value past INT32_MAX would silently
     /// stop tokenizing at 2 GiB. Reject it explicitly instead of returning truncated results.
     if (length > static_cast<size_t>(std::numeric_limits<int32_t>::max()))
@@ -929,11 +927,6 @@ bool IcuTokenizer::nextInString(
 
     pos = length;
     return false;
-#else
-    throw Exception(
-        ErrorCodes::SUPPORT_IS_DISABLED,
-        "The 'icu' tokenizer requires ClickHouse to be built with ICU support");
-#endif
 }
 
 bool IcuTokenizer::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t & /*pos*/, String & /*token*/) const
@@ -952,6 +945,7 @@ void IcuTokenizer::substringToTokens(
 {
     wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
 }
+#endif
 
 }
 
