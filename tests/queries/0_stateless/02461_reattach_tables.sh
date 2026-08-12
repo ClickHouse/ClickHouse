@@ -856,3 +856,38 @@ fi
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_implicit_dst"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_implicit_src"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${IMPLICIT_USER}"
+
+# Tables of a `Remote` database are read-through proxies of another server's tables: resolving one
+# (`isTableExist`, `tryGetTable`) issues remote metadata RPCs under the caller's credentials and
+# enforces `SHOW COLUMNS` on the underlying table (see `DatabaseRemote::fetchTableStructure`). The
+# hook must reject the database (it does not support detaching tables) before probing any table of
+# it: `EXISTS TABLE` requires only `SHOW TABLES` on the proxy database, so for a user without any
+# grant on the underlying table the hook's eligibility probe would otherwise fail the query with
+# `ACCESS_DENIED` (the query itself answers `0` — the table stays hidden).
+REMOTE_DB="db_reattach_remote_${CLICKHOUSE_DATABASE}"
+REMOTE_USER="user_reattach_remote_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${REMOTE_DB}"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${REMOTE_USER}"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_remote_under"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_remote_under (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${REMOTE_DB} ENGINE = Remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', '${CLICKHOUSE_DATABASE}', 'default', '')"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${REMOTE_USER} IDENTIFIED WITH no_password"
+${CLICKHOUSE_CLIENT} -q "GRANT SHOW TABLES ON ${REMOTE_DB}.* TO ${REMOTE_USER}"
+
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${REMOTE_USER}" \
+    --reattach_tables_before_query_execution=1 \
+    --query "EXISTS TABLE ${REMOTE_DB}.t_reattach_remote_under" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -ne 0 ]; then
+    echo "FAIL (client error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "ACCESS_DENIED"; then
+    echo "FAIL (the hook probed the underlying table on behalf of the query)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE"; then
+    echo "FAIL (a Remote database table was detached)"
+else
+    echo "OK"
+fi
+
+${CLICKHOUSE_CLIENT} -q "DROP USER ${REMOTE_USER}"
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${REMOTE_DB}"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_remote_under"

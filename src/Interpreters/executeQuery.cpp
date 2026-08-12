@@ -1586,6 +1586,16 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
     if (create.isTemporary())
         return static_cast<bool>(context->tryResolveStorageID(StorageID("", create.getTable()), Context::ResolveExternal));
 
+    /// Probing the destination must itself be side-effect free: in databases that do not support
+    /// detaching tables even `isTableExist` can act on behalf of the query — e.g.
+    /// `DatabaseRemote::isTableExist` reaches out to the remote server under the caller's credentials
+    /// and propagates transport/authentication failures. Whether such a statement stops before its
+    /// sources cannot be predicted here, so conservatively report that it does — erring toward
+    /// suppressing randomization for a succeeding statement rather than probing on its behalf.
+    if (const auto database = DatabaseCatalog::instance().tryGetDatabase(destination_database);
+        database && !database->supportsDetachingTables())
+        return true;
+
     /// A taken destination name makes the statement throw `TABLE_ALREADY_EXISTS` (or, with
     /// `IF NOT EXISTS`, a pure no-op) before the populating `SELECT` runs — see the `is_plain_create`
     /// branch of `InterpreterCreateQuery::doCreateTableAsSelectViaTemporaryTable` and the existence check
@@ -1975,9 +1985,24 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
     /// disable the hook; the reattach loop below skips them individually. Like the access preflight, this
     /// is a best-effort, point-in-time check: a table dropped concurrently after it is not caught here,
     /// and the loop below re-resolves each table before detaching it.
+    ///
+    /// The probe itself must be side-effect free, so databases that do not support detaching tables
+    /// are never probed: in such databases even `isTableExist` can act on behalf of the query — e.g.
+    /// `DatabaseRemote::isTableExist` reaches out to the remote server under the caller's credentials
+    /// and propagates transport/authentication failures — while the reattach loop below skips their
+    /// tables anyway. When such a reference is required, its existence cannot be verified here, so
+    /// skip the hook for the whole query — erring toward skipping randomization, never toward
+    /// producing side effects for a query that may be about to fail on the unverified reference.
     for (const auto & table : data.tables)
-        if (table.existence_required && !DatabaseCatalog::instance().isTableExist(table.id, context))
+    {
+        if (!table.existence_required)
+            continue;
+        if (const auto database = DatabaseCatalog::instance().tryGetDatabase(table.id.getDatabaseName());
+            database && !database->supportsDetachingTables())
             return;
+        if (!DatabaseCatalog::instance().isTableExist(table.id, context))
+            return;
+    }
 
     /// Access preflight — keep access-rejected queries side-effect free. The outer query's own access
     /// checks run only later, when its interpreter is constructed, so without this check a user who may
@@ -2142,17 +2167,30 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             }
         }
 
-        /// `DETACH TABLE` requires `DROP TABLE`, and the internal `ATTACH TABLE` below goes through the same
-        /// authorization path as `CREATE`/`ATTACH` (see `InterpreterCreateQuery`): besides `CREATE TABLE` it
-        /// also checks the `TABLE ENGINE` grant for the table's engine when
-        /// `access_control_improvements.table_engines_require_grant` is enabled. Mirror all of these
+        /// The internal `DETACH TABLE` and `ATTACH TABLE` below authorize against the actual object kind:
+        /// `InterpreterDropQuery` requires `DROP TABLE` for a plain table but `DROP VIEW`/`DROP DICTIONARY`
+        /// for a view/dictionary, and the `ATTACH` path in `InterpreterCreateQuery` correspondingly requires
+        /// `CREATE TABLE`, `CREATE VIEW` or `CREATE DICTIONARY`. For a plain table the `ATTACH` additionally
+        /// checks the `TABLE ENGINE` grant for the table's engine when
+        /// `access_control_improvements.table_engines_require_grant` is enabled; views and dictionaries have
+        /// no engine of their own, so the engine grant does not apply to them. Mirror all of these
         /// requirements here; otherwise the hook could `DETACH` a table and then fail to `ATTACH` it back
         /// (e.g. with `ACCESS_DENIED` on the engine grant), leaving the table detached and failing later
         /// statements with `UNKNOWN_TABLE`. Skip the table if the user lacks any of them.
+        /// (No view or dictionary kind currently reports `storesDataOnDisk`, so the kind-specific branches
+        /// are defensive; the check above already keeps such objects out of the reattach loop.)
         /// `isGranted(TABLE_ENGINE, ...)` already accounts for the `table_engines_require_grant` setting.
-        if (!access->isGranted(AccessType::DROP_TABLE, table_id.getDatabaseName(), table_id.getTableName())
-            || !access->isGranted(AccessType::CREATE_TABLE, table_id.getDatabaseName(), table_id.getTableName())
-            || !access->isGranted(AccessType::TABLE_ENGINE, table->getName()))
+        const AccessType drop_access = table->isView() ? AccessType::DROP_VIEW
+            : table->isDictionary() ? AccessType::DROP_DICTIONARY
+            : AccessType::DROP_TABLE;
+        const AccessType create_access = table->isView() ? AccessType::CREATE_VIEW
+            : table->isDictionary() ? AccessType::CREATE_DICTIONARY
+            : AccessType::CREATE_TABLE;
+        if (!access->isGranted(drop_access, table_id.getDatabaseName(), table_id.getTableName())
+            || !access->isGranted(create_access, table_id.getDatabaseName(), table_id.getTableName()))
+            continue;
+        if (!table->isView() && !table->isDictionary()
+            && !access->isGranted(AccessType::TABLE_ENGINE, table->getName()))
             continue;
 
         table.reset();
