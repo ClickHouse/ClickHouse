@@ -184,7 +184,7 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedSorting(const Stack & stack, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-void optimizeExchanges(QueryPlan::Node & root);
+void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
@@ -548,7 +548,7 @@ void optimizeTreeSecondPass(
         tryRemoveRedundantSorting(&root);
     /// Optimize exchanges
     if (optimization_settings.make_distributed_plan && optimization_settings.distributed_plan_optimize_exchanges)
-        optimizeExchanges(root);
+        optimizeExchanges(root, optimization_settings);
 
     /// Force set-operation branches to expose full columns so they agree after a fragment is serialized
     /// and constness is re-derived per step.
