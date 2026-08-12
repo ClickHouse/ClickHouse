@@ -410,17 +410,25 @@ class ReleaseInfo:
                 )
             recover = True
         else:
-            # Creating (not recovering): refuse an empty patch release, where the
-            # only commit since the previous release is the automated version
-            # bump (tweak == 1). The recovery branches above are exempt.
-            if release_type == "patch" and self._is_empty_patch_release(
-                version.patch, version.tweak
-            ):
-                raise RuntimeError(
-                    f"Refusing to create an empty patch release [{release_tag}] "
-                    f"from [{commit_ref}]: version [{version.string}] has tweak 1, "
-                    f"so the only commit since the previous release is the "
-                    f"automated version bump — there is nothing to release."
+            # Creating (not recovering). The recovery branches above are exempt.
+            if release_type == "patch":
+                # tweak == 1: the only commit since the previous release is the automated bump — nothing to release.
+                if self._is_empty_patch_release(version.patch, version.tweak):
+                    raise RuntimeError(
+                        f"Refusing to create an empty patch release [{release_tag}] "
+                        f"from [{commit_ref}]: version [{version.string}] has tweak 1, "
+                        f"so the only commit since the previous release is the "
+                        f"automated version bump — there is nothing to release."
+                    )
+                # A tag already on this X.Y.P line means the post-release bump was lost; refuse rather than re-release the line.
+                line_tags = Shell.get_output(
+                    f"git tag --list 'v{version.major}.{version.minor}.{version.patch}.*'"
+                )
+                assert not line_tags, (
+                    f"refusing to create [{release_tag}]: line "
+                    f"{version.major}.{version.minor}.{version.patch} was already "
+                    f"released as [{line_tags.split()[0]}]; the post-release version "
+                    f"bump was lost — bump the branch before releasing"
                 )
             recover = False
         self.is_recovery = recover

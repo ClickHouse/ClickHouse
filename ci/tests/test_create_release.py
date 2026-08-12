@@ -1263,3 +1263,89 @@ def test_enqueue_release_pr_open_enqueues(monkeypatch):
     )
     assert ri._enqueue_release_pr("https://x/pull/111", "ChangeLog", False) is True
     assert enq["pr"] == 111
+
+
+def test_prepare_refuses_rereleasing_an_already_released_line(tmp_path):
+    """A create run whose X.Y.P line was already released must fail closed.
+
+    If the post-release bump is ever lost, the branch stays on the released line,
+    so dispatching its tip recomputes the same ``26.6.2`` line with a higher
+    tweak. A ``v26.6.2.*`` tag already exists, so ``prepare`` must refuse rather
+    than silently re-release the line (the stuck-branch regression that produced
+    ``26.6.2.81`` / ``26.6.2.158`` / ``26.6.2.160``).
+    """
+    pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args):
+        subprocess.run(
+            ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+        )
+
+    git("init", "-q", "-b", "26.6")
+    git("config", "user.email", "robot@clickhouse.com")
+    git("config", "user.name", "robot-clickhouse")
+    git("config", "commit.gpgsign", "false")
+    git("config", "tag.gpgsign", "false")
+
+    (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "Anchor commit")
+    anchor = _head_sha(repo)
+
+    (repo / "cmake").mkdir()
+    (repo / _VERSIONS_FILE).write_text(
+        _VERSIONS_CONTENT.replace("0" * 40, anchor), encoding="utf-8"
+    )
+    (repo / "src" / "Storages" / "System").mkdir(parents=True)
+    (repo / _CONTRIBUTORS_FILE).write_text(
+        "const char * auto_contributors[] {\n    nullptr};\n", encoding="utf-8"
+    )
+    git("add", "-A")
+    git("commit", "-q", "-m", "Base release commit (line 26.6.2)")
+    # The 26.6.2 line was already released, but the branch was never bumped, so
+    # the tip still describes 26.6.2 with a growing tweak.
+    git("commit", "-q", "--allow-empty", "-m", "commit after release")
+    git("tag", "-a", "v26.6.2.2-stable", "-m", "Release v26.6.2.2-stable")
+    git("commit", "-q", "--allow-empty", "-m", "more work")
+    git("commit", "-q", "--allow-empty", "-m", "more work")
+    git("remote", "add", "origin", str(repo))
+    git("fetch", "-q", "origin")
+
+    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
+    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
+    script = str(repo / "ci" / "jobs" / "scripts" / "create_release.py")
+
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    gh_stub = bindir / "gh"
+    gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
+    gh_stub.chmod(0o755)
+    env = {
+        **os.environ,
+        "PYTHONPATH": REPO_ROOT,
+        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
+        "GITHUB_REPOSITORY": "test/clickhouse",
+    }
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            script,
+            "--prepare-release-info",
+            "--ref",
+            "26.6",
+            "--release-type",
+            "patch",
+            "--dry-run",
+        ],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0, "re-releasing an already-released line should fail"
+    out = result.stdout + result.stderr
+    assert "was already released" in out and "bump was lost" in out
