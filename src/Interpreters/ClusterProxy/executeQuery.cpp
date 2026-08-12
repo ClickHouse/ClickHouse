@@ -1032,6 +1032,19 @@ void executeQueryWithParallelReplicas(
         /// fails closed instead of letting a replica that may be lagging behind on it serve it.
         if (uses_merge_tables && exclude_stale_replicas)
             new_context->setSetting("parallel_replicas_freshness_checked_tables", serializeFreshnessCheckedTables(tables_to_check));
+
+        /// Tell every node which child sets the `Merge` tables of the query resolved to when this
+        /// initiator planned it, so a node whose `Merge` table resolves to a different set fails
+        /// closed instead of reading different tables than the other nodes (see the serialization
+        /// helper for the full reasoning). A non-designated (sibling) `Merge` leaf is read plainly
+        /// and in full by every participating node - the initiator's local plan included - so this
+        /// must be set before the local plan is built below, and whether reading is coordinated
+        /// around a pinned snapshot replica (which makes the coordinated read, and only it,
+        /// tolerant to a diverging set) is decided here as well and travels with the sets.
+        if (uses_merge_tables)
+            new_context->setSetting(
+                "parallel_replicas_merge_child_tables",
+                serializeMergeChildTableSets(merge_child_table_sets, canUseLocalPlanForParallelReplicas(new_context)));
     }
 
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
@@ -1125,17 +1138,6 @@ void executeQueryWithParallelReplicas(
     {
         chassert(max_replicas_to_use <= connection_pools.size());
         connection_pools.resize(max_replicas_to_use);
-
-        /// Without a local plan the reading coordinator has no pinned snapshot replica: every
-        /// underlying table of a `Merge` table is announced by whichever replicas matched it, so a
-        /// child table that this initiator matched but no participating replica did would never be
-        /// announced at all, and its rows would silently vanish from the result. Tell the replicas
-        /// which child sets this initiator saw, so a replica whose `Merge` table resolves to a
-        /// different set fails closed instead (with a local plan this is not needed: the coordinator
-        /// ignores streams the local replica did not announce, and the local replica reads them in
-        /// full by itself).
-        if (uses_merge_tables)
-            new_context->setSetting("parallel_replicas_merge_child_tables", serializeMergeChildTableSets(merge_child_table_sets));
 
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
             query_ast,

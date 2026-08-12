@@ -1,0 +1,8 @@
+-- pinned, no drift
+1000	499500	4995000
+-- pinned, sibling drift
+SUPPORT_IS_DISABLED
+-- unpinned, sibling drift
+SUPPORT_IS_DISABLED
+-- pinned, designated drift
+ok

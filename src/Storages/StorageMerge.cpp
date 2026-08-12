@@ -909,41 +909,44 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
 
     selected_tables = getSelectedTables(context);
 
-    /// The planner decided that reading can be coordinated with parallel replicas from a separate,
-    /// unlocked catalog walk (`StorageMerge::supportsParallelReplicasReading`). Revalidate the
-    /// selected tables under the table locks that reading will actually use: the set of tables
-    /// matched by the Merge table may have changed since the query was planned, and may differ
-    /// between the replicas. Reading is coordinated at the level of MergeTree parts and mark
-    /// ranges, so gaining or losing a whole MergeTree table stays correct (every underlying table
-    /// forms its own data stream, and its parts are distributed only across the replicas that
-    /// announced them), but a child that cannot be coordinated would be read in full by every
-    /// replica and duplicate its rows in the result — fail closed instead.
-    if (parallel_replicas_local_plan_info || context->canUseParallelReplicasOnFollower())
+    /// Whether this read participates in coordinated parallel-replicas reading of this `Merge`
+    /// table: the initiator's pinned local plan, or a collaborating replica reading the designated
+    /// leaf. A sibling (non-designated) `Merge` leaf of the same query is read plainly and in full
+    /// by every participating node instead - the planner clears the parallel-replicas mode on its
+    /// context - and the checks below distinguish the two.
+    const bool coordinated_read = parallel_replicas_local_plan_info || context->canUseParallelReplicasOnFollower();
+
+    const auto & settings = context->getSettingsRef();
+
+    /// The initiator sets the internal settings consumed below on the context it plans the
+    /// local plan and the shipped query with; the context of the initiator's coordinated read
+    /// predates that. A collaborating replica - and the plain read of a sibling leaf, whose
+    /// context descends from the initiator's on both sides - receives them with the query.
+    const auto & initiator_settings = parallel_replicas_local_plan_info
+        ? parallel_replicas_local_plan_info->context->getSettingsRef()
+        : settings;
+
+    /// Every node of a parallel-replicas query must read a `Merge` table through the same child
+    /// set, or different nodes join and return different rows: a sibling leaf is read in full by
+    /// every node, and without a pinned snapshot replica a child table that the initiator matched
+    /// but no participating replica did would never be announced to the reading coordinator, so
+    /// its rows would silently vanish from the result. The initiator passes the child sets of the
+    /// `Merge` tables it planned, keyed by the table expression each of them belongs to, so
+    /// require the set of tables this node matches to be equal to the set the initiator planned
+    /// for the same table expression - a query reading two `Merge` tables must not accept the
+    /// child set of the sibling one, or a leaf whose set drifted into the other leaf's set would
+    /// read the wrong tables and duplicate or drop rows. The comparison is of the raw matched
+    /// sets, before the pruning of children by a filter on `_database`/`_table`
+    /// (`getSelectedTables`), which is derived on every node from the same query. The one exempt
+    /// read is the coordinated one when the initiator pinned a snapshot replica (its local plan):
+    /// the coordinator then ignores streams the local replica did not announce and the local
+    /// replica reads the ones nobody else announced in full, so the result is exactly the pinned
+    /// replica's snapshot however the set diverges elsewhere - failing closed there would only
+    /// turn correct queries into errors.
     {
-        const auto & settings = context->getSettingsRef();
-
-        /// The initiator sets the internal settings consumed below on the context it plans the
-        /// local plan and the shipped query with; the context this step was created with predates
-        /// that.
-        const auto & initiator_settings = parallel_replicas_local_plan_info
-            ? parallel_replicas_local_plan_info->context->getSettingsRef()
-            : settings;
-
-        /// When the initiator builds no local plan, the reading coordinator has no pinned snapshot
-        /// replica: every underlying table is announced by whichever replicas matched it, so a
-        /// child table that the initiator matched but no participating replica did would never be
-        /// announced at all, and its rows would silently vanish from the result (with a local plan
-        /// the initiator itself announces every child and reads the ones nobody else announced in
-        /// full). The initiator passes the child sets of the `Merge` tables it read, keyed by the
-        /// table expression each of them belongs to, so require the set of tables this replica
-        /// matches to be equal to the set the initiator read for the same table expression - a
-        /// query reading two `Merge` tables must not accept the child set of the sibling one, or a
-        /// leaf whose set drifted into the other leaf's set would read the wrong tables and
-        /// duplicate or drop rows. The comparison is of the raw matched sets, before the pruning of
-        /// children by a filter on `_database`/`_table` (`getSelectedTables`), which is derived on
-        /// every node from the same query.
         const auto initiator_child_table_sets = parseMergeChildTableSets(initiator_settings[Setting::parallel_replicas_merge_child_tables]);
-        if (!initiator_child_table_sets.empty())
+        if (!initiator_child_table_sets.empty()
+            && !(coordinated_read && initiator_child_table_sets.pinned_snapshot_replica))
         {
             std::set<String> child_tables_here;
             for (const auto & child_name : assert_cast<const StorageMerge &>(*storage_merge).getChildTableNames(context))
@@ -965,7 +968,7 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
             /// falling back to the sets of the whole query still fails closed on a set that no
             /// leaf of the query resolved to.
             std::vector<std::set<String>> expected_table_sets;
-            for (const auto & table_set : initiator_child_table_sets)
+            for (const auto & table_set : initiator_child_table_sets.sets)
             {
                 if (table_set.key == key_here)
                 {
@@ -977,20 +980,32 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
             }
             if (expected_table_sets.empty())
             {
-                for (const auto & table_set : initiator_child_table_sets)
+                for (const auto & table_set : initiator_child_table_sets.sets)
                     expected_table_sets.push_back(table_set.tables);
             }
 
             if (std::find(expected_table_sets.begin(), expected_table_sets.end(), child_tables_here) == expected_table_sets.end())
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Cannot coordinate reading from table {} with parallel replicas: the set of its underlying "
-                    "tables ({}) differs from the set the initiator read, so it changed after the query was "
-                    "planned, or differs on this replica",
+                    "Cannot read from table {} in a query with parallel replicas: the set of its underlying "
+                    "tables ({}) differs from the set the initiator planned, so it changed after the query was "
+                    "planned, or differs on this node",
                     storage_merge->getStorageID().getNameForLogs(),
                     fmt::join(child_tables_here, ", "));
         }
+    }
 
+    /// The planner decided that reading can be coordinated with parallel replicas from a separate,
+    /// unlocked catalog walk (`StorageMerge::supportsParallelReplicasReading`). Revalidate the
+    /// selected tables under the table locks that reading will actually use: the set of tables
+    /// matched by the Merge table may have changed since the query was planned, and may differ
+    /// between the replicas. Reading is coordinated at the level of MergeTree parts and mark
+    /// ranges, so gaining or losing a whole MergeTree table stays correct (every underlying table
+    /// forms its own data stream, and its parts are distributed only across the replicas that
+    /// announced them), but a child that cannot be coordinated would be read in full by every
+    /// replica and duplicate its rows in the result — fail closed instead.
+    if (coordinated_read)
+    {
         /// The initiator selected the replicas against the replicated tables enumerated at planning
         /// time: a replicated table that started matching after that was never checked for
         /// replication delay, so a replica already admitted to coordinated reading may be lagging

@@ -675,9 +675,13 @@ std::unordered_set<String> parseFreshnessCheckedTables(const String & serialized
     return tables;
 }
 
-String serializeMergeChildTableSets(const std::vector<MergeChildTableSet> & table_sets)
+static constexpr std::string_view pinned_snapshot_replica_marker = "pinned;";
+
+String serializeMergeChildTableSets(const std::vector<MergeChildTableSet> & table_sets, bool pinned_snapshot_replica)
 {
     String serialized;
+    if (pinned_snapshot_replica)
+        serialized += pinned_snapshot_replica_marker;
     for (const auto & table_set : table_sets)
     {
         serialized += table_set.key;
@@ -700,10 +704,16 @@ String serializeMergeChildTableSets(const std::vector<MergeChildTableSet> & tabl
     return serialized;
 }
 
-std::vector<ParsedMergeChildTableSet> parseMergeChildTableSets(const String & serialized)
+ParsedMergeChildTableSets parseMergeChildTableSets(const String & serialized)
 {
-    std::vector<ParsedMergeChildTableSet> table_sets;
-    for (size_t pos = 0; pos < serialized.size();)
+    ParsedMergeChildTableSets result;
+    size_t pos = 0;
+    if (serialized.starts_with(pinned_snapshot_replica_marker))
+    {
+        result.pinned_snapshot_replica = true;
+        pos = pinned_snapshot_replica_marker.size();
+    }
+    for (; pos < serialized.size();)
     {
         size_t semicolon = serialized.find(';', pos);
         if (semicolon == String::npos)
@@ -719,11 +729,35 @@ std::vector<ParsedMergeChildTableSet> parseMergeChildTableSets(const String & se
             table_set.tables.emplace(serialized.substr(name_pos, comma - name_pos));
             name_pos = comma + 1;
         }
-        table_sets.push_back(std::move(table_set));
+        result.sets.push_back(std::move(table_set));
 
         pos = semicolon + 1;
     }
-    return table_sets;
+    return result;
+}
+
+String stripAliasesFromMergeChildTableSetKeys(const String & serialized)
+{
+    const auto parsed = parseMergeChildTableSets(serialized);
+
+    String result;
+    if (parsed.pinned_snapshot_replica)
+        result += pinned_snapshot_replica_marker;
+    for (const auto & table_set : parsed.sets)
+    {
+        result += mergeChildTableSetKeyBaseName(table_set.key);
+        result += '=';
+        /// The parsed names are already in their serialized (escaped) form, and `std::set`
+        /// keeps them sorted the way the original serialization did.
+        for (const auto & name : table_set.tables)
+        {
+            result += name;
+            if (name != *table_set.tables.rbegin())
+                result += ',';
+        }
+        result += ';';
+    }
+    return result;
 }
 
 /// Walk the query tree looking for a UNION node whose every child query

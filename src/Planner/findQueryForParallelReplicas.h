@@ -63,13 +63,22 @@ String mergeChildTableSetKeyBaseName(const String & key);
 
 /// Serialization of the child table sets of the `Merge` tables (and `merge` table functions) the
 /// query reads, one set per `Merge` table expression, for the internal setting
-/// `parallel_replicas_merge_child_tables`. When the initiator builds no local plan, the reading
+/// `parallel_replicas_merge_child_tables`. Every node reading a `Merge` table of the query must
+/// read exactly the child set the initiator planned: a non-coordinated (sibling) `Merge` leaf is
+/// read in full by every participating node, so a set that differs between the nodes joins
+/// different rows on different nodes; and when the initiator builds no local plan, the reading
 /// coordinator has no pinned snapshot replica and a child table matched by no participating
-/// replica would never be announced, so its rows would silently vanish from the result. A replica
+/// replica would never be announced, so its rows would silently vanish from the result. A node
 /// whose `Merge` table resolves to a child set different from the initiator's set for the same
-/// table expression fails closed instead. Every set is serialized as its `mergeChildTableSetKey`,
-/// `=`, and the `freshnessCheckedTableName` names joined by `,`, and is terminated by `;`, so an
-/// empty string means "no sets" while `key=;` is a single empty set.
+/// table expression fails closed instead. The only exempt read is the coordinated one when the
+/// initiator pinned a snapshot replica (its local one): the coordinator then ignores streams the
+/// local replica did not announce and the local replica reads the ones nobody else announced in
+/// full, so a diverging set stays correct there - the serialization carries that pinnedness so
+/// the readers know whether the coordinated read is exempt. Every set is serialized as its
+/// `mergeChildTableSetKey`, `=`, and the `freshnessCheckedTableName` names joined by `,`, and is
+/// terminated by `;`, so an empty string means "no sets" while `key=;` is a single empty set; a
+/// pinned snapshot replica is announced by a leading `pinned;` segment (a real key is either
+/// empty or contains `:`, so the marker cannot collide with one).
 struct MergeChildTableSet
 {
     String key;
@@ -82,8 +91,25 @@ struct ParsedMergeChildTableSet
     std::set<String> tables;
 };
 
-String serializeMergeChildTableSets(const std::vector<MergeChildTableSet> & table_sets);
-std::vector<ParsedMergeChildTableSet> parseMergeChildTableSets(const String & serialized);
+struct ParsedMergeChildTableSets
+{
+    /// Whether the reading coordinator has a pinned snapshot replica (the initiator built a local
+    /// plan), which makes the coordinated read - and only it - tolerant to a diverging child set.
+    bool pinned_snapshot_replica = false;
+    std::vector<ParsedMergeChildTableSet> sets;
+
+    bool empty() const { return sets.empty(); }
+};
+
+String serializeMergeChildTableSets(const std::vector<MergeChildTableSet> & table_sets, bool pinned_snapshot_replica);
+ParsedMergeChildTableSets parseMergeChildTableSets(const String & serialized);
+
+/// Rewrites a serialized child-set list so that every key keeps only its base-name component.
+/// A `Merge` read of a serialized plan is re-planned from a single-table query of its own
+/// (`resolveStorages`), whose alias numbering restarts from `__table1` and is unrelated to that of
+/// the original query - a renumbered alias must not exact-match the key of an unrelated sibling
+/// table expression, so on that path the keys are matched by name only.
+String stripAliasesFromMergeChildTableSetKeys(const String & serialized);
 
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;

@@ -32,6 +32,7 @@ namespace Setting
 {
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsBool parallel_replicas_allow_merge_tables;
+    extern const SettingsString parallel_replicas_merge_child_tables;
 }
 
 namespace FailPoints
@@ -244,6 +245,16 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     /// Without updating all nodes, nested subqueries (e.g. in JOINs) would still have
     /// parallel replicas enabled in their contexts, causing the Planner to create
     /// additional `ParallelReplicasReadingCoordinator` instances.
+    ///
+    /// The node contexts are copies of the analysis-time contexts, which predate the internal
+    /// settings the initiator ships with the query, while the remote replicas receive those with
+    /// the query and see them in every node context. Propagate the child sets of the `Merge`
+    /// tables of the query into the node contexts too, so a plain read of a non-designated
+    /// (sibling) `Merge` leaf inside this local plan revalidates its child set the same way the
+    /// replicas do (`ReadFromMerge::filterTablesAndCreateChildrenPlans`) - the local plan reads
+    /// such a leaf in full for itself, so a set that drifted since planning must fail closed here
+    /// as well.
+    const auto & merge_child_tables = context->getSettingsRef()[Setting::parallel_replicas_merge_child_tables].value;
     auto local_query_tree = query_tree->clone();
     {
         std::vector<IQueryTreeNode *> nodes_to_visit;
@@ -258,6 +269,8 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
                 auto node_context = Context::createCopy(query_node->getContext());
                 node_context->setPositionalArgumentsAlreadyResolved(true);
                 node_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                if (!merge_child_tables.empty())
+                    node_context->setSetting("parallel_replicas_merge_child_tables", merge_child_tables);
                 query_node->getMutableContext() = std::move(node_context);
             }
             else if (auto * union_node = current->as<UnionNode>())
@@ -265,6 +278,8 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
                 auto node_context = Context::createCopy(union_node->getContext());
                 node_context->setPositionalArgumentsAlreadyResolved(true);
                 node_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                if (!merge_child_tables.empty())
+                    node_context->setSetting("parallel_replicas_merge_child_tables", merge_child_tables);
                 union_node->getMutableContext() = std::move(node_context);
             }
 

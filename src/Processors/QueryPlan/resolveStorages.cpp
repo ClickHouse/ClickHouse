@@ -29,6 +29,7 @@
 
 #include <Storages/StorageMerge.h>
 #include <Planner/Utils.h>
+#include <Planner/findQueryForParallelReplicas.h>
 #include <Core/Settings.h>
 
 #include <stack>
@@ -47,6 +48,7 @@ namespace Setting
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsString parallel_replicas_merge_child_tables;
 }
 
 namespace ErrorCodes
@@ -270,10 +272,16 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
             /// re-enable coordination for a read the initiator did not designate. The designated-table
             /// hint carries the `__tableN` alias numbering of the whole original query, which cannot
             /// match the aliases of this single-table query, so drop it - the leaf to read is already
-            /// pinned by the plan here.
+            /// pinned by the plan here. The keys of the shipped child sets carry those aliases too,
+            /// and this single-table query renumbers its one leaf to `__table1`, which must not
+            /// exact-match the key of an unrelated sibling table expression - strip the aliases so
+            /// the sets are matched by table name only.
             auto mutable_context = Context::createCopy(context);
             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", use_parallel_replicas);
             mutable_context->setSetting("parallel_replicas_designated_table", String{});
+            mutable_context->setSetting(
+                "parallel_replicas_merge_child_tables",
+                stripAliasesFromMergeChildTableSetKeys(context->getSettingsRef()[Setting::parallel_replicas_merge_child_tables]));
             interpreter_context = std::move(mutable_context);
         }
 
