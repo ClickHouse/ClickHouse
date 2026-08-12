@@ -20,12 +20,8 @@ def started_cluster():
 
 def execute_queries_persistent_connection(queries):
     """Execute multiple queries through a single persistent clickhouse-client connection"""
-    # Pin the port explicitly so the client connects exactly once. Without an explicit
-    # port (and TLS mode) the client concurrently probes the plain and the secure ports
-    # to auto-detect which one to use, and the discarded probe connection would inflate
-    # the "Done processing connection" count this test asserts on.
     proc = subprocess.Popen(
-        ["docker", "exec", "-i", node.docker_id, "clickhouse", "client", "--port", "9000"],
+        ["docker", "exec", "-i", node.docker_id, "clickhouse", "client"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

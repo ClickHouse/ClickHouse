@@ -7061,6 +7061,16 @@ if __name__ == "__main__":
         if args.secure:
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " --secure "
 
+    if not args.secure:
+        # Tell the client which protocol this run uses instead of letting it choose. A client that is
+        # given neither a port nor a TLS mode probes both the plain and the secure port and prefers TLS,
+        # and the test server listens on both, so an unspecified TLS mode would silently switch the whole
+        # suite over to TLS - including the tests that assert on the plain port and on `is_secure`.
+        args.client += " --no-secure"
+        os.environ["CLICKHOUSE_CLIENT_OPT"] = (
+            os.environ.get("CLICKHOUSE_CLIENT_OPT", "") + " --no-secure "
+        )
+
     if args.cloud:
         enable_analyzer = os.getenv("CLOUD_ENABLE_ANALYZER", "1")
         enable_pr = os.getenv("CLOUD_ENABLE_PARALLEL_REPLICAS", "0")
