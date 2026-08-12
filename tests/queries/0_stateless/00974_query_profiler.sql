@@ -64,8 +64,28 @@ SET log_queries = 0;
 SET query_profiler_real_time_period_ns = 0;
 SYSTEM FLUSH LOGS trace_log, query_log;
 
-WITH addressToLine(arrayJoin(trace) AS addr) || '#' || demangle(addressToSymbol(addr)) AS symbol
-SELECT count() > 0 FROM system.trace_log t WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%test real time query profiler numbers_mt%' AND query NOT LIKE '%system%' ORDER BY event_time DESC LIMIT 1) AND symbol LIKE '%Source%';
+-- Symbolize a bounded sample of the rows instead of all of them. The 1ms period above makes this
+-- query produce tens of thousands of samples on a slow sanitizer runner, and symbolization costs
+-- about a millisecond per row there (`addressToLine` walks DWARF), so symbolizing every sample made
+-- this verification query read 94887 rows in 318 seconds in the flaky check until it was killed with
+-- `Estimated query execution time (1385.003 seconds) is too long. Maximum: 600` (`TOO_SLOW`).
+-- 1000 rows keep the work bounded without weakening the check: about 70% of this query's samples
+-- carry a `Source` frame (measured locally: 281 of 410), and when fewer than 1000 samples were
+-- delivered the `LIMIT` takes all of them, exactly as before. The `query_id` filter sits inside the
+-- `LIMIT` subquery, so other queries' samples are never symbolized either.
+SELECT count() > 0 FROM
+(
+    SELECT addressToLine(arrayJoin(trace) AS addr) || '#' || demangle(addressToSymbol(addr)) AS symbol
+    FROM
+    (
+        SELECT trace
+        FROM system.trace_log
+        WHERE event_date >= yesterday() AND event_time >= now() - 600
+            AND query_id = (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%test real time query profiler numbers_mt%' AND query NOT LIKE '%system%' ORDER BY event_time DESC LIMIT 1)
+        LIMIT 1000
+    )
+)
+WHERE symbol LIKE '%Source%';
 
 SET query_profiler_cpu_time_period_ns = 1000000;
 SET log_queries = 1;
@@ -75,5 +95,17 @@ SET log_queries = 0;
 SET query_profiler_cpu_time_period_ns = 0;
 SYSTEM FLUSH LOGS trace_log, query_log;
 
-WITH addressToLine(arrayJoin(trace) AS addr) || '#' || demangle(addressToSymbol(addr)) AS symbol
-SELECT count() > 0 FROM system.trace_log t WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%test cpu time query profiler%' AND query NOT LIKE '%system%' ORDER BY event_time DESC LIMIT 1) AND symbol LIKE '%Source%';
+-- Bounded the same way as the sub-test above.
+SELECT count() > 0 FROM
+(
+    SELECT addressToLine(arrayJoin(trace) AS addr) || '#' || demangle(addressToSymbol(addr)) AS symbol
+    FROM
+    (
+        SELECT trace
+        FROM system.trace_log
+        WHERE event_date >= yesterday() AND event_time >= now() - 600
+            AND query_id = (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%test cpu time query profiler%' AND query NOT LIKE '%system%' ORDER BY event_time DESC LIMIT 1)
+        LIMIT 1000
+    )
+)
+WHERE symbol LIKE '%Source%';
