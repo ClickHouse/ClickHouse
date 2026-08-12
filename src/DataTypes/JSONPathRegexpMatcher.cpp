@@ -123,7 +123,7 @@ struct JSONPathRegexpMatcher::Impl
 
     static bool matchesSet(const re2::RE2::Set & regexp_set, re2::StringPiece path)
     {
-        re2::RE2::Set::ErrorInfo error_info;
+        re2::RE2::Set::ErrorInfo error_info{};
         if (regexp_set.Match(path, nullptr, &error_info))
             return true;
 

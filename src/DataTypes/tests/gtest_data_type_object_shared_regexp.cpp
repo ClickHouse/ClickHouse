@@ -167,5 +167,25 @@ TEST(DataTypeObjectSharedRegexp, ProvenanceJoinSaturatesForDifferentRootPrefixes
     EXPECT_TRUE(saturated->equals(*mergeJSONSharedDataPathRules(makeJSONType({}), saturated)));
 }
 
+TEST(DataTypeObjectSharedRegexp, HasSaturatedPolicyDetectsTopThroughNestedContainers)
+{
+    const auto plain = makeJSONType({{"^left", MatchMode::Partial}});
+    EXPECT_FALSE(hasSaturatedJSONSharedDataPathPolicy(*plain));
+    EXPECT_FALSE(hasSaturatedJSONSharedDataPathPolicy(*makeJSONType({})));
+
+    const auto saturated = makeJSONType({{"(?s:.*)", MatchMode::Full}});
+    EXPECT_TRUE(hasSaturatedJSONSharedDataPathPolicy(*saturated));
+    /// The same pattern with partial match semantics is a user rule, not the saturated fallback.
+    EXPECT_FALSE(hasSaturatedJSONSharedDataPathPolicy(*makeJSONType({{"(?s:.*)", MatchMode::Partial}})));
+
+    EXPECT_TRUE(hasSaturatedJSONSharedDataPathPolicy(*std::make_shared<DataTypeArray>(saturated)));
+    EXPECT_TRUE(hasSaturatedJSONSharedDataPathPolicy(*makeJSONTypeWithTypedPath({}, std::make_shared<DataTypeArray>(saturated))));
+    EXPECT_FALSE(hasSaturatedJSONSharedDataPathPolicy(*makeJSONTypeWithTypedPath({}, std::make_shared<DataTypeArray>(plain))));
+
+    /// A join that saturates must be detected the same way the merge and mutation warnings detect it.
+    EXPECT_TRUE(hasSaturatedJSONSharedDataPathPolicy(*mergeJSONSharedDataPathRules(
+        makeJSONType({{"^a", MatchMode::Full}}, "left."), makeJSONType({{"^b", MatchMode::Full}}, "right."))));
+}
+
 }
 }

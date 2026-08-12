@@ -512,32 +512,32 @@ ColumnDynamic * ColumnObject::tryToAddNewDynamicPath(std::string_view path)
     return it_ptr->second;
 }
 
-bool ColumnObject::shouldForceSharedData(std::string_view path) const
+bool ColumnObject::shouldForceSharedData(std::string_view path)
 {
     if (!shared_data_path_matcher)
         return false;
 
+    if (force_shared_data_paths.contains(path))
+        return true;
+
+    bool force_shared = false;
     if (shared_data_path_prefix.empty())
-        return shared_data_path_matcher->matches(path);
+    {
+        force_shared = shared_data_path_matcher->matches(path);
+    }
+    else
+    {
+        String root_relative_path;
+        root_relative_path.reserve(shared_data_path_prefix.size() + path.size());
+        root_relative_path.append(shared_data_path_prefix);
+        root_relative_path.append(path);
+        force_shared = shared_data_path_matcher->matches(root_relative_path);
+    }
 
-    String root_relative_path;
-    root_relative_path.reserve(shared_data_path_prefix.size() + path.size());
-    root_relative_path.append(shared_data_path_prefix);
-    root_relative_path.append(path);
-    return shared_data_path_matcher->matches(root_relative_path);
-}
-
-void ColumnObject::addNewDynamicPath(std::string_view path, MutableColumnPtr column)
-{
-    if (dynamic_paths.size() == max_dynamic_paths)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add new dynamic path as the limit ({}) on dynamic paths is reached", max_dynamic_paths);
-
-    if (!empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting specific column for dynamic path is allowed only for empty object column");
-
-    auto it = dynamic_paths.emplace(path, std::move(column)).first;
-    dynamic_paths_ptrs.emplace(path, assert_cast<ColumnDynamic *>(it->second.get()));
-    sorted_dynamic_paths.insert(it->first);
+    /// Memoize only matches: non-matching paths become dynamic paths or overflow to shared data anyway.
+    if (force_shared)
+        force_shared_data_paths.emplace(path);
+    return force_shared;
 }
 
 bool ColumnObject::tryToAddNewDynamicPath(std::string_view path, MutableColumnPtr & column)
@@ -545,7 +545,12 @@ bool ColumnObject::tryToAddNewDynamicPath(std::string_view path, MutableColumnPt
     if (dynamic_paths.size() == max_dynamic_paths || (shared_data_path_matcher && shouldForceSharedData(path)))
         return false;
 
-    addNewDynamicPath(path, std::move(column));
+    if (!empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting specific column for dynamic path is allowed only for empty object column");
+
+    auto it = dynamic_paths.emplace(path, std::move(column)).first;
+    dynamic_paths_ptrs.emplace(path, assert_cast<ColumnDynamic *>(it->second.get()));
+    sorted_dynamic_paths.insert(it->first);
     return true;
 }
 
@@ -2005,6 +2010,8 @@ bool ColumnObject::dynamicStructureEquals(const IColumn & rhs) const
 
 void ColumnObject::setSharedDataPathMatcher(JSONPathRegexpMatcherPtr matcher, String path_prefix)
 {
+    /// Memoized force-shared decisions are valid only for the previously bound matcher and prefix.
+    force_shared_data_paths.clear();
     shared_data_path_matcher = std::move(matcher);
     shared_data_path_prefix = std::move(path_prefix);
 }
