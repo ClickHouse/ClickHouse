@@ -1425,7 +1425,7 @@ bool RestCatalog::updateSchema(
 void RestCatalog::dropTable(const String & namespace_name, const String & table_name) const
 {
     const std::string endpoint
-        = (base_url / config.prefix / "namespaces" / namespace_name / "tables" / table_name).string()
+        = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string()
         + "?purgeRequested=False";
 
     Poco::JSON::Object::Ptr request_body = nullptr;
