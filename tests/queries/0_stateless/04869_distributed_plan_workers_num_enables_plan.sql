@@ -5,7 +5,9 @@
 -- `distributed_plan_workers_num` enables `make_distributed_plan` on its own (issue #114501).
 -- Everything runs locally so that the implied plan never dials a Worker.
 
-SET distributed_plan_execute_locally = 1;
+-- A global GROUP BY limit cannot be enforced once aggregation is split per bucket, and the test
+-- server profile sets one, so clear it for the aggregation below.
+SET distributed_plan_execute_locally = 1, max_rows_to_group_by = 0;
 
 DROP TABLE IF EXISTS t_dp_workers;
 CREATE TABLE t_dp_workers (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id;
