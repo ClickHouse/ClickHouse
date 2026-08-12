@@ -13,7 +13,43 @@ struct FilterDAGOutputPruningResult
     std::vector<size_t> required_input_positions;
 };
 
-/// Prune filter DAG outputs by position and return the input positions needed to compute the remaining outputs and filter.
+/// What pruneFilterDAGOutputsByPosition would do, computed without touching the DAG.
+struct FilterDAGOutputPruningPlan
+{
+    FilterDAGOutputPruningResult result;
+
+    /// Whether inputs may be removed, and the value the filter column flag takes.
+    bool remove_inputs = false;
+    bool remove_filter_column = false;
+    /// DAG output positions to keep, before the filter column is erased from the header, the filter
+    /// column included: it is needed to filter, whether or not anyone reads it.
+    std::vector<size_t> required_dag_positions;
+    /// Input header positions of the pass-through columns to drop.
+    std::vector<size_t> dropped_passthrough_header_positions;
+    /// Whether removeUnusedActions would erase any node.
+    bool removes_any_action = false;
+    /// Whether the filter predicate folds to a constant through `materialize` once the filter column is
+    /// dropped; the rest of the plan is worked out on the folded DAG.
+    bool fold_filter_predicate = false;
+    String filter_column_name;
+};
+
+FilterDAGOutputPruningPlan analyzeFilterDAGOutputPruning(
+    const ActionsDAG & dag,
+    const String & filter_column_name,
+    bool remove_filter_column,
+    const Block & input_header,
+    const std::vector<size_t> & required_output_positions,
+    bool remove_inputs);
+
+void applyFilterDAGOutputPruning(
+    ActionsDAG & dag,
+    bool & remove_filter_column,
+    const Block & input_header,
+    const FilterDAGOutputPruningPlan & plan);
+
+/// Prune filter DAG outputs by position and return the input positions needed to compute the remaining
+/// outputs and filter. The analysis above plus its application.
 FilterDAGOutputPruningResult pruneFilterDAGOutputsByPosition(
     ActionsDAG & dag,
     const String & filter_column_name,
@@ -71,6 +107,9 @@ public:
 
     bool canRemoveUnusedColumns() const override;
     RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
+
+    bool canGetRequiredColumns() const override { return true; }
+    RemoveUnusedColumnsResult getRequiredColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) const override;
     bool canRemoveColumnsFromOutput() const override;
 
     void setPreventInputRemoval() { prevent_input_removal = true; }
@@ -80,6 +119,16 @@ public:
 
 private:
     void updateOutputHeader() override;
+
+    /// Everything removeUnusedColumns needs to know, computed without touching the step. Shared by
+    /// removeUnusedColumns and getRequiredColumns so their answers cannot differ.
+    struct RequiredColumnsPlan
+    {
+        RemoveUnusedColumnsResult result;
+        FilterDAGOutputPruningPlan pruning;
+    };
+
+    RequiredColumnsPlan analyzeRequiredColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) const;
 
     ActionsDAG actions_dag;
     String filter_column_name;

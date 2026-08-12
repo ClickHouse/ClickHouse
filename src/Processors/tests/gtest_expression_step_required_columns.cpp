@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 
 using namespace DB;
 
@@ -44,8 +45,23 @@ std::unique_ptr<ExpressionStep> makeStepWithDuplicateNames()
     return std::make_unique<ExpressionStep>(input_header, std::move(dag));
 }
 
+/// Input header (a, b, c) filtered by `f`, computed from a. The DAG outputs are (f, x) where x aliases
+/// b, so c is a pass-through. `remove_filter_column` decides whether f shows up in the output header.
+std::unique_ptr<FilterStep> makeFilterStep(bool remove_filter_column)
+{
+    auto input_header = std::make_shared<const Block>(Block{column("a"), column("b"), column("c")});
+
+    ActionsDAG dag;
+    const auto & a = dag.addInput(column("a"));
+    const auto & b = dag.addInput(column("b"));
+    dag.getOutputs() = {&dag.addAlias(a, "f"), &dag.addAlias(b, "x")};
+
+    return std::make_unique<FilterStep>(input_header, std::move(dag), "f", remove_filter_column);
+}
+
+template <typename Step>
 void checkAnswersMatch(
-    const std::function<std::unique_ptr<ExpressionStep>()> & make_step,
+    const std::function<std::unique_ptr<Step>()> & make_step,
     const std::vector<size_t> & required_output_positions,
     bool remove_inputs)
 {
@@ -73,17 +89,54 @@ TEST(ExpressionStepRequiredColumns, MatchesRemoveUnusedColumns)
     for (bool remove_inputs : {true, false})
     {
         /// Keep one DAG output, the other output and the pass-through go away.
-        checkAnswersMatch(makeStep, {0}, remove_inputs);
+        checkAnswersMatch<ExpressionStep>(makeStep, {0}, remove_inputs);
         /// Keep a DAG output and the pass-through.
-        checkAnswersMatch(makeStep, {0, 2}, remove_inputs);
+        checkAnswersMatch<ExpressionStep>(makeStep, {0, 2}, remove_inputs);
         /// Keep the pass-through only.
-        checkAnswersMatch(makeStep, {2}, remove_inputs);
+        checkAnswersMatch<ExpressionStep>(makeStep, {2}, remove_inputs);
         /// Keep everything: nothing to do.
-        checkAnswersMatch(makeStep, {0, 1, 2}, remove_inputs);
+        checkAnswersMatch<ExpressionStep>(makeStep, {0, 1, 2}, remove_inputs);
 
-        checkAnswersMatch(makeStepWithDuplicateNames, {0}, remove_inputs);
-        checkAnswersMatch(makeStepWithDuplicateNames, {1}, remove_inputs);
+        checkAnswersMatch<ExpressionStep>(makeStepWithDuplicateNames, {0}, remove_inputs);
+        checkAnswersMatch<ExpressionStep>(makeStepWithDuplicateNames, {1}, remove_inputs);
     }
+}
+
+TEST(FilterStepRequiredColumns, MatchesRemoveUnusedColumns)
+{
+    for (bool remove_inputs : {true, false})
+    {
+        /// Output header is (x, c): the filter column is erased, so the caller's positions have to be
+        /// mapped back over it.
+        const auto make_without_filter_column = [] { return makeFilterStep(/*remove_filter_column=*/true); };
+        checkAnswersMatch<FilterStep>(make_without_filter_column, {0}, remove_inputs);
+        checkAnswersMatch<FilterStep>(make_without_filter_column, {1}, remove_inputs);
+        checkAnswersMatch<FilterStep>(make_without_filter_column, {0, 1}, remove_inputs);
+
+        /// Output header is (f, x, c). Not asking for f makes the step drop it from the header, while
+        /// the DAG still has to compute it to filter.
+        const auto make_with_filter_column = [] { return makeFilterStep(/*remove_filter_column=*/false); };
+        checkAnswersMatch<FilterStep>(make_with_filter_column, {0}, remove_inputs);
+        checkAnswersMatch<FilterStep>(make_with_filter_column, {1}, remove_inputs);
+        checkAnswersMatch<FilterStep>(make_with_filter_column, {2}, remove_inputs);
+        checkAnswersMatch<FilterStep>(make_with_filter_column, {0, 1, 2}, remove_inputs);
+    }
+}
+
+TEST(FilterStepRequiredColumns, KeepsTheFilterInputAndDropsTheRest)
+{
+    const auto step = makeFilterStep(/*remove_filter_column=*/true);
+
+    /// Output header is (x, c). Asking for c only still needs a, because the filter reads it.
+    const auto result = step->getRequiredColumns({1}, /*remove_inputs=*/true);
+    ASSERT_TRUE(result.changed);
+    ASSERT_EQ(result.required_input_positions.size(), 1u);
+    EXPECT_EQ(result.required_input_positions.front(), std::vector<size_t>({0, 2}));
+
+    /// The question left the step alone, so applying it now must give the same answer.
+    const auto applied = step->removeUnusedColumns({1}, /*remove_inputs=*/true);
+    EXPECT_EQ(applied.required_input_positions, result.required_input_positions);
+    EXPECT_EQ(step->getOutputHeader()->dumpNames(), "c");
 }
 
 TEST(ExpressionStepRequiredColumns, ReportsThePositionEachInputReads)
