@@ -263,6 +263,19 @@ void URI::validateKey(const String & key, const Poco::URI & uri)
     }
 }
 
+std::string expandRegionToAmazonPath(const std::string & region)
+{
+    Aws::S3::Endpoint::S3EndpointProvider provider;
+    provider.AccessBuiltInParameters().SetStringParameter("Region", Aws::String(region));
+    auto outcome = provider.ResolveEndpoint({});
+    if (outcome.IsSuccess())
+    {
+        auto uri = outcome.GetResult().GetURI();
+        return uri.GetURIString();
+    }
+    return "https://s3." + region + ".amazonaws.com";
+}
+
 }
 
 }
