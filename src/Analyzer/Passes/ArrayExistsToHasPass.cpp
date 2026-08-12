@@ -11,6 +11,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -28,7 +29,7 @@ namespace
 /// `equals` compares the string family zero-padded, so a needle whose extra bytes are all NUL
 /// still matches a narrower element. `has` compares either the String supertype, which strips
 /// trailing NULs, or raw Fields, which are not padded. The two therefore agree only when the
-/// element and needle types are identical, and a tuple agrees only when all of its elements do.
+/// element and needle types are identical, and a container agrees only when its members do.
 bool stringFamilyPairIsNotEqualityEquivalent(const DataTypePtr & element_type, const DataTypePtr & needle_type)
 {
     auto element = removeNullable(removeLowCardinality(element_type));
@@ -49,6 +50,17 @@ bool stringFamilyPairIsNotEqualityEquivalent(const DataTypePtr & element_type, c
 
         return false;
     }
+
+    const auto * element_array = typeid_cast<const DataTypeArray *>(element.get());
+    const auto * needle_array = typeid_cast<const DataTypeArray *>(needle.get());
+    if (element_array && needle_array)
+        return stringFamilyPairIsNotEqualityEquivalent(element_array->getNestedType(), needle_array->getNestedType());
+
+    const auto * element_map = typeid_cast<const DataTypeMap *>(element.get());
+    const auto * needle_map = typeid_cast<const DataTypeMap *>(needle.get());
+    if (element_map && needle_map)
+        return stringFamilyPairIsNotEqualityEquivalent(element_map->getKeyType(), needle_map->getKeyType())
+            || stringFamilyPairIsNotEqualityEquivalent(element_map->getValueType(), needle_map->getValueType());
 
     return isStringOrFixedString(element) && isStringOrFixedString(needle) && !element->equals(*needle);
 }

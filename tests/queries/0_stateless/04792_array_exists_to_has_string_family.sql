@@ -1,5 +1,8 @@
 -- { echo }
 -- The arrayExists -> has rewrite must not change the answer for a String/FixedString pair.
+-- The rewrite is an analyzer pass, so the assertions below are only live with the analyzer on.
+
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_fs;
 CREATE TABLE t_fs (v Array(FixedString(3))) ENGINE = Memory;
@@ -64,19 +67,48 @@ CREATE TABLE t_tuple2 (v Array(Tuple(Tuple(FixedString(3))))) ENGINE = Memory;
 INSERT INTO t_tuple2 SELECT [tuple(tuple(toFixedString('V0', 3)))];
 SELECT arrayExists(x -> x = tuple(tuple('V0\0')), v) FROM t_tuple2 SETTINGS optimize_rewrite_array_exists_to_has = 0;
 SELECT arrayExists(x -> x = tuple(tuple('V0\0')), v) FROM t_tuple2 SETTINGS optimize_rewrite_array_exists_to_has = 1;
+SELECT arrayExists(x -> x = tuple('V0\0'), [tuple(toFixedString('V0', 3))]) SETTINGS optimize_rewrite_array_exists_to_has = 0;
+SELECT arrayExists(x -> x = tuple('V0\0'), [tuple(toFixedString('V0', 3))]) SETTINGS optimize_rewrite_array_exists_to_has = 1;
 
--- Array and Map elements do not zero-pad on either side, so they keep the rewrite.
+-- Array and Map elements: over a column both spellings answer 0, but over a constant array
+-- `has` compares raw Fields and answers 1 where `equals` answers 0, so they diverge as well.
 DROP TABLE IF EXISTS t_nested_arr;
 CREATE TABLE t_nested_arr (v Array(Array(FixedString(3)))) ENGINE = Memory;
 INSERT INTO t_nested_arr SELECT [[toFixedString('V0', 3)]];
 SELECT arrayExists(x -> x = ['V0\0'], v) FROM t_nested_arr SETTINGS optimize_rewrite_array_exists_to_has = 0;
 SELECT arrayExists(x -> x = ['V0\0'], v) FROM t_nested_arr SETTINGS optimize_rewrite_array_exists_to_has = 1;
+SELECT arrayExists(x -> x = ['V0\0'], [[toFixedString('V0', 3)]]) SETTINGS optimize_rewrite_array_exists_to_has = 0;
+SELECT arrayExists(x -> x = ['V0\0'], [[toFixedString('V0', 3)]]) SETTINGS optimize_rewrite_array_exists_to_has = 1;
 
 DROP TABLE IF EXISTS t_nested_map;
 CREATE TABLE t_nested_map (v Array(Map(String, FixedString(3)))) ENGINE = Memory;
 INSERT INTO t_nested_map SELECT [map('k', toFixedString('V0', 3))];
 SELECT arrayExists(x -> x = map('k', 'V0\0'), v) FROM t_nested_map SETTINGS optimize_rewrite_array_exists_to_has = 0;
 SELECT arrayExists(x -> x = map('k', 'V0\0'), v) FROM t_nested_map SETTINGS optimize_rewrite_array_exists_to_has = 1;
+SELECT arrayExists(x -> x = map('k', 'V0\0'), [map('k', toFixedString('V0', 3))]) SETTINGS optimize_rewrite_array_exists_to_has = 0;
+SELECT arrayExists(x -> x = map('k', 'V0\0'), [map('k', toFixedString('V0', 3))]) SETTINGS optimize_rewrite_array_exists_to_has = 1;
+
+-- The key side of a Map is compared too.
+SELECT arrayExists(x -> x = map('k\0', 'V'), [map(toFixedString('k', 2), 'V')]) SETTINGS optimize_rewrite_array_exists_to_has = 0;
+SELECT arrayExists(x -> x = map('k\0', 'V'), [map(toFixedString('k', 2), 'V')]) SETTINGS optimize_rewrite_array_exists_to_has = 1;
+
+-- Mixed nesting: the pair is reached through a tuple and then an array.
+SELECT arrayExists(x -> x = tuple(['V0\0']), [tuple([toFixedString('V0', 3)])]) SETTINGS optimize_rewrite_array_exists_to_has = 0;
+SELECT arrayExists(x -> x = tuple(['V0\0']), [tuple([toFixedString('V0', 3)])]) SETTINGS optimize_rewrite_array_exists_to_has = 1;
+SELECT arrayExists(x -> x = tuple(['V0\0']), v) FROM (SELECT [tuple([toFixedString('V0', 3)])] AS v) SETTINGS optimize_rewrite_array_exists_to_has = 0;
+SELECT arrayExists(x -> x = tuple(['V0\0']), v) FROM (SELECT [tuple([toFixedString('V0', 3)])] AS v) SETTINGS optimize_rewrite_array_exists_to_has = 1;
+
+-- A container whose members have identical types keeps the rewrite, and so does a numeric one.
+SELECT arrayExists(x -> x = [toFixedString('V0', 3)], [[toFixedString('V0', 3)]]) SETTINGS optimize_rewrite_array_exists_to_has = 0;
+SELECT arrayExists(x -> x = [toFixedString('V0', 3)], [[toFixedString('V0', 3)]]) SETTINGS optimize_rewrite_array_exists_to_has = 1;
+SELECT arrayExists(x -> x = map('k', toFixedString('V0', 3)), [map('k', toFixedString('V0', 3))]) SETTINGS optimize_rewrite_array_exists_to_has = 0;
+SELECT arrayExists(x -> x = map('k', toFixedString('V0', 3)), [map('k', toFixedString('V0', 3))]) SETTINGS optimize_rewrite_array_exists_to_has = 1;
+SELECT arrayExists(x -> x = [1, 2], [[1, 2], [3]]) SETTINGS optimize_rewrite_array_exists_to_has = 0;
+SELECT arrayExists(x -> x = [1, 2], [[1, 2], [3]]) SETTINGS optimize_rewrite_array_exists_to_has = 1;
+
+-- A tail that is not all NUL must still not match inside a container.
+SELECT arrayExists(x -> x = ['V0abc'], [[toFixedString('V0', 3)]]) SETTINGS optimize_rewrite_array_exists_to_has = 0;
+SELECT arrayExists(x -> x = ['V0abc'], [[toFixedString('V0', 3)]]) SETTINGS optimize_rewrite_array_exists_to_has = 1;
 
 -- Which spelling the plan ends up with. Match `function_name:` rather than the bare name:
 -- the PROJECTION COLUMNS header echoes the original query text, so a bare `%arrayExists%`
@@ -93,10 +125,20 @@ SELECT count() FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = 'V0', v) FRO
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = 'V0', v) FROM t_str SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: has%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = toFixedString('V0', 3), v) FROM t_fs SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: arrayExists%';
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = toFixedString('V0', 3), v) FROM t_fs SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: has%';
-SELECT count() FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = ['V0\0'], v) FROM t_nested_arr SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: arrayExists%';
-SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = ['V0\0'], v) FROM t_nested_arr SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: has%';
-SELECT count() FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = map('k', 'V0\0'), v) FROM t_nested_map SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: arrayExists%';
-SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = map('k', 'V0\0'), v) FROM t_nested_map SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: has%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = [toFixedString('V0', 3)], v) FROM t_nested_arr SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: arrayExists%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = [toFixedString('V0', 3)], v) FROM t_nested_arr SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: has%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = map('k', toFixedString('V0', 3)), v) FROM t_nested_map SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: arrayExists%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = map('k', toFixedString('V0', 3)), v) FROM t_nested_map SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: has%';
+
+-- Declined for a mismatched pair reached through Array, Map, or a mix of containers.
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = ['V0\0'], v) FROM t_nested_arr SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: arrayExists%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = ['V0\0'], v) FROM t_nested_arr SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: has%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = map('k', 'V0\0'), v) FROM t_nested_map SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: arrayExists%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = map('k', 'V0\0'), v) FROM t_nested_map SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: has%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = map('k\0', 'V'), [map(toFixedString('k', 2), 'V')]) SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: arrayExists%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = map('k\0', 'V'), [map(toFixedString('k', 2), 'V')]) SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: has%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = tuple(['V0\0']), [tuple([toFixedString('V0', 3)])]) SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: arrayExists%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = tuple(['V0\0']), [tuple([toFixedString('V0', 3)])]) SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: has%';
 
 -- Over a constant array too: a same-type tuple keeps the rewrite, a cross-width pair declines.
 -- (A numeric constant array goes on to become `in` via the has -> in rewrite.)
