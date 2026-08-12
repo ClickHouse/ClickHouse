@@ -52,10 +52,9 @@ SELECT count() FROM numbers(10) WHERE materialize(now()) > toDateTime('1970-01-0
 -- surviving non-filter outputs must not be folded - y must still look non-Const downstream
 SELECT isConstant(y) FROM (SELECT materialize(1) = 1 AS y FROM numbers(1)) WHERE materialize(1) = 1;
 
--- predicate function not in the value-only whitelist - filter stays as is, runtime still raises
+-- `like` supports only a constant ESCAPE argument and raises `ILLEGAL_COLUMN` for a materialized
+-- one while the query header is built, before any plan-level fold could run - preserved
 SELECT count() FROM numbers(1) WHERE like('50%off', '50#%off', materialize('#')); -- { serverError ILLEGAL_COLUMN }
-
--- buried materialize under a non-whitelisted child of a non-whitelisted parent - still no fold
 SELECT count() FROM numbers(1) WHERE like('50%off', '50#%off', concat(materialize('#'), '')); -- { serverError ILLEGAL_COLUMN }
 
 -- mixed String/non-String comparison raises at analysis (header build on non-const String),
@@ -66,10 +65,11 @@ SELECT count() FROM numbers(1) WHERE materialize('257') != toUInt8(1); -- { serv
 -- folding and's second arg is safe: an unconvertible const comparison yields false, not an exception
 SELECT count() FROM numbers(1) WHERE and(0, materialize(tuple(1)) = '(1') SETTINGS short_circuit_function_evaluation = 'enable';
 
--- empty rowset, toFloat64 is not whitelisted so no speculative fold, runtime skips the WHERE
+-- folding `toFloat64('x86_74')` throws, so the predicate stays unfolded; runtime never
+-- evaluates the WHERE over the empty rowset
 SELECT count() FROM numbers(0) WHERE toFloat64(materialize('x86_74')) < 50;
 
--- `if` not in the whitelist - planning doesn't evaluate the lazy then-branch
+-- an exception while folding an `if` branch only disables the fold - planning must not raise
 SELECT count() > 0 FROM (
     EXPLAIN PLAN SELECT count() FROM numbers(1)
     WHERE if(equals(materialize('abc'), 'aws.lambda.duration'),
@@ -79,11 +79,9 @@ SELECT count() > 0 FROM (
 );
 
 
--- comparison is only invariant to constness when both sides are strings or neither is:
--- `executeWithConstString` casts a *constant* String/FixedString operand to the other operand's
--- type and is unreachable for a materialized one, so folding a mixed comparison through
--- `materialize` would switch the dispatch. Such a filter must stay in the plan
-SELECT 'mixed string comparison not folded', countIf(explain LIKE '%Filter column: materialize%')
+-- a mixed comparison with the String operand constant runs `executeWithConstString` both at
+-- runtime and in the fold, so it folds to the same value the query would produce
+SELECT 'mixed string comparison with const string folded', countIf(explain LIKE '%Filter column: 1%')
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(1) WHERE materialize(toUInt8(1)) = '1');
 SELECT count() FROM numbers(1) WHERE materialize(toUInt8(1)) = '1';
 SELECT count() FROM numbers(1) WHERE materialize(toUInt8(1)) = '257';
@@ -92,10 +90,10 @@ SELECT count() FROM numbers(1) WHERE materialize(toUInt8(1)) = '257';
 SELECT count() FROM numbers(100) WHERE materialize('online'::String) = materialize('online'::String);
 SELECT count() FROM numbers(100) WHERE materialize(1) = materialize(2);
 
--- `and` / `or` fold only when every argument folds to a constant: whether runtime evaluates the
--- arguments after a decisive one depends on `short_circuit_function_evaluation` (the `disable` mode
--- promises eager evaluation, including exceptions), which the fold cannot see. A decisive constant
--- with a non-foldable sibling therefore stays in the plan (a literal `0` would be folded earlier,
+-- `and` / `or` fold only when every argument folds to a constant - there is no decisive-argument
+-- shortcut, because whether runtime evaluates the arguments after a decisive one depends on
+-- `short_circuit_function_evaluation`, which the fold cannot see. A decisive constant with a
+-- non-foldable sibling therefore stays in the plan (a literal `0` would be folded earlier,
 -- by the analyzer, so the decisive argument is wrapped in `materialize`)
 SELECT 'decisive and with non-const sibling not folded', countIf(explain LIKE '%Filter column: 0%')
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE and(materialize(0), number = 1));
@@ -161,15 +159,14 @@ JOIN (SELECT number AS a FROM numbers(3)) t2 ON t1.a = t2.a
 WHERE m = 5;
 
 -- tuple comparison decomposes a constant tuple into constant element columns, so a nested
--- string / non-string element pair reaches `executeWithConstString` only on the folded path -
--- the invariance check recurses through tuple elements and such filters must stay in the plan
-SELECT 'mixed tuple comparison not folded', countIf(explain LIKE '%Filter column: materialize%')
+-- string / non-string pair with the string side constant folds the same way a top-level one does
+SELECT 'mixed tuple comparison with const string folded', countIf(explain LIKE '%Filter column: 1%')
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(1) WHERE materialize(tuple(toUInt8(1))) = tuple('1'));
 SELECT count() FROM numbers(1) WHERE materialize(tuple(toUInt8(1))) = tuple('1');
-SELECT 'nested mixed tuple comparison not folded', countIf(explain LIKE '%Filter column: materialize%')
+SELECT 'nested mixed tuple comparison folded', countIf(explain LIKE '%Filter column: 1%')
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(1) WHERE materialize(tuple(tuple(toUInt8(1)), 1)) = tuple(tuple('1'), 1));
--- with the string on the materialized side the nested comparison raises - the fold must not
--- swallow the exception
+-- with the string on the materialized side the comparison already raises while the query header
+-- is built, before any plan-level fold could run - the exception is preserved
 SELECT count() FROM numbers(1) WHERE materialize(tuple('1')) = tuple(toUInt8(1)); -- { serverError NO_COMMON_TYPE }
 -- same-shaped tuples still fold
 SELECT 'same-typed tuple folded', countIf(explain LIKE '%Filter column: 1%')

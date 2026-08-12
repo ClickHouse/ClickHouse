@@ -975,19 +975,18 @@ struct FoldResult
     bool masked_secret;
 };
 
-/// Fold a predicate: const COLUMN leaves, walk past alias/materialize, recurse into
-/// `isInvariantToConstness` functions.
+/// Fold a predicate: const COLUMN leaves, walk past alias/materialize, evaluate functions
+/// over the folded constant arguments.
 ///
-/// Why `isInvariantToConstness` is needed at all: the fold evaluates `f(c)` on the plain constant
-/// and presents the result as what the query would observably do when executing `f(materialize(c))`.
-/// That substitution is only sound when the function's behavior - the produced values AND whether it
-/// throws - does not depend on the const-ness of its arguments. Most functions qualify, but not all:
-/// comparisons special-case a constant String operand (`executeWithConstString` casts it to the other
-/// operand's type), so `'1' = toUInt8(1)` succeeds while `materialize('1') = toUInt8(1)` throws
-/// `NO_COMMON_TYPE`; `like` requires a constant ESCAPE argument and throws `ILLEGAL_COLUMN` for a
-/// materialized one; `isConstant` exists to inspect the representation itself. Folding through such
-/// functions would silently replace the query's real outcome (often an exception) with the
-/// constant-path result, so only functions that declare invariance participate
+/// This is ordinary constant folding, just performed after stripping `materialize`, so the same
+/// contract applies: the function must be deterministic (which excludes functions that inspect
+/// the column representation, like `isConstant`) and `isSuitableForConstantFolding` (which
+/// excludes functions whose whole point is a runtime effect, like `throwIf`). Constant arguments are
+/// always supported, so evaluating on the plain constants is a faithful stand-in for executing
+/// over the materialized ones. If the evaluation throws (e.g. a function that supports only a
+/// constant argument, or a genuinely failing computation), the predicate is left unfolded and
+/// runtime keeps its exact behavior, including `short_circuit_function_evaluation` semantics
+/// for `and` / `or` arguments
 std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
 {
     while (node)
@@ -1017,17 +1016,8 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
         || !node->function_base
         || !node->function
         || !node->function_base->isDeterministic()
-        || !node->function_base->isInvariantToConstness())
+        || !node->function_base->isSuitableForConstantFolding())
         return std::nullopt;
-
-    /// Whether the arguments of `and` / `or` after a decisive one (`0` for `and`, `1` for `or`)
-    /// are evaluated at runtime depends on `short_circuit_function_evaluation`: short-circuit modes
-    /// skip them, but `disable` promises eager evaluation, including any exception they raise.
-    /// That setting is not visible here, so fold `and` / `or` only when every argument folds to a
-    /// constant without an exception - then both modes agree with the folded result. An exception
-    /// while folding an argument means the runtime behavior is mode-dependent, so leave the
-    /// predicate alone: the unfolded filter raises (or not) exactly as the chosen mode dictates
-    const bool is_and_or = node->function_base->getName() == "and" || node->function_base->getName() == "or";
 
     try
     {
@@ -1065,9 +1055,9 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
     }
     catch (...)
     {
-        if (is_and_or)
-            return std::nullopt;
-        throw;
+        /// Not foldable; the unfolded predicate reproduces the exception (or not, under
+        /// short-circuit evaluation) exactly as the query dictates
+        return std::nullopt;
     }
 }
 
