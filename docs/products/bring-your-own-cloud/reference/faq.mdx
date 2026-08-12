@@ -111,9 +111,9 @@ By default, the Kubernetes API endpoint is public but restricted to ClickHouse's
 </Accordion>
 
 <Accordion title="What is the size of the VPC/VNet IP range created?">
-By default, we use `10.0.0.0/16` for the BYOC VPC (AWS/GCP) or VNet (Azure). We recommend reserving at least /22 for potential future scaling,
-but if you prefer to limit the size, it is possible to use /23 if it is likely that you will be limited
-to 30 server pods.
+By default, we use `10.0.0.0/16` for the BYOC VPC (AWS/GCP) or VNet (Azure). We recommend reserving at least `/22` for potential future scaling.
+
+The minimum differs by cloud. On AWS the floor is `/23`, but that yields `/25` private subnets and limits you to roughly 30 server pods, so only choose it if you are confident the deployment will stay that small. On GCP the minimum is `/20`, because half the range is assigned to the GKE cluster pod range, which must be at least `/21` for the cluster to provision.
 </Accordion>
 
 <Accordion title="How does network communication work between the BYOC network and object storage?">
