@@ -843,6 +843,46 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
     /// clause would pull unknown identifiers into the source query.
     modified_select.setExpression(ASTSelectQuery::Expression::INTERPOLATE, {});
 
+    /// The rows this query inserts go through `writeIntoWindowView`, which executes the mergeable
+    /// view query over them, so all row transformations of the original query happen there and must
+    /// not be applied while reading the raw source table too. A leftover ARRAY JOIN would expand the
+    /// rows here and then again in the view query (double-counting every array element), and without
+    /// an alias it would even replace the raw Array column with its elements before the rows reach
+    /// the view query. WHERE and PREWHERE are cleared for the same reason: the view query re-applies
+    /// its filter itself, and the predicate may reference aliases of the removed ARRAY JOIN (or of
+    /// the rewritten select list), which do not exist in the raw-source query. SAMPLE and FINAL are
+    /// the opposite case: they would be applied here but never on the live path (`writeIntoWindowView`
+    /// reads the inserted blocks back through `StorageBlocks`, which ignores the table-expression
+    /// modifiers), so the initialized state would be computed from a sampled/finalized snapshot that
+    /// steady-state inserts never see.
+    modified_select.setExpression(ASTSelectQuery::Expression::WHERE, {});
+    modified_select.setExpression(ASTSelectQuery::Expression::PREWHERE, {});
+    if (auto tables = modified_select.tables())
+    {
+        std::erase_if(
+            tables->children,
+            [](const ASTPtr & child) { return child->as<ASTTablesInSelectQueryElement &>().array_join != nullptr; });
+
+        for (const auto & child : tables->children)
+        {
+            auto & element = child->as<ASTTablesInSelectQueryElement &>();
+            if (!element.table_expression)
+                continue;
+            auto & table_expression = element.table_expression->as<ASTTableExpression &>();
+            table_expression.final = false;
+            if (table_expression.sample_size)
+            {
+                std::erase(table_expression.children, table_expression.sample_size);
+                table_expression.sample_size = nullptr;
+            }
+            if (table_expression.sample_offset)
+            {
+                std::erase(table_expression.children, table_expression.sample_offset);
+                table_expression.sample_offset = nullptr;
+            }
+        }
+    }
+
     const auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
     select_with_union_query->list_of_selects = make_intrusive<ASTExpressionList>();
     select_with_union_query->list_of_selects->children.push_back(query);
