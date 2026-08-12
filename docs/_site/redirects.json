@@ -1,5 +1,9 @@
 [
   {
+    "source": "/products/cloud/guides/migration/oss-to-cloud-backup-restore",
+    "destination": "/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
+  },
+  {
     "source": "/docs/products/bring-your-own-cloud",
     "destination": "/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
   },
@@ -1980,7 +1984,7 @@
     "source": "/cloud/migration/etl-tool-to-clickhouse"
   },
   {
-    "destination": "/products/cloud/guides/migration/oss-to-cloud-backup-restore",
+    "destination": "/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore",
     "source": "/cloud/migration/oss-to-cloud-backup-restore"
   },
   {
@@ -2690,6 +2694,10 @@
   {
     "destination": "/reference/engines/database-engines/postgresql",
     "source": "/engines/database-engines/postgresql"
+  },
+  {
+    "destination": "/reference/engines/database-engines/remote",
+    "source": "/engines/database-engines/remote"
   },
   {
     "destination": "/reference/engines/database-engines/replicated",
@@ -39148,6 +39156,10 @@
     "source": "/sql-reference/aggregate-functions/reference/flame_graph"
   },
   {
+    "destination": "/reference/functions/aggregate-functions/gini",
+    "source": "/sql-reference/aggregate-functions/reference/gini"
+  },
+  {
     "destination": "/reference/functions/aggregate-functions/groupArray",
     "source": "/sql-reference/aggregate-functions/reference/grouparray"
   },
@@ -39948,8 +39960,12 @@
     "source": "/sql-reference/functions/random-functions"
   },
   {
-    "destination": "/reference/functions/regular-functions/regular-functions-index",
+    "destination": "/reference/functions/regular-functions/overview",
     "source": "/sql-reference/functions/regular-functions"
+  },
+  {
+    "destination": "/reference/functions/regular-functions/overview",
+    "source": "/reference/functions/regular-functions/regular-functions-index"
   },
   {
     "destination": "/reference/functions/regular-functions/rounding-functions",
