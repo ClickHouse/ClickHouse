@@ -4185,10 +4185,38 @@ struct ToNumberMonotonicity
             return {};
         }
 
+        /// From DateTime64: it is represented by an Int64 number of ticks, 10^scale ticks per second.
+        /// The conversion to an integer (e.g. `toUnixTimestamp`) takes the whole number of seconds,
+        /// truncating the fractional part toward zero, and throws a `DECIMAL_OVERFLOW` exception when
+        /// the result does not fit into the target type - it never wraps around (see `DecimalUtils::convertTo`).
+        /// Truncation preserves order, so the conversion is monotonic everywhere it is defined.
+        ///
+        /// The unbounded claim below lets `KeyCondition` push a comparison of a raw `DateTime64` column
+        /// with a constant through the sorting key expression (e.g. `ORDER BY toUnixTimestamp(ts)` with
+        /// `WHERE ts >= c`). It is sound there: stored keys cannot correspond to out-of-range values,
+        /// because computing the sorting key at insert time would have thrown, and an unrepresentable
+        /// constant is rejected gracefully by the guards in `applyFunctionChainToColumn`.
+        ///
+        /// For a range with a concrete bound we deliberately answer "unknown", even when both bounds fit
+        /// into the target type. Index analysis does not apply the function to the two bounds: it applies
+        /// it to the whole column of index values the bound comes from (see `applyFunction` in
+        /// `KeyCondition.cpp`), and that column may also hold out-of-range values from other granules of
+        /// the part, for which the batched conversion would throw an exception.
+        if (which_inner_type.isDateTime64())
+        {
+            if (!left.isNull() || !right.isNull())
+                return {};
+
+            /// With zero scale the conversion is an identity mapping of the seconds, so it is strict.
+            const bool is_strict = assert_cast<const DataTypeDateTime64 &>(
+                low_cardinality ? *low_cardinality_dictionary_type : type).getScale() == 0;
+            return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = is_strict };
+        }
+
         /// Integer cases.
 
         /// Only support types represented by native integers.
-        /// It can be extended to big integers, decimals and DateTime64 later.
+        /// It can be extended to big integers and decimals later.
         /// By the way, NULLs are representing unbounded ranges.
         /// For null Field, check if the type is valid.
         /// See : https://github.com/ClickHouse/ClickHouse/issues/80742
