@@ -1853,9 +1853,6 @@ keeper_settings = {
         "async_replication": true_false_lambda,
         "auto_forwarding": true_false_lambda,
         "check_node_acl_on_remove": true_false_lambda,
-        "commit_logs_cache_entry_count_threshold": threshold_generator(
-            0.2, 0.2, 0, 500000
-        ),
         "commit_logs_cache_size_threshold": threshold_generator(
             0.2, 0.2, 0, 1000 * 1024 * 1024
         ),
@@ -1872,15 +1869,20 @@ keeper_settings = {
         "force_sync": true_false_lambda,
         "fresh_log_gap": threshold_generator(0.2, 0.2, 0, 200),
         "heart_beat_interval_ms": threshold_generator(0.2, 0.2, 100, 1500),
-        "latest_logs_cache_entry_count_threshold": threshold_generator(
-            0.2, 0.2, 0, 500000
-        ),
         "latest_logs_cache_size_threshold": threshold_generator(
             0.2, 0.2, 0, 2 * 1024 * 1024 * 1024
         ),
         "leadership_expiry_ms": threshold_generator(0.2, 0.2, 0, 1999),
         "log_file_overallocate_size": threshold_generator(
             0.2, 0.2, 0, 100 * 1024 * 1024
+        ),
+        "log_readahead_chunk_size": threshold_generator(0.2, 0.2, 1, 64),
+        "log_readahead_commit_window_bytes": threshold_generator(
+            0.2, 0.2, 0, 1000 * 1024 * 1024
+        ),
+        "log_readahead_enabled": true_false_lambda,
+        "log_readahead_window_bytes": threshold_generator(
+            0.2, 0.2, 1, 64 * 1024 * 1024
         ),
         "log_slow_connection_operation_threshold_ms": threshold_generator(
             0.2, 0.2, 0, 10000
@@ -1913,6 +1915,7 @@ keeper_settings = {
         ),
         "min_request_size_for_cache": threshold_generator(0.2, 0.2, 0, 100 * 1024),
         "min_session_timeout_ms": threshold_generator(0.2, 0.2, 1000, 10000),
+        "min_time_between_fsyncs_ms": threshold_generator(0.2, 0.2, 0, 100),
         "nuraft_append_entries_backward_probe_throttle_threshold": threshold_generator(
             0.2, 0.2, 0, 128
         ),

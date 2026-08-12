@@ -258,7 +258,9 @@ public:
 
     UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
     {
-        return {num_arguments - 1};
+        auto arguments = nested_func->getArgumentsThatCanBeOnlyNull();
+        arguments.insert(num_arguments - 1);
+        return arguments;
     }
 
 #if USE_EMBEDDED_COMPILER

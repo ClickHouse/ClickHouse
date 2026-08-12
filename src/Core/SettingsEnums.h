@@ -554,6 +554,7 @@ DECLARE_SETTING_ENUM(MergeTreePartMinMaxIndexColumns)
 enum class MergeCoordinatorDistributionAlgorithm : uint64_t
 {
     WATER_FILLING = 0,
+    SAINTE_LAGUE = 1,
 };
 
 DECLARE_SETTING_ENUM(MergeCoordinatorDistributionAlgorithm)
