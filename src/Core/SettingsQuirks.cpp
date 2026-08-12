@@ -110,6 +110,12 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
     {
         settings[Setting::local_filesystem_read_method] = "pread";
 
+        /// This is a property of this host, not of the query. A setting marked as changed goes into
+        /// `Settings::changes()`, and `Connection::sendQuery` forwards those to the remote shards -
+        /// which would downgrade the read method on hosts where the system call works. Leave it
+        /// unchanged instead, so it is only the effective default here.
+        settings[Setting::local_filesystem_read_method].setChanged(false);
+
         /// `applySettingsQuirks` is called for every settings change as well, and the call that
         /// applies the default profile on startup comes before the one that has a logger,
         /// so the reason is reported once per process, by whichever call switches it first.

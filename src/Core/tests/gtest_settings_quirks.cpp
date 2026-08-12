@@ -26,6 +26,13 @@ TEST(SettingsQuirks, PreadThreadpoolNeedsPreadNoWait)
     EXPECT_EQ(
         settings[Setting::local_filesystem_read_method].value,
         preadNoWaitUnavailableReason().empty() ? "pread_threadpool" : "pread");
+
+    /// The switch is a property of this host, not of the query. A changed setting is serialized
+    /// into the query the initiator sends to the remote shards, and a host that cannot use the
+    /// system call must not impose 'pread' on the shards that can.
+    EXPECT_FALSE(settings[Setting::local_filesystem_read_method].changed);
+    for (const auto & change : settings.changes())
+        EXPECT_NE(change.name, "local_filesystem_read_method");
 }
 
 TEST(SettingsQuirks, AnExplicitReadMethodIsKept)
