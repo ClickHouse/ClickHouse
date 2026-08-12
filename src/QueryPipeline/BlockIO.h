@@ -3,7 +3,6 @@
 #include <functional>
 #include <Common/QueryScope.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Interpreters/QueryMetadataCache.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <IO/Progress.h>
 #include <Parsers/IAST_fwd.h>
@@ -38,21 +37,6 @@ struct BlockIO
     /// Needed for internal queries.
     /// Each level calls executeQuery and adds its process list entry.
     VectorWithMemoryTracking<std::shared_ptr<ProcessListEntry>> process_list_entries;
-
-    /// Query-scoped cache for storage metadata and snapshots.
-    ///
-    /// The cache is created at query execution entry point and is kept alive by BlockIO for the entire lifetime of
-    /// query execution (including pipeline execution and internal/nested queries).
-    ///
-    /// It allows consistently reusing StorageMetadata and StorageSnapshot instances within the same query across
-    /// concurrent execution threads, while avoiding extending their lifetime beyond the query scope.
-    ///
-    /// The cache is *not* owned by Context to prevent reference cycles; Context only holds a weak reference to it for
-    /// access during query execution.
-    QueryMetadataCachePtr query_metadata_cache;
-
-    /// The ASTInsertQuery actually executed, when it differs from the top-level parsed query (e.g. CREATE ... AS/AND INSERT).
-    ASTPtr insert_query;
 
     QueryPipeline pipeline;
 

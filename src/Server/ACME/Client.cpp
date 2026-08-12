@@ -174,11 +174,11 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
     for (const auto & domain : domains)
         zk->createIfNotExists(fs::path(zookeeper_path) / acme_hostname / "domains" / domain, "");
 
-    BackgroundSchedulePool & bgpool = Context::getGlobalContextInstance()->getSchedulePool();
+    BackgroundSchedulePoolPtr bgpool = Context::getGlobalContextInstance()->getSchedulePool();
 
-    refresh_certificates_task = bgpool.createTask(StorageID::createEmpty(), "ACME::refreshCertificatesTask", [this, &config] { refreshCertificatesTask(config); });
-    authentication_task = bgpool.createTask(StorageID::createEmpty(), "ACME::authenticationTask", [this] { authenticationTask(); });
-    refresh_key_task = bgpool.createTask(StorageID::createEmpty(), "ACME::refreshKeyTask", [this] { refreshKeyTask(); });
+    refresh_certificates_task = bgpool->createTask(StorageID::createEmpty(), "ACME::refreshCertificatesTask", [this, &config] { refreshCertificatesTask(config); });
+    authentication_task = bgpool->createTask(StorageID::createEmpty(), "ACME::authenticationTask", [this] { authenticationTask(); });
+    refresh_key_task = bgpool->createTask(StorageID::createEmpty(), "ACME::refreshKeyTask", [this] { refreshKeyTask(); });
 
     {
         std::lock_guard key_lock(private_acme_key_mutex);

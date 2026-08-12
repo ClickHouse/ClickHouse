@@ -36,7 +36,7 @@
 	url = https://github.com/ClickHouse/jemalloc
 [submodule "contrib/google-protobuf"]
 	path = contrib/google-protobuf
-	url = https://github.com/ClickHouse/google-protobuf.git
+	url = https://github.com/protocolbuffers/protobuf.git
 [submodule "contrib/boost"]
 	path = contrib/boost
 	url = https://github.com/ClickHouse/boost
@@ -398,7 +398,7 @@
 	url = https://github.com/ClickHouse/silk.git
 [submodule "contrib/xsimd"]
 	path = contrib/xsimd
-	url = https://github.com/xtensor-stack/xsimd
+	url = https://github.com/ClickHouse/xsimd
 [submodule "contrib/simdutf"]
 	path = contrib/simdutf
 	url = https://github.com/ClickHouse/simdutf

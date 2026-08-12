@@ -137,7 +137,7 @@ bool ParserStreamSettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         if (!cursor.has_value())
             return false;
 
-        stream_settings->cursor = buildCursorTree(cursor.value());
+        stream_settings->setCursor(buildCursorTree(cursor.value()));
     }
 
     if (s_watermark.ignore(pos, expected))
@@ -146,7 +146,7 @@ bool ParserStreamSettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         if (!watermark.has_value())
             return false;
 
-        stream_settings->watermark = std::make_shared<WatermarkSettings>(std::move(watermark.value()));
+        stream_settings->setWatermark(std::make_shared<WatermarkSettings>(std::move(watermark.value())));
     }
 
     node = std::move(stream_settings);
