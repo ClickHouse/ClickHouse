@@ -19,6 +19,7 @@
 #include <absl/container/flat_hash_set.h>
 #include <base/types.h>
 
+#include <concepts>
 #include <span>
 #include <variant>
 #include <vector>
@@ -195,13 +196,20 @@ struct PostingsSerialization
         HasPositions = 1ULL << 5,
     };
 
-    void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
-    void serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
-    void serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr);
-    PostingListPtr deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality);
-    /// The same, but appends the row ids to the plain array instead of materializing a posting list.
-    /// Used in merges of text indexes, where row ids may be remapped before adding to the output posting list.
-    void deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality, PaddedPODArray<UInt32> & row_ids);
+    /// Serializes a roaring bitmap as a portable serialized bitmap.
+    void serializeBitmap(const roaring::api::roaring_bitmap_t & postings, WriteBuffer & ostr);
+    /// Serializes a posting lists using the posting list codec.
+    void serializeCompressed(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
+    /// Serializes a plain array of row ids as VarUInt values.
+    static void serializeRaw(std::span<const UInt32> postings, WriteBuffer & ostr);
+
+    /// Returns the row ids of a posting list as a plain array of ascending unique values.
+    /// A large container is converted into the reusable buffer, so the returned span is valid until the next call.
+    std::span<const UInt32> toRawPostings(const PostingListBuilder & postings);
+    std::span<const UInt32> toRawPostings(std::span<const UInt32> postings) const { return postings; }
+
+    PostingListPtr deserializeToBitmap(ReadBuffer & istr, UInt64 header, UInt64 cardinality);
+    void deserializeToArray(ReadBuffer & istr, UInt64 header, UInt64 cardinality, PaddedPODArray<UInt32> & row_ids);
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
 
 private:
@@ -210,9 +218,9 @@ private:
     PostingListCodecPtr posting_list_codec;
     MergeTreeIndexVersion serialization_version;
 
-    /// Reusable buffers to avoid repeated heap allocations during deserialization.
-    std::vector<UInt32> raw_postings_buffer;
-    PaddedPODArray<char> deserialization_buffer;
+    /// Reusable buffers to avoid repeated heap allocations during serialization/deserialization.
+    PaddedPODArray<UInt32> raw_postings_buffer;
+    PaddedPODArray<char> raw_data_buffer;
 };
 
 /// Closed range of rows.
@@ -319,6 +327,11 @@ struct TextIndexHeader
     DictionarySparseIndex sparse_index;
 };
 
+/// A posting list is serialized either from the builder used while writing an index,
+/// or from a plain array of row ids, which merges of text indexes have already materialized.
+template <typename T>
+concept PostingsContainer = std::same_as<T, PostingListBuilder> || std::same_as<T, std::span<const UInt32>>;
+
 struct TextIndexSerialization
 {
     enum class TokensFormat : UInt64
@@ -327,16 +340,11 @@ struct TextIndexSerialization
         FrontCodedStrings = 1
     };
 
+    /// Serializes the posting list of a single token and returns its metadata.
+    /// The row ids must be sorted in ascending order and unique.
+    template <PostingsContainer Postings>
     static TokenPostingsInfo serializePostings(
-        PostingListBuilder & postings,
-        MergeTreeIndexWriterStream & postings_stream,
-        const MergeTreeIndexTextParams & params,
-        PostingsSerialization & postings_serialization);
-
-    /// The same, but for a posting list stored in a plain array.
-    /// The values must be sorted in ascending order and unique.
-    static TokenPostingsInfo serializePostings(
-        std::span<const UInt32> postings,
+        const Postings & postings,
         MergeTreeIndexWriterStream & postings_stream,
         const MergeTreeIndexTextParams & params,
         PostingsSerialization & postings_serialization);

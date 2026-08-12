@@ -365,8 +365,8 @@ void MergeTextIndexesTask::mergePostingLists(size_t source_num, size_t row)
     /// Bitpacked and raw postings are stored as plain row ids: decode them into an array,
     /// adjust in place and add to the output postings, without materializing an intermediate
     /// posting list. Roaring postings are decoded into an array only if they must be adjusted.
-    bool decode_to_array = merged_part_offsets
-        || (token_info.header & (PostingsSerialization::Flags::IsCompressed | PostingsSerialization::Flags::RawPostings));
+    bool is_compressed_or_raw = token_info.header & (PostingsSerialization::Flags::IsCompressed | PostingsSerialization::Flags::RawPostings);
+    bool decode_to_array = merged_part_offsets || is_compressed_or_raw;
 
     for (const auto offset_in_file : token_info.offsets)
     {
@@ -375,13 +375,13 @@ void MergeTextIndexesTask::mergePostingLists(size_t source_num, size_t row)
         if (decode_to_array)
         {
             row_ids_buffer.clear();
-            serialization.deserialize(*data_buffer, token_info.header, token_info.cardinality, row_ids_buffer);
+            serialization.deserializeToArray(*data_buffer, token_info.header, token_info.cardinality, row_ids_buffer);
             adjustPartOffsets(source_num, row_ids_buffer);
             output_postings.addMany(row_ids_buffer.size(), row_ids_buffer.data());
         }
         else
         {
-            auto posting = serialization.deserialize(*data_buffer, token_info.header, token_info.cardinality);
+            auto posting = serialization.deserializeToBitmap(*data_buffer, token_info.header, token_info.cardinality);
             output_postings |= *posting;
         }
     }
@@ -524,10 +524,7 @@ void MergeTextIndexesTask::flushDictionaryBlock()
         TextIndexSerialization::serializeTokenInfo(ostr, output_infos[i]);
 
         if (output_infos[i].header & PostingsSerialization::Flags::EmbeddedPostings)
-        {
-            for (UInt32 value : output_infos[i].embedded_postings)
-                writeVarUInt(value, ostr);
-        }
+            PostingsSerialization::serializeRaw(output_infos[i].embedded_postings, ostr);
     }
 
     output_tokens = ColumnString::create();
