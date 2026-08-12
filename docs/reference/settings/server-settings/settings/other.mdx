@@ -480,10 +480,14 @@ A value of `0` means ClickHouse disables HSTS. If you set a positive number, the
 ## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
-If true, ClickHouse doesn't write defaults for empty SQL security statement in `CREATE VIEW` queries.
+If true, a `CREATE VIEW` or `CREATE MATERIALIZED VIEW` query that specifies neither `DEFINER` nor `SQL SECURITY` is stored as written, and the view gets an empty SQL security type. Specifying `DEFINER` alone counts as `SQL SECURITY DEFINER`, so such a query is unaffected by this setting. A normal view with an empty SQL security type runs with the permissions of the invoker. For a materialized view with an explicitly specified target table, the access checks on the target table are skipped: inserting into the source table does not require the `INSERT` privilege on the target table, and reading from the view does not require the `SELECT` privilege on it.
+
+If false, the defaults from the [`default_normal_view_sql_security`](/reference/settings/session-settings#default_normal_view_sql_security), [`default_materialized_view_sql_security`](/reference/settings/session-settings#default_materialized_view_sql_security), and [`default_view_definer`](/reference/settings/session-settings#default_view_definer) settings are written into the view definition at creation time. With the default values of those settings, a materialized view created with neither clause records the creating user as its definer and runs with that user's permissions.
+
+Refreshable materialized views always receive the defaults, regardless of this setting.
 
 <Note>
-This setting is only necessary for the migration period and will become obsolete in 24.4
+Changing this setting affects only views created afterwards; the stored definitions of existing views stay unchanged.
 </Note>
 
 ## include_from {#include_from}
