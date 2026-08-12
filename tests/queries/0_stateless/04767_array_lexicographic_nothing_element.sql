@@ -63,6 +63,33 @@ INSERT INTO t_nullable_tuple VALUES ([(1, 2)]);
 INSERT INTO t_nothing_tuple_i64 VALUES ([(NULL, -1)]);
 SELECT a = b FROM t_nullable_tuple, t_nothing_tuple_i64; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+-- Both sides bare `Nothing` in the same aligned position, differing only in the signedness of the
+-- carrying member. The element resolver answers `Nullable(UInt8)` for such a pair, but that column
+-- is null for every row, so the pair still decides nothing and must be rejected. Both operand
+-- orders, because a classifier that stopped at the first aligned pair would accept this.
+DROP TABLE IF EXISTS t_nothing_tuple_u64_pair;
+DROP TABLE IF EXISTS t_nothing_tuple_i64_pair;
+CREATE TABLE t_nothing_tuple_u64_pair (a Array(Tuple(Nothing, UInt64))) ENGINE = Memory;
+CREATE TABLE t_nothing_tuple_i64_pair (b Array(Tuple(Nothing, Int64))) ENGINE = Memory;
+INSERT INTO t_nothing_tuple_u64_pair VALUES ([(NULL, 5)]);
+INSERT INTO t_nothing_tuple_i64_pair VALUES ([(NULL, 7)]);
+SELECT toTypeName(a = b) FROM t_nothing_tuple_u64_pair, t_nothing_tuple_i64_pair; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT a = b FROM t_nothing_tuple_u64_pair, t_nothing_tuple_i64_pair; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT b = a FROM t_nothing_tuple_u64_pair, t_nothing_tuple_i64_pair; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT a > b FROM t_nothing_tuple_u64_pair, t_nothing_tuple_i64_pair; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT b > a FROM t_nothing_tuple_u64_pair, t_nothing_tuple_i64_pair; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- The same mixed signed/unsigned shape without `Nothing` stays accepted, so the rows above pin the
+-- `Nothing` member and not the signedness difference.
+DROP TABLE IF EXISTS t_string_tuple_u64;
+DROP TABLE IF EXISTS t_string_tuple_i64;
+CREATE TABLE t_string_tuple_u64 (a Array(Tuple(String, UInt64))) ENGINE = Memory;
+CREATE TABLE t_string_tuple_i64 (b Array(Tuple(String, Int64))) ENGINE = Memory;
+INSERT INTO t_string_tuple_u64 VALUES ([('x', 5)]);
+INSERT INTO t_string_tuple_i64 VALUES ([('x', 7)]);
+SELECT a = b FROM t_string_tuple_u64, t_string_tuple_i64;
+SELECT a > b FROM t_string_tuple_u64, t_string_tuple_i64;
+
 -- A `Nullable(T)` wrapper carries values, so it decides nothing about a bare `Nothing` nested under
 -- it: such a side must still be rejected. `Nullable(Tuple(...))` needs its own setting to exist.
 SET enable_nullable_tuple_type = 1;
@@ -121,6 +148,10 @@ DROP TABLE t_nothing_tuple_i64;
 DROP TABLE t_nullable_nothing_tuple;
 DROP TABLE t_nested_nothing_tuple;
 DROP TABLE t_nullable_tuple_nothing;
+DROP TABLE t_nothing_tuple_u64_pair;
+DROP TABLE t_nothing_tuple_i64_pair;
+DROP TABLE t_string_tuple_u64;
+DROP TABLE t_string_tuple_i64;
 DROP TABLE t_map_nothing;
 DROP TABLE t_map_uint8;
 DROP TABLE t_nested_array_nothing;
