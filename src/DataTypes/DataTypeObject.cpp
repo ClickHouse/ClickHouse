@@ -1362,8 +1362,6 @@ Unless `allow_json_shared_data_paths_repromotion` is enabled, each data part rec
 
 If the rules recorded across the merged parts cannot be combined exactly — more than 256 distinct rules or more than 1 MiB of patterns accumulated over the history of `SHARED REGEXP` alterations, or a combination that fails to compile — the merged part falls back to the single match-everything rule `SHARED REGEXP '(?s:.*)'` that keeps every untyped path in shared data, and a warning is logged. Later merges preserve this fallback. To undo it, set `allow_json_shared_data_paths_repromotion=1` and rewrite the column, for example with `OPTIMIZE TABLE ... FINAL` or `ALTER TABLE ... UPDATE <column> = <column>`.
 
-Known limitation: materializing a lightweight-update patch with `ALTER TABLE ... APPLY PATCHES` does not reconsider `SHARED REGEXP` placement for the paths it materializes, even with `allow_json_shared_data_paths_repromotion=1` — such a path can remain in shared data after `APPLY PATCHES` completes. Use `OPTIMIZE TABLE ... FINAL` (or another operation that fully rewrites the column, such as `ALTER TABLE ... UPDATE <column> = <column>`) to repromote paths that were only touched by a materialized patch.
-
 <WhenToUseJson />
 
 ## Creating `JSON` {#creating-json}
