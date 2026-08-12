@@ -1,10 +1,14 @@
--- Tags: no-ordinary-database, no-parallel
+-- Tags: no-ordinary-database, no-parallel, log-engine, no-replicated-database
 -- no-parallel: reads the server-global ProfileEvents counters
 -- ASTFuzzerSkippedSharedNonParallelTarget, ASTFuzzerSkipCheckFailed and ASTFuzzerQueries, so no
 -- other test may run fuzzed queries against the same server while this one measures the deltas.
 -- The counters are bumped in the query-finish callback, after the query's own ProfileEvents
 -- snapshot is taken, so system.query_log carries none of them and per-query_id attribution
 -- (the 04339 pattern, which does not need the tag) is not available here.
+-- log-engine: the whole oracle rests on the target NOT supporting parallel insert, which
+-- --replace-log-memory-with-mergetree rewrites away (it also rewrites the Memory fixture).
+-- no-replicated-database: for the lazy_load_tables section below, plus a DETACH TABLE inside the
+-- test database.
 
 -- The serverfuzz/stress profile sets ast_fuzzer_runs server-wide, which would make every statement
 -- here fire the fuzzer and pollute the counters. Pin the baseline to 0 so only statements with an
@@ -12,12 +16,17 @@
 SET ast_fuzzer_runs = 0;
 SET ast_fuzzer_any_query = 0;
 SET send_logs_level = 'fatal';
+-- The stress runner appends this unconditionally; a DROP of a table that stores no data on disk
+-- then becomes a TRUNCATE, so fuzz_events would survive its own DROP and the next CREATE would fail.
+SET ignore_drop_queries_probability = 0;
 
 DROP TABLE IF EXISTS fuzz_src;
 DROP TABLE IF EXISTS fuzz_log;
 DROP TABLE IF EXISTS fuzz_mt;
 DROP TABLE IF EXISTS fuzz_events;
 
+-- One table for every section: each row is keyed by its own label, and creating it once keeps the
+-- fixture independent of whether a DROP in between was honoured.
 CREATE TABLE fuzz_events (label String, skipped Int64, undecided Int64, executed Int64) ENGINE = Memory;
 
 -- sumIf over the (possibly absent) rows yields 0 before an event has ever fired, so the delta
@@ -85,20 +94,19 @@ DROP TABLE fuzz_mv;
 DROP TABLE fuzz_mt;
 DROP TABLE fuzz_log;
 DROP TABLE fuzz_src;
-DROP TABLE fuzz_events;
 
 -- The hazard reached through a lazily loaded table. DETACH/ATTACH DATABASE replaces every plain
 -- table with a proxy that renames the storage it wraps to the proxy's own id, so a walk that
 -- re-entered by id would read the hop as a cycle and report the whole graph as safe.
-DROP DATABASE IF EXISTS 04876_lazy;
-CREATE DATABASE 04876_lazy ENGINE = Atomic SETTINGS lazy_load_tables = 1;
-CREATE TABLE 04876_lazy.src (k Int) ENGINE = Null;
-CREATE TABLE 04876_lazy.tgt (k Int) ENGINE = TinyLog;
-DETACH DATABASE 04876_lazy;
-ATTACH DATABASE 04876_lazy;
-SELECT 'lazy_proxy_engine', engine FROM system.tables WHERE database = '04876_lazy' AND name = 'tgt';
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS lazy_load_tables = 1;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.src (k Int) ENGINE = Null;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tgt (k Int) ENGINE = TinyLog;
+DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+SELECT 'lazy_proxy_engine', engine FROM system.tables
+WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'tgt';
 
-CREATE TABLE fuzz_events (label String, skipped Int64, undecided Int64, executed Int64) ENGINE = Memory;
 INSERT INTO fuzz_events
 SELECT 'before_lazy',
        toInt64(sumIf(value, event = 'ASTFuzzerSkippedSharedNonParallelTarget')),
@@ -106,7 +114,9 @@ SELECT 'before_lazy',
        toInt64(sumIf(value, event = 'ASTFuzzerQueries'))
 FROM system.events;
 
-CREATE MATERIALIZED VIEW 04876_lazy.mv TO 04876_lazy.tgt AS SELECT k FROM 04876_lazy.src
+CREATE MATERIALIZED VIEW {CLICKHOUSE_DATABASE_1:Identifier}.mv
+TO {CLICKHOUSE_DATABASE_1:Identifier}.tgt
+AS SELECT k FROM {CLICKHOUSE_DATABASE_1:Identifier}.src
 SETTINGS ast_fuzzer_runs = 30, ast_fuzzer_any_query = 1;
 
 INSERT INTO fuzz_events
@@ -120,11 +130,11 @@ SELECT 'lazy_proxy_clone_skipped',
       (SELECT skipped FROM fuzz_events WHERE label = 'after_lazy')
     - (SELECT skipped FROM fuzz_events WHERE label = 'before_lazy') > 0;
 
-INSERT INTO 04876_lazy.src SETTINGS lock_acquire_timeout = 5, wait_for_async_insert_timeout = 10 VALUES (1);
-SELECT 'lazy_proxy_insert_completed', count() FROM 04876_lazy.tgt;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.src
+SETTINGS lock_acquire_timeout = 5, wait_for_async_insert_timeout = 10 VALUES (1);
+SELECT 'lazy_proxy_insert_completed', count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.tgt;
 
-DROP DATABASE 04876_lazy;
-DROP TABLE fuzz_events;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- An undecided answer is counted rather than silently read as safe: the dependent view's own
 -- target is detached, so that branch cannot be resolved, and the query is still fuzzed.
@@ -138,7 +148,6 @@ CREATE TABLE und_gone (k Int) ENGINE = TinyLog;
 CREATE MATERIALIZED VIEW und_mv_gone TO und_gone AS SELECT k FROM und_mt;
 DETACH TABLE und_gone;
 
-CREATE TABLE fuzz_events (label String, skipped Int64, undecided Int64, executed Int64) ENGINE = Memory;
 INSERT INTO fuzz_events
 SELECT 'before_undecided',
        toInt64(sumIf(value, event = 'ASTFuzzerSkippedSharedNonParallelTarget')),
@@ -165,6 +174,12 @@ SELECT 'undecided_counted',
     - (SELECT undecided FROM fuzz_events WHERE label = 'before_undecided')
    >= (SELECT executed FROM fuzz_events WHERE label = 'after_undecided')
     - (SELECT executed FROM fuzz_events WHERE label = 'before_undecided');
+
+-- Lower bound for the comparison above, which two zeroes would otherwise satisfy without any
+-- query having been fuzzed at all.
+SELECT 'undecided_executed_nonzero',
+      (SELECT executed FROM fuzz_events WHERE label = 'after_undecided')
+    - (SELECT executed FROM fuzz_events WHERE label = 'before_undecided') > 0;
 
 SELECT 'undecided_not_skipped',
       (SELECT skipped FROM fuzz_events WHERE label = 'after_undecided')

@@ -178,10 +178,14 @@ public:
 
     /// Whether adding a materialized view from `source` to `new_view_target` would make one
     /// `INSERT INTO source` build two sinks for the same storage while that storage accepts only one
-    /// `write()` per `INSERT` (`IStorage::supportsParallelInsert() == false`). Both the graph already
-    /// reachable from `source` and the branch `new_view_target` starts are walked over the edges
-    /// `collectAllDependencies` follows (a view's own target plus `getDependentViews`), validating each
-    /// view hop against a stale dependency the way `observePath` does. Capability is tested only on
+    /// `write()` per `INSERT` (`IStorage::supportsParallelInsert() == false`) - either one sink from each
+    /// side, or two within the new branch alone. Both the graph already reachable from `source` and the
+    /// branch `new_view_target` starts are walked over the edges `collectAllDependencies` follows (a
+    /// view's own target plus `getDependentViews`), validating each view hop against a stale dependency
+    /// the way `observePath` does. Dependent views are taken at every node, including one whose
+    /// `noPushingToViewsOnInserts()` holds and which a direct `INSERT` writes alone, so at such a node the
+    /// walk is a superset: it also covers that storage's background consumer, whose insert does push to
+    /// the views, and it errs towards `Hazardous` rather than past a real one. Capability is tested only on
     /// concrete sinks - a view is written *through*, never *to* - and `Alias` and proxy hops are resolved
     /// to the storage they hand the write to, which materializes and starts up a lazily loaded one.
     /// A `Buffer` or a `Distributed` ends a branch: the write it forwards runs as an `INSERT` of its own,

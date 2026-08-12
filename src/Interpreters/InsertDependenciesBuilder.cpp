@@ -955,23 +955,25 @@ InsertDependenciesBuilder::DuplicateNonParallelSinkVerdict InsertDependenciesBui
     auto edge_key = [](const StorageIDMaybeEmpty & node)
     { return fmt::format("{}:{}:{}:{}:", node.database_name.size(), node.database_name, node.table_name.size(), node.table_name); };
 
-    /// `parent` is empty at the root of a pipeline, where there is no edge to validate. `resolved`
-    /// carries a storage that must be walked as handed over rather than looked up: a proxy renames the
-    /// storage it wraps to the proxy's own id, so a lookup would return the proxy again. `insert_root`
-    /// marks a storage an `INSERT` itself targets, the only position at which
-    /// `noPushingToViewsOnInserts()` suppresses the dependent views.
+    /// `parent` is empty at the root of a branch, where there is no edge to validate. `resolved` carries
+    /// a storage to walk as handed over rather than looked up: a proxy renames the storage it wraps to
+    /// the proxy's own id, so a lookup would return the proxy again.
     struct Node
     {
         StorageIDMaybeEmpty id;
         StorageIDMaybeEmpty parent;
         StoragePtr resolved = nullptr;
-        bool insert_root = false;
         size_t depth = 0;
     };
 
-    /// Collects into `sinks` the storages that accept a single `write()` per `INSERT` and for which a write
+    /// Counted rather than collected: two live edges reaching one such sink within a single branch
+    /// already build two sinks on it, with no second branch involved.
+    using SinkCounts = std::
+        unordered_map<StorageIDMaybeEmpty, size_t, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+
+    /// Counts in `sinks` the storages that accept a single `write()` per `INSERT` and for which a write
     /// into `node.id` builds a sink, over the edges `collectAllDependencies` follows.
-    std::function<void(const Node &, StorageIDSet &)> collect = [&](const Node & node, StorageIDSet & sinks)
+    std::function<void(const Node &, SinkCounts &)> collect = [&](const Node & node, SinkCounts & sinks)
     {
         /// A view chain is bounded only by the catalog.
         checkStackSize();
@@ -1027,9 +1029,8 @@ InsertDependenciesBuilder::DuplicateNonParallelSinkVerdict InsertDependenciesBui
             return;
 
         /// Dependent views belong to the id, and a proxy hop revisits an id whose views were already
-        /// taken. A storage that consumes from a queue is written by its background consumer, so a
-        /// direct `INSERT` into it builds the root sink alone.
-        if (!node.resolved && (!node.insert_root || !storage->noPushingToViewsOnInserts()))
+        /// taken.
+        if (!node.resolved)
         {
             for (const auto & view_id : catalog.getDependentViews(node.id))
                 collect({view_id, node.id}, sinks);
@@ -1045,7 +1046,7 @@ InsertDependenciesBuilder::DuplicateNonParallelSinkVerdict InsertDependenciesBui
         if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
         {
             if (auto target = alias->tryGetTargetTable())
-                collect({target->getStorageID(), {}, nullptr, true, node.depth + 1}, sinks);
+                collect({target->getStorageID(), {}, nullptr, node.depth + 1}, sinks);
             else
                 undecided = true;
             return;
@@ -1054,29 +1055,27 @@ InsertDependenciesBuilder::DuplicateNonParallelSinkVerdict InsertDependenciesBui
         {
             /// Resolving a lazy proxy materializes and starts up the storage it wraps.
             if (auto nested = proxy->getNested())
-                collect({node.id, node.parent, nested, node.insert_root, node.depth + 1}, sinks);
+                collect({node.id, node.parent, nested, node.depth + 1}, sinks);
             else
                 undecided = true;
             return;
         }
 
         if (!storage->supportsParallelInsert())
-            sinks.insert(storage->getStorageID());
+            ++sinks[storage->getStorageID()];
     };
 
-    StorageIDSet reachable_now;
-    collect({source, {}, nullptr, true}, reachable_now);
-    if (reachable_now.empty())
-        return undecided ? DuplicateNonParallelSinkVerdict::Undecided : DuplicateNonParallelSinkVerdict::NotHazardous;
+    SinkCounts reachable_now;
+    collect({source, {}}, reachable_now);
 
     walked_edges.clear();
-    StorageIDSet reachable_from_new_view;
+    SinkCounts reachable_from_new_view;
     collect({new_view_target, {}}, reachable_from_new_view);
 
-    /// Every collected sink was reached over live edges, so a sink in both sets is positive proof even
-    /// when some other branch stayed unresolved.
-    for (const auto & sink_id : reachable_from_new_view)
-        if (reachable_now.contains(sink_id))
+    /// Every count was reached over live edges and `walked_edges` admits each edge once, so two counts
+    /// are two distinct sinks: positive proof even when some other branch stayed unresolved.
+    for (const auto & [sink_id, count] : reachable_from_new_view)
+        if (count >= 2 || reachable_now.contains(sink_id))
             return DuplicateNonParallelSinkVerdict::Hazardous;
 
     return undecided ? DuplicateNonParallelSinkVerdict::Undecided : DuplicateNonParallelSinkVerdict::NotHazardous;

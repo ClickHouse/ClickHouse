@@ -2274,10 +2274,8 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             continue;
         }
 
-        /// Fuzzing a `CREATE MATERIALIZED VIEW` renames the view but keeps its external `TO`, so the new
-        /// view shares both source and target with the one it was derived from. One `INSERT` then builds
-        /// two sinks for that target, which cannot complete if the target takes only one `write()` per
-        /// `INSERT`: the second sink waits out `lock_acquire_timeout`.
+        /// A storage taking one `write()` per `INSERT` cannot serve two sinks of the same `INSERT`: the
+        /// second waits out `lock_acquire_timeout`. Such a view is withdrawn instead of executed.
         if (const auto * create = fuzzed_ast->as<ASTCreateQuery>(); create && create->is_materialized_view_with_external_target())
         {
             using Verdict = InsertDependenciesBuilder::DuplicateNonParallelSinkVerdict;
