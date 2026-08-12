@@ -79,6 +79,7 @@ private:
     std::exception_ptr init_exception;
 
 public:
+    /// True if WHERE / PREWHERE / row-policy filters may change the emitted row count.
     bool hasFilter() const;
 
     /// Creates `key_condition` and `additional_columns` with std::call_once semantics.

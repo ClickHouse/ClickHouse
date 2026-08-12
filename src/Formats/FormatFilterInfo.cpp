@@ -82,7 +82,9 @@ FormatFilterInfo::FormatFilterInfo() = default;
 
 bool FormatFilterInfo::hasFilter() const
 {
-    return filter_actions_dag != nullptr;
+    /// Any of these can reduce the number of rows emitted by the reader pipeline.
+    /// Count-from-files cache must not be populated when they are present.
+    return filter_actions_dag != nullptr || row_level_filter != nullptr || prewhere_info != nullptr;
 }
 
 Block FormatFilterInfo::buildKeyConditionInputs(

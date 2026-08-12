@@ -617,8 +617,10 @@ Chunk StorageObjectStorageSource::generate()
             }
         }
 
+        /// Do not cache filtered cardinality: filter DAG, PREWHERE, and row policies all
+        /// reduce rows seen by generate(), while the cache key is file identity only.
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && !format_filter_info->filter_actions_dag
+            && format_filter_info && !format_filter_info->hasFilter()
             && canUseCountFromFilesCache(reader.getObjectInfo()))
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
