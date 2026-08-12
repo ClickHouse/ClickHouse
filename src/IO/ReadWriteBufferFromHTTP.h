@@ -210,10 +210,14 @@ private:
     /// Waits before the next retry attempt. Returns true if the read has been cancelled while waiting.
     bool waitBeforeRetry(size_t milliseconds) const;
 
-    /// Whether the code that reads from this buffer has cancelled the read, see doWithRetries. The
-    /// helpers which swallow the errors of the requests they make must not swallow the error of a
-    /// request interrupted by a cancellation - nothing may go on requesting after it.
+    /// Whether the code that reads from this buffer has cancelled the read, see doWithRetries.
     bool isReadCancelled() const;
+
+    /// For the catch blocks of the helpers which treat the failure of a metadata request as an
+    /// answer: rethrows the exception being handled when it is the interruption of a request the
+    /// cancellation has abandoned - nothing may go on requesting after it. Must be called from a
+    /// catch block.
+    void rethrowIfReadInterrupted() const;
 
     CallResult  callImpl(
         Poco::Net::HTTPResponse & response,

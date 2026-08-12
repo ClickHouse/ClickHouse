@@ -300,7 +300,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(limit_by_transform_after_loop_pause) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_mid_loop_pause) \
     PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause) \
-    PAUSEABLE_ONCE(storage_url_pause_between_metadata_probes)
+    PAUSEABLE_ONCE(storage_url_pause_between_metadata_probes) \
+    PAUSEABLE_ONCE(http_read_buffer_pause_before_metadata_fallback)
 
 namespace FailPoints
 {

@@ -4,6 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/parseHTTPDate.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
@@ -63,6 +64,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
+}
+
+namespace FailPoints
+{
+    extern const char http_read_buffer_pause_before_metadata_fallback[];
 }
 
 std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::CallResult::transformToReadBuffer(size_t buf_size) &&
@@ -125,27 +131,23 @@ std::optional<size_t> ReadWriteBufferFromHTTP::tryGetFileSize()
         catch (const HTTPException &)
         {
             /// A file without a size is fine, but a request interrupted by a cancellation must not
-            /// come out as such a file: the caller would go on requesting the data no one needs.
-            if (isReadCancelled())
-                throw;
+            /// come out as such a file, see rethrowIfReadInterrupted.
+            rethrowIfReadInterrupted();
             return std::nullopt;
         }
         catch (const NetException &)
         {
-            if (isReadCancelled())
-                throw;
+            rethrowIfReadInterrupted();
             return std::nullopt;
         }
         catch (const Poco::Net::NetException &)
         {
-            if (isReadCancelled())
-                throw;
+            rethrowIfReadInterrupted();
             return std::nullopt;
         }
         catch (const Poco::IOException &)
         {
-            if (isReadCancelled())
-                throw;
+            rethrowIfReadInterrupted();
             return std::nullopt;
         }
     }
@@ -460,6 +462,27 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
 bool ReadWriteBufferFromHTTP::isReadCancelled() const
 {
     return cancellation && cancellation->isCancelled();
+}
+
+
+/// The fallbacks of tryGetFileSize, tryGetLastModificationTime and getFileInfo treat the failure
+/// of their metadata request as an answer: the file simply comes out as one without the metadata.
+/// A request interrupted by a cancellation must not come out that way - the caller would go on
+/// requesting the data no one needs - so its error is rethrown. The interruption is told by the
+/// mark doWithRetries leaves on the abandoned request, see Cancellation::markReadInterrupted, not
+/// by the cancellation flag itself: an error the cancellation had nothing to do with - one that
+/// had already happened when the cancellation arrived - stays swallowed no matter how the delivery
+/// of the cancellation races with the unwinding, so a soft cancellation cannot turn a failure the
+/// fallback would have swallowed into a failure of the query, see StorageURLSource::generate.
+void ReadWriteBufferFromHTTP::rethrowIfReadInterrupted() const
+{
+    /// Holds the thread right before the check, so that a test can deliver a cancellation to a
+    /// request which had already failed on its own, see
+    /// 04869_url_function_stale_metadata_error_after_soft_cancel.
+    FailPointInjection::pauseFailPoint(FailPoints::http_read_buffer_pause_before_metadata_fallback);
+
+    if (cancellation && cancellation->isReadInterrupted())
+        throw;
 }
 
 
@@ -804,28 +827,24 @@ std::optional<time_t> ReadWriteBufferFromHTTP::tryGetLastModificationTime()
         }
         catch (const HTTPException &)
         {
-            /// A file without a modification time is fine, but a request interrupted by a cancellation
-            /// must not come out as such a file: the caller would go on requesting the data no one needs.
-            if (isReadCancelled())
-                throw;
+            /// A file without a modification time is fine, but a request interrupted by a
+            /// cancellation must not come out as such a file, see rethrowIfReadInterrupted.
+            rethrowIfReadInterrupted();
             return std::nullopt;
         }
         catch (const NetException &)
         {
-            if (isReadCancelled())
-                throw;
+            rethrowIfReadInterrupted();
             return std::nullopt;
         }
         catch (const Poco::Net::NetException &)
         {
-            if (isReadCancelled())
-                throw;
+            rethrowIfReadInterrupted();
             return std::nullopt;
         }
         catch (const Poco::IOException &)
         {
-            if (isReadCancelled())
-                throw;
+            rethrowIfReadInterrupted();
             return std::nullopt;
         }
     }
@@ -864,9 +883,8 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
             /// But a HEAD interrupted by a cancellation must not come out as a file without
             /// metadata: the caller would go on making requests - here, the requests for the
             /// metadata this request failed to get - after the read has been cancelled, see
-            /// tryGetLastModificationTime and tryGetFileSize.
-            if (isReadCancelled())
-                throw;
+            /// rethrowIfReadInterrupted.
+            rethrowIfReadInterrupted();
 
             return HTTPFileInfo{};
         }
