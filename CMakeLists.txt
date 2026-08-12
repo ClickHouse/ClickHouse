@@ -121,7 +121,6 @@ endif()
 add_library(global-libs INTERFACE)
 
 include (cmake/sanitize.cmake)
-include (cmake/profile_optimization.cmake)
 
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
 
@@ -136,25 +135,10 @@ if (ENABLE_COLORED_BUILD AND CMAKE_GENERATOR STREQUAL "Ninja")
     # --> available since CMake 3.24: https://stackoverflow.com/a/73349744
 endif ()
 
+include (cmake/check_flags.cmake)
 include (cmake/add_warning.cmake)
 
-# A compiler without zlib accepts -gz but only warns, so -Werror on that warning makes the check fail.
-include (CheckCompilerFlag)
-set (CMAKE_REQUIRED_FLAGS "-Werror=debug-compression-unavailable")
-check_compiler_flag (C   "-gz=zlib" C_COMPILER_SUPPORTS_GZ_ZLIB)
-check_compiler_flag (CXX "-gz=zlib" CXX_COMPILER_SUPPORTS_GZ_ZLIB)
-unset (CMAKE_REQUIRED_FLAGS)
-set (COMPILER_SUPPORTS_GZ_ZLIB OFF)
-if (C_COMPILER_SUPPORTS_GZ_ZLIB AND CXX_COMPILER_SUPPORTS_GZ_ZLIB)
-    set (COMPILER_SUPPORTS_GZ_ZLIB ON)
-endif ()
-
-# Block build-time CMake probes (check_*, try_compile, try_run) project-wide. Compiler and
-# toolchain are fixed (see cmake/tools.cmake), so feature detection is unnecessary - any
-# version-dependent behaviour must be gated on CMAKE_CXX_COMPILER_VERSION explicitly.
-include (cmake/block_build_time_checks.cmake)
-
-option(ENABLE_TESTS "Provide unit_tests_dbms target with Google.Test unit tests" ON)
+option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
 option(ENABLE_BENCHMARKS "Build all benchmark programs in 'benchmarks' subdirectories" OFF)
 
@@ -170,43 +154,9 @@ if (OS_LINUX)
     # - The main clickhouse binary does not use dlopen,
     #   and whatever is poisoning it by LD_PRELOAD should not link to our symbols.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic -Wl,--gc-sections")
-
-    if (LINKER_NAME MATCHES "lld" AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
-        # Fold identical code and data sections to reduce binary size.
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--icf=all")
-    endif ()
-
-    # In Release builds, strip residual debug sections that may come from contrib
-    # libraries or Rust crates compiled with debug info by their own build systems.
-    if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" AND NOT SPLIT_DEBUG_SYMBOLS)
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--strip-debug")
-    endif ()
 endif ()
 
 if (OS_DARWIN)
-    # Same reasoning as `--no-export-dynamic` on Linux: the main clickhouse binary does not
-    # use dlopen, so it does not need to export any dynamic symbols. By default the Mach-O
-    # linker puts every global symbol into the export trie (hundreds of thousands of them for
-    # clickhouse), which dyld walks for weak-symbol coalescing on every launch, adding ~0.15s
-    # of startup latency. An empty `-exported_symbols_list` suppresses the export trie while
-    # keeping the LC_SYMTAB used for backtraces intact. We use it instead of the simpler
-    # `-no_exported_symbols` because the latter is not understood by the cctools `ld` used for
-    # cross-compilation in CI, while `-exported_symbols_list` is supported by both it and lld.
-    #
-    # Skip this for sanitizer builds: on Darwin we rely on Apple's bundled sanitizer runtime,
-    # which resolves hooks such as `__asan_default_options` / `__lsan_default_suppressions`
-    # (see base/base/sanitizer_options.h) by symbol name via dyld weak-symbol coalescing.
-    # Hiding the executable's exports would silently drop those options. Sanitizer builds are
-    # for testing and do not need the startup optimization anyway.
-    if (NOT SANITIZE)
-        set (EMPTY_EXPORTED_SYMBOLS_LIST "${CMAKE_BINARY_DIR}/empty_exported_symbols.txt")
-        file (WRITE "${EMPTY_EXPORTED_SYMBOLS_LIST}" "")
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-exported_symbols_list,${EMPTY_EXPORTED_SYMBOLS_LIST}")
-    endif ()
-
-    # Remove unreachable functions/data (Darwin equivalent of --gc-sections).
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
-
     # The `-all_load` flag forces loading of all symbols from all libraries,
     # and leads to multiply-defined symbols. This flag allows force loading
     # from a _specific_ library, which is what we need.
@@ -228,9 +178,7 @@ else()
 endif()
 # Provides faster linking and lower binary size.
 # Tradeoff is the inability to debug some source files with e.g. gdb
-# (empty stack frames and no local variables).
-# In Release builds (which have no debug info by default), this option has
-# no effect -- it only reduces debug info for RelWithDebInfo and MinSizeRel.
+# (empty stack frames and no local variables)."
 option(OMIT_HEAVY_DEBUG_SYMBOLS
     "Do not generate debugger info for heavy modules (ClickHouse functions and dictionaries, some contrib)"
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
@@ -239,9 +187,8 @@ option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
 
 # Create BuildID when using lld. For other linkers it is created by default.
 # (NOTE: LINKER_NAME can be either path or name, and in different variants)
-if (LINKER_NAME MATCHES "lld" AND NOT LINKER_NAME MATCHES "ld64")
+if (LINKER_NAME MATCHES "lld")
     # SHA1 is not cryptographically secure but it is the best what lld is offering.
-    # ld64.lld (MachO linker) does not support --build-id.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--build-id=sha1")
 endif ()
 
@@ -307,11 +254,8 @@ endif()
 option (ENABLE_BUILD_PATH_MAPPING "Enable remapping of file source paths in debug info, predefined preprocessor macros, and __builtin_FILE(). It's used to generate reproducible builds. See https://reproducible-builds.org/docs/build-path" ${ENABLE_BUILD_PATH_MAPPING_DEFAULT})
 
 if (ENABLE_BUILD_PATH_MAPPING)
-    # Fix DW_AT_comp_dir to "." regardless of the build directory location, then strip the source
-    # directory prefix from all file paths (trailing slash ensures the separator is stripped too,
-    # leaving bare relative paths like "src/Foo.cpp" that the symbolizer resolves to "./src/Foo.cpp").
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fdebug-compilation-dir=. -ffile-prefix-map=${PROJECT_SOURCE_DIR}/=")
-    set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -fdebug-compilation-dir=. -ffile-prefix-map=${PROJECT_SOURCE_DIR}/=")
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffile-prefix-map=${PROJECT_SOURCE_DIR}=.")
+    set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -ffile-prefix-map=${PROJECT_SOURCE_DIR}=.")
 endif ()
 
 option (ENABLE_BUILD_PROFILING "Enable profiling of build time" OFF)
@@ -332,25 +276,8 @@ set (CMAKE_C_STANDARD 11)
 set (CMAKE_C_EXTENSIONS ON) # required by most contribs written in C
 set (CMAKE_C_STANDARD_REQUIRED ON)
 
-# Align functions and loops to reduce performance sensitivity to code layout changes,
-# providing more stable benchmarks.
-set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64 -falign-loops=32")
-
-# Put each function and data item into its own section so that the linker can
-# remove unused ones (--gc-sections / -dead_strip) and fold identical ones (--icf).
-# Sanitizer and coverage builds do not benefit from these size optimizations
-# and the extra sections hurt instruction-cache locality in hot loops,
-# causing timing-sensitive tests to fail.
-if (NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} -ffunction-sections -fdata-sections")
-    # -faddrsig emits an address-significance table that lets lld's ICF
-    # distinguish address-taken symbols from non-address-taken ones.
-    # Only useful on Linux where we use lld with --icf=all; Darwin's ld64
-    # does not consume these sections.
-    if (OS_LINUX)
-        set(COMPILER_FLAGS "${COMPILER_FLAGS} -faddrsig")
-    endif ()
-endif()
+# falign-functions=64 prevents from random performance regressions with the code change. Thus, providing more stable benchmarks.
+set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64")
 
 if (ARCH_AMD64)
     # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
@@ -361,32 +288,6 @@ endif()
 
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
-
-# Do not maintain `errno` for math functions (`sqrt`, `log`, `pow`, ...). This changes no
-# computed result - `errno` is the only observable difference and ClickHouse never reads it
-# after a libm call - but it lets the compiler emit math instructions directly instead of
-# guarding each call with a branch to a libm wrapper, which also unblocks vectorization.
-# Clang's default on Linux is `-fmath-errno` (errno-setting), so this is not already implied.
-set (COMPILER_FLAGS "${COMPILER_FLAGS} -fno-math-errno")
-
-# `-fno-math-errno` lets the compiler fold, hoist, and eliminate libm calls. That can remove the
-# last `src/`-side references to a libm function, leaving its only references in contrib objects
-# (e.g. usearch, arrow) that are linked after our in-tree `glibc-compatibility` math archive. Since
-# an archive member is pulled only to satisfy an already-undefined symbol, the in-tree object is
-# never extracted and the reference binds to shared glibc's newer symbol version, which the
-# compatibility check rejects (max allowed GLIBC version is 2.4 on amd64, 2.18 on aarch64). Force
-# our in-tree `musl` implementations to be pulled from the static archive so they preempt glibc,
-# in the same spirit as the explicit `memcpy` interposition in `clickhouse_add_executable` below.
-#
-# Both the single-precision functions (new glibc version `@GLIBC_2.27`) and the double-precision
-# ones (`@GLIBC_2.29`) are pinned. The doubles matter when `ENABLE_LLVM_LIBC_MATH=OFF`: in that
-# configuration llvm-libc does not provide them, so `exp`/`log`/`pow`/`exp2`/`log2` are available
-# only from the earlier `glibc-compatibility` archive and a later contrib reference can otherwise
-# bind to glibc's `@GLIBC_2.29` symbols above the floor. With llvm-libc on they are already pulled
-# from it, so the extra `-u` requests are harmless no-ops.
-if (GLIBC_COMPATIBILITY)
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-u,logf -Wl,-u,powf -Wl,-u,expf -Wl,-u,exp2f -Wl,-u,log2f -Wl,-u,log -Wl,-u,pow -Wl,-u,exp -Wl,-u,exp2 -Wl,-u,log2")
-endif ()
 
 set (DEBUG_INFO_FLAGS "-g")
 if (DISABLE_ALL_DEBUG_SYMBOLS)
@@ -403,17 +304,6 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     # NOTE: that clang has a bug because of it does not emit .debug_aranges
     # with ThinLTO, so custom ld.lld wrapper is shipped in docker images.
     set(DEBUG_INFO_FLAGS "${DEBUG_INFO_FLAGS} -gdwarf-aranges")
-endif ()
-
-# Compress DWARF debug sections (`.debug_*`) in object files with -gz=zlib to shrink the build dir
-# (debug info dominates it). Compile-only via add_compile_options, so binaries stay uncompressed and
-# the symbolizer is unaffected. Defaults on where the compiler supports it (probed above).
-option (COMPRESS_DEBUG_SECTIONS "Compress DWARF debug sections in object files with zlib (-gz)" ${COMPILER_SUPPORTS_GZ_ZLIB})
-
-if (COMPRESS_DEBUG_SECTIONS)
-    # Only C/C++ (and GNU-style ASM handled by clang) understand -gz; scope it away from other
-    # languages such as ASM_NASM (ISA-L on amd64), whose nasm assembler rejects the flag.
-    add_compile_options ($<$<COMPILE_LANGUAGE:C,CXX,ASM>:-gz=zlib>)
 endif ()
 
 # Disable omit frame pointer compiler optimization using -fno-omit-frame-pointer
@@ -449,35 +339,15 @@ endif()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-absolute-paths")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-absolute-paths")
 
-# https://clang.llvm.org/docs/ThinLTO.html
-# Applies to clang and linux only.
-# Disabled by default; explicitly enabled in CI for release and performance builds.
-option(ENABLE_THINLTO "Clang-specific link time optimization" OFF)
+if (NOT ENABLE_TESTS AND NOT ENABLE_CLANG_TIDY AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND OS_LINUX)
+    # https://clang.llvm.org/docs/ThinLTO.html
+    # Applies to clang and linux only.
+    # Disabled when building with tests or sanitizers.
+    # Also disabled with clang-tidy where we don't care about linking
+    option(ENABLE_THINLTO "Clang-specific link time optimization" ON)
+endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
-
-# CFI requires ThinLTO. Validate here, after ENABLE_THINLTO has been resolved by
-# the option() call above. sanitize.cmake is included earlier (before the option()
-# declaration) so the check must live here where ENABLE_THINLTO is fully defined.
-if (ENABLE_CFI AND NOT ENABLE_THINLTO)
-    message (FATAL_ERROR "ENABLE_CFI requires ENABLE_THINLTO. "
-        "CFI needs -flto=thin and -fwhole-program-vtables which are only applied "
-        "when ThinLTO is enabled. Current configuration has ENABLE_THINLTO=${ENABLE_THINLTO}.")
-endif ()
-
-if (ENABLE_CFI AND ENABLE_TESTS)
-    message (FATAL_ERROR "ENABLE_CFI is incompatible with ENABLE_TESTS. "
-        "ThinLTO (required by CFI) is disabled when building tests. "
-        "Build without tests (ENABLE_TESTS=0) to use CFI.")
-endif ()
-
-# CFI flags are wired into the RelWithDebInfo profile only (CMAKE_*_FLAGS_RELWITHDEBINFO).
-# Other build types would configure successfully and print the CFI status message while
-# silently producing a non-CFI binary, so reject them explicitly.
-if (ENABLE_CFI AND NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
-    message (FATAL_ERROR "ENABLE_CFI is only supported with CMAKE_BUILD_TYPE=RelWithDebInfo. "
-        "Current configuration has CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}.")
-endif ()
 
 # We cannot afford to use LTO when compiling unit tests, and it's not enough
 # to only supply -fno-lto at the final linking stage. So we disable it
@@ -491,35 +361,6 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
     if(LINKER_NAME MATCHES "lld")
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--lto-whole-program-visibility")
     endif()
-
-    if (ENABLE_CFI)
-        # CFI checks: virtual dispatch type safety and bad downcasts via static_cast.
-        # cfi-icall is omitted because C function pointers in contrib libraries (compiled without
-        # CFI) would cause false positives. Start conservative; broaden after baseline is clean.
-        # cfi-vcall and cfi-derived-cast are C++-only checks; do not apply to C compilation.
-        #
-        # Use `-fvisibility=default` rather than the CFI-documented `hidden`: with hidden
-        # visibility the build succeeds (with `-Wunique-object-duplication` suppressed) but the
-        # resulting binary crashes with SIGSEGV before main runs, because inline-static singletons
-        # like `Context::global_context_instance` and `BaseSettings::unknown_settings` get
-        # duplicated per translation unit and singleton identity is broken. Validated empirically
-        # by WeeklyCFI run 25790910376 — `clickhouse-server --version` exited with signal 11.
-        # CFI vtable visibility is still satisfied for in-binary types because
-        # `-fwhole-program-vtables` and `-Wl,--lto-whole-program-visibility` (set above) cause
-        # the linker to treat all vtables as internal to the binary.
-        #
-        # CFI is left in the default trap mode: a violation executes an illegal instruction
-        # (SIGILL) and CI's core-dump handler yields a stack trace pinpointing the bad vcall/cast.
-        # Diagnostic mode (`-fno-sanitize-trap=cfi`, which prints a UBSan-style type/location
-        # report) is deliberately NOT used: it makes Clang link `libclang_rt.ubsan_standalone`,
-        # which this toolchain does not ship (only select compiler-rt libs are built from contrib),
-        # so even host tools like `protoc` fail to link — validated by WeeklyCFI run 28943752776.
-        # `-fno-sanitize-recover=cfi` is redundant in trap mode but kept as an explicit marker that
-        # a violation must never be continued past.
-        set (CFI_FLAGS "-fsanitize=cfi-vcall,cfi-derived-cast -fno-sanitize-recover=cfi -fvisibility=default")
-        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
-        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
-    endif ()
 elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
 endif ()
@@ -541,12 +382,12 @@ include(cmake/limit_jobs.cmake)
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
-# Increase stack size on Musl. We need big stack for our recursive-descend parser
-# and for analyzer passes that recurse on deeply-nested join trees (e.g.
-# 1000-join queries). Match glibc's 8 MiB default; musl reads this from
-# PT_GNU_STACK and clamps it to DEFAULT_STACK_MAX (also 8 MiB).
+# Don't use the system compiler-rt library even if it is available. Instead build it directly
+option(USE_SYSTEM_COMPILER_RT "Use the system compiler-rt if available. If disabled it will be built from sources (supported for Linux and FreeBSD)" OFF)
+
+# Increase stack size on Musl. We need big stack for our recursive-descend parser.
 if (USE_MUSL)
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=8388608")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=2097152")
 endif ()
 
 include(cmake/dbms_glob_sources.cmake)
@@ -668,9 +509,12 @@ endif ()
 macro (clickhouse_add_executable target)
     # invoke built-in add_executable
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
-    # Note: for musl builds (-nostartfiles), the CRT startup files are added to every
-    # executable through the link flags, see cmake/linux/default_libs.cmake.
-    add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
+    # if GLIBC_COMPATIBILITY is ON and ENABLE_THINLTO is on than provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
+    if (ARCH_AMD64 AND GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
+        add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:memcpy>)
+    else ()
+        add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
+    endif ()
 
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
@@ -726,7 +570,7 @@ if (ENABLE_RUST)
 endif()
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
-    AND NOT SANITIZE AND NOT ENABLE_FUZZING
+    AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT ENABLE_FUZZING
     AND OMIT_HEAVY_DEBUG_SYMBOLS AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64))
     set(CHECK_LARGE_OBJECT_SIZES_DEFAULT ON)
 else ()
@@ -790,7 +634,6 @@ if (NATIVE_BUILD_TARGETS
     AND NOT(
         CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
         AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
-        AND NOT USE_MUSL
     )
 )
     message (STATUS "Building native targets: ${NATIVE_BUILD_TARGETS}")

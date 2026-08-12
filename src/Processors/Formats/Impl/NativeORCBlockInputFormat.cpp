@@ -12,7 +12,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -29,14 +28,10 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
-#include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <IO/ReadSettings.h>
-#include <IO/SeekableReadBuffer.h>
 #include <IO/SharedThreadPools.h>
-#include <IO/WithFileSize.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Set.h>
@@ -71,12 +66,9 @@ extern const int TOO_DEEP_RECURSION;
 
 
 ORCInputStream::ORCInputStream(SeekableReadBuffer & in_, size_t file_size_, bool use_prefetch)
-    : in(in_)
-    , file_size(file_size_)
-    , use_offset_based_read(in_.supportsReadAt())
-    , use_async_prefetch(use_prefetch && use_offset_based_read)
+    : in(in_), file_size(file_size_), supports_read_at(use_prefetch && in_.supportsReadAt())
 {
-    if (use_async_prefetch)
+    if (supports_read_at)
         async_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), ThreadName::ORC_FILE);
 }
 
@@ -92,21 +84,13 @@ UInt64 ORCInputStream::getNaturalReadSize() const
 
 void ORCInputStream::read(void * buf, UInt64 length, UInt64 offset)
 {
-    if (use_offset_based_read)
+    if (supports_read_at)
     {
         size_t bytes_read = 0;
         while (bytes_read < length)
         {
             size_t bytes_to_read = length - bytes_read;
             size_t n = in.readBigAt(reinterpret_cast<char *>(buf) + bytes_read, bytes_to_read, offset + bytes_read, nullptr);
-            if (n == 0)
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Truncated or corrupted ORC input: readBigAt returned 0 bytes at offset {} ({} bytes remaining of {} requested from base offset {})",
-                    offset + bytes_read,
-                    bytes_to_read,
-                    length,
-                    offset);
             bytes_read += n;
         }
     }
@@ -120,7 +104,7 @@ void ORCInputStream::read(void * buf, UInt64 length, UInt64 offset)
 
 std::future<void> ORCInputStream::readAsync(void * buf, uint64_t length, uint64_t offset)
 {
-    if (use_async_prefetch)
+    if (supports_read_at)
     {
         return async_runner(
             [this, buf, length, offset]
@@ -203,7 +187,7 @@ static DataTypePtr parseORCType(
     size_t max_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH,
     size_t depth = 0)
 {
-    chassert(orc_type != nullptr);
+    assert(orc_type != nullptr);
 
     /// ORC LIST/MAP/STRUCT types can be nested arbitrarily deep and the ORC library does not bound
     /// the nesting, so reject deep nesting early (before building the type) with an explicit limit.
@@ -397,7 +381,7 @@ convertFieldToORCLiteral(const orc::Type & orc_type, const Field & field, DataTy
             }
             case orc::FLOAT:
             case orc::DOUBLE: {
-                Float64 val = 0;
+                Float64 val;
                 if (field.tryGet(val))
                     return orc::Literal(val);
                 break;
@@ -411,7 +395,7 @@ convertFieldToORCLiteral(const orc::Type & orc_type, const Field & field, DataTy
                 break;
             }
             case orc::DATE: {
-                Int64 val = 0;
+                Int64 val;
                 if (field.tryGet(val))
                     return orc::Literal(orc::PredicateDataType::DATE, val);
                 break;
@@ -823,12 +807,7 @@ static void getFileReader(
         return;
 
     orc::ReaderOptions options;
-    /// ORC library requires rangeSizeLimit > holeSizeLimit.
-    static constexpr uint64_t default_range_size_limit = 10 * 1024 * 1024UL;
-    /// Clamp to avoid overflow when computing holeSizeLimit + 1.
-    uint64_t hole_size_limit = std::min<uint64_t>(min_bytes_for_seek, std::numeric_limits<uint64_t>::max() - 1);
-    uint64_t range_size_limit = std::max(default_range_size_limit, hole_size_limit + 1);
-    options.setCacheOptions(orc::CacheOptions{.holeSizeLimit = hole_size_limit, .rangeSizeLimit = range_size_limit});
+    options.setCacheOptions(orc::CacheOptions{.holeSizeLimit = min_bytes_for_seek, .rangeSizeLimit = 10 * 1024 * 1024UL});
 
     auto input_stream = asORCInputStream(in, format_settings, use_prefetch, is_stopped);
     file_reader = orc::createReader(std::move(input_stream), options);
@@ -1013,8 +992,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
         format_settings.orc.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.orc.case_insensitive_column_matching,
-        format_settings.orc.dictionary_as_low_cardinality,
-        format_settings.date_time_overflow_behavior);
+        format_settings.orc.dictionary_as_low_cardinality);
 
     const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
     const auto & header = getPort().getHeader();
@@ -1083,7 +1061,7 @@ std::vector<int> NativeORCBlockInputFormat::calculateSelectedStripes(int num_str
 
 bool NativeORCBlockInputFormat::prepareStripeReader()
 {
-    chassert(file_reader);
+    assert(file_reader);
 
     if (read_iterator >= selected_stripes.size())
         return false;
@@ -1192,17 +1170,11 @@ NativeORCSchemaReader::NativeORCSchemaReader(ReadBuffer & in_, const FormatSetti
 {
 }
 
-void NativeORCSchemaReader::initializeIfNeeded()
-{
-    if (initialized)
-        return;
-    getFileReader(in, file_reader, format_settings, false, 0, is_stopped);
-    initialized = true;
-}
-
 NamesAndTypesList NativeORCSchemaReader::readSchema()
 {
-    initializeIfNeeded();
+    std::unique_ptr<orc::Reader> file_reader;
+    std::atomic<int> is_stopped = 0;
+    getFileReader(in, file_reader, format_settings, false, 0, is_stopped);
 
     const auto & schema = file_reader->getType();
     Block header;
@@ -1233,25 +1205,17 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
     return header.getNamesAndTypesList();
 }
 
-std::optional<size_t> NativeORCSchemaReader::readNumberOrRows()
-{
-    initializeIfNeeded();
-    return file_reader->getNumberOfRows();
-}
-
 ORCColumnToCHColumn::ORCColumnToCHColumn(
     const Block & header_,
     bool allow_missing_columns_,
     bool null_as_default_,
     bool case_insensitive_matching_,
-    bool dictionary_as_low_cardinality_,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_)
+    bool dictionary_as_low_cardinality_)
     : header(header_)
     , allow_missing_columns(allow_missing_columns_)
     , null_as_default(null_as_default_)
     , case_insensitive_matching(case_insensitive_matching_)
     , dictionary_as_low_cardinality(dictionary_as_low_cardinality_)
-    , date_time_overflow_behavior(date_time_overflow_behavior_)
 {
 }
 
@@ -1592,7 +1556,7 @@ static ColumnWithTypeAndName readColumnWithDecimalDataCast(
     {
         if (!orc_decimal_column->hasNulls || orc_decimal_column->notNull[i])
         {
-            DecimalType decimal_value{};
+            DecimalType decimal_value;
             if constexpr (std::is_same_v<BatchType, orc::Decimal128VectorBatch>)
             {
                 Int128 int128_value;
@@ -1757,65 +1721,40 @@ static ColumnWithTypeAndName readColumnWithDateData(
     return {std::move(internal_column), internal_type, column_name};
 }
 
-static ColumnWithTypeAndName readColumnWithTimestampData(
-    const orc::ColumnVectorBatch * orc_column,
-    const String & column_name,
-    const DataTypePtr & type_hint,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
+static ColumnWithTypeAndName
+readColumnWithTimestampData(const orc::ColumnVectorBatch * orc_column, const String & column_name)
 {
     const auto * orc_ts_column = dynamic_cast<const orc::TimestampVectorBatch *>(orc_column);
 
-    /// ORC stores timestamps as (seconds, nanoseconds). ClickHouse used to convert them through a fixed
-    /// DateTime64(9) intermediate (seconds * 1e9 + nanoseconds), which overflows Int64 for timestamps beyond
-    /// ~year 2262 even when the requested DateTime64 scale can represent the value (e.g. Iceberg's DateTime64(6)).
-    /// Read directly at the requested scale so such values round-trip like Parquet, and only handle overflow when
-    /// even the target scale does not fit Int64.
-    UInt32 scale = 9;
-    if (type_hint)
-    {
-        const auto * dt64_hint = typeid_cast<const DataTypeDateTime64 *>(removeNullable(recursiveRemoveLowCardinality(type_hint)).get());
-        if (dt64_hint)
-            scale = dt64_hint->getScale();
-    }
-
-    auto internal_type = std::make_shared<DataTypeDateTime64>(scale);
+    auto internal_type = std::make_shared<DataTypeDateTime64>(9);
     auto internal_column = internal_type->createColumn();
     auto & column_data = assert_cast<ColumnDateTime64 &>(*internal_column).getData();
     column_data.reserve(orc_ts_column->numElements);
 
-    /// Factor to go from nanoseconds down to the target scale (scale is in [0, 9]).
-    const Int128 divisor = DecimalUtils::scaleMultiplier<Int128>(9 - scale);
-    const Int128 int64_min = std::numeric_limits<Int64>::min();
-    const Int128 int64_max = std::numeric_limits<Int64>::max();
-
+    constexpr Int64 multiplier = 1e9L;
     for (size_t i = 0; i < orc_ts_column->numElements; ++i)
     {
         if (!orc_ts_column->hasNulls || orc_ts_column->notNull[i])
         {
-            const Int64 seconds = orc_ts_column->data[i];
-            const Int64 nanoseconds = orc_ts_column->nanoseconds[i];
+            Int64 timestamp_value;
+            Int64 seconds = orc_ts_column->data[i];
+            Int64 nanoseconds = orc_ts_column->nanoseconds[i];
 
-            /// seconds * 1e9 + nanoseconds cannot overflow Int128 (|seconds| < 2^63, product < ~9.2e27 << Int128 max).
-            const Int128 nanos_total = static_cast<Int128>(seconds) * 1'000'000'000 + nanoseconds;
-            /// Integer division truncates toward zero, matching the DateTime64(9) -> DateTime64(scale) cast that ran afterwards.
-            Int128 value = nanos_total / divisor;
+            /// Check for overflow when converting timestamp to DateTime64(9)
+            bool overflow = common::mulOverflow(seconds, multiplier, timestamp_value);
+            overflow |= common::addOverflow(timestamp_value, nanoseconds, timestamp_value);
 
-            if (value < int64_min || value > int64_max)
-            {
-                if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
-                    value = value < int64_min ? int64_min : int64_max;
-                else
-                    /// Throw for both `throw` and `ignore` (the default): keep the historical behavior and never silently corrupt data.
-                    throw Exception(
-                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                        "Timestamp value in column \"{}\" is out of range for DateTime64({}): seconds={}, nanoseconds={}",
-                        column_name,
-                        scale,
-                        seconds,
-                        nanoseconds);
-            }
+            if (overflow)
+                throw Exception(
+                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                    "Timestamp value in column \"{}\" is out of range for DateTime64: seconds={}, nanoseconds={}",
+                    column_name,
+                    seconds,
+                    nanoseconds);
 
-            column_data.push_back(DateTime64(static_cast<Int64>(value)));
+            Decimal64 decimal64;
+            decimal64.value = timestamp_value;
+            column_data.emplace_back(std::move(decimal64));
         }
         else
             column_data.push_back(0);
@@ -1836,8 +1775,8 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
 
     bool skipped = false;
 
-    if (!inside_nullable && (orc_column->hasNulls || (type_hint && isNullableOrLowCardinalityNullable(type_hint))) && !orc_column->isEncoded
-        && (orc_type->getKind() != orc::LIST && orc_type->getKind() != orc::MAP))
+    if (!inside_nullable && (orc_column->hasNulls || (type_hint && type_hint->isNullable())) && !orc_column->isEncoded
+        && (orc_type->getKind() != orc::LIST && orc_type->getKind() != orc::MAP && orc_type->getKind() != orc::STRUCT))
     {
         DataTypePtr nested_type_hint;
         if (type_hint)
@@ -1937,7 +1876,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             return readColumnWithDateData(orc_column, column_name, type_hint);
         case orc::TIMESTAMP: [[fallthrough]];
         case orc::TIMESTAMP_INSTANT:
-            return readColumnWithTimestampData(orc_column, column_name, type_hint, date_time_overflow_behavior);
+            return readColumnWithTimestampData(orc_column, column_name);
         case orc::DECIMAL:
         {
             auto interal_type = parseORCType(orc_type, false, false, nullptr, skipped);
@@ -2009,27 +1948,19 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             auto nested_column = readColumnFromORCColumn(orc_nested_column, orc_nested_type, column_name, false, nested_type_hint);
 
             auto offsets_column = readOffsetsFromORCListColumn(orc_list_column);
+            auto array_column = ColumnArray::create(nested_column.column, offsets_column);
             DataTypePtr array_type;
-            ColumnPtr array_data_column = nested_column.column;
-            /// If type hint is Nested and the element is a named Tuple, return the Nested type
-            /// so that `Nested::flatten` can decompose it into separate arrays.
-            /// When the element is Nullable(Tuple(...)), unwrap it and propagate the struct null
-            /// map to each element via `unwrapNullableTuple`.
-            const auto * tuple_type = type_hint && isNested(type_hint)
-                ? typeid_cast<const DataTypeTuple *>(removeNullable(nested_column.type).get())
-                : nullptr;
-            if (tuple_type)
+            /// If type hint is Nested, we should return Nested type,
+            /// because we differentiate Nested and simple Array(Tuple)
+            if (type_hint && isNested(type_hint))
             {
-                auto unwrapped = Nested::unwrapNullableTuple({array_data_column, nested_column.type, column_name});
-                array_data_column = unwrapped.column;
-                const auto & result_tuple = assert_cast<const DataTypeTuple &>(*unwrapped.type);
-                array_type = createNested(result_tuple.getElements(), result_tuple.getElementNames());
+                const auto & tuple_type = assert_cast<const DataTypeTuple &>(*nested_column.type);
+                array_type = createNested(tuple_type.getElements(), tuple_type.getElementNames());
             }
             else
             {
                 array_type = std::make_shared<DataTypeArray>(nested_column.type);
             }
-            auto array_column = ColumnArray::create(array_data_column, offsets_column);
             return {array_column, array_type, column_name};
         }
         case orc::STRUCT:
@@ -2183,174 +2114,6 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
     res.setColumns(columns_list, num_rows);
 }
 
-void registerInputFormatORC(FormatFactory & factory);
-void registerInputFormatORC(FormatFactory & factory)
-{
-    factory.registerRandomAccessInputFormat(
-        "ORC",
-        [](ReadBuffer & buf,
-           const Block & sample,
-           const FormatSettings & settings,
-           const ReadSettings & read_settings,
-           bool is_remote_fs,
-           FormatParserSharedResourcesPtr,
-           FormatFilterInfoPtr format_filter_info)
-        {
-            const bool has_file_size = isBufferWithFileSize(buf);
-            auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(&buf);
-            const bool use_prefetch = is_remote_fs && read_settings.remote_fs_settings.prefetch && has_file_size && seekable_in
-                && seekable_in->checkIfActuallySeekable() && seekable_in->supportsReadAt() && settings.seekable_read;
-            const size_t min_bytes_for_seek = use_prefetch ? read_settings.remote_fs_settings.min_bytes_for_seek : 0;
-            return std::make_shared<NativeORCBlockInputFormat>(
-                buf, std::make_shared<const Block>(sample), settings, use_prefetch, min_bytes_for_seek, format_filter_info);
-        });
-    factory.markFormatSupportsSubsetOfColumns("ORC");
-
-    factory.setDocumentation("ORC", Documentation{
-        .description = R"DOCS_MD(
-| Input | Output | Alias |
-|-------|--------|-------|
-| ✔     | ✔      |       |
-
-## Description {#description}
-
-[Apache ORC](https://orc.apache.org/) is a columnar storage format widely used in the [Hadoop](https://hadoop.apache.org/) ecosystem.
-
-## Data types matching {#data-types-matching-orc}
-
-The table below compares supported ORC data types and their corresponding ClickHouse [data types](/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
-
-| ORC data type (`INSERT`)              | ClickHouse data type                                                                                              | ORC data type (`SELECT`) |
-|---------------------------------------|-------------------------------------------------------------------------------------------------------------------|--------------------------|
-| `Boolean`                             | [Bool](/sql-reference/data-types/boolean.md)                                                              | `Boolean`                |
-| `Tinyint`                             | [Int8/UInt8](/sql-reference/data-types/int-uint.md)/[Enum8](/sql-reference/data-types/enum.md)    | `Tinyint`                |
-| `Smallint`                            | [Int16/UInt16](/sql-reference/data-types/int-uint.md)/[Enum16](/sql-reference/data-types/enum.md) | `Smallint`               |
-| `Int`                                 | [Int32/UInt32](/sql-reference/data-types/int-uint.md)                                                     | `Int`                    |
-| `Bigint`                              | [Int64/UInt64](/sql-reference/data-types/int-uint.md)                                                     | `Bigint`                 |
-| `Float`                               | [Float32](/sql-reference/data-types/float.md)                                                             | `Float`                  |
-| `Double`                              | [Float64](/sql-reference/data-types/float.md)                                                             | `Double`                 |
-| `Decimal`                             | [Decimal](/sql-reference/data-types/decimal.md)                                                           | `Decimal`                |
-| `Date`                                | [Date32](/sql-reference/data-types/date32.md)                                                             | `Date`                   |
-| `Timestamp`                           | [DateTime64](/sql-reference/data-types/datetime64.md)                                                     | `Timestamp`              |
-| `String`, `Varchar`, `Binary`         | [String](/sql-reference/data-types/string.md)                                                             | `String`                 |
-| `Char`                                | [FixedString](/sql-reference/data-types/fixedstring.md)                                                   | `String`                 |
-| `List`                                | [Array](/sql-reference/data-types/array.md)                                                               | `List`                   |
-| `Struct`                              | [Tuple](/sql-reference/data-types/tuple.md)                                                               | `Struct`                 |
-| `Map`                                 | [Map](/sql-reference/data-types/map.md)                                                                   | `Map`                    |
-| `Int`                                 | [IPv4](/sql-reference/data-types/int-uint.md)                                                             | `Int`                    |
-| `Binary`                              | [IPv6](/sql-reference/data-types/ipv6.md)                                                                 | `Binary`                 |
-| `Binary`                              | [Int128/UInt128/Int256/UInt256](/sql-reference/data-types/int-uint.md)                                    | `Binary`                 |
-| `Binary`                              | [Decimal256](/sql-reference/data-types/decimal.md)                                                        | `Binary`                 |
-
-- Other types are not supported.
-- Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
-- The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#CAST) the data to the data type set for the ClickHouse table column.
-
-## Example usage {#example-usage}
-
-### Inserting data {#inserting-data}
-
-Using an ORC file with the following data, named as `football.orc`:
-
-```text
-    ┌───────date─┬─season─┬─home_team─────────────┬─away_team───────────┬─home_team_goals─┬─away_team_goals─┐
- 1. │ 2022-04-30 │   2021 │ Sutton United         │ Bradford City       │               1 │               4 │
- 2. │ 2022-04-30 │   2021 │ Swindon Town          │ Barrow              │               2 │               1 │
- 3. │ 2022-04-30 │   2021 │ Tranmere Rovers       │ Oldham Athletic     │               2 │               0 │
- 4. │ 2022-05-02 │   2021 │ Port Vale             │ Newport County      │               1 │               2 │
- 5. │ 2022-05-02 │   2021 │ Salford City          │ Mansfield Town      │               2 │               2 │
- 6. │ 2022-05-07 │   2021 │ Barrow                │ Northampton Town    │               1 │               3 │
- 7. │ 2022-05-07 │   2021 │ Bradford City         │ Carlisle United     │               2 │               0 │
- 8. │ 2022-05-07 │   2021 │ Bristol Rovers        │ Scunthorpe United   │               7 │               0 │
- 9. │ 2022-05-07 │   2021 │ Exeter City           │ Port Vale           │               0 │               1 │
-10. │ 2022-05-07 │   2021 │ Harrogate Town A.F.C. │ Sutton United       │               0 │               2 │
-11. │ 2022-05-07 │   2021 │ Hartlepool United     │ Colchester United   │               0 │               2 │
-12. │ 2022-05-07 │   2021 │ Leyton Orient         │ Tranmere Rovers     │               0 │               1 │
-13. │ 2022-05-07 │   2021 │ Mansfield Town        │ Forest Green Rovers │               2 │               2 │
-14. │ 2022-05-07 │   2021 │ Newport County        │ Rochdale            │               0 │               2 │
-15. │ 2022-05-07 │   2021 │ Oldham Athletic       │ Crawley Town        │               3 │               3 │
-16. │ 2022-05-07 │   2021 │ Stevenage Borough     │ Salford City        │               4 │               2 │
-17. │ 2022-05-07 │   2021 │ Walsall               │ Swindon Town        │               0 │               3 │
-    └────────────┴────────┴───────────────────────┴─────────────────────┴─────────────────┴─────────────────┘
-```
-
-Insert the data:
-
-```sql
-INSERT INTO football FROM INFILE 'football.orc' FORMAT ORC;
-```
-
-### Reading data {#reading-data}
-
-Read data using the `ORC` format:
-
-```sql
-SELECT *
-FROM football
-INTO OUTFILE 'football.orc'
-FORMAT ORC
-```
-
-:::tip
-ORC is a binary format that does not display in a human-readable form on the terminal. Use the `INTO OUTFILE` to output ORC files.
-:::
-
-## Format settings {#format-settings}
-
-| Setting                                                                                                                                                                                                      | Description                                                                            | Default |
-|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------|---------|
-| [`output_format_orc_string_as_string`](/reference/settings/formats/output-format#output_format_orc_string_as_string)                                                                                 | Use ORC String type instead of Binary for String columns.                              | `true`  |
-| [`output_format_orc_compression_method`](/reference/settings/formats/output-format#output_format_orc_compression_method)                                                                             | Compression method used in output ORC format. Default value                            | `zstd`  |
-| [`input_format_orc_case_insensitive_column_matching`](/reference/settings/formats/input-format#input_format_orc_case_insensitive_column_matching)                                                   | Ignore case when matching ORC columns with ClickHouse columns.                         | `false` |
-| [`input_format_orc_allow_missing_columns`](/reference/settings/formats/input-format#input_format_orc_allow_missing_columns)                                                                         | Allow missing columns while reading ORC data.                                          | `true`  |
-| [`input_format_orc_skip_columns_with_unsupported_types_in_schema_inference`](/reference/settings/formats/input-format#input_format_orc_skip_columns_with_unsupported_types_in_schema_inference)     | Allow skipping columns with unsupported types while schema inference for ORC format.   | `false` |
-
-To exchange data with Hadoop, you can use [HDFS table engine](/reference/engines/table-engines/integrations/hdfs).
-)DOCS_MD"});
-}
-
-void registerORCSchemaReader(FormatFactory & factory);
-void registerORCSchemaReader(FormatFactory & factory)
-{
-    factory.registerSchemaReader(
-        "ORC",
-        [](ReadBuffer & buf, const FormatSettings & settings)
-        {
-            return std::make_shared<NativeORCSchemaReader>(buf, settings);
-        }
-        );
-
-    factory.registerAdditionalInfoForSchemaCacheGetter("ORC", [](const FormatSettings & settings)
-    {
-        return fmt::format(
-            "schema_inference_make_columns_nullable={};schema_inference_allow_nullable_tuple_type={};"
-            "dictionary_as_low_cardinality={};skip_columns_with_unsupported_types={};max_parser_depth={}",
-            settings.schema_inference_make_columns_nullable,
-            settings.schema_inference_allow_nullable_tuple_type,
-            settings.orc.dictionary_as_low_cardinality,
-            settings.orc.skip_columns_with_unsupported_types_in_schema_inference,
-            settings.max_parser_depth);
-    });
-}
-
-}
-
-#else
-
-namespace DB
-{
-    class FormatFactory;
-
-    void registerInputFormatORC(FormatFactory &);
-    void registerORCSchemaReader(FormatFactory &);
-
-    void registerInputFormatORC(FormatFactory &)
-    {
-    }
-
-    void registerORCSchemaReader(FormatFactory &)
-    {
-    }
 }
 
 #endif

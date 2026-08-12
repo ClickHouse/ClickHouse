@@ -28,7 +28,6 @@ SOURCE(MYSQL(
     invalidate_query 'SQL_QUERY'
     fail_on_connection_loss 'true'
     query 'SELECT id, value_1, value_2 FROM db_name.table_name'
-    enable_compression 1
 ))
 ```
 
@@ -55,7 +54,6 @@ SOURCE(MYSQL(
       <invalidate_query>SQL_QUERY</invalidate_query>
       <fail_on_connection_loss>true</fail_on_connection_loss>
       <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
-      <enable_compression>1</enable_compression>
   </mysql>
 </source>
 ```
@@ -78,9 +76,8 @@ Setting fields:
 | `table` | Name of the table. |
 | `where` | The selection criteria. The syntax for conditions is the same as for `WHERE` clause in MySQL, for example, `id > 10 AND id < 20`. Optional. |
 | `invalidate_query` | Query for checking the dictionary status. Optional. Read more in the section [Refreshing dictionary data using LIFETIME](../lifetime.md). |
-| `fail_on_connection_loss` | Controls behavior of the server on connection loss. If `true`, an exception is thrown immediately if the connection between client and server was lost. If `false`, the server retries to fetch data at least three times before reporting an error. Note that retrying leads to increased response times. Default value: `false`. |
+| `fail_on_connection_loss` | Controls behavior of the server on connection loss. If `true`, an exception is thrown immediately if the connection between client and server was lost. If `false`, the ClickHouse server retries to execute the query three times before throwing an exception. Note that retrying leads to increased response times. Default value: `false`. |
 | `query` | The custom query. Optional. |
-| `enable_compression` | Enables zlib compression for the MySQL protocol connection. When set to `1`, ClickHouse requests protocol-level compression from the MySQL server. Can also be set per-replica inside `<replica>`. Default value: `0`. |
 
 :::note
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.

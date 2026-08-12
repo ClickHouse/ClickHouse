@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 
+#include <Columns/ColumnsNumber.h>
 
 #include <Interpreters/sortBlock.h>
 
@@ -88,19 +89,14 @@ public:
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       */
-    MergeTreeTemporaryPartPtr writeTempPart(
-        BlockWithPartition & block,
-        StorageMetadataPtr metadata_snapshot,
-        ContextPtr context,
-        bool may_exist = true);
+    MergeTreeTemporaryPartPtr writeTempPart(BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context);
 
     MergeTreeTemporaryPartPtr writeTempPatchPart(
         BlockWithPartition & block,
         StorageMetadataPtr metadata_snapshot,
         String partition_id,
         SourcePartsSetForPatch source_parts_set,
-        ContextPtr context,
-        bool may_exist = true);
+        ContextPtr context);
 
     MergeTreeData::MergingParams::Mode getMergingMode() const
     {
@@ -114,8 +110,7 @@ public:
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
-        bool merge_is_needed,
-        ContextPtr context);
+        bool merge_is_needed);
 
     /// For mutation: MATERIALIZE PROJECTION.
     static MergeTreeTemporaryPartPtr writeTempProjectionPart(
@@ -124,8 +119,7 @@ public:
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
-        size_t block_num,
-        ContextPtr context);
+        size_t block_num);
 
     static Block mergeBlock(
         Block && block,
@@ -141,8 +135,7 @@ private:
         String partition_id,
         SourcePartsSetForPatch source_parts_set,
         ContextPtr context,
-        UInt64 block_number,
-        bool may_exist = true);
+        UInt64 block_number);
 
     static MergeTreeTemporaryPartPtr writeProjectionPartImpl(
         const String & part_name,
@@ -152,7 +145,6 @@ private:
         LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
-        MergeTreeIndices indices,
         bool merge_is_needed);
 
     MergeTreeData & data;

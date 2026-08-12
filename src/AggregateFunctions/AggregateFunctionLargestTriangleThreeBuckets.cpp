@@ -26,7 +26,6 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int INCORRECT_DATA;
 }
 
 struct Settings;
@@ -250,7 +249,7 @@ public:
         }
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & a = data(place);
         const auto & b = data(rhs);
@@ -265,10 +264,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        auto & sample = data(place);
-        sample.read(buf, arena);
-        if (sample.x.size() != sample.y.size())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Sizes of x and y do not match in the state of {}", getName());
+        data(place).read(buf, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -355,7 +351,6 @@ createAggregateFunctionLargestTriangleThreeBuckets(const std::string & name, con
 }
 
 
-void registerAggregateFunctionLargestTriangleThreeBuckets(AggregateFunctionFactory & factory);
 void registerAggregateFunctionLargestTriangleThreeBuckets(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

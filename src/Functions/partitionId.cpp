@@ -18,7 +18,7 @@ namespace ErrorCodes
 /** partitionId(x, y, ...) is a function that computes partition ids of arguments.
   * The function is slow and should not be called for large amount of rows.
   */
-class FunctionPartitionId final : public IFunction
+class FunctionPartitionId : public IFunction
 {
 public:
     static constexpr auto name = "partitionId";
@@ -66,7 +66,7 @@ public:
 REGISTER_FUNCTION(PartitionId)
 {
     FunctionDocumentation::Description description = R"(
-Computes the [partition ID](/reference/engines/table-engines/mergetree-family/custom-partitioning-key).
+Computes the [partition ID](../../engines/table-engines/mergetree-family/custom-partitioning-key.md).
 
 :::note
 This function is slow and should not be called for large numbers of rows.

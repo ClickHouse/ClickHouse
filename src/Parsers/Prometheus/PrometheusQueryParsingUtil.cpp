@@ -80,7 +80,7 @@ namespace
                         setErrorPos(error_pos, pos);
                         return false;
                     }
-                    UInt8 byte = 0;
+                    UInt8 byte;
                     if (!tryParseIntInBase<16>(byte, input.substr(pos + 2, 2)))
                     {
                         setErrorMessage(error_message,
@@ -110,7 +110,7 @@ namespace
                         setErrorPos(error_pos, pos);
                         return false;
                     }
-                    UInt16 byte = 0;
+                    UInt16 byte;
                     if (!tryParseIntInBase<8>(byte, input.substr(pos + 1, 3)))
                     {
                         setErrorMessage(error_message,
@@ -141,7 +141,7 @@ namespace
                         setErrorPos(error_pos, pos);
                         return false;
                     }
-                    UInt16 code_point = 0;
+                    UInt16 code_point;
                     if (!tryParseIntInBase<16>(code_point, input.substr(pos + 2, 4)))
                     {
                         setErrorMessage(error_message,
@@ -167,7 +167,7 @@ namespace
                         setErrorPos(error_pos, pos);
                         return false;
                     }
-                    UInt32 code_point = 0;
+                    UInt32 code_point;
                     if (!tryParseIntInBase<16>(code_point, input.substr(pos + 2, 8)))
                     {
                         setErrorMessage(error_message,
@@ -271,7 +271,7 @@ namespace
                 char before = str[pos - 1];
                 char after = str[pos + 1];
 
-                bool between_digits = false;
+                bool between_digits;
                 if constexpr (is_hex)
                     between_digits = (std::isxdigit(before) || (std::tolower(before) == 'x')) && std::isxdigit(after);
                 else
@@ -393,7 +393,7 @@ namespace
         std::string_view hex_without_prefix = std::string_view{str}.substr(2);
 
         /// Parse hexadecimal number.
-        Int64 value = 0;
+        Int64 value;
         if (!tryParseIntInBase<16>(value, hex_without_prefix))
         {
             setErrorMessage(error_message, "Cannot parse {} {} in hexadecimal format", getTypeName<T>(), quoteString(str));
@@ -533,7 +533,7 @@ namespace
 
         if constexpr (is_decimal<T>)
         {
-            Int64 scaled_milliseconds = 0;
+            Int64 scaled_milliseconds;
             if (scale > 3)
             {
                 if (common::mulOverflow(milliseconds, DecimalUtils::scaleMultiplier<T>(scale - 3), scaled_milliseconds))

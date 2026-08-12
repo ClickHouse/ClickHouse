@@ -10,7 +10,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/FailPoint.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <Common/DateLUTImpl.h>
 
@@ -19,8 +18,6 @@
 namespace ProfileEvents
 {
     extern const Event DataAfterMergeDiffersFromReplica;
-    extern const Event MergeCommitMilliseconds;
-    extern const Event MergeTotalMilliseconds;
     extern const Event ReplicatedPartMerges;
 }
 
@@ -62,17 +59,6 @@ MergeFromLogEntryTask::MergeFromLogEntryTask(
 {
 }
 
-MergeFromLogEntryTask::~MergeFromLogEntryTask()
-{
-    /// zero_copy_lock's destructor can perform a real ZooKeeper request (releasing the exclusive
-    /// lock's ephemeral node) if the task is destroyed while still holding the lock, e.g. on
-    /// cancellation before the explicit unlock in prepare()/finalize() is reached. That request
-    /// has no component scope by default when this destructor runs from generic background-task
-    /// cleanup (MergeTreeBackgroundExecutor::routine), so set one explicitly here.
-    auto component_guard = Coordination::setCurrentComponent("MergeFromLogEntryTask::~MergeFromLogEntryTask");
-    zero_copy_lock.reset();
-}
-
 
 ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 {
@@ -84,7 +70,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         std::this_thread::sleep_for(std::chrono::milliseconds(3000));
     });
 
-    const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr();
     int32_t metadata_version = metadata_snapshot->getMetadataVersion();
     const auto storage_settings_ptr = storage.getSettings();
 
@@ -94,8 +80,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(
             PartLogElement::MERGE_PARTS, execution_status, stopwatch.elapsed(),
-            entry.new_part_name, part, parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot),
-            {}, this->projections_merge_time);
+            entry.new_part_name, part, parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot));
     };
 
     if ((*storage_settings_ptr)[MergeTreeSetting::always_fetch_merged_part])
@@ -371,7 +356,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     storage.writePartLog(
         PartLogElement::MERGE_PARTS_START, {}, 0,
-        entry.new_part_name, part, parts, merge_mutate_entry.get(), {}, {}, {});
+        entry.new_part_name, part, parts, merge_mutate_entry.get(), {});
 
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, NO_TRANSACTION_RAW);
 
@@ -407,10 +392,6 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     part = merge_task->getFuture().get();
     auto cached_marks = merge_task->releaseCachedMarks();
     auto cached_index_marks = merge_task->releaseCachedIndexMarks();
-    projections_merge_time = merge_task->grabProjectionsMergeTime();
-#if CLICKHOUSE_CLOUD
-    part->is_prewarmed = true;
-#endif
 
     storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr);
     /// Why we reset task here? Because it holds shared pointer to part and tryRemovePartImmediately will
@@ -420,8 +401,6 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     /// temp directories which guards temporary dir from background removal. So it's right place to reset the task
     /// and it's really needed.
     merge_task.reset();
-
-    Stopwatch commit_watch;
 
     try
     {
@@ -433,9 +412,6 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
         {
             transaction_ptr->rollback();
 
-            UInt64 commit_elapsed_ms = commit_watch.elapsedMilliseconds();
-            ProfileEvents::increment(ProfileEvents::MergeCommitMilliseconds, commit_elapsed_ms);
-            ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, commit_elapsed_ms);
             ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
 
             Strings files_with_size;
@@ -486,10 +462,6 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
      * This is not a problem, because in this case the merge will remain in the queue, and we will try again.
      */
-    UInt64 commit_elapsed_ms = commit_watch.elapsedMilliseconds();
-    ProfileEvents::increment(ProfileEvents::MergeCommitMilliseconds, commit_elapsed_ms);
-    ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, commit_elapsed_ms);
-
     finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 
