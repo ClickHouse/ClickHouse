@@ -5,6 +5,8 @@ import argparse
 import logging
 import os
 import random
+import shlex
+import shutil
 import signal
 import subprocess
 import time
@@ -788,15 +790,17 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main():
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-    args = parse_args()
+def collect_stacktrace_dumps(output_folder: Path) -> None:
+    # stdout keeps only a trimmed preview of the server stacktrace dumps;
+    # the full dumps are written to the working directory.
+    for stacktrace_log in ("sql_stacktraces.log", "c_stacktraces.log"):
+        path = Path.cwd() / stacktrace_log
+        if path.exists():
+            # Not rename: source and destination are different mounts.
+            shutil.move(path, output_folder / stacktrace_log)
 
-    if args.drop_databases and not args.hung_check:
-        raise argparse.ArgumentTypeError(
-            "--drop-databases only used in hung check (--hung-check)"
-        )
 
+def run_stress_test(args: argparse.Namespace) -> None:
     call_with_retry(make_query_command("SELECT 1"), timeout=0.5, retry_count=20)
 
     # Create random query/client killer unless disabled or in upgrade check mode
@@ -875,11 +879,49 @@ def main():
             )
             hung_check_log = args.output_folder / "hung_check.log"  # type: Path
             with Popen(["/usr/bin/tee", hung_check_log], stdin=PIPE) as tee:
-                res = call(
-                    cmd, shell=True, stdout=tee.stdin, stderr=STDOUT, timeout=600
-                )
-                if tee.stdin is not None:
-                    tee.stdin.close()
+                try:
+                    # Own session, so that on timeout the whole process
+                    # tree can be killed at once; otherwise survivors keep
+                    # appending to the dumps while they are collected.
+                    with Popen(
+                        cmd,
+                        shell=True,
+                        stdout=tee.stdin,
+                        stderr=STDOUT,
+                        start_new_session=True,
+                    ) as hung_check:
+                        try:
+                            res = hung_check.wait(timeout=600)
+                        except subprocess.TimeoutExpired:
+                            os.killpg(hung_check.pid, signal.SIGKILL)
+                            # The test runner starts each test in its own
+                            # session, out of reach of the killpg above,
+                            # but records the pgid in a file for exactly
+                            # this situation. The test command may carry
+                            # options (e.g. in the upgrade check), while
+                            # cleanup needs only the executable.
+                            test_runner = shlex.split(args.test_cmd)[0]
+                            call([test_runner, "--cleanup"], timeout=60)
+                            raise
+                finally:
+                    if tee.stdin is not None:
+                        tee.stdin.close()
+                    try:
+                        # EOF on the pipe means every process that
+                        # inherited it as stdout/stderr has exited: the
+                        # barrier that keeps the collection of the dumps
+                        # from racing a live writer.
+                        tee.wait(timeout=60)
+                    except subprocess.TimeoutExpired:
+                        # A writer survived both kills, e.g. a process
+                        # in uninterruptible sleep dies only once its
+                        # kernel wait completes. Give up on the barrier:
+                        # a dump with a torn tail beats losing it to the
+                        # job timeout.
+                        logging.warning(
+                            "Some hung check process survived the kill"
+                        )
+                        tee.kill()
             if res != 0 and have_long_running_queries:
                 logging.info("Hung check failed with exit code %d", res)
 
@@ -943,6 +985,24 @@ def main():
                 logging.info("No queries hung")
 
     logging.info("Stress test finished")
+
+
+def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    args = parse_args()
+
+    if args.drop_databases and not args.hung_check:
+        raise argparse.ArgumentTypeError(
+            "--drop-databases only used in hung check (--hung-check)"
+        )
+
+    try:
+        run_stress_test(args)
+    finally:
+        # Any exit path can leave dumps behind: the upgrade check runs
+        # without the hung check, and the test run can raise before the
+        # hung check is reached.
+        collect_stacktrace_dumps(args.output_folder)
 
 
 if __name__ == "__main__":
