@@ -816,6 +816,21 @@ def test_function_over_time():
         eps=1e-9,
     )
 
+    # deriv: per-second OLS slope of `test`'s samples in each window (180/195 are dropped for lack of
+    # samples the same way rate/idelta drop them: only a single sample falls in the window).
+    do_query_test(
+        "deriv(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "0.1"], [150, "0.11"], [165, "0.1"], [210, "0.15"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',0.1),('1970-01-01 00:02:30.000',0.11),('1970-01-01 00:02:45.000',0.1),('1970-01-01 00:03:30.000',0.15)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
     # changes: `test` never repeats a value within a window's samples, except two
     # consecutive equal samples at 110/120, so most windows count every transition.
     do_query_test(
@@ -1112,6 +1127,13 @@ def test_date_time_functions():
     )
 
     do_query_test(
+        "day_of_week()",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "0"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 0]],
+    )
+
+    do_query_test(
         "day_of_week(timestamps)[20:10]",
         120,
         '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[110, "0"], [120, "6"]]}]}',
@@ -1125,6 +1147,13 @@ def test_date_time_functions():
 
     do_query_test(
         "day_of_month(vector(time()))",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "8"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 8]],
+    )
+
+    do_query_test(
+        "day_of_month()",
         1770582640,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "8"]}]}',
         [["[]", "2026-02-08 20:30:40.000", 8]],
@@ -1150,6 +1179,13 @@ def test_date_time_functions():
     )
 
     do_query_test(
+        "days_in_month()",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "28"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 28]],
+    )
+
+    do_query_test(
         "days_in_month(timestamps)[20:10]",
         120,
         '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[110, "30"], [120, "31"]]}]}',
@@ -1163,6 +1199,13 @@ def test_date_time_functions():
 
     do_query_test(
         "day_of_year(vector(time()))",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "39"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 39]],
+    )
+
+    do_query_test(
+        "day_of_year()",
         1770582640,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "39"]}]}',
         [["[]", "2026-02-08 20:30:40.000", 39]],
@@ -1188,6 +1231,13 @@ def test_date_time_functions():
     )
 
     do_query_test(
+        "minute()",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "30"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 30]],
+    )
+
+    do_query_test(
         "minute(timestamps)[20:10]",
         120,
         '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[110, "30"], [120, "30"]]}]}',
@@ -1201,6 +1251,13 @@ def test_date_time_functions():
 
     do_query_test(
         "hour(vector(time()))",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "20"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 20]],
+    )
+
+    do_query_test(
+        "hour()",
         1770582640,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "20"]}]}',
         [["[]", "2026-02-08 20:30:40.000", 20]],
@@ -1226,6 +1283,13 @@ def test_date_time_functions():
     )
 
     do_query_test(
+        "month()",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "2"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 2]],
+    )
+
+    do_query_test(
         "month(timestamps)[20:10]",
         120,
         '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[110, "11"], [120, "12"]]}]}',
@@ -1245,6 +1309,13 @@ def test_date_time_functions():
     )
 
     do_query_test(
+        "year()",
+        1770582640,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [1770582640, "2026"]}]}',
+        [["[]", "2026-02-08 20:30:40.000", 2026]],
+    )
+
+    do_query_test(
         "year(timestamps)[20:10]",
         120,
         '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[110, "2025"], [120, "2025"]]}]}',
@@ -1255,6 +1326,122 @@ def test_date_time_functions():
             ]
         ],
     )
+
+    # A date/time function called without arguments is evaluated at each step of a range query.
+    do_range_query_test(
+        "minute()",
+        1770582580,
+        1770582700,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[1770582580, "29"], [1770582640, "30"], [1770582700, "31"]]}]}',
+        [
+            [
+                "[]",
+                "[('2026-02-08 20:29:40.000',29),('2026-02-08 20:30:40.000',30),('2026-02-08 20:31:40.000',31)]",
+            ]
+        ],
+    )
+
+
+# Regression test: a date/time function called without arguments synthesizes the evaluation time internally
+# and, at some point, used to always cast it to the TimeSeries table's scalar (value) data type before
+# extracting a calendar component from it. ClickHouse's TimeSeries engine explicitly supports Float32-typed
+# value columns, and Float32 only has ~128 seconds of precision at today's epoch magnitude, so on such a table
+# this used to round the evaluation time by up to ~64 seconds before minute()/hour()/etc. ever saw it - enough
+# to flip which minute (or hour, etc.) it falls into near a boundary. This must return the exact calendar value
+# regardless of the table's scalar type, both for a single evaluation time and for a range of evaluation times.
+# The same used to be true for the explicit `vector(time())` carrier (which `f()` is documented to be equivalent
+# to): only the implicit zero-argument branch kept the evaluation time in native precision, so
+# `minute(vector(time()))` still rounded it through the table's Float32 scalar type and disagreed with `minute()`.
+# The same is also true for `time()` wrapped in any nesting of `scalar(...)`/`vector(...)`/unary `+` - e.g.
+# `minute(vector(scalar(vector(time()))))` and `minute(vector(+time()))` - since scalar()/vector()/unary `+` are
+# value-preserving passthroughs, so these must agree with `minute()` too. (`scalar(vector(time()))` on its own isn't
+# reachable as a date/time function's argument: date/time functions require an instant-vector argument, and scalar(...)
+# produces a scalar, so it must be wrapped in another vector(...) to be used here - hence
+# `vector(scalar(vector(time())))` below.)
+def test_date_time_functions_zero_arg_with_float32_scalar():
+    node.query(
+        "CREATE TABLE prometheus_f32 (time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+    )
+
+    try:
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQuery(prometheus_f32, 'minute()', 1770582700)"
+            ),
+            [["[]", "2026-02-08 20:31:40.000", 31]],
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQuery(prometheus_f32, 'minute(vector(time()))', 1770582700)"
+            ),
+            [["[]", "2026-02-08 20:31:40.000", 31]],
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQuery(prometheus_f32, 'minute(vector(scalar(vector(time()))))', 1770582700)"
+            ),
+            [["[]", "2026-02-08 20:31:40.000", 31]],
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQuery(prometheus_f32, 'minute(vector(+time()))', 1770582700)"
+            ),
+            [["[]", "2026-02-08 20:31:40.000", 31]],
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32, 'minute()', 1770582580, 1770582700, 60)"
+            ),
+            [
+                [
+                    "[]",
+                    "[('2026-02-08 20:29:40.000',29),('2026-02-08 20:30:40.000',30),('2026-02-08 20:31:40.000',31)]",
+                ]
+            ],
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32, 'minute(vector(time()))', 1770582580, 1770582700, 60)"
+            ),
+            [
+                [
+                    "[]",
+                    "[('2026-02-08 20:29:40.000',29),('2026-02-08 20:30:40.000',30),('2026-02-08 20:31:40.000',31)]",
+                ]
+            ],
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32, 'minute(vector(scalar(vector(time()))))', 1770582580, 1770582700, 60)"
+            ),
+            [
+                [
+                    "[]",
+                    "[('2026-02-08 20:29:40.000',29),('2026-02-08 20:30:40.000',30),('2026-02-08 20:31:40.000',31)]",
+                ]
+            ],
+        )
+
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32, 'minute(vector(+time()))', 1770582580, 1770582700, 60)"
+            ),
+            [
+                [
+                    "[]",
+                    "[('2026-02-08 20:29:40.000',29),('2026-02-08 20:30:40.000',30),('2026-02-08 20:31:40.000',31)]",
+                ]
+            ],
+        )
+    finally:
+        node.query("DROP TABLE prometheus_f32 SYNC")
 
 
 def test_math_functions():
@@ -1983,6 +2170,46 @@ def test_math_binary_operators():
         100,
         '{"resultType": "scalar", "result": [100, "1"]}',
         [["1970-01-01 00:01:40.000", 1]],
+    )
+
+    do_query_test(
+        "5 % +Inf",
+        100,
+        '{"resultType": "scalar", "result": [100, "5"]}',
+        [["1970-01-01 00:01:40.000", 5]],
+    )
+
+    do_query_test(
+        "vector(-5) % vector(-Inf)",
+        100,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [100, "-5"]}]}',
+        [["[]", "1970-01-01 00:01:40.000", -5]],
+    )
+
+    do_query_test(
+        "+Inf % 5",
+        100,
+        '{"resultType": "scalar", "result": [100, "NaN"]}',
+        [["1970-01-01 00:01:40.000", "nan"]],
+    )
+
+    do_query_test(
+        "5 % NaN",
+        100,
+        '{"resultType": "scalar", "result": [100, "NaN"]}',
+        [["1970-01-01 00:01:40.000", "nan"]],
+    )
+
+    do_query_test(
+        "(5 % (last_over_time(test[10s]) + +Inf))[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "5"], [135, "5"], [195, "5"], [210, "5"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',5),('1970-01-01 00:02:15.000',5),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',5)]",
+            ]
+        ],
     )
 
     do_query_test(
