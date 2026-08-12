@@ -16,11 +16,14 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int FAULT_INJECTED;
 }
 
 namespace FailPoints
 {
     extern const char output_format_sleep_on_progress[];
+    extern const char framing_throw_before_totals_boundary[];
+    extern const char framing_throw_before_extremes_boundary[];
 }
 
 IOutputFormat::IOutputFormat(SharedHeader header_, WriteBuffer & out_)
@@ -150,19 +153,40 @@ void IOutputFormat::work()
                 writeFramingPayloadBoundary(FramedPacketKind::Data);
             if (auto totals = prepareTotals(std::move(current_chunk)))
             {
+                if (framing)
+                    framing->beginPayload(FramedPacketKind::Totals);
                 consumeTotals(std::move(totals));
                 are_totals_written = true;
                 if (framing)
+                {
+                    /// Test-only: emulate the totals serialization throwing after buffering some
+                    /// bytes but before the packet boundary, to check that the exception path
+                    /// discards the fragment instead of flushing it as a `data` packet.
+                    fiu_do_on(FailPoints::framing_throw_before_totals_boundary,
+                    {
+                        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault before the framed totals boundary");
+                    });
                     writeFramingPayloadBoundary(FramedPacketKind::Totals);
+                }
             }
             break;
         case Extremes:
             writeSuffixIfNeeded();
             if (framing)
+            {
                 writeFramingPayloadBoundary(FramedPacketKind::Data);
+                framing->beginPayload(FramedPacketKind::Extremes);
+            }
             consumeExtremes(std::move(current_chunk));
             if (framing)
+            {
+                /// Test-only: same as above, for the extremes portion.
+                fiu_do_on(FailPoints::framing_throw_before_extremes_boundary,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault before the framed extremes boundary");
+                });
                 writeFramingPayloadBoundary(FramedPacketKind::Extremes);
+            }
             break;
     }
 
@@ -221,7 +245,9 @@ void IOutputFormat::finalizeUnlocked()
         /// the `exception` packet is terminal. `finalizeBuffers` is still called so format-owned
         /// wrapping buffers are released cleanly; bytes the format produced before the failure that
         /// are still sitting in them drain into the payload buffer and are emitted by the framing's
-        /// `finalize` below, preserving the payload-concatenation contract.
+        /// `finalize` below, preserving the payload-concatenation contract - unless the format was
+        /// mid-`totals` / mid-`extremes` when it failed, in which case the framing discards the
+        /// fragment instead of mislabeling it as `data` (see `IFramingFormat::beginPayload`).
         finalizeBuffers();
         framing->finalize();
         finalized = true;
@@ -267,11 +293,21 @@ void IOutputFormat::setTotals(const Block & totals)
     std::lock_guard lock(writing_mutex);
     writeSuffixIfNeeded();
     if (framing)
+    {
         writeFramingPayloadBoundary(FramedPacketKind::Data);
+        framing->beginPayload(FramedPacketKind::Totals);
+    }
     consumeTotals(Chunk(totals.getColumns(), totals.rows()));
     are_totals_written = true;
     if (framing)
+    {
+        /// Test-only: see the `work` counterpart.
+        fiu_do_on(FailPoints::framing_throw_before_totals_boundary,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault before the framed totals boundary");
+        });
         writeFramingPayloadBoundary(FramedPacketKind::Totals);
+    }
 }
 
 void IOutputFormat::setExtremes(const Block & extremes)
@@ -279,10 +315,20 @@ void IOutputFormat::setExtremes(const Block & extremes)
     std::lock_guard lock(writing_mutex);
     writeSuffixIfNeeded();
     if (framing)
+    {
         writeFramingPayloadBoundary(FramedPacketKind::Data);
+        framing->beginPayload(FramedPacketKind::Extremes);
+    }
     consumeExtremes(Chunk(extremes.getColumns(), extremes.rows()));
     if (framing)
+    {
+        /// Test-only: see the `work` counterpart.
+        fiu_do_on(FailPoints::framing_throw_before_extremes_boundary,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault before the framed extremes boundary");
+        });
         writeFramingPayloadBoundary(FramedPacketKind::Extremes);
+    }
 }
 
 void IOutputFormat::onProgress(const Progress & progress)

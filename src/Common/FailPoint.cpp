@@ -156,6 +156,8 @@ static struct InitFiu
     ONCE(framing_finalize_throw) \
     ONCE(framing_throw_after_writing_packet) \
     ONCE(framing_throw_during_payload_reset) \
+    ONCE(framing_throw_before_totals_boundary) \
+    ONCE(framing_throw_before_extremes_boundary) \
     ONCE(framing_pump_logs_throw) \
     ONCE(framing_exception_packet_throw) \
     ONCE(framing_throw_after_final_progress) \
