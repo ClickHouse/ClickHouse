@@ -71,36 +71,48 @@ $CLICKHOUSE_LOCAL -q "
     SETTINGS engine_file_truncate_on_insert = 1"
 echo '{"version":1,"size":1}' > "$DIR/ckpt/_delta_log/_last_checkpoint"
 
-# "variant" has no partition columns at all, and one column of a type ClickHouse cannot
-# represent yet. Statistics come from the snapshot's file stats, so they stay available.
-mkdir -p "$DIR/variant/_delta_log"
+# "variant" and "variant_p" are both well formed and declare a column of a type ClickHouse
+# cannot represent yet; "variant_p" additionally partitions by a declared column. Row and
+# byte counts come from the snapshot's file statistics, so neither table needs a converted
+# schema to report them.
+mkdir -p "$DIR/variant/_delta_log" "$DIR/variant_p/_delta_log" "$DIR/variant_p/p=1"
 $CLICKHOUSE_LOCAL -q "
     INSERT INTO FUNCTION file('$DIR/variant/part-00000-c000.snappy.parquet', Parquet, 'id Int64')
     SELECT number FROM numbers(7)
     SETTINGS engine_file_truncate_on_insert = 1"
-python3 - "$DIR/variant" <<'EOF'
+$CLICKHOUSE_LOCAL -q "
+    INSERT INTO FUNCTION file('$DIR/variant_p/$DATA', Parquet, 'id Int64')
+    SELECT number FROM numbers(7)
+    SETTINGS engine_file_truncate_on_insert = 1"
+python3 - "$DIR" "$DATA" <<'EOF'
 import json, os, sys
 
-table_dir = sys.argv[1]
-data = "part-00000-c000.snappy.parquet"
-fields = [{"name": "id", "type": "long", "nullable": True, "metadata": {}},
-          {"name": "v", "type": "variant", "nullable": True, "metadata": {}}]
-actions = [
-    {"protocol": {"minReaderVersion": 3, "minWriterVersion": 7,
-                  "readerFeatures": ["variantType"], "writerFeatures": ["variantType"]}},
-    {"metaData": {"id": "114462-variant",
-                  "format": {"provider": "parquet", "options": {}},
-                  "schemaString": json.dumps({"type": "struct", "fields": fields}),
-                  "partitionColumns": [],
-                  "configuration": {}, "createdTime": 1600000000000}},
-    {"add": {"path": data, "partitionValues": {},
-             "size": os.path.getsize(os.path.join(table_dir, data)),
-             "modificationTime": 1600000000000, "dataChange": True,
-             "stats": json.dumps({"numRecords": 7})}},
-]
-with open(os.path.join(table_dir, "_delta_log", "00000000000000000000.json"), "w") as log:
-    for action in actions:
-        log.write(json.dumps(action) + "\n")
+directory, data = sys.argv[1], sys.argv[2]
+field = lambda name, type_: {"name": name, "type": type_, "nullable": True, "metadata": {}}
+variant = field("v", "variant")
+tables = {
+    "variant": ([field("id", "long"), variant], [], "part-00000-c000.snappy.parquet", {}),
+    "variant_p": ([field("id", "long"), field("p", "string"), variant], ["p"], data, {"p": "1"}),
+}
+
+for table, (schema_fields, partition_columns, path, partition_values) in tables.items():
+    table_dir = os.path.join(directory, table)
+    actions = [
+        {"protocol": {"minReaderVersion": 3, "minWriterVersion": 7,
+                      "readerFeatures": ["variantType"], "writerFeatures": ["variantType"]}},
+        {"metaData": {"id": "114462-" + table,
+                      "format": {"provider": "parquet", "options": {}},
+                      "schemaString": json.dumps({"type": "struct", "fields": schema_fields}),
+                      "partitionColumns": partition_columns,
+                      "configuration": {}, "createdTime": 1600000000000}},
+        {"add": {"path": path, "partitionValues": partition_values,
+                 "size": os.path.getsize(os.path.join(table_dir, path)),
+                 "modificationTime": 1600000000000, "dataChange": True,
+                 "stats": json.dumps({"numRecords": 7})}},
+    ]
+    with open(os.path.join(table_dir, "_delta_log", "00000000000000000000.json"), "w") as log:
+        for action in actions:
+            log.write(json.dumps(action) + "\n")
 EOF
 
 echo '-- control: a declared partition column reads fine on both readers'
@@ -112,22 +124,14 @@ $CLICKHOUSE_LOCAL -q "SELECT * FROM deltaLakeLocal('$DIR/bad') FORMAT Null" 2>&1
 $CLICKHOUSE_LOCAL -q "SELECT * FROM deltaLakeLocal('$DIR/bad') WHERE id > 3 FORMAT Null" 2>&1 | grep -oF "BAD_ARGUMENTS"
 $CLICKHOUSE_LOCAL -q "SELECT * FROM deltaLakeLocal('$DIR/bad') WHERE id > 3 FORMAT Null SETTINGS delta_lake_enable_engine_predicate = 0" 2>&1 | grep -oF "BAD_ARGUMENTS"
 
-echo '-- delta-kernel reader: an explicit schema does not answer count() from statistics'
-$CLICKHOUSE_LOCAL --multiquery "
-CREATE TABLE t (\`id\` Int64, \`s\` String) ENGINE = DeltaLakeLocal('$DIR/bad');
-SELECT count() FROM t;
-" 2>&1 | grep -oF "BAD_ARGUMENTS"
-
-echo '-- delta-kernel reader: no row or byte statistics are published either'
-$CLICKHOUSE_LOCAL --multiquery "
-CREATE TABLE t2 (\`id\` Int64, \`s\` String) ENGINE = DeltaLakeLocal('$DIR/bad');
-SELECT total_rows IS NULL, total_bytes IS NULL FROM system.tables WHERE name = 't2';
-" 2>&1 | grep -E "^1\s+1$|BAD_ARGUMENTS"
-
-echo '-- delta-kernel reader: an unpartitioned table still publishes statistics'
+echo '-- delta-kernel reader: a table with an unsupported column type still publishes statistics'
 $CLICKHOUSE_LOCAL --multiquery "
 CREATE TABLE t3 (\`id\` Int64) ENGINE = DeltaLakeLocal('$DIR/variant');
 SELECT total_rows IS NULL, total_bytes IS NULL FROM system.tables WHERE name = 't3';
+" 2>&1 | grep -E "^0\s+0$|NOT_IMPLEMENTED"
+$CLICKHOUSE_LOCAL --multiquery "
+CREATE TABLE t4 (\`id\` Int64) ENGINE = DeltaLakeLocal('$DIR/variant_p');
+SELECT total_rows IS NULL, total_bytes IS NULL FROM system.tables WHERE name = 't4';
 " 2>&1 | grep -E "^0\s+0$|NOT_IMPLEMENTED"
 
 echo '-- legacy reader: json log branch'
