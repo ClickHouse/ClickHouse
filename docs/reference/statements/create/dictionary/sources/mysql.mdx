@@ -77,9 +77,17 @@ Setting fields:
 | `fail_on_connection_loss` | Controls behavior of the server on connection loss. If `true`, an exception is thrown immediately if the connection between client and server was lost. If `false`, the server retries to fetch data at least three times before reporting an error. Note that retrying leads to increased response times. Default value: `false`. |
 | `query` | The custom query. Optional. |
 | `enable_compression` | Enables zlib compression for the MySQL protocol connection. When set to `1`, ClickHouse requests protocol-level compression from the MySQL server. Can also be set per-replica inside `<replica>`. Default value: `0`. |
+| `ssl_ca_pem` | Contents of the CA certificate that the MySQL server certificate is verified against. Optional. |
+| `ssl_cert_pem` | Contents of the client certificate, for certificate-based authentication. Optional. |
+| `ssl_key_pem` | Contents of the private key belonging to `ssl_cert_pem`. Optional. |
+| `ssl_ca`, `ssl_cert`, `ssl_key` | The same credentials as paths to files on the server. Only allowed for a dictionary defined in a server configuration file, see below. Optional. |
 
 <Note>
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
+</Note>
+
+<Note>
+`ssl_ca`, `ssl_cert` and `ssl_key` name files that the server opens with its own privileges, so they are only accepted for a dictionary defined in a server configuration file. A dictionary created with a `CREATE DICTIONARY` query must pass the contents instead, in `ssl_ca_pem`, `ssl_cert_pem` and `ssl_key_pem`. Those values are masked in logs and in `SHOW` queries, the same way passwords are.
 </Note>
 
 <Note>

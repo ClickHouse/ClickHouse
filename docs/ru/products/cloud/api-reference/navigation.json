@@ -21,7 +21,8 @@
       {
         "group": "Биллинг",
         "pages": [
-          "GET /v1/organizations/{organizationId}/usageCost"
+          "GET /v1/organizations/{organizationId}/usageCost",
+          "products/cloud/api-reference/billing/active-balances-get"
         ]
       },
       {

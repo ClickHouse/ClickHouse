@@ -117,6 +117,10 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/reference/data-types/int-uint)) — Total number of returned object infos from iceberg iterator.
 - `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/reference/data-types/int-uint)) — Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.
 - `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/reference/data-types/int-uint)) — Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.
+- `ProfileEvent_OneLakeAccessTokenRequests` ([UInt64](/reference/data-types/int-uint)) — Number of access token requests issued by the OneLake catalog via the Entra ID refresh token grant.
+- `ProfileEvent_OneLakeAccessTokenRequestFailures` ([UInt64](/reference/data-types/int-uint)) — Number of failed access token requests issued by the OneLake catalog via the Entra ID refresh token grant (including expired or revoked refresh tokens).
+- `ProfileEvent_OneLakeAccessTokenRequestMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent requesting access tokens via the Entra ID refresh token grant in the OneLake catalog.
+- `ProfileEvent_OneLakeAccessTokenExpirations` ([UInt64](/reference/data-types/int-uint)) — Number of times the cached OneLake access token was found expired and renewed transparently.
 - `ProfileEvent_VectorSimilarityIndexCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times an index granule has been found in the vector index cache.
 - `ProfileEvent_VectorSimilarityIndexCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times an index granule has not been found in the vector index cache and had to be read from disk.
 - `ProfileEvent_VectorSimilarityIndexCacheWeightLost` ([UInt64](/reference/data-types/int-uint)) — Approximate number of bytes evicted from the vector index cache.
@@ -1361,6 +1365,7 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_ExecutableUserDefinedFunctionPoolWaitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent waiting on tryBorrowObject when the executable_pool user-defined function pool is exhausted, in microseconds.
 - `ProfileEvent_ParquetReadRowGroups` ([UInt64](/reference/data-types/int-uint)) — The total number of row groups read from parquet data
 - `ProfileEvent_ParquetPrunedRowGroups` ([UInt64](/reference/data-types/int-uint)) — The total number of row groups pruned from parquet data
+- `ProfileEvent_ParquetPrunedPages` ([UInt64](/reference/data-types/int-uint)) — The total number of pages pruned from parquet data via column index
 - `ProfileEvent_ParquetDecodingTasks` ([UInt64](/reference/data-types/int-uint)) — Tasks issued by parquet reader
 - `ProfileEvent_ParquetDecodingTaskBatches` ([UInt64](/reference/data-types/int-uint)) — Task groups sent to a thread pool by parquet reader
 - `ProfileEvent_ParquetPrefetcherReadRandomRead` ([UInt64](/reference/data-types/int-uint)) — The total number of reads with ReadMode::RandomRead by DB::Parquet::Prefetcher
@@ -1774,6 +1779,9 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `CurrentMetric_FilesystemCacheEvictionThreads` ([Int64](/reference/data-types/int-uint)) — Number of threads in the filesystem cache background eviction (removal) pool
 - `CurrentMetric_FilesystemCacheEvictionThreadsActive` ([Int64](/reference/data-types/int-uint)) — Number of threads in the filesystem cache background eviction pool running a task
 - `CurrentMetric_FilesystemCacheEvictionThreadsScheduled` ([Int64](/reference/data-types/int-uint)) — Number of queued or active jobs in the filesystem cache background eviction pool
+- `CurrentMetric_FilesystemCacheDropCacheThreads` ([Int64](/reference/data-types/int-uint)) — Number of threads in the filesystem cache pool for parallel keys removal on SYSTEM DROP FILESYSTEM CACHE
+- `CurrentMetric_FilesystemCacheDropCacheThreadsActive` ([Int64](/reference/data-types/int-uint)) — Number of threads in the filesystem cache keys removal pool running a task
+- `CurrentMetric_FilesystemCacheDropCacheThreadsScheduled` ([Int64](/reference/data-types/int-uint)) — Number of queued or active jobs in the filesystem cache keys removal pool
 - `CurrentMetric_AsyncInsertCacheSize` ([Int64](/reference/data-types/int-uint)) — Number of async insert hash id in cache
 - `CurrentMetric_IcebergMetadataFilesCacheBytes` ([Int64](/reference/data-types/int-uint)) — Size of the Iceberg metadata cache in bytes
 - `CurrentMetric_IcebergMetadataFilesCacheFiles` ([Int64](/reference/data-types/int-uint)) — Number of cached files in the Iceberg metadata cache
@@ -1838,6 +1846,10 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `CurrentMetric_BcryptCacheBytes` ([Int64](/reference/data-types/int-uint)) — Total size of the bcrypt authentication cache in bytes
 - `CurrentMetric_BcryptCacheSize` ([Int64](/reference/data-types/int-uint)) — Total number of entries in the bcrypt authentication cache
 - `CurrentMetric_ColumnsDescriptionsCacheSize` ([Int64](/reference/data-types/int-uint)) — Size of ColumnsDescriptions cache (per-table cache)
+- `CurrentMetric_SharedPartSerializationsCacheSize` ([Int64](/reference/data-types/int-uint)) — Number of distinct serializations maps shared across data parts (sum over per-table caches)
+- `CurrentMetric_SharedPartSerializationGroupsCacheSize` ([Int64](/reference/data-types/int-uint)) — Number of distinct per-column serialization groups shared across data parts (sum over per-table caches)
+- `CurrentMetric_SharedPartColumnsSubstreamsCacheSize` ([Int64](/reference/data-types/int-uint)) — Number of distinct columns substreams lists shared across data parts (sum over per-table caches)
+- `CurrentMetric_SharedPartColumnSubstreamsEntriesCacheSize` ([Int64](/reference/data-types/int-uint)) — Number of distinct per-column substream entries shared across data parts (sum over per-table caches)
 - `CurrentMetric_S3Requests` ([Int64](/reference/data-types/int-uint)) — S3 requests count
 - `CurrentMetric_KeeperAliveConnections` ([Int64](/reference/data-types/int-uint)) — Number of alive connections
 - `CurrentMetric_KeeperOutstandingRequests` ([Int64](/reference/data-types/int-uint)) — Number of outstanding requests
@@ -1978,7 +1990,6 @@ hostname:                                                        clickhouse.eu-c
 event_date:                                                      2020-09-05
 event_time:                                                      2020-09-05 16:22:33
 event_time_microseconds:                                         2020-09-05 16:22:33.196807
-milliseconds:                                                    196
 ProfileEvent_Query:                                              0
 ProfileEvent_SelectQuery:                                        0
 ProfileEvent_InsertQuery:                                        0

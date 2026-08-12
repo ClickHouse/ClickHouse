@@ -193,7 +193,10 @@ namespace
             return convertCodePointPositionToByteOffset(promql_query, ctx->getSymbol()->getStartIndex());
         }
 
-        static size_t getStartPos(const antlr4::ParserRuleContext * ctx) { return ctx->getStart()->getStartIndex(); }
+        size_t getStartPos(const antlr4::ParserRuleContext * ctx) const
+        {
+            return convertCodePointPositionToByteOffset(promql_query, ctx->getStart()->getStartIndex());
+        }
 
         bool parseStringLiteral(const antlr4::tree::TerminalNode * ctx, String & result)
         {

@@ -301,6 +301,85 @@ bool StorageMaterializedPostgreSQL::needRewriteQueryWithFinal(const Names & colu
 }
 
 
+bool StorageMaterializedPostgreSQL::supportsPrewhere() const
+{
+    /// `read` hands the `SelectQueryInfo` over to the nested table untouched, so whatever the nested table
+    /// can do with `PREWHERE` the wrapper can do too. While the nested table is not created yet there is
+    /// nothing to read from anyway, so the default is good enough.
+    if (auto nested = tryGetNested())
+        return nested->supportsPrewhere();
+    return false;
+}
+
+
+bool StorageMaterializedPostgreSQL::canMoveConditionsToPrewhere() const
+{
+    if (auto nested = tryGetNested())
+        return nested->canMoveConditionsToPrewhere();
+    return false;
+}
+
+
+bool StorageMaterializedPostgreSQL::supportedPrewhereColumnsIncludeSubcolumns() const
+{
+    /// `StorageMerge` ANDs this bit across its children, so leaving it at the `IStorage` default would
+    /// silently drop a subcolumn condition from `PREWHERE` for the whole `Merge` table.
+    if (auto nested = tryGetNested())
+        return nested->supportedPrewhereColumnsIncludeSubcolumns();
+    return false;
+}
+
+
+bool StorageMaterializedPostgreSQL::supportsSubcolumns() const
+{
+    if (auto nested = tryGetNested())
+        return nested->supportsSubcolumns();
+    return false;
+}
+
+
+bool StorageMaterializedPostgreSQL::supportsOptimizationToSubcolumns() const
+{
+    if (auto nested = tryGetNested())
+        return nested->supportsOptimizationToSubcolumns();
+    return false;
+}
+
+
+IStorage::ColumnSizeByName StorageMaterializedPostgreSQL::getColumnSizes() const
+{
+    if (auto nested = tryGetNested())
+        return nested->getColumnSizes();
+    return {};
+}
+
+
+IStorage::ColumnSizeByName StorageMaterializedPostgreSQL::getColumnSizes(const Names & columns) const
+{
+    if (auto nested = tryGetNested())
+        return nested->getColumnSizes(columns);
+    return {};
+}
+
+
+std::optional<UInt64> StorageMaterializedPostgreSQL::totalRows(ContextPtr query_context) const
+{
+    /// An estimate: as for any `ReplacingMergeTree`, the deleted rows and the superseded versions of the
+    /// updated rows are still counted until the parts are merged.
+    if (auto nested = tryGetNested())
+        return nested->totalRows(query_context);
+    return {};
+}
+
+
+std::optional<UInt64> StorageMaterializedPostgreSQL::totalBytes(ContextPtr query_context) const
+{
+    if (auto nested = tryGetNested())
+        return nested->totalBytes(query_context);
+    return {};
+}
+
+
 void StorageMaterializedPostgreSQL::read(
         QueryPlan & query_plan,
         const Names & column_names,

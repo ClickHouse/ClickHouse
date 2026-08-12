@@ -48,6 +48,8 @@
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTDataType.h>
+#include <Parsers/ASTEnumDataType.h>
+#include <Parsers/ASTTupleDataType.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
@@ -3056,390 +3058,9 @@ static const std::map<size_t, Strings> swapAggrs
          "uniq",
          "welchTTest"}}};
 
-DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
+const std::map<size_t, Strings> & QueryFuzzer::swapAggregateNames()
 {
-    checkIterationLimit();
-
-    /// Do not replace Array/Tuple/etc. with not Array/Tuple too often.
-    const auto * type_array = typeid_cast<const DataTypeArray *>(type.get());
-    if (type_array && fuzz_rand() % 4 != 0)
-        return std::make_shared<DataTypeArray>(fuzzDataType(type_array->getNestedType()));
-
-    const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get());
-    if (type_tuple && fuzz_rand() % 4 != 0)
-    {
-        DataTypes elements;
-        for (const auto & element : type_tuple->getElements())
-            elements.push_back(fuzzDataType(element));
-        /// Occasionally add a new alternative
-        if (elements.size() < 10 && fuzz_rand() % 10 == 0)
-            elements.push_back(getRandomType());
-        /// Occasionally drop an alternative (keep at least 1)
-        if (elements.size() > 1 && fuzz_rand() % 10 == 0)
-            elements.erase(elements.begin() + fuzz_rand() % elements.size());
-        if (type_tuple->hasExplicitNames())
-        {
-            auto names = type_tuple->getElementNames();
-            /// Pad with synthetic names if a field was added, truncate if one was dropped
-            while (names.size() < elements.size())
-                names.push_back("f" + std::to_string(names.size()));
-            names.resize(elements.size());
-            return std::make_shared<DataTypeTuple>(elements, names);
-        }
-        return std::make_shared<DataTypeTuple>(elements);
-    }
-
-    const auto * type_map = typeid_cast<const DataTypeMap *>(type.get());
-    if (type_map && fuzz_rand() % 4 != 0)
-    {
-        auto key_type = fuzzDataType(type_map->getKeyType());
-        auto value_type = fuzzDataType(type_map->getValueType());
-        if (!DataTypeMap::isValidKeyType(key_type))
-            key_type = type_map->getKeyType();
-
-        return std::make_shared<DataTypeMap>(key_type, value_type);
-    }
-
-    const auto * type_nullable = typeid_cast<const DataTypeNullable *>(type.get());
-    if (type_nullable)
-    {
-        size_t tmp = fuzz_rand() % 3;
-        if (tmp == 0)
-            return fuzzDataType(type_nullable->getNestedType());
-
-        if (tmp == 1)
-        {
-            auto nested_type = fuzzDataType(type_nullable->getNestedType());
-            if (nested_type->canBeInsideNullable())
-                return std::make_shared<DataTypeNullable>(nested_type);
-        }
-    }
-
-    const auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get());
-    if (type_low_cardinality)
-    {
-        size_t tmp = fuzz_rand() % 3;
-        if (tmp == 0)
-            return fuzzDataType(type_low_cardinality->getDictionaryType());
-
-        if (tmp == 1)
-        {
-            auto nested_type = fuzzDataType(type_low_cardinality->getDictionaryType());
-            if (nested_type->canBeInsideLowCardinality())
-                return std::make_shared<DataTypeLowCardinality>(nested_type);
-        }
-    }
-
-    const auto * type_fixed_string = typeid_cast<const DataTypeFixedString *>(type.get());
-    if (type_fixed_string && fuzz_rand() % 4 != 0)
-    {
-        /// Mutate length by ±2 (relative) or pick a fresh random size
-        const size_t n = type_fixed_string->getN();
-        const size_t new_n = (fuzz_rand() % 4 == 0)
-            ? (fuzz_rand() % MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS + 1)
-            : std::clamp<size_t>(
-                  std::max<ssize_t>(1, static_cast<ssize_t>(n) + static_cast<ssize_t>(fuzz_rand() % 5) - 2),
-                  1,
-                  MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS);
-        return std::make_shared<DataTypeFixedString>(new_n);
-    }
-
-    const auto * type_datetime64 = typeid_cast<const DataTypeDateTime64 *>(type.get());
-    if (type_datetime64 && fuzz_rand() % 4 != 0)
-        return std::make_shared<DataTypeDateTime64>(fuzz_rand() % 10); /// scale in [0, 9]
-
-    const auto * type_time64 = typeid_cast<const DataTypeTime64 *>(type.get());
-    if (type_time64 && fuzz_rand() % 4 != 0)
-        return std::make_shared<DataTypeTime64>(fuzz_rand() % 10); /// scale in [0, 9]
-
-    const auto * type_dynamic = typeid_cast<const DataTypeDynamic *>(type.get());
-    if (type_dynamic && fuzz_rand() % 4 != 0)
-        return std::make_shared<DataTypeDynamic>(fuzz_rand() % 255);
-
-    const auto * type_variant = typeid_cast<const DataTypeVariant *>(type.get());
-    if (type_variant && fuzz_rand() % 4 != 0)
-    {
-        DataTypes variants;
-        for (const auto & v : type_variant->getVariants())
-            variants.push_back(fuzzDataType(v));
-        /// Occasionally add a new alternative
-        if (variants.size() < 10 && fuzz_rand() % 4 == 0)
-            variants.push_back(getRandomType());
-        /// Occasionally drop an alternative (keep at least 1)
-        if (variants.size() > 1 && fuzz_rand() % 4 == 0)
-            variants.erase(variants.begin() + fuzz_rand() % variants.size());
-        return std::make_shared<DataTypeVariant>(variants);
-    }
-
-    /// NOLINTBEGIN(bugprone-macro-parentheses)
-    /// Enum types: add or remove enum values
-#define FUZZ_ENUM(INT_TYPE) \
-    if (const auto * dt_enum = typeid_cast<const DataTypeEnum<INT_TYPE> *>(type.get()); dt_enum && fuzz_rand() % 4 != 0) \
-    { \
-        auto values = dt_enum->getValues(); \
-        if (values.size() < 50 && fuzz_rand() % 3 == 0) \
-        { \
-            const auto new_val = static_cast<INT_TYPE>(fuzz_rand()); \
-            if (!dt_enum->hasValue(new_val)) \
-                values.emplace_back("e" + std::to_string(values.size()), new_val); \
-        } \
-        if (values.size() > 1 && fuzz_rand() % 3 == 0) \
-            values.erase(values.begin() + fuzz_rand() % values.size()); \
-        if (!values.empty()) \
-            return std::make_shared<DataTypeEnum<INT_TYPE>>(values); \
-    }
-    FUZZ_ENUM(Int8)
-    FUZZ_ENUM(Int16)
-#undef FUZZ_ENUM
-
-    /// Decimal types: mutate scale, and occasionally the precision tier too
-#define FUZZ_DECIMAL(DT) \
-    if (const auto * dt_dec = typeid_cast<const DataTypeDecimal<DT> *>(type.get()); dt_dec && fuzz_rand() % 4 != 0) \
-    { \
-        const UInt32 max_prec = DataTypeDecimal<DT>::maxPrecision(); \
-        const UInt32 new_prec = (fuzz_rand() % 4 == 0) ? UInt32(fuzz_rand() % max_prec + 1) : dt_dec->getPrecision(); \
-        return std::make_shared<DataTypeDecimal<DT>>(new_prec, UInt32(fuzz_rand() % (new_prec + 1))); \
-    }
-    FUZZ_DECIMAL(Decimal32)
-    FUZZ_DECIMAL(Decimal64)
-    FUZZ_DECIMAL(Decimal128)
-    FUZZ_DECIMAL(Decimal256)
-#undef FUZZ_DECIMAL
-    /// NOLINTEND(bugprone-macro-parentheses)
-
-    const auto * type_aggr = typeid_cast<const DataTypeAggregateFunction *>(type.get());
-    if (type_aggr && fuzz_rand() % 4 != 0)
-    {
-        const auto nargs = type_aggr->getArgumentsDataTypes().size();
-        String new_name = type_aggr->getFunctionName();
-        DataTypes new_arg_types = type_aggr->getArgumentsDataTypes();
-        bool changed = false;
-
-        if (nargs > 0 && nargs < 3 && swapAggrs.contains(nargs) && fuzz_rand() % 3 == 0)
-        {
-            String candidate = pickRandomly(fuzz_rand, swapAggrs.at(nargs));
-            if (candidate != new_name)
-            {
-                new_name = std::move(candidate);
-                changed = true;
-            }
-        }
-        for (auto & arg_type : new_arg_types)
-        {
-            auto fuzzed = fuzzDataType(arg_type);
-            if (fuzzed != arg_type)
-            {
-                arg_type = fuzzed;
-                changed = true;
-            }
-        }
-        if (changed)
-        {
-            try
-            {
-                AggregateFunctionProperties properties;
-                auto new_func = AggregateFunctionFactory::instance().get(
-                    new_name, NullsAction::EMPTY, new_arg_types, type_aggr->getParameters(), properties);
-                return std::make_shared<DataTypeAggregateFunction>(new_func, new_arg_types, type_aggr->getParameters());
-            }
-            catch (...) // NOLINT(bugprone-empty-catch) Ok: aggregate may reject fuzzed argument types
-            {
-            }
-        }
-        return type;
-    }
-
-    size_t tmp = fuzz_rand() % 8;
-    if (tmp == 0)
-        return std::make_shared<DataTypeArray>(type);
-
-    if (tmp <= 1 && type->canBeInsideNullable())
-        return std::make_shared<DataTypeNullable>(type);
-
-    if (tmp <= 2 && type->canBeInsideLowCardinality())
-        return std::make_shared<DataTypeLowCardinality>(type);
-
-    if (tmp <= 3)
-        return getRandomType();
-
-    return type;
-}
-
-DataTypePtr QueryFuzzer::getRandomType()
-{
-    checkIterationLimit();
-
-    static const std::vector<TypeIndex> random_types = {TypeIndex::UInt8,      TypeIndex::UInt16,         TypeIndex::UInt32,
-                                                        TypeIndex::UInt64,     TypeIndex::UInt128,        TypeIndex::UInt256,
-                                                        TypeIndex::Int8,       TypeIndex::Int16,          TypeIndex::Int32,
-                                                        TypeIndex::Int64,      TypeIndex::Int128,         TypeIndex::Int256,
-                                                        TypeIndex::BFloat16,   TypeIndex::Float32,        TypeIndex::Float64,
-                                                        TypeIndex::Date,       TypeIndex::Date32,         TypeIndex::DateTime,
-                                                        TypeIndex::DateTime64, TypeIndex::String,         TypeIndex::FixedString,
-                                                        TypeIndex::Enum8,      TypeIndex::Enum16,         TypeIndex::Decimal32,
-                                                        TypeIndex::Decimal64,  TypeIndex::Decimal128,     TypeIndex::Decimal256,
-                                                        TypeIndex::UUID,       TypeIndex::Array,          TypeIndex::Tuple,
-                                                        TypeIndex::Nullable,   TypeIndex::LowCardinality, TypeIndex::Map,
-                                                        TypeIndex::IPv4,       TypeIndex::IPv6,           TypeIndex::Variant,
-                                                        TypeIndex::Dynamic,    TypeIndex::Time,           TypeIndex::Time64,
-                                                        TypeIndex::Object,     TypeIndex::QBit,           TypeIndex::AggregateFunction};
-
-    /// Geo types are custom-named Array aliases with no TypeIndex of their own,
-    /// so they are appended after the TypeIndex vector in a unified selection.
-    static constexpr const char * geo_type_names[]
-        = {"Point", "MultiPoint", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon"};
-    static constexpr size_t n_geo = std::size(geo_type_names);
-    const size_t pick = fuzz_rand() % (random_types.size() + n_geo);
-    if (pick >= random_types.size())
-        return DataTypeFactory::instance().get(geo_type_names[pick - random_types.size()]);
-
-    static constexpr const char * timezones[] = {"UTC", "Europe/Moscow", "America/New_York", "Asia/Tokyo", "Australia/Sydney"};
-    const auto type_id = random_types[pick];
-
-/// NOLINTBEGIN(bugprone-macro-parentheses)
-#define DISPATCH(DECIMAL) \
-    case TypeIndex::DECIMAL: \
-        return std::make_shared<DataTypeDecimal<DECIMAL>>( \
-            DataTypeDecimal<DECIMAL>::maxPrecision(), (fuzz_rand() % DataTypeDecimal<DECIMAL>::maxPrecision()) + 1);
-
-    switch (type_id)
-    {
-        case TypeIndex::Tuple: {
-            const size_t tuple_size = fuzz_rand() % 6;
-            DataTypes elements;
-            for (size_t i = 0; i < tuple_size; ++i)
-                elements.push_back(getRandomType());
-            return std::make_shared<DataTypeTuple>(elements);
-        }
-        case TypeIndex::Variant: {
-            const size_t tuple_size = fuzz_rand() % 6 + 1;
-            DataTypes elements;
-            for (size_t i = 0; i < tuple_size; ++i)
-                elements.push_back(getRandomType());
-            return std::make_shared<DataTypeVariant>(elements);
-        }
-        case TypeIndex::Array: return std::make_shared<DataTypeArray>(getRandomType());
-        case TypeIndex::Map: {
-            auto key_type = getRandomType();
-            /// `DataTypeMap`'s constructor rejects a `Nullable`/`LowCardinality(Nullable)` key.
-            if (!DataTypeMap::isValidKeyType(key_type))
-                key_type = std::make_shared<DataTypeString>();
-            return std::make_shared<DataTypeMap>(key_type, getRandomType());
-        }
-        case TypeIndex::LowCardinality: {
-            auto inner = getRandomType();
-            if (!inner->canBeInsideLowCardinality())
-                inner = std::make_shared<DataTypeString>();
-            return std::make_shared<DataTypeLowCardinality>(inner);
-        }
-        case TypeIndex::Nullable: {
-            auto inner = getRandomType();
-            if (!inner->canBeInsideNullable())
-                inner = std::make_shared<DataTypeString>();
-            return std::make_shared<DataTypeNullable>(inner);
-        }
-            DISPATCH(Decimal32)
-            DISPATCH(Decimal64)
-            DISPATCH(Decimal128)
-            DISPATCH(Decimal256)
-        case TypeIndex::FixedString: return std::make_shared<DataTypeFixedString>(fuzz_rand() % 20 + 1);
-        case TypeIndex::Enum8: {
-            DataTypeEnum<Int8>::Values values;
-            const size_t n = fuzz_rand() % 4 + 1;
-            for (size_t i = 0; i < n; ++i)
-                values.emplace_back("v" + std::to_string(i), static_cast<Int8>(i));
-            return std::make_shared<DataTypeEnum<Int8>>(values);
-        }
-        case TypeIndex::Enum16: {
-            DataTypeEnum<Int16>::Values values;
-            const size_t n = fuzz_rand() % 4 + 1;
-            for (size_t i = 0; i < n; ++i)
-                values.emplace_back("v" + std::to_string(i), static_cast<Int16>(i));
-            return std::make_shared<DataTypeEnum<Int16>>(values);
-        }
-        case TypeIndex::DateTime:
-            if (fuzz_rand() % 3 == 0)
-                return std::make_shared<DataTypeDateTime>(timezones[fuzz_rand() % std::size(timezones)]);
-            return std::make_shared<DataTypeDateTime>();
-        case TypeIndex::DateTime64: {
-            const UInt32 scale = fuzz_rand() % 10;
-            if (fuzz_rand() % 3 == 0)
-                return std::make_shared<DataTypeDateTime64>(scale, timezones[fuzz_rand() % std::size(timezones)]);
-            return std::make_shared<DataTypeDateTime64>(scale);
-        }
-        case TypeIndex::Time64: return std::make_shared<DataTypeTime64>(fuzz_rand() % 10);
-        case TypeIndex::Dynamic: return std::make_shared<DataTypeDynamic>(fuzz_rand() % 20);
-        case TypeIndex::Object: {
-            /// Randomize the `JSON` type parameters, which drive distinct code paths:
-            /// `max_dynamic_paths = 0` pushes every path into shared data,
-            /// `max_dynamic_types` bounds the `Dynamic` values
-            Strings params;
-            if (fuzz_rand() % 3 == 0)
-                params.push_back("max_dynamic_paths=" + std::to_string(fuzz_rand() % 300));
-            if (fuzz_rand() % 3 == 0)
-                params.push_back("max_dynamic_types=" + std::to_string(fuzz_rand() % 40));
-            if (params.empty())
-                return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
-            String json_type = "JSON(";
-            for (size_t i = 0; i < params.size(); ++i)
-            {
-                if (i > 0)
-                    json_type += ", ";
-                json_type += params[i];
-            }
-            json_type += ")";
-            return DataTypeFactory::instance().get(json_type);
-        }
-        case TypeIndex::QBit: {
-            static const DataTypePtr qbit_element_types[]
-                = {std::make_shared<DataTypeInt8>(),
-                   std::make_shared<DataTypeBFloat16>(),
-                   std::make_shared<DataTypeFloat32>(),
-                   std::make_shared<DataTypeFloat64>()};
-            const auto & element_type = qbit_element_types[fuzz_rand() % std::size(qbit_element_types)];
-
-            /// Occasionally build a strided QBit. The constraints are: dimension % stride == 0 and (when strided) stride % 8 == 0.
-            if (fuzz_rand() % 4 == 0)
-            {
-                const size_t stride = (fuzz_rand() % 16 + 1) * 8; /// multiple of 8 in [8, 128]
-                const size_t num_groups = fuzz_rand() % 8 + 1; /// 1..8 stride groups
-                const size_t dimension = stride * num_groups;
-                return std::make_shared<DataTypeQBit>(element_type, dimension, stride);
-            }
-
-            const size_t dimension = fuzz_rand() % 128 + 1;
-            return std::make_shared<DataTypeQBit>(element_type, dimension, dimension);
-        }
-        case TypeIndex::AggregateFunction: {
-            const size_t nargs = fuzz_rand() % 3;
-            String name = "count";
-            DataTypes arg_types;
-            if (nargs > 0 && swapAggrs.contains(nargs))
-            {
-                name = pickRandomly(fuzz_rand, swapAggrs.at(nargs));
-                for (size_t i = 0; i < nargs; ++i)
-                    arg_types.push_back(getRandomType());
-            }
-            try
-            {
-                AggregateFunctionProperties properties;
-                auto func = AggregateFunctionFactory::instance().get(name, NullsAction::EMPTY, arg_types, {}, properties);
-                return std::make_shared<DataTypeAggregateFunction>(func, arg_types, Array{});
-            }
-            catch (...) // NOLINT(bugprone-empty-catch) Ok: aggregate may reject random argument types
-            {
-                AggregateFunctionProperties properties;
-                auto func = AggregateFunctionFactory::instance().get("count", NullsAction::EMPTY, {}, {}, properties);
-                return std::make_shared<DataTypeAggregateFunction>(func, DataTypes{}, Array{});
-            }
-        }
-        default: break;
-    }
-
-#undef DISPATCH
-    /// NOLINTEND(bugprone-macro-parentheses)
-
-    return DataTypeFactory::instance().get(String(magic_enum::enum_name(type_id)));
+    return swapAggrs;
 }
 
 void QueryFuzzer::fuzzTableName(ASTTableExpression & table)
@@ -8115,25 +7736,26 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             hypo_index->if_exists = !hypo_index->if_exists;
         fuzz(hypo_index->children);
     }
-    else if (typeid_cast<ASTDataType *>(ast.get()) && fuzz_rand() % 10 == 0)
+    else if (dynamic_cast<ASTDataType *>(ast.get()))
     {
-        /// Re-fuzz the data type via the DataType layer, which produces structurally valid
-        /// mutations (nullable wrappers, array nesting, precision changes, etc.).
-        const auto old_type = DataTypeFactory::instance().tryGet(ast);
-        if (old_type)
+        /// Fuzz a data type only through the DataType layer: ParserDataType does not accept an expression, so
+        /// one injected into the argument list cannot be parsed back (#109706). dynamic_cast, not typeid_cast:
+        /// this has to own every ASTDataType subclass, otherwise one falls through to the generic fuzzer.
+        if (fuzz_rand() % 10 == 0)
         {
-            const auto new_type = fuzzDataType(old_type);
-            ParserDataType parser;
-            debug_visited_nodes.erase(ast.get());
-            ast = parseQuery(
-                parser,
-                new_type->getName(),
-                DBMS_DEFAULT_MAX_QUERY_SIZE,
-                DBMS_DEFAULT_MAX_PARSER_DEPTH,
-                DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            if (const auto old_type = DataTypeFactory::instance().tryGet(ast))
+            {
+                const auto new_type = fuzzDataType(old_type);
+                ParserDataType parser;
+                debug_visited_nodes.erase(ast.get());
+                ast = parseQuery(
+                    parser,
+                    new_type->getName(),
+                    DBMS_DEFAULT_MAX_QUERY_SIZE,
+                    DBMS_DEFAULT_MAX_PARSER_DEPTH,
+                    DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            }
         }
-        else
-            fuzz(ast->children);
     }
     else if (auto * show_tables = typeid_cast<ASTShowTablesQuery *>(ast.get()))
     {

@@ -127,6 +127,14 @@ public:
 REGISTER_FUNCTION(Synonyms)
 {
     FunctionDocumentation::Description description = R"(
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+:::warning
+This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
+Set `allow_experimental_nlp_functions = 1` to enable it.
+:::
+
 Finds synonyms of a given word.
 
 There are two types of synonym extensions:
@@ -138,11 +146,6 @@ Words in this line must be separated with space or tab characters.
 
 With the `wordnet` extension type you need to provide a path to a directory with the WordNet thesaurus in it.
 The thesaurus must contain a WordNet sense index.
-
-:::warning
-This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
-Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
 )";
     FunctionDocumentation::Syntax syntax = "synonyms(ext_name, word)";
     FunctionDocumentation::Arguments arguments = {

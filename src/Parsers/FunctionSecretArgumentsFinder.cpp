@@ -298,11 +298,40 @@ void FunctionSecretArgumentsFinder::findMySQLFunctionSecretArguments()
     {
         /// mysql(named_collection, ..., password = 'password', ...)
         findSecretNamedArgument("password", 1);
+        findTLSCredentialsSecretArguments(1);
     }
     else
     {
         /// mysql('host:port', 'database', 'table', 'user', 'password', ...)
         markSecretArgument(4);
+        findTLSCredentialsSecretArguments(5);
+    }
+}
+
+void FunctionSecretArgumentsFinder::findTLSCredentialsSecretArguments(size_t start)
+{
+    for (const auto & key : tls_credentials_secret_keys)
+        findSecretNamedArgument(key, start);
+
+    /// The named-collection parser does not require the key of a `key = value` argument to be a plain
+    /// literal or identifier: `getKeyValueFromASTImpl` evaluates it as a constant expression, so
+    /// `mysql(creds, concat('ssl_ca', '_pem') = 'SECRET', table = 't')` passes a TLS credential too.
+    /// This finder works on the AST alone and cannot evaluate an expression, so it fails closed: the
+    /// value of every argument whose key it cannot read is hidden. Hiding the value of a non-secret
+    /// argument written that way is harmless, while leaving a credential visible is not.
+    for (size_t i = start; i < function->arguments->size(); ++i)
+    {
+        const auto equals_func = function->arguments->at(i)->getFunction();
+        if (!equals_func || (equals_func->name() != "equals"))
+            continue;
+
+        if (!equals_func->arguments || equals_func->arguments->size() != 2)
+            continue;
+
+        if (tryGetStringFromArgument(*equals_func->arguments->at(0), nullptr))
+            continue;
+
+        markSecretArgument(i, /* argument_is_named= */ true);
     }
 }
 
@@ -996,11 +1025,13 @@ void FunctionSecretArgumentsFinder::findMySQLDatabaseSecretArguments()
     {
         /// MySQL(named_collection, ..., password = 'password', ...)
         findSecretNamedArgument("password", 1);
+        findTLSCredentialsSecretArguments(1);
     }
     else
     {
         /// MySQL('host:port', 'database', 'user', 'password')
         markSecretArgument(3);
+        findTLSCredentialsSecretArguments(4);
     }
 }
 

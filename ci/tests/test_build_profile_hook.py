@@ -23,7 +23,9 @@ Layers covered:
   stops halfway must not leave that marker behind.
 * The upload transport (``LogCluster.do_query``): the telemetry INSERT runs
   with parallel parsing disabled so its peak parse memory stays under the
-  shared cluster's per-user limit.
+  shared cluster's per-user limit, and retries transient 5xx rejections with
+  the body rewound, riding out the cluster's memory-pressure spikes instead of
+  failing the whole build job on the first one.
 * The endpoint routing (``LogCluster.READONLY_URL``): the consumer reads
   through the read-only sub-service of the cluster and sends no settings there,
   while the uploads keep the writer endpoint.
@@ -671,6 +673,78 @@ def test_do_query_disables_parallel_parsing():
 
     assert cluster.do_query("INSERT INTO t FORMAT JSONEachRow", data=b"")
     assert cluster._session.params["input_format_parallel_parsing"] == 0
+
+
+def test_do_query_retries_transient_500_with_rewound_body(monkeypatch):
+    """A transient 500 must be retried, and the retry must re-send the body.
+
+    The shared cluster goes through minutes-long memory-pressure spikes (Code
+    241 for every query); a single-attempt INSERT during a spike fails the
+    whole build job. And since requests consumes a file-like body on the first
+    attempt, a retry that does not rewind it would POST an empty body - an
+    INSERT that succeeds while the telemetry is silently lost.
+    """
+    import io
+
+    from ci.jobs.scripts import log_cluster as log_cluster_module
+
+    monkeypatch.setattr(log_cluster_module.time, "sleep", lambda _: None)
+
+    class _Resp:
+        def __init__(self, status_code):
+            self.status_code = status_code
+            self.ok = status_code < 400
+            self.text = ""
+
+    class _Session:
+        def __init__(self):
+            self.bodies = []
+            self.codes = [500, 500, 200]
+
+        def post(self, url, params, data, headers, timeout):
+            self.bodies.append(data.read())
+            return _Resp(self.codes[len(self.bodies) - 1])
+
+    cluster = LogCluster()
+    cluster.is_ready = lambda: True
+    cluster.url = "https://example"
+    cluster._auth = {}
+    cluster._session = _Session()
+
+    body = io.BytesIO(b'{"a": 1}\n')
+    assert cluster.do_query("INSERT INTO t FORMAT JSONEachRow", data=body, retries=8)
+    # Three attempts, each with the full body, not the first attempt's leftover.
+    assert cluster._session.bodies == [b'{"a": 1}\n'] * 3
+
+
+def test_do_query_does_not_retry_client_errors(monkeypatch):
+    """A 4xx is not transient: retrying a rejected query only re-runs the
+    rejection, so a single attempt must be the end of it."""
+    from ci.jobs.scripts import log_cluster as log_cluster_module
+
+    monkeypatch.setattr(log_cluster_module.time, "sleep", lambda _: None)
+
+    class _Resp:
+        status_code = 400
+        ok = False
+        text = "syntax error"
+
+    class _Session:
+        def __init__(self):
+            self.posts = 0
+
+        def post(self, url, params, data, headers, timeout):
+            self.posts += 1
+            return _Resp()
+
+    cluster = LogCluster()
+    cluster.is_ready = lambda: True
+    cluster.url = "https://example"
+    cluster._auth = {}
+    cluster._session = _Session()
+
+    assert not cluster.do_query("INSERT INTO t FORMAT JSONEachRow", data=b"", retries=8)
+    assert cluster._session.posts == 1
 
 
 # --- endpoint routing: reads on the read-only sub-service -----------------

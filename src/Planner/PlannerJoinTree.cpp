@@ -176,7 +176,6 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_MANY_COLUMNS;
     extern const int UNSUPPORTED_METHOD;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -796,16 +795,16 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
-    if (settings[Setting::parallel_replicas_count] <= 1 || settings[Setting::parallel_replicas_custom_key].value.empty())
+    if (settings[Setting::parallel_replicas_count] <= 1)
         return {};
 
+    /// An empty custom key is not skipped silently on purpose: the caller has already checked that the custom key
+    /// filtering is requested, and this replica has been given an offset to read only its own part of the data.
+    /// `parseCustomKeyForTable` fails on it, the same way it does on the initiator when the initiator builds the
+    /// filter itself for a cluster with a single shard.
     auto custom_key_ast = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *query_context);
-    if (!custom_key_ast)
-        throw DB::Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Parallel replicas processing with custom_key has been requested "
-                "(setting 'max_parallel_replicas'), but the table does not have custom_key defined for it "
-                " or it's invalid (setting 'parallel_replicas_custom_key')");
+    /// `parseCustomKeyForTable` either parses the key or throws, it never returns nothing.
+    chassert(custom_key_ast);
 
     LOG_TRACE(getLogger("Planner"), "Processing query on a replica using custom_key '{}'", settings[Setting::parallel_replicas_custom_key].value);
 

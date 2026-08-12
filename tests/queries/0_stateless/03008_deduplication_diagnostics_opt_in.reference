@@ -1,0 +1,279 @@
+insert_several_blocks_into_table main DEBUG 0
+insert_several_blocks_into_table main markers first 2
+insert_several_blocks_into_table main markers second 2
+insert_several_blocks_into_table first emit DEBUG total 10
+insert_several_blocks_into_table first emit DEBUG phase 5
+insert_several_blocks_into_table first emit probed settings 4
+insert_several_blocks_into_table first emit mutating 0
+insert_several_blocks_into_table second emit DEBUG total 10
+insert_several_blocks_into_table second emit DEBUG phase 5
+insert_several_blocks_into_table second emit probed settings 4
+insert_several_blocks_into_table second emit mutating 0
+mv_generates_several_blocks main DEBUG 0
+mv_generates_several_blocks main markers first 2
+mv_generates_several_blocks main markers second 2
+mv_generates_several_blocks first emit DEBUG total 11
+mv_generates_several_blocks first emit DEBUG phase 5
+mv_generates_several_blocks first emit probed settings 4
+mv_generates_several_blocks first emit mutating 0
+mv_generates_several_blocks second emit DEBUG total 11
+mv_generates_several_blocks second emit DEBUG phase 5
+mv_generates_several_blocks second emit probed settings 4
+mv_generates_several_blocks second emit mutating 0
+several_mv_into_one_table main DEBUG 0
+several_mv_into_one_table main markers first 2
+several_mv_into_one_table main markers second 2
+several_mv_into_one_table first emit DEBUG total 11
+several_mv_into_one_table first emit DEBUG phase 5
+several_mv_into_one_table first emit probed settings 4
+several_mv_into_one_table first emit mutating 0
+several_mv_into_one_table second emit DEBUG total 11
+several_mv_into_one_table second emit DEBUG phase 5
+several_mv_into_one_table second emit probed settings 4
+several_mv_into_one_table second emit mutating 0
+insert_several_blocks_into_table first stmt SET enable_analyzer=1
+insert_several_blocks_into_table first stmt SET max_insert_threads=10
+insert_several_blocks_into_table first stmt SET update_insert_deduplication_token_in_dependent_materialized_views=1
+insert_several_blocks_into_table first stmt SET deduplicate_blocks_in_dependent_materialized_views=1
+insert_several_blocks_into_table first stmt SET max_block_size=1
+insert_several_blocks_into_table first stmt SET min_insert_block_size_rows=0
+insert_several_blocks_into_table first stmt SET min_insert_block_size_bytes=0
+insert_several_blocks_into_table first stmt -- DEBUG (first) — only printed when counts mismatch WITH (SELECT count() FROM table_a_b) AS c_src SELECT 'DEBUG first: Checking source table table_a_b counts' WHERE c_src != 10
+insert_several_blocks_into_table first stmt WITH (SELECT count() FROM table_a_b) AS c_src SELECT 'DEBUG first src expected/actual', toUInt64(10) AS expected, c_src AS actual WHERE c_src != 10
+insert_several_blocks_into_table first stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT 'DEBUG first: Checking destination table table_when_b_even counts' WHERE c_dst != 5
+insert_several_blocks_into_table first stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT 'DEBUG first dst expected/actual', toUInt64(5) AS expected, c_dst AS actual WHERE c_dst != 5
+insert_several_blocks_into_table first stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT 'DEBUG first: Distribution across parts in table_when_b_even' WHERE c_dst != 5
+insert_several_blocks_into_table first stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT '_part', _part, count() FROM table_when_b_even WHERE c_dst != 5 GROUP BY _part ORDER BY _part
+insert_several_blocks_into_table first stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT 'DEBUG: Sample rows from table_when_b_even' WHERE c_dst != 5
+insert_several_blocks_into_table first stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT a, b FROM table_when_b_even WHERE c_dst != 5 ORDER BY a, b
+insert_several_blocks_into_table first stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT 'DEBUG: Grouped counts in table_when_b_even by (a, b)' WHERE c_dst != 5
+insert_several_blocks_into_table first stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT a, b, count() FROM table_when_b_even WHERE c_dst != 5 GROUP BY a, b ORDER BY a, b
+insert_several_blocks_into_table first stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT 'DEBUG: Active parts in system.parts' WHERE c_dst != 5
+insert_several_blocks_into_table first stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT table, name, rows, bytes_on_disk FROM system.parts WHERE active AND database = currentDatabase() AND table IN ('table_a_b', 'table_when_b_even') AND c_dst != 5 ORDER BY table, name
+insert_several_blocks_into_table first stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT 'DEBUG: Relevant settings from system.settings' WHERE c_dst != 5
+insert_several_blocks_into_table first stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT name, value FROM system.settings WHERE name IN ( 'max_insert_threads', 'max_block_size', 'update_insert_deduplication_token_in_dependent_materialized_views', 'deduplicate_blocks_in_dependent_materialized_views' ) AND c_dst != 5 ORDER BY name
+insert_several_blocks_into_table first emit parses 1
+insert_several_blocks_into_table second stmt SET enable_analyzer=1
+insert_several_blocks_into_table second stmt SET max_insert_threads=10
+insert_several_blocks_into_table second stmt SET update_insert_deduplication_token_in_dependent_materialized_views=1
+insert_several_blocks_into_table second stmt SET deduplicate_blocks_in_dependent_materialized_views=1
+insert_several_blocks_into_table second stmt SET max_block_size=1
+insert_several_blocks_into_table second stmt SET min_insert_block_size_rows=0
+insert_several_blocks_into_table second stmt SET min_insert_block_size_bytes=0
+insert_several_blocks_into_table second stmt -- DEBUG (second) — only printed when counts mismatch WITH (SELECT count() FROM table_a_b) AS c_src SELECT 'DEBUG second: Checking source table table_a_b counts' WHERE c_src != 20
+insert_several_blocks_into_table second stmt WITH (SELECT count() FROM table_a_b) AS c_src SELECT 'DEBUG second src expected/actual', toUInt64(20) AS expected, c_src AS actual WHERE c_src != 20
+insert_several_blocks_into_table second stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT 'DEBUG second: Checking destination table table_when_b_even counts' WHERE c_dst != 10
+insert_several_blocks_into_table second stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT 'DEBUG second dst expected/actual', toUInt64(10) AS expected, c_dst AS actual WHERE c_dst != 10
+insert_several_blocks_into_table second stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT 'DEBUG second: Distribution across parts in table_when_b_even' WHERE c_dst != 10
+insert_several_blocks_into_table second stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT '_part', _part, count() FROM table_when_b_even WHERE c_dst != 10 GROUP BY _part ORDER BY _part
+insert_several_blocks_into_table second stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT 'DEBUG: Sample rows from table_when_b_even' WHERE c_dst != 10
+insert_several_blocks_into_table second stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT a, b FROM table_when_b_even WHERE c_dst != 10 ORDER BY a, b
+insert_several_blocks_into_table second stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT 'DEBUG: Grouped counts in table_when_b_even by (a, b)' WHERE c_dst != 10
+insert_several_blocks_into_table second stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT a, b, count() FROM table_when_b_even WHERE c_dst != 10 GROUP BY a, b ORDER BY a, b
+insert_several_blocks_into_table second stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT 'DEBUG: Active parts in system.parts' WHERE c_dst != 10
+insert_several_blocks_into_table second stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT table, name, rows, bytes_on_disk FROM system.parts WHERE active AND database = currentDatabase() AND table IN ('table_a_b', 'table_when_b_even') AND c_dst != 10 ORDER BY table, name
+insert_several_blocks_into_table second stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT 'DEBUG: Relevant settings from system.settings' WHERE c_dst != 10
+insert_several_blocks_into_table second stmt WITH (SELECT count() FROM table_when_b_even) AS c_dst SELECT name, value FROM system.settings WHERE name IN ( 'max_insert_threads', 'max_block_size', 'update_insert_deduplication_token_in_dependent_materialized_views', 'deduplicate_blocks_in_dependent_materialized_views' ) AND c_dst != 10 ORDER BY name
+insert_several_blocks_into_table second emit parses 1
+mv_generates_several_blocks first stmt SET enable_analyzer=1
+mv_generates_several_blocks first stmt SET max_insert_threads=10
+mv_generates_several_blocks first stmt SET update_insert_deduplication_token_in_dependent_materialized_views=1
+mv_generates_several_blocks first stmt SET deduplicate_blocks_in_dependent_materialized_views=1
+mv_generates_several_blocks first stmt SET min_joined_block_size_rows = 1
+mv_generates_several_blocks first stmt SET max_joined_block_size_rows = 1
+mv_generates_several_blocks first stmt SET max_block_size=1
+mv_generates_several_blocks first stmt SET min_insert_block_size_rows=0
+mv_generates_several_blocks first stmt SET min_insert_block_size_bytes=0
+mv_generates_several_blocks first stmt -- DEBUG (first) — only printed when counts mismatch WITH (SELECT count() FROM table_a_b) AS c_src SELECT 'DEBUG first: Checking source table table_a_b counts' WHERE c_src != 5
+mv_generates_several_blocks first stmt WITH (SELECT count() FROM table_a_b) AS c_src SELECT 'DEBUG first src expected/actual', toUInt64(5) AS expected, c_src AS actual WHERE c_src != 5
+mv_generates_several_blocks first stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT 'DEBUG first: Checking destination table table_when_b_even_and_joined counts' WHERE c_dst != 9
+mv_generates_several_blocks first stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT 'DEBUG first dst expected/actual', toUInt64(9) AS expected, c_dst AS actual WHERE c_dst != 9
+mv_generates_several_blocks first stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT 'DEBUG first: Distribution across parts in table_when_b_even_and_joined' WHERE c_dst != 9
+mv_generates_several_blocks first stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT '_part', _part, count() FROM table_when_b_even_and_joined WHERE c_dst != 9 GROUP BY _part ORDER BY _part
+mv_generates_several_blocks first stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT 'DEBUG: Sample rows from table_when_b_even_and_joined' WHERE c_dst != 9
+mv_generates_several_blocks first stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT a_src, a_join, b FROM table_when_b_even_and_joined WHERE c_dst != 9 ORDER BY a_src, a_join, b
+mv_generates_several_blocks first stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT 'DEBUG: Grouped counts in table_when_b_even_and_joined by (a_src, a_join, b)' WHERE c_dst != 9
+mv_generates_several_blocks first stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT a_src, a_join, b, count() FROM table_when_b_even_and_joined WHERE c_dst != 9 GROUP BY a_src, a_join, b ORDER BY a_src, a_join, b
+mv_generates_several_blocks first stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT 'DEBUG: Active parts in system.parts' WHERE c_dst != 9
+mv_generates_several_blocks first stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT table, name, rows, bytes_on_disk FROM system.parts WHERE active AND database = currentDatabase() AND table IN ('table_a_b', 'table_for_join_with', 'table_when_b_even_and_joined') AND c_dst != 9 ORDER BY table, name
+mv_generates_several_blocks first stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT 'DEBUG: Table definitions from system.tables' WHERE c_dst != 9
+mv_generates_several_blocks first stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT name, engine, create_table_query FROM system.tables WHERE database = currentDatabase() AND name IN ('table_a_b', 'table_for_join_with', 'table_when_b_even_and_joined', 'mv_b_even') AND c_dst != 9 ORDER BY name
+mv_generates_several_blocks first stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT 'DEBUG: Relevant settings from system.settings' WHERE c_dst != 9
+mv_generates_several_blocks first stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT name, value FROM system.settings WHERE name IN ( 'max_insert_threads', 'max_block_size', 'update_insert_deduplication_token_in_dependent_materialized_views', 'deduplicate_blocks_in_dependent_materialized_views' ) AND c_dst != 9 ORDER BY name
+mv_generates_several_blocks first emit parses 1
+mv_generates_several_blocks second stmt SET enable_analyzer=1
+mv_generates_several_blocks second stmt SET max_insert_threads=10
+mv_generates_several_blocks second stmt SET update_insert_deduplication_token_in_dependent_materialized_views=1
+mv_generates_several_blocks second stmt SET deduplicate_blocks_in_dependent_materialized_views=1
+mv_generates_several_blocks second stmt SET min_joined_block_size_rows = 1
+mv_generates_several_blocks second stmt SET max_joined_block_size_rows = 1
+mv_generates_several_blocks second stmt SET max_block_size=1
+mv_generates_several_blocks second stmt SET min_insert_block_size_rows=0
+mv_generates_several_blocks second stmt SET min_insert_block_size_bytes=0
+mv_generates_several_blocks second stmt -- DEBUG (second) — only printed when counts mismatch WITH (SELECT count() FROM table_a_b) AS c_src SELECT 'DEBUG second: Checking source table table_a_b counts' WHERE c_src != 10
+mv_generates_several_blocks second stmt WITH (SELECT count() FROM table_a_b) AS c_src SELECT 'DEBUG second src expected/actual', toUInt64(10) AS expected, c_src AS actual WHERE c_src != 10
+mv_generates_several_blocks second stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT 'DEBUG second: Checking destination table table_when_b_even_and_joined counts' WHERE c_dst != 18
+mv_generates_several_blocks second stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT 'DEBUG second dst expected/actual', toUInt64(18) AS expected, c_dst AS actual WHERE c_dst != 18
+mv_generates_several_blocks second stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT 'DEBUG second: Distribution across parts in table_when_b_even_and_joined' WHERE c_dst != 18
+mv_generates_several_blocks second stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT '_part', _part, count() FROM table_when_b_even_and_joined WHERE c_dst != 18 GROUP BY _part ORDER BY _part
+mv_generates_several_blocks second stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT 'DEBUG: Sample rows from table_when_b_even_and_joined' WHERE c_dst != 18
+mv_generates_several_blocks second stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT a_src, a_join, b FROM table_when_b_even_and_joined WHERE c_dst != 18 ORDER BY a_src, a_join, b
+mv_generates_several_blocks second stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT 'DEBUG: Grouped counts in table_when_b_even_and_joined by (a_src, a_join, b)' WHERE c_dst != 18
+mv_generates_several_blocks second stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT a_src, a_join, b, count() FROM table_when_b_even_and_joined WHERE c_dst != 18 GROUP BY a_src, a_join, b ORDER BY a_src, a_join, b
+mv_generates_several_blocks second stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT 'DEBUG: Active parts in system.parts' WHERE c_dst != 18
+mv_generates_several_blocks second stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT table, name, rows, bytes_on_disk FROM system.parts WHERE active AND database = currentDatabase() AND table IN ('table_a_b', 'table_for_join_with', 'table_when_b_even_and_joined') AND c_dst != 18 ORDER BY table, name
+mv_generates_several_blocks second stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT 'DEBUG: Table definitions from system.tables' WHERE c_dst != 18
+mv_generates_several_blocks second stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT name, engine, create_table_query FROM system.tables WHERE database = currentDatabase() AND name IN ('table_a_b', 'table_for_join_with', 'table_when_b_even_and_joined', 'mv_b_even') AND c_dst != 18 ORDER BY name
+mv_generates_several_blocks second stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT 'DEBUG: Relevant settings from system.settings' WHERE c_dst != 18
+mv_generates_several_blocks second stmt WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT name, value FROM system.settings WHERE name IN ( 'max_insert_threads', 'max_block_size', 'update_insert_deduplication_token_in_dependent_materialized_views', 'deduplicate_blocks_in_dependent_materialized_views' ) AND c_dst != 18 ORDER BY name
+mv_generates_several_blocks second emit parses 1
+several_mv_into_one_table first stmt SET enable_analyzer=1
+several_mv_into_one_table first stmt SET max_insert_threads=10
+several_mv_into_one_table first stmt SET update_insert_deduplication_token_in_dependent_materialized_views=1
+several_mv_into_one_table first stmt SET deduplicate_blocks_in_dependent_materialized_views=1
+several_mv_into_one_table first stmt SET max_block_size=1
+several_mv_into_one_table first stmt SET min_insert_block_size_rows=0
+several_mv_into_one_table first stmt SET min_insert_block_size_bytes=0
+several_mv_into_one_table first stmt -- DEBUG (first) — only printed when counts mismatch WITH (SELECT count() FROM table_src) AS c_src SELECT 'DEBUG first: Checking source table table_src counts' WHERE c_src != 8
+several_mv_into_one_table first stmt WITH (SELECT count() FROM table_src) AS c_src SELECT 'DEBUG first src expected/actual', toUInt64(8) AS expected, c_src AS actual WHERE c_src != 8
+several_mv_into_one_table first stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT 'DEBUG first: Checking destination table table_dst counts' WHERE c_dst != 6
+several_mv_into_one_table first stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT 'DEBUG first dst expected/actual', toUInt64(6) AS expected, c_dst AS actual WHERE c_dst != 6
+several_mv_into_one_table first stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT 'DEBUG first: Distribution across parts in table_dst' WHERE c_dst != 6
+several_mv_into_one_table first stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT '_part', _part, count() FROM table_dst WHERE c_dst != 6 GROUP BY _part ORDER BY _part
+several_mv_into_one_table first stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT 'DEBUG: Sample rows from table_dst' WHERE c_dst != 6
+several_mv_into_one_table first stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT a, b FROM table_dst WHERE c_dst != 6 ORDER BY a, b
+several_mv_into_one_table first stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT 'DEBUG: Grouped counts in table_dst by (a, b)' WHERE c_dst != 6
+several_mv_into_one_table first stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT a, b, count() FROM table_dst WHERE c_dst != 6 GROUP BY a, b ORDER BY a, b
+several_mv_into_one_table first stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT 'DEBUG: Active parts in system.parts' WHERE c_dst != 6
+several_mv_into_one_table first stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT table, name, rows, bytes_on_disk FROM system.parts WHERE active AND database = currentDatabase() AND table IN ('table_src', 'table_dst') AND c_dst != 6 ORDER BY table, name
+several_mv_into_one_table first stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT 'DEBUG: Table definitions from system.tables' WHERE c_dst != 6
+several_mv_into_one_table first stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT name, engine, create_table_query FROM system.tables WHERE database = currentDatabase() AND name IN ('table_src', 'table_dst', 'mv_b_even', 'mv_b_even_even') AND c_dst != 6 ORDER BY name
+several_mv_into_one_table first stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT 'DEBUG: Relevant settings from system.settings' WHERE c_dst != 6
+several_mv_into_one_table first stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT name, value FROM system.settings WHERE name IN ( 'max_insert_threads', 'max_block_size', 'update_insert_deduplication_token_in_dependent_materialized_views', 'deduplicate_blocks_in_dependent_materialized_views' ) AND c_dst != 6 ORDER BY name
+several_mv_into_one_table first emit parses 1
+several_mv_into_one_table second stmt SET enable_analyzer=1
+several_mv_into_one_table second stmt SET max_insert_threads=10
+several_mv_into_one_table second stmt SET update_insert_deduplication_token_in_dependent_materialized_views=1
+several_mv_into_one_table second stmt SET deduplicate_blocks_in_dependent_materialized_views=1
+several_mv_into_one_table second stmt SET max_block_size=1
+several_mv_into_one_table second stmt SET min_insert_block_size_rows=0
+several_mv_into_one_table second stmt SET min_insert_block_size_bytes=0
+several_mv_into_one_table second stmt -- DEBUG (second) — only printed when counts mismatch WITH (SELECT count() FROM table_src) AS c_src SELECT 'DEBUG second: Checking source table table_src counts' WHERE c_src != 16
+several_mv_into_one_table second stmt WITH (SELECT count() FROM table_src) AS c_src SELECT 'DEBUG second src expected/actual', toUInt64(16) AS expected, c_src AS actual WHERE c_src != 16
+several_mv_into_one_table second stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT 'DEBUG second: Checking destination table table_dst counts' WHERE c_dst != 12
+several_mv_into_one_table second stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT 'DEBUG second dst expected/actual', toUInt64(12) AS expected, c_dst AS actual WHERE c_dst != 12
+several_mv_into_one_table second stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT 'DEBUG second: Distribution across parts in table_dst' WHERE c_dst != 12
+several_mv_into_one_table second stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT '_part', _part, count() FROM table_dst WHERE c_dst != 12 GROUP BY _part ORDER BY _part
+several_mv_into_one_table second stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT 'DEBUG: Sample rows from table_dst' WHERE c_dst != 12
+several_mv_into_one_table second stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT a, b FROM table_dst WHERE c_dst != 12 ORDER BY a, b
+several_mv_into_one_table second stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT 'DEBUG: Grouped counts in table_dst by (a, b)' WHERE c_dst != 12
+several_mv_into_one_table second stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT a, b, count() FROM table_dst WHERE c_dst != 12 GROUP BY a, b ORDER BY a, b
+several_mv_into_one_table second stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT 'DEBUG: Active parts in system.parts' WHERE c_dst != 12
+several_mv_into_one_table second stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT table, name, rows, bytes_on_disk FROM system.parts WHERE active AND database = currentDatabase() AND table IN ('table_src', 'table_dst') AND c_dst != 12 ORDER BY table, name
+several_mv_into_one_table second stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT 'DEBUG: Table definitions from system.tables' WHERE c_dst != 12
+several_mv_into_one_table second stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT name, engine, create_table_query FROM system.tables WHERE database = currentDatabase() AND name IN ('table_src', 'table_dst', 'mv_b_even', 'mv_b_even_even') AND c_dst != 12 ORDER BY name
+several_mv_into_one_table second stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT 'DEBUG: Relevant settings from system.settings' WHERE c_dst != 12
+several_mv_into_one_table second stmt WITH (SELECT count() FROM table_dst) AS c_dst SELECT name, value FROM system.settings WHERE name IN ( 'max_insert_threads', 'max_block_size', 'update_insert_deduplication_token_in_dependent_materialized_views', 'deduplicate_blocks_in_dependent_materialized_views' ) AND c_dst != 12 ORDER BY name
+several_mv_into_one_table second emit parses 1
+03008_deduplication_insert_several_blocks_replicated first parses [first]
+03008_deduplication_insert_several_blocks_replicated second parses [second]
+03008_deduplication_insert_several_blocks_replicated main debug-on-fail 0
+03008_deduplication_insert_several_blocks_replicated emit-debug-only 1
+03008_deduplication_mv_generates_several_blocks_replicated first parses [first]
+03008_deduplication_mv_generates_several_blocks_replicated second parses [second]
+03008_deduplication_mv_generates_several_blocks_replicated main debug-on-fail 0
+03008_deduplication_mv_generates_several_blocks_replicated emit-debug-only 1
+03008_deduplication_several_mv_into_one_table_replicated first parses [first]
+03008_deduplication_several_mv_into_one_table_replicated second parses [second]
+03008_deduplication_several_mv_into_one_table_replicated main debug-on-fail 0
+03008_deduplication_several_mv_into_one_table_replicated emit-debug-only 1
+03008_deduplication_insert_several_blocks_nonreplicated first parses [first]
+03008_deduplication_insert_several_blocks_nonreplicated second parses [second]
+03008_deduplication_insert_several_blocks_nonreplicated main debug-on-fail 0
+03008_deduplication_insert_several_blocks_nonreplicated emit-debug-only 1
+03008_deduplication_mv_generates_several_blocks_nonreplicated first parses [first]
+03008_deduplication_mv_generates_several_blocks_nonreplicated second parses [second]
+03008_deduplication_mv_generates_several_blocks_nonreplicated main debug-on-fail 0
+03008_deduplication_mv_generates_several_blocks_nonreplicated emit-debug-only 1
+03008_deduplication_several_mv_into_one_table_nonreplicated first parses [first]
+03008_deduplication_several_mv_into_one_table_nonreplicated second parses [second]
+03008_deduplication_several_mv_into_one_table_nonreplicated main debug-on-fail 0
+03008_deduplication_several_mv_into_one_table_nonreplicated emit-debug-only 1
+03008_deduplication_insert_several_blocks_replicated main subcommand [insert_several_blocks_into_table]
+03008_deduplication_insert_several_blocks_replicated first failure verdict [FAIL]
+03008_deduplication_insert_several_blocks_replicated first failure client invocations 2
+03008_deduplication_insert_several_blocks_replicated first failure rerun payload matches 1
+03008_deduplication_insert_several_blocks_replicated first failure rerun mutating 0
+03008_deduplication_insert_several_blocks_replicated first failure marker forwarded 1
+03008_deduplication_insert_several_blocks_replicated first interrupted rerun forwards marker 1
+03008_deduplication_insert_several_blocks_replicated second failure verdict [FAIL]
+03008_deduplication_insert_several_blocks_replicated second failure client invocations 2
+03008_deduplication_insert_several_blocks_replicated second failure rerun payload matches 1
+03008_deduplication_insert_several_blocks_replicated second failure rerun mutating 0
+03008_deduplication_insert_several_blocks_replicated second failure marker forwarded 1
+03008_deduplication_insert_several_blocks_replicated second interrupted rerun forwards marker 1
+03008_deduplication_mv_generates_several_blocks_replicated main subcommand [mv_generates_several_blocks]
+03008_deduplication_mv_generates_several_blocks_replicated first failure verdict [FAIL]
+03008_deduplication_mv_generates_several_blocks_replicated first failure client invocations 2
+03008_deduplication_mv_generates_several_blocks_replicated first failure rerun payload matches 1
+03008_deduplication_mv_generates_several_blocks_replicated first failure rerun mutating 0
+03008_deduplication_mv_generates_several_blocks_replicated first failure marker forwarded 1
+03008_deduplication_mv_generates_several_blocks_replicated first interrupted rerun forwards marker 1
+03008_deduplication_mv_generates_several_blocks_replicated second failure verdict [FAIL]
+03008_deduplication_mv_generates_several_blocks_replicated second failure client invocations 2
+03008_deduplication_mv_generates_several_blocks_replicated second failure rerun payload matches 1
+03008_deduplication_mv_generates_several_blocks_replicated second failure rerun mutating 0
+03008_deduplication_mv_generates_several_blocks_replicated second failure marker forwarded 1
+03008_deduplication_mv_generates_several_blocks_replicated second interrupted rerun forwards marker 1
+03008_deduplication_several_mv_into_one_table_replicated main subcommand [several_mv_into_one_table]
+03008_deduplication_several_mv_into_one_table_replicated first failure verdict [FAIL]
+03008_deduplication_several_mv_into_one_table_replicated first failure client invocations 2
+03008_deduplication_several_mv_into_one_table_replicated first failure rerun payload matches 1
+03008_deduplication_several_mv_into_one_table_replicated first failure rerun mutating 0
+03008_deduplication_several_mv_into_one_table_replicated first failure marker forwarded 1
+03008_deduplication_several_mv_into_one_table_replicated first interrupted rerun forwards marker 1
+03008_deduplication_several_mv_into_one_table_replicated second failure verdict [FAIL]
+03008_deduplication_several_mv_into_one_table_replicated second failure client invocations 2
+03008_deduplication_several_mv_into_one_table_replicated second failure rerun payload matches 1
+03008_deduplication_several_mv_into_one_table_replicated second failure rerun mutating 0
+03008_deduplication_several_mv_into_one_table_replicated second failure marker forwarded 1
+03008_deduplication_several_mv_into_one_table_replicated second interrupted rerun forwards marker 1
+03008_deduplication_insert_several_blocks_nonreplicated main subcommand [insert_several_blocks_into_table]
+03008_deduplication_insert_several_blocks_nonreplicated first failure verdict [FAIL]
+03008_deduplication_insert_several_blocks_nonreplicated first failure client invocations 2
+03008_deduplication_insert_several_blocks_nonreplicated first failure rerun payload matches 1
+03008_deduplication_insert_several_blocks_nonreplicated first failure rerun mutating 0
+03008_deduplication_insert_several_blocks_nonreplicated first failure marker forwarded 1
+03008_deduplication_insert_several_blocks_nonreplicated first interrupted rerun forwards marker 1
+03008_deduplication_insert_several_blocks_nonreplicated second failure verdict [FAIL]
+03008_deduplication_insert_several_blocks_nonreplicated second failure client invocations 2
+03008_deduplication_insert_several_blocks_nonreplicated second failure rerun payload matches 1
+03008_deduplication_insert_several_blocks_nonreplicated second failure rerun mutating 0
+03008_deduplication_insert_several_blocks_nonreplicated second failure marker forwarded 1
+03008_deduplication_insert_several_blocks_nonreplicated second interrupted rerun forwards marker 1
+03008_deduplication_mv_generates_several_blocks_nonreplicated main subcommand [mv_generates_several_blocks]
+03008_deduplication_mv_generates_several_blocks_nonreplicated first failure verdict [FAIL]
+03008_deduplication_mv_generates_several_blocks_nonreplicated first failure client invocations 2
+03008_deduplication_mv_generates_several_blocks_nonreplicated first failure rerun payload matches 1
+03008_deduplication_mv_generates_several_blocks_nonreplicated first failure rerun mutating 0
+03008_deduplication_mv_generates_several_blocks_nonreplicated first failure marker forwarded 1
+03008_deduplication_mv_generates_several_blocks_nonreplicated first interrupted rerun forwards marker 1
+03008_deduplication_mv_generates_several_blocks_nonreplicated second failure verdict [FAIL]
+03008_deduplication_mv_generates_several_blocks_nonreplicated second failure client invocations 2
+03008_deduplication_mv_generates_several_blocks_nonreplicated second failure rerun payload matches 1
+03008_deduplication_mv_generates_several_blocks_nonreplicated second failure rerun mutating 0
+03008_deduplication_mv_generates_several_blocks_nonreplicated second failure marker forwarded 1
+03008_deduplication_mv_generates_several_blocks_nonreplicated second interrupted rerun forwards marker 1
+03008_deduplication_several_mv_into_one_table_nonreplicated main subcommand [several_mv_into_one_table]
+03008_deduplication_several_mv_into_one_table_nonreplicated first failure verdict [FAIL]
+03008_deduplication_several_mv_into_one_table_nonreplicated first failure client invocations 2
+03008_deduplication_several_mv_into_one_table_nonreplicated first failure rerun payload matches 1
+03008_deduplication_several_mv_into_one_table_nonreplicated first failure rerun mutating 0
+03008_deduplication_several_mv_into_one_table_nonreplicated first failure marker forwarded 1
+03008_deduplication_several_mv_into_one_table_nonreplicated first interrupted rerun forwards marker 1
+03008_deduplication_several_mv_into_one_table_nonreplicated second failure verdict [FAIL]
+03008_deduplication_several_mv_into_one_table_nonreplicated second failure client invocations 2
+03008_deduplication_several_mv_into_one_table_nonreplicated second failure rerun payload matches 1
+03008_deduplication_several_mv_into_one_table_nonreplicated second failure rerun mutating 0
+03008_deduplication_several_mv_into_one_table_nonreplicated second failure marker forwarded 1
+03008_deduplication_several_mv_into_one_table_nonreplicated second interrupted rerun forwards marker 1

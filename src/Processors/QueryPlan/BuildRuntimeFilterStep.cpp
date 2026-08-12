@@ -149,7 +149,7 @@ void BuildRuntimeFilterStep::updateOutputHeader()
     output_header = input_headers.front();
 }
 
-void BuildRuntimeFilterStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+void BuildRuntimeFilterStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
     settings[QueryPlanSerializationSetting::join_runtime_filter_exact_values_limit] = exact_values_limit;
     settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_bytes] = bloom_filter_bytes;

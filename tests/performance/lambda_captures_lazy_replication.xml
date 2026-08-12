@@ -1,0 +1,24 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>lazy_replication</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Large String capture replicated per array element inside the lambda. -->
+    <query>WITH materialize(randomString(100000)) AS s SELECT sum(arrayExists(x -> substring(s, x, 1) = 'a', range(100))) FROM numbers(100) SETTINGS enable_lazy_columns_replication = {lazy_replication} FORMAT Null</query>
+    <query>SELECT sum(length(arrayMap(x -> concat(substring(s, x, 2), toString(x)), range(100)))) FROM (SELECT materialize(randomString(100000)) AS s FROM numbers(100)) SETTINGS enable_lazy_columns_replication = {lazy_replication} FORMAT Null</query>
+
+    <!-- Large Array capture indexed by the lambda argument. -->
+    <query>WITH materialize(range(10000)) AS big SELECT sum(length(arrayFilter(i -> big[i + 1] % 2 = 0, range(100)))) FROM numbers(100) SETTINGS enable_lazy_columns_replication = {lazy_replication} FORMAT Null</query>
+
+    <!-- Large String capture produced by lazy ARRAY JOIN replication, then used inside the lambda. -->
+    <query>SELECT sum(length(arrayMap(x -> substring(s, x, 1), range(10)))) FROM (SELECT materialize(randomString(100000)) AS s, range(100) AS r FROM numbers(100)) ARRAY JOIN r SETTINGS enable_lazy_columns_replication = {lazy_replication} FORMAT Null</query>
+
+    <!-- Large String capture produced by lazy JOIN replication, then used inside the lambda. -->
+    <query>SELECT sum(length(arrayMap(x -> substring(s, x, 1), range(10)))) FROM (SELECT 42 AS k FROM numbers(2000)) AS l INNER JOIN (SELECT 42 AS k, randomString(100000) AS s) AS r ON l.k = r.k SETTINGS enable_lazy_columns_replication = {lazy_replication} FORMAT Null</query>
+</test>

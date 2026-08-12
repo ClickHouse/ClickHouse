@@ -143,7 +143,7 @@ Output stack trace of a job creator when job results in exception. Disabled by d
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "Enable lazy columns replication in JOIN and ARRAY JOIN by default"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "0"},{"label": "Add a setting to enable lazy columns replication in JOIN and ARRAY JOIN"}]}]}/>
 
-Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
+Enables lazy columns replication in `JOIN`, `ARRAY JOIN` and lambda captures of higher-order functions (e.g. `arrayMap`), it allows to avoid unnecessary copy of the same rows multiple times in memory.
 
 ## enable_materialized_cte {#enable_materialized_cte}
 
@@ -301,13 +301,6 @@ WHERE (_part, _part_offset) IN (
 ```
 
 Without this setting, the outer and inner queries may operate on different data snapshots, leading to incorrect results.
-
-<Note>
-Enabling this setting disables the optimization which removes unnecessary data parts from snapshots once the planning stage is complete.
-As a result, long-running queries may hold onto obsolete parts for their entire duration, delaying part cleanup and increasing storage pressure.
-
-This setting currently applies only to tables from the MergeTree family.
-</Note>
 
 Possible values:
 

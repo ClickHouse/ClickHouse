@@ -1913,6 +1913,7 @@ keeper_settings = {
         ),
         "min_request_size_for_cache": threshold_generator(0.2, 0.2, 0, 100 * 1024),
         "min_session_timeout_ms": threshold_generator(0.2, 0.2, 1000, 10000),
+        "min_time_between_fsyncs_ms": threshold_generator(0.2, 0.2, 0, 100),
         "nuraft_append_entries_backward_probe_throttle_threshold": threshold_generator(
             0.2, 0.2, 0, 128
         ),
