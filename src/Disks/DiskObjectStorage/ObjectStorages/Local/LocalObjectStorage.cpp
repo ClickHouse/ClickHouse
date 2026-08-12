@@ -516,6 +516,19 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
             continue;
         }
 
+        const fs::path dir = std::move(pending_dirs.back());
+        pending_dirs.pop_back();
+
+        std::error_code ec;
+        fs::directory_iterator it(dir, ec);
+        if (ec)
+        {
+            /// The directory itself vanished (or a path component was replaced)
+            /// before we could open it: omit only this subtree, keep the rest.
+            throw_unless_vanished(ec, dir);
+            continue;
+        }
+
         const fs::directory_iterator end;
         while (it != end)
         {
