@@ -60,22 +60,22 @@ void addFromGeoColumn(BboxAccumulator & acc, const IColumn & col, size_t row)
     }
 }
 
-/// Try to extract the bounding box of a constant ActionsDAG COLUMN node
-/// containing a native CH geometry (Tuple/Array of Float64 tuples).
-/// Delegates to `tryExtractBboxFromColumn` (Common/GeoBbox.h) so that invalid
-/// polygons/multipolygons are rejected the same way as the Parquet geo-pruning
-/// path, rather than silently producing a bogus bbox that can prune away all
-/// granules and hide the "Polygon is not valid" exception `pointInPolygon`
-/// would otherwise throw at execute time.
-bool tryExtractConstGeoBbox(
-    const ActionsDAG::Node * node,
-    double & xmin, double & ymin,
-    double & xmax, double & ymax)
+/// Extract the (single) Field value of a constant ActionsDAG COLUMN node, for combining
+/// several such children into one assembled geometry (see tryExtractBboxFromMultiArgConstGeometry).
+bool tryExtractConstGeoField(const ActionsDAG::Node * node, Field & out_field)
 {
     if (!node->column || !node->is_deterministic_constant)
         return false;
 
-    return tryExtractBboxFromColumn(*node->column, xmin, ymin, xmax, ymax);
+    const IColumn * data_col = node->column.get();
+    if (const auto * const_col = typeid_cast<const ColumnConst *>(data_col))
+        data_col = &const_col->getDataColumn();
+
+    if (data_col->size() != 1)
+        return false;
+
+    data_col->get(0, out_field);
+    return true;
 }
 
 }
@@ -211,6 +211,7 @@ MergeTreeIndexConditionSpatialBbox::extractQueryBbox(
             /// `any_extraction_failed` guard.
             bool any_extraction_failed = false;
             QueryBbox bbox;
+            std::vector<Field> const_fields;
             for (const auto * child : node->children)
             {
                 if (child->type == ActionsDAG::ActionType::INPUT)
@@ -230,17 +231,54 @@ MergeTreeIndexConditionSpatialBbox::extractQueryBbox(
                     continue;
                 }
 
-                double xmin = 0;
-                double ymin = 0;
-                double xmax = 0;
-                double ymax = 0;
-                if (!tryExtractConstGeoBbox(child, xmin, ymin, xmax, ymax))
+                Field field;
+                if (!tryExtractConstGeoField(child, field))
                 {
                     any_extraction_failed = true;
                     continue;
                 }
+                const_fields.push_back(std::move(field));
+            }
 
-                if (!has_bbox)
+            /// A single constant geometry argument is self-contained (shell + holes, or a full
+            /// MultiPolygon, all in one literal) and is already validated as such by
+            /// tryExtractConstGeoBbox/extractBboxFromFieldValue. Two or more constant arguments
+            /// must be assembled and validated together (see tryExtractBboxFromMultiArgConstGeometry),
+            /// matching how FunctionPointInPolygon combines them at execute time -- validating each
+            /// argument in isolation would miss e.g. a hole entirely outside its shell.
+            if (!const_fields.empty())
+            {
+                double xmin = 0;
+                double ymin = 0;
+                double xmax = 0;
+                double ymax = 0;
+                bool ok = false;
+                if (const_fields.size() == 1)
+                {
+                    BboxAccumulator acc;
+                    ok = extractBboxFromFieldValue(const_fields[0], acc) && acc.valid;
+                    if (ok)
+                    {
+                        xmin = acc.xmin;
+                        ymin = acc.ymin;
+                        xmax = acc.xmax;
+                        ymax = acc.ymax;
+                    }
+                }
+                else
+                {
+                    std::vector<const Field *> field_ptrs;
+                    field_ptrs.reserve(const_fields.size());
+                    for (const auto & f : const_fields)
+                        field_ptrs.push_back(&f);
+                    ok = tryExtractBboxFromMultiArgConstGeometry(field_ptrs, xmin, ymin, xmax, ymax);
+                }
+
+                if (!ok)
+                {
+                    any_extraction_failed = true;
+                }
+                else if (!has_bbox)
                 {
                     bbox = {xmin, ymin, xmax, ymax};
                     has_bbox = true;

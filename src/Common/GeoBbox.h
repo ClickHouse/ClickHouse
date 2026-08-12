@@ -302,6 +302,100 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
     return false;
 }
 
+/// Multi-argument `pointInPolygon(point, arg1, arg2, ...)` combines its constant geometry
+/// arguments differently depending on the shape of the first one, exactly mirroring
+/// `FunctionPointInPolygon::executeImpl`'s `is_const_multi_polygon` decision:
+///  - first argument a Polygon (an array of rings, per `isPolygonArray`): every argument is
+///    a separate component of one `MultiPolygon` (`parseConstMultiPolygonFromMultipleColumns`).
+///  - otherwise (first argument a flat Ring, per `isRingArray`): the first argument is the
+///    shell and the rest are holes of one `Polygon` (`parseConstPolygonWithHolesFromMultipleColumns`).
+/// Validates the ASSEMBLED geometry with `bg::is_valid`, not each argument in isolation --
+/// a hole entirely outside its shell, or overlapping components in a multipolygon, are only
+/// visible once the pieces are combined, and must fail closed the same way a single-argument
+/// invalid polygon does.
+inline bool tryExtractBboxFromMultiArgConstGeometry(
+    const std::vector<const Field *> & args,
+    double & xmin, double & ymin, double & xmax, double & ymax)
+{
+    using namespace GeoBboxDetail;
+
+    if (args.size() < 2)
+        return false;
+
+    for (const auto * f : args)
+        if (f->getType() != Field::Types::Array)
+            return false;
+
+    BboxAccumulator acc;
+    std::string failure_message;
+
+    if (isPolygonArray(args[0]->safeGet<Array>()))
+    {
+        MultiPolygon<CartesianPoint> multi_polygon;
+        for (const auto * f : args)
+        {
+            const auto & array = f->safeGet<Array>();
+            multi_polygon.emplace_back();
+            if (isPolygonArray(array))
+            {
+                if (!buildPolygon(array, multi_polygon.back()))
+                    return false;
+            }
+            else if (isRingArray(array))
+            {
+                if (!appendRing(array, multi_polygon.back().outer()))
+                    return false;
+            }
+            else
+                return false;
+        }
+
+        boost::geometry::correct(multi_polygon);
+        if (!boost::geometry::is_valid(multi_polygon, failure_message))
+            return false;
+
+        for (const auto & poly : multi_polygon)
+            acc.addAll(poly.outer());
+    }
+    else
+    {
+        Polygon<CartesianPoint> polygon;
+        for (size_t i = 0; i < args.size(); ++i)
+        {
+            const auto & array = args[i]->safeGet<Array>();
+            if (!isRingArray(array))
+                return false;
+
+            if (i == 0)
+            {
+                if (!appendRing(array, polygon.outer()))
+                    return false;
+            }
+            else
+            {
+                polygon.inners().emplace_back();
+                if (!appendRing(array, polygon.inners().back()))
+                    return false;
+            }
+        }
+
+        boost::geometry::correct(polygon);
+        if (!boost::geometry::is_valid(polygon, failure_message))
+            return false;
+
+        acc.addAll(polygon.outer());
+    }
+
+    if (!acc.found)
+        return false;
+
+    xmin = acc.xmin;
+    ymin = acc.ymin;
+    xmax = acc.xmax;
+    ymax = acc.ymax;
+    return true;
+}
+
 /// Try to extract a bounding box from a constant column.
 /// Handles: WKB-encoded String (via parseWKBFormat), CH native geometry
 /// (Tuple(Float64,Float64) for points, nested Array(Tuple) for collections).
