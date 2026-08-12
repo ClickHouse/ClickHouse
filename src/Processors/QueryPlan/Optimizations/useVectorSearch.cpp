@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include <Columns/ColumnConst.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Field.h>
@@ -441,6 +443,14 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
             const ActionsDAG::Node * sort_column_node = expression.tryFindInOutputs(sort_column); /// "cosine/L2Distance(..., ...)"
             const auto result_type = sort_column_node->result_type;
 
+            /// Remember the position of the sort column among the outputs: the rewritten node must be
+            /// reinserted at the same position, because parent steps (e.g. a Limit above the Sorting, or
+            /// exchange steps in a distributed plan) were created with this output order and their headers
+            /// are not updated by this optimization. Appending it at the end would swap the header column
+            /// order and `makeDistributedPlan` would fail to rebuild the plan fragments with a logical error.
+            const auto & outputs = expression.getOutputs();
+            const size_t sort_column_pos = std::find(outputs.begin(), outputs.end(), sort_column_node) - outputs.begin();
+
             /// Now replace the "cosineDistance(vec, [1.0, 2.0...])" node in the DAG by the "_distance" node
             expression.removeUnusedResult(sort_column); /// Removes the OUTPUT cosineDistance(...) FUNCTION Node
             expression.removeUnusedActions(); /// Removes the vector column INPUT node (it is no longer needed)
@@ -457,7 +467,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
                 distance_node = &expression.addCast(*distance_node, result_type, "_CAST_distance", nullptr);
 
             const auto * new_output = &expression.addAlias(*distance_node, sort_column);
-            expression.getOutputs().push_back(new_output);
+            expression.getOutputs().insert(expression.getOutputs().begin() + sort_column_pos, new_output);
 
             /// Need to do same removal of the vector column from the Filter step
             if (filter_or_prewhere_node)
