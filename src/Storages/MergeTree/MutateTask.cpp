@@ -684,22 +684,17 @@ static void splitAndModifyMutationCommands(
     }
 }
 
-/// Records the substreams of a column that a rename brought under `new_column_name`. The substreams
-/// are file names, so they are re-prefixed from the storage key the source part wrote them under to
-/// the one the new part will -- the same key when a rename does not move the files.
 static void addRenamedColumnToColumnsSubstreams(
     ColumnsSubstreams & new_columns_substreams,
     const ColumnsSubstreams & old_columns_substreams,
-    const String & new_column_name,
-    const String & old_stream_key,
-    const String & new_stream_key,
+    const String & new_name,
+    const String & old_name,
     size_t old_position)
 {
-    new_columns_substreams.addColumn(new_column_name);
+    new_columns_substreams.addColumn(new_name);
     const auto & old_substreams = old_columns_substreams.getColumnSubstreams(old_position);
     for (const auto & substream : old_substreams)
-        new_columns_substreams.addSubstreamToLastColumn(
-            ISerialization::getFileNameForRenamedColumnStream(old_stream_key, new_stream_key, substream));
+        new_columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForRenamedColumnStream(old_name, new_name, substream));
 }
 
 static bool isDeletedMaskUpdated(const MutationCommand & command, const NameSet & storage_columns_set)
@@ -785,8 +780,8 @@ getColumnsForNewDataPart(
             deleted_mask_updated |= isDeletedMaskUpdated(command, storage_columns_set);
 
         /// If we don't have this column in source part, than we don't need to materialize it.
-        /// Either name: a RENAME command names its column as the part was loaded with it, everything
-        /// else as the current schema does, and the two differ after a metadata-only ALTER.
+        /// Either name: the command names the column as the current schema does, while the part may
+        /// still hold it -- or an orphan of it -- under the name it was loaded with.
         if (!part_columns.has(command.column_name) && !part_column_by_current_name.contains(command.column_name))
         {
             /// For RENAME commands, handle chained renames:
@@ -881,11 +876,8 @@ getColumnsForNewDataPart(
         {
             /// A record whose id has left the mapping belongs to a dropped column and must not carry
             /// into the new part: the same logical name may now belong to a re-added column with a
-            /// fresh id. Persistent virtuals and a name a rename mutation is still moving are never in
-            /// the mapping -- keep them.
-            if (!column_id_mapping->hasColumnId(stored_key)
-                && !isPersistentVirtualColumn(stored_key)
-                && !renamed_columns_from_to.contains(stored_key))
+            /// fresh id. Persistent virtuals are never in the mapping -- keep them.
+            if (!column_id_mapping->hasColumnId(stored_key) && !isPersistentVirtualColumn(stored_key))
                 continue;
 
             if (auto part_column = part_column_by_id.find(stored_key); part_column != part_column_by_id.end())
@@ -946,14 +938,10 @@ getColumnsForNewDataPart(
     if (!isWidePart(source_part) || !isFullPartStorage(source_part->getDataPartStorage()))
         return {updated_header.getNamesAndTypesList(), new_serialization_infos, {}};
 
-    /// The stream files of a renamed column are named from its storage key -- its id where the table
-    /// stamps ids, its name otherwise -- so a metadata-only RENAME leaves them where they are, and
-    /// only a rename mutation re-prefixes them.
-    auto stream_key_after_rename = [&](const ColumnId & old_key, const String & new_name)
-    {
-        return has_column_ids ? old_key.value() : new_name;
-    };
-
+    /// Renames below are rename MUTATIONS, which a table with column IDs never has: RENAME COLUMN is
+    /// metadata-only there, and activating the mapping while one is queued is refused
+    /// (MergeTreeData::checkAlterIsPossible). So the stream files really are named from the logical
+    /// name, and re-prefixing them by name is right.
     const ColumnsSubstreams & source_columns_substreams = source_part->getColumnsSubstreams();
     bool fill_columns_substreams = !source_columns_substreams.empty();
     ColumnsSubstreams new_columns_substreams;
@@ -1009,8 +997,7 @@ getColumnsForNewDataPart(
                                 new_columns_substreams,
                                 source_columns_substreams,
                                 it->name,
-                                renamed_from_column.getColumnId().value(),
-                                stream_key_after_rename(renamed_from_column.getColumnId(), it->name),
+                                source_col->first,
                                 *source_part->getColumnPosition(renamed_from_column.getColumnId()));
 
                         ++it;
@@ -1071,8 +1058,7 @@ getColumnsForNewDataPart(
                                 new_columns_substreams,
                                 source_columns_substreams,
                                 it->name,
-                                renamed_from_column.getColumnId().value(),
-                                stream_key_after_rename(renamed_from_column.getColumnId(), it->name),
+                                renamed_from,
                                 *source_part->getColumnPosition(renamed_from_column.getColumnId()));
                     }
                     else
@@ -1315,8 +1301,7 @@ static NameToNameVector collectFilesForRenames(
     MergeTreeData::DataPartPtr new_part,
     const MutationCommands & commands_for_renames,
     const NameSet & updated_columns_in_patches,
-    const String & mrk_extension,
-    bool has_column_ids)
+    const String & mrk_extension)
 {
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     auto stream_counts = getStreamCounts(source_part, source_part->checksums, source_part->getColumns().getNames());
@@ -1421,7 +1406,8 @@ static NameToNameVector collectFilesForRenames(
                 /// load-time name, so the name lookup above misses. The current schema still holds
                 /// the column (CLEAR does not drop it), so resolve the part's column by the id that
                 /// keys its files -- otherwise no stream is found and the clear silently no-ops.
-                if (!column_in_part && has_column_ids)
+                /// Without a mapping this asks the same question twice: the id is the name.
+                if (!column_in_part)
                     column_in_part = source_part->tryGetColumnBySnapshotName(command.column_name, metadata_snapshot);
 
                 if (!column_in_part)
@@ -1446,8 +1432,10 @@ static NameToNameVector collectFilesForRenames(
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
-                if (has_column_ids)
-                    continue;
+                /// A table with column IDs has no rename mutations to collect files for: RENAME COLUMN
+                /// is metadata-only there, and activating the mapping while one is queued is refused
+                /// (MergeTreeData::checkAlterIsPossible). So the files really are named from the
+                /// logical name here.
 
                 /// Columns updated in patches should be rewritten by mutation.
                 if (updated_columns_in_patches.contains(command.rename_to))
@@ -4179,8 +4167,7 @@ bool MutateTask::prepare()
             ctx->new_data_part,
             ctx->for_file_renames,
             updated_columns_in_patches,
-            ctx->mrk_extension,
-            ctx->getActiveColumnIdMapping() != nullptr);
+            ctx->mrk_extension);
 
         /// In case of replicated merge tree with zero copy replication
         /// Here Clickhouse has to follow the common procedure when deleting new part in temporary state

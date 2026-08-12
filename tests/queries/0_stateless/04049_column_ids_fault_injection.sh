@@ -6,6 +6,8 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+# shellcheck source=./mergetree_mutations.lib
+. "$CURDIR"/mergetree_mutations.lib
 
 set -e
 
@@ -244,3 +246,39 @@ $CLICKHOUSE_CLIENT --query "ATTACH TABLE t_activate_fail"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM t_activate_fail"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_activate_fail SYNC"
+
+# Section 9: activating the mapping while a mutation is still queued must be refused. That mutation
+# was planned against logical file names -- a queued RENAME expects to move files -- while the mapping
+# makes names metadata-only, and the two then disagree about what the part's files are called: the
+# mutation drops the very column it was renaming. Both are durable, so the ALTER is what loses.
+$CLICKHOUSE_CLIENT --query "
+    DROP TABLE IF EXISTS t_activate_busy SYNC;
+
+    CREATE TABLE t_activate_busy (k UInt64, b String)
+    ENGINE = MergeTree ORDER BY k
+    SETTINGS min_bytes_for_wide_part = 0, serialization_info_version = 'basic';
+
+    INSERT INTO t_activate_busy VALUES (1, 'keep_me');
+" </dev/null
+
+# Hold the mutation in the queue: STOP MERGES keeps it from executing, and alter_sync=0 lets the
+# ALTER return instead of waiting for it while holding the alter lock.
+$CLICKHOUSE_CLIENT --query "SYSTEM STOP MERGES t_activate_busy"
+$CLICKHOUSE_CLIENT --alter_sync 0 --mutations_sync 0 --query "ALTER TABLE t_activate_busy RENAME COLUMN b TO d"
+$CLICKHOUSE_CLIENT --query "SELECT 'queued', count() FROM system.mutations
+    WHERE database = currentDatabase() AND table = 't_activate_busy' AND NOT is_done"
+
+$CLICKHOUSE_CLIENT --query "ALTER TABLE t_activate_busy MODIFY SETTING serialization_info_version = 'with_column_ids'" 2>&1 \
+    | grep -o "SUPPORT_IS_DISABLED" | head -1
+$CLICKHOUSE_CLIENT --query "SELECT 'still basic', engine_full NOT LIKE '%with_column_ids%'
+    FROM system.tables WHERE database = currentDatabase() AND name = 't_activate_busy'"
+
+# Let it finish: the rename lands the old way with the data intact, and activation is then accepted.
+$CLICKHOUSE_CLIENT --query "SYSTEM START MERGES t_activate_busy"
+wait_for_all_mutations "t_activate_busy"
+$CLICKHOUSE_CLIENT --query "SELECT 'renamed', k, d FROM t_activate_busy ORDER BY k"
+$CLICKHOUSE_CLIENT --query "ALTER TABLE t_activate_busy MODIFY SETTING serialization_info_version = 'with_column_ids'"
+$CLICKHOUSE_CLIENT --query "SELECT 'activated', engine_full LIKE '%with_column_ids%'
+    FROM system.tables WHERE database = currentDatabase() AND name = 't_activate_busy'"
+
+$CLICKHOUSE_CLIENT --query "DROP TABLE t_activate_busy SYNC"

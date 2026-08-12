@@ -4941,11 +4941,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     {
         return c.type == AlterCommand::MODIFY_SETTING || c.type == AlterCommand::RESET_SETTING;
     });
-    if (hasActiveColumnIdMapping() && has_settings_commands)
+    /// Effective settings after this ALTER, recomputed from defaults the way `changeSettings` does --
+    /// applying onto the current settings would let `RESET SETTING` slip through unnoticed.
+    auto column_ids_after_alter = [&]
     {
-        /// Recompute effective settings from defaults, the way `changeSettings`
-        /// does -- applying onto the current settings would let `RESET SETTING`
-        /// slip through unnoticed.
         StorageInMemoryMetadata result_metadata = *storage_metadata_snapshot;
         commands.apply(result_metadata, local_context);
 
@@ -4956,14 +4955,31 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 local_context,
                 /*is_loading_from_existing_metadata=*/true);
 
-        /// The table's files are already named by column IDs, so the mapping stays
-        /// authoritative no matter what the settings say -- reject the lie.
-        if ((*result_settings)[MergeTreeSetting::serialization_info_version] != MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS)
+        return (*result_settings)[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS;
+    };
+
+    /// The table's files are already named by column IDs, so the mapping stays
+    /// authoritative no matter what the settings say -- reject the lie.
+    if (hasActiveColumnIdMapping() && has_settings_commands && !column_ids_after_alter())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot change `serialization_info_version` away from 'with_column_ids' for table {}: "
+            "the table has a column ID mapping and its data files are named by column IDs. "
+            "Column IDs cannot be deactivated once active.",
+            getStorageID().getNameForLogs());
+
+    /// A queued mutation was planned against logical file names -- a queued RENAME COLUMN expects to
+    /// move files. Activating the mapping makes names metadata-only, so the mapping and that mutation
+    /// disagree about what the part's files are called, and the mutation drops the very column it was
+    /// renaming. The mutation is already durable, so the activation is what gets refused.
+    if (!hasActiveColumnIdMapping() && has_settings_commands)
+    {
+        auto queued_mutations = getUnfinishedMutationCommands();
+        if (!queued_mutations.empty() && column_ids_after_alter())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Cannot change `serialization_info_version` away from 'with_column_ids' for table {}: "
-                "the table has a column ID mapping and its data files are named by column IDs. "
-                "Column IDs cannot be deactivated once active.",
-                getStorageID().getNameForLogs());
+                "Cannot enable `serialization_info_version = 'with_column_ids'` for table {} while {} "
+                "mutation(s) are still running: they were planned against the current file names. "
+                "Wait for them to finish (see system.mutations), then retry.",
+                getStorageID().getNameForLogs(), queued_mutations.size());
     }
 
     /// Block the case of alter table add projection for special merge trees.
