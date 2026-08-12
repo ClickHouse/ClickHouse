@@ -15,6 +15,10 @@
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
+-- The control query below relies on the non-rescoring rewrite actually happening under `FINAL`, which requires
+-- the vector index to be used. Pin the settings against randomization.
+SET use_skip_indexes_if_final = 1;
+SET use_skip_indexes_if_final_exact_mode = 0;
 
 DROP ROW POLICY IF EXISTS rp_04839 ON t_04839;
 DROP TABLE IF EXISTS t_04839;
