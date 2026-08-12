@@ -16,6 +16,7 @@
 #include <base/getFQDNOrHostName.h>
 
 
+#include <optional>
 #include <unordered_set>
 
 namespace DB
@@ -209,11 +210,22 @@ void BackgroundQueriesDistributedRegistry::threadFunction()
 {
     auto component_guard = Coordination::setCurrentComponent("BackgroundQueriesDistributedRegistry::run");
 
+    /// We may pop an entry from the queue and fail to process it due to (intermittent) ZooKeeper errors.
+    /// Stash it to pending_update to avoid having to push it to the queue again.
+    std::optional<EntryUpdate> pending_update;
+
     while (true)
     {
-        EntryUpdate update{};
-        if (entry_asynchronous_update_queue.tryPop(update, IDLE_TICK_PERIOD_MS))
+        if (!pending_update)
         {
+            EntryUpdate update{};
+            if (entry_asynchronous_update_queue.tryPop(update, IDLE_TICK_PERIOD_MS))
+                pending_update = std::move(update);
+        }
+
+        if (pending_update)
+        {
+            auto & update = *pending_update;
             try
             {
                 auto zookeeper = getZooKeeper();
@@ -223,14 +235,16 @@ void BackgroundQueriesDistributedRegistry::threadFunction()
                     code = zookeeper->tryCreate(update.entry_path, body, zkutil::CreateMode::Persistent, entry_ttl_ms);
                 if (code != Coordination::Error::ZOK)
                     throw zkutil::KeeperException::fromPath(code, update.entry_path);
-                continue;
+                pending_update.reset();
             }
             catch (...)
             {
                 tryLogCurrentException(log);
-                const auto query_id = update.entry.query_id;
-                if (!entry_asynchronous_update_queue.push(std::move(update)))
-                    LOG_WARNING(log, "Dropping the outcome of background query {}: the registry is shutting down", query_id);
+                if (entry_asynchronous_update_queue.isFinished())
+                {
+                    LOG_WARNING(log, "Dropping the outcome of background query {}: the registry is shutting down", update.entry.query_id);
+                    pending_update.reset();
+                }
             }
         }
 
