@@ -112,7 +112,10 @@ protected:
     /// Named arguments carrying NATS credentials. They are the setting names, because the `NATS` engine
     /// takes its arguments as overrides of a named collection (`NATS(collection, nats_token = '...')`).
     /// Keep in sync with `NATS::SETTINGS_TO_HIDE`, which masks the same secrets in the `SETTINGS` clause.
-    static constexpr std::string_view nats_secret_keys[] = {"nats_password", "nats_token", "nats_credential_file"};
+    /// `nats_credentials` is not a supported setting anymore, but the query is formatted for logging
+    /// before the overrides are validated, so the old spelling has to stay masked.
+    static constexpr std::string_view nats_secret_keys[]
+        = {"nats_password", "nats_token", "nats_credential_file", "nats_credentials"};
 
     void markSecretArgument(size_t index, bool argument_is_named = false);
 

@@ -293,6 +293,37 @@ TEST(ParserCreateQuery, MaskNATSTableEnginePositionalArguments)
     EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
 }
 
+TEST(ParserCreateQuery, MaskNATSTableEngineRemovedCredentialsSetting)
+{
+    /// `nats_credentials` is not a supported setting anymore, but the query is formatted for logging
+    /// before the settings are validated, so both spellings of the old setting have to stay masked
+    /// to keep the raw JWT/seed out of the query log even though the server then rejects the query.
+    {
+        const String query =
+            "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, nats_credentials = 'plain_user_jwt_and_seed')";
+
+        DB::ParserCreateQuery parser;
+        DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+        const String masked = ast->formatForLogging();
+
+        EXPECT_EQ(masked.find("plain_user_jwt_and_seed"), String::npos);
+        EXPECT_NE(masked.find("nats_credentials = '[HIDDEN]'"), String::npos);
+    }
+    {
+        const String query =
+            "CREATE TABLE test_nats (key UInt64) ENGINE = NATS SETTINGS nats_credentials = 'plain_user_jwt_and_seed'";
+
+        DB::ParserCreateQuery parser;
+        DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+        const String masked = ast->formatForLogging();
+
+        EXPECT_EQ(masked.find("plain_user_jwt_and_seed"), String::npos);
+        EXPECT_NE(masked.find("nats_credentials = '[HIDDEN]'"), String::npos);
+    }
+}
+
 TEST_P(ParserTest, parseQuery)
 {
     const auto & parser = std::get<0>(GetParam());

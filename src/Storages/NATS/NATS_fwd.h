@@ -15,6 +15,10 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
     {"nats_password", DEFAULT_MASKING_RULE},
     {"nats_token", DEFAULT_MASKING_RULE},
     {"nats_credential_file", DEFAULT_MASKING_RULE},
+    /// `nats_credentials` is not a supported setting anymore, but the query is formatted for logging
+    /// before the settings are validated, so the old spelling has to stay masked to keep the raw
+    /// JWT/seed out of the query log even on queries the server then rejects.
+    {"nats_credentials", DEFAULT_MASKING_RULE},
     {"nats_url", [](const DB::Field & value)
     {
         std::string masked_value = value.safeGet<std::string>();
