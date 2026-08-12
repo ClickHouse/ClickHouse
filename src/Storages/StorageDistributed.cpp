@@ -75,6 +75,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/InsertStartGates.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -1246,6 +1247,13 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     query_context->increaseDistributedDepth();
     query_context->setSetting("enable_parallel_replicas", Field{0}); // TODO: allow parallel inserts with PR for distributed tables
 
+    /// This server can be local for several destination shards, and then the query runs one nested
+    /// INSERT per such shard, all of them writing into the same local table. Share one registry of
+    /// gates between them, so the `Too many parts` check of a nested INSERT does not count the parts
+    /// a sibling nested INSERT of the same query has already committed, and so a non-parallel quorum
+    /// insert is not started twice for one query.
+    auto insert_start_gates = std::make_shared<InsertStartGates>();
+
     size_t available_shards = 0;
     for (size_t shard_index : collections::range(0, shards_info.size()))
     {
@@ -1259,6 +1267,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
                 /* no_squash */ false,
                 /* no_destination */ false,
                 /* async_isnert */ false);
+            interpreter.setInsertStartGates(insert_start_gates);
             pipeline.addCompletedPipeline(interpreter.execute().pipeline);
             ++available_shards;
         }
