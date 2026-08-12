@@ -884,6 +884,15 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
     return storage_policy;
 }
 
+bool MergeTreeData::hasUnreplicatedLocalDiskData() const
+{
+    if (!storesDataOnDisk() || supportsReplication())
+        return false;
+
+    return std::ranges::any_of(
+        getStoragePolicy()->getDisks(), [](const auto & disk) { return !disk->isRemote(); });
+}
+
 std::map<std::string, DiskPtr> MergeTreeData::getDistinctDisksForParts(const DataPartsVector & parts_list) const
 {
     if (parts_list.empty())

@@ -16,6 +16,8 @@ ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --user "user_${CLICKHOUS
 # Engines that keep unreplicated data on local disk are rejected.
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --user "user_${CLICKHOUSE_DATABASE}" --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_mt (x UInt32) engine = MergeTree order by x;" 2>&1 | grep -o "Only tables with a replicated engine or tables which do not store data on local disk" | head -n 1
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --user "user_${CLICKHOUSE_DATABASE}" --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_set (x UInt32) engine = Set;" 2>&1 | grep -o "Only tables with a replicated engine or tables which do not store data on local disk" | head -n 1
+# A non-replicated `MergeTree` is allowed when every disk in its storage policy is remote.
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --user "user_${CLICKHOUSE_DATABASE}" --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_mt_s3 (x UInt32) engine = MergeTree order by x settings storage_policy = 's3_no_cache';"
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_mt (x UInt32) engine = MergeTree order by x;"
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --user "user_${CLICKHOUSE_DATABASE}" --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_rmt (x UInt32) engine = ReplicatedMergeTree order by x;"
 # `Distributed`, `Remote`, and `RemoteSecure` with ordinary table targets can keep their background `INSERT`

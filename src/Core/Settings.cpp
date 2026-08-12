@@ -6254,12 +6254,13 @@ Allow creating a table in a database with the `Replicated` engine only if the ta
 stored on local disk or does not store data on local disk.
 
 This restriction applies only to local on-disk data. It does not guarantee the durability of in-memory data or
-of data stored outside the server's local disks. The check uses each storage's `storesDataOnDisk` and
-`supportsReplication` capabilities.
+of data stored outside the server's local disks.
 
 For example, `ReplicatedMergeTree`, in-memory engines such as `Memory` and `Buffer`, metadata-only engines
 such as `Merge` and `Alias`, and external-storage or data lake engines such as `S3` and `AzureBlobStorage` are
-allowed. Non-replicated local-disk engines such as `MergeTree`, `Log`, and `Set` are rejected.
+allowed. Non-replicated local-disk engines such as `Log` and `Set` are rejected. A non-replicated `MergeTree`
+table is rejected when its storage policy contains a local disk and allowed when every disk in its storage policy
+is remote.
 
 `Distributed`, `Remote`, and `RemoteSecure` tables with an ordinary table target are rejected because they can
 store the background `INSERT` queue on local disk. A `Remote` or `RemoteSecure` table with a table-function
