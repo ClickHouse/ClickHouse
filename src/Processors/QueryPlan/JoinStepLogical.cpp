@@ -1966,15 +1966,23 @@ std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
 
 void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
-    join_settings.updatePlanSettings(settings, join_operator.canBecomeConstantJoin());
+    join_settings.updatePlanSettings(settings, join_operator);
 
     /// The sorting settings of a join are consumed only by the sorts the planner adds around a
-    /// full-sorting-merge join or an IEJoin (`addSortingForMergeJoin`, `constructIEJoinStep`). With none of
-    /// those algorithms enabled they configure nothing, so they must not put the spill-codec opt-in on the
-    /// wire for a join that can only be executed by an in-memory algorithm.
-    bool join_can_use_sorting = TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::FULL_SORTING_MERGE)
-        || TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
-        || TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::IE_JOIN);
+    /// full-sorting-merge join or an IEJoin (`addSortingForMergeJoin`, `constructIEJoinStep`), so they must
+    /// not put the spill-codec opt-in on the wire for a join that can only be executed by an in-memory
+    /// algorithm. An enabled sorting-based algorithm counts only when this join's shape lets the planner
+    /// pick it: a full-sorting-merge join needs a kind/strictness pair `MergeJoinAlgorithm` implements, an
+    /// IEJoin additionally needs two cross-side inequalities in the ON expression
+    /// (`tryExtractIEJoinDescription`). The parts of those tests unavailable here (a single disjunct,
+    /// comparable key types) conservatively count as satisfied.
+    bool join_can_use_sorting =
+        ((TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::FULL_SORTING_MERGE)
+          || TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE))
+         && FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(join_operator.kind, join_operator.strictness))
+        || (TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::IE_JOIN)
+            && IEJoinStep::isSupportedJoinType(join_operator.kind, join_operator.strictness)
+            && join_operator.hasCrossSideInequalityPair());
     sorting_settings.updatePlanSettings(settings, /*sorting_is_reachable=*/join_can_use_sorting);
 }
 

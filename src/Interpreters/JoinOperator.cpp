@@ -12,7 +12,9 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 
 #include <fmt/ranges.h>
+#include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Interpreters/MergeJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/ActionsDAG.h>
 
@@ -248,7 +250,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     join_runtime_filter_from_fixed_hash_table = settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table];
 }
 
-void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, bool constant_join_is_possible) const
+void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, const JoinOperator & join_operator) const
 {
     settings[QueryPlanSerializationSetting::join_algorithm] = join_algorithms;
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
@@ -289,7 +291,7 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     /// files (see `canSpillToTemporaryFiles`) never resolves the codec and must not carry the opt-in. See
     /// the matching comment in `AggregatingStep::serializeSettings` and
     /// `spillCodecNeedsExperimentalCodecsOptIn`.
-    if (spillCodecNeedsExperimentalCodecsOptIn(canSpillToTemporaryFiles(constant_join_is_possible), allow_experimental_codecs, temporary_files_codec))
+    if (spillCodecNeedsExperimentalCodecsOptIn(canSpillToTemporaryFiles(join_operator), allow_experimental_codecs, temporary_files_codec))
         settings[QueryPlanSerializationSetting::allow_experimental_codecs] = true;
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
     settings[QueryPlanSerializationSetting::join_output_by_rowlist_perkey_rows_threshold] = join_output_by_rowlist_perkey_rows_threshold;
@@ -311,23 +313,42 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table] = join_runtime_filter_from_fixed_hash_table;
 }
 
-bool JoinSettings::canSpillToTemporaryFiles(bool constant_join_is_possible) const
+bool JoinSettings::canSpillToTemporaryFiles(const JoinOperator & join_operator) const
 {
-    /// A `hash` / `parallel_hash` / `direct` / `full_sorting_merge` join reaches temporary files only through
-    /// the automatic conversion to a spilling hash join, which both planners gate on an external-join
-    /// threshold (`PlannerJoins::tryCreateJoin` and `ExpressionAnalyzer::createJoin` test
-    /// `max_bytes_before_external_join > 0`). The raw settings are tested rather than the effective threshold
-    /// so the answer does not depend on the local memory limits of whoever asks.
-    if (max_bytes_before_external_join != 0 || max_bytes_ratio_before_external_join != 0.)
-        return true;
+    /// Both spilling implementations accept only some kind/strictness pairs; a join the implementation
+    /// rejects falls back to an in-memory algorithm (or fails to plan) instead of spilling. The remaining
+    /// parts of the planners' `isSupported` tests (a single disjunct, no mixed expression) need the full
+    /// `TableJoin` and conservatively count as satisfied here.
+    const bool spilling_hash_join_is_possible = GraceHashJoin::isSupported(join_operator.kind, join_operator.strictness);
+    const bool merge_join_is_possible = MergeJoin::isSupported(join_operator.kind, join_operator.strictness);
 
-    /// `grace_hash` always spills. `partial_merge` / `prefer_partial_merge` / `auto` can end up in
-    /// `MergeJoin`, which writes the right table through `SortedBlocksWriter` once the in-memory size limits
-    /// are hit.
     for (auto algorithm : join_algorithms)
     {
-        if (algorithm == JoinAlgorithm::GRACE_HASH || algorithm == JoinAlgorithm::PARTIAL_MERGE
-            || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE || algorithm == JoinAlgorithm::AUTO)
+        /// An external-join threshold converts a join into a spilling hash join, but only the branches that
+        /// build a hash join consult it (`PlannerJoins::tryCreateJoin` and `ExpressionAnalyzer::createJoin`
+        /// test `max_bytes_before_external_join > 0` for `hash` / `parallel_hash` / `default` / `auto`, and
+        /// `prefer_partial_merge` falls back to the same hash branch); `direct`, `full_sorting_merge`,
+        /// `parallel_full_sorting_merge` and `ie_join` never look at it. The raw settings are tested rather
+        /// than the effective threshold so the answer does not depend on the local memory limits of whoever
+        /// asks.
+        if ((max_bytes_before_external_join != 0 || max_bytes_ratio_before_external_join != 0.)
+            && spilling_hash_join_is_possible
+            && (algorithm == JoinAlgorithm::HASH || algorithm == JoinAlgorithm::PARALLEL_HASH
+                || algorithm == JoinAlgorithm::DEFAULT || algorithm == JoinAlgorithm::AUTO
+                || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE))
+            return true;
+
+        /// `grace_hash` always spills - when the join is one it can be built for at all.
+        if (algorithm == JoinAlgorithm::GRACE_HASH && spilling_hash_join_is_possible)
+            return true;
+
+        /// `partial_merge` / `prefer_partial_merge` / `auto` can end up in `MergeJoin` (directly or through
+        /// `JoinSwitcher`), which writes the right table through `SortedBlocksWriter` once the in-memory
+        /// size limits are hit - but only for the kind/strictness pairs `MergeJoin` supports; e.g. a keyed
+        /// `RIGHT ANY` join under `auto` falls back to an in-memory hash join.
+        if ((algorithm == JoinAlgorithm::PARTIAL_MERGE || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE
+             || algorithm == JoinAlgorithm::AUTO)
+            && merge_join_is_possible)
             return true;
     }
 
@@ -335,7 +356,7 @@ bool JoinSettings::canSpillToTemporaryFiles(bool constant_join_is_possible) cons
     /// right table to disk as soon as the in-memory size limits would be exceeded — but only when the join
     /// shape admits a `ConstantJoin` at all: a join keyed by a genuine equality never reaches it, so for
     /// such a join the size limits alone cannot cause a spill.
-    return constant_join_is_possible && (max_rows_in_join != 0 || max_bytes_in_join != 0);
+    return join_operator.canBecomeConstantJoin() && (max_rows_in_join != 0 || max_bytes_in_join != 0);
 }
 
 UInt64 JoinSettings::getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join)
@@ -418,6 +439,25 @@ bool JoinOperator::canBecomeConstantJoin() const
     }
 
     return true;
+}
+
+bool JoinOperator::hasCrossSideInequalityPair() const
+{
+    /// The condition-shape half of `tryGetIEJoinKeyCondition` (`JoinStepLogical.cpp`): an inequality whose
+    /// operands come from the two different inputs. The type-compatibility half needs no repetition for a
+    /// conservative answer.
+    size_t count = 0;
+    for (const auto & condition : expression)
+    {
+        auto [op, lhs, rhs] = condition.asBinaryPredicate();
+        if (op != JoinConditionOperator::Less && op != JoinConditionOperator::LessOrEquals
+            && op != JoinConditionOperator::Greater && op != JoinConditionOperator::GreaterOrEquals)
+            continue;
+        if (((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft())) && ++count >= 2)
+            return true;
+    }
+
+    return false;
 }
 
 void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag) const

@@ -302,9 +302,13 @@ void GraceHashJoin::initBuckets()
 
 bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
 {
-    bool is_asof = (table_join->strictness() == JoinStrictness::Asof);
-    auto kind = table_join->kind();
-    return !is_asof && (isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind)) && table_join->oneDisjunct();
+    return isSupported(table_join->kind(), table_join->strictness()) && table_join->oneDisjunct();
+}
+
+bool GraceHashJoin::isSupported(JoinKind kind, JoinStrictness strictness)
+{
+    bool is_asof = (strictness == JoinStrictness::Asof);
+    return !is_asof && (isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind));
 }
 
 GraceHashJoin::~GraceHashJoin() = default;
