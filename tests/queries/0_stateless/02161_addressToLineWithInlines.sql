@@ -13,6 +13,10 @@ SET query_profiler_cpu_time_period_ns = 0;
 SYSTEM FLUSH LOGS query_log, trace_log;
 SET max_execution_time = 300;
 
+-- Symbolization test, not a perf test: reading system.trace_log can be slow
+-- and false-positives the execution-time guards (TOO_SLOW / TIMEOUT_EXCEEDED).
+SET max_estimated_execution_time = 0, max_execution_time = 0;
+
 WITH
     lineWithInlines AS
     (
