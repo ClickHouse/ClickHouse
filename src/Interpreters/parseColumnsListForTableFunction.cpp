@@ -49,6 +49,14 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
 {
 }
 
+DataTypeValidationSettings DataTypeValidationSettings::forRuntimeTypeNames(const DB::Settings & settings)
+{
+    DataTypeValidationSettings result;
+    result.allow_experimental_time_decay_aggregate_functions
+        = settings[Setting::allow_experimental_time_decay_aggregate_functions];
+    return result;
+}
+
 
 void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidationSettings & settings)
 {

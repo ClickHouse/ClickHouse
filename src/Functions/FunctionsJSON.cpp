@@ -695,7 +695,7 @@ public:
     explicit JSONOverloadResolver(ContextPtr context)
         : allow_simdjson(context->getSettingsRef()[Setting::allow_simdjson])
         , format_settings(getFormatSettings(context))
-        , data_type_validation_settings(context->getSettingsRef())
+        , data_type_validation_settings(DataTypeValidationSettings::forRuntimeTypeNames(context->getSettingsRef()))
     {}
 
     bool isVariadic() const override { return true; }

@@ -30,7 +30,7 @@ public:
     }
 
     explicit FunctionDefaultValueOfTypeName(const Settings & settings)
-        : data_type_validation_settings(settings)
+        : data_type_validation_settings(DataTypeValidationSettings::forRuntimeTypeNames(settings))
     {
     }
 

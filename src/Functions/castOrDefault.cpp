@@ -49,7 +49,7 @@ public:
 
     explicit FunctionCastOrDefault(ContextPtr context_)
         : keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable])
-        , data_type_validation_settings(context_->getSettingsRef())
+        , data_type_validation_settings(DataTypeValidationSettings::forRuntimeTypeNames(context_->getSettingsRef()))
     {
     }
 

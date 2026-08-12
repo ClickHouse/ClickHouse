@@ -34,6 +34,10 @@ SELECT JSONExtract('{"value":1,"time":0,"decay_length":10}', 'ExponentialTimeDec
 SELECT JSONExtractKeysAndValues('{}', 'ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
 SELECT getTypeSerializationStreams('ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
 
+-- Runtime type-name validation must not apply unrelated CREATE/ALTER restrictions.
+SELECT _CAST(1, 'LowCardinality(UInt8)') FORMAT Null;
+SELECT JSONExtract('{"value":1}', 'value', 'LowCardinality(UInt8)') FORMAT Null;
+
 -- All scalar operations on the experimental value type remain gated.
 SELECT exponentialTimeDecayingValueAt(value, toFloat64(1)) FROM time_decay_feature_gate; -- { serverError UNKNOWN_FUNCTION }
 SELECT exponentialTimeDecayingDecayLength(value) FROM time_decay_feature_gate; -- { serverError UNKNOWN_FUNCTION }

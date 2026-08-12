@@ -16,6 +16,8 @@ struct DataTypeValidationSettings
 
     explicit DataTypeValidationSettings(const Settings & settings);
 
+    static DataTypeValidationSettings forRuntimeTypeNames(const Settings & settings);
+
     bool allow_suspicious_low_cardinality_types = true;
     bool allow_suspicious_fixed_string_types = true;
     bool allow_suspicious_variant_types = true;

@@ -161,7 +161,12 @@ public:
     {
         if (internal)
             return std::make_unique<CastOverloadResolverImpl>(
-                context_, cast_type, internal, diagnostic, false /*keep_nullable*/, DataTypeValidationSettings(context_->getSettingsRef()));
+                context_,
+                cast_type,
+                internal,
+                diagnostic,
+                false /*keep_nullable*/,
+                DataTypeValidationSettings::forRuntimeTypeNames(context_->getSettingsRef()));
 
         const auto & settings_ref = context_->getSettingsRef();
         return std::make_unique<CastOverloadResolverImpl>(
