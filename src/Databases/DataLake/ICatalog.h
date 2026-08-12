@@ -38,7 +38,6 @@ public:
     bool hasLocation() const;
     bool hasSchema() const;
     bool hasStorageCredentials() const;
-    bool hasDataLakeSpecificProperties() const;
 
     void setLocation(const std::string & location_);
     std::string getLocation() const;
