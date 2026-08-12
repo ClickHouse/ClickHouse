@@ -5,7 +5,7 @@
 # Regression test for https://github.com/ClickHouse/ClickHouse/pull/107567.
 #
 # `s3_list_object_parallelism` must stay a *pure performance knob*: enabling it may only change how fast
-# globbed s3() paths are listed, never the query result. The parallel listing iterator emits keys in
+# globbed S3 paths are listed, never the query result. The parallel listing iterator emits keys in
 # scheduler (non-deterministic) order rather than S3's lexicographic order, and two call sites take the
 # *first* listed file as meaningful:
 #   * hive-partitioning detection          -> StorageObjectStorage::getPathSample
