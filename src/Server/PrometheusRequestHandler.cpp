@@ -1,7 +1,5 @@
 #include <Server/PrometheusRequestHandler.h>
 
-#include <limits>
-
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBuffer.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
@@ -485,16 +483,6 @@ public:
                 ErrorCodes::BAD_ARGUMENTS,
                 "Invalid value of the 'limit' parameter: '{}', expected a non-negative integer",
                 limit_str);
-
-        /// The metadata endpoints detect truncation by querying `LIMIT limit + 1` rows, so the maximum
-        /// representable value cannot be served: the addition would wrap to zero and turn a valid request
-        /// into an empty response with no truncation warning. Reject it up front (fail closed), uniformly
-        /// for all endpoints.
-        if (limit == std::numeric_limits<UInt64>::max())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The value of the 'limit' parameter is too large: {}, the maximum supported value is {}",
-                limit, std::numeric_limits<UInt64>::max() - 1);
 
         return limit;
     }

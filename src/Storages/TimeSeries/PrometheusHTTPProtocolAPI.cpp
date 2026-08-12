@@ -37,8 +37,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <fmt/format.h>
 
-#include <limits>
-
 
 namespace DB
 {
@@ -52,6 +50,7 @@ namespace ErrorCodes
 namespace TimeSeriesSetting
 {
     extern const TimeSeriesSettingsBool filter_by_min_time_and_max_time;
+    extern const TimeSeriesSettingsBool store_min_time_and_max_time;
     extern const TimeSeriesSettingsMap tags_to_columns;
 }
 
@@ -627,6 +626,25 @@ void PrometheusHTTPProtocolAPI::appendTimeRangeConditions(
             TimeSeriesColumnNames::MinTime,
             TimeSeriesColumnNames::MaxTime);
 
+    /// `StorageTimeSeriesSelector::readImpl` gates the prefilter on `filter_by_min_time_and_max_time`
+    /// AND `store_min_time_and_max_time`. When `store_min_time_and_max_time` is disabled and
+    /// `filter_by_min_time_and_max_time` is left at its default, the latter still reads as `true`
+    /// (`checkTimeSeriesSettings` rejects only an explicitly enabled conflict), while a supported
+    /// external 'tags' table can still physically keep `min_time`/`max_time` columns in that mode
+    /// (`normalizeTimeSeriesDefinition` requires them only when the setting is enabled, it does not
+    /// forbid them otherwise). Those columns are then not maintained by the write path, so gate on the
+    /// setting itself, before consulting the table schema - otherwise the metadata endpoints would
+    /// trust stale or preexisting bounds that the real query path ignores.
+    if (!(*time_series_settings)[TimeSeriesSetting::store_min_time_and_max_time])
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot apply the 'start'/'end' time range on the Prometheus metadata endpoints because the "
+            "'store_min_time_and_max_time' setting of the TimeSeries table is disabled, so the '{}'/'{}' columns "
+            "of the 'tags' table are not maintained and '/api/v1/query'/'/api/v1/query_range' do not use them for "
+            "filtering either. Enable 'store_min_time_and_max_time' to use time range filtering, or omit 'start'/'end'",
+            TimeSeriesColumnNames::MinTime,
+            TimeSeriesColumnNames::MaxTime);
+
     auto tags_metadata = tags_table->getInMemoryMetadataPtr(getContext(), false);
     if (!tags_metadata->columns.has(TimeSeriesColumnNames::MinTime) || !tags_metadata->columns.has(TimeSeriesColumnNames::MaxTime))
         throw Exception(
@@ -748,10 +766,11 @@ void PrometheusHTTPProtocolAPI::getSeries(
     for (size_t i = 0; i < conditions.size(); ++i)
         query += (i == 0 ? " WHERE " : " AND ") + conditions[i];
 
-    /// Each result row is emitted as exactly one series, so `LIMIT limit + 1` bounds the scan while still
-    /// letting the emission loop below see whether the result was truncated (the one extra row).
-    if (limit)
-        query += fmt::format(" LIMIT {}", limit + 1);
+    /// `limit` is deliberately NOT pushed down as a SQL `LIMIT`: the mixed-carrier `bad_data`
+    /// validation below must see every matched row to fail closed, and a SQL-side `LIMIT` lets the
+    /// scan stop early, so whether a corrupted row is detected would depend on the caller's `limit`
+    /// and on row order. Like `/api/v1/query`, the limit is enforced in the emission loop instead;
+    /// rows beyond it are still pulled and validated, they only flip the truncation flag.
 
     LOG_TRACE(log, "Prometheus series query: {}", query);
 
@@ -822,8 +841,8 @@ void PrometheusHTTPProtocolAPI::getSeries(
 
             for (size_t i = 0; i < result_block.rows(); ++i)
             {
-                /// The SQL `LIMIT limit + 1` above bounds the scan, so at most one extra row shows up
-                /// here; it only signals that the result is truncated and is not emitted itself.
+                /// A row beyond `limit` only signals that the result is truncated and is not emitted
+                /// itself; the remaining blocks are still pulled and validated above.
                 if (limit && emitted == limit)
                 {
                     truncated = true;
@@ -956,14 +975,11 @@ void PrometheusHTTPProtocolAPI::getLabels(
 
     query += " ORDER BY label_key";
 
-    /// Each result row is emitted as one label name, except the rows for `__name__` (prepended as a
-    /// virtual label instead) and the empty string (the `LEFT ARRAY JOIN` marker for a matching series
-    /// with no label keys), which are skipped. Each of the two occurs at most once thanks to `DISTINCT`,
-    /// so `LIMIT limit + 2` gives the emission loop below enough rows to fill the limit and to see
-    /// whether the result was truncated. The addition saturates: `limit` values near `UInt64` max are
-    /// accepted by the handler, and wrapping around to `LIMIT 0` would return no rows at all.
-    if (limit)
-        query += fmt::format(" LIMIT {}", limit > std::numeric_limits<UInt64>::max() - 2 ? std::numeric_limits<UInt64>::max() : limit + 2);
+    /// `limit` is deliberately NOT pushed down as a SQL `LIMIT`: the conflicting-carrier `throwIf`
+    /// check embedded in `label_keys_expr` must be evaluated on every matched row to fail closed, and
+    /// a SQL-side `LIMIT` lets the scan stop early, so whether a corrupted row is detected would
+    /// depend on the caller's `limit` and on row order. Like `/api/v1/query`, the limit is enforced
+    /// in the emission loop instead.
 
     LOG_TRACE(log, "Prometheus labels query: {}", query);
 
@@ -1079,7 +1095,7 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
     {
         /// __name__ maps to the metric_name column directly. An empty metric name is treated as an
         /// absent label (the emission loop below skips empty values anyway), so filter it out in SQL
-        /// to keep result rows one-to-one with emitted items - the `LIMIT limit + 1` bound relies on it.
+        /// to keep result rows one-to-one with emitted items.
         query = fmt::format(
             "SELECT DISTINCT {} AS label_value FROM {}",
             TimeSeriesColumnNames::MetricName,
@@ -1128,7 +1144,7 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
             /// Extract distinct values for a specific key from the tags Map. A key stored with an empty
             /// value is treated as an absent label (the emission loop below skips empty values anyway),
             /// so require a non-empty value in SQL - which also implies the key is present - to keep
-            /// result rows one-to-one with emitted items; the `LIMIT limit + 1` bound relies on it.
+            /// result rows one-to-one with emitted items.
             query = fmt::format(
                 "SELECT DISTINCT {}[{}] AS label_value FROM {}",
                 TimeSeriesColumnNames::Tags,
@@ -1150,11 +1166,11 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
 
     query += " ORDER BY label_value";
 
-    /// Thanks to the non-empty-value conditions above each result row is emitted as exactly one label
-    /// value, so `LIMIT limit + 1` bounds the scan while still letting the emission loop below see
-    /// whether the result was truncated (the one extra row).
-    if (limit)
-        query += fmt::format(" LIMIT {}", limit + 1);
+    /// `limit` is deliberately NOT pushed down as a SQL `LIMIT`: for a `tags_to_columns` tag the
+    /// conflicting-carrier `throwIf` check embedded in the value expression must be evaluated on
+    /// every matched row to fail closed, and a SQL-side `LIMIT` lets the scan stop early, so whether
+    /// a corrupted row is detected would depend on the caller's `limit` and on row order. Like
+    /// `/api/v1/query`, the limit is enforced in the emission loop instead.
 
     LOG_TRACE(log, "Prometheus label values query: {}", query);
 

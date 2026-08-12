@@ -156,27 +156,13 @@ def test_invalid_limit_is_rejected():
         assert "limit" in result["error"]
 
 
-def test_limit_uint64_max_is_rejected():
-    """The endpoints detect truncation by querying `LIMIT limit + 1` rows, so `UInt64` max would wrap
-    to zero and turn a valid request into an empty response; it must be rejected instead."""
-    uint64_max = 2**64 - 1
-    for path in [
-        f"/api/v1/series?limit={uint64_max}",
-        f"/api/v1/labels?limit={uint64_max}",
-        f"/api/v1/label/host/values?limit={uint64_max}",
-    ]:
-        response = get_response(path)
-        assert response.status_code == 400, f"{path}: expected 400, got {response.status_code}: {response.text}"
-        result = response.json()
-        assert result["status"] == "error"
-        assert "limit" in result["error"]
-
-
-def test_limit_just_below_uint64_max_is_accepted():
-    """The largest representable `limit` value must still behave as an ordinary huge limit."""
-    result = get_success_json(f"/api/v1/labels?limit={2**64 - 2}")
-    assert sorted(result["data"]) == ALL_LABELS
-    assert "warnings" not in result
+def test_limit_uint64_max_is_accepted():
+    """The limit is enforced during emission (not as a SQL `LIMIT`), so even the largest
+    representable value behaves as an ordinary huge limit."""
+    for limit in [2**64 - 1, 2**64 - 2]:
+        result = get_success_json(f"/api/v1/labels?limit={limit}")
+        assert sorted(result["data"]) == ALL_LABELS
+        assert "warnings" not in result
 
 
 def test_query_limit():
@@ -194,16 +180,12 @@ def test_query_limit():
 
 def test_query_range_limit():
     """/api/v1/query_range truncates a matrix result to `limit` series."""
-    result = get_success_json(
-        "/api/v1/query_range?query=cpu_usage&start=1000&end=1030&step=15&limit=1"
-    )
+    result = get_success_json("/api/v1/query_range?query=cpu_usage&start=1000&end=1030&step=15&limit=1")
     assert result["data"]["resultType"] == "matrix"
     assert len(result["data"]["result"]) == 1
     assert TRUNCATION_WARNING in result.get("warnings", [])
 
-    result = get_success_json(
-        "/api/v1/query_range?query=cpu_usage&start=1000&end=1030&step=15&limit=100"
-    )
+    result = get_success_json("/api/v1/query_range?query=cpu_usage&start=1000&end=1030&step=15&limit=100")
     assert len(result["data"]["result"]) == 2
     assert "warnings" not in result
 
