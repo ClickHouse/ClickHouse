@@ -60,7 +60,11 @@ ssize_t preadNoWait(
         RWF_NOWAIT);
 
     if (res > 0)
+    {
+        /// The braces are required: outside of an MSan build the macro expands to nothing,
+        /// and `bugprone-suspicious-semicolon` rejects the empty statement that leaves behind.
         __msan_unpoison(buf, res);
+    }
 
     return res;
 #else
