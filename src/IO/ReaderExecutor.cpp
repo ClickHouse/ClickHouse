@@ -77,14 +77,14 @@ namespace DB
 ///   Schedule-driven interpreter region) -> `finishWindow`.
 /// PLAN BUILD, two spans: `preparePlan` (the plan scheduler, in Read path)
 ///   and `observeAndSchedule` + its extract* helpers.
-/// COLLECT, three spans: `collectInFlightInto`; the put pair `collectFillTargets` /
-///   `runPutStep`; and teardown's `cancelMachine` / `drainAbandonedMachines`.
+/// COLLECT, two spans: `collectInFlightInto` (with `collectFillTargets` recording the
+///   fill-target views at launch); and teardown's `cancelMachine` / `drainAbandonedMachines`.
 /// DISPLAY read surface, two spans: the `Display` methods, plus the plan-view
 ///   hit serve `readHitFromView` they join at `Display::read`.
 /// PRODUCER: `coordinatedPrefetch` (machine fetch step, with its led-run merge
 ///   `mergeRanges`) -> `fetchWindowFromSource` -> `readFromSource` / the Long
-///   connection region; fills land through `writeSliceToWriter`; deferred puts
-///   run at collect.
+///   connection region; fills land through `writeSliceToWriter` per tile, and the
+///   refused residue is banked at collect (not re-cached).
 /// ──────────────────────────────────────────────────────────────────────────────
 
 
@@ -791,15 +791,12 @@ void ReaderExecutor::collectInFlightInto()
         }
 
         /// A fetched prefix that cannot serve the cursor (extension-only bytes below the
-        /// requested range, or a kept seek moved past it) is already in its cells (the
-        /// worker commits per tile); retry only the refused residue into the writers,
-        /// then let the caller read synchronously - serving an empty window here would
-        /// read as a false EOF upstream.
+        /// requested range, or a kept seek moved past it): the led bytes are already in the
+        /// cells (the worker commits per tile) and the refused residue below the cursor is
+        /// dropped - the consumer has passed it. Let the caller read synchronously; serving an
+        /// empty window here would read as a false EOF upstream.
         if (fetched_end <= toPhys(position))
-        {
-            runPutStep(*m, m->fetched);
             return;
-        }
         stats.add(Stats::PartialCollects);
     }
     else if (!m->inline_serve)
@@ -809,11 +806,10 @@ void ReaderExecutor::collectInFlightInto()
         stats.add(Stats::PrefetchHits);
     }
 
-    /// The worker committed its led bytes per tile, so the collect has no window to
-    /// assemble - the display serves the cells. What remains here: retry the refused residue
-    /// into the writers (a role a sibling held at fetch time may be free now; evicted
-    /// space may have opened), and hand the caller what is STILL homeless - the bank is
-    /// its only route to the display.
+    /// The worker committed its led bytes per tile, so the collect has no window to assemble -
+    /// the display serves the cells. The refused residue (a cell a sibling led, or one with no
+    /// reservation space, at fetch time) is NOT re-cached: we accept the gap and hand the caller
+    /// the homeless bytes via the bank below, its only route to the display.
     /// Test hook: pause when the fetch frontier lands inside a partial segment, so a test can
     /// drop the cache and observe that the plan's writer holder keeps the partial non-releasable
     /// (it survives). No-op unless the failpoint is enabled.
@@ -822,7 +818,6 @@ void ReaderExecutor::collectInFlightInto()
         FailPointInjection::pauseFailPoint(FailPoints::reader_executor_pause_after_window);
 
     ChainedBuffers residue = std::move(m->fetched);
-    runPutStep(*m, residue);   /// `m` stays alive - the still-refused scan below reads its views
 
     /// The still-refused residue, sliced exactly-once per uncommitted sub-range (the put
     /// above may have landed parts of it). A bypass window has no views, so everything
@@ -1011,20 +1006,26 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
     VectorWithMemoryTracking<CacheWriter::FillClaim> claims;
     for (const auto & view : m.writer_views)
     {
-        if (!view.writer)
-            continue;
-        const size_t lo = std::max(window.offset, view.writer->range().offset);
-        const size_t hi = std::min(window.end(), view.writer->range().end());
-        if (lo >= hi)
-            continue;
-        writer_coverage.add(ByteRange{lo, hi - lo});
-        auto fill_claim = view.writer->claim(ByteRange{lo, hi - lo});
-        for (const auto & r : fill_claim.available)
-            resolved.add(r);
-        for (const auto & r : fill_claim.to_fetch)
+        /// One claim per view, PARALLEL to `m.writer_views` (a default/empty claim for a null or
+        /// non-overlapping view) so the per-tile `pushChainToWriters` can index claim↔view. The
+        /// claims are held for the whole fetch step, so the per-tile writes run under them.
+        CacheWriter::FillClaim fill_claim;
+        if (view.writer)
         {
-            to_fetch.add(r);
-            resolved.add(r);
+            const size_t lo = std::max(window.offset, view.writer->range().offset);
+            const size_t hi = std::min(window.end(), view.writer->range().end());
+            if (lo < hi)
+            {
+                writer_coverage.add(ByteRange{lo, hi - lo});
+                fill_claim = view.writer->claim(ByteRange{lo, hi - lo});
+                for (const auto & r : fill_claim.available)
+                    resolved.add(r);
+                for (const auto & r : fill_claim.to_fetch)
+                {
+                    to_fetch.add(r);
+                    resolved.add(r);
+                }
+            }
         }
         claims.push_back(std::move(fill_claim));
     }
@@ -1085,7 +1086,7 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
             const ByteRange piece{off, std::min(step, run_hi - off)};
             ChainedBuffers run = fetchWindowFromSource(piece, /*from_prefetch=*/true, m.reached_eof, level,
                 m.bound_advertised, m.inline_serve ? &fill_lane.conn : &m.long_conn, &m, m.stats);
-            pushChainToWriters(m.writer_views, piece, run, m.stats);
+            pushChainToWriters(m.writer_views, claims, piece, run, m.stats);
             if (!run.empty())
                 m.fetched_end = std::max(m.fetched_end, run.range().end());
             for (const auto & keep : uncommittedIn(m.writer_views, piece))
@@ -1199,26 +1200,23 @@ ChainedBuffers ReaderExecutor::fetchWindowFromSource(ByteRange physical_window, 
     return result;
 }
 
-void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, ByteRange window, const ChainedBuffers & chain,
-    Stats & out_stats)
+void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, [[maybe_unused]] const CacheWriter::FillClaim & claim,
+    ByteRange window, const ChainedBuffers & chain, Stats & out_stats)
 {
     chassert(writer);
-    /// Clamp the write target to the window's served portion and the buffer's own
-    /// aligned range; the buffer further skips already-committed bytes internally
-    /// (committed-set idempotency), so an out-of-order/overlapping slice from an
-    /// interleaved promotion never double-counts.
+    /// `claim` is the CALLER's held role for this writer: its lifetime keeps the segment's
+    /// downloader role open, and it is passed as a guardrail so a write only ever runs under a
+    /// held claim. The write acquires no role of its own - `claim` is the sole role-acquisition
+    /// site. `DiskCacheWriter::write` still enforces the role per segment (`isDownloader`), so a
+    /// cell a sibling leads refuses the bytes.
+    ///
+    /// Clamp the write target to the window's served portion and the buffer's own aligned range;
+    /// the buffer further skips already-committed bytes internally (committed-set idempotency),
+    /// so an out-of-order/overlapping slice from an interleaved promotion never double-counts.
     const size_t lo = std::max(writer->range().offset, window.offset);
     const size_t hi = std::min(writer->range().end(), window.end());
     if (lo >= hi)
         return;
-
-    /// Claim the target cells for the duration of this call - `claim` is the sole
-    /// role-acquisition site, a write never adopts a role. Under a machine's window-long
-    /// claim (the per-tile commits) this nested claim wins nothing new and its destructor
-    /// releases nothing of the machine's; on the claimless paths (the put step at collect,
-    /// handed fills, the header populate) it holds the roles for exactly this write. Cells
-    /// claimed by a sibling refuse the bytes, as before.
-    auto fill_claim = writer->claim(ByteRange{lo, hi - lo});
 
     /// Write only the sub-ranges the chain actually COVERS. Under per-segment downloader
     /// coordination the assembled chain holds only the bytes THIS thread fetched (its led
@@ -1246,11 +1244,13 @@ void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, ByteRange window, 
 
 // ─── Fill lane ─────────────────────────────────────────────────────────────
 
-void ReaderExecutor::pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views, ByteRange window,
+void ReaderExecutor::pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views,
+    const VectorWithMemoryTracking<CacheWriter::FillClaim> & claims, ByteRange window,
     const ChainedBuffers & chain, Stats & out_stats)
 {
-    for (const auto & view : views)
-        writeSliceToWriter(view.writer, window, chain, out_stats);
+    chassert(claims.size() == views.size());
+    for (size_t i = 0; i < views.size(); ++i)
+        writeSliceToWriter(views[i].writer, claims[i], window, chain, out_stats);
 }
 
 /// The committed parts of `window` within `writer`'s cell.
@@ -1703,28 +1703,6 @@ void ReaderExecutor::collectFillTargets(FetchMachine & m)
     }
 }
 
-void ReaderExecutor::runPutStep(const FetchMachine & m, const ChainedBuffers & assembled)
-{
-    /// `writer_views` were recorded at LAUNCH (`collectFillTargets`): NON-OWNING views of this
-    /// window's fill-target writers in the shared `read_plan.tiers`, written in place on THIS
-    /// read thread, inline at collect - the machine's own counters were already folded there,
-    /// so the fill accounts straight into the executor `stats`. Runs AFTER the collect pinned
-    /// at the fetch frontier. A failed fill is logged, never thrown: a read must not fail
-    /// because cache population did.
-    if (m.writer_views.empty())
-        return;  /// nothing to fill for this window
-
-    try
-    {
-        pushChainToWriters(m.writer_views, m.physical_window, assembled, stats);
-    }
-    catch (...)
-    {
-        stats.add(Stats::PutFailed);
-        tryLogCurrentException(log, "Cache fill failed");
-    }
-}
-
 void ReaderExecutor::runHandedFills(ByteRange served_range, const ChainedBuffers & bytes, Stats & out_stats)
 {
     /// A promote's targets are strictly-faster-tier cells, so its `CacheWriter`s are
@@ -1817,7 +1795,7 @@ bool ReaderExecutor::launchMachineForWindow(size_t ri, ByteRange window, IFetchM
     /// Inline (serve-thread) runner -> the fetch stops at the first sibling-led segment.
     m->inline_serve = (&machine_runner == local_runner.get());
     /// Record the fill-target writers now so the step can write its led segments inline during
-    /// the fetch (the collect's `runPutStep` reuses these views).
+    /// the fetch (the collect reuses these views to bank the refused residue).
     collectFillTargets(*m);
 
     /// The foreground is the sole opener; the aligned window's first physical range gives the
@@ -2737,7 +2715,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// Describe the plan's work once, here - over the plan's own span (the schedule
     /// derives it from the geometry): everything within it is read by the scan
     /// (User), only the cell slack around it is FillOnly.
-    /// `schedule.retrieves[*].into` then drives `runPutStep` so a faster tier never
+    /// `schedule.retrieves[*].into` then drives the per-tile fill so a faster tier never
     /// receives slack bytes (see `ReadPlan::schedule`).
     read_plan.schedule = buildSchedule(
         *read_plan.geometry(),

@@ -427,15 +427,17 @@ private:
 
     /// The per-writer-list body shared by the fetch step's per-tile commit and
     /// the collect's put step: write `chain ∩ writer-range ∩ window` into each
-    /// (already schedule-filtered) writer.
-    void pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views, ByteRange window,
+    /// (already schedule-filtered) writer. `claims` is PARALLEL to `views` - the
+    /// caller's held role per writer, so the write never claims itself.
+    void pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views,
+        const VectorWithMemoryTracking<CacheWriter::FillClaim> & claims, ByteRange window,
         const ChainedBuffers & chain, Stats & out_stats);
 
     /// Write `chain ∩ writer-range ∩ window` into ONE writer (the body of the
-    /// loops above). Takes its own scoped `claim` over the target - a no-op-release
-    /// nested claim when the calling worker already holds the cells' roles.
-    void writeSliceToWriter(CacheWriter * writer, ByteRange window, const ChainedBuffers & chain,
-        Stats & out_stats);
+    /// loops above). `claim` is the caller's held role for this writer, passed as a
+    /// guardrail: the write acquires no role of its own.
+    void writeSliceToWriter(CacheWriter * writer, const CacheWriter::FillClaim & claim,
+        ByteRange window, const ChainedBuffers & chain, Stats & out_stats);
 
     /// Read from source into the pre-allocated `blocks`: DRAIN a held/carried long
     /// connection (`lc`, nullable) if it can serve this fetch, otherwise open a
@@ -519,11 +521,6 @@ private:
     /// Record the window's fill-target writers (NON-OWNING views into `read_plan.tiers`) on the
     /// machine at LAUNCH, so the worker can write its led segments inline during the fetch.
     void collectFillTargets(FetchMachine & m);
-
-    /// Turn a just-collected machine into its cache fill: using the `writer_views` recorded at
-    /// launch, hand it the assembled chain and run the fill INLINE on the read thread (a failed
-    /// fill logged, never thrown).
-    void runPutStep(const FetchMachine & m, const ChainedBuffers & assembled);
 
     /// Run the scheduled PROMOTE jobs overlapping the just-served range (`HandedChain`):
     /// write served bytes UP into the faster cells the fetch deliberately skipped

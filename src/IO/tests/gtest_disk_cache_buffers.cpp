@@ -819,41 +819,6 @@ TEST_F(DiskCacheBuffers, ClaimReleaseMakesForeignThreadTeardownSafe)
     SUCCEED();
 }
 
-/// The claim-scoped release: a nested claim over segments this thread ALREADY leads (a
-/// tile write inside a window-long claim) must release NOTHING of the outer claim's - its
-/// destructor completes only roles it newly won. The outer claim must survive the nested
-/// one and still own the role (`write` under it keeps landing bytes); only the outer
-/// claim's drop releases the segment.
-TEST_F(DiskCacheBuffers, NestedClaimDoesNotReleaseOuterRoles)
-{
-    auto provider = makeProvider();
-    auto object = makeObject("obj_nested", kSegmentSize);
-
-    auto view_misses = openWriters(*provider, object, /*object_file_offset=*/0, {ByteRange{0, kSegmentSize}}); const auto & misses = view_misses->misses();
-    ASSERT_EQ(misses.size(), 1u);
-    ASSERT_NE(misses[0].writer, nullptr);
-    auto & writer = *misses[0].writer;
-
-    auto outer = writer.claim(ByteRange{0, kSegmentSize});
-    ASSERT_FALSE(outer.to_fetch.empty());
-
-    {
-        auto nested = writer.claim(ByteRange{0, kSegmentSize});
-        /// Already ours: the nested claim still reports the run to-fetch (the caller may
-        /// write through it), but wins no new role.
-        ASSERT_FALSE(nested.to_fetch.empty());
-    }   /// nested drop must NOT release the outer role
-
-    /// The role survived the nested drop: a write under the outer claim still lands.
-    String payload(kSegmentSize / 2, 'x');
-    ChainedBuffers chain;
-    auto block = std::make_shared<OwnedChainedBuffer>(payload.size());
-    memcpy(block->data(), payload.data(), payload.size());
-    chain.append(ChainedBufferNode{block, 0, payload.size(), 0});
-    EXPECT_EQ(writer.write(std::move(chain)), payload.size())
-        << "the outer claim's role must survive the nested claim's drop";
-}
-
 /// Virgin miss runs are TILED into max-fill-cell tiles, one MissEntry per cell,
 /// so the cells `openWriter` opens coincide with the fetch tail grid.
 /// In this fixture boundary == max segment == 4 KiB, so the tile is one
