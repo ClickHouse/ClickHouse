@@ -36,7 +36,6 @@ private:
     struct Segment
     {
         StoredObject object;
-        size_t object_offset = 0;
         size_t file_offset = 0;
         size_t size = 0;
     };

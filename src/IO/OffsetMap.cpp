@@ -35,7 +35,6 @@ void OffsetMap::build(const StoredObjects & objects)
             total_size = StoredObject::UnknownSize;
             segments.push_back(Segment{
                 .object = obj,
-                .object_offset = 0,
                 .file_offset = 0,
                 .size = StoredObject::UnknownSize,
             });
@@ -43,7 +42,6 @@ void OffsetMap::build(const StoredObjects & objects)
         }
         segments.push_back(Segment{
             .object = obj,
-            .object_offset = 0,
             .file_offset = total_size,
             .size = obj.bytes_size,
         });
@@ -66,7 +64,7 @@ VectorWithMemoryTracking<OffsetMap::ObjectRange> OffsetMap::map(ByteRange file_r
 
         size_t overlap_start = std::max(seg_start, file_range.offset);
         size_t overlap_end = std::min(seg_end, req_end);
-        size_t offset_in_object = seg.object_offset + (overlap_start - seg_start);
+        size_t offset_in_object = overlap_start - seg_start;
 
         result.push_back(ObjectRange{
             .object = seg.object,
