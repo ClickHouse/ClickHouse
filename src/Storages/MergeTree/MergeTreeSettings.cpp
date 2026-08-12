@@ -220,6 +220,9 @@ When a column qualifies, it is stored in dictionary-encoded form on disk even th
 `LowCardinality`, and is materialized to a full column when a query requires it. This is checked after
 sparse serialization, so a column that qualifies for sparse serialization is stored as sparse instead.
 
+Reading a subcolumn of such a column (for example `s.size`) is not supported, because the subcolumn's
+streams do not exist in a dictionary-encoded part.
+
 A value of `0` disables automatic `LowCardinality` serialization.
 )", 0) \
     DECLARE(Bool, replace_long_file_name_to_hash, true, R"(
