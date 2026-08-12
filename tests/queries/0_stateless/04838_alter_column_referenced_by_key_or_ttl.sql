@@ -83,6 +83,17 @@ SYSTEM START MERGES test;
 ALTER TABLE test DROP COLUMN n;
 DROP TABLE test;
 
+-- An unfinished mutation reading a subcolumn blocks the drop of the column that stores it
+CREATE TABLE test (a Tuple(x UInt64), b UInt64, c UInt64) ENGINE = MergeTree ORDER BY b;
+INSERT INTO test VALUES ((1), 1, 1);
+SYSTEM STOP MERGES test;
+ALTER TABLE test UPDATE c = a.x WHERE 1 SETTINGS mutations_sync = 0;
+ALTER TABLE test DROP COLUMN a; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 'test' SYNC FORMAT Null;
+SYSTEM START MERGES test;
+ALTER TABLE test DROP COLUMN a;
+DROP TABLE test;
+
 -- Without shared Nested offsets the name does not denote the group: it is an unknown name to drop,
 -- and a no-op under IF EXISTS
 CREATE TABLE test (`n.a` UInt64, x UInt64) ENGINE = MergeTree ORDER BY `n.a` SETTINGS share_nested_offsets = 0;

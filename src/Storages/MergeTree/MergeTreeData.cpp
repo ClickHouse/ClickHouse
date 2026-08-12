@@ -11674,15 +11674,20 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
     if (!command.isDropOrRename() || unfinished_mutations.empty())
         return;
 
-    /// Dropping a name that is not a column of the table drops the whole Nested group, so a mutation
-    /// that touches any of its `name.*` columns is affected as well.
+    /// A mutation can reference a subcolumn (`a.x` of a Tuple column `a`), so every name it uses is
+    /// matched by the column that stores it. Dropping a name that is not a column of the table drops
+    /// the whole Nested group, so a mutation that touches any of its `name.*` columns is affected too.
     const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache*/ false);
+    const auto & columns = metadata_snapshot->getColumns();
     const bool drops_nested_group = (*getSettings())[MergeTreeSetting::share_nested_offsets]
-        && !metadata_snapshot->getColumns().has(command.column_name);
+        && !columns.has(command.column_name);
     auto affects_column = [&](const String & name)
     {
-        return name == command.column_name
-            || (drops_nested_group && startsWith(name, command.column_name + "."));
+        String name_in_storage = name;
+        if (auto resolved = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+            name_in_storage = resolved->getNameInStorage();
+        return name_in_storage == command.column_name
+            || (drops_nested_group && startsWith(name_in_storage, command.column_name + "."));
     };
 
     auto throw_exception = [] (
