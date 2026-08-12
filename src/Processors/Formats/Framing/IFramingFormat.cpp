@@ -110,7 +110,21 @@ void IFramingFormat::finalize()
     if (finalized || failClosedAfterPartialWrite())
         return;
 
-    extractAndWritePayload(FramedPacketKind::Data);
+    if (pending_payload_kind != FramedPacketKind::Data)
+    {
+        /// The payload buffer holds a partial `totals` / `extremes` portion: its serialization threw
+        /// after buffering some bytes but before the `onPayload` boundary was taken, and the
+        /// exception path landed here (on the success path the boundary always runs, resetting the
+        /// pending kind). Flushing the fragment as a `data` packet would hand a client that
+        /// concatenates the `data` payloads bytes that never belonged to the main result set, and a
+        /// partial row is not usable under its own packet kind either - the stream is terminal (the
+        /// `exception` packet follows), so discard the fragment.
+        payload.str();
+        payload.restart(DBMS_DEFAULT_BUFFER_SIZE);
+        pending_payload_kind = FramedPacketKind::Data;
+    }
+    else
+        extractAndWritePayload(FramedPacketKind::Data);
     pumpLogs();
     pumpProfileEvents(/*force=*/ true);
 
@@ -169,6 +183,10 @@ void IFramingFormat::flushOut()
 
 void IFramingFormat::extractAndWritePayload(FramedPacketKind kind)
 {
+    /// The portion the format was writing reaches its boundary here (`onPayload` passes the kind
+    /// explicitly), so whatever is buffered next is `Data` again - see `beginPayload`.
+    pending_payload_kind = FramedPacketKind::Data;
+
     std::string & data = payload.str();
 
     /// `payload.str()` finalized the buffer, so it has to be restarted for the output format to write

@@ -79,6 +79,16 @@ public:
     /// (does nothing if the payload buffer is empty). Also pumps pending logs and profile events.
     void onPayload(FramedPacketKind kind);
 
+    /// Called before the output format starts writing a `totals` / `extremes` portion into the
+    /// payload buffer, so that the exception path knows what any buffered-but-unbounded bytes are.
+    /// If the serialization throws after buffering some bytes but before the `onPayload` boundary,
+    /// `finalize` must not flush that fragment as a `data` packet - the concatenation of the `data`
+    /// payloads is documented to be exactly the format's main output, and a partial `totals` row
+    /// does not belong to it (nor is it usable under its own kind) - so it discards the fragment
+    /// instead (see `finalize`). `onPayload` resets the pending kind back to `Data` once the
+    /// portion's boundary is taken.
+    void beginPayload(FramedPacketKind kind) { pending_payload_kind = kind; }
+
     /// Called on query progress, possibly from another thread than `onPayload`
     /// (but the calls are serialized by IOutputFormat). Also pumps pending logs and profile events.
     void onProgress(const Progress & progress);
@@ -166,6 +176,12 @@ private:
     }
 
     WriteBufferFromOwnString payload;
+
+    /// What any bytes currently buffered in `payload` are: `Data`, or - between `beginPayload` and
+    /// the matching `onPayload` boundary - the `totals` / `extremes` portion the output format is
+    /// writing. Consulted by the exception path of `finalize` so a partial `totals` / `extremes`
+    /// fragment is discarded instead of being flushed as a `data` packet (see `beginPayload`).
+    FramedPacketKind pending_payload_kind = FramedPacketKind::Data;
 
     std::shared_ptr<InternalTextLogsQueue> logs_queue;
     InternalProfileEventsQueuePtr profile_events_queue;
