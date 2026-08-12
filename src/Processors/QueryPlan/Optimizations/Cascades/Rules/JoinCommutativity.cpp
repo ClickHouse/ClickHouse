@@ -41,6 +41,12 @@ bool JoinCommutativity::checkPattern(GroupExpressionPtr expression, const Expres
     if (join.kind == JoinKind::Inner)
         return join.strictness == JoinStrictness::All;
 
+    /// `join_any_take_last_row` pins which matching row an ANY join keeps, and that row
+    /// comes from the hash-table build side; a swap changes the build side and the result.
+    /// The non-Cascades reordering suppresses the swap the same way.
+    if (join.strictness == JoinStrictness::Any && join_step->getJoinSettings().join_any_take_last_row)
+        return false;
+
     return
         join.kind == JoinKind::Cross ||
         join.strictness == JoinStrictness::Semi ||

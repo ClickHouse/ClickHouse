@@ -119,4 +119,63 @@ SELECT '-- 13. Exchange-free plan with a window falls back to local execution';
 SELECT DISTINCT sum(x) OVER () FROM t_gating
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 0, distributed_plan_execute_locally = 1;
 
+-- `join_any_take_last_row` pins which matching row an ANY join keeps: the last one built into
+-- the hash table. A commutativity swap changes the build side, so it would change the result;
+-- the swap alternative is not generated for such joins (the non-Cascades reordering suppresses
+-- the swap the same way). `max_threads = 1` keeps the build order, and so the expected row,
+-- deterministic.
+SELECT '-- 14. ANY join with join_any_take_last_row is not swapped (must return the last row)';
+DROP TABLE IF EXISTS t_gating_any;
+DROP TABLE IF EXISTS t_gating_one;
+CREATE TABLE t_gating_any (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY (k, v);
+INSERT INTO t_gating_any SELECT 1, number + 2 FROM numbers(1000);
+CREATE TABLE t_gating_one (k UInt32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_gating_one VALUES (1);
+SELECT v FROM t_gating_one ANY LEFT JOIN t_gating_any USING (k)
+SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
+    join_algorithm = 'hash', join_any_take_last_row = 1, max_threads = 1;
+DROP TABLE t_gating_any;
+DROP TABLE t_gating_one;
+
+-- An ANY join keeps one arbitrary matching row per key when the build side has duplicate keys,
+-- so recomputing it independently on every node can give each node different rows. A subplan
+-- that contains an ANY join must be computed once and broadcast, never replicated per node.
+-- The stat hints make the fact side decisively large, so the dimension side of the outer join
+-- gets a replicated requirement.
+SELECT '-- 15. A subplan with an ANY join is broadcast, not recomputed per node';
+-- Materialized statistics would displace the stat hints with the real (small) table sizes
+-- and the plan would collapse to a single node, so keep the inserts from materializing them.
+SET materialize_statistics_on_insert = 0;
+DROP TABLE IF EXISTS t_gating_fact;
+DROP TABLE IF EXISTS t_gating_dim1;
+DROP TABLE IF EXISTS t_gating_dim2;
+CREATE TABLE t_gating_fact (k UInt32, x UInt32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_gating_fact SELECT number % 1000, number FROM numbers(10000);
+CREATE TABLE t_gating_dim1 (k UInt32, d UInt32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_gating_dim1 SELECT number, number FROM numbers(1000);
+CREATE TABLE t_gating_dim2 (d UInt32, name String) ENGINE = MergeTree ORDER BY d;
+INSERT INTO t_gating_dim2 SELECT number % 100, toString(number) FROM numbers(200);
+SET param__internal_join_table_stat_hints = '{
+    "t_gating_fact": { "cardinality": 100000000, "distinct_keys": { "k": 1000 } },
+    "t_gating_dim1": { "cardinality": 1000, "distinct_keys": { "k": 1000, "d": 1000 } },
+    "t_gating_dim2": { "cardinality": 200, "distinct_keys": { "d": 100 } }
+}';
+-- The outer probe runs without Cascades (`viewExplain` reads are rejected, see case 7); the
+-- explained query enables it. Counts: replicated-subplan steps (must be 0), broadcasts (1).
+SELECT countIf(explain LIKE '%(Replicated %'), countIf(explain LIKE '%BroadcastExchange%')
+FROM (
+    EXPLAIN
+    SELECT dims.name, sum(f.x)
+    FROM t_gating_fact AS f
+    INNER JOIN (SELECT k, name FROM t_gating_dim1 ANY LEFT JOIN t_gating_dim2 USING (d)) AS dims ON f.k = dims.k
+    GROUP BY dims.name
+    SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
+        distributed_plan_execute_locally = 1, join_algorithm = 'hash', max_rows_to_group_by = 0
+)
+SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
+SET param__internal_join_table_stat_hints = '';
+DROP TABLE t_gating_fact;
+DROP TABLE t_gating_dim1;
+DROP TABLE t_gating_dim2;
+
 DROP TABLE t_gating;

@@ -42,3 +42,7 @@
 4	100300
 -- 13. Exchange-free plan with a window falls back to local execution
 499500
+-- 14. ANY join with join_any_take_last_row is not swapped (must return the last row)
+1001
+-- 15. A subplan with an ANY join is broadcast, not recomputed per node
+0	1

@@ -21,9 +21,17 @@ namespace DB
 static bool isReplicationSafe(const IQueryPlanStep & step)
 {
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(&step))
-        /// A hash join is deterministic; only a non-deterministic function in the join
-        /// condition or residual filter could make per-node results differ.
+    {
+        const auto & join = join_step->getJoinOperator();
+        /// An ANY join keeps one arbitrary matching row per key when the build side has
+        /// duplicate keys; which row wins depends on the parallel build order, so two nodes
+        /// can produce different rows from identical inputs.
+        if (join.strictness == JoinStrictness::Any || join.strictness == JoinStrictness::RightAny)
+            return false;
+        /// A hash join is otherwise deterministic; only a non-deterministic function in the
+        /// join condition or residual filter could make per-node results differ.
         return !QueryPlanOptimizations::dagContainsNonDeterministicFunction(join_step->getActionsDAG());
+    }
     return false;
 }
 
