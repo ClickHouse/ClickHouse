@@ -13,7 +13,8 @@ import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanF
 
 The following tables list supported regions by cloud provider. Badges indicate Private Region, HIPAA, and PCI availability. Regions without a badge don't currently offer any of these options.
 
-### AWS regions {#aws-regions}
+<Tabs>
+<Tab title="AWS" id="aws-regions">
 
 | Region | Availability |
 | --- | --- |
@@ -38,7 +39,8 @@ The following tables list supported regions by cloud provider. Badges indicate P
 | `us-east-2` | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
 | `us-west-2` | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
 
-### Google Cloud regions {#google-cloud-regions}
+</Tab>
+<Tab title="Google Cloud" id="google-cloud-regions">
 
 | Region | Availability |
 | --- | --- |
@@ -54,7 +56,8 @@ The following tables list supported regions by cloud provider. Badges indicate P
 | `us-east1` | <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
 | `us-west1` | <Badge color="purple">Private</Badge> |
 
-### Azure regions {#azure-regions}
+</Tab>
+<Tab title="Azure" id="azure-regions">
 
 | Region | Availability |
 | --- | --- |
@@ -64,6 +67,9 @@ The following tables list supported regions by cloud provider. Badges indicate P
 | `Japan East` | <Badge color="purple">Private</Badge> |
 | `UAE North` | <Badge color="purple">Private</Badge> |
 | `West US 3` | — |
+
+</Tab>
+</Tabs>
 
 <Note>
 Need to deploy to a region not currently listed? [Submit a request](https://clickhouse.com/pricing?modal=open).
