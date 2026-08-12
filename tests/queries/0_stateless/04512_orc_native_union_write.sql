@@ -103,9 +103,10 @@ INSERT INTO FUNCTION file(currentDatabase() || '_04512_names.orc', ORC, 'v Varia
 SELECT CAST(NULL, 'Variant(Tuple(binary Int32), Tuple(string Int32))');
 DESC file(currentDatabase() || '_04512_names.orc', ORC);
 
--- A field name may itself contain the punctuation that renders a struct field.
-INSERT INTO FUNCTION file(currentDatabase() || '_04512_punct.orc', ORC, 'v Variant(Tuple(`a:int,b` Int32), Tuple(a Int32, b Int32))')
-SELECT CAST(NULL, 'Variant(Tuple(`a:int,b` Int32), Tuple(a Int32, b Int32))');
+-- A struct field name may itself contain the punctuation that renders a field, including a rendered
+-- child key, so field names are length-framed and two distinct tuples cannot render one key.
+INSERT INTO FUNCTION file(currentDatabase() || '_04512_punct.orc', ORC, 'v Variant(Tuple(`a:3<>,b` Int32), Tuple(a Int32, b Int32))')
+SELECT CAST(NULL, 'Variant(Tuple(`a:3<>,b` Int32), Tuple(a Int32, b Int32))');
 DESC file(currentDatabase() || '_04512_punct.orc', ORC);
 
 INSERT INTO FUNCTION file(currentDatabase() || '_04512_dec.orc', ORC, 'v Variant(Decimal64(2), Decimal128(2))')
