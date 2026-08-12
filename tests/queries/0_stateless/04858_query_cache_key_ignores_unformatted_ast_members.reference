@@ -1,0 +1,8 @@
+settings reset with DEFAULT do not reach the key
+1
+a setting that does affect the result still separates keys
+2
+UNION ALL nesting does not reach the key
+1
+a different set operation still separates keys
+2
