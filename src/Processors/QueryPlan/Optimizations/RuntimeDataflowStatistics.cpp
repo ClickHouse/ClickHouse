@@ -5,6 +5,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
@@ -263,6 +264,20 @@ static void sampleNonStatePartsCompression(
                     compressed_bytes);
             return;
         }
+    }
+    else if (const auto * dynamic_column = typeid_cast<const ColumnDynamic *>(column.get()))
+    {
+        /// `Dynamic` also allows `AggregateFunction` alternatives - e.g. `CAST(state, 'Dynamic')` - and
+        /// stores its values in a nested `ColumnVariant`. The column tracks that variant's type itself
+        /// (`getVariantInfo().variant_type`, always in sync with the nested column), so recurse into the
+        /// variant with it and let the arm above take the alternatives apart.
+        sampleNonStatePartsCompression(
+            dynamic_column->getVariantColumnPtr(),
+            dynamic_column->getVariantInfo().variant_type,
+            repetitions,
+            sample_bytes,
+            compressed_bytes);
+        return;
     }
     else if (const auto * sparse_column = typeid_cast<const ColumnSparse *>(column.get()))
     {
