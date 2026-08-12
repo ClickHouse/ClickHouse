@@ -4,6 +4,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/SyncReplicaMode.h>
 #include <Server/ServerType.h>
+#include <base/EnumReflection.h>
 
 #include "config.h"
 
@@ -268,3 +269,13 @@ protected:
 
 
 }
+
+/// The number of SYSTEM query types exceeds the default magic_enum range [-128, 127].
+/// Without extending the range magic_enum silently ignores the types with values above 127,
+/// so such queries cannot be parsed (ParserSystemQuery iterates over magic_enum::enum_values)
+/// and cannot be formatted (ASTSystemQuery::typeToString indexes a magic_enum-sized array).
+template <> struct magic_enum::customize::enum_range<DB::ASTSystemQuery::Type>
+{
+    static constexpr int min = 0;
+    static constexpr int max = 512;
+};
