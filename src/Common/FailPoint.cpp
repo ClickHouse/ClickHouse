@@ -232,6 +232,7 @@ static struct InitFiu
     ONCE(mt_throw_after_mutation_commit) \
     PAUSEABLE(mt_start_mutation_pause_before_register) \
     PAUSEABLE(mt_mutate_task_pause_before_prepare) \
+    PAUSEABLE(mt_alter_prewait_pause_before_wait) \
     ONCE(mt_alter_throw_in_durable_rollback) \
     REGULAR(rmt_merge_selecting_task_no_free_threads) \
     REGULAR(rmt_merge_selecting_task_max_part_size) \

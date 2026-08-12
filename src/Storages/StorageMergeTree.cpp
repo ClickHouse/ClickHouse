@@ -93,6 +93,7 @@ namespace FailPoints
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_start_mutation_pause_before_register[];
     extern const char mt_alter_throw_in_durable_rollback[];
+    extern const char mt_alter_prewait_pause_before_wait[];
 }
 
 namespace Setting
@@ -618,56 +619,77 @@ void StorageMergeTree::alter(
 
         if (!maybe_mutation_commands.empty() && maybe_mutation_commands.containBarrierCommand())
         {
-            int64_t prev_mutation = 0;
-            {
-                /// A rolled-back or orphaned transactional mutation will never finish, and
-                /// `getIncompleteMutationsStatusUnlocked` reports it as killed, so waiting for it
-                /// would fail the barrier `ALTER` with `Mutation ... was killed`. Wait for the
-                /// latest entry that can still be applied instead, like the merge predicates do.
-                std::lock_guard lock(currently_processing_in_background_mutex);
-                for (auto it = current_mutations_by_version.rbegin(); it != current_mutations_by_version.rend(); ++it)
-                {
-                    if (!isDeadTransactionalMutation(it->second))
-                    {
-                        prev_mutation = it->first;
-                        break;
-                    }
-                }
-            }
-
             /// Always wait previous mutations synchronously, because alters
             /// should be executed in sequential order.
-            if (prev_mutation != 0)
+            while (true)
             {
+                int64_t prev_mutation = 0;
+                {
+                    /// A rolled-back or orphaned transactional mutation will never finish, and
+                    /// `getIncompleteMutationsStatusUnlocked` reports it as killed, so waiting for it
+                    /// would fail the barrier `ALTER` with `Mutation ... was killed`. Wait for the
+                    /// latest entry that can still be applied instead, like the merge predicates do.
+                    std::lock_guard lock(currently_processing_in_background_mutex);
+                    for (auto it = current_mutations_by_version.rbegin(); it != current_mutations_by_version.rend(); ++it)
+                    {
+                        if (!isDeadTransactionalMutation(it->second))
+                        {
+                            prev_mutation = it->first;
+                            break;
+                        }
+                    }
+                }
+
+                if (prev_mutation == 0)
+                    break;
+
                 LOG_DEBUG(log, "Cannot change metadata with barrier alter query, will wait for mutation {}", prev_mutation);
-                waitForMutation(prev_mutation, /* from_another_mutation */ true);
-                LOG_DEBUG(log, "Mutation {} finished", prev_mutation);
+                /// The chosen mutation can die while we are waiting for it: `KILL TRANSACTION`
+                /// rolls back a transactional mutation at any moment, and `KILL MUTATION`
+                /// removes an entry outright. Handle that the same way as a mutation that was
+                /// already dead when the scan above ran: re-scan and wait for the latest
+                /// mutation that can still be applied, instead of failing this `ALTER`.
+                if (tryWaitForAnotherMutation(prev_mutation))
+                {
+                    LOG_DEBUG(log, "Mutation {} finished", prev_mutation);
+                    break;
+                }
+                LOG_DEBUG(log, "Mutation {} was killed while waiting for it, looking for another mutation to wait for", prev_mutation);
             }
         }
         else
         {
-            int64_t mutation_to_wait = 0;
+            while (true)
             {
-                /// Skip rolled-back / orphaned transactional rename mutations, exactly as the
-                /// barrier scan above does: they will never finish, and
-                /// `getIncompleteMutationsStatusUnlocked` reports them as killed, so waiting
-                /// for one would fail this `ALTER` with `Mutation ... was killed`.
-                std::lock_guard lock(currently_processing_in_background_mutex);
-                for (const auto & [version, mutation_entry] : current_mutations_by_version | std::views::reverse)
+                int64_t mutation_to_wait = 0;
                 {
-                    if (mutation_entry.commands->containBarrierCommand() && !isDeadTransactionalMutation(mutation_entry))
+                    /// Skip rolled-back / orphaned transactional rename mutations, exactly as the
+                    /// barrier scan above does: they will never finish, and
+                    /// `getIncompleteMutationsStatusUnlocked` reports them as killed, so waiting
+                    /// for one would fail this `ALTER` with `Mutation ... was killed`.
+                    std::lock_guard lock(currently_processing_in_background_mutex);
+                    for (const auto & [version, mutation_entry] : current_mutations_by_version | std::views::reverse)
                     {
-                        mutation_to_wait = version;
-                        break;
+                        if (mutation_entry.commands->containBarrierCommand() && !isDeadTransactionalMutation(mutation_entry))
+                        {
+                            mutation_to_wait = version;
+                            break;
+                        }
                     }
                 }
-            }
 
-            if (mutation_to_wait != 0)
-            {
+                if (mutation_to_wait == 0)
+                    break;
+
                 LOG_DEBUG(log, "Cannot change metadata while rename mutation {} is not finished, will wait for it", mutation_to_wait);
-                waitForMutation(mutation_to_wait, /* from_another_mutation */ true);
-                LOG_DEBUG(log, "Mutation {} finished", mutation_to_wait);
+                /// Same as the barrier prewait above: a rename mutation killed during the wait
+                /// must not fail this `ALTER`; re-scan for the next one to wait for.
+                if (tryWaitForAnotherMutation(mutation_to_wait))
+                {
+                    LOG_DEBUG(log, "Mutation {} finished", mutation_to_wait);
+                    break;
+                }
+                LOG_DEBUG(log, "Mutation {} was killed while waiting for it, looking for another mutation to wait for", mutation_to_wait);
             }
         }
 
@@ -1150,6 +1172,18 @@ void StorageMergeTree::waitForMutation(const String & mutation_id, bool wait_for
 
 void StorageMergeTree::waitForMutation(Int64 version, const String & mutation_id, bool wait_for_another_mutation)
 {
+    waitForMutationImpl(version, mutation_id, wait_for_another_mutation, /* throw_if_killed */ true);
+}
+
+bool StorageMergeTree::tryWaitForAnotherMutation(Int64 version)
+{
+    FailPointInjection::pauseFailPoint(FailPoints::mt_alter_prewait_pause_before_wait);
+    return waitForMutationImpl(
+        version, MergeTreeMutationEntry::versionToFileName(version), /* wait_for_another_mutation */ true, /* throw_if_killed */ false);
+}
+
+bool StorageMergeTree::waitForMutationImpl(Int64 version, const String & mutation_id, bool wait_for_another_mutation, bool throw_if_killed)
+{
     LOG_INFO(log, "Waiting mutation: {}", mutation_id);
     {
         auto check = [version, wait_for_another_mutation, this]()
@@ -1185,9 +1219,15 @@ void StorageMergeTree::waitForMutation(Int64 version, const String & mutation_id
     mutation_ids.insert(mutation_id);
 
     auto mutation_status = getIncompleteMutationsStatus(version, &mutation_ids, wait_for_another_mutation);
+    if (!mutation_status && !throw_if_killed)
+    {
+        LOG_INFO(log, "Mutation {} was killed or removed while waiting for it", mutation_id);
+        return false;
+    }
     checkMutationStatus(mutation_status, mutation_ids);
 
     LOG_INFO(log, "Mutation {} done", mutation_id);
+    return true;
 }
 
 void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)

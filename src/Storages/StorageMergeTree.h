@@ -244,6 +244,18 @@ private:
     void waitForMutation(Int64 version, bool wait_for_another_mutation);
     void waitForMutation(const String & mutation_id, bool wait_for_another_mutation) override;
     void waitForMutation(Int64 version, const String & mutation_id, bool wait_for_another_mutation = false);
+
+    /// Waits for a previous mutation exactly as `waitForMutation(version, /* wait_for_another_mutation */ true)`
+    /// does, but returns false instead of throwing when the mutation was killed or removed during
+    /// the wait (e.g. `KILL TRANSACTION` rolled back a transactional mutation while an `ALTER` was
+    /// waiting for it). The caller re-scans `current_mutations_by_version` for the next mutation to
+    /// wait for, so a mutation that dies during the wait is handled the same way as one that was
+    /// already dead when the caller's scan ran.
+    bool tryWaitForAnotherMutation(Int64 version);
+
+    /// Common implementation of `waitForMutation` and `tryWaitForAnotherMutation`. Returns false
+    /// if the mutation was killed or removed during the wait and `throw_if_killed` is not set.
+    bool waitForMutationImpl(Int64 version, const String & mutation_id, bool wait_for_another_mutation, bool throw_if_killed);
     void setMutationCSN(const String & mutation_id, CSN csn) override;
 
     friend struct CurrentlyMergingPartsTagger;
