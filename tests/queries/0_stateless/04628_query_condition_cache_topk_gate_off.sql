@@ -2,9 +2,9 @@
 -- Tag no-parallel: Messes with internal cache
 -- Tag long: needs ~1M rows for the QCC to populate.
 --
--- The query condition cache (QCC) for `ORDER BY ... LIMIT n` (TopK) reads is
--- gated behind the `use_query_condition_cache_for_top_k` setting and is DISABLED by default.
--- This test asserts the default-off contract at every gated touch point:
+-- The query condition cache (QCC) for `ORDER BY ... LIMIT n` (TopK) reads is enabled by default
+-- but can be switched off with the `use_query_condition_cache_for_top_k` setting.
+-- This test asserts the gate-off contract at every gated touch point:
 --   * a TopK read must not reuse an entry primed by a plain `SELECT ... WHERE` with the same
 --     predicate (no predicate-only reuse path) — including skip-index-only TopK shapes where no
 --     `__topKFilter` node is folded into the filter DAG, so the plain condition hash of the TopK
@@ -21,7 +21,8 @@
 
 SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
--- Pin the gate to its default value: this test covers the default-off contract.
+-- Turn the gate off: this test covers the contract of the query condition cache being
+-- switched off for TopK reads.
 SET use_query_condition_cache_for_top_k = 0;
 SET use_top_k_dynamic_filtering = 1;
 SET use_skip_indexes_for_top_k = 1;

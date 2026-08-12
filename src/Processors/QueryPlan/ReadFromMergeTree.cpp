@@ -3070,7 +3070,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
             /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
-            /// `use_query_condition_cache_for_top_k` setting (disabled by default). When it is off, do
+            /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, do
             /// not record index-analysis exclusions for TopK reads: their excluded ranges include marks
             /// dropped by the running `__topKFilter` threshold, which is not sound to store in the
             /// (threshold-oblivious) QCC. When it is on, salt the key with the TopK plan parameters so
@@ -5275,7 +5275,7 @@ void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
     top_k_filter_info = top_k_filter_info_;
 
     /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
-    /// `use_query_condition_cache_for_top_k` setting (disabled by default). When it is off, turn the
+    /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, turn the
     /// cache off for this read: a TopK read can drop granules during execution depending on the running
     /// `__topKFilter` threshold, so writing threshold-oblivious QCC entries is unsound.
     /// Use `allow_query_condition_cache` rather than mutating `reader_settings` directly: it is the
