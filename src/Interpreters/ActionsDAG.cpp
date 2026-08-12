@@ -2919,7 +2919,10 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & co
                         dumpDAG());
 
     std::unordered_set<const Node *> split_nodes = {node};
-    auto res = split(split_nodes);
+    /// The filter name may also be an input name. Two same-named outputs of different structure in the
+    /// first half would break the Block invariant, so let split() rename the promoted node and repair
+    /// the second half. The mapping carries the final name of the filter node.
+    auto res = split(split_nodes, /*create_split_nodes_mapping=*/ true, /*avoid_duplicate_inputs=*/ true);
     return res;
 }
 
