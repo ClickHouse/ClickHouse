@@ -1,0 +1,14 @@
+LIKE in PREWHERE, ILIKE in PREWHERE
+25
+25
+LIKE in PREWHERE, ILIKE in WHERE (the reported crash)
+25
+25
+LIKE in WHERE, ILIKE in PREWHERE
+25
+25
+LIKE in WHERE, ILIKE in WHERE
+25
+25
+Read column set
+Output: txt, __text_index_idx_ilike_cecf6b109512fb4eb871d08611e7d247
