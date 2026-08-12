@@ -164,11 +164,11 @@ TEST(MultipartUploadMemory, MaxSinglePartUploadSizeDoesNotInflateTheCeiling)
 TEST(MultipartUploadMemory, MinUploadPartSizeAboveMaxStillPricesTheMinSizeBuffers)
 {
     /// min_size above max_size is accepted for Azure (there is no validateUploadSettings there at all), and
-    /// ExpBufferAllocationPolicy hands out min_size unclamped as the second buffer, so the ceiling must keep
-    /// pricing the buffers at min_size - dropping to max_size alone would under-report the writer 4x here,
-    /// and an admission gate that under-reserves admits merges that then exceed their reservation. The policy
-    /// itself is not replayed here: its first-buffer std::clamp has the lo > hi precondition violated by this
-    /// configuration, which is exactly why the ceiling must stay conservative about it.
+    /// ExpBufferAllocationPolicy is well-defined for it: the first-buffer computation is the spelled-out
+    /// clamp that tolerates lo > hi (see the constructor), so the first AND the second buffer are both
+    /// min_size, and later buffers cap at max_size. The ceiling must therefore keep pricing the buffers at
+    /// min_size - dropping to max_size alone would under-report the writer 4x here, and an admission gate
+    /// that under-reserves admits merges that then exceed their reservation.
     BufferAllocationPolicy::Settings settings;
     settings.max_single_size = 32 * 1024 * 1024;
     settings.min_size = 256 * 1024 * 1024;
@@ -176,7 +176,13 @@ TEST(MultipartUploadMemory, MinUploadPartSizeAboveMaxStillPricesTheMinSizeBuffer
 
     const auto memory = getMultipartUploadMemory(settings, 1);
 
+    EXPECT_EQ(firstPolicyBufferSize(settings), 256ULL * 1024 * 1024);
     EXPECT_EQ(memory.ceiling, 2 * 256ULL * 1024 * 1024);
+    /// The policy is replayed here like in every other case: the writer's live buffers really reach
+    /// two min_size buffers (the detached first part plus the second buffer being filled).
+    const UInt64 live = liveBuffersUpperBound(settings, 1, 2000);
+    EXPECT_EQ(live, 2 * 256ULL * 1024 * 1024);
+    EXPECT_GE(memory.ceiling, live);
 }
 
 TEST(MultipartUploadMemory, StrictUploadPartSizeUsesTheFixedSizePolicy)

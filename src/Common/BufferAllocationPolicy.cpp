@@ -48,7 +48,13 @@ class ExpBufferAllocationPolicy : public DB::BufferAllocationPolicy
 
 public:
     explicit ExpBufferAllocationPolicy(const BufferAllocationPolicy::Settings & settings_)
-        : first_size(std::clamp(settings_.max_single_size, settings_.min_size, settings_.max_size))
+        /// For min_size <= max_size this is exactly std::clamp(max_single_size, min_size, max_size).
+        /// It is spelled out because min_size > max_size is a pair the Azure settings accept unchanged
+        /// (there is no validateUploadSettings for them), and std::clamp with lo > hi is undefined
+        /// behavior: the first buffer is then min_size - consistent with the second buffer, which is
+        /// handed out at min_size unclamped, and with getMultipartUploadMemory below, which prices every
+        /// buffer at max(min_size, max_size).
+        : first_size(std::min(std::max(settings_.max_single_size, settings_.min_size), std::max(settings_.min_size, settings_.max_size)))
         , second_size(settings_.min_size)
         , multiply_factor(settings_.multiply_factor)
         , multiply_threshold(settings_.multiply_parts_count_threshold)
@@ -113,8 +119,9 @@ MultipartUploadMemory getMultipartUploadMemory(const BufferAllocationPolicy::Set
 
     /// Mirror the two policies of create above. FixedSizeBufferAllocationPolicy hands out buffers of
     /// strict_size, the first one included. ExpBufferAllocationPolicy starts at
-    /// clamp(max_single_size, min_size, max_size), hands out min_size (unclamped) as the second buffer, and
-    /// grows later buffers up to max_size - so the largest buffer it can ever hand out is
+    /// min(max(max_single_size, min_size), max(min_size, max_size)) - clamp(max_single_size, min_size,
+    /// max_size), defined for min_size > max_size too - hands out min_size (unclamped) as the second
+    /// buffer, and grows later buffers up to max_size - so the largest buffer it can ever hand out is
     /// max(min_size, max_size), whatever max_single_size is. Including max_single_size here would overstate
     /// the ceiling when max_single_part_upload_size exceeds max_upload_part_size (a configuration
     /// validateUploadSettings accepts), rejecting wide remote merges for memory the writer can never
