@@ -129,6 +129,19 @@ public:
         /// status cache, so the next listing pass re-queues them with the original deadlines.
         std::deque<ObjectInfoPtr> foreign_processing_files_to_recheck TSA_GUARDED_BY(next_mutex);
 
+        /// Ordered mode only. An ordering domain is the scope of one `processed` pointer:
+        /// a bucket, and a partition within it when partitioning is used. Committing a file
+        /// declares every smaller path of its domain processed, so while a file of the domain
+        /// is held by a foreign `processing` node, later files of the domain must not be
+        /// processed: the pointer would advance past the held file and lose it forever.
+        using OrderingDomain = std::pair<Bucket, std::string>;
+        std::map<OrderingDomain, std::set<std::string>> foreign_held_files_per_domain TSA_GUARDED_BY(next_mutex);
+
+        OrderingDomain getOrderingDomain(const std::string & path) const;
+        void recordForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
+        void resolveForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
+        bool isBlockedByForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
+
         std::pair<ObjectInfoPtr, FileMetadataPtr> next();
         void filterProcessableFiles(ObjectInfos & objects) TSA_REQUIRES(next_mutex);
         ObjectInfos takeDueForeignProcessingRechecks() TSA_REQUIRES(next_mutex);

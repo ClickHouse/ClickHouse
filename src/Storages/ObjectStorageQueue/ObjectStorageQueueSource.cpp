@@ -493,7 +493,7 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
     /// skip the file without including it into the keeper requests below,
     /// and recheck it when the observation expires.
     std::unordered_set<std::string> skipped_foreign_processing;
-    std::erase_if(paths, [&](const std::string & path)
+    std::erase_if(paths, [&](const std::string & path) TSA_REQUIRES(next_mutex)
     {
         const auto status = metadata->tryGetFileStatus(path);
         if (!status
@@ -503,8 +503,25 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
 
         LOG_TEST(log, "Skipping file {}: Processing by another processor", path);
         skipped_foreign_processing.insert(path);
+        recordForeignHeldFile(path);
         return true;
     });
+
+    /// Ordered mode: while a smaller file of the same ordering domain is held by a foreign
+    /// `processing` node, later files are dropped for this pass — committing one would
+    /// advance the `processed` pointer past the held file and lose it forever.
+    /// The next listing pass re-lists them.
+    if (mode == ObjectStorageQueueMode::ORDERED)
+    {
+        std::erase_if(paths, [&](const std::string & path) TSA_REQUIRES(next_mutex)
+        {
+            if (!isBlockedByForeignHeldFile(path))
+                return false;
+
+            LOG_TEST(log, "Skipping file {}: a smaller file of its ordering domain is processed by another processor", path);
+            return true;
+        });
+    }
 
     std::unordered_map<std::string, ObjectStorageQueueIFileMetadata::FileTerminalState> terminal_states;
 
@@ -529,6 +546,9 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
     /// processor could stay cached as `Processing` until cache eviction.
     for (const auto & [path, terminal_state] : terminal_states)
     {
+        /// A terminal state resolves the file: it no longer blocks its ordering domain.
+        resolveForeignHeldFile(path);
+
         const auto status = metadata->tryGetFileStatus(path);
         if (!status)
             continue;
@@ -610,17 +630,70 @@ void ObjectStorageQueueSource::FileIterator::recheckForeignProcessingLater(
 {
     using FileStatus = ObjectStorageQueueIFileMetadata::FileStatus;
 
+    const bool foreign_processing = status
+        && status->state.load() == FileStatus::State::Processing
+        && status->isProcessingByAnotherProcessor();
+
+    std::lock_guard lock(next_mutex);
+
+    if (!foreign_processing)
+    {
+        /// The failed attempt discovered a terminal state instead of a foreign
+        /// `processing` node: the file no longer blocks its ordering domain.
+        resolveForeignHeldFile(object_info->getPath());
+        return;
+    }
+
+    recordForeignHeldFile(object_info->getPath());
+
     /// Only a fresh observation defers the recheck. An already-expired one (e.g. the TTL
     /// is zero) means keeper is checked on every pass: queueing the file would make it
     /// due immediately and spin the iterator instead of letting the pass finish.
-    if (!status
-        || status->state.load() != FileStatus::State::Processing
-        || !status->isProcessingByAnotherProcessor()
-        || status->shouldRetryProcessing(foreign_processing_node_cache_ttl_sec.load()))
+    if (status->shouldRetryProcessing(foreign_processing_node_cache_ttl_sec.load()))
         return;
 
-    std::lock_guard lock(next_mutex);
     foreign_processing_files_to_recheck.push_back(std::move(object_info));
+}
+
+ObjectStorageQueueSource::FileIterator::OrderingDomain
+ObjectStorageQueueSource::FileIterator::getOrderingDomain(const std::string & path) const
+{
+    const Bucket bucket = use_buckets_for_processing
+        ? ObjectStorageQueueMetadata::getBucketForPath(
+              path, buckets_num, metadata->getBucketingMode(), metadata->getPartitioningMode(), metadata->getFilenameParser())
+        : 0;
+    return {bucket, ObjectStorageQueueOrderedFileMetadata::getPartitionKeyForPath(path, metadata->getPartitioningMode(), metadata->getFilenameParser())};
+}
+
+void ObjectStorageQueueSource::FileIterator::recordForeignHeldFile(const std::string & path)
+{
+    if (mode != ObjectStorageQueueMode::ORDERED)
+        return;
+
+    foreign_held_files_per_domain[getOrderingDomain(path)].insert(path);
+}
+
+void ObjectStorageQueueSource::FileIterator::resolveForeignHeldFile(const std::string & path)
+{
+    if (mode != ObjectStorageQueueMode::ORDERED || foreign_held_files_per_domain.empty())
+        return;
+
+    const auto it = foreign_held_files_per_domain.find(getOrderingDomain(path));
+    if (it == foreign_held_files_per_domain.end())
+        return;
+
+    it->second.erase(path);
+    if (it->second.empty())
+        foreign_held_files_per_domain.erase(it);
+}
+
+bool ObjectStorageQueueSource::FileIterator::isBlockedByForeignHeldFile(const std::string & path)
+{
+    if (mode != ObjectStorageQueueMode::ORDERED || foreign_held_files_per_domain.empty())
+        return false;
+
+    const auto it = foreign_held_files_per_domain.find(getOrderingDomain(path));
+    return it != foreign_held_files_per_domain.end() && *it->second.begin() < path;
 }
 
 ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
@@ -679,6 +752,26 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
             return {};
         }
 
+        if (mode == ObjectStorageQueueMode::ORDERED)
+        {
+            bool blocked = false;
+            {
+                std::lock_guard lock(next_mutex);
+                blocked = isBlockedByForeignHeldFile(object_info->getPath());
+            }
+            if (blocked)
+            {
+                /// A smaller file of the same ordering domain is held by a foreign
+                /// `processing` node: processing this file would advance the `processed`
+                /// pointer past the held file and lose it forever. Drop the file for
+                /// this pass; the next listing pass re-lists it.
+                LOG_TEST(log, "Skipping file {}: a smaller file of its ordering domain is processed by another processor", object_info->getPath());
+                if (file_metadata)
+                    file_metadata->resetProcessing();
+                continue;
+            }
+        }
+
         if (!file_metadata)
         {
             file_metadata = metadata->getFileMetadata(object_info->getPath(), bucket_info, foreign_processing_node_cache_ttl_sec.load());
@@ -686,8 +779,16 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
             {
                 /// If the file is processing by another processor, recheck it when
                 /// the cached observation of its `processing` node expires.
+                /// In Ordered mode a foreign `processing` node also blocks the later
+                /// files of the ordering domain until the file is resolved.
                 recheckForeignProcessingLater(object_info, file_metadata->getFileStatus());
                 continue;
+            }
+            if (mode == ObjectStorageQueueMode::ORDERED)
+            {
+                /// This server now owns the file: it no longer blocks its ordering domain.
+                std::lock_guard lock(next_mutex);
+                resolveForeignHeldFile(object_info->getPath());
             }
         }
 

@@ -68,6 +68,13 @@ public:
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const ObjectStorageQueueFilenameParser * parser);
 
+    /// The partition key of a file path; an empty string when partitioning
+    /// is not used or the path does not match the partitioning scheme.
+    static std::string getPartitionKeyForPath(
+        const std::string & path,
+        ObjectStorageQueuePartitioningMode partitioning_mode,
+        const ObjectStorageQueueFilenameParser * parser);
+
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
     static std::vector<std::string> getLastProcessedPaths(

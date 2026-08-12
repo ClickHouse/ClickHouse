@@ -203,6 +203,71 @@ def test_file_is_retried_in_ordered_mode(started_cluster):
         )
 
 
+def test_later_files_do_not_advance_past_foreign_held_file_in_ordered_mode(started_cluster):
+    """The foreign processor holds a file in the MIDDLE of the ordering domain.
+
+    Later files of the domain must not be processed while the held file is unresolved:
+    committing one would advance the max processed path past the held file, and the
+    next listing pass would drop the held file as already processed - losing it forever.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_foreign_processing_node_ordered_gap_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    files_to_generate = 5
+    generate_random_files(started_cluster, files_path, files_to_generate, start_ind=0, row_num=1)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "s3queue_loading_retries": 100,
+            "s3queue_foreign_processing_node_cache_ttl_seconds": 5,
+        },
+    )
+
+    # `test_2.csv` sorts in the middle: `test_3.csv` and `test_4.csv` must wait for it.
+    conflict_file = f"{files_path}/test_2.csv"
+    conflict_node = node.query(f"SELECT sipHash64('{conflict_file}')").strip()
+    zk = started_cluster.get_kazoo_client("zoo1")
+    zk.ensure_path(f"{keeper_path}/processing")
+    zk.create(f"{keeper_path}/processing/{conflict_node}", b"another processor")
+
+    try:
+        create_mv(node, table_name, dst_table_name)
+
+        def get_count():
+            return int(node.query(f"SELECT count() FROM {dst_table_name}").strip())
+
+        # Only the files before the held one are processed: committing a later file
+        # would advance the max processed path past the file held by the foreign
+        # processor, and it would never be retried.
+        run_with_retry(lambda x: x == 2, get_count)
+        assert node.query(f"SELECT count() FROM {dst_table_name} WHERE _path LIKE '%test_2.csv' OR _path LIKE '%test_3.csv' OR _path LIKE '%test_4.csv'").strip() == "0"
+
+        # The foreign processor released the file without committing it.
+        zk.delete(f"{keeper_path}/processing/{conflict_node}")
+
+        # The held file is retried when the cached observation expires,
+        # and the files after it follow.
+        run_with_retry(lambda x: x == files_to_generate, get_count)
+    finally:
+        node.query(
+            f"""
+        DROP TABLE IF EXISTS {dst_table_name};
+        DROP TABLE IF EXISTS {table_name};
+        """
+        )
+
+
 def test_cached_state_updated_when_foreign_processor_commits(started_cluster):
     """A file committed by another processor must not stay cached as `Processing`.
 

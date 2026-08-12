@@ -675,6 +675,14 @@ ObjectStorageQueueOrderedFileMetadata::getBucketForPath(
     return getBucketForPathImpl(path_, buckets_num, bucketing_mode, partitioning_mode, parser);
 }
 
+std::string ObjectStorageQueueOrderedFileMetadata::getPartitionKeyForPath(
+    const std::string & path_,
+    ObjectStorageQueuePartitioningMode partitioning_mode,
+    const ObjectStorageQueueFilenameParser * parser)
+{
+    return getPartitionKey(path_, partitioning_mode, parser);
+}
+
 ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(
     const std::filesystem::path & zk_path,
     const Bucket & bucket,
