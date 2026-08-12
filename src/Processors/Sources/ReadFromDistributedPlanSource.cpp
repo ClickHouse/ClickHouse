@@ -51,6 +51,9 @@ std::optional<Chunk> ReadFromDistributedPlanSource::tryGenerate()
     }
     catch (...)
     {
+        /// Record the failure before the cleanup cancels the exchanges, so their consumers
+        /// rethrow this root cause.
+        cancellation->recordCurrentException();
         cleanupLocked();
         throw;
     }
@@ -68,7 +71,7 @@ void ReadFromDistributedPlanSource::onCancel() noexcept
     {
         /// Wake exchange waiters before taking the lock: the lock holder itself may be blocked
         /// on an exchange or on a stage whose tasks are, and would never release it otherwise.
-        cancelDistributedQueryInMemoryExchanges(unique_query_id);
+        cancelDistributedQueryInMemoryExchanges(unique_query_id, cancellation->getFailure());
         std::lock_guard lock(executor_mutex);
         cleanupLocked();
     }
