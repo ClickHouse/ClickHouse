@@ -20,7 +20,9 @@ using ColumnIdMappingPtr = std::shared_ptr<const ColumnIdMapping>;
 ///
 /// Existing columns get column_id == column_name at activation time.
 /// New columns added after activation get monotonically increasing numeric
-/// column IDs ("1", "2", ...) from a counter that never decreases.
+/// column IDs ("1", "2", ...) from a counter that never decreases; a flattened
+/// Nested child takes two of them, as "<group prefix>.<child counter>" ("5.7"),
+/// so that siblings share the group prefix their offsets stream is named from.
 /// RENAME only updates the mapping; the column ID (and therefore all
 /// on-disk filenames) stays unchanged.  DROP removes the entry but the
 /// counter is never recycled, so a subsequent ADD of the same logical name

@@ -73,7 +73,8 @@ SELECT DISTINCT column, column_id FROM system.parts_columns WHERE database = cur
 SELECT a, sum(c) FROM t_ids_proj GROUP BY a ORDER BY a SETTINGS force_optimize_projection = 1;
 DROP TABLE t_ids_proj SYNC;
 
--- why: a flattened Nested ADDed after activation gets compound column IDs ("<n>.x", "<n>.y").
+-- why: a flattened Nested ADDed after activation gets compound column IDs, one counter per child
+-- under the group's shared prefix ("1.2", "1.3").
 CREATE TABLE t_ids_flat_add (a UInt64, b String) ENGINE = MergeTree ORDER BY a
 SETTINGS min_bytes_for_wide_part = 0, serialization_info_version = 'with_column_ids';
 INSERT INTO t_ids_flat_add VALUES (1, 'one');

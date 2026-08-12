@@ -254,6 +254,20 @@ INSERT INTO t_ids_defaults (a, val) VALUES (2, 20);
 SELECT a, val, c FROM t_ids_defaults ORDER BY a;
 DROP TABLE t_ids_defaults SYNC;
 
+-- why: the other claimant on an existing name is a RENAME's target, not an ADD. Phase 1 keeps the
+-- old name in the mapping until the metadata commit, so `beginRename` would see the claimed name
+-- twice -- a LOGICAL_ERROR, which ABORTS a Debug server. The CLEAR case matters most: it frees
+-- nothing, so `AlterCommands::validate` lets the rename through and only this check stands between
+-- it and the abort. A legit move of two names in one ALTER must still pass.
+CREATE TABLE t_ids_claim (k UInt64, a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, serialization_info_version = 'with_column_ids';
+INSERT INTO t_ids_claim VALUES (1, 10, 20, 30);
+ALTER TABLE t_ids_claim DROP COLUMN b, RENAME COLUMN c TO b; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE t_ids_claim CLEAR COLUMN b, RENAME COLUMN c TO b; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE t_ids_claim RENAME COLUMN a TO x, RENAME COLUMN b TO y;
+SELECT k, x, y, c FROM t_ids_claim ORDER BY k;
+DROP TABLE t_ids_claim SYNC;
+
 -- why: single-ALTER DROP + re-ADD of one name cannot be made crash-safe between the
 -- metadata commit and the cleanup mutation, so it is rejected regardless of
 -- allow_non_metadata_alters; two separate ALTERs are the workaround.
@@ -287,14 +301,23 @@ OPTIMIZE TABLE t_ids_drop_readd_nested FINAL;
 SELECT a, `n.x`, `n.y` FROM t_ids_drop_readd_nested ORDER BY a;
 DROP TABLE t_ids_drop_readd_nested SYNC;
 
--- why: a single-child Nested column ADDed after activation has a plain counter ID;
--- renaming it across parent boundaries would break offset stream lookup, so reject.
+-- why: a single-child Nested column ADDed after activation takes a compound ID ("1.2"), so its
+-- offsets stream is named from that ID and a cross-parent rename cannot move it -- the rename stays
+-- metadata-only and the data stays readable. A sibling added later under the new parent inherits the
+-- same ID prefix, so the group shares ONE offsets stream, keyed by ID instead of by logical name.
 CREATE TABLE t_ids_nested_single (a UInt64) ENGINE = MergeTree ORDER BY a
 SETTINGS min_bytes_for_wide_part = 0, serialization_info_version = 'with_column_ids';
 ALTER TABLE t_ids_nested_single ADD COLUMN `n.x` Array(UInt64);
 INSERT INTO t_ids_nested_single VALUES (1, [10, 20, 30]);
-ALTER TABLE t_ids_nested_single RENAME COLUMN `n.x` TO `m.x`; -- { serverError NOT_IMPLEMENTED }
-SELECT a, `n.x` FROM t_ids_nested_single;
+ALTER TABLE t_ids_nested_single RENAME COLUMN `n.x` TO `m.x`;
+SELECT a, `m.x` FROM t_ids_nested_single;
+ALTER TABLE t_ids_nested_single ADD COLUMN `m.y` Array(String);
+INSERT INTO t_ids_nested_single VALUES (2, [40], ['zz']);
+OPTIMIZE TABLE t_ids_nested_single FINAL;
+SELECT a, `m.x`, `m.y` FROM t_ids_nested_single ORDER BY a;
+SELECT DISTINCT arrayJoin(arrayFilter(x -> position(x, 'size0') > 0, filenames))
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_ids_nested_single' AND active AND column LIKE 'm.%';
 DROP TABLE t_ids_nested_single SYNC;
 
 -- why: moving one Nested child to another parent would leave its sibling racing on the

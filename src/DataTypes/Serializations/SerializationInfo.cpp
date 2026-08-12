@@ -508,17 +508,16 @@ bool SerializationInfoByName::needsPersistence() const
     return !empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC;
 }
 
-static void writeJSONImpl(const SerializationInfoByName & infos, WriteBuffer & out)
+void SerializationInfoByName::writeJSON(WriteBuffer & out) const
 {
-    auto version = infos.getVersion();
-    const auto & settings = infos.getSettings();
+    auto version = getVersion();
 
     writeChar('{', out);
     writeJSONKey(KEY_COLUMNS, out);
     writeChar('[', out);
 
     bool first = true;
-    for (const auto & [name, info] : infos)
+    for (const auto & [name, info] : *this)
     {
         if (!first)
             writeChar(',', out);
@@ -562,11 +561,6 @@ static void writeJSONImpl(const SerializationInfoByName & infos, WriteBuffer & o
     writeChar(',', out);
     writeJSONKeyValue(KEY_VERSION, static_cast<size_t>(version), out);
     writeChar('}', out);
-}
-
-void SerializationInfoByName::writeJSON(WriteBuffer & out) const
-{
-    writeJSONImpl(*this, out);
 }
 
 SerializationInfoByName SerializationInfoByName::clone() const

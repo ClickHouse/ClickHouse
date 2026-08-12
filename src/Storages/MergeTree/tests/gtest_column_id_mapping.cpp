@@ -55,6 +55,26 @@ TEST(ColumnIdMapping, CounterWithNumericColumnNames)
     EXPECT_EQ(mapping.allocateColumnId(), "11");
 }
 
+TEST(ColumnIdMapping, CounterCoversBothHalvesOfACompoundId)
+{
+    /// A flattened Nested child id spends a counter value on each half, so both halves have to
+    /// push the counter up -- whether they come from a column name at activation or from a
+    /// mapping an earlier ALTER wrote.
+    auto identity = ColumnIdMapping::createIdentity(makeColumns({"n.3", "a"}));
+    EXPECT_EQ(identity.allocateColumnId(), "4");
+
+    auto restored = ColumnIdMapping::fromString(R"({
+        "active": true,
+        "next_column_id": 2,
+        "mapping": {
+            "n.x": "1.7",
+            "n.y": "1.5"
+        }
+    })");
+
+    EXPECT_EQ(restored.allocateColumnId(), "8");
+}
+
 TEST(ColumnIdMapping, RenamePreservesColumnId)
 {
     auto mapping = ColumnIdMapping::createIdentity(makeColumns({"a", "b"}));

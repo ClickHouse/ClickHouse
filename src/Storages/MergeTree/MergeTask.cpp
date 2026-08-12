@@ -7,14 +7,13 @@
 #include <Storages/ColumnsDescription.h>
 
 #include <memory>
+#include <unordered_set>
 #include <fmt/format.h>
 
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/ColumnId.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
-
-#include <unordered_set>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Disks/SingleDiskVolume.h>
@@ -48,11 +47,11 @@
 #include <Processors/Transforms/TTLTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>

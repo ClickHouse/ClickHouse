@@ -1101,14 +1101,6 @@ public:
 
     bool columnIdActivationPending() const;
 
-private:
-    SettingsChangeResult changeSettingsImpl(
-        const ASTPtr & new_settings,
-        AlterLockHolder & table_lock_holder,
-        StorageInMemoryMetadata * metadata_to_collect_into,
-        bool run_sanity_checks);
-
-public:
     std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
     static void verifySortingKey(const KeyDescription & sorting_key);
 
@@ -2103,6 +2095,12 @@ protected:
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 
 private:
+    SettingsChangeResult changeSettingsImpl(
+        const ASTPtr & new_settings,
+        AlterLockHolder & table_lock_holder,
+        StorageInMemoryMetadata * metadata_to_collect_into,
+        bool run_sanity_checks);
+
     /// Checking that candidate part doesn't break invariants: correct partition
     void checkPartPartition(MutableDataPartPtr & part, const DataPartsAnyLock & lock) const;
     void checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, const DataPartsAnyLock & lock) const;

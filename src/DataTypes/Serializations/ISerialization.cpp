@@ -468,7 +468,7 @@ String ISerialization::getFileNameForStreamByColumnId(const NameAndTypePair & co
     if (settings.share_nested_offsets && isPossibleOffsetsOfNested(path))
     {
         /// Flattened Nested siblings ("n.x", "n.y") share one offsets stream, under the Nested
-        /// parent's prefix -- taken from the id ("n.x" -> "n", "5.x" -> "5") because a rename cannot
+        /// parent's prefix -- taken from the id ("n.x" -> "n", "5.7" -> "5") because a rename cannot
         /// move that. A counter id with no dot ("5") has no parent in it, so the name supplies one.
         const auto nested_from_id = Nested::extractTableName(column_id);
         const auto nested_from_logical = Nested::extractTableName(logical_name);

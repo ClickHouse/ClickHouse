@@ -8,6 +8,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 #include <fmt/core.h>
 #include <fmt/ranges.h>
@@ -64,36 +65,42 @@ bool alterActivatesColumnIds(const MergeTreeSettings & settings_after_alter, con
     return columnIdSettingsEnabled(settings_after_alter) && has_compatible_alter;
 }
 
-/// Rename / drop chains where the rename target is the source of another
-/// rename or a drop in the same ALTER (e.g. `RENAME b TO tmp, RENAME c TO b`
-/// or `DROP COLUMN b, RENAME COLUMN c TO b`).  Two-phase rename keeps the
-/// old name in the mapping during phase 1, so the second command would trip
-/// the duplicate-logical-name check in `beginRename` and throw
-/// `LOGICAL_ERROR`.  Reject these patterns explicitly so the user gets a
-/// clear message; the workaround is to split into two ALTERs.
-void rejectUnsafeRenameChains(const AlterCommands & commands)
+/// A command names a Nested column by its parent ("n"), which no flattened column list holds --
+/// only its children ("n.x"). Those children, among `physical_names`.
+Names nestedChildrenIn(const String & parent_name, const std::set<String> & physical_names)
 {
-    std::set<String> sources_freed_in_this_alter;
-    for (const auto & c : commands)
+    Names children;
+    const String prefix = parent_name + ".";
+    for (const auto & physical_name : physical_names)
     {
-        if (c.ignore)
-            continue;
-        if (c.type == AlterCommand::RENAME_COLUMN || c.type == AlterCommand::DROP_COLUMN)
-            sources_freed_in_this_alter.insert(c.column_name);
+        if (physical_name.starts_with(prefix))
+            children.push_back(physical_name);
     }
-    for (const auto & c : commands)
+    return children;
+}
+
+/// What a command's subject names among `schema_names`: itself, or a Nested parent's children --
+/// a parent is not itself a physical column.
+Names physicalNamesOf(const String & column_name, const std::set<String> & schema_names)
+{
+    if (schema_names.contains(column_name))
+        return {column_name};
+    return nestedChildrenIn(column_name, schema_names);
+}
+
+/// Whether this ALTER also moves `column_name` under `new_parent`, which is what makes a
+/// cross-parent Nested move whole rather than partial.
+bool isRenamedUnderParent(const AlterCommands & commands, const String & column_name, const String & new_parent)
+{
+    const String new_logical_prefix = new_parent + ".";
+    for (const auto & command : commands)
     {
-        if (c.ignore || c.type != AlterCommand::RENAME_COLUMN)
+        if (command.ignore || command.type != AlterCommand::RENAME_COLUMN)
             continue;
-        if (sources_freed_in_this_alter.contains(c.rename_to))
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "ALTER on column-IDs table: cannot rename '{}' to '{}' in the "
-                "same ALTER that frees '{}' (via another RENAME or DROP).  "
-                "Two-phase rename cannot represent this safely; split into "
-                "two ALTER statements.",
-                c.column_name, c.rename_to, c.rename_to);
+        if (command.column_name == column_name && command.rename_to.starts_with(new_logical_prefix))
+            return true;
     }
+    return false;
 }
 
 /// Legality of a single RENAME COLUMN on the metadata-only path.  For
@@ -107,14 +114,16 @@ void validateTwoPhaseRename(
     auto [id_parent, id_child] = Nested::splitName(column_id);
     auto [old_parent, old_child] = Nested::splitName(command.column_name);
     auto [new_parent, new_child] = Nested::splitName(command.rename_to);
+
     bool is_nested = !old_child.empty();
     bool changes_prefix = (old_parent != new_parent);
-    bool id_has_dot = !id_child.empty();
+    if (!nested_offsets_shared || !is_nested || !changes_prefix)
+        return;
 
     /// Plain-counter column ID (no dot, e.g. "5"): the offset stream name is
     /// derived from the logical Nested parent, so a cross-parent rename would
     /// change it while existing parts still carry the old stream name.
-    if (nested_offsets_shared && is_nested && changes_prefix && !id_has_dot)
+    if (id_child.empty())
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
@@ -129,120 +138,76 @@ void validateTwoPhaseRename(
             column_id);
     }
 
-    /// Partial cross-parent Nested move is unsafe: the writer folds the offset stream by the
-    /// Nested prefix of the column ID, so leaving a sibling under the old logical parent makes
-    /// two logical parents read and write through one offsets stream.
-    if (nested_offsets_shared && is_nested && changes_prefix && id_has_dot)
+    /// Partial cross-parent Nested move is unsafe: leaving a sibling under the old logical parent
+    /// makes two logical parents read and write through one offsets stream. A sibling shares that
+    /// stream either through the same column-ID prefix, or -- for a plain-counter sibling, which a
+    /// mapping written before one-pass allocation can hold -- through the old logical parent.
+    const String old_logical_prefix = old_parent + ".";
+    for (const auto & [other_logical, other_column_id] : mapping.getLogicalToId())
     {
-        const String old_logical_prefix = old_parent + ".";
-        const String new_logical_prefix = new_parent + ".";
-        for (const auto & [other_logical, other_column_id] : mapping.getLogicalToId())
-        {
-            if (other_logical == command.column_name)
-                continue;
-            if (!other_logical.starts_with(old_logical_prefix))
-                continue;
-            auto [other_id_parent, other_id_child] = Nested::splitName(other_column_id);
-            if (other_id_parent != id_parent)
-                continue;
-            bool other_renamed = false;
-            for (const auto & other_cmd : commands)
-            {
-                if (other_cmd.ignore || other_cmd.type != AlterCommand::RENAME_COLUMN)
-                    continue;
-                if (other_cmd.column_name == other_logical
-                    && other_cmd.rename_to.starts_with(new_logical_prefix))
-                {
-                    other_renamed = true;
-                    break;
-                }
-            }
-            if (!other_renamed)
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Cross-parent Nested rename of '{}' to '{}' requires "
-                    "sibling column '{}' (sharing column-ID prefix '{}') "
-                    "to also be renamed to a child of '{}' in the same "
-                    "ALTER. Partial cross-parent moves are unsafe "
-                    "because the shared offset stream cannot be split.",
-                    command.column_name, command.rename_to,
-                    other_logical, id_parent, new_parent);
-        }
+        if (other_logical == command.column_name || !other_logical.starts_with(old_logical_prefix))
+            continue;
+
+        auto [other_id_parent, other_id_child] = Nested::splitName(other_column_id);
+        bool shares_offsets = other_id_child.empty() || other_id_parent == id_parent;
+        if (!shares_offsets || isRenamedUnderParent(commands, other_logical, new_parent))
+            continue;
+
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cross-parent Nested rename of '{}' to '{}' requires "
+            "sibling column '{}' (column ID '{}', sharing the group's "
+            "offset stream) to also be renamed to a child of '{}' in the "
+            "same ALTER. Partial cross-parent moves are unsafe "
+            "because the shared offset stream cannot be split.",
+            command.column_name, command.rename_to,
+            other_logical, other_column_id, new_parent);
     }
 }
 
-/// DROP (or RENAME) of a column plus ADD COLUMN of the same name in one ALTER
-/// cannot be made crash-safe as metadata-only: after a crash in between, the
-/// re-added name would resolve to the freed column's bytes (see ColumnIdMapping.h).
-void rejectDropOrRenameThenReAdd(const AlterCommands & commands, const std::set<String> & new_col_names)
+/// A name the table ALREADY has must not be claimed by this ALTER -- as an `ADD COLUMN` or as a
+/// RENAME's target -- even when the same ALTER drops or renames the column holding it.
+/// `AlterCommands::validate` accepts that, being order-aware, but the mapping cannot represent it:
+/// phase 1 keeps the old name until the metadata commit, so `beginRename` sees the claimed name
+/// twice, and once phase 2 prunes the entry the claim resolves to the old column's ID -- its bytes
+/// (see ColumnIdMapping.h). So collect the claims and reject any that the old schema holds.
+/// A claim is a column as it BECOMES, hence the new schema when expanding a Nested parent.
+void rejectNameReuse(
+    const AlterCommands & commands, const std::set<String> & old_col_names, const std::set<String> & new_col_names)
 {
-    std::set<String> readded_names;
+    std::set<String> claimed_names;
 
-    /// Whole-column DROPs only: `CLEAR COLUMN` and partition-scoped
-    /// `DROP COLUMN ... IN PARTITION` don't remove the column from metadata.
-    std::set<String> explicitly_dropped;
     for (const auto & command : commands)
     {
         if (command.ignore)
             continue;
-        if (command.type == AlterCommand::DROP_COLUMN && !command.clear && !command.partition)
-            explicitly_dropped.insert(command.column_name);
-    }
-    for (const auto & dropped_name : explicitly_dropped)
-    {
-        if (new_col_names.contains(dropped_name))
+
+        if (command.type == AlterCommand::ADD_COLUMN)
         {
-            readded_names.insert(dropped_name);
+            auto names = physicalNamesOf(command.column_name, new_col_names);
+            claimed_names.insert(names.begin(), names.end());
         }
-        else
+        else if (command.type == AlterCommand::RENAME_COLUMN)
         {
-            String prefix = dropped_name + ".";
-            for (const auto & new_name : new_col_names)
-            {
-                if (new_name.starts_with(prefix))
-                    readded_names.insert(new_name);
-            }
+            /// Renaming a whole Nested struct is refused upstream, so a target needs no expansion.
+            claimed_names.insert(command.rename_to);
         }
     }
 
-    /// The RENAME side: `AlterCommands::validate` accepts
-    /// `RENAME COLUMN b TO old_b, ADD COLUMN b ...` because validation is
-    /// order-aware (after the rename, `b` is free), but once phase 2 removes
-    /// the old `b -> b` entry, the mapping has no entry for the new `b` and
-    /// reads fall back to the column ID `b`, which is the renamed column's bytes.
-    std::set<String> rename_freed_sources;
-    for (const auto & command : commands)
+    Names reused_names;
+    for (const auto & claimed_name : claimed_names)
     {
-        if (command.ignore || command.type != AlterCommand::RENAME_COLUMN)
-            continue;
-        rename_freed_sources.insert(command.column_name);
-    }
-    for (const auto & command : commands)
-    {
-        if (command.ignore || command.type != AlterCommand::ADD_COLUMN)
-            continue;
-        if (rename_freed_sources.contains(command.column_name))
-        {
-            readded_names.insert(command.column_name);
-        }
-        else
-        {
-            String prefix = command.column_name + ".";
-            for (const auto & new_name : new_col_names)
-            {
-                if (new_name.starts_with(prefix) && rename_freed_sources.contains(new_name))
-                    readded_names.insert(new_name);
-            }
-        }
+        if (old_col_names.contains(claimed_name))
+            reused_names.push_back(claimed_name);
     }
 
-    if (!readded_names.empty())
+    if (!reused_names.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "ALTER on column-IDs table: DROP/RENAME of '{}' followed by ADD COLUMN "
-            "of the same name in a single ALTER cannot be made crash-safe.  Split "
-            "into two separate ALTER statements (the destructive op first, then "
-            "the ADD); each is fully durable.",
-            fmt::join(readded_names, "', '"));
+            "ALTER on column-IDs table: '{}' is a column this table already has, and this ALTER "
+            "claims the name again -- by ADD COLUMN, or as a RENAME target -- which cannot be made "
+            "crash-safe even if the same ALTER frees it.  Split into two separate ALTER statements, "
+            "the destructive one first; each is fully durable.",
+            fmt::join(reused_names, "', '"));
 }
 
 /// Allocates column IDs for the columns this ALTER adds.  Flattened Nested
@@ -250,90 +215,86 @@ void rejectDropOrRenameThenReAdd(const AlterCommands & commands, const std::set<
 /// it, so the shared offset stream (e.g. "5.size0") stays coherent across
 /// old and new parts.
 void allocateNewColumnIds(
-    const StorageInMemoryMetadata & new_metadata, const std::set<String> & old_col_names, ColumnIdMapping & mapping)
+    const StorageInMemoryMetadata & new_metadata,
+    const std::set<String> & old_col_names,
+    const std::set<String> & rename_targets,
+    ColumnIdMapping & mapping)
 {
-    std::map<String, std::vector<std::pair<String, String>>> nested_groups;
-    std::map<String, String> incremental_child_prefix; // logical name -> column-ID parent
-    std::vector<String> plain_new_columns;
+    const auto physical_columns = new_metadata.getColumns().getAllPhysical();
 
-    for (const auto & col : new_metadata.getColumns().getAllPhysical())
+    /// A rename target was added to the mapping by phase 1 of this same ALTER, so it is no more
+    /// "new" than a name the old schema had. Asking the whole mapping instead would also match a
+    /// name an EARLIER ALTER retained, and bind the new column to the retained entry's ID.
+    auto is_new_column = [&](const String & name) { return !old_col_names.contains(name) && !rename_targets.contains(name); };
+
+    /// A retained entry is residue from an earlier ALTER whose finalize did not persist: only a
+    /// table load prunes it, so it outlives the ALTER that left it. Drop it, since `addColumn`
+    /// rejects a duplicate logical name and the re-added column must not inherit the freed ID.
+    for (const auto & column : physical_columns)
     {
-        if (old_col_names.contains(col.name) || mapping.hasLogicalName(col.name))
+        if (!is_new_column(column.name) || !mapping.hasLogicalName(column.name))
             continue;
 
-        auto [parent, child] = Nested::splitName(col.name);
-        if (!child.empty())
-        {
-            String existing_prefix;
-            for (const auto & other : new_metadata.getColumns().getAllPhysical())
-            {
-                if (other.name == col.name)
-                    continue;
-                auto [other_parent, other_child] = Nested::splitName(other.name);
-                if (other_child.empty() || other_parent != parent)
-                    continue;
-                if (!old_col_names.contains(other.name))
-                    continue;
-                if (!mapping.hasLogicalName(other.name))
-                    continue;
-                const String & sibling_id = mapping.getColumnId(other.name);
-                auto [sibling_id_parent, sibling_id_child] = Nested::splitName(sibling_id);
-                if (!sibling_id_child.empty())
-                {
-                    existing_prefix = sibling_id_parent;
-                    break;
-                }
-            }
-            if (!existing_prefix.empty())
-            {
-                incremental_child_prefix[col.name] = existing_prefix;
-                continue;
-            }
+        LOG_WARNING(
+            getLogger("ColumnIdAlterPlanner"),
+            "Column ID mapping has a retained entry for '{}' (column ID '{}') that the schema has re-added; "
+            "it was left behind by an earlier ALTER whose finalize did not persist. Dropping the entry and "
+            "allocating a fresh column ID.",
+            column.name, mapping.getColumnId(column.name));
 
-            bool has_new_sibling = false;
-            for (const auto & other : new_metadata.getColumns().getAllPhysical())
-            {
-                if (other.name == col.name)
-                    continue;
-                auto [other_parent, other_child] = Nested::splitName(other.name);
-                if (!other_child.empty() && other_parent == parent
-                    && !old_col_names.contains(other.name))
-                {
-                    has_new_sibling = true;
-                    break;
-                }
-            }
-            if (has_new_sibling)
-            {
-                nested_groups[parent].emplace_back(col.name, child);
+        mapping.removeColumn(column.name);
+    }
+
+    /// The compound id prefix a flattened Nested parent's children take ("5" for "5.x"), so the group
+    /// shares one offsets stream. Empty means the group keeps the plain-counter convention instead:
+    /// a plain id derives its offsets stream from the LOGICAL parent, so a dotted new child beside
+    /// plain siblings would open a second stream inside one logical group. Resolved once per parent:
+    /// inherited from an already-mapped sibling, or a fresh counter id when the group has none.
+    std::map<String, String> id_parent_by_nested_parent;
+
+    auto nested_id_parent = [&](const String & parent) -> const String &
+    {
+        auto [it, inserted] = id_parent_by_nested_parent.try_emplace(parent);
+        if (!inserted)
+            return it->second;
+
+        bool has_mapped_sibling = false;
+        for (const auto & column : physical_columns)
+        {
+            auto [other_parent, other_child] = Nested::splitName(column.name);
+            if (other_child.empty() || other_parent != parent || is_new_column(column.name))
                 continue;
+
+            has_mapped_sibling = true;
+            auto [id_parent, id_child] = Nested::splitName(mapping.getColumnIdOrDefault(column.name));
+            if (!id_child.empty())
+            {
+                it->second = id_parent;
+                return it->second;
             }
         }
-        plain_new_columns.push_back(col.name);
-    }
 
-    /// Allocate compound column IDs for flattened Nested groups (initial
-    /// `ADD COLUMN n Nested(...)`).
-    for (const auto & [parent, siblings] : nested_groups)
-    {
-        auto base = mapping.allocateColumnId();
-        for (const auto & [logical_name, child_name] : siblings)
-            mapping.addColumn(logical_name, base + "." + child_name);
-    }
+        if (!has_mapped_sibling)
+            it->second = mapping.allocateColumnId();
+        return it->second;
+    };
 
-    /// Incremental child additions inherit the existing siblings' column-ID
-    /// prefix so the shared offset stream stays coherent.
-    for (const auto & [logical_name, id_parent] : incremental_child_prefix)
+    for (const auto & column : physical_columns)
     {
-        auto [_, child_name] = Nested::splitName(logical_name);
-        mapping.addColumn(logical_name, id_parent + "." + child_name);
-    }
+        if (!is_new_column(column.name))
+            continue;
 
-    /// Allocate plain counter-based column IDs for non-Nested columns.
-    for (const auto & col_name : plain_new_columns)
-    {
-        auto new_column_id = mapping.allocateColumnId();
-        mapping.addColumn(col_name, new_column_id);
+        auto [parent, child] = Nested::splitName(column.name);
+        const String id_parent = child.empty() ? "" : nested_id_parent(parent);
+
+        /// The child half of the id is a counter, never the logical child name: a name-derived half
+        /// is reconstructed identically when a DROP and a re-ADD of that name land in two separate
+        /// ALTERs, which would hand the re-added column the dropped column's streams. The counter
+        /// never recycles, so the compound id is unique by construction.
+        if (id_parent.empty())
+            mapping.addColumn(column.name, mapping.allocateColumnId());
+        else
+            mapping.addColumn(column.name, id_parent + "." + mapping.allocateColumnId());
     }
 }
 
@@ -374,7 +335,18 @@ ColumnIdAlterPlan prepareColumnIdMappingForAlter(
     else
         local_mapping = *current_mapping;
 
-    rejectUnsafeRenameChains(commands);
+    /// Use the actual metadata diff to handle flattened Nested correctly:
+    /// `commands.apply` expands `ADD COLUMN n Nested(...)` into `n.x`, `n.y`, etc.
+    std::set<String> old_col_names;
+    for (const auto & col : old_metadata.getColumns().getAllPhysical())
+        old_col_names.insert(col.name);
+    std::set<String> new_col_names;
+    for (const auto & col : new_metadata.getColumns().getAllPhysical())
+        new_col_names.insert(col.name);
+
+    /// Ahead of phase 1, which is where a name claimed twice would otherwise surface as
+    /// `beginRename`'s duplicate-logical-name LOGICAL_ERROR.
+    rejectNameReuse(commands, old_col_names, new_col_names);
 
     /// When `share_nested_offsets` is off, dotted columns are independent and
     /// don't share an offsets stream, so the flattened-Nested rename
@@ -385,6 +357,7 @@ ColumnIdAlterPlan prepareColumnIdMappingForAlter(
     /// Two-phase rename: `beginRename` keeps both old and new logical names
     /// in the mapping so the persisted state is crash-safe.  After metadata
     /// commit, `finishRename` removes the old entry.
+    std::set<String> rename_targets;
     for (const auto & command : commands)
     {
         if (command.ignore || command.type != AlterCommand::RENAME_COLUMN)
@@ -395,20 +368,10 @@ ColumnIdAlterPlan prepareColumnIdMappingForAlter(
         validateTwoPhaseRename(command, commands, local_mapping, nested_offsets_shared);
         local_mapping.beginRename(command.column_name, command.rename_to);
         plan.rename_old_names.push_back(command.column_name);
+        rename_targets.insert(command.rename_to);
     }
 
-    /// Use the actual metadata diff to handle flattened Nested correctly:
-    /// `commands.apply` expands `ADD COLUMN n Nested(...)` into `n.x`, `n.y`, etc.
-    std::set<String> old_col_names;
-    for (const auto & col : old_metadata.getColumns().getAllPhysical())
-        old_col_names.insert(col.name);
-    std::set<String> new_col_names;
-    for (const auto & col : new_metadata.getColumns().getAllPhysical())
-        new_col_names.insert(col.name);
-
-    rejectDropOrRenameThenReAdd(commands, new_col_names);
-
-    allocateNewColumnIds(new_metadata, old_col_names, local_mapping);
+    allocateNewColumnIds(new_metadata, old_col_names, rename_targets, local_mapping);
 
     /// Two-phase drop for crash safety: keep dropped columns in the mapping until after the
     /// metadata commit, where phase 2 removes them (see the two-phase / reconcile contract

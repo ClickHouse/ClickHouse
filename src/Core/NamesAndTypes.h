@@ -65,7 +65,7 @@ public:
     ///
     /// When a table has a ColumnIdMapping (serialization_info_version =
     /// 'with_column_ids'), each column is assigned a stable, counter-allocated
-    /// column ID (e.g. "0", "1", "2") that never changes across renames or
+    /// column ID (e.g. "1", "2", "3") that never changes across renames or
     /// drops. This decouples the file names on disk from the logical column names
     /// visible to users, enabling metadata-only RENAME and DROP without rewriting
     /// data files.

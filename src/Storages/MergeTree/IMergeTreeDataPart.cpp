@@ -922,8 +922,7 @@ void IMergeTreeDataPart::loadIndexMarksToCache(MarkCache * index_mark_cache) con
     if (secondary_indices.empty())
         return;
 
-    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
-        shared_from_this(), std::make_shared<AlterConversions>());
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
     auto read_settings = storage.getContext()->getReadSettings();
     std::vector<std::unique_ptr<MergeTreeMarksLoader>> loaders;
 
@@ -2267,8 +2266,7 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
 
     auto alter_conversions = std::make_shared<AlterConversions>();
-    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
-        shared_from_this(), alter_conversions);
+    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
 
     MergeTreeReaderPtr reader = createMergeTreeReader(
         part_info,
@@ -3521,8 +3519,7 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
     settings.read_only_column_sample = true;
 
     auto alter_conversions = std::make_shared<AlterConversions>();
-    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
-        shared_from_this(), alter_conversions);
+    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
 
     MergeTreeReaderPtr reader = createMergeTreeReader(
         part_info,

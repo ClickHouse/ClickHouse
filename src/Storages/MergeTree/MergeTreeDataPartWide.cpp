@@ -337,8 +337,7 @@ void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCac
 
     auto context = storage.getContext();
     auto read_settings = context->getReadSettings();
-    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
-        shared_from_this(), std::make_shared<AlterConversions>());
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
 
     LOG_TEST(getLogger("MergeTreeDataPartWide"), "Loading marks into mark cache for columns {} of part {}", toString(column_names), name);
 
@@ -715,8 +714,7 @@ std::vector<String> MergeTreeDataPartWide::getListOfStreamsForColumn(const NameA
     settings.read_only_column_sample = true;
 
     auto alter_conversions = std::make_shared<AlterConversions>();
-    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
-        shared_from_this(), alter_conversions);
+    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
 
     MergeTreeReaderPtr reader = createMergeTreeReaderWide(
         part_info,

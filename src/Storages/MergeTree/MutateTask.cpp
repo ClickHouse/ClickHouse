@@ -141,6 +141,7 @@ static bool haveMutationsOfDynamicColumns(
     /// picks the partial-mutation path, which cannot enumerate a dynamic column's dependent substreams.
     auto has_dynamic_subcolumns_in_part = [&](const String & column_name)
     {
+        /// The snapshot first: a name it knows resolves through the id the part's files are keyed by.
         auto column = data_part->tryGetColumnBySnapshotName(column_name, metadata_snapshot);
         if (!column)
             column = data_part->tryGetColumnByNameUnsafe(column_name);
@@ -1161,6 +1162,22 @@ static std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
     return projections_to_recalc;
 }
 
+/// For a caller that may not hold the part's own pair for `column_name`. With the pair the stream is
+/// keyed by the column's stamped id, which is how the file is named; without one -- an id-less part,
+/// or a name this part predates -- the name has to serve, and finds nothing if it is not the key.
+static std::optional<String> streamNameForColumn(
+    const std::optional<NameAndTypePair> & part_column,
+    const String & column_name,
+    const ISerialization::SubstreamPath & substream_path,
+    const MergeTreeDataPartChecksums & checksums,
+    const MergeTreeSettingsPtr & storage_settings)
+{
+    if (part_column)
+        return IMergeTreeDataPart::getStreamNameForColumn(*part_column, substream_path, ".bin", checksums, storage_settings);
+
+    return IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", checksums, storage_settings);
+}
+
 static std::unordered_map<String, size_t> getStreamCounts(
     const MergeTreeDataPartPtr & data_part,
     const MergeTreeDataPartChecksums & source_part_checksums,
@@ -1199,12 +1216,10 @@ static std::unordered_map<String, size_t> getStreamCounts(
 
             auto callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
-                /// Key the stream by the part's stamped id, not by a logical name that might equal a
-                /// foreign column's id and miscount the shared-stream refcount. No pair (an id-less
-                /// part, or a current name this part predates) keys by the name and finds nothing.
-                std::optional<String> stream_name = part_column
-                    ? IMergeTreeDataPart::getStreamNameForColumn(*part_column, substream_path, ".bin", source_part_checksums, data_part->storage.getSettings())
-                    : IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", source_part_checksums, data_part->storage.getSettings());
+                /// A logical name could equal a foreign column's id and miscount the shared-stream
+                /// refcount, so the part's own pair keys this whenever there is one.
+                auto stream_name = streamNameForColumn(
+                    part_column, column_name, substream_path, source_part_checksums, data_part->storage.getSettings());
                 if (stream_name)
                     ++stream_counts[*stream_name];
             };
@@ -1327,7 +1342,6 @@ static NameToNameVector collectFilesForRenames(
     const String & mrk_extension,
     bool has_column_ids)
 {
-
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     auto stream_counts = getStreamCounts(source_part, source_part->checksums, source_part->getColumns().getNames());
 
@@ -1435,11 +1449,8 @@ static NameToNameVector collectFilesForRenames(
 
                 ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
                 {
-                    std::optional<String> stream_name;
-                    if (column_in_part)
-                        stream_name = IMergeTreeDataPart::getStreamNameForColumn(*column_in_part, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
-                    else
-                        stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
+                    auto stream_name = streamNameForColumn(
+                        column_in_part, command.column_name, substream_path, source_part->checksums, source_part->storage.getSettings());
 
                     /// Delete files if they are no longer shared with another column.
                     if (stream_name && --stream_counts[*stream_name] == 0)
@@ -1777,7 +1788,7 @@ struct MutationContext
 
     /// The mutation's single column-ID mapping, read off the pinned `metadata_snapshot`
     /// (the mapping is folded into the metadata, captured atomically with the schema).
-    ColumnIdMappingPtr getColumnIdMapping() const
+    ColumnIdMappingPtr getActiveColumnIdMapping() const
     {
         return metadata_snapshot ? metadata_snapshot->getActiveColumnIdMapping() : nullptr;
     }
@@ -2216,7 +2227,7 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         ctx->new_data_part.get(),
         ++projection_block_num,
         ctx->context,
-        ctx->getColumnIdMapping());
+        ctx->getActiveColumnIdMapping());
 
     tmp_part->finalize();
     tmp_part->part->getDataPartStorage().commitTransaction();
@@ -3128,7 +3139,7 @@ private:
                     if (new_part_columns_set.contains(col.name))
                         columns_for_writer.push_back(col);
             }
-            if (const auto column_id_mapping = ctx->getColumnIdMapping())
+            if (const auto column_id_mapping = ctx->getActiveColumnIdMapping())
                 column_id_mapping->stampColumnIds(columns_for_writer);
 
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
@@ -4073,9 +4084,9 @@ bool MutateTask::prepare()
 
     auto [new_columns, new_infos, new_columns_substreams] = MutationHelpers::getColumnsForNewDataPart(
         ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
-        ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames, ctx->getColumnIdMapping(), ctx->metadata_snapshot);
+        ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames, ctx->getActiveColumnIdMapping(), ctx->metadata_snapshot);
 
-    if (const auto column_id_mapping = ctx->getColumnIdMapping())
+    if (const auto column_id_mapping = ctx->getActiveColumnIdMapping())
         column_id_mapping->stampColumnIds(new_columns);
 
     /// The part's records are keyed by stamped column ID; `getColumnsForNewDataPart`
@@ -4193,7 +4204,7 @@ bool MutateTask::prepare()
             ctx->for_file_renames,
             updated_columns_in_patches,
             ctx->mrk_extension,
-            ctx->getColumnIdMapping() != nullptr);
+            ctx->getActiveColumnIdMapping() != nullptr);
 
         /// In case of replicated merge tree with zero copy replication
         /// Here Clickhouse has to follow the common procedure when deleting new part in temporary state

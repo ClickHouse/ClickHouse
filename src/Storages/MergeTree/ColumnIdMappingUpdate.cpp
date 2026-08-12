@@ -22,6 +22,7 @@ namespace FailPoints
 {
     extern const char column_ids_throw_before_mapping_persist[];
     extern const char column_ids_throw_after_mapping_persist[];
+    extern const char column_ids_throw_before_mapping_prune[];
 }
 
 namespace
@@ -52,6 +53,13 @@ void failpointAfterMappingPersist()
     });
 }
 
+void failpointBeforeMappingPrune()
+{
+    fiu_do_on(FailPoints::column_ids_throw_before_mapping_prune,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before column ID mapping prune");
+    });
+}
 
 /// Runs on the load path BEFORE the mapping is published, so a torn or hand-edited `column_ids.json`
 /// is refused with a file-naming error rather than tripping the schema-stamp desync assertion (a
@@ -109,7 +117,6 @@ NameToNameVector pruneRetainedNames(ColumnIdMapping & mapping, const ColumnIdAlt
 {
     NameToNameVector column_size_renames;
 
-    // rename
     for (const auto & old_name : plan.rename_old_names)
     {
         auto column_id = mapping.tryGetColumnId(old_name);
@@ -122,7 +129,6 @@ NameToNameVector pruneRetainedNames(ColumnIdMapping & mapping, const ColumnIdAlt
             column_size_renames.emplace_back(old_name, *new_name);
     }
 
-    // drop
     for (const auto & name : plan.drop_names)
     {
         if (mapping.hasLogicalName(name))
@@ -270,6 +276,8 @@ void ColumnIdMappingUpdate::persistAfterSchemaCommit(const ColumnIdAlterPlan & p
 
     try
     {
+        failpointBeforeMappingPrune();
+
         ColumnIdMapping pruned = *mapping;
         auto size_renames = pruneRetainedNames(pruned, plan);
 

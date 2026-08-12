@@ -265,6 +265,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(column_ids_pause_after_metadata_alter) \
     ONCE(column_ids_throw_before_mapping_persist) \
     ONCE(column_ids_throw_after_mapping_persist) \
+    ONCE(column_ids_throw_before_mapping_prune) \
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \
     PAUSEABLE_ONCE(smt_clone_partition_pause_before_commit) \

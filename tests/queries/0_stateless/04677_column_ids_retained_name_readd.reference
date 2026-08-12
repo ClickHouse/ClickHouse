@@ -1,0 +1,19 @@
+drop: re-added a does not read the dropped column's data:
+1	
+2	fresh
+drop: after merge:
+1	
+2	fresh
+drop: fresh id for a:
+1
+drop: reattached:
+1	
+2	fresh
+chain: re-added a does not read the pre-rename data:
+1	
+2	fresh
+chain: fresh id for a:
+1
+chain: reattached:
+1	
+2	fresh

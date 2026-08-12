@@ -32,10 +32,6 @@ constexpr auto KEY_ACTIVE = "active";
 constexpr auto KEY_NEXT_COLUMN_ID = "next_column_id";
 constexpr auto KEY_MAPPING = "mapping";
 
-/// Scans column names (or column IDs) to find the highest value that
-/// parses as a valid UInt64, then returns max + 1.  This prevents collisions
-/// when a table already has numeric column names like "2" or "10" — the
-/// counter must start above them.
 UInt64 safeIncrementColumnId(UInt64 max_id)
 {
     if (max_id == std::numeric_limits<UInt64>::max())
@@ -44,6 +40,8 @@ UInt64 safeIncrementColumnId(UInt64 max_id)
     return max_id + 1;
 }
 
+/// The counter starts above every numeric column NAME as well, or a table that already has a column
+/// literally named "2" collides with the ID a later `ADD COLUMN` allocates.
 UInt64 getNextColumnId(const NamesAndTypesList & columns)
 {
     UInt64 max_numeric_column_id = 0;
@@ -74,17 +72,27 @@ UInt64 getNextColumnId(const std::unordered_map<String, String> & logical_to_id)
 
 UInt64 ColumnIdMapping::extractNumericCounter(const String & s)
 {
-    UInt64 value = 0;
-    const auto * begin = s.data();
-    const auto * end = begin + s.size();
-    auto [ptr, ec] = std::from_chars(begin, end, value);
-    if (ec != std::errc())
-        return 0;
-    if (ptr == end)
-        return value;
-    if (*ptr == '.' && ptr + 1 != end)
-        return value;
-    return 0;
+    /// Every dot-separated numeric component counts, not just the first: a flattened Nested child id
+    /// is "<parent counter>.<child counter>" ("5.7"), and both halves come from this counter, so the
+    /// counter has to end up above both -- for a numeric column NAME at activation just the same.
+    UInt64 max_component = 0;
+    size_t component_begin = 0;
+    while (true)
+    {
+        const auto separator = s.find('.', component_begin);
+        const auto component_size = (separator == String::npos ? s.size() : separator) - component_begin;
+
+        UInt64 value = 0;
+        const auto * begin = s.data() + component_begin;
+        const auto * end = begin + component_size;
+        auto [ptr, ec] = std::from_chars(begin, end, value);
+        if (ec == std::errc() && ptr == end)
+            max_component = std::max(max_component, value);
+
+        if (separator == String::npos)
+            return max_component;
+        component_begin = separator + 1;
+    }
 }
 
 String ColumnIdMapping::getColumnId(const String & logical_name) const

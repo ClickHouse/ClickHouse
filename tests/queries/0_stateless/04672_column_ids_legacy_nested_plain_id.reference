@@ -1,0 +1,10 @@
+plain group, ids and offsets streams:
+n.x	1	['n.size0']
+n.y	2	['n.size0']
+plain group, cross-parent rename:
+NOT_IMPLEMENTED
+mixed group, ids and offsets streams:
+n.x	1	['n.size0']
+n.y	2.y	['2.size0']
+mixed group, cross-parent rename of the dotted child:
+NOT_IMPLEMENTED

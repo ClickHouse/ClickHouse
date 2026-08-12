@@ -224,7 +224,7 @@ $CLICKHOUSE_CLIENT --query "
     SETTINGS min_bytes_for_wide_part = 0;
 
     INSERT INTO t_activate_fail VALUES (1, 'keep_me');
-"
+" </dev/null
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT column_ids_throw_after_mapping_persist"
 $CLICKHOUSE_CLIENT --query "ALTER TABLE t_activate_fail MODIFY SETTING serialization_info_version = 'with_column_ids'" 2>&1 \
     | grep -o "FAULT_INJECTED" | head -1

@@ -314,7 +314,7 @@ TEST(SerializationInfoJSON, ChooseKindStackZeroRows)
     EXPECT_EQ(kind_stack, expected);
 }
 
-TEST(SerializationInfoColumnIds, CanonicalizeNameEqualsOtherColumnsId)
+TEST(SerializationInfoColumnIds, ReKeyWhenNameEqualsOtherColumnsId)
 {
     /// `d` was renamed from `b` and kept the column ID "b"; the freed name `b`
     /// re-appears under the fresh ID "1".  Records accumulated under logical
