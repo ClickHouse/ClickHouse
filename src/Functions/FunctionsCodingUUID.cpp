@@ -145,7 +145,9 @@ public:
         /// selects the UUID variant — `parseVariant` reads it via `getInt` and casts to the
         /// enum's underlying type, which silently wraps for wider integers (e.g. UInt16(258)
         /// becomes 2). Narrow to `Int8 | UInt8` to preserve the original validation contract.
-        return "(FixedString(16), [Int8 | UInt8]) -> String";
+        /// The selector must be `const`: `parseVariant` reads only row 0, so a row-varying
+        /// column would silently serialize every row with the first row's variant.
+        return "(FixedString(16), [const Int8 | UInt8]) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -213,8 +215,8 @@ public:
     {
         /// `FixedString(36)` (uuid_text_length) is the exact width the parser reads, so a
         /// wrong-width FixedString is rejected at analysis time.
-        /// See `FunctionUUIDNumToString::getSignatureString` for why `[Int8 | UInt8]`.
-        return "(String | FixedString(36), [Int8 | UInt8]) -> FixedString(16)";
+        /// See `FunctionUUIDNumToString::getSignatureString` for why `[const Int8 | UInt8]`.
+        return "(String | FixedString(36), [const Int8 | UInt8]) -> FixedString(16)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -308,8 +310,8 @@ public:
 
     String getSignatureString() const override
     {
-        /// See `FunctionUUIDNumToString::getSignatureString` for why `[Int8 | UInt8]`.
-        return "(UUID, [Int8 | UInt8]) -> FixedString(16)";
+        /// See `FunctionUUIDNumToString::getSignatureString` for why `[const Int8 | UInt8]`.
+        return "(UUID, [const Int8 | UInt8]) -> FixedString(16)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
