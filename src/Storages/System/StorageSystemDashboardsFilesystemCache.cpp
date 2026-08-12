@@ -369,7 +369,8 @@ SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS 
     avg(ProfileEvent_FilesystemCacheReserveAttempts) AS Attempts,
     avg(ProfileEvent_FilesystemCacheFailedReserveAttempts) AS Failed,
     avg(ProfileEvent_FilesystemCacheFailToReserveSpaceBecauseOfLockContention) AS SkippedOnLockContention,
-    avg(ProfileEvent_FilesystemCacheFailToReserveSpaceBecauseOfCacheResize) AS SkippedOnCacheResize
+    avg(ProfileEvent_FilesystemCacheFailToReserveSpaceBecauseOfCacheResize) AS SkippedOnCacheResize,
+    avg(ProfileEvent_FilesystemCacheFailToReserveSpaceBecauseOfQueryLimit) AS SkippedOnQueryLimit
 FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
 GROUP BY t
