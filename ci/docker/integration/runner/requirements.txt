@@ -50,6 +50,8 @@ lxml==6.1.0
 lz4==4.4.5
 markdown-it-py==3.0.0
 mdurl==0.1.2
+# V8 bindings for ci/tests/test_host_metrics_chart.py (drives json.html chart code)
+mini-racer==0.14.1
 minio==7.2.20
 mmh3==4.1.0
 nats-py==2.14.0
