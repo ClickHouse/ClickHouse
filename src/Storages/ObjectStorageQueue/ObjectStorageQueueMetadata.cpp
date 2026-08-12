@@ -1541,17 +1541,35 @@ void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
     if (code == Coordination::Error::ZNONODE || (code == Coordination::Error::ZOK && keeper_failed_nodes.empty()))
     {
         /// No /failed path or empty /failed means all failed files were deleted
-        /// Clear entire failed cache
+        /// Capture generations at snapshot time to avoid removing entries added after the check
+        std::unordered_map<std::string, uint64_t> failed_generations;
+        {
+            auto all_entries = local_file_statuses.dump();
+            for (const auto & entry : all_entries)
+            {
+                if (entry.mapped->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+                    failed_generations[entry.mapped->path] = entry.mapped->generation.load();
+            }
+        }
+
+        /// Remove only entries whose generation still matches the snapshot
         size_t removed = 0;
         using KeyType = UInt128;
         using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
         local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
-            [&removed](const KeyType & /* key */, const StatusPtr & status)
+            [&failed_generations, &removed](const KeyType & /* key */, const StatusPtr & status)
             {
                 if (status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
                 {
-                    ++removed;
-                    return true;
+                    auto it = failed_generations.find(status->path);
+                    if (it != failed_generations.end() && status->generation.load() == it->second)
+                    {
+                        /// Generation matches snapshot → same entry, safe to remove
+                        ++removed;
+                        return true;
+                    }
+                    /// Generation changed → new entry re-inserted, don't remove
+                    return false;
                 }
                 return false;
             }
