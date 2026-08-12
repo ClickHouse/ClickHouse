@@ -87,15 +87,24 @@ void DiskColumnIdMappingStore::store(const ColumnIdMapping & mapping)
 
     /// A crash between the write and the replace leaves either the previous file intact or only the
     /// `.tmp` behind, so a reader never sees a torn one.
+    const bool fsync_metadata = data.getContext()->getSettingsRef()[Setting::fsync_metadata];
     try
     {
         {
             auto buf = disk->writeFile(column_ids_tmp_path, 4096, WriteMode::Rewrite, data.getContext()->getWriteSettings());
             mapping.serialize(*buf);
             buf->finalize();
-            if (data.getContext()->getSettingsRef()[Setting::fsync_metadata])
+            if (fsync_metadata)
                 buf->sync();
         }
+
+        /// The rename itself needs the directory entry on the device: fsyncing only the file leaves
+        /// a window where the crash keeps the old name and loses the mapping this call reported
+        /// stored. The guard syncs the directory when it goes out of scope, after the replace.
+        SyncGuardPtr directory_sync_guard;
+        if (fsync_metadata)
+            directory_sync_guard = disk->getDirectorySyncGuard(table_path);
+
         disk->replaceFile(column_ids_tmp_path, column_ids_path);
     }
     catch (...)

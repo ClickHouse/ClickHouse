@@ -106,8 +106,10 @@ public:
     static constexpr UInt64 FORMAT_VERSION_WITH_NAMES = 1;
     static constexpr UInt64 FORMAT_VERSION_WITH_COLUMN_IDS = 2;
 
-    /// Returns the format version read, so the caller can check it against its own state.
-    UInt64 readText(ReadBuffer & buf, bool check_eof = true);
+    /// Returns the format version read. A caller that cannot resolve column IDs must not opt in:
+    /// under `FORMAT_VERSION_WITH_COLUMN_IDS` a name slot holds an ID, and read as a name it would
+    /// silently denote the wrong column, so the version is rejected unless it is asked for.
+    UInt64 readText(ReadBuffer & buf, bool check_eof = true, bool allow_column_ids = false);
     void writeText(WriteBuffer & buf, bool use_column_ids = false) const;
 
     String toString() const;

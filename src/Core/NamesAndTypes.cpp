@@ -110,7 +110,7 @@ void NameAndTypePair::setDelimiterAndTypeInStorage(const String & name_in_storag
 }
 
 /// Under `FORMAT_VERSION_WITH_COLUMN_IDS` a name slot holds a column ID, not the logical name.
-UInt64 NamesAndTypesList::readText(ReadBuffer & buf, bool check_eof)
+UInt64 NamesAndTypesList::readText(ReadBuffer & buf, bool check_eof, bool allow_column_ids)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
@@ -119,7 +119,11 @@ UInt64 NamesAndTypesList::readText(ReadBuffer & buf, bool check_eof)
     DB::readText(format_version, buf);
     assertChar('\n', buf);
 
-    if (format_version != FORMAT_VERSION_WITH_NAMES && format_version != FORMAT_VERSION_WITH_COLUMN_IDS)
+    /// A caller that did not ask for IDs would read them as names and denote the wrong columns, so
+    /// the version it cannot honour is as unknown to it as any other.
+    const bool known_version = format_version == FORMAT_VERSION_WITH_NAMES
+        || (allow_column_ids && format_version == FORMAT_VERSION_WITH_COLUMN_IDS);
+    if (!known_version)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown columns format version: {}", format_version);
 
     size_t count = 0;
