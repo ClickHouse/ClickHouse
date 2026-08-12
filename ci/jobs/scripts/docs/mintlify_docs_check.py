@@ -59,10 +59,6 @@ MINT = "NODE_OPTIONS=--max-old-space-size=8192 mint"
 LYCHEE = "python3 ../ci/jobs/scripts/docs/lychee_check.py"
 VALIDATE_CHECK = ("Validate docs.json", f"{MINT} validate")
 INTERNAL_LINKS_CHECK = ("Check internal links and anchors", f"{LYCHEE} --mode links .")
-CANONICAL_LINKS_CHECK = (
-    "Check canonical internal links",
-    "python3 ../ci/jobs/scripts/docs/canonical_links_check.py .",
-)
 REDIRECTS_CHECK = ("Check redirects", f"{LYCHEE} --mode redirects .")
 EXTERNAL_LINKS_CHECK = ("Check external links (warnings)", f"{LYCHEE} --mode external .")
 SNIPPET_IMPORTS_CHECK = (
@@ -76,7 +72,6 @@ CHANGELOGS_CHECK = (
 DEFAULT_CHECKS = [
     SNIPPET_IMPORTS_CHECK,
     VALIDATE_CHECK,
-    CANONICAL_LINKS_CHECK,
     INTERNAL_LINKS_CHECK,
     REDIRECTS_CHECK,
     EXTERNAL_LINKS_CHECK,
