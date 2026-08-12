@@ -618,6 +618,16 @@ Map型のカラムを、タプルのJSON配列としてデシリアライズし�
 
 JSON 内のフィールドの最大深度です。これは厳密な上限ではないため、必ずしも正確に適用されるわけではありません。
 
+<div id="input_format_json_max_string_column_growth_step">
+  ## input_format_json_max_string_column_growth_step
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "JSON のマテリアライズ時に JSON カラムの内部 String バッファが 2 のべき乗で増加する際の上限を設定し、過剰な割り当てを抑制する新しい設定。"}]}]} />
+
+文字列から JSON をパースする際に JSON カラムの内部 String バッファを構築するとき、2 のべき乗による増加をこのバイト数で上限にします。予約済みサイズがこの値に達すると、バッファは倍増する代わりにこのサイズ単位で増加します。これにより、大きな JSON カラムでの過剰な割り当てを抑制します。0 は無制限 (常に倍増) を意味します。
+
 <div id="input_format_json_named_tuples_as_objects">
   ## input_format_json_named_tuples_as_objects
 </div>

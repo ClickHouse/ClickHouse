@@ -619,6 +619,16 @@ Désactivé par défaut.
 
 Profondeur maximale d’un champ en JSON. Il ne s’agit pas d’une limite stricte et elle n’a pas besoin d’être appliquée avec précision.
 
+<div id="input_format_json_max_string_column_growth_step">
+  ## input_format_json_max_string_column_growth_step
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nouveau paramètre permettant de plafonner la croissance par puissances de deux des tampons String internes de la colonne JSON lors de la matérialisation du JSON, afin de limiter la surallocation."}]}]} />
+
+Lors de la création des tampons String internes de la colonne JSON pendant l&#39;analyse d&#39;un JSON à partir d&#39;une chaîne, plafonnez la croissance par puissances de deux à ce nombre d&#39;octets : une fois que la taille réservée atteint cette valeur, le tampon augmente par incréments de cette taille au lieu de doubler. Cela limite la surallocation pour les grandes colonnes JSON. 0 signifie illimité (doublement pur).
+
 <div id="input_format_json_named_tuples_as_objects">
   ## input_format_json_named_tuples_as_objects
 </div>

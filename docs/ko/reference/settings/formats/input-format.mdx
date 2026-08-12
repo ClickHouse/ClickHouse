@@ -618,6 +618,16 @@ SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" :
 
 JSON 필드의 최대 깊이입니다. 이는 엄격한 제한이 아니므로 정확히 적용되지 않을 수 있습니다.
 
+<div id="input_format_json_max_string_column_growth_step">
+  ## input_format_json_max_string_column_growth_step
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "JSON 구체화 과정에서 JSON 컬럼 내부 String 버퍼의 2의 거듭제곱 단위 증가를 제한해 과도한 할당을 방지하는 새로운 설정입니다."}]}]} />
+
+문자열에서 JSON을 파싱하면서 JSON 컬럼 내부의 String 버퍼를 생성할 때 2의 거듭제곱 단위 증가를 이 바이트 수로 제한합니다. 예약된 크기가 이 값에 도달하면 버퍼는 두 배로 늘어나는 대신 이 크기만큼씩 증가합니다. 이를 통해 대규모 JSON 컬럼에서 과도한 할당을 제한합니다. 0은 제한 없음(계속 두 배로 증가)을 의미합니다.
+
 <div id="input_format_json_named_tuples_as_objects">
   ## input_format_json_named_tuples_as_objects
 </div>

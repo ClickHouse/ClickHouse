@@ -422,6 +422,7 @@
             "ru/reference/engines/database-engines/materialized-postgresql",
             "ru/reference/engines/database-engines/mysql",
             "ru/reference/engines/database-engines/postgresql",
+            "ru/reference/engines/database-engines/remote",
             "ru/reference/engines/database-engines/replicated",
             "ru/reference/engines/database-engines/shared",
             "ru/reference/engines/database-engines/sqlite"
@@ -556,6 +557,7 @@
                 "ru/reference/functions/aggregate-functions/exponentialTimeDecayedSum",
                 "ru/reference/functions/aggregate-functions/first_value",
                 "ru/reference/functions/aggregate-functions/flame_graph",
+                "ru/reference/functions/aggregate-functions/gini",
                 "ru/reference/functions/aggregate-functions/groupArray",
                 "ru/reference/functions/aggregate-functions/groupArrayArray",
                 "ru/reference/functions/aggregate-functions/groupArrayInsertAt",

@@ -619,6 +619,16 @@ SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" :
 
 Максимальная глубина поля в JSON. Это не жёсткое ограничение: его не обязательно соблюдать в точности.
 
+<div id="input_format_json_max_string_column_growth_step">
+  ## input_format_json_max_string_column_growth_step
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Новая настройка, ограничивающая рост внутренних буферов String JSON-столбца по степеням двойки при материализации JSON и предотвращающая избыточное выделение памяти."}]}]} />
+
+При формировании внутренних буферов String JSON-столбца при разборе JSON из строки ограничивает рост по степеням двойки указанным числом байтов: когда зарезервированный размер достигает этого значения, буфер увеличивается на это значение вместо удвоения. Это ограничивает избыточное выделение памяти для больших JSON-столбцов. 0 означает отсутствие ограничений (чистое удвоение).
+
 <div id="input_format_json_named_tuples_as_objects">
   ## input_format_json_named_tuples_as_objects
 </div>

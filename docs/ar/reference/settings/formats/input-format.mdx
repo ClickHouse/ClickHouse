@@ -619,6 +619,16 @@ SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" :
 
 الحد الأقصى لعمق حقل في JSON. هذا ليس حدًا صارمًا، ولا يجب تطبيقه بدقة تامة.
 
+<div id="input_format_json_max_string_column_growth_step">
+  ## input_format_json_max_string_column_growth_step
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد جديد للحد من النمو بمضاعفات العدد اثنين للمخازن المؤقتة الداخلية من نوع String لعمود JSON أثناء تخزين JSON فعليًا، للحد من التخصيص الزائد."}]}]} />
+
+عند إنشاء المخازن المؤقتة الداخلية من نوع String لعمود JSON أثناء تحليل JSON من سلسلة نصية، حدِّد نموها بمضاعفات العدد اثنين بهذا العدد من البايتات: فعندما يصل الحجم المحجوز إلى هذه القيمة، ينمو المخزن المؤقت بزيادات بهذا الحجم بدلًا من أن يتضاعف. يحد هذا من التخصيص الزائد لأعمدة JSON الكبيرة. تعني القيمة 0 عدم وجود حد (مضاعفة فقط).
+
 <div id="input_format_json_named_tuples_as_objects">
   ## input_format_json_named_tuples_as_objects
 </div>

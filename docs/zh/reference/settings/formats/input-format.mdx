@@ -618,6 +618,16 @@ SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" :
 
 JSON 中字段的最大深度。这不是严格限制，无需精确执行。
 
+<div id="input_format_json_max_string_column_growth_step">
+  ## input_format_json_max_string_column_growth_step
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置，用于在物化 JSON 时限制 JSON 列内部 String 缓冲区按 2 的幂扩容，从而控制过度分配。"}]}]} />
+
+从字符串解析 JSON 并构建 JSON 列的内部 String 缓冲区时，将按 2 的幂扩容的上限设为此字节数：保留容量达到该值后，缓冲区将以此大小为增量扩容，而非翻倍。这样可控制大型 JSON 列的过度分配。0 表示不设上限 (始终翻倍) 。
+
 <div id="input_format_json_named_tuples_as_objects">
   ## input_format_json_named_tuples_as_objects
 </div>

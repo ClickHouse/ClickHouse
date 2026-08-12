@@ -131,7 +131,7 @@ const FormatSettingsExplorer = () => {
     },
     {
       label: "input_format_*",
-      count: 127,
+      count: 128,
       settings: [
         { name: "input_format_allow_errors_num", href: "/reference/settings/formats/input-format#input_format_allow_errors_num", default: "0" },
         { name: "input_format_allow_errors_ratio", href: "/reference/settings/formats/input-format#input_format_allow_errors_ratio", default: "0" },
@@ -210,6 +210,7 @@ const FormatSettingsExplorer = () => {
         { name: "input_format_json_infer_incomplete_types_as_strings", href: "/reference/settings/formats/input-format#input_format_json_infer_incomplete_types_as_strings", default: "1" },
         { name: "input_format_json_map_as_array_of_tuples", href: "/reference/settings/formats/input-format#input_format_json_map_as_array_of_tuples", default: "0" },
         { name: "input_format_json_max_depth", href: "/reference/settings/formats/input-format#input_format_json_max_depth", default: "1000" },
+        { name: "input_format_json_max_string_column_growth_step", href: "/reference/settings/formats/input-format#input_format_json_max_string_column_growth_step", default: "0" },
         { name: "input_format_json_named_tuples_as_objects", href: "/reference/settings/formats/input-format#input_format_json_named_tuples_as_objects", default: "1" },
         { name: "input_format_json_read_arrays_as_strings", href: "/reference/settings/formats/input-format#input_format_json_read_arrays_as_strings", default: "1" },
         { name: "input_format_json_read_bools_as_numbers", href: "/reference/settings/formats/input-format#input_format_json_read_bools_as_numbers", default: "1" },

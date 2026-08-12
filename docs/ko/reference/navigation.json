@@ -422,6 +422,7 @@
             "ko/reference/engines/database-engines/materialized-postgresql",
             "ko/reference/engines/database-engines/mysql",
             "ko/reference/engines/database-engines/postgresql",
+            "ko/reference/engines/database-engines/remote",
             "ko/reference/engines/database-engines/replicated",
             "ko/reference/engines/database-engines/shared",
             "ko/reference/engines/database-engines/sqlite"
@@ -556,6 +557,7 @@
                 "ko/reference/functions/aggregate-functions/exponentialTimeDecayedSum",
                 "ko/reference/functions/aggregate-functions/first_value",
                 "ko/reference/functions/aggregate-functions/flame_graph",
+                "ko/reference/functions/aggregate-functions/gini",
                 "ko/reference/functions/aggregate-functions/groupArray",
                 "ko/reference/functions/aggregate-functions/groupArrayArray",
                 "ko/reference/functions/aggregate-functions/groupArrayInsertAt",

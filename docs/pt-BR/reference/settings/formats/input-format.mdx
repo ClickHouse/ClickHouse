@@ -619,6 +619,16 @@ Desativado por padrão.
 
 Profundidade máxima de um campo em JSON. Não é um limite estrito e não precisa ser aplicado exatamente.
 
+<div id="input_format_json_max_string_column_growth_step">
+  ## input_format_json_max_string_column_growth_step
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para limitar o crescimento em potências de dois dos buffers internos de String da coluna JSON durante a materialização do JSON, limitando a superalocação."}]}]} />
+
+Ao criar os buffers internos de String da coluna JSON durante o parsing de JSON a partir de uma string, limite o crescimento em potências de dois a esta quantidade de bytes: quando o tamanho reservado atingir esse valor, o buffer crescerá em incrementos desse tamanho, em vez de dobrar. Isso limita a superalocação em colunas JSON grandes. 0 significa ilimitado (apenas duplicação).
+
 <div id="input_format_json_named_tuples_as_objects">
   ## input_format_json_named_tuples_as_objects
 </div>
