@@ -244,6 +244,12 @@ public:
         throwNotImplemented(fmt::format("EXECUTE {}", command_name));
     }
 
+    virtual bool supportsTruncate() const { return false; }
+    virtual void truncate(ContextPtr /*context*/, std::shared_ptr<DataLake::ICatalog> /*catalog*/, const StorageID & /*storage_id*/)
+    {
+        throwNotImplemented("truncate");
+    }
+
     virtual void drop(ContextPtr) { }
 
     virtual ObjectStorageType getObjectStorageType() const { return ObjectStorageType::None; }
