@@ -216,7 +216,13 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replic
 }
 
 /// Transplant the sets from the single-replica plan to the parallel-replicas plan once we decided to enable parallel replicas
-void moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, const QueryPlan & parallel_replicas_plan)
+/// `allow_unmatched_sets` is for the plan that ships `IN` sets to the replicas: there the subquery has
+/// been replaced by a temporary table, so the set the shipped plan builds is keyed by a different hash
+/// and has no counterpart in the single-replica plan. Such a set builds itself from the temporary table,
+/// which is exactly the work we wanted to move off the replicas, so leave it alone instead of failing.
+/// For the probe plan the two plans must mirror each other, and an unmatched set stays a hard error.
+void moveSetsFromLocalPlanToReplicasPlan(
+    const QueryPlan & single_replica_plan, const QueryPlan & parallel_replicas_plan, bool allow_unmatched_sets = false)
 {
     Stack stack;
     std::map<FutureSet::Hash, SetAndKeyPtr> sets_map;
@@ -253,6 +259,13 @@ void moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, 
                     if (auto it = sets_map.find(future_set->getHash()); it != sets_map.end())
                     {
                         future_set->replaceSetAndKey(it->second);
+                    }
+                    else if (allow_unmatched_sets)
+                    {
+                        LOG_DEBUG(
+                            getLogger("optimizeTree"),
+                            "Set {} has no counterpart in the single-replica plan; it is built from a shipped temporary table",
+                            future_set->getHash().low64);
                     }
                     else
                     {
@@ -311,7 +324,12 @@ void considerEnablingParallelReplicas(
 
     /// Hand the probe plan the sets this plan has already filled. It is built and optimized purely to
     /// decide whether replicas pay off, and optimizing it would otherwise re-run every `IN` subquery.
-    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
+    /// The probe plan is only used to decide whether replicas pay off, and the decision is made by
+    /// matching its top node against the single-node plan by hash. Shipping `IN` sets replaces a
+    /// subquery with a temporary table, which changes that hash and makes the match fail - so the probe
+    /// is always built unshipped, and the shipped plan is built below only once replicas are chosen.
+    auto built_sets = collectBuiltSets(query_plan);
+    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(built_sets, /*ship_in_subqueries*/ false);
     if (!plan_with_parallel_replicas)
         return;
 
@@ -444,6 +462,31 @@ void considerEnablingParallelReplicas(
                         "Parallel replicas branch read is analyzed for table {} but the single-node plan reads {}",
                         local_replica_plan_reading_step->getStorageID().getNameForLogs(),
                         source_reading_step->getStorageID().getNameForLogs());
+                }
+                /// Replicas are worth it. Only now is it worth building the variant that ships the `IN`
+                /// sets: doing it for the probe would pay for materializing them even when the probe is
+                /// thrown away, and would break the hash matching above.
+                if (optimization_settings.parallel_replicas_ship_prepared_sets)
+                {
+                    if (auto shipped_plan
+                        = optimization_settings.query_plan_with_parallel_replicas_builder(built_sets, /*ship_in_subqueries*/ true))
+                    {
+                        /// Redo on the shipped plan what was done to the probe: hand it the index analysis
+                        /// the single-node plan already produced.
+                        if (const auto * shipped_top = findTopNodeOfReplicasPlan(shipped_plan->getRootNode()))
+                        {
+                            if (ReadFromMergeTree * shipped_reading_step = findReadingStep(*shipped_top);
+                                shipped_reading_step && shipped_reading_step->getAnalyzedResult() == nullptr
+                                && &shipped_reading_step->getMergeTreeData() == &source_reading_step->getMergeTreeData())
+                            {
+                                shipped_reading_step->setAnalyzedResult(analysis);
+                            }
+                        }
+                        moveSetsFromLocalPlanToReplicasPlan(query_plan, *shipped_plan, /*allow_unmatched_sets*/ true);
+                        query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*shipped_plan));
+                        return;
+                    }
+                    LOG_DEBUG(getLogger("optimizeTree"), "Could not build the plan that ships `IN` sets, using the probe plan");
                 }
                 moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas);
                 query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));
