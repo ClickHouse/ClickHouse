@@ -3,6 +3,7 @@
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/KeyGetter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -29,6 +30,8 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Poco/String.h>
 #include <filesystem>
+#include <numeric>
+#include <unordered_set>
 
 
 namespace fs = std::filesystem;
@@ -260,6 +263,13 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     const auto & join_on = analyzed_join->getOnlyClause();
     if (join_on.on_filter_condition_left || join_on.on_filter_condition_right)
         throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "ON section of JOIN with filter conditions is not implemented");
+
+    /// The prebuilt join is reused as is (see reuseJoinedData below), so it cannot serve an
+    /// expression the query derived: the names are unqualified, the saved block has a different
+    /// layout and the maps variant may differ.
+    if (analyzed_join->getMixedJoinExpression())
+        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
+            "ON section of JOIN with a condition involving columns from both tables is not implemented for the Join table engine");
 
     const auto & key_names_right = join_on.key_names_right;
     const auto & key_names_left = join_on.key_names_left;
@@ -728,6 +738,71 @@ size_t rawSize(const std::string_view & t)
     return t.size();
 }
 
+/// Byte range of one key column inside a packed map key, plus the output column it belongs to.
+struct PackedKeyColumn
+{
+    size_t output_pos;
+    size_t offset;
+    size_t width;
+};
+
+/// How output key columns are recovered from a map key: the whole key for the single-key maps, or
+/// one byte range per key column for the keysN maps, which pack all key columns into one blob.
+struct KeyLayout
+{
+    std::optional<size_t> whole_key_pos;
+    std::vector<PackedKeyColumn> packed;
+    /// Indexed by output column position, so the fill loops stay a constant-time test per column.
+    std::vector<bool> is_key_column;
+};
+
+/// HashMethodKeysFixed is the only join key getter that packs key columns into one blob, and the only
+/// one declaring shuffleKeyColumns, so this selects exactly the keysN maps.
+template <typename KeyGetter>
+concept PacksKeysIntoBlob = requires(std::vector<IColumn *> & columns, const Sizes & sizes) {
+    { KeyGetter::shuffleKeyColumns(columns, sizes) } -> std::same_as<std::optional<Sizes>>;
+};
+
+/// Order in which key slots occupy bytes of the packed key. `packed_sizes` is what
+/// HashMethodKeysFixed::shuffleKeyColumns reports: the widths in packed order, or nothing for plain
+/// clause order. Slots of one width keep their clause order there, which makes the mapping unique.
+std::vector<size_t> packedKeyOrder(const Sizes & clause_sizes, const std::optional<Sizes> & packed_sizes)
+{
+    std::vector<size_t> order(clause_sizes.size());
+    if (!packed_sizes)
+    {
+        std::iota(order.begin(), order.end(), 0);
+        return order;
+    }
+
+    if (packed_sizes->size() != clause_sizes.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "StorageJoin packed key has {} components but the join has {} keys",
+            packed_sizes->size(),
+            clause_sizes.size());
+
+    std::vector<bool> taken(clause_sizes.size(), false);
+    for (size_t position = 0; position < packed_sizes->size(); ++position)
+    {
+        auto slot = clause_sizes.size();
+        for (size_t i = 0; i < clause_sizes.size(); ++i)
+        {
+            if (!taken[i] && clause_sizes[i] == (*packed_sizes)[position])
+            {
+                slot = i;
+                break;
+            }
+        }
+        if (slot == clause_sizes.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "StorageJoin has no key of size {} left to pack", (*packed_sizes)[position]);
+        taken[slot] = true;
+        order[position] = slot;
+    }
+    return order;
+}
+
 }
 
 class JoinSource final : public ISource
@@ -740,12 +815,14 @@ public:
         , max_block_size(max_block_size_)
         , sample_block(std::move(sample_block_))
     {
-        if (!join->getTableJoin().oneDisjunct())
+        const auto & table_join = join->getTableJoin();
+        if (!table_join.oneDisjunct())
             throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageJoin does not support OR for keys in JOIN ON section");
 
         column_indices.resize(sample_block->columns());
 
         auto & saved_block = join->getJoinedData()->sample_block;
+        std::unordered_map<String, size_t> key_output_positions;
 
         for (size_t i = 0; i < sample_block->columns(); ++i)
         {
@@ -753,6 +830,7 @@ public:
             if (join->right_table_keys.has(name))
             {
                 key_pos = i;
+                key_output_positions.emplace(name, i);
                 const auto & column = join->right_table_keys.getByName(name);
                 restored_block.insert(column);
             }
@@ -764,6 +842,25 @@ public:
                 const auto & column = saved_block.getByPosition(pos);
                 restored_block.insert(column);
             }
+        }
+
+        /// Key slots of a packed map key, in engine-clause order. They come from the clause and not
+        /// from right_table_keys, which deduplicates a repeated key name while the packed key does not.
+        const auto & key_names_right = table_join.getOnlyClause().key_names_right;
+        const auto & key_sizes = join->getKeySizes().at(0);
+        if (key_names_right.size() != key_sizes.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "StorageJoin has {} key names but {} key sizes",
+                key_names_right.size(),
+                key_sizes.size());
+
+        key_slots.reserve(key_names_right.size());
+        for (size_t slot = 0; slot < key_names_right.size(); ++slot)
+        {
+            auto it = key_output_positions.find(key_names_right[slot]);
+            size_t output_pos = it == key_output_positions.end() ? not_selected : it->second;
+            key_slots.push_back({output_pos, 0, key_sizes[slot]});
         }
     }
 
@@ -794,8 +891,12 @@ private:
     SharedHeader sample_block;
     Block restored_block; /// sample_block with parent column types
 
+    static constexpr size_t not_selected = std::numeric_limits<size_t>::max();
+
     ColumnNumbers column_indices;
     std::optional<size_t> key_pos;
+    /// One entry per engine key argument, in clause order; `offset` is filled per map variant.
+    std::vector<PackedKeyColumn> key_slots;
 
     std::unique_ptr<void, std::function<void(void *)>> position; /// type erasure
 
@@ -811,13 +912,17 @@ private:
         {
 #define M(TYPE)                                           \
     case HashJoin::Type::TYPE:                                \
-        rows_added = fillColumns<KIND, STRICTNESS>(*maps.TYPE, mut_columns); \
+        rows_added = fillColumns<KIND, STRICTNESS, HashJoin::Type::TYPE>(*maps.TYPE, mut_columns); \
         break;
             APPLY_FOR_JOIN_VARIANTS_LIMITED(M)
 #undef M
 
             default:
-                throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys of type {} in StorageJoin", join->data->type);
+                throw Exception(
+                    ErrorCodes::UNSUPPORTED_JOIN_KEYS,
+                    "Cannot read a Join table whose keys are stored as {}: the key values are not recoverable "
+                    "from the map. Read it with a JOIN or joinGet instead",
+                    join->data->type);
         }
 
         if (!rows_added)
@@ -846,11 +951,12 @@ private:
         return Chunk(std::move(columns), num_rows);
     }
 
-    template <JoinKind KIND, JoinStrictness STRICTNESS, typename Map>
+    template <JoinKind KIND, JoinStrictness STRICTNESS, HashJoin::Type TYPE, typename Map>
     size_t fillColumns(const Map & map, MutableColumns & columns)
     {
         size_t rows_added = 0;
         const StoredBlock * const * stored_columns = join->getJoinedData()->stored_columns_index->blocksData();
+        const KeyLayout layout = makeKeyLayout<TYPE, Map>();
 
         if (!position)
             position = decltype(position)(
@@ -864,32 +970,32 @@ private:
         {
             if constexpr (STRICTNESS == JoinStrictness::RightAny)
             {
-                fillOne<Map>(columns, column_indices, it, key_pos, rows_added, stored_columns);
+                fillOne<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
             }
             else if constexpr (STRICTNESS == JoinStrictness::All)
             {
-                fillAll<Map>(columns, column_indices, it, key_pos, rows_added, stored_columns);
+                fillAll<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
             }
             else if constexpr (STRICTNESS == JoinStrictness::Any)
             {
                 if constexpr (KIND == JoinKind::Left || KIND == JoinKind::Inner)
-                    fillOne<Map>(columns, column_indices, it, key_pos, rows_added, stored_columns);
+                    fillOne<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
                 else if constexpr (KIND == JoinKind::Right)
-                    fillAll<Map>(columns, column_indices, it, key_pos, rows_added, stored_columns);
+                    fillAll<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
             }
             else if constexpr (STRICTNESS == JoinStrictness::Semi)
             {
                 if constexpr (KIND == JoinKind::Left)
-                    fillOne<Map>(columns, column_indices, it, key_pos, rows_added, stored_columns);
+                    fillOne<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
                 else if constexpr (KIND == JoinKind::Right)
-                    fillAll<Map>(columns, column_indices, it, key_pos, rows_added, stored_columns);
+                    fillAll<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
             }
             else if constexpr (STRICTNESS == JoinStrictness::Anti)
             {
                 if constexpr (KIND == JoinKind::Left)
-                    fillOne<Map>(columns, column_indices, it, key_pos, rows_added, stored_columns);
+                    fillOne<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
                 else if constexpr (KIND == JoinKind::Right)
-                    fillAll<Map>(columns, column_indices, it, key_pos, rows_added, stored_columns);
+                    fillAll<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
             }
             else
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This JOIN is not implemented yet");
@@ -904,35 +1010,97 @@ private:
         return rows_added;
     }
 
+    /// Byte ranges of the key columns inside this map's key. Empty `packed` means the map key is a
+    /// single key value inserted whole, which is how every non-keysN variant behaves.
+    template <HashJoin::Type TYPE, typename Map>
+    KeyLayout makeKeyLayout() const
+    {
+        KeyLayout layout;
+        layout.whole_key_pos = key_pos;
+        layout.is_key_column.assign(sample_block->columns(), false);
+        if (key_pos)
+            layout.is_key_column[*key_pos] = true;
+
+        /// Note key32 and keys32 (likewise key64/keys64) share one map type, so the variant has to come
+        /// from the enum: only the keysN ones pack several key columns into the map key.
+        using KeyGetter = typename KeyGetterForType<TYPE, std::remove_cvref_t<Map>>::Type;
+        if constexpr (PacksKeysIntoBlob<KeyGetter>)
+        {
+            Sizes clause_sizes;
+            clause_sizes.reserve(key_slots.size());
+            for (const auto & slot : key_slots)
+                clause_sizes.push_back(slot.width);
+
+            /// Aggregation reports the packed order the same way (Aggregator.cpp: shuffleKeyColumns
+            /// feeding the sizes to insertKeyIntoColumns), so the two cannot disagree about the layout.
+            std::vector<IColumn *> unused_columns(key_slots.size(), nullptr);
+            const auto order = packedKeyOrder(clause_sizes, KeyGetter::shuffleKeyColumns(unused_columns, clause_sizes));
+
+            size_t offset = 0;
+            std::unordered_set<size_t> emitted;
+            for (size_t slot : order)
+            {
+                auto entry = key_slots[slot];
+                entry.offset = offset;
+                offset += entry.width;
+                /// A key name repeated in the engine arguments (Join(ALL, INNER, a, a, b)) occupies one
+                /// slot per argument, all holding the same value, but has one output column.
+                if (entry.output_pos != not_selected && emitted.insert(entry.output_pos).second)
+                {
+                    layout.packed.push_back(entry);
+                    layout.is_key_column[entry.output_pos] = true;
+                }
+            }
+
+            if (offset > sizeof(typename Map::key_type))
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "StorageJoin keys occupy {} bytes but the map key holds {}",
+                    offset,
+                    sizeof(typename Map::key_type));
+
+            layout.whole_key_pos.reset();
+        }
+        return layout;
+    }
+
+    template <typename Map>
+    static void insertKey(MutableColumns & columns, const KeyLayout & layout, typename Map::const_iterator & it)
+    {
+        if (layout.whole_key_pos)
+            columns[*layout.whole_key_pos]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
+        else
+            for (const auto & slot : layout.packed)
+                columns[slot.output_pos]->insertData(rawData(it->getKey()) + slot.offset, slot.width);
+    }
+
     template <typename Map>
     static void fillOne(MutableColumns & columns, const ColumnNumbers & column_indices, typename Map::const_iterator & it,
-                        const std::optional<size_t> & key_pos, size_t & rows_added, const StoredBlock * const * stored_columns)
+                        const KeyLayout & layout, size_t & rows_added, const StoredBlock * const * stored_columns)
     {
         /// The mapped value of MapsOne is a single encoded ref; the mapped value of MapsAll
         /// (RightAny under preferUseMapsAll) is a tagged ref list whose first element is taken.
         const UInt64 ref_word = firstRefWord(it->getMapped());
         const StoredBlock * block = stored_columns[refWordBlockNo(ref_word)];
         for (size_t j = 0; j < columns.size(); ++j)
-            if (j == key_pos)
-                columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
-            else
+            if (!layout.is_key_column[j])
                 columns[j]->insertFrom(*block->columns[column_indices[j]], refWordRowNo(ref_word));
+        insertKey<Map>(columns, layout, it);
         ++rows_added;
     }
 
     template <typename Map>
     static void fillAll(MutableColumns & columns, const ColumnNumbers & column_indices, typename Map::const_iterator & it,
-                        const std::optional<size_t> & key_pos, size_t & rows_added, const StoredBlock * const * stored_columns)
+                        const KeyLayout & layout, size_t & rows_added, const StoredBlock * const * stored_columns)
     {
         for (auto ref_it = it->getMapped().begin(); ref_it.ok(); ++ref_it)
         {
             const UInt64 ref_word = *ref_it;
             const StoredBlock * block = stored_columns[refWordBlockNo(ref_word)];
             for (size_t j = 0; j < columns.size(); ++j)
-                if (j == key_pos)
-                    columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
-                else
+                if (!layout.is_key_column[j])
                     columns[j]->insertFrom(*block->columns[column_indices[j]], refWordRowNo(ref_word));
+            insertKey<Map>(columns, layout, it);
             ++rows_added;
         }
     }
