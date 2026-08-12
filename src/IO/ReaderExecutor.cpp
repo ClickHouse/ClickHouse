@@ -376,7 +376,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
     const auto start_piece = offset_map.map(ByteRange{window_offset, 1});
     chassert(!start_piece.empty());
     const StoredObject & object = start_piece.front().object;
-    const size_t object_file_offset = window_offset - start_piece.front().object_offset;
+    const size_t object_offset = start_piece.front().object_offset;
 
     /// Serve one block from `window_offset`, capped by the window and by what is available up to `end`.
     auto serve_len = [&](size_t end) { return std::min({block_size, max_serve, end - window_offset}); };
@@ -389,7 +389,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
         stats.add(Stats::CacheGetRequests);
         /// `resolve` returns the window's residency in offset order; the first run reaching past
         /// `window_offset` is the one covering it (coverage is contiguous from the ask start).
-        auto resolutions = cache->resolve(object, object_file_offset, ByteRange{window_offset, max_serve});
+        auto resolutions = cache->resolve(object, object_offset, ByteRange{window_offset, max_serve});
         for (auto & r : resolutions)
         {
             if (r.range.end() <= window_offset)

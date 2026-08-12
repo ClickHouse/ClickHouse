@@ -116,7 +116,7 @@ public:
     /// Resolve `range` into hits (readers) and misses (writers when the tier populates). See the
     /// definition for the get / getOrSet split.
     VectorWithMemoryTracking<Resolution> resolve(
-        const StoredObject & object, size_t object_file_offset, ByteRange range) override;
+        const StoredObject & object, size_t object_offset, ByteRange range) override;
 
 private:
     FileCachePtr cache;

@@ -178,9 +178,10 @@ public:
     /// populating tier opens it here, a read-only or bypass tier returns it writer-less. The caller
     /// subtracts faster-tier hits before it asks. Edge segments may overhang `range` (segment-boundary
     /// rounding, or the object-end clamp). Holds no per-call state, so many threads can resolve one
-    /// shared provider at once (parallel `readBigAt`).
+    /// shared provider at once (parallel `readBigAt`). `range` is file-space; `object_offset` is
+    /// `range.offset`'s object-local position (so the object's file base is `range.offset - object_offset`).
     virtual VectorWithMemoryTracking<Resolution> resolve(
-        const StoredObject & object, size_t object_file_offset, ByteRange range) = 0;
+        const StoredObject & object, size_t object_offset, ByteRange range) = 0;
 };
 
 }

@@ -552,12 +552,14 @@ DiskCacheProvider::DiskCacheProvider(
 /// bypass (`read_if_exists_otherwise_bypass`): `cache->get` only - existing segments, gaps and tails
 /// as exact writer-less misses, nothing created.
 VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
-    const StoredObject & object, size_t object_file_offset, ByteRange range)
+    const StoredObject & object, size_t object_offset, ByteRange range)
 {
     VectorWithMemoryTracking<ICacheProvider::Resolution> out;
     const size_t object_size = object.bytes_size;
-    chassert(range.offset >= object_file_offset);
-    const size_t ask_lo_obj = range.offset - object_file_offset;
+    /// Object's file base (see `ICacheProvider::resolve`): lifts object-local extents to file space.
+    chassert(range.offset >= object_offset);
+    const size_t object_file_offset = range.offset - object_offset;
+    const size_t ask_lo_obj = object_offset;
     if (ask_lo_obj >= object_size)
         return out;
 
