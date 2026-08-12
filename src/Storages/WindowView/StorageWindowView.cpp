@@ -859,27 +859,33 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
     modified_select.setExpression(ASTSelectQuery::Expression::PREWHERE, {});
     if (auto tables = modified_select.tables())
     {
-        std::erase_if(
-            tables->children,
-            [](const ASTPtr & child) { return child->as<ASTTablesInSelectQueryElement &>().array_join != nullptr; });
+        auto & tables_children = tables->children;
+        tables_children.erase(
+            std::remove_if(
+                tables_children.begin(),
+                tables_children.end(),
+                [](const ASTPtr & child) { return child->as<ASTTablesInSelectQueryElement &>().array_join != nullptr; }),
+            tables_children.end());
 
-        for (const auto & child : tables->children)
+        for (const auto & child : tables_children)
         {
             auto & element = child->as<ASTTablesInSelectQueryElement &>();
             if (!element.table_expression)
                 continue;
             auto & table_expression = element.table_expression->as<ASTTableExpression &>();
             table_expression.final = false;
-            if (table_expression.sample_size)
+
+            auto remove_child = [&](ASTPtr & node)
             {
-                std::erase(table_expression.children, table_expression.sample_size);
-                table_expression.sample_size = nullptr;
-            }
-            if (table_expression.sample_offset)
-            {
-                std::erase(table_expression.children, table_expression.sample_offset);
-                table_expression.sample_offset = nullptr;
-            }
+                if (!node)
+                    return;
+                auto & expression_children = table_expression.children;
+                expression_children.erase(
+                    std::remove(expression_children.begin(), expression_children.end(), node), expression_children.end());
+                node = nullptr;
+            };
+            remove_child(table_expression.sample_size);
+            remove_child(table_expression.sample_offset);
         }
     }
 
