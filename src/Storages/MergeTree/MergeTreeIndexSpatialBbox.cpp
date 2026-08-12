@@ -302,10 +302,14 @@ MergeTreeIndexConditionSpatialBbox::extractNodeBbox(
     }
 
     /// This predicate doesn't reference the indexed column at all (e.g. a spatial predicate
-    /// on a different geometry column entirely) -- it carries no pruning information here,
-    /// but it also isn't a reason to fail the whole conjunction closed.
+    /// on a different geometry column entirely) -- it carries no pruning information here.
+    /// But with `short_circuit_function_evaluation = 'disable'` it is still evaluated on every
+    /// row, so if one of its constant geometry arguments failed to extract (and is therefore
+    /// guaranteed to raise on evaluation), that must still veto pruning for this index --
+    /// otherwise a granule could be pruned using only an unrelated, valid conjunct's bbox,
+    /// silently hiding the exception this conjunct is guaranteed to raise.
     if (!input_child)
-        return NodeBboxStatus::NotApplicable;
+        return any_extraction_failed ? NodeBboxStatus::Failed : NodeBboxStatus::NotApplicable;
 
     if (has_extra_non_constant)
         return NodeBboxStatus::NoInfo;
