@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+
+function wait_for_query()
+{
+    local query=$1
+    local start=$EPOCHSECONDS
+    while [[ $($CLICKHOUSE_CLIENT -q "$query" 2>/dev/null) != 1 ]]; do
+        if ((EPOCHSECONDS - start > 180)); then
+            echo "Timeout waiting for: $query" >&2
+            exit 1
+        fi
+        sleep 0.3
+    done
+}
+
+function wait_for()
+{
+    local condition=$1
+    wait_for_query "SELECT $condition"
+}
+
+function wait_for_query_log()
+{
+    local condition=$1
+    wait_for_query "SYSTEM FLUSH LOGS query_log; SELECT $condition"
+}
+
+function finished_in_query_log()
+{
+    echo "count() = 1 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$1' AND type = 'QueryFinish'"
+}
+
+function shared_native_and_http_tests()
+{
+    local run=$1
+    echo "=== $run ==="
+    $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE t"
+
+    echo '--- INSERT SELECT in background: no output, rows land, attributed in query_log'
+    local insert_id="insert_${run}_${CLICKHOUSE_DATABASE}"
+    local out
+    out=$($run "INSERT INTO t SETTINGS max_block_size = 1 SELECT number FROM numbers(30) WHERE NOT ignore(sleepEachRow(0.05))" "$insert_id")
+    [[ -z "$out" ]] && echo "no output"
+    wait_for "count() = 1 FROM system.background_queries WHERE query_id = '$insert_id' AND status = 'Finished'"
+    wait_for_query_log "$(finished_in_query_log "$insert_id")"
+    $CLICKHOUSE_CLIENT -q "
+        SELECT count() FROM t;
+        SELECT memory_usage > 0, length(ProfileEvents) > 0 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$insert_id' AND type = 'QueryFinish';
+        SELECT user = currentUser(), host != '', query != '', exception_code, exception = '', finish_time >= submit_time FROM system.background_queries WHERE query_id = '$insert_id'"
+
+    echo '--- a long-running background query is visible and attributed in system.processes, and KILL QUERY kills it'
+    local victim_id="victim_${run}_${CLICKHOUSE_DATABASE}"
+    $run "INSERT INTO t SETTINGS max_block_size = 1 SELECT number FROM numbers(600) WHERE NOT ignore(sleepEachRow(0.1))" "$victim_id"
+    wait_for "count() = 1 FROM system.processes WHERE query_id = '$victim_id' AND user = currentUser() AND current_database = currentDatabase() AND read_rows > 0"
+    wait_for "count() = 1 FROM system.background_queries WHERE query_id = '$victim_id' AND status = 'Running' AND finish_time IS NULL"
+    echo "attributed in system.processes and system.background_queries"
+    out=$($run "KILL QUERY WHERE query_id = '$victim_id' SYNC")
+    [[ -z "$out" ]] && echo "no output"
+    wait_for "count() = 1 FROM system.background_queries WHERE query_id = '$victim_id' AND status = 'Failed' AND exception_code = 394 AND exception != ''"
+    wait_for_query_log "count() = 1 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$victim_id' AND type = 'ExceptionWhileProcessing' AND exception_code = 394"
+    echo "killed"
+
+    echo '--- SELECT in background discards the result'
+    out=$($run "SELECT 1")
+    [[ -z "$out" ]] && echo "no output"
+
+    echo '--- CREATE TABLE AS SELECT in background'
+    $run "CREATE TABLE t_ctas_${run} ENGINE = MergeTree ORDER BY n AS SELECT number AS n FROM numbers(10)"
+    wait_for "count() = 10 FROM t_ctas_${run}"
+    echo "created with rows"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE t_ctas_${run}"
+
+    echo '--- enabling the setting for a whole session is rejected'
+    $run "SET run_query_in_background = 1" "" 0 | grep -o -m1 "run_query_in_background cannot be changed with SET"
+
+    echo '--- a query that cannot run in the background fails asynchronously'
+    local set_id="set_${run}_${CLICKHOUSE_DATABASE}"
+    $run "SET max_threads = 4" "$set_id"
+    wait_for "count() = 1 FROM system.background_queries WHERE query_id = '$set_id' AND status = 'Failed' AND exception_code != 0 AND exception != ''"
+    wait_for_query_log "count() = 1 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$set_id' AND exception_code != 0"
+    echo "failed asynchronously"
+}

@@ -1,0 +1,26 @@
+=== run_http ===
+--- INSERT SELECT in background: no output, rows land, attributed in query_log
+no output
+30
+1	1
+1	1	1	0	1	1
+--- a long-running background query is visible and attributed in system.processes, and KILL QUERY kills it
+attributed in system.processes and system.background_queries
+no output
+killed
+--- SELECT in background discards the result
+no output
+--- CREATE TABLE AS SELECT in background
+created with rows
+--- enabling the setting for a whole session is rejected
+run_query_in_background cannot be changed with SET
+--- a query that cannot run in the background fails asynchronously
+failed asynchronously
+=== http ===
+--- server-minted query_id is returned in the header and inline body data is inserted
+query_id header present
+2
+--- inline SETTINGS is rejected synchronously
+BAD_ARGUMENTS
+--- a body that streams data beyond the query text is rejected synchronously
+BAD_ARGUMENTS
