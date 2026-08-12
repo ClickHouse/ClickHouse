@@ -2,7 +2,7 @@
 # Tags: no-fasttest
 # Tag no-fasttest: requires S3 (MinIO)
 
-# Tests that listing globbed s3() paths in parallel (s3_list_object_parallelism > 1, which walks the
+# Tests that listing globbed S3 paths in parallel (s3_list_object_parallelism > 1, which walks the
 # common-prefix tree concurrently) returns exactly the same files as the serial listing, for a
 # Hive-style hierarchical layout and for several glob shapes, including the "**" fallback.
 
