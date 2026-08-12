@@ -10,8 +10,9 @@
 # and without a check in between the second probe would request the metadata of a file no one is left
 # to read. The window between the probes is a few instructions wide, so the test holds the source in it
 # with a failpoint: the server tears down the HEAD request abruptly, the source pauses on the failpoint,
-# the test delivers a soft `max_execution_time` timeout with the `break` overflow mode, and only then
-# releases the failpoint.
+# the test cancels the client with SIGINT - `partial_result_on_first_cancel` makes that a soft
+# cancellation, and its delivery is under the test's control, unlike a timer racing the query - and
+# only then releases the failpoint.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -26,8 +27,6 @@ PORT_FILE=$(mktemp "./${CLICKHOUSE_DATABASE}.XXXXXX.port")
 # - /nohead answers a HEAD request by tearing the connection down without a response - the network
 #   error which leaves the first metadata probe with nothing to remember - and would serve a small
 #   file to a GET request, which must never arrive.
-# - /reset starts the next attempt from scratch, for the case when the cancellation preempts the
-#   first request, see below.
 # The server must serve requests in parallel: the test polls /stats while the query is being
 # served, and a single-threaded server would block the polls behind the query's requests.
 python3 -u -c "
@@ -52,10 +51,6 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             if not head:
                 self.wfile.write(body)
-        elif self.path == '/reset':
-            counts.clear()
-            self.send_response(200)
-            self.end_headers()
         elif self.path == '/nohead':
             if head:
                 self.close_connection = True
@@ -105,71 +100,66 @@ stat_count()
     curl -sS "http://127.0.0.1:$HTTP_PORT/stats" | python3 -c "import sys, json; print(json.load(sys.stdin).get('$1', 0))"
 }
 
-# The HEAD request must have failed before the cancellation arrived - a request interrupted by the
-# cancellation is reported from the probe itself and never reaches the window between the probes,
-# which is a different, already covered path. When the server is slow to start the query - under
-# a sanitizer, for example - the soft timeout can fire first: nothing to assert then, so retry.
-for attempt in {1..10}; do
-    curl -sS "http://127.0.0.1:$HTTP_PORT/reset" -o /dev/null
-    $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT storage_url_pause_between_metadata_probes"
+$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT storage_url_pause_between_metadata_probes"
 
-    QUERY_ID="${CLICKHOUSE_DATABASE}_no_second_metadata_probe_$attempt"
+QUERY_ID="${CLICKHOUSE_DATABASE}_no_second_metadata_probe"
 
-    # http_max_tries stops the retries of the torn-down HEAD request: the first probe must fail
-    # while the query is still alive.
-    # parallel_replicas_for_cluster_engines would rewrite url to urlCluster and read it in remote
-    # queries with their own query ids: the log the test waits for would be left under a different
-    # query id.
-    $CLICKHOUSE_CLIENT \
-        --max_execution_time 1 \
-        --timeout_overflow_mode 'break' \
-        --http_make_head_request 1 \
-        --http_max_tries 1 \
-        --parallel_replicas_for_cluster_engines 0 \
-        --query_id "$QUERY_ID" \
-        --query "SELECT x FROM url('http://127.0.0.1:$HTTP_PORT/nohead', 'CSV', 'x UInt64')" \
-        >/dev/null 2>/dev/null &
-    CLIENT_PID=$!
+# http_max_tries stops the retries of the torn-down HEAD request: the first probe must fail once
+# and for all before the cancellation, not be interrupted by it on a retry.
+# parallel_replicas_for_cluster_engines would rewrite url to urlCluster and read it in remote
+# queries with their own query ids: the cancel of this client would not reach the source the same
+# way, and the log the test waits for would be left under a different query id.
+$CLICKHOUSE_CLIENT \
+    --partial_result_on_first_cancel 1 \
+    --http_make_head_request 1 \
+    --http_max_tries 1 \
+    --parallel_replicas_for_cluster_engines 0 \
+    --query_id "$QUERY_ID" \
+    --query "SELECT x FROM url('http://127.0.0.1:$HTTP_PORT/nohead', 'CSV', 'x UInt64')" \
+    >/dev/null 2>/dev/null &
+CLIENT_PID=$!
 
-    # Wait until the first probe has sent its HEAD request, after which the source pauses on the
-    # failpoint between the probes.
-    for _ in {1..100}; do
-        (($(stat_count "HEAD /nohead") > 0)) && break
-        sleep 0.1
-    done
-
-    # The probe must have run before the cancellation, see above.
-    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
-    PREEMPTED=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.text_log WHERE query_id = '$QUERY_ID' AND logger_name = 'StorageURLSource' AND message LIKE 'The read has been cancelled%'")
-
-    # Wait until the soft timeout has cancelled the source, which leaves a trace in the log.
-    DELIVERED=0
-    for _ in {1..120}; do
-        $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
-        if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.text_log WHERE query_id = '$QUERY_ID' AND logger_name = 'StorageURLSource' AND message LIKE 'The read has been cancelled%'") != 0 ]]; then
-            DELIVERED=1
-            break
-        fi
-        sleep 0.1
-    done
-
-    # Only now, with the cancellation delivered, release the source from the window between the
-    # probes. It must end the stream instead of sending another HEAD request.
-    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT storage_url_pause_between_metadata_probes"
-
-    wait $CLIENT_PID
-    CLIENT_STATUS=$?
-
-    ((DELIVERED == 1)) && [[ "$PREEMPTED" == 0 ]] && (($(stat_count "HEAD /nohead") > 0)) && break
+# Wait until the query is registered - so that the SIGINT below cancels the query instead of a
+# client that has not started it yet - and its first probe has sent the HEAD request, after which
+# the source pauses on the failpoint between the probes. The HEAD has failed with no cancellation
+# in sight: what the second probe does after the cancellation is delivered is all that is tested.
+for _ in {1..300}; do
+    [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.processes WHERE query_id = '$QUERY_ID'") == 1 ]] && break
+    sleep 0.1
+done
+for _ in {1..300}; do
+    (($(stat_count "HEAD /nohead") > 0)) && break
+    sleep 0.1
 done
 
-if ((DELIVERED == 1)) && [[ "$PREEMPTED" == 0 ]] && (($(stat_count "HEAD /nohead") > 0)); then
+# The soft cancellation: the client asks for its partial result, the query keeps running.
+kill -SIGINT $CLIENT_PID
+
+# Wait until the cancellation has reached the source, which leaves a trace in the log.
+DELIVERED=0
+for _ in {1..300}; do
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
+    if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.text_log WHERE query_id = '$QUERY_ID' AND logger_name = 'StorageURLSource' AND message LIKE 'The read has been cancelled%'") != 0 ]]; then
+        DELIVERED=1
+        break
+    fi
+    sleep 0.1
+done
+
+# Only now, with the cancellation delivered, release the source from the window between the
+# probes. It must end the stream instead of sending another HEAD request.
+$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT storage_url_pause_between_metadata_probes"
+
+wait $CLIENT_PID
+CLIENT_STATUS=$?
+
+if ((DELIVERED == 1)); then
     echo "the cancellation was delivered while the source was paused between the metadata probes"
 else
     echo "FAIL: the cancellation was not delivered while the source was paused between the metadata probes"
 fi
 
-# The query is not killed by the soft timeout: it returns what it has read - nothing.
+# The query is cancelled softly: it returns what it has read - nothing.
 if ((CLIENT_STATUS == 0)); then
     echo "the query succeeded"
 else
