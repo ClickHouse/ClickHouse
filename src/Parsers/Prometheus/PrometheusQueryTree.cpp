@@ -21,6 +21,62 @@ namespace
 {
     using Node = PrometheusQueryTree::Node;
 
+    bool isLegacyLabelName(std::string_view label)
+    {
+        if (label.empty())
+            return false;
+
+        auto is_alpha = [](char c)
+        {
+            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+        };
+        auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
+
+        if (!is_alpha(label.front()) && label.front() != '_')
+            return false;
+
+        for (char c : label.substr(1))
+        {
+            if (!is_alpha(c) && !is_digit(c) && c != '_')
+                return false;
+        }
+
+        return true;
+    }
+
+    bool isLegacyMetricName(std::string_view metric)
+    {
+        if (metric.empty())
+            return false;
+
+        auto is_alpha = [](char c)
+        {
+            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+        };
+        auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
+
+        if (!is_alpha(metric.front()) && metric.front() != '_' && metric.front() != ':')
+            return false;
+
+        for (char c : metric.substr(1))
+        {
+            if (!is_alpha(c) && !is_digit(c) && c != '_' && c != ':')
+                return false;
+        }
+
+        return true;
+    }
+
+    String formatLabelName(const String & label)
+    {
+        return isLegacyLabelName(label) ? label : doubleQuoteString(label);
+    }
+
+    String formatMetricName(const String & metric)
+    {
+        return isLegacyMetricName(metric) ? metric : doubleQuoteString(metric);
+    }
+
     template <typename NodeType>
     NodeType * cloneNodeImpl(const NodeType * node, std::vector<std::unique_ptr<Node>> & node_list)
     {
@@ -320,24 +376,31 @@ String PrometheusQueryTree::InstantSelector::toString(const PrometheusQueryTree 
         }
     }
 
-    String str;
-    if (has_metric_name)
-    {
-        str += matchers[metric_name_pos].label_value;
-    }
+    bool metric_name_is_legacy = has_metric_name && isLegacyMetricName(matchers[metric_name_pos].label_value);
 
-    if (!has_metric_name || (matchers.size() - has_metric_name > 0))
+    String str;
+    if (metric_name_is_legacy)
+        str += formatMetricName(matchers[metric_name_pos].label_value);
+
+    if (!metric_name_is_legacy || !has_metric_name || (matchers.size() - has_metric_name > 0))
     {
         str += "{";
         bool need_comma = false;
         for (size_t i = 0; i != matchers.size(); ++i)
         {
-            if (i == metric_name_pos)
+            if (i == metric_name_pos && metric_name_is_legacy)
                 continue;
             const auto & matcher = matchers[i];
             if (need_comma)
                 str += ",";
-            str += matcher.label_name;
+            if (i == metric_name_pos)
+            {
+                str += formatMetricName(matcher.label_value);
+            }
+            else
+            {
+                str += formatLabelName(matcher.label_name);
+            }
             std::string_view matcher_type_str;
             switch (matcher.matcher_type)
             {
@@ -347,8 +410,11 @@ String PrometheusQueryTree::InstantSelector::toString(const PrometheusQueryTree 
                 case MatcherType::NRE: matcher_type_str = "!~"; break;
             }
             chassert(!matcher_type_str.empty());
-            str += matcher_type_str;
-            str += quotePromQLString(matcher.label_value);
+            if (i != metric_name_pos)
+            {
+                str += matcher_type_str;
+                str += quotePromQLString(matcher.label_value);
+            }
             need_comma = true;
         }
         str += "}";

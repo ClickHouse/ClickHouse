@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/isValidUTF8.h>
 
 #include "config.h"
 
@@ -310,6 +311,30 @@ namespace
         /// Extracts a label name.
         String getLabelName(antlr4_grammars::PromQLParser::LabelNameContext * ctx) const { return ctx->getText(); }
 
+        bool getSelectorIdentifier(antlr4_grammars::PromQLParser::SelectorIdentifierContext * ctx, String & identifier)
+        {
+            if (auto * label_name_ctx = ctx->labelName())
+            {
+                identifier = getLabelName(label_name_ctx);
+                return true;
+            }
+
+            auto * string_ctx = ctx->STRING();
+            if (!string_ctx)
+                throwInconsistentSchema("SelectorIdentifier", ctx->getText());
+
+            if (!parseStringLiteral(string_ctx, identifier))
+                return false;
+
+            if (identifier.empty() || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(identifier.data()), identifier.size()))
+            {
+                error_listener.setError("invalid selector identifier", getStartPos(string_ctx));
+                return false;
+            }
+
+            return true;
+        }
+
         /// Extracts multiple label names separated by comma.
         Strings getLabelNameList(antlr4_grammars::PromQLParser::LabelNameListContext * ctx) const
         {
@@ -325,13 +350,14 @@ namespace
         /// Extracts a matcher.
         bool getMatcher(antlr4_grammars::PromQLParser::LabelMatcherContext * ctx, Matcher & res_matcher)
         {
-            auto * label_name_ctx = ctx->labelName();
+            auto * selector_identifier_ctx = ctx->selectorIdentifier();
             auto * label_value_ctx = ctx->STRING();
             auto * op_ctx = ctx->labelMatcherOperator();
-            if (!label_name_ctx || !label_value_ctx || !op_ctx)
+            if (!selector_identifier_ctx || !label_value_ctx || !op_ctx)
                 throwInconsistentSchema("LabelMatcher", ctx->getText());
 
-            res_matcher.label_name = getLabelName(label_name_ctx);
+            if (!getSelectorIdentifier(selector_identifier_ctx, res_matcher.label_name))
+                return false;
 
             MatcherType matcher_type = {};
             if (op_ctx->EQ())
@@ -353,6 +379,27 @@ namespace
                 return false;
             }
 
+            return true;
+        }
+
+        bool getMatcherForQuotedMetricName(antlr4_grammars::PromQLParser::LabelMatcherContext * ctx, Matcher & res_matcher)
+        {
+            auto * string_ctx = ctx->STRING();
+            if (!string_ctx)
+                throwInconsistentSchema("LabelMatcher", ctx->getText());
+
+            res_matcher.label_name = "__name__";
+            if (!parseStringLiteral(string_ctx, res_matcher.label_value))
+                return false;
+
+            if (res_matcher.label_value.empty()
+                || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(res_matcher.label_value.data()), res_matcher.label_value.size()))
+            {
+                error_listener.setError("invalid selector identifier", getStartPos(string_ctx));
+                return false;
+            }
+
+            res_matcher.matcher_type = MatcherType::EQ;
             return true;
         }
 
@@ -380,7 +427,10 @@ namespace
                 for (size_t i = 0; (label_matcher_ctx = label_matcher_list_ctx->labelMatcher(i)) != nullptr; ++i)
                 {
                     Matcher matcher;
-                    if (!getMatcher(label_matcher_ctx, matcher))
+                    bool parsed = label_matcher_ctx->selectorIdentifier()
+                        ? getMatcher(label_matcher_ctx, matcher)
+                        : getMatcherForQuotedMetricName(label_matcher_ctx, matcher);
+                    if (!parsed)
                     {
                         chassert(error_listener.hasError());
                         return nullptr;

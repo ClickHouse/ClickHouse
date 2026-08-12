@@ -21,6 +21,49 @@ namespace
 }
 
 
+TEST(PromQLParser, QuotedSelectorIdentifiers)
+{
+    EXPECT_EQ(parse(R"({"http.server.request.duration"})"), R"(
+{"http.server.request.duration"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ EQ 'http.server.request.duration'
+)");
+
+    EXPECT_EQ(parse(R"({"rpc.server.duration", "service.name"="api"})"), R"(
+{"rpc.server.duration","service.name"="api"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ EQ 'rpc.server.duration'
+        service.name EQ 'api'
+)");
+
+    EXPECT_EQ(parse(R"(up{"service.name"=~"api.*"})"), R"(
+up{"service.name"=~"api.*"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ EQ 'up'
+        service.name RE 'api.*'
+)");
+}
+
+
+TEST(PromQLParser, InvalidQuotedSelectorIdentifiers)
+{
+    for (const auto query : {R"({""})", R"({""="value"})", R"({"\xff"})"})
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_FALSE(error_message.empty()) << query;
+    }
+}
+
+
 /// Parse queries from https://github.com/prometheus/compliance/blob/main/promql/promql-test-queries.yml
 TEST(PromQLParser, ComplianceQueries)
 {
