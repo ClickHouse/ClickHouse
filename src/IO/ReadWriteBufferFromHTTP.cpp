@@ -1,5 +1,6 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 
+#include <base/pathToString.h>
 #include <IO/HTTPCommon.h>
 #include <IO/WriteHelpers.h>
 #include <IO/parseHTTPDate.h>
@@ -32,7 +33,9 @@ Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPRespons
     /// with path from the original URI and normalize it.
     auto path = std::filesystem::weakly_canonical(std::filesystem::path(prev_uri.getPath()) / location);
     location_uri = prev_uri;
-    location_uri.setPath(path);
+    /// A URL path is `/`-separated by definition, so read the normalized path back generically -
+    /// on Windows `operator/` would otherwise have put `\` into it.
+    location_uri.setPath(pathToGenericString(path));
     return location_uri;
 }
 
@@ -631,7 +634,9 @@ off_t ReadWriteBufferFromHTTP::seek(off_t offset_, int whence)
 
 void ReadWriteBufferFromHTTP::setReadUntilPosition(size_t until)
 {
-    until = std::max(until, 1ul);
+    /// Not `1ul`: `unsigned long` is 32-bit on LLP64 (Windows), which fails the `std::max`
+    /// template deduction against `size_t`.
+    until = std::max<size_t>(until, 1);
     if (read_range.end && *read_range.end + 1 == until)
         return;
     read_range.end = until - 1;
