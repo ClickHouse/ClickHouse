@@ -57,17 +57,14 @@ TEST(ParquetRowGroupGlobalOffsets, RejectsNegativeRowGroupRowCount)
     EXPECT_THROW(buildRowGroupGlobalOffsets(makeFileMetaData(10, {10, -1})), Exception);
 }
 
-TEST(ParquetRowGroupGlobalOffsets, RejectsMismatchWithFileNumRows)
+TEST(ParquetRowGroupGlobalOffsets, ToleratesMismatchWithFileNumRows)
 {
-    try
-    {
-        buildRowGroupGlobalOffsets(makeFileMetaData(11, {10, 0}));
-        FAIL() << "Expected INCORRECT_DATA";
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
-    }
+    /// Offsets follow row-group counts even when FileMetaData.num_rows is stale/wrong.
+    const auto offsets = buildRowGroupGlobalOffsets(makeFileMetaData(11, {10, 0}));
+    ASSERT_EQ(offsets.size(), 3u);
+    EXPECT_EQ(offsets[0], 0u);
+    EXPECT_EQ(offsets[1], 10u);
+    EXPECT_EQ(offsets[2], 10u);
 }
 
 TEST(ParquetRowGroupGlobalOffsets, RejectsOverflowingCumulativeCounts)
