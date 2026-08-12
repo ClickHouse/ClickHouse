@@ -7066,7 +7066,9 @@ if __name__ == "__main__":
         # given neither a port nor a TLS mode probes both the plain and the secure port and prefers TLS,
         # and the test server listens on both, so an unspecified TLS mode would silently switch the whole
         # suite over to TLS - including the tests that assert on the plain port and on `is_secure`.
-        args.client += " --no-secure"
+        #
+        # Only here, and not in `args.client` as well: the command line of a `.sql` test is built from
+        # both, and `--no-secure` cannot be specified more than once.
         os.environ["CLICKHOUSE_CLIENT_OPT"] = (
             os.environ.get("CLICKHOUSE_CLIENT_OPT", "") + " --no-secure "
         )
