@@ -47,5 +47,8 @@ SELECT bitmapMin(bitmapXor(bitmapBuild(CAST(range(33), 'Array(Int16)')), bitmapB
 -- bitmapTransform uses the same UnsignedT domain as bitmapContains
 SELECT arraySort(bitmapToArray(bitmapTransform(bitmapBuild([-1, 0]::Array(Int8)), [255], [10])));
 SELECT arraySort(bitmapToArray(bitmapTransform(bitmapBuild(arrayConcat(CAST(range(31), 'Array(Int8)'), [-1]::Array(Int8))), [255], [10])));
--- out-of-range mapping no-ops
+-- a source value the element type cannot hold is simply not found, so nothing is replaced
 SELECT arraySort(bitmapToArray(bitmapTransform(bitmapBuild([-1, 0]::Array(Int8)), [256], [10])));
+-- a replacement value the element type cannot hold is rejected, whether or not the source is present
+SELECT bitmapTransform(bitmapBuild([1, 2]::Array(UInt8)), [1], [256]); -- { serverError BAD_ARGUMENTS }
+SELECT bitmapTransform(bitmapBuild([1, 2]::Array(UInt8)), [3], [256]); -- { serverError BAD_ARGUMENTS }

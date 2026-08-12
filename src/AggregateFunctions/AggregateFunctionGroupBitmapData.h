@@ -681,24 +681,33 @@ public:
         if (isSmall())
             toLarge();
 
+        constexpr UInt64 max_element = std::is_same_v<T, UInt64>
+            ? std::numeric_limits<UInt64>::max()
+            : static_cast<UInt64>(std::numeric_limits<UnsignedT>::max());
+
         for (size_t i = 0; i < num; ++i)
         {
             if (from_vals[i] == to_vals[i])
                 continue;
 
-            if constexpr (!std::is_same_v<T, UInt64>)
-            {
-                const auto max_u = static_cast<UInt64>(std::numeric_limits<UnsignedT>::max());
-                if (from_vals[i] > max_u || to_vals[i] > max_u)
-                    continue;
-            }
+            /// Rejected regardless of whether the replacement applies, so that the outcome depends
+            /// on the arguments and not on the contents of the bitmap. Storing such a value would
+            /// silently truncate it to an unrelated element.
+            if (to_vals[i] > max_element)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Replacement value {} does not fit into the bitmap element type, the maximum is {}",
+                    to_vals[i],
+                    max_element);
+
+            /// The bitmap cannot hold this value, so there is nothing to replace. Consistent with
+            /// `bitmapContains`, which reports such a value as absent instead of failing.
+            if (from_vals[i] > max_element)
+                continue;
 
             /// Cast through T so narrow signed values match sign-extended storage (e.g. Int8 255 -> -1 -> 0xFFFFFFFF).
-            const Value from_v = static_cast<Value>(static_cast<T>(from_vals[i]));
-            const Value to_v = static_cast<Value>(static_cast<T>(to_vals[i]));
-            bool changed = roaring_bitmap->removeChecked(from_v);
-            if (changed)
-                roaring_bitmap->add(to_v);
+            if (roaring_bitmap->removeChecked(static_cast<Value>(static_cast<T>(from_vals[i]))))
+                roaring_bitmap->add(static_cast<Value>(static_cast<T>(to_vals[i])));
         }
     }
 
