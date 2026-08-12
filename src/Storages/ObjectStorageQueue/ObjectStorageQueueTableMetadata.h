@@ -39,6 +39,7 @@ struct ObjectStorageQueueTableMetadata
     std::atomic<UInt64> buckets;
 
     bool processing_threads_num_changed = false;
+    bool failed_files_ttl_sec_changed = false;
 
     ObjectStorageQueueTableMetadata(
         const ObjectStorageQueueSettings & engine_settings,

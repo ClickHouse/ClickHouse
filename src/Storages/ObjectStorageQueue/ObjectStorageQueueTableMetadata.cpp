@@ -85,6 +85,8 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     else
         processing_threads_num = engine_settings[ObjectStorageQueueSetting::processing_threads_num];
 
+    failed_files_ttl_sec_changed = engine_settings[ObjectStorageQueueSetting::failed_file_ttl_sec].changed;
+
     // Validate regex partitioning configuration
     if (partitioning_mode == "regex")
     {
@@ -239,6 +241,19 @@ void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueT
             LOG_TRACE(log, "{}", message);
 
         processing_threads_num = from_zk.processing_threads_num.load();
+    }
+
+    if (failed_files_ttl_sec != from_zk.failed_files_ttl_sec)
+    {
+        if (!failed_files_ttl_sec_changed)
+        {
+            /// Legacy table: local value was never explicitly set, inherit from Keeper
+            auto log = getLogger("ObjectStorageQueueTableMetadata");
+            LOG_TRACE(log, "Using `failed_files_ttl_sec` from keeper: {} (local: {})",
+                from_zk.failed_files_ttl_sec.load(), failed_files_ttl_sec.load());
+            failed_files_ttl_sec = from_zk.failed_files_ttl_sec.load();
+        }
+        /// else: user explicitly set it locally, let checkImmutableFieldsEquals throw METADATA_MISMATCH
     }
 }
 
