@@ -988,13 +988,23 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             return false;
 
         /// `mapContainsKey`/`mapContainsValue`/`mapContains`, and `has` over a `Map`, are adapters
-        /// of the same arrayIndex.h machinery over the keys/values subcolumn, so the constant must
-        /// be coerced the same way as for `has` over an array. The subcolumn keeps the
-        /// `LowCardinality` wrapper that the `mapKeys`/`mapValues` index expression strips, so the
-        /// coercion mode must be read from the `Map` type itself, not from the index header.
+        /// of the same arrayIndex.h machinery, so the constant must be coerced the same way as for
+        /// `has` over an array. The `mapKeys`/`mapValues` index expression strips the
+        /// `LowCardinality` wrapper of the key/value type, so the coercion mode must be read from
+        /// the `Map` type itself, not from the index header.
         DataTypePtr element_type;
         if (const auto * map_type = typeid_cast<const DataTypeMap *>(key_node.getDAGNode()->result_type.get()))
+        {
             element_type = function_name == "mapContainsValue" ? map_type->getValueType() : map_type->getKeyType();
+
+            /// The `mapContains*` adapters run over the keys/values subcolumn, which keeps the
+            /// wrapper, so they compare against the dictionary. `has` over a `Map` instead goes
+            /// through `executeMap`, which rewrites the map to an array of its keys and strips
+            /// `LowCardinality` from both arguments before comparing (arrayIndex.h), so it compares
+            /// the raw padded bytes exactly like `has` over an `Array(String)`.
+            if (function_name == "has")
+                element_type = recursiveRemoveLowCardinality(element_type);
+        }
 
         out.function = RPNElement::FUNCTION_HAS;
         const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
