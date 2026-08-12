@@ -43,6 +43,13 @@ ALTER TABLE test DROP COLUMN n; -- { serverError ILLEGAL_COLUMN }
 ALTER TABLE test DROP COLUMN IF EXISTS n; -- { serverError ILLEGAL_COLUMN }
 DROP TABLE test;
 
+-- An exact column takes precedence over the group: dropping `n` leaves `n.a` in place, so the
+-- dependency of `c` on `n.a` does not forbid it, while `n.a` itself stays protected
+CREATE TABLE test (n UInt64, `n.a` UInt64, c UInt64 DEFAULT `n.a` + 1) ENGINE = MergeTree ORDER BY tuple();
+ALTER TABLE test DROP COLUMN n;
+ALTER TABLE test DROP COLUMN `n.a`; -- { serverError ILLEGAL_COLUMN }
+DROP TABLE test;
+
 -- Dropping the group is rejected while a materialized view reads a column of the group
 CREATE TABLE test (`n.a` UInt64, `n.b` UInt64, x UInt64) ENGINE = MergeTree ORDER BY x;
 CREATE MATERIALIZED VIEW test_mv ENGINE = Null AS SELECT `n.a` FROM test;
