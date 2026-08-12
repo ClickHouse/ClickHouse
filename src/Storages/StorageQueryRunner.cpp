@@ -349,7 +349,7 @@ public:
         if (shutdown_called)
             LOG_WARNING(log, "The table is shutting down, discarding the query");
         else
-            LOG_ERROR(LogFrequencyLimiter(log, 5), "The queue is full (max_queue_size = {}), discarding the query", max_queue_size);
+            LOG_ERROR(LogFrequencyLimiter(log, 5), "Cannot schedule the query (max_queue_size = {}), discarding it", max_queue_size);
     }
 
     const std::shared_ptr<PrefixLatch> & getPending() const { return pending; }
