@@ -55,6 +55,12 @@ IQueryPlanStep::RemoveUnusedColumnsResult IQueryPlanStep::removeUnusedColumns(co
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeUnusedColumns is not implemented for step {}", getName());
 }
 
+IQueryPlanStep::RemoveUnusedColumnsResult
+IQueryPlanStep::getRequiredColumns(const std::vector<size_t> & /*required_output_positions*/, bool /*remove_inputs*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getRequiredColumns is not implemented for step {}", getName());
+}
+
 bool IQueryPlanStep::canRemoveColumnsFromOutput() const
 {
     return false;

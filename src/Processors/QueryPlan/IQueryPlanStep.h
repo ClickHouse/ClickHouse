@@ -177,6 +177,14 @@ public:
     /// The order of the remaining outputs must be preserved.
     virtual RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & /*required_output_positions*/, bool /*remove_inputs*/);
 
+    /// Same answer as removeUnusedColumns, but leaves this step untouched, so a pass can try a
+    /// candidate set of required columns and back out. Where both are implemented, removeUnusedColumns
+    /// is this calculation plus its application. Requires canGetRequiredColumns.
+    virtual RemoveUnusedColumnsResult getRequiredColumns(const std::vector<size_t> & /*required_output_positions*/, bool /*remove_inputs*/) const;
+
+    /// Returns true if the step has implemented getRequiredColumns.
+    virtual bool canGetRequiredColumns() const { return false; }
+
     /// Returns true if the step can remove any columns from the output using removeUnusedColumns.
     virtual bool canRemoveColumnsFromOutput() const;
 

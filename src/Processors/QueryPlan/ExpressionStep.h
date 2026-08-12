@@ -48,6 +48,9 @@ public:
     RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
     bool canRemoveColumnsFromOutput() const override;
 
+    bool canGetRequiredColumns() const override { return true; }
+    RemoveUnusedColumnsResult getRequiredColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) const override;
+
     /// Prevent future input removal by removeUnusedColumns.
     /// Used when extra columns were absorbed from a child step that cannot reduce its output
     /// (e.g., ReadFromMergeTree with FINAL must keep sort key columns).
@@ -56,6 +59,25 @@ public:
 
 private:
     void updateOutputHeader() override;
+
+    /// Everything removeUnusedColumns needs to know, computed without touching the step. Shared by
+    /// removeUnusedColumns and getRequiredColumns so their answers cannot differ.
+    struct RequiredColumnsPlan
+    {
+        RemoveUnusedColumnsResult result;
+
+        /// Whether inputs may be removed, after the prevent_input_removal override.
+        bool remove_inputs = false;
+        /// Positions in the DAG outputs to keep, and their nodes.
+        std::vector<size_t> required_dag_positions;
+        /// Input header positions of the pass-through columns to keep, and of those to drop.
+        std::vector<size_t> required_passthrough_header_positions;
+        std::vector<size_t> dropped_passthrough_header_positions;
+        /// Whether removeUnusedActions would erase any node.
+        bool removes_any_action = false;
+    };
+
+    RequiredColumnsPlan analyzeRequiredColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) const;
 
     ActionsDAG actions_dag;
     bool prevent_input_removal = false;
