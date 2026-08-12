@@ -18,7 +18,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
-#include <Storages/MergeTree/ColumnIdMapping.h>
+#include <Storages/MergeTree/ColumnIdHelper.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -974,7 +974,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     }
 
     /// The part's records are keyed by stamped column ID; the stats above were
-    /// accumulated under logical names.
+    /// accumulated under column names.
     infos.reKeyToColumnIds(columns);
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
     new_data_part->setSourcePartsSet(std::move(source_parts_set));
@@ -1195,7 +1195,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     infos.add(block);
 
     /// The part's records are keyed by stamped column ID; the stats above were
-    /// accumulated under logical names.
+    /// accumulated under column names.
     infos.reKeyToColumnIds(columns);
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
 

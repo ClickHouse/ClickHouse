@@ -50,17 +50,17 @@ UInt64 getNextColumnId(const NamesAndTypesList & columns)
     return safeIncrementColumnId(max_numeric_column_id);
 }
 
-UInt64 getNextColumnId(const std::unordered_map<String, String> & logical_to_id)
+UInt64 getNextColumnId(const std::unordered_map<String, String> & name_to_id)
 {
     UInt64 max_numeric_column_id = 0;
-    for (const auto & [_, column_id] : logical_to_id)
+    for (const auto & [_, column_id] : name_to_id)
         max_numeric_column_id = std::max(max_numeric_column_id, ColumnIdMapping::extractNumericCounter(column_id));
     return safeIncrementColumnId(max_numeric_column_id);
 }
 
-[[noreturn]] void throwMissingLogicalName(const String & logical_name)
+[[noreturn]] void throwMissingColumnName(const String & column_name)
 {
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Logical column name '{}' is not found in `ColumnIdMapping`", logical_name);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column name '{}' is not found in `ColumnIdMapping`", column_name);
 }
 
 [[noreturn]] void throwMissingColumnId(const String & column_id)
@@ -95,59 +95,59 @@ UInt64 ColumnIdMapping::extractNumericCounter(const String & s)
     }
 }
 
-String ColumnIdMapping::getColumnId(const String & logical_name) const
+String ColumnIdMapping::getColumnId(const String & column_name) const
 {
-    auto it = logical_to_id.find(logical_name);
-    if (it == logical_to_id.end())
-        throwMissingLogicalName(logical_name);
+    auto it = name_to_id.find(column_name);
+    if (it == name_to_id.end())
+        throwMissingColumnName(column_name);
 
     return it->second;
 }
 
-String ColumnIdMapping::getColumnIdOrDefault(const String & logical_name) const
+String ColumnIdMapping::getColumnIdOrDefault(const String & column_name) const
 {
-    auto it = logical_to_id.find(logical_name);
-    return it == logical_to_id.end() ? logical_name : it->second;
+    auto it = name_to_id.find(column_name);
+    return it == name_to_id.end() ? column_name : it->second;
 }
 
-String ColumnIdMapping::getLogicalName(const String & column_id) const
+String ColumnIdMapping::getColumnName(const String & column_id) const
 {
-    auto it = id_to_logical.find(column_id);
-    if (it == id_to_logical.end())
+    auto it = id_to_name.find(column_id);
+    if (it == id_to_name.end())
         throwMissingColumnId(column_id);
 
     return it->second;
 }
 
-bool ColumnIdMapping::hasLogicalName(const String & logical_name) const
+bool ColumnIdMapping::hasColumnName(const String & column_name) const
 {
-    return logical_to_id.contains(logical_name);
+    return name_to_id.contains(column_name);
 }
 
 bool ColumnIdMapping::hasColumnId(const String & column_id) const
 {
-    return id_to_logical.contains(column_id);
+    return id_to_name.contains(column_id);
 }
 
-std::optional<ColumnId> ColumnIdMapping::tryGetColumnId(const String & logical_name) const
+std::optional<ColumnId> ColumnIdMapping::tryGetColumnId(const String & column_name) const
 {
-    if (!hasLogicalName(logical_name))
+    if (!hasColumnName(column_name))
         return std::nullopt;
-    return ColumnId{getColumnId(logical_name)};
+    return ColumnId{getColumnId(column_name)};
 }
 
-std::optional<String> ColumnIdMapping::tryGetLogicalName(const ColumnId & column_id) const
+std::optional<String> ColumnIdMapping::tryGetColumnName(const ColumnId & column_id) const
 {
     if (!hasColumnId(column_id.value()))
         return std::nullopt;
-    return getLogicalName(column_id.value());
+    return getColumnName(column_id.value());
 }
 
 String ColumnIdMapping::allocateColumnId()
 {
     /// The counter is monotonically increasing and never recycled.
     /// This guarantees that DROP column "x" followed by ADD column "x"
-    /// always gets a different column ID, even if the logical name
+    /// always gets a different column ID, even if the column name
     /// is reused.  Old parts still reference the old column ID,
     /// which is now orphaned — the reader's loadColumns remapping
     /// (column-ID-first algorithm) will correctly skip it.
@@ -157,95 +157,95 @@ String ColumnIdMapping::allocateColumnId()
     return ::DB::toString(id);
 }
 
-void ColumnIdMapping::addColumn(const String & logical_name, const String & column_id)
+void ColumnIdMapping::addColumn(const String & column_name, const String & column_id)
 {
-    if (logical_to_id.contains(logical_name))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical column name '{}' is already registered in `ColumnIdMapping`", logical_name);
+    if (name_to_id.contains(column_name))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name '{}' is already registered in `ColumnIdMapping`", column_name);
 
-    if (id_to_logical.contains(column_id))
+    if (id_to_name.contains(column_id))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Column ID '{}' is already registered in `ColumnIdMapping`", column_id);
 
     active = true;
-    logical_to_id.emplace(logical_name, column_id);
-    id_to_logical.emplace(column_id, logical_name);
+    name_to_id.emplace(column_name, column_id);
+    id_to_name.emplace(column_id, column_name);
 }
 
-void ColumnIdMapping::detachLogicalName(std::unordered_map<String, String>::iterator it)
+void ColumnIdMapping::detachColumnName(std::unordered_map<String, String>::iterator it)
 {
     const String column_id = it->second;
-    logical_to_id.erase(it);
+    name_to_id.erase(it);
 
     /// A second name can still hold the id -- that is the transient state `beginRename` leaves --
     /// so the reverse entry is re-pointed at the survivor rather than erased.
-    for (const auto & [other_logical, other_column_id] : logical_to_id)
+    for (const auto & [other_name, other_column_id] : name_to_id)
     {
         if (other_column_id == column_id)
         {
-            id_to_logical[column_id] = other_logical;
+            id_to_name[column_id] = other_name;
             return;
         }
     }
-    id_to_logical.erase(column_id);
+    id_to_name.erase(column_id);
 }
 
-void ColumnIdMapping::removeColumn(const String & logical_name)
+void ColumnIdMapping::removeColumn(const String & column_name)
 {
-    auto it = logical_to_id.find(logical_name);
-    if (it == logical_to_id.end())
-        throwMissingLogicalName(logical_name);
+    auto it = name_to_id.find(column_name);
+    if (it == name_to_id.end())
+        throwMissingColumnName(column_name);
 
-    detachLogicalName(it);
+    detachColumnName(it);
 }
 
-void ColumnIdMapping::beginRename(const String & old_logical_name, const String & new_logical_name)
+void ColumnIdMapping::beginRename(const String & old_column_name, const String & new_column_name)
 {
-    auto it = logical_to_id.find(old_logical_name);
-    if (it == logical_to_id.end())
-        throwMissingLogicalName(old_logical_name);
+    auto it = name_to_id.find(old_column_name);
+    if (it == name_to_id.end())
+        throwMissingColumnName(old_column_name);
 
-    if (logical_to_id.contains(new_logical_name))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical column name '{}' is already registered in `ColumnIdMapping`", new_logical_name);
+    if (name_to_id.contains(new_column_name))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name '{}' is already registered in `ColumnIdMapping`", new_column_name);
 
     auto column_id = it->second;
 
     /// Reject renaming a column to a name equal to another active column's ID. On-disk
-    /// artifacts (streams, minmax, sizes) are keyed by the column id, so a logical name that equals
+    /// artifacts (streams, minmax, sizes) are keyed by the column id, so a column name that equals
     /// a foreign column's id makes name-vs-id resolution ambiguous -- reachable via a mutation that
     /// then reads/writes the wrong streams (silent data corruption). Allowing it safely would need
     /// id-vs-name disambiguation at every by-name resolution site; until then, reject it loudly.
     /// The self-case (a column adopting its own id as its name) is fine.
-    if (id_to_logical.contains(new_logical_name) && new_logical_name != column_id)
+    if (id_to_name.contains(new_column_name) && new_column_name != column_id)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Cannot rename column '{}' to '{}': the new name collides with an existing column ID",
-            old_logical_name, new_logical_name);
+            old_column_name, new_column_name);
 
-    logical_to_id.emplace(new_logical_name, column_id);
-    /// Do NOT update id_to_logical here — keep it pointing to
-    /// old_logical_name so the reverse map stays consistent with the
+    name_to_id.emplace(new_column_name, column_id);
+    /// Do NOT update id_to_name here — keep it pointing to
+    /// old_column_name so the reverse map stays consistent with the
     /// still-uncommitted metadata.  `reconcileColumnIdMappingWithMetadata`
     /// resolves any ambiguity on restart.  `finishRename` updates the
     /// reverse map once the metadata commit is confirmed.
 }
 
-void ColumnIdMapping::finishRename(const String & old_logical_name)
+void ColumnIdMapping::finishRename(const String & old_column_name)
 {
-    auto it = logical_to_id.find(old_logical_name);
+    auto it = name_to_id.find(old_column_name);
     /// `beginRename` registered the old name and nothing between the two phases removes it: the
     /// planner only adds, and `AlterCommands::validate` rejects two renames of the same column.
-    if (it == logical_to_id.end())
+    if (it == name_to_id.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "`finishRename` of logical column name '{}' without a matching `beginRename`", old_logical_name);
+            "`finishRename` of column name '{}' without a matching `beginRename`", old_column_name);
 
-    detachLogicalName(it);
+    detachColumnName(it);
 }
 
-Names ColumnIdMapping::logicalNames() const
+Names ColumnIdMapping::columnNames() const
 {
     Names names;
-    names.reserve(logical_to_id.size());
+    names.reserve(name_to_id.size());
 
-    for (const auto & [logical_name, _] : logical_to_id)
-        names.push_back(logical_name);
+    for (const auto & [column_name, _] : name_to_id)
+        names.push_back(column_name);
 
     return names;
 }
@@ -279,14 +279,14 @@ String ColumnIdMapping::toString() const
     Poco::JSON::Object json;
     Poco::JSON::Object mapping_json;
 
-    std::vector<std::pair<String, String>> mapping_entries(logical_to_id.begin(), logical_to_id.end());
+    std::vector<std::pair<String, String>> mapping_entries(name_to_id.begin(), name_to_id.end());
     std::sort(mapping_entries.begin(), mapping_entries.end(), [](const auto & lhs, const auto & rhs)
     {
         return lhs.first < rhs.first;
     });
 
-    for (const auto & [logical_name, column_id] : mapping_entries)
-        mapping_json.set(logical_name, column_id);
+    for (const auto & [column_name, column_id] : mapping_entries)
+        mapping_json.set(column_name, column_id);
 
     json.set(KEY_ACTIVE, active);
     json.set(KEY_NEXT_COLUMN_ID, next_column_id);
@@ -315,34 +315,34 @@ ColumnIdMapping ColumnIdMapping::fromString(const String & str)
         return mapping;
 
     auto mapping_object = object->getObject(KEY_MAPPING);
-    for (const auto & [logical_name, column_id_value] : *mapping_object)
+    for (const auto & [column_name, column_id_value] : *mapping_object)
     {
         String column_id = column_id_value.convert<String>();
-        mapping.logical_to_id.emplace(logical_name, column_id);
-        mapping.id_to_logical[column_id] = logical_name;
+        mapping.name_to_id.emplace(column_name, column_id);
+        mapping.id_to_name[column_id] = column_name;
     }
 
-    /// During two-phase rename, both old and new logical names map to the
+    /// During two-phase rename, both old and new names map to the
     /// same column ID.  The `operator[]` above may have picked either
     /// winner depending on JSON key iteration order.  Rebuild the reverse
-    /// map deterministically: for each column ID with multiple logical
-    /// names, prefer the lexicographically smallest one.  This is arbitrary
+    /// map deterministically: for each column ID with multiple names,
+    /// prefer the lexicographically smallest one.  This is arbitrary
     /// but stable; `reconcileColumnIdMappingWithMetadata` will remove
     /// the stale entry immediately after startup anyway.
-    if (mapping.id_to_logical.size() < mapping.logical_to_id.size())
+    if (mapping.id_to_name.size() < mapping.name_to_id.size())
     {
-        mapping.id_to_logical.clear();
-        for (const auto & [logical, column_id] : mapping.logical_to_id)
+        mapping.id_to_name.clear();
+        for (const auto & [column_name, column_id] : mapping.name_to_id)
         {
-            auto it = mapping.id_to_logical.find(column_id);
-            if (it == mapping.id_to_logical.end() || logical < it->second)
-                mapping.id_to_logical[column_id] = logical;
+            auto it = mapping.id_to_name.find(column_id);
+            if (it == mapping.id_to_name.end() || column_name < it->second)
+                mapping.id_to_name[column_id] = column_name;
         }
     }
 
-    mapping.active = mapping.active || !mapping.logical_to_id.empty();
-    if (!mapping.logical_to_id.empty())
-        mapping.next_column_id = std::max(mapping.next_column_id, getNextColumnId(mapping.logical_to_id));
+    mapping.active = mapping.active || !mapping.name_to_id.empty();
+    if (!mapping.name_to_id.empty())
+        mapping.next_column_id = std::max(mapping.next_column_id, getNextColumnId(mapping.name_to_id));
 
     return mapping;
 }
@@ -392,20 +392,6 @@ void ColumnIdMapping::stampColumnIdsLenient(NamesAndTypesList & columns) const
         /// a projection part's parent-mapping-stamped columns) is left UNSTAMPED
         /// (empty id ≡ name-keyed on disk). No throw.
     }
-}
-
-ColumnId getColumnIdInPart(const NamesAndTypesList & part_columns, const String & column_name)
-{
-    auto column = part_columns.tryGetByName(column_name);
-    return column ? column->getColumnId() : ColumnId{column_name};
-}
-
-String getColumnNameByIdInPart(const NamesAndTypesList & part_columns, const ColumnId & column_id)
-{
-    for (const auto & column : part_columns)
-        if (column.getColumnId() == column_id)
-            return column.name;
-    return column_id.value();
 }
 
 }

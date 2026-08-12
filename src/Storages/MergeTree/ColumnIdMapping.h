@@ -16,7 +16,7 @@ class WriteBuffer;
 class ColumnIdMapping;
 using ColumnIdMappingPtr = std::shared_ptr<const ColumnIdMapping>;
 
-/// Bidirectional map between logical SQL column names and stable on-disk column IDs.
+/// Bidirectional map between SQL column names and stable on-disk column IDs.
 ///
 /// Existing columns get column_id == column_name at activation time.
 /// New columns added after activation get monotonically increasing numeric
@@ -25,7 +25,7 @@ using ColumnIdMappingPtr = std::shared_ptr<const ColumnIdMapping>;
 /// so that siblings share the group prefix their offsets stream is named from.
 /// RENAME only updates the mapping; the column ID (and therefore all
 /// on-disk filenames) stays unchanged.  DROP removes the entry but the
-/// counter is never recycled, so a subsequent ADD of the same logical name
+/// counter is never recycled, so a subsequent ADD of the same column name
 /// gets a fresh column ID — this is the key invariant that makes
 /// DROP + re-ADD safe (old data files become orphans, not wrong-type reads).
 ///
@@ -61,9 +61,9 @@ public:
         return active;
     }
 
-    const std::unordered_map<String, String> & getLogicalToId() const
+    const std::unordered_map<String, String> & getNameToId() const
     {
-        return logical_to_id;
+        return name_to_id;
     }
 
     UInt64 getNextColumnIdCounter() const
@@ -80,30 +80,30 @@ public:
         return extractNumericCounter(column_id) >= next_column_id;
     }
 
-    /// Throws if `logical_name` is not in the mapping.
-    String getColumnId(const String & logical_name) const;
+    /// Throws if `column_name` is not in the mapping.
+    String getColumnId(const String & column_name) const;
 
-    /// Returns `logical_name` itself when not in the mapping — safe default
+    /// Returns `column_name` itself when not in the mapping — safe default
     /// for virtual columns, helper columns, and legacy (pre-activation) code paths.
-    String getColumnIdOrDefault(const String & logical_name) const;
+    String getColumnIdOrDefault(const String & column_name) const;
 
-    /// Reverse lookup: column ID -> logical name. Throws if not found.
-    String getLogicalName(const String & column_id) const;
+    /// Reverse lookup: column ID -> column name. Throws if not found.
+    String getColumnName(const String & column_id) const;
 
-    bool hasLogicalName(const String & logical_name) const;
+    bool hasColumnName(const String & column_name) const;
     bool hasColumnId(const String & column_id) const;
 
-    /// Guard + lookup folded together for the pattern call sites repeat: translate a logical
-    /// name to its (typed) id, or an id back to its logical name. `nullopt` when unmapped.
-    std::optional<ColumnId> tryGetColumnId(const String & logical_name) const;
-    std::optional<String> tryGetLogicalName(const ColumnId & column_id) const;
+    /// Guard + lookup folded together for the pattern call sites repeat: translate a column
+    /// name to its (typed) id, or an id back to its column name. `nullopt` when unmapped.
+    std::optional<ColumnId> tryGetColumnId(const String & column_name) const;
+    std::optional<String> tryGetColumnName(const ColumnId & column_id) const;
 
     /// Allocates the next numeric column ID and advances the counter.
     /// Also sets `active = true` as a side effect (first allocation activates the mapping).
     String allocateColumnId();
 
-    void addColumn(const String & logical_name, const String & column_id);
-    void removeColumn(const String & logical_name);
+    void addColumn(const String & column_name, const String & column_id);
+    void removeColumn(const String & column_name);
 
     /// Two-phase rename for crash safety.
     ///
@@ -116,14 +116,14 @@ public:
     /// an entry for it, and `reconcileColumnIdMappingWithMetadata` would
     /// remove the dangling "name" entry.
     ///
-    /// Phase 1 (`beginRename`): add the NEW logical name while keeping the OLD
+    /// Phase 1 (`beginRename`): add the NEW column name while keeping the OLD
     /// one — both point to the same column ID.  Persist the mapping.
     ///   mapping on disk:  { "b":"b", "name":"b" }    (both present)
     ///   metadata:         column "b"                  (not yet committed)
     ///
     /// Then commit the metadata (column "b" becomes "name").
     ///
-    /// Phase 2 (`finishRename`): remove the OLD logical name and persist.
+    /// Phase 2 (`finishRename`): remove the OLD column name and persist.
     ///   mapping on disk:  { "name":"b" }
     ///   metadata:         column "name"
     ///
@@ -134,10 +134,10 @@ public:
     ///  - Crash after metadata commit but before phase 2: metadata has "name",
     ///    reconciliation keeps "name"->"b" and removes "b"->"b".  Correct
     ///    renamed state.
-    void beginRename(const String & old_logical_name, const String & new_logical_name);
-    void finishRename(const String & old_logical_name);
+    void beginRename(const String & old_column_name, const String & new_column_name);
+    void finishRename(const String & old_column_name);
 
-    Names logicalNames() const;
+    Names columnNames() const;
 
     /// Ingress stamp for both write (new part) and read (query resolution): set `column_id`
     /// on each `NameAndTypePair` by name→id lookup. No-op when the mapping is inactive.
@@ -180,22 +180,12 @@ public:
 
 private:
     /// Drop `it`'s forward entry and repair the reverse map.
-    void detachLogicalName(std::unordered_map<String, String>::iterator it);
+    void detachColumnName(std::unordered_map<String, String>::iterator it);
 
     bool active = false;
     UInt64 next_column_id = 1;
-    std::unordered_map<String, String> logical_to_id;
-    std::unordered_map<String, String> id_to_logical;
+    std::unordered_map<String, String> name_to_id;
+    std::unordered_map<String, String> id_to_name;
 };
-
-/// The id a part's per-column artifacts carry for a column -- `minmax_<id>.idx`,
-/// `statistics_<id>.stats`, `ttl.txt` entries: `getColumnId()` of the part's column of that name, so a
-/// metadata-only RENAME cannot orphan them. A name the part does not hold passes through as an id, the
-/// same fallback `getColumnId()` itself makes. Whole columns only -- for the subcolumn-aware form that
-/// keys `getSerialization`, see `NameAndTypePair::getStorageKey`.
-ColumnId getColumnIdInPart(const NamesAndTypesList & part_columns, const String & column_name);
-
-/// Inverse of getColumnIdInPart.
-String getColumnNameByIdInPart(const NamesAndTypesList & part_columns, const ColumnId & column_id);
 
 }

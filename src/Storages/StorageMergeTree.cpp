@@ -43,6 +43,7 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/MergeTreeMergePredicate.h>
 #include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/MergeTreePartsCollector.h>
+#include <Storages/MergeTree/ColumnIdHelper.h>
 #include <Storages/MergeTree/ColumnIdMappingStore.h>
 #include <Storages/MergeTree/ColumnIdMappingUpdate.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -529,7 +530,7 @@ void StorageMergeTree::alter(
     {
         /// Same sequence as the full ALTER below: durable mapping, durable schema, one publish
         /// last. Publishing an activation before the schema commit would leave the table
-        /// activating on restart while its parts still use logical filenames.
+        /// activating on restart while its parts still use name-based filenames.
         ColumnIdMappingUpdate mapping_update(*this, log.load());
         SettingsChangeResult settings_result;
 

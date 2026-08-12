@@ -4,7 +4,7 @@
 #include <IO/PackedFilesWriter.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Storages/MergeTree/ColumnIdMapping.h>
+#include <Storages/MergeTree/ColumnIdHelper.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Common/escapeForFileName.h>
 

@@ -7671,17 +7671,17 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const Data
     addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
 }
 
-/// Aggregate sizes are keyed by CURRENT logical name.  A part loaded before a
+/// Aggregate sizes are keyed by CURRENT column name.  A part loaded before a
 /// metadata-only RENAME still stamps the old name, so derive the key from the
 /// stamped column ID; `renameColumnSizesEntry` re-keys the aggregate on RENAME.
-/// An orphan (a dropped column's stream still present in an old part) has no live logical name;
+/// An orphan (a dropped column's stream still present in an old part) has no live column name;
 /// `nullopt` skips it, so its bytes never land in the size aggregate. Keying it by its id-token
-/// instead would risk colliding with a live column whose logical name equals that token (the id
+/// instead would risk colliding with a live column whose column name equals that token (the id
 /// and name namespaces are both plain strings), attributing the dropped column's bytes to it.
 static std::optional<String> columnSizesKey(const NameAndTypePair & column, const ColumnIdMapping * mapping)
 {
     if (mapping)
-        return mapping->tryGetLogicalName(column.column_id);
+        return mapping->tryGetColumnName(column.column_id);
     return column.name;
 }
 
@@ -10802,7 +10802,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     /// Only the binding has to match.  A source counter ahead of the destination's is not itself a
     /// problem -- it matters only if a part actually carries such an ID, which the transfer checks
     /// per part, where it can say which part and refuse only that transfer.
-    if (my_mapping && my_mapping->getLogicalToId() != src_mapping->getLogicalToId())
+    if (my_mapping && my_mapping->getNameToId() != src_mapping->getNameToId())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Tables have different column ID mappings; "
             "partition operations require identical logical-to-ID column mappings");
@@ -12259,14 +12259,14 @@ static void updateSerializationHintsForPart(
     for (const auto & part_column : part->getColumns())
     {
         /// Part records are keyed by the stamped column ID; hints by the current
-        /// logical name. Join them through the part's stamped column list.
+        /// column name. Join them through the part's stamped column list.
         auto info = part_infos.tryGet(part_column.getColumnId().value());
         if (!info)
             continue;
 
         String hint_name = part_column.name;
         if (column_id_mapping)
-            if (auto name = column_id_mapping->tryGetLogicalName(part_column.getColumnId()))
+            if (auto name = column_id_mapping->tryGetColumnName(part_column.getColumnId()))
                 hint_name = *name;
 
         auto new_hint = hints.tryGet(hint_name);

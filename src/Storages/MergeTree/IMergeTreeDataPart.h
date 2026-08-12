@@ -212,7 +212,7 @@ public:
     /// Canonical name -> id -> part bridge: resolve @current_name against the operation @snapshot's
     /// schema (subcolumn-aware) to its stable id, then return this part's slot carrying that id.
     /// The part keeps its load-time names after a metadata-only RENAME, so a caller holding a current
-    /// logical name must go through the id -- never the part's own (possibly stale) name. A legacy /
+    /// column name must go through the id -- never the part's own (possibly stale) name. A legacy /
     /// unmapped snapshot column carries an empty id, which getColumnId falls back to the name, so the
     /// lookup degrades to name-based on the part. `nullopt` if the name is not in the snapshot or the
     /// part has no such slot. @current_name may name a subcolumn, which resolves to the parent's slot
@@ -472,7 +472,7 @@ public:
     Checksums checksums;
 
     /// Columns with values, that all have been zeroed by expired ttl. Keyed by column ID, so
-    /// consumers match it against a part's own columns without resolving a logical name.
+    /// consumers match it against a part's own columns without resolving a column name.
     ColumnIdSet expired_column_ids;
 
     NameSet invalidated_system_columns;
@@ -865,7 +865,7 @@ protected:
     void validateSubstreamColumnNames(const ColumnsSubstreams & substreams) const;
 
     /// Fail closed before resolving a column's streams: on a part written with column IDs a column
-    /// without one would fall back to resolution by logical name, which binds a foreign or absent
+    /// without one would fall back to resolution by column name, which binds a foreign or absent
     /// file instead of reporting the miss.
     void checkColumnIdIsStamped(const NameAndTypePair & column) const;
 
@@ -892,7 +892,7 @@ private:
     mutable std::atomic<MergeTreeDataPartState> state{MergeTreeDataPartState::Temporary};
 
     /// In compact parts order of columns is necessary.
-    /// Keyed by stable storage id (getColumnId()), not logical name -- see setColumns.
+    /// Keyed by stable storage id (getColumnId()), not column name -- see setColumns.
     NameToNumber column_storage_key_to_position;
 
     /// Map from name of column to its serialization info.
@@ -922,7 +922,7 @@ private:
     void loadColumns(bool require, bool load_metadata_version);
 
     /// When a column ID mapping is active, every entry in the on-disk column list (columns.txt)
-    /// is a column ID rather than a current logical name. Translate each back to its logical name
+    /// is a column ID rather than a current column name. Translate each back to its column name
     /// and attach the column ID as metadata.
     NamesAndTypesList remapColumnIdsToLogicalNames(
         const NamesAndTypesList & loaded_columns,

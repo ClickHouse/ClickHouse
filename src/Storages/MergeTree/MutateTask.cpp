@@ -253,7 +253,7 @@ static void remapPartColumnsToCurrentNames(
 
     for (const auto & col : part_id_columns)
     {
-        auto current_name = mapping.tryGetLogicalName(col.getColumnId());
+        auto current_name = mapping.tryGetColumnName(col.getColumnId());
         if (!current_name)
             continue;
 
@@ -764,7 +764,7 @@ getColumnsForNewDataPart(
         }
 
         part_column_by_id.emplace(column.getColumnId().value(), column);
-        if (auto current_name = column_id_mapping->tryGetLogicalName(column.getColumnId()))
+        if (auto current_name = column_id_mapping->tryGetColumnName(column.getColumnId()))
             part_column_by_current_name.emplace(*current_name, column);
     }
 
@@ -875,7 +875,7 @@ getColumnsForNewDataPart(
         if (has_column_ids)
         {
             /// A record whose id has left the mapping belongs to a dropped column and must not carry
-            /// into the new part: the same logical name may now belong to a re-added column with a
+            /// into the new part: the same column name may now belong to a re-added column with a
             /// fresh id. Persistent virtuals are never in the mapping -- keep them.
             if (!column_id_mapping->hasColumnId(stored_key) && !isPersistentVirtualColumn(stored_key))
                 continue;
@@ -1435,7 +1435,7 @@ static NameToNameVector collectFilesForRenames(
                 /// A table with column IDs has no rename mutations to collect files for: RENAME COLUMN
                 /// is metadata-only there, and activating the mapping while one is queued is refused
                 /// (MergeTreeData::checkAlterIsPossible). So the files really are named from the
-                /// logical name here.
+                /// column name here.
 
                 /// Columns updated in patches should be rewritten by mutation.
                 if (updated_columns_in_patches.contains(command.rename_to))

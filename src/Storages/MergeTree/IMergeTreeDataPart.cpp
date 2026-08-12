@@ -28,7 +28,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/Backup.h>
-#include <Storages/MergeTree/ColumnIdMapping.h>
+#include <Storages/MergeTree/ColumnIdHelper.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -778,11 +778,11 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
     size_t pos = 0;
 
     /// The part's internal maps are keyed by the stable storage id (`getColumnId()`),
-    /// not the logical name. For a table without column ids the id falls back to the name, so
+    /// not the column name. For a table without column ids the id falls back to the name, so
     /// this is identical to name-keying; for an id table the key survives a metadata-only RENAME
     /// (the part is not reloaded), so a site that resolves by id off the schema it holds finds the
     /// right on-disk slot without threading a mapping in. Name-based entry points resolve name -> id
-    /// first: against the operation's schema (`tryGetColumnBySnapshotName`) for a current logical name,
+    /// first: against the operation's schema (`tryGetColumnBySnapshotName`) for a current column name,
     /// or against this part's own columns (`tryGetColumnByNameUnsafe`) for a bare part-own name.
     for (const auto & column : columns)
         column_storage_key_to_position.emplace(column.getColumnId().value(), pos++);
@@ -2361,28 +2361,28 @@ void IMergeTreeDataPart::loadUUID()
     }
 }
 
-/// Resolution stays in ID-space: an on-disk key is never reinterpreted as a current logical name,
+/// Resolution stays in ID-space: an on-disk key is never reinterpreted as a current column name,
 /// or a dropped column's stale key could be re-bound to a live sibling's stream. A key that is no
 /// longer live keeps its slot -- compact ordinals must not shift -- under a placeholder name, since
-/// a duplicate logical name would make the reloaded part unresolvable.
+/// a duplicate column name would make the reloaded part unresolvable.
 NamesAndTypesList IMergeTreeDataPart::remapColumnIdsToLogicalNames(
     const NamesAndTypesList & loaded_columns,
     const ColumnIdMapping & mapping) const
 {
-    /// Reserve every on-disk key and every current logical name so an orphan's placeholder can
-    /// collide with neither -- one equal to a live logical name would let callers mistake the
+    /// Reserve every on-disk key and every current column name so an orphan's placeholder can
+    /// collide with neither -- one equal to a live column name would let callers mistake the
     /// orphan's dropped-column bytes for that column's.
     NameSet reserved_names;
     for (const auto & column : loaded_columns)
         reserved_names.insert(column.name);
-    const auto mapping_logical_names = mapping.logicalNames();
-    reserved_names.insert(mapping_logical_names.begin(), mapping_logical_names.end());
+    const auto mapping_column_names = mapping.columnNames();
+    reserved_names.insert(mapping_column_names.begin(), mapping_column_names.end());
 
     NamesAndTypesList remapped_columns;
     for (const auto & column : loaded_columns)
     {
         /// The token in columns.txt IS this part's key for the column, whatever the mapping says
-        /// about it; only the logical name has to be resolved.
+        /// about it; only the column name has to be resolved.
         auto remapped_column = column;
         remapped_column.setColumnId(ColumnId{column.name});
 
@@ -2400,8 +2400,8 @@ NamesAndTypesList IMergeTreeDataPart::remapColumnIdsToLogicalNames(
                     name, storage.getStorageID().getNameForLogs(), column.name, mapping.getNextColumnIdCounter());
 
             if (mapping.hasColumnId(column.name))
-                remapped_column.name = mapping.getLogicalName(column.name);
-            else if (mapping.hasLogicalName(column.name))
+                remapped_column.name = mapping.getColumnName(column.name);
+            else if (mapping.hasColumnName(column.name))
             {
                 /// A dropped column's orphan stream, whose stale name a RENAME or DROP + re-ADD may
                 /// since have handed to a live column. A placeholder name keeps the orphan's identity
@@ -2511,7 +2511,7 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     setColumns(loaded_columns, infos, *loaded_metadata_version);
 }
 
-/// The substream keys in `columns_substreams.txt` are logical names only for a part written without
+/// The substream keys in `columns_substreams.txt` are column names only for a part written without
 /// column ids; for an id part they are ids, which a check against column names can never match.
 void IMergeTreeDataPart::validateSubstreamColumnNames(const ColumnsSubstreams & substreams) const
 {
@@ -2578,7 +2578,7 @@ void IMergeTreeDataPart::loadColumnsSubstreams()
         /// produced wrong substream names in columns_substreams.txt.
         /// For Wide parts this file is not mandatory, so we can safely discard it and proceed
         /// as if it didn't exist.  Skip for parts written with column IDs active —
-        /// the column key in columns_substreams.txt is the logical name but substreams
+        /// the column key in columns_substreams.txt is the column name but substreams
         /// are keyed by column_id, so the prefix check would always false-positive.
         if (part_type == MergeTreeDataPartType::Wide && !hasStampedColumnIds())
         {
@@ -2943,7 +2943,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 
             /// Verify minmax index checksums exist. Resolve id-first when the mapping is
             /// active so a foreign column's minmax_<id>.idx cannot satisfy the check for a
-            /// different column whose logical name equals that id.
+            /// different column whose column name equals that id.
             if (!isEmpty() && !parent_part)
             {
                 for (const String & col_name : partition_key.expression->getRequiredColumns())

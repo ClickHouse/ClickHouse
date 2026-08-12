@@ -6,14 +6,12 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/FailPoint.h>
 
-#include <fmt/ranges.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int CORRUPTED_DATA;
     extern const int FAULT_INJECTED;
     extern const int LOGICAL_ERROR;
 }
@@ -34,7 +32,7 @@ namespace
 bool sameMapping(const ColumnIdMapping & lhs, const ColumnIdMapping & rhs)
 {
     return lhs.isActive() == rhs.isActive() && lhs.getNextColumnIdCounter() == rhs.getNextColumnIdCounter()
-        && lhs.getLogicalToId() == rhs.getLogicalToId();
+        && lhs.getNameToId() == rhs.getNameToId();
 }
 
 void failpointBeforeMappingPersist()
@@ -61,58 +59,6 @@ void failpointBeforeMappingPrune()
     });
 }
 
-/// Runs on the load path BEFORE the mapping is published, so a torn or hand-edited `column_ids.json`
-/// is refused with a file-naming error rather than tripping the schema-stamp desync assertion (a
-/// debug abort).
-void checkColumnIdMappingCoversMetadata(const MergeTreeData & data, const ColumnIdMapping & mapping)
-{
-    auto metadata_snapshot = data.getInMemoryMetadataPtr(nullptr, false);
-
-    Names missing_from_mapping;
-    for (const auto & col : metadata_snapshot->getColumns().getAllPhysical())
-    {
-        if (!mapping.hasLogicalName(col.name))
-            missing_from_mapping.push_back(col.name);
-    }
-    if (!missing_from_mapping.empty())
-        throw Exception(
-            ErrorCodes::CORRUPTED_DATA,
-            "Column ID mapping for table {} is missing entries for column(s): {}. "
-            "This indicates a torn write of `column_ids.json` (mapping not "
-            "updated while `metadata.sql` already committed the schema change). "
-            "The mapping cannot be rebuilt safely because DROP + re-ADD of the "
-            "same column name makes on-disk files indistinguishable from their "
-            "column ID alone. Restore the table from backup or fix "
-            "`column_ids.json` manually.",
-            data.getStorageID().getNameForLogs(),
-            fmt::join(missing_from_mapping, ", "));
-}
-
-/// A two-phase rename transiently maps two logical names to one column ID, so this runs only after
-/// the reconciliation trim has dropped the old name: a duplicate surviving that is real corruption
-/// that would silently let two SQL columns share one on-disk stream.
-void checkNoLogicalNamesShareColumnId(const MergeTreeData & data, const ColumnIdMapping & mapping)
-{
-    std::unordered_map<String, Names> logicals_by_id;
-    for (const auto & [logical, column_id] : mapping.getLogicalToId())
-        logicals_by_id[column_id].push_back(logical);
-
-    for (const auto & [column_id, logicals] : logicals_by_id)
-    {
-        if (logicals.size() > 1)
-            throw Exception(
-                ErrorCodes::CORRUPTED_DATA,
-                "Column ID mapping for table {} has multiple logical columns "
-                "mapped to the same column ID '{}': {}.  All of them are "
-                "still present in the schema, which indicates a corrupted "
-                "`column_ids.json` (not a transient two-phase-rename state). "
-                "Restore from backup or repair the file manually.",
-                data.getStorageID().getNameForLogs(),
-                column_id,
-                fmt::join(logicals, ", "));
-    }
-}
-
 NameToNameVector pruneRetainedNames(ColumnIdMapping & mapping, const ColumnIdAlterPlan & plan)
 {
     NameToNameVector column_size_renames;
@@ -125,63 +71,19 @@ NameToNameVector pruneRetainedNames(ColumnIdMapping & mapping, const ColumnIdAlt
         if (!column_id)
             continue;
 
-        if (auto new_name = mapping.tryGetLogicalName(*column_id); new_name && *new_name != old_name)
+        if (auto new_name = mapping.tryGetColumnName(*column_id); new_name && *new_name != old_name)
             column_size_renames.emplace_back(old_name, *new_name);
     }
 
     for (const auto & name : plan.drop_names)
     {
-        if (mapping.hasLogicalName(name))
+        if (mapping.hasColumnName(name))
             mapping.removeColumn(name);
     }
 
     return column_size_renames;
 }
 
-}
-
-void loadColumnIdMapping(MergeTreeData & data, bool attach)
-{
-    auto loaded_mapping = data.getColumnIdMappingStore().load(attach);
-    if (!loaded_mapping)
-        return;
-
-    if (loaded_mapping->isActive())
-        checkColumnIdMappingCoversMetadata(data, *loaded_mapping);
-    data.setColumnIdMapping(std::move(*loaded_mapping));
-}
-
-void reconcileColumnIdMappingWithMetadata(MergeTreeData & data)
-{
-    if (!data.hasActiveColumnIdMapping())
-        return;
-
-    auto mapping = data.getColumnIdMapping();
-    auto metadata_snapshot = data.getInMemoryMetadataPtr(nullptr, false);
-    auto metadata_columns = metadata_snapshot->getColumns().getAllPhysical();
-
-    checkColumnIdMappingCoversMetadata(data, *mapping);
-
-    /// Trim mapping entries whose logical name is no longer in metadata (mapping-ahead-of-schema
-    /// window from a crash between the mapping write and the `metadata.sql` truncation). Safe to
-    /// recover from: the dropped or renamed column lost its on-disk authority at the schema commit,
-    /// so the entry is dead weight.
-    ColumnIdMapping reconciled = *mapping;
-    bool changed = false;
-    for (const auto & col_name : mapping->logicalNames())
-    {
-        if (!metadata_columns.tryGetByName(col_name))
-        {
-            reconciled.removeColumn(col_name);
-            changed = true;
-        }
-    }
-
-    if (changed)
-        data.persistMapping(std::move(reconciled));
-
-    if (auto final_mapping = data.getColumnIdMapping())
-        checkNoLogicalNamesShareColumnId(data, *final_mapping);
 }
 
 ColumnIdMappingUpdate::ColumnIdMappingUpdate(MergeTreeData & data_, LoggerPtr log_)

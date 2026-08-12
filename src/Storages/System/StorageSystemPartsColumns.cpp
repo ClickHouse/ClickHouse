@@ -103,7 +103,7 @@ void StorageSystemPartsColumns::processNextStorage(
         String default_expression;
     };
 
-    /// One live-mapping snapshot per storage: displayed logical names are derived
+    /// One live-mapping snapshot per storage: displayed column names are derived
     /// from each part column's stamped ID, because a metadata-only RENAME does not
     /// refresh the parts' cached column lists.
     const auto column_id_mapping = info.data->getActiveColumnIdMapping();
@@ -165,7 +165,7 @@ void StorageSystemPartsColumns::processNextStorage(
             /// part's recorded (historical) name is the informative display.
             String column_name = column.name;
             if (column_id_mapping)
-                if (auto name = column_id_mapping->tryGetLogicalName(column.column_id))
+                if (auto name = column_id_mapping->tryGetColumnName(column.column_id))
                     column_name = *name;
 
             if (columns_mask[src_index++])

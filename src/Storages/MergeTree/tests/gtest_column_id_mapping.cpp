@@ -80,10 +80,10 @@ TEST(ColumnIdMapping, RenamePreservesColumnId)
     mapping.beginRename("a", "c");
     mapping.finishRename("a");
 
-    EXPECT_FALSE(mapping.hasLogicalName("a"));
-    EXPECT_TRUE(mapping.hasLogicalName("c"));
+    EXPECT_FALSE(mapping.hasColumnName("a"));
+    EXPECT_TRUE(mapping.hasColumnName("c"));
     EXPECT_EQ(mapping.getColumnId("c"), "a");
-    EXPECT_EQ(mapping.getLogicalName("a"), "c");
+    EXPECT_EQ(mapping.getColumnName("a"), "c");
 }
 
 TEST(ColumnIdMapping, SerializeDeserializeRoundTrip)
@@ -100,7 +100,7 @@ TEST(ColumnIdMapping, SerializeDeserializeRoundTrip)
     EXPECT_EQ(restored.getColumnId("10"), "10");
     EXPECT_EQ(restored.getColumnId("b"), "a");
     EXPECT_EQ(restored.getColumnId("c"), "11");
-    EXPECT_EQ(restored.getLogicalName("a"), "b");
+    EXPECT_EQ(restored.getColumnName("a"), "b");
     EXPECT_EQ(restored.allocateColumnId(), "12");
 }
 
@@ -145,17 +145,17 @@ TEST(ColumnIdMapping, TwoPhaseRenameNormal)
 
     mapping.beginRename("a", "c");
 
-    EXPECT_TRUE(mapping.hasLogicalName("a"));
-    EXPECT_TRUE(mapping.hasLogicalName("c"));
+    EXPECT_TRUE(mapping.hasColumnName("a"));
+    EXPECT_TRUE(mapping.hasColumnName("c"));
     EXPECT_EQ(mapping.getColumnId("a"), "a");
     EXPECT_EQ(mapping.getColumnId("c"), "a");
 
     mapping.finishRename("a");
 
-    EXPECT_FALSE(mapping.hasLogicalName("a"));
-    EXPECT_TRUE(mapping.hasLogicalName("c"));
+    EXPECT_FALSE(mapping.hasColumnName("a"));
+    EXPECT_TRUE(mapping.hasColumnName("c"));
     EXPECT_EQ(mapping.getColumnId("c"), "a");
-    EXPECT_EQ(mapping.getLogicalName("a"), "c");
+    EXPECT_EQ(mapping.getColumnName("a"), "c");
 }
 
 TEST(ColumnIdMapping, TwoPhaseRenameCrashRecovery)
@@ -167,18 +167,18 @@ TEST(ColumnIdMapping, TwoPhaseRenameCrashRecovery)
     auto serialized = mapping.toString();
     auto restored = ColumnIdMapping::fromString(serialized);
 
-    EXPECT_TRUE(restored.hasLogicalName("a"));
-    EXPECT_TRUE(restored.hasLogicalName("c"));
+    EXPECT_TRUE(restored.hasColumnName("a"));
+    EXPECT_TRUE(restored.hasColumnName("c"));
     /// Both "a" and "c" map to column ID "a"; reverse map must be deterministic
-    /// (lexicographically smallest logical name wins).
-    EXPECT_EQ(restored.getLogicalName("a"), "a");
+    /// (lexicographically smallest column name wins).
+    EXPECT_EQ(restored.getColumnName("a"), "a");
 
     restored.removeColumn("c");
 
-    EXPECT_TRUE(restored.hasLogicalName("a"));
-    EXPECT_FALSE(restored.hasLogicalName("c"));
+    EXPECT_TRUE(restored.hasColumnName("a"));
+    EXPECT_FALSE(restored.hasColumnName("c"));
     EXPECT_EQ(restored.getColumnId("a"), "a");
-    EXPECT_EQ(restored.getLogicalName("a"), "a");
+    EXPECT_EQ(restored.getColumnName("a"), "a");
 }
 
 TEST(ColumnIdMapping, TwoPhaseRenameRemoveOldPreservesColumnId)
@@ -192,7 +192,7 @@ TEST(ColumnIdMapping, TwoPhaseRenameRemoveOldPreservesColumnId)
 
     mapping.removeColumn("c");
 
-    EXPECT_TRUE(mapping.hasLogicalName("d"));
+    EXPECT_TRUE(mapping.hasColumnName("d"));
     EXPECT_EQ(mapping.getColumnId("d"), column_id);
     EXPECT_TRUE(mapping.hasColumnId(column_id));
 }
@@ -218,7 +218,7 @@ TEST(ColumnIdMapping, ConcurrentDropAddCycle)
 TEST(ColumnIdMapping, RenameToExistingColumnIdIsRejected)
 {
     /// Renaming a column to a name equal to another active column's id is rejected: on-disk
-    /// artifacts are keyed by the column id, so such a logical name makes name-vs-id resolution
+    /// artifacts are keyed by the column id, so such a column name makes name-vs-id resolution
     /// ambiguous (reachable via a mutation that then reads/writes the wrong streams). The
     /// two-phase rotation a->x; b->a is a special case of this and is likewise rejected.
     auto mapping = ColumnIdMapping::createIdentity(makeColumns({"a", "b"}));
@@ -244,7 +244,7 @@ TEST(ColumnIdMapping, RenameToExistingColumnIdIsRejected)
 /// stampColumnIds must NOT clobber a column that already carries a part-local id.
 /// Callers such as MergeTreeDataPartWide::getListOfStreamsForColumn (subcolumn sizes) feed
 /// an already-stamped part column into the reader factory, which then re-stamps off the
-/// *live* metadata mapping. After a DROP + re-ADD reuses the logical name at a fresh id,
+/// *live* metadata mapping. After a DROP + re-ADD reuses the column name at a fresh id,
 /// re-stamping would rewrite the old part's real id to the live one and mis-resolve its
 /// streams. Columns that arrive id-less (the main read path's query columns) must still
 /// get stamped.

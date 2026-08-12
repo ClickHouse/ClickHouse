@@ -440,7 +440,7 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
                 /// for it to disambiguate against. cached_index_marks was emplaced under the
                 /// on-disk (possibly hashed) name -- if those differ (long index name +
                 /// replace_long_file_name_to_hash) the prewarmed marks never get hit. Re-key
-                /// the entry under the logical name so prewarm survives.
+                /// the entry under the column name so prewarm survives.
                 const String & on_disk_key = stream->escaped_column_name;
                 const String logical_key = logical_index_name + index_substreams[substream_idx].suffix;
                 if (on_disk_key != logical_key)

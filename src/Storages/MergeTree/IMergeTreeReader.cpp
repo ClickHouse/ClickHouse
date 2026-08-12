@@ -362,7 +362,7 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
 
 std::optional<NameAndTypePair> IMergeTreeReader::tryResolveInPart(const NameAndTypePair & required_column) const
 {
-    /// An id-carrying request resolves by ID, never by name: the part's own logical names lag
+    /// An id-carrying request resolves by ID, never by name: the part's own column names lag
     /// behind after a metadata-only RENAME, and after DROP+ADD it still lists a same-named dead
     /// column of the old type.
     if (!required_column.column_id.empty())
@@ -523,34 +523,17 @@ IMergeTreeReader::findColumnForOffsets(const NameAndTypePair & required_column) 
         return offsets_streams;
     };
 
-    /// Which columns share an offsets stream is an ID-space question, because that is how the stream
-    /// is named: `getFileNameForStreamByColumnId` derives it from the id's Nested prefix, or from the
-    /// whole id when it has none. Asking in logical-name space instead answers a different question
-    /// and gets two shapes wrong. A metadata-only DROP leaves the dropped column in the part under
-    /// its own id, so a column re-added under that name matched it and read arrays of the DROPPED
-    /// column's length, filled with defaults, where an empty array is correct. And a sibling added
-    /// after a cross-parent rename did NOT match the group it shares a stream with, since the part
-    /// still carries the pre-rename logical prefix. An unstamped column's id falls back to its own
-    /// name, so a legacy part keeps matching by name.
+    /// Which columns share an offsets stream is an id-space question -- that is how the stream is
+    /// named (see getFileNameForStreamByColumnId). The names built below only pair the two sides up.
     auto required_id_prefix = Nested::extractTableName(required_column.getColumnId().value());
-
-    /// The stream names below only pair the two sides up -- the file actually read is derived from
-    /// the matched part column's own pair -- so they are built in one namespace, the shared id
-    /// prefix. The logical prefixes cannot serve: a cross-parent rename makes them differ.
     auto required_offsets_streams = get_offsets_streams(getSerializationInPart(required_column), required_id_prefix);
 
     size_t max_matched_streams = 0;
     std::optional<ColumnForOffsets> result;
 
-    /// Find column that has maximal number of matching
-    /// offsets columns with required_column.
-    ///
-    /// Iterate the part's own flat columns. Folding a flattened Nested field onto its Nested
-    /// parent first would break the returned column's storage key: the part's whole-column maps
-    /// (position, serialization) are keyed by `getColumnId()`, and for such a fold that key
-    /// degrades to the Nested prefix ("n" instead of "n.a") while the part has no slot under it.
-    /// Nothing here needs the folded form: only the column's id prefix and its own serialization
-    /// take part in the match.
+    /// Find column that has maximal number of matching offsets columns with required_column. Match
+    /// the part's own flat columns: folding one onto its Nested parent would key the result by a
+    /// prefix the part has no slot under.
     for (const auto & part_column : data_part_info_for_read->getColumns())
     {
         if (Nested::extractTableName(part_column.getColumnId().value()) != required_id_prefix)

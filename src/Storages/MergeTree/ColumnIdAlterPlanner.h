@@ -26,17 +26,17 @@ struct MergeTreeSettings;
 struct ColumnIdAlterPlan
 {
     /// The post-ALTER mapping in its phase-1 SUPERSET form: renames have both the old and
-    /// new logical names pointing at the ID (beginRename), added columns have fresh IDs,
+    /// new column names pointing at the ID (beginRename), added columns have fresh IDs,
     /// and dropped columns are still present. Published (disk then in-memory) before the
     /// metadata commit. Populated iff `column_ids_active`.
     std::optional<ColumnIdMapping> new_mapping;
 
-    /// Old logical names of renamed columns, kept alive in `new_mapping` across the commit;
+    /// Old names of renamed columns, kept alive in `new_mapping` across the commit;
     /// phase 2 prunes each (finishRename) afterwards. Retained through the commit so a crash
     /// before it leaves the old name -- which metadata still uses -- resolvable.
     std::vector<String> rename_old_names;
 
-    /// Dropped columns' logical names, likewise kept in `new_mapping` until after the commit;
+    /// Dropped columns' names, likewise kept in `new_mapping` until after the commit;
     /// phase 2 removes them (two-phase drop for crash safety).
     std::vector<String> drop_names;
 

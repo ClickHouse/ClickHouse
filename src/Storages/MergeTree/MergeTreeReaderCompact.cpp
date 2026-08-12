@@ -471,7 +471,7 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, Mer
     };
 
     /// Build check_stream_exists_callback for this column if we have a column position.
-    /// Resolve the same way as buffer_getter above: by column ID first, then by logical name.
+    /// Resolve the same way as buffer_getter above: by column ID first, then by column name.
     ISerialization::DeserializeBinaryBulkSettings::CheckStreamExistsCallback check_stream_exists_callback;
     if (column_positions[column_idx])
     {

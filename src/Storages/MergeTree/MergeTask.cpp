@@ -328,7 +328,7 @@ static void addMissedColumnsToSerializationInfos(
     const SerializationInfo::Settings & info_settings,
     SerializationInfoByName & new_infos)
 {
-    /// Keyed by stamped column ID throughout: the part's logical names may be stale after a
+    /// Keyed by stamped column ID throughout: the part's column names may be stale after a
     /// metadata-only RENAME, while IDs are stable.
     ColumnIdSet part_column_ids;
     for (const auto & column : part_columns)
