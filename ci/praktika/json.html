@@ -1140,13 +1140,15 @@
     // Renders the whole-VM CPU/RAM timeline collected by praktika's
     // HostMetricsCollector and stored in a job Result's ext.metrics.
     // Shape: { interval, duration, mem_total_gb, n_raw, peaks: {cpu, mem, mem_gb},
-    //          psi?: {...}, series: { cpu: [[t,avg,peak],...], mem: [...] } }
+    //          psi?: {...}, series: { cpu: [[t,avg,peak],...], iowait?: [...], mem: [...] } }
     function addHostMetricsChart(metrics) {
         // Require the current schema (with exact `peaks`). Reports produced by
         // the earlier version lack it and use [t, v] points - skip rather than
         // degrade, so the chart code only ever handles one shape.
         if (!metrics || !metrics.series || !metrics.peaks) return;
         const cpu = metrics.series.cpu || [];
+        // Reports from before iowait was collected simply have no series.
+        const iowait = metrics.series.iowait || [];
         const mem = metrics.series.mem || [];
         const disk = metrics.series.disk || [];
         if (cpu.length < 2 && mem.length < 2 && disk.length < 2) return;
@@ -1157,6 +1159,7 @@
         wrapper.style.position = "relative";
 
         const CPU_COLOR = "#4e79a7";
+        const IOWAIT_COLOR = "#f28e2b";
         const MEM_COLOR = "#e15759";
         const DISK_COLOR = "#59a14f";
 
@@ -1165,12 +1168,13 @@
         const peakOf = (p) => p[2];
         // Exact global peaks (max over every fine sample, never decimated away).
         const cpuPeak = metrics.peaks.cpu;
+        const iowaitPeak = metrics.peaks.iowait;
         const memPeak = metrics.peaks.mem;
         const diskPeak = metrics.peaks.disk;
         const lastT = (s) => (s.length ? s[s.length - 1][0] : 0);
         const duration = Math.max(
             metrics.duration || 0,
-            lastT(cpu), lastT(mem), lastT(disk),
+            lastT(cpu), lastT(iowait), lastT(mem), lastT(disk),
             1
         );
 
@@ -1217,6 +1221,9 @@
         // Left column: peak legend, one metric per line.
         const legendCol = mkCol("left");
         addRow(legendCol, `<span style="color:${CPU_COLOR}">■</span> cpu ${cpuPeak.toFixed(0)}% peak`);
+        if (iowait.length && iowaitPeak != null) {
+            addRow(legendCol, `<span style="color:${IOWAIT_COLOR}">■</span> iowait ${iowaitPeak.toFixed(0)}% peak`);
+        }
         addRow(legendCol, `<span style="color:${MEM_COLOR}">■</span> ram ${memPeak.toFixed(0)}%` +
             (metrics.mem_total_gb ? ` of ${metrics.mem_total_gb}GB` : ""));
         if (disk.length) {
@@ -1309,6 +1316,8 @@
         mkPath(disk, DISK_COLOR, avgOf, "1.2", "1");
         mkPath(mem, MEM_COLOR, peakOf, "1", "0.35");
         mkPath(mem, MEM_COLOR, avgOf, "1.2", "1");
+        mkPath(iowait, IOWAIT_COLOR, peakOf, "1", "0.35");
+        mkPath(iowait, IOWAIT_COLOR, avgOf, "1.2", "1");
         mkPath(cpu, CPU_COLOR, peakOf, "1", "0.35");
         mkPath(cpu, CPU_COLOR, avgOf, "1.2", "1");
 
@@ -1346,13 +1355,14 @@
             const cx = xScale(t);
             cursor.setAttribute("x1", cx); cursor.setAttribute("x2", cx);
             cursor.setAttribute("stroke-opacity", 0.4);
-            const c = nearest(cpu, t), m = nearest(mem, t), d = nearest(disk, t);
+            const c = nearest(cpu, t), w = nearest(iowait, t), m = nearest(mem, t), d = nearest(disk, t);
             const fmtPt = (label, color, p) =>
                 `<span style="color:${color}">${label}</span> ${avgOf(p).toFixed(0)}%` +
                 ` <span style="opacity:0.7">(peak ${peakOf(p).toFixed(0)}%)</span>`;
             tip.innerHTML =
                 `${fmtT(t)}<br>` +
                 (c ? fmtPt("cpu", CPU_COLOR, c) + "<br>" : "") +
+                (w ? fmtPt("iowait", IOWAIT_COLOR, w) + "<br>" : "") +
                 (m ? fmtPt("ram", MEM_COLOR, m) + (d ? "<br>" : "") : "") +
                 (d ? fmtPt("disk", DISK_COLOR, d) : "");
             tip.style.display = "block";

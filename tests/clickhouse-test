@@ -2294,6 +2294,23 @@ class TestCase:
     def http_format_settings(settings_list) -> str:
         return urllib.parse.urlencode(settings_list)
 
+    # A `no-<feature>` tag means the test does not work with that feature, so the feature
+    # must be off unless the test itself turns it on.
+    FEATURE_TAG_OVERRIDES = {
+        "no-parallel-replicas": "enable_parallel_replicas",
+        "no-async-insert": "async_insert",
+    }
+
+    def feature_tag_overrides(self) -> str:
+        tags = self.tags or set()
+        return self.cli_format_settings(
+            {
+                setting: 0
+                for tag, setting in self.FEATURE_TAG_OVERRIDES.items()
+                if tag in tags
+            }
+        )
+
     def has_show_create_table_in_test(self):
         return not subprocess.call(["grep", "-iq", "show create", self.case_file])
 
@@ -2343,6 +2360,14 @@ class TestCase:
 
         current_value = os.environ.get("CLICKHOUSE_CLIENT_OPT", "")
         os.environ["CLICKHOUSE_CLIENT_OPT"] = f"{current_value} --allow_repeated_settings".strip()
+
+        # Last, so that it beats an externally supplied --client-option that enabled the
+        # feature: with --allow_repeated_settings the last occurrence takes effect. A SET
+        # or SETTINGS clause inside the test still wins over any command line value.
+        overrides = self.feature_tag_overrides()
+        if overrides:
+            os.environ["CLICKHOUSE_CLIENT_OPT"] += f" {overrides}"
+            return f"{new_options} {client_options} {overrides}"
 
         return new_options + " " + client_options
 
