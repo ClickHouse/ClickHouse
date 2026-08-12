@@ -39,8 +39,11 @@ static struct InitFiu
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
     REGULAR(smt_dedup_conflict_part_name_missing) \
+    REGULAR(merge_tree_sink_on_start_random_sleep) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
+    PAUSEABLE_ONCE(remote_query_executor_receive_packet_pause) \
+    PAUSEABLE_ONCE(remote_query_executor_finish_drain_pause) \
     ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(stripe_log_sink_write_fallpoint) \
@@ -93,6 +96,7 @@ static struct InitFiu
     REGULAR(distributed_cache_wait_gap_buffered_on_seek) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     PAUSEABLE(file_cache_pause_before_do_eviction) \
+    PAUSEABLE(file_segment_pause_before_write) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(cache_filesystem_failure_non_errno) \
@@ -139,6 +143,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
+    PAUSEABLE_ONCE(keeper_map_delete_pause_before_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(terminate_with_exception) \
@@ -162,10 +167,12 @@ static struct InitFiu
     ONCE(space_saving_copy_arena_throw) \
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(keeper_fault_on_watch_request) \
+    REGULAR(keeper_shutdown_delay_before_queue_check) \
     REGULAR(lazy_pipe_fds_fail_close) \
-    ONCE(create_empty_part_inject_stale_dir) \
+    REGULAR(claim_inject_stale_part_dir) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(async_insert_flush_pause_in_executor) \
+    PAUSEABLE(system_replicas_schedule_requests_pause) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
     REGULAR(replicated_merge_tree_all_replicas_stale) \
     REGULAR(zero_copy_lock_zk_fail_before_op) \
@@ -176,6 +183,7 @@ static struct InitFiu
     REGULAR(zero_copy_unlock_zk_fail_after_op) \
     REGULAR(plain_rewritable_object_storage_azure_not_found_on_init) \
     PAUSEABLE(storage_merge_tree_background_clear_old_parts_pause) \
+    PAUSEABLE(storage_merge_create_children_plans_pause) \
     PAUSEABLE_ONCE(storage_shared_merge_tree_mutate_pause_before_wait) \
     PAUSEABLE(database_replicated_startup_pause) \
     ONCE(keeper_leader_sets_invalid_digest) \
@@ -248,12 +256,17 @@ static struct InitFiu
     REGULAR(database_replicated_force_metadata_digest_check) \
     ONCE(oom_canary_force_oom_evidence) \
     PAUSEABLE(truncate_database_tables_pause) \
+    PAUSEABLE(database_materialized_postgresql_pause_before_table_drop) \
     REGULAR(datalake_try_get_table_return_nullptr) \
     REGULAR(datalake_try_get_table_throw) \
     REGULAR(datalake_get_tables_throw) \
     REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
+    REGULAR(atomic_populate_fail_before_subscription) \
+    PAUSEABLE(atomic_populate_pause_before_subscription) \
+    PAUSEABLE(atomic_populate_pause_after_view_publication) \
+    PAUSEABLE(atomic_populate_pause_before_source_guard) \
     PAUSEABLE(database_catalog_drop_finally_before_id_erase) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     ONCE(mt_skip_scheduling_merge_once) \
@@ -269,6 +282,13 @@ static struct InitFiu
     PAUSEABLE_ONCE(iceberg_compaction_merge_pause_in_step) \
     REGULAR(tcp_handler_fail_connection_setup) \
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
+    PAUSEABLE(keeper_changelog_read_plan_resolved) \
+    PAUSEABLE(keeper_changelog_removed_from_disk_set) \
+    PAUSEABLE(keeper_changelog_readahead_fill_wedge) \
+    PAUSEABLE(keeper_changelog_readahead_serve_wait) \
+    PAUSEABLE(keeper_changelog_readahead_park_armed) \
+    PAUSEABLE(keeper_changelog_readahead_pre_drain) \
+    REGULAR(keeper_changelog_readahead_fill_exception) \
     REGULAR(distributed_plan_record_failure_while_starting_tasks) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
@@ -494,7 +514,19 @@ std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints
 
 #else // USE_LIBFIU
 
+/// These are hooks in regular code paths, so they must be no-ops rather than throw.
+/// In particular, `disableFailPoint` is called unconditionally during quorum cleanup
+/// in `StorageReplicatedMergeTree` and `ReplicatedMergeTreeRestartingThread`.
+
 void FailPointInjection::pauseFailPoint(const String &)
+{
+}
+
+void FailPointInjection::notifyPauseAndWaitForResume(const String &)
+{
+}
+
+void FailPointInjection::disableFailPoint(const String &)
 {
 }
 
@@ -503,43 +535,33 @@ bool FailPointInjection::hasAnyFailPointBeenRegistered()
     return false;
 }
 
+/// The rest are only reachable through SYSTEM ... FAILPOINT queries (whose interpreter
+/// already throws in builds without libfiu), and pretending to succeed would leave the
+/// caller waiting for a fail point that can never fire.
+
+[[noreturn]] static void throwDisabled()
+{
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Fail points are disabled because ClickHouse was built without libfiu");
+}
+
 void FailPointInjection::enableFailPoint(const String &)
 {
-}
-
-void FailPointInjection::enablePauseFailPoint(const String &, UInt64)
-{
-}
-
-void FailPointInjection::disableFailPoint(const String &)
-{
+    throwDisabled();
 }
 
 void FailPointInjection::notifyFailPoint(const String &)
 {
-}
-
-void FailPointInjection::wait(const String &)
-{
+    throwDisabled();
 }
 
 void FailPointInjection::waitForPause(const String &)
 {
+    throwDisabled();
 }
 
 void FailPointInjection::waitForResume(const String &)
 {
-}
-
-void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfiguration & config)
-{
-    String root_key = "fail_points_active";
-
-    Poco::Util::AbstractConfiguration::Keys fail_point_names;
-    config.keys(root_key, fail_point_names);
-
-    if (!fail_point_names.empty())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FIU is not enabled");
+    throwDisabled();
 }
 
 std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints()

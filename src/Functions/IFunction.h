@@ -203,7 +203,21 @@ public:
 
     virtual bool isStateful() const { return false; }
 
+    /** Returns true if the function maps a variable-size argument (`String`, `FixedString`, `Array`, `Map`)
+      * to a small fixed-size result, so that computing it early and carrying the result instead of the
+      * argument strictly reduces the volume of data flowing through the query plan.
+      * Examples: `length`, `lengthUTF8`, `empty`, `notEmpty`.
+      * Used by the `pushDownVolumeReducingFunction` query plan optimization.
+      */
     virtual bool isVolumeReducing() const { return false; }
+
+    /** Returns true if this is a spatial predicate for which bbox-disjoint pruning is safe.
+      * Specifically: if the bounding boxes of the geometry arguments are disjoint,
+      * the function is guaranteed to return 0/false for all such rows.
+      * Default: false. Spatial intersection/containment functions override this to return true.
+      * UDFs with spatial semantics can also override this to enable Parquet row group / page pruning.
+      */
+    virtual bool isSpatialPredicate() const { return false; }
 
     /** Should we evaluate this function while constant folding, if arguments are constants?
       * Usually this is true. Notable counterexample is function 'sleep'.
@@ -411,6 +425,9 @@ public:
 
     /// Override and return true if function could take different number of arguments.
     virtual bool isVariadic() const { return false; }
+
+    /// See IFunctionBase::isSpatialPredicate.
+    virtual bool isSpatialPredicate() const { return false; }
 
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
@@ -624,7 +641,9 @@ public:
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isServerConstant() const { return false; }
     virtual bool isStateful() const { return false; }
+    /// See `IFunctionBase::isVolumeReducing`.
     virtual bool isVolumeReducing() const { return false; }
+    virtual bool isSpatialPredicate() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }

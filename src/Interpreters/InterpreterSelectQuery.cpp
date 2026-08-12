@@ -88,6 +88,7 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMerge.h>
@@ -134,6 +135,7 @@ namespace Setting
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
+    extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool async_socket_for_remote;
@@ -212,6 +214,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_parallel_single_level_merge;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool enable_lazy_columns_replication;
@@ -240,8 +243,8 @@ namespace ErrorCodes
     extern const int INVALID_WITH_FILL_EXPRESSION;
     extern const int ACCESS_DENIED;
     extern const int UNKNOWN_IDENTIFIER;
-    extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -579,6 +582,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
+    /// Only the analyzer can resolve recursive CTEs, and reaching this interpreter means the old analyzer.
+    if (getSelectQuery().recursive_with)
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD, "WITH RECURSIVE is not supported with the old analyzer. Please use `enable_analyzer=1`");
+
     initSettings();
 
     // Automatic parallel replicas aren't supported in the old analyzer, this code is needed only as a safe guard for
@@ -612,7 +620,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (context->getSettingsRef()[Setting::enable_global_with_statement])
             ApplyWithAliasVisitor::visit(query_ptr);
-        ApplyWithSubqueryVisitor(context).visit(query_ptr);
+        ApplyWithSubqueryVisitor::visit(query_ptr);
     }
 
     query_info.query = query_ptr->clone();
@@ -676,11 +684,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
-    /// Check support for JOIN for parallel replicas with custom key
-    if (joined_tables.tablesCount() > 1 && !settings[Setting::parallel_replicas_custom_key].value.empty())
+    /// Check support for JOIN for parallel replicas with custom key.
+    /// Dropping the custom key alone would leave the parallel replicas enabled without anything to split the
+    /// data by: the initiator would still send the query to every replica of the shard, and every replica would
+    /// read the whole table. Disable the parallel replicas themselves, as the query is executed without them.
+    if (joined_tables.tablesCount() > 1 && context->canUseParallelReplicasCustomKey())
     {
         LOG_DEBUG(log, "JOINs are not supported with parallel_replicas_custom_key. Query will be executed without using them.");
-        context->setSetting("parallel_replicas_custom_key", String{""});
+        context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
     }
 
     /// Check support for FINAL for parallel replicas
@@ -698,9 +709,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
-    /// Check support for parallel replicas for non-replicated storage (plain MergeTree)
+    /// Check support for parallel replicas for non-replicated storage (plain MergeTree).
+    /// The setting is about the task based parallel replicas, which read the parts the coordinator assigns to
+    /// them and need the same parts on every replica. The replicas of the offset based parallel replicas read
+    /// what their own filter by the custom key or by the sampling key selects, and that filter is built here as
+    /// well. Disabling the parallel replicas for those would drop the filter, while the initiator has already
+    /// sent the query to every replica of the shard, and every replica would read the whole table.
     bool is_plain_merge_tree = storage && storage->isMergeTree() && !storage->supportsReplication();
-    if (is_plain_merge_tree && settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+    if (is_plain_merge_tree && context->canUseTaskBasedParallelReplicas()
         && !settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
     {
         if (settings[Setting::allow_experimental_parallel_reading_from_replicas] == 1)
@@ -782,29 +798,22 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (settings[Setting::parallel_replicas_count] > 1)
         {
-            if (auto custom_key_ast = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *context))
-            {
-                LOG_TRACE(log, "Processing query on a replica using custom_key '{}'", settings[Setting::parallel_replicas_custom_key].value);
+            auto custom_key_ast = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *context);
+            /// `parseCustomKeyForTable` either parses the key or throws, it never returns nothing.
+            chassert(custom_key_ast);
 
-                auto custom_key_metadata = storage->getInMemoryMetadataPtr(context, false);
-                parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
-                    settings[Setting::parallel_replicas_count],
-                    settings[Setting::parallel_replica_offset],
-                    std::move(custom_key_ast),
-                    {settings[Setting::parallel_replicas_mode],
-                     settings[Setting::parallel_replicas_custom_key_range_lower],
-                     settings[Setting::parallel_replicas_custom_key_range_upper]},
-                    custom_key_metadata->columns,
-                    context);
-            }
-            else if (settings[Setting::parallel_replica_offset] > 0)
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Parallel replicas processing with custom_key has been requested "
-                    "(setting 'max_parallel_replicas') but the table does not have custom_key defined for it "
-                    "or it's invalid (settings `parallel_replicas_custom_key`)");
-            }
+            LOG_TRACE(log, "Processing query on a replica using custom_key '{}'", settings[Setting::parallel_replicas_custom_key].value);
+
+            auto custom_key_metadata = storage->getInMemoryMetadataPtr(context, false);
+            parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
+                settings[Setting::parallel_replicas_count],
+                settings[Setting::parallel_replica_offset],
+                std::move(custom_key_ast),
+                {settings[Setting::parallel_replicas_mode],
+                 settings[Setting::parallel_replicas_custom_key_range_lower],
+                 settings[Setting::parallel_replicas_custom_key_range_upper]},
+                custom_key_metadata->columns,
+                context);
         }
         /// We disable prefer_localhost_replica because if one of the replicas is local it will create a single local plan
         /// instead of executing the query with multiple replicas
@@ -868,7 +877,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
             Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
-            if (const auto & column_sizes = storage->getColumnSizes(queried_columns); !column_sizes.empty())
+            const auto & column_sizes = storage->getColumnSizes(
+                queried_columns, context->getSettingsRef()[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);
+            if (!column_sizes.empty())
             {
                 /// Extract column compressed sizes.
                 std::unordered_map<std::string, UInt64> column_compressed_sizes;
@@ -904,6 +915,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     estimator,
                     queried_columns,
                     supported_prewhere_columns,
+                    storage->supportedPrewhereColumnsIncludeSubcolumns(),
                     log};
 
                 where_optimizer.optimize(current_info, context);
@@ -1282,6 +1294,16 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     {
         query_info.prepared_sets = query_analyzer->getPreparedSets();
         from_stage = storage->getQueryProcessingStage(context, options.to_stage, storage_snapshot, query_info);
+
+        /// A row-level filter refused for push-down is applied as a FilterStep right above
+        /// the read, which only the first processing stage adds. A storage processing further
+        /// (e.g. Distributed or a wrapper over it) would silently skip the policy, so fail closed instead.
+        if (row_policy_info && from_stage > QueryProcessingStage::FetchColumns && !shouldPushRowLevelFilterToStorage())
+            throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+                "Row policy filter for {} cannot be pushed into the storage read, and the storage processes "
+                "the query remotely, so the filter cannot be applied. Define the policy on the underlying tables "
+                "instead; note that such a policy is not applied to reads shipped with `serialize_query_plan = 1`",
+                storage->getStorageID().getNameForLogs());
     }
 
     /// Do I need to perform the first part of the pipeline?
@@ -1941,7 +1963,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         {
             // If there is a storage that supports prewhere, this will always be nullptr
             // Thus, we don't actually need to check if projection is active.
-            if (expressions.row_policy_info && !(!input_pipe && storage && storage->supportsPrewhere()))
+            if (expressions.row_policy_info && !shouldPushRowLevelFilterToStorage())
             {
                 auto row_level_security_step = std::make_unique<FilterStep>(
                     query_plan.getCurrentHeader(),
@@ -2407,7 +2429,8 @@ static void executeMergeAggregatedImpl(
             settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]),
         settings[Setting::max_block_size],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
-        settings[Setting::serialize_string_in_memory_with_zero_byte]);
+        settings[Setting::serialize_string_in_memory_with_zero_byte],
+        settings[Setting::enable_packed_string_keys_in_aggregation]);
 
     auto grouping_sets_params = getAggregatorGroupingSetsParams(aggregation_keys_list, keys);
 
@@ -2472,6 +2495,36 @@ bool InterpreterSelectQuery::shouldMoveToPrewhere() const
     return settings[Setting::optimize_move_to_prewhere] && (!query.final() || settings[Setting::optimize_move_to_prewhere_if_final]);
 }
 
+bool InterpreterSelectQuery::shouldPushRowLevelFilterToStorage() const
+{
+    if (input_pipe || !storage || !storage->supportsPrewhere())
+        return false;
+
+    /// A remote storage cannot carry the filter at all: read() only ships query text to the
+    /// remote servers and never lowers the filter into it, so pushing would silently drop an
+    /// access-control filter. Refuse, and let the stage check fail closed.
+    if (storage->isRemote())
+        return false;
+
+    /// The filter is built against this table's schema, but read() hands it to wrapper
+    /// storages' children (Merge, Buffer), which re-derive it against their own types.
+    /// Push it down only if every column it consumes is in the PREWHERE contract.
+    /// NOTE: uses the interpreter's own row_policy_info, so it is callable before
+    /// analysis_result exists; they share the same object.
+    if (const auto supported_prewhere_columns = storage->supportedPrewhereColumns())
+    {
+        const auto & table_columns = metadata_snapshot->getColumns();
+        const bool include_subcolumns = storage->supportedPrewhereColumnsIncludeSubcolumns();
+        for (const auto & column_name : row_policy_info->actions.getRequiredColumnsNames())
+        {
+            if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, include_subcolumns, table_columns, column_name))
+                return false;
+        }
+    }
+
+    return true;
+}
+
 void InterpreterSelectQuery::addPrewhereAliasActions()
 {
     auto & row_level_filter = analysis_result.row_policy_info;
@@ -2503,7 +2556,9 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
             columns.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
         }
 
-        if (row_level_filter)
+        /// A row policy that will not be pushed into the storage read is applied as an ordinary
+        /// FilterStep above it, so its columns are read normally and are not PREWHERE columns.
+        if (row_level_filter && shouldPushRowLevelFilterToStorage())
         {
             auto row_level_required_columns = row_level_filter->actions.getRequiredColumns().getNames();
             columns.insert(row_level_required_columns.begin(), row_level_required_columns.end());
@@ -2624,10 +2679,12 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
     if (supported_prewhere_columns.has_value())
     {
         NameSet required_columns_from_prewhere = get_prewhere_columns();
+        const auto & table_columns = metadata_snapshot->getColumns();
+        const bool include_subcolumns = storage->supportedPrewhereColumnsIncludeSubcolumns();
 
         for (const auto & column_name : required_columns_from_prewhere)
         {
-            if (!supported_prewhere_columns->contains(column_name))
+            if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, include_subcolumns, table_columns, column_name))
                 throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "Storage {} doesn't support PREWHERE for {}", storage->getName(), column_name);
         }
     }
@@ -2879,7 +2936,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         if (max_streams == 0)
             max_streams = 1;
 
-        if (analysis_result.row_policy_info && (!input_pipe && storage && storage->supportsPrewhere()))
+        if (analysis_result.row_policy_info && shouldPushRowLevelFilterToStorage())
             query_info.row_level_filter = analysis_result.row_policy_info;
 
         if (analysis_result.prewhere_info)
@@ -3014,7 +3071,8 @@ static Aggregator::Params getAggregatorParams(
         stats_collecting_params,
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
         settings[Setting::serialize_string_in_memory_with_zero_byte],
-        settings[Setting::enable_parallel_single_level_merge]};
+        settings[Setting::enable_parallel_single_level_merge],
+        settings[Setting::enable_packed_string_keys_in_aggregation]};
 }
 
 void InterpreterSelectQuery::executeAggregation(
