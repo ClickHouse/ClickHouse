@@ -1,0 +1,32 @@
+name: Documentation Team Review Requests
+
+on:
+  pull_request_target:
+    branches: [master]
+    types: [opened, reopened, synchronize, labeled]
+
+concurrency:
+  group: documentation-team-review-requests-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  request-reviews:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository ||
+      contains(github.event.pull_request.labels.*.name, 'can be tested')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out trusted base revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Request documentation team reviews
+        env:
+          GH_TOKEN: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
+        run: python3 -m ci.jobs.scripts.team_review_requests
