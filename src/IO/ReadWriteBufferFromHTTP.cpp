@@ -1,12 +1,8 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <base/pathToString.h>
-#if defined(OS_WINDOWS)
-#include <Poco/DateTimeFormat.h>
-#include <Poco/DateTimeParser.h>
-#endif
 
 #include <IO/HTTPCommon.h>
 #include <IO/WriteHelpers.h>
+#include <IO/parseHTTPDate.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
@@ -36,7 +32,7 @@ Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPRespons
     /// with path from the original URI and normalize it.
     auto path = std::filesystem::weakly_canonical(std::filesystem::path(prev_uri.getPath()) / location);
     location_uri = prev_uri;
-    location_uri.setPath(pathToString(path));
+    location_uri.setPath(path);
     return location_uri;
 }
 
@@ -635,7 +631,7 @@ off_t ReadWriteBufferFromHTTP::seek(off_t offset_, int whence)
 
 void ReadWriteBufferFromHTTP::setReadUntilPosition(size_t until)
 {
-    until = std::max(until, 1uz);
+    until = std::max(until, 1ul);
     if (read_range.end && *read_range.end + 1 == until)
         return;
     read_range.end = until - 1;
@@ -804,25 +800,7 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
     }
 
     if (response.has("Last-Modified"))
-    {
-        String date_str = response.get("Last-Modified");
-#if defined(OS_WINDOWS)
-        /// mingw-w64 has no `strptime`. Poco parses this exact format - `Last-Modified` is an
-        /// IMF-fixdate per RFC 7231 - and is already linked, so there is no need for one.
-        Poco::DateTime parsed;
-        int time_zone_differential = 0;
-        if (Poco::DateTimeParser::tryParse(Poco::DateTimeFormat::HTTP_FORMAT, date_str, parsed, time_zone_differential))
-        {
-            parsed.makeUTC(time_zone_differential);
-            res.last_modified = parsed.timestamp().epochTime();
-        }
-#else
-        struct tm info{};
-        char * end = strptime(date_str.data(), "%a, %d %b %Y %H:%M:%S %Z", &info);
-        if (end == date_str.data() + date_str.size())
-            res.last_modified = timegm(&info);
-#endif
-    }
+        res.last_modified = tryParseHTTPDate(response.get("Last-Modified"));
 
     return res;
 }

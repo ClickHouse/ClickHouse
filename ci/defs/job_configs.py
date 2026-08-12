@@ -117,7 +117,7 @@ common_ft_job_config = Job.Config(
             "./tests/config",
             "./tests/*.txt",
             "./ci/docker/stateless-test",
-            "./ci/jobs/scripts/functional_tests/setup_minio.sh",
+            "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
         ],
     ),
     result_name_for_cidb="Tests",
@@ -522,6 +522,11 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.LOONGARCH64,
             provides=[ArtifactNames.CH_LOONGARCH64],
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+        Job.ParamSet(
+            parameter=BuildTypes.WASM64,
+            provides=[ArtifactNames.CH_WASM64],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(

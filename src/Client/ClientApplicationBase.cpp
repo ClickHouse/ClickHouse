@@ -97,8 +97,10 @@ ClientApplicationBase::~ClientApplicationBase()
     try
     {
 #if !defined(OS_WINDOWS)
+#if defined(OS_HAS_SIGNAL_HANDLERS)
         writeSignalIDtoSignalPipe(SignalListener::StopThread);
         signal_listener_thread.join();
+#endif
         HandledSignals::instance().reset();
 #endif
     }
@@ -318,11 +320,12 @@ void ClientApplicationBase::init(int argc, char ** argv)
     }
 
     fatal_log = createLogger("ClientBase", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
-#if !defined(OS_WINDOWS)
-    /// Windows reports a fault through Structured Exception Handling rather than a signal, so
-    /// there is no handler to install and no pipe for one to write to. A crash there loses the
-    /// stack trace that this thread would have printed; `AddVectoredExceptionHandler` is what
-    /// would restore it.
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+    /// Without signals nothing ever writes to the signal pipe, so there is nothing to listen
+    /// for - and the blocking read of that pipe is all the listener thread does. On Windows in
+    /// particular, a fault is reported through Structured Exception Handling rather than a
+    /// signal; a crash there loses the stack trace that this thread would have printed, and
+    /// `AddVectoredExceptionHandler` is what would restore it.
     signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
     signal_listener_thread.start(*signal_listener);
 #endif
