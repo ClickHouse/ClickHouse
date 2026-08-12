@@ -79,12 +79,6 @@ like:
 
 Let's explore the lifecycle of a Postgres service.
 
-<Warning>
-**Credential redaction from July 31, 2026**
-
-As of **July 31, 2026**, the API no longer returns the `password` and `connectionString` properties in its responses. They appear only in the [create](#create) response and [password reset] response when the request contained no password. We recommend that you capture credentials from the [create](#create) response. If you manage services with Terraform, upgrade the provider to **v3.21.0 or later** before July 31, 2026 (see the [Terraform reference](/products/managed-postgres/terraform)).
-</Warning>
-
 ### Create {#create}
 
 First, create a new one
@@ -111,7 +105,9 @@ create_data='{
 ```
 
 Now use this data to create a new instance; note that it requires the content
-type header. Save the response in order to have access to the credentials it returns:
+type header. Save the response: it is the only one that includes the service
+credentials (the [password reset] response also returns them when the request
+does not supply a password):
 
 ```bash
 pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
@@ -158,7 +154,8 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-The output will be similar to the JSON returned for creation (but without the `password` and `connectionString` properties after July 31, 2026), but keep an eye
+The output will be similar to the JSON returned for creation, minus the
+credentials, but keep an eye
 on the `state`; when it changes to `running`, the server is ready:
 
 ```bash
@@ -217,9 +214,7 @@ The returned data should include the new tags:
       "value": "production"
     }
   ],
-  "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com:5432/postgres?channel_binding=require",
   "username": "postgres",
-  "password": "vV6cfEr2p_-TzkCDrZOx",
   "hostname": "my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com",
   "isPrimary": true,
   "state": "running"

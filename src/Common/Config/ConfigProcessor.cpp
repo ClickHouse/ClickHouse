@@ -796,12 +796,6 @@ XMLDocumentPtr ConfigProcessor::processConfig(
 
             include_from_path = node->innerText();
         }
-        else
-        {
-            std::string default_path = "/etc/metrika.xml";
-            if (fs::exists(default_path))
-                include_from_path = default_path;
-        }
 
         /// When --try is passed and the include_from file is missing, drop the path so that
         /// processIncludes does not try to parse it. We must still call processIncludes

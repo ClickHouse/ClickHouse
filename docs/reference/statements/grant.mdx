@@ -252,6 +252,7 @@ The hierarchy of privileges in ClickHouse is shown below:
   - `SHOW FILESYSTEM CACHES`
   - [`SOURCES`](#sources)
     - `AZURE`
+    - `BIGQUERY`
     - `FILE`
     - `HDFS`
     - `HIVE`
@@ -634,6 +635,7 @@ Allows using external data sources. Applies to [table engines](/reference/engine
 
 Possible parameters:
 - `AZURE`
+- `BIGQUERY`
 - `FILE`
 - `HDFS`
 - `HIVE`
@@ -769,6 +771,8 @@ Assuming a named collection is called abc, we grant privilege CREATE NAMED COLLE
 - `GRANT CREATE NAMED COLLECTION ON abc TO john`
 
 ### TABLE ENGINE {#table-engine}
+
+<CloudNotSupportedBadge/>
 
 Allows using a specified table engine when creating a table. Applies to [table engines](/reference/engines/table-engines/index).
 
