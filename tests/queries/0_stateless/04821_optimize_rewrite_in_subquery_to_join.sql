@@ -90,8 +90,8 @@ SELECT count() FROM t_outer WHERE val NOT IN (SELECT y FROM t_right) SETTINGS op
 SELECT count() FROM t_outer WHERE val NOT IN (SELECT y FROM t_right) SETTINGS optimize_rewrite_in_subquery_to_join = 1;
 
 SELECT '-- results: empty subquery';
-SELECT count() FROM t_outer WHERE val IN (SELECT y FROM t_right WHERE 0) SETTINGS optimize_rewrite_in_subquery_to_join = 1;
-SELECT count() FROM t_outer WHERE val NOT IN (SELECT y FROM t_right WHERE 0) SETTINGS optimize_rewrite_in_subquery_to_join = 1;
+SELECT count() FROM t_outer WHERE val IN (SELECT y FROM t_right WHERE 0);
+SELECT count() FROM t_outer WHERE val NOT IN (SELECT y FROM t_right WHERE 0);
 
 SELECT '-- results: NULLs on both sides (NULL is not in, NULL is not not-in the set)';
 DROP TABLE IF EXISTS t_nulls_left;
@@ -123,11 +123,11 @@ SELECT '-- results: LowCardinality keys';
 DROP TABLE IF EXISTS t_lc;
 CREATE TABLE t_lc (s LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_lc VALUES ('a'), ('b'), ('c');
-SELECT count() FROM t_lc WHERE s IN (SELECT 'b') SETTINGS optimize_rewrite_in_subquery_to_join = 1;
-SELECT count() FROM t_lc WHERE s NOT IN (SELECT 'b') SETTINGS optimize_rewrite_in_subquery_to_join = 1;
+SELECT count() FROM t_lc WHERE s IN (SELECT 'b');
+SELECT count() FROM t_lc WHERE s NOT IN (SELECT 'b');
 
 SELECT '-- results: name collision between inner and outer columns';
-SELECT count() FROM t_outer WHERE val IN (SELECT val * 10 AS val FROM t_outer WHERE id = 1) SETTINGS optimize_rewrite_in_subquery_to_join = 1;
+SELECT count() FROM t_outer WHERE val IN (SELECT val * 10 AS val FROM t_outer WHERE id = 1);
 
 DROP TABLE t_outer;
 DROP TABLE t_right;

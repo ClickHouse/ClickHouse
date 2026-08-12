@@ -9,7 +9,6 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Utils.h>
 
-#include <Functions/logical.h>
 
 #include <Core/Settings.h>
 
@@ -361,23 +360,6 @@ private:
             checkNotRewritten(item.is_comma, join_node);
     }
 
-    QueryTreeNodePtr makeConjunction(const QueryTreeNodes & nodes)
-    {
-        if (nodes.empty())
-            return nullptr;
-
-        if (nodes.size() == 1)
-            return nodes.front();
-
-        auto function_node = std::make_shared<FunctionNode>("and");
-        function_node->markAsOperator();
-        for (const auto & node : nodes)
-            function_node->getArguments().getNodes().push_back(node);
-
-        const auto & function = createInternalFunctionAndOverloadResolver();
-        function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
-        return function_node;
-    }
 };
 
 }

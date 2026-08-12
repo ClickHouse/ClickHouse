@@ -172,6 +172,10 @@ QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node);
 /// Arguments and parameters are taken from the node.
 void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const String & function_name, const ContextPtr & context);
 
+/// Combine expressions into a conjunction: nullptr for none, the expression itself for one,
+/// a resolved `and` function node otherwise.
+QueryTreeNodePtr makeConjunction(const QueryTreeNodes & conditions);
+
 /// Resolves function node as aggregate function with given name.
 /// Arguments and parameters are taken from the node.
 void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name);

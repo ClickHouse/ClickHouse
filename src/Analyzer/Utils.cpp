@@ -36,6 +36,7 @@
 
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/logical.h>
 
 #include <Storages/IStorage.h>
 
@@ -1071,6 +1072,23 @@ void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const Stri
 {
     auto aggregate_function = resolveAggregateFunction(function_node, function_name);
     function_node.resolveAsAggregateFunction(std::move(aggregate_function));
+}
+
+QueryTreeNodePtr makeConjunction(const QueryTreeNodes & conditions)
+{
+    if (conditions.empty())
+        return nullptr;
+
+    if (conditions.size() == 1)
+        return conditions.front();
+
+    auto function_node = std::make_shared<FunctionNode>("and");
+    function_node->markAsOperator();
+    function_node->getArguments().getNodes() = conditions;
+
+    const auto & function = createInternalFunctionAndOverloadResolver();
+    function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
+    return function_node;
 }
 
 std::pair<TableExpressionNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node)
