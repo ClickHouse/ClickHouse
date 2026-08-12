@@ -2130,14 +2130,27 @@ def test_rabbitmq_drop_table_properly(rabbitmq_cluster, db, unique):
     assert exists
 
     instance.query(f"DROP TABLE {db}.rabbitmq_drop")
-    time.sleep(30)
 
-    try:
-        exists = channel.queue_declare(queue=f"{unique}_rabbit_queue_drop", passive=True)
-    except Exception:
-        exists = False
-
-    assert not exists
+    # Only a 404 means the queue is gone. A successful passive declare leaves the channel
+    # usable, and the 404 path breaks out at once, so the channel is never used after the
+    # broker closes it.
+    queue_removal_timeout_sec = 30
+    deadline = time.monotonic() + queue_removal_timeout_sec
+    while True:
+        try:
+            channel.queue_declare(queue=f"{unique}_rabbit_queue_drop", passive=True)
+        except pika.exceptions.ChannelClosedByBroker as e:
+            assert e.reply_code == 404, f"unexpected channel close: {e}"
+            break
+        # The last declare lands at the deadline, so the accepted window is exactly
+        # queue_removal_timeout_sec.
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            pytest.fail(
+                f"Queue {unique}_rabbit_queue_drop still exists "
+                f"{queue_removal_timeout_sec} seconds after DROP TABLE."
+            )
+        time.sleep(min(0.5, remaining))
 
 
 def test_rabbitmq_queue_settings(rabbitmq_cluster, db, unique):
