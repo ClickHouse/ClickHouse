@@ -31,3 +31,18 @@ SELECT 'promoted' AS repr,
        numericIndexedVectorGetValue(v, CAST(-1, 'Int8')) AS from_get_value
 FROM (SELECT groupNumericIndexedVectorState(CAST(idx, 'Int8'), toInt64(7)) AS v
       FROM (SELECT arrayJoin(arrayConcat(range(0, 32), [-1])) AS idx));
+
+-- They must also agree after an index first receives the value 0 and then a non-zero one.
+SELECT 'zero then non-zero, Int8' AS what,
+       numericIndexedVectorToMap(v)[-1] AS from_map,
+       numericIndexedVectorGetValue(v, CAST(-1, 'Int8')) AS from_get_value
+FROM (SELECT groupNumericIndexedVectorState(CAST(t.1, 'Int8'), t.2) AS v
+      FROM (SELECT arrayJoin([tuple(toInt8(-1), toInt64(0)), tuple(toInt8(-1), toInt64(3))]) AS t))
+SETTINGS max_threads = 1;
+
+SELECT 'zero then non-zero, UInt8' AS what,
+       numericIndexedVectorToMap(v)[5] AS from_map,
+       numericIndexedVectorGetValue(v, toUInt8(5)) AS from_get_value
+FROM (SELECT groupNumericIndexedVectorState(toUInt8(5), val) AS v
+      FROM (SELECT arrayJoin([toInt64(0), toInt64(3)]) AS val))
+SETTINGS max_threads = 1;

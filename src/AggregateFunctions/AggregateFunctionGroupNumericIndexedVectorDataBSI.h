@@ -1801,9 +1801,10 @@ public:
     /// return origin_vector(this)[index]
     ValueType getValue(IndexType index) const
     {
+        /// `zero_indexes` is not consulted: an index with no bits set is zero anyway, and the set is
+        /// not cleared when a later update makes the value non-zero. Deriving the value from the bit
+        /// slices alone is what `getAllValueSum` and the map conversion already do.
         const UInt64 lookup = static_cast<std::make_unsigned_t<IndexType>>(index);
-        if (zero_indexes->rb_contains(lookup))
-            return 0;
 
         const UInt32 total_bit_num = getTotalBitNum();
         if (total_bit_num == 0)
