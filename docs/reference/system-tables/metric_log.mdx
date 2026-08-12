@@ -117,6 +117,10 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/reference/data-types/int-uint)) — Total number of returned object infos from iceberg iterator.
 - `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/reference/data-types/int-uint)) — Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.
 - `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/reference/data-types/int-uint)) — Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.
+- `ProfileEvent_OneLakeAccessTokenRequests` ([UInt64](/reference/data-types/int-uint)) — Number of access token requests issued by the OneLake catalog via the Entra ID refresh token grant.
+- `ProfileEvent_OneLakeAccessTokenRequestFailures` ([UInt64](/reference/data-types/int-uint)) — Number of failed access token requests issued by the OneLake catalog via the Entra ID refresh token grant (including expired or revoked refresh tokens).
+- `ProfileEvent_OneLakeAccessTokenRequestMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent requesting access tokens via the Entra ID refresh token grant in the OneLake catalog.
+- `ProfileEvent_OneLakeAccessTokenExpirations` ([UInt64](/reference/data-types/int-uint)) — Number of times the cached OneLake access token was found expired and renewed transparently.
 - `ProfileEvent_VectorSimilarityIndexCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times an index granule has been found in the vector index cache.
 - `ProfileEvent_VectorSimilarityIndexCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times an index granule has not been found in the vector index cache and had to be read from disk.
 - `ProfileEvent_VectorSimilarityIndexCacheWeightLost` ([UInt64](/reference/data-types/int-uint)) — Approximate number of bytes evicted from the vector index cache.
@@ -833,6 +837,7 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_FilesystemCacheCheckCorrectness` ([UInt64](/reference/data-types/int-uint)) — Number of times FileCache::assertCacheCorrectness was called
 - `ProfileEvent_FilesystemCacheCheckCorrectnessMicroseconds` ([UInt64](/reference/data-types/int-uint)) — How much time does FileCache::assertCacheCorrectness takes
 - `ProfileEvent_FileSegmentWaitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Wait on DOWNLOADING state
+- `ProfileEvent_FileSegmentWaitTimeouts` ([UInt64](/reference/data-types/int-uint)) — Number of times waiting on a DOWNLOADING file segment timed out (see `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)
 - `ProfileEvent_FileSegmentCompleteMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Duration of FileSegment::complete() in filesystem cache
 - `ProfileEvent_FileSegmentLockMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Lock file segment time
 - `ProfileEvent_FileSegmentWriteMicroseconds` ([UInt64](/reference/data-types/int-uint)) — File segment write() time
@@ -1265,9 +1270,15 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_SharedMergeTreeReplicaSetUpdatesFromZooKeeperRequests` ([UInt64](/reference/data-types/int-uint)) — How many total ZooKeeper requests we made to update replica set
 - `ProfileEvent_SharedMergeTreeReplicaSetUpdatesFromZooKeeperMicroseconds` ([UInt64](/reference/data-types/int-uint)) — How much time we spend to update replica set
 - `ProfileEvent_KeeperLogsEntryReadFromLatestCache` ([UInt64](/reference/data-types/int-uint)) — Number of log entries in Keeper being read from latest logs cache
-- `ProfileEvent_KeeperLogsEntryReadFromCommitCache` ([UInt64](/reference/data-types/int-uint)) — Number of log entries in Keeper being read from commit logs cache
 - `ProfileEvent_KeeperLogsEntryReadFromFile` ([UInt64](/reference/data-types/int-uint)) — Number of log entries in Keeper being read directly from the changelog file
-- `ProfileEvent_KeeperLogsPrefetchedEntries` ([UInt64](/reference/data-types/int-uint)) — Number of log entries in Keeper being prefetched from the changelog file
+- `ProfileEvent_KeeperLogsReadAheadFillReopens` ([UInt64](/reference/data-types/int-uint)) — Number of times the Keeper read-ahead fill reopened or seeked a changelog file
+- `ProfileEvent_KeeperLogsReadAheadFillDecodedEntries` ([UInt64](/reference/data-types/int-uint)) — Number of log entries decoded by the Keeper read-ahead fill task
+- `ProfileEvent_KeeperLogsReadAheadCursorsInstalled` ([UInt64](/reference/data-types/int-uint)) — Number of new fill cursors queued onto a Keeper changelog read-ahead reader (peer or commit) that the fill task was not already covering
+- `ProfileEvent_KeeperLogsReadAheadPlanEpochMismatches` ([UInt64](/reference/data-types/int-uint)) — Number of times a Keeper changelog read plan was discarded because a concurrent write_at truncation invalidated it before it could be served
+- `ProfileEvent_KeeperLogsReadAheadScheduleRejected` ([UInt64](/reference/data-types/int-uint)) — Number of times a Keeper changelog read-ahead reader could not be created because the read-ahead thread pool queue was full; the caller falls back to a direct read
+- `ProfileEvent_KeeperLogsReadAheadReadersCreated` ([UInt64](/reference/data-types/int-uint)) — Number of Keeper changelog read-ahead readers (and their fill tasks) created; staying flat across file boundaries indicates a reader is being reused rather than torn down and recreated
+- `ProfileEvent_KeeperLogsReadAheadTimeoutFallbacks` ([UInt64](/reference/data-types/int-uint)) — Number of times a Keeper changelog read-ahead serve request timed out waiting for the fill task and fell back to a direct read of the remaining tail
+- `ProfileEvent_KeeperLogsEntryReadFromCommitReadAhead` ([UInt64](/reference/data-types/int-uint)) — Number of log entries served to the commit thread from the commit read-ahead reader's decoded window (fast-path pop or first-of-window drain pop)
 - `ProfileEvent_KeeperChangelogWrittenBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes written to the changelog in Keeper
 - `ProfileEvent_KeeperChangelogFileSyncMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent in fsync for Keeper changelog (uncompressed logs only)
 - `ProfileEvent_KeeperSnapshotWrittenBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes written to snapshot files in Keeper
@@ -1722,6 +1733,9 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `CurrentMetric_KeeperReadThreads` ([Int64](/reference/data-types/int-uint)) — Number of threads in the threadpool for keeper server reads.
 - `CurrentMetric_KeeperReadThreadsActive` ([Int64](/reference/data-types/int-uint)) — Number of active threads in the threadpool for keeper server reads.
 - `CurrentMetric_KeeperReadThreadsScheduled` ([Int64](/reference/data-types/int-uint)) — Number of queued or active jobs in the threadpool for keeper server reads. Meaningless metric, the actual read tasks on this thread pool are scheduled through a different mechanism.
+- `CurrentMetric_KeeperChangelogReadAheadThreads` ([Int64](/reference/data-types/int-uint)) — Number of threads in the threadpool for Keeper changelog read-ahead fill tasks.
+- `CurrentMetric_KeeperChangelogReadAheadThreadsActive` ([Int64](/reference/data-types/int-uint)) — Number of active threads in the threadpool for Keeper changelog read-ahead fill tasks.
+- `CurrentMetric_KeeperChangelogReadAheadThreadsScheduled` ([Int64](/reference/data-types/int-uint)) — Number of queued or active jobs in the threadpool for Keeper changelog read-ahead fill tasks.
 - `CurrentMetric_KeeperBlockCacheBytes` ([Int64](/reference/data-types/int-uint)) — Total size of blocks in the Keeper storage block cache, in bytes.
 - `CurrentMetric_KeeperBlockCacheBlocks` ([Int64](/reference/data-types/int-uint)) — Number of blocks in the Keeper storage block cache.
 - `CurrentMetric_DistributedBytesToInsert` ([Int64](/reference/data-types/int-uint)) — Number of pending bytes to process for asynchronous insertion into Distributed tables. Number of bytes for every shard is summed.
@@ -1775,6 +1789,9 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `CurrentMetric_FilesystemCacheEvictionThreads` ([Int64](/reference/data-types/int-uint)) — Number of threads in the filesystem cache background eviction (removal) pool
 - `CurrentMetric_FilesystemCacheEvictionThreadsActive` ([Int64](/reference/data-types/int-uint)) — Number of threads in the filesystem cache background eviction pool running a task
 - `CurrentMetric_FilesystemCacheEvictionThreadsScheduled` ([Int64](/reference/data-types/int-uint)) — Number of queued or active jobs in the filesystem cache background eviction pool
+- `CurrentMetric_FilesystemCacheDropCacheThreads` ([Int64](/reference/data-types/int-uint)) — Number of threads in the filesystem cache pool for parallel keys removal on SYSTEM DROP FILESYSTEM CACHE
+- `CurrentMetric_FilesystemCacheDropCacheThreadsActive` ([Int64](/reference/data-types/int-uint)) — Number of threads in the filesystem cache keys removal pool running a task
+- `CurrentMetric_FilesystemCacheDropCacheThreadsScheduled` ([Int64](/reference/data-types/int-uint)) — Number of queued or active jobs in the filesystem cache keys removal pool
 - `CurrentMetric_AsyncInsertCacheSize` ([Int64](/reference/data-types/int-uint)) — Number of async insert hash id in cache
 - `CurrentMetric_IcebergMetadataFilesCacheBytes` ([Int64](/reference/data-types/int-uint)) — Size of the Iceberg metadata cache in bytes
 - `CurrentMetric_IcebergMetadataFilesCacheFiles` ([Int64](/reference/data-types/int-uint)) — Number of cached files in the Iceberg metadata cache
@@ -1983,7 +2000,6 @@ hostname:                                                        clickhouse.eu-c
 event_date:                                                      2020-09-05
 event_time:                                                      2020-09-05 16:22:33
 event_time_microseconds:                                         2020-09-05 16:22:33.196807
-milliseconds:                                                    196
 ProfileEvent_Query:                                              0
 ProfileEvent_SelectQuery:                                        0
 ProfileEvent_InsertQuery:                                        0
