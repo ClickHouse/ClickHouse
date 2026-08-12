@@ -1,5 +1,0 @@
-
-**Aliases:**
-
-- `build_id` — Alias for the build ID of the running ClickHouse server binary.
-- `other_alias` — Alias for `other_column`.
