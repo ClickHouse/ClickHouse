@@ -24,6 +24,9 @@
 #include <Processors/QueryPlan/ShuffleExchangeStep.h>
 #include <Processors/QueryPlan/BroadcastExchangeStep.h>
 #include <Processors/QueryPlan/GatherExchangeStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
+#include <fmt/ranges.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnConst.h>
@@ -73,7 +76,8 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 void tryMakeDistributedSorting(const Stack & stack, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node);
-void optimizeExchanges(QueryPlan::Node & root);
+void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
+bool keyTypeBreaksHashSharding(const IDataType & type);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
@@ -685,13 +689,149 @@ static bool isSortColumnPreserved(const ActionsDAG & dag, const String & column_
     return node->type == ActionsDAG::ActionType::INPUT && node->result_name == column_name;
 }
 
+/// Parallelizes a `PARTITION BY` window across buckets. `tryMakeDistributedSorting` plans the window's
+/// feeding sort as
+///
+///   Window (PARTITION BY p ORDER BY o)
+///     GatherExchange (sorted by p+o)
+///     Sorting (full, p+o)
+///       ScatterExchange (any)
+///         <source>
+///
+/// which computes the whole window on one node over fully gathered input. When the scatter is keyed by
+/// the partition columns instead, every bucket receives complete partitions, so the sort and the window
+/// run in parallel per bucket and the gather receives already-windowed data:
+///
+///   GatherExchange (sorted by p+o)
+///     Window
+///       Sorting (full, p+o)
+///         ScatterExchange (hash by p)
+///           <source>
+///
+/// The gather stays sorted: each bucket's window output is sorted by p+o (`WindowTransform` preserves the
+/// input order), and the sorted merge reproduces the exact global order of the single-node plan -
+/// otherwise a downstream step whose sort was removed based on the window's output order would silently
+/// receive unordered data. This must run before the exchange rewrites below, which replace the matched
+/// scatter/gather pairs with shuffles.
+static void tryPushWindowBelowSortedGather(QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (node.children.size() != 1)
+        return;
+    auto * window_step = typeid_cast<WindowStep *>(node.step.get());
+    if (!window_step)
+        return;
+
+    const auto & window_description = window_step->getWindowDescription();
+    const auto & partition_by = window_description.partition_by;
+    const auto & full_sort_description = window_description.full_sort_description;
+    /// Without `PARTITION BY` every row belongs to one global partition; it cannot be split by hashing.
+    if (partition_by.empty())
+        return;
+
+    QueryPlan::Node * gather_node = node.children[0];
+    auto * gather_step = typeid_cast<GatherExchangeStep *>(gather_node->step.get());
+    if (!gather_step || gather_node->children.size() != 1)
+        return;
+    /// The gather must guarantee exactly the order the window needs; that is the evidence this
+    /// gather-sort chain was built for this window.
+    if (!gather_step->getMaintainSortDescription() || *gather_step->getMaintainSortDescription() != full_sort_description)
+        return;
+
+    QueryPlan::Node * sorting_node = gather_node->children[0];
+    auto * sorting_step = typeid_cast<SortingStep *>(sorting_node->step.get());
+    if (!sorting_step || sorting_node->children.size() != 1)
+        return;
+    if (sorting_step->getType() != SortingStep::Type::Full)
+        return;
+    /// A pushed-down limit truncates per bucket; retargeting the scatter would change which rows
+    /// survive it. Limit pushdown keeps the `Limit` step above the gather today, so this does not
+    /// match - the guard keeps the rule sound if that ever changes.
+    if (sorting_step->getLimit() != 0)
+        return;
+    const auto & sorting_description = sorting_step->getSortDescription();
+    if (sorting_description.size() < full_sort_description.size()
+        || !std::equal(full_sort_description.begin(), full_sort_description.end(), sorting_description.begin()))
+        return;
+
+    QueryPlan::Node * scatter_node = sorting_node->children[0];
+    auto * scatter_step = typeid_cast<ScatterExchangeStep *>(scatter_node->step.get());
+    if (!scatter_step || scatter_node->children.size() != 1)
+        return;
+    /// Only retarget the free "any" scatter the sorting transform inserted; a keyed scatter serves
+    /// some other operator's placement.
+    if (!scatter_step->getKeys().empty())
+        return;
+    if (scatter_step->getResultBucketCount() <= 1)
+        return;
+
+    /// The partition keys must survive as plain columns at the scatter input, or they cannot be hashed.
+    /// Types whose hash disagrees with `compareAt` (floats, `JSON`, `Dynamic` - see
+    /// `keyTypeBreaksHashSharding`) would split one logical partition across buckets and produce wrong
+    /// window values, so such windows stay gathered.
+    const auto & scatter_input_header = scatter_step->getInputHeaders().front();
+    Names partition_names;
+    partition_names.reserve(partition_by.size());
+    for (const auto & partition_column : partition_by)
+    {
+        if (!scatter_input_header->has(partition_column.column_name))
+            return;
+        if (keyTypeBreaksHashSharding(*scatter_input_header->getByName(partition_column.column_name).type))
+            return;
+        partition_names.push_back(partition_column.column_name);
+    }
+
+    const size_t bucket_count = scatter_step->getResultBucketCount();
+    const String window_name = window_description.window_name;
+
+    /// The per-bucket window must not fan out: `streams_fan_out` resizes the output across threads
+    /// after the window, which destroys the per-stream order the sorted gather merges by. The fan-out
+    /// exists to re-parallelize downstream work on a single node; in the distributed shape that
+    /// parallelism comes from the buckets themselves.
+    auto bucket_window = std::make_unique<WindowStep>(
+        sorting_node->step->getOutputHeader(), window_description, window_step->getWindowFunctions(), /*streams_fan_out_=*/false);
+    bucket_window->setStepDescription(*window_step);
+
+    /// Move the gather above the window; the children links already form the target chain.
+    node.step = std::move(gather_node->step);
+    QueryPlan::Node * window_node = gather_node;
+    window_node->step = std::move(bucket_window);
+    node.step->updateInputHeader(window_node->step->getOutputHeader());
+
+    auto keyed_scatter = std::make_unique<ScatterExchangeStep>(
+        scatter_node->children[0]->step->getOutputHeader(), partition_names, bucket_count);
+    keyed_scatter->setStepDescription(
+        fmt::format("scatter by ({})", fmt::join(partition_names, ", ")), optimization_settings.max_step_description_length);
+    scatter_node->step = std::move(keyed_scatter);
+
+    LOG_DEBUG(getLogger("tryPushWindowBelowSortedGather"),
+        "Distributing window '{}' across {} buckets by ({})",
+        window_name, bucket_count, fmt::join(partition_names, ", "));
+}
+
 /// 1. Moves exchanges where possible to parallelize more work. Example: if there is a Filter step on top of an GatherExchange step
 /// then filter step can be moved below the exchange step to allow parallel processing.
 /// 2. Removes unnecessary exchanges. Example: if there is a ShuffleExchange step on top of another exchange step then child
 /// exchange step can be removed.
-void optimizeExchanges(QueryPlan::Node & root)
+void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings)
 {
     Stack stack;
+
+    /// Window push-down first, on the exact shapes the `tryMakeDistributed*` pass produced - the
+    /// walk below replaces the matched scatter/gather pairs with shuffles.
+    stack.push_back({.node = &root});
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+        tryPushWindowBelowSortedGather(*frame.node, optimization_settings);
+        stack.pop_back();
+    }
 
     stack.push_back({.node = &root});
     while (!stack.empty())
