@@ -57,8 +57,8 @@ $CLICKHOUSE_CLIENT -q "SELECT sum(x) FROM test_leader_election_s3"
 # (`InterpreterAlterQuery` -> `checkMutationIsPossible` -> `StorageMergeTree::mutate`) is not
 # exercised by any other check in this suite, so a regression there would go unnoticed.
 # Follower-side rejection of writes is covered by the integration test.
-$CLICKHOUSE_CLIENT -q "ALTER TABLE test_leader_election_s3 DELETE WHERE x = 1" 2>&1 | grep -c -F "SUPPORT_IS_DISABLED"
-$CLICKHOUSE_CLIENT -q "ALTER TABLE test_leader_election_s3 UPDATE s = 'x' WHERE x = 1" 2>&1 | grep -c -F "SUPPORT_IS_DISABLED"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE test_leader_election_s3 DELETE WHERE x = 1" 2>&1 | grep -o -m1 -F "SUPPORT_IS_DISABLED"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE test_leader_election_s3 UPDATE s = 'x' WHERE x = 1" 2>&1 | grep -o -m1 -F "SUPPORT_IS_DISABLED"
 
 # The rejected mutations left the data untouched.
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM test_leader_election_s3"
