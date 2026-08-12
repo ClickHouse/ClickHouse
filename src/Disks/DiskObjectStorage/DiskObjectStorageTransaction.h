@@ -35,8 +35,6 @@ protected:
     const bool wait_blob_removal;
     const std::string read_resource_name;
     const std::string write_resource_name;
-    const std::string inner_read_resource_name;
-    const std::string inner_write_resource_name;
 
     MetadataTransactionPtr metadata_transaction;
     std::vector<std::function<void(MetadataTransactionPtr tx)>> operations_to_execute;
@@ -51,9 +49,7 @@ public:
         std::shared_ptr<ThreadPool> copy_object_pool_,
         bool wait_blob_removal_,
         std::string read_resource_name_,
-        std::string write_resource_name_,
-        std::string inner_read_resource_name_ = "",
-        std::string inner_write_resource_name_ = "");
+        std::string write_resource_name_);
 
     void commit() override;
     TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override;
@@ -147,9 +143,7 @@ struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTra
         ObjectStorageRouterPtr destination_object_storages_,
         std::shared_ptr<ThreadPool> copy_object_pool_,
         std::string read_resource_name_,
-        std::string write_resource_name_,
-        std::string inner_read_resource_name_ = "",
-        std::string inner_write_resource_name_ = "");
+        std::string write_resource_name_);
 
     void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings &) override;
 };

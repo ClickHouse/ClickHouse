@@ -10,10 +10,9 @@ namespace
 {
 
 template <class Settings>
-Settings updateIOSchedulingSettingsImpl(const Settings & settings, const std::string & read_resource_name, const std::string & write_resource_name, const std::string & inner_read_resource_name, const std::string & inner_write_resource_name)
+Settings updateIOSchedulingSettingsImpl(const Settings & settings, const std::string & read_resource_name, const std::string & write_resource_name)
 {
-    if (read_resource_name.empty() && write_resource_name.empty()
-        && inner_read_resource_name.empty() && inner_write_resource_name.empty())
+    if (read_resource_name.empty() && write_resource_name.empty())
         return settings;
     if (auto query_context = CurrentThread::tryGetQueryContext())
     {
@@ -22,10 +21,6 @@ Settings updateIOSchedulingSettingsImpl(const Settings & settings, const std::st
             result.io_scheduling.read_resource_link = query_context->getWorkloadClassifier()->get(read_resource_name);
         if (!write_resource_name.empty())
             result.io_scheduling.write_resource_link = query_context->getWorkloadClassifier()->get(write_resource_name);
-        if (!inner_read_resource_name.empty())
-            result.io_scheduling.inner_read_resource_link = query_context->getWorkloadClassifier()->get(inner_read_resource_name);
-        if (!inner_write_resource_name.empty())
-            result.io_scheduling.inner_write_resource_link = query_context->getWorkloadClassifier()->get(inner_write_resource_name);
         return result;
     }
     return settings;
@@ -33,14 +28,14 @@ Settings updateIOSchedulingSettingsImpl(const Settings & settings, const std::st
 
 }
 
-ReadSettings updateIOSchedulingSettings(const ReadSettings & settings, const std::string & read_resource_name, const std::string & write_resource_name, const std::string & inner_read_resource_name, const std::string & inner_write_resource_name)
+ReadSettings updateIOSchedulingSettings(const ReadSettings & settings, const std::string & read_resource_name, const std::string & write_resource_name)
 {
-    return updateIOSchedulingSettingsImpl(settings, read_resource_name, write_resource_name, inner_read_resource_name, inner_write_resource_name);
+    return updateIOSchedulingSettingsImpl(settings, read_resource_name, write_resource_name);
 }
 
-WriteSettings updateIOSchedulingSettings(const WriteSettings & settings, const std::string & read_resource_name, const std::string & write_resource_name, const std::string & inner_read_resource_name, const std::string & inner_write_resource_name)
+WriteSettings updateIOSchedulingSettings(const WriteSettings & settings, const std::string & read_resource_name, const std::string & write_resource_name)
 {
-    return updateIOSchedulingSettingsImpl(settings, read_resource_name, write_resource_name, inner_read_resource_name, inner_write_resource_name);
+    return updateIOSchedulingSettingsImpl(settings, read_resource_name, write_resource_name);
 }
 
 }

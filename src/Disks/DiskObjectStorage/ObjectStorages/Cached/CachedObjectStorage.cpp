@@ -10,7 +10,6 @@
 #include <Interpreters/FileCache/FileCacheSettings.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
-#include <Common/Scheduler/ResourceLink.h>
 #include <Common/logger_useful.h>
 #include <filesystem>
 
@@ -21,18 +20,6 @@ namespace DB
 namespace FileCacheSetting
 {
     extern const FileCacheSettingsBool cache_on_write_operations;
-}
-
-/// If inner (wrapped disk) resource links are set in IO scheduling settings,
-/// swap them in as the active links. This ensures that when a cache-miss
-/// delegates to the inner ObjectStorage (e.g. S3), the inner disk's RESOURCE
-/// throttler applies rather than the cache disk's.
-void applyInnerResourceLinks(IOSchedulingSettings & io)
-{
-    if (io.inner_read_resource_link)
-        io.read_resource_link = io.inner_read_resource_link;
-    if (io.inner_write_resource_link)
-        io.write_resource_link = io.inner_write_resource_link;
 }
 
 CachedObjectStorage::CachedObjectStorage(
@@ -79,9 +66,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
     /// Filesystem cache is handled as a pipeline stage by DiskObjectStorage::prepareRead
     /// and StorageObjectStorageSource. This method delegates directly to the underlying storage.
     /// Callers that need caching should use ReadPipeline with needFilesystemCache().
-    auto patched = patchSettings(read_settings);
-    applyInnerResourceLinks(patched.io_scheduling);
-    return object_storage->readObject(object, patched, read_hint, use_external_buffer, restrict_seek);
+    return object_storage->readObject(object, patchSettings(read_settings), read_hint, use_external_buffer, restrict_seek);
 }
 
 SmallObjectDataWithMetadata CachedObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
@@ -94,9 +79,7 @@ SmallObjectDataWithMetadata CachedObjectStorage::readSmallObjectAndGetObjectMeta
     /// (notably `etag`). The base `IObjectStorage` implementation only reads the bytes
     /// and leaves metadata empty, which silently breaks Iceberg `version-hint.text`
     /// CAS updates on cached S3/Azure storage.
-    auto patched = patchSettings(read_settings);
-    applyInnerResourceLinks(patched.io_scheduling);
-    return object_storage->readSmallObjectAndGetObjectMetadata(object, patched, max_size_bytes, read_hint);
+    return object_storage->readSmallObjectAndGetObjectMetadata(object, patchSettings(read_settings), max_size_bytes, read_hint);
 }
 
 void CachedObjectStorage::prepareRead(
@@ -111,9 +94,7 @@ void CachedObjectStorage::prepareRead(
     /// (e.g. `LocalObjectStorage` forces `local_fs_method = pread` and disables
     /// `direct_io`). Those tweaks must be in effect when the inner storage builds
     /// the source, so we patch before delegating.
-    auto patched = patchSettings(read_settings);
-    applyInnerResourceLinks(patched.io_scheduling);
-    object_storage->prepareRead(object_storage, objects, patched, read_hint, pipeline);
+    object_storage->prepareRead(object_storage, objects, patchSettings(read_settings), read_hint, pipeline);
 
     /// Add the filesystem cache stage if filesystem cache is enabled.
     if (read_settings.enable_filesystem_cache)
@@ -139,7 +120,6 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
 {
     /// Add cache relating settings to WriteSettings.
     auto modified_write_settings = IObjectStorage::patchSettings(write_settings);
-    applyInnerResourceLinks(modified_write_settings.io_scheduling);
     auto implementation_buffer = object_storage->writeObject(object, mode, attributes, buf_size, modified_write_settings);
 
     bool cache_on_write = modified_write_settings.enable_filesystem_cache_on_write_operations
@@ -196,14 +176,7 @@ void CachedObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     IObjectStorage & object_storage_to,
     std::optional<ObjectAttributes> object_to_attributes)
 {
-    /// Patch settings and apply inner (wrapped disk) resource links before
-    /// delegating, so S3 I/O during cross-object-storage copy is throttled
-    /// by the inner disk's RESOURCE, not the cache disk's.
-    auto patched_read = patchSettings(read_settings);
-    applyInnerResourceLinks(patched_read.io_scheduling);
-    auto patched_write = IObjectStorage::patchSettings(write_settings);
-    applyInnerResourceLinks(patched_write.io_scheduling);
-    object_storage->copyObjectToAnotherObjectStorage(object_from, object_to, patched_read, patched_write, object_storage_to, object_to_attributes);
+    object_storage->copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes);
 }
 
 void CachedObjectStorage::copyObject( // NOLINT
@@ -213,14 +186,7 @@ void CachedObjectStorage::copyObject( // NOLINT
     const WriteSettings & write_settings,
     std::optional<ObjectAttributes> object_to_attributes)
 {
-    /// Patch settings and apply inner (wrapped disk) resource links before
-    /// delegating, so S3 I/O during copy is throttled by the inner disk's
-    /// RESOURCE, not the cache disk's.
-    auto patched_read = patchSettings(read_settings);
-    applyInnerResourceLinks(patched_read.io_scheduling);
-    auto patched_write = IObjectStorage::patchSettings(write_settings);
-    applyInnerResourceLinks(patched_write.io_scheduling);
-    object_storage->copyObject(object_from, object_to, patched_read, patched_write, object_to_attributes);
+    object_storage->copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
 }
 
 void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const

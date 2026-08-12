@@ -78,9 +78,7 @@ DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     std::shared_ptr<ThreadPool> copy_object_pool_,
     bool wait_blob_removal_,
     String read_resource_name_,
-    String write_resource_name_,
-    String inner_read_resource_name_,
-    String inner_write_resource_name_)
+    String write_resource_name_)
     : cluster(std::move(cluster_))
     , metadata_storage(std::move(metadata_storage_))
     , object_storages(std::move(object_storages_))
@@ -89,8 +87,6 @@ DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     , wait_blob_removal(wait_blob_removal_)
     , read_resource_name(std::move(read_resource_name_))
     , write_resource_name(std::move(write_resource_name_))
-    , inner_read_resource_name(std::move(inner_read_resource_name_))
-    , inner_write_resource_name(std::move(inner_write_resource_name_))
     , metadata_transaction(metadata_storage->createTransaction())
 {
 }
@@ -104,10 +100,8 @@ MultipleDisksObjectStorageTransaction::MultipleDisksObjectStorageTransaction(
     ObjectStorageRouterPtr destination_object_storages_,
     std::shared_ptr<ThreadPool> copy_object_pool_,
     std::string read_resource_name_,
-    std::string write_resource_name_,
-    std::string inner_read_resource_name_,
-    std::string inner_write_resource_name_)
-    : DiskObjectStorageTransaction(destination_cluster_, destination_metadata_storage_, destination_object_storages_, /*blob_killer=*/nullptr, std::move(copy_object_pool_), /*wait_blob_removal=*/false, std::move(read_resource_name_), std::move(write_resource_name_), std::move(inner_read_resource_name_), std::move(inner_write_resource_name_))
+    std::string write_resource_name_)
+    : DiskObjectStorageTransaction(destination_cluster_, destination_metadata_storage_, destination_object_storages_, /*blob_killer=*/nullptr, std::move(copy_object_pool_), /*wait_blob_removal=*/false, std::move(read_resource_name_), std::move(write_resource_name_))
     , source_cluster(std::move(source_cluster_))
     , source_metadata_storage(std::move(source_metadata_storage_))
     , source_object_storages(std::move(source_object_storages_))
@@ -271,7 +265,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 {
     LOG_TEST(getLogger("DiskObjectStorageTransaction"), "write file {} mode {} autocommit {}", path, mode, autocommit);
 
-    WriteSettings enriched_settings = updateIOSchedulingSettings(settings, read_resource_name, write_resource_name, inner_read_resource_name, inner_write_resource_name);
+    WriteSettings enriched_settings = updateIOSchedulingSettings(settings, read_resource_name, write_resource_name);
 
     /// NOTE: We check it here and not after writing blob because in case of plain/plain-rewritable metadata storages
     ///       undo of disk tx will actually remove existing data.
@@ -476,9 +470,9 @@ void DiskObjectStorageTransaction::copyFileImpl(
     /// Share the enriched settings via shared_ptr so each task lambda captures a cheap refcount bump
     /// rather than a full copy of ReadSettings / WriteSettings.
     const auto enriched_read_settings = std::make_shared<const ReadSettings>(
-        updateIOSchedulingSettings(read_settings, read_resource_name, write_resource_name, inner_read_resource_name, inner_write_resource_name));
+        updateIOSchedulingSettings(read_settings, read_resource_name, write_resource_name));
     const auto enriched_write_settings = std::make_shared<const WriteSettings>(
-        updateIOSchedulingSettings(write_settings, read_resource_name, write_resource_name, inner_read_resource_name, inner_write_resource_name));
+        updateIOSchedulingSettings(write_settings, read_resource_name, write_resource_name));
 
     const auto blobs_to_copy = src_metadata_storage->getStorageObjects(from_file_path);
     const auto blobs_to_create = blobs_to_copy

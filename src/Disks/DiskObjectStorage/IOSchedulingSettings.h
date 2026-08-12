@@ -8,7 +8,7 @@
 namespace DB
 {
 
-ReadSettings updateIOSchedulingSettings(const ReadSettings & settings, const std::string & read_resource_name, const std::string & write_resource_name, const std::string & inner_read_resource_name = "", const std::string & inner_write_resource_name = "");
-WriteSettings updateIOSchedulingSettings(const WriteSettings & settings, const std::string & read_resource_name, const std::string & write_resource_name, const std::string & inner_read_resource_name = "", const std::string & inner_write_resource_name = "");
+ReadSettings updateIOSchedulingSettings(const ReadSettings & settings, const std::string & read_resource_name, const std::string & write_resource_name);
+WriteSettings updateIOSchedulingSettings(const WriteSettings & settings, const std::string & read_resource_name, const std::string & write_resource_name);
 
 }

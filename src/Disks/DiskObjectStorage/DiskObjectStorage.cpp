@@ -82,21 +82,12 @@ ObjectStoragePtr DiskObjectStorage::getObjectStorage()
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 {
-    return std::make_shared<DiskObjectStorageTransaction>(cluster, metadata_storage, object_storages, blob_killer, copy_object_pool, wait_blob_removal,
-        getReadResourceName(), getWriteResourceName(),
-        wrapped_disk ? wrapped_disk->getReadResourceName() : "",
-        wrapped_disk ? wrapped_disk->getWriteResourceName() : "");
+    return std::make_shared<DiskObjectStorageTransaction>(cluster, metadata_storage, object_storages, blob_killer, copy_object_pool, wait_blob_removal, getReadResourceName(), getWriteResourceName());
 }
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk)
 {
-    return std::make_shared<MultipleDisksObjectStorageTransaction>(
-        cluster, metadata_storage, object_storages,
-        to_disk.cluster, to_disk.metadata_storage, to_disk.object_storages,
-        to_disk.copy_object_pool,
-        getReadResourceName(), to_disk.getWriteResourceName(),
-        wrapped_disk ? wrapped_disk->getReadResourceName() : "",
-        to_disk.wrapped_disk ? to_disk.wrapped_disk->getWriteResourceName() : "");
+    return std::make_shared<MultipleDisksObjectStorageTransaction>(cluster, metadata_storage, object_storages, to_disk.cluster, to_disk.metadata_storage, to_disk.object_storages, to_disk.copy_object_pool, getReadResourceName(), to_disk.getWriteResourceName());
 }
 
 DiskObjectStorage::DiskObjectStorage(
@@ -800,10 +791,7 @@ void DiskObjectStorage::prepareRead(
 {
     const auto storage_objects = metadata_storage->getStorageObjects(path);
 
-    auto read_settings = updateIOSchedulingSettings(settings,
-        getReadResourceName(), getWriteResourceName(),
-        wrapped_disk ? wrapped_disk->getReadResourceName() : "",
-        wrapped_disk ? wrapped_disk->getWriteResourceName() : "");
+    auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     auto global_context = Context::getGlobalContextInstance();
     auto storage = object_storages->takePointingTo(cluster->getLocalLocation());
 

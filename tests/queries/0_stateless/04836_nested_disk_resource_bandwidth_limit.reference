@@ -1,6 +1,0 @@
-04836_io_cached	['04836_cached_disk']	['04836_cached_disk']
-04836_io_oss	['04836_oss_disk']	['04836_oss_disk']
-04836_all		CREATE WORKLOAD `04836_all` SETTINGS max_bytes_per_second = 200000000 FOR `04836_io_cached`, max_bytes_per_second = 50000000 FOR `04836_io_oss`
-04836_io_cached	bandwidth_limit	200000000
-04836_io_oss	bandwidth_limit	50000000
-04836_io_cached	bandwidth_limit	100000000
