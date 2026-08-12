@@ -182,7 +182,7 @@ private:
         const IStorage * ignore_self);
 
     ColumnSizeByName getColumnSizes() const override;
-    ColumnSizeByName getColumnSizes(const Names & columns) const override;
+    ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
 
     std::optional<ColumnSizeByName> tryGetColumnSizes() const override;
 

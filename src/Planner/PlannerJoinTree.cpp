@@ -2050,7 +2050,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     /// let such a query run on a single replica, as it did before `parallel_replicas_allow_merge_tables`.
                     const bool is_merge_storage = typeid_cast<const StorageMerge *>(storage.get()) != nullptr;
 
-                    if (!is_merge_storage && query_context->canUseParallelReplicasCustomKey()
+                    /// The custom-key read below replaces the plan with a remote read at the fixed stage
+                    /// `WithMergeableStateAfterAggregationAndLimit`, so it is only allowed when the requested
+                    /// stage is not below that: a plan built up to a partial stage - e.g. a `Merge` table plans
+                    /// its children up to `WithMergeableState` when one of the underlying tables is read through
+                    /// an interpreter - must not receive finalized (post-aggregation, post-LIMIT) data instead
+                    /// of the partial aggregation states its consumer expects.
+                    const bool to_stage_supports_custom_key = select_query_options.to_stage == QueryProcessingStage::Complete
+                        || select_query_options.to_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+
+                    if (!is_merge_storage && query_context->canUseParallelReplicasCustomKey() && to_stage_supports_custom_key
                         && query_context->getClientInfo().distributed_depth == 0)
                     {
                         if (auto cluster = query_context->getClusterForParallelReplicas();
