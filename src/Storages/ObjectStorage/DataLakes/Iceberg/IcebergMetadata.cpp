@@ -604,7 +604,7 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
 
     insertRowToLogTable(
         local_context,
-        dumpMetadataObjectToString(metadata_object),
+        [&] { return dumpMetadataObjectToString(metadata_object); },
         DB::IcebergMetadataLogLevel::Metadata,
         persistent_components.path_resolver.getTableRoot(),
         Iceberg::IcebergPathFromMetadata::deserialize(metadata_path),

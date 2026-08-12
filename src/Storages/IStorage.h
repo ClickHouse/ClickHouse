@@ -216,9 +216,12 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
-    /// Same as parameterless overload but also includes sizes for requested subcolumns
+    /// Same as parameterless overload but also includes sizes for the requested subcolumns.
+    /// Computing exact subcolumn sizes can be expensive, so `calculate_subcolumn_sizes` (driven by
+    /// `allow_calculating_subcolumns_sizes_for_merge_tree_reading` at call sites) selects between the
+    /// exact size and the cheaper top-level column size as an approximation.
     /// The default implementation falls back to the parameterless version.
-    virtual ColumnSizeByName getColumnSizes(const Names & /*columns*/) const { return getColumnSizes(); }
+    virtual ColumnSizeByName getColumnSizes(const Names & /*columns*/, bool /*calculate_subcolumn_sizes*/) const { return getColumnSizes(); }
 
     /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias
     virtual std::optional<ColumnSizeByName> tryGetColumnSizes() const { return getColumnSizes(); }
