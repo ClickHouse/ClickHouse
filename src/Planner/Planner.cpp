@@ -2300,7 +2300,10 @@ void Planner::buildPlanForQueryNode()
                 continue;
 
             const auto & modifiers = table_node->getTableExpressionModifiers();
-            if (modifiers.has_value() && (modifiers->hasFinal() || modifiers->hasStream()))
+            /// A follower must keep the setting on for its own read-side `STREAM` refusal to fire.
+            if (modifiers.has_value()
+                && (modifiers->hasFinal()
+                    || (modifiers->hasStream() && query_context->canUseParallelReplicasOnInitiator())))
             {
                 const auto * modifier = modifiers->hasFinal() ? "FINAL" : "STREAM";
                 if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
