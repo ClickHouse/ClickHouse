@@ -1444,6 +1444,8 @@ void jsonBloomFilterIndexValidator(const IndexDescription & index, bool, const M
     getJSONBloomOptions(index);
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "`jsonbf_v1` must be created on one direct `JSON` column");
+    if (!index.isSimpleSingleColumnIndex())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`jsonbf_v1` must be created on a direct `JSON` column");
     if (!isObject(index.data_types.front()))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,

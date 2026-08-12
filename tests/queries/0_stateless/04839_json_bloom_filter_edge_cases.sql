@@ -9,6 +9,7 @@ CREATE TABLE json_bf_invalid (id UInt64, j JSON, INDEX idx j TYPE jsonbf_v1(fals
 CREATE TABLE json_bf_invalid (id UInt64, j JSON, INDEX idx j TYPE jsonbf_v1(tokenizer = 'splitByNonAlpha') GRANULARITY 1) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE json_bf_invalid (id UInt64, j JSON, INDEX idx j TYPE jsonbf_v1(bogus = 1) GRANULARITY 1) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE json_bf_invalid (id UInt64, j JSON, INDEX idx (j, id) TYPE jsonbf_v1() GRANULARITY 1) ENGINE = MergeTree ORDER BY id; -- { serverError INCORRECT_NUMBER_OF_COLUMNS }
+CREATE TABLE json_bf_invalid (id UInt64, j JSON, INDEX idx materialize(j) TYPE jsonbf_v1() GRANULARITY 1) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE json_bf_invalid (id UInt64, j JSON, INDEX idx id TYPE jsonbf_v1() GRANULARITY 1) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE json_bf_edges
