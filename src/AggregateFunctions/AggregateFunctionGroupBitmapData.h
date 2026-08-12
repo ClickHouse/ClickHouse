@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <memory>
 #include <base/sort.h>
 #include <boost/noncopyable.hpp>
@@ -590,20 +591,24 @@ public:
 
         if (isSmall())
         {
-            VectorWithMemoryTracking<T> sorted;
-            sorted.reserve(small.size());
+            /// The small set holds at most `small_set_size` elements, so no allocation is needed.
+            std::array<T, small_set_size> values;
+            size_t num_values = 0;
             for (const auto & x : small)
-                sorted.push_back(x.getValue());
-            ::sort(
-                sorted.begin(),
-                sorted.end(),
-                [](const T & lhs, const T & rhs) { return static_cast<UnsignedT>(lhs) < static_cast<UnsignedT>(rhs); });
+                values[num_values++] = x.getValue();
 
-            const UInt64 start = std::min(offset, static_cast<UInt64>(sorted.size()));
-            const UInt64 count = std::min(limit, static_cast<UInt64>(sorted.size()) - start);
-            const UInt64 end = start + count;
-            for (UInt64 i = start; i < end; ++i)
-                r1.add(sorted[i]);
+            /// `offset` is below the size, checked above.
+            const UInt64 count = std::min(limit, static_cast<UInt64>(num_values) - offset);
+
+            /// Only the first `offset + count` elements have to be in order.
+            ::partial_sort(
+                values.begin(),
+                values.begin() + (offset + count),
+                values.begin() + num_values,
+                [](T lhs, T rhs) { return static_cast<UnsignedT>(lhs) < static_cast<UnsignedT>(rhs); });
+
+            for (UInt64 i = offset; i < offset + count; ++i)
+                r1.add(values[i]);
             return count;
         }
 
