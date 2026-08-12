@@ -17,6 +17,11 @@ INTEGRATIONS_DOCS_PREFIXES = (
 DOCS_TEAM = "docs"
 CLICKPIPES_TEAM = "clickpipes"
 INTEGRATIONS_ECOSYSTEM_TEAM = "integrations-ecosystem"
+MANAGED_DOCS_TEAMS = (
+    DOCS_TEAM,
+    CLICKPIPES_TEAM,
+    INTEGRATIONS_ECOSYSTEM_TEAM,
+)
 
 CAN_BE_TESTED = "can be tested"
 REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -89,8 +94,9 @@ def check(event):
     repository = event["repository"]["full_name"]
     pull_request_number = event["pull_request"]["number"]
     changed_files = get_changed_files(repository, pull_request_number)
-    return GH.request_team_reviews(
+    return GH.reconcile_team_reviews(
         get_docs_teams_to_request(changed_files),
+        MANAGED_DOCS_TEAMS,
         pr=pull_request_number,
         repo=repository,
     )

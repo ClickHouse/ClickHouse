@@ -786,7 +786,8 @@ class GH:
         return res
 
     @classmethod
-    def _submit_team_review_requests(cls, team_slugs, pr, repo):
+    def _submit_team_review_change(cls, method, team_slugs, pr, repo):
+        assert method in ("POST", "DELETE")
         assert team_slugs
 
         payload = {"reviewers": [], "team_reviewers": team_slugs}
@@ -798,17 +799,26 @@ class GH:
 
         try:
             cmd = (
-                "gh api -X POST "
+                f"gh api -X {method} "
                 f'-H "Accept: application/vnd.github.v3+json" '
                 f'"/repos/{repo}/pulls/{pr}/requested_reviewers" '
                 f"--input {shlex.quote(temp_file_path)}"
             )
             if not cls.do_command_with_retries(cmd):
+                action = "request" if method == "POST" else "remove"
                 raise RuntimeError(
-                    f"Failed to request team reviews for pull request [{pr}]"
+                    f"Failed to {action} team reviews for pull request [{pr}]"
                 )
         finally:
             os.unlink(temp_file_path)
+
+    @classmethod
+    def _submit_team_review_requests(cls, team_slugs, pr, repo):
+        cls._submit_team_review_change("POST", team_slugs, pr, repo)
+
+    @classmethod
+    def _submit_team_review_removals(cls, team_slugs, pr, repo):
+        cls._submit_team_review_change("DELETE", team_slugs, pr, repo)
 
     @classmethod
     def _get_requested_team_reviews(cls, pr, repo):
@@ -862,6 +872,48 @@ class GH:
                     "Failed to verify team review requests for pull request "
                     f"[{pr}], missing teams [{', '.join(sorted(missing_teams))}]"
                 )
+
+        return True
+
+    @classmethod
+    def reconcile_team_reviews(
+        cls, desired_team_slugs, managed_team_slugs, pr=None, repo=None
+    ):
+        desired = set(desired_team_slugs)
+        managed = set(managed_team_slugs)
+        unmanaged_desired = desired - managed
+        if unmanaged_desired:
+            raise ValueError(
+                "Desired review teams are not managed by this workflow: "
+                f"[{', '.join(sorted(unmanaged_desired))}]"
+            )
+
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        current = cls._get_requested_team_reviews(pr, repo)
+        teams_to_request = sorted(desired - current)
+        teams_to_remove = sorted((current & managed) - desired)
+
+        if teams_to_request:
+            cls._submit_team_review_requests(teams_to_request, pr, repo)
+        if teams_to_remove:
+            cls._submit_team_review_removals(teams_to_remove, pr, repo)
+
+        if teams_to_request or teams_to_remove:
+            current = cls._get_requested_team_reviews(pr, repo)
+
+        current_managed = current & managed
+        if current_managed != desired:
+            missing_teams = desired - current_managed
+            stale_teams = current_managed - desired
+            raise RuntimeError(
+                f"Failed to reconcile team reviews for pull request [{pr}], "
+                f"missing teams [{', '.join(sorted(missing_teams))}], "
+                f"stale teams [{', '.join(sorted(stale_teams))}]"
+            )
 
         return True
 

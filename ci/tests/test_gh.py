@@ -363,7 +363,14 @@ def test_request_team_reviews_adds_only_missing_teams(monkeypatch):
     ]
 
 
-def test_submit_team_review_requests_uses_rest_api(monkeypatch):
+@pytest.mark.parametrize(
+    ("method", "submit_method"),
+    [
+        ("POST", GH._submit_team_review_requests),
+        ("DELETE", GH._submit_team_review_removals),
+    ],
+)
+def test_submit_team_review_change_uses_rest_api(monkeypatch, method, submit_method):
     commands = []
     payloads = []
 
@@ -377,17 +384,16 @@ def test_submit_team_review_requests_uses_rest_api(monkeypatch):
 
     monkeypatch.setattr(GH, "do_command_with_retries", staticmethod(fake_submit))
 
-    GH._submit_team_review_requests(
+    submit_method(
         team_slugs=["clickpipes", "docs"],
         pr=42,
         repo="ClickHouse/ClickHouse",
     )
 
     assert len(commands) == 1
+    assert f"gh api -X {method}" in commands[0]
     assert "repos/ClickHouse/ClickHouse/pulls/42/requested_reviewers" in commands[0]
-    assert payloads == [
-        {"reviewers": [], "team_reviewers": ["clickpipes", "docs"]}
-    ]
+    assert payloads == [{"reviewers": [], "team_reviewers": ["clickpipes", "docs"]}]
 
 
 def test_request_team_reviews_fails_when_submission_is_not_applied(monkeypatch):
@@ -439,3 +445,114 @@ def test_request_team_reviews_fails_when_lookup_fails(monkeypatch):
         assert False, "Should have raised when requested reviewers are unavailable"
     except RuntimeError as e:
         assert "Failed to retrieve team review requests" in str(e)
+
+
+def test_reconcile_team_reviews_adds_and_removes_only_managed_teams(monkeypatch):
+    responses = iter(
+        [
+            '["clickpipes", "docs", "unmanaged-team"]',
+            '["docs", "integrations-ecosystem", "unmanaged-team"]',
+        ]
+    )
+    requests = []
+    removals = []
+    monkeypatch.setattr(
+        GH,
+        "get_output_with_retries",
+        staticmethod(lambda *_args, **_kwargs: next(responses)),
+    )
+    monkeypatch.setattr(
+        GH,
+        "_submit_team_review_requests",
+        staticmethod(lambda teams, pr, repo: requests.append((teams, pr, repo))),
+    )
+    monkeypatch.setattr(
+        GH,
+        "_submit_team_review_removals",
+        staticmethod(lambda teams, pr, repo: removals.append((teams, pr, repo))),
+    )
+
+    assert GH.reconcile_team_reviews(
+        desired_team_slugs=["docs", "integrations-ecosystem"],
+        managed_team_slugs=["docs", "clickpipes", "integrations-ecosystem"],
+        pr=42,
+        repo="ClickHouse/ClickHouse",
+    )
+    assert requests == [(["integrations-ecosystem"], 42, "ClickHouse/ClickHouse")]
+    assert removals == [(["clickpipes"], 42, "ClickHouse/ClickHouse")]
+
+
+def test_reconcile_team_reviews_removes_managed_teams_when_none_are_desired(
+    monkeypatch,
+):
+    responses = iter(
+        [
+            '["clickpipes", "docs", "unmanaged-team"]',
+            '["unmanaged-team"]',
+        ]
+    )
+    removals = []
+    monkeypatch.setattr(
+        GH,
+        "get_output_with_retries",
+        staticmethod(lambda *_args, **_kwargs: next(responses)),
+    )
+    monkeypatch.setattr(
+        GH,
+        "_submit_team_review_requests",
+        staticmethod(lambda *_args: pytest.fail("unexpected review request")),
+    )
+    monkeypatch.setattr(
+        GH,
+        "_submit_team_review_removals",
+        staticmethod(lambda teams, pr, repo: removals.append((teams, pr, repo))),
+    )
+
+    assert GH.reconcile_team_reviews(
+        desired_team_slugs=[],
+        managed_team_slugs=["docs", "clickpipes", "integrations-ecosystem"],
+        pr=42,
+        repo="ClickHouse/ClickHouse",
+    )
+    assert removals == [(["clickpipes", "docs"], 42, "ClickHouse/ClickHouse")]
+
+
+def test_reconcile_team_reviews_rejects_unmanaged_desired_team(monkeypatch):
+    monkeypatch.setattr(
+        GH,
+        "get_output_with_retries",
+        staticmethod(lambda *_args, **_kwargs: pytest.fail("unexpected lookup")),
+    )
+
+    with pytest.raises(ValueError, match=r"\[unmanaged-team\]"):
+        GH.reconcile_team_reviews(
+            desired_team_slugs=["docs", "unmanaged-team"],
+            managed_team_slugs=["docs"],
+            pr=42,
+            repo="ClickHouse/ClickHouse",
+        )
+
+
+def test_reconcile_team_reviews_fails_when_removal_is_not_applied(monkeypatch):
+    responses = iter(
+        [
+            '["clickpipes", "docs"]',
+            '["clickpipes", "docs"]',
+        ]
+    )
+    monkeypatch.setattr(
+        GH,
+        "get_output_with_retries",
+        staticmethod(lambda *_args, **_kwargs: next(responses)),
+    )
+    monkeypatch.setattr(
+        GH, "_submit_team_review_removals", staticmethod(lambda *_args: None)
+    )
+
+    with pytest.raises(RuntimeError, match=r"stale teams \[clickpipes\]"):
+        GH.reconcile_team_reviews(
+            desired_team_slugs=["docs"],
+            managed_team_slugs=["docs", "clickpipes"],
+            pr=42,
+            repo="ClickHouse/ClickHouse",
+        )
