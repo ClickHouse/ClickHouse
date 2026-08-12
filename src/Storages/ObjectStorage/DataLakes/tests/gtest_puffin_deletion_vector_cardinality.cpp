@@ -50,6 +50,7 @@ TEST(PuffinDeletionVectorCardinality, RejectsCardinalityAboveLimitBeforeFullAllo
     /// Huge declared length with only a tiny buffer: without an early ceiling check this would
     /// allocate `large_declared_length` (or fail mid-read after that allocate). ReadBufferFromMemory
     /// does not expose file size, so bounds checks alone do not stop this.
+    /// The SQL `Puffin` format applies the same early check in `readDeletionVectorBlobBytes`.
     const char header[8] = {};
     ReadBufferFromMemory file(header, sizeof(header));
 
