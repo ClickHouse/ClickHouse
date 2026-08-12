@@ -1833,8 +1833,8 @@ ColumnPtr ColumnObject::compress(bool force_compression) const
             my_global_max_dynamic_paths,
             my_max_dynamic_types,
             my_statistics,
-            std::move(my_shared_data_path_matcher),
-            std::move(my_shared_data_path_prefix));
+            my_shared_data_path_matcher,
+            my_shared_data_path_prefix);
     };
 
     return ColumnCompressed::create(size(), byte_size, decompress);
