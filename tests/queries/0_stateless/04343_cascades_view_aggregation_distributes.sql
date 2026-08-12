@@ -30,7 +30,7 @@ SET query_plan_optimize_join_order_randomize = 0;
 
 -- Simulate a 20 node cluster and weight the cost model towards parallelism.
 SET param__internal_cascades_cluster_node_count = 20;
-SET param__internal_cascades_cost_config = '{"work_weight":1,"exchange_fixed_overhead":100,"network_weight":1,"sequential_weight":1000}';
+SET param__internal_cascades_cost_config = '{"work_weight":1,"exchange_fixed_overhead":3000,"network_weight":1,"sequential_weight":32}';
 -- `column_bytes` pins the widths derived from the sentinel rows' parts; without it the join's
 -- build-side choice sits on a cost near-tie that flips with the part format (wide vs compact).
 SET param__internal_join_table_stat_hints = '{

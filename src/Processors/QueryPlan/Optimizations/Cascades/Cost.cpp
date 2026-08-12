@@ -17,6 +17,7 @@
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/QueryPlan/GatherExchangeStep.h>
 #include <Processors/QueryPlan/ScatterExchangeStep.h>
+#include <Processors/QueryPlan/ShuffleExchangeStep.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <base/types.h>
@@ -132,22 +133,17 @@ static Cost hashJoinCost(const CostInputs & inputs, bool is_broadcast)
     const auto & right_stats = inputStats(inputs, 1);
 
     Cost cost;
-    cost.work = (left_stats.estimated_row_count
-                 + inputs.config.hash_table_build_factor * right_stats.estimated_row_count
-                 + inputs.output_stats.estimated_row_count) / inputs.parallelism;
+    cost.work = (left_stats.estimated_row_count + inputs.output_stats.estimated_row_count) / inputs.parallelism;
 
+    /// The build side is materialized fully on every node for a broadcast join (the nodes build
+    /// concurrently) and 1/N per node otherwise. The build is work, not a sequential phase:
+    /// `parallel_hash` shards the hash table across threads within a node.
+    const Float64 build_rows_per_node = is_broadcast
+        ? right_stats.estimated_row_count
+        : right_stats.estimated_row_count / inputs.parallelism;
     /// Hash table materialization: memory allocation + cache pressure.
-    const Float64 hash_table_bytes = right_stats.estimated_row_count * right_stats.estimated_bytes_per_row;
-    if (is_broadcast)
-    {
-        cost.work += hash_table_bytes;
-        cost.sequential += inputs.config.hash_table_build_factor * right_stats.estimated_row_count;
-    }
-    else
-    {
-        cost.work += hash_table_bytes / inputs.parallelism;
-        cost.sequential += inputs.config.hash_table_build_factor * right_stats.estimated_row_count / inputs.parallelism;
-    }
+    cost.work += inputs.config.hash_table_build_factor * build_rows_per_node
+        + build_rows_per_node * right_stats.estimated_bytes_per_row;
     return cost;
 }
 
@@ -226,10 +222,12 @@ static Cost mergingAggregatedCost(const CostInputs & inputs)
 static Cost broadcastExchangeCost(const CostInputs & inputs)
 {
     Cost cost;
-    /// Each of the N receiving nodes gets a full copy, so N times the data crosses the network;
-    /// without the factor a 100-node broadcast would look as cheap as a 2-node one.
-    cost.network += inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row
-        * std::max(1.0, inputs.node_count);
+    /// The network term is wall-clock per node, like the work term (which is divided by
+    /// parallelism): every receiving node ingests the full payload, all of them concurrently,
+    /// and the senders each ship their share of the copies in parallel. So one full payload
+    /// is the per-node bound. A shuffle moves 1/N per node, so a broadcast still costs N times
+    /// a shuffle of the same data.
+    cost.network += inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row;
     cost.sequential += inputs.config.exchange_fixed_overhead;
     return cost;
 }
@@ -240,12 +238,18 @@ static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
     /// not the group's trimmed L; the caller resolves that override from the memo.
     const Float64 rows = inputs.exchange_rows_override.value_or(inputs.output_stats.estimated_row_count);
     Cost cost;
-    /// Each row crosses the network once.
-    cost.network += rows * inputs.output_stats.estimated_bytes_per_row;
+    /// The network term is wall-clock per node, like the work term. A shuffle (N->N) moves
+    /// 1/N of the data per node, all nodes concurrently; without the division one node
+    /// scanning the whole table is priced the same as the cluster shuffling it, and the
+    /// optimizer keeps big scans on a single node.
+    Float64 network_bytes = rows * inputs.output_stats.estimated_bytes_per_row;
+    if (dynamic_cast<const ShuffleExchangeStep *>(&step))
+        network_bytes /= std::max(1.0, inputs.node_count);
+    cost.network += network_bytes;
     cost.sequential += inputs.config.exchange_fixed_overhead;
     /// Gather (N->1) and Scatter (1->N) funnel every row through a single node that
-    /// sends or receives them sequentially; Shuffle (N->N) spreads this across nodes.
-    /// Without the funnel cost a gather/scatter of a large input looks as cheap as a
+    /// sends or receives them sequentially, so their transfer stays undivided and each row
+    /// pays the funnel cost. Without it a gather of a large input looks as cheap as a
     /// shuffle, so the optimizer distributes work (e.g. a sort) that should stay local.
     if (dynamic_cast<const GatherExchangeStep *>(&step) || dynamic_cast<const ScatterExchangeStep *>(&step))
         cost.sequential += inputs.config.funnel_sequential_cost_per_row * rows;

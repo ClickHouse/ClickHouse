@@ -31,7 +31,7 @@ namespace DB
 ///     mixed `work` units above).
 ///
 /// Broadcast vs shuffle differentiation:
-///   - sequential: broadcast builds the full hash table on every node
+///   - work: broadcast builds the full hash table on every node
 ///     (`right_rows * hash_table_build_factor`), shuffle builds 1/N of it per node
 ///   - network:    both modeled by their respective Exchange children
 ///
@@ -40,8 +40,15 @@ struct CostConfig
 {
     Float64 work_weight = 1.0;            /// Parallelizable work (scans, expression eval, I/O).
     Float64 network_weight = 1.0;         /// Per-byte network transfer.
-    Float64 sequential_weight = 1000.0;   /// Single-threaded phases (hash build, merge).
-    Float64 exchange_fixed_overhead = 100.0; /// Fixed per-exchange latency (connection setup, metadata).
+    /// Single-threaded phases (gather/scatter funnels, merge cursors). The weight is the
+    /// per-node thread count: work parallelizes across the threads of a node while a serial
+    /// phase holds one thread, so one serial row costs about `threads` work rows (Brent's law:
+    /// wall-clock ~ work / threads + serial path).
+    Float64 sequential_weight = 32.0;
+    /// Fixed per-exchange latency (connection setup, metadata), in sequential rows. The
+    /// weighted value (~1e5 work units) keeps a plan over a small input local: distribution
+    /// cannot pay for its setup there.
+    Float64 exchange_fixed_overhead = 3000.0;
 
     /// Per-operator constants of the model. The defaults are the model; overrides are for experiments.
     Float64 expression_cost_per_row = 0.1;   /// Expressions and filters do little work per row.

@@ -27,13 +27,17 @@ Expression ((Project names + Projection))
 20
 -- RIGHT ANY JOIN (RightAny strictness, not commutable)
 Expression ((Project names + Projection))
-  Aggregating
-    Expression (Before GROUP BY)
-      JoinLogical (Local HashJoin )
-        Expression (Change column names to column identifiers)
-          ReadFromMergeTree (default.test_orders)
-        Expression (Change column names to column identifiers)
-          ReadFromMergeTree (default.test_lineitem)
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin )
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.test_orders)
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.test_lineitem)
 20
 20
 -- LEFT SEMI JOIN (lineitem broadcast, no swap needed)
