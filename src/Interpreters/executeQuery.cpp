@@ -1283,15 +1283,27 @@ static BlockIO executeQueryImpl(
         }
         else if (settings[Setting::dialect] == Dialect::mongo && !internal)
         {
+            /// A leading `SET` must bypass the experimental gate: it is how a session that
+            /// turned `allow_experimental_mongo_dialect` back off runs `SET dialect = 'clickhouse'`
+            /// to leave the dialect, the same way the `clickhouse_json` dialect escapes below.
+            /// The Mongo parser itself parses a `SET` with the ClickHouse parser, so only the
+            /// gate needs the exception. A Mongo statement always starts with the collection
+            /// path (`db.<collection>.<command>`), never with a bare `SET` word.
+            const bool is_set_escape = isClickHouseJSONSetEscape(begin, end, settings[Setting::max_query_size]);
 #if USE_RAPIDJSON
-            if (!settings[Setting::allow_experimental_mongo_dialect])
+            if (!settings[Setting::allow_experimental_mongo_dialect] && !is_set_escape)
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
                     "Support for the MongoDB dialect is disabled (turn on setting 'allow_experimental_mongo_dialect')");
             Mongo::ParserMongoQuery parser(max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
             out_ast = parseMongoQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 #else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the MongoDB dialect is disabled: ClickHouse is built without rapidjson");
+            /// A build without rapidjson must not strand a session whose dialect was set to
+            /// `mongo` either: a `SET` is plain SQL and needs nothing of the Mongo parser.
+            if (!is_set_escape)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the MongoDB dialect is disabled: ClickHouse is built without rapidjson");
+            ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 #endif
         }
         else if (settings[Setting::dialect] == Dialect::clickhouse_json && !internal)
