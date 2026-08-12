@@ -527,6 +527,7 @@ class ReleaseInfo:
                 if self.release_type == "new":
                     version.githash = CHVersion.get_release_version().githash
                 else:
+                    # Point VERSION_GITHASH at the branch tip, not the release commit.
                     version.githash = Shell.get_output_or_raise("git rev-parse HEAD")
                     latest_release_version = CHVersion.get_release_version()
                     assert not version.is_older(latest_release_version), (
