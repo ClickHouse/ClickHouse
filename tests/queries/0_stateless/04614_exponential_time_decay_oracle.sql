@@ -1,7 +1,50 @@
 DROP TABLE IF EXISTS time_decay_feature_gate;
 DROP TABLE IF EXISTS time_decay_feature_gate_blocked;
+DROP TABLE IF EXISTS time_decay_default_insert;
+DROP TABLE IF EXISTS time_decay_default_alter;
+DROP TABLE IF EXISTS time_decay_default_simple_aggregate;
 
 SET allow_experimental_time_decay_aggregate_functions = 1;
+
+-- The implicit default must preserve the decay-length marker encoded in the type.
+SELECT defaultValueOfTypeName('ExponentialTimeDecayingFloat64(10)')
+    = CAST((0., 0., 10.), 'ExponentialTimeDecayingFloat64(10)');
+
+CREATE TABLE time_decay_default_insert
+(
+    id UInt8,
+    value ExponentialTimeDecayingFloat64(10)
+)
+ENGINE = Memory;
+INSERT INTO time_decay_default_insert (id) VALUES (1);
+SELECT value = CAST((0., 0., 10.), 'ExponentialTimeDecayingFloat64(10)')
+FROM time_decay_default_insert;
+
+CREATE TABLE time_decay_default_alter (id UInt8) ENGINE = Memory;
+INSERT INTO time_decay_default_alter VALUES (1);
+ALTER TABLE time_decay_default_alter
+    ADD COLUMN value ExponentialTimeDecayingFloat64(10);
+SELECT value = CAST((0., 0., 10.), 'ExponentialTimeDecayingFloat64(10)')
+FROM time_decay_default_alter;
+
+CREATE TABLE time_decay_default_simple_aggregate
+(
+    id UInt8,
+    value SimpleAggregateFunction(
+        exponentialTimeDecayedSum,
+        ExponentialTimeDecayingFloat64(10))
+)
+ENGINE = AggregatingMergeTree
+ORDER BY id;
+INSERT INTO time_decay_default_simple_aggregate (id) VALUES (1);
+SELECT
+    value = CAST((0., 0., 10.), 'ExponentialTimeDecayingFloat64(10)'),
+    exponentialTimeDecayingDecayLength(value) = 10
+FROM time_decay_default_simple_aggregate;
+
+DROP TABLE time_decay_default_insert;
+DROP TABLE time_decay_default_alter;
+DROP TABLE time_decay_default_simple_aggregate;
 
 CREATE TABLE time_decay_feature_gate
 (
