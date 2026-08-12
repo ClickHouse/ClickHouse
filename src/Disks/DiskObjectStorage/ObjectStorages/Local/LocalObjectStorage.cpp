@@ -552,18 +552,19 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
             }
             else
             {
-                /// `entry_path` is produced by descending the already-validated
-                /// `resolved_path` and the walk never follows symlinks, so it is
-                /// guaranteed to be under the key prefix. Stat it directly instead
-                /// of routing through `tryGetObjectMetadata`, whose per-entry
-                /// re-resolution (`fs::relative` / `fs::weakly_canonical`) uses
-                /// throwing filesystem primitives that abort the whole listing
-                /// when a churned entry vanishes mid-resolution.
-                if (auto metadata = tryStatResolvedPath(entry_path))
+                if (auto metadata = tryGetObjectMetadata(entry_path, /*with_tags=*/ false))
                     children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry_path, std::move(*metadata)));
             }
 
-        children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry.path(), getObjectMetadata(entry.path(), false)));
+            it.increment(ec);
+            if (ec)
+            {
+                /// `increment` resets the iterator to end() on error; a vanished
+                /// entry only affects this directory, the worklist preserves the rest.
+                throw_unless_vanished(ec, dir);
+                break;
+            }
+        }
     }
 }
 
