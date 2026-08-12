@@ -446,3 +446,10 @@ SELECT
 FROM VALUES('value Float64, time Float64', (1, 1))
 WHERE false
 SETTINGS aggregate_functions_null_for_empty = 1;
+
+-- Old-analyzer parameterized views must not capture the experimental type while disabled.
+SET allow_experimental_time_decay_aggregate_functions = 0;
+SET enable_analyzer = 0;
+CREATE VIEW time_decay_parameterized_view_gate AS
+SELECT tupleElement({value:ExponentialTimeDecayingFloat64(10)}, 1); -- { serverError ILLEGAL_COLUMN }
+SET allow_experimental_time_decay_aggregate_functions = 1;

@@ -58,6 +58,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/interpretSubquery.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/misc.h>
 #include <Parsers/QueryParameterVisitor.h>
 
@@ -1061,6 +1062,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             else if (data.is_create_parameterized_view && query_parameter)
             {
                 const auto data_type = DataTypeFactory::instance().get(query_parameter->type);
+                validateDataType(
+                    data_type,
+                    DataTypeValidationSettings::forRuntimeTypeNames(data.getContext()->getSettingsRef()));
                 /// During analysis for CREATE VIEW of a parameterized view, if parameter is
                 /// used multiple times, column is only added once.
                 /// The placeholder column carries no runtime value: parameter substitution
