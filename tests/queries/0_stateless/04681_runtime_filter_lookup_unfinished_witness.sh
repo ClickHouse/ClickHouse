@@ -43,18 +43,20 @@ JOIN_SETTINGS="
     SET join_runtime_filter_min_probe_rows = 0;
 "
 
+# The row counts are asserted, not discarded: an unfinished lookup that rejected rows instead of
+# passing them through would still increment the witness below, but would lose matches here.
 # Negative control: the ordinary finished path must not increment the witness.
 $CLICKHOUSE_CLIENT -q "
     $JOIN_SETTINGS
-    SELECT count() FROM rf_witness_probe AS l JOIN rf_witness_build AS r ON l.k = r.k
-    FORMAT Null SETTINGS log_comment = '04681_finished';
+    SELECT 'finished_rows', count() FROM rf_witness_probe AS l JOIN rf_witness_build AS r ON l.k = r.k
+    SETTINGS log_comment = '04681_finished';
 "
 
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT runtime_filter_skip_finish_insert"
 $CLICKHOUSE_CLIENT -q "
     $JOIN_SETTINGS
-    SELECT count() FROM rf_witness_probe AS l JOIN rf_witness_build AS r ON l.k = r.k
-    FORMAT Null SETTINGS log_comment = '04681_unfinished';
+    SELECT 'unfinished_rows', count() FROM rf_witness_probe AS l JOIN rf_witness_build AS r ON l.k = r.k
+    SETTINGS log_comment = '04681_unfinished';
 "
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT runtime_filter_skip_finish_insert"
 
