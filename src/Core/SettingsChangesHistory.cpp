@@ -41,7 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.6.2.20001.altinityantalya",
         {
-            {"use_puffin_files_cache", true, true, "Enables cache of parsed Puffin file content such as deletion vectors."},
+            {"use_puffin_files_cache", false, true, "Enables cache of parsed Puffin file content such as deletion vectors."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
