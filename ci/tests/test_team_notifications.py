@@ -12,14 +12,6 @@ from ci.jobs.scripts.workflow_hooks import team_notifications
             ["clickpipes", "docs"],
         ),
         (
-            ["docs/integrations/language-clients/python/index.mdx"],
-            ["integrations-ecosystem", "docs"],
-        ),
-        (
-            ["docs/integrations/connectors/data-ingestion/index.mdx"],
-            ["integrations-ecosystem", "docs"],
-        ),
-        (
             [
                 "docs/integrations/language-clients/python/index.mdx",
                 "docs/integrations/connectors/data-ingestion/index.mdx",
@@ -39,13 +31,6 @@ from ci.jobs.scripts.workflow_hooks import team_notifications
         ),
         (
             [
-                "docs/integrations/clickpipes/home.mdx",
-                "docs/reference/functions/array-functions.mdx",
-            ],
-            ["clickpipes", "docs"],
-        ),
-        (
-            [
                 "docs/pt-BR/integrations/clickpipes/home.mdx",
                 "docs/ja/integrations/connectors/navigation.json",
             ],
@@ -55,17 +40,6 @@ from ci.jobs.scripts.workflow_hooks import team_notifications
             ["docs/integrations/clickpipes/home.mdx", "src/Core/Block.cpp"],
             [],
         ),
-        (
-            ["docs/reference/functions/array-functions.mdx", "src/Core/Block.cpp"],
-            [],
-        ),
-        (
-            [
-                "ci/jobs/scripts/workflow_hooks/team_notifications.py",
-                "docs/integrations/clickpipes/home.mdx",
-            ],
-            ["clickpipes", "docs"],
-        ),
         (["src/Core/TypeId.h"], []),
         ([], []),
     ],
@@ -74,7 +48,28 @@ def test_get_docs_teams_to_request(changed_files, expected_teams):
     assert team_notifications.get_docs_teams_to_request(changed_files) == expected_teams
 
 
-def test_check_requests_docs_teams(monkeypatch):
+def test_check_skips_docs_teams_without_repository_access(monkeypatch):
+    class FakeInfo:
+        event_action = "opened"
+
+        def get_kv_data(self, key):
+            assert key == "changed_files"
+            return [
+                "docs/integrations/clickpipes/home.mdx",
+                "docs/integrations/language-clients/python/index.mdx",
+            ]
+
+    monkeypatch.setattr(team_notifications, "Info", FakeInfo)
+    monkeypatch.setattr(
+        team_notifications.GH,
+        "request_team_reviews",
+        staticmethod(lambda *_args: pytest.fail("unexpected review request")),
+    )
+
+    assert team_notifications.check()
+
+
+def test_check_requests_docs_teams_when_enabled(monkeypatch):
     class FakeInfo:
         event_action = "opened"
 
@@ -92,29 +87,14 @@ def test_check_requests_docs_teams(monkeypatch):
 
     monkeypatch.setattr(team_notifications, "Info", FakeInfo)
     monkeypatch.setattr(
+        team_notifications, "ENABLE_DOCS_TEAM_REVIEW_REQUESTS", True
+    )
+    monkeypatch.setattr(
         team_notifications.GH, "request_team_reviews", staticmethod(fake_request)
     )
 
     assert team_notifications.check()
     assert requested == ["clickpipes", "integrations-ecosystem", "docs"]
-
-
-def test_check_does_not_request_reviews_without_docs_teams(monkeypatch):
-    class FakeInfo:
-        event_action = "opened"
-
-        def get_kv_data(self, key):
-            assert key == "changed_files"
-            return ["src/Core/Block.cpp"]
-
-    monkeypatch.setattr(team_notifications, "Info", FakeInfo)
-    monkeypatch.setattr(
-        team_notifications.GH,
-        "request_team_reviews",
-        staticmethod(lambda teams: not teams),
-    )
-
-    assert team_notifications.check()
 
 
 def test_check_does_not_manage_docs_reviews_after_open(monkeypatch):
