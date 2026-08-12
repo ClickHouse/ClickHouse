@@ -14,7 +14,7 @@ doc_type: 'reference'
 
 Input format for reading [Apache Iceberg Puffin](https://iceberg.apache.org/puffin-spec/) files.
 
-The format exposes deleted row positions from `deletion-vector-v1` blobs. It is the only supported blob type: a file containing any other blob type (for example `apache-datasketches-theta-v1`) is rejected.
+The format exposes deleted row positions from `deletion-vector-v1` blobs. Other blob types (for example `apache-datasketches-theta-v1`) are skipped.
 If a puffin file contains multiple `deletion-vector-v1` blobs, the format outputs one row per such blob.
 
 Fixed output columns:

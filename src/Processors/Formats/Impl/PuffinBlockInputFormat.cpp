@@ -407,12 +407,13 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_
         }
         else
         {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Puffin blob {}: unsupported blob type '{}', only '{}' is supported",
-                i,
-                blob.type,
-                PUFFIN_DELETION_VECTOR_BLOB_TYPE);
+            /// Puffin allows arbitrary blob types in one file (indexes, sketches, DVs, ...).
+            /// Keep common metadata so Iceberg can bind a DV by offset/length; do not require
+            /// deletion-vector properties for non-DV entries.
+            if (blob_obj->has("compression-codec") && !blob_obj->isNull("compression-codec"))
+                blob.compression_codec = requireBlobMetadataString(blob_obj, "compression-codec", i);
+
+            parseBlobProperties(blob_obj, blob, i, /*required=*/false);
         }
 
         requireBlobMetadataField(blob_obj, "fields", i);
@@ -944,12 +945,7 @@ Chunk PuffinInputFormat::read()
         const auto & blob = footer.blobs[blob_index++];
 
         if (blob.type != PUFFIN_DELETION_VECTOR_BLOB_TYPE)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Puffin blob {}: unexpected blob type '{}', only '{}' is supported",
-                current_blob_index,
-                blob.type,
-                PUFFIN_DELETION_VECTOR_BLOB_TYPE);
+            continue;
 
         const auto & referenced_data_file = blob.properties.at("referenced-data-file");
 
@@ -1040,9 +1036,7 @@ void registerInputFormatPuffin(FormatFactory & factory)
 ## Description {#description}
 
 Special input format for reading [Apache Iceberg Puffin](https://iceberg.apache.org/puffin-spec/) file footer metadata.
-It outputs one row per blob entry from the footer `BlobMetadata` list.
-
-`deletion-vector-v1` is the only supported blob type: a file containing any other blob type (for example `apache-datasketches-theta-v1`) is rejected.
+It outputs one row per blob entry from the footer `BlobMetadata` list, including non-deletion-vector types (for example `apache-datasketches-theta-v1`). Full deletion-vector property validation applies only to `deletion-vector-v1` entries.
 
 Fixed output columns:
 - `blob_type` (`String`) - blob type, for example `deletion-vector-v1`
@@ -1085,7 +1079,7 @@ Pair with the `Puffin` format to read `deletion-vector-v1` blob payloads.
 
 Input format for reading [Apache Iceberg Puffin](https://iceberg.apache.org/puffin-spec/) files.
 
-The format exposes deleted row positions from `deletion-vector-v1` blobs. It is the only supported blob type: a file containing any other blob type (for example `apache-datasketches-theta-v1`) is rejected.
+The format exposes deleted row positions from `deletion-vector-v1` blobs. Other blob types (for example `apache-datasketches-theta-v1`) are skipped.
 If a puffin file contains multiple `deletion-vector-v1` blobs, the format outputs one row per such blob.
 
 Fixed output columns:
