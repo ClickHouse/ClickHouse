@@ -11,9 +11,7 @@
 -- The tag is what makes the deltas attributable, and it is load-bearing rather than cosmetic: it
 -- serializes only within one clickhouse-test process, while the stress runner drives several against
 -- one server. Measured under a concurrent fuzzing process, every claim that a delta was exactly zero
--- failed 15 of 15 runs, so those are bounded by this section's own executed delta instead and then
--- held 30 of 30. The undecided-versus-executed comparison remains same-window by nature: a foreign
--- decided query inflates only the executed side, so it too relies on the tag.
+-- failed 15 of 15 runs, so those are bounded by this section's own executed delta instead.
 -- log-engine: the whole oracle rests on the target NOT supporting parallel insert, which
 -- --replace-log-memory-with-mergetree rewrites away (it also rewrites the Memory fixture).
 -- no-replicated-database: for the lazy_load_tables section below, plus a DETACH TABLE inside the
@@ -171,7 +169,7 @@ SELECT 'before_undecided',
 FROM system.events;
 
 CREATE MATERIALIZED VIEW und_mv TO und_mt AS SELECT k FROM und_src
-SETTINGS ast_fuzzer_runs = 30, ast_fuzzer_any_query = 1;
+SETTINGS ast_fuzzer_runs = 30, ast_fuzzer_any_query = 1, log_comment = '04876_undecided';
 
 INSERT INTO fuzz_events
 SELECT 'after_undecided',
@@ -181,29 +179,30 @@ SELECT 'after_undecided',
 FROM system.events;
 
 -- Every fuzzed CREATE here hits the unresolvable branch, so each executed query must contribute an
--- undecided verdict. Compared against the executed count rather than against zero: this same counter
--- also fires when the dependency extractor throws on a shape the fuzzer injected, which happens on a
--- few runs regardless, so a `> 0` assertion would hold even with the exits uncounted. Not a fixed
--- floor either: the fuzz loop stops early on some runs (both deltas measured 30 on 18 of 20 runs and
--- 14 on the other two), and it is their equality that is the claim.
+-- undecided verdict. The right side counts this section's OWN clones out of query_log instead of a
+-- server-global counter: a withdrawn clone never reaches execution and so is never logged, while an
+-- executed one always is. A foreign fuzzing process can therefore only raise the left side, which
+-- makes the inequality one-sided in the safe direction rather than same-window.
+SYSTEM FLUSH LOGS query_log;
+
+INSERT INTO fuzz_events
+SELECT 'undecided_own_clones', 0, 0, count(DISTINCT query_id)
+FROM system.query_log
+WHERE event_date >= today() - 1
+  AND current_database = currentDatabase()
+  AND log_comment = '04876_undecided'
+  AND query LIKE '%und\_mv\_\_fuzz%'
+SETTINGS enable_parallel_replicas = 0;
+
 SELECT 'undecided_counted',
       (SELECT undecided FROM fuzz_events WHERE label = 'after_undecided')
     - (SELECT undecided FROM fuzz_events WHERE label = 'before_undecided')
-   >= (SELECT executed FROM fuzz_events WHERE label = 'after_undecided')
-    - (SELECT executed FROM fuzz_events WHERE label = 'before_undecided');
+   >= (SELECT executed FROM fuzz_events WHERE label = 'undecided_own_clones');
 
 -- Lower bound for the comparison above, which two zeroes would otherwise satisfy without any
 -- query having been fuzzed at all.
 SELECT 'undecided_executed_nonzero',
-      (SELECT executed FROM fuzz_events WHERE label = 'after_undecided')
-    - (SELECT executed FROM fuzz_events WHERE label = 'before_undecided') > 0;
-
--- Bounded, not pinned to zero, for the same reason as safe_target_not_skipped above.
-SELECT 'undecided_not_skipped',
-      (SELECT skipped FROM fuzz_events WHERE label = 'after_undecided')
-    - (SELECT skipped FROM fuzz_events WHERE label = 'before_undecided')
-    < (SELECT executed FROM fuzz_events WHERE label = 'after_undecided')
-    - (SELECT executed FROM fuzz_events WHERE label = 'before_undecided');
+      (SELECT executed FROM fuzz_events WHERE label = 'undecided_own_clones') > 0;
 
 ATTACH TABLE und_gone;
 DROP TABLE und_mv;

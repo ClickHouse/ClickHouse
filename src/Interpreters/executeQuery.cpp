@@ -2303,8 +2303,8 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 
             if (verdict == Verdict::Hazardous)
             {
-                /// The name was recorded before this point and later mutations retarget table references
-                /// to the recorded names, so a name no table backs has to be withdrawn.
+                /// The fuzzer retargets table references to the names in its live-name registry, so a
+                /// name no table backs must leave that registry.
                 auto [fuzzer, lock] = getGlobalASTFuzzer();
                 fuzzer->notifyQueryFailed(fuzzed_ast);
                 ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedSharedNonParallelTarget);
