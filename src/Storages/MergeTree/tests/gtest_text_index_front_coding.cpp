@@ -19,7 +19,6 @@ using namespace DB;
 namespace DB::ErrorCodes
 {
     extern const int CORRUPTED_DATA;
-    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 namespace
@@ -160,7 +159,7 @@ TEST(TextIndexFrontCoding, FirstTokenTooLargeIsRejected)
     writeVarUInt(1, out); /// num_tokens
     writeVarUInt(SerializationString::MAX_STRING_SIZE + 1, out);
 
-    EXPECT_EQ(deserializeTokensErrorCode(out.str()), ErrorCodes::TOO_LARGE_STRING_SIZE);
+    EXPECT_EQ(deserializeTokensErrorCode(out.str()), ErrorCodes::CORRUPTED_DATA);
 }
 
 /// A reconstructed token size that does not overflow but exceeds the size cap must be rejected before allocating.
@@ -174,5 +173,5 @@ TEST(TextIndexFrontCoding, ReconstructedTokenTooLargeIsRejected)
     out.write("test", 4);
     writeFrontCodedToken(out, /*lcp=*/ 4, /*data_size=*/ SerializationString::MAX_STRING_SIZE, "");
 
-    EXPECT_EQ(deserializeTokensErrorCode(out.str()), ErrorCodes::TOO_LARGE_STRING_SIZE);
+    EXPECT_EQ(deserializeTokensErrorCode(out.str()), ErrorCodes::CORRUPTED_DATA);
 }
