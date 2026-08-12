@@ -870,7 +870,9 @@ async function main() {
         const r = await runScenario(js, {
             href: base + '?tab=Scratch#' + stale_hash,
             historyState: { tabId: 't7', tabName: 'Scratch' },
-            openDelayMs: 30,
+            /// A zero-delay open leaves no wall-clock margin, so the load-window interaction below
+            /// holds only if it is ordered structurally rather than by timing.
+            openDelayMs: 0,
             duringLoad: (sandbox) => {
                 vm.runInContext(
                     "query_area.value = 'SELECT 999';" +
