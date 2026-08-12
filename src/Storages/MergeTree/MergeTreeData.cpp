@@ -5143,7 +5143,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         {
             throw Exception(
                 ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                "Trying to ALTER DROP key {} column which is a part of key expression",
+                "Trying to ALTER {} key {} column which is a part of key expression",
+                command.clear ? "CLEAR" : "DROP",
                 backQuoteIfNeed(command.column_name));
         }
 
@@ -5151,7 +5152,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         {
             throw Exception(
                 ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                "Trying to ALTER DROP column {} whose subcolumns ({}) are part of key expression",
+                "Trying to ALTER {} column {} whose subcolumns ({}) are part of key expression",
+                command.clear ? "CLEAR" : "DROP",
                 backQuoteIfNeed(command.column_name),
                 boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
         }

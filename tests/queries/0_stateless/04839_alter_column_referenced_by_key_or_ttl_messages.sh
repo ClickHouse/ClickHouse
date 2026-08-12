@@ -11,10 +11,18 @@ $CLICKHOUSE_CLIENT -q "
 " 2>&1 | grep -m1 -oF 'Trying to ALTER DROP key a column which is a part of key expression'
 
 $CLICKHOUSE_CLIENT -q "
+    ALTER TABLE key_column CLEAR COLUMN a;
+" 2>&1 | grep -m1 -oF 'Trying to ALTER CLEAR key a column which is a part of key expression'
+
+$CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS subcolumn;
     CREATE TABLE subcolumn (a Tuple(x UInt64, y UInt64), b UInt64) ENGINE = MergeTree ORDER BY a.x;
     ALTER TABLE subcolumn DROP COLUMN a;
 " 2>&1 | grep -m1 -oF 'Trying to ALTER DROP column a whose subcolumns (`a.x`) are part of key expression'
+
+$CLICKHOUSE_CLIENT -q "
+    ALTER TABLE subcolumn CLEAR COLUMN a;
+" 2>&1 | grep -m1 -oF 'Trying to ALTER CLEAR column a whose subcolumns (`a.x`) are part of key expression'
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS sign_column;
