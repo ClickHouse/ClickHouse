@@ -110,6 +110,7 @@ public:
         const NameSet & partially_read_columns,
         const NamesAndTypesList & part_columns,
         const ColumnSizeByName & column_sizes,
+        const ColumnSize & part_total_size,
         size_t read_bytes,
         std::optional<bool> & should_continue_sampling);
 

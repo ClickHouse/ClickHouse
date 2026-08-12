@@ -222,6 +222,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     const NameSet & partially_read_columns,
     const NamesAndTypesList & part_columns,
     const ColumnSizeByName & column_sizes,
+    const ColumnSize & part_total_size,
     size_t read_bytes,
     std::optional<bool> & should_continue_sampling)
 {
@@ -265,6 +266,20 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
             /// per-column byte split to subtract here (unlike the `column_sizes` branch above, which never
             /// serializes and handles such columns fine), so give up on the statistics for this query.
             markUnsupportedCase();
+        }
+        else if (part_total_size.data_uncompressed && part_total_size.data_compressed)
+        {
+            /// Compact parts keep no per-column sizes, but the part as a whole has measured totals.
+            /// Use that ratio rather than re-compressing a sample: the sample would be compressed with
+            /// the built-in default codec, which is simply wrong when the data is stored with another
+            /// one (e.g. ZSTD), and the error propagates into `effective_max_reading_threads`.
+            const auto part_ratio = static_cast<double>(part_total_size.data_compressed)
+                / static_cast<double>(part_total_size.data_uncompressed);
+            for (const auto & column : input_columns)
+            {
+                sample_bytes += column.column->byteSize();
+                compressed_bytes += static_cast<size_t>(static_cast<double>(column.column->byteSize()) * part_ratio);
+            }
         }
         else
         {

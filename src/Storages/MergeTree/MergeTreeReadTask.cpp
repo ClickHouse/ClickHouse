@@ -98,10 +98,13 @@ MergeTreeReadTask::MergeTreeReadTask(
 {
     if (updater)
     {
-        dataflow_cache_update_cb = [&](const ColumnsWithTypeAndName & columns,
-                                       const NameSet & partially_read_columns,
-                                       size_t read_bytes,
-                                       std::optional<bool> & should_continue_sampling) -> void
+        /// Cannot change for the lifetime of the part, and reading it takes a lock, so resolve it once
+        /// rather than on every block. Zero for parts whose checksums are not loaded.
+        const auto part_total_size = info->data_part_info->getTotalColumnsSize();
+        dataflow_cache_update_cb = [this, part_total_size](const ColumnsWithTypeAndName & columns,
+                                                           const NameSet & partially_read_columns,
+                                                           size_t read_bytes,
+                                                           std::optional<bool> & should_continue_sampling) -> void
         {
             chassert(updater);
             const auto & part_columns = info->data_part_info->getColumns();
@@ -113,6 +116,7 @@ MergeTreeReadTask::MergeTreeReadTask(
                 partially_read_columns,
                 part_columns,
                 column_sizes ? *column_sizes : no_column_sizes,
+                part_total_size,
                 read_bytes,
                 should_continue_sampling);
         };
