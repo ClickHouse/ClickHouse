@@ -264,6 +264,7 @@ namespace FailPoints
     extern const char trigger_sanitizer_error[];
     extern const char query_plan_cache_pause_after_logical_plan[];
     extern const char query_plan_cache_pause_before_resolve_storages[];
+    extern const char query_plan_cache_pause_after_validation[];
 }
 
 static TSA_NO_THREAD_SAFETY_ANALYSIS void triggerSanitizerError()
@@ -1214,6 +1215,11 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
                 /// falling through to normal planning.
                 checkAccessForQueryPlanCacheHit(*cached_entry, context);
 
+                /// Lets a test alter a table between the validation of the entry and the binding of
+                /// the plan's reads to storage snapshots, which is otherwise a narrow race; see
+                /// `04869_query_plan_cache_table_altered_while_materializing`.
+                FailPointInjection::pauseFailPoint(FailPoints::query_plan_cache_pause_after_validation);
+
                 auto plan = materializeCachedQueryPlan(cached_entry->serialized_plan, context, validated_identities);
 
                 /// The planner normally records query access info; on a hit it is skipped,
@@ -1234,7 +1240,12 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
             if (e.code() != ErrorCodes::INCORRECT_DATA && e.code() != ErrorCodes::UNKNOWN_TABLE)
                 throw;
             ProfileEvents::increment(ProfileEvents::QueryPlanCacheStaleMisses);
-            tryLogCurrentException("QueryPlanCache", "Stale or corrupt cached plan, falling back to normal planning");
+            /// Losing a race with concurrent DDL is a normal thing (same as on the miss path), and
+            /// the query still succeeds through re-planning, so this is not logged as an error:
+            /// with `send_logs_level` an error would surface a scary stack trace on every such
+            /// benign fallback. The stale miss stays observable through the profile event.
+            LOG_DEBUG(getLogger("QueryPlanCache"),
+                "Stale or corrupt cached plan, falling back to normal planning: {}", e.message());
         }
 
         /// Reached only when the entry failed validation or materialized stale/corrupt (a
@@ -1370,7 +1381,7 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     auto plan = std::move(*analyzer_interpreter).extractQueryPlan();
     QueryPlan::ExpectedStorageIdentities expected_identities;
     for (const auto & [name, identity] : analyzed_identities)
-        expected_identities.emplace(name, identity.uuid);
+        expected_identities.emplace(name, QueryPlan::ExpectedStorageIdentity{identity.uuid, identity.semantics_fingerprint});
     try
     {
         plan.resolveStorages(context, &expected_identities);

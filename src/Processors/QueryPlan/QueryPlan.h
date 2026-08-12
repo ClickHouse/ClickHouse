@@ -10,7 +10,7 @@
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Parsers/IAST_fwd.h>
 
-#include <base/UUID.h>
+#include <Core/UUID.h>
 
 #include <functional>
 #include <list>
@@ -135,7 +135,16 @@ public:
     /// this map is passed, every resolved leaf must match the identity recorded here, so a plan can
     /// never execute against a storage that was not validated (e.g. an `Atomic` `DROP`/`CREATE` in
     /// between). See `materializeCachedQueryPlan`.
-    using ExpectedStorageIdentities = std::map<std::pair<String, String>, UUID>;
+    /// The UUID alone cannot see a same-UUID in-place change (`ALTER TABLE ... MODIFY COLUMN`,
+    /// `ALTER ROW POLICY`) landing between validation and resolution, so the identity also carries
+    /// the semantics fingerprint the caller proved (see `computeQueryPlanCacheSemanticsFingerprint`),
+    /// which resolution re-checks against the snapshot the read is actually bound to.
+    struct ExpectedStorageIdentity
+    {
+        UUID uuid = UUIDHelpers::Nil;
+        UInt64 semantics_fingerprint = 0;
+    };
+    using ExpectedStorageIdentities = std::map<std::pair<String, String>, ExpectedStorageIdentity>;
 
     void resolveStorages(const ContextPtr & context, const ExpectedStorageIdentities * expected_identities = nullptr);
 

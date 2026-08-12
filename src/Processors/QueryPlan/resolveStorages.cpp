@@ -13,6 +13,7 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 
+#include <Interpreters/Cache/QueryPlanCacheUtils.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
@@ -220,10 +221,26 @@ static QueryPlanResourceHolder replaceReadingFromTable(
     {
         const auto & storage_id = storage->getStorageID();
         auto it = expected_identities->find({storage_id.getDatabaseName(), storage_id.table_name});
-        if (it == expected_identities->end() || it->second != storage_id.uuid)
+        if (it == expected_identities->end() || it->second.uuid != storage_id.uuid)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Table {} resolved to a storage that was not validated for this query plan",
+                storage->getStorageID().getNameForLogs());
+
+        /// The UUID pins the table object, but not its semantics: an in-place change
+        /// (`ALTER TABLE ... MODIFY COLUMN`, `ALTER ROW POLICY`) landing between the caller's
+        /// validation and this point keeps the UUID while the plan still bakes in the old schema
+        /// or row-policy filter. The read would then execute the stale plan over the snapshot
+        /// bound here. Re-check the proven semantics fingerprint against this exact snapshot -
+        /// the metadata the read executes with - and reject the plan on any drift, exactly like
+        /// an unexpected UUID. Note this must use the pre-modifier metadata: FINAL/SAMPLE extend
+        /// the metadata below, after the identity is pinned, on both the validation and this side.
+        if (computeQueryPlanCacheSemanticsFingerprint(
+                snapshot->metadata, storage_id.getDatabaseName(), storage_id.table_name, context)
+            != it->second.semantics_fingerprint)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Table {} was altered between query plan validation and execution",
                 storage->getStorageID().getNameForLogs());
     }
 

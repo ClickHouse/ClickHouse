@@ -801,8 +801,11 @@ bool validateQueryPlanCacheEntry(
             return false;
 
         /// Record the identity that was just proven, so that materialization can bind its leaf
-        /// reads to it instead of trusting a second, independent name resolution.
-        validated_identities[{storage_id.getDatabaseName(), storage_id.table_name}] = storage_id.uuid;
+        /// reads to it instead of trusting a second, independent name resolution. The semantics
+        /// fingerprint travels along: the UUID pins the table object, but only the fingerprint
+        /// lets `resolveStorages` see a same-UUID in-place `ALTER` landing after this check.
+        validated_identities[{storage_id.getDatabaseName(), storage_id.table_name}]
+            = {storage_id.uuid, computeQueryPlanCacheSemanticsFingerprint(dep)};
     }
 
     return true;

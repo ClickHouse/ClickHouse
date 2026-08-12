@@ -280,6 +280,7 @@ static struct InitFiu
     PAUSEABLE(transaction_after_commit_pause) \
     PAUSEABLE(query_plan_cache_pause_after_logical_plan) \
     PAUSEABLE(query_plan_cache_pause_before_resolve_storages) \
+    PAUSEABLE(query_plan_cache_pause_after_validation) \
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
     PAUSEABLE_ONCE(iceberg_compaction_merge_pause_in_step) \
     REGULAR(tcp_handler_fail_connection_setup) \
