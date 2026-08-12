@@ -1,106 +1,9 @@
-import os
-import subprocess
 import sys
-import tempfile
 
-from ci.praktika import Secret
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 
 INTEGRATIONS_ECOSYSTEM_FILES = ("src/Core/TypeId.h",)
-
-DOCS_PREFIX = "docs/"
-SOURCE_PREFIX = "src/"
-CLICKPIPES_DOCS_PREFIX = "docs/integrations/clickpipes/"
-INTEGRATIONS_DOCS_PREFIXES = (
-    "docs/integrations/language-clients/",
-    "docs/integrations/connectors/",
-)
-
-DOCS_TEAM = "docs"
-CLICKPIPES_TEAM = "clickpipes"
-INTEGRATIONS_ECOSYSTEM_TEAM = "integrations-ecosystem"
-
-TEAM_REVIEW_TOKENS = tuple(
-    Secret.Config(name=name, type=Secret.Type.AWS_SSM_PARAMETER)
-    for name in (
-        "/ci/robot-ch-test-poll-copilot",
-        "/ci/robot-ch-test-poll-1-copilot",
-    )
-)
-
-
-def normalize_path(file):
-    return file.removeprefix(".").removeprefix("/")
-
-
-def get_docs_teams_to_request(changed_files):
-    files = [normalize_path(file) for file in changed_files]
-    if any(file.startswith(SOURCE_PREFIX) for file in files):
-        return []
-
-    files = [file for file in files if file.startswith(DOCS_PREFIX)]
-    teams = []
-
-    if not files:
-        return teams
-
-    if any(file.startswith(CLICKPIPES_DOCS_PREFIX) for file in files):
-        teams.append(CLICKPIPES_TEAM)
-
-    if any(
-        file.startswith(prefix)
-        for file in files
-        for prefix in INTEGRATIONS_DOCS_PREFIXES
-    ):
-        teams.append(INTEGRATIONS_ECOSYSTEM_TEAM)
-
-    teams.append(DOCS_TEAM)
-    return teams
-
-
-def request_docs_team_reviews(team_slugs):
-    if not team_slugs:
-        return True
-
-    for token_config in TEAM_REVIEW_TOKENS:
-        with tempfile.TemporaryDirectory() as gh_config_dir:
-            gh_env = os.environ.copy()
-            gh_env["GH_CONFIG_DIR"] = gh_config_dir
-            gh_env.pop("GH_TOKEN", None)
-            gh_env.pop("GITHUB_TOKEN", None)
-            try:
-                subprocess.run(
-                    ["gh", "auth", "login", "--with-token"],
-                    input=token_config.get_value(),
-                    text=True,
-                    check=True,
-                    env=gh_env,
-                )
-            except subprocess.CalledProcessError:
-                print(
-                    f"WARNING: Failed to authenticate team review robot "
-                    f"[{token_config.name}]"
-                )
-                continue
-
-            previous_env = {
-                name: os.environ.get(name)
-                for name in ("GH_CONFIG_DIR", "GH_TOKEN", "GITHUB_TOKEN")
-            }
-            os.environ["GH_CONFIG_DIR"] = gh_config_dir
-            os.environ.pop("GH_TOKEN", None)
-            os.environ.pop("GITHUB_TOKEN", None)
-            try:
-                return GH.request_team_reviews(team_slugs)
-            finally:
-                for name, value in previous_env.items():
-                    if value is None:
-                        os.environ.pop(name, None)
-                    else:
-                        os.environ[name] = value
-
-    raise RuntimeError("Failed to authenticate any team review robot")
 
 
 def check():
@@ -112,8 +15,6 @@ def check():
         "most likely failed to fetch the PR file list from the GitHub API. "
         "See the Config Workflow logs for the underlying error."
     )
-    if info.event_action in ("opened", "synchronize"):
-        request_docs_team_reviews(get_docs_teams_to_request(changed_files))
 
     if any(
         file.startswith(prefix)
