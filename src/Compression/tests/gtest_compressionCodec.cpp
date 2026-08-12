@@ -3494,8 +3494,8 @@ TEST_F(WallabyTest, FindsTheDeltaCapBehindAnExiledSpike)
     /// post-spike deltas do not fit either), while the actual winner is the 4-bit cap: 63 exiled
     /// spikes next to 4-bit lanes (~1.3 KiB against ~2.2 KiB for both capped Frame-of-Reference
     /// and the uncapped 18-bit delta lanes, and ~1.4 KiB for the XOR lower bound). An encoder
-    /// revision that verified only the single proposed width missed it; the walk now climbs from
-    /// the proposal while the measured payload keeps improving.
+    /// revision that verified only the single proposed width missed it; every cap that the lower
+    /// bound does not rule out is now walked exactly.
     std::vector<Float64> values(1024);
     for (size_t i = 0; i < values.size(); ++i)
         values[i] = static_cast<Float64>(3 * i);
@@ -3503,6 +3503,34 @@ TEST_F(WallabyTest, FindsTheDeltaCapBehindAnExiledSpike)
         values[i] = static_cast<Float64>(100000 + 3 * i);
 
     EXPECT_LT(wallabyCompressedSize(values), 1400u);
+}
+
+TEST_F(WallabyTest, TakesADeltaCapWinSmallerThanAVectorOfLanes)
+{
+    /// A cap can win by less than the cost of a handful of exceptions, and the encoder must still
+    /// take it. These integers walk a +7 ramp into which every 128th position inserts a value 9
+    /// above its predecessor, so that the ramp resumes with a delta of -2: the deltas are +7
+    /// everywhere except 8 isolated `(+9, -2)` pairs. The widest delta needs 5 bits, but capping
+    /// at 4 bits exiles exactly the 8 inserted values, and the chain re-synchronizes immediately
+    /// because the delta across an exiled value is back to +7. That trades 128 bytes of lanes for
+    /// 8 exceptions of 10 bytes, making the capped payload 48 bytes smaller than the uncapped
+    /// 640-byte one - a real but small win, which an encoder revision that required the histogram
+    /// estimate to beat the best payload by a fixed 64-byte margin threw away.
+    std::vector<Float64> values;
+    values.reserve(1024);
+    Float64 ramp = 0;
+    while (values.size() < 1024)
+    {
+        if (values.size() % 128 == 127)
+        {
+            values.push_back(ramp + 2);
+            continue;
+        }
+        values.push_back(ramp);
+        ramp += 7;
+    }
+
+    EXPECT_LT(wallabyCompressedSize(values), 640u);
 }
 
 }

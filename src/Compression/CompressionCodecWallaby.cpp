@@ -760,11 +760,18 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         const UInt8 bits_for_full = for_range == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(for_range));
 
         UInt32 for_width_histogram[Traits::width_bits + 1] = {};
+        /// Widths of the adjacent deltas whose both values survive the quantization, and the
+        /// smaller width of each pair of consecutive such deltas. Together they bound from below
+        /// how many values a capped chain walk has to exile — see the lower bound below.
         UInt32 delta_width_histogram[Traits::width_bits + 1] = {};
+        UInt32 delta_pair_width_histogram[Traits::width_bits + 1] = {};
         T max_zigzag = 0;
         bool delta_valid = true;
         if (allow_capping)
         {
+            UInt32 previous_counted = 0;
+            UInt8 previous_counted_width = 0;
+            bool has_previous_counted = false;
             for (UInt32 i = 0; i < count; ++i)
             {
                 if (is_quantization_exception[i])
@@ -780,7 +787,17 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
                     {
                         const T zigzag = (static_cast<T>(delta) << 1) ^ static_cast<T>(delta >> (Traits::width_bits - 1));
                         max_zigzag = std::max(max_zigzag, zigzag);
-                        ++delta_width_histogram[zigzag == 0 ? 0 : Traits::width_bits - std::countl_zero(zigzag)];
+                        const UInt8 zigzag_width
+                            = zigzag == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(zigzag));
+                        if (!is_quantization_exception[i - 1])
+                        {
+                            ++delta_width_histogram[zigzag_width];
+                            if (has_previous_counted && previous_counted + 1 == i)
+                                ++delta_pair_width_histogram[std::min(zigzag_width, previous_counted_width)];
+                            has_previous_counted = true;
+                            previous_counted = i;
+                            previous_counted_width = zigzag_width;
+                        }
                     }
                 }
             }
@@ -947,44 +964,55 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
 
             if (allow_capping)
             {
-                UInt32 outliers = 0;
-                UInt8 estimated_w = bits_delta_full;
-                UInt32 estimated_cost = uncapped.payload_size;
+                /** A cap narrower than the full width has to be verified by an exact chain walk,
+                  * because the adjacent-delta histogram is not a bound in either direction: it
+                  * double-counts a spike (the jump and the return are two wide adjacent deltas, but
+                  * exiling the spike costs one exception, after which the chain re-synchronizes on
+                  * the return), while conversely an exiled value re-widens the next delta (which
+                  * now spans from further back) and that can cascade. Deciding by the histogram
+                  * alone — or skipping the walk unless the histogram promises some fixed margin —
+                  * would give up the "cheapest encoding per vector" contract for small wins.
+                  *
+                  * What the histograms do give is a lower bound on the exact cost at a cap `w`. The
+                  * lane bytes and the per-exception cost are exact, and if an adjacent delta wider
+                  * than `w` has both of its values surviving the quantization, the walk must exile
+                  * at least one of them: had both survived the cap, the chain would step from the
+                  * first to the second and that very delta would have to fit. One exiled value
+                  * takes part in only two adjacent deltas, so with `V` such violations forming `R`
+                  * runs of consecutive ones the walk exiles at least `max(R, ceil(V / 2))` values on
+                  * top of the quantization exceptions (`R` counts one per run, and it is the exact
+                  * minimum for the isolated spikes that make capping pay off in practice).
+                  *
+                  * So evaluate exactly every cap whose bound is below the best payload known so far,
+                  * cheapest bound first, so that each measurement prunes the remaining caps. The
+                  * winner is the cheapest packing over all caps, and no cap that could have won is
+                  * left unwalked.
+                  */
+                UInt32 lower_bound[Traits::width_bits] = {};
+                UInt32 violations = 0;
+                UInt32 adjacent_violations = 0;
                 for (Int32 w = bits_delta_full - 1; w >= 0; --w)
                 {
-                    outliers += delta_width_histogram[w + 1];
-                    const UInt32 cost = header_size + lanes_bytes(static_cast<UInt8>(w))
-                        + (exception_count + outliers) * exceptionCost<T>();
-                    if (cost < estimated_cost)
-                    {
-                        estimated_cost = cost;
-                        estimated_w = static_cast<UInt8>(w);
-                    }
+                    violations += delta_width_histogram[w + 1];
+                    adjacent_violations += delta_pair_width_histogram[w + 1];
+                    const UInt32 runs = violations - std::min(violations, adjacent_violations);
+                    const UInt32 exiles = std::max(runs, (violations + 1) / 2);
+                    lower_bound[w] = header_size + lanes_bytes(static_cast<UInt8>(w))
+                        + (exception_count + exiles) * exceptionCost<T>();
                 }
-                if (estimated_w < bits_delta_full && estimated_cost + 64 < best_packing->payload_size)
+
+                bool evaluated[Traits::width_bits] = {};
+                while (true)
                 {
-                    /// The histogram only proposes a cap, in both directions: it double-counts a
-                    /// spike (the jump and the return are two wide adjacent deltas, but exiling
-                    /// the spike costs one exception, after which the chain re-synchronizes on the
-                    /// return), and conversely an exiled delta re-widens the next lane (its delta
-                    /// now spans from further back), which can cascade. So the exact chain walk
-                    /// can prefer a neighbouring width; climb from the proposal in each direction
-                    /// while the walk keeps improving.
-                    Packing capped = evaluate_delta(estimated_w);
-                    for (Int32 w = estimated_w + 1; w < bits_delta_full; ++w)
-                    {
-                        const Packing wider = evaluate_delta(static_cast<UInt8>(w));
-                        if (wider.payload_size >= capped.payload_size)
-                            break;
-                        capped = wider;
-                    }
-                    for (Int32 w = static_cast<Int32>(estimated_w) - 1; w >= 0; --w)
-                    {
-                        const Packing narrower = evaluate_delta(static_cast<UInt8>(w));
-                        if (narrower.payload_size >= capped.payload_size)
-                            break;
-                        capped = narrower;
-                    }
+                    Int32 cheapest = -1;
+                    for (Int32 w = 0; w < bits_delta_full; ++w)
+                        if (!evaluated[w] && lower_bound[w] < best_packing->payload_size
+                            && (cheapest < 0 || lower_bound[w] < lower_bound[cheapest]))
+                            cheapest = w;
+                    if (cheapest < 0)
+                        break;
+                    evaluated[cheapest] = true;
+                    const Packing capped = evaluate_delta(static_cast<UInt8>(cheapest));
                     if (capped.payload_size < best_packing->payload_size)
                         best_packing = capped;
                 }
