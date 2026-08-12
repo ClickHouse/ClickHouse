@@ -5772,12 +5772,26 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
     }
 
+    /// A part's column names are its load-time ones and go stale on a metadata-only RENAME, while the
+    /// commands name columns as the current schema does. Compared by name, a stale part-side name
+    /// aliases a live, different column and a legal DROP is refused -- so compare IDs.
+    const auto & mapping_snapshot = old_metadata.column_id_mapping;
+    const bool resolve_ids = mapping_snapshot && mapping_snapshot->isActive();
+    ColumnIdSet dropped_column_ids;
+    for (const auto & dropped_column : dropped_columns)
+    {
+        /// A non-physical column is in no part and outside the mapping, so its name could collide with a real id.
+        if (resolve_ids && !old_metadata.columns.hasPhysical(dropped_column))
+            continue;
+        dropped_column_ids.emplace(resolve_ids ? mapping_snapshot->getColumnIdOrDefault(dropped_column) : dropped_column);
+    }
+
     for (const auto & part : getDataPartsVectorForInternalUsage())
     {
         bool at_least_one_column_rest = false;
         for (const auto & column : part->getColumns())
         {
-            if (!dropped_columns.contains(column.name))
+            if (!dropped_column_ids.contains(column.getColumnId()))
             {
                 at_least_one_column_rest = true;
                 break;

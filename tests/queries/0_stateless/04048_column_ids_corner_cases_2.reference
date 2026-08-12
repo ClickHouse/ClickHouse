@@ -89,3 +89,17 @@ freed: wide q mutated	1	kept!
 freed: compact q mutated	1	kept!
 freed: one q left	Compact	q	p	String
 freed: one q left	Wide	q	p	String
+stale name: part holds	y	1
+stale name: survivor reads	part_holds_this	zz
+stale read: sole column	part_holds_this
+stale read: sole column reloaded	part_holds_this
+stale read: renamed and new	old column bytes	default of w
+stale read: renamed and new reloaded	old column bytes	default of w
+stale read: freed name	old column bytes	default of new x
+stale read: freed name reversed	default of new x	old column bytes
+stale read: freed name alone	default of new x
+stale read: freed name reloaded	old column bytes	default of new x
+stale read: freed name compact	old column bytes	default of new x
+stale read: no column in part	later default
+stale read: renamed pair	aa	bb
+stale read: no column in part reloaded	later default

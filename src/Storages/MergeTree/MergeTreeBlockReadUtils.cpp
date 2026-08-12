@@ -106,7 +106,12 @@ bool injectRequiredColumnsRecursively(
         if (alter_conversions && alter_conversions->isColumnRenamed(column_name_in_part))
             column_name_in_part = alter_conversions->getColumnOldName(column_name_in_part);
 
-        auto column_in_part = data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part);
+        /// Ask the part by id, exactly as IMergeTreeReader::tryResolveInPart will: the part keeps the
+        /// names it was loaded with, so a metadata-only RENAME leaves them stale and a name lookup
+        /// can miss this column or match a different one that re-used its old name.
+        auto column_in_part = column_in_storage->column_id.empty()
+            ? data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part)
+            : data_part_info_for_reader.tryGetColumn(column_in_storage->getColumnId());
 
         bool share_nested = true;
         if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage))
@@ -221,11 +226,19 @@ NameSet injectRequiredColumns(
         /// (to be resolvable by the StorageSnapshot). This handles cases where the table schema has changed
         /// since the part was created: columns may have been added (not in the part) or dropped (not in metadata).
         const auto & part_columns = data_part_info_for_reader.getColumns();
+        const auto column_id_mapping = storage_snapshot->metadata->getActiveColumnIdMapping();
+
         NamesAndTypesList available_columns;
         for (const auto & column : part_columns)
         {
-            if (storage_snapshot->tryGetColumn(options, column.name))
-                available_columns.push_back(column);
+            /// The chosen name goes back to the caller to be resolved in the current schema, so a part
+            /// column that outlived a metadata-only RENAME must be offered under its current name.
+            auto current_name = column_id_mapping && !column.column_id.empty()
+                ? column_id_mapping->tryGetColumnName(column.getColumnId())
+                : std::optional<String>(column.name);
+
+            if (current_name && storage_snapshot->tryGetColumn(options, *current_name))
+                available_columns.emplace_back(*current_name, column.type, column.column_id);
         }
 
         if (available_columns.empty())

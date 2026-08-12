@@ -524,3 +524,121 @@ WHERE database = currentDatabase() AND table LIKE 't_mutate_over_freed_%' AND ac
 ORDER BY part_type, column_id;
 DROP TABLE t_mutate_over_freed_wide;
 DROP TABLE t_mutate_over_freed_compact;
+
+-- ===== the empty-part guard must ask about the part's ids, not its (possibly stale) names =====
+-- why: the guard rejects a DROP that would take away every column of some part.  It compared the
+-- commands' names -- the current schema's -- against each part's load-time names, which a
+-- metadata-only RENAME leaves stale, so the two sides could disagree in both directions: dropping
+-- the re-used name 'x' (a different column, added later under its own id, that no part holds) was
+-- refused, and dropping 'y' -- the part's only column, still called 'x' there -- was allowed and
+-- left the part with no columns and the table unreadable.
+DROP TABLE IF EXISTS t_drop_stale_part_name;
+CREATE TABLE t_drop_stale_part_name (k UInt64) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS serialization_info_version = 'with_column_ids', min_bytes_for_wide_part = 0;
+ALTER TABLE t_drop_stale_part_name ADD COLUMN x String;
+ALTER TABLE t_drop_stale_part_name DROP COLUMN k;
+INSERT INTO t_drop_stale_part_name (x) VALUES ('part_holds_this');
+ALTER TABLE t_drop_stale_part_name RENAME COLUMN x TO y;
+ALTER TABLE t_drop_stale_part_name ADD COLUMN x String DEFAULT 'fresh';
+SELECT 'stale name: part holds', column, column_id FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_drop_stale_part_name' AND active ORDER BY column_id;
+-- No part holds this 'x', so the drop is legal.
+ALTER TABLE t_drop_stale_part_name DROP COLUMN x;
+-- 'y' is the part's only column, so dropping (or clearing) it must still be refused.
+ALTER TABLE t_drop_stale_part_name ADD COLUMN z String DEFAULT 'zz';
+ALTER TABLE t_drop_stale_part_name DROP COLUMN y; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_drop_stale_part_name CLEAR COLUMN y; -- { serverError BAD_ARGUMENTS }
+-- An ALIAS is in no part, so dropping one cannot empty a part -- not even when its name is the id of
+-- the column the part does hold ('1', printed above), which is what the guard now compares against.
+ALTER TABLE t_drop_stale_part_name ADD COLUMN `1` String ALIAS z;
+ALTER TABLE t_drop_stale_part_name DROP COLUMN `1`;
+-- Reload, which restamps the part's column names from the mapping, and check the data survived.
+DETACH TABLE t_drop_stale_part_name;
+ATTACH TABLE t_drop_stale_part_name;
+SELECT 'stale name: survivor reads', y, z FROM t_drop_stale_part_name;
+DROP TABLE t_drop_stale_part_name;
+
+-- ===== a read must ask the part about ids, not about names, with no reload in between =====
+-- why: required-column injection asked the part for the current column name.  A metadata-only
+-- RENAME does not reload the part, so the part still lists the old name: the renamed column looked
+-- absent and the read failed, naming the part's stale name, until something reloaded the part.
+-- No DETACH/ATTACH before the first read here -- that is what used to paper the bug over.
+DROP TABLE IF EXISTS t_read_stale_sole;
+CREATE TABLE t_read_stale_sole (k UInt64) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS serialization_info_version = 'with_column_ids', min_bytes_for_wide_part = 0;
+ALTER TABLE t_read_stale_sole ADD COLUMN x String;
+ALTER TABLE t_read_stale_sole DROP COLUMN k;
+INSERT INTO t_read_stale_sole (x) VALUES ('part_holds_this');
+ALTER TABLE t_read_stale_sole RENAME COLUMN x TO y;
+SELECT 'stale read: sole column', y FROM t_read_stale_sole;
+DETACH TABLE t_read_stale_sole;
+ATTACH TABLE t_read_stale_sole;
+SELECT 'stale read: sole column reloaded', y FROM t_read_stale_sole;
+DROP TABLE t_read_stale_sole;
+
+-- why: same part, but now read together with a column added after the rename -- the renamed column
+-- must still resolve to the part's data and the new one to its own default.
+DROP TABLE IF EXISTS t_read_stale_with_new;
+CREATE TABLE t_read_stale_with_new (k UInt64) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS serialization_info_version = 'with_column_ids', min_bytes_for_wide_part = 0;
+ALTER TABLE t_read_stale_with_new ADD COLUMN x String;
+ALTER TABLE t_read_stale_with_new DROP COLUMN k;
+INSERT INTO t_read_stale_with_new (x) VALUES ('old column bytes');
+ALTER TABLE t_read_stale_with_new RENAME COLUMN x TO y;
+ALTER TABLE t_read_stale_with_new ADD COLUMN w String DEFAULT 'default of w';
+SELECT 'stale read: renamed and new', y, w FROM t_read_stale_with_new;
+DETACH TABLE t_read_stale_with_new;
+ATTACH TABLE t_read_stale_with_new;
+SELECT 'stale read: renamed and new reloaded', y, w FROM t_read_stale_with_new;
+DROP TABLE t_read_stale_with_new;
+
+-- why: a later column re-uses the freed name.  The renamed column kept its id, so this 'x' is a
+-- different column and must read its own default -- but the part still lists its own column under
+-- the name 'x'.  The Wide reader's substreams and prefix-state caches were keyed by name, so the
+-- two shared one entry: the new column was served the part's data, and in the other read order the
+-- part's column was served the new one's prefix state (a serialization-state mismatch).  Read in
+-- both orders and alone, since the collision only shows when both are in one read.
+DROP TABLE IF EXISTS t_read_stale_reused;
+CREATE TABLE t_read_stale_reused (k UInt64) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS serialization_info_version = 'with_column_ids', min_bytes_for_wide_part = 0;
+ALTER TABLE t_read_stale_reused ADD COLUMN x String;
+ALTER TABLE t_read_stale_reused DROP COLUMN k;
+INSERT INTO t_read_stale_reused (x) VALUES ('old column bytes');
+ALTER TABLE t_read_stale_reused RENAME COLUMN x TO y;
+ALTER TABLE t_read_stale_reused ADD COLUMN x String DEFAULT 'default of new x';
+SELECT 'stale read: freed name', y, x FROM t_read_stale_reused;
+SELECT 'stale read: freed name reversed', x, y FROM t_read_stale_reused;
+SELECT 'stale read: freed name alone', x FROM t_read_stale_reused;
+DETACH TABLE t_read_stale_reused;
+ATTACH TABLE t_read_stale_reused;
+SELECT 'stale read: freed name reloaded', y, x FROM t_read_stale_reused;
+DROP TABLE t_read_stale_reused;
+
+DROP TABLE IF EXISTS t_read_stale_reused_compact;
+CREATE TABLE t_read_stale_reused_compact (k UInt64) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS serialization_info_version = 'with_column_ids', min_bytes_for_wide_part = '10G';
+ALTER TABLE t_read_stale_reused_compact ADD COLUMN x String;
+ALTER TABLE t_read_stale_reused_compact DROP COLUMN k;
+INSERT INTO t_read_stale_reused_compact (x) VALUES ('old column bytes');
+ALTER TABLE t_read_stale_reused_compact RENAME COLUMN x TO y;
+ALTER TABLE t_read_stale_reused_compact ADD COLUMN x String DEFAULT 'default of new x';
+SELECT 'stale read: freed name compact', y, x FROM t_read_stale_reused_compact;
+DROP TABLE t_read_stale_reused_compact;
+
+-- why: when no requested column is in the part, the read falls back to the part's smallest column
+-- just to count rows.  That column is named back to the caller, who resolves it in the current
+-- schema -- so with every part column renamed, the part's stale names left nothing resolvable and
+-- the read failed instead of returning the new column's default.
+DROP TABLE IF EXISTS t_read_stale_all_renamed;
+CREATE TABLE t_read_stale_all_renamed (a String, b String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS serialization_info_version = 'with_column_ids', min_bytes_for_wide_part = 0;
+INSERT INTO t_read_stale_all_renamed VALUES ('aa', 'bb');
+ALTER TABLE t_read_stale_all_renamed RENAME COLUMN a TO a2;
+ALTER TABLE t_read_stale_all_renamed RENAME COLUMN b TO b2;
+ALTER TABLE t_read_stale_all_renamed ADD COLUMN c String DEFAULT 'later default';
+SELECT 'stale read: no column in part', c FROM t_read_stale_all_renamed;
+SELECT 'stale read: renamed pair', a2, b2 FROM t_read_stale_all_renamed;
+DETACH TABLE t_read_stale_all_renamed;
+ATTACH TABLE t_read_stale_all_renamed;
+SELECT 'stale read: no column in part reloaded', c FROM t_read_stale_all_renamed;
+DROP TABLE t_read_stale_all_renamed;

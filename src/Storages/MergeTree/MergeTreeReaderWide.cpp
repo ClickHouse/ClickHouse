@@ -22,6 +22,15 @@ namespace DB
 namespace
 {
     constexpr auto DATA_FILE_EXTENSION = ".bin";
+
+    /// The reader's per-column maps -- the substreams caches (whole columns, shared between a column
+    /// and its subcolumns) and the prefix-state map (one entry per column or subcolumn) -- are keyed by
+    /// column id, not by name. A part keeps its load-time names, so after a metadata-only RENAME its
+    /// slot for one column can share a name with a different, later-added column; keyed by name, the
+    /// column missing from the part would be served the other one's cached data and prefix state.
+    /// Without ids these keys are the names they have always been.
+    String substreamsCacheKey(const NameAndTypePair & column) { return column.getColumnId().value(); }
+    String prefixStateKey(const NameAndTypePair & column) { return column.getStorageKey().value(); }
 }
 
 namespace ErrorCodes
@@ -138,7 +147,7 @@ void MergeTreeReaderWide::prefetchForAllColumns(
 
         try
         {
-            auto & cache = caches[columns_to_read[pos].getNameInStorage()];
+            auto & cache = caches[substreamsCacheKey(columns_to_read[pos])];
             prefetchForColumn(
                 priority, columns_to_read[pos], serializations[pos], from_mark, continue_reading,
                 current_task_last_mark, cache);
@@ -216,8 +225,8 @@ size_t MergeTreeReaderWide::readRows(
             try
             {
                 size_t column_size_before_reading = column->size();
-                auto & cache = caches[column_to_read.getNameInStorage()];
-                auto & deserialize_states_cache = deserialize_states_caches[column_to_read.getNameInStorage()];
+                auto & cache = caches[substreamsCacheKey(column_to_read)];
+                auto & deserialize_states_cache = deserialize_states_caches[substreamsCacheKey(column_to_read)];
 
                 readData(
                     column_to_read,
@@ -252,7 +261,7 @@ size_t MergeTreeReaderWide::readRows(
                                 if (j <= pos)
                                     continue;
                                 ISerialization::addColumnWithNumReadRowsToSubstreamsCache(
-                                    &caches[columns_to_read[j].getNameInStorage()], offsets_path, cached_column, num_read_rows);
+                                    &caches[substreamsCacheKey(columns_to_read[j])], offsets_path, cached_column, num_read_rows);
                             }
                         }
                     }
@@ -482,7 +491,7 @@ void MergeTreeReaderWide::deserializePrefix(
     ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache,
     ISerialization::StreamCallback prefixes_prefetch_callback)
 {
-    const auto & name = name_and_type.name;
+    const auto name = prefixStateKey(name_and_type);
     if (!deserialize_state_map.contains(name))
     {
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
@@ -595,8 +604,8 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsImpl(size_t num_columns,
 
             try
             {
-                auto & cache = caches[columns_to_read[pos].getNameInStorage()];
-                auto & deserialize_states_cache = deserialize_states_caches[columns_to_read[pos].getNameInStorage()];
+                auto & cache = caches[substreamsCacheKey(columns_to_read[pos])];
+                auto & deserialize_states_cache = deserialize_states_caches[substreamsCacheKey(columns_to_read[pos])];
                 deserializePrefix(
                     serializations[pos],
                     columns_to_read[pos],
@@ -639,7 +648,7 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsWithPrefetch(size_t num_
             auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
             if (stream_name && !prefetched_streams.contains(*stream_name))
             {
-                if (ReadBuffer * buf = getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), name_and_type, 0, /* seek_to_mark = */false, current_task_last_mark, caches[name_and_type.getNameInStorage()]))
+                if (ReadBuffer * buf = getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), name_and_type, 0, /* seek_to_mark = */false, current_task_last_mark, caches[substreamsCacheKey(name_and_type)]))
                 {
                     buf->prefetch(priority);
                     prefetched_streams.insert(*stream_name);
@@ -682,7 +691,7 @@ void MergeTreeReaderWide::prefetchForColumn(
     /// If we already deserialized prefixes, we can use deserialization state during streams enumeration to enumerate dynamic subcolumns.
     if (!deserialize_binary_bulk_state_map.empty())
     {
-        auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withDeserializeState(deserialize_binary_bulk_state_map[name_and_type.name]);
+        auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withDeserializeState(deserialize_binary_bulk_state_map[prefixStateKey(name_and_type)]);
         ISerialization::EnumerateStreamsSettings settings;
         serialization->enumerateStreams(settings, callback, data);
     }
@@ -771,7 +780,7 @@ void MergeTreeReaderWide::readData(
     };
 
     deserialize_settings.continuous_reading = continue_reading;
-    auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
+    auto & deserialize_state = deserialize_binary_bulk_state_map[prefixStateKey(name_and_type)];
 
     serialization->deserializeBinaryBulkWithMultipleStreams(
         column, rows_offset, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
@@ -796,7 +805,7 @@ std::unordered_map<String, std::vector<String>> MergeTreeReaderWide::getAllColum
                 column_to_streams[name_and_type.name].push_back(*stream_name);
         };
 
-        auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withDeserializeState(deserialize_binary_bulk_state_map[name_and_type.name]);
+        auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withDeserializeState(deserialize_binary_bulk_state_map[prefixStateKey(name_and_type)]);
         ISerialization::EnumerateStreamsSettings settings;
         serialization->enumerateStreams(settings, callback, data);
     }
