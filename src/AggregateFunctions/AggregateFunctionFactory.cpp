@@ -774,19 +774,36 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             bool nested_has_variant = std::any_of(
                 nested_types.begin(), nested_types.end(), [](const auto & type) { return isVariant(type); });
 
-            /// The -Distinct combinator stores the distinct argument values and replays them into the nested
-            /// function on merge and finalization, so how the nested function treats the NULL rows of a Variant
-            /// argument is part of the meaning of an already written ...Distinct state: it must not depend on
-            /// the current `aggregate_functions_skip_variant_nulls` value, or a state written before an upgrade
-            /// would change its result after it (e.g. a stored countDistinctState over a Variant with a NULL
-            /// row would flip between counting and not counting it). Resolve the nested function with the NULL
-            /// skipping disabled -- the replay then always aggregates the NULL keys a history contains, exactly
-            /// like the versions that wrote states before the skipping contract existed -- and skip the NULL
-            /// rows of newly aggregated data in front of the history instead (the AggregateFunctionVariantNull
-            /// applied below over the combined function, under the same setting as the leaf wrapper above). The
-            /// setting then only controls which rows enter the history, never how a history is replayed, which
-            /// is the rule that holds for every other aggregate state.
-            bool distinct_replays_variant_nulls = combinator_name == "Distinct" && nested_has_variant;
+            /// When a Variant appears among the combinator's own (top-level) arguments, the NULL-skipping must
+            /// happen outside the combined function, not in the nested leaf: resolve the nested function with
+            /// the skipping disabled and apply the AggregateFunctionVariantNull wrapper over the combined
+            /// function below. This mirrors where the "Null" combinator sits for Nullable arguments (outside
+            /// all other combinators), and it matters for every combinator whose `add` keeps per-row state of
+            /// its own next to the nested state:
+            ///   - -ArgMin/-ArgMax update their stored key (and reset the nested state) before the nested
+            ///     function could skip the row, so `anyArgMax(v, k)` over (NULL, 10), ('x', 5) would remember
+            ///     the key 10 of the skipped NULL row and then ignore the lower-key non-NULL row, returning
+            ///     NULL instead of 'x' -- a skipped row must not participate in the key comparison at all;
+            ///   - -OrDefault/-OrNull set their "there was a value" flag for every row, so `countOrNull(v)`
+            ///     over only NULL rows would return 0 while over an all-NULL Nullable it returns NULL;
+            ///   - -Distinct stores the distinct argument values and replays them into the nested function on
+            ///     merge and finalization, so how the nested function treats the NULL rows of a Variant
+            ///     argument is part of the meaning of an already written ...Distinct state: it must not depend
+            ///     on the current `aggregate_functions_skip_variant_nulls` value, or a state written before an
+            ///     upgrade would change its result after it (e.g. a stored countDistinctState over a Variant
+            ///     with a NULL row would flip between counting and not counting it). With the nested function
+            ///     resolved without the skipping, the replay always aggregates the NULL keys a history
+            ///     contains, exactly like the versions that wrote states before the skipping contract existed,
+            ///     and the setting only controls which rows enter the history (via the outer wrapper), never
+            ///     how a history is replayed -- the rule that holds for every other aggregate state.
+            /// The wrapper is layout-transparent (see AggregateFunctionVariantNull), so hoisting it over the
+            /// combined function changes no state representation, and a combinator that reintroduces a Variant
+            /// from a declared AggregateFunction(...) state type (the get() call below) keeps reconstructing
+            /// the layout the state was written with. A combinator that merely exposes a nested Variant from
+            /// ordinary user data with no Variant among its own arguments (e.g. -Array over Array(Variant))
+            /// is unaffected: there the leaf wrapper keeps skipping the NULL elements as before.
+            bool top_level_has_variant = std::any_of(
+                argument_types.begin(), argument_types.end(), [](const auto & type) { return isVariant(type); });
 
             /// The Variant here provably comes from an already declared AggregateFunction(...) state type, so the
             /// adapter must reconstruct it exactly as declared, independently of the current query settings.
@@ -794,10 +811,10 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
                 ? get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant,
                       /*from_declared_state_type=*/ true)
                 : getWithoutVariantAdapter(nested_name, action, nested_types, nested_parameters, out_properties, state_variant,
-                      apply_variant_adapter_to_nested, allow_skipping_variant_nulls && !distinct_replays_variant_nulls);
+                      apply_variant_adapter_to_nested, allow_skipping_variant_nulls && !top_level_has_variant);
             combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
 
-            if (distinct_replays_variant_nulls && allow_skipping_variant_nulls)
+            if (top_level_has_variant && allow_skipping_variant_nulls && !out_properties.is_window_function)
             {
                 const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;
                 if (!settings || (*settings)[Setting::aggregate_functions_skip_variant_nulls])

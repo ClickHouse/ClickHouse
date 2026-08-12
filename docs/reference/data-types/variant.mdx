@@ -633,6 +633,8 @@ FROM values('v Variant(UInt64, String)', NULL, 1::UInt64, NULL, 'a');
 └──────────┴────────┴───────────────┴──────────────┘
 ```
 
+The skipped rows are invisible to the combinators as well, exactly as if they had been filtered out before the aggregation — like the `-Null` combinator, which sits outside the other combinators of a `Nullable` argument: a NULL row does not update the comparison key of `-ArgMin` / `-ArgMax`, and does not count as a value for `-OrNull` / `-OrDefault`, so `anyArgMax(v, k)` returns the non-NULL value with the greatest key among the non-NULL rows, and `countOrNull` over a group of only NULL values returns NULL.
+
 The equivalence with `Nullable` covers only the skipping of the NULL rows. Unlike a `Nullable` argument (or the `-Null` combinator), a `Variant` argument does not change the result type of the function or its result for an empty group: the function keeps its usual result type, and a group where every `Variant` value is NULL gets the same result as an empty set — for example, `groupConcat` over such a group returns the empty `String`, not NULL.
 
 <Note>

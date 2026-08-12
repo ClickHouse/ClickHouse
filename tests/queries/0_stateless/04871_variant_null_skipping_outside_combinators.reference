@@ -1,0 +1,23 @@
+-- ArgMax: a higher-key NULL row must not shadow a lower-key non-NULL row
+x
+x
+1
+['x','y']
+1
+-- the same rows over Nullable must agree
+x
+x
+1
+['x','y']
+1
+-- nested combinator chains filter once, outermost
+x
+x
+-- an all-NULL group is empty for -OrNull/-OrDefault, as for Nullable
+\N
+\N
+-- a state written with the key untouched by NULL rows merges the same way
+x
+-- the setting restores the previous behavior
+\N
+2
