@@ -695,7 +695,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                 if (old_json->isObject(f_type) && !field->isObject(f_type))
                 {
                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
+                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                         "Can't cast primitive type to the complex type, field id is {}, old schema id is {}, new schema id is {}",
                         id,
                         old_id,
@@ -727,7 +727,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
             if (!type->isNullable() && !field->isObject(f_type))
             {
                 throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                     "Cannot add a column with id {} with required values to the table during schema evolution. This is forbidden by "
                     "Iceberg format specification. Old schema id is {}, new "
                     "schema id is {}",
@@ -787,7 +787,7 @@ void IcebergSchemaProcessor::registerSnapshotWithSchemaId(Int64 snapshot_id, Int
         if (old_id != schema_id)
         {
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                 "Snapshot with id {} already registered with schema id {}, trying to register with new schema id {}",
                 snapshot_id,
                 old_id,
