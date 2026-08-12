@@ -1,6 +1,9 @@
 #include "config.h"
 #include <Common/Config/YAMLParser.h>
 #include <Common/Exception.h>
+#include <base/pathToString.h>
+
+#include <fstream>
 
 namespace DB::ErrorCodes
 {
@@ -144,20 +147,21 @@ namespace
 
 Poco::AutoPtr<Poco::XML::Document> YAMLParser::parse(const String& path)
 {
+    /// Not `YAML::LoadFile`: it opens the file by the narrow byte string, which on Windows goes
+    /// through the active code page and so misses any path outside it. Opening the stream
+    /// ourselves through `pathFromString` keeps the path UTF-8 end to end.
+    std::ifstream file(pathFromString(path));
+    if (!file.is_open())
+        throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Unable to open YAML configuration file {}", path);
     YAML::Node node_yml;
     try
     {
-        node_yml = YAML::LoadFile(path);
+        node_yml = YAML::Load(file);
     }
     catch (const YAML::ParserException& e)
     {
         /// yaml-cpp cannot parse the file because its contents are incorrect
         throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "Unable to parse YAML configuration file {}, {}", path, e.what());
-    }
-    catch (const YAML::BadFile&)
-    {
-        /// yaml-cpp cannot open the file even though it exists
-        throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Unable to open YAML configuration file {}", path);
     }
     Poco::AutoPtr<Poco::XML::Document> xml = new Document;
     Poco::AutoPtr<Poco::XML::Element> root_node = xml->createElement("clickhouse");

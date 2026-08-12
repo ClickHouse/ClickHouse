@@ -61,7 +61,7 @@ static std::string main_config_path;
 
 bool ConfigProcessor::isPreprocessedFile(const std::string & path)
 {
-    return endsWith(pathToString(fs::path(path).stem()), PREPROCESSED_SUFFIX);
+    return endsWith(pathToString(pathFromString(path).stem()), PREPROCESSED_SUFFIX);
 }
 
 
@@ -643,17 +643,17 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
 {
     Files files;
 
-    fs::path merge_dir_path(config_path);
-    std::set<std::string> merge_dirs;
+    fs::path merge_dir_path = pathFromString(config_path);
+    std::set<fs::path> merge_dirs;
 
     /// Add path_to_config/config_name.d dir
     merge_dir_path.replace_extension("d");
-    merge_dirs.insert(pathToString(merge_dir_path));
+    merge_dirs.insert(merge_dir_path);
     /// Add path_to_config/conf.d dir
     merge_dir_path.replace_filename("conf.d");
-    merge_dirs.insert(pathToString(merge_dir_path));
+    merge_dirs.insert(merge_dir_path);
 
-    for (const std::string & merge_dir_name : merge_dirs)
+    for (const fs::path & merge_dir_name : merge_dirs)
     {
         if (!fs::exists(merge_dir_name) || !fs::is_directory(merge_dir_name))
             continue;
@@ -681,23 +681,26 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
 
 XMLDocumentPtr ConfigProcessor::parseConfig(const std::string & config_path, Poco::XML::DOMParser & dom_parser)
 {
-    fs::path p(config_path);
+    fs::path p = pathFromString(config_path);
     std::string extension = pathToString(p.extension());
     boost::algorithm::to_lower(extension);
 
+    /// `dom_parser.parse(config_path)` takes the path as a narrow string, but that is fine even on
+    /// Windows: Poco is built with `POCO_WIN32_UTF8`, so its file streams interpret narrow paths
+    /// as UTF-8 and open the file through the wide API.
     if (extension == ".xml")
         return dom_parser.parse(config_path);
     if (extension == ".yaml" || extension == ".yml")
         return YAMLParser::parse(config_path);
 
     /// Suppose non regular file parsed as XML, such as pipe: /dev/fd/X (regardless it has .xml extension or not)
-    if (!fs::is_regular_file(config_path))
+    if (!fs::is_regular_file(p))
         return dom_parser.parse(config_path);
 
     /// If the regular file begins with < it might be XML, otherwise it might be YAML.
     bool maybe_xml = false;
     {
-        std::ifstream file(config_path);
+        std::ifstream file(p);
         if (!file.is_open())
             throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Unknown format of '{}' config", config_path);
 
@@ -731,7 +734,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
 
     XMLDocumentPtr config;
 
-    if (fs::exists(path))
+    if (fs::exists(pathFromString(path)))
     {
         config = parseConfig(path, dom_parser);
     }
@@ -808,7 +811,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         /// processIncludes does not try to parse it. We must still call processIncludes
         /// because it also performs from_env/from_zk/incl substitutions on the rest of the
         /// config; skipping it would silently strip those values (issue #101704).
-        if (!throw_on_bad_include_from && !include_from_path.empty() && !fs::exists(include_from_path))
+        if (!throw_on_bad_include_from && !include_from_path.empty() && !fs::exists(pathFromString(include_from_path)))
         {
             LOG_WARNING(log, "File {} (from 'include_from') does not exist. Ignoring.", include_from_path);
             include_from_path.clear();
@@ -975,33 +978,33 @@ void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::
 
             /// If we have config file in YAML format, the preprocessed config will inherit .yaml extension
             /// but will contain config in XML format, so some tools like clickhouse extract-from-config won't work
-            new_path = fs::path(new_path).replace_extension(".xml").string();
+            new_path = pathToString(pathFromString(new_path).replace_extension(".xml"));
 
             if (preprocessed_dir.empty())
             {
                 if (!loaded_config.configuration->has("path"))
                 {
                     // Will use current directory
-                    fs::path parent_path = fs::path(loaded_config.config_path).parent_path();
-                    preprocessed_dir = parent_path.string();
-                    fs::path fs_new_path(new_path);
-                    fs_new_path.replace_filename(fs_new_path.stem().string() + PREPROCESSED_SUFFIX + fs_new_path.extension().string());
-                    new_path = fs_new_path.string();
+                    fs::path parent_path = pathFromString(loaded_config.config_path).parent_path();
+                    preprocessed_dir = pathToString(parent_path);
+                    fs::path fs_new_path = pathFromString(new_path);
+                    fs_new_path.replace_filename(pathToString(fs_new_path.stem()) + PREPROCESSED_SUFFIX + pathToString(fs_new_path.extension()));
+                    new_path = pathToString(fs_new_path);
                 }
                 else
                 {
-                    fs::path loaded_config_path(loaded_config.configuration->getString("path"));
+                    fs::path loaded_config_path = pathFromString(loaded_config.configuration->getString("path"));
                     preprocessed_dir = pathToString(loaded_config_path / preprocessed_configs_path);
                 }
             }
             else
             {
-                fs::path preprocessed_dir_path(preprocessed_dir);
-                preprocessed_dir = (preprocessed_dir_path / preprocessed_configs_path).string();
+                fs::path preprocessed_dir_path = pathFromString(preprocessed_dir);
+                preprocessed_dir = pathToString(preprocessed_dir_path / preprocessed_configs_path);
             }
 
-            preprocessed_path = (fs::path(preprocessed_dir) / fs::path(new_path)).string();
-            auto preprocessed_path_parent = fs::path(preprocessed_path).parent_path();
+            preprocessed_path = pathToString(pathFromString(preprocessed_dir) / pathFromString(new_path));
+            auto preprocessed_path_parent = pathFromString(preprocessed_path).parent_path();
             if (!preprocessed_path_parent.empty())
                 fs::create_directories(preprocessed_path_parent);
         }

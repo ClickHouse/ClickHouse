@@ -357,10 +357,10 @@ void LocalServer::initialize(Poco::Util::Application & self)
     else if (config_path.empty())
         config_path = getLocalConfigPath(pathToGenericString(home_path)).value_or("");
 
-    if (fs::exists(config_path))
+    if (fs::exists(pathFromString(config_path)))
     {
         ConfigProcessor config_processor(config_path);
-        ConfigProcessor::setConfigPath(pathToGenericString(fs::path(config_path).parent_path()));
+        ConfigProcessor::setConfigPath(pathToGenericString(pathFromString(config_path).parent_path()));
         auto loaded_config = config_processor.loadConfig();
         getClientConfiguration().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
         loaded_config_path = config_path;
@@ -1116,7 +1116,7 @@ void LocalServer::setupUsers()
     if (getClientConfiguration().has("path"))
     {
         /// Use disk storage for persistence when --path is specified.
-        String access_path = pathToGenericString(fs::path(global_context->getPath()) / "access" / "");
+        String access_path = pathToGenericString(pathFromString(global_context->getPath()) / "access" / "");
         access_control.addDiskStorage(DiskAccessStorage::STORAGE_TYPE, access_path, /* readonly= */ false, /* allow_backup= */ false);
     }
     else

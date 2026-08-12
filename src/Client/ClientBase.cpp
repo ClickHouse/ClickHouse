@@ -4532,7 +4532,7 @@ void ClientBase::runInteractive()
         /// Load command history if present.
         bool should_create_parent_directories = false;
         if (getClientConfiguration().has("history_file"))
-            history_file = getClientConfiguration().getString("history_file");
+            history_file = pathFromString(getClientConfiguration().getString("history_file"));
         else
         {
             history_file = getHistoryFilePath();
@@ -4807,9 +4807,9 @@ void ClientBase::runNonInteractive()
 
 fs::path ClientBase::getHistoryFilePath()
 {
-    auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE"); // NOLINT(concurrency-mt-unsafe)
-    if (history_file_from_env)
-        return history_file_from_env;
+    auto history_file_from_env = getPathFromEnvironment("CLICKHOUSE_HISTORY_FILE");
+    if (!history_file_from_env.empty())
+        return pathFromString(history_file_from_env);
 
     /// Client query history was stored in ~/.clickhouse-client-history
     /// before moving to $XDG_STATE_HOME/clickhouse/client-query-history.
