@@ -118,3 +118,14 @@ SELECT v, toTypeName(v) FROM file(currentDatabase() || '_04512_dec.orc', ORC) OR
 INSERT INTO FUNCTION file(currentDatabase() || '_04512_nested_ok.orc', ORC, 'v Variant(Array(Variant(String, Int32)), Array(Variant(Float64, Int32)))')
 SELECT CAST(NULL, 'Variant(Array(Variant(String, Int32)), Array(Variant(Float64, Int32)))');
 DESC file(currentDatabase() || '_04512_nested_ok.orc', ORC);
+
+-- Only the branches of a nested union are order-insensitive. The children of an ORC list, map or
+-- struct are positional, because their order is part of the Map or Tuple type, so branches that
+-- differ only in child order are different types and must round-trip.
+INSERT INTO FUNCTION file(currentDatabase() || '_04512_map_pos.orc', ORC, 'v Variant(Map(Int32, String), Map(String, Int32))')
+SELECT CAST(NULL, 'Variant(Map(Int32, String), Map(String, Int32))');
+DESC file(currentDatabase() || '_04512_map_pos.orc', ORC);
+
+INSERT INTO FUNCTION file(currentDatabase() || '_04512_tuple_pos.orc', ORC, 'v Variant(Tuple(a Int32, b String), Tuple(b String, a Int32))')
+SELECT CAST(NULL, 'Variant(Tuple(a Int32, b String), Tuple(b String, a Int32))');
+DESC file(currentDatabase() || '_04512_tuple_pos.orc', ORC);
