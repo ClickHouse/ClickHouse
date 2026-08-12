@@ -7774,7 +7774,7 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(co
     primary_index_size.add(part->getIndexSizeFromFile());
 }
 
-IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns) const
+IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const
 {
     auto result = getColumnSizes();
 
@@ -7791,12 +7791,36 @@ IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns) 
     if (subcolumn_names.empty())
         return result;
 
-    /// For each requested column that is a subcolumn and not already in the result,
-    /// aggregate its size across all active parts using getSubcolumnSize.
-    /// This gives the correct on-disk size for subcolumns based on required substreams.
-    auto parts_lock = readLockParts();
-    auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
-    for (const auto & part : committed_parts_range)
+    /// When exact subcolumn sizes are disabled, approximate each subcolumn with its whole top-level
+    /// column size (already in result), resolved from metadata without locking parts.
+    if (!calculate_subcolumn_sizes)
+    {
+        auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        const auto & storage_columns = metadata_snapshot->getColumns();
+        for (const auto & col_name : subcolumn_names)
+        {
+            auto column = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, col_name);
+            if (column && column->isSubcolumn())
+            {
+                if (auto it = result.find(column->getNameInStorage()); it != result.end())
+                    result[col_name] = it->second;
+            }
+        }
+
+        return result;
+    }
+
+    /// Exact subcolumn sizes are derived per active part from the required substreams.
+    /// Snapshot the parts under the lock and release it before the per-part size calculation,
+    /// which reads part-local state and would otherwise block part commits and merges.
+    DataPartsVector parts;
+    {
+        auto parts_lock = readLockParts();
+        auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
+        parts.assign(committed_parts_range.begin(), committed_parts_range.end());
+    }
+
+    for (const auto & part : parts)
     {
         for (const auto & col_name : subcolumn_names)
         {
