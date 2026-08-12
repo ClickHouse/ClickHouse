@@ -9,111 +9,97 @@ doc_type: 'reference'
 
 import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-## AWS regions {#aws-regions}
+<a id="aws-regions" />
+<a id="google-cloud-regions" />
+<a id="azure-regions" />
 
-- ap-northeast-1 (Tokyo)
-- ap-northeast-2 (South Korea, Seoul)
-- ap-south-1 (Mumbai)
-- ap-southeast-1 (Singapore)
-- ap-southeast-2 (Sydney)
-- eu-central-1 (Frankfurt)
-- eu-west-1 (Ireland)
-- eu-west-2 (London)
-- us-east-1 (N. Virginia)
-- us-east-2 (Ohio)
-- us-west-2 (Oregon)
-- il-central-1 (Israel, Tel Aviv)
-- ca-central-1 (Canada)
+## Supported regions {#supported-regions}
 
-**Private Region:**
-- af-south-1 (South Africa)
-- eu-north-1 (Stockholm)
-- sa-east-1 (South America)
-- ap-southeast-3 (Jakarta)
-- ap-east-1 (Hong Kong)
-- ap-east-2 (Taipei)
-- mx-central-1 (Mexico)
- 
-## Google Cloud regions {#google-cloud-regions}
+Select a cloud provider to see its supported regions. A checkmark indicates that a region is available as a Private Region or supports HIPAA or PCI compliance. A dash indicates that the option isn't currently available.
 
-- asia-southeast1 (Singapore)
-- asia-northeast1 (Tokyo)
-- europe-west2 (London)
-- europe-west4 (Netherlands)
-- us-central1 (Iowa)
-- us-east1 (South Carolina)
+<Tabs>
+<Tab title="AWS">
 
-**Private Region:**
+| Region | Location | Private | HIPAA | PCI |
+| --- | --- | :---: | :---: | :---: |
+| `af-south-1` | South Africa | ✓ | ✓ | ✓ |
+| `ap-east-1` | Hong Kong | ✓ | — | — |
+| `ap-east-2` | Taipei | ✓ | — | — |
+| `ap-northeast-1` | Tokyo | — | — | — |
+| `ap-northeast-2` | South Korea, Seoul | — | — | — |
+| `ap-south-1` | Mumbai | — | — | — |
+| `ap-southeast-1` | Singapore | — | — | — |
+| `ap-southeast-2` | Sydney | — | — | — |
+| `ap-southeast-3` | Jakarta | ✓ | — | — |
+| `ca-central-1` | Canada | — | ✓ | ✓ |
+| `eu-central-1` | Frankfurt | — | ✓ | ✓ |
+| `eu-north-1` | Stockholm | ✓ | ✓ | ✓ |
+| `eu-west-1` | Ireland | — | ✓ | ✓ |
+| `eu-west-2` | London | — | ✓ | ✓ |
+| `il-central-1` | Israel, Tel Aviv | — | — | — |
+| `mx-central-1` | Mexico | ✓ | — | ✓ |
+| `sa-east-1` | South America | ✓ | ✓ | ✓ |
+| `us-east-1` | N. Virginia | — | ✓ | ✓ |
+| `us-east-2` | Ohio | — | ✓ | ✓ |
+| `us-west-2` | Oregon | — | ✓ | ✓ |
 
-- australia-southeast1(Sydney)
-- europe-west3 (Frankfurt)
-- europe-west6 (Zurich)
-- northamerica-northeast1 (Montréal)
-- us-west1 (Oregon)
+</Tab>
+<Tab title="Google Cloud">
 
-## Azure regions {#azure-regions}
+| Region | Location | Private | HIPAA | PCI |
+| --- | --- | :---: | :---: | :---: |
+| `asia-northeast1` | Tokyo | — | — | — |
+| `asia-southeast1` | Singapore | — | — | — |
+| `australia-southeast1` | Sydney | ✓ | — | — |
+| `europe-west2` | London | — | — | — |
+| `europe-west3` | Frankfurt | ✓ | — | — |
+| `europe-west4` | Netherlands | — | ✓ | ✓ |
+| `europe-west6` | Zurich | ✓ | — | — |
+| `northamerica-northeast1` | Montréal | ✓ | — | — |
+| `us-central1` | Iowa | — | ✓ | ✓ |
+| `us-east1` | South Carolina | — | ✓ | ✓ |
+| `us-west1` | Oregon | ✓ | — | — |
 
-- West US 3 (Arizona)
-- East US 2 (Virginia)
-- Germany West Central (Frankfurt)
+</Tab>
+<Tab title="Azure">
 
-**Private Region:**
+| Region | Location | Private | HIPAA | PCI |
+| --- | --- | :---: | :---: | :---: |
+| `Australia East` | New South Wales | ✓ | — | — |
+| `East US 2` | Virginia | — | — | — |
+| `Germany West Central` | Frankfurt | — | — | — |
+| `Japan East` | Tokyo, Saitama | ✓ | — | — |
+| `UAE North` | Dubai | ✓ | — | — |
+| `West US 3` | Arizona | — | — | — |
 
-- Japan East (Tokyo, Saitama)
-- UAE North (Dubai)
-- Australia East (New South Wales)
+</Tab>
+</Tabs>
 
 <Note>
-Need to deploy to a region not currently listed? [Submit a request](https://clickhouse.com/pricing?modal=open). 
+Need to deploy to a region not currently listed? [Submit a request](https://clickhouse.com/pricing?modal=open).
 </Note>
 
 ## Private regions {#private-regions}
 
 <EnterprisePlanFeatureBadge feature="Private regions feature"/>
 
-We offer Private regions for our Enterprise tier services. Please [Contact us](https://clickhouse.com/company/contact) for private region requests.
+We offer Private Regions for Enterprise tier services. Please [contact us](https://clickhouse.com/company/contact) to request a Private Region.
 
-Key considerations for private regions:
+Key considerations for Private Regions:
+
 - Services won't auto-scale; however, manual vertical and horizontal scaling is supported.
 - Services can't be idled.
-  
-Additional requirements may apply for HIPAA compliance (including signing a BAA). Note that HIPAA is currently available only for Enterprise tier services
 
-## HIPAA compliant regions {#hipaa-compliant-regions}
+Additional requirements may apply for HIPAA compliance, including signing a Business Associate Agreement (BAA). HIPAA is currently available only for Enterprise tier services.
+
+## HIPAA-compliant regions {#hipaa-compliant-regions}
 
 <EnterprisePlanFeatureBadge feature="HIPAA" support="true"/>
 
-Customers must sign a Business Associate Agreement (BAA) and request onboarding through Sales or Support to set up services in HIPAA compliant regions. The following regions support HIPAA compliance:
-- AWS af-south-1 (South Africa) **Private Region**
-- AWS ca-central-1 (Canada)
-- AWS eu-central-1 (Frankfurt)
-- AWS eu-north-1 (Stockholm) **Private Region**
-- AWS eu-west-1 (Ireland)
-- AWS eu-west-2 (London)
-- AWS sa-east-1 (South America) **Private Region**
-- AWS us-east-1 (N. Virginia)
-- AWS us-east-2 (Ohio)
-- AWS us-west-2 (Oregon)
-- GCP europe-west4 (Netherlands)
-- GCP us-central1 (Iowa)
-- GCP us-east1 (South Carolina)
+Customers must sign a BAA and request onboarding through Sales or Support to set up services in regions marked as HIPAA compliant in the table.
 
-## PCI compliant regions {#pci-compliant-regions}
+## PCI-compliant regions {#pci-compliant-regions}
 
 <EnterprisePlanFeatureBadge feature="PCI" support="true"/>
 
-Customers must request onboarding through Sales or Support to set up services in PCI compliant regions. The following regions support PCI compliance:
-- AWS af-south-1 (South Africa) **Private Region**
-- AWS ca-central-1 (Canada)
-- AWS eu-central-1 (Frankfurt)
-- AWS eu-north-1 (Stockholm) **Private Region**
-- AWS eu-west-1 (Ireland)
-- AWS eu-west-2 (London)
-- AWS mx-central-1 (Mexico) **Private Region**
-- AWS sa-east-1 (South America) **Private Region**
-- AWS us-east-1 (N. Virginia)
-- AWS us-east-2 (Ohio)
-- AWS us-west-2 (Oregon)
-- GCP europe-west4 (Netherlands)
-- GCP us-central1 (Iowa)
-- GCP us-east1 (South Carolina)
+Customers must request onboarding through Sales or Support to set up services in regions marked as PCI compliant in the table.
