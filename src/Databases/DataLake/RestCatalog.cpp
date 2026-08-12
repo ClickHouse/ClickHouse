@@ -1517,7 +1517,7 @@ bool RestCatalog::tryGetTableMetadata(
     {
         return getTableMetadataImpl(namespace_name, table_name, result);
     }
-    catch (const DB::Exception & ex)
+    catch (const DB::HTTPException & ex)
     {
         /// Only HTTP 404 from the catalog means "table does not exist". Anything else —
         /// 401/403 (expired or revoked credentials), 5xx, and so on — must propagate:
