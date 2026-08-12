@@ -1,0 +1,105 @@
+-- {echoOn}
+
+-- Test 1: Baseline (no pruning) — both segments planned, Union (Hybrid) present.
+-- SELECT * surfaces the actual rows from both segments so a buggy pruner that swaps or
+-- drops a segment would change the values, not just the count.
+SELECT * FROM pruning_t ORDER BY ts;
+2025-06-15 00:00:00	4
+2025-08-01 00:00:00	3
+2025-10-15 00:00:00	1
+2025-11-01 00:00:00	2
+SELECT * FROM pruning_t WHERE value > 0 ORDER BY ts;
+2025-06-15 00:00:00	4
+2025-08-01 00:00:00	3
+2025-10-15 00:00:00	1
+2025-11-01 00:00:00	2
+EXPLAIN SELECT count() FROM pruning_t WHERE value > 0;
+Expression ((Project names + Projection))
+  MergingAggregated
+    Union (Hybrid)
+      Aggregating
+        Expression (Before GROUP BY)
+          Expression ((WHERE + Change column names to column identifiers))
+            ReadFromMergeTree (default.local_hot)
+      MergingAggregated
+        Aggregating
+          Expression (Before GROUP BY)
+            Expression ((WHERE + Change column names to column identifiers))
+              ReadFromMergeTree (default.local_cold)
+-- Test 2: Cold (additional) segment pruned via range contradiction — only base remains.
+-- The surviving rows must be the two hot rows; the cold rows must not leak through.
+SELECT * FROM pruning_t WHERE ts > '2025-10-01' ORDER BY ts;
+2025-10-15 00:00:00	1
+2025-11-01 00:00:00	2
+EXPLAIN SELECT count() FROM pruning_t WHERE ts > '2025-10-01';
+Expression ((Project names + Projection))
+  Aggregating
+    ReadFromPreparedSource (_exact_count_projection)
+-- Test 3: Hot (base) segment pruned — only cold remains as a local plan.
+-- The surviving rows must be the two cold rows.
+SELECT * FROM pruning_t WHERE ts <= '2025-08-01' ORDER BY ts;
+2025-06-15 00:00:00	4
+2025-08-01 00:00:00	3
+EXPLAIN SELECT count() FROM pruning_t WHERE ts <= '2025-08-01';
+Expression ((Project names + Projection))
+  Aggregating
+    ReadFromPreparedSource (_exact_count_projection)
+-- Test 4: PREWHERE participates in pruning.
+SELECT * FROM pruning_t PREWHERE ts > '2025-10-01' ORDER BY ts;
+2025-10-15 00:00:00	1
+2025-11-01 00:00:00	2
+EXPLAIN SELECT count() FROM pruning_t PREWHERE ts > '2025-10-01';
+Expression ((Project names + Projection))
+  Aggregating
+    ReadFromPreparedSource (_exact_count_projection)
+-- Test 5: All segments pruned — getQueryProcessingStage returns FetchColumns,
+-- planner inserts ReadNothing, AggregatingTransform synthesizes the default row.
+-- The meaningful answer here is "zero rows", so `count()` is the right shape.
+SELECT count() FROM pruning_t WHERE ts > '2025-12-01' AND ts <= '2025-08-01';
+0
+EXPLAIN SELECT count() FROM pruning_t WHERE ts > '2025-12-01' AND ts <= '2025-08-01';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadNothing (Read from NullSource)
+-- {echoOn}
+
+-- Test 6: three segments, only hot survives.
+SELECT * FROM pruning_t3 WHERE ts > '2025-10-01' ORDER BY ts;
+2025-10-15 00:00:00	1
+2025-11-01 00:00:00	2
+EXPLAIN SELECT count() FROM pruning_t3 WHERE ts > '2025-10-01';
+Expression ((Project names + Projection))
+  Aggregating
+    ReadFromPreparedSource (_exact_count_projection)
+-- Test 7: OR alternative is not a mandatory constraint — hot survives via the OR.
+SELECT * FROM pruning_or WHERE (value = 1 OR value = 2) AND ts > '2025-10-01' ORDER BY ts;
+2025-10-15 00:00:00	1
+2025-11-01 00:00:00	2
+EXPLAIN SELECT count() FROM pruning_or WHERE (value = 1 OR value = 2) AND ts > '2025-10-01';
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.local_hot)
+-- Test 8: JOIN — pruner conservatively skips, both segments planned. EXPLAIN is omitted
+-- because JOIN-side ordering depends on randomized settings the test harness cycles
+-- through (e.g. query_plan_join_swap_table); we verify by projecting the joined columns.
+SELECT t.ts, t.value, d.label
+FROM pruning_t AS t
+INNER JOIN dim AS d ON t.value = d.id
+WHERE d.id > 1 AND t.ts <= '2025-08-01'
+ORDER BY t.ts;
+2025-06-15 00:00:00	4	d
+2025-08-01 00:00:00	3	c
+-- Test 9: SELECT alias shadows a Hybrid column used by segment predicates. With default
+-- prefer_column_name_to_alias=0 the WHERE's `ts` resolves to the alias expression (a
+-- constant true for every row); if the pruner mistakenly treated the unresolved `ts` as
+-- the Hybrid column it would prune the cold segment (`ts <= '2025-09-01'`) and silently
+-- drop those rows. All 4 rows must survive — projecting `value` confirms which rows.
+SELECT ts, value FROM (SELECT toDateTime('2025-11-01') AS ts, value FROM pruning_t WHERE ts > '2025-10-01') ORDER BY value;
+2025-11-01 00:00:00	1
+2025-11-01 00:00:00	2
+2025-11-01 00:00:00	3
+2025-11-01 00:00:00	4

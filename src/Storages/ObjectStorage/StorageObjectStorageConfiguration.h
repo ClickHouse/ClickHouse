@@ -359,6 +359,14 @@ public:
 
     virtual bool isClusterSupported() const { return true; }
 
+    /// False when the storage is instantiated from anything other than a user-issued `CREATE`
+    /// (ATTACH, server startup, RESTORE, replicated-DDL replay). `initPartitionStrategy` must not
+    /// apply the `file_like_engine_default_partition_strategy` default to such tables: a pre-26.6
+    /// table with a `{_partition_id}` path was created under the implicit wildcard strategy, and
+    /// re-deriving `hive` from the current default on ATTACH would refuse to load it and abort
+    /// server startup/upgrade. Defaults to true so table functions keep strict validation.
+    bool is_create_query = true;
+
 private:
     String format = "auto";
     String compression_method = "auto";

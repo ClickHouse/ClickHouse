@@ -36,6 +36,7 @@ namespace ErrorCodes
     DECLARE(String, onelake_tenant_id, "", "Tenant id from azure", 0) \
     DECLARE(String, onelake_client_id, "", "Client id from azure", 0) \
     DECLARE(String, onelake_client_secret, "", "Client secret from azure", 0) \
+    DECLARE(String, onelake_bearer_token, "", "Pre-obtained bearer token for OneLake, scoped to https://storage.azure.com. The token is static and not refreshed, so a long-lived database must be recreated once it expires", 0) \
     DECLARE(Bool, onelake_use_blob_endpoint, true, "Use the Blob endpoint (.blob.fabric.microsoft.com) for OneLake. When disabled, the DFS endpoint (.dfs.fabric.microsoft.com) is used instead", 0) \
     DECLARE(String, google_project_id, "", "Google Cloud project ID for BigLake. Required for BigLake catalog. Used in x-goog-user-project header. If not set and google_adc_quota_project_id is provided, it latter will be used", 0) \
     DECLARE(String, google_service_account, "", "Google Cloud service account email for metadata service authentication. Default: 'default'. Only used when ADC credentials are not provided", 0) \

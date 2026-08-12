@@ -90,6 +90,12 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     ContextMutablePtr context_copy = Context::createCopy(args.getContext());
     Settings settings_copy = args.getLocalContext()->getSettingsCopy();
     context_copy->setSettings(settings_copy);
+
+    /// Only a user-issued `CREATE` may apply the `file_like_engine_default_partition_strategy`
+    /// default; ATTACH / startup / RESTORE / replicated-DDL replay must load pre-existing
+    /// `{_partition_id}` tables as wildcard (see `initPartitionStrategy`).
+    configuration->is_create_query = args.mode == LoadingStrictnessLevel::CREATE;
+
     return std::make_shared<StorageObjectStorageCluster>(
         cluster_name,
         configuration,
@@ -154,7 +160,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 - `account_key` - if storage_account_url is used, then account key can be specified here
 - `format` — The [format](/interfaces/formats.md) of the file.
 - `compression` — Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).
-- `partition_strategy` – Options: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Defaults to the `file_like_engine_default_partition_strategy` setting (`WILDCARD` under `compatibility` settings older than `26.6`, `HIVE` otherwise).
+- `partition_strategy` – Options: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. If the path contains a `{_partition_id}` placeholder, defaults to `WILDCARD` — the only strategy compatible with such a path. Otherwise defaults to the `file_like_engine_default_partition_strategy` setting (`WILDCARD` under `compatibility` settings older than `26.6`, `HIVE` otherwise).
 - `partition_columns_in_data_file` - Only used with `HIVE` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
 - `extra_credentials` - Use `client_id` and `tenant_id` for authentication. If extra_credentials are provided, they are given priority over `account_name` and `account_key`.
 
@@ -230,7 +236,7 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 
 #### Partition strategy {#partition-strategy}
 
-`WILDCARD`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Reading is not supported.
+`WILDCARD`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Reading is not supported. Selected by default when the path contains a `{_partition_id}` placeholder (the only strategy compatible with such a path), and otherwise under `compatibility` settings older than `26.6`; in the remaining cases the default is `HIVE` (see the `file_like_engine_default_partition_strategy` setting).
 
 `HIVE` (the default) implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
@@ -308,9 +314,9 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 - `format` — The [format](/sql-reference/formats#formats-overview) of the file.
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file. For more information see [Using S3 for Data Storage](../mergetree-family/mergetree.md#table_engine-mergetree-s3).
 - `compression` — Compression type. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Parameter is optional. By default, it will auto-detect compression by file extension.
-- `partition_strategy` – Options: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Defaults to the `file_like_engine_default_partition_strategy` setting (`WILDCARD` under `compatibility` settings older than `26.6`, `HIVE` otherwise).
+- `partition_strategy` – Options: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. If the path contains a `{_partition_id}` placeholder, defaults to `WILDCARD` — the only strategy compatible with such a path. Otherwise defaults to the `file_like_engine_default_partition_strategy` setting (`WILDCARD` under `compatibility` settings older than `26.6`, `HIVE` otherwise).
 - `partition_columns_in_data_file` - Only used with `HIVE` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
-- `storage_class_name` - Options: `STANDARD` or `INTELLIGENT_TIERING`, allow to specify [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
+- `storage_class_name` - Options: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Only S3 storage classes that allow immediate retrieval are supported (archival classes such as `GLACIER` and `DEEP_ARCHIVE` are not). Allows to specify [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
 - `extra_credentials` - Optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
 
 ### Data cache {#data-cache}
@@ -352,7 +358,7 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 
 #### Partition strategy {#partition-strategy}
 
-`WILDCARD`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Reading is not supported.
+`WILDCARD`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Reading is not supported. Selected by default when the path contains a `{_partition_id}` placeholder (the only strategy compatible with such a path), and otherwise under `compatibility` settings older than `26.6`; in the remaining cases the default is `HIVE` (see the `file_like_engine_default_partition_strategy` setting).
 
 `HIVE` (the default) implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern, it is equivalent to `SELECT * FROM s3('table_root/**.parquet')`.
 Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
@@ -428,7 +434,8 @@ ENGINE = S3(
            'http://minio:10000/clickhouse//test_{_partition_id}.csv',
            'minioadmin',
            'minioadminpassword',
-           'CSV')
+           'CSV',
+           partition_strategy='wildcard')
 PARTITION BY column3
 ```
 

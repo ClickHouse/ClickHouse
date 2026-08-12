@@ -422,10 +422,23 @@ def test_select(started_cluster, engine):
     )
 
     assert num_rows == int(
-        node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
+        node.query(
+            # Regression test: a session temp table used to be pinned by the query context
+            # captured in the S3 client refresher and cached with the manifest file in the
+            # global IcebergMetadataFilesCache, crashing the graceful restart below with a
+            # use-after-free. The SELECT * is required: it reads a manifest file (count()
+            # alone is served from the snapshot summary). All statements must stay in one
+            # node.query call = one session.
+            f"CREATE TEMPORARY TABLE pin_me (x UInt8) ENGINE = Memory;"
+            f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}` FORMAT Null;"
+            f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`"
+        )
     )
 
     assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE table = '{namespace}.{table_name}' and database = '{CATALOG_NAME}'").strip()) == 1
+
+    # Replays the graceful shutdown; the teardown sanitizer check catches the UAF if it regresses.
+    node.restart_clickhouse()
 
 
 @pytest.mark.parametrize("engine", AVAILABLE_ENGINES)
@@ -857,6 +870,50 @@ def test_table_with_slash(started_cluster):
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
     node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_encoded_name}` VALUES (NULL, 'AAPL', 193.24, 193.31, tuple('bot'));", settings={"allow_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_encoded_name}`") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n"
+
+
+def test_partition_value_with_slash(started_cluster):
+    """Partition value containing '/' produces object keys with %2F; reading must preserve encoding."""
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_partition_slash_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    partition_spec = PartitionSpec(
+        PartitionField(
+            source_id=2, field_id=1000, transform=IdentityTransform(), name="symbol"
+        )
+    )
+    schema = DEFAULT_SCHEMA
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    table = create_table(
+        catalog,
+        root_namespace,
+        table_name,
+        schema,
+        partition_spec=partition_spec,
+        sort_order=DEFAULT_SORT_ORDER,
+    )
+
+    data = [
+        {
+            "datetime": datetime.now(),
+            "symbol": "us/west",
+            "bid": 100.0,
+            "ask": 101.0,
+            "details": {"created_by": "test"},
+        }
+    ]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    assert 1 == int(node.query(f"SELECT count() FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`"))
+    assert "us/west" in node.query(f"SELECT symbol FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`")
 
 
 def test_cluster_select(started_cluster):
