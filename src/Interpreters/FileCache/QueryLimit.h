@@ -33,6 +33,11 @@ public:
     /// other than the one which evicted it (or by several queries at once).
     void unchargeEvictedSegment(const FileCacheKey & key, size_t offset, const CachePriorityGuard::WriteLock &);
 
+    /// Give back the reserve-ahead surplus of a file segment to `query_id`, which reserved it.
+    /// A no-op for an empty `query_id`: the reservation was charged to no query (a background
+    /// download), so there is nothing to give back.
+    void unchargeSurplus(const String & query_id, const FileCacheKey & key, size_t offset, size_t size);
+
     class QueryContext
     {
     public:
@@ -76,8 +81,8 @@ public:
             size_t offset,
             const CachePriorityGuard::WriteLock &);
 
-        /// Give back space which was reserved but not written (reserve-ahead surplus returned
-        /// by `FileSegment::shrinkFileSegmentToDownloadedSize`). No-op without a record.
+        /// Give back space which was reserved but not written, at most what is charged for
+        /// `key`:`offset`. No-op without a record.
         void tryDecrementSize(const Key & key, size_t offset, size_t size);
 
     private:
@@ -109,6 +114,9 @@ public:
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
 
 private:
+    /// The context of the current query, if any. The caller holds `query_map_mutex`.
+    QueryContextPtr tryGetCurrentQueryContextUnlocked() const;
+
     using QueryContextMap = std::unordered_map<String, QueryContextPtr>;
     QueryContextMap query_map;
     /// The single lock guarding `query_map`. It is a leaf mutex, deliberately not one of the

@@ -5,6 +5,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/CurrentThread.h>
 #include <Interpreters/FileCache/FileCacheSettings.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/CacheUsage.h>
@@ -1301,7 +1302,8 @@ bool FileCache::tryReserve(
     FileCacheReserveStat & reserve_stat,
     const OriginInfo & origin_info,
     size_t lock_wait_timeout_milliseconds,
-    std::string & failure_reason)
+    std::string & failure_reason,
+    String * charged_query_id)
 {
     CurrentMetrics::Increment increment(CurrentMetrics::FilesystemCacheReserveThreads);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheReserveMicroseconds);
@@ -1328,7 +1330,7 @@ bool FileCache::tryReserve(
 
     const bool success = doTryReserve(
         file_segment, size, reserve_stat, origin_info, lock_wait_timeout_milliseconds,
-        failure_reason);
+        failure_reason, charged_query_id);
     if (!success)
         ProfileEvents::increment(ProfileEvents::FilesystemCacheFailedReserveAttempts);
     return success;
@@ -1340,7 +1342,8 @@ bool FileCache::doTryReserve(
     FileCacheReserveStat & reserve_stat,
     const OriginInfo & origin_info,
     size_t /* lock_wait_timeout_milliseconds */,
-    std::string & failure_reason)
+    std::string & failure_reason,
+    String * charged_query_id)
 {
     auto main_priority_iterator = file_segment.getQueueIterator();
 #ifdef DEBUG_OR_SANITIZER_BUILD
@@ -1378,6 +1381,10 @@ bool FileCache::doTryReserve(
             query_context = query_limit->tryGetQueryContext();
             if (query_context)
             {
+                /// Reported to the caller, which remembers who to give the unwritten part back to.
+                if (charged_query_id)
+                    *charged_query_id = CurrentThread::getQueryId();
+
                 query_priority = &query_context->getPriority();
                 if (!query_priority->canFit(size, required_elements_num, lock, /* reservee */nullptr, origin_info)
                     && !query_context->recacheOnFileCacheQueryLimitExceeded())
@@ -3333,14 +3340,12 @@ bool FileCache::fitsIntoCurrentQueryLimit(size_t size) const
     return limit == 0 || priority.getSizeApprox() + size <= limit;
 }
 
-void FileCache::decrementQueryLimitSize(const Key & key, size_t offset, size_t size)
+void FileCache::unchargeQueryLimitSurplus(const String & query_id, const Key & key, size_t offset, size_t size)
 {
-    if (!query_limit)
-        return;
-
-    if (auto query_context = query_limit->tryGetQueryContext())
-        query_context->tryDecrementSize(key, offset, size);
+    if (query_limit)
+        query_limit->unchargeSurplus(query_id, key, offset, size);
 }
+
 
 std::vector<FileSegment::Info> FileCache::sync()
 {

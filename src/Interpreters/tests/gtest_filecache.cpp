@@ -3749,9 +3749,10 @@ TEST_F(FileCacheTest, RenameToIncludeSizeInNameFailureKeepsSegmentConsistent)
 
 namespace
 {
-/// Reserves `size` for a new file segment under `key_name` and downloads `downloaded_size` bytes.
-/// Returns whether the reservation succeeded.
-bool reserveAndDownloadSegment(
+/// Reserves `size` for a new file segment under `key_name` and writes `downloaded_size` bytes of it,
+/// leaving the segment incomplete: `size - downloaded_size` stays reserved but not written. Returns
+/// the holder, or null if the reservation was refused.
+FileSegmentsHolderPtr reserveAndWriteSegment(
     DB::FileCache & cache,
     const std::string & cache_path,
     const std::string & key_name,
@@ -3766,15 +3767,32 @@ bool reserveAndDownloadSegment(
 
     std::string failure_reason;
     if (!segment->reserve(size, 1000, failure_reason))
-        return false;
+        return nullptr;
 
     auto key_str = segment->key().toString();
     fs::create_directories(fs::path(cache_path) / key_str.substr(0, 3) / key_str);
 
     std::string data(downloaded_size, '0');
     segment->write(data.data(), data.size(), segment->getCurrentWriteOffset());
+    return segments;
+}
+
+/// The same, but completes the segment, which gives the unwritten part of the reservation back.
+bool reserveAndDownloadSegment(
+    DB::FileCache & cache,
+    const std::string & cache_path,
+    const std::string & key_name,
+    size_t offset,
+    size_t size,
+    size_t downloaded_size)
+{
+    auto segments = reserveAndWriteSegment(cache, cache_path, key_name, offset, size, downloaded_size);
+    if (!segments)
+        return false;
+
     FileSegment::complete(
-        FileSegmentPtr(segment), /* allow_background_download */false, /* force_shrink_to_downloaded_size */false);
+        FileSegmentPtr(*segments->begin()), /* allow_background_download */false,
+        /* force_shrink_to_downloaded_size */false);
     return true;
 }
 
@@ -3852,6 +3870,50 @@ TEST_F(FileCacheTest, QueryLimitUnchargesEvictedSegments)
     ASSERT_TRUE(fixture.reserveAndDownload(200, 5, 5, cache_base_path));
     /// 10 (evicted) + 10 + 5 exceeds the budget, 10 + 5 does not.
     ASSERT_TRUE(fixture.reserveAndDownload(300, 10, 10, cache_base_path));
+}
+
+TEST_F(FileCacheTest, QueryLimitSurplusGoesBackToTheQueryWhichReservedIt)
+{
+    /// A file segment is completed by whoever holds it last, which after a hand-over of the download
+    /// is not the query charged for the reserve-ahead. The surplus must go back to the query which
+    /// reserved it, and to nobody when it was reserved by a background download.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const std::string owner_query_id = "surplus_owner";
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId(owner_query_id);
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    QueryLimitFixture fixture(
+        "query_limit_surplus_owner", cache_base_path3, owner_query_id,
+        /* max_download_size_per_query */12, /* reserve_granularity */0);
+    ASSERT_TRUE(fixture.holder != nullptr);
+
+    /// 8 of the 12 byte budget, of which only 2 bytes are written: 6 bytes of reserve-ahead.
+    auto reserved = reserveAndWriteSegment(*fixture.cache, cache_base_path3, "query_limit_key", 0, 8, 2);
+    ASSERT_TRUE(reserved != nullptr);
+    /// Hand the download over, so that another query may complete the segment.
+    (*reserved->begin())->resetDownloader();
+
+    /// Another query completes the segment, which is what gives the reserve-ahead back.
+    std::thread completing_query([&]
+    {
+        DB::ThreadStatus completing_thread_status;
+        auto completing_context = DB::Context::createCopy(getContext().context);
+        completing_context->makeQueryContext();
+        completing_context->setCurrentQueryId("surplus_completer");
+        auto completing_scope_holder = DB::QueryScope::create(completing_context);
+        auto completing_holder = fixture.cache->getQueryContextHolder("surplus_completer", fixture.read_settings);
+
+        reserved.reset();
+    });
+    completing_query.join();
+
+    /// The 6 bytes went back to the query which reserved them, not to the one which completed the
+    /// segment, so only the 2 written bytes stay charged and 8 more bytes fit into the budget.
+    ASSERT_TRUE(reserveAndDownloadSegment(*fixture.cache, cache_base_path3, "query_limit_key_2", 0, 8, 8));
 }
 
 TEST_F(FileCacheTest, QueryLimitUnchargesSegmentsEvictedByAnotherQuery)
@@ -3967,7 +4029,8 @@ TEST_F(FileCacheTest, QueryLimitUnchargeDoesNotUnderflow)
     ASSERT_TRUE(fixture.reserveAndDownload(0, 10, 10, cache_base_path3));
 
     /// A surplus larger than the 10 bytes this query is charged for the segment.
-    fixture.cache->decrementQueryLimitSize(DB::FileCacheKey::fromPath("query_limit_key"), 0, 1000);
+    fixture.cache->unchargeQueryLimitSurplus(
+        query_id, DB::FileCacheKey::fromPath("query_limit_key"), 0, 1000);
 
     /// The budget is intact (not wrapped around), so 10 more bytes still fit into the limit.
     ASSERT_TRUE(fixture.reserveAndDownload(100, 10, 10, cache_base_path3));

@@ -742,13 +742,28 @@ bool FileSegment::reserve(
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
 
+    String charged_query_id;
     bool reserved = cache->tryReserve(
-        *this, size_to_reserve, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds, failure_reason);
+        *this, size_to_reserve, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds,
+        failure_reason, &charged_query_id);
 
     if (!reserved)
+    {
         setDownloadFailedUnlocked(lock());
+        return false;
+    }
 
-    return reserved;
+    if (cache->hasQueryLimit())
+    {
+        /// The write which follows consumes the previous reserve-ahead, so the query charged now
+        /// owns the whole outstanding one.
+        auto lk = lock();
+        chassert(download_data || download_state == State::DETACHED);
+        if (download_data)
+            download_data->query_limit_owner = charged_query_id;
+    }
+
+    return true;
 }
 
 void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock & lock)
@@ -944,9 +959,12 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     {
         const size_t surplus = reserved_size - downloaded_size;
         queue_iterator->decrementSize(surplus);
-        /// Keep the per-query limit accounting in sync: the surplus was never written,
-        /// so it must not stay charged against the query quota either.
-        cache->decrementQueryLimitSize(key(), offset(), surplus);
+        /// The surplus was never written, so it must not stay charged against a query quota either.
+        if (download_data)
+        {
+            cache->unchargeQueryLimitSurplus(download_data->query_limit_owner, key(), offset(), surplus);
+            download_data->query_limit_owner.clear();
+        }
         reserved_size = downloaded_size.load();
     }
 
@@ -1005,14 +1023,7 @@ size_t FileSegment::getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard:
     desired_size = std::min(desired_size, range().size());
     chassert(desired_size >= downloaded_size);
 
-    const size_t size_to_download = desired_size - downloaded_size;
-
-    /// A background download writes from a thread which has no query context, so its bytes are not
-    /// charged to the query which started it. Do not queue more than that query has left to write.
-    if (!cache->fitsIntoCurrentQueryLimit(size_to_download))
-        return 0;
-
-    return size_to_download;
+    return desired_size - downloaded_size;
 }
 
 void FileSegment::complete(FileSegmentPtr && file_segment, bool allow_background_download, bool force_shrink_to_downloaded_size)
@@ -1106,6 +1117,19 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
             {
                 bool added_to_download_queue = false;
                 size_t background_download_size = allow_background_download ? getSizeForBackgroundDownloadUnlocked(segment_lock) : 0;
+
+                /// A background download reserves from a thread without a query context, so its
+                /// bytes are charged to no query. Do not start one which would write more than the
+                /// current query has left, keeping in mind that the reserved part is charged already.
+                /// The size is recomputed by the download thread, so this decides only whether to
+                /// start at all.
+                if (const size_t reserved_ahead = reserved_size - current_downloaded_size;
+                    background_download_size > reserved_ahead
+                    && !cache->fitsIntoCurrentQueryLimit(background_download_size - reserved_ahead))
+                {
+                    background_download_size = 0;
+                }
+
                 if (background_download_size)
                 {
                     ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundDownloadQueuePush);

@@ -227,13 +227,16 @@ public:
 
     size_t getReserveGranularity() const { return reserve_granularity.load(std::memory_order_relaxed); }
 
+    /// `charged_query_id`, if given, receives the query charged for the reservation in its per-query
+    /// limit, or an empty string when it is charged to no query.
     bool tryReserve(
         FileSegment & file_segment,
         size_t size,
         FileCacheReserveStat & stat,
         const OriginInfo & origin,
         size_t lock_wait_timeout_milliseconds,
-        std::string & failure_reason);
+        std::string & failure_reason,
+        String * charged_query_id = nullptr);
 
     bool tryIncreasePriority(FileSegment & file_segment);
 
@@ -257,8 +260,11 @@ public:
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
     QueryContextHolderPtr getQueryContextHolder(const String & query_id, const FilesystemCacheSettings & settings);
 
-    /// Uncharge `size` from the current query's per-query limit accounting for `key`:`offset`.
-    void decrementQueryLimitSize(const Key & key, size_t offset, size_t size);
+    /// Give back `size` bytes reserved for `key`:`offset` but never written to `query_id`.
+    void unchargeQueryLimitSurplus(const String & query_id, const Key & key, size_t offset, size_t size);
+
+    /// Whether writes into this cache are charged to the query which makes them.
+    bool hasQueryLimit() const { return query_limit != nullptr; }
 
     /// Whether `size` still fits into the per-query write limit of the current query.
     /// True when there is no such limit.
@@ -461,7 +467,8 @@ private:
         FileCacheReserveStat & stat,
         const OriginInfo & origin_info,
         size_t lock_wait_timeout_milliseconds,
-        std::string & failure_reason);
+        std::string & failure_reason,
+        String * charged_query_id);
 
     bool doEviction(
         EvictionInfo & main_eviction_info,

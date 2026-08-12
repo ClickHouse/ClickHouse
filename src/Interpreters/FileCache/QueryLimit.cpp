@@ -19,17 +19,23 @@ static bool isQueryInitialized()
         && !CurrentThread::getQueryId().empty();
 }
 
-FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContext()
+FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetCurrentQueryContextUnlocked() const
 {
     if (!isQueryInitialized())
         return nullptr;
 
-    std::lock_guard lock(query_map_mutex);
     auto query_iter = query_map.find(std::string(CurrentThread::getQueryId()));
     if (query_iter == query_map.end() || query_iter->second->isQueryFinished())
         return nullptr;
     return query_iter->second;
 }
+
+FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::tryGetQueryContext()
+{
+    std::lock_guard lock(query_map_mutex);
+    return tryGetCurrentQueryContextUnlocked();
+}
+
 
 std::vector<FileCacheQueryLimit::QueryContextPtr>
 FileCacheQueryLimit::removeQueryContext(QueryContextPtr & context)
@@ -73,6 +79,20 @@ void FileCacheQueryLimit::unchargeEvictedSegment(
     std::lock_guard map_lock(query_map_mutex);
     for (auto & [_, context] : query_map)
         context->tryRemove(key, offset, lock);
+}
+
+void FileCacheQueryLimit::unchargeSurplus(
+    const String & query_id, const FileCacheKey & key, size_t offset, size_t size)
+{
+    if (query_id.empty() || !size)
+        return;
+
+    std::lock_guard map_lock(query_map_mutex);
+    /// Deliberately not skipping a finished query: its context can still be charged (holders are
+    /// released after the query ends), and the bytes have to be given back to it all the same.
+    auto query_iter = query_map.find(query_id);
+    if (query_iter != query_map.end())
+        query_iter->second->tryDecrementSize(key, offset, size);
 }
 
 FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
@@ -158,11 +178,9 @@ void FileCacheQueryLimit::QueryContext::tryDecrementSize(const Key & key, size_t
     if (record == records.end())
         return;
 
-    /// `size` is the surplus of the whole file segment, which can also cover reserve-ahead of
-    /// other queries which downloaded parts of it, while this record holds only what this query
-    /// reserved itself. Uncharging more than that would underflow the per-query accounting.
-    const size_t to_decrement = std::min<size_t>(size, record->second->getEntry()->size);
-    if (to_decrement)
+    /// The surplus belongs to the whole file segment, while this record holds only what this query
+    /// reserved of it: a segment whose download was handed over is charged to several queries.
+    if (const size_t to_decrement = std::min<size_t>(size, record->second->getEntry()->size))
         record->second->decrementSize(to_decrement);
 }
 

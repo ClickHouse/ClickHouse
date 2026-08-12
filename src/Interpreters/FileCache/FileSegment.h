@@ -312,6 +312,10 @@ private:
     struct DownloadState
     {
         DownloaderId downloader_id; /// The one who prepares the download.
+        /// The query which reserved `reserved_size - downloaded_size` last, so that this
+        /// reserve-ahead is given back to it and not to whoever completes the segment.
+        /// Empty when the reservation was charged to no query, e.g. a background download.
+        String query_limit_owner;
         RemoteFileReaderPtr remote_file_reader;
         LocalCacheWriterPtr cache_writer;
         /// Only used for an assertion in assertCorrectnessUnlocked() in debug/sanitizer builds.
