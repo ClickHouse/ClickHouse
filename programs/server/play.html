@@ -4301,18 +4301,27 @@ class QueryResultElement extends HTMLElement
         };
     }
 
-    /// How much of an ISO 8601 timestamp, `2026-08-11T12:34:56.789`, a chart shows: the date alone,
-    /// the time of day up to minutes, up to seconds, or up to milliseconds. The values are the
-    /// lengths of the corresponding prefixes, which is how `_formatChartTime` cuts them.
+    /// How much of an ISO 8601 timestamp, `2026-08-11T12:34:56.789123`, a chart shows: the date
+    /// alone, the time of day up to minutes, up to seconds, milliseconds or microseconds. The
+    /// values are the lengths of the corresponding prefixes, which is how `_formatChartTime` cuts
+    /// them. Microseconds are the end of the line: a `DateTime64` travels through uPlot as a
+    /// double, whose resolution at the present epoch is a fraction of a microsecond, so the digits
+    /// of a finer scale would be noise.
     static _CHART_TIME_DATE = 10;
     static _CHART_TIME_MINUTE = 16;
     static _CHART_TIME_SECOND = 19;
     static _CHART_TIME_SUBSECOND = 23;
+    static _CHART_TIME_MICROSECOND = 26;
 
     /// The `JSONCompactColumns` spelling of `Date`, `Date32`, `DateTime` and `DateTime64`:
     /// `2026-08-11`, `2026-08-11 12:34:56` and `2026-08-11 12:34:56.789`, as well as the
     /// `date_time_output_format = 'iso'` variants, which use `T` and add a `Z` or a `+03:00` offset.
     static _CHART_DATE_TIME_RE = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/;
+
+    /// The `JSONCompactColumns` spelling of an `Int64`, a `UInt64` and their wider cousins, which
+    /// arrive quoted because JSON numbers cannot carry them: `_compareChartX` compares such strings
+    /// exactly, where a double would collapse the neighbouring values above 2^53.
+    static _CHART_INTEGER_RE = /^-?\d+$/;
 
     /// Convert one such string to a Unix timestamp in seconds (fractional for `DateTime64`), which
     /// is what uPlot's time scale plots. Returns null for anything that is not a date or a time.
@@ -4353,7 +4362,7 @@ class QueryResultElement extends HTMLElement
         const values = [];
         let seen_value = false;
         let has_time = false;
-        let has_subsecond = false;
+        let subsecond_digits = 0;
 
         for (const value of column)
         {
@@ -4367,20 +4376,24 @@ class QueryResultElement extends HTMLElement
             values.push(seconds);
             seen_value = true;
             /// The value has matched the pattern already, so a `:` means it carries a time of day,
-            /// and a `.` means it carries subseconds.
+            /// and a `.` means it carries subseconds - as many digits as the scale of the
+            /// `DateTime64` writes.
             has_time = has_time || value.includes(':');
-            has_subsecond = has_subsecond || value.includes('.');
+            const fraction = /\.(\d+)/.exec(value);
+            if (fraction) { subsecond_digits = Math.max(subsecond_digits, fraction[1].length); }
         }
 
         if (!seen_value) { return null; }
 
         /// uPlot's own balloon format stops at whole minutes, which cannot tell apart the
         /// neighbouring points of a per-second or a `DateTime64` chart, so show as much as the data
-        /// carries and no more: a `Date` needs no time of day.
+        /// carries and no more: a `Date` needs no time of day, and a `DateTime64` gets its own
+        /// scale, up to the microseconds a double can carry.
         const precision = !has_time
             ? QueryResultElement._CHART_TIME_DATE
-            : has_subsecond
-                ? QueryResultElement._CHART_TIME_SUBSECOND
+            : subsecond_digits > 0
+                ? Math.min(QueryResultElement._CHART_TIME_SECOND + 1 + subsecond_digits,
+                    QueryResultElement._CHART_TIME_MICROSECOND)
                 : QueryResultElement._CHART_TIME_SECOND;
 
         return { values, precision };
@@ -4391,6 +4404,17 @@ class QueryResultElement extends HTMLElement
     /// makes uPlot put the time of day on a second line under the date.
     static _formatChartTime(seconds, precision, separator = ' ')
     {
+        /// `toISOString` stops at milliseconds; the extra digits of a finer `DateTime64` are
+        /// spelled out by hand. `toFixed` may round the fraction up to a whole `1.000...`,
+        /// in which case the second it carried over is put back.
+        if (precision > QueryResultElement._CHART_TIME_SUBSECOND)
+        {
+            let whole = Math.floor(seconds);
+            const fraction = (seconds - whole).toFixed(precision - QueryResultElement._CHART_TIME_SECOND - 1);
+            if (fraction[0] == '1') { ++whole; }
+            return new Date(whole * 1000).toISOString().slice(0, QueryResultElement._CHART_TIME_SECOND)
+                .replace('T', separator) + '.' + fraction.slice(2);
+        }
         return new Date(seconds * 1000).toISOString().slice(0, precision).replace('T', separator);
     }
 
@@ -4405,7 +4429,9 @@ class QueryResultElement extends HTMLElement
                 ? QueryResultElement._CHART_TIME_MINUTE
                 : found_incr >= 1
                     ? QueryResultElement._CHART_TIME_SECOND
-                    : QueryResultElement._CHART_TIME_SUBSECOND;
+                    : found_incr >= 0.001
+                        ? QueryResultElement._CHART_TIME_SUBSECOND
+                        : QueryResultElement._CHART_TIME_MICROSECOND;
 
         return ticks.map((tick, i) =>
         {
@@ -4435,9 +4461,18 @@ class QueryResultElement extends HTMLElement
 
     /// Compare two x values of a chart. They are numbers most of the time, but 64-bit integers and
     /// decimals arrive as strings in `JSONCompactColumns`, hence the numeric comparison of anything
-    /// that looks like a number, with a lexicographic comparison as the last resort.
+    /// that looks like a number, with a lexicographic comparison as the last resort. Integers are
+    /// compared exactly: above 2^53 the neighbouring values of an `Int64` or a `UInt64` collapse
+    /// into the same double, which would pass a descending pair off as an ordered one.
     static _compareChartX(a, b)
     {
+        if (typeof a == 'string' && typeof b == 'string'
+            && QueryResultElement._CHART_INTEGER_RE.test(a) && QueryResultElement._CHART_INTEGER_RE.test(b))
+        {
+            const x = BigInt(a);
+            const y = BigInt(b);
+            return x < y ? -1 : x > y ? 1 : 0;
+        }
         const x = Number(a);
         const y = Number(b);
         if (Number.isFinite(x) && Number.isFinite(y)) { return x < y ? -1 : x > y ? 1 : 0; }
