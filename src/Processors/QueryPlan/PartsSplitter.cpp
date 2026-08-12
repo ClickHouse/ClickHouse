@@ -1226,8 +1226,9 @@ static void applyRangeFilterFromAST(Pipe & pipe, ASTPtr & filter_function, const
     /// An empty pipe has no header at all, and there is nothing to filter in it anyway. Skipping it here
     /// is safe: the only step getters that can return an empty pipe are the merging-pipe getters (the
     /// `ReadType::InOrder` getters in `ReadFromMergeTree::spreadMarkRangesAmongStreams` and
-    /// `spreadMarkRangesAmongStreamsFinal`), and their consumers unite the per-layer pipes with
-    /// `Pipe::unitePipes`, which starts with `removeEmptyPipes`, so the empty pipe is dropped anyway.
+    /// `spreadMarkRangesAmongStreamsFinal`), and their consumers drop the empty per-layer pipes:
+    /// the former unites them with `Pipe::unitePipes`, which starts with `removeEmptyPipes`, and the
+    /// latter skips them explicitly before attaching the `FINAL` merging transforms.
     /// The join-by-shards path, where an empty layer must keep occupying its output port to preserve
     /// positional shard pairing, never passes an empty pipe here: in `ReadFromMergeTree::readByLayers`
     /// the in-order getter substitutes a `NullSource` placeholder, and the default getter reads through
