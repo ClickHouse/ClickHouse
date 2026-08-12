@@ -1144,6 +1144,10 @@ JoinAnalysisCounters MergeJoinAlgorithm::getJoinAnalysisCounters() const
     JoinAnalysisCounters counters;
     counters.left_rows = stat.num_rows[0];
     counters.right_rows = stat.num_rows[1];
+
+    if (strictness == JoinStrictness::Any && analyze_mode != JoinAnalyzeMode::Exact)
+        return counters;
+
     counters.matched_left = stat.matched_rows.left;
 
     /// ASOF visits only the nearest right row of a key group, not every right row that satisfies

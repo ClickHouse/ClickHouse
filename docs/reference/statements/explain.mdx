@@ -809,8 +809,8 @@ Most of these numbers fall out of data the join builds anyway and are reported b
   condition — and the count is exact without the option.
 
 `partial_merge` needs it for the **right** side of the four `ALL` kinds, for the same reason.
-`full_sorting_merge` and `parallel_full_sorting_merge` need it for nothing: they walk the two sorted
-inputs and see every row of an equal range as they consume it.
+`full_sorting_merge` and `parallel_full_sorting_merge` need it for **both** sides of the `ANY` kinds. The
+`ALL` kinds need nothing.
 
 <Note>
 The option is off by default because the extra bookkeeping is not free, and what it costs is measurement fidelity. The work is done inside the probe loop and grows with the number of output rows. Use `matches = 1` when you need to know the exact matches that left and right rows found on the other side.
