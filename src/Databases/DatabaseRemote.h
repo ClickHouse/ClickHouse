@@ -25,8 +25,12 @@ class Context;
   * `Remote` and `RemoteSecure` differ only in whether the connection uses a plain or a TLS TCP port
   * by default. Both are handy for federating several ClickHouse clusters or for plugging a larger
   * ClickHouse cluster into `clickhouse-local` or a smaller cluster.
+  *
+  * The class also serves as the base of the `Cluster` database engine (see `DatabaseCluster`), which
+  * differs only in where the cluster comes from (the server configuration instead of the engine
+  * arguments) and in the table engine that `SHOW CREATE TABLE` prints.
   */
-class DatabaseRemote final : public DatabaseWithAltersOnDiskBase, WithContext
+class DatabaseRemote : public DatabaseWithAltersOnDiskBase, protected WithContext
 {
 public:
     DatabaseRemote(
@@ -108,26 +112,44 @@ protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
 
-private:
-    const String metadata_path;
+    /// One consistent snapshot of the clusters a metadata operation works with: the cluster with
+    /// every configured replica, and its metadata-lookup fallback with the replicas that point to
+    /// this server stripped from their shards, while every other shard stays intact (see
+    /// `Cluster::tryGetClusterWithoutLocalReplicas` for when the fallback is null). The `Remote`
+    /// engine returns the fixed clusters built from the engine arguments; the `Cluster` engine
+    /// resolves the named cluster from the current server configuration, so its databases follow
+    /// configuration reloads.
+    struct ProxyClusters
+    {
+        ClusterPtr cluster;
+        ClusterPtr remote_only_cluster;
+    };
+    virtual ProxyClusters getProxyClusters() const { return {cluster, remote_only_cluster}; }
+
+    /// Build a `Distributed` storage that forwards to `remote_database.table_name` on the remote
+    /// server, inferring the column structure from it. Returns `nullptr` if the table genuinely
+    /// does not exist. When `throw_on_error` is set, a transport/authentication failure is
+    /// propagated instead of being reported as a missing table; when it is not set (the best-effort
+    /// path used by `tryGetTable`/`system.tables`), any failure returns `nullptr`.
+    StoragePtr fetchTable(const String & table_name, ContextPtr local_context, bool throw_on_error = false) const;
+
     const ASTPtr database_engine_define;
     const String remote_database;
+    LoggerPtr log;
+
+private:
+    const String metadata_path;
     /// The stored credentials of the engine, kept for `SHOW CREATE TABLE`: when the addresses are
     /// given as a named collection but the live proxy is bound to the fallback cluster, the emitted
     /// definition switches to the positional form (see `getCreateTableQueryImpl`), which has to
     /// carry them explicitly.
     const String username;
     const String password;
+    /// The fixed clusters of the `Remote` engine, unused by the `Cluster` engine, whose clusters are
+    /// dynamic; every metadata operation takes its snapshot through `getProxyClusters` instead.
     const ClusterPtr cluster;
-    /// `cluster` with the replicas that point to this server stripped from their shards, while every
-    /// other shard stays intact; used as the metadata-lookup fallback when the local replica does not
-    /// have the database or the table (see `fetchTablesList` / `fetchTableStructure`). Null when
-    /// `cluster` has no local replicas (the fallback is never needed) or when some shard consists of
-    /// local replicas only (there is nothing to fall back to for that shard, and dropping it would
-    /// silently serve only a subset of the configured shards).
     const ClusterPtr remote_only_cluster;
     const bool secure;
-    LoggerPtr log;
     bool persistent = true;
     const UUID db_uuid;
 
@@ -166,16 +188,9 @@ private:
     /// does not have the database or the table, falls back to the remote replicas, like the
     /// `Distributed` read path does. Like the listing, the structure is inferred from an arbitrary
     /// shard. Returns an empty set when the table does not exist, and sets
-    /// `table_cluster` to the cluster through which the table should be accessed (`remote_only_cluster`
-    /// when the structure came from the fallback, `cluster` otherwise).
+    /// `table_cluster` to the cluster through which the table should be accessed (the remote-only
+    /// fallback cluster when the structure came from the fallback, the full cluster otherwise).
     ColumnsDescription fetchTableStructure(const String & table_name, ContextPtr local_context, ClusterPtr & table_cluster) const;
-
-    /// Build a `Distributed` storage that forwards to `remote_database.table_name` on the remote
-    /// server, inferring the column structure from it. Returns `nullptr` if the table genuinely
-    /// does not exist. When `throw_on_error` is set, a transport/authentication failure is
-    /// propagated instead of being reported as a missing table; when it is not set (the best-effort
-    /// path used by `tryGetTable`/`system.tables`), any failure returns `nullptr`.
-    StoragePtr fetchTable(const String & table_name, ContextPtr local_context, bool throw_on_error = false) const;
 };
 
 }

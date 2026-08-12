@@ -15,6 +15,8 @@ The list of tables and their structure are fetched from the remote server on dem
 
 This is handy for federating several ClickHouse clusters or for plugging a larger ClickHouse cluster into `clickhouse-local` or a smaller cluster.
 
+To access a cluster defined in the server configuration by its name instead of by explicit addresses, use the [`Cluster`](/engines/database-engines/cluster) database engine.
+
 ## Creating a database {#creating-a-database}
 
 ```sql

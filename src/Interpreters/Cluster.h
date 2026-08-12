@@ -287,6 +287,15 @@ public:
     /// Get a new Cluster that contains all servers (all shards with all replicas) from existing cluster as independent shards.
     std::unique_ptr<Cluster> getClusterWithReplicasAsShards(const Settings & settings, size_t max_replicas_from_shard = 0) const;
 
+    /// Get a new Cluster with the replicas that point to this server stripped from their shards, while
+    /// every other replica keeps its per-replica settings (credentials, secure connections, compression,
+    /// the inter-server secret, ...). Used by the `Remote` and `Cluster` database engines as the
+    /// metadata-lookup fallback when the local replica does not have the database or a table. Returns
+    /// nullptr when the cluster has no local replicas (there is nothing to strip, so the fallback is
+    /// never needed) or when some shard consists of local replicas only (there is nothing to fall back
+    /// to for that shard, and dropping it would silently serve only a subset of the shards).
+    std::unique_ptr<Cluster> tryGetClusterWithoutLocalReplicas(const Settings & settings) const;
+
     /// Returns false if cluster configuration doesn't allow to use it for cross-replication.
     /// NOTE: true does not mean, that it's actually a cross-replication cluster.
     bool maybeCrossReplication() const;
@@ -312,6 +321,10 @@ private:
     /// For getClusterWithReplicasAsShards implementation
     struct ReplicasAsShardsTag {};
     Cluster(ReplicasAsShardsTag, const Cluster & from, const Settings & settings, size_t max_replicas_from_shard);
+
+    /// For tryGetClusterWithoutLocalReplicas implementation
+    struct RemoteReplicasTag {};
+    Cluster(RemoteReplicasTag, const Cluster & from, const Settings & settings);
 
     void addShard(
         const Settings & settings,

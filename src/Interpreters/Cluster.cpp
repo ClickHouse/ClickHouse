@@ -769,6 +769,27 @@ std::unique_ptr<Cluster> Cluster::getClusterWithMultipleShards(const std::vector
     return std::unique_ptr<Cluster>{ new Cluster(SubclusterTag{}, *this, indices) };
 }
 
+std::unique_ptr<Cluster> Cluster::tryGetClusterWithoutLocalReplicas(const Settings & settings) const
+{
+    /// The locality is judged by `ShardInfo` rather than by `Address::is_local` alone: a cluster
+    /// built with `treat_local_as_remote` keeps its addresses marked local while every shard is
+    /// effectively remote, and such a cluster needs no stripping.
+    bool has_local_replicas = false;
+    for (const auto & shard_info : shards_info)
+    {
+        if (!shard_info.isLocal())
+            continue;
+        if (!shard_info.hasRemoteConnections())
+            return nullptr;
+        has_local_replicas = true;
+    }
+
+    if (!has_local_replicas)
+        return nullptr;
+
+    return std::unique_ptr<Cluster>(new Cluster(RemoteReplicasTag{}, *this, settings));
+}
+
 namespace
 {
 
@@ -894,6 +915,47 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
 
     secret = from.secret;
     name = from.name;
+
+    initMisc();
+}
+
+
+Cluster::Cluster(Cluster::RemoteReplicasTag, const Cluster & from, const Settings & settings)
+{
+    if (from.addresses_with_failover.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster is empty");
+
+    secret = from.secret;
+    name = from.name;
+
+    UInt32 current_shard_num = 1;
+    for (size_t shard_index : collections::range(0, from.addresses_with_failover.size()))
+    {
+        const auto & from_shard = from.shards_info.at(shard_index);
+
+        /// `tryGetClusterWithoutLocalReplicas` guarantees that the source cluster does not treat its
+        /// local addresses as remote (such a cluster is returned as nullptr before this constructor
+        /// runs), so `Address::is_local` is exactly the effective locality here, and every shard
+        /// keeps at least one replica.
+        Addresses replicas;
+        for (const auto & address : from.addresses_with_failover[shard_index])
+        {
+            if (!address.is_local)
+                replicas.push_back(address);
+        }
+
+        addresses_with_failover.emplace_back(replicas);
+
+        addShard(
+            settings,
+            std::move(replicas),
+            /* treat_local_as_remote = */ false,
+            current_shard_num,
+            from_shard.name,
+            from_shard.weight,
+            from_shard.has_internal_replication);
+        ++current_shard_num;
+    }
 
     initMisc();
 }

@@ -67,15 +67,15 @@ DatabaseRemote::DatabaseRemote(
     UUID uuid)
     : DatabaseWithAltersOnDiskBase(database_name_)
     , WithContext(context_->getGlobalContext())
-    , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
     , remote_database(remote_database_)
+    , log(getLogger("DatabaseRemote(" + database_name_ + ")"))
+    , metadata_path(metadata_path_)
     , username(username_)
     , password(password_)
     , cluster(std::move(cluster_))
     , remote_only_cluster(std::move(remote_only_cluster_))
     , secure(secure_)
-    , log(getLogger("DatabaseRemote(" + database_name_ + ")"))
     , db_uuid(uuid)
 {
     persistent = !context_->getClientInfo().is_shared_catalog_internal;
@@ -90,10 +90,11 @@ DatabaseRemote::DatabaseRemote(
 namespace
 {
 
-/// Several `Remote` databases on this server may refer to each other in a cycle (e.g. `a` -> `b` -> `a`),
-/// in which case following the local shard would recurse forever. The pointer-equality check of
-/// `tryGetLocalDatabase` only catches the direct self-reference, so additionally track the databases
-/// being traversed and reject re-entry. The traversal is synchronous, so a thread-local set suffices.
+/// Several `Remote`/`Cluster` databases on this server may refer to each other in a cycle (e.g.
+/// `a` -> `b` -> `a`), in which case following the local shard would recurse forever. The
+/// pointer-equality check of `tryGetLocalDatabase` only catches the direct self-reference, so
+/// additionally track the databases being traversed and reject re-entry. The traversal is
+/// synchronous, so a thread-local set suffices.
 thread_local std::unordered_set<const IDatabase *> local_databases_in_traversal;
 
 struct LocalTraversalGuard
@@ -105,7 +106,8 @@ struct LocalTraversalGuard
         if (!local_databases_in_traversal.emplace(database).second)
             throw Exception(
                 ErrorCodes::INFINITE_LOOP,
-                "A chain of `Remote` databases containing {} refers to itself",
+                "A chain of `{}` databases containing {} refers to itself",
+                database->getEngineName(),
                 backQuoteIfNeed(database->getDatabaseName()));
     }
 
@@ -133,6 +135,8 @@ DatabasePtr DatabaseRemote::tryGetLocalDatabase() const
 
 Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String * only_table, bool ignore_visibility) const
 {
+    const ProxyClusters clusters = getProxyClusters();
+
     auto sample_block = std::make_shared<const Block>(Block{
         {ColumnString::create(), std::make_shared<DataTypeString>(), "name"},
     });
@@ -197,8 +201,8 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
     /// every `SHOW TABLES` / `EXISTS TABLE` by the number of shards. A shard that points to this server
     /// is preferred, because it needs no round trip at all; another shard is consulted only when the
     /// current one is unavailable.
-    const Cluster * remote_cluster = cluster.get();
-    for (const auto & shard_info : cluster->getShardsInfo())
+    const Cluster * remote_cluster = clusters.cluster.get();
+    for (const auto & shard_info : clusters.cluster->getShardsInfo())
     {
         /// A shard that points to this server is a local shard (see `buildClusters`). Enumerate the
         /// local database under `local_context` instead of opening a self-connection with the stored
@@ -223,7 +227,7 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
             /// which live under a different database name. Checking the name of the intermediate
             /// proxy on top of that would hide the tables the caller is in fact allowed to see (a
             /// chain `outer` -> `inner` -> `db` needs no grants on `inner`, only on `db`).
-            const auto * underlying_remote = typeid_cast<const DatabaseRemote *>(local_database.get());
+            const auto * underlying_remote = dynamic_cast<const DatabaseRemote *>(local_database.get());
             const bool underlying_listing_is_filtered_by_access = underlying_remote != nullptr;
             const auto access = local_context->getAccess();
 
@@ -284,13 +288,13 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
                     /// and read. Only a name that the local replica does not have at all is taken from the
                     /// fallback: a name it has but hides from the caller stays hidden, exactly like in the
                     /// `only_table` branch above.
-                    if (!remote_only_cluster)
+                    if (!clusters.remote_only_cluster)
                         return tables;
 
                     Strings remote_tables;
                     try
                     {
-                        remote_tables = fetch_from_cluster(*remote_only_cluster);
+                        remote_tables = fetch_from_cluster(*clusters.remote_only_cluster);
                     }
                     catch (...)
                     {
@@ -334,7 +338,7 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
                 /// same-shard remote replicas below instead of turning one bad intermediate proxy into a
                 /// failure of the whole database. The hidden-vs-missing distinction above is a property
                 /// of the answering replica, and the answering replica is now a remote one.
-                if (!underlying_remote || !remote_only_cluster)
+                if (!underlying_remote || !clusters.remote_only_cluster)
                     throw;
                 LOG_DEBUG(
                     log,
@@ -350,9 +354,9 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
         /// the same here instead of hiding their tables. The fallback queries only the genuinely
         /// remote replicas: a TCP self-connection would list local metadata under the stored engine
         /// credentials rather than the caller's own.
-        if (!remote_only_cluster)
+        if (!clusters.remote_only_cluster)
             return {};
-        remote_cluster = remote_only_cluster.get();
+        remote_cluster = clusters.remote_only_cluster.get();
         break;
     }
 
@@ -362,14 +366,16 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
 
 ColumnsDescription DatabaseRemote::fetchTableStructure(const String & table_name, ContextPtr local_context, ClusterPtr & table_cluster) const
 {
-    table_cluster = cluster;
+    const ProxyClusters clusters = getProxyClusters();
+
+    table_cluster = clusters.cluster;
 
     /// A shard that points to this server is handled locally, like in `fetchTablesList`. Crucially, the
     /// local shard must not go through `DatabaseCatalog::getTable` (as the local-shard special case of
     /// `getStructureOfRemoteTable` does): for a missing table that method builds name hints, and the
     /// hints enumerate the tables of every database, including this one, recursing back into `fetchTable`
     /// and hanging the server. Resolve the table with the non-throwing methods instead.
-    for (const auto & shard_info : cluster->getShardsInfo())
+    for (const auto & shard_info : clusters.cluster->getShardsInfo())
     {
         if (!shard_info.isLocal())
             continue;
@@ -388,7 +394,7 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(const String & table_name
             /// like in `fetchTablesList`. Reading and writing the data still requires the rights on
             /// every hop of the chain, because the query is really executed against the table of the
             /// intermediate database, as it is for a `Distributed` table over another one.
-            const auto * underlying_remote = typeid_cast<const DatabaseRemote *>(local_database.get());
+            const auto * underlying_remote = dynamic_cast<const DatabaseRemote *>(local_database.get());
             const bool local_database_is_remote = underlying_remote != nullptr;
 
             /// `IDatabase::tryGetTable` resolves the name regardless of the caller's grants, so the
@@ -430,7 +436,7 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(const String & table_name
                         if (!columns.empty())
                             return columns;
 
-                        if (!remote_only_cluster)
+                        if (!clusters.remote_only_cluster)
                             throw NetException(
                                 ErrorCodes::NO_REMOTE_SHARD_AVAILABLE,
                                 "The table {}.{} exists on the local shard, but its structure is temporarily unavailable "
@@ -472,7 +478,7 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(const String & table_name
                 /// failure of the whole database (`fetchTablesList` does the same for the listing). The
                 /// hidden-vs-missing distinction above is a property of the answering replica, and the
                 /// answering replica is now a remote one.
-                if (!local_database_is_remote || !remote_only_cluster)
+                if (!local_database_is_remote || !clusters.remote_only_cluster)
                     throw;
                 LOG_DEBUG(
                     log,
@@ -493,14 +499,14 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(const String & table_name
         /// database fails `Context::resolveStorageID` before the remote-replica fallback of
         /// `SelectStreamFactory::createForShard` could engage, and an `INSERT` duplicates the data
         /// to every replica of the shard, so it must not fail on the local one).
-        if (!remote_only_cluster)
+        if (!clusters.remote_only_cluster)
             return {};
 
-        table_cluster = remote_only_cluster;
-        return getStructureOfRemoteTable(*remote_only_cluster, StorageID{remote_database, table_name}, local_context);
+        table_cluster = clusters.remote_only_cluster;
+        return getStructureOfRemoteTable(*clusters.remote_only_cluster, StorageID{remote_database, table_name}, local_context);
     }
 
-    return getStructureOfRemoteTable(*cluster, StorageID{remote_database, table_name}, local_context);
+    return getStructureOfRemoteTable(*clusters.cluster, StorageID{remote_database, table_name}, local_context);
 }
 
 
@@ -777,12 +783,14 @@ ASTPtr DatabaseRemote::getCreateTableQueryImpl(const String & table_name, Contex
     /// definition reconstructs the object that actually serves the queries.
     const auto * distributed = typeid_cast<const StorageDistributed *>(storage.get());
 
+    const ProxyClusters clusters = getProxyClusters();
+
     String effective_addresses;
-    if (remote_only_cluster)
+    if (clusters.remote_only_cluster)
     {
-        if (distributed && distributed->getCluster() == remote_only_cluster)
+        if (distributed && distributed->getCluster() == clusters.remote_only_cluster)
         {
-            for (const auto & shard_addresses : remote_only_cluster->getShardsAddresses())
+            for (const auto & shard_addresses : clusters.remote_only_cluster->getShardsAddresses())
             {
                 if (!effective_addresses.empty())
                     effective_addresses += ',';
@@ -872,7 +880,7 @@ void DatabaseRemote::createTable(ContextPtr, const String & table_name, const St
 {
     throw Exception(
         ErrorCodes::NOT_IMPLEMENTED,
-        "The `{}` database engine is a read-through view of a remote server and does not support CREATE TABLE (table {})",
+        "The `{}` database engine is a read-through view of a remote database and does not support CREATE TABLE (table {})",
         getEngineName(),
         table_name);
 }
@@ -882,7 +890,7 @@ void DatabaseRemote::dropTable(ContextPtr, const String & table_name, bool /* sy
 {
     throw Exception(
         ErrorCodes::NOT_IMPLEMENTED,
-        "The `{}` database engine is a read-through view of a remote server and does not support DROP TABLE (table {})",
+        "The `{}` database engine is a read-through view of a remote database and does not support DROP TABLE (table {})",
         getEngineName(),
         table_name);
 }
@@ -892,7 +900,7 @@ void DatabaseRemote::attachTable(ContextPtr, const String & table_name, const St
 {
     throw Exception(
         ErrorCodes::NOT_IMPLEMENTED,
-        "The `{}` database engine is a read-through view of a remote server and does not support ATTACH TABLE (table {})",
+        "The `{}` database engine is a read-through view of a remote database and does not support ATTACH TABLE (table {})",
         getEngineName(),
         table_name);
 }
@@ -902,7 +910,7 @@ StoragePtr DatabaseRemote::detachTable(ContextPtr, const String & table_name)
 {
     throw Exception(
         ErrorCodes::NOT_IMPLEMENTED,
-        "The `{}` database engine is a read-through view of a remote server and does not support DETACH TABLE (table {})",
+        "The `{}` database engine is a read-through view of a remote database and does not support DETACH TABLE (table {})",
         getEngineName(),
         table_name);
 }
@@ -986,36 +994,9 @@ static DatabaseRemoteClusters buildClusters(const String & cluster_description, 
     /// have the database or the table, the metadata lookup falls back to the remaining replicas of
     /// the same shard (see `fetchTablesList` / `fetchTableStructure`), which must reach only the
     /// genuinely remote ones, so precompute a cluster with the local replicas stripped from their
-    /// shards while every other shard stays intact. If some shard consists of local replicas only,
-    /// there is nothing to fall back to for that shard, and a fallback cluster without it would
-    /// silently read and write only a subset of the configured shards, so no fallback cluster is
-    /// built at all: a database or table missing on such a local replica is reported as missing.
-    HostsByShard remote_only_names;
-    bool has_local_replicas = false;
-    bool fallback_possible = true;
-    for (const auto & shard_addresses : all_replicas_cluster->getShardsAddresses())
-    {
-        Strings replicas;
-        bool shard_has_local_replicas = false;
-        for (const auto & address : shard_addresses)
-        {
-            if (address.is_local)
-                shard_has_local_replicas = true;
-            else
-                replicas.push_back(address.readableString());
-        }
-        has_local_replicas |= shard_has_local_replicas;
-        if (shard_has_local_replicas && replicas.empty())
-        {
-            fallback_possible = false;
-            break;
-        }
-        remote_only_names.push_back(std::move(replicas));
-    }
-
-    ClusterPtr remote_only_cluster;
-    if (has_local_replicas && fallback_possible)
-        remote_only_cluster = std::make_shared<Cluster>(context->getSettingsRef(), remote_only_names, params);
+    /// shards while every other shard stays intact (see `tryGetClusterWithoutLocalReplicas` for when
+    /// no fallback cluster is built at all).
+    ClusterPtr remote_only_cluster = all_replicas_cluster->tryGetClusterWithoutLocalReplicas(context->getSettingsRef());
 
     return {std::move(all_replicas_cluster), std::move(remote_only_cluster)};
 }
