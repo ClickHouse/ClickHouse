@@ -78,7 +78,7 @@ TEST(IcebergPositionDeleteKindPresence, ParquetPositionDeletesOnly)
     EXPECT_FALSE(presence.hasBoth());
 }
 
-TEST(IcebergPositionDeleteKindPresence, CoexistenceFailsClosedGate)
+TEST(IcebergPositionDeleteKindPresence, Coexistence)
 {
     const auto presence = getPositionDeleteKindPresence({
         makePositionDeleteEntry("puffin", /*content_offset=*/4, /*content_size_in_bytes=*/40),
@@ -89,9 +89,9 @@ TEST(IcebergPositionDeleteKindPresence, CoexistenceFailsClosedGate)
     EXPECT_TRUE(presence.hasBoth());
 }
 
-TEST(IcebergPositionDeleteKindPresence, CrossManifestAggregation)
+TEST(IcebergPositionDeleteKindPresence, PresenceFieldsCombineWithOr)
 {
-    /// Mimic totalRows: OR presence across manifests before deciding fail-closed.
+    /// Callers that scan multiple manifests (e.g. mutation DV rejection) OR these flags themselves.
     auto first = getPositionDeleteKindPresence({
         makePositionDeleteEntry("puffin", /*content_offset=*/4, /*content_size_in_bytes=*/40),
     });
@@ -99,9 +99,8 @@ TEST(IcebergPositionDeleteKindPresence, CrossManifestAggregation)
         makePositionDeleteEntry("parquet"),
     });
 
-    const bool has_deletion_vectors = first.has_deletion_vectors || second.has_deletion_vectors;
-    const bool has_parquet_position_deletes = first.has_parquet_position_deletes || second.has_parquet_position_deletes;
-    EXPECT_TRUE(has_deletion_vectors && has_parquet_position_deletes);
+    EXPECT_TRUE(first.has_deletion_vectors || second.has_deletion_vectors);
+    EXPECT_TRUE(first.has_parquet_position_deletes || second.has_parquet_position_deletes);
 }
 
 #endif
