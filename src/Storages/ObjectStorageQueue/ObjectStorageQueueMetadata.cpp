@@ -1967,6 +1967,18 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
     /// Track successful deletions for partial success reporting
     size_t total_deleted = 0;
 
+    /// Snapshot generations of all Failed files before starting Keeper deletes
+    /// to prevent race where file re-fails with new generation before cache removal
+    std::unordered_map<std::string, uint64_t> failed_generations;
+    {
+        auto all_entries = local_file_statuses.dump();
+        for (const auto & entry : all_entries)
+        {
+            if (entry.mapped->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+                failed_generations[entry.mapped->path] = entry.mapped->generation.load();
+        }
+    }
+
     for (size_t i = 0; i < failed_nodes.size(); i += batch_size)
     {
         size_t batch_end = std::min(i + batch_size, failed_nodes.size());
@@ -2034,9 +2046,22 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
                     /// Clear cache immediately for successfully deleted znodes
                     for (size_t k = batch_file_paths.size() - remove_requests.size(); k < batch_file_paths.size(); ++k)
                     {
-                        auto cache_key = getMetadataCacheKey(batch_file_paths[k]);
-                        local_file_statuses.remove(cache_key);
-                        file_paths.push_back(batch_file_paths[k]);
+                        const auto & file_path = batch_file_paths[k];
+                        using KeyType = UInt128;
+                        using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+                        local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                            [&failed_generations, &file_path](const KeyType &, const StatusPtr & status)
+                            {
+                                if (status->path == file_path && status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+                                {
+                                    auto it = failed_generations.find(file_path);
+                                    if (it != failed_generations.end() && status->generation.load() == it->second)
+                                        return true;
+                                }
+                                return false;
+                            }
+                        ));
+                        file_paths.push_back(file_path);
                     }
                     total_deleted += remove_requests.size();
                 }
@@ -2052,9 +2077,22 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
                         if (remove_responses[k]->error == Coordination::Error::ZOK)
                         {
                             /// This specific remove succeeded - update cache
-                            auto cache_key = getMetadataCacheKey(batch_file_paths[batch_start_idx + k]);
-                            local_file_statuses.remove(cache_key);
-                            file_paths.push_back(batch_file_paths[batch_start_idx + k]);
+                            const auto & file_path = batch_file_paths[batch_start_idx + k];
+                            using KeyType = UInt128;
+                            using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+                            local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                                [&failed_generations, &file_path](const KeyType &, const StatusPtr & status)
+                                {
+                                    if (status->path == file_path && status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+                                    {
+                                        auto it = failed_generations.find(file_path);
+                                        if (it != failed_generations.end() && status->generation.load() == it->second)
+                                            return true;
+                                    }
+                                    return false;
+                                }
+                            ));
+                            file_paths.push_back(file_path);
                             ++batch_succeeded;
                         }
                         else if (remove_responses[k]->error == Coordination::Error::ZRUNTIMEINCONSISTENCY)
@@ -2071,9 +2109,22 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
                             {
                                 /// ZOK: retry succeeded. ZNONODE: first attempt already deleted the node
                                 /// before the multi aborted. Either way, the node is gone - clear cache.
-                                auto cache_key = getMetadataCacheKey(batch_file_paths[batch_start_idx + k]);
-                                local_file_statuses.remove(cache_key);
-                                file_paths.push_back(batch_file_paths[batch_start_idx + k]);
+                                const auto & file_path = batch_file_paths[batch_start_idx + k];
+                                using KeyType = UInt128;
+                                using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+                                local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                                    [&failed_generations, &file_path](const KeyType &, const StatusPtr & status)
+                                    {
+                                        if (status->path == file_path && status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+                                        {
+                                            auto it = failed_generations.find(file_path);
+                                            if (it != failed_generations.end() && status->generation.load() == it->second)
+                                                return true;
+                                        }
+                                        return false;
+                                    }
+                                ));
+                                file_paths.push_back(file_path);
                                 ++batch_succeeded;
 
                                 if (retry_code == Coordination::Error::ZNONODE)
@@ -2122,9 +2173,22 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
                 /// Clear cache immediately for successfully deleted znodes
                 for (size_t k = batch_file_paths.size() - remove_requests.size(); k < batch_file_paths.size(); ++k)
                 {
-                    auto cache_key = getMetadataCacheKey(batch_file_paths[k]);
-                    local_file_statuses.remove(cache_key);
-                    file_paths.push_back(batch_file_paths[k]);
+                    const auto & file_path = batch_file_paths[k];
+                    using KeyType = UInt128;
+                    using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+                    local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                        [&failed_generations, &file_path](const KeyType &, const StatusPtr & status)
+                        {
+                            if (status->path == file_path && status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+                            {
+                                auto it = failed_generations.find(file_path);
+                                if (it != failed_generations.end() && status->generation.load() == it->second)
+                                    return true;
+                            }
+                            return false;
+                        }
+                    ));
+                    file_paths.push_back(file_path);
                 }
                 total_deleted += remove_requests.size();
             }
@@ -2140,9 +2204,22 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
                     if (remove_responses[k]->error == Coordination::Error::ZOK)
                     {
                         /// This specific remove succeeded - update cache
-                        auto cache_key = getMetadataCacheKey(batch_file_paths[batch_start_idx + k]);
-                        local_file_statuses.remove(cache_key);
-                        file_paths.push_back(batch_file_paths[batch_start_idx + k]);
+                        const auto & file_path = batch_file_paths[batch_start_idx + k];
+                        using KeyType = UInt128;
+                        using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+                        local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                            [&failed_generations, &file_path](const KeyType &, const StatusPtr & status)
+                            {
+                                if (status->path == file_path && status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+                                {
+                                    auto it = failed_generations.find(file_path);
+                                    if (it != failed_generations.end() && status->generation.load() == it->second)
+                                        return true;
+                                }
+                                return false;
+                            }
+                        ));
+                        file_paths.push_back(file_path);
                         ++batch_succeeded;
                     }
                     else if (remove_responses[k]->error == Coordination::Error::ZRUNTIMEINCONSISTENCY)
@@ -2159,9 +2236,22 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
                         {
                             /// ZOK: retry succeeded. ZNONODE: first attempt already deleted the node
                             /// before the multi aborted. Either way, the node is gone - clear cache.
-                            auto cache_key = getMetadataCacheKey(batch_file_paths[batch_start_idx + k]);
-                            local_file_statuses.remove(cache_key);
-                            file_paths.push_back(batch_file_paths[batch_start_idx + k]);
+                            const auto & file_path = batch_file_paths[batch_start_idx + k];
+                            using KeyType = UInt128;
+                            using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+                            local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                                [&failed_generations, &file_path](const KeyType &, const StatusPtr & status)
+                                {
+                                    if (status->path == file_path && status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+                                    {
+                                        auto it = failed_generations.find(file_path);
+                                        if (it != failed_generations.end() && status->generation.load() == it->second)
+                                            return true;
+                                    }
+                                    return false;
+                                }
+                            ));
+                            file_paths.push_back(file_path);
                             ++batch_succeeded;
 
                             if (retry_code == Coordination::Error::ZNONODE)
