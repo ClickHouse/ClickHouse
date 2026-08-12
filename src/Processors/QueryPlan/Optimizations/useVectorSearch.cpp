@@ -459,6 +459,43 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
             }
         }
 
+        /// If the filter (or intermediate expression) step below the sort itself reads the vector column - e.g.
+        /// a plain `WHERE length(vec) > 0` that was not moved to `PREWHERE` - skip the optimization as well.
+        /// The step is rebuilt below on top of the reader header without the physical vector column, so a
+        /// predicate that reads it would be left without its input and the query would fail with
+        /// `NOT_FOUND_COLUMN_IN_BLOCK`. Detect it by pruning a copy of the step's DAG the same way the rebuild
+        /// does and checking whether the vector column survives among the required inputs.
+        std::optional<ActionsDAG> pruned_filter_expression;
+        if (optimize_plan && filter_or_prewhere_node)
+        {
+            const ActionsDAG & filter_expression
+                = prewhere_expression_step ? prewhere_expression_step->getExpression() : filter_step->getExpression();
+            pruned_filter_expression = filter_expression.clone();
+
+            String output_result_to_delete;
+            for (const auto * output_node : pruned_filter_expression->getOutputs())
+            {
+                if (output_node->type == ActionsDAG::ActionType::ALIAS && output_node->children.at(0)->result_name == search_column)
+                {
+                    output_result_to_delete = output_node->result_name;
+                    break;
+                }
+            }
+            if (output_result_to_delete.empty())
+                output_result_to_delete = search_column; /// old analyzer
+            pruned_filter_expression->removeUnusedResult(output_result_to_delete);
+            pruned_filter_expression->removeUnusedActions();
+
+            for (const auto * input : pruned_filter_expression->getInputs())
+            {
+                if (input->result_name == search_column)
+                {
+                    optimize_plan = false;
+                    break;
+                }
+            }
+        }
+
         if (optimize_plan)
         {
             auto analyzed_result = read_from_mergetree_step->getAnalyzedResult();
@@ -510,32 +547,18 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
             const auto * new_output = &expression.addAlias(*distance_node, sort_column);
             expression.getOutputs().push_back(new_output);
 
-            /// Need to do same removal of the vector column from the Filter step
+            /// Need to do same removal of the vector column from the Filter step. The removal has already been
+            /// done on `pruned_filter_expression` above (where it also served as the bailout check).
             if (filter_or_prewhere_node)
             {
-                ActionsDAG & filter_expression = prewhere_expression_step ? prewhere_expression_step->getExpression() : filter_step->getExpression();
-                String output_result_to_delete;
-                for (const auto * output_node : filter_expression.getOutputs())
-                {
-                    if (output_node->type == ActionsDAG::ActionType::ALIAS && output_node->children.at(0)->result_name == search_column)
-                    {
-                        output_result_to_delete = output_node->result_name;
-                        break;
-                    }
-                }
-                if (output_result_to_delete.empty())
-                    output_result_to_delete = search_column; /// old analyzer
-                filter_expression.removeUnusedResult(output_result_to_delete);
-                filter_expression.removeUnusedActions();
-
                 /// Update the node with new Step
                 QueryPlanStepPtr new_step;
                 if (prewhere_expression_step)
-                    new_step = std::make_unique<ExpressionStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression));
+                    new_step = std::make_unique<ExpressionStep>(read_from_mergetree_step->getOutputHeader(), std::move(*pruned_filter_expression));
                 else
-                    new_step = std::make_unique<FilterStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+                    new_step = std::make_unique<FilterStep>(read_from_mergetree_step->getOutputHeader(), std::move(*pruned_filter_expression), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
                 new_step->setStepDescription(*filter_or_prewhere_node->step);
-               filter_or_prewhere_node->step = std::move(new_step);
+                filter_or_prewhere_node->step = std::move(new_step);
             }
         }
 
