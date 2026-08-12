@@ -194,22 +194,23 @@
   {
     "group": "Postgres",
     "pages": [
-      "pt-BR/products/cloud/api-reference/postgres/postgres-service-create",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-service-get-list",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-service-get",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-service-delete",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-service-patch",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-service-certs-get",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-instance-restore",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-service-set-password",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-service-patch-state",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-instance-create-read-replica",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-instance-config-get",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-instance-config-post",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-instance-config-patch",
-      "pt-BR/products/cloud/api-reference/postgres/postgres-instance-metrics-get",
-      "pt-BR/products/cloud/api-reference/postgres/slow-query-patterns-get-list",
-      "pt-BR/products/cloud/api-reference/postgres/slow-query-pattern-get"
+      "products/cloud/api-reference/postgres/postgres-service-create",
+      "products/cloud/api-reference/postgres/postgres-service-get-list",
+      "products/cloud/api-reference/postgres/postgres-service-get",
+      "products/cloud/api-reference/postgres/postgres-service-delete",
+      "products/cloud/api-reference/postgres/postgres-service-patch",
+      "products/cloud/api-reference/postgres/postgres-service-certs-get",
+      "products/cloud/api-reference/postgres/postgres-instance-restore",
+      "products/cloud/api-reference/postgres/postgres-service-set-password",
+      "products/cloud/api-reference/postgres/postgres-service-patch-state",
+      "products/cloud/api-reference/postgres/postgres-instance-create-read-replica",
+      "products/cloud/api-reference/postgres/postgres-instance-config-get",
+      "products/cloud/api-reference/postgres/postgres-instance-config-post",
+      "products/cloud/api-reference/postgres/postgres-instance-config-patch",
+      "products/cloud/api-reference/postgres/postgres-instance-metrics-get",
+      "products/cloud/api-reference/postgres/slow-query-patterns-get-list",
+      "products/cloud/api-reference/postgres/slow-query-pattern-get",
+      "products/cloud/api-reference/postgres/postgres-logs-get-list"
     ]
   }
 ]
