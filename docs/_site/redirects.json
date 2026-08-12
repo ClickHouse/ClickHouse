@@ -2696,6 +2696,10 @@
     "source": "/engines/database-engines/postgresql"
   },
   {
+    "destination": "/reference/engines/database-engines/remote",
+    "source": "/engines/database-engines/remote"
+  },
+  {
     "destination": "/reference/engines/database-engines/replicated",
     "source": "/engines/database-engines/replicated"
   },
@@ -39154,6 +39158,10 @@
   {
     "destination": "/reference/functions/aggregate-functions/flame_graph",
     "source": "/sql-reference/aggregate-functions/reference/flame_graph"
+  },
+  {
+    "destination": "/reference/functions/aggregate-functions/gini",
+    "source": "/sql-reference/aggregate-functions/reference/gini"
   },
   {
     "destination": "/reference/functions/aggregate-functions/groupArray",
