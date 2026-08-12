@@ -41,13 +41,6 @@ workflow = Workflow.Config(
             default_value="",
         ),
         Workflow.Config.InputConfig(
-            name="type",
-            description="Release type - new for a new release branch, patch for a patch release",
-            is_required=True,
-            default_value="patch",
-            options=["patch", "new"],
-        ),
-        Workflow.Config.InputConfig(
             name="only-repo",
             description="Run only repo updates including docker (repo-recovery, tests)",
             is_required=False,

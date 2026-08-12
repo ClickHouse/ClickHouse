@@ -75,12 +75,6 @@ def parse_args() -> argparse.Namespace:
         help="Git reference (branch or commit sha) from which the release was created",
     )
     parser.add_argument(
-        "--release-type",
-        choices=("new", "patch"),
-        default=None,
-        help="The type of release",
-    )
-    parser.add_argument(
         "--assignee",
         type=str,
         default=None,
@@ -112,8 +106,6 @@ def parse_args() -> argparse.Namespace:
 
     if args.ref is None:
         args.ref = _wi("ref")
-    if args.release_type is None:
-        args.release_type = _wi("type") or None
     if not args.dry_run:
         args.dry_run = _wi("dry-run").lower() == "true"
     if not args.only_repo:
@@ -124,10 +116,6 @@ def parse_args() -> argparse.Namespace:
         args.assignee = _wi("assignee")
 
     assert args.ref, "ref must be set via --ref or workflow dispatch input 'ref'"
-    assert args.release_type in (
-        "new",
-        "patch",
-    ), "release-type must be 'new' or 'patch'"
 
     return args
 
@@ -139,13 +127,8 @@ def main():
     stopwatch = Utils.Stopwatch()
     args = parse_args()
 
-    # The "new" release has a disjoint, much shorter step sequence in its own file.
-    if args.release_type == "new":
-        from ci.jobs.new_release_branch_job import main as run_new_release_branch
-
-        run_new_release_branch()
-        return
-
+    # This job runs the "patch" release only; cutting a new release branch is the
+    # separate CreateReleaseBranch workflow (new_release_branch_job.py).
     # Imported here (not at module top) so create_release's boto3 dependency is
     # only pulled on the release machine, not at praktika config time.
     from ci.jobs.scripts import create_release
