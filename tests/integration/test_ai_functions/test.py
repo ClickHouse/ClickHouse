@@ -188,6 +188,7 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
         )
         instance.query(
             "CREATE TABLE test_filter_join_right (id UInt32, tag String) ENGINE = Memory"
+        )
         instance.query(
             "CREATE TABLE test_input_pairs (id UInt8, a Nullable(String), b Nullable(String)) ENGINE = Memory"
         )
