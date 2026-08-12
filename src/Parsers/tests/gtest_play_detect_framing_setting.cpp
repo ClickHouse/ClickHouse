@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Parsers/Lexer.h>
+#include <Parsers/tests/play_fallback_tokenizer.h>
 
 #include <algorithm>
 #include <cctype>
@@ -39,6 +40,12 @@
   * Instead we reproduce the token-walking algorithm here on top of the real `DB::Lexer`. The lexer
   * (the part most likely to evolve) is shared; only the small detection below is a port. Keep this
   * in sync with `detectFramingSetting` in `programs/server/play.html`.
+  *
+  * The browser has a second tokenizer: when WebAssembly is unavailable (or the WASM lexer failed),
+  * `fallbackTokenize` produces a compatible token list in plain JS and the very same walk runs over
+  * it. Every case here therefore runs through both tokenizations (see `expectFraming`), pinning the
+  * agreement of the two paths - the text-match heuristic this replaced misclassified queries the
+  * walk handles (e.g. `SELECT settings x, framing_output_format = 'None' FROM t`).
   */
 
 namespace
@@ -128,10 +135,11 @@ std::optional<std::string> settingName(const Tok & tok)
     return std::nullopt;
 }
 
-/// Faithful port of `detectFramingSetting` from play.html.
-FramingSetting detectFramingSetting(const std::string & query)
+/// Faithful port of `detectFramingSetting` from play.html, over an already-produced token list (the
+/// browser runs the same walk over the WASM lexer's tokens and, when the lexer is unavailable, over
+/// `fallbackTokenize`'s - see `expectFraming`, which exercises both here).
+FramingSetting detectFramingSetting(const std::vector<Tok> & tokens)
 {
-    const std::vector<Tok> tokens = tokenizeSignificant(query);
     int depth = 0;
     /// True at the start of the query and right after a top-level `;`, so a leading `SET` is
     /// recognized per statement.
@@ -301,12 +309,34 @@ FramingSetting detectFramingSetting(const std::string & query)
     return {false, false, false};
 }
 
+/// Mirror of the no-WebAssembly path: the same walk over `fallbackTokenize`'s tokens (see
+/// `play_fallback_tokenizer.h`), filtered to significant ones exactly like the browser's
+/// `.filter(t => t.significant)`.
+std::vector<Tok> fallbackTokenizeSignificant(const std::string & query)
+{
+    std::vector<Tok> tokens;
+    for (const auto & token : PlayFallbackTokenizer::tokenize(query))
+        if (token.significant)
+            tokens.push_back({token.type, token.text});
+    return tokens;
+}
+
+/// Every case runs through BOTH tokenizations: the real `DB::Lexer` (the WASM path) and the
+/// fallback tokenizer (the no-WebAssembly path). The regex heuristic the fallback replaced
+/// misclassified e.g. `SELECT settings x, framing_output_format = 'None' FROM t` as disabling
+/// framing; running the same walk over fallback tokens keeps the two paths in agreement by
+/// construction, and this assertion pins it for the whole corpus.
 void expectFraming(const std::string & query, bool user_framing, bool user_disables_framing, bool user_sets_session_framing = false)
 {
-    const FramingSetting result = detectFramingSetting(query);
+    const FramingSetting result = detectFramingSetting(tokenizeSignificant(query));
     EXPECT_EQ(result.user_framing, user_framing) << "query: " << query;
     EXPECT_EQ(result.user_disables_framing, user_disables_framing) << "query: " << query;
     EXPECT_EQ(result.user_sets_session_framing, user_sets_session_framing) << "query: " << query;
+
+    const FramingSetting fallback = detectFramingSetting(fallbackTokenizeSignificant(query));
+    EXPECT_EQ(fallback.user_framing, user_framing) << "fallback tokenizer, query: " << query;
+    EXPECT_EQ(fallback.user_disables_framing, user_disables_framing) << "fallback tokenizer, query: " << query;
+    EXPECT_EQ(fallback.user_sets_session_framing, user_sets_session_framing) << "fallback tokenizer, query: " << query;
 }
 
 }
@@ -529,6 +559,30 @@ TEST(PlayDetectFramingSetting, ShorthandOpenedListMustEndLikeASettingsList)
     /// The rollback leaves the rest of the walk intact: an unrelated real settings clause after such
     /// a query body is still parsed as one.
     expectFraming("SELECT settings x, framing_output_format = 'None' FROM t SETTINGS max_threads = 1", false, false);
+}
+
+TEST(PlayDetectFramingSetting, NoLexerFallbackRunsTheSameWalk)
+{
+    /// The reported bug: a browser without WebAssembly used to fall back to a raw text match, which
+    /// treated `SELECT settings x, framing_output_format = 'None' FROM t` as a real `SETTINGS`
+    /// clause and refused a valid `SELECT` as if it had disabled framing. The fallback now runs the
+    /// SAME walk over `fallbackTokenize`'s tokens (`expectFraming` above exercises every corpus
+    /// case through it); these are the reported false positives, pinned explicitly.
+    const auto fallback = [](const std::string & query)
+    {
+        return detectFramingSetting(fallbackTokenizeSignificant(query));
+    };
+    const FramingSetting body_comparison = fallback("SELECT settings x, framing_output_format = 'None' FROM t");
+    EXPECT_FALSE(body_comparison.user_framing);
+    EXPECT_FALSE(body_comparison.user_disables_framing);
+    EXPECT_FALSE(body_comparison.user_sets_session_framing);
+    /// The real spellings keep working in the fallback.
+    const FramingSetting disables = fallback("SELECT 1 SETTINGS framing_output_format = 'None'");
+    EXPECT_TRUE(disables.user_disables_framing);
+    const FramingSetting chooses = fallback("SELECT 1 SETTINGS framing_output_format = 'EventStream'");
+    EXPECT_TRUE(chooses.user_framing);
+    const FramingSetting session = fallback("SET framing_output_format = 'EventStream'");
+    EXPECT_TRUE(session.user_sets_session_framing);
 }
 
 TEST(PlayDetectFramingSetting, LargeQueryIsTokenizedWithoutALimit)

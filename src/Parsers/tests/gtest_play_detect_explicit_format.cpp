@@ -1,14 +1,12 @@
 #include <gtest/gtest.h>
 
 #include <Parsers/Lexer.h>
-
-#include <Common/re2.h>
+#include <Parsers/tests/play_fallback_tokenizer.h>
 
 #include <algorithm>
 #include <cctype>
 #include <optional>
 #include <string>
-#include <string_view>
 #include <vector>
 
 /** Regression coverage for the `detectExplicitFormat` / `detectExplicitFormatClause` logic in
@@ -39,6 +37,13 @@
   * Instead we reproduce the token-walking algorithm here on top of the real `DB::Lexer`. The lexer
   * (the part most likely to evolve) is shared; only the small detection below is a port. Keep this
   * in sync with `detectExplicitFormatClause` / `detectExplicitFormat` in `programs/server/play.html`.
+  *
+  * The browser has a second tokenizer: when WebAssembly is unavailable (or the WASM lexer failed),
+  * `fallbackTokenize` produces a compatible token list in plain JS and the very same walk runs over
+  * it. Every case here therefore runs through both tokenizations (see `expectFormat` /
+  * `expectStrip`), pinning the agreement of the two paths - the regex heuristic this replaced took
+  * `WITH 1 AS format SELECT format JSONCompactColumns SETTINGS max_threads = 1` and
+  * `SELECT 1 -- FORMAT JSON` for a real trailing clause.
   */
 
 namespace
@@ -145,11 +150,29 @@ bool endsExpression(const Tok * tok)
     return tok->type == DB::TokenType::BareWord && !isOperandExpectingKeyword(toLower(tok->text));
 }
 
-/// Faithful port of `detectExplicitFormatClause` from play.html. Returns the format name and the
-/// span of the whole `FORMAT <name>` clause, or `nullopt` when the query has no real `FORMAT` clause.
-std::optional<FormatClause> detectExplicitFormatClause(const std::string & query)
+/// Mirror of the no-WebAssembly path: the same walk over `fallbackTokenize`'s tokens (see
+/// `play_fallback_tokenizer.h`). The browser derives the character spans by summing the length of
+/// every token, so the offsets are exact in both paths; the same accumulation happens here.
+std::vector<Tok> fallbackTokenizeSignificant(const std::string & query)
 {
-    const std::vector<Tok> tokens = tokenizeSignificant(query);
+    std::vector<Tok> tokens;
+    size_t offset = 0;
+    for (const auto & token : PlayFallbackTokenizer::tokenize(query))
+    {
+        if (token.significant)
+            tokens.push_back({token.type, token.text, offset, offset + token.text.size()});
+        offset += token.text.size();
+    }
+    return tokens;
+}
+
+/// Faithful port of `detectExplicitFormatClause` from play.html, over an already-produced token list
+/// (the browser runs the same walk over the WASM lexer's tokens and, when the lexer is unavailable,
+/// over `fallbackTokenize`'s - see `expectFormat` / `expectStrip`, which exercise both here).
+/// Returns the format name and the span of the whole `FORMAT <name>` clause, or `nullopt` when the
+/// query has no real `FORMAT` clause.
+std::optional<FormatClause> detectExplicitFormatClause(const std::vector<Tok> & tokens)
+{
     int depth = 0;
     for (size_t i = 0; i + 1 < tokens.size(); ++i)
     {
@@ -190,9 +213,9 @@ std::optional<FormatClause> detectExplicitFormatClause(const std::string & query
 }
 
 /// Thin wrapper mirroring `detectExplicitFormat` in play.html (name only).
-std::optional<std::string> detectExplicitFormat(const std::string & query)
+std::optional<std::string> detectExplicitFormat(const std::vector<Tok> & tokens)
 {
-    const std::optional<FormatClause> clause = detectExplicitFormatClause(query);
+    const std::optional<FormatClause> clause = detectExplicitFormatClause(tokens);
     if (clause)
         return clause->name;
     return std::nullopt;
@@ -200,43 +223,31 @@ std::optional<std::string> detectExplicitFormat(const std::string & query)
 
 /// Mirror of the download handler's strip: remove only the real trailing `FORMAT` clause span, so
 /// the rest of the query is left byte-for-byte intact (a plain regex would rewrite ordinary SQL).
-std::string stripExplicitFormat(const std::string & query)
+std::string stripExplicitFormat(const std::string & query, const std::vector<Tok> & tokens)
 {
-    const std::optional<FormatClause> clause = detectExplicitFormatClause(query);
+    const std::optional<FormatClause> clause = detectExplicitFormatClause(tokens);
     if (!clause)
         return query;
     return query.substr(0, clause->start) + query.substr(clause->end);
 }
 
-/// Mirror of the no-WebAssembly fallback of `detectExplicitFormatClause` in play.html: without the
-/// lexer the page falls back to a best-effort text match anchored to a real trailing clause (only `;`
-/// or `SETTINGS` may follow the name). The browser anchors the tail with a lookahead, which re2 does
-/// not support, so this port consumes the tail inside the match instead and takes the clause span
-/// from a capture group wrapped around the keyword and the name - the acceptance is the same, and
-/// for a single search so is the reported span. Like the lexer branch, the name is reported unquoted
-/// while the span keeps the quotes, so the download strips the whole clause.
-std::optional<FormatClause> detectExplicitFormatClauseNoLexer(const std::string & query)
-{
-    /// A custom raw-string delimiter: the pattern itself contains `)"`.
-    static const re2::RE2 re(R"RE((?i)(\bFORMAT\s+(?:`([^`]+)`|"([^"]+)"|(\w+)))\s*(?:;|\bSETTINGS\b|$))RE");
-    /// [0] = whole match (including the consumed tail), [1] = the clause span, [2]-[4] = the name.
-    std::string_view groups[5];
-    if (!re.Match({query.data(), query.size()}, 0, query.size(), re2::RE2::UNANCHORED, groups, 5))
-        return std::nullopt;
-    const std::string_view name = !groups[2].empty() ? groups[2] : (!groups[3].empty() ? groups[3] : groups[4]);
-    const size_t start = static_cast<size_t>(groups[1].data() - query.data());
-    return FormatClause{std::string(name), start, start + groups[1].size()};
-}
-
+/// Every case runs through BOTH tokenizations: the real `DB::Lexer` (the WASM path) and the fallback
+/// tokenizer (the no-WebAssembly path). The regex heuristic the fallback replaced reintroduced
+/// exactly the context bugs the walk fixes - `WITH 1 AS format SELECT format JSONCompactColumns
+/// SETTINGS max_threads = 1` and `SELECT 1 -- FORMAT JSON` both looked like a real trailing clause,
+/// so the page suppressed its own framing or the download stripped bytes out of ordinary SQL.
+/// Running the same walk over fallback tokens keeps the two paths in agreement by construction, and
+/// these assertions pin it for the whole corpus (negatives included).
 void expectFormat(const std::string & query, const std::optional<std::string> & expected)
 {
-    const std::optional<std::string> result = detectExplicitFormat(query);
-    EXPECT_EQ(result, expected) << "query: " << query;
+    EXPECT_EQ(detectExplicitFormat(tokenizeSignificant(query)), expected) << "query: " << query;
+    EXPECT_EQ(detectExplicitFormat(fallbackTokenizeSignificant(query)), expected) << "fallback tokenizer, query: " << query;
 }
 
 void expectStrip(const std::string & query, const std::string & expected)
 {
-    EXPECT_EQ(stripExplicitFormat(query), expected) << "query: " << query;
+    EXPECT_EQ(stripExplicitFormat(query, tokenizeSignificant(query)), expected) << "query: " << query;
+    EXPECT_EQ(stripExplicitFormat(query, fallbackTokenizeSignificant(query)), expected) << "fallback tokenizer, query: " << query;
 }
 
 }
@@ -288,42 +299,28 @@ TEST(PlayDetectExplicitFormat, QuotedFormatNameIsARealClause)
     expectFormat("SELECT `format` JSON", std::nullopt);
 }
 
-TEST(PlayDetectExplicitFormat, NoLexerFallbackAcceptsAQuotedFormatName)
+TEST(PlayDetectExplicitFormat, NoLexerFallbackRunsTheSameWalk)
 {
-    /// A browser without WebAssembly has no lexer, so the page falls back to a text match. It must
-    /// honor the same contract as the lexer branch for the quoted spellings the server accepts:
-    /// otherwise `FORMAT `JSONCompactColumns`` still looks like "no explicit format" there, the page
-    /// adds its own `EventStream` framing, and the download does not strip the real clause.
-    const auto name = [](const std::string & query) -> std::optional<std::string>
+    /// The reported bug: a browser without WebAssembly used to fall back to a raw regex, which
+    /// reintroduced exactly the context bugs the token walk fixes - an aliased identifier or a
+    /// comment mention looked like a real trailing clause, so the page suppressed its own
+    /// `EventStream` framing and the download stripped bytes out of ordinary SQL. The fallback now
+    /// runs the SAME walk over `fallbackTokenize`'s tokens (`expectFormat` / `expectStrip` above
+    /// exercise every corpus case through it); these are the reported false positives, pinned
+    /// explicitly.
+    const auto fallback_name = [](const std::string & query)
     {
-        const std::optional<FormatClause> clause = detectExplicitFormatClauseNoLexer(query);
-        if (clause)
-            return clause->name;
-        return std::nullopt;
+        return detectExplicitFormat(fallbackTokenizeSignificant(query));
     };
-    const auto strip = [](const std::string & query)
-    {
-        const std::optional<FormatClause> clause = detectExplicitFormatClauseNoLexer(query);
-        if (!clause)
-            return query;
-        return query.substr(0, clause->start) + query.substr(clause->end);
-    };
-
-    /// The bare-word spelling kept working all along.
-    EXPECT_EQ(name("SELECT 1 FORMAT JSON"), std::optional<std::string>("JSON"));
-    /// The regression: quoted names, in both spellings and with either trailing clause terminator.
-    EXPECT_EQ(name("SELECT 1 FORMAT `JSON`"), std::optional<std::string>("JSON"));
-    EXPECT_EQ(name("SELECT * FROM system.numbers LIMIT 1 FORMAT `JSONCompactColumns`"),
-              std::optional<std::string>("JSONCompactColumns"));
-    EXPECT_EQ(name("SELECT 1 FORMAT \"TSV\""), std::optional<std::string>("TSV"));
-    EXPECT_EQ(name("SELECT 1 FORMAT `JSON`;"), std::optional<std::string>("JSON"));
-    EXPECT_EQ(name("SELECT 1 FORMAT `TSV` SETTINGS max_threads = 1"), std::optional<std::string>("TSV"));
-    /// The span covers the quotes, so the download strips the whole clause.
-    EXPECT_EQ(strip("SELECT 1 FORMAT `JSON`"), "SELECT 1 ");
-    EXPECT_EQ(strip("SELECT 1 FORMAT `TSV` SETTINGS max_threads = 1"), "SELECT 1  SETTINGS max_threads = 1");
-    /// Still anchored to a trailing clause: a `FORMAT` mention followed by more query text is not one.
-    EXPECT_EQ(name("SELECT 1 FORMAT `JSON` FROM t"), std::nullopt);
-    EXPECT_EQ(name("SELECT 1"), std::nullopt);
+    EXPECT_EQ(fallback_name("WITH 1 AS format SELECT format JSONCompactColumns SETTINGS max_threads = 1"), std::nullopt);
+    EXPECT_EQ(fallback_name("SELECT 1 -- FORMAT JSON"), std::nullopt);
+    EXPECT_EQ(fallback_name("SELECT 1 /* FORMAT JSONCompactColumns */"), std::nullopt);
+    EXPECT_EQ(fallback_name("SELECT 'FORMAT JSONCompactColumns'"), std::nullopt);
+    /// The real spellings keep working in the fallback, quoted names included.
+    EXPECT_EQ(fallback_name("SELECT 1 FORMAT JSON"), std::optional<std::string>("JSON"));
+    EXPECT_EQ(fallback_name("SELECT 1 FORMAT `JSON`"), std::optional<std::string>("JSON"));
+    EXPECT_EQ(fallback_name("SELECT 1 FORMAT \"TSV\""), std::optional<std::string>("TSV"));
+    EXPECT_EQ(fallback_name("SELECT 1 FORMAT `TSV` SETTINGS max_threads = 1"), std::optional<std::string>("TSV"));
 }
 
 TEST(PlayDetectExplicitFormat, StringLiteralIsNotAFormatClause)

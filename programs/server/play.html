@@ -13407,8 +13407,10 @@ function tokenizeSync(query) {
 /// `detectExplicitFormatClause`, `queryIsReadOnly`, `splitAllQueries`, `getQueryUnderCursor`):
 /// returns the token list, or null when the lexer cannot produce one - WebAssembly is unavailable,
 /// or tokenization failed (e.g. the memory could not grow to fit the text, or the forward-progress
-/// guard fired). A null tells the caller to use its best-effort text-match fallback, so a query the
-/// lexer cannot handle still runs instead of failing or hanging the tab before any request is sent.
+/// guard fired). A null tells the caller to use its fallback - the same token walk over
+/// `fallbackTokenize` for the two detectors that shape the request (see `tokenizeWithFallback`), a
+/// best-effort text heuristic for the rest - so a query the lexer cannot handle still runs instead
+/// of failing or hanging the tab before any request is sent.
 async function tokenizeOrNull(text)
 {
     if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') return null;
@@ -13421,6 +13423,160 @@ async function tokenizeOrNull(text)
         console.error('Tokenization failed, falling back to a text match:', e);
         return null;
     }
+}
+
+/// The token type of everything `fallbackTokenize` does not classify (multi-char operators, a lone
+/// `?`, unicode, ...). No token walk treats it specially, which is the conservative direction for
+/// both detectors below: an unclassified token never opens a settings context and never ends an
+/// expression, so nothing is mistaken for a real clause.
+const TT_FALLBACK_OTHER = -1;
+
+/// Plain-JS fallback for `tokenizeSync`, used on the request path when the WASM lexer cannot
+/// produce a token list (WebAssembly is unavailable, or `tokenize` threw). It emits tokens in the
+/// same shape (`{type, significant, token}`, tiling the input exactly) with the same `TT` codes for
+/// every category the token walks classify - bare words, quoted identifiers, string literals,
+/// heredocs, numbers, comments, brackets, commas, `=`, `;`, `+`, `-`, `*` - so
+/// `detectFramingSetting` and `detectExplicitFormatClause` run the SAME walk they run on the lexer
+/// tokens. The regex heuristics this replaces kept reintroducing exactly the context bugs the walks
+/// fix: `SELECT settings x, framing_output_format = 'None' FROM t` was refused as if it disabled
+/// framing, and `WITH 1 AS format SELECT format JSONCompactColumns SETTINGS max_threads = 1` or
+/// `SELECT 1 -- FORMAT JSON` were taken for a real trailing `FORMAT` clause. The tokenization rules
+/// mirror `src/Parsers/Lexer.cpp` for the classified categories (`--`/`//`/`# `/`#!` line comments,
+/// nested `/* */`, `\`-escapes and doubled quotes in strings and quoted identifiers, `$tag$...$tag$`
+/// heredocs, words of `[A-Za-z0-9_$]`); the C++ port driven by the gtest regressions lives in
+/// `src/Parsers/tests/play_fallback_tokenizer.h` - keep the two in sync.
+function fallbackTokenize(text)
+{
+    const tokens = [];
+    let i = 0;
+    /// Emits `[i, end)` as one token and advances. Unterminated constructs (a string or comment
+    /// running off the end) are emitted as-is rather than as errors: the fallback is best-effort
+    /// and must always produce a token list for the whole text.
+    const push = (type, end, significant = true) =>
+    {
+        tokens.push({ type, significant, token: text.slice(i, Math.min(end, text.length)) });
+        i = Math.min(end, text.length);
+    };
+    const isWordChar = (c) => c !== undefined && /[A-Za-z0-9_$]/.test(c);
+    /// A quoted token (string literal or quoted identifier): `\` escapes the next character, a
+    /// doubled quote continues the token.
+    const quoted = (type) =>
+    {
+        const quote = text[i];
+        let j = i + 1;
+        while (j < text.length)
+        {
+            if (text[j] === '\\') { j += 2; continue; }
+            if (text[j] === quote)
+            {
+                if (text[j + 1] === quote) { j += 2; continue; }
+                ++j;
+                break;
+            }
+            ++j;
+        }
+        push(type, j);
+    };
+    const lineComment = () =>
+    {
+        let j = text.indexOf('\n', i);
+        push(TT.Comment, j < 0 ? text.length : j, false);
+    };
+    while (i < text.length)
+    {
+        const c = text[i];
+        if (c === ' ' || c === '\t' || c === '\n' || c === '\r' || c === '\f' || c === '\v')
+        {
+            let j = i + 1;
+            while (j < text.length && ' \t\n\r\f\v'.includes(text[j])) ++j;
+            push(TT.Whitespace, j, false);
+        }
+        else if (c === '-' && text[i + 1] === '-') lineComment();
+        else if (c === '/' && text[i + 1] === '/') lineComment();
+        else if (c === '#' && (text[i + 1] === ' ' || text[i + 1] === '!')) lineComment();
+        else if (c === '/' && text[i + 1] === '*')
+        {
+            /// Nested multiline comments, as in the SQL standard.
+            let level = 1;
+            let j = i + 2;
+            while (j + 1 < text.length && level > 0)
+            {
+                if (text[j] === '/' && text[j + 1] === '*') { ++level; j += 2; }
+                else if (text[j] === '*' && text[j + 1] === '/') { --level; j += 2; }
+                else ++j;
+            }
+            push(TT.Comment, level > 0 ? text.length : j, false);
+        }
+        else if (c === '\'') quoted(TT.StringLiteral);
+        else if (c === '`' || c === '"') quoted(TT.QuotedIdentifier);
+        else if (/[0-9]/.test(c) || (c === '.' && /[0-9]/.test(text[i + 1])))
+        {
+            /// Approximates the lexer's number token: word characters and dots, with a sign allowed
+            /// right after an exponent marker. The walks only need the token's span and its text.
+            let j = i + 1;
+            while (j < text.length
+                && (/[0-9A-Za-z_.]/.test(text[j])
+                    || ((text[j] === '+' || text[j] === '-') && /[eEpP]/.test(text[j - 1]))))
+                ++j;
+            push(TT.Number, j);
+        }
+        else if (c === '(') push(TT.OpeningRoundBracket, i + 1);
+        else if (c === ')') push(TT.ClosingRoundBracket, i + 1);
+        else if (c === '[') push(TT.OpeningSquareBracket, i + 1);
+        else if (c === ']') push(TT.ClosingSquareBracket, i + 1);
+        else if (c === '{') push(TT.OpeningCurlyBrace, i + 1);
+        else if (c === '}') push(TT.ClosingCurlyBrace, i + 1);
+        else if (c === ',') push(TT.Comma, i + 1);
+        else if (c === ';') push(TT.Semicolon, i + 1);
+        else if (c === '*') push(TT.Asterisk, i + 1);
+        else if (c === '+') push(TT.Plus, i + 1);
+        else if (c === '=') push(TT.Equals, text[i + 1] === '=' ? i + 2 : i + 1);
+        else if (c === '-') push(text[i + 1] === '>' ? TT_FALLBACK_OTHER : TT.Minus, text[i + 1] === '>' ? i + 2 : i + 1);
+        else if ((c === '!' && text[i + 1] === '=')
+            || (c === '<' && (text[i + 1] === '=' || text[i + 1] === '>'))
+            || (c === '>' && text[i + 1] === '=')
+            || (c === '|' && text[i + 1] === '|')
+            || (c === ':' && text[i + 1] === ':'))
+        {
+            /// A two-character operator is consumed atomically, so its second character can never
+            /// leak out as a spurious `=` in front of a settings walk.
+            push(TT_FALLBACK_OTHER, i + 2);
+        }
+        else if (c === '$')
+        {
+            /// A `$tag$...$tag$` heredoc is one token, so nothing inside it can look like a clause.
+            const tag_end = text.indexOf('$', i + 1);
+            const tag_ok = tag_end >= 0 && [...text.slice(i + 1, tag_end)].every(ch => /[A-Za-z0-9_]/.test(ch));
+            const closing = tag_ok ? text.indexOf(text.slice(i, tag_end + 1), tag_end + 1) : -1;
+            if (closing >= 0)
+                push(TT.HereDoc, closing + (tag_end + 1 - i));
+            else if (!isWordChar(text[i + 1]))
+                push(TT_FALLBACK_OTHER, i + 1);
+            else
+            {
+                let j = i + 1;
+                while (j < text.length && isWordChar(text[j])) ++j;
+                push(TT.BareWord, j);
+            }
+        }
+        else if (/[A-Za-z_]/.test(c))
+        {
+            let j = i + 1;
+            while (j < text.length && isWordChar(text[j])) ++j;
+            push(TT.BareWord, j);
+        }
+        else push(TT_FALLBACK_OTHER, i + 1);
+    }
+    return tokens;
+}
+
+/// `tokenizeOrNull` for the two detectors whose answer changes the request shape
+/// (`detectFramingSetting`, `detectExplicitFormatClause`): when the lexer cannot produce a token
+/// list, the same walk runs over `fallbackTokenize`'s tokens instead of a divergent text-match
+/// heuristic.
+async function tokenizeWithFallback(text)
+{
+    return await tokenizeOrNull(text) ?? fallbackTokenize(text);
 }
 
 /// Decide whether the query carries its own `framing_output_format` setting and, if so, whether that
@@ -13456,35 +13612,12 @@ async function tokenizeOrNull(text)
 /// clause (`SELECT 1 FORMAT TSV SETTINGS framing_output_format = 'None'` is valid). A standalone
 /// `SET framing_output_format = ...` is distinguished from a query-level `SETTINGS` clause because the
 /// former persists in the session (when the connection uses a `session_id`), which this page cannot
-/// honor. Falls back to a best-effort text match only when the lexer cannot produce a token list -
-/// WebAssembly is unavailable, or tokenization failed - mirroring `getQueryUnderCursor`.
+/// honor. When the lexer cannot produce a token list - WebAssembly is unavailable, or tokenization
+/// failed - the same walk runs over `fallbackTokenize`'s tokens, so the classification (and every
+/// context rule above) is identical in both paths.
 async function detectFramingSetting(query)
 {
-    const raw_tokens = await tokenizeOrNull(query);
-    if (raw_tokens === null) {
-        /// Without the lexer, require a `SETTINGS`/`SET` keyword before the assignment so that a bare
-        /// comparison in the query body is not mistaken for a setting. The name may be spelled as a
-        /// quoted identifier, so an optional closing quote is allowed between the name and the `=`.
-        const has_setting = /\b(?:settings|set)\b[\s\S]*\bframing_output_format[`"]?\s*=/i.test(query);
-        /// A standalone `SET framing_output_format = ...` (the statement begins with `SET`) changes the
-        /// session default, which this page cannot honor; detect it by the leading keyword.
-        const sets_session = /^\s*set\b[\s\S]*\bframing_output_format[`"]?\s*=/i.test(query);
-        /// The server applies duplicate `SETTINGS` entries in order, so classify by the last
-        /// assignment's value rather than by any `= 'None'` occurrence. `None` disables framing;
-        /// `DEFAULT` and a query-parameter placeholder (`{fmt:String}`) may resolve to `None`,
-        /// so they are classified conservatively as disabling too.
-        const assignments = [...query.matchAll(/\bframing_output_format[`"]?\s*=\s*('?\w+'?|\{[^}]*\})/gi)];
-        const raw_value = assignments.length ? assignments[assignments.length - 1][1] : '';
-        const last_value = raw_value.replace(/'/g, '').toLowerCase();
-        const disables = has_setting && !sets_session
-            && (last_value === 'none' || last_value === 'default' || raw_value.startsWith('{'));
-        return {
-            user_framing: has_setting && !disables && !sets_session,
-            user_disables_framing: disables,
-            user_sets_session_framing: sets_session,
-        };
-    }
-
+    const raw_tokens = await tokenizeWithFallback(query);
     const tokens = raw_tokens.filter(t => t.significant);
     /// `ParserSetQuery` parses the setting name with a full identifier parser, so the name may also
     /// be spelled as a quoted identifier: a backquoted `framing_output_format` in `SETTINGS` or `SET`
@@ -13668,23 +13801,13 @@ async function detectFramingSetting(query)
 /// `JSONCompactColumns`), either of which would make `use_framing` false and silently drop the page's
 /// own `EventStream` request, or (for the download) rewrite the query into a different statement.
 /// The clause span is derived by summing token lengths, which are JS-string offsets into `query`
-/// (the same contiguous token stream `getQueryUnderCursor` relies on). Falls back to a best-effort
-/// text match only when the lexer cannot produce a token list - WebAssembly is unavailable, or
-/// tokenization failed - mirroring `getQueryUnderCursor`.
+/// (the same contiguous token stream `getQueryUnderCursor` relies on). When the lexer cannot produce
+/// a token list - WebAssembly is unavailable, or tokenization failed - the same walk runs over
+/// `fallbackTokenize`'s tokens, so the clause detection (and the span the download strips) is
+/// identical in both paths.
 async function detectExplicitFormatClause(query)
 {
-    const raw_tokens = await tokenizeOrNull(query);
-    if (raw_tokens === null) {
-        /// Anchor the match to a real trailing clause (only `;` or `SETTINGS` may follow the name),
-        /// and capture just the `FORMAT <name>` span so the caller strips nothing else. The name is
-        /// parsed by an identifier parser on the server, so a backquoted or double-quoted spelling is
-        /// a real clause too: match all three and report the unquoted name, while the span keeps the
-        /// quotes so the download strips the whole clause - the same contract as the lexer branch.
-        const m = query.match(/\bFORMAT\s+(?:`([^`]+)`|"([^"]+)"|(\w+))(?=\s*(?:;|\bSETTINGS\b|$))/i);
-        if (!m) return null;
-        const name = m[1] ?? m[2] ?? m[3];
-        return { name, start: m.index, end: m.index + m[0].length };
-    }
+    const raw_tokens = await tokenizeWithFallback(query);
 
     /// Annotate the significant tokens with their character offsets in `query`, accumulating the
     /// length of every token (significant or not) so the offsets track the original string exactly.

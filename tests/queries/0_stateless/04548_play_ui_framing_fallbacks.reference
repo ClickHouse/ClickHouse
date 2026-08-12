@@ -6,7 +6,8 @@ framing kind persisted: OK
 restore keys off framing kind: OK
 download strips real format clause: OK
 lexer walk accepts a quoted format name: OK
-fallback regex accepts a quoted format name: OK
+fallback tokenizer present: OK
+both detectors use the fallback tokenizer: OK
 lexer buffers at heap base: OK
 lexer memory grows to fit: OK
 lexer created without size cap: OK

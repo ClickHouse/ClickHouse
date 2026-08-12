@@ -116,12 +116,17 @@ echo "$page" | grep -q -F 'framing_kind:' && echo 'framing kind persisted: OK'
 # The download strips only a real trailing `FORMAT` clause using the SQL-lexer walk, not a raw regex.
 echo "$page" | grep -q -F 'const format_clause = await detectExplicitFormatClause(query)' && echo 'download strips real format clause: OK'
 # The server parses the `FORMAT` name with an identifier parser, so a quoted spelling is a real
-# clause. Both branches of `detectExplicitFormatClause` must accept it: the lexer walk (via
-# `TT.QuotedIdentifier`) and the no-WebAssembly fallback regex - otherwise a browser without
-# WebAssembly still treats `FORMAT `JSONCompactColumns`` as "no explicit format", adds the page's own
-# framing, and the download does not strip the real clause.
+# clause and the lexer walk accepts it (via `TT.QuotedIdentifier`).
 echo "$page" | grep -q -F 'tokens[i + 1].type === TT.QuotedIdentifier' && echo 'lexer walk accepts a quoted format name: OK'
-echo "$page" | grep -q -F 'query.match(/\bFORMAT\s+(?:`([^`]+)`|"([^"]+)"|(\w+))(?=\s*(?:;|\bSETTINGS\b|$))/i)' && echo 'fallback regex accepts a quoted format name: OK'
+# Without WebAssembly the two request-shaping detectors (`detectFramingSetting`,
+# `detectExplicitFormatClause`) run the SAME token walk over `fallbackTokenize`'s plain-JS tokens
+# instead of a divergent regex heuristic (which misread e.g. `SELECT settings x,
+# framing_output_format = 'None' FROM t` and `WITH 1 AS format SELECT format JSONCompactColumns
+# SETTINGS max_threads = 1`); the walk-level regressions live in
+# `src/Parsers/tests/gtest_play_detect_framing_setting.cpp` / `gtest_play_detect_explicit_format.cpp`
+# (every case runs through both tokenizations).
+echo "$page" | grep -q -F 'function fallbackTokenize(text)' && echo 'fallback tokenizer present: OK'
+[ "$(echo "$page" | grep -c 'await tokenizeWithFallback(')" -eq 2 ] && echo 'both detectors use the fallback tokenizer: OK'
 # The embedded SQL lexer must not hang or truncate on a large query: its buffers live at the
 # module's `__heap_base` (below it, the module's own shadow stack overwrote them - the cause of an
 # infinite tokenize loop on a ~64 KiB query), the memory grows to fit the text, the lexer is
@@ -129,13 +134,14 @@ echo "$page" | grep -q -F 'query.match(/\bFORMAT\s+(?:`([^`]+)`|"([^"]+)"|(\w+))
 # boundary as an error, silently truncating the token stream), and a token stream that stops
 # advancing throws instead of looping. The request-path detectors (`detectFramingSetting`,
 # `detectExplicitFormatClause`, `queryIsReadOnly`, `splitAllQueries`, `getQueryUnderCursor`)
-# translate such a failure into their text-match fallbacks via `tokenizeOrNull`, so a query the
+# translate such a failure into their fallbacks via `tokenizeOrNull` (the token-walk-over-
+# `fallbackTokenize` path for the first two, text heuristics for the rest), so a query the
 # lexer cannot handle still runs instead of hanging the tab before any request is sent.
 echo "$page" | grep -q -F 'exports.__heap_base.value' && echo 'lexer buffers at heap base: OK'
 echo "$page" | grep -q -F 'exports.memory.grow(' && echo 'lexer memory grows to fit: OK'
 echo "$page" | grep -q -F 'clickhouse_lexer_create(lexer_offset, query_begin, query_end, 0)' && echo 'lexer created without size cap: OK'
 echo "$page" | grep -q -F 'SQL lexer stopped advancing' && echo 'lexer forward-progress guard: OK'
-[ "$(echo "$page" | grep -c 'await tokenizeOrNull(')" -ge 5 ] && echo 'request-path detectors fall back on lexer failure: OK'
+[ "$(echo "$page" | grep -c 'await tokenizeOrNull(')" -ge 4 ] && echo 'request-path detectors fall back on lexer failure: OK'
 # The single-result restore (`restoreFromHistory`) dispatches an `ndjson_packets` snapshot at the
 # top level of its chain (`else if (kind === 'ndjson_packets')`), before the `!ok` and format
 # branches, so a successful packet stream whose format has a special restore path is replayed raw
