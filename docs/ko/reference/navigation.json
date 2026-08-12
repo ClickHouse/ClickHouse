@@ -168,6 +168,7 @@
                 "ko/reference/statements/select/limit",
                 "ko/reference/statements/select/offset",
                 "ko/reference/statements/select/order-by",
+                "ko/reference/statements/select/pipe-operators",
                 "ko/reference/statements/select/prewhere",
                 "ko/reference/statements/select/qualify",
                 "ko/reference/statements/select/replace_modifier",

@@ -33,6 +33,21 @@ FROM table
 SELECT *
 ```
 
+Em uma consulta que começa com `FROM`, a cláusula `SELECT` é opcional: quando omitida, a consulta funciona como se `SELECT *` tivesse sido escrito:
+
+```sql
+FROM table
+WHERE x > 1
+```
+
+Esse formato é usado principalmente em consultas com [operadores de pipe](/pt-BR/reference/statements/select/pipe-operators):
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+```
+
 <div id="final-modifier">
   ## Modificador FINAL
 </div>

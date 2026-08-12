@@ -168,6 +168,7 @@
                 "es/reference/statements/select/limit",
                 "es/reference/statements/select/offset",
                 "es/reference/statements/select/order-by",
+                "es/reference/statements/select/pipe-operators",
                 "es/reference/statements/select/prewhere",
                 "es/reference/statements/select/qualify",
                 "es/reference/statements/select/replace_modifier",

@@ -33,6 +33,21 @@ FROM table
 SELECT *
 ```
 
+在以 `FROM` 开头的查询中，`SELECT` 子句是可选的；省略时，该查询的行为如同写入了 `SELECT *`：
+
+```sql
+FROM table
+WHERE x > 1
+```
+
+此形式主要用于使用[管道运算符](/zh/reference/statements/select/pipe-operators)的查询：
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+```
+
 <div id="final-modifier">
   ## FINAL 修饰符
 </div>

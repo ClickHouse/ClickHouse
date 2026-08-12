@@ -62,6 +62,15 @@ Les spécificités de chaque clause facultative sont décrites dans des sections
 * [clause INTO OUTFILE](/fr/reference/statements/select/into-outfile)
 * [clause FORMAT](/fr/reference/statements/select/format)
 
+Une requête peut également être écrite sous la forme d’une chaîne linéaire de transformations à l’aide d’[opérateurs pipe](/fr/reference/statements/select/pipe-operators) :
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+|> ORDER BY c DESC
+```
+
 <div id="select-clause">
   ## Clause SELECT
 </div>

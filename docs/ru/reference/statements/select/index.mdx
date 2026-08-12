@@ -53,7 +53,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 * [секция WINDOW](/ru/reference/functions/window-functions/index)
 * [предложение QUALIFY](/ru/reference/statements/select/qualify)
 * [предложение ORDER BY](/ru/reference/statements/select/order-by)
-* [предложение LIMIT BY](/ru/reference/statements/select/limit-by)
+* [секция LIMIT BY](/ru/reference/statements/select/limit-by)
 * [секция LIMIT](/ru/reference/statements/select/limit)
 * [секция OFFSET](/ru/reference/statements/select/offset)
 * [секция UNION](/ru/reference/statements/select/union)
@@ -61,6 +61,15 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 * [оператор EXCEPT](/ru/reference/statements/select/except)
 * [Предложение INTO OUTFILE](/ru/reference/statements/select/into-outfile)
 * [предложение FORMAT](/ru/reference/statements/select/format)
+
+Запрос также можно записать в виде линейной цепочки преобразований с [конвейерными операторами](/ru/reference/statements/select/pipe-operators):
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+|> ORDER BY c DESC
+```
 
 <div id="select-clause">
   ## Секция SELECT

@@ -62,6 +62,15 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 * [INTO OUTFILE 句](/ja/reference/statements/select/into-outfile)
 * [FORMAT 句](/ja/reference/statements/select/format)
 
+クエリは、[パイプ演算子](/ja/reference/statements/select/pipe-operators)を使用して、変換を線形に連結する形式で記述することもできます。
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+|> ORDER BY c DESC
+```
+
 <div id="select-clause">
   ## SELECT 句
 </div>

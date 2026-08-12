@@ -62,6 +62,15 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 * [بند INTO OUTFILE](/ar/reference/statements/select/into-outfile)
 * [بند FORMAT](/ar/reference/statements/select/format)
 
+يمكن أيضًا كتابة الاستعلام كسلسلة خطية من التحويلات باستخدام [عوامل الأنبوب](/ar/reference/statements/select/pipe-operators):
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+|> ORDER BY c DESC
+```
+
 <div id="select-clause">
   ## بند SELECT
 </div>

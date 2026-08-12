@@ -33,6 +33,21 @@ FROM table
 SELECT *
 ```
 
+في استعلام يبدأ بـ `FROM`، تكون عبارة `SELECT` اختيارية. عند حذفها، يعمل الاستعلام كما لو كُتبت `SELECT *`:
+
+```sql
+FROM table
+WHERE x > 1
+```
+
+يُستخدم هذا الشكل غالبًا في الاستعلامات التي تستخدم [عوامل pipe](/ar/reference/statements/select/pipe-operators):
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+```
+
 <div id="final-modifier">
   ## مُعدِّل FINAL
 </div>

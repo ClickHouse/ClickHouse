@@ -62,6 +62,15 @@ Los detalles de cada cláusula opcional se describen en secciones independientes
 * [cláusula INTO OUTFILE](/es/reference/statements/select/into-outfile)
 * [cláusula FORMAT](/es/reference/statements/select/format)
 
+Una consulta también puede escribirse como una cadena lineal de transformaciones con [operadores de canalización](/es/reference/statements/select/pipe-operators):
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+|> ORDER BY c DESC
+```
+
 <div id="select-clause">
   ## Cláusula SELECT
 </div>

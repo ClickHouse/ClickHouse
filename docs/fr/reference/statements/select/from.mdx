@@ -33,6 +33,21 @@ FROM table
 SELECT *
 ```
 
+Dans une requête qui commence par `FROM`, la clause `SELECT` est facultative : lorsqu’elle est omise, la requête fonctionne comme si `SELECT *` avait été écrit :
+
+```sql
+FROM table
+WHERE x > 1
+```
+
+Cette forme est principalement utilisée dans les requêtes utilisant des [opérateurs pipe](/fr/reference/statements/select/pipe-operators) :
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+```
+
 <div id="final-modifier">
   ## Modificateur FINAL
 </div>

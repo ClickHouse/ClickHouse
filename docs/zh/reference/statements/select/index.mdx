@@ -62,6 +62,15 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 * [INTO OUTFILE 子句](/zh/reference/statements/select/into-outfile)
 * [FORMAT 子句](/zh/reference/statements/select/format)
 
+查询也可以写成使用[管道运算符](/zh/reference/statements/select/pipe-operators)构成的线性转换链：
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+|> ORDER BY c DESC
+```
+
 <div id="select-clause">
   ## SELECT 子句
 </div>

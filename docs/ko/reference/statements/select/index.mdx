@@ -62,6 +62,15 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 * [INTO OUTFILE 절](/ko/reference/statements/select/into-outfile)
 * [FORMAT 절](/ko/reference/statements/select/format)
 
+쿼리는 [파이프 연산자](/ko/reference/statements/select/pipe-operators)를 사용해 변환을 선형으로 연결하는 방식으로도 작성할 수 있습니다:
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+|> ORDER BY c DESC
+```
+
 <div id="select-clause">
   ## SELECT 절
 </div>

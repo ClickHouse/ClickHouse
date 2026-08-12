@@ -33,6 +33,21 @@ FROM table
 SELECT *
 ```
 
+`FROM` で始まるクエリでは、`SELECT`句は任意です。省略した場合、`SELECT *` が記述されているかのように動作します。
+
+```sql
+FROM table
+WHERE x > 1
+```
+
+この形式は主に、[パイプ演算子](/ja/reference/statements/select/pipe-operators)を使用するクエリで使用されます：
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+```
+
 <div id="final-modifier">
   ## FINAL 修飾子
 </div>
