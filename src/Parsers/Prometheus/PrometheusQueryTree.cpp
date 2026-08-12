@@ -76,11 +76,41 @@ namespace
         return true;
     }
 
+    bool isLegacyMetricName(std::string_view metric)
+    {
+        if (metric.empty())
+            return false;
+
+        auto is_alpha = [](char c)
+        {
+            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+        };
+        auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
+
+        if (!is_alpha(metric.front()) && metric.front() != '_' && metric.front() != ':')
+            return false;
+
+        for (char c : metric.substr(1))
+        {
+            if (!is_alpha(c) && !is_digit(c) && c != '_' && c != ':')
+                return false;
+        }
+
+        return true;
+    }
+
     bool canPrintGroupingLabelUnquoted(std::string_view label)
     {
         return isLegacyLabelName(label)
             && !equalsCaseInsensitive(label, "inf")
             && !equalsCaseInsensitive(label, "nan");
+    }
+
+    bool canPrintMetricNameUnquoted(std::string_view metric)
+    {
+        return isLegacyMetricName(metric)
+            && !equalsCaseInsensitive(metric, "inf")
+            && !equalsCaseInsensitive(metric, "nan");
     }
 
     String formatLabelName(const String & label)
@@ -379,19 +409,20 @@ String PrometheusQueryTree::InstantSelector::toString(const PrometheusQueryTree 
         }
     }
 
-    String str;
-    if (has_metric_name)
-    {
-        str += matchers[metric_name_pos].label_value;
-    }
+    const bool metric_name_can_be_printed_unquoted
+        = has_metric_name && canPrintMetricNameUnquoted(matchers[metric_name_pos].label_value);
 
-    if (!has_metric_name || (matchers.size() - has_metric_name > 0))
+    String str;
+    if (metric_name_can_be_printed_unquoted)
+        str += matchers[metric_name_pos].label_value;
+
+    if (!metric_name_can_be_printed_unquoted || !has_metric_name || (matchers.size() - has_metric_name > 0))
     {
         str += "{";
         bool need_comma = false;
         for (size_t i = 0; i != matchers.size(); ++i)
         {
-            if (i == metric_name_pos)
+            if (i == metric_name_pos && metric_name_can_be_printed_unquoted)
                 continue;
             const auto & matcher = matchers[i];
             if (need_comma)

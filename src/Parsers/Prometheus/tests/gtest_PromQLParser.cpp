@@ -100,6 +100,18 @@ TEST(PromQLParser, QuotedGroupingLabelsRoundTrip)
 }
 
 
+TEST(PromQLParser, QuotedMetricNameRoundTrip)
+{
+    const auto input = R"(sum by ("service.name") ({__name__="http.server.duration"}))";
+
+    PrometheusQueryTree query_tree{input};
+    EXPECT_EQ(query_tree.toString(), input);
+
+    PrometheusQueryTree reparsed_query_tree{query_tree.toString()};
+    EXPECT_EQ(reparsed_query_tree.toString(), input);
+}
+
+
 TEST(PromQLParser, InvalidQuotedGroupingLabels)
 {
     for (const auto query : {R"(sum by ("") (up))", R"(sum by ("\xff") (up))"})
