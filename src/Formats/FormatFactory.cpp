@@ -225,6 +225,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.bloom_filter_push_down = settings[Setting::input_format_parquet_bloom_filter_push_down];
     format_settings.parquet.dictionary_filter_push_down = settings[Setting::input_format_parquet_dictionary_filter_push_down];
     format_settings.parquet.page_filter_push_down = settings[Setting::input_format_parquet_page_filter_push_down];
+    format_settings.parquet.spatial_filter_push_down = settings[Setting::input_format_parquet_spatial_filter_push_down];
     format_settings.parquet.use_offset_index = settings[Setting::input_format_parquet_use_offset_index];
 
     format_settings.parquet.enable_json_parsing = settings[Setting::input_format_parquet_enable_json_parsing];
@@ -343,8 +344,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.arrow.output_compression_method = settings[Setting::output_format_arrow_compression_method];
     format_settings.arrow.output_date_as_uint16 = settings[Setting::output_format_arrow_date_as_uint16];
     format_settings.arrow.output_unsupported_types_as_binary = settings[Setting::output_format_arrow_unsupported_types_as_binary];
-    format_settings.arrow.input_use_native_reader = settings[Setting::input_format_arrow_use_native_reader];
-    format_settings.arrow.output_use_native_writer = settings[Setting::output_format_arrow_use_native_writer];
     format_settings.orc.allow_missing_columns = settings[Setting::input_format_orc_allow_missing_columns];
     format_settings.orc.row_batch_size = settings[Setting::input_format_orc_row_batch_size];
     format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_orc_skip_columns_with_unsupported_types_in_schema_inference];

@@ -88,6 +88,7 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMerge.h>
@@ -242,6 +243,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -579,6 +581,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
+    /// Only the analyzer can resolve recursive CTEs, and reaching this interpreter means the old analyzer.
+    if (getSelectQuery().recursive_with)
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD, "WITH RECURSIVE is not supported with the old analyzer. Please use `enable_analyzer=1`");
+
     initSettings();
 
     // Automatic parallel replicas aren't supported in the old analyzer, this code is needed only as a safe guard for
@@ -612,7 +619,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (context->getSettingsRef()[Setting::enable_global_with_statement])
             ApplyWithAliasVisitor::visit(query_ptr);
-        ApplyWithSubqueryVisitor(context).visit(query_ptr);
+        ApplyWithSubqueryVisitor::visit(query_ptr);
     }
 
     query_info.query = query_ptr->clone();
@@ -904,6 +911,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     estimator,
                     queried_columns,
                     supported_prewhere_columns,
+                    storage->supportedPrewhereColumnsIncludeSubcolumns(),
                     log};
 
                 where_optimizer.optimize(current_info, context);
@@ -1282,6 +1290,16 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     {
         query_info.prepared_sets = query_analyzer->getPreparedSets();
         from_stage = storage->getQueryProcessingStage(context, options.to_stage, storage_snapshot, query_info);
+
+        /// A row-level filter refused for push-down is applied as a FilterStep right above
+        /// the read, which only the first processing stage adds. A storage processing further
+        /// (e.g. Distributed or a wrapper over it) would silently skip the policy, so fail closed instead.
+        if (row_policy_info && from_stage > QueryProcessingStage::FetchColumns && !shouldPushRowLevelFilterToStorage())
+            throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+                "Row policy filter for {} cannot be pushed into the storage read, and the storage processes "
+                "the query remotely, so the filter cannot be applied. Define the policy on the underlying tables "
+                "instead; note that such a policy is not applied to reads shipped with `serialize_query_plan = 1`",
+                storage->getStorageID().getNameForLogs());
     }
 
     /// Do I need to perform the first part of the pipeline?
@@ -1941,7 +1959,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         {
             // If there is a storage that supports prewhere, this will always be nullptr
             // Thus, we don't actually need to check if projection is active.
-            if (expressions.row_policy_info && !(!input_pipe && storage && storage->supportsPrewhere()))
+            if (expressions.row_policy_info && !shouldPushRowLevelFilterToStorage())
             {
                 auto row_level_security_step = std::make_unique<FilterStep>(
                     query_plan.getCurrentHeader(),
@@ -2472,6 +2490,36 @@ bool InterpreterSelectQuery::shouldMoveToPrewhere() const
     return settings[Setting::optimize_move_to_prewhere] && (!query.final() || settings[Setting::optimize_move_to_prewhere_if_final]);
 }
 
+bool InterpreterSelectQuery::shouldPushRowLevelFilterToStorage() const
+{
+    if (input_pipe || !storage || !storage->supportsPrewhere())
+        return false;
+
+    /// A remote storage cannot carry the filter at all: read() only ships query text to the
+    /// remote servers and never lowers the filter into it, so pushing would silently drop an
+    /// access-control filter. Refuse, and let the stage check fail closed.
+    if (storage->isRemote())
+        return false;
+
+    /// The filter is built against this table's schema, but read() hands it to wrapper
+    /// storages' children (Merge, Buffer), which re-derive it against their own types.
+    /// Push it down only if every column it consumes is in the PREWHERE contract.
+    /// NOTE: uses the interpreter's own row_policy_info, so it is callable before
+    /// analysis_result exists; they share the same object.
+    if (const auto supported_prewhere_columns = storage->supportedPrewhereColumns())
+    {
+        const auto & table_columns = metadata_snapshot->getColumns();
+        const bool include_subcolumns = storage->supportedPrewhereColumnsIncludeSubcolumns();
+        for (const auto & column_name : row_policy_info->actions.getRequiredColumnsNames())
+        {
+            if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, include_subcolumns, table_columns, column_name))
+                return false;
+        }
+    }
+
+    return true;
+}
+
 void InterpreterSelectQuery::addPrewhereAliasActions()
 {
     auto & row_level_filter = analysis_result.row_policy_info;
@@ -2503,7 +2551,9 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
             columns.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
         }
 
-        if (row_level_filter)
+        /// A row policy that will not be pushed into the storage read is applied as an ordinary
+        /// FilterStep above it, so its columns are read normally and are not PREWHERE columns.
+        if (row_level_filter && shouldPushRowLevelFilterToStorage())
         {
             auto row_level_required_columns = row_level_filter->actions.getRequiredColumns().getNames();
             columns.insert(row_level_required_columns.begin(), row_level_required_columns.end());
@@ -2624,10 +2674,12 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
     if (supported_prewhere_columns.has_value())
     {
         NameSet required_columns_from_prewhere = get_prewhere_columns();
+        const auto & table_columns = metadata_snapshot->getColumns();
+        const bool include_subcolumns = storage->supportedPrewhereColumnsIncludeSubcolumns();
 
         for (const auto & column_name : required_columns_from_prewhere)
         {
-            if (!supported_prewhere_columns->contains(column_name))
+            if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, include_subcolumns, table_columns, column_name))
                 throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "Storage {} doesn't support PREWHERE for {}", storage->getName(), column_name);
         }
     }
@@ -2879,7 +2931,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         if (max_streams == 0)
             max_streams = 1;
 
-        if (analysis_result.row_policy_info && (!input_pipe && storage && storage->supportsPrewhere()))
+        if (analysis_result.row_policy_info && shouldPushRowLevelFilterToStorage())
             query_info.row_level_filter = analysis_result.row_policy_info;
 
         if (analysis_result.prewhere_info)

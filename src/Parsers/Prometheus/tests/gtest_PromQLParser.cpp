@@ -1180,6 +1180,27 @@ PrometheusQueryTree(INSTANT_VECTOR):
 }
 
 
+TEST(PromQLParser, DurationUnitOrder)
+{
+    for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
+             {"up[1m1d]", 6},
+             {"up[1h2h]", 6},
+             {"up offset 1ms1s", 14},
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_EQ(error_pos, expected_error_pos) << query;
+    }
+
+    EXPECT_NO_THROW(PrometheusQueryTree{"up[1y2w3d4h5m6s7ms]"});
+    EXPECT_NO_THROW(PrometheusQueryTree{"up[1d2h5ms]"});
+}
+
+
 TEST(PromQLParser, ErrorPosition)
 {
     for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{

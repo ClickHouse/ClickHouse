@@ -1842,7 +1842,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.select && create.isView())
     {
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor(getContext()).visit(*create.select);
+        ApplyWithSubqueryVisitor::visit(*create.select);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.select);
     }
@@ -2680,7 +2680,17 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             [&current_context](const StorageID & to_drop_id)
             {
                 if (auto to_drop = DatabaseCatalog::instance().tryGetTable(to_drop_id, current_context))
+                {
+                    /// The replaced table is dropped after the swap, under an internal temporary name that
+                    /// grants cannot cover, so check the drop privilege for its kind here, on its real name.
+                    AccessType drop_access = AccessType::DROP_TABLE;
+                    if (to_drop->isView())
+                        drop_access = AccessType::DROP_VIEW;
+                    else if (to_drop->isDictionary())
+                        drop_access = AccessType::DROP_DICTIONARY;
+                    current_context->checkAccess(drop_access, to_drop_id);
                     to_drop->checkTableSizeBelowDropLimit(current_context);
+                }
             });
         try
         {
@@ -2708,7 +2718,10 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             /// kind than the new one (e.g. a dictionary replaced by a view), so the drop must match its kind.
             if (auto replaced = DatabaseCatalog::instance().tryGetTable(StorageID{create.getDatabase(), create.getTable()}, current_context))
                 ast_drop->is_dictionary = replaced->isDictionary();
-            /// `pre_swap_check` already gated this; bypass to avoid double-consuming
+            /// `pre_swap_check` already authorized this drop against the replaced table's real name.
+            /// The temporary name cannot be covered by grants, so skip the access check on it.
+            ast_drop->no_access_check = true;
+            /// `pre_swap_check` also gated the size; bypass to avoid double-consuming
             /// the `force_drop_table` flag inside `Context::checkCanBeDropped`.
             auto drop_context = make_drop_context(/*bypass_size_guard=*/true);
             InterpreterDropQuery(ast_drop, drop_context).execute();

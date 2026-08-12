@@ -2,7 +2,9 @@
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <gtest/gtest.h>
 #include <condition_variable>
+#include <limits>
 #include <mutex>
+#include <thread>
 
 using namespace DB;
 
@@ -280,4 +282,42 @@ TEST(BackgroundSchedulePool, ScheduleAfterTerminitePool)
 
     ASSERT_EQ(task->schedule(), false);
     ASSERT_EQ(delayed_task->scheduleAfter(1), false);
+}
+
+/// A huge delay must not wrap into a past deadline and fire immediately.
+TEST(BackgroundSchedulePool, ScheduleAfterHugeDelayDoesNotFire)
+{
+    auto pool = BackgroundSchedulePool::create(4, 4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
+
+    std::atomic<size_t> executions = 0;
+    BackgroundSchedulePoolTaskHolder task;
+    task = pool->createTask(StorageID::createEmpty(), "huge_delay", [&] { ++executions; });
+    ASSERT_EQ(task->activate(), true);
+
+    /// The first value converts to microseconds losslessly, so it reaches the wait and overflows
+    /// there when it is widened to nanoseconds. The others already wrap (mod 2^64) during the
+    /// conversion, so they only ever exercise the deadline arithmetic.
+    for (size_t ms : {size_t(10000000000000), size_t(1) << 63, std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max() / 1000 + 1})
+    {
+        ASSERT_EQ(task->scheduleAfter(ms), true);
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+        /// Assert the task is parked, not merely unfired: a scheduler that dropped the request
+        /// entirely would also leave `executions` at zero.
+        size_t found = 0;
+        for (const auto & info : pool->getTasks())
+        {
+            if (info.log_name != "huge_delay")
+                continue;
+            ++found;
+            ASSERT_TRUE(info.delayed);
+            ASSERT_FALSE(info.executing);
+            ASSERT_FALSE(info.scheduled);
+        }
+        ASSERT_EQ(found, 1u);
+        ASSERT_EQ(executions.load(), 0u);
+    }
+
+    ASSERT_EQ(task->deactivate(), true);
+    pool->join();
 }

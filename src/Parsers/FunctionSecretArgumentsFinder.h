@@ -105,6 +105,12 @@ protected:
     static constexpr std::string_view s3_secret_keys[]
         = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "external_id"};
 
+    /// Named arguments carrying NATS credentials. They are the setting names, because the `NATS` engine
+    /// takes its arguments as overrides of a named collection (`NATS(collection, nats_token = '...')`).
+    /// Keep in sync with `NATS::SETTINGS_TO_HIDE`, which masks the same secrets in the `SETTINGS` clause.
+    static constexpr std::string_view nats_secret_keys[]
+        = {"nats_password", "nats_token", "nats_credential_file", "nats_credentials"};
+
     void markSecretArgument(size_t index, bool argument_is_named = false);
 
     /// `headers(..)` and `extra_credentials(..)` are nested maps whose values are secret auth material
@@ -185,6 +191,7 @@ protected:
     void findAzureBlobStorageTableEngineSecretArguments();
     void findRedisFunctionSecretArguments();
     void findYTsaurusStorageTableEngineSecretArguments();
+    void findNATSTableEngineSecretArguments();
     void findDatabaseEngineSecretArguments();
     void findMySQLDatabaseSecretArguments();
     void findS3DatabaseSecretArguments();

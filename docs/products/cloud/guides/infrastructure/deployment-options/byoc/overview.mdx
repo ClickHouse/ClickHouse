@@ -29,6 +29,16 @@ BYOC is designed specifically for large-scale deployments, and requires customer
 **Supported Cloud Regions:**
 All **public regions** listed in our [supported regions](/products/cloud/reference/supported-regions) documentation are available for BYOC deployments. Private regions aren't currently supported.
 
+## Prerequisites {#prerequisites}
+
+The following requirements are fundamental to how BYOC is built and operated. They apply to every deployment and cannot be waived or worked around:
+
+- **A supported region.** BYOC deploys only into the public regions listed in the [supported regions](/products/cloud/reference/supported-regions) documentation. AWS Local Zones and single-zone regions are not supported. If the region you need isn't listed, talk to your ClickHouse representative before planning a deployment.
+- **Three availability zones.** Every BYOC infrastructure spans three availability zones — this is how high availability is provided for ClickHouse servers and ClickHouse Keeper. Regions with fewer than three zones cannot host BYOC, and single-zone or two-zone deployments are not offered.
+- **The onboarding artifacts, applied verbatim.** The CloudFormation template or Terraform module must be applied exactly as provided — the resource names (such as the `ClickHouseManagementRole` IAM role) and the [documented baseline permissions](/products/bring-your-own-cloud/reference/privilege) are hard-coded into ClickHouse's automation. Any modification requires ClickHouse's explicit approval; supported customizations are exposed as template parameters. See [standard onboarding](/products/bring-your-own-cloud/onboarding/standard).
+- **A ClickHouse-managed Kubernetes cluster.** The EKS/GKE/AKS cluster is created and fully operated by ClickHouse. Installing into an existing Kubernetes cluster is not supported, and cluster-wide admission controllers or policy engines must not be installed on it.
+- **Network basics.** Working DNS resolution and outbound internet access (directly or via NAT) are required in every setup. For a ClickHouse-managed VPC/VNet, the CIDR range must be at least `/23` — and `/23` is the floor, not a recommendation: every replica consumes IP addresses, so larger deployments need a larger range. Customer-managed VPCs have their own per-cloud subnet requirements — see the [AWS](/products/bring-your-own-cloud/onboarding/customization-aws) and [GCP](/products/bring-your-own-cloud/onboarding/customization-gcp) customization guides.
+
 ## Features {#features}
 
 ### Supported features {#supported-features}

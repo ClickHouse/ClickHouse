@@ -1,6 +1,7 @@
 #include <thread>
 #include <Storages/StorageMaterializedView.h>
 
+#include <Storages/ColumnDefault.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -35,6 +36,8 @@
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/ProtocolDefines.h>
+#include <Common/config_version.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -629,6 +632,16 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
     refresh_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
     refresh_context->setSetting("log_comment", log_comment);
     refresh_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
+    /// The client info is inherited from the table's (global) context and has no client version.
+    /// This server is the real initiator of the refresh query and of any distributed sub-query it
+    /// spawns (e.g. the refresh `SELECT` reads from a `Distributed` table), so fill the version with
+    /// this server's version. Otherwise remote shards treat the initiator as a pre-23.3 server and
+    /// apply legacy compatibility downgrades, and `RemoteQueryExecutor` rejects the zero version
+    /// outright.
+    if (client_info.client_version_major == 0
+        && client_info.client_version_minor == 0
+        && client_info.client_version_patch == 0)
+        refresh_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
     /// Generate a random query id.
     refresh_context->setCurrentQueryId("");
     /// Use the database where the materialized view is created to run the select query in the refresh task
@@ -1082,18 +1095,40 @@ std::optional<NameSet> StorageMaterializedView::supportedPrewhereColumns() const
         return std::nullopt;
 
     auto view_metadata = getInMemoryMetadataPtr(getContext(), false);
-    auto view_columns = view_metadata->getColumns().getAll();
+    const auto & view_columns_description = view_metadata->getColumns();
     auto target_table_metadata = table->getInMemoryMetadataPtr(getContext(), false);
     auto target_table_columns = target_table_metadata->getColumns();
     NameSet supported_columns;
-    for (const auto & [name, type] : view_columns)
+    for (const auto & [name, type] : view_columns_description.getAll())
     {
         auto target_column = target_table_columns.tryGetColumn(GetColumnsOptions::All, name);
-        if (target_column && target_column->type->equals(*type))
+        if (!target_column || !target_column->type->equals(*type))
+            continue;
+        /// The filter is forwarded into the raw target read, so the column must be physical there
+        /// just like here (same rule as StorageMerge): an ALIAS twin has no input it binds to.
+        const auto view_kind = view_columns_description.getDefault(name).value_or(ColumnDefault{}).kind;
+        const auto target_kind = target_table_columns.getDefault(name).value_or(ColumnDefault{}).kind;
+        if (columnDefaultKindHasSameType(view_kind, target_kind))
             supported_columns.insert(name);
     }
 
+    /// The loop above only compares against the target's *declared* columns. When the target
+    /// aggregates other tables itself (a `Merge`, another `MaterializedView`, ...), its declared
+    /// type can match while a leaf's differs, and the read delegated down to that leaf would then
+    /// re-derive PREWHERE against a type the plan did not expect. Intersect with what the target
+    /// itself allows so the constraint holds transitively. Target chains cannot cycle: a
+    /// self-target is rejected with BAD_ARGUMENTS and a loop with INFINITE_LOOP, both at DDL time.
+    if (const auto target_supported_columns = table->supportedPrewhereColumns())
+        std::erase_if(supported_columns, [&](const auto & name) { return !target_supported_columns->contains(name); });
+
     return supported_columns;
+}
+
+bool StorageMaterializedView::supportedPrewhereColumnsIncludeSubcolumns() const
+{
+    if (auto table = tryGetTargetTable())
+        return table->supportedPrewhereColumnsIncludeSubcolumns();
+    return false;
 }
 
 void registerStorageMaterializedView(StorageFactory & factory);

@@ -12,7 +12,6 @@ from ci.defs.defs import (
     JobNames,
     RunnerLabels,
 )
-
 LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
 # Keeper stress spins nested Docker inside the integration-tests-runner container.
 # Using nearly all host RAM for the outer container can starve the host runner
@@ -45,6 +44,8 @@ build_digest_config = Job.CacheDigestConfig(
         "./rust",
         "./ci/jobs/build_clickhouse.py",
         "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        "./ci/jobs/scripts/log_cluster.py",
+        "./utils/prepare-time-trace/prepare-time-trace.sh",
         # The build job also assembles the deb, rpm and tgz packages, so changes to
         # their definitions and to the packaging script have to schedule a rebuild.
         "./packages",
@@ -200,7 +201,7 @@ class JobConfigs:
     )
     ci_tests = Job.Config(
         name=JobNames.CI_TESTS,
-        runs_on=RunnerLabels.ARM_LARGE,
+        runs_on=RunnerLabels.ARM_SMALL,
         command="python3 ./ci/jobs/ci_tests_job.py",
         timeout=1200,
         run_in_docker=f"clickhouse/integration-tests-runner+root+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
@@ -427,13 +428,21 @@ class JobConfigs:
     # with the PR release builds' cmake flags (see PR_CACHE_WARMUP_BUILD_TYPES
     # in build_clickhouse.py) while keeping the shared sccache read-write. This
     # populates the cache so that read-only PR release builds get cache hits.
-    # They provide no artifacts and run no profile/master-head post hooks - the
-    # only purpose is to warm sccache.
+    # They provide no artifacts. The build profile hook runs so that the
+    # "Build profile diff" check gets a master baseline built with the PR
+    # flags - the arm warmup's object sizes and compile traces are the only
+    # master data directly comparable to a PR build (official master builds
+    # keep debug symbols, PR builds strip them). The hook uploads only for the
+    # arm variant (see _PROFILED_BUILDS in build_profile_hook.py).
     sccache_warmup_build_jobs = [
         job.set_command(f"{job.command} --build-examples")
         if f"({BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP})" in job.name
         else job
-        for job in common_build_job_config.parametrize(
+        for job in common_build_job_config.set_post_hooks(
+            post_hooks=[
+                "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+            ],
+        ).parametrize(
             Job.ParamSet(
                 parameter=BuildTypes.AMD_RELEASE_PR_CACHE_WARMUP,
                 runs_on=RunnerLabels.ARM_LARGE,
@@ -1490,26 +1499,6 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_RELEASE],
         ),
     )
-    docs_job = Job.Config(
-        name=JobNames.DOCS,
-        runs_on=RunnerLabels.FUNC_TESTER_ARM,
-        command="python3 ./ci/jobs/docs_job.py",
-        digest_config=Job.CacheDigestConfig(
-            # Restrict to the legacy Docusaurus content tree so that PRs which
-            # only touch the new Mintlify site (./docs/docs.json, ./docs/*.mdx,
-            # etc.) do not trigger this job.
-            include_paths=[
-                "./docs/en/",
-                "./docs/changelogs/",
-                "./ci/jobs/docs_job.py",
-                "CHANGELOG.md",
-                "./src/Functions",
-            ],
-        ),
-        run_in_docker="clickhouse/docs-builder",
-        requires=[ArtifactNames.CH_ARM_BINARY],
-        run_after=[JobNames.STYLE_CHECK],
-    )
     docs_job_mintlify = Job.Config(
         name=JobNames.DOCS_MINTLIFY,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
@@ -1519,22 +1508,20 @@ class JobConfigs:
                 "./docs",
                 "./ci/jobs/docs_job_mintlify.py",
                 "./ci/jobs/scripts/docs",
+                "./utils/generate-async-metrics-docs",
+                "./utils/generate-system-tables-docs",
             ],
-            # Exclude everything currently in ./docs so that this job runs only
-            # on files that are NOT part of the legacy docs tree (i.e. the new
-            # Mintlify site files such as ./docs/docs.json and any new Mintlify
-            # content). Add new excludes here if more non-Mintlify content is
-            # introduced under ./docs.
+            # These files are internal inputs or contributor documentation, not
+            # pages published by Mintlify.
             exclude_paths=[
                 "./docs/README.md",
                 "./docs/_templates/",
                 "./docs/_includes/",
                 "./docs/changelog_entry_guidelines.md",
                 "./docs/changelogs/",
-                "./docs/en/",
             ],
         ),
-        run_in_docker="clickhouse/docs-builder"
+        run_in_docker="clickhouse/docs-builder",
     )
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
@@ -1744,6 +1731,42 @@ class JobConfigs:
         run_in_docker="clickhouse/performance-comparison",
         command="python3 ./ci/jobs/vector_search_stress_tests.py",
         timeout=6 * 3600,
+    )
+    # Compares the PR's arm_release build profile (binary and per-object sizes,
+    # per-symbol sizes, compile and link time down to individual functions and
+    # template instantiations) against the latest master build, and posts a PR
+    # comment when the change is significant. The data comes from the CI logs
+    # cluster: the PR side is uploaded by the arm_release build post-hook
+    # (build_profile_hook.py), the master side by master workflow builds.
+    # No digest_config, i.e. not cacheable: the job's output is a PR comment
+    # about one concrete commit (it embeds the head sha and links this run's
+    # report). Reusing a cached result would leave that comment describing an
+    # older commit of the PR - including a change that the head has already
+    # reverted - so the comparison is redone for every head. The job is cheap:
+    # it only queries the CI logs cluster.
+    build_profile_diff_job = Job.Config(
+        name=JobNames.BUILD_PROFILE_DIFF,
+        runs_on=RunnerLabels.ARM_SMALL,
+        # stateless-test rather than test-base: the job reads the CI logs
+        # cluster credentials from AWS SSM, and stateless-test is the test
+        # image that ships the aws CLI.
+        run_in_docker="clickhouse/stateless-test",
+        requires=["Build (arm_release)"],
+        command="python3 ./ci/jobs/build_profile_diff_job.py",
+        timeout=1800,
+        enable_gh_auth=True,
+        # Run on a red head too. This job is the only writer of the
+        # `build-profile-diff` PR comment, so skipping it leaves the comment
+        # posted for an older commit pinned to the PR, reading as if it
+        # described the head. `Build (arm_release)` runs after every regular
+        # build (`set_run_after(REGULAR_BUILD_NAMES)` in ci/workflows/pull_request.py)
+        # and inherits the default "no upstream failure" gate, so an unrelated
+        # build failure skips it and would skip this job with it. With no
+        # profile data for the head the job posts the "no data" text over the
+        # stale comparison (see main()) instead of leaving it. Not
+        # `run_unless_cancelled`: that would also ignore the job filter and run
+        # this on a `release` or `do not test` PR.
+        run_on_upstream_failure=True,
     )
     llvm_coverage_job = Job.Config(
         name=JobNames.LLVM_COVERAGE,

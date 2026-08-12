@@ -19,6 +19,7 @@ Contains information about all filesystem cache settings
 - `max_elements` ([UInt64](/reference/data-types/int-uint)) — Maximum number of cache elements, e.g. file segments (limits number of files on filesystem)
 - `max_file_segment_size` ([UInt64](/reference/data-types/int-uint)) — Maximum size of a single file segment
 - `boundary_alignment` ([UInt64](/reference/data-types/int-uint)) — File segment alignment
+- `reserve_granularity` ([UInt64](/reference/data-types/int-uint)) — When reserving space for a file segment download, reserve at least this many bytes ahead of the downloaded size (capped at the file segment size). Coarser granularity reduces the rate of cache state lock acquisitions on the reservation hot path, at the cost of holding some reserved-but-not-yet-downloaded space (reclaimed on file segment completion). Value 0 disables reserve-ahead: space is reserved exactly as requested.
 - `cache_on_write_operations` ([UInt8](/reference/data-types/int-uint)) — Enables write-through cache (cache on INSERT and MERGE)
 - `cache_policy` ([String](/reference/data-types/string)) — Cache eviction policy
 - `slru_size_ratio` ([Float64](/reference/data-types/float)) — SLRU cache policy size ratio of protected to probationary elements
@@ -30,6 +31,7 @@ Contains information about all filesystem cache settings
 - `keep_free_space_size_ratio` ([Float64](/reference/data-types/float)) — A ratio of free space which cache would try to uphold in the background
 - `keep_free_space_elements_ratio` ([Float64](/reference/data-types/float)) — A ratio of free elements which cache would try to uphold in the background
 - `keep_free_space_remove_batch` ([UInt64](/reference/data-types/int-uint)) — A remove batch size of cache elements made by background thread which upholds free space/elements ratio
+- `keep_free_space_eviction_threads` ([UInt64](/reference/data-types/int-uint)) — Number of threads which perform the actual file segment removal (filesystem deletion) for the background free space/elements ratio keeping. The single background thread collects eviction candidates and frees their priority queue entries, while these threads do the lock-free removal in parallel
 - `invalidated_entries_cleanup_interval_ms` ([UInt64](/reference/data-types/int-uint)) — Idle interval in milliseconds of the background task which purges invalidated (lazily-removed) priority queue entries
 - `invalidated_entries_cleanup_threshold` ([UInt64](/reference/data-types/int-uint)) — Number of accumulated invalidated priority queue entries which triggers their background removal
 - `invalidated_entries_cleanup_remove_batch` ([UInt64](/reference/data-types/int-uint)) — Maximum number of invalidated priority queue entries removed under a single write lock per background iteration
@@ -39,12 +41,17 @@ Contains information about all filesystem cache settings
 - `bypass_cache_threshold` ([UInt64](/reference/data-types/int-uint)) — Undocumented. Not recommended for use
 - `write_cache_per_user_id_directory` ([UInt8](/reference/data-types/int-uint)) — Internal ClickHouse Cloud setting
 - `allow_dynamic_cache_resize` ([UInt8](/reference/data-types/int-uint)) — Allow dynamic resize of filesystem cache
+- `dynamic_resize_lock_wait_ms` ([UInt64](/reference/data-types/int-uint)) — Timeout in milliseconds to acquire the dynamic resize exclusive lock before skipping the resize attempt
 - `max_size_ratio_to_total_space` ([Float64](/reference/data-types/float)) — Ratio of `max_size` to total disk space
 - `skip_cache_on_disk_failure` ([UInt8](/reference/data-types/int-uint)) — If true, bypass filesystem cache operations silently on disk IO errors. If false (default), disk IO errors are propagated as startup failures.
 - `use_split_cache` ([UInt8](/reference/data-types/int-uint)) — Use separation of files to system/data.
 - `split_cache_ratio` ([Float64](/reference/data-types/float)) — Ratio of system segment to total size of cache for split_cache.
+- `system_cache_extensions` ([String](/reference/data-types/string)) — Comma-separated list of file extensions that are classified as system cache segments when `use_split_cache` is enabled. When changed, existing cache entries remain in their previous segment type and are evicted naturally over time. Restart is required to change this setting.
 - `overcommit_eviction_evict_step` ([UInt64](/reference/data-types/int-uint)) — Eviction step in bytes for overcommit eviction policy. Used for keep_free_space_*_ratio settings
 - `check_cache_probability` ([Float64](/reference/data-types/float)) — Works only for debug or sanitizer build. Checks cache correctness by going through all cache and checking state of each cache element
+- `idle_client_ttl_sec` ([UInt64](/reference/data-types/int-uint)) — If non-zero and `write_cache_per_user_id_directory` is enabled, all cache entries that belong to a client (user_id) which has not been accessed for this many seconds are fully removed from the cache. Each access by the client refreshes the timer. Default is 1 week. Used by the distributed cache server.
+- `idle_client_check_interval_sec` ([UInt64](/reference/data-types/int-uint)) — How often the idle client eviction task runs, in seconds. Only meaningful when `idle_client_ttl_sec` is non-zero. 0 means an automatic value (`max(1, idle_client_ttl_sec / 10)`).
+- `idle_client_eviction_threads` ([UInt64](/reference/data-types/int-uint)) — Maximum number of threads used to purge idle clients' cache. Only meaningful when `idle_client_ttl_sec` is non-zero.
 - `expose_prometheus_eviction_metrics` ([UInt8](/reference/data-types/int-uint)) — Expose Prometheus metrics for filesystem cache eviction activity (`filesystem_cache_evictions_total` etc.). Off by default. Can be toggled at runtime via `SYSTEM RELOAD CONFIG`.
 - `expose_prometheus_eviction_metrics_per_user` ([UInt8](/reference/data-types/int-uint)) — Additionally expose per-user-id eviction metrics. Requires `expose_prometheus_eviction_metrics`. Cardinality grows with distinct evicting users.
 - `is_initialized` ([UInt8](/reference/data-types/int-uint)) — Indicates whether cache was successfully initialized

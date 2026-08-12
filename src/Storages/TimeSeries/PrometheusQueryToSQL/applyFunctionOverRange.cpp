@@ -142,7 +142,7 @@ bool isFunctionOverRange(std::string_view function_name)
 
 
 SQLQueryPiece applyFunctionOverRange(
-    const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     return applyFunctionOverRange(function_node, function_node->function_name, std::move(arguments), context);
 }

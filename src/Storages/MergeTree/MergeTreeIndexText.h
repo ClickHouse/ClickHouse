@@ -560,6 +560,8 @@ public:
     std::unique_ptr<IPostingListCodec> posting_list_codec;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
     MergeTreeIndexTextPostprocessorPtr postprocessor;
+    /// Name of the index expression rewritten as `optimize_empty_string_comparisons` rewrites queries.
+    std::optional<String> normalized_index_column_name;
 };
 
 }

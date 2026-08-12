@@ -148,6 +148,15 @@ public:
     /// This is needed for engines whose aggregates data from multiple tables, like Merge.
     virtual std::optional<NameSet> supportedPrewhereColumns() const { return std::nullopt; }
 
+    /// Whether a subcolumn is admitted into PREWHERE whenever `supportedPrewhereColumns` admits
+    /// its origin column. Subcolumn sets are open-ended (JSON paths), so the contract enumerates
+    /// top-level names only; this tells whether the storage's PREWHERE machinery resolves a
+    /// subcolumn of an admitted column. Wrappers delegating the read (`Merge`, `Buffer`,
+    /// `MaterializedView`) re-derive the filter by name and forward the question to the
+    /// underlying tables; storages evaluating PREWHERE in a format reader (e.g. data lakes over
+    /// Parquet with column mapping) cannot resolve subcolumns there, hence the fail-safe default.
+    virtual bool supportedPrewhereColumnsIncludeSubcolumns() const { return false; }
+
     /// Returns true if the storage supports optimization of moving conditions to PREWHERE section.
     virtual bool canMoveConditionsToPrewhere() const { return supportsPrewhere(); }
 
@@ -443,6 +452,18 @@ public:
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr /*context*/,
         bool /*async_insert*/);
+
+    /** Checks on the initiator that the current user is allowed to insert into this table, in
+      * addition to the `INSERT` privilege on the table name checked by the interpreter.
+      *
+      * Called when the storage is the destination of an `INSERT`, before the query is executed or
+      * queued for asynchronous insertion. A storage whose `write` guards the write with an access
+      * check of its own must repeat the check here: with `async_insert = 1` the sink is created
+      * later, in a background flush, so a check done only in `write` neither reaches the user
+      * (with `wait_for_async_insert = 0` the query has already returned success) nor happens with
+      * the privileges the user had when the query was issued.
+      */
+    virtual void checkInsertIsAllowed(ContextPtr /*context*/) const {}
 
     /** Writes the data to a table in distributed manner.
       * It is supposed that implementation looks into SELECT part of the query and executes distributed

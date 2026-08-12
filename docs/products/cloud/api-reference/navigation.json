@@ -46,6 +46,23 @@
           "PATCH /v1/organizations/{organizationId}/roles/{roleId}",
           "DELETE /v1/organizations/{organizationId}/roles/{roleId}"
         ]
+      },
+      {
+        "group": "UDF",
+        "pages": [
+          "products/cloud/api-reference/udf/udf-attach",
+          "products/cloud/api-reference/udf/udf-attachment-get",
+          "products/cloud/api-reference/udf/udf-detach",
+          "products/cloud/api-reference/udf/udf-attachment-list",
+          "products/cloud/api-reference/udf/udf-create",
+          "products/cloud/api-reference/udf/udf-list",
+          "products/cloud/api-reference/udf/udf-delete",
+          "products/cloud/api-reference/udf/udf-get",
+          "products/cloud/api-reference/udf/udf-upload-session-create",
+          "products/cloud/api-reference/udf/udf-version-create",
+          "products/cloud/api-reference/udf/udf-version-list",
+          "products/cloud/api-reference/udf/udf-version-delete"
+        ]
       }
     ]
   },
@@ -157,11 +174,6 @@
       "products/cloud/api-reference/clickstack/click-stack-get-alert",
       "products/cloud/api-reference/clickstack/click-stack-update-alert",
       "products/cloud/api-reference/clickstack/click-stack-delete-alert",
-      "products/cloud/api-reference/clickstack/click-stack-list-connections",
-      "products/cloud/api-reference/clickstack/click-stack-create-connection",
-      "products/cloud/api-reference/clickstack/click-stack-get-connection",
-      "products/cloud/api-reference/clickstack/click-stack-update-connection",
-      "products/cloud/api-reference/clickstack/click-stack-delete-connection",
       "products/cloud/api-reference/clickstack/click-stack-list-webhooks",
       "products/cloud/api-reference/clickstack/click-stack-create-webhook",
       "products/cloud/api-reference/clickstack/click-stack-update-webhook",

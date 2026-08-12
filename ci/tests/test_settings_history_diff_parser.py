@@ -4,8 +4,10 @@ Tests for `parse_settings_history_changes` in
 `settings_changes_history` style check with the settings a change adds to
 `src/Core/SettingsChangesHistory.cpp`.
 
-The parser reports new records and value changes (including an in-place edit of an existing
-entry), but not reason-only edits. Whether such a change must sit under the current version
+The parser reports new records, value changes (including an in-place edit of an existing entry),
+removed records and records moved to another version or namespace block; only reason-only edits
+of an entry that stays in its block are ignored. Whether such a change must sit under the current
+version
 block is decided by the style check, not the parser: it enforces the rule as soon as any other
 C++ source file changed, so an edit that touches only SettingsChangesHistory.cpp - a historical
 correction - is allowed there. The parser therefore reports in-place value edits; the source-file
@@ -87,11 +89,202 @@ def test_in_place_value_edit_is_reported():
     ]
 
 
-def test_pure_removal_is_ignored():
+def test_pure_removal_is_reported():
+    # Dropping a record changes what the history says, so it is reported: otherwise a change
+    # that reverts a compiled default to an older value could delete the row recording the
+    # original change instead of recording the revert, and both the style check and
+    # 03999_stateless_settings_history (which only compares the current default with the newest
+    # recorded value) would stay green. Deleting a phantom record is still possible - the
+    # source-file gate lets a change that touches only this file through.
     patch = (
         "@@ -9,3 +9,2 @@\n"
         " {\n"
         '-            {"old_setting", 1, 2, "Phantom record"},\n'
         " });\n"
     )
+    assert parse_settings_history_changes(patch, FILE_LINES) == [
+        {"namespace": "Session", "name": "old_setting"}
+    ]
+
+
+def test_removal_namespace_comes_from_the_enclosing_block():
+    patch = (
+        "@@ -5,4 +5,3 @@\n"
+        " {\n"
+        '-            {"brand_new_merge_tree_setting", 0, 1, "New setting"},\n'
+        " });\n"
+    )
+    assert parse_settings_history_changes(patch, FILE_LINES) == [
+        {"namespace": "MergeTree", "name": "brand_new_merge_tree_setting"}
+    ]
+
+
+def test_entry_moved_to_an_older_version_block_is_reported():
+    # "Move instead of delete": the record is re-added verbatim under an older version block.
+    # The newest recorded value is unchanged, so 03999_stateless_settings_history still passes,
+    # but `compatibility` would attribute the default flip to the wrong release - so the parser
+    # must report it once and let the style check demand it under the current version block.
+    patch = (
+        "@@ -1,4 +1,3 @@\n"
+        " {\n"
+        '-            {"old_setting", 0, 1000, "Fixed record"},\n'
+        " });\n"
+        "@@ -9,3 +8,4 @@\n"
+        " {\n"
+        '+            {"old_setting", 0, 1000, "Fixed record"},\n'
+        " });\n"
+    )
+    assert parse_settings_history_changes(patch, FILE_LINES) == [
+        {"namespace": "Session", "name": "old_setting"}
+    ]
+
+
+def test_entry_moved_between_namespaces_is_reported():
+    # The same version, but the record hops from the session history to the MergeTree history.
+    patch = (
+        "@@ -1,4 +1,3 @@\n"
+        " {\n"
+        '-            {"shared_name", 0, 1, "Moved"},\n'
+        " });\n"
+        "@@ -5,3 +4,4 @@\n"
+        " {\n"
+        '+            {"shared_name", 0, 1, "Moved"},\n'
+        " });\n"
+    )
+    assert parse_settings_history_changes(patch, FILE_LINES) == [
+        {"namespace": "MergeTree", "name": "shared_name"},
+        {"namespace": "Session", "name": "shared_name"},
+    ]
+
+
+def test_entry_reordered_inside_the_same_block_is_ignored():
+    # Both sides sit in the same block, so nothing about what the history records changed.
+    patch = (
+        "@@ -1,4 +1,4 @@\n"
+        " addSettingsChanges(settings_changes_history, \"26.8\",\n"
+        " {\n"
+        '-            {"brand_new_setting", false, true, "New setting"},\n'
+        '             {"another_setting", 0, 1, "Untouched"},\n'
+        '+            {"brand_new_setting", false, true, "New setting"},\n'
+        " });\n"
+    )
     assert parse_settings_history_changes(patch, FILE_LINES) == []
+
+
+def test_removal_and_replacement_with_another_value_reports_the_setting_once():
+    # A revert recorded properly: the old row is dropped and a new row with a different value is
+    # added. Both sides name the same setting in the same namespace, so it is reported once.
+    patch = (
+        "@@ -9,3 +9,3 @@\n"
+        " {\n"
+        '-            {"old_setting", 0, 1000, "Fixed record"},\n'
+        '+            {"old_setting", 1000, 0, "Reverted"},\n'
+        " });\n"
+    )
+    assert parse_settings_history_changes(patch, FILE_LINES) == [
+        {"namespace": "Session", "name": "old_setting"}
+    ]
+
+
+HEADER_EDIT_FILE_LINES = [
+    "        addSettingsChanges(settings_changes_history, \"26.7\",",
+    "        {",
+    "            {\"first_setting\", false, true, \"Untouched\"},",
+    "            {\"second_setting\", 0, 1, \"Untouched\"},",
+    "        });",
+    "        addSettingsChanges(settings_changes_history, \"26.6\",",
+    "        {",
+    "            {\"older_setting\", 0, 1, \"Untouched\"},",
+    "        });",
+]
+
+
+def test_block_header_version_edit_reports_every_entry_of_the_block():
+    # The block-granularity variant of "move instead of delete": no entry line changes at all,
+    # only the version in the `addSettingsChanges` header, which reassigns every record
+    # underneath to another release. An entry-only scan returns nothing and the style check
+    # would skip, so `compatibility` could be made to attribute the flips to the wrong release.
+    patch = (
+        "@@ -1,5 +1,5 @@\n"
+        '-        addSettingsChanges(settings_changes_history, "26.8",\n'
+        '+        addSettingsChanges(settings_changes_history, "26.7",\n'
+        "         {\n"
+        '             {"first_setting", false, true, "Untouched"},\n'
+        '             {"second_setting", 0, 1, "Untouched"},\n'
+        "         });\n"
+    )
+    assert parse_settings_history_changes(patch, HEADER_EDIT_FILE_LINES) == [
+        {"namespace": "Session", "name": "first_setting"},
+        {"namespace": "Session", "name": "second_setting"},
+    ]
+
+
+def test_block_header_namespace_edit_reports_every_entry_of_the_block():
+    # Same hole, the other axis: the whole block hops from the session history to the MergeTree
+    # history without a single entry line changing.
+    file_lines = [
+        "        addSettingsChanges(merge_tree_settings_changes_history, \"26.8\",",
+        "        {",
+        "            {\"first_setting\", false, true, \"Untouched\"},",
+        "        });",
+    ]
+    patch = (
+        "@@ -1,4 +1,4 @@\n"
+        '-        addSettingsChanges(settings_changes_history, "26.8",\n'
+        '+        addSettingsChanges(merge_tree_settings_changes_history, "26.8",\n'
+        "         {\n"
+        '             {"first_setting", false, true, "Untouched"},\n'
+        "         });\n"
+    )
+    assert parse_settings_history_changes(patch, file_lines) == [
+        {"namespace": "MergeTree", "name": "first_setting"}
+    ]
+
+
+def test_block_header_edit_does_not_report_the_neighbouring_blocks():
+    # Only the edited block is affected; the records of the block above and below keep saying
+    # exactly what they said before.
+    patch = (
+        "@@ -6,4 +6,4 @@\n"
+        '-        addSettingsChanges(settings_changes_history, "26.5",\n'
+        '+        addSettingsChanges(settings_changes_history, "26.6",\n'
+        "         {\n"
+        '             {"older_setting", 0, 1, "Untouched"},\n'
+        "         });\n"
+    )
+    assert parse_settings_history_changes(patch, HEADER_EDIT_FILE_LINES) == [
+        {"namespace": "Session", "name": "older_setting"}
+    ]
+
+
+def test_a_new_block_reports_the_entries_it_introduces():
+    # Opening the block for a new release: the header and its entries are added together. The
+    # entries are reported, which is what the style check wants to see under the current block.
+    patch = (
+        "@@ -1,1 +1,5 @@\n"
+        '+        addSettingsChanges(settings_changes_history, "26.7",\n'
+        "+        {\n"
+        '+            {"first_setting", false, true, "Untouched"},\n'
+        '+            {"second_setting", 0, 1, "Untouched"},\n'
+        "+        });\n"
+        '         addSettingsChanges(settings_changes_history, "26.6",\n'
+    )
+    assert parse_settings_history_changes(patch, HEADER_EDIT_FILE_LINES) == [
+        {"namespace": "Session", "name": "first_setting"},
+        {"namespace": "Session", "name": "second_setting"},
+    ]
+
+
+def test_reason_only_edit_of_a_block_that_keeps_its_header_is_still_ignored():
+    # The header line is untouched, so the block-level path must not fire and turn a harmless
+    # reason-text edit into a violation.
+    patch = (
+        "@@ -1,5 +1,5 @@\n"
+        '         addSettingsChanges(settings_changes_history, "26.7",\n'
+        "         {\n"
+        '-            {"first_setting", false, true, "Old wording"},\n'
+        '+            {"first_setting", false, true, "Untouched"},\n'
+        '             {"second_setting", 0, 1, "Untouched"},\n'
+        "         });\n"
+    )
+    assert parse_settings_history_changes(patch, HEADER_EDIT_FILE_LINES) == []

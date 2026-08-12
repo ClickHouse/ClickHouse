@@ -1160,6 +1160,7 @@ toTypeName(value): Date32
     FunctionDocumentation::Description description_toTime = R"(
 Converts an input value to type [Time](/sql-reference/data-types/time).
 Supports conversion from String, FixedString, DateTime, DateTime64, or numeric types representing seconds since midnight.
+Numeric values outside of the range of the type (`-999:59:59` to `999:59:59`, that is `-3599999` to `3599999` seconds) are saturated to the range boundaries, and non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception.
 
 :::note Legacy `toTime`
 Before v25.5, `toTime` was a different function, which converted a date with time to a fixed date (`1970-01-02`) while preserving the
@@ -1173,7 +1174,7 @@ The setting defaults to `0` since v26.7, but defaulted to `1` from v25.6 to v26.
     )";
     FunctionDocumentation::Syntax syntax_toTime = "toTime(x)";
     FunctionDocumentation::Arguments arguments_toTime = {
-        {"x", "Input value to convert.", {"String", "FixedString", "DateTime", "DateTime64", "(U)Int*", "Float*"}}
+        {"x", "Input value to convert.", {"String", "FixedString", "DateTime", "DateTime64", "(U)Int*", "BFloat16", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toTime = {"Returns the converted value.", {"Time"}};
     FunctionDocumentation::Examples examples_toTime = {
@@ -1306,52 +1307,49 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
     /// toDateTime32 documentation
     FunctionDocumentation::Description description_toDateTime32 = R"(
 Converts an input value to type `DateTime`.
-Supports conversion from `String`, `FixedString`, `Date`, `Date32`, `DateTime`, or numeric types (`(U)Int*`, `Float*`, `Decimal`).
-DateTime32 provides extended range compared to `DateTime`, supporting dates from `1900-01-01` to `2299-12-31`.
+Supports conversion from `String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64`, or numeric types (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `BFloat16`, `Float32`, `Float64`). `Decimal` and `Time64` values are not supported and result in an exception; the `Time` type and wide integer types such as `(U)Int128`/`(U)Int256` wrap around instead of saturating.
+`DateTime32` is an alias of `DateTime` and supports dates from `1970-01-01 00:00:00` to `2106-02-07 06:28:15`.
+When converting from a string or from one of the saturating numeric types listed above, values outside of this range are saturated to the range boundaries. Non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception.
+Conversions from other date and time types such as `Date32` or `DateTime64` follow the `date_time_overflow_behavior` setting: the default `ignore` mode may produce wrapped-around values, `saturate` clamps them to the range boundaries, and `throw` throws an exception.
     )";
     FunctionDocumentation::Syntax syntax_toDateTime32 = "toDateTime32(x[, timezone])";
     FunctionDocumentation::Arguments arguments_toDateTime32 = {
-        {"x", "Input value to convert.", {"String", "FixedString", "UInt*", "Float*", "Date", "DateTime", "DateTime64"}},
+        {"x", "Input value to convert.", {"String", "FixedString", "(U)Int*", "Float*", "BFloat16", "Date", "Date32", "Time", "DateTime", "DateTime64"}},
         {"timezone", "Optional. Timezone for the returned `DateTime` value.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toDateTime32 = {"Returns the converted input value.", {"DateTime"}};
     FunctionDocumentation::Examples examples_toDateTime32 = {
     {
-        "The value is within the range",
+        "From a string",
         R"(
-SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00') AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime          │
+└─────────────────────┴───────────────────┘
         )"
     },
     {
-        "As a decimal with precision",
+        "From a Unix timestamp",
         R"(
-SELECT toDateTime64(1735689600.000, 3) AS value, toTypeName(value);
--- without the decimal point the value is still treated as Unix Timestamp in seconds
-SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
+SELECT toDateTime32(1735689600, 'UTC') AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2299-12-31 23:59:59.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime('UTC')   │
+└─────────────────────┴───────────────────┘
         )"
     },
     {
         "With a timezone",
         R"(
-SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
-└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+┌───────────────value─┬─toTypeName(value)─────────┐
+│ 2025-01-01 00:00:00 │ DateTime('Asia/Istanbul') │
+└─────────────────────┴───────────────────────────┘
         )"
     }
     };

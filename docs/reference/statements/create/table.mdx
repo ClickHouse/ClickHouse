@@ -360,6 +360,7 @@ ENGINE = <Engine>
 
 The `Default` codec can be specified to reference default compression which may depend on different settings (and properties of data) in runtime.
 Example: `value UInt64 CODEC(Default)` — the same as lack of codec specification.
+See also [Adaptive Codec Selection](#adaptive-codec-selection).
 
 Also you can remove current CODEC from the column and use default compression from config.xml:
 
@@ -404,9 +405,15 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 
 #### ZXC {#zxc}
 
+<ExperimentalBadge/>
+
 `ZXC[(level)]` — asymmetric [`zxc` compression algorithm](https://github.com/hellobertrand/zxc) with configurable `level`. Possible levels: \[1, 7\]. Default level: 3.
 
 `ZXC` trades slow compression for very fast decompression, at a compression ratio between `LZ4` and `ZSTD`. It is a good fit for the compress-once, decompress-many pattern, and decompresses fastest on modern ARM cores. Higher levels mean better compression and slower compression, while decompression stays fast.
+
+<Note>
+This codec is experimental and requires `SET allow_experimental_codecs = 1` to use.
+</Note>
 
 #### Obsolete: ZSTD_QAT {#zstd_qat}
 
@@ -481,6 +488,31 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
+#### Quantized {#quantized}
+
+<ExperimentalBadge/>
+
+`Quantized(method, dimensions[, ...])` — A specialized codec to support approximate vector search on columns of type `Array(Float32)`, `Array(Float64)` or `Array(BFloat16)`.
+It stores the original, full-precision vectors, as well as a compact *quantized code* per vector alongside.
+On `MergeTree`-family tables, vector search queries with setting [`vector_search_use_quantized_codes`](/reference/settings/session-settings/vector-search#vector_search_use_quantized_codes) will scan the quantized codes to build a shortlist and subsequently rescore the results against the full-precision vectors.
+This two-stage search reads fewer bytes than a normal full-precision scan at the cost of lower recall.
+`dimensions` is the vector length; supported `method` values are `rabitq`, `turboquant`, `int8`, `prefix` and `product`, each a different size / accuracy / distance-function trade-off.
+
+The codec can only be set in `CREATE TABLE`, it cannot be added, removed, or changed through `ALTER TABLE`, including with `ADD COLUMN ... CODEC(Quantized(...))`.
+It cannot be chained with any other codec (not even an encryption codec such as `AES_128_GCM_SIV`).
+For more details, see [Vector search with quantized codecs](/reference/engines/table-engines/mergetree-family/annindexes#vector-search-with-quantized-codecs).
+
+```sql
+SET allow_experimental_codecs = 1;
+
+CREATE TABLE vectors
+(
+    id UInt32,
+    vec Array(BFloat16) CODEC(Quantized('rabitq', 1536))
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
 ### Encryption Codecs {#encryption-codecs}
 
 These codecs don't actually compress data, but instead encrypt data on disk. These are only available when an encryption key is specified by [encryption](/reference/settings/server-settings/settings/other#encryption) settings. Note that encryption only makes sense at the end of codec pipelines, because encrypted data usually can't be compressed in any meaningful way.
@@ -528,6 +560,43 @@ CREATE TABLE mytable
 )
 ENGINE = MergeTree ORDER BY x;
 ```
+
+### Adaptive Codec Selection {#adaptive-codec-selection}
+
+<ExperimentalBadge/>
+
+The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`allow_experimental_adaptive_codec_selection`](/reference/settings/merge-tree-settings) enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), each block is written with whichever codec would compress it smallest, chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type.
+
+A block is never larger than the default codec would make it, and incompressible data is stored raw (compressing it would produce a slightly larger file that is slower to read). The work happens in the background, on merges and mutations, where the data is recompressed anyway. Insert speed is unaffected. Queries often get faster: less data is fetched from disk, every block a query reads must be decompressed first, and specialized codecs decompress faster than the default `LZ4`. Each block records the codec it was written with, so reading requires no setting, and the feature can be switched off at any time with all data remaining readable.
+
+```sql
+CREATE TABLE adaptive
+(
+    time DateTime,
+    user_id UInt64
+)
+ENGINE = MergeTree
+ORDER BY time
+SETTINGS allow_experimental_adaptive_codec_selection = 1;
+
+INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number) FROM numbers(1000000);
+OPTIMIZE TABLE adaptive FINAL;
+```
+
+You can observe how it works with the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions/mergeTreeCodecBlockCounts) table function. Here `time` grows steadily, so `T64`, which stores only the bits that vary within a block, beat the default codec on every block. `user_id` holds hashes that no codec can shrink, so its blocks were stored raw:
+
+```sql
+SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase(), 'adaptive');
+```
+
+```text
+   ┌─column──┬─codec_block_counts─┐
+1. │ time    │ {'T64':62}         │
+2. │ user_id │ {'NONE':123}       │
+   └─────────┴────────────────────┘
+```
+
+Selection currently covers integer-like columns: integers, enums, dates and times, `Decimal32`/`Decimal64`, and `IPv4`.
 
 ## Temporary Tables {#temporary-tables}
 

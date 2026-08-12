@@ -86,6 +86,11 @@ public:
         if (!isMergeAlgorithmStrictnessAndKindSupported(table_join->kind(), table_join->strictness()))
             return false;
 
+        /// `MergeJoinAlgorithm` never evaluates a mixed (cross-side non-equi) `ON` condition, so
+        /// accepting one here would silently drop it.
+        if (table_join->getMixedJoinExpression())
+            return false;
+
         bool support_storage = !table_join->isSpecialStorage();
 
         const auto & on_expr = table_join->getOnlyClause();

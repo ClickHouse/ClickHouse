@@ -11,6 +11,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -51,6 +52,7 @@ namespace Setting
 
 namespace NATSSetting
 {
+    extern const NATSSettingsString nats_credentials;
     extern const NATSSettingsString nats_credential_file;
     extern const NATSSettingsMilliseconds nats_flush_interval_ms;
     extern const NATSSettingsBool nats_wait_for_flush_interval;
@@ -115,6 +117,21 @@ StorageNATS::StorageNATS(
     auto nats_password = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_password]);
     auto nats_token = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_token]);
     auto nats_credential_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credential_file]);
+    auto nats_credentials = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credentials]);
+
+    /// A credential source specified in the table settings overrides both config-level sources
+    /// (otherwise a table with `nats_credential_file` would silently authenticate with a server-level `nats.credentials`).
+    /// Only when neither is specified in the table settings, fall back to the config,
+    /// where having both sources at once is as ambiguous as in the table settings.
+    if (nats_credential_file.empty() && nats_credentials.empty())
+    {
+        nats_credential_file = getContext()->getConfigRef().getString("nats.credential_file", "");
+        nats_credentials = getContext()->getConfigRef().getString("nats.credentials", "");
+        if (!nats_credential_file.empty() && !nats_credentials.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "You can specify only one of `nats.credential_file` and `nats.credentials` in the server configuration");
+    }
 
     configuration =
     {
@@ -123,7 +140,8 @@ StorageNATS::StorageNATS(
         .username = nats_username.empty() ? getContext()->getConfigRef().getString("nats.user", "") : nats_username,
         .password = nats_password.empty() ? getContext()->getConfigRef().getString("nats.password", "") : nats_password,
         .token = nats_token.empty() ? getContext()->getConfigRef().getString("nats.token", "") : nats_token,
-        .credential_file = nats_credential_file.empty() ? getContext()->getConfigRef().getString("nats.credential_file", "") : nats_credential_file,
+        .credential_file = nats_credential_file,
+        .credentials = nats_credentials,
         .max_connect_tries = static_cast<UInt64>((*nats_settings)[NATSSetting::nats_startup_connect_tries].value),
         .reconnect_wait = static_cast<int>((*nats_settings)[NATSSetting::nats_reconnect_wait].value),
         .secure = (*nats_settings)[NATSSetting::nats_secure].value
@@ -829,20 +847,74 @@ String StorageNATS::getConsumerName() const
     return getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_consumer_name]);
 }
 
+namespace
+{
+
+/// `nats_credential_file` and `nats_credentials` are two ways to provide the same credentials, so only one
+/// of them may be specified. A source specified in the query (in the `SETTINGS` clause or as a named-collection
+/// override) is more specific than one stored in the named collection, so it replaces it instead of conflicting
+/// with it - otherwise a named collection with one of the sources could not be reused by a table which provides
+/// the other one.
+void resolveCredentialSource(NATSSettings & nats_settings, bool credential_file_from_collection, bool credentials_from_collection)
+{
+    const bool credential_file_set = !nats_settings[NATSSetting::nats_credential_file].value.empty();
+    const bool credentials_set = !nats_settings[NATSSetting::nats_credentials].value.empty();
+
+    const bool credential_file_from_query = credential_file_set && !credential_file_from_collection;
+    const bool credentials_from_query = credentials_set && !credentials_from_collection;
+
+    if (credential_file_from_query && credentials_from_query)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "You can specify only one of `nats_credential_file` and `nats_credentials`");
+
+    if (credential_file_from_collection && credentials_from_collection)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The named collection can specify only one of `nats_credential_file` and `nats_credentials`");
+
+    if (credential_file_from_query && credentials_from_collection)
+        nats_settings[NATSSetting::nats_credentials] = String{};
+    else if (credentials_from_query && credential_file_from_collection)
+        nats_settings[NATSSetting::nats_credential_file] = String{};
+}
+
+}
+
 void registerStorageNATS(StorageFactory & factory);
 void registerStorageNATS(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         auto nats_settings = std::make_unique<NATSSettings>();
+        /// Whether a credential source comes from the named collection itself rather than from a query override.
+        bool credential_file_from_collection = false;
+        bool credentials_from_collection = false;
         if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
         {
             nats_settings->loadFromNamedCollection(named_collection);
+
+            credential_file_from_collection = !(*nats_settings)[NATSSetting::nats_credential_file].value.empty()
+                && !named_collection->isQueryOverridden("nats_credential_file");
+            credentials_from_collection = !(*nats_settings)[NATSSetting::nats_credentials].value.empty()
+                && !named_collection->isQueryOverridden("nats_credentials");
         }
         else if (!args.storage_def->settings)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "NATS engine must have settings");
 
         nats_settings->loadFromQuery(*args.storage_def);
+
+        /// A credential source assigned in the `SETTINGS` clause is query-level even when the named
+        /// collection provides the same key: the clause is applied on top of the collection values,
+        /// so the final value no longer comes from the collection.
+        if (args.storage_def->settings)
+        {
+            for (const auto & change : args.storage_def->settings->changes)
+            {
+                if (change.name == "nats_credential_file")
+                    credential_file_from_collection = false;
+                else if (change.name == "nats_credentials")
+                    credentials_from_collection = false;
+            }
+        }
 
         if (!(*nats_settings)[NATSSetting::nats_url].changed && !(*nats_settings)[NATSSetting::nats_server_list].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify either `nats_url` or `nats_server_list` settings");
@@ -852,6 +924,8 @@ void registerStorageNATS(StorageFactory & factory)
 
         if (!(*nats_settings)[NATSSetting::nats_subjects].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_subjects` setting");
+
+        resolveCredentialSource(*nats_settings, credential_file_from_collection, credentials_from_collection);
 
         if ((*nats_settings)[NATSSetting::nats_consumer_name].changed && !(*nats_settings)[NATSSetting::nats_stream].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "To use NATS jet stream, you must specify `nats_stream` setting");
@@ -902,8 +976,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
     [nats_credential_file = '/var/nats_credentials',]
+    [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
+    [nats_commit_on_select = false,]
     [nats_handle_error_mode = 'default']
 ```
 
@@ -926,12 +1002,15 @@ Optional parameters:
 - `nats_skip_broken_messages` - NATS message parser tolerance to schema-incompatible messages per block. Default: `0`. If `nats_skip_broken_messages = N` then the engine skips *N* NATS messages that cannot be parsed (a message equals a row of data).
 - `nats_max_block_size` - Number of row collected by poll(s) for flushing data from NATS. Default: [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size).
 - `nats_flush_interval_ms` - Timeout for flushing data read from NATS. Default: [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms).
+- `nats_wait_for_flush_interval` - If `true`, a background streaming cycle stays open for the whole flush interval (`nats_flush_interval_ms`, or `stream_flush_interval_ms` otherwise) instead of finishing as soon as the consumer queue drains, letting more messages accumulate into a single block at the cost of up to one flush interval of extra ingestion latency. Default: `false` (low-latency drain-and-go behaviour).
 - `nats_username` - NATS username.
 - `nats_password` - NATS password.
 - `nats_token` - NATS auth token.
 - `nats_credential_file` - Path to a NATS credentials file.
+- `nats_credentials` - NATS credentials content (the same payload as in a `.creds` file with user JWT and seed).
 - `nats_startup_connect_tries` - Number of connect tries at startup. Default: `5`.
 - `nats_max_rows_per_message` — The maximum number of rows written in one NATS message for row-based formats. (default : `1`).
+- `nats_commit_on_select` - Commit messages when query is made. Applies to JetStream only; core NATS has no acknowledgements. Default: `0`.
 - `nats_handle_error_mode` — How to handle errors for NATS engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`).
 
 SSL connection:
@@ -1163,6 +1242,8 @@ CREATE TABLE nats_jet_stream (
               nats_subjects = 'stream_subject',
               nats_format = 'JSONEachRow';
 ```
+
+JetStream tables give at-least-once delivery: a message is acknowledged only after it has been inserted into the dependent materialized views, so a message whose insert fails or is interrupted stays unacknowledged and is redelivered. Core NATS (without JetStream) has no acknowledgement or replay, so it is at-most-once and an interrupted message is lost.
 )DOCS_MD",
             .syntax = "ENGINE = NATS() SETTINGS nats_url = 'host:port', nats_subjects = 'subject', nats_format = 'format', ...",
             .related = {"Kafka", "RabbitMQ", "FileLog"}});

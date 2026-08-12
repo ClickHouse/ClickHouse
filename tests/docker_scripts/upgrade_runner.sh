@@ -360,9 +360,6 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       `MergeTreeBackgroundExecutor` line of the replicated case in a single entry.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
-# `Unknown tokenizer: 'unicode_word'` appears because the `unicode_word` tokenizer was renamed to `asciiCJK`
-#       (with `unicodeWord` as a transitional alias). Tables from old versions using `unicode_word` trigger this
-#       on attach. Narrowed to the exact legacy name so genuinely unsupported tokenizer names are not masked.
 # `Azure::Storage::StorageException.*Not found address of host` is a transient Azure blob DNS resolution failure
 #       for `openbucketforpublicci.blob.core.windows.net`. Filtered via regex in the secondary pipe below to match
 #       both the Azure SDK exception type AND the DNS error together, so non-Azure DNS errors are not masked.
@@ -536,7 +533,6 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot parse projection test_projection" \
            -e "Key expressions cannot contain subqueries" \
            -e "Expression must be deterministic but it contains non-deterministic part" \
-           -e "Unknown tokenizer: 'unicode_word'" \
            -e "This engine is deprecated and is not supported in transactions" \
            -e "Prevent converting Nullable type to non-Nullable type inside mutation" \
            -e "e.what() = failed to parse response body" \

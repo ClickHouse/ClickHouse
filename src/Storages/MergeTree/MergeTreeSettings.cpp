@@ -202,7 +202,7 @@ You can see which parts of `s` were stored using the sparse serialization:
 └────────┴────────────────────┘
 ```
 )", 0) \
-    DECLARE(Bool, compute_exact_num_defaults_for_sparse_columns, false, R"(
+    DECLARE(Bool, compute_exact_num_defaults_for_sparse_columns, true, R"(
 Compute the exact count of default values per column during inserts and
 merges, instead of the cheaper sampling estimate used to decide on sparse
 serialization. Required by `optimize_trivial_count_with_sparsity_filter`,
@@ -210,7 +210,7 @@ which consumes the persisted `num_defaults` counter (Nullable columns
 additionally need `nullable_serialization_version = 'allow_sparse'`).
 Leaving it disabled keeps inserts/merges as fast as before; enabling it
 adds an O(rows) pass per sparse-eligible column.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(Bool, replace_long_file_name_to_hash, true, R"(
 If the file name for column is too long (more than 'max_file_name_length'
 bytes) replace it to SipHash128
@@ -1972,14 +1972,16 @@ Comma-separated list of statistics types to calculate automatically on all suita
 Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
 The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
 )", 0) \
-    DECLARE(UInt64, packed_skip_index_max_bytes, 0, R"(
+    DECLARE(UInt64, packed_skip_index_max_bytes, 1024 * 1024, R"(
 Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
 chain) below which a skip-index substream is bundled into a single `skp_idx.packed`
 archive per part instead of being written as a separate `skp_idx_<name>.idx2` / `.mrk2`
 file. Substreams larger than this stay in the legacy per-file layout. The decision is
 made independently per substream at write time, so a single part can have small indices
 (e.g. `minmax`) packed and large ones (e.g. a heavy `bloom_filter`) per-file. Set to 0
-to disable packing entirely (default).
+to disable packing entirely. Defaults to 1 MiB, which bundles the typically small skip
+indices into one archive per part and cuts the object count (and read requests) on object
+storage, while leaving genuinely large substreams in the per-file layout.
 
 Each skip-index substream actually consists of a data file and a marks file; both buffer
 in memory up to the threshold before the spill decision is made. So peak memory while
@@ -1994,7 +1996,7 @@ with `add_minmax_index_for_numeric_columns`).
 The on-disk format is self-describing: readers detect `skp_idx.packed` and serve packed
 substreams from inside it transparently. Changing this setting affects newly written parts
 only; existing parts retain whatever layout they had at write time.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
 When enabled, allows summing columns in a SummingMergeTree table to be used in
 the partition or sorting key.
@@ -3069,7 +3071,14 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
 /// Cloud only
 bool MergeTreeSettings::isSMTReadonlySetting(const String & name)
 {
-    return name == "enable_mixed_granularity_parts";
+    /// SharedMergeTree additionally allows altering the index granularity: each part carries its
+    /// own granularity, so parts written under different values coexist fine. Everything else
+    /// that is read-only for the other MergeTree engines is read-only here as well, so that a
+    /// setting added to `isReadonlySetting` does not silently stay alterable on SharedMergeTree.
+    if (name == "index_granularity" || name == "index_granularity_bytes")
+        return false;
+
+    return isReadonlySetting(name);
 }
 
 void MergeTreeSettings::checkCanSet(std::string_view name, const Field & value)

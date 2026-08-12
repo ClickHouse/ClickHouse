@@ -344,6 +344,11 @@ public:
     /// table's bootstrap re-credentials the client afterwards.
     bool force_anonymous_load_fallback = false;
 
+    /// Set when a base-URL setting (e.g. `s3_base`) rewrote a relative URL coming from a named
+    /// collection. `initialize` materializes it back into the engine args so that the persisted
+    /// DDL does not depend on the setting at attach time.
+    String url_overridden_by_base_setting;
+
 protected:
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;

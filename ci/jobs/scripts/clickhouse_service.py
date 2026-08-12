@@ -63,6 +63,15 @@ class ClickHouseService:
         try:
             Utils.add_to_PATH(temp_dir)
 
+            # This context manager is entered once per job and starts a single
+            # server on fixed shared ports. Clear any clickhouse-server leaked
+            # by a previous CI job on this reused runner before anything else:
+            # its held ports would make our start fail, and while it is alive it
+            # can write into `run_path` - which we are about to delete and
+            # recreate - or keep mutating deleted-open files there
+            # (see kill_leftover_server_processes).
+            kill_leftover_server_processes()
+
             # Download binary if absent; CI release artifacts extract the
             # binary without the executable bit, so chmod afterwards.
             clickhouse_bin = Path(temp_dir) / "clickhouse"
@@ -75,17 +84,6 @@ class ClickHouseService:
                 link_path = Path(temp_dir) / link_name
                 if not link_path.exists():
                     Utils.link(clickhouse_bin, link_path)
-
-            # The build artifacts are self-extracting: the first invocation
-            # decompresses the real ELF in place. An unstripped release build
-            # expands to over 4 GB, which on its own can outlast the pid-file
-            # wait in `_wait_ready`, so the server gets killed mid-extraction
-            # before it ever runs and the job fails with `Failed to get PID`.
-            # Extract synchronously here - the same thing the install stage in
-            # `functional_tests.py` does - so that wait covers server startup
-            # only. Decompression is a no-op once the binary is extracted, so
-            # this is cheap on repeat starts within a job.
-            Shell.run(f"{clickhouse_bin} --version", verbose=True, strict=True)
 
             # Run config hooks in order, passing the config and data dirs so a
             # hook can build paths into either. Typically the first is
@@ -104,12 +102,19 @@ class ClickHouseService:
             Path(self.log_dir).mkdir(parents=True, exist_ok=True)
             Path(self.pid_file).unlink(missing_ok=True)
 
-            # This context manager is entered once per job and starts a single
-            # server on fixed shared ports. Right before that first start, clear
-            # any clickhouse-server leaked by a previous CI job on this reused
-            # runner; otherwise its held ports make this start fail
-            # (see kill_leftover_server_processes).
-            kill_leftover_server_processes()
+            # The build artifacts are self-extracting: the first invocation
+            # decompresses the real ELF in place. An unstripped release build
+            # expands to over 4 GB, which on its own can outlast the pid-file
+            # wait in `_wait_ready`, so the server gets killed mid-extraction
+            # before it ever runs and the job fails with `Failed to get PID`.
+            # Extract synchronously here - the same thing the install stage in
+            # `functional_tests.py` does - so that wait covers server startup
+            # only. Decompression is a no-op once the binary is extracted, so
+            # this is cheap on repeat starts within a job. This runs after the
+            # stale `run_path` of a previous job on this reused runner is
+            # removed above, so the extra 4+ GB the extraction needs does not
+            # compete with data we are about to delete anyway.
+            Shell.run(f"{clickhouse_bin} --version", verbose=True, strict=True)
 
             argv = [
                 str(Path(temp_dir) / "clickhouse-server"),

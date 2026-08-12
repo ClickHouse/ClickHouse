@@ -592,8 +592,9 @@ protected:
     /// so view-inner queries on the same node are unaffected.
     bool positional_arguments_already_resolved = false;
 
-    inline static ContextPtr global_context_instance;
-    inline static ContextPtr background_context_instance;   /// Global holder to maintain ownership of background_context
+    /// Defined out of line: a definition in the header gives every shared object its own copy.
+    static ContextPtr global_context_instance;
+    static ContextPtr background_context_instance;   /// Global holder to maintain ownership of background_context
 
     /// Temporary data for query execution accounting.
     TemporaryDataOnDiskScopePtr temp_data_on_disk;

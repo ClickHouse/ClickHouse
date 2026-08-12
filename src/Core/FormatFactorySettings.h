@@ -219,6 +219,9 @@ Approximate memory limit for Parquet reader v3. Limits how many row groups or co
     DECLARE(Bool, input_format_parquet_page_filter_push_down, true, R"(
 Skip pages using min/max values from column index.
 )", 0) \
+    DECLARE(Bool, input_format_parquet_spatial_filter_push_down, true, R"(
+When reading GeoParquet files, skip whole row groups and, together with `input_format_parquet_page_filter_push_down`, individual pages based on spatial predicates in the WHERE clause and the geometry bounding box statistics (`geospatial_statistics.bbox` or `covering.bbox` columns) in the Parquet metadata.
+)", 0) \
     DECLARE(Bool, input_format_parquet_use_offset_index, true, R"(
 Minor tweak to how pages are read from parquet file when no page filtering is used.
 )", 0) \
@@ -352,9 +355,6 @@ Skip columns with unsupported types while schema inference for format ORC
 )", 0) \
     DECLARE(Bool, input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference, false, R"(
 Skip columns with unsupported types while schema inference for format Arrow
-)", 0) \
-    DECLARE(Bool, input_format_arrow_use_native_reader, true, R"(
-Use the native ClickHouse reader for the Arrow and ArrowStream formats instead of the one based on the Apache Arrow library.
 )", 0) \
     DECLARE(String, column_names_for_schema_inference, "", R"(
 The list of column names to use in schema inference for formats without column names. The format: 'column1,column2,column3,...'
@@ -1490,9 +1490,6 @@ Write Date values as plain 16-bit numbers (read back as UInt16), instead of conv
     DECLARE(Bool, output_format_arrow_unsupported_types_as_binary, true, R"(
 Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
 )", 0) \
-    DECLARE(Bool, output_format_arrow_use_native_writer, true, R"(
-Use the native ClickHouse writer for the Arrow and ArrowStream formats instead of the one based on the Apache Arrow library.
-)", 0) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
 Use ORC String type instead of Binary for String columns
@@ -1693,6 +1690,8 @@ Supported modes:
     MAKE_OBSOLETE(M, Bool, input_format_parquet_use_native_reader, false) \
     MAKE_OBSOLETE(M, Bool, input_format_parquet_use_native_reader_v3, true) \
     MAKE_OBSOLETE(M, Bool, input_format_orc_use_fast_decoder, true) \
+    MAKE_OBSOLETE(M, Bool, input_format_arrow_use_native_reader, true) \
+    MAKE_OBSOLETE(M, Bool, output_format_arrow_use_native_writer, true) \
     MAKE_OBSOLETE(M, Bool, output_format_parquet_use_custom_encoder, true) \
     MAKE_OBSOLETE(M, ParquetVersion, output_format_parquet_version, "2.latest") \
     MAKE_OBSOLETE(M, Bool, output_format_parquet_compliant_nested_types, true) \

@@ -554,6 +554,28 @@ void StorageMergeTree::alter(
                 LOG_DEBUG(log, "Mutation {} finished", prev_mutation);
             }
         }
+        else
+        {
+            int64_t mutation_to_wait = 0;
+            {
+                std::lock_guard lock(currently_processing_in_background_mutex);
+                for (const auto & [version, mutation_entry] : current_mutations_by_version | std::views::reverse)
+                {
+                    if (mutation_entry.commands->containBarrierCommand())
+                    {
+                        mutation_to_wait = version;
+                        break;
+                    }
+                }
+            }
+
+            if (mutation_to_wait != 0)
+            {
+                LOG_DEBUG(log, "Cannot change metadata while rename mutation {} is not finished, will wait for it", mutation_to_wait);
+                waitForMutation(mutation_to_wait, /* from_another_mutation */ true);
+                LOG_DEBUG(log, "Mutation {} finished", mutation_to_wait);
+            }
+        }
 
         {
             /// Settings, the rename `mutation_*.txt`, and the durable metadata commit are

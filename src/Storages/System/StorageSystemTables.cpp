@@ -2,6 +2,8 @@
 #include <Storages/System/DatabaseTablesCursor.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
+#include <set>
+
 #include <Access/ContextAccess.h>
 #include <Core/UUID.h>
 #if CLICKHOUSE_CLOUD
@@ -347,6 +349,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"primary_key", std::make_shared<DataTypeString>(), "The primary key expression specified in the table."},
         {"sampling_key", std::make_shared<DataTypeString>(), "The sampling key expression specified in the table."},
         {"unique_key", std::make_shared<DataTypeString>(), "The unique key expression specified in the table (UNIQUE KEY clause)."},
+        {"skipping_indices_types", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of the distinct types of data skipping indices defined on the table (for example minmax, set, bloom_filter, ngrambf_v1, tokenbf_v1, text, vector_similarity). Empty for tables without skip indices."},
         {"storage_policy", std::make_shared<DataTypeString>(), "The storage policy. Relevant for tables using MergeTree and Distributed engines."},
         {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise NULL (including underlying Buffer table)."
@@ -453,6 +456,26 @@ protected:
             return {};
 
         return inner_query->as<ASTSelectWithUnionQuery>()->getQueryParameters();
+    }
+
+    void fillSkippingIndicesTypes(MutableColumns & columns, const StorageMetadataPtr & metadata_snapshot, size_t & res_index)
+    {
+        Array skipping_indices_types;
+        if (metadata_snapshot)
+        {
+            /// Collect distinct types, sorted, so the result is deterministic.
+            /// Skip implicitly created indices (e.g. via add_minmax_index_for_numeric_columns)
+            /// so the column reports only skip indices explicitly defined on the table.
+            std::set<String> types;
+            for (const auto & index : metadata_snapshot->getSecondaryIndices())
+                if (!index.isImplicitlyCreated())
+                    types.insert(index.type);
+
+            skipping_indices_types.reserve(types.size());
+            for (const auto & type : types)
+                skipping_indices_types.push_back(type);
+        }
+        columns[res_index++]->insert(skipping_indices_types);
     }
 
     void fillParametralizedViewData(MutableColumns & columns, const StoragePtr & table, size_t & res_index)
@@ -602,7 +625,13 @@ protected:
                                 // parameterized view parameters
                                 fillParametralizedViewData(res_columns, table.second, res_index);
                             }
-                            else if (src_index == 21 && columns_mask[src_index])
+                            // skipping_indices_types
+                            else if (src_index == 20 && columns_mask[src_index])
+                            {
+                                const auto metadata_snapshot = table.second->getInMemoryMetadataPtr(context, false);
+                                fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);
+                            }
+                            else if (src_index == 22 && columns_mask[src_index])
                             {
                                 try
                                 {
@@ -620,7 +649,7 @@ protected:
                                 ++res_index;
                             }
                             // total_bytes
-                            else if (src_index == 22 && columns_mask[src_index])
+                            else if (src_index == 23 && columns_mask[src_index])
                             {
                                 try
                                 {
@@ -885,6 +914,9 @@ protected:
                     else
                         res_columns[res_index++]->insertDefault();
                 }
+
+                if (columns_mask[src_index++])
+                    fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);
 
                 if (columns_mask[src_index++])
                 {

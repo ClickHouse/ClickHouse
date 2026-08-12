@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from ci.jobs import check_style
+from ci.jobs.scripts.workflow_hooks.store_data import parse_settings_history_changes
 
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
@@ -55,7 +56,7 @@ def test_history_only_change_is_a_correction_and_is_allowed(monkeypatch):
 
 def test_history_plus_unrelated_non_source_change_is_still_a_correction(monkeypatch):
     kv = _kv(
-        [HISTORY, "docs/en/operations/settings/settings.md", "ci/jobs/check_style.py"],
+        [HISTORY, "docs/reference/settings/session-settings/overview.mdx", "ci/jobs/check_style.py"],
         [{"namespace": "Session", "name": "no_such_setting_at_all"}],
     )
     assert _run(monkeypatch, kv) == ""
@@ -102,5 +103,96 @@ def test_declaration_file_change_is_enforced(monkeypatch):
     assert "no_such_setting_at_all" in _run(monkeypatch, kv)
 
 
+def test_deleting_the_last_record_is_not_an_escape_hatch(monkeypatch):
+    # End-to-end with the diff parser: a change that reverts a compiled default cannot escape
+    # the rule by deleting the row that recorded the original change instead of recording the
+    # revert. 03999_stateless_settings_history would be satisfied by such a deletion (it only
+    # compares the current default with the newest recorded value), so the style check has to
+    # catch it. Deleting a phantom record remains possible - that change touches only the
+    # history file, which the gate lets through (see above).
+    file_lines = [
+        '        addSettingsChanges(settings_changes_history, "26.7",',
+        "        {",
+        "        });",
+    ]
+    patch = (
+        "@@ -1,3 +1,3 @@\n"
+        " {\n"
+        '-            {"no_such_setting_at_all", 0, 1, "Recorded in 26.7"},\n'
+        " });\n"
+    )
+    changed = parse_settings_history_changes(patch, file_lines)
+    assert changed == [{"namespace": "Session", "name": "no_such_setting_at_all"}]
+    kv = _kv([HISTORY, "src/Core/Settings.cpp"], changed)
+    assert "no_such_setting_at_all" in _run(monkeypatch, kv)
+
+    # The same deletion without any other source change is a historical correction: allowed.
+    assert _run(monkeypatch, _kv([HISTORY], changed)) == ""
+
+
+def test_moving_a_record_to_an_older_block_is_not_an_escape_hatch(monkeypatch):
+    # The "move instead of delete" variant: the record is re-added verbatim under an older
+    # version block. Nothing about the newest recorded value changes, so
+    # 03999_stateless_settings_history passes, but `compatibility` would attribute the default
+    # flip to the wrong release. The parser reports the setting once and the style check demands
+    # it under the current version block.
+    entry = '            {"no_such_setting_at_all", 0, 1, "Recorded here now"},'
+    file_lines = [
+        '        addSettingsChanges(settings_changes_history, "26.8",',
+        "        {",
+        "        });",
+        '        addSettingsChanges(settings_changes_history, "26.7",',
+        "        {",
+        entry,
+        "        });",
+    ]
+    patch = (
+        "@@ -1,4 +1,3 @@\n"
+        ' addSettingsChanges(settings_changes_history, "26.8",\n'
+        " {\n"
+        f"-{entry}\n"
+        " });\n"
+        "@@ -5,3 +4,4 @@\n"
+        ' addSettingsChanges(settings_changes_history, "26.7",\n'
+        " {\n"
+        f"+{entry}\n"
+        " });\n"
+    )
+    changed = parse_settings_history_changes(patch, file_lines)
+    assert changed == [{"namespace": "Session", "name": "no_such_setting_at_all"}]
+    kv = _kv([HISTORY, "src/Core/Settings.cpp"], changed)
+    assert "no_such_setting_at_all" in _run(monkeypatch, kv)
+
+
 def test_no_history_change_at_all_is_skipped(monkeypatch):
     assert _run(monkeypatch, _kv(["src/Core/Settings.cpp"], [])) == ""
+
+
+def test_editing_a_block_header_is_not_an_escape_hatch(monkeypatch):
+    # The block-granularity variant: not a single entry line changes, only the version in the
+    # `addSettingsChanges` header, which reassigns every record underneath to another release.
+    # Without the block-level path the parser would report nothing and the style check would
+    # treat the change as "nothing to validate" while `compatibility` starts serving the wrong
+    # value for two releases at once.
+    entry = '            {"no_such_setting_at_all", 0, 1, "Recorded here"},'
+    file_lines = [
+        '        addSettingsChanges(settings_changes_history, "26.7",',
+        "        {",
+        entry,
+        "        });",
+    ]
+    patch = (
+        "@@ -1,4 +1,4 @@\n"
+        '-        addSettingsChanges(settings_changes_history, "26.8",\n'
+        '+        addSettingsChanges(settings_changes_history, "26.7",\n'
+        "         {\n"
+        f" {entry}\n"
+        "         });\n"
+    )
+    changed = parse_settings_history_changes(patch, file_lines)
+    assert changed == [{"namespace": "Session", "name": "no_such_setting_at_all"}]
+    kv = _kv([HISTORY, "src/Core/Settings.cpp"], changed)
+    assert "no_such_setting_at_all" in _run(monkeypatch, kv)
+
+    # The same header edit without any other source change is a historical correction: allowed.
+    assert _run(monkeypatch, _kv([HISTORY], changed)) == ""
