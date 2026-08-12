@@ -29,7 +29,8 @@ INSERT INTO t_auto_lc SELECT number, 'item_' || toString(number % 7), 'uniq2_' |
 
 SELECT 'serialization per part';
 SELECT name, column, serialization_kind FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_auto_lc' AND active ORDER BY name, column;
+WHERE database = currentDatabase() AND table = 't_auto_lc' AND active AND NOT startsWith(column, '_')
+ORDER BY name, column;
 
 SELECT 'transparent type';
 SELECT toTypeName(lc), toTypeName(hc), toTypeName(sp) FROM t_auto_lc LIMIT 1;
@@ -47,14 +48,16 @@ SELECT 'after merge';
 SYSTEM START MERGES t_auto_lc;
 OPTIMIZE TABLE t_auto_lc FINAL;
 SELECT name, column, serialization_kind FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_auto_lc' AND active ORDER BY name, column;
+WHERE database = currentDatabase() AND table = 't_auto_lc' AND active AND NOT startsWith(column, '_')
+ORDER BY name, column;
 SELECT count(), uniqExact(lc), uniqExact(hc), uniqExact(num), uniqExact(sp) FROM t_auto_lc;
 
 SELECT 'after detach/attach';
 DETACH TABLE t_auto_lc;
 ATTACH TABLE t_auto_lc;
 SELECT column, serialization_kind FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_auto_lc' AND active ORDER BY column;
+WHERE database = currentDatabase() AND table = 't_auto_lc' AND active AND NOT startsWith(column, '_')
+ORDER BY column;
 SELECT count(), uniqExact(lc) FROM t_auto_lc;
 
 DROP TABLE t_auto_lc;
