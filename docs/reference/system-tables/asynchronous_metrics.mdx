@@ -512,11 +512,11 @@ Average request latency of ClickHouse Keeper.
 
 ### KeeperCommitLogsCacheEntries {#keepercommitlogscacheentries}
 
-Number of entries stored in the in-memory cache for next logs to be committed
+Number of decoded log entries currently buffered ahead of the commit thread by the changelog read-ahead reader
 
 ### KeeperCommitLogsCacheSize {#keepercommitlogscachesize}
 
-Total size of in-memory cache for next logs to be committed
+Total size of decoded log entries currently buffered ahead of the commit thread by the changelog read-ahead reader
 
 ### KeeperEphemeralsCount {#keeperephemeralscount}
 
