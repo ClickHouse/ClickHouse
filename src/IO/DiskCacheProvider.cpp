@@ -13,14 +13,6 @@
 #include <cstring>
 #include <vector>
 
-namespace CurrentMetrics
-{
-    /// A segment held (unreleasable) by a DiskCacheReader/DiskCacheWriter after `resolve` handed it
-    /// out and released the holder. Kept in step with the buffer's lifetime so the gauge still
-    /// reflects the reader-executor's holds.
-    extern const Metric FilesystemCacheHoldFileSegments;
-}
-
 namespace DB
 {
 
