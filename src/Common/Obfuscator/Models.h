@@ -25,6 +25,7 @@
 #include <Common/assert_cast.h>
 #include <Core/Block.h>
 #include <Common/DateLUT.h>
+#include <base/arithmeticOverflow.h>
 #include <limits>
 #include <memory>
 #include <cmath>
@@ -800,6 +801,16 @@ public:
 
         if (params.frequency_add)
         {
+            /// The additions below are on unvalidated user input (`frequency_add` is unbounded), so do them
+            /// with checked arithmetic and fail closed: a silent `UInt64` wrap would corrupt the histogram
+            /// counters and could degenerate the model into sampling only `END` instead of lowering skew.
+            auto throw_overflow = [&]
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The frequency-add parameter value {} is too large: it overflows the frequency counters of the trained Markov model",
+                    params.frequency_add);
+            };
+
             for (auto & elem : table)
             {
                 Histogram & histogram = elem.getMapped();
@@ -807,10 +818,14 @@ public:
                     continue;
 
                 for (auto & bucket : histogram.buckets)
-                    bucket.second += params.frequency_add;
+                    if (common::addOverflow(bucket.second, params.frequency_add, bucket.second))
+                        throw_overflow();
 
-                histogram.count_end += params.frequency_add;
-                histogram.total += params.frequency_add * histogram.buckets.size();
+                UInt64 total_addition = 0;
+                if (common::addOverflow(histogram.count_end, params.frequency_add, histogram.count_end)
+                    || common::mulOverflow(params.frequency_add, static_cast<UInt64>(histogram.buckets.size()), total_addition)
+                    || common::addOverflow(histogram.total, total_addition, histogram.total))
+                    throw_overflow();
             }
         }
 
