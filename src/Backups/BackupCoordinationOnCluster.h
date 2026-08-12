@@ -79,7 +79,7 @@ public:
 
     void addFileInfos(BackupFileInfos && file_infos) override;
     BackupFileInfos getFileInfos() const override;
-    BackupFileInfos getFileInfosForAllHosts() const override;
+    void forEachFileInfoForAllHosts(const std::function<void(const BackupFileInfo &)> & callback) const override;
     bool startWritingFile(size_t data_file_index) override;
 
     ZooKeeperRetriesInfo getOnClusterInitializationKeeperRetriesInfo() const override;

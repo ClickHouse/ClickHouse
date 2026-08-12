@@ -8,6 +8,11 @@ Endpoints:
       `aiTranslate`'s `instructions` argument is forwarded in the prompt, or that the
       `Authorization` header is omitted when the named collection has no `api_key`).
       Header names are lower-cased for case-insensitive lookup.
+  GET  /set-flaky?count=N            — arm the flaky endpoints below to fail their next N requests
+      with a simulated transient network error (used to exercise retries). `count=0` disarms.
+  POST /v1/chat/flaky                — like `/v1/chat/completions`, but drops the connection without
+      a response for the first N requests after `/set-flaky?count=N`, then succeeds.
+  POST /v1/embeddings_flaky          — like `/v1/embeddings`, but flaky in the same way as above.
   POST /v1/chat/completions          — returns response based on request content:
       - If response_format with json_schema is present, returns JSON matching the schema
         with values derived from the user message.
@@ -20,19 +25,27 @@ Endpoints:
       element, exercising the duplicate-index rejection path.
   POST /v1/embeddings_wrong_count    — returns one fewer entry than requested, exercising the
       cardinality mismatch path.
-  POST /v1/error                     — always returns HTTP 500 (used for chat completion errors)
+  POST /v1/error                     — always returns HTTP 500, a transient/server-side error that
+      the url table function (and so the AI functions) retries.
+  POST /v1/bad_request               — always returns HTTP 400, a deterministic client error that
+      the url table function never retries, used to assert AI functions do not retry it either.
   POST /v1/embeddings_error          — always returns HTTP 500 (used for embedding errors)
 """
 
 import http.server
 import json
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 MOCK_PORT = 18123
 DEFAULT_EMBED_DIM = 4
 
 # Single-threaded `HTTPServer` handles one request at a time, so a plain dict is safe.
 LAST_REQUEST = {"path": None, "body": None, "headers": {}}
+
+# Number of upcoming requests to the flaky endpoints (`/v1/chat/flaky`, `/v1/embeddings_flaky`)
+# that should fail with a simulated transient network error before they start succeeding.
+# Set via `GET /set-flaky?count=N`. Used to exercise the network-error retry path.
+FLAKY = {"fails_remaining": 0}
 
 
 def extract_user_message(body):
@@ -143,6 +156,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json(200, LAST_REQUEST)
             return
 
+        if parsed.path == "/set-flaky":
+            qs = parse_qs(parsed.query)
+            FLAKY["fails_remaining"] = int(qs.get("count", ["0"])[0])
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK")
+            return
+
         self.send_response(404)
         self.end_headers()
 
@@ -154,6 +176,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
         LAST_REQUEST["path"] = parsed.path
         LAST_REQUEST["body"] = body
         LAST_REQUEST["headers"] = {k.lower(): v for k, v in self.headers.items()}
+
+        if parsed.path in ("/v1/chat/flaky", "/v1/embeddings_flaky"):
+            if FLAKY["fails_remaining"] > 0:
+                FLAKY["fails_remaining"] -= 1
+                # Simulate a transient network failure: close the connection without sending any
+                # response, so the client sees EOF — a Poco network exception — rather than an HTTP
+                # error status. This exercises the network-error retry path, distinct from the HTTP
+                # 500 path (`/v1/error`).
+                self.close_connection = True
+                return
+            if parsed.path == "/v1/chat/flaky":
+                self._send_json(200, make_success_response(extract_user_message(body)))
+            else:
+                self._send_json(200, make_embeddings_response(body))
+            return
 
         if parsed.path == "/v1/chat/completions":
             user_msg = extract_user_message(body)
@@ -169,6 +206,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if parsed.path == "/v1/error":
             self._send_json(500, make_error_response("permanent failure"))
+            return
+
+        if parsed.path == "/v1/bad_request":
+            # A deterministic client error (e.g. malformed request / bad API key). The url table
+            # function never retries 400, so neither should the AI functions.
+            self._send_json(400, make_error_response("invalid request", error_type="invalid_request_error"))
             return
 
         if parsed.path == "/v1/embeddings":

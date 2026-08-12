@@ -12,6 +12,7 @@
 
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/BoolMask.h>
+#include <Storages/MergeTree/KeyOrder.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 
@@ -25,6 +26,7 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct ActionDAGNodes;
 class MergeTreeSetIndex;
+struct KeyDescription;
 
 
 /// Canonize the predicate
@@ -67,7 +69,10 @@ private:
     struct ThisIsPrivate {};
 
 public:
-    /// Construct key condition from ActionsDAG nodes
+    /// Construct key condition from ActionsDAG nodes.
+    /// This overload takes the key column names and expression without any direction information,
+    /// so the condition treats the key as ascending in every column. Use it only for keys that
+    /// cannot be reverse-sorted (e.g. skip index expressions, virtual row-offset columns).
     KeyCondition(
         const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context,
@@ -75,6 +80,17 @@ public:
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false,
         bool skip_analysis_ = false); /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
+
+    /// Same as above, but takes the key's KeyDescription. The condition honors the key's per-column
+    /// sort directions (reverse flags; an empty vector means all-ascending, e.g. a partition key).
+    /// Any condition over a key that can be reverse-sorted (a MergeTree primary key) must be
+    /// constructed this way, otherwise a reverse key would be analyzed as ascending.
+    KeyCondition(
+        const ActionsDAGWithInversionPushDown & filter_dag,
+        ContextPtr context,
+        const KeyDescription & key_description,
+        bool single_point_ = false,
+        bool skip_analysis_ = false);
 
     struct BloomFilterData
     {
@@ -157,6 +173,8 @@ public:
         const DataTypes & sparse_data_types,
         const std::vector<UInt8> & equal_boundaries_mask,
         BoolMask initial_mask) const;
+
+    const KeyOrder & getKeyOrder() const { return key_order; }
 
     /// Same as checkInRange, but calculate only may_be_true component of a result.
     /// This is more efficient than checkInRange(...).can_be_true.
@@ -271,6 +289,11 @@ public:
     ///  - `intDiv(x, 3) < 10`                         -> { "(-Inf, +Inf)" } (functions on the key are not analyzed here)
     ///  - `(x < 10 AND x % 2 = 0) OR (x < 20 AND x % 3 = 0)` -> { "(-Inf, +Inf)" } (no partial extraction across OR branches)
     Ranges extractBounds() const;
+
+    /// Same stack algorithm as extractPlainRanges, but for a multi-column key: logical ops apply
+    /// as usual, while atoms that constrain other key columns become the universe for `column_index`.
+    /// Returns false if the RPN contains unsupported atoms for this extraction (same as extractPlainRanges).
+    bool extractPlainRangesForColumn(size_t column_index, Ranges & ranges) const;
 
     /// The expression is stored as Reverse Polish Notation.
     struct RPNElement
@@ -593,6 +616,9 @@ private:
     /// Holds the result of (setting.date_time_overflow_behavior == DateTimeOverflowBehavior::Ignore)
     /// Used to check toDateTime monotonicity.
     bool date_time_overflow_behavior_ignore;
+
+    /// Holds whether the key columns are sorted in reverse (ORDER BY ... DESC) or not.
+    KeyOrder key_order;
 
     /// If true, this key condition is relaxed. When a key condition is relaxed, it
     /// is considered weakened. This is because keys may not always align perfectly
