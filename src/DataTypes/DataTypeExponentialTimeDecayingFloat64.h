@@ -19,6 +19,7 @@ public:
     }
 
     String getName() const override;
+    std::optional<Field> getDefault() const override;
     Float64 getDecayLength() const { return decay_length; }
 
 private:

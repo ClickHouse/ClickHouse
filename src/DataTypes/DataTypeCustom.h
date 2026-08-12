@@ -1,7 +1,9 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <cstddef>
+#include <Core/Field.h>
 #include <Core/Types_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
@@ -22,6 +24,7 @@ public:
     virtual ~IDataTypeCustomName() = default;
 
     virtual String getName() const = 0;
+    virtual std::optional<Field> getDefault() const { return std::nullopt; }
 };
 
 using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;

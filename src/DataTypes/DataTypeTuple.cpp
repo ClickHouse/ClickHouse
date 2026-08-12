@@ -247,11 +247,24 @@ MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serializatio
 
 Field DataTypeTuple::getDefault() const
 {
+    if (const auto * custom_name = getCustomName())
+        if (auto custom_default = custom_name->getDefault())
+            return *custom_default;
+
     return Tuple(std::from_range_t{}, elems | std::views::transform([](const DataTypePtr & elem) { return elem->getDefault(); }));
 }
 
 void DataTypeTuple::insertDefaultInto(IColumn & column) const
 {
+    if (const auto * custom_name = getCustomName())
+    {
+        if (auto custom_default = custom_name->getDefault())
+        {
+            column.insert(*custom_default);
+            return;
+        }
+    }
+
     if (elems.empty())
     {
         column.insertDefault();

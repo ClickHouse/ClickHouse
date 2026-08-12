@@ -64,6 +64,13 @@ void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const Aggreg
     }
 }
 
+std::optional<Field> DataTypeCustomSimpleAggregateFunction::getDefault() const
+{
+    if (argument_types.size() == 1)
+        return argument_types[0]->getDefault();
+    return std::nullopt;
+}
+
 String DataTypeCustomSimpleAggregateFunction::getName() const
 {
     WriteBufferFromOwnString stream;

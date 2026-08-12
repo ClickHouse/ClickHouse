@@ -17,7 +17,7 @@ namespace DB
   *
   * All tuples with same size and types of elements are equivalent for expressions, regardless to names of elements.
   */
-class DataTypeTuple : public IDataType
+class DataTypeTuple final : public IDataType
 {
 private:
     DataTypes elems;

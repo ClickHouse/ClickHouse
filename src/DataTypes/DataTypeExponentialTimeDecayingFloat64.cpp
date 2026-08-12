@@ -1,6 +1,5 @@
 #include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 
-#include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
@@ -26,40 +25,6 @@ namespace ErrorCodes
 namespace
 {
 
-class DataTypeExponentialTimeDecayingFloat64Storage final : public DataTypeTuple
-{
-public:
-    explicit DataTypeExponentialTimeDecayingFloat64Storage(Float64 decay_length_)
-        : DataTypeTuple(
-            DataTypes{
-                std::make_shared<DataTypeFloat64>(),
-                std::make_shared<DataTypeFloat64>(),
-                std::make_shared<DataTypeFloat64>()},
-            Names{"value", "time", "decay_length"})
-        , decay_length(decay_length_)
-    {
-    }
-
-    Field getDefault() const override
-    {
-        return Tuple{Float64(0), Float64(0), decay_length};
-    }
-
-    void insertDefaultInto(IColumn & column) const override
-    {
-        column.insert(getDefault());
-    }
-
-    bool equals(const IDataType & rhs) const override
-    {
-        const auto * other = dynamic_cast<const DataTypeExponentialTimeDecayingFloat64Storage *>(&rhs);
-        return other && decay_length == other->decay_length;
-    }
-
-private:
-    const Float64 decay_length;
-};
-
 Float64 getDecayLength(const ASTPtr & parameters)
 {
     if (!parameters || parameters->children.size() != 1)
@@ -84,7 +49,12 @@ Float64 getDecayLength(const ASTPtr & parameters)
 
 std::pair<DataTypePtr, DataTypeCustomDescPtr> create(Float64 decay_length)
 {
-    auto storage_type = std::make_shared<DataTypeExponentialTimeDecayingFloat64Storage>(decay_length);
+    auto storage_type = std::make_shared<DataTypeTuple>(
+        DataTypes{
+            std::make_shared<DataTypeFloat64>(),
+            std::make_shared<DataTypeFloat64>(),
+            std::make_shared<DataTypeFloat64>()},
+        Names{"value", "time", "decay_length"});
 
     return {
         storage_type,
@@ -104,11 +74,17 @@ String DataTypeCustomExponentialTimeDecayingFloat64::getName() const
     return fmt::format("ExponentialTimeDecayingFloat64({})", decay_length);
 }
 
+std::optional<Field> DataTypeCustomExponentialTimeDecayingFloat64::getDefault() const
+{
+    return Tuple{Float64(0), Float64(0), decay_length};
+}
+
 DataTypePtr createDataTypeExponentialTimeDecayingFloat64(Float64 decay_length)
 {
-    auto [type, customization] = create(decay_length);
-    type->setCustomization(std::move(customization));
-    return type;
+    return DataTypeFactory::instance().getCustom(
+        "Tuple(value Float64, time Float64, decay_length Float64)",
+        std::make_unique<DataTypeCustomDesc>(
+            std::make_unique<DataTypeCustomExponentialTimeDecayingFloat64>(decay_length)));
 }
 
 std::optional<Float64> tryGetExponentialTimeDecayingFloat64DecayLength(const IDataType & type)
