@@ -33,11 +33,11 @@ When a query is stopped by `max_execution_time` with `break`, some operations ca
 partial result safely, so instead of a smaller result they stop without producing one. A function
 computing a single value stops without producing that value; whether the stop also reaches the
 client as a `TIMEOUT_EXCEEDED` error, or only as a missing result, depends on where the query was
-interrupted. A mutation of a `Memory` table leaves the table unchanged and reports
-`TIMEOUT_EXCEEDED`. An `INSERT` may report `QUERY_WAS_CANCELLED`. Some operations that wait for
-other replicas or for background work do not stop at `max_execution_time` at all: a quorum write
-keeps waiting until its quorum is satisfied or `insert_quorum_timeout` elapses, then reports
-`UNKNOWN_STATUS_OF_INSERT`.
+interrupted. A `Memory`-table mutation left incomplete by the timeout keeps the table unchanged and
+reports `TIMEOUT_EXCEEDED`. An `INSERT` may report `QUERY_WAS_CANCELLED`. Some operations that wait
+for other replicas or for background work do not stop at `max_execution_time` at all: a quorum
+write keeps waiting until its quorum is satisfied, or reports `UNKNOWN_STATUS_OF_INSERT` if
+`insert_quorum_timeout` elapses first.
 
 ## `group_by_overflow_mode` settings {#group_by_overflow_mode_settings}
 

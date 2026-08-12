@@ -3304,11 +3304,11 @@ Possible values:
 source data ran out. Some operations cannot return a partial result safely, so instead of a smaller
 result they stop without producing one. A function computing a single value stops without producing
 that value; whether the stop also reaches the client as a `TIMEOUT_EXCEEDED` error, or only as a
-missing result, depends on where the query was interrupted. A mutation of a `Memory` table leaves
-the table unchanged and reports `TIMEOUT_EXCEEDED`. An `INSERT` may report `QUERY_WAS_CANCELLED`.
-Some operations that wait for other replicas or for background work do not stop at
-`max_execution_time` at all: a quorum write keeps waiting until its quorum is satisfied or
-`insert_quorum_timeout` elapses, then reports `UNKNOWN_STATUS_OF_INSERT`.
+missing result, depends on where the query was interrupted. A `Memory`-table mutation left
+incomplete by the timeout keeps the table unchanged and reports `TIMEOUT_EXCEEDED`. An `INSERT` may
+report `QUERY_WAS_CANCELLED`. Some operations that wait for other replicas or for background work
+do not stop at `max_execution_time` at all: a quorum write keeps waiting until its quorum is
+satisfied, or reports `UNKNOWN_STATUS_OF_INSERT` if `insert_quorum_timeout` elapses first.
 )", 0) \
     DECLARE(Seconds, max_execution_time_leaf, 0, R"(
 Similar semantically to [`max_execution_time`](#max_execution_time) but only
