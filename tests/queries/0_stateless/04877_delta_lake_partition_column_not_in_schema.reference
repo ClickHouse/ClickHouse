@@ -7,5 +7,9 @@ BAD_ARGUMENTS
 BAD_ARGUMENTS
 -- delta-kernel reader: an explicit schema does not answer count() from statistics
 BAD_ARGUMENTS
--- legacy reader
+-- delta-kernel reader: no row or byte statistics are published either
+1	1
+-- legacy reader: json log branch
+INCORRECT_DATA
+-- legacy reader: checkpoint branch
 INCORRECT_DATA

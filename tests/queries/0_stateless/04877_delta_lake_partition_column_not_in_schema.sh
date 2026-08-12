@@ -47,7 +47,29 @@ for table, schema_fields in fields.items():
     with open(os.path.join(table_dir, "_delta_log", "00000000000000000000.json"), "w") as log:
         for action in actions:
             log.write(json.dumps(action) + "\n")
+
+with open(os.path.join(directory, "bad_schema.json"), "w") as out:
+    out.write(json.dumps({"type": "struct", "fields": fields["bad"]}))
 EOF
+
+# "ckpt" reaches the legacy reader's checkpoint branch instead of its JSON log branch:
+# a _last_checkpoint makes the reader parse the checkpoint parquet, whose single row
+# carries both the schema without 'p' and the add action keyed by 'p'.
+BAD_SCHEMA=$(cat "$DIR/bad_schema.json")
+mkdir -p "$DIR/ckpt/_delta_log" "$DIR/ckpt/p=1"
+$CLICKHOUSE_LOCAL -q "
+    INSERT INTO FUNCTION file('$DIR/ckpt/$DATA', Parquet, 'id Int64, s String')
+    SELECT number, toString(number) FROM numbers(5)
+    SETTINGS engine_file_truncate_on_insert = 1"
+$CLICKHOUSE_LOCAL -q "
+    INSERT INTO FUNCTION file('$DIR/ckpt/_delta_log/00000000000000000001.checkpoint.parquet', Parquet,
+        'add Tuple(path Nullable(String), partitionValues Map(String, Nullable(String)),
+                   size Nullable(Int64), modificationTime Nullable(Int64), dataChange Nullable(Bool)),
+         metaData Tuple(schemaString Nullable(String))')
+    SELECT ('$DATA', map('p', '1'), toInt64($(stat -c%s "$DIR/ckpt/$DATA")), toInt64(1600000000000), true),
+           tuple('$BAD_SCHEMA')
+    SETTINGS engine_file_truncate_on_insert = 1"
+echo '{"version":1,"size":1}' > "$DIR/ckpt/_delta_log/_last_checkpoint"
 
 echo '-- control: a declared partition column reads fine on both readers'
 $CLICKHOUSE_LOCAL -q "SELECT id, s, p FROM deltaLakeLocal('$DIR/good') WHERE id > 3"
@@ -64,7 +86,16 @@ CREATE TABLE t (\`id\` Int64, \`s\` String) ENGINE = DeltaLakeLocal('$DIR/bad');
 SELECT count() FROM t;
 " 2>&1 | grep -oF "BAD_ARGUMENTS"
 
-echo '-- legacy reader'
+echo '-- delta-kernel reader: no row or byte statistics are published either'
+$CLICKHOUSE_LOCAL --multiquery "
+CREATE TABLE t2 (\`id\` Int64, \`s\` String) ENGINE = DeltaLakeLocal('$DIR/bad');
+SELECT total_rows IS NULL, total_bytes IS NULL FROM system.tables WHERE name = 't2';
+" 2>&1 | grep -E "^1\s+1$|BAD_ARGUMENTS"
+
+echo '-- legacy reader: json log branch'
 $CLICKHOUSE_LOCAL -q "SELECT * FROM deltaLakeLocal('$DIR/bad') FORMAT Null SETTINGS allow_delta_kernel_rs = 0" 2>&1 | grep -oF "INCORRECT_DATA"
+
+echo '-- legacy reader: checkpoint branch'
+$CLICKHOUSE_LOCAL -q "SELECT * FROM deltaLakeLocal('$DIR/ckpt') FORMAT Null SETTINGS allow_delta_kernel_rs = 0" 2>&1 | grep -oF "INCORRECT_DATA"
 
 rm -rf "$DIR"
