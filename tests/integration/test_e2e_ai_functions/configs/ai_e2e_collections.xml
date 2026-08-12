@@ -1,0 +1,27 @@
+<clickhouse>
+    <!-- Named collections for the live (paid) half, defined in config rather than by DDL.
+
+         `CREATE NAMED COLLECTION` would persist the API key into
+         `database/named_collections/*.sql`, which sits in the instance directory that the
+         integration job packages into `logs.tar.gz` on failure. Reading the values from the
+         environment keeps this file free of secrets, and `hide_in_preprocessed` removes the
+         `api_key` element from the preprocessed copy that ClickHouse writes to disk.
+
+         Every referenced variable must exist: `from_env` throws when a variable is unset, so
+         `conftest.py` always passes all four, empty when the suite is unconfigured. -->
+    <named_collections>
+        <ai_e2e_chat>
+            <provider>openai</provider>
+            <endpoint from_env="AI_E2E_CHAT_ENDPOINT"/>
+            <model from_env="AI_E2E_CHAT_MODEL"/>
+            <api_key from_env="AI_E2E_API_KEY" hide_in_preprocessed="true"/>
+        </ai_e2e_chat>
+        <!-- No `model`: the embedding functions take it as a positional argument and reject
+             a collection that declares one. -->
+        <ai_e2e_embed>
+            <provider>openai</provider>
+            <endpoint from_env="AI_E2E_EMBED_ENDPOINT"/>
+            <api_key from_env="AI_E2E_API_KEY" hide_in_preprocessed="true"/>
+        </ai_e2e_embed>
+    </named_collections>
+</clickhouse>
