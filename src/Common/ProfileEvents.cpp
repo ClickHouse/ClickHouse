@@ -1717,7 +1717,7 @@ Counters::Counters(Counters && src) noexcept
     : counters(std::exchange(src.counters, nullptr))
     , cpus(src.cpus.exchange(0, std::memory_order_relaxed))
     , counters_holder(std::move(src.counters_holder))
-    , parent(src.parent.exchange(nullptr))
+    , parent(src.parent.exchange(nullptr, std::memory_order_acquire))
     , should_trace_array(src.should_trace_array.exchange(nullptr, std::memory_order_relaxed))
     , should_trace_holder(std::move(src.should_trace_holder))
     , trace_all_profile_events(src.trace_all_profile_events.load(std::memory_order_relaxed))
@@ -1747,21 +1747,21 @@ Count Counters::load(Event event) const
 
 void Counters::setParent(Counters * parent_)
 {
-    parent.store(parent_, std::memory_order_relaxed);
+    parent.store(parent_, std::memory_order_release);
 }
 
 void Counters::setUserCounters(Counters * user)
 {
     auto * current_val = this;
-    auto * parent_val = this->parent.load(std::memory_order_relaxed);
+    auto * parent_val = this->parent.load(std::memory_order_acquire);
 
     while (parent_val != nullptr && parent_val->level != VariableContext::Global && parent_val->level != VariableContext::User)
     {
         current_val = parent_val;
-        parent_val = current_val->parent.load(std::memory_order_relaxed);
+        parent_val = current_val->parent.load(std::memory_order_acquire);
     }
 
-    current_val->parent.store(user, std::memory_order_relaxed);
+    current_val->parent.store(user, std::memory_order_release);
 }
 
 void Counters::setTraceAllProfileEvents()
@@ -1985,7 +1985,7 @@ void Counters::increment(Event event, Count amount)
             send_to_trace_log |= trace_arr[event].load(std::memory_order_relaxed);
         send_to_trace_log |= current->trace_all_profile_events.load(std::memory_order_relaxed);
 
-        current = current->parent;
+        current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 
     if (unlikely(send_to_trace_log))
@@ -1999,7 +1999,7 @@ void Counters::incrementNoTrace(Event event, Count amount)
     do
     {
         current->fetchAdd(event, amount, cpu);
-        current = current->parent;
+        current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 }
 
@@ -2013,7 +2013,7 @@ void Counters::incrementSignalSafe(Event event, Count amount)
     do
     {
         current->fetchAdd(event, amount, -1);
-        current = current->parent;
+        current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 }
 
