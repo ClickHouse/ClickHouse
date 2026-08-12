@@ -157,7 +157,40 @@ StorageRabbitMQ::StorageRabbitMQ(
     String username;
     String password;
 
-    if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_host_port].changed)
+    /// The connection is TLS when either the `rabbitmq_secure` setting is on or the
+    /// `rabbitmq_address` URI uses the `amqps` scheme; OpenSSL must be initialized in both cases.
+    bool secure_connection = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_secure].value;
+
+    const auto address_string = getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address]);
+
+    if (!address_string.empty())
+    {
+        std::optional<AMQP::Address> address;
+        try
+        {
+            address.emplace(address_string);
+        }
+        catch (const std::exception & e)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid `rabbitmq_address`: {}", e.what());
+        }
+
+        context_->getRemoteHostFilter().checkHostAndPort(address->hostname(), toString(address->port()));
+
+        /// connectImpl takes the transport (amqp/amqps) from the URI scheme and ignores the
+        /// `rabbitmq_secure` setting for the address form, so reject a contradictory
+        /// `rabbitmq_secure = 1` rather than silently connecting in plaintext. Only for a fresh
+        /// CREATE though: an existing table must still attach on restart (it stays plaintext, as
+        /// it did before), so this validation does not brick upgrades.
+        if (mode <= LoadingStrictnessLevel::CREATE && secure_connection && !address->secure())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`rabbitmq_secure = 1` conflicts with the plaintext `amqp://` scheme in "
+                "`rabbitmq_address`; use an `amqps://` address for a secure connection");
+
+        secure_connection = address->secure();
+    }
+    else if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_host_port].changed)
     {
         username = setting_rabbitmq_username.empty() ? config.getString("rabbitmq.username", "") : setting_rabbitmq_username;
         password = setting_rabbitmq_password.empty() ? config.getString("rabbitmq.password", "") : setting_rabbitmq_password;
@@ -174,7 +207,7 @@ StorageRabbitMQ::StorageRabbitMQ(
 
         context_->getRemoteHostFilter().checkHostAndPort(parsed_address.first, toString(parsed_address.second));
     }
-    else if (!(*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address].changed)
+    else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "RabbitMQ requires either `rabbitmq_host_port` or `rabbitmq_address` setting");
 
     configuration =
@@ -184,11 +217,11 @@ StorageRabbitMQ::StorageRabbitMQ(
         .username = username,
         .password = password,
         .vhost = config.getString("rabbitmq.vhost", getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_vhost])),
-        .secure = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_secure].value,
-        .connection_string = getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address])
+        .secure = secure_connection,
+        .connection_string = address_string
     };
 
-    if (configuration.secure)
+    if (secure_connection)
         SSL_library_init();
 
     if (!columns_.getMaterialized().empty() || !columns_.getAliases().empty() || !columns_.getDefaults().empty() || !columns_.getEphemeral().empty())
@@ -247,13 +280,13 @@ StorageRabbitMQ::StorageRabbitMQ(
     }
 
     /// One looping task for all consumers as they share the same connection == the same handler == the same event loop
-    looping_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "RabbitMQLoopingTask", [this]{ loopingFunc(); });
+    looping_task = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), "RabbitMQLoopingTask", [this]{ loopingFunc(); });
     looping_task->deactivate();
 
-    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "RabbitMQStreamingTask", [this]{ threadFunc(); });
+    streaming_task = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), "RabbitMQStreamingTask", [this]{ threadFunc(); });
     streaming_task->deactivate();
 
-    init_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "RabbitMQConnectionTask", [this]{ connectionFunc(); });
+    init_task = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), "RabbitMQConnectionTask", [this]{ connectionFunc(); });
     init_task->deactivate();
 }
 
@@ -1567,7 +1600,7 @@ Optional parameters:
 - `rabbitmq_max_block_size` - Number of row collected before flushing data from RabbitMQ. Default: [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size).
 - `rabbitmq_flush_interval_ms` - Timeout for flushing data from RabbitMQ. Default: [stream_flush_interval_ms](/reference/settings/session-settings/stream#stream_flush_interval_ms).
 - `rabbitmq_queue_settings_list` - allows to set RabbitMQ settings when creating a queue. Available settings: `x-max-length`, `x-max-length-bytes`, `x-message-ttl`, `x-expires`, `x-priority`, `x-max-priority`, `x-overflow`, `x-dead-letter-exchange`, `x-queue-type`. The `durable` setting is enabled automatically for the queue.
-- `rabbitmq_address` - Address for connection. Use ether this setting or `rabbitmq_host_port`.
+- `rabbitmq_address` - Address for connection: `amqp(s)://user:password@host:port/vhost`. Use either this setting or `rabbitmq_host_port`; if both are set, `rabbitmq_address` is the one used. Its host and port are checked against [remote_url_allow_hosts](/reference/settings/server-settings/settings/remote#remote_url_allow_hosts).
 - `rabbitmq_vhost` - RabbitMQ vhost. Default: `'/'`.
 - `rabbitmq_queue_consume` - Use user-defined queues and do not make any RabbitMQ setup: declaring exchanges, queues, bindings. Default: `false`.
 - `rabbitmq_username` - RabbitMQ username.
@@ -1582,7 +1615,8 @@ Optional parameters:
 
 ### SSL connection {#ssl-connection}
 
-Use either `rabbitmq_secure = 1` or `amqps` in connection address: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`.
+With the `rabbitmq_host_port` form, set `rabbitmq_secure = 1` to use TLS.
+With the `rabbitmq_address` form the transport comes from the URI scheme, so use `amqps`: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`. `rabbitmq_secure` is ignored for the address form, and `rabbitmq_secure = 1` together with a plaintext `amqp://` address is rejected rather than silently connecting in cleartext.
 The default behaviour of the used library is not to check if the created TLS connection is sufficiently secure. Whether the certificate is expired, self-signed, missing or invalid: the connection is simply permitted. More strict checking of certificates can possibly be implemented in the future.
 
 Also format settings can be added along with rabbitmq-related settings.
@@ -1708,6 +1742,12 @@ The number of rows in one RabbitMQ message depends on whether the format is row-
 
 - For row-based formats the number of rows in one RabbitMQ message can be controlled by setting `rabbitmq_max_rows_per_message`.
 - For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](/reference/settings/session-settings/max#max_block_size).
+
+## Data durability on power loss {#data-durability}
+
+The `RabbitMQ` engine can silently lose already-consumed rows if the OS page cache is discarded before the inserted data is written to disk. After a batch is pushed to the dependent materialized views, the consumer sends `basic.ack` to the broker, which lets the broker delete those messages. The inserted rows, however, are only durable once the target part is fsynced, which does not happen synchronously by default (`fsync_after_insert = 0`). If the page cache is lost after the acknowledgement but before the target part is fsynced, the broker has already dropped the messages and the consumer resumes past them on reconnect, so the rows are lost with no error and `count()` is simply smaller. A plain process kill does not expose this, because the kernel keeps the page cache and eventually writes it back. A loss of the page cache does expose it; examples are a device-level power loss and an unclean host or kernel reset.
+
+For the recommended materialized-view consumption path (the acknowledgement is sent only after the whole insert pipeline finishes), setting `fsync_after_insert = 1` (and `fsync_part_directory = 1`) on the target `MergeTree` tables makes the inserted parts durable before the acknowledgement is sent, which narrows this window substantially. The setting must be enabled on every `MergeTree` table the batch is inserted into, including cascaded materialized-view targets; any such table left at the default can still lose its part. Asynchronous intermediaries do not gain durability from this setting alone: for example a `Distributed` target inserts in the background when `distributed_foreground_insert = 0`, which is the default outside ClickHouse Cloud, so it needs its own durability settings or synchronous insertion. This mitigation also does not apply to a direct `INSERT ... SELECT ... FROM <rabbitmq_table>` with `rabbitmq_commit_on_select = 1`, where messages are acknowledged when the read reaches its end rather than after the destination has written a durable part.
 )DOCS_MD",
             .syntax = "ENGINE = RabbitMQ() SETTINGS rabbitmq_host_port = 'host:port', rabbitmq_exchange_name = 'exchange', rabbitmq_format = 'format', ...",
             .related = {"Kafka", "NATS", "FileLog"}});

@@ -22,6 +22,7 @@
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Common/re2.h>
 #include <string_view>
+#include <unordered_set>
 #include <gtest/gtest.h>
 #include <Parsers/tests/gtest_common.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -145,6 +146,49 @@ TEST(ParserExecuteAsQuery, OutputOptionChildOrderIsCanonical)
     }
 }
 
+/// `IAST`'s copy constructor copies `children` as-is, so a `clone()` built on `make_intrusive<T>(*this)`
+/// has to clear them before re-adding: otherwise the clone keeps pointing at the original's nodes and
+/// mutating one is visible through the other. The AST fuzzer reports that as
+/// `IAST::clone() is broken for some AST node`. See `ASTDropQuery::clone`.
+TEST(ParserQueryWithOutput, CloneOwnsItsChildren)
+{
+    const std::vector<String> queries = {
+        "DROP TABLE db.t",
+        "DROP TABLE t1, t2, t3",
+        "DROP TABLE IF EXISTS db.t SYNC FORMAT JSONEachRow",
+        "TRUNCATE TABLE db.t",
+        "DETACH TABLE db.t PERMANENTLY",
+        "UNDROP TABLE db.t",
+        "UNDROP TABLE db.t FORMAT JSONEachRow",
+        "DESCRIBE FILESYSTEM CACHE 'cache'",
+        "DESCRIBE FILESYSTEM CACHE 'cache' FORMAT JSONEachRow",
+    };
+
+    const auto collect = [](const IAST & ast, auto & self) -> std::unordered_set<const IAST *>
+    {
+        std::unordered_set<const IAST *> nodes{&ast};
+        for (const auto & child : ast.children)
+            nodes.merge(self(*child, self));
+        return nodes;
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        ASTPtr cloned = ast->clone();
+        const auto original_nodes = collect(*ast, collect);
+        for (const auto * node : collect(*cloned, collect))
+            EXPECT_FALSE(original_nodes.contains(node)) << "clone shares a node with the original: " << query;
+
+        /// The clone must also reproduce the child order a fresh parse produces, so that a query
+        /// and its clone hash the same.
+        EXPECT_EQ(ast->getTreeHash(false), cloned->getTreeHash(false)) << "clone of: " << query;
+    }
+}
+
 /// `ASTIndexDeclaration` carries a `part_of_create_index_query` flag that switches its formatting
 /// between the `CREATE INDEX` form (`(expr) TYPE ...`, with the extra wrapper this PR restores for
 /// parenthesized expressions) and the column-list form (`name expr TYPE ...`). `clone()` must carry
@@ -210,6 +254,88 @@ TEST(ParserCreateDatabaseQuery, MaskDataLakeCatalogStorageCredentials)
     EXPECT_EQ(masked.find("storage_secret"), String::npos);
     EXPECT_EQ(masked.find("AKIA_PLAIN"), String::npos);
     EXPECT_EQ(masked.find("AKIA_STORAGE"), String::npos);
+    EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskNATSTableEngineCredentials)
+{
+    /// The `NATS` engine takes its arguments as overrides of a named collection, so the credentials can
+    /// appear as engine arguments and not only in the `SETTINGS` clause. Every credential source must be
+    /// hidden in `SHOW CREATE TABLE` and in the query log, otherwise secrets leak.
+    const String query =
+        "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, nats_password = 'plain_password', "
+        "nats_token = 'plain_token', nats_credential_file = '/plain/credential/file', "
+        "nats_credentials = 'plain_user_jwt_and_seed')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    /// formatForLogging always hides secrets.
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_EQ(masked.find("plain_token"), String::npos);
+    EXPECT_EQ(masked.find("/plain/credential/file"), String::npos);
+    EXPECT_EQ(masked.find("plain_user_jwt_and_seed"), String::npos);
+    /// The keys of the named overrides are not secrets and stay visible, as does the collection name.
+    EXPECT_NE(masked.find("nats1"), String::npos);
+    EXPECT_NE(masked.find("nats_credentials = '[HIDDEN]'"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskNATSTableEngineURLPassword)
+{
+    /// A `nats_url` override can carry the credentials in its userinfo. Only the password is hidden,
+    /// keeping the rest of the url visible, the same way the `SETTINGS` clause form is masked.
+    const String query =
+        "CREATE TABLE test_nats (key UInt64) "
+        "ENGINE = NATS(nats1, nats_url = 'nats://plain_user:plain_password@example.com:4222')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_NE(masked.find("nats://plain_user:[HIDDEN]@example.com:4222"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskNATSTableEngineNonLiteralArguments)
+{
+    /// A key or a `nats_url` value we cannot read as a plain literal is hidden whole (fail closed):
+    /// the key can name a secret setting, and the url pieces can embed the credentials.
+    const String query =
+        "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, "
+        "concat('nats_', 'credentials') = 'plain_user_jwt_and_seed', "
+        "nats_url = concat('nats://plain_user:plain_password@', 'example.com:4222'))";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_EQ(masked.find("plain_user_jwt_and_seed"), String::npos);
+    EXPECT_NE(masked.find("nats1"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskNATSTableEnginePositionalArguments)
+{
+    /// The engine accepts no positional arguments except the collection name in the first position,
+    /// but it rejects them only after the query has been formatted for logging. A malformed
+    /// positional argument can carry a secret, so it is hidden whole (fail closed).
+    const String query =
+        "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, '/plain/credential/file', "
+        "'nats://plain_user:plain_password@example.com:4222')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("/plain/credential/file"), String::npos);
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    /// The collection name is the one legitimate positional argument and stays visible.
+    EXPECT_NE(masked.find("nats1"), String::npos);
     EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
 }
 
