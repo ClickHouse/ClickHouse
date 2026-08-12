@@ -7,15 +7,17 @@
 -- so `ignore_drop_queries_probability` must not skip or rewrite them. When it does, the temporary
 -- table is left behind as a `_tmp_replace_*` table that still holds its data and survives a
 -- restart, and one is leaked per statement.
---
--- The setup and teardown DROPs below pin the setting to 0: they are ordinary user DROPs, so the
--- injection this test turns on would eat them too and leave the test's own tables behind.
+
+-- The test runs with the injection on, so it keeps its objects in databases it creates itself:
+-- DROP DATABASE is not injected, so one at the end removes everything without pinning the setting.
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier};
+USE {CLICKHOUSE_DATABASE_2:Identifier};
 
 SET ignore_drop_queries_probability = 1;
 
 SELECT '-- failure path: the temporary table must be cleaned up, not stranded';
 
-DROP TABLE IF EXISTS dst_04796 SYNC SETTINGS ignore_drop_queries_probability = 0;
 CREATE TABLE dst_04796 (a UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO dst_04796 SELECT number FROM numbers(10);
 
@@ -47,14 +49,9 @@ CREATE OR REPLACE TABLE dst_04796 (a UInt64) ENGINE = MergeTree ORDER BY a AS SE
 
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '%tmp_replace%';
 
-DROP TABLE dst_04796 SYNC SETTINGS ignore_drop_queries_probability = 0;
-
 SELECT '-- a view temporary is not MergeTree, so its internal DROP would be rewritten to TRUNCATE';
 
 -- A rewritten internal DROP asks for an exclusive lock under the outer statement's query id.
-DROP TABLE IF EXISTS src_04796 SYNC SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS mv_04796 SYNC SETTINGS ignore_drop_queries_probability = 0;
-
 CREATE TABLE src_04796 (id UInt64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO src_04796 SELECT number FROM numbers(100);
 CREATE MATERIALIZED VIEW mv_04796 ENGINE = MergeTree ORDER BY id POPULATE AS SELECT id FROM src_04796;
@@ -81,16 +78,13 @@ CREATE OR REPLACE VIEW {CLICKHOUSE_DATABASE_1:Identifier}.v_04796 AS SELECT 2 AS
 -- The replacement must be the new definition, not the old one left in place.
 SELECT x FROM {CLICKHOUSE_DATABASE_1:Identifier}.v_04796;
 
-DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier} SETTINGS ignore_drop_queries_probability = 0;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 SELECT '-- a user DROP is still skipped: the setting keeps doing what it is for';
 
-DROP TABLE IF EXISTS user_drop_04796 SYNC SETTINGS ignore_drop_queries_probability = 0;
 CREATE TABLE user_drop_04796 (a UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO user_drop_04796 SELECT number FROM numbers(10);
 DROP TABLE user_drop_04796;
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'user_drop_04796';
 
-DROP TABLE mv_04796 SYNC SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE src_04796 SYNC SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS user_drop_04796 SYNC SETTINGS ignore_drop_queries_probability = 0;
+DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};
