@@ -3,6 +3,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Processors/Formats/Impl/SQLInsertRowOutputFormat.h>
 #include <Processors/Port.h>
 #include <Storages/StorageFactory.h>
@@ -35,6 +36,18 @@ SQLInsertRowOutputFormat::SQLInsertRowOutputFormat(WriteBuffer & out_, SharedHea
             if (!unique_column_names.emplace(column_name).second)
                 throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} already exists", backQuoteIfNeed(column_name));
         }
+
+        const auto & type_validation = format_settings.sql_insert.data_type_validation;
+        DataTypeValidationSettings validation_settings;
+        validation_settings.allow_suspicious_low_cardinality_types = type_validation.allow_suspicious_low_cardinality_types;
+        validation_settings.allow_suspicious_fixed_string_types = type_validation.allow_suspicious_fixed_string_types;
+        validation_settings.allow_suspicious_variant_types = type_validation.allow_suspicious_variant_types;
+        validation_settings.validate_nested_types = type_validation.validate_nested_types;
+        validation_settings.enable_time_time64_type = type_validation.enable_time_time64_type;
+        validation_settings.allow_experimental_nullable_tuple_type = type_validation.allow_experimental_nullable_tuple_type;
+
+        for (const auto & type : types)
+            validateDataType(type, validation_settings);
 
         checkAllTypesAreAllowedInTable(header_->getNamesAndTypesList());
     }
