@@ -10,7 +10,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
-#include <cmath>
 
 
 namespace DB::ErrorCodes
@@ -47,17 +46,10 @@ namespace
         }
     }
 
-    enum class PostProcessFunction
-    {
-        None,
-        Deriv,
-    };
-
     struct ImplInfo
     {
         std::string_view ch_function_name;
         bool drop_metric_name = true;
-        PostProcessFunction post_process_function = PostProcessFunction::None;
     };
 
     ASTPtr toFloat64(ASTPtr && x)
@@ -227,24 +219,22 @@ namespace
     ASTPtr applyPredictLinearScalarGridParameter(
         ASTPtr && intercept_values,
         ASTPtr && slope_values,
-        ASTPtr && predict_offsets,
-        const ConverterContext & context)
+        ASTPtr && predict_offsets)
     {
         auto is_null = makeASTFunction(
             "or",
             makeASTFunction("isNull", make_intrusive<ASTIdentifier>("intercept")),
             makeASTFunction("isNull", make_intrusive<ASTIdentifier>("slope")));
 
+        /// `timeSeriesDerivToGrid` reports a per-second slope and `predict_offset` is expressed in seconds,
+        /// so the prediction needs no conversion to the timestamp tick resolution here.
         auto prediction = makeASTFunction(
             "plus",
             makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>("intercept")),
             makeASTFunction(
                 "multiply",
                 makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>("slope")),
-                makeASTFunction(
-                    "multiply",
-                    make_intrusive<ASTIdentifier>("predict_offset"),
-                    make_intrusive<ASTLiteral>(std::pow(10.0, context.timestamp_scale)))));
+                make_intrusive<ASTIdentifier>("predict_offset")));
 
         return makeASTFunction(
             "arrayMap",
@@ -295,17 +285,16 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
-            {"deriv",
-             {
-                 "timeSeriesDerivToGrid",
-                 /* drop_metric_name = */ true,
-                 PostProcessFunction::Deriv,
-             }},
-
             {"last_over_time",
              {
                  "timeSeriesLastToGrid",
                  /* drop_metric_name = */ false,
+             }},
+
+            {"deriv",
+             {
+                 "timeSeriesDerivToGrid",
+                 /* drop_metric_name = */ true,
              }},
 
             {"changes",
@@ -595,7 +584,7 @@ SQLQueryPiece applyFunctionOverRange(
         }
 
         result_values = applyPredictLinearScalarGridParameter(
-            std::move(intercept_values), std::move(slope_values), std::move(grid_parameter), context);
+            std::move(intercept_values), std::move(slope_values), std::move(grid_parameter));
     }
     else
     {
@@ -619,26 +608,6 @@ SQLQueryPiece applyFunctionOverRange(
                 timeSeriesDurationToAST(aggregate_step, context.timestamp_data_type),
                 timeSeriesDurationToAST(window, context.timestamp_data_type));
         }
-    }
-
-    if (impl_info && impl_info->post_process_function != PostProcessFunction::None)
-    {
-        /// timeSeriesDerivToGrid returns a slope per timestamp unit; PromQL deriv reports per-second slope.
-        ASTPtr factor = make_intrusive<ASTLiteral>(std::pow(10.0, context.timestamp_scale));
-
-        result_values = makeASTFunction(
-            "arrayMap",
-            makeASTLambda(
-                {"x"},
-                makeASTFunction(
-                    "if",
-                    makeASTFunction("isNull", make_intrusive<ASTIdentifier>("x")),
-                    make_intrusive<ASTLiteral>(Field{}),
-                    makeASTFunction(
-                        "multiply",
-                        make_intrusive<ASTIdentifier>("x"),
-                        std::move(factor)))),
-            std::move(result_values));
     }
 
     if (at_modifier_range_argument && !is_predict_linear)

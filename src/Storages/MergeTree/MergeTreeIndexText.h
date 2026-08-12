@@ -7,6 +7,7 @@
 #include <Common/BitPackedStringArray.h>
 #include <Common/BitPackedUInt64Array.h>
 #include <Common/Logger.h>
+#include <Common/PODArray.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
@@ -190,12 +191,14 @@ struct PostingsSerialization
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
 
 private:
+    const IPostingListCodec & resolveCodec(UInt64 header);
+
     PostingListCodecPtr posting_list_codec;
     MergeTreeIndexVersion serialization_version;
 
     /// Reusable buffers to avoid repeated heap allocations during deserialization.
     std::vector<UInt32> raw_postings_buffer;
-    std::vector<char> deserialization_buffer;
+    PaddedPODArray<char> deserialization_buffer;
 };
 
 /// Closed range of rows.
@@ -560,6 +563,8 @@ public:
     std::unique_ptr<IPostingListCodec> posting_list_codec;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
     MergeTreeIndexTextPostprocessorPtr postprocessor;
+    /// Name of the index expression rewritten as `optimize_empty_string_comparisons` rewrites queries.
+    std::optional<String> normalized_index_column_name;
 };
 
 }

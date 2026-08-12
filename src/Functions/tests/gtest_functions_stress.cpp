@@ -282,6 +282,7 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "aiExtract",
     "aiTranslate",
     "aiEmbed",
+    "aiSimilarity",
     "naiveBayesClassifier",
     "transactionLatestSnapshot",
     "transactionOldestSnapshot",
