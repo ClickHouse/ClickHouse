@@ -13,7 +13,6 @@
 #include <Core/NamesAndTypes.h>
 #include <IO/ReadHelpers.h>
 #include <algorithm>
-#include <ranges>
 
 namespace DB
 {
@@ -669,12 +668,15 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
     else if (serialization_version.value == SerializationVersion::MAP_WITH_BUCKETS)
     {
         size_t end = limit && offset + limit < column.size() ? offset + limit : column.size();
-        auto shared_data_buckets = splitSharedDataPathsToBuckets(column, offset, end, buckets);
+        /// Build one bucket at a time (and free it before building the next) to reduce peak memory,
+        /// instead of materializing all bucket columns simultaneously.
+        SharedDataBucketsSplitter buckets_splitter(column, offset, end, buckets);
         for (size_t bucket = 0; bucket != buckets; ++bucket)
         {
+            auto bucket_column = buckets_splitter.extractBucket(bucket);
             settings.path.push_back(Substream::Bucket);
             settings.path.back().bucket = bucket;
-            serialization_map->serializeBinaryBulkWithMultipleStreams(*shared_data_buckets[bucket], 0, 0, settings, shared_data_state->bucket_map_states[bucket]);
+            serialization_map->serializeBinaryBulkWithMultipleStreams(*bucket_column, 0, 0, settings, shared_data_state->bucket_map_states[bucket]);
             settings.path.pop_back();
         }
     }

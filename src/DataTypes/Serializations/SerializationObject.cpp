@@ -158,8 +158,8 @@ struct SerializeBinaryBulkStateObject: public ISerialization::SerializeBinaryBul
     /// If true, statistics will be recalculated during serialization.
     bool recalculate_statistics = false;
 
-    /// For flattened serialization only. string_views reference data inside the Object column
-    /// (shared data paths and dynamic paths map keys) which stays alive during serialization.
+    /// For flattened serialization only. string_views reference path data inside the Object column
+    /// (shared data paths and dynamic paths map keys), which stays alive during serialization.
     std::vector<std::pair<std::string_view, ColumnPtr>> flattened_paths;
 
     explicit SerializeBinaryBulkStateObject(SerializationObject::SerializationVersion serialization_version_)

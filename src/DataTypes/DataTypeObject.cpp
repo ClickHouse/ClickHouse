@@ -15,6 +15,7 @@
 #include <Interpreters/castColumn.h>
 #include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/quoteString.h>
 
 #include <Parsers/IAST.h>
@@ -854,6 +855,15 @@ DataTypePtr DataTypeObject::getTypeOfNestedObjects() const
 DataTypePtr DataTypeObject::getDynamicType() const
 {
     return std::make_shared<DataTypeDynamic>(max_dynamic_types);
+}
+
+UnorderedMapWithMemoryTracking<String, SerializationPtr> DataTypeObject::getTypedPathSerializations() const
+{
+    UnorderedMapWithMemoryTracking<String, SerializationPtr> result;
+    result.reserve(typed_paths.size());
+    for (const auto & [path, type] : typed_paths)
+        result.emplace(path, type->getDefaultSerialization());
+    return result;
 }
 
 static DataTypePtr createJSON(const ASTPtr & arguments)
@@ -1972,6 +1982,8 @@ SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 
 With lazy type hints enabled, this query returns no rows, confirming the operation was metadata-only.
 
+This holds for the type-hint changes described above; see [Limitations](#lazy-type-hints-limitations) for the cases that are instead rejected.
+
 ### Materializing Type Hints {#materializing-type-hints}
 
 To materialize type hints in existing data, you can either:
@@ -1985,6 +1997,12 @@ To materialize type hints in existing data, you can either:
 - This feature is experimental and may change in future versions
 - Query-time type conversion can have significant performance overhead compared to pre-materialized types, especially for large JSON objects
 - The feature only applies when modifying `typed_paths` (type hints); other JSON parameters like `max_dynamic_paths`, `SKIP`, or `SKIP REGEXP` still require mutations
+- Modifying a type hint (or removing a typed path) is **not** metadata-only, and is rejected, when the affected subcolumn is used in a positionally-persisted structure:
+  - the **primary/sorting key** or **partition key** — the change is forbidden, because the on-disk primary index / partition values cannot be rebuilt by a metadata-only `ALTER` (as with any other key column);
+  - an explicit **data skipping index** — drop the index first, or disable `allow_experimental_json_lazy_type_hints` to run the change as a full mutation that rebuilds the index.
+  - a **projection whose sort key (`ORDER BY`) reads the subcolumn** — drop the projection first, because a metadata-only `ALTER` cannot rebuild the projection's primary index.
+
+  Adding hints for paths not used in any such structure, or changes that leave the on-disk type of the used subcolumns unchanged (e.g. adding an unrelated typed path), remain metadata-only.
 
 ## Comparison between values of the JSON type {#comparison-between-values-of-the-json-type}
 
