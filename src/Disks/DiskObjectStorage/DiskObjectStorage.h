@@ -51,7 +51,13 @@ public:
 
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
-    bool supportZeroCopyReplication() const override { return metadata_storage->getType() != MetadataStorageType::Keeper; }
+    /// Keeper metadata replicates itself; in-memory metadata is transient and has no local
+    /// metadata files zero-copy could ship (see `getReplicatedFilesDescriptionForRemoteDisk`).
+    bool supportZeroCopyReplication() const override
+    {
+        return metadata_storage->getType() != MetadataStorageType::Keeper
+            && metadata_storage->getType() != MetadataStorageType::Memory;
+    }
 
     bool supportParallelWrite() const override { return object_storages->takePointingTo(cluster->getLocalLocation())->supportParallelWrite(); }
 
