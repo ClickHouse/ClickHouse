@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/getLeastSupertype.h>
 
 namespace DB
@@ -23,6 +24,34 @@ namespace Setting
 
 namespace
 {
+
+/// `equals` compares the string family zero-padded, so a needle whose extra bytes are all NUL
+/// still matches a narrower element. `has` compares either the String supertype, which strips
+/// trailing NULs, or raw Fields, which are not padded. The two therefore agree only when the
+/// element and needle types are identical, and a tuple agrees only when all of its elements do.
+bool stringFamilyPairIsNotEqualityEquivalent(const DataTypePtr & element_type, const DataTypePtr & needle_type)
+{
+    auto element = removeNullable(removeLowCardinality(element_type));
+    auto needle = removeNullable(removeLowCardinality(needle_type));
+
+    const auto * element_tuple = typeid_cast<const DataTypeTuple *>(element.get());
+    const auto * needle_tuple = typeid_cast<const DataTypeTuple *>(needle.get());
+    if (element_tuple && needle_tuple)
+    {
+        const auto & element_elements = element_tuple->getElements();
+        const auto & needle_elements = needle_tuple->getElements();
+        if (element_elements.size() != needle_elements.size())
+            return false;
+
+        for (size_t i = 0; i < element_elements.size(); ++i)
+            if (stringFamilyPairIsNotEqualityEquivalent(element_elements[i], needle_elements[i]))
+                return true;
+
+        return false;
+    }
+
+    return isStringOrFixedString(element) && isStringOrFixedString(needle) && !element->equals(*needle);
+}
 
 class RewriteArrayExistsToHasVisitor : public InDepthQueryTreeVisitorWithContext<RewriteArrayExistsToHasVisitor>
 {
@@ -120,6 +149,11 @@ public:
 
         const auto * constant_node = has_constant_element_argument->as<ConstantNode>();
         if (constant_node && constant_node->getValue().isNull())
+            return;
+
+        /// Such a pair has a supertype, so the check below admits it, but the two spellings
+        /// still disagree.
+        if (stringFamilyPairIsNotEqualityEquivalent(nested_type, constant_type))
             return;
 
         bool types_compatible = (isNativeNumber(nested_type) || isEnum(nested_type)) && isNativeNumber(constant_type);
