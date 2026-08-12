@@ -53,7 +53,8 @@ wait_for_query_log "$(finished_in_query_log "$dist_id")"
 $CLICKHOUSE_CLIENT -q "
     SELECT count() FROM t WHERE n >= 2000;
     SELECT count() FROM system.query_log
-    WHERE event_date >= yesterday() AND initial_query_id = '$dist_id' AND is_initial_query = 0 AND type = 'QueryStart'
+    WHERE event_date >= yesterday() AND has(databases, currentDatabase()) AND initial_query_id = '$dist_id'
+        AND is_initial_query = 0 AND type = 'QueryStart'
         AND query_id NOT IN (
             SELECT query_id FROM system.query_log
             WHERE event_date >= yesterday() AND initial_query_id = '$dist_id' AND is_initial_query = 0 AND type = 'QueryFinish');
