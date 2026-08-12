@@ -253,7 +253,8 @@ private:
         bool allow_lambda_expression,
         bool allow_table_expression,
         bool ignore_alias = false,
-        bool allow_niladic_functions = true);
+        bool allow_niladic_functions = true,
+        bool is_top_level_projection = false);
 
     void applyGroupByUseNullsToExpression(QueryTreeNodePtr & node, IdentifierResolveScope & scope);
 
@@ -261,7 +262,7 @@ private:
 
     std::unordered_set<std::string> collectMatcherProducedColumnNames(const QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
-    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true);
+    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true, bool is_top_level_projection = false);
 
     ProjectionNames resolveSortNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
 

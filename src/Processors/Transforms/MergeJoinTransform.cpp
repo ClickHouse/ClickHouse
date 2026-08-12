@@ -68,11 +68,11 @@ ConstNullMapPtr getNullMapData(const ColumnPtr & column)
 template <typename TCursor>
 int ALWAYS_INLINE compareCursors(const TCursor & lhs, size_t lpos,
                                  const TCursor & rhs, size_t rpos,
-                                 int null_direction_hint)
+                                 int null_direction_hint, size_t from_key = 0)
 {
     chassert(lhs.sort_columns.size() == rhs.sort_columns.size());
     size_t key_length = lhs.sort_columns.size();
-    for (size_t i = 0; i < key_length; ++i)
+    for (size_t i = from_key; i < key_length; ++i)
     {
         const auto & left_column = *lhs.sort_columns[i];
         const auto & right_column = *rhs.sort_columns[i];
@@ -94,6 +94,79 @@ int ALWAYS_INLINE compareCursors(const TCursor & lhs, const TCursor & rhs, int n
 {
     return compareCursors(lhs, lhs.getRow(), rhs, rhs.getRow(), null_direction_hint);
 }
+
+struct FirstKeyCompare
+{
+    /// Comparison of the first key columns of the current rows.
+    int cmp = 0;
+    /// Number of rows of the lesser side known to be less than the other side's current row
+    /// (0 when the run was not tracked: a NULL row, or the first key columns are equal).
+    size_t track = 0;
+};
+
+/// Compares only the first key column of the current rows. A nonzero result decides the whole
+/// tuple comparison regardless of the remaining key columns, and the run of lesser rows on the
+/// lesser side (a prefix of the sorted block) can be skipped at once (see skipTracked).
+FirstKeyCompare ALWAYS_INLINE trackCursorsFirstKey(const FullMergeJoinCursor & lhs, const FullMergeJoinCursor & rhs, int null_direction_hint)
+{
+    const size_t lpos = lhs.getRow();
+    const size_t rpos = rhs.getRow();
+    const IColumn & left_column = *lhs.sort_columns.front();
+    const IColumn & right_column = *rhs.sort_columns.front();
+    const auto * left_null_map = getNullMapData(lhs.null_maps.front());
+    const auto * right_null_map = getNullMapData(rhs.null_maps.front());
+
+    /// Rows with NULL in the first key column are ordered by the null map, not by the values
+    /// of the nested column; their runs are skipped by nextDistinct.
+    if (left_null_map && (*left_null_map)[lpos])
+        return {null_direction_hint, 0};
+    if (right_null_map && (*right_null_map)[rpos])
+        return {-null_direction_hint, 0};
+
+    /// A single virtual call fuses the comparison and the run search.
+    if (!left_null_map && !right_null_map)
+    {
+        Int64 track = left_column.compareTrackAt(lpos, rpos, right_column, null_direction_hint);
+        if (track < 0)
+            return {-1, static_cast<size_t>(-track)};
+        if (track > 0)
+            return {1, static_cast<size_t>(track)};
+        return {0, 0};
+    }
+
+    /// With a nullable first key column the values of the nested column at NULL positions are
+    /// unspecified and break the sortedness compareTrackAt relies on, so the run search checks
+    /// the null map in the predicate (NULL rows sort to the block edge and never satisfy it).
+    int cmp = left_column.compareAt(lpos, rpos, right_column, null_direction_hint);
+    if (cmp == 0)
+        return {0, 0};
+
+    const IColumn & column = cmp < 0 ? left_column : right_column;
+    const IColumn & other = cmp < 0 ? right_column : left_column;
+    const size_t pos = cmp < 0 ? lpos : rpos;
+    const size_t other_pos = cmp < 0 ? rpos : lpos;
+    const size_t rows = cmp < 0 ? lhs.rows : rhs.rows;
+    const auto * null_map = cmp < 0 ? left_null_map : right_null_map;
+
+    auto is_less = [&](size_t row)
+    {
+        return (!null_map || !(*null_map)[row])
+            && column.compareAt(row, other_pos, other, null_direction_hint) < 0;
+    };
+
+    /// Resolve a run of length one with a single comparison before paying the run-search setup cost.
+    size_t run_end = 0;
+    if (pos + 1 >= rows || !is_less(pos + 1))
+        run_end = pos + 1;
+    else
+    {
+        /// Every probe is a virtual compareAt call, which is expensive, so keep the linear probe short.
+        static constexpr size_t linear_probe = 8;
+        run_end = findEqualRangeEndAssumeSorted(pos + 1, rows, linear_probe, is_less);
+    }
+    return {cmp, run_end - pos};
+}
+
 
 int compareAsofCursors(const FullMergeJoinCursor & lhs, const FullMergeJoinCursor & rhs, int null_direction_hint)
 {
@@ -170,6 +243,16 @@ size_t ALWAYS_INLINE nextDistinct(FullMergeJoinCursor & impl)
 
     impl.pos = run_end;
     return run_end - start_pos;
+}
+
+/// Advances the cursor past the tracked run of lesser rows (see trackCursorsFirstKey); when the
+/// run was not tracked, skips the run of equal keys. Returns the number of rows skipped.
+size_t ALWAYS_INLINE skipTracked(FullMergeJoinCursor & cursor, size_t tracked_rows)
+{
+    if (tracked_rows == 0)
+        return nextDistinct(cursor);
+    cursor.pos += tracked_rows;
+    return tracked_rows;
 }
 
 ColumnPtr replicateRow(const IColumn & column, size_t num)
@@ -436,6 +519,11 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         input_headers_,
         max_block_size_)
 {
+    /// This algorithm matches rows on the equality keys (plus the `ASOF` inequality) only, so a
+    /// mixed `ON` condition reaching here would be dropped instead of applied.
+    if (join_ptr->getTableJoin().getMixedJoinExpression())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeJoinAlgorithm cannot evaluate a mixed JOIN ON condition");
+
     for (const auto & [left_key, right_key] : join_ptr->getTableJoin().leftToRightKeyRemap())
     {
         size_t left_idx = input_headers[0]->getPositionByName(left_key);
@@ -540,7 +628,10 @@ struct AllJoinImpl
             lpos = left_cursor.getRow();
             rpos = right_cursor.getRow();
 
-            cmp = compareCursors(left_cursor, right_cursor, null_direction_hint);
+            /// Compare the first key column once: a nonzero result decides the whole tuple
+            /// comparison and carries the run of lesser rows that can be skipped at once.
+            FirstKeyCompare first_key = trackCursorsFirstKey(left_cursor, right_cursor, null_direction_hint);
+            cmp = first_key.cmp != 0 ? first_key.cmp : compareCursors(left_cursor, lpos, right_cursor, rpos, null_direction_hint, /*from_key=*/ 1);
 
             if (cmp == 0)
             {
@@ -568,7 +659,8 @@ struct AllJoinImpl
             }
             else if (cmp < 0)
             {
-                size_t num = nextDistinct(left_cursor);
+                /// When a later key column decided the order, only the run of equal keys can be skipped.
+                size_t num = skipTracked(left_cursor, first_key.track);
                 if constexpr (isLeftOrFull(kind))
                 {
                     right_map.resize_fill(right_map.size() + num, right_cursor.rows);
@@ -578,7 +670,7 @@ struct AllJoinImpl
             }
             else
             {
-                size_t num = nextDistinct(right_cursor);
+                size_t num = skipTracked(right_cursor, first_key.track);
                 if constexpr (isRightOrFull(kind))
                 {
                     left_map.resize_fill(left_map.size() + num, left_cursor.rows);
@@ -846,7 +938,11 @@ struct AnyJoinImpl
             lpos = left_cursor.getRow();
             rpos = right_cursor.getRow();
 
-            cmp = compareCursors(left_cursor, right_cursor, null_direction_hint);
+            /// Compare the first key column once: a nonzero result decides the whole tuple
+            /// comparison and carries the run of lesser rows that can be skipped at once.
+            FirstKeyCompare first_key = trackCursorsFirstKey(left_cursor, right_cursor, null_direction_hint);
+            cmp = first_key.cmp != 0 ? first_key.cmp : compareCursors(left_cursor, lpos, right_cursor, rpos, null_direction_hint, /*from_key=*/ 1);
+
             if (cmp == 0)
             {
                 if constexpr (isLeftOrFull(kind))
@@ -871,13 +967,14 @@ struct AnyJoinImpl
             }
             else if (cmp < 0)
             {
-                size_t num = nextDistinct(left_cursor);
+                /// When a later key column decided the order, only the run of equal keys can be skipped.
+                size_t num = skipTracked(left_cursor, first_key.track);
                 if constexpr (isLeftOrFull(kind))
                     right_map.resize_fill(right_map.size() + num, right_cursor.rows);
             }
             else
             {
-                size_t num = nextDistinct(right_cursor);
+                size_t num = skipTracked(right_cursor, first_key.track);
                 if constexpr (isRightOrFull(kind))
                     left_map.resize_fill(left_map.size() + num, left_cursor.rows);
             }

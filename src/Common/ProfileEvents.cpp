@@ -116,12 +116,18 @@
     M(IcebergMetadataReturnedObjectInfos, "Total number of returned object infos from iceberg iterator.", ValueType::Number) \
     M(IcebergMinMaxNonPrunedDeleteFiles, "Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.", ValueType::Number) \
     M(IcebergMinMaxPrunedDeleteFiles, "Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.", ValueType::Number) \
+    M(OneLakeAccessTokenRequests, "Number of access token requests issued by the OneLake catalog via the Entra ID refresh token grant.", ValueType::Number) \
+    M(OneLakeAccessTokenRequestFailures, "Number of failed access token requests issued by the OneLake catalog via the Entra ID refresh token grant (including expired or revoked refresh tokens).", ValueType::Number) \
+    M(OneLakeAccessTokenRequestMicroseconds, "Total time spent requesting access tokens via the Entra ID refresh token grant in the OneLake catalog.", ValueType::Microseconds) \
+    M(OneLakeAccessTokenExpirations, "Number of times the cached OneLake access token was found expired and renewed transparently.", ValueType::Number) \
     M(VectorSimilarityIndexCacheHits, "Number of times an index granule has been found in the vector index cache.", ValueType::Number) \
     M(VectorSimilarityIndexCacheMisses, "Number of times an index granule has not been found in the vector index cache and had to be read from disk.", ValueType::Number) \
     M(VectorSimilarityIndexCacheWeightLost, "Approximate number of bytes evicted from the vector index cache.", ValueType::Number) \
     M(TextIndexReadDictionaryBlocks, "Number of times a text index dictionary block has been read from disk.", ValueType::Number) \
     M(TextIndexTokensCacheHits, "Number of times a text index token info has been found in the cache.", ValueType::Number) \
     M(TextIndexTokensCacheMisses, "Number of times a text index token info has not been found in the cache.", ValueType::Number) \
+    M(TextIndexTokensCacheNegativeHits, "Number of times an absent text index token has been found in the cache.", ValueType::Number) \
+    M(TextIndexTokensCacheNegativeMisses, "Number of absent text index tokens added to the cache after a dictionary lookup.", ValueType::Number) \
     M(TextIndexHeaderCacheHits, "Number of times a header has been found in the cache.", ValueType::Number) \
     M(TextIndexHeaderCacheMisses, "Number of times a header has not been found in the cache.", ValueType::Number) \
     M(TextIndexPostingsCacheHits, "Number of times a text index posting list has been found in the cache.", ValueType::Number) \
@@ -902,6 +908,7 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheCheckCorrectness, "Number of times FileCache::assertCacheCorrectness was called", ValueType::Number) \
     M(FilesystemCacheCheckCorrectnessMicroseconds, "How much time does FileCache::assertCacheCorrectness takes", ValueType::Microseconds) \
     M(FileSegmentWaitMicroseconds, "Wait on DOWNLOADING state", ValueType::Microseconds) \
+    M(FileSegmentWaitTimeouts, "Number of times waiting on a DOWNLOADING file segment timed out (see `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)", ValueType::Number) \
     M(FileSegmentCompleteMicroseconds, "Duration of FileSegment::complete() in filesystem cache", ValueType::Microseconds) \
     M(FileSegmentLockMicroseconds, "Lock file segment time", ValueType::Microseconds) \
     M(FileSegmentWriteMicroseconds, "File segment write() time", ValueType::Microseconds) \
@@ -1374,9 +1381,15 @@ The server successfully detected this situation and will download merged part fr
     M(SharedMergeTreeReplicaSetUpdatesFromZooKeeperMicroseconds, "How much time we spend to update replica set", ValueType::Number) \
     \
     M(KeeperLogsEntryReadFromLatestCache, "Number of log entries in Keeper being read from latest logs cache", ValueType::Number) \
-    M(KeeperLogsEntryReadFromCommitCache, "Number of log entries in Keeper being read from commit logs cache", ValueType::Number) \
     M(KeeperLogsEntryReadFromFile, "Number of log entries in Keeper being read directly from the changelog file", ValueType::Number) \
-    M(KeeperLogsPrefetchedEntries, "Number of log entries in Keeper being prefetched from the changelog file", ValueType::Number) \
+    M(KeeperLogsReadAheadFillReopens, "Number of times the Keeper read-ahead fill reopened or seeked a changelog file", ValueType::Number) \
+    M(KeeperLogsReadAheadFillDecodedEntries, "Number of log entries decoded by the Keeper read-ahead fill task", ValueType::Number) \
+    M(KeeperLogsReadAheadCursorsInstalled, "Number of new fill cursors queued onto a Keeper changelog read-ahead reader (peer or commit) that the fill task was not already covering", ValueType::Number) \
+    M(KeeperLogsReadAheadPlanEpochMismatches, "Number of times a Keeper changelog read plan was discarded because a concurrent write_at truncation invalidated it before it could be served", ValueType::Number) \
+    M(KeeperLogsReadAheadScheduleRejected, "Number of times a Keeper changelog read-ahead reader could not be created because the read-ahead thread pool queue was full; the caller falls back to a direct read", ValueType::Number) \
+    M(KeeperLogsReadAheadReadersCreated, "Number of Keeper changelog read-ahead readers (and their fill tasks) created; staying flat across file boundaries indicates a reader is being reused rather than torn down and recreated", ValueType::Number) \
+    M(KeeperLogsReadAheadTimeoutFallbacks, "Number of times a Keeper changelog read-ahead serve request timed out waiting for the fill task and fell back to a direct read of the remaining tail", ValueType::Number) \
+    M(KeeperLogsEntryReadFromCommitReadAhead, "Number of log entries served to the commit thread from the commit read-ahead reader's decoded window (fast-path pop or first-of-window drain pop)", ValueType::Number) \
     M(KeeperChangelogWrittenBytes, "Number of bytes written to the changelog in Keeper", ValueType::Bytes) \
     M(KeeperChangelogFileSyncMicroseconds, "Time spent in fsync for Keeper changelog (uncompressed logs only)", ValueType::Microseconds) \
     M(KeeperSnapshotWrittenBytes, "Number of bytes written to snapshot files in Keeper", ValueType::Bytes) \
@@ -1487,6 +1500,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ParquetReadRowGroups, "The total number of row groups read from parquet data", ValueType::Number) \
     M(ParquetPrunedRowGroups, "The total number of row groups pruned from parquet data", ValueType::Number) \
+    M(ParquetPrunedPages, "The total number of pages pruned from parquet data via column index", ValueType::Number) \
     M(ParquetDecodingTasks, "Tasks issued by parquet reader", ValueType::Number) \
     M(ParquetDecodingTaskBatches, "Task groups sent to a thread pool by parquet reader", ValueType::Number) \
     M(ParquetPrefetcherReadRandomRead, "The total number of reads with ReadMode::RandomRead by DB::Parquet::Prefetcher", ValueType::Number) \
@@ -1703,7 +1717,7 @@ Counters::Counters(Counters && src) noexcept
     : counters(std::exchange(src.counters, nullptr))
     , cpus(src.cpus.exchange(0, std::memory_order_relaxed))
     , counters_holder(std::move(src.counters_holder))
-    , parent(src.parent.exchange(nullptr))
+    , parent(src.parent.exchange(nullptr, std::memory_order_acquire))
     , should_trace_array(src.should_trace_array.exchange(nullptr, std::memory_order_relaxed))
     , should_trace_holder(std::move(src.should_trace_holder))
     , trace_all_profile_events(src.trace_all_profile_events.load(std::memory_order_relaxed))
@@ -1733,21 +1747,21 @@ Count Counters::load(Event event) const
 
 void Counters::setParent(Counters * parent_)
 {
-    parent.store(parent_, std::memory_order_relaxed);
+    parent.store(parent_, std::memory_order_release);
 }
 
 void Counters::setUserCounters(Counters * user)
 {
     auto * current_val = this;
-    auto * parent_val = this->parent.load(std::memory_order_relaxed);
+    auto * parent_val = this->parent.load(std::memory_order_acquire);
 
     while (parent_val != nullptr && parent_val->level != VariableContext::Global && parent_val->level != VariableContext::User)
     {
         current_val = parent_val;
-        parent_val = current_val->parent.load(std::memory_order_relaxed);
+        parent_val = current_val->parent.load(std::memory_order_acquire);
     }
 
-    current_val->parent.store(user, std::memory_order_relaxed);
+    current_val->parent.store(user, std::memory_order_release);
 }
 
 void Counters::setTraceAllProfileEvents()
@@ -1971,7 +1985,7 @@ void Counters::increment(Event event, Count amount)
             send_to_trace_log |= trace_arr[event].load(std::memory_order_relaxed);
         send_to_trace_log |= current->trace_all_profile_events.load(std::memory_order_relaxed);
 
-        current = current->parent;
+        current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 
     if (unlikely(send_to_trace_log))
@@ -1985,7 +1999,7 @@ void Counters::incrementNoTrace(Event event, Count amount)
     do
     {
         current->fetchAdd(event, amount, cpu);
-        current = current->parent;
+        current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 }
 
@@ -1999,7 +2013,7 @@ void Counters::incrementSignalSafe(Event event, Count amount)
     do
     {
         current->fetchAdd(event, amount, -1);
-        current = current->parent;
+        current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 }
 

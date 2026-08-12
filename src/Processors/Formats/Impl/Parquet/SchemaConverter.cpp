@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Functions/DateTimeTransforms.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 
 #include <fmt/ranges.h>
@@ -38,11 +39,13 @@ namespace DB::Parquet
 
 SchemaConverter::SchemaConverter(
     const parq::FileMetaData & file_metadata_, const ReadOptions & options_,
-    const Block * sample_block_)
+    const Block * sample_block_, std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns)
     : file_metadata(file_metadata_), options(options_), sample_block(sample_block_)
     , levels {LevelInfo {.def = 0, .rep = 0, .is_array = true}}
 {
-    if (options.format.parquet.allow_geoparquet_parser)
+    if (precomputed_geo_columns.has_value())
+        geo_columns = std::move(*precomputed_geo_columns);
+    else if (options.format.parquet.allow_geoparquet_parser)
     {
         for (const auto & kv : file_metadata.key_value_metadata)
         {
@@ -116,6 +119,7 @@ void SchemaConverter::prepareForReading()
         missing_output.output_type = missing_output.input_type;
         missing_output.is_missing_column = true;
     }
+
 }
 
 NamesAndTypesList SchemaConverter::inferSchema()
@@ -1027,7 +1031,7 @@ void SchemaConverter::processPrimitiveColumn(
 
     if (type_hint && type_hint->getName() == "Geometry" && type == parq::Type::BYTE_ARRAY)
     {
-        GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed};
+        GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed, std::nullopt};
         out_inferred_type = getGeoDataType(GeoType::Mixed);
         out_decoder.string_converter = std::make_shared<GeoConverter>(iceberg_geo, options.format.precise_float_parsing);
         return;
@@ -1201,6 +1205,19 @@ void SchemaConverter::processPrimitiveColumn(
             /// (As we want to make this backwards compatible, not break any workflows.)
             if (converter->date_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore)
                 converter->date_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Throw;
+
+            /// When the requested type is Date, enforce the narrower Date range [0, 65535]:
+            /// `formOutputColumn` later casts the decoded Date32 column to Date without checks,
+            /// narrowing the day number to UInt16, so an unchecked extended Date32 value would
+            /// wrap into an unrelated in-range Date. Similarly for a DateTime target, whose
+            /// context-less cast wraps day numbers whose midnight does not fit into DateTime.
+            /// A DateTime64 target needs the same treatment with a scale-dependent window, because the cast
+            /// clamps whole seconds that the target scale cannot represent.
+            converter->date_target_is_date = type_hint && WhichDataType(type_hint->getTypeId()).isDate();
+            converter->date_target_is_datetime = type_hint && WhichDataType(type_hint->getTypeId()).isDateTime();
+            if (const auto * dt64_hint = type_hint ? typeid_cast<const DataTypeDateTime64 *>(type_hint.get()) : nullptr)
+                converter->date_target_datetime64_day_range = getDateTime64DayNumRange(
+                    DecimalUtils::scaleMultiplier<DateTime64::NativeType>(dt64_hint->getScale()), dt64_hint->getTimeZone());
         }
 
         out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
@@ -1214,6 +1231,9 @@ void SchemaConverter::processPrimitiveColumn(
         UInt32 scale = logical.__isset.DECIMAL ? logical.DECIMAL.scale : element.scale;
         precision = std::max(precision, scale);
 
+        /// Precision of the Decimal type exactly as wide as one decoded value. Legal parquet can
+        /// make it exceed `precision` (e.g. INT64 with precision 9), so it, not `precision`,
+        /// determines the width of the column we decode into.
         UInt32 max_precision = 0;
         if (type == parq::Type::INT32 || type == parq::Type::INT64)
         {
@@ -1282,8 +1302,15 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet decimal type precision or scale is too big ({} digits) for physical type {}", precision, thriftToString(type));
 
         out_inferred_type = createDecimal<DataTypeDecimal>(precision, scale);
-        size_t output_size = out_inferred_type->getSizeOfValueInMemory();
-        out_decoder.allow_stats = is_output_type_decimal(output_size, scale);
+
+        /// Decode into a column as wide as the converter writes; castColumn then narrows it to the
+        /// declared precision, throwing DECIMAL_OVERFLOW for values that don't fit.
+        auto decoded_type = createDecimal<DataTypeDecimal>(max_precision, scale);
+        size_t decoded_size = decoded_type->getSizeOfValueInMemory();
+        if (decoded_size != out_inferred_type->getSizeOfValueInMemory())
+            out_decoded_type = std::move(decoded_type);
+
+        out_decoder.allow_stats = is_output_type_decimal(decoded_size, scale);
 
         return;
     }
