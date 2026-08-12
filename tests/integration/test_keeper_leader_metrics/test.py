@@ -125,6 +125,23 @@ def test_leader_failover_metrics(started_cluster):
                 continue
             assert get_keeper_async_metric(node, "KeeperLastLeaderElectionTime") == 0
             assert get_keeper_async_metric(node, "KeeperLastLeaderUnavailableTime") == 0
+
+        # Reset the active leader after it has recorded both values. Wait for
+        # the asynchronous-metrics refresh to prove that `srst` clears them.
+        keeper_utils.send_4lw_cmd(cluster, new_leader, cmd="srst")
+        for _ in range(60):
+            last_election_time = get_keeper_async_metric(
+                new_leader, "KeeperLastLeaderElectionTime"
+            )
+            last_unavailable_time = get_keeper_async_metric(
+                new_leader, "KeeperLastLeaderUnavailableTime"
+            )
+            if last_election_time == 0 and last_unavailable_time == 0:
+                break
+            time.sleep(1)
+
+        assert last_election_time == 0
+        assert last_unavailable_time == 0
     finally:
         if old_leader is not None:
             old_leader.start_clickhouse()
