@@ -433,6 +433,45 @@ QueryTreeNodes QueryAnalyzer::getArrayElementsForInTupleArguments(
     return array_elements;
 }
 
+/// Builds the row-wise comparison for a one-element IN set: the compare-nulls functions
+/// (`nullIn`, `notNullIn`) map to isDistinctFrom/isNotDistinctFrom, the others map to
+/// ifNull(equals/notEquals(...), default), with a NULL result for a NULL LHS value.
+/// The caller must resolve the returned node.
+static QueryTreeNodePtr buildScalarInComparison(
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodePtr & right_argument,
+    bool is_not_in,
+    bool compare_nulls)
+{
+    if (compare_nulls)
+    {
+        auto comparison_fn = std::make_shared<FunctionNode>(is_not_in ? "isDistinctFrom" : "isNotDistinctFrom");
+        comparison_fn->getArguments().getNodes() = {left_argument, right_argument};
+        return comparison_fn;
+    }
+
+    auto eq_fn = std::make_shared<FunctionNode>(is_not_in ? "notEquals" : "equals");
+    eq_fn->getArguments().getNodes() = {left_argument, right_argument};
+
+    auto default_val = std::make_shared<ConstantNode>(is_not_in ? Field{1u} : Field{0u});
+    auto ifnull_fn = std::make_shared<FunctionNode>("ifNull");
+    ifnull_fn->getArguments().getNodes() = {eq_fn, default_val};
+
+    if (!isNullableOrLowCardinalityNullable(left_argument->getResultType()))
+        return ifnull_fn;
+
+    auto is_null_fn = std::make_shared<FunctionNode>("isNull");
+    is_null_fn->getArguments().getNodes().push_back(left_argument);
+
+    auto null_const = std::make_shared<ConstantNode>(
+        Field{},
+        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()));
+
+    auto raw_if = std::make_shared<FunctionNode>("if");
+    raw_if->getArguments().getNodes() = {is_null_fn, null_const, ifnull_fn};
+    return raw_if;
+}
+
 /// converts tuple to array with proper type handling
 QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
     const QueryTreeNodes & tuple_args,
@@ -1531,6 +1570,20 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     const bool left_is_tuple = isTuple(removeNullable(in_first_argument->getResultType()));
                     const bool right_is_tuple = isTuple(removeNullable(in_second_argument_column->getColumnType()));
                     expand_single_tuple_value = !left_is_tuple && right_is_tuple;
+
+                    /// A scalar column with a tuple LHS is a one-element set whose only execution
+                    /// strategy is the direct row-wise comparison, like the scalar function RHS of
+                    /// Case 3 below. Wrapping it in tuple() would send it through the tuple-set
+                    /// rewrite, where the least supertype of the tuple LHS and a NULL column becomes
+                    /// `Nullable(Tuple(...))` and fails, while the function-node analog
+                    /// `(1, 2) IN (materialize(NULL))` returns 0.
+                    if (left_is_tuple && !right_is_tuple)
+                    {
+                        auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+                        node = buildScalarInComparison(fn_args[0], in_second_argument, is_not_in, compare_nulls);
+                        resolveFunction(node, scope);
+                        return ProjectionNames{proj};
+                    }
                 }
 
                 /// Any other single column value is a one-element set; wrap it in tuple() so it can be
@@ -1737,43 +1790,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         }
                     }
 
-                    if (compare_nulls)
-                    {
-                        auto comparison_fn = std::make_shared<FunctionNode>(is_not_in ? "isDistinctFrom" : "isNotDistinctFrom");
-                        comparison_fn->getArguments().getNodes() = {fn_args[0], right_argument};
-
-                        node = comparison_fn;
-                        resolveFunction(node, scope);
-                        return ProjectionNames{proj};
-                    }
-
-                    auto eq_fn = std::make_shared<FunctionNode>(is_not_in ? "notEquals" : "equals");
-                    eq_fn->getArguments().getNodes() = {fn_args[0], right_argument};
-
-                    auto default_val = std::make_shared<ConstantNode>(is_not_in ? Field{1u} : Field{0u});
-                    auto ifnull_fn = std::make_shared<FunctionNode>("ifNull");
-                    ifnull_fn->getArguments().getNodes() = {eq_fn, default_val};
-
-                    const bool left_can_be_null = isNullableOrLowCardinalityNullable(in_first_argument->getResultType());
-                    if (left_can_be_null)
-                    {
-                        auto is_null_fn = std::make_shared<FunctionNode>("isNull");
-                        is_null_fn->getArguments().getNodes().push_back(fn_args[0]);
-
-                        auto null_const = std::make_shared<ConstantNode>(
-                            Field{},
-                            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()));
-
-                        auto raw_if = std::make_shared<FunctionNode>("if");
-                        raw_if->getArguments().getNodes() = {is_null_fn, null_const, ifnull_fn};
-
-                        node = raw_if;
-                    }
-                    else
-                    {
-                        node = ifnull_fn;
-                    }
-
+                    node = buildScalarInComparison(fn_args[0], right_argument, is_not_in, compare_nulls);
                     resolveFunction(node, scope);
                     return ProjectionNames{proj};
                 }
