@@ -5081,6 +5081,13 @@ Allow CREATE MATERIALIZED VIEW with SELECT query that references nonexistent tab
     DECLARE(Bool, materialized_views_squash_parallel_inserts, true, R"(Squash inserts to materialized views destination table of a single INSERT query from parallel inserts to reduce amount of generated parts.
 If set to false and `parallel_view_processing` is enabled, INSERT query will generate part in the destination table for each `max_insert_thread`.
 )", 0) \
+    DECLARE(Bool, materialized_views_populate_atomically, true, R"(
+Make `CREATE MATERIALIZED VIEW ... POPULATE` atomic: the view is subscribed to new inserts of the source table and a snapshot of the existing data is taken together, under a brief exclusive lock on the source table, so that every row inserted concurrently with the population is delivered to the view exactly once (neither missed nor duplicated). The (possibly long-running) population then reads the pinned snapshot without holding any lock.
+
+This is local insert-path atomicity: the exclusive lock only serializes with inserts that acquire this source table's storage lock on the same server, so the exactly-once guarantee covers inserts arriving through this server. It is not a cluster-wide guarantee - rows inserted on another replica of a `ReplicatedMergeTree` source, or through a distributed write path (for example, into a `Distributed` table or via `ON CLUSTER`), concurrently with the population can still be missed or duplicated.
+
+This requires the source table to support reading a pinned point-in-time snapshot (the `MergeTree` family and `Memory`). For any other source (a view, `Distributed`, `Merge`, the `Log` family, or a table not in an `Atomic` database) the population falls back to the legacy, non-atomic behavior (recorded in the server log): existing data is read with a separate, non-coordinated snapshot, so rows inserted during the population can be missed or duplicated. Set this setting to `false` to force the legacy behavior for all sources. Applies to plain `CREATE MATERIALIZED VIEW` only; `CREATE OR REPLACE` / `REPLACE` always use the legacy non-atomic population, and so does a view created in a `Replicated` database (where `POPULATE` requires `database_replicated_allow_heavy_create`), because a failed population could not be rolled back consistently on all replicas there.
+)", 0) \
     DECLARE(Bool, use_compact_format_in_distributed_parts_names, true, R"(
 Uses compact format for storing blocks for background (`distributed_foreground_insert`) INSERT into tables with `Distributed` engine.
 
@@ -6614,6 +6621,9 @@ Enable multithreading after evaluating window functions to allow parallel stream
     DECLARE(Bool, query_plan_optimize_lazy_materialization, true, R"(
 Use query plan for lazy materialization optimization.
 )", 0) \
+    DECLARE(Bool, query_plan_optimize_lazy_materialization_for_object_storage, true, R"(
+Use lazy materialization optimization for reading Parquet files from object storage (including Iceberg tables): for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
+)", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
     DECLARE(Bool, query_plan_optimize_lazy_final, false, R"(
@@ -6875,6 +6885,9 @@ Cloud default value: `1`.
 )", 0) \
     DECLARE(Bool, enable_filesystem_cache_log, false, R"(
 Allows to record the filesystem caching log for each query
+)", 0) \
+    DECLARE(Bool, filesystem_cache_verbose_logging, false, R"(
+Emit `TEST`-level log messages for every filesystem cache buffer refill (state of the read, remaining size to read, bytes read). Only for debugging: the messages are formatted once per read, so enabling it on a query that does many small cached reads adds a large amount of logging overhead. The messages are only visible when the log level is `test` anyway (see `send_logs_level`).
 )", 0) \
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, R"(
 Allow to use the filesystem cache in passive mode - benefit from the existing cache entries, but don't put more entries into the cache. If you set this setting for heavy ad-hoc queries and leave it disabled for short real-time queries, this will allows to avoid cache threshing by too heavy queries and to improve the overall system efficiency.
