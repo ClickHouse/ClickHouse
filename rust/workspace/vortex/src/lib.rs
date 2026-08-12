@@ -319,6 +319,13 @@ fn dictionary_export_field(
         matches!(dtype, DType::Bool(_) | DType::Primitive(..) | DType::Utf8(_) | DType::Binary(_))
     }
 
+    // Nullable arrays are exported canonically: their validity lives in the dictionary codes,
+    // and the Arrow dictionary export does not carry it over, so the nulls would be replaced by
+    // the values stored under the mask.
+    if array.dtype().nullability() != Nullability::NonNullable {
+        return Ok(None);
+    }
+
     let make_field = |codes: &DType, values: &DType| -> VortexResult<Field> {
         let codes_type = session.arrow().to_arrow_field("", codes)?.data_type().clone();
         let values_type = session.arrow().to_arrow_field("", values)?.data_type().clone();
