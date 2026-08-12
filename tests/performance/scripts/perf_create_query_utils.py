@@ -27,26 +27,57 @@ def is_word_at(text, pos, word):
     return end >= len(text) or not (text[end].isalnum() or text[end] == "_")
 
 
+def comment_end(text, pos):
+    """If a SQL comment starts at `pos`, return the index just past it,
+    else `None`.
+
+    This is the single definition of the comment grammar for every scanner
+    in this module, mirroring `src/Parsers/Lexer.cpp`: `--` and `//` start a
+    line comment; `#` starts a MySQL-style line comment only when followed
+    by a space or `!` (a bare `#foo` is an error token, not a comment); and
+    `/* ... */` block comments nest according to the SQL standard. A line
+    comment ends just before its `\\n` (the newline itself is whitespace, as
+    in the lexer, where the newline cannot be escaped). An unterminated
+    block comment extends to the end of the text: the lexer flags it as an
+    error token, and here nothing meaningful can follow it either way.
+    """
+    length = len(text)
+    c = text[pos]
+    next_c = text[pos + 1] if pos + 1 < length else ""
+    if (c == "-" and next_c == "-") or (c == "/" and next_c == "/") or (c == "#" and next_c in (" ", "!")):
+        while pos < length and text[pos] != "\n":
+            pos += 1
+        return pos
+    if c == "/" and next_c == "*":
+        pos += 2
+        nesting_level = 1
+        while pos < length:
+            pair = text[pos : pos + 2]
+            if pair == "/*":
+                nesting_level += 1
+                pos += 2
+            elif pair == "*/":
+                nesting_level -= 1
+                pos += 2
+                if nesting_level == 0:
+                    return pos
+            else:
+                pos += 1
+        return length
+    return None
+
+
 def skip_whitespace_and_comments(text, pos):
-    """Advance `pos` past whitespace and `--` / `#` / `/* */` comments."""
+    """Advance `pos` past whitespace and comments (see `comment_end`)."""
     length = len(text)
     while pos < length:
-        c = text[pos]
-        next_c = text[pos + 1] if pos + 1 < length else ""
-        if c in " \t\r\n":
+        if text[pos] in " \t\r\n":
             pos += 1
-        elif (c == "-" and next_c == "-") or c == "#":
-            while pos < length and text[pos] != "\n":
-                pos += 1
-        elif c == "/" and next_c == "*":
-            pos += 2
-            while pos < length:
-                if text[pos] == "*" and pos + 1 < length and text[pos + 1] == "/":
-                    pos += 2
-                    break
-                pos += 1
-        else:
+            continue
+        after_comment = comment_end(text, pos)
+        if after_comment is None:
             break
+        pos = after_comment
     return pos
 
 
@@ -54,7 +85,7 @@ def create_query_engine(query):
     """Return the engine name of a `CREATE TABLE`, or `None` when there is none.
 
     The `ENGINE` keyword is located outside string / backtick literals,
-    outside `--` / `#` / `/* */` comments and at bracket depth zero, so an
+    outside comments (see `comment_end`) and at bracket depth zero, so an
     `ENGINE` written inside a column `COMMENT` literal or inside the schema
     parentheses is not matched. Only the bare engine name is returned; its
     arguments (`ReplicatedMergeTree('/path', 'replica')`) are not parsed.
@@ -62,24 +93,10 @@ def create_query_engine(query):
     i = 0
     n = len(query)
     quote = None
-    line_comment = False
-    block_comment = False
     depth = 0
     while i < n:
         c = query[i]
         next_c = query[i + 1] if i + 1 < n else ""
-        if line_comment:
-            if c == "\n":
-                line_comment = False
-            i += 1
-            continue
-        if block_comment:
-            if c == "*" and next_c == "/":
-                block_comment = False
-                i += 2
-                continue
-            i += 1
-            continue
         if quote is not None:
             if c == "\\" and i + 1 < n:
                 i += 2
@@ -91,13 +108,9 @@ def create_query_engine(query):
                 quote = None
             i += 1
             continue
-        if (c == "-" and next_c == "-") or c == "#":
-            line_comment = True
-            i += 1
-            continue
-        if c == "/" and next_c == "*":
-            block_comment = True
-            i += 2
+        after_comment = comment_end(query, i)
+        if after_comment is not None:
+            i = after_comment
             continue
         if c in "'\"`":
             quote = c
@@ -180,9 +193,9 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
 
     def find_table_settings_keyword(text):
         """Return the index of the table's own top-level `SETTINGS` keyword,
-        ignoring matches inside string/backtick literals or `--`/`#`/`/* */`
-        comments and inside brackets. Return -1 when there is no table-level
-        SETTINGS clause.
+        ignoring matches inside string/backtick literals or comments (see
+        `comment_end`) and inside brackets. Return -1 when there is no
+        table-level SETTINGS clause.
 
         A top-level `AS` is disambiguated the way `ParserCreateQuery.cpp`
         does: when it is followed by `SELECT`, `WITH`, or `(`, it starts the
@@ -204,24 +217,10 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
         i = 0
         n = len(text)
         quote = None
-        line_comment = False
-        block_comment = False
         depth = 0
         while i < n:
             c = text[i]
             next_c = text[i + 1] if i + 1 < n else ""
-            if line_comment:
-                if c == "\n":
-                    line_comment = False
-                i += 1
-                continue
-            if block_comment:
-                if c == "*" and next_c == "/":
-                    block_comment = False
-                    i += 2
-                    continue
-                i += 1
-                continue
             if quote is not None:
                 if c == "\\" and i + 1 < n:
                     i += 2
@@ -234,13 +233,9 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
                     quote = None
                 i += 1
                 continue
-            if (c == "-" and next_c == "-") or c == "#":
-                line_comment = True
-                i += 1
-                continue
-            if c == "/" and next_c == "*":
-                block_comment = True
-                i += 2
+            after_comment = comment_end(text, i)
+            if after_comment is not None:
+                i = after_comment
                 continue
             if c in "'\"`":
                 quote = c
@@ -286,8 +281,8 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
         return query
 
     # Locate `setting_name = ` at the top level of the SETTINGS clause:
-    # outside string and backtick literals, outside `--`, `#`, `/* */`
-    # comments, and at bracket depth 0 (so a literal containing the
+    # outside string and backtick literals, outside comments (see
+    # `comment_end`), and at bracket depth 0 (so a literal containing the
     # setting name inside an array, tuple, or function call is not
     # matched). The plain `re.search` cannot enforce this on raw text.
     name_lower = setting_name.lower()
@@ -295,8 +290,6 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
     i = settings_pos + len("SETTINGS")
     n = len(query)
     quote = None
-    line_comment = False
-    block_comment = False
     depth = 0
     name_start = -1
     value_start = -1
@@ -304,18 +297,6 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
     while i < n:
         c = query[i]
         next_c = query[i + 1] if i + 1 < n else ""
-        if line_comment:
-            if c == "\n":
-                line_comment = False
-            i += 1
-            continue
-        if block_comment:
-            if c == "*" and next_c == "/":
-                block_comment = False
-                i += 2
-                continue
-            i += 1
-            continue
         if quote is not None:
             if c == "\\" and i + 1 < n:
                 i += 2
@@ -327,13 +308,9 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
                 quote = None
             i += 1
             continue
-        if (c == "-" and next_c == "-") or c == "#":
-            line_comment = True
-            i += 1
-            continue
-        if c == "/" and next_c == "*":
-            block_comment = True
-            i += 2
+        after_comment = comment_end(query, i)
+        if after_comment is not None:
+            i = after_comment
             continue
         if c in "'\"`":
             quote = c
@@ -400,28 +377,14 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
     # Scan from the start of the value to find its end at the next
     # top-level comma or semicolon, a keyword starting a trailing
     # clause, or end of query. Mirror the name-scan state machine so
-    # commas inside string/backtick literals or inside `--`, `#`,
-    # `/* */` comments are ignored.
+    # commas inside string/backtick literals or inside comments (see
+    # `comment_end`) are ignored.
     i = value_start
     quote = None
-    line_comment = False
-    block_comment = False
     depth = 0
     while i < n:
         c = query[i]
         next_c = query[i + 1] if i + 1 < n else ""
-        if line_comment:
-            if c == "\n":
-                line_comment = False
-            i += 1
-            continue
-        if block_comment:
-            if c == "*" and next_c == "/":
-                block_comment = False
-                i += 2
-                continue
-            i += 1
-            continue
         if quote is not None:
             if c == "\\" and i + 1 < n:
                 i += 2
@@ -434,13 +397,9 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
                 quote = None
             i += 1
             continue
-        if (c == "-" and next_c == "-") or c == "#":
-            line_comment = True
-            i += 1
-            continue
-        if c == "/" and next_c == "*":
-            block_comment = True
-            i += 2
+        after_comment = comment_end(query, i)
+        if after_comment is not None:
+            i = after_comment
             continue
         if c in "'\"`":
             quote = c
@@ -505,15 +464,9 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
                     in_quote = None
                 pos += 1
                 continue
-            if (ch == "-" and nxt == "-") or ch == "#":
-                while pos < length and text[pos] != "\n":
-                    pos += 1
-                continue
-            if ch == "/" and nxt == "*":
-                pos += 2
-                while pos < length and not (text[pos] == "*" and (text[pos + 1] if pos + 1 < length else "") == "/"):
-                    pos += 1
-                pos += 2
+            after_comment = comment_end(text, pos)
+            if after_comment is not None:
+                pos = after_comment
                 continue
             if ch in "'\"`":
                 in_quote = ch

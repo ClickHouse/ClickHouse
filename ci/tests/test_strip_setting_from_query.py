@@ -472,6 +472,74 @@ def test_value_aware_comment_between_eq_and_value_is_stripped():
     assert strip_setting_from_query(query, SETTING, ALLOWED) == expected
 
 
+# Regression: the scanner must accept the full comment grammar of
+# `src/Parsers/Lexer.cpp`, not a reduced one. It used to miss `//` line
+# comments and nesting inside `/* ... */` block comments, so a valid fixture
+# using either shape came back unchanged and `perf.py` re-raised
+# `UNKNOWN_SETTING` on the baseline instead of stripping the
+# baseline-equivalent assignment.
+LEXER_COMMENT_STRIP_CASES = [
+    # `//` line comment between the value and the separator comma.
+    (
+        "slash_slash_comment_after_zero_first_of_two",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple()\nSETTINGS {SETTING} = 0 // keep\n, index_granularity = 8192",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple()\nSETTINGS index_granularity = 8192",
+    ),
+    # `//` line comment after the only setting.
+    (
+        "slash_slash_comment_after_false_only_setting",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = false // keep\n",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple()",
+    ),
+    # Nested block comment (SQL standard) between the value and the comma.
+    (
+        "nested_block_comment_after_zero_first_of_two",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 0 /* keep /* nested */ still */, index_granularity = 8192",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192",
+    ),
+    # Nested block comment between the setting name and `=`.
+    (
+        "nested_block_comment_between_name_and_eq",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} /* a /* b */ c */ = 0, index_granularity = 8192",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192",
+    ),
+    # `#!` line comment (shebang form) between the value and the comma.
+    (
+        "hash_bang_comment_after_zero_first_of_two",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 0 #! keep\n, index_granularity = 8192",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "case",
+    LEXER_COMMENT_STRIP_CASES,
+    ids=[c[0] for c in LEXER_COMMENT_STRIP_CASES],
+)
+def test_lexer_comment_grammar_is_mirrored(case):
+    _name, query, expected = case
+    assert strip_setting_from_query(query, SETTING, ALLOWED) == expected
+
+
+def test_slash_slash_inside_string_value_is_kept():
+    # `//` inside a quoted value is part of the value, not a comment: the
+    # value normalizes to the whole string literal, misses the allowlist, and
+    # the query is returned unchanged so `perf.py` fails fast.
+    query = f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = '0 // x'"
+    assert strip_setting_from_query(query, SETTING, ALLOWED) == query
+
+
+def test_bare_hash_is_not_a_comment():
+    # `Lexer.cpp` recognizes `#` as a comment only when followed by a space or
+    # `!` (`#hello` is an error token). The scanner mirrors that: `0 #tag` is
+    # not `0` followed by a comment, so the value misses the allowlist and the
+    # query is returned unchanged for `perf.py` to fail fast on the (invalid)
+    # fixture instead of stripping it on the baseline side only.
+    query = f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 0 #tag\n, index_granularity = 8192"
+    assert strip_setting_from_query(query, SETTING, ALLOWED) == query
+
+
 # `perf.py` only strips a `MergeTree` setting from a `CREATE TABLE` of the
 # `MergeTree` family. On any other engine an `UNKNOWN_SETTING` means the
 # fixture itself is wrong: the setting cannot affect that table, so silently
