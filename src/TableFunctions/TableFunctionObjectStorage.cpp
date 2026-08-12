@@ -1949,7 +1949,7 @@ value: 993
 
 ### Compaction {#iceberg-writes-compaction}
 
-Data compaction (merging position delete files into data files) is not implemented: `OPTIMIZE TABLE` on an Iceberg table reports `NOT_IMPLEMENTED`. It does not publish the rewritten generation, so no reader would select it.
+Data compaction (merging position delete files into data files) is not implemented in the open-source build: `OPTIMIZE TABLE` on an Iceberg table reports `NOT_IMPLEMENTED` there. It does not publish the rewritten generation, so no reader would select it.
 
 Manifest compaction is supported and consolidates a table's manifest files:
 
@@ -1959,7 +1959,7 @@ SET allow_experimental_iceberg_compaction = 1
 OPTIMIZE TABLE iceberg_writes_example MANIFEST;
 ```
 
-To reclaim files, use [`expire_snapshots`](#iceberg-expire-snapshots) and [`remove_orphan_files`](#iceberg-remove-orphan-files).
+To reclaim files, use [`expire_snapshots`](#iceberg-expire-snapshots).
 
 ### Expire Snapshots {#iceberg-expire-snapshots}
 

@@ -471,7 +471,7 @@ bool IcebergMetadata::optimize(
             "OPTIMIZE TABLE is not yet supported for Iceberg data compaction: the rewritten generation is not published "
             "(no version increment, no version hint and no catalog commit), so no reader would select it, while the "
             "previous generation's files are deleted even though retained snapshots still reference them. "
-            "Use OPTIMIZE TABLE ... MANIFEST to compact manifests, or expire_snapshots / remove_orphan_files to reclaim files");
+            "Use OPTIMIZE TABLE ... MANIFEST to compact manifests, or expire_snapshots to reclaim files");
     }
     else
     {

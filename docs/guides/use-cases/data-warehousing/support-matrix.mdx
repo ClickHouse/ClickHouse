@@ -53,7 +53,7 @@ ClickHouse integrates with four open table formats: [Apache Iceberg](/reference/
 | INSERT | ✅ | Beta from 26.2. Requires `allow_insert_into_iceberg = 1`. See [Inserting data](/reference/functions/table-functions/iceberg#writes-inserts). |
 | DELETE | ✅ | Experimental. Requires `allow_insert_into_iceberg = 1`. Via `ALTER TABLE ... DELETE WHERE`. See [Deleting data](/reference/functions/table-functions/iceberg#iceberg-writes-delete). |
 | ALTER TABLE (schema changes) | ✅ | Experimental. Requires `allow_insert_into_iceberg = 1`. Add, drop, modify, rename columns. See [Schema evolution](/reference/functions/table-functions/iceberg#iceberg-writes-schema-evolution). |
-| Compaction | ⚠️ | Experimental. Requires `allow_experimental_iceberg_compaction = 1`. Manifest compaction only, via `OPTIMIZE TABLE ... MANIFEST`. Data compaction (merging position delete files into data files) is not implemented. See [Compaction](/reference/functions/table-functions/iceberg#iceberg-writes-compaction). |
+| Compaction | ⚠️ | Experimental. Requires `allow_experimental_iceberg_compaction = 1`. Manifest compaction only, via `OPTIMIZE TABLE ... MANIFEST`. Data compaction (merging position delete files into data files) is not implemented in the open-source build. See [Compaction](/reference/functions/table-functions/iceberg#iceberg-writes-compaction). |
 | UPDATE / MERGE | ❌ | Not supported. |
 | Copy-on-write | ❌ | Not supported |
 | Expire snapshots | ❌ | Not supported |
