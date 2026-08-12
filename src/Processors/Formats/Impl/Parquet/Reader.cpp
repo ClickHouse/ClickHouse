@@ -349,14 +349,10 @@ std::vector<size_t> buildRowGroupGlobalOffsets(const parq::FileMetaData & file_m
         global_offsets[i + 1] = static_cast<size_t>(total_rows);
     }
 
-    if (total_rows != static_cast<UInt64>(file_metadata.num_rows))
-    {
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Sum of Parquet row group row counts ({}) does not match FileMetaData.num_rows ({})",
-            total_rows,
-            file_metadata.num_rows);
-    }
+    /// Do not require the row-group sum to equal `FileMetaData.num_rows`. Some writers leave a
+    /// stale or inconsistent file-level count; global offsets and deletion-vector positions are
+    /// defined by the row-group layout. This helper runs on every ParquetV3 read, so rejecting
+    /// mismatches would break previously readable files.
 
     return global_offsets;
 }

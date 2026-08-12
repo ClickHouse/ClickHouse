@@ -550,7 +550,8 @@ private:
 };
 
 /// Prefix offsets of row groups in the file; result size is `row_groups.size() + 1`.
-/// Throws `INCORRECT_DATA` on negative counts, size overflow, or mismatch with `FileMetaData.num_rows`.
+/// Throws `INCORRECT_DATA` on negative counts or size overflow. A mismatch between the
+/// row-group sum and `FileMetaData.num_rows` is tolerated: offsets follow the row-group layout.
 std::vector<size_t> buildRowGroupGlobalOffsets(const parq::FileMetaData & file_metadata);
 
 }
