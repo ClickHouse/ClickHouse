@@ -30,6 +30,12 @@
 []
 [1,2]
 [1,2,3]
+-- for the symmetric difference two arguments are enough to miscount a repeated value
+[1,2]
+[1,2]
+[1,2]
+[]
+[1,2]
 -- empty arguments
 []
 []
@@ -68,4 +74,5 @@
 []
 [[1,2],[2],[3]]
 [[2],[1]]
+[[1],[2]]
 76500

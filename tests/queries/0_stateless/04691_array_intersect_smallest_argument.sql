@@ -21,6 +21,13 @@ SELECT arraySort(arraySymmetricDifference([1, 1], [1], [1]));
 SELECT arraySort(arrayUnion([1], [2], [1, 1]));
 SELECT arraySort(arrayUnion([1, 1], [2, 2], [3, 3]));
 
+SELECT '-- for the symmetric difference two arguments are enough to miscount a repeated value';
+SELECT arraySort(arraySymmetricDifference([1], [2, 2]));
+SELECT arraySort(arraySymmetricDifference([2, 2], [1]));
+SELECT arraySort(arraySymmetricDifference([1, 1], [2, 2]));
+SELECT arrayIntersect([1], [2, 2]);
+SELECT arraySort(arrayUnion([1], [2, 2]));
+
 SELECT '-- empty arguments';
 SELECT arrayIntersect([1, 2, 3], []);
 SELECT arrayIntersect([], [1, 2, 3]);
@@ -67,4 +74,5 @@ SELECT arraySort(arrayIntersect([(1, 'a'), (2, 'b')], [(2, 'b'), (3, 'c')], [(2,
 SELECT arrayIntersect([[1]], [[2]], [[1], [1]]);
 SELECT arraySort(arrayUnion([[1, 2]], [[2]], [[2], [3]]));
 SELECT arraySymmetricDifference([[1]], [[2]], [[1], [1]]);
+SELECT arraySort(arraySymmetricDifference([[1]], [[2], [2]]));
 SELECT sum(length(arrayIntersect(a, b))) FROM (SELECT arrayMap(x -> [x, x + 1], range(number % 20)) AS a, arrayMap(x -> [x + 2, x + 3], range(number % 20)) AS b FROM numbers(10000));
