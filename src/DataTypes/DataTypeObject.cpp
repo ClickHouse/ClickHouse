@@ -1285,6 +1285,26 @@ bool hasSaturatedJSONSharedDataPathPolicy(const IDataType & type)
     return false;
 }
 
+bool containsJSONObjectType(const IDataType & type)
+{
+    if (typeid_cast<const DataTypeObject *>(&type))
+        return true;
+
+    if (const auto * array = typeid_cast<const DataTypeArray *>(&type))
+        return containsJSONObjectType(*array->getNestedType());
+
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+        return containsJSONObjectType(*nullable->getNestedType());
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type))
+        return std::ranges::any_of(tuple->getElements(), [](const auto & element) { return containsJSONObjectType(*element); });
+
+    if (const auto * map = typeid_cast<const DataTypeMap *>(&type))
+        return containsJSONObjectType(*map->getKeyType()) || containsJSONObjectType(*map->getValueType());
+
+    return false;
+}
+
 static DataTypePtr createJSON(const ASTPtr & arguments)
 {
     return createObject(arguments, DataTypeObject::SchemaFormat::JSON);
