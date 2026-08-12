@@ -92,10 +92,11 @@ namespace
         return tableNameWithTypeToString(table_name.database, table_name.table, first_upper);
     }
 
-    BackupEntriesCollector::BackupCapture captureTable(const IStorage & storage)
+    /// Spelled out because the handle converts only as an lvalue.
+    StorageMetadataPtr captureMetadata(const IStorage & storage)
     {
         const StorageMetadataHandle metadata = storage.getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
-        return {StorageMetadataPtr(metadata), storage.getBackupPartsBound()};
+        return StorageMetadataPtr(metadata);
     }
 
     /// How long we should sleep after finding an inconsistency error.
@@ -593,11 +594,10 @@ void BackupEntriesCollector::gatherTablesMetadata()
             res_table_info.metadata_path_in_backup = metadata_path_in_backup;
             res_table_info.data_path_in_backup = data_path_in_backup;
 
-            /// Captured beside the CREATE because the two are one artifact; `verifyCaptures` rejects
-            /// the attempt if the schema moved in between.  A Replicated database hands back a null
-            /// storage for a table that lives on another replica, and that table archives no data.
+            /// Beside the CREATE, because the two are one artifact.  Null storage: a Replicated
+            /// database lists tables that live on another replica, which archive no data here.
             if (storage)
-                res_table_info.backup_capture = captureTable(*storage);
+                res_table_info.captured_metadata = captureMetadata(*storage);
 
             /// Record REPLACE targets of refreshable materialized views from the create query, not
             /// the storage object: for Replicated/Shared databases `getTablesForBackup` resolves it
@@ -741,16 +741,16 @@ void BackupEntriesCollector::lockTablesForReading()
         });
 }
 
-BackupEntriesCollector::BackupCapture BackupEntriesCollector::getBackupCapture(const IStorage & storage) const
+StorageMetadataPtr BackupEntriesCollector::getCapturedMetadata(const IStorage & storage) const
 {
     const auto storage_id = storage.getStorageID();
     if (auto it = table_infos.find(QualifiedTableName{storage_id.database_name, storage_id.table_name});
-        it != table_infos.end() && it->second.backup_capture.metadata)
-        return it->second.backup_capture;
+        it != table_infos.end() && it->second.captured_metadata)
+        return it->second.captured_metadata;
 
     /// Not gathered, so not captured: a wrapper's inner table, reached through the wrapper's own
     /// `backupData`.  Capturing now is atomic, and it has no archived CREATE of its own to tie it to.
-    return captureTable(storage);
+    return captureMetadata(storage);
 }
 
 /// Identity of the mapping, not of the metadata object: a debug build hands out a fresh copy of the
@@ -760,11 +760,11 @@ bool BackupEntriesCollector::verifyCaptures(String & mismatch_description) const
 {
     for (const auto & [table_name, table_info] : table_infos)
     {
-        if (!table_info.backup_capture.metadata)
+        if (!table_info.captured_metadata)
             continue;
 
         const StorageMetadataHandle current = table_info.storage->getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
-        if (table_info.backup_capture.metadata->column_id_mapping != current->column_id_mapping)
+        if (table_info.captured_metadata->column_id_mapping != current->column_id_mapping)
         {
             mismatch_description = fmt::format(
                 "{} was altered while the backup was gathering metadata",

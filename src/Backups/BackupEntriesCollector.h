@@ -70,15 +70,8 @@ public:
     /// 1) we need to join (in a backup) the data of replicated tables gathered on different hosts.
     void addPostTask(std::function<void()> task);
 
-    /// What this backup archives a table as of, captured beside the CREATE it has to agree with.
-    struct BackupCapture
-    {
-        StorageMetadataPtr metadata;
-        std::optional<Int64> parts_bound;
-    };
-
-    /// The capture for @storage, or a fresh one if it was archived through a wrapper.
-    BackupCapture getBackupCapture(const IStorage & storage) const;
+    /// The metadata this backup archives @storage as of; taken now if it was never gathered.
+    StorageMetadataPtr getCapturedMetadata(const IStorage & storage) const;
 
 private:
     void calculateRootPathInBackup();
@@ -186,8 +179,7 @@ private:
         std::optional<String> replicated_table_zk_path;
         std::optional<ASTs> partitions;
         bool should_backup_data = true;
-        /// Captured beside `create_table_query`; empty metadata where the table was not captured.
-        BackupCapture backup_capture;
+        StorageMetadataPtr captured_metadata;
     };
 
     String current_stage;

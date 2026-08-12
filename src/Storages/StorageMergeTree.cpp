@@ -3022,52 +3022,6 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     return results;
 }
 
-/// An ID at or above the counter is one @mapping cannot name -- the part was written under a newer
-/// mapping.  `remapColumnIdsToLogicalNames` refuses such a part on attach, so pairing them anyway
-/// would only defer the failure to a restore or a reload.
-static std::optional<String> findColumnIdAtOrAboveCounter(const IMergeTreeDataPart & part, const ColumnIdMapping & mapping)
-{
-    for (const auto & column : part.getColumns())
-    {
-        /// An unstamped column is name-keyed by design -- the `checkColumnIdIsStamped` carve-out.
-        if (column.column_id.empty())
-            continue;
-
-        if (mapping.isColumnIdAtOrAboveCounter(column.column_id.value()))
-            return column.column_id.value();
-    }
-    return {};
-}
-
-/// How a post-capture ID reaches a part the bound admits: `ADD COLUMN` hands out the next ID, and a
-/// mutation of a pre-capture part then stamps it while keeping that part's block range.
-static void checkPartColumnIdsPredateCapture(const IMergeTreeDataPart & part, const ColumnIdMapping & mapping)
-{
-    if (auto column_id = findColumnIdAtOrAboveCounter(part, mapping))
-        throw Exception(
-            ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
-            "Part {} carries column ID {}, which was allocated after this backup captured the "
-            "table's schema (whose next column ID is {}), so the backup would not be restorable; "
-            "retry the BACKUP.",
-            part.name, backQuoteIfNeed(*column_id), mapping.getNextColumnIdCounter());
-}
-
-/// A transferred part keeps the IDs it was written with, and the structure check proved the two
-/// mappings equal only at that moment -- the transfer runs under `lockForShare`, which does not
-/// block an ALTER on either side.
-static void checkPartColumnIdsFitDestination(
-    const IMergeTreeDataPart & part, const ColumnIdMapping & destination_mapping, const StorageID & destination)
-{
-    if (auto column_id = findColumnIdAtOrAboveCounter(part, destination_mapping))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Part {} carries column ID {}, which table {} has not handed out yet (its next column ID "
-            "is {}); moving the part there would let a later ADD COLUMN reuse that ID and read this "
-            "part's bytes.",
-            part.name, backQuoteIfNeed(*column_id), destination.getNameForLogs(),
-            destination_mapping.getNextColumnIdCounter());
-}
-
 void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr local_context)
 {
     assertNotReadonly();
@@ -3185,13 +3139,6 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             source_table->getStorageID().getNameForLogs(), partition_id);
     }
 
-    /// Before anything is cloned, so a rejected transfer costs no file copies.
-    if (auto destination_mapping = my_metadata_snapshot->getActiveColumnIdMapping())
-    {
-        for (const auto & src_part : src_parts)
-            checkPartColumnIdsFitDestination(*src_part, *destination_mapping, getStorageID());
-    }
-
     MutableDataPartsVector dst_parts;
     std::vector<scope_guard> dst_parts_locks;
 
@@ -3284,6 +3231,17 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                 block_holders.emplace_back(fillNewPartName(part, data_parts_lock));
                 renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock, /*rename_in_transaction=*/ false);
             }
+
+            /// Against the snapshot the structure check matched, not live state: the clone's own
+            /// guard reads the mapping live, so an `ADD COLUMN` on each side -- handing both the
+            /// same next ID -- would have moved the counter past it by then.
+            if (my_metadata_snapshot->column_id_mapping != getColumnIdMapping())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Table {} had its column-ID mapping altered while parts were being transferred "
+                    "into it, so the transferred parts may resolve to different columns than they "
+                    "were written with; retry the partition operation.",
+                    getStorageID().getNameForLogs());
 
             /// Populate transaction
             transaction.commit(data_parts_lock);
@@ -3393,13 +3351,6 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
                         src_parts.size(), settings[Setting::max_parts_to_move].value);
     }
 
-    /// See `replacePartitionFrom`.
-    if (auto destination_mapping = dest_metadata_snapshot->getActiveColumnIdMapping())
-    {
-        for (const auto & src_part : src_parts)
-            checkPartColumnIdsFitDestination(*src_part, *destination_mapping, dest_table_storage->getStorageID());
-    }
-
     MutableDataPartsVector dst_parts;
     std::vector<scope_guard> dst_parts_locks;
 
@@ -3470,6 +3421,15 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             }
 
             dest_transaction.renameParts();
+
+            /// See `replacePartitionFrom`.
+            if (dest_metadata_snapshot->column_id_mapping != dest_table_storage->getColumnIdMapping())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Table {} had its column-ID mapping altered while parts were being transferred "
+                    "into it, so the transferred parts may resolve to different columns than they "
+                    "were written with; retry the partition operation.",
+                    dest_table_storage->getStorageID().getNameForLogs());
 
             dest_transaction.commit(dest_data_parts_lock);
 
@@ -3605,41 +3565,20 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
 /// schema has to be archived too, and the archived CREATE is materialized before the data phase and
 /// cannot be re-tied afterwards: capture no later than here, then use it instead of re-reading.
 ///
-/// The block bound is the other half of that instant, and only an empty table needs one.  A part
-/// written after the capture is a hazard only if the mapping was replaced wholesale in between,
-/// rebinding IDs the captured mapping already names; the one operation that does that is RESTORE,
-/// refused on a table that already holds data.  Every other change is incremental -- an ID is never
-/// handed to a second column -- so such a part still resolves to the same columns under the captured
-/// mapping, except for an ID minted after it, which `checkPartColumnIdsPredateCapture` refuses.
-/// Bounding a non-empty table would cost more than it buys: a partition dropped and refilled during
-/// the backup arrives above the bound while the parts it replaced are already gone, leaving the
-/// archive with neither.
-///
-/// The two reads need no common lock, for the same reason: an `ADD COLUMN` between them allocates at
-/// or above the captured counter, where the per-part check sees it.
-std::optional<Int64> StorageMergeTree::getBackupPartsBound() const
-{
-    if (!getActiveColumnIdMapping() || getTotalActiveSizeInBytes() > 0)
-        return {};
-
-    /// An empty table admits no part: everything arrives after the capture.
-    return 0;
-}
-
-
+/// `verifyCaptures` covers the gather; the parts are read here, later, so this function closes the
+/// rest of the window at its end -- fail-closed, because telling a harmless mapping change from a
+/// harmful one costs more state than the answer is worth.
 void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
     const auto & backup_settings = backup_entries_collector.getBackupSettings();
     auto local_context = backup_entries_collector.getContext();
 
-    /// Everything below is archived as of this, so there is no live schema read here and nothing to
-    /// compare against one.
-    const auto capture = backup_entries_collector.getBackupCapture(*this);
+    const auto captured_metadata = backup_entries_collector.getCapturedMetadata(*this);
 
     /// TODO(unique-key): sidecar-aware backup. The per-part delete-bitmap
     /// sidecars are not enumerated as part artifacts, so BACKUP would silently
     /// omit them and restore would resurrect deleted rows. Reject for now.
-    if (capture.metadata->hasUniqueKey())
+    if (captured_metadata->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "BACKUP is not supported for UNIQUE KEY tables yet: delete-bitmap sidecars "
             "are not preserved across backup/restore.");
@@ -3650,24 +3589,8 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    if (capture.parts_bound)
-    {
-        /// `min_block`, not `max_block`: a merge of a pre-capture part with a post-capture one
-        /// straddles the bound, and dropping it would lose committed pre-capture rows.
-        const size_t parts_count_before_bound = data_parts.size();
-        std::erase_if(data_parts, [&](const auto & part) { return part->info.min_block > *capture.parts_bound; });
-        if (parts_count_before_bound != data_parts.size())
-            LOG_TRACE(log, "Excluded {} part(s) that arrived after the backup captured the table",
-                parts_count_before_bound - data_parts.size());
-    }
-
-    const auto & mapping = capture.metadata->column_id_mapping;
+    const auto & mapping = captured_metadata->column_id_mapping;
     const bool has_active_mapping = mapping && mapping->isActive();
-    if (has_active_mapping)
-    {
-        for (const auto & part : data_parts)
-            checkPartColumnIdsPredateCapture(*part, *mapping);
-    }
 
     Int64 min_data_version = std::numeric_limits<Int64>::max();
     for (const auto & data_part : data_parts)
@@ -3685,6 +3608,14 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
             fs::path(data_path_in_backup) / COLUMN_IDS_FILE_NAME,
             std::make_shared<BackupEntryFromMemory>(mapping->toString()));
     }
+
+    /// Last, so it covers every read above.
+    if (mapping != getColumnIdMapping())
+        throw Exception(
+            ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
+            "Table {} had its column-ID mapping altered while this backup was reading its parts, so "
+            "the archive would pair them with a mapping they were not written under; retry the BACKUP.",
+            getStorageID().getNameForLogs());
 }
 
 

@@ -145,12 +145,13 @@ SETTINGS serialization_info_version = 'with_column_ids',
          min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 "
 echo "INSERT INTO t_attach_dst VALUES (10, 'y', 99)" | $CLIENT
-# Both tables now have logical_to_id = {a:a,b:b,c:c}, but the source part still
-# carries the orphan d's ID, which dst has not handed out.
+# Both tables now have logical_to_id = {a:a,b:b,c:c}, but the source part still carries the orphan
+# d's ID, which dst has not handed out -- caught when the clone loads its columns against dst's
+# mapping, which is why the transfer needs no check of its own.
 
 $CLIENT --query "
 ALTER TABLE t_attach_dst ATTACH PARTITION tuple() FROM t_attach_src
-" 2>&1 | grep -qE "has not handed out yet" && echo "throws_on_foreign_column_id" || echo "missing_guard"
+" 2>&1 | grep -qE "at or above the table's next column ID counter" && echo "throws_on_foreign_column_id" || echo "missing_guard"
 
 # Destination still readable with its own mapping.
 $CLIENT --query "SELECT a, b, c FROM t_attach_dst ORDER BY a"

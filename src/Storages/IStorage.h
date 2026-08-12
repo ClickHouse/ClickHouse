@@ -242,10 +242,6 @@ public:
     /// Makes backup entries to backup the data of this storage.
     virtual void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
 
-    /// The highest block number a part may carry to belong in a BACKUP capturing this table now;
-    /// `nullopt` where the schema bounds nothing, as it does for a self-describing part file.
-    virtual std::optional<Int64> getBackupPartsBound() const { return {}; }
-
     /// Extracts data from the backup and put it to the storage.
     virtual void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
 
