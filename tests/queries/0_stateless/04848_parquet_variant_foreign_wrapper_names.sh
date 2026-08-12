@@ -40,13 +40,13 @@ open('${FOREIGN_FILE}', 'wb').write(data)
 
 echo '-- with ClickHouse footer metadata'
 ${CLICKHOUSE_LOCAL} -q "
-SELECT v FROM file('${CH_FILE}', Parquet, 'v JSON') ORDER BY toInt64(v.a.value)
+SELECT v FROM file('${CH_FILE}', Parquet, 'v JSON') ORDER BY JSONExtractInt(toString(v), 'a', 'value')
 SETTINGS input_format_parquet_use_native_reader_v3 = 1;
 "
 
 echo '-- foreign file (no ClickHouse footer metadata)'
 ${CLICKHOUSE_LOCAL} -q "
-SELECT v FROM file('${FOREIGN_FILE}', Parquet, 'v JSON') ORDER BY toInt64(v.a.value)
+SELECT v FROM file('${FOREIGN_FILE}', Parquet, 'v JSON') ORDER BY JSONExtractInt(toString(v), 'a', 'value')
 SETTINGS input_format_parquet_use_native_reader_v3 = 1;
 "
 
