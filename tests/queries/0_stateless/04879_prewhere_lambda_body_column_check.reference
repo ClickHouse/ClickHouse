@@ -1,0 +1,35 @@
+unsupported column inside a lambda body, qualified
+unsupported column inside a lambda body, asterisk
+unsupported column outside a lambda, refused already
+higher-order function other than arrayMap
+array-joined alias inside a lambda body
+array-joined alias outside a lambda, refused already
+supported column inside a lambda body
+100
+300
+diverging types are fine in WHERE
+100
+300
+unrestricted storage, lambda body
+100
+lambda parameter shadowing a table column
+100
+lambda over a non-first table expression
+2	20	200
+left join, right column inside a lambda body
+1
+2
+left join, right column outside a lambda
+1
+2
+left join, right column in WHERE, filtered after the join
+1
+left join with join_use_nulls, right column inside a lambda body
+1
+2
+left join with join_use_nulls, right column outside a lambda
+1
+2
+left join with join_use_nulls, lambda parameter shadowing the right column
+1	100
+2	\N

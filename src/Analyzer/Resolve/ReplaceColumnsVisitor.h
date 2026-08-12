@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/LambdaNode.h>
 #include <Analyzer/Utils.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <fmt/ranges.h>
 
 namespace DB
@@ -49,7 +51,22 @@ public:
             node = replacement_node;
 
         if (auto * function_node = node->as<FunctionNode>(); function_node && function_node->isResolved())
+        {
             rerunFunctionResolve(function_node, context);
+        }
+        else if (auto * lambda_node = node->as<LambdaNode>())
+        {
+            /// The lambda caches its own result type, so replacing a column inside its body leaves that
+            /// cache stale and the mismatch resurfaces later as a header type mismatch. Recompute it from
+            /// the rewritten body, keeping the argument types.
+            const auto * lambda_type = typeid_cast<const DataTypeFunction *>(lambda_node->getResultType().get());
+            if (!lambda_type)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Lambda node {} result type is not a function type",
+                    lambda_node->formatASTForErrorMessage());
+
+            lambda_node->resolve(std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), lambda_node->getExpression()->getResultType()));
+        }
     }
 
     /// We want to re-run resolve for function _after_ its arguments are replaced
@@ -57,11 +74,15 @@ public:
 
     bool needChildVisit(QueryTreeNodePtr & /* parent */, QueryTreeNodePtr & child)
     {
-        /// Visit only expressions, but not subqueries
+        /// Visit only expressions, but not subqueries.
+        /// LAMBDA is an expression too: a matcher inside a lambda body (`arrayMap(x -> *, ...)`) is
+        /// rewritten by the same JOIN type corrections as one outside it, so the replacement must reach
+        /// it, otherwise the registered entry is never applied.
         return child->getNodeType() == QueryTreeNodeType::IDENTIFIER
             || child->getNodeType() == QueryTreeNodeType::LIST
             || child->getNodeType() == QueryTreeNodeType::FUNCTION
-            || child->getNodeType() == QueryTreeNodeType::COLUMN;
+            || child->getNodeType() == QueryTreeNodeType::COLUMN
+            || child->getNodeType() == QueryTreeNodeType::LAMBDA;
     }
 
 private:
