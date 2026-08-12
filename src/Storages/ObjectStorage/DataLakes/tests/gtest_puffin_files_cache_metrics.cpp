@@ -85,14 +85,11 @@ TEST(PuffinFilesCacheMetrics, WaiterOfClearDiscardedLoadCountsAsMiss)
     const auto misses_before = ProfileEvents::global_counters[ProfileEvents::PuffinFilesCacheMisses].load();
 
     std::promise<void> load_started;
-    std::promise<void> allow_load_finish;
-    std::promise<void> waiter_entered;
     auto load_started_future = load_started.get_future();
-    auto allow_load_finish_future = allow_load_finish.get_future();
-    auto waiter_entered_future = waiter_entered.get_future();
 
     std::atomic<size_t> load_calls{0};
     std::atomic<bool> waiter_load_called{false};
+    std::atomic<bool> waiter_joined_insert_token{false};
 
     std::thread producer(
         [&]()
@@ -103,7 +100,19 @@ TEST(PuffinFilesCacheMetrics, WaiterOfClearDiscardedLoadCountsAsMiss)
                 {
                     ++load_calls;
                     load_started.set_value();
-                    allow_load_finish_future.wait();
+
+                    /// Wait until the waiter has acquired the same insert token (refcount >= 2)
+                    /// before clear()+finish. A fixed sleep raced: if the producer finished first,
+                    /// the waiter started a fresh load and this test became flaky.
+                    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+                    while (cache.getInsertTokenRefcount(*key) < 2)
+                    {
+                        if (std::chrono::steady_clock::now() >= deadline)
+                            return makeExcludedRows({42});
+                        std::this_thread::yield();
+                    }
+                    waiter_joined_insert_token.store(true);
+
                     cache.clear();
                     return makeExcludedRows({42});
                 });
@@ -114,7 +123,6 @@ TEST(PuffinFilesCacheMetrics, WaiterOfClearDiscardedLoadCountsAsMiss)
     std::thread waiter(
         [&]()
         {
-            waiter_entered.set_value();
             cache.getOrSetDeletionVector(
                 *key,
                 [&]()
@@ -124,14 +132,10 @@ TEST(PuffinFilesCacheMetrics, WaiterOfClearDiscardedLoadCountsAsMiss)
                 });
         });
 
-    ASSERT_EQ(waiter_entered_future.wait_for(std::chrono::seconds(5)), std::future_status::ready);
-    /// Give the waiter time to block on the shared insert token before the producer finishes.
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-    allow_load_finish.set_value();
     producer.join();
     waiter.join();
 
+    ASSERT_TRUE(waiter_joined_insert_token.load());
     EXPECT_EQ(load_calls.load(), 1u);
     EXPECT_FALSE(waiter_load_called.load());
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::PuffinFilesCacheHits] - hits_before, 0u);

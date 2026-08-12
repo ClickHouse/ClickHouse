@@ -252,6 +252,17 @@ public:
         out_misses = misses;
     }
 
+    /// Number of concurrent getOrSet callers holding the insert token for `key`, or 0 if none.
+    /// Useful for tests that wait until a second thread has joined an in-flight load.
+    size_t getInsertTokenRefcount(const Key & key) const
+    {
+        std::lock_guard lock(mutex);
+        auto it = insert_tokens.find(key);
+        if (it == insert_tokens.end())
+            return 0;
+        return it->second->refcount;
+    }
+
     std::vector<KeyMapped> dump() const
     {
         std::lock_guard lock(mutex);
