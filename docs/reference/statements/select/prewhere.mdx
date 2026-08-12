@@ -24,6 +24,12 @@ If query has [FINAL](/reference/statements/select/from#final-modifier) modifier,
 The `PREWHERE` section is executed before `FINAL`, so the results of `FROM ... FINAL` queries may be skewed when using `PREWHERE` with fields not in the `ORDER BY` section of a table.
 </Note>
 
+<Note>
+`PREWHERE` is applied while reading the table it belongs to, so it filters that one input before a [JOIN](/reference/statements/select/join) is performed, whereas `WHERE` is applied after the join. The same condition can therefore give different results in the two clauses.
+
+For example, `SELECT a.id FROM a LEFT JOIN b ON a.id = b.x PREWHERE b.y > 50` is equivalent to `SELECT a.id FROM a LEFT JOIN (SELECT * FROM b WHERE y > 50) AS b ON a.id = b.x`, and not to the same query with `WHERE b.y > 50`: rows of `b` are removed before the join runs, so rows of `a` that lose their match are returned filled with default values rather than dropped.
+</Note>
+
 ## Limitations {#limitations}
 
 `PREWHERE` is only supported by tables from the [*MergeTree](/reference/engines/table-engines/mergetree-family/index) family.
