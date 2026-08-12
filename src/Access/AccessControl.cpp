@@ -510,7 +510,7 @@ void AccessControl::addStoragesFromMainConfig(
 
     String config_dir = std::filesystem::path{config_path}.remove_filename().string();
     String dbms_dir = config.getString("path", DBMS_DEFAULT_PATH);
-    String include_from_path = config.getString("include_from", "/etc/metrika.xml");
+    String include_from_path = config.getString("include_from", "");
     bool has_user_directories = config.has("user_directories");
 
     /// If path to users' config isn't absolute, try guess its root (current) dir.
