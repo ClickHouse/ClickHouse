@@ -1,5 +1,6 @@
 #include <Columns/ColumnVector.h>
 
+#include <base/defines.h>
 #include <base/bit_cast.h>
 #include <base/scope_guard.h>
 #include <base/sort.h>
@@ -1174,6 +1175,23 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max, size_t start, size_t
         * NOTE: There exist many different NaNs.
         * Different NaN could be returned: not bit-exact value as one of NaNs from column.
         */
+    if constexpr (has_find_extreme_implementation<T> && is_floating_point<T>)
+    {
+        auto cur_min = findExtremeMin(data.data(), start, end);
+        auto cur_max = findExtremeMax(data.data(), start, end);
+
+        if (!cur_min || !cur_max)
+        {
+            min = NaNOrZero<T>();
+            max = NaNOrZero<T>();
+            return;
+        }
+
+        min = NearestFieldType<T>(*cur_min);
+        max = NearestFieldType<T>(*cur_max);
+        return;
+    }
+
     size_t i = start;
     if constexpr (is_floating_point<T>)
     {
@@ -1529,7 +1547,8 @@ template ColumnPtr ColumnVector<UInt64>::indexImpl<UInt8>(const PaddedPODArray<U
 template ColumnPtr ColumnVector<UInt64>::indexImpl<UInt16>(const PaddedPODArray<UInt16> & indexes, size_t limit) const;
 template ColumnPtr ColumnVector<UInt64>::indexImpl<UInt32>(const PaddedPODArray<UInt32> & indexes, size_t limit) const;
 
-#if defined(OS_DARWIN)
+/// `size_t` is not covered by the instantiations above where it is a type of its own.
+#if defined(SIZE_T_IS_A_DISTINCT_TYPE)
 template ColumnPtr ColumnVector<UInt8>::indexImpl<size_t>(const PaddedPODArray<size_t> & indexes, size_t limit) const;
 template ColumnPtr ColumnVector<UInt64>::indexImpl<size_t>(const PaddedPODArray<size_t> & indexes, size_t limit) const;
 #endif
