@@ -309,6 +309,76 @@ def test_lldb_pid_loop_honours_the_aggregate_deadline():
     assert str(pids[-1]) in output.split("skipping")[1], output
 
 
+def _counting_clock(readings):
+    """A clock returning the given readings in order, then repeating the last,
+    and counting how many times it was read."""
+    remaining = list(readings)
+    calls = []
+
+    def clock():
+        calls.append(None)
+        return remaining.pop(0) if len(remaining) > 1 else remaining[0]
+
+    return clock, calls
+
+
+def test_lldb_aggregate_deadline_is_immune_to_a_wall_clock_step():
+    # The ceiling bounds elapsed time, so it cannot be read from the settable
+    # clock: a backward step inflates what is left and the loop runs on past it.
+    ct = _load_clickhouse_test(require_server=False)
+    args = _make_args()
+    args.build_flags = {ct["BuildFlags"].DEBUG}
+    pids = [111, 222, 333, 444]
+
+    # Elapsed advances past the 2s ceiling after the first attach; the wall
+    # clock steps backwards, which is what a deadline built on it would follow.
+    fake_monotonic, monotonic_calls = _counting_clock([1000.0, 1000.0, 1010.0])
+    fake_time, time_calls = _counting_clock([1000.0, 1000.0, 900.0])
+
+    globals_ = ct["print_c_stacktraces"].__globals__
+    saved = (globals_["monotonic"], globals_["time"])
+    globals_["monotonic"], globals_["time"] = fake_monotonic, fake_time
+    try:
+        budgets, output = _capture_lldb_budgets(
+            ct, args, pids, per_pid_timeout=30, total_timeout=2
+        )
+    finally:
+        globals_["monotonic"], globals_["time"] = saved
+
+    # Premise: the clock actually patched is the one the function reads, or the
+    # arm proves nothing about either source.
+    assert len(monotonic_calls) >= 2, len(monotonic_calls)
+    assert not time_calls, len(time_calls)
+
+    assert len(budgets) == 1, budgets
+    assert budgets[0] <= 2, budgets
+    assert f"skipping {len(pids) - 1} of {len(pids)} processes" in output, output
+
+
+def test_explicit_per_pid_budget_is_honoured_over_the_flavor_value():
+    # Both budgets reach the collector, and the explicit one wins: the timeout
+    # handler runs inside its own fired alarm and asks for the tight 30s value
+    # on a build whose flavor budget is 120s.
+    ct = _load_clickhouse_test(require_server=False)
+    args = _make_args()
+    args.build_flags = {ct["BuildFlags"].DEBUG}
+
+    # test_lldb_budget_scales_with_build_flavor asserts slow > release, which is
+    # what makes the two observable values differ here. total_timeout is the
+    # larger of the two so the aggregate clamp cannot mask the per-PID one.
+    budgets, _ = _capture_lldb_budgets(
+        ct,
+        args,
+        [4242],
+        per_pid_timeout=ct["LLDB_TIMEOUT"],
+        total_timeout=ct["LLDB_SLOW_BUILD_TIMEOUT"],
+    )
+
+    assert len(budgets) == 1, budgets
+    assert abs(budgets[0] - ct["LLDB_TIMEOUT"]) < 1, budgets
+    assert budgets[0] < ct["LLDB_SLOW_BUILD_TIMEOUT"] - 1, budgets
+
+
 def test_truncated_dump_is_not_announced_as_full():
     # A rescued partial backtrace is worth keeping, but the report must not
     # present it as the complete one: a reader who trusts the "full" label

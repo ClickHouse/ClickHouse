@@ -46,7 +46,7 @@ from errno import EPERM, ESRCH
 from pathlib import Path
 from ssl import SSLEOFError
 from subprocess import PIPE, Popen
-from time import sleep, time
+from time import monotonic, sleep, time
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 try:
@@ -1357,9 +1357,9 @@ def print_c_stacktraces(
         )
         return
 
-    deadline = time() + total_timeout
+    deadline = monotonic() + total_timeout
     for index, pid in enumerate(all_pids):
-        remaining = deadline - time()
+        remaining = deadline - monotonic()
         if remaining <= 0:
             # Name the skipped pids: silence here reads as "nothing to dump".
             print(
