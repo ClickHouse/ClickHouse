@@ -3408,15 +3408,17 @@ void registerStorageRemote(StorageFactory & factory)
         /// `Remote('127.0.0.1', merge(db, '^protected$'), 'default')` and reach a local target they cannot
         /// access directly, even though a direct `CREATE` would be rejected.
         ///
-        /// The one concession for a table-function target on restore is that the analysis is allowed to
-        /// fail for reasons other than access control: the target's underlying tables may legitimately be
-        /// absent in the restore environment (e.g. the table matched by `merge(...)` was dropped since the
-        /// backup was taken), and a valid persisted table must still be restorable in that case. An
-        /// access-control failure (`ACCESS_DENIED`) is always fatal — it is the exact case a direct
-        /// `CREATE` would reject and the only one that could let the restoring user reach a local target
-        /// they cannot access. Any other failure means the target could not be analyzed (and therefore
-        /// cannot be read either, so there is nothing to leak), so the restore proceeds with the columns
-        /// carried in the backup metadata.
+        /// The one concession for a table-function target with an explicit column list is that the
+        /// analysis is allowed to fail for reasons other than access control, mirroring the
+        /// `Distributed(cluster, table_function())` sibling: the target may legitimately be unresolvable
+        /// at create time — a self-referential `merge(currentDatabase(), '^self$')` matches nothing until
+        /// the table exists, and on restore the table matched by `merge(...)` may have been dropped since
+        /// the backup was taken — and the read path defers exactly these cases until a query reaches the
+        /// shard. An access-control failure (`ACCESS_DENIED`) is always fatal — it is the exact case a
+        /// direct query would reject and the only one that could let the user reach a local target they
+        /// cannot access. Any other failure means the target could not be analyzed (and therefore cannot
+        /// be read either, so there is nothing to leak), so the `CREATE` proceeds with the explicit
+        /// columns and the target is validated again when a query actually reaches the shard.
         const bool loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
 
         /// Bind a table-function target to the current database at CREATE time, exactly as the
@@ -3455,9 +3457,11 @@ void registerStorageRemote(StorageFactory & factory)
         if (columns.empty() || analyze_table_function_target)
         {
             /// When the structure was carried in the definition, the analysis runs purely for its access
-            /// side effect, so on restore a non-access failure (absent target) may be tolerated. When the
-            /// structure was omitted, the analysis is the only source of columns and must always succeed.
-            const bool tolerate_absent_target = !columns.empty() && args.is_restore_from_backup;
+            /// side effect, so a non-access failure (a target that is not resolvable right now) is
+            /// tolerated and deferred to read time, exactly as in the `Distributed` sibling above. When
+            /// the structure was omitted, the analysis is the only source of columns and must always
+            /// succeed.
+            const bool tolerate_absent_target = !columns.empty();
 
             try
             {
@@ -3502,13 +3506,14 @@ void registerStorageRemote(StorageFactory & factory)
                     throw;
 
                 /// The target could not be analyzed for a reason other than access control (e.g. the
-                /// table matched by `merge(...)` was dropped since the backup was taken). The restore
-                /// proceeds with the columns carried in the backup metadata, but the swallowed error is
-                /// logged rather than silently discarded, so a genuine problem is not hidden.
+                /// table matched by `merge(...)` does not exist yet, or was dropped since the backup was
+                /// taken). The `CREATE` proceeds with the explicit columns carried in the definition, but
+                /// the swallowed error is logged rather than silently discarded, so a genuine problem is
+                /// not hidden.
                 LOG_WARNING(
                     getLogger(secure ? "RemoteSecure" : "Remote"),
-                    "Could not analyze the table function target of {} during RESTORE; proceeding with "
-                    "the columns from the backup metadata. Error: {}",
+                    "Could not analyze the table function target of {}; proceeding with "
+                    "the explicitly specified columns. Error: {}",
                     args.table_id.getNameForLogs(),
                     getExceptionMessage(e, /* with_stacktrace = */ true));
             }
