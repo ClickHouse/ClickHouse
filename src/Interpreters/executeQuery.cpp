@@ -72,7 +72,9 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
+#include <Databases/DDLDependencyVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InsertDependenciesBuilder.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -128,6 +130,8 @@ namespace ProfileEvents
     extern const Event ASTFuzzerQueries;
     extern const Event ASTFuzzerSkippedBackupRestore;
     extern const Event ASTFuzzerSkippedReplicatedDDLInternal;
+    extern const Event ASTFuzzerSkippedSharedNonParallelTarget;
+    extern const Event ASTFuzzerSkipCheckFailed;
     extern const Event QueryParseMicroseconds;
 }
 
@@ -2268,6 +2272,42 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         catch (...) // Ok: skip fuzzed ASTs that are too deeply nested
         {
             continue;
+        }
+
+        /// Fuzzing a `CREATE MATERIALIZED VIEW` renames the view but keeps its external `TO`, so the new
+        /// view shares both source and target with the one it was derived from. One `INSERT` then builds
+        /// two sinks for that target, which cannot complete if the target takes only one `write()` per
+        /// `INSERT`: the second sink waits out `lock_acquire_timeout`.
+        if (const auto * create = fuzzed_ast->as<ASTCreateQuery>(); create && create->is_materialized_view_with_external_target())
+        {
+            bool skip = false;
+            try
+            {
+                /// Both ids come from the extractor that registers the dependency edges this question is
+                /// asked about, so the two cannot disagree. The fuzzer moves the source as well as the name.
+                auto deps = getDependenciesFromCreateQuery(
+                    context->getGlobalContext(),
+                    {create->getDatabase(), create->getTable()},
+                    fuzzed_ast,
+                    context->getCurrentDatabase());
+                if (deps.mv_from_dependency && deps.mv_to_dependency)
+                    skip = InsertDependenciesBuilder::insertWouldDuplicateNonParallelSink(
+                        *deps.mv_from_dependency, *deps.mv_to_dependency, context);
+            }
+            catch (...) // Ok: an undecided check must not suppress fuzzing
+            {
+                ProfileEvents::increment(ProfileEvents::ASTFuzzerSkipCheckFailed);
+            }
+
+            if (skip)
+            {
+                /// The name was recorded before this point and later mutations retarget table references
+                /// to the recorded names, so a name no table backs has to be withdrawn.
+                auto [fuzzer, lock] = getGlobalASTFuzzer();
+                fuzzer->notifyQueryFailed(fuzzed_ast);
+                ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedSharedNonParallelTarget);
+                continue;
+            }
         }
 
         /// Drop any SETTINGS that would override the fuzz-context resource caps below; otherwise a

@@ -46,6 +46,8 @@
     M(ASTFuzzerQueries, "Number of fuzzed queries attempted by the server-side AST fuzzer.", ValueType::Number) \
     M(ASTFuzzerSkippedBackupRestore, "Number of fuzzed BACKUP/RESTORE queries the server-side AST fuzzer skipped instead of executing.", ValueType::Number) \
     M(ASTFuzzerSkippedReplicatedDDLInternal, "Number of times the server-side AST fuzzer skipped fuzzing because an internal replicated-database DDL execution (a live ZooKeeperMetadataTransaction) was in flight on the context.", ValueType::Number) \
+    M(ASTFuzzerSkippedSharedNonParallelTarget, "Number of fuzzed CREATE MATERIALIZED VIEW queries the server-side AST fuzzer skipped instead of executing, because the new view would have made one INSERT build two sinks for a storage that accepts only one write() per INSERT.", ValueType::Number) \
+    M(ASTFuzzerSkipCheckFailed, "Number of times the server-side AST fuzzer could not decide whether a fuzzed CREATE MATERIALIZED VIEW would duplicate a non-parallel sink, and executed the query anyway.", ValueType::Number) \
     M(QueryTimeMicroseconds, "Total time of all queries.", ValueType::Microseconds) \
     M(SelectQueryTimeMicroseconds, "Total time of SELECT queries.", ValueType::Microseconds) \
     M(InsertQueryTimeMicroseconds, "Total time of INSERT queries.", ValueType::Microseconds) \

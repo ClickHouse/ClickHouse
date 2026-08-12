@@ -2,6 +2,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 
 #include <Common/MemoryTracker.h>
+#include <Common/checkStackSize.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
 #include <Processors/ResizeProcessor.h>
@@ -932,6 +933,114 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentView(const StorageP
     /// A concrete local target: its dependent views are visible to `collectAllDependencies`, so the
     /// hazard scan over `storages` checks them (and whether their targets actually deduplicate)
     /// directly - nothing is hidden.
+    return false;
+}
+
+
+bool InsertDependenciesBuilder::insertWouldDuplicateNonParallelSink(
+    const StorageID & source, const StorageID & new_view_target, ContextPtr context)
+{
+    const auto & catalog = DatabaseCatalog::instance();
+
+    /// A cycle leaves the reachable set unknown, so the whole answer is unknown.
+    bool cyclic = false;
+
+    StorageIDSet active;
+    /// Keyed on the edge, not on the node: whether a view is pushed to depends on which parent it was
+    /// reached from, so memoizing a view by name alone would carry the verdict for a stale edge over to
+    /// the live one.
+    std::unordered_set<String> walked_edges;
+
+    /// Collects into `sinks` the storages that accept a single `write()` per `INSERT` and for which a write
+    /// into `id` builds a sink, over the edges `collectAllDependencies` follows. `parent` is the node `id`
+    /// was reached from; it is empty at the root of a pipeline, where there is no edge to validate.
+    std::function<void(const StorageIDMaybeEmpty &, const StorageIDMaybeEmpty &, StorageIDSet &)> collect
+        = [&](const StorageIDMaybeEmpty & id, const StorageIDMaybeEmpty & parent, StorageIDSet & sinks)
+    {
+        /// A view chain is bounded only by the catalog.
+        checkStackSize();
+
+        if (active.contains(id))
+        {
+            cyclic = true;
+            return;
+        }
+        /// Length-prefixed, because a database or table name may itself contain any separator.
+        auto edge_key = [](const StorageIDMaybeEmpty & node)
+        {
+            return fmt::format("{}:{}:{}:{}:", node.database_name.size(), node.database_name, node.table_name.size(), node.table_name);
+        };
+        if (!walked_edges.insert(edge_key(id) + edge_key(parent)).second)
+            return;
+        active.insert(id);
+        SCOPE_EXIT({ active.erase(id); });
+
+        auto storage = catalog.tryGetTable(id, context);
+        if (!storage)
+            return;
+
+        if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(storage.get()))
+        {
+            /// `ALTER ... MODIFY QUERY` and a reused table name leave dependency edges that no longer
+            /// hold; a view reached over such an edge is not pushed to by this `INSERT`.
+            auto metadata = storage->getInMemoryMetadataPtr(context, false);
+            StorageIDMaybeEmpty select_table_id = metadata->getSelectQuery().select_table_id;
+            if (!parent.empty() && select_table_id != parent)
+                return;
+
+            /// A view is written *through* to its target, never *to*.
+            collect(materialized_view->getTargetTableId(), id, sinks);
+            return;
+        }
+
+        /// A window view is pushed its own inner storage; its external target is written by the separate
+        /// `INSERT` that `StorageWindowView::fire` runs.
+        if (dynamic_cast<const StorageWindowView *>(storage.get()))
+            return;
+
+        /// Dependent views are registered against the table the view's `SELECT` named, so they are looked
+        /// up before any forwarding hop is resolved.
+        for (const auto & view_id : catalog.getDependentViews(id))
+            collect(view_id, id, sinks);
+
+        /// A `Buffer` accumulates the rows and a `Distributed` sends them on: the write that reaches the
+        /// destination is a separate `INSERT`, whose sinks are not part of this one.
+        if (dynamic_cast<const StorageBuffer *>(storage.get()) || dynamic_cast<const StorageDistributed *>(storage.get()))
+            return;
+
+        /// An `Alias` runs a nested `INSERT` into its target per sink and a proxy hands the write to the
+        /// storage it wraps, so the target's sink is built as the root of that nested write.
+        if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+        {
+            if (auto target = alias->tryGetTargetTable())
+                collect(target->getStorageID(), {}, sinks);
+            return;
+        }
+        if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        {
+            if (auto nested = proxy->getNested())
+                collect(nested->getStorageID(), {}, sinks);
+            return;
+        }
+
+        if (!storage->supportsParallelInsert())
+            sinks.insert(storage->getStorageID());
+    };
+
+    StorageIDSet reachable_now;
+    collect(source, {}, reachable_now);
+    if (cyclic || reachable_now.empty())
+        return false;
+
+    walked_edges.clear();
+    StorageIDSet reachable_from_new_view;
+    collect(new_view_target, {}, reachable_from_new_view);
+    if (cyclic)
+        return false;
+
+    for (const auto & sink_id : reachable_from_new_view)
+        if (reachable_now.contains(sink_id))
+            return true;
     return false;
 }
 
