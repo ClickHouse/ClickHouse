@@ -1986,13 +1986,13 @@ IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
     return column_sizes;
 }
 
-IStorage::ColumnSizeByName StorageMerge::getColumnSizes(const Names & columns) const
+IStorage::ColumnSizeByName StorageMerge::getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const
 {
     ColumnSizeByName column_sizes;
 
     forEachTable([&](const auto & table)
     {
-        for (const auto & [name, size] : table->getColumnSizes(columns))
+        for (const auto & [name, size] : table->getColumnSizes(columns, calculate_subcolumn_sizes))
             column_sizes[name].add(size);
     });
 
