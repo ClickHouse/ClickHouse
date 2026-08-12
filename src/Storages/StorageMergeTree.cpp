@@ -4586,15 +4586,14 @@ void StorageMergeTree::restoreDataFromBackup(RestorerFromBackup & restorer, cons
     MergeTreeData::restoreDataFromBackup(restorer, data_path_in_backup, partitions);
 }
 
-void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> &)
+void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> &, UInt64 admission_epoch)
 {
-    /// Same admission-epoch fence as `attachPartition`: restoring parts publishes them into the
-    /// (possibly shared) storage prefix, so a lease lost during the restore must fail closed
-    /// before each rename, and the whole batch is published through a single transaction so
-    /// that a lease lost in the middle undoes the renames already done instead of leaving the
-    /// restore partially applied.
-    const UInt64 admission_epoch = currentLeadershipEpoch();
-
+    /// Same admission-epoch fence as `attachPartition`, except the epoch is the one sampled when
+    /// the `RESTORE` command was admitted (not at this publish step, which runs long after): a
+    /// lease lost during the restore must fail closed before each rename even if this node has
+    /// reacquired leadership meanwhile, and the whole batch is published through a single
+    /// transaction so that a lease lost in the middle undoes the renames already done instead of
+    /// leaving the restore partially applied.
     if (parts.empty())
         return;
 

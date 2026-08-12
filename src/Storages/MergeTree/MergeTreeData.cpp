@@ -8848,12 +8848,15 @@ public:
     RestoredPartsHolder(
         const std::shared_ptr<MergeTreeData> & storage_,
         const BackupPtr & backup_,
-        const ZooKeeperRetriesInfo & zookeeper_retries_info_)
-        : storage(storage_), backup(backup_), zookeeper_retries_info(zookeeper_retries_info_)
+        const ZooKeeperRetriesInfo & zookeeper_retries_info_,
+        UInt64 admission_epoch_)
+        : storage(storage_), backup(backup_), zookeeper_retries_info(zookeeper_retries_info_), admission_epoch(admission_epoch_)
     {
     }
 
     BackupPtr getBackup() const { return backup; }
+
+    UInt64 getAdmissionEpoch() const { return admission_epoch; }
 
     void setNumParts(size_t num_parts_)
     {
@@ -8906,7 +8909,7 @@ private:
             parts.end(),
             [](const MutableDataPartPtr & lhs, const MutableDataPartPtr & rhs) { return lhs->info.min_block < rhs->info.min_block; });
 
-        storage->attachRestoredParts(std::move(parts), zookeeper_retries_info);
+        storage->attachRestoredParts(std::move(parts), zookeeper_retries_info, admission_epoch);
         parts.clear();
         temp_part_dirs.clear();
         num_parts = 0;
@@ -8915,6 +8918,7 @@ private:
     const std::shared_ptr<MergeTreeData> storage;
     const BackupPtr backup;
     const ZooKeeperRetriesInfo zookeeper_retries_info;
+    const UInt64 admission_epoch;
     size_t num_parts = 0;
     size_t num_broken_parts = 0;
     MutableDataPartsVector parts;
@@ -8934,8 +8938,14 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
 
     bool restore_broken_parts_as_detached = restorer.getRestoreSettings().restore_broken_parts_as_detached;
 
+    /// Under `leader_election` the whole restore — every part copy and the final publish — is
+    /// fenced to the leadership epoch that admitted the command: a lease lost during the restore
+    /// must fail closed even if this node reacquires leadership meanwhile, because the interim
+    /// leader may have written its own data the restored parts were never reconciled with.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
+
     auto restored_parts_holder = std::make_shared<RestoredPartsHolder>(
-        std::static_pointer_cast<MergeTreeData>(shared_from_this()), backup, restorer.getZooKeeperRetriesInfo());
+        std::static_pointer_cast<MergeTreeData>(shared_from_this()), backup, restorer.getZooKeeperRetriesInfo(), admission_epoch);
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
     size_t num_parts = 0;
@@ -8975,12 +8985,11 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
     /// The data restore tasks run asynchronously, long after `restoreDataFromBackup` admitted
     /// the command, and each of them copies a whole part into a `tmp_restore_*` directory under
     /// the table's data path. Under `leader_election` that path is shared with the other nodes,
-    /// so re-check leadership per part: a lease lost meanwhile must stop the copying instead of
-    /// writing the rest of the backup into a prefix another node now owns.
-    if (!mayMutateSharedStorage())
-        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
-            "Cannot restore part {} into shared storage: this node is not the leader anymore (leader_election)",
-            part_name);
+    /// so re-check the admission epoch per part: a lease lost meanwhile — even if reacquired —
+    /// must stop the copying instead of writing the rest of the backup into a prefix another
+    /// node may own now.
+    const UInt64 admission_epoch = restored_parts_holder->getAdmissionEpoch();
+    assertWritableLeaderAtEpoch(admission_epoch);
 
     /// Find all files of this part in the backup.
     Strings filenames = backup->listFiles(part_path_in_backup, /* recursive= */ true);
@@ -9028,6 +9037,12 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
             ProfileEvents::increment(ProfileEvents::RestorePartsSkippedBytes, backup->getFileSize(part_path_in_backup_fs / filename));
             continue;
         }
+
+        /// Bound the leak of a lease lost in the middle of the part to a single file: without a
+        /// per-file fence a lease gone stale after the first copied file would still let the rest
+        /// of the part stream into the shared prefix. The check is two atomic loads — noise next
+        /// to a file copy from the backup.
+        assertWritableLeaderAtEpoch(admission_epoch);
 
         size_t file_size = backup->copyFileToDisk(part_path_in_backup_fs / filename, disk, temp_part_dir / filename, WriteMode::Rewrite);
         reservation->update(reservation->getSize() - file_size);

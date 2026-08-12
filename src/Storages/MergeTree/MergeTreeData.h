@@ -2126,8 +2126,11 @@ protected:
     void restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> restored_parts_holder, const MergeTreePartInfo & part_info, const String & part_path_in_backup, bool detach_if_broken) const;
     MutableDataPartPtr loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const;
 
-    /// Attaches restored parts to the storage.
-    virtual void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) = 0;
+    /// Attaches restored parts to the storage. `admission_epoch` is the leadership epoch sampled
+    /// when the restore was admitted (see `currentLeadershipEpoch`); the publish must be fenced to
+    /// that same epoch so a lease lost and reacquired during the restore fails closed instead of
+    /// publishing under the new lease. Ignored by storages without `leader_election`.
+    virtual void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info, UInt64 admission_epoch) = 0;
 
     void resetSerializationHints(const DataPartsLock & lock);
 
