@@ -66,14 +66,9 @@ def get_zk_applied_zxid(cluster: ClickHouseCluster, zk_node):
     """
     # This fixture's Keepers listen on cluster.zookeeper_port, not on the
     # 9181 default of keeper_utils.
-    client = keeper_utils.get_keeper_socket(
-        cluster, zk_node, cluster.zookeeper_port, timeout_sec=10
+    data = keeper_utils.send_4lw_cmd(
+        cluster, zk_node, "srvr", cluster.zookeeper_port, timeout_sec=10
     )
-    try:
-        client.send(b"srvr")
-        data = client.recv(100_000).decode()
-    finally:
-        client.close()
 
     for line in data.splitlines():
         if line.startswith("Zxid:"):
@@ -112,22 +107,14 @@ def wait_zk_node_caught_up(cluster: ClickHouseCluster, zk_node, nodes, timeout=6
     """
     deadline = time.monotonic() + timeout
     applied = client_zxid = None
-    consecutive_ok = 0
     while time.monotonic() < deadline:
         applied = get_zk_applied_zxid(cluster, zk_node)
-        # Read the clients after zk_node: their watermarks advance
-        # asynchronously (every heartbeat response carries a zxid), so one
-        # sampled earlier could already be stale and zk_node would still
-        # refuse the new session.
+        # Read the clients after zk_node, so client_zxid is never older than
+        # applied. A Keeper's committed zxid only grows, so once this holds for
+        # such a pair it stays true for that pair.
         client_zxid = get_max_client_zxid(nodes)
         if applied is not None and client_zxid is not None and applied >= client_zxid:
-            # Require two consecutive samples: a single one can be a stale
-            # snapshot taken just before a watermark advanced again.
-            consecutive_ok += 1
-            if consecutive_ok >= 2:
-                return
-        else:
-            consecutive_ok = 0
+            return
         time.sleep(0.2)
 
     raise AssertionError(
