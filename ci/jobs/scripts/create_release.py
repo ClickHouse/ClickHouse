@@ -34,7 +34,6 @@ gpg --import key.pgp
 gpg --list-secret-keys
 """
 
-import argparse
 import atexit
 import dataclasses
 import json
@@ -59,10 +58,9 @@ from ci.praktika.gh import GH
 from ci.praktika.git import Git
 from ci.praktika.utils import Shell
 
-# S3Helper requires boto3 (installed on release machines); ssh has no external deps.
+# S3Helper requires boto3 (installed on release machines).
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../tests/ci"))
 from s3_helper import S3Helper  # noqa: E402
-from ssh import SSHAgent  # noqa: E402
 
 GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse")
 S3_BUILDS_BUCKET = os.getenv("S3_BUILDS_BUCKET", "clickhouse-builds")
@@ -140,7 +138,7 @@ def update_contributors(raise_error: bool = False) -> None:
         [c.split(maxsplit=1)[-1].translate(escaping) for c in shortlog.splitlines()]
     )
     contributors_lines = [f'    "{c}",' for c in contributors]
-    executer = Path(__file__).relative_to(Path.cwd())
+    executer = os.path.relpath(__file__, Path.cwd())
     content = CONTRIBUTORS_TEMPLATE.format(
         executer=executer, contributors="\n".join(contributors_lines)
     )
@@ -165,8 +163,9 @@ class ReleaseProgress:
 
 
 class ReleaseContextManager:
-    def __init__(self, release_progress):
+    def __init__(self, release_progress, commit_ref=None):
         self.release_progress = release_progress
+        self.commit_ref = commit_ref
         self.release_info = None
 
     def __enter__(self):
@@ -174,7 +173,7 @@ class ReleaseContextManager:
             self.release_info = ReleaseInfo(
                 release_branch="NA",
                 release_type="NA",
-                commit_sha=args.ref,
+                commit_sha=self.commit_ref,
                 release_tag="NA",
                 version="NA",
                 codename="NA",
@@ -1026,138 +1025,85 @@ def checkout_new(ref: str) -> Iterator[None]:
     Shell.check(rollback_cmd, verbose=True)
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="Creates release",
-    )
-    parser.add_argument(
-        "--prepare-release-info",
-        action="store_true",
-        help="Initial step to prepare info like release branch, release tag, etc.",
-    )
-    parser.add_argument(
-        "--push-release-tag",
-        action="store_true",
-        help="Creates and pushes git tag",
-    )
-    parser.add_argument(
-        "--push-new-release-branch",
-        action="store_true",
-        help="Creates and pushes new release branch and corresponding service gh tags for backports",
-    )
-    parser.add_argument(
-        "--create-bump-version-pr",
-        action="store_true",
-        help="Updates version, contributors list and creates PR",
-    )
-    parser.add_argument(
-        "--download-packages",
-        action="store_true",
-        help="Downloads all required packages from s3",
-    )
-    parser.add_argument(
-        "--create-gh-release",
-        action="store_true",
-        help="Create GH Release object and attach all packages",
-    )
-    parser.add_argument(
-        "--post-status",
-        action="store_true",
-        help="Post release status (prints summary; Slack integration removed)",
-    )
-    parser.add_argument(
-        "--ref",
-        type=str,
-        help="the commit hash or branch",
-    )
-    parser.add_argument(
-        "--release-type",
-        choices=("new", "patch"),
-        help="a release type to bump the major.minor.patch version part",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="do not make any actual changes in the repo, just show what will be done",
-    )
-    return parser.parse_args()
+# Release actions, called directly by the job orchestrators (release_job.py for
+# "patch", new_release_branch_job.py for "new"). Each opens its own
+# ReleaseContextManager (state is passed between them via RELEASE_INFO_FILE, not
+# in-memory), so the callers stay a flat list of named steps.
 
 
-if __name__ == "__main__":
-    args = parse_args()
+def prepare_release_info(ref: str, release_type: str, dry_run: bool) -> None:
+    with ReleaseContextManager(
+        release_progress=ReleaseProgress.STARTED, commit_ref=ref
+    ) as release_info:
+        assert (
+            ref and release_type
+        ), "ref and release_type must be provided to prepare_release_info"
+        release_info.prepare(
+            commit_ref=ref, release_type=release_type, dry_run=dry_run
+        )
 
-    _ssh_agent = None
-    _key_pub = None
-    if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
-        _key = os.getenv("ROBOT_CLICKHOUSE_SSH_KEY")
-        _ssh_agent = SSHAgent()
-        _key_pub = _ssh_agent.add(_key)
-        _ssh_agent.print_keys()
 
-    if args.prepare_release_info:
-        with ReleaseContextManager(release_progress=ReleaseProgress.STARTED) as release_info:
-            assert (
-                args.ref and args.release_type
-            ), "--ref and --release-type must be provided with --prepare-release-info"
-            release_info.prepare(
-                commit_ref=args.ref,
-                release_type=args.release_type,
-                dry_run=args.dry_run,
-            )
+def download_packages() -> None:
+    with ReleaseContextManager(
+        release_progress=ReleaseProgress.DOWNLOAD_PACKAGES
+    ) as release_info:
+        PackageDownloader(
+            release=release_info.release_branch,
+            commit_sha=release_info.commit_sha,
+            version=release_info.version,
+        ).run()
 
-    if args.download_packages:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.DOWNLOAD_PACKAGES
-        ) as release_info:
-            p = PackageDownloader(
-                release=release_info.release_branch,
-                commit_sha=release_info.commit_sha,
-                version=release_info.version,
-            )
-            p.run()
 
-    if args.push_release_tag:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.PUSH_RELEASE_TAG
-        ) as release_info:
-            release_info.push_release_tag(dry_run=args.dry_run)
+def push_release_tag(dry_run: bool) -> None:
+    with ReleaseContextManager(
+        release_progress=ReleaseProgress.PUSH_RELEASE_TAG
+    ) as release_info:
+        release_info.push_release_tag(dry_run=dry_run)
 
-    if args.push_new_release_branch:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.PUSH_NEW_RELEASE_BRANCH
-        ) as release_info:
-            release_info.push_new_release_branch(dry_run=args.dry_run)
 
-    if args.create_bump_version_pr:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.BUMP_VERSION
-        ) as release_info:
-            release_info.update_version_and_contributors_list(dry_run=args.dry_run)
+def push_new_release_branch(dry_run: bool) -> None:
+    with ReleaseContextManager(
+        release_progress=ReleaseProgress.PUSH_NEW_RELEASE_BRANCH
+    ) as release_info:
+        release_info.push_new_release_branch(dry_run=dry_run)
 
-    if args.create_gh_release:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.CREATE_GH_RELEASE
-        ) as release_info:
-            p = PackageDownloader(
-                release=release_info.release_branch,
-                commit_sha=release_info.commit_sha,
-                version=release_info.version,
-            )
-            release_info.create_gh_release(
-                packages_files=p.get_all_packages_files(), dry_run=args.dry_run
-            )
 
-    if args.post_status:
-        release_info = ReleaseInfo.from_file()
-        if release_info.is_new_release_branch():
-            title = "New release branch"
-        else:
-            title = "New release"
-        # Print the release-info summary for the job log / Slack context. Pass or
-        # fail is conveyed by the workflow job result, not re-derived here.
-        print(f"{title}: {release_info.release_tag}")
-        print(json.dumps(dataclasses.asdict(release_info), indent=2))
+def create_bump_version_pr(dry_run: bool) -> None:
+    with ReleaseContextManager(
+        release_progress=ReleaseProgress.BUMP_VERSION
+    ) as release_info:
+        release_info.update_version_and_contributors_list(dry_run=dry_run)
 
-    if _ssh_agent and _key_pub:
-        _ssh_agent.remove(_key_pub)
+
+def create_gh_release(dry_run: bool) -> None:
+    with ReleaseContextManager(
+        release_progress=ReleaseProgress.CREATE_GH_RELEASE
+    ) as release_info:
+        p = PackageDownloader(
+            release=release_info.release_branch,
+            commit_sha=release_info.commit_sha,
+            version=release_info.version,
+        )
+        release_info.create_gh_release(
+            packages_files=p.get_all_packages_files(), dry_run=dry_run
+        )
+
+
+def merge_prs(dry_run: bool) -> None:
+    with ReleaseContextManager(
+        release_progress=ReleaseProgress.MERGE_CREATED_PRS
+    ) as release_info:
+        release_info.update_release_info(dry_run=dry_run)
+        release_info.merge_prs(dry_run=dry_run)
+
+
+def post_status() -> None:
+    release_info = ReleaseInfo.from_file()
+    title = (
+        "New release branch"
+        if release_info.is_new_release_branch()
+        else "New release"
+    )
+    # Pass/fail is conveyed by the workflow job result, not re-derived here.
+    print(f"{title}: {release_info.release_tag}")
+    print(json.dumps(dataclasses.asdict(release_info), indent=2))

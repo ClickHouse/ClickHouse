@@ -139,6 +139,17 @@ def main():
     stopwatch = Utils.Stopwatch()
     args = parse_args()
 
+    # The "new" release has a disjoint, much shorter step sequence in its own file.
+    if args.release_type == "new":
+        from ci.jobs.new_release_branch_job import main as run_new_release_branch
+
+        run_new_release_branch()
+        return
+
+    # Imported here (not at module top) so create_release's boto3 dependency is
+    # only pulled on the release machine, not at praktika config time.
+    from ci.jobs.scripts import create_release
+
     # Drop any release-info file left by a previous release on a reused
     # self-hosted runner. "Prepare Release Info" writes a fresh STARTED stub as
     # soon as it runs, so from here on RELEASE_INFO_FILE exists only if that step
@@ -228,9 +239,9 @@ def main():
     # Authenticate to Docker Hub in the setup phase, before any release
     # mutation (tag push, GitHub release, repo export). Pushing docker images
     # is part of the release contract, so a missing/expired registry token must
-    # stop the run before partial publication. Gated on patch && !dry_run so it
+    # stop the run before partial publication. Gated on !dry_run so it
     # also covers only-repo / only-docker recovery runs.
-    if args.release_type == "patch" and not args.dry_run:
+    if not args.dry_run:
 
         def docker_login():
             Shell.check(
@@ -247,7 +258,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if args.release_type == "patch" and not args.only_docker:
+    if not args.only_docker:
         # Skipped on dry-run (local convenience).
         if not args.dry_run:
             step(
@@ -317,11 +328,8 @@ def main():
 
     step(
         name="Prepare Release Info",
-        command=[
-            f"python3 ./ci/jobs/scripts/create_release.py --prepare-release-info"
-            f" --ref {shlex.quote(args.ref)} --release-type {args.release_type}"
-            f" {dry_run_flag}".strip()
-        ],
+        command=create_release.prepare_release_info,
+        command_kwargs=dict(ref=args.ref, release_type="patch", dry_run=args.dry_run),
         workdir=REPO_PATH,
     )
 
@@ -354,9 +362,8 @@ def main():
 
         step(name="Validate Recovery Ref", command=_require_recovery_ref)
 
-    # The release opens exactly one PR against master - the changelog PR for a
-    # patch, the version-bump PR for a new release. Ensure it exists and is
-    # merged, idempotently: create it if absent, merge it if open, skip if it is
+    # The release opens exactly one PR against master - the changelog PR. Ensure
+    # it exists and is merged, idempotently: create it if absent, merge it if open, skip if it is
     # already merged. This converges a fresh release and a recovery / rerun after
     # a failed create-or-merge through the same path. These PR operations key off
     # the PR's actual state, not the run mode, so they run regardless of
@@ -374,11 +381,7 @@ def main():
         if ok:
             with open(RELEASE_INFO_FILE) as f:
                 _info = json.load(f)
-            release_pr_branch = (
-                f"auto/{_info['release_tag']}"
-                if args.release_type == "patch"
-                else f"bump_version_{_info['version']}"
-            )
+            release_pr_branch = f"auto/{_info['release_tag']}"
             release_pr_state = GH.get_pr_state_by_branch(
                 release_pr_branch, "ClickHouse/ClickHouse"
             )
@@ -394,56 +397,22 @@ def main():
     # Fail-fast: verify the release packages exist (this downloads them) before
     # pushing the tag or opening the changelog PR, so a missing-artifacts run
     # aborts without leaving a tag / PR behind.
-    if args.release_type == "patch" and not args.only_docker:
+    if not args.only_docker:
         step(
             name="Download All Release Artifacts",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --download-packages"
-                f" {dry_run_flag}".strip()
-            ],
+            command=create_release.download_packages,
             workdir=REPO_PATH,
         )
 
     if create_new_release:
         step(
             name="Push Git Tag for the Release",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --push-release-tag"
-                f" {dry_run_flag}".strip()
-            ],
+            command=create_release.push_release_tag,
+            command_kwargs=dict(dry_run=args.dry_run),
             workdir=REPO_PATH,
         )
 
-    if args.release_type == "new" and create_new_release:
-        step(
-            name="Push New Release Branch",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --push-new-release-branch"
-                f" {dry_run_flag}".strip()
-            ],
-            workdir=REPO_PATH,
-        )
-
-    # For a "new" release the version bump also opens the master bump PR that
-    # the merge_prs step merges below, so it must run here, before that merge. For a
-    # "patch" release the bump is only a direct push of the branch version file
-    # and nothing downstream depends on it; it is deferred to the very end of the
-    # run (after the merge_prs step) so that a rerun after any failure between the tag
-    # push and the end always sees an un-bumped branch. prepare then reads the
-    # branch tip as the just-released version, recovers the existing release, and
-    # never refuses a rerun as "out-of-order" or mints a release below the tip —
-    # all without scanning git tags. See the deferred step near the end of main.
-    if args.release_type == "new" and release_pr_absent:
-        step(
-            name="Bump CH Version and Update Contributors' List",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --create-bump-version-pr"
-                f" {dry_run_flag}".strip()
-            ],
-            workdir=REPO_PATH,
-        )
-
-    if ok and args.release_type == "patch" and release_pr_absent:
+    if ok and release_pr_absent:
         with open(RELEASE_INFO_FILE) as f:
             release_tag = json.load(f)["release_tag"]
         uid = os.getuid()
@@ -479,7 +448,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if ok and args.release_type == "patch" and not args.dry_run and release_pr_absent:
+    if ok and not args.dry_run and release_pr_absent:
         with open(RELEASE_INFO_FILE) as f:
             release_tag = json.load(f)["release_tag"]
 
@@ -624,11 +593,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if (
-        args.release_type == "patch"
-        and not args.only_repo
-        and not args.only_docker
-    ):
+    if not args.only_repo and not args.only_docker:
         # Restore the working tree after the changelog/version-bump steps, which
         # dirty it. A no-op on recovery / out-of-order runs (they skip the
         # changelog steps); the always-run "Checkout Back" below is the safety net
@@ -644,14 +609,12 @@ def main():
 
         step(
             name="Create GH Release",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --create-gh-release"
-                f" {dry_run_flag}".strip()
-            ],
+            command=create_release.create_gh_release,
+            command_kwargs=dict(dry_run=args.dry_run),
             workdir=REPO_PATH,
         )
 
-    if args.release_type == "patch" and not args.only_docker:
+    if not args.only_docker:
         for name, flag in (
             ("Export TGZ Packages", "--export-tgz"),
             ("Test TGZ Packages", "--test-tgz"),
@@ -669,7 +632,7 @@ def main():
                 workdir=REPO_PATH,
             )
 
-    if ok and args.release_type == "patch" and not args.dry_run:
+    if ok and not args.dry_run:
         with open(RELEASE_INFO_FILE) as f:
             release_info = json.load(f)
         release_tag = release_info["release_tag"]
@@ -859,20 +822,13 @@ def main():
     # un-bumped branch and prepare recovers the existing release instead of
     # refusing it or minting a below-tip release. `step` skips it when a prior
     # step already failed, so a failed publish leaves the branch un-bumped and
-    # recoverable. ("new" bumps earlier, above, because the merge step below
-    # merges the master bump PR it opens.)
+    # recoverable.
     # Gated on `is_branch_release` so an un-bumped recovery still completes the bump.
-    if (
-        is_branch_release
-        and args.release_type == "patch"
-        and not (args.only_repo or args.only_docker)
-    ):
+    if is_branch_release and not (args.only_repo or args.only_docker):
         step(
             name="Bump CH Version and Update Contributors' List",
-            command=[
-                f"python3 ./ci/jobs/scripts/create_release.py --create-bump-version-pr"
-                f" {dry_run_flag}".strip()
-            ],
+            command=create_release.create_bump_version_pr,
+            command_kwargs=dict(dry_run=args.dry_run),
             workdir=REPO_PATH,
         )
 
@@ -883,24 +839,11 @@ def main():
     # failed prior run); skipped only when it is already merged (the "merged ->
     # continue" branch). merge_prs looks the PR up by branch and enqueues it
     # (best-effort); a no-op if the lookup finds nothing.
-    def merge_created_prs():
-        # Imported lazily so the module-level boto3 dependency of create_release
-        # is only needed on the release machine, not at praktika config time.
-        from ci.jobs.scripts.create_release import (
-            ReleaseContextManager,
-            ReleaseProgress,
-        )
-
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.MERGE_CREATED_PRS
-        ) as release_info:
-            release_info.update_release_info(dry_run=args.dry_run)
-            release_info.merge_prs(dry_run=args.dry_run)
-
     if release_pr_needs_merge:
         step(
             name="Update Release Info and Merge Created PRs",
-            command=merge_created_prs,
+            command=create_release.merge_prs,
+            command_kwargs=dict(dry_run=args.dry_run),
             workdir=REPO_PATH,
         )
 
@@ -914,10 +857,7 @@ def main():
         results.append(
             Result.from_commands_run(
                 name="Post Slack Message",
-                command=[
-                    f"python3 ./ci/jobs/scripts/create_release.py --post-status"
-                    f" {dry_run_flag}".strip()
-                ],
+                command=create_release.post_status,
                 workdir=REPO_PATH,
             )
         )
