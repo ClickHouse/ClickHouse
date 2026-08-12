@@ -1,3 +1,0 @@
-<clickhouse>
-		<async_insert_parse_threads>5</async_insert_parse_threads>
-</clickhouse>
