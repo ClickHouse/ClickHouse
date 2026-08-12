@@ -8,4 +8,7 @@ lazy_proxy_insert_completed	1
 undecided_counted	1
 undecided_executed_nonzero	1
 undecided_not_skipped	1
+queue_source_clone_skipped	1
+queue_source_safe_target_not_skipped	1
+queue_source_safe_target_executed	1
 alive

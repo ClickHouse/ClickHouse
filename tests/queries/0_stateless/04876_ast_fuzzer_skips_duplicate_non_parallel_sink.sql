@@ -1,10 +1,19 @@
--- Tags: no-ordinary-database, no-parallel, log-engine, no-replicated-database
+-- Tags: no-ordinary-database, no-parallel, log-engine, no-replicated-database, no-fasttest
+-- no-fasttest: the queue-source section below needs the Kafka engine, which the fast-test build
+-- does not have.
 -- no-parallel: reads the server-global ProfileEvents counters
--- ASTFuzzerSkippedSharedNonParallelTarget, ASTFuzzerSkipCheckFailed and ASTFuzzerQueries, so no
--- other test may run fuzzed queries against the same server while this one measures the deltas.
+-- ASTFuzzerSkippedSharedNonParallelTarget, ASTFuzzerSharedNonParallelTargetCheckUndecided and
+-- ASTFuzzerQueries, so no other test may run fuzzed queries against the same server while this one
+-- measures the deltas.
 -- The counters are bumped in the query-finish callback, after the query's own ProfileEvents
 -- snapshot is taken, so system.query_log carries none of them and per-query_id attribution
 -- (the 04339 pattern, which does not need the tag) is not available here.
+-- The tag is what makes the deltas attributable, and it is load-bearing rather than cosmetic: it
+-- serializes only within one clickhouse-test process, while the stress runner drives several against
+-- one server. Measured under a concurrent fuzzing process, every claim that a delta was exactly zero
+-- failed 15 of 15 runs, so those are bounded by this section's own executed delta instead and then
+-- held 30 of 30. The undecided-versus-executed comparison remains same-window by nature: a foreign
+-- decided query inflates only the executed side, so it too relies on the tag.
 -- log-engine: the whole oracle rests on the target NOT supporting parallel insert, which
 -- --replace-log-memory-with-mergetree rewrites away (it also rewrites the Memory fixture).
 -- no-replicated-database: for the lazy_load_tables section below, plus a DETACH TABLE inside the
@@ -37,7 +46,7 @@ CREATE TABLE fuzz_log (k Int) ENGINE = TinyLog;
 INSERT INTO fuzz_events
 SELECT 'before',
        toInt64(sumIf(value, event = 'ASTFuzzerSkippedSharedNonParallelTarget')),
-       toInt64(sumIf(value, event = 'ASTFuzzerSkipCheckFailed')),
+       toInt64(sumIf(value, event = 'ASTFuzzerSharedNonParallelTargetCheckUndecided')),
        toInt64(sumIf(value, event = 'ASTFuzzerQueries'))
 FROM system.events;
 
@@ -53,7 +62,7 @@ SETTINGS ast_fuzzer_runs = 30, ast_fuzzer_any_query = 1;
 INSERT INTO fuzz_events
 SELECT 'after_hazard',
        toInt64(sumIf(value, event = 'ASTFuzzerSkippedSharedNonParallelTarget')),
-       toInt64(sumIf(value, event = 'ASTFuzzerSkipCheckFailed')),
+       toInt64(sumIf(value, event = 'ASTFuzzerSharedNonParallelTargetCheckUndecided')),
        toInt64(sumIf(value, event = 'ASTFuzzerQueries'))
 FROM system.events;
 
@@ -77,13 +86,19 @@ SETTINGS ast_fuzzer_runs = 30, ast_fuzzer_any_query = 1;
 INSERT INTO fuzz_events
 SELECT 'after_safe',
        toInt64(sumIf(value, event = 'ASTFuzzerSkippedSharedNonParallelTarget')),
-       toInt64(sumIf(value, event = 'ASTFuzzerSkipCheckFailed')),
+       toInt64(sumIf(value, event = 'ASTFuzzerSharedNonParallelTargetCheckUndecided')),
        toInt64(sumIf(value, event = 'ASTFuzzerQueries'))
 FROM system.events;
 
+-- Bounded rather than pinned to zero: `no-parallel` only serializes within one clickhouse-test
+-- process, while the stress runner drives several against one server, and a foreign fuzzed query can
+-- only inflate these server-global counters. A skip delta below the executed delta still shows this
+-- section's own queries were executed rather than withdrawn, which is the claim.
 SELECT 'safe_target_not_skipped',
       (SELECT skipped FROM fuzz_events WHERE label = 'after_safe')
-    - (SELECT skipped FROM fuzz_events WHERE label = 'after_hazard') = 0;
+    - (SELECT skipped FROM fuzz_events WHERE label = 'after_hazard')
+    < (SELECT executed FROM fuzz_events WHERE label = 'after_safe')
+    - (SELECT executed FROM fuzz_events WHERE label = 'after_hazard');
 
 SELECT 'safe_target_executed',
       (SELECT executed FROM fuzz_events WHERE label = 'after_safe')
@@ -110,7 +125,7 @@ WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'tgt';
 INSERT INTO fuzz_events
 SELECT 'before_lazy',
        toInt64(sumIf(value, event = 'ASTFuzzerSkippedSharedNonParallelTarget')),
-       toInt64(sumIf(value, event = 'ASTFuzzerSkipCheckFailed')),
+       toInt64(sumIf(value, event = 'ASTFuzzerSharedNonParallelTargetCheckUndecided')),
        toInt64(sumIf(value, event = 'ASTFuzzerQueries'))
 FROM system.events;
 
@@ -122,7 +137,7 @@ SETTINGS ast_fuzzer_runs = 30, ast_fuzzer_any_query = 1;
 INSERT INTO fuzz_events
 SELECT 'after_lazy',
        toInt64(sumIf(value, event = 'ASTFuzzerSkippedSharedNonParallelTarget')),
-       toInt64(sumIf(value, event = 'ASTFuzzerSkipCheckFailed')),
+       toInt64(sumIf(value, event = 'ASTFuzzerSharedNonParallelTargetCheckUndecided')),
        toInt64(sumIf(value, event = 'ASTFuzzerQueries'))
 FROM system.events;
 
@@ -151,7 +166,7 @@ DETACH TABLE und_gone;
 INSERT INTO fuzz_events
 SELECT 'before_undecided',
        toInt64(sumIf(value, event = 'ASTFuzzerSkippedSharedNonParallelTarget')),
-       toInt64(sumIf(value, event = 'ASTFuzzerSkipCheckFailed')),
+       toInt64(sumIf(value, event = 'ASTFuzzerSharedNonParallelTargetCheckUndecided')),
        toInt64(sumIf(value, event = 'ASTFuzzerQueries'))
 FROM system.events;
 
@@ -161,14 +176,16 @@ SETTINGS ast_fuzzer_runs = 30, ast_fuzzer_any_query = 1;
 INSERT INTO fuzz_events
 SELECT 'after_undecided',
        toInt64(sumIf(value, event = 'ASTFuzzerSkippedSharedNonParallelTarget')),
-       toInt64(sumIf(value, event = 'ASTFuzzerSkipCheckFailed')),
+       toInt64(sumIf(value, event = 'ASTFuzzerSharedNonParallelTargetCheckUndecided')),
        toInt64(sumIf(value, event = 'ASTFuzzerQueries'))
 FROM system.events;
 
 -- Every fuzzed CREATE here hits the unresolvable branch, so each executed query must contribute an
--- undecided verdict. Compared against the executed count rather than against zero: this same
--- counter also fires when the dependency extractor throws on a shape the fuzzer injected, which
--- happens on a few runs regardless, so a `> 0` assertion would hold even with the exits uncounted.
+-- undecided verdict. Compared against the executed count rather than against zero: this same counter
+-- also fires when the dependency extractor throws on a shape the fuzzer injected, which happens on a
+-- few runs regardless, so a `> 0` assertion would hold even with the exits uncounted. Not a fixed
+-- floor either: the fuzz loop stops early on some runs (both deltas measured 30 on 18 of 20 runs and
+-- 14 on the other two), and it is their equality that is the claim.
 SELECT 'undecided_counted',
       (SELECT undecided FROM fuzz_events WHERE label = 'after_undecided')
     - (SELECT undecided FROM fuzz_events WHERE label = 'before_undecided')
@@ -181,9 +198,12 @@ SELECT 'undecided_executed_nonzero',
       (SELECT executed FROM fuzz_events WHERE label = 'after_undecided')
     - (SELECT executed FROM fuzz_events WHERE label = 'before_undecided') > 0;
 
+-- Bounded, not pinned to zero, for the same reason as safe_target_not_skipped above.
 SELECT 'undecided_not_skipped',
       (SELECT skipped FROM fuzz_events WHERE label = 'after_undecided')
-    - (SELECT skipped FROM fuzz_events WHERE label = 'before_undecided') = 0;
+    - (SELECT skipped FROM fuzz_events WHERE label = 'before_undecided')
+    < (SELECT executed FROM fuzz_events WHERE label = 'after_undecided')
+    - (SELECT executed FROM fuzz_events WHERE label = 'before_undecided');
 
 ATTACH TABLE und_gone;
 DROP TABLE und_mv;
@@ -191,6 +211,72 @@ DROP TABLE und_mv_gone;
 DROP TABLE und_gone;
 DROP TABLE und_mt;
 DROP TABLE und_src;
+
+-- A queue engine sets `noPushingToViewsOnInserts`, so a direct INSERT into it pushes to no view -
+-- but its background consumer inserts with `no_destination`, which does build a sink for every
+-- dependent view. The dependent views of such a source are therefore walked like any other: a
+-- clone sharing the TinyLog target has to be skipped. Kafka is used because it is the queue
+-- carrier constructible without a live broker; the same override is on Kafka2, FileLog, NATS and
+-- RabbitMQ. The skip is decided at CREATE time, so no broker is needed here.
+DROP TABLE IF EXISTS q_src;
+DROP TABLE IF EXISTS q_log;
+DROP TABLE IF EXISTS q_mt;
+
+CREATE TABLE q_log (k Int) ENGINE = TinyLog;
+CREATE TABLE q_src (k Int) ENGINE = Kafka
+    SETTINGS kafka_broker_list = 'localhost:9092', kafka_topic_list = '04876_q',
+             kafka_group_name = '04876_q', kafka_format = 'CSV';
+
+INSERT INTO fuzz_events
+SELECT 'before_queue',
+       toInt64(sumIf(value, event = 'ASTFuzzerSkippedSharedNonParallelTarget')),
+       toInt64(sumIf(value, event = 'ASTFuzzerSharedNonParallelTargetCheckUndecided')),
+       toInt64(sumIf(value, event = 'ASTFuzzerQueries'))
+FROM system.events;
+
+CREATE MATERIALIZED VIEW q_mv TO q_log AS SELECT k FROM q_src
+SETTINGS ast_fuzzer_runs = 30, ast_fuzzer_any_query = 1;
+
+INSERT INTO fuzz_events
+SELECT 'after_queue',
+       toInt64(sumIf(value, event = 'ASTFuzzerSkippedSharedNonParallelTarget')),
+       toInt64(sumIf(value, event = 'ASTFuzzerSharedNonParallelTargetCheckUndecided')),
+       toInt64(sumIf(value, event = 'ASTFuzzerQueries'))
+FROM system.events;
+
+SELECT 'queue_source_clone_skipped',
+      (SELECT skipped FROM fuzz_events WHERE label = 'after_queue')
+    - (SELECT skipped FROM fuzz_events WHERE label = 'before_queue') > 0;
+
+-- Control: the same queue source over a parallel-capable target must keep being fuzzed, so a
+-- positive above is not every queue-sourced view being reported hazardous.
+CREATE TABLE q_mt (k Int) ENGINE = MergeTree ORDER BY k;
+CREATE MATERIALIZED VIEW q_mv_mt TO q_mt AS SELECT k FROM q_src
+SETTINGS ast_fuzzer_runs = 30, ast_fuzzer_any_query = 1;
+
+INSERT INTO fuzz_events
+SELECT 'after_queue_safe',
+       toInt64(sumIf(value, event = 'ASTFuzzerSkippedSharedNonParallelTarget')),
+       toInt64(sumIf(value, event = 'ASTFuzzerSharedNonParallelTargetCheckUndecided')),
+       toInt64(sumIf(value, event = 'ASTFuzzerQueries'))
+FROM system.events;
+
+SELECT 'queue_source_safe_target_not_skipped',
+      (SELECT skipped FROM fuzz_events WHERE label = 'after_queue_safe')
+    - (SELECT skipped FROM fuzz_events WHERE label = 'after_queue')
+    < (SELECT executed FROM fuzz_events WHERE label = 'after_queue_safe')
+    - (SELECT executed FROM fuzz_events WHERE label = 'after_queue');
+
+SELECT 'queue_source_safe_target_executed',
+      (SELECT executed FROM fuzz_events WHERE label = 'after_queue_safe')
+    - (SELECT executed FROM fuzz_events WHERE label = 'after_queue') > 0;
+
+DROP TABLE q_mv_mt;
+DROP TABLE q_mv;
+DROP TABLE q_mt;
+DROP TABLE q_src;
+DROP TABLE q_log;
+
 DROP TABLE fuzz_events;
 
 SELECT 'alive';

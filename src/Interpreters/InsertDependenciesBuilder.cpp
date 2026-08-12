@@ -780,6 +780,10 @@ private:
 /// below are willing to follow. A longer chain (or a cycle of aliases) fails closed.
 static constexpr size_t max_insert_forwarding_depth = 16;
 
+/// Maximum number of nodes `insertWouldDuplicateNonParallelSink` visits before failing closed. Its walk
+/// counts each path separately, so a graph whose branches reconverge costs more than its node count.
+static constexpr size_t max_duplicate_sink_walk_visits = 10000;
+
 bool InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(const StoragePtr & storage, size_t depth)
 {
     if (depth > max_insert_forwarding_depth)
@@ -947,13 +951,23 @@ InsertDependenciesBuilder::DuplicateNonParallelSinkVerdict InsertDependenciesBui
     bool undecided = false;
 
     StorageIDSet active;
+    /// Admits each edge once, within the current path or within the whole walk per `count_per_path`.
     /// Keyed on the edge, not on the node: whether a view is pushed to depends on which parent it was
-    /// reached from, so memoizing a view by name alone would carry the verdict for a stale edge over to
-    /// the live one.
-    std::unordered_set<String> walked_edges;
+    /// reached from, so memoizing a view by name alone would carry a stale edge's verdict to the live one.
+    std::unordered_set<String> path_edges;
     /// Length-prefixed, because a database or table name may itself contain any separator.
     auto edge_key = [](const StorageIDMaybeEmpty & node)
     { return fmt::format("{}:{}:{}:{}:", node.database_name.size(), node.database_name, node.table_name.size(), node.table_name); };
+
+    size_t visits = 0;
+
+    /// A proven duplicate ends the walk: no further count can change that answer.
+    bool proven = false;
+
+    /// Whether an edge is admitted once per path rather than once per walk. Counting per path is what
+    /// proves a duplicate below a convergence, and it costs a path enumeration, so only the walk that
+    /// decides pays for it.
+    bool count_per_path = false;
 
     /// `parent` is empty at the root of a branch, where there is no edge to validate. `resolved` carries
     /// a storage to walk as handed over rather than looked up: a proxy renames the storage it wraps to
@@ -971,6 +985,9 @@ InsertDependenciesBuilder::DuplicateNonParallelSinkVerdict InsertDependenciesBui
     using SinkCounts = std::
         unordered_map<StorageIDMaybeEmpty, size_t, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
 
+    /// The sinks the source reaches without the new view, once the first walk has collected them.
+    const SinkCounts * baseline = nullptr;
+
     /// Counts in `sinks` the storages that accept a single `write()` per `INSERT` and for which a write
     /// into `node.id` builds a sink, over the edges `collectAllDependencies` follows.
     std::function<void(const Node &, SinkCounts &)> collect = [&](const Node & node, SinkCounts & sinks)
@@ -978,7 +995,10 @@ InsertDependenciesBuilder::DuplicateNonParallelSinkVerdict InsertDependenciesBui
         /// A view chain is bounded only by the catalog.
         checkStackSize();
 
-        if (node.depth > max_insert_forwarding_depth)
+        if (proven)
+            return;
+
+        if (node.depth > max_insert_forwarding_depth || ++visits > max_duplicate_sink_walk_visits)
         {
             undecided = true;
             return;
@@ -986,6 +1006,7 @@ InsertDependenciesBuilder::DuplicateNonParallelSinkVerdict InsertDependenciesBui
 
         StoragePtr storage = node.resolved;
         bool holds_active_entry = false;
+        String walked_edge;
         if (!storage)
         {
             if (active.contains(node.id))
@@ -993,7 +1014,8 @@ InsertDependenciesBuilder::DuplicateNonParallelSinkVerdict InsertDependenciesBui
                 undecided = true;
                 return;
             }
-            if (!walked_edges.insert(edge_key(node.id) + edge_key(node.parent)).second)
+            walked_edge = edge_key(node.id) + edge_key(node.parent);
+            if (!path_edges.insert(walked_edge).second)
                 return;
             storage = catalog.tryGetTable(node.id, context);
             if (!storage)
@@ -1007,6 +1029,8 @@ InsertDependenciesBuilder::DuplicateNonParallelSinkVerdict InsertDependenciesBui
         SCOPE_EXIT({
             if (holds_active_entry)
                 active.erase(node.id);
+            if (count_per_path && !walked_edge.empty())
+                path_edges.erase(walked_edge);
         });
 
         if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(storage.get()))
@@ -1061,22 +1085,30 @@ InsertDependenciesBuilder::DuplicateNonParallelSinkVerdict InsertDependenciesBui
             return;
         }
 
-        if (!storage->supportsParallelInsert())
-            ++sinks[storage->getStorageID()];
+        if (storage->supportsParallelInsert())
+            return;
+
+        /// Every count is reached over a live edge admitted once per path, so a second count is a second
+        /// path and therefore a second sink: positive proof even when another branch stayed unresolved.
+        /// A sink the source already reaches proves the same. Both only once `baseline` holds the set the
+        /// source reaches without this view, since a duplicate already in that set is not its doing.
+        auto sink_id = storage->getStorageID();
+        size_t reached = ++sinks[sink_id];
+        if (baseline && (reached >= 2 || baseline->contains(sink_id)))
+            proven = true;
     };
 
     SinkCounts reachable_now;
     collect({source, {}}, reachable_now);
 
-    walked_edges.clear();
+    baseline = &reachable_now;
+    count_per_path = true;
+    path_edges.clear();
     SinkCounts reachable_from_new_view;
     collect({new_view_target, {}}, reachable_from_new_view);
 
-    /// Every count was reached over live edges and `walked_edges` admits each edge once, so two counts
-    /// are two distinct sinks: positive proof even when some other branch stayed unresolved.
-    for (const auto & [sink_id, count] : reachable_from_new_view)
-        if (count >= 2 || reachable_now.contains(sink_id))
-            return DuplicateNonParallelSinkVerdict::Hazardous;
+    if (proven)
+        return DuplicateNonParallelSinkVerdict::Hazardous;
 
     return undecided ? DuplicateNonParallelSinkVerdict::Undecided : DuplicateNonParallelSinkVerdict::NotHazardous;
 }

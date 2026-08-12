@@ -131,7 +131,7 @@ namespace ProfileEvents
     extern const Event ASTFuzzerSkippedBackupRestore;
     extern const Event ASTFuzzerSkippedReplicatedDDLInternal;
     extern const Event ASTFuzzerSkippedSharedNonParallelTarget;
-    extern const Event ASTFuzzerSkipCheckFailed;
+    extern const Event ASTFuzzerSharedNonParallelTargetCheckUndecided;
     extern const Event QueryParseMicroseconds;
 }
 
@@ -2299,7 +2299,7 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             }
 
             if (verdict == Verdict::Undecided)
-                ProfileEvents::increment(ProfileEvents::ASTFuzzerSkipCheckFailed);
+                ProfileEvents::increment(ProfileEvents::ASTFuzzerSharedNonParallelTargetCheckUndecided);
 
             if (verdict == Verdict::Hazardous)
             {
