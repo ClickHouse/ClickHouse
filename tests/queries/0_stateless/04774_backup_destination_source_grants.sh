@@ -124,6 +124,22 @@ ${CLICKHOUSE_CLIENT} -q "GRANT READ ON FILE TO $user"
 deny_or_allow "BACKUP TABLE $src.t TO File('${CLICKHOUSE_TEST_UNIQUE_NAME}/b_inc_ok') SETTINGS base_backup=$bk FORMAT Null"
 ${CLICKHOUSE_CLIENT} -q "REVOKE READ, WRITE ON FILE FROM $user"
 
+echo "-- the source grant a BACKUP consumed is accounted to the BACKUP query"
+# `BackupStarter` runs the check on a copy of the query context, whose `QueryPrivilegesInfo` is
+# reset by `makeQueryContext`, so the grant reaches system.query_log only while that tracker is
+# shared with the originating query.
+audit_qid="04774_audit_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} -q "GRANT WRITE ON FILE TO $user"
+${CLICKHOUSE_CLIENT} --user "$user" --query_id "$audit_qid" -q \
+    "BACKUP TABLE $src.t TO File('${CLICKHOUSE_TEST_UNIQUE_NAME}/b_audit') FORMAT Null"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+${CLICKHOUSE_CLIENT} -q "
+SELECT has(used_privileges, 'WRITE ON FILE')
+FROM system.query_log
+WHERE query_id = '$audit_qid' AND type = 'QueryFinish' AND current_database = currentDatabase()
+ORDER BY event_time_microseconds DESC LIMIT 1"
+${CLICKHOUSE_CLIENT} -q "REVOKE WRITE ON FILE FROM $user"
+
 echo "-- an admin holding SOURCES is unaffected"
 ${CLICKHOUSE_CLIENT} -q "BACKUP TABLE $src.t TO File('${CLICKHOUSE_TEST_UNIQUE_NAME}/b_adm') FORMAT Null"
 ${CLICKHOUSE_CLIENT} -q "RESTORE TABLE $src.t AS $db.r_adm FROM $bk FORMAT Null"

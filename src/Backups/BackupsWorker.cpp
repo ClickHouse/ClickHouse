@@ -426,6 +426,12 @@ struct BackupsWorker::BackupStarter
         backup_settings = BackupSettings::fromBackupQuery(*backup_query);
         backup_context->makeQueryContext();
 
+        /// `makeQueryContext` above resets `backup_context` to a fresh, empty `QueryPrivilegesInfo`. Sharing
+        /// the originating one accounts privileges checked on copies of `backup_context` to the BACKUP query,
+        /// so they reach the `used_privileges`/`missing_privileges` columns of `system.query_log`.
+        /// `QueryPrivilegesInfo` has its own mutex and is not a field a concurrent originating thread mutates.
+        backup_context->setQueryPrivilegesInfo(query_context->getQueryPrivilegesInfoPtr());
+
         backup_info = BackupInfo::fromAST(*backup_query->backup_name);
         backup_name_for_logging = backup_info.toStringForLogging();
         is_internal_backup = backup_settings.internal;

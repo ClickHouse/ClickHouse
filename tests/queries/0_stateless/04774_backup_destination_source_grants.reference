@@ -34,5 +34,7 @@ Code: 82
 1
 -- with READ ON FILE as well: allowed
 allowed
+-- the source grant a BACKUP consumed is accounted to the BACKUP query
+1
 -- an admin holding SOURCES is unaffected
 42
