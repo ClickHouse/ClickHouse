@@ -27,7 +27,7 @@ class IObjectStorage;
 struct PuffinFilesCacheKey
 {
     /// Distinguishes object-storage backends that share the same relative path (and possibly etag).
-    /// Built via `makeStorageIdentity` from storage type + namespace + common key prefix.
+    /// Built via `makeStorageIdentity` from storage type + description (endpoint) + namespace + prefix.
     String storage_identity;
     String file_path;
     String etag;
@@ -76,7 +76,8 @@ public:
 
     PuffinFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio);
 
-    /// Stable backend identity for cache keys: `getName()://getObjectsNamespace()/getCommonKeyPrefix()`.
+    /// Stable backend identity for cache keys:
+    /// `getName()://getDescription()/getObjectsNamespace()/getCommonKeyPrefix()`.
     static String makeStorageIdentity(const IObjectStorage & object_storage);
 
     static std::optional<PuffinFilesCacheKey> tryCreateKey(

@@ -30,7 +30,7 @@ TEST(PuffinFilesCacheClone, CacheHitReturnsIndependentCopy)
     PuffinFilesCache cache("SLRU", 1'000'000, 100, 0.5);
 
     const auto key = PuffinFilesCache::tryCreateKey(
-        "Local:///test-prefix", "puffin.bin", "etag-1", 100, 200, "data/file-a.parquet", 3, 100);
+        "Local:////test-prefix", "puffin.bin", "etag-1", 100, 200, "data/file-a.parquet", 3, 100);
     ASSERT_TRUE(key.has_value());
 
     size_t load_calls = 0;
@@ -65,7 +65,7 @@ TEST(PuffinFilesCacheClone, EmptyExcludedRowsReturnsNullptr)
     PuffinFilesCache cache("SLRU", 1'000'000, 100, 0.5);
 
     const auto key = PuffinFilesCache::tryCreateKey(
-        "Local:///test-prefix", "puffin.bin", "etag-1", 100, 200, "data/file-a.parquet", 3, 100);
+        "Local:////test-prefix", "puffin.bin", "etag-1", 100, 200, "data/file-a.parquet", 3, 100);
     ASSERT_TRUE(key.has_value());
 
     const auto files_before = CurrentMetrics::get(CurrentMetrics::PuffinFilesCacheFiles);

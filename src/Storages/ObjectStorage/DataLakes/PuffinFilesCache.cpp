@@ -92,7 +92,10 @@ PuffinFilesCache::PuffinFilesCache(
 
 String PuffinFilesCache::makeStorageIdentity(const IObjectStorage & object_storage)
 {
-    return object_storage.getName() + "://" + object_storage.getObjectsNamespace() + "/" + object_storage.getCommonKeyPrefix();
+    /// Include getDescription() (S3 endpoint, Azure account URL, Local path, ...) so two
+    /// backends with the same bucket/prefix on different hosts do not share cache entries.
+    return object_storage.getName() + "://" + object_storage.getDescription() + "/"
+        + object_storage.getObjectsNamespace() + "/" + object_storage.getCommonKeyPrefix();
 }
 
 std::optional<PuffinFilesCacheKey> PuffinFilesCache::tryCreateKey(
