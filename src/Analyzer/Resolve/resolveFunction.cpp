@@ -2040,13 +2040,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (first_argument_constant_node && second_argument_constant_node)
         {
             const auto & first_argument_constant_type = first_argument_constant_node->getResultType();
-            const auto second_argument_constant_literal = second_argument_constant_node->getValue();
+            const auto & second_argument_constant_column = second_argument_constant_node->getColumn();
             const auto & second_argument_constant_type = second_argument_constant_node->getResultType();
 
             const auto & settings = scope.context->getSettingsRef();
 
             auto result_block = getSetElementsForConstantValue(
-                first_argument_constant_type, second_argument_constant_literal, second_argument_constant_type,
+                first_argument_constant_type, second_argument_constant_column, second_argument_constant_type,
                 GetSetElementParams{
                     .transform_null_in = settings[Setting::transform_null_in],
                     .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
