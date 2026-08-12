@@ -17,7 +17,7 @@ Constant expression value: true
 2	10
 2	20
 -- outer join child under ANY INNER ON 1
-2	2	7
+1
 -- comma join child under ANY INNER ON 1
 2	7	1
 -- ANY INNER ON 1 child under comma join
