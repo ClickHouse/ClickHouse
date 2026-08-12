@@ -32,8 +32,14 @@ String ASTDropQuery::getID(char delim) const
 ASTPtr ASTDropQuery::clone() const
 {
     auto res = make_intrusive<ASTDropQuery>(*this);
-    cloneOutputOptions(*res);
+    res->children.clear();
     cloneTableOptions(*res);
+    if (database_and_tables)
+    {
+        res->database_and_tables = database_and_tables->clone();
+        res->children.push_back(res->database_and_tables);
+    }
+    cloneOutputOptions(*res);
     return res;
 }
 
