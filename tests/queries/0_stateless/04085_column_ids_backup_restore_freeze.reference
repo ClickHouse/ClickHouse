@@ -11,6 +11,5 @@ throws_on_non_empty
 throws_on_legacy_into_active
 throws_on_foreign_column_id
 10	y	99
-inactive_mapping_not_backed_up
 throws_on_above_counter_id
 10	own

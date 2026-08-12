@@ -184,7 +184,7 @@ WHERE database = currentDatabase() AND table = 't_ren_mut' AND active AND column
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_ren_mut SYNC"
 
-# Section 7: INSERT/RENAME race (CB1) -- sink stamps from captured snapshot, not live mapping.
+# Section 7: INSERT/RENAME race -- the sink stamps from its captured snapshot, not the live mapping.
 # An ALTER RENAME landing between the INSERT sink's snapshot capture and the temp-part write
 # must not make the writer stamp a stale name against the moved live mapping; the inserted rows
 # must stay readable under the new name instead of silently reading as defaults.
@@ -239,11 +239,16 @@ $CLICKHOUSE_CLIENT --query "
 "
 $CLICKHOUSE_CLIENT --query "SELECT a, b FROM t_activate_fail ORDER BY a"
 
-# The discriminator: a leftover `column_ids.json` makes this ATTACH fail (the load path refuses a
-# mapping the settings do not ask for), so a clean reattach proves the file went away.
+# The discriminator: the file is what makes a table use column IDs, so a leftover one activates this
+# table on its next load -- and its parts still use logical filenames. A RENAME that still goes
+# through a mutation is what says the file left with the failed ALTER.
 $CLICKHOUSE_CLIENT --query "DETACH TABLE t_activate_fail SYNC"
 $CLICKHOUSE_CLIENT --query "ATTACH TABLE t_activate_fail"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM t_activate_fail"
+$CLICKHOUSE_CLIENT --query "ALTER TABLE t_activate_fail RENAME COLUMN b TO d SETTINGS mutations_sync = 2"
+$CLICKHOUSE_CLIENT --query "SELECT 'renamed_by_mutation', count() >= 1 FROM system.mutations
+    WHERE database = currentDatabase() AND table = 't_activate_fail'"
+$CLICKHOUSE_CLIENT --query "SELECT a, d FROM t_activate_fail ORDER BY a"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_activate_fail SYNC"
 

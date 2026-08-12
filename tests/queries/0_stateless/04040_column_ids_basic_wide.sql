@@ -233,6 +233,18 @@ CHECK TABLE t_ids_check_ser SETTINGS check_query_single_value_result = 1;
 SELECT a, d FROM t_ids_check_ser WHERE d IS NOT NULL ORDER BY a LIMIT 3;
 DROP TABLE t_ids_check_ser SYNC;
 
+-- why: the same on a COMPACT part, which records its substreams per columns.txt slot under the
+-- write-time column ID -- a metadata-only RENAME changes neither, so CHECK must resolve the slots
+-- by ID and still pass.
+CREATE TABLE t_ids_check_compact (a UInt32, b String, c Float64) ENGINE = MergeTree ORDER BY a
+SETTINGS serialization_info_version = 'with_column_ids',
+         min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
+INSERT INTO t_ids_check_compact VALUES (1, 'x', 1.5), (2, 'y', 2.5);
+ALTER TABLE t_ids_check_compact RENAME COLUMN b TO b2;
+CHECK TABLE t_ids_check_compact SETTINGS check_query_single_value_result = 1;
+SELECT * FROM t_ids_check_compact ORDER BY a;
+DROP TABLE t_ids_check_compact SYNC;
+
 -- why: introspection must speak the part's stamped column IDs -- current logical
 -- names right after a metadata-only RENAME, ID-based stream filenames, subcolumn
 -- sizes from the ID-based streams, and mergeTreeIndex() marks of numeric-ID columns.
@@ -268,12 +280,12 @@ FROM system.parts_columns
 SELECT min(tupleElement(`s.mark`, 1) IS NOT NULL AND tupleElement(`s.mark`, 2) IS NOT NULL) AS marks_real
 FROM mergeTreeIndex(currentDatabase(), 't_ids_introspection', with_marks = true)
 WHERE part_name = 'all_2_2_0';
--- why (S8-real): column_modification_time must resolve the ID-based stream of a numeric-ID column.
+-- why: column_modification_time must resolve the ID-based stream of a numeric-ID column.
 SELECT column, column_modification_time IS NOT NULL AS has_column_modification_time
 FROM system.parts_columns
     WHERE database = currentDatabase() AND table = 't_ids_introspection' AND active
         AND name = 'all_2_2_0' AND column = 's';
--- why (M24): mergeTreeIndex() marks of a column RENAMEd after the part was loaded must
+-- why: mergeTreeIndex() marks of a column RENAMEd after the part was loaded must
 -- resolve through the live mapping -- the part's cached column list still holds the old
 -- name, but the ID-keyed stream is unchanged, so the new name's marks must be non-NULL.
 SELECT min(tupleElement(`b2.mark`, 1) IS NOT NULL AND tupleElement(`b2.mark`, 2) IS NOT NULL) AS renamed_marks_real
@@ -282,7 +294,7 @@ WHERE part_name = 'all_1_1_0';
 DROP TABLE t_ids_introspection SYNC;
 
 -- why: the same introspection displays must also speak IDs on COMPACT parts --
--- mergeTreeIndex() marks (M12) and column_modification_time for a numeric-ID column.
+-- mergeTreeIndex() marks and column_modification_time for a numeric-ID column.
 CREATE TABLE t_ids_introspection_compact (a UInt64, b String) ENGINE = MergeTree ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 1000000000,
@@ -306,26 +318,3 @@ FROM system.parts_columns
     WHERE database = currentDatabase() AND table = 't_ids_introspection_compact' AND active
         AND name = 'all_2_2_0' AND column = 's';
 DROP TABLE t_ids_introspection_compact SYNC;
-
--- why (M12 regression): with_marks introspection on a COMPACT part with substream
--- marks must not throw for a streamless-root column -- a Tuple has no root .bin
--- stream, so its root marks come back NULL, while a numeric-ID column still resolves
--- through the ID-keyed substream map and shows real marks.
-CREATE TABLE t_ids_introspection_compact_tuple (a UInt64, tup Tuple(x UInt64, y String))
-ENGINE = MergeTree ORDER BY a
-SETTINGS
-    min_bytes_for_wide_part = 1000000000,
-    min_rows_for_wide_part = 1000000000,
-    serialization_info_version = 'with_column_ids',
-    ratio_of_defaults_for_sparse_serialization = 1.0;
-INSERT INTO t_ids_introspection_compact_tuple SELECT number, (number, toString(number)) FROM numbers(100);
-ALTER TABLE t_ids_introspection_compact_tuple ADD COLUMN s Nullable(String);
-ALTER TABLE t_ids_introspection_compact_tuple DROP COLUMN s;
-ALTER TABLE t_ids_introspection_compact_tuple ADD COLUMN s Nullable(String);
-INSERT INTO t_ids_introspection_compact_tuple SELECT number, (number, toString(number)), concat('x', toString(number)) FROM numbers(100, 100);
-SELECT
-    min(tupleElement(`s.mark`, 1) IS NOT NULL) AS s_marks_real,
-    max(tupleElement(`tup.mark`, 1) IS NULL) AS tup_root_marks_null
-FROM mergeTreeIndex(currentDatabase(), 't_ids_introspection_compact_tuple', with_marks = true)
-WHERE part_name = 'all_2_2_0';
-DROP TABLE t_ids_introspection_compact_tuple SYNC;

@@ -1,5 +1,9 @@
 distinct part disks: 2
+live mapping copies: 1
 freeze mapping copies: 2
+live mapping copies after rename: 1
+1	x
+2	y
 rejected: mapping off the authoritative disk
 loaded after refusal: 0
 copy not adopted

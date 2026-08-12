@@ -3,7 +3,9 @@
 # why: the two places a multi-disk layout changes column-ID handling.
 #   1. FREEZE: a shadow is an immutable, portable, PER-DISK artifact; offline tools
 #      read one disk's subtree at a time, so `column_ids.json` must land in the
-#      shadow of EACH disk holding frozen parts, not just one.
+#      shadow of EACH disk holding frozen parts, not just one. The live table is the
+#      opposite: one copy, on the policy's first disk, before and after an ALTER
+#      rewrites it.
 #   2. ATTACH: `column_ids.json` is read from the policy's first disk and nowhere else,
 #      so a copy on another disk must not rescue the table -- nothing at load time can
 #      prove it current, and a stale one resurrects DROP+re-ADD bytes under a reused name.
@@ -20,6 +22,15 @@ server_path=$($CLIENT --query "SELECT value FROM system.server_settings WHERE na
 server_path="${server_path%/}"
 
 resolve() { case "$1" in /*) echo "$1" ;; *) echo "${server_path}/$1" ;; esac; }
+
+# How many of the table's disks hold a `column_ids.json`.
+count_copies() {
+    local n=0
+    while read -r p; do
+        [ -n "$p" ] && [ -f "$(resolve "$p")column_ids.json" ] && n=$((n + 1))
+    done < <($CLIENT --query "SELECT arrayJoin(data_paths) FROM system.tables WHERE database = currentDatabase() AND name = '$1'")
+    echo "$n"
+}
 
 # Both sections need a multi-disk table with column IDs active and wide parts.
 create_table() {
@@ -48,12 +59,22 @@ $CLIENT --query "ALTER TABLE t_freeze_disks MOVE PART 'all_1_1_0' TO DISK 'disk1
 $CLIENT --query "ALTER TABLE t_freeze_disks MOVE PART 'all_2_2_0' TO DISK 'disk2_02961'"
 echo "distinct part disks: $($CLIENT --query "SELECT countDistinct(disk_name) FROM system.parts WHERE database = currentDatabase() AND table = 't_freeze_disks' AND active")"
 
+echo "live mapping copies: $(count_copies t_freeze_disks)"
+
 $CLIENT --query "ALTER TABLE t_freeze_disks FREEZE WITH NAME '${backup_name}'"
 
 n_maps=$(find "${server_path}" -path "*/shadow/${backup_name}/*" -name column_ids.json 2>/dev/null | wc -l | tr -d ' ')
 echo "freeze mapping copies: ${n_maps}"
 
 $CLIENT --query "ALTER TABLE t_freeze_disks UNFREEZE WITH NAME '${backup_name}'" > /dev/null
+
+# A RENAME rewrites the mapping: still one copy, and the reloaded table reads through it.
+$CLIENT --query "ALTER TABLE t_freeze_disks RENAME COLUMN b TO b2"
+echo "live mapping copies after rename: $(count_copies t_freeze_disks)"
+$CLIENT --query "DETACH TABLE t_freeze_disks SYNC"
+$CLIENT --query "ATTACH TABLE t_freeze_disks"
+$CLIENT --query "SELECT a, b2 FROM t_freeze_disks ORDER BY a"
+
 $CLIENT --query "DROP TABLE t_freeze_disks SYNC"
 
 # 2. ATTACH refuses to adopt a copy that is not on the authoritative disk. Destructive

@@ -159,28 +159,7 @@ $CLIENT --query "SELECT a, b, c FROM t_attach_dst ORDER BY a"
 $CLIENT --query "DROP TABLE t_attach_src SYNC"
 $CLIENT --query "DROP TABLE t_attach_dst SYNC"
 
-# Scenario 5: an inactive leftover mapping must not travel with BACKUP, or RESTORE
-# adopts it over an empty destination's own mapping and scenario 3's guard never fires.
-backup4="${CLICKHOUSE_TEST_UNIQUE_NAME}_b4"
-$CLIENT --query "DROP TABLE IF EXISTS t_inactive SYNC"
-$CLIENT --query "
-CREATE TABLE t_inactive (a UInt32, b String)
-ENGINE = MergeTree ORDER BY a
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
-"
-echo "INSERT INTO t_inactive VALUES (1, 'x')" | $CLIENT
-table_dir=$($CLIENT --query "SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND name = 't_inactive'")
-$CLIENT --query "DETACH TABLE t_inactive SYNC"
-printf '%s' '{"active": false, "next_column_id": 1, "mapping": {}}' > "${table_dir}column_ids.json"
-$CLIENT --query "ATTACH TABLE t_inactive"
-
-$CLIENT --query "BACKUP TABLE t_inactive TO Disk('backups', '${backup4}')" > /dev/null
-[ "$(find "${backups_root}${backup4}" -name 'column_ids.json' -type f | wc -l)" = "0" ] \
-    && echo "inactive_mapping_not_backed_up" || echo "inactive_mapping_leaked"
-
-$CLIENT --query "DROP TABLE t_inactive SYNC"
-
-# Scenario 6: a part copied in from another table carries a column ID above this table's counter,
+# Scenario 5: a part copied in from another table carries a column ID above this table's counter,
 # and one that is a live logical name here -- loading it must throw, not alias that column.
 $CLIENT --query "DROP TABLE IF EXISTS t_ahead_src SYNC"
 $CLIENT --query "DROP TABLE IF EXISTS t_ahead_dst SYNC"
