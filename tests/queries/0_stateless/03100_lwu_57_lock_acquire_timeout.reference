@@ -17,6 +17,6 @@ plain auto cancelled-in-wait 1
 plain auto single-chunk cancelled-in-wait 1
 plain auto zero-timeout uncontended succeeded
 churn succeeded tries_bounded 1
-cas reached true backed_off true
+cas retried_once 1
 cancel interrupted 1 promptly 1
 watch spanned true registered_once true

@@ -2,8 +2,8 @@
 # Tags: long, no-replicated-database, no-parallel
 # long: the lock holds put this at about a minute.
 # no-replicated-database - path in zookeeper differs with replicated database
-# no-parallel: the `infinite_sleep` failpoint is server-global, so a concurrent test would park
-#   every one of its own `sleep()` calls at it or disable it while a holder here is parked.
+# no-parallel: the `infinite_sleep` and `patch_parts_lock_pause_before_cas` failpoints are
+#   server-global, so a concurrent test would park at them or clear them while this one waits.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,6 +18,7 @@ run_id="lwu57-$CLICKHOUSE_DATABASE-$RANDOM$RANDOM"
 function cleanup()
 {
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT infinite_sleep" 2>/dev/null || true
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT patch_parts_lock_pause_before_cas" 2>/dev/null || true
     wait || true
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_lwu_timeout_sync SYNC; DROP TABLE IF EXISTS t_lwu_timeout_auto SYNC; DROP TABLE IF EXISTS t_lwu_cas SYNC; DROP TABLE IF EXISTS t_lwu_cancel SYNC; DROP TABLE IF EXISTS t_lwu_plain_sync SYNC; DROP TABLE IF EXISTS t_lwu_plain_auto SYNC" 2>/dev/null || true
 }
@@ -513,71 +514,65 @@ function run_cancel()
 }
 
 # Losing the parent-version CAS means some unrelated update committed, so there is no node to watch
-# and the retry backs off a fixed amount instead of spinning on Keeper. The writers below touch
-# pairwise-disjoint columns, so none of them ever finds a column conflict: every one goes straight to
-# the CAS, and whoever overlaps another's read-then-CAS window loses it.
+# and the retry backs off a fixed amount instead of spinning on Keeper. The victim is parked between
+# reading that version and using it, and a second update commits while it is parked, so the victim
+# loses the compare-and-swap because the test put a commit in that window rather than because two
+# concurrent writers happened to overlap in it.
 function run_cas_contention()
 {
     table_name="t_lwu_cas"
-    local writers=6
-
-    local cols="" vals=""
-    for k in $(seq 0 $((writers - 1)))
-    do
-        cols="$cols, c$k UInt64"
-        vals="$vals, 0"
-    done
+    tag="$run_id-cas"
 
     $CLICKHOUSE_CLIENT --query "
         SET insert_keeper_fault_injection_probability = 0.0;
         DROP TABLE IF EXISTS $table_name SYNC;
 
-        CREATE TABLE $table_name (id UInt64 $cols)
+        CREATE TABLE $table_name (id UInt64, a UInt64, b UInt64)
         ENGINE = ReplicatedMergeTree('/zookeeper/{database}/$table_name/', '1')
         ORDER BY id
         SETTINGS
             enable_block_number_column = 1,
             enable_block_offset_column = 1;
 
-        INSERT INTO $table_name SELECT number $vals FROM numbers(5);
+        INSERT INTO $table_name SELECT number, 0, 0 FROM numbers(5);
     "
 
-    tag="$run_id-cas"
-    for k in $(seq 0 $((writers - 1)))
-    do
-        (
-            end=$((SECONDS + 4))
-            while [[ $SECONDS -lt $end ]]
-            do
-                $CLICKHOUSE_CLIENT --query "
-                    SET enable_lightweight_update = 1;
-                    UPDATE $table_name SET c$k = c$k + 1 WHERE id = 1
-                    SETTINGS update_parallel_mode = 'auto', lock_acquire_timeout = 60, log_comment = '$tag';
-                " 2>/dev/null || true
-            done
-        ) &
-    done
-    wait
+    $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT patch_parts_lock_pause_before_cas"
 
-    # Every retry sleeps 50 ms inside the lock acquisition, which is what
-    # PatchesAcquireLockMicroseconds measures, so acquiring must have taken at least that long. An
-    # inequality implied by the sleep itself, not a tuned threshold. The first condition also guards
-    # against a vacuous pass: without any retry the second one holds trivially.
+    $CLICKHOUSE_CLIENT --query_id "$tag" --query "
+        SET enable_lightweight_update = 1;
+        UPDATE $table_name SET a = a + 1 WHERE id = 1
+        SETTINGS update_parallel_mode = 'auto', lock_acquire_timeout = 60, log_comment = '$tag';
+    " &
+    local victim_pid=$!
+
+    # The wait itself is untimed, so it is bounded here: if nothing ever parks, this reports which
+    # step failed instead of hanging until the whole test is killed.
+    if ! timeout 60 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT patch_parts_lock_pause_before_cas PAUSE"
+    then
+        echo "Failed to park an update before the lightweight update lock compare-and-swap" >&2
+        exit 2
+    fi
+
+    # `b` is neither read nor written by the victim, so this conflicts with nothing and only bumps
+    # the version of the directory the victim is about to write. The failpoint is one-shot, so this
+    # update runs straight through.
     $CLICKHOUSE_CLIENT --query "
-        SYSTEM FLUSH LOGS query_log;
-        SELECT
-            'cas reached ' || if(countIf(retries > 0) > 0, 'true', 'false')
-                || ' backed_off ' || if(minIf(acquire_us - retries * 50000, retries > 0) >= 0, 'true', 'false')
-        FROM
-        (
-            SELECT
-                toInt64(ProfileEvents['PatchesAcquireLockBadVersionRetries']) AS retries,
-                toInt64(ProfileEvents['PatchesAcquireLockMicroseconds']) AS acquire_us
-            FROM system.query_log
-            WHERE current_database = currentDatabase() AND log_comment = '$tag' AND type = 'QueryFinish'
-        );
+        SET enable_lightweight_update = 1;
+        UPDATE $table_name SET b = b + 1 WHERE id = 1 SETTINGS update_parallel_mode = 'auto';
     "
 
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT patch_parts_lock_pause_before_cas"
+    wait "$victim_pid"
+
+    # Exactly one commit landed in the window, so the victim loses the compare-and-swap once and
+    # succeeds on its next attempt. Both counts are chosen by the construction rather than by how
+    # fast the runner is. PatchesAcquireLockMicroseconds encloses the parked time, so it cannot say
+    # anything about the backoff here and is not asserted.
+    read -r _ tries retries _ <<< "$(query_stats "$tag")"
+    echo "cas retried_once $(( retries == 1 && tries == 2 ))"
+
+    wait
     $CLICKHOUSE_CLIENT --query "DROP TABLE $table_name SYNC"
 }
 

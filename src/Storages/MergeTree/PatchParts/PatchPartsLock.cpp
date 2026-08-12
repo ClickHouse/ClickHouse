@@ -15,6 +15,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/FailPoint.h>
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Interpreters/ProcessList.h>
@@ -31,6 +32,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char patch_parts_lock_pause_before_cas[];
+}
 
 namespace Setting
 {
@@ -211,6 +217,10 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
         Coordination::Requests ops;
         ops.push_back(zkutil::makeCreateRequest(in_progress_path / "update-", affected_columns_str, zkutil::CreateMode::EphemeralSequential));
         ops.push_back(zkutil::makeSetRequest(in_progress_path, "", parent_stat.version));
+
+        /// `parent_stat.version` was read above, so anything committing here makes the request below
+        /// fail with ZBADVERSION.
+        FailPointInjection::pauseFailPoint(FailPoints::patch_parts_lock_pause_before_cas);
 
         Coordination::Responses responses;
         auto code = zookeeper->tryMulti(ops, responses);
