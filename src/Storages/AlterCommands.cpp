@@ -2293,20 +2293,24 @@ std::vector<String> getDependentViewsForDroppedColumn(
     const String & dropped_name,
     bool share_nested_offsets)
 {
+    /// A view can depend on a subcolumn (`a.x` of a Tuple column `a`), so every dependency is matched
+    /// by the column that stores it. A dropped name that is not a column of the table denotes a whole
+    /// Nested group, and the views that depend on any of its columns block the drop as well.
+    const bool drops_group = share_nested_offsets && !columns.has(dropped_name);
+
     std::vector<String> views;
-    if (auto it = dependent_views_by_column.find(dropped_name); it != dependent_views_by_column.end())
-        views = it->second;
-
-    if (share_nested_offsets && !columns.has(dropped_name))
+    for (const auto & [column, column_views] : dependent_views_by_column)
     {
-        for (const auto & [column, column_views] : dependent_views_by_column)
-            if (startsWith(column, dropped_name + "."))
-                views.insert(views.end(), column_views.begin(), column_views.end());
+        String name_in_storage = column;
+        if (auto resolved = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column))
+            name_in_storage = resolved->getNameInStorage();
 
-        std::sort(views.begin(), views.end());
-        views.erase(std::unique(views.begin(), views.end()), views.end());
+        if (name_in_storage == dropped_name || (drops_group && startsWith(name_in_storage, dropped_name + ".")))
+            views.insert(views.end(), column_views.begin(), column_views.end());
     }
 
+    std::sort(views.begin(), views.end());
+    views.erase(std::unique(views.begin(), views.end()), views.end());
     return views;
 }
 

@@ -52,6 +52,14 @@ DROP TABLE test_mv;
 ALTER TABLE test DROP COLUMN n;
 DROP TABLE test;
 
+-- A materialized view reading a subcolumn blocks the drop of the column that stores it
+CREATE TABLE test (a Tuple(x UInt64, y UInt64), z UInt64) ENGINE = MergeTree ORDER BY z;
+CREATE MATERIALIZED VIEW test_mv ENGINE = Null AS SELECT a.x FROM test;
+ALTER TABLE test DROP COLUMN a; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE test_mv;
+ALTER TABLE test DROP COLUMN a;
+DROP TABLE test;
+
 -- The same protection for engines with their own check: a Merge table over the same columns
 CREATE TABLE test (`n.a` UInt64, `n.b` UInt64, x UInt64) ENGINE = MergeTree ORDER BY x;
 CREATE TABLE test_merge ENGINE = Merge(currentDatabase(), '^test$');
