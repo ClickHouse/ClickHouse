@@ -17,6 +17,8 @@
 #include <base/scope_guard.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 
+#include <unordered_map>
+
 namespace DB
 {
 
@@ -506,12 +508,37 @@ std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromF
     /// dependency and must not pin its inputs to the main branch - otherwise a schema with unused
     /// `DEFAULT` / `ALIAS` columns would lose the I/O savings for no reason.
     const auto & column_defaults = info.columns_description.getDefaults();
+
+    /// The names in `source_header` / `requested_columns` are query-level and can be subcolumns
+    /// (`j.user.name`), while `column_defaults` and the identifiers inside default expressions are
+    /// storage-level (`j`, `a`). The dependency analysis therefore runs on storage-level names:
+    /// a subcolumn seeds and pins through its storage parent, and a pinned parent keeps all of its
+    /// subcolumns on the main branch (the format reads a subcolumn as its whole parent column, so
+    /// `AddingDefaultsTransform` evaluates the parent's expression in every branch that reads any
+    /// subcolumn of it).
+    std::unordered_map<String, String> storage_name_of;
+    for (const auto & column : info.requested_columns)
+        storage_name_of[column.name] = column.getNameInStorage();
+    auto to_storage_name = [&](const String & name)
+    {
+        auto it = storage_name_of.find(name);
+        return it == storage_name_of.end() ? name : it->second;
+    };
+    /// `columns_to_keep` accumulates both query-level names and storage-level names (the latter
+    /// from the default analysis), so a column is pinned to the main branch when either itself or
+    /// its storage parent is.
+    auto is_kept = [&](const String & name)
+    {
+        return columns_to_keep.contains(name) || columns_to_keep.contains(to_storage_name(name));
+    };
+
     NameSet names_in_default_expressions;
     std::vector<String> names_to_visit;
     auto seed_defaulted_column = [&](const String & name)
     {
-        if (column_defaults.contains(name) && names_in_default_expressions.insert(name).second)
-            names_to_visit.push_back(name);
+        const String storage_name = to_storage_name(name);
+        if (column_defaults.contains(storage_name) && names_in_default_expressions.insert(storage_name).second)
+            names_to_visit.push_back(storage_name);
     };
     auto default_expression_inputs = [&](const String & name)
     {
@@ -555,14 +582,19 @@ std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromF
         pinned_more = false;
         for (const auto & column : info.source_header)
         {
-            if (columns_to_keep.contains(column.name) || !column_defaults.contains(column.name))
+            const String storage_name = to_storage_name(column.name);
+            if (is_kept(column.name) || !column_defaults.contains(storage_name))
                 continue;
 
-            for (const auto & input : default_expression_inputs(column.name))
+            for (const auto & input : default_expression_inputs(storage_name))
             {
+                /// The lazy branch sees the real value of the input only when the input is a whole
+                /// requested column (a subcolumn is read as its parent, which the expression does
+                /// not reference) that is deferred as well.
                 const bool input_is_deferred_too = source_header_names.contains(input)
                     && requested_from_format.contains(input)
-                    && !columns_to_keep.contains(input);
+                    && to_storage_name(input) == input
+                    && !is_kept(input);
                 if (!input_is_deferred_too)
                 {
                     seed_defaulted_column(column.name);
@@ -578,7 +610,7 @@ std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromF
     Block lazy_source_header;
     for (const auto & column : info.source_header)
     {
-        if (!columns_to_keep.contains(column.name) && requested_from_format.contains(column.name))
+        if (!is_kept(column.name) && requested_from_format.contains(column.name))
         {
             lazy_names.insert(column.name);
             lazy_source_header.insert(column);
