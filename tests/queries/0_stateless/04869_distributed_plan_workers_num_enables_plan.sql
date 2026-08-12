@@ -32,10 +32,11 @@ WHERE explain LIKE '%ReadFromDistributedPlanSource%' LIMIT 1;
 
 DROP TABLE t_dp_workers;
 
-SELECT 'an explicit value wins over the implication';
-SET make_distributed_plan = 0;
+SELECT 'off again when the workers num goes back to zero';
+SET distributed_plan_workers_num = 0;
 SELECT getSetting('make_distributed_plan');
 
-SELECT 'and keeps winning when the workers num changes again';
+SELECT 'an explicit value wins over the implication';
+SET make_distributed_plan = 0;
 SET distributed_plan_workers_num = 5;
 SELECT getSetting('make_distributed_plan');

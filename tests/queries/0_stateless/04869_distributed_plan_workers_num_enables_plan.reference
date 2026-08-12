@@ -8,7 +8,7 @@ implied by a session workers num
 true
 the query distributes with make_distributed_plan left alone
 distributes
-an explicit value wins over the implication
+off again when the workers num goes back to zero
 false
-and keeps winning when the workers num changes again
+an explicit value wins over the implication
 false

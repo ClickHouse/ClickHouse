@@ -102,9 +102,9 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
 void adjustSettingsForMakeDistributedPlan(Settings & settings)
 {
     /// Stateless Workers only run the stages of a distributed plan, so asking for Workers implies
-    /// asking for the plan. An explicit value still wins, so a fragment can turn the plan back off.
-    if (settings[Setting::distributed_plan_workers_num] != 0 && !settings.isChanged("make_distributed_plan"))
-        settings[Setting::make_distributed_plan] = true;
+    /// asking for the plan. Deriving instead of assigning keeps a later zero count from pinning it on.
+    if (!settings[Setting::make_distributed_plan].changed)
+        settings[Setting::make_distributed_plan].value = settings[Setting::distributed_plan_workers_num] != 0;
 
     if (!settings[Setting::make_distributed_plan])
         return;
