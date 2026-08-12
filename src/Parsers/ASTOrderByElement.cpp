@@ -31,7 +31,8 @@ void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_ali
 {
     /// `nulls_direction` already holds the effective direction, so
     /// `nulls_direction_was_explicitly_specified` is only about formatting and is left unhashed.
-    static_assert(sizeof(*this) == 88, "If members were added to ASTOrderByElement, hash them here unless they are purely cosmetic.");
+    /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 88, "If members were added to ASTOrderByElement, hash them here unless they are purely cosmetic.");
 
     /// The children carry different roles (collation, `WITH FILL` bounds) recorded only in
     /// `positions`. Without hashing the roles, `WITH FILL FROM 1 TO 2` and `WITH FILL FROM 1 STEP 2`

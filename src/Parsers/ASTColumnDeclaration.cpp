@@ -120,7 +120,8 @@ void ASTColumnDeclaration::updateTreeHashImpl(SipHash & hash_state, bool ignore_
     /// `name` is part of `getID`, which the default implementation hashes. The rest of the
     /// non-child members carry meaning and must be hashed here: `x UInt8 DEFAULT 1` and
     /// `x UInt8 MATERIALIZED 1` differ only in `default_specifier`.
-    static_assert(sizeof(*this) == 64, "If members were added to ASTColumnDeclaration, hash them here unless they are purely cosmetic.");
+    /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 64, "If members were added to ASTColumnDeclaration, hash them here unless they are purely cosmetic.");
     hash_state.update(default_specifier);
     hash_state.update(null_modifier.has_value());
     if (null_modifier.has_value())

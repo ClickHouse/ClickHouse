@@ -76,7 +76,8 @@ public:
 void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     /// None of the members below is a child, so the default implementation does not see them.
-    static_assert(sizeof(*this) == 112, "If members were added to ASTSetQuery, hash them here unless they are purely cosmetic.");
+    /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 112, "If members were added to ASTSetQuery, hash them here unless they are purely cosmetic.");
 
     /// Not cosmetic: `formatImpl` prints the `SET` keyword only for a standalone query.
     hash_state.update(is_standalone);
