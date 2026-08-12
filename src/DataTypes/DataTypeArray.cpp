@@ -84,6 +84,14 @@ void DataTypeArray::forEachChild(const ChildCallback & callback) const
     nested->forEachChild(callback);
 }
 
+DataTypePtr DataTypeArray::doTransformChildren(const ChildTransform & transform) const
+{
+    auto new_nested = transform(nested)->transformChildren(transform);
+    if (new_nested.get() == nested.get())
+        return shared_from_this();
+    return std::make_shared<DataTypeArray>(new_nested);
+}
+
 std::unique_ptr<ISerialization::SubstreamData> DataTypeArray::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
 {
     auto nested_type = assert_cast<const DataTypeArray &>(*data.type).nested;

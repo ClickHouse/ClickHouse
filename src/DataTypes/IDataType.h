@@ -122,6 +122,12 @@ public:
     using ChildCallback = std::function<void(const IDataType &)>;
     virtual void forEachChild(const ChildCallback &) const {}
 
+    /// Mutable counterpart of forEachChild: returns a copy with transform applied to every descendant
+    /// (recursively), rebuilding containers and preserving custom name and configuration; returns
+    /// *this unchanged when nothing changed. Like forEachChild, transform is NOT applied to this node
+    /// itself - apply it to the root yourself. A container is covered once it overrides doTransformChildren.
+    DataTypePtr transformChildren(const ChildTransform & transform) const;
+
     Names getSubcolumnNames() const;
 
     virtual MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const;
@@ -359,6 +365,10 @@ public:
     DataTypeCustomDescPtr cloneCustomization() const;
 
 protected:
+    /// Recursive rebuild for transformChildren, which carries customization over separately. Overrides
+    /// mirror forEachChild: apply transform to each child and recurse into it. Default is a leaf.
+    virtual DataTypePtr doTransformChildren(const ChildTransform &) const { return shared_from_this(); }
+
     static std::unique_ptr<SubstreamData> getSubcolumnData(
         std::string_view subcolumn_name,
         const SubstreamData & data,

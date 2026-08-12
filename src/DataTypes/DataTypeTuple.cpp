@@ -448,6 +448,26 @@ void DataTypeTuple::forEachChild(const ChildCallback & callback) const
     }
 }
 
+DataTypePtr DataTypeTuple::doTransformChildren(const ChildTransform & transform) const
+{
+    DataTypes new_elems;
+    new_elems.reserve(elems.size());
+    bool changed = false;
+    for (const auto & elem : elems)
+    {
+        auto new_elem = transform(elem)->transformChildren(transform);
+        changed |= new_elem.get() != elem.get();
+        new_elems.push_back(std::move(new_elem));
+    }
+
+    if (!changed)
+        return shared_from_this();
+
+    return has_explicit_names
+        ? std::make_shared<DataTypeTuple>(new_elems, names)
+        : std::make_shared<DataTypeTuple>(new_elems);
+}
+
 void DataTypeTuple::updateHashImpl(SipHash & hash) const
 {
     hash.update(elems.size());

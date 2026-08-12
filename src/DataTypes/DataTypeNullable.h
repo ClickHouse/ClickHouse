@@ -54,6 +54,7 @@ public:
     const DataTypePtr & getNestedType() const { return nested_data_type; }
 
     void forEachChild(const ChildCallback & callback) const override;
+    DataTypePtr doTransformChildren(const ChildTransform & transform) const override;
 
 private:
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;

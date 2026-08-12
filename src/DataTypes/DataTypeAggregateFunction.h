@@ -88,8 +88,10 @@ public:
 /// Each versioned leaf is replaced by - never mutated into - a copy carrying the version, so that
 /// concurrent serializations of a shared type object do not race on it. A single data type object
 /// is shared between concurrent queries: it lives in the table's column description and is aliased
-/// by the headers of their result blocks. `type` is reassigned only if some leaf actually changes,
-/// and the rebuild preserves custom type names such as `Nested` and `SimpleAggregateFunction`.
+/// by the headers of their result blocks. `type` is reassigned only if some leaf actually changes.
+///
+/// The traversal is generic: it recurses through `IDataType::transformChildren`, so every container
+/// type is covered and custom type names such as `Nested` and `SimpleAggregateFunction` are preserved.
 ///
 /// `if_empty` keeps an already-explicit version; `revision` picks the version from the
 /// server/client revision (nullopt forces version 0).

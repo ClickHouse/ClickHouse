@@ -63,6 +63,7 @@ public:
     static bool isValidKeyType(DataTypePtr key_type);
 
     void forEachChild(const ChildCallback & callback) const override;
+    DataTypePtr doTransformChildren(const ChildTransform & transform) const override;
 
     bool hasDynamicSubcolumnsData() const override { return true; }
     bool hasDynamicStructure() const override { return key_type->hasDynamicStructure() || value_type->hasDynamicStructure(); }

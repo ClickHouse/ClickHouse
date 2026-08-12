@@ -229,6 +229,26 @@ void DataTypeVariant::forEachChild(const DB::IDataType::ChildCallback & callback
     }
 }
 
+DataTypePtr DataTypeVariant::doTransformChildren(const ChildTransform & transform) const
+{
+    DataTypes new_variants;
+    new_variants.reserve(variants.size());
+    bool changed = false;
+    for (const auto & variant : variants)
+    {
+        auto new_variant = transform(variant)->transformChildren(transform);
+        changed |= new_variant.get() != variant.get();
+        new_variants.push_back(std::move(new_variant));
+    }
+
+    if (!changed)
+        return shared_from_this();
+
+    /// Keep the existing discriminator order: the transform only assigns versions and never merges
+    /// two distinct variants into the same type, so the fixed-order constructor is safe here.
+    return std::make_shared<DataTypeVariant>(new_variants, FixedDiscriminatorOrder{});
+}
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.empty())

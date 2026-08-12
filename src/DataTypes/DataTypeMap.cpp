@@ -180,6 +180,15 @@ void DataTypeMap::forEachChild(const DB::IDataType::ChildCallback & callback) co
     value_type->forEachChild(callback);
 }
 
+DataTypePtr DataTypeMap::doTransformChildren(const ChildTransform & transform) const
+{
+    auto new_key_type = transform(key_type)->transformChildren(transform);
+    auto new_value_type = transform(value_type)->transformChildren(transform);
+    if (new_key_type.get() == key_type.get() && new_value_type.get() == value_type.get())
+        return shared_from_this();
+    return std::make_shared<DataTypeMap>(new_key_type, new_value_type);
+}
+
 /// Resolves a dynamic subcolumn like `map['key']` by parsing the key from the subcolumn name,
 /// creating a `SerializationMapKeyValue` that knows how to read only the relevant bucket,
 /// and optionally pre-extracting the values from an existing column.

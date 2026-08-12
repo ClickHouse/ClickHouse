@@ -32,6 +32,22 @@ String DataTypeNestedCustomName::getName() const
     return s.str();
 }
 
+DataTypeCustomNamePtr DataTypeNestedCustomName::transformChildren(const ChildTransform & transform) const
+{
+    DataTypes new_elems;
+    new_elems.reserve(elems.size());
+    bool changed = false;
+    for (const auto & elem : elems)
+    {
+        auto new_elem = transform(elem)->transformChildren(transform);
+        changed |= new_elem.get() != elem.get();
+        new_elems.push_back(std::move(new_elem));
+    }
+    if (!changed)
+        return shared_from_this();
+    return std::make_shared<DataTypeNestedCustomName>(new_elems, names);
+}
+
 static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.empty())

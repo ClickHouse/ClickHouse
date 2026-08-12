@@ -3,6 +3,7 @@
 #include <memory>
 #include <cstddef>
 #include <Core/Types_fwd.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
@@ -12,21 +13,26 @@ class ReadBuffer;
 class WriteBuffer;
 struct FormatSettings;
 class IColumn;
+class IDataTypeCustomName;
+/// Shared so a copy of a type can carry the same custom name, and so a name can return itself from
+/// `transformChildren` via `shared_from_this`.
+using DataTypeCustomNamePtr = std::shared_ptr<const IDataTypeCustomName>;
 
 /** Allow to customize an existing data type and set a different name and/or text serialization/deserialization methods.
  * See use in IPv4 and IPv6 data types, and also in SimpleAggregateFunction.
   */
-class IDataTypeCustomName
+class IDataTypeCustomName : public std::enable_shared_from_this<IDataTypeCustomName>
 {
 public:
     virtual ~IDataTypeCustomName() = default;
 
     virtual String getName() const = 0;
-};
 
-/// Shared rather than unique so that a data type can be copied together with its
-/// customization - see DataTypeAggregateFunction::cloneWithVersion.
-using DataTypeCustomNamePtr = std::shared_ptr<const IDataTypeCustomName>;
+    /// Returns a copy with any embedded child types transformed, or itself when it embeds none (the
+    /// common case). A name that embeds types (e.g. Nested) overrides this to stay in sync with a
+    /// rebuilt type. See IDataType::transformChildren.
+    virtual DataTypeCustomNamePtr transformChildren(const ChildTransform &) const { return shared_from_this(); }
+};
 
 /** Describe a data type customization
  */

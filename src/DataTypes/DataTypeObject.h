@@ -61,6 +61,7 @@ public:
     void updateHashImpl(SipHash & hash) const override;
 
     void forEachChild(const ChildCallback &) const override;
+    DataTypePtr doTransformChildren(const ChildTransform & transform) const override;
 
     bool hasDynamicSubcolumnsData() const override { return true; }
     bool hasDynamicStructure() const override { return true; }

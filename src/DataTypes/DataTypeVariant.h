@@ -67,6 +67,7 @@ public:
     std::optional<ColumnVariant::Discriminator> tryGetVariantDiscriminator(const String & type_name) const;
 
     void forEachChild(const ChildCallback & callback) const override;
+    DataTypePtr doTransformChildren(const ChildTransform & transform) const override;
 
 private:
     std::string doGetName() const override;

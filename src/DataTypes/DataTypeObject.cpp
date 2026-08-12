@@ -280,6 +280,25 @@ void DataTypeObject::forEachChild(const ChildCallback & callback) const
     }
 }
 
+DataTypePtr DataTypeObject::doTransformChildren(const ChildTransform & transform) const
+{
+    std::unordered_map<String, DataTypePtr> new_typed_paths;
+    new_typed_paths.reserve(typed_paths.size());
+    bool changed = false;
+    for (const auto & [path, type] : typed_paths)
+    {
+        auto new_type = transform(type)->transformChildren(transform);
+        changed |= new_type.get() != type.get();
+        new_typed_paths.emplace(path, std::move(new_type));
+    }
+
+    if (!changed)
+        return shared_from_this();
+
+    return std::make_shared<DataTypeObject>(
+        schema_format, std::move(new_typed_paths), paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types);
+}
+
 namespace
 {
 

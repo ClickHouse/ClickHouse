@@ -5,8 +5,10 @@
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Common/tests/gtest_global_register.h>
 
 #include <atomic>
@@ -261,6 +263,69 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderNullableIsAssigne
     const auto * source_tuple = typeid_cast<const DataTypeTuple *>(
         typeid_cast<const DataTypeNullable *>(nullable.get())->getNestedType().get());
     ASSERT_EQ(asAgg(source_tuple->getElements()[0]).getVersion(), 1u);
+}
+
+/// A versioned state can sit inside a Variant, e.g. `Variant(String, AggregateFunction(sumMap, ...))`.
+/// The old hand-written walk only descended into Nullable/Array/Tuple/Map, so it silently skipped
+/// Variant; the generic transformChildren traversal covers it. The rebuilt type stays a Variant and
+/// the shared source is left untouched.
+GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderVariantIsAssigned)
+{
+    tryRegisterAggregateFunctions();
+
+    DataTypePtr variant = DataTypeFactory::instance().get(
+        "Variant(String, AggregateFunction(sumMap, Array(UInt64), Array(UInt64)))");
+
+    DataTypePtr assigned = variant;
+    setVersionToAggregateFunctions(assigned, /*if_empty=*/true, /*revision=*/std::nullopt);
+
+    ASSERT_NE(assigned.get(), variant.get());
+    const auto * assigned_variant = typeid_cast<const DataTypeVariant *>(assigned.get());
+    ASSERT_NE(assigned_variant, nullptr);
+
+    /// The versioned leaf under the Variant was forced to version 0, and discriminator order is kept.
+    const auto & source_variants = typeid_cast<const DataTypeVariant &>(*variant).getVariants();
+    const auto & assigned_variants = assigned_variant->getVariants();
+    ASSERT_EQ(assigned_variants.size(), source_variants.size());
+    for (size_t i = 0; i < source_variants.size(); ++i)
+    {
+        if (const auto * agg = typeid_cast<const DataTypeAggregateFunction *>(assigned_variants[i].get()))
+        {
+            ASSERT_EQ(agg->getVersion(), 0u);
+            /// The shared source keeps its default version.
+            ASSERT_EQ(asAgg(source_variants[i]).getVersion(), 1u);
+        }
+        else
+        {
+            /// Non-aggregate variants are untouched (same object).
+            ASSERT_EQ(assigned_variants[i].get(), source_variants[i].get());
+        }
+    }
+}
+
+/// A versioned state can be a typed path of a JSON column, e.g. `JSON(x AggregateFunction(sumMap, ...))`.
+/// transformChildren descends into the JSON typed paths, which the old walk did not cover.
+GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderJSONTypedPathIsAssigned)
+{
+    tryRegisterAggregateFunctions();
+
+    DataTypePtr json = DataTypeFactory::instance().get(
+        "JSON(x AggregateFunction(sumMap, Array(UInt64), Array(UInt64)))");
+
+    DataTypePtr assigned = json;
+    setVersionToAggregateFunctions(assigned, /*if_empty=*/true, /*revision=*/std::nullopt);
+
+    ASSERT_NE(assigned.get(), json.get());
+    const auto * assigned_object = typeid_cast<const DataTypeObject *>(assigned.get());
+    ASSERT_NE(assigned_object, nullptr);
+
+    auto it = assigned_object->getTypedPaths().find("x");
+    ASSERT_NE(it, assigned_object->getTypedPaths().end());
+    ASSERT_EQ(asAgg(it->second).getVersion(), 0u);
+
+    /// The shared source keeps its default version.
+    const auto & source_paths = typeid_cast<const DataTypeObject &>(*json).getTypedPaths();
+    ASSERT_EQ(asAgg(source_paths.at("x")).getVersion(), 1u);
 }
 
 /// Concurrent setVersionToAggregateFunctions calls over the SAME shared type object.
