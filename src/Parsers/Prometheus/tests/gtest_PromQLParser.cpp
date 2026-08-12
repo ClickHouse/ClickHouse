@@ -28,8 +28,10 @@ namespace
         PrometheusQueryTree reparsed;
         String error_message;
         size_t error_pos = 0;
-        EXPECT_TRUE(reparsed.tryParse(serialized, 3, &error_message, &error_pos))
+        ASSERT_TRUE(reparsed.tryParse(serialized, 3, &error_message, &error_pos))
             << input << ": " << error_message << " at position " << error_pos;
+        EXPECT_EQ(reparsed.getResultType(), query_tree.getResultType()) << input;
+        EXPECT_EQ(reparsed.dumpTree(), query_tree.dumpTree()) << input;
     }
 }
 
@@ -64,6 +66,10 @@ PrometheusQueryTree(INSTANT_VECTOR):
 
     expectRoundTrip(R"({""="value"})", R"({""="value"})");
     expectRoundTrip(R"({"métric.name","服务.name"="api"})", R"({"métric.name","服务.name"="api"})");
+    expectRoundTrip(R"({"NaN"})", R"({"NaN"})");
+    expectRoundTrip(R"({"Inf"})", R"({"Inf"})");
+    expectRoundTrip(R"(up{"NaN"="x"})", R"(up{"NaN"="x"})");
+    expectRoundTrip(R"(up{"Inf"="x"})", R"(up{"Inf"="x"})");
 }
 
 
@@ -84,6 +90,15 @@ TEST(PromQLParser, EmptyMetricNameMatcher)
 {
     for (const auto query : {R"({__name__="",a="x"})", R"({"__name__"="",a="x"})"})
         expectRoundTrip(query, R"({__name__="",a="x"})");
+}
+
+
+TEST(PromQLParser, MultipleMetricNameMatchers)
+{
+    expectRoundTrip(R"({"bar",__name__="baz"})", R"({"bar","baz"})");
+    expectRoundTrip(R"({"bar",__name__=~"ba.*"})", R"({"bar",__name__=~"ba.*"})");
+    expectRoundTrip(R"({"foo","bar"})", R"({"foo","bar"})");
+    expectRoundTrip(R"({__name__="foo",__name__="bar"})", R"({"foo","bar"})");
 }
 
 

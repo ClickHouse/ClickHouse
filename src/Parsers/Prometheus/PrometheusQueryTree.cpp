@@ -1,6 +1,7 @@
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
@@ -67,14 +68,28 @@ namespace
         return true;
     }
 
+    bool canPrintLabelNameUnquoted(std::string_view label)
+    {
+        return isLegacyLabelName(label)
+            && !equalsCaseInsensitive(label, "inf")
+            && !equalsCaseInsensitive(label, "nan");
+    }
+
+    bool canPrintMetricNameUnquoted(std::string_view metric)
+    {
+        return isLegacyMetricName(metric)
+            && !equalsCaseInsensitive(metric, "inf")
+            && !equalsCaseInsensitive(metric, "nan");
+    }
+
     String formatLabelName(const String & label)
     {
-        return isLegacyLabelName(label) ? label : doubleQuoteString(label);
+        return canPrintLabelNameUnquoted(label) ? label : doubleQuoteString(label);
     }
 
     String formatMetricName(const String & metric)
     {
-        return isLegacyMetricName(metric) ? metric : doubleQuoteString(metric);
+        return canPrintMetricNameUnquoted(metric) ? metric : doubleQuoteString(metric);
     }
 
     template <typename NodeType>
@@ -363,41 +378,47 @@ String PrometheusQueryTree::StringLiteral::toString(const PrometheusQueryTree &)
 
 String PrometheusQueryTree::InstantSelector::toString(const PrometheusQueryTree &) const
 {
-    bool has_metric_name = false;
+    size_t metric_name_matcher_count = 0;
     size_t metric_name_pos = static_cast<size_t>(-1);
     for (size_t i = 0; i != matchers.size(); ++i)
     {
         const auto & matcher = matchers[i];
-        if ((matcher.label_name == "__name__") && (matcher.matcher_type == MatcherType::EQ))
+        if (matcher.label_name == "__name__")
         {
-            has_metric_name = true;
-            metric_name_pos = i;
-            break;
+            ++metric_name_matcher_count;
+            if (matcher.matcher_type == MatcherType::EQ && metric_name_pos == static_cast<size_t>(-1))
+                metric_name_pos = i;
         }
     }
 
-    bool metric_name_is_legacy = has_metric_name && isLegacyMetricName(matchers[metric_name_pos].label_value);
-    bool metric_name_is_quoted
-        = has_metric_name && !metric_name_is_legacy && !matchers[metric_name_pos].label_value.empty();
+    const bool can_hoist_metric_name
+        = metric_name_matcher_count == 1
+        && metric_name_pos != static_cast<size_t>(-1)
+        && canPrintMetricNameUnquoted(matchers[metric_name_pos].label_value);
 
     String str;
-    if (metric_name_is_legacy)
+    if (can_hoist_metric_name)
         str += formatMetricName(matchers[metric_name_pos].label_value);
 
-    if (!metric_name_is_legacy || !has_metric_name || (matchers.size() - has_metric_name > 0))
+    if (!can_hoist_metric_name || matchers.size() > 1)
     {
         str += "{";
         bool need_comma = false;
         for (size_t i = 0; i != matchers.size(); ++i)
         {
-            if (i == metric_name_pos && metric_name_is_legacy)
+            if (i == metric_name_pos && can_hoist_metric_name)
                 continue;
             const auto & matcher = matchers[i];
             if (need_comma)
                 str += ",";
-            if (i == metric_name_pos && metric_name_is_quoted)
+
+            const bool is_quoted_metric_name
+                = matcher.label_name == "__name__"
+                && matcher.matcher_type == MatcherType::EQ
+                && !matcher.label_value.empty();
+            if (is_quoted_metric_name)
             {
-                str += formatMetricName(matcher.label_value);
+                str += doubleQuoteString(matcher.label_value);
             }
             else
             {
@@ -412,7 +433,7 @@ String PrometheusQueryTree::InstantSelector::toString(const PrometheusQueryTree 
                 case MatcherType::NRE: matcher_type_str = "!~"; break;
             }
             chassert(!matcher_type_str.empty());
-            if (i != metric_name_pos || !metric_name_is_quoted)
+            if (!is_quoted_metric_name)
             {
                 str += matcher_type_str;
                 str += quotePromQLString(matcher.label_value);
