@@ -74,9 +74,15 @@ SELECT isNull(v), hex(v) FROM format(Regexp, 'v LowCardinality(Nullable(String))
 
 SELECT '-- Raw: a tab-containing null token is a value where null handling is off';
 SELECT hex(v) FROM format(Regexp, 'v String', unhex('763D6109620A')) SETTINGS format_regexp = '^v=(.+)$', format_tsv_null_representation = 'a\tb', input_format_null_as_default = 0;
-SELECT isNull(v), hex(v) FROM format(Regexp, 'v Nullable(String)', unhex('763D6109620A')) SETTINGS format_regexp = '^v=(.+)$', format_tsv_null_representation = 'a\tb', input_format_null_as_default = 0;
+SELECT isNull(v) FROM format(Regexp, 'v Nullable(String)', unhex('763D6109620A')) SETTINGS format_regexp = '^v=(.+)$', format_tsv_null_representation = 'a\tb', input_format_null_as_default = 0;
 SELECT hex(v) FROM format(Regexp, 'v String', unhex('763D6109620A')) SETTINGS format_regexp = '^v=(.+)$', format_tsv_null_representation = 'a\tb';
-SELECT isNull(v), hex(v) FROM format(Regexp, 'v LowCardinality(Nullable(String))', unhex('763D6109620A')) SETTINGS format_regexp = '^v=(.+)$', format_tsv_null_representation = 'a\tb', input_format_null_as_default = 0;
+SELECT isNull(v) FROM format(Regexp, 'v LowCardinality(Nullable(String))', unhex('763D6109620A')) SETTINGS format_regexp = '^v=(.+)$', format_tsv_null_representation = 'a\tb', input_format_null_as_default = 0;
+
+SELECT '-- Raw: Variant owns the null token without a Nullable wrapper';
+SELECT isNull(v) FROM format(Regexp, 'v Variant(String, UInt64)', unhex('763D6109620A')) SETTINGS format_regexp = '^v=(.+)$', format_tsv_null_representation = 'a\tb', input_format_null_as_default = 0;
+SELECT isNull(v), hex(v::String) FROM format(Regexp, 'v Variant(String, UInt64)', unhex('763D616263096A756E6B0A')) SETTINGS format_regexp = '^v=(.+)$', input_format_null_as_default = 0;
+SELECT '-- Raw: Dynamic does not own it, so a tab-containing field is read whole';
+SELECT isNull(v), hex(v::String) FROM format(Regexp, 'v Dynamic', unhex('763D6109620A')) SETTINGS format_regexp = '^v=(.+)$', format_tsv_null_representation = 'a\tb', input_format_null_as_default = 0;
 
 SELECT '-- Raw: a null token followed by a tab is a value, not a null';
 SELECT isNull(v), hex(v) FROM format(Regexp, 'v Nullable(String)', unhex('763D5C4E09780A')) SETTINGS format_regexp = '^v=(.+)$';

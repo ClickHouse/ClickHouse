@@ -117,7 +117,7 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
         /// value, while the `Raw` reader stops there. A field equal to the null representation keeps
         /// that reader, which owns the rule's null token where a null-aware one is selected at all.
         const bool null_token_is_live
-            = isNullableOrLowCardinalityNullable(type) || format_settings.null_as_default;
+            = isNullableOrLowCardinalityNullable(type) || isVariant(type) || format_settings.null_as_default;
         if (escaping_rule == FormatSettings::EscapingRule::Raw
             && matched_field.find('\t') != std::string_view::npos
             && !(null_token_is_live && matched_field == format_settings.tsv.null_representation))

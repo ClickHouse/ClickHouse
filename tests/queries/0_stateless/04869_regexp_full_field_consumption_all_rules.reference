@@ -33,9 +33,14 @@
 0	5C4E
 -- Raw: a tab-containing null token is a value where null handling is off
 610962
-1	a	b
+1
 
-1	a	b
+1
+-- Raw: Variant owns the null token without a Nullable wrapper
+1
+0	616263096A756E6B
+-- Raw: Dynamic does not own it, so a tab-containing field is read whole
+0	610962
 -- Raw: a null token followed by a tab is a value, not a null
 0	5C4E0978
 0	5C4E0978
