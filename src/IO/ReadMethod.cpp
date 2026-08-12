@@ -1,6 +1,11 @@
 #include <IO/ReadMethod.h>
 #include <IO/preadNoWait.h>
 
+#include <base/defines.h>
+
+#include <fcntl.h>
+#include <unistd.h>
+
 
 namespace DB
 {
@@ -9,6 +14,21 @@ bool willUseDirectIO([[maybe_unused]] size_t estimated_size, [[maybe_unused]] si
 {
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
     return direct_io_threshold && estimated_size >= direct_io_threshold;
+#else
+    /// `createReadBufferFromFileBase` does not even compile the O_DIRECT branch here.
+    return false;
+#endif
+}
+
+bool canOpenWithDirectIO([[maybe_unused]] const std::string & path)
+{
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
+    int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_DIRECT);
+    if (fd == -1)
+        return false;
+    [[maybe_unused]] int res = ::close(fd);
+    chassert(res == 0);
+    return true;
 #else
     /// `createReadBufferFromFileBase` does not even compile the O_DIRECT branch here.
     return false;

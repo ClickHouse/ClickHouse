@@ -1,10 +1,21 @@
 #include <gtest/gtest.h>
 
+#include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/ReadMethod.h>
+#include <IO/ReadSettings.h>
 #include <IO/preadNoWait.h>
+#include <Common/ProfileEvents.h>
 #include <base/unit.h>
 
 #include <cerrno>
+#include <filesystem>
+#include <fstream>
+
+namespace ProfileEvents
+{
+    extern const Event CreatedReadBufferDirectIO;
+    extern const Event CreatedReadBufferDirectIOFailed;
+}
 
 using namespace DB;
 
@@ -107,6 +118,57 @@ TEST(ReadMethod, DirectIOBasisMatchesTheReader)
                 willUseDirectIO(size, /*direct_io_threshold*/ 1_MiB)),
             direct_io_possible && size >= 1_MiB ? LocalFSReadMethod::pread_threadpool : LocalFSReadMethod::pread);
     }
+}
+
+TEST(ReadMethod, DirectIOOpenProbeMatchesTheReader)
+{
+    /// `willUseDirectIO` proves only that the reader will *attempt* O_DIRECT. Whether the attempt
+    /// succeeds depends on the filesystem, and on failure `createReadBufferFromFileBase` falls
+    /// back to cached IO and resolves the method as a non-direct read. `canOpenWithDirectIO` is
+    /// how a component that branches before the buffer is created (`DiskLocal::prepareRead`)
+    /// proves the outcome instead of assuming it, so that on an unsupported-`preadNoWait` host
+    /// an O_DIRECT-rejected 'pread_threadpool' read - which the reader downgrades to plain
+    /// cached 'pread' - does not lose the userspace page cache.
+
+    /// A file that cannot be opened at all cannot be opened with O_DIRECT.
+    EXPECT_FALSE(canOpenWithDirectIO("/nonexistent-directory/nonexistent-file"));
+
+    const auto path = std::filesystem::temp_directory_path() / "gtest_read_method_direct_io_probe.bin";
+    {
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        const std::string data(4096, 'x');
+        out.write(data.data(), data.size());
+    }
+
+    const bool probe = canOpenWithDirectIO(path);
+
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
+    /// Whatever this filesystem answered, the reader must make the same decision. Ask it for an
+    /// O_DIRECT-eligible read of the same file (a size above the threshold; synchronous 'pread',
+    /// so no thread pool is involved) and observe which branch it took.
+    ReadSettings settings;
+    settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    settings.local_fs_settings.direct_io_threshold = 1;
+
+    const ProfileEvents::Count direct_before = ProfileEvents::global_counters[ProfileEvents::CreatedReadBufferDirectIO];
+    const ProfileEvents::Count fallback_before = ProfileEvents::global_counters[ProfileEvents::CreatedReadBufferDirectIOFailed];
+
+    {
+        auto buf = createReadBufferFromFileBase(path, settings, /*read_hint*/ 4096);
+        EXPECT_NE(buf, nullptr);
+    }
+
+    const ProfileEvents::Count direct_after = ProfileEvents::global_counters[ProfileEvents::CreatedReadBufferDirectIO];
+    const ProfileEvents::Count fallback_after = ProfileEvents::global_counters[ProfileEvents::CreatedReadBufferDirectIOFailed];
+
+    EXPECT_EQ(direct_after - direct_before, probe ? 1 : 0);
+    EXPECT_EQ(fallback_after - fallback_before, probe ? 0 : 1);
+#else
+    /// The reader never attempts O_DIRECT here, and the probe must not claim otherwise.
+    EXPECT_FALSE(probe);
+#endif
+
+    std::filesystem::remove(path);
 }
 
 TEST(PreadNoWait, UnavailabilityIsRecognized)

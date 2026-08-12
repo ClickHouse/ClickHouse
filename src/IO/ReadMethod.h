@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 namespace DB
 {
@@ -64,6 +65,17 @@ enum class RemoteFSReadMethod : uint8_t
 /// (e.g. `DiskLocal::prepareRead`) must use this, so that it does not claim an O_DIRECT read
 /// where the reader cannot perform one.
 bool willUseDirectIO(size_t estimated_size, size_t direct_io_threshold);
+
+/// Whether the file can actually be opened with O_DIRECT.
+///
+/// `willUseDirectIO` proves only that `createReadBufferFromFileBase` will *attempt* O_DIRECT.
+/// The open can still be rejected at runtime (e.g. the filesystem does not support O_DIRECT),
+/// and then the reader falls back to cached IO and resolves the method as a non-direct read.
+/// A component that branches on `direct_io` before the buffer is created can use this probe -
+/// it opens the file with the same flags the reader uses - to prove the attempt will succeed
+/// instead of assuming it. On platforms where the reader never attempts O_DIRECT the answer
+/// is 'no', matching `willUseDirectIO`.
+bool canOpenWithDirectIO(const std::string & path);
 
 /// The read method to use for a local file, given the requested one.
 ///

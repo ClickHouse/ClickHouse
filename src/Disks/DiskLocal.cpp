@@ -423,13 +423,6 @@ void DiskLocal::prepareRead(
 
     StoredObject obj(full_path.string(), full_path.string(), ec ? StoredObject::UnknownSize : file_size);
 
-    /// No gather for local disk — the source buffer is returned directly.
-    pipeline.setLocalFileSource(
-        full_path.string(),
-        StoredObjects{obj},
-        settings,
-        read_hint);
-
     /// Use the same estimated size basis as createReadBufferFromFileBase:
     /// read_hint first, then file_size. A large file with a small read_hint
     /// won't trigger O_DIRECT, so page cache remains safe.
@@ -438,13 +431,41 @@ void DiskLocal::prepareRead(
     /// or a large 'pread_threadpool' read would keep the method here while the reader
     /// resolves it to 'pread'.
     const size_t estimated_size = read_hint.value_or(file_size);
-    const bool direct_io = willUseDirectIO(estimated_size, settings.local_fs_settings.direct_io_threshold);
+    bool direct_io = willUseDirectIO(estimated_size, settings.local_fs_settings.direct_io_threshold);
+
+    ReadSettings read_settings = settings;
+
+    /// `willUseDirectIO` proves only that the reader will *attempt* O_DIRECT. The open can still
+    /// be rejected at runtime (e.g. the filesystem does not support O_DIRECT), and then the reader
+    /// falls back to cached IO and resolves the method as a non-direct read - which may downgrade
+    /// 'pread_threadpool' to 'pread' and makes the read compatible with the userspace page cache.
+    /// When the page-cache decision depends on it, prove the O_DIRECT open with the same flags the
+    /// reader uses. On failure, disable direct IO for this read in the settings handed to the
+    /// source, so the reader deterministically resolves the same non-direct read as here (its own
+    /// runtime fallback would reach the same resolution, since its open cannot succeed when the
+    /// probe just failed on the same file - clearing the threshold only skips the doomed attempt).
+    /// Resolving a non-direct 'pread_threadpool' read below reaches the `preadNoWait` probe, and
+    /// that is fine on this path: the reader's fallback resolution would reach it for this read
+    /// anyway.
+    if (direct_io && settings.use_page_cache_for_local_disks && settings.page_cache_settings.cache
+        && !canOpenWithDirectIO(full_path.string()))
+    {
+        direct_io = false;
+        read_settings.local_fs_settings.direct_io_threshold = 0;
+    }
+
+    /// No gather for local disk — the source buffer is returned directly.
+    pipeline.setLocalFileSource(
+        full_path.string(),
+        StoredObjects{obj},
+        read_settings,
+        read_hint);
 
     /// The same resolution as in `createReadBufferFromFileBase`: on a system where the page cache
     /// cannot be checked without waiting for the disk, 'pread_threadpool' reads with 'pread',
     /// and then the userspace page cache is usable as it is for 'pread'.
     const LocalFSReadMethod method
-        = resolveLocalFSReadMethod(settings.local_fs_settings.method, direct_io);
+        = resolveLocalFSReadMethod(read_settings.local_fs_settings.method, direct_io);
 
     /// Page cache is incompatible with several local read methods:
     ///   - async methods (io_uring, pread_fake_async, pread_threadpool): the
