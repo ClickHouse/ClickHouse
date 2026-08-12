@@ -1,0 +1,27 @@
+-- uncompressed entry
+1	a
+1	b
+1	c
+2	d
+2	e
+1	a
+1	b
+1	c
+2	d
+2	e
+-- compressed entry
+1	a
+1	b
+1	c
+2	d
+2	e
+1	a
+1	b
+1	c
+2	d
+2	e
+-- hits and misses
+0	1
+1	0
+0	1
+1	0

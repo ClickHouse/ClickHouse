@@ -687,7 +687,7 @@ void QueryResultCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
             /// such chunks are expected).
             auto & buffered_chunk = (chunk_type == ChunkType::Totals) ? query_result->totals : query_result->extremes;
 
-            convertToFullIfSparse(chunk);
+            removeSpecialColumnRepresentations(chunk);
             convertToFullIfConst(chunk);
 
             if (!buffered_chunk.has_value())
@@ -704,7 +704,7 @@ namespace
 {
 
 /// Combine N (usually small) chunks to M chunks with max_chunk_size rows each.
-/// The input chunks are non-const to save unnecessary copies for convertToFullIfSparse and convertToFullIfConst.
+/// The input chunks are non-const to save unnecessary copies for removeSpecialColumnRepresentations and convertToFullIfConst.
 Chunks squashChunks(Chunks & chunks, size_t max_chunk_size)
 {
     Chunks squashed_chunks;
@@ -712,7 +712,7 @@ Chunks squashChunks(Chunks & chunks, size_t max_chunk_size)
 
     for (auto & chunk : chunks)
     {
-        convertToFullIfSparse(chunk);
+        removeSpecialColumnRepresentations(chunk);
         convertToFullIfConst(chunk);
 
         const size_t rows_chunk = chunk.getNumRows();
@@ -911,7 +911,9 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, std::optional<OnD
                 size_t entry_size_in_bytes = QueryResultCache::EntryWeight()(*entry->mapped);
                 size_t entry_size_in_rows = countRowsInChunks(*entry->mapped);
 
-                if (entry_size_in_bytes < max_entry_size_in_bytes && entry_size_in_rows < max_entry_size_in_rows && !QueryResultCache::IsStale()(entry->key))
+                /// Use the same admission boundary as the write paths, which reject only entries strictly greater than the limits.
+                /// Otherwise an entry sized exactly at the limit would be persisted on disk but never promoted back to memory.
+                if (entry_size_in_bytes <= max_entry_size_in_bytes && entry_size_in_rows <= max_entry_size_in_rows && !QueryResultCache::IsStale()(entry->key))
                 {
                     cache_.set(entry->key, entry->mapped); /// Add entry to in-memory cache
                 }
