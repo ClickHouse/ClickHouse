@@ -12,6 +12,7 @@
 --   2. Distributed execution result
 --   3. Single-node baseline for correctness comparison
 
+SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;
@@ -25,6 +26,7 @@ SET max_rows_to_group_by = 0;
 SET enable_join_runtime_filters = 0;
 SET optimize_move_to_prewhere = 0;
 SET query_plan_convert_outer_join_to_inner_join = 0;
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 
 DROP TABLE IF EXISTS dist_orders;
 DROP TABLE IF EXISTS dist_items;

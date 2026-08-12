@@ -82,24 +82,40 @@ class DisksClient(object):
             self.proc.stderr.fileno(): self.proc.stderr,
         }
 
-    def execute_query(self, query: str, timeout: float = 5.0) -> str:
+    def execute_query(self, query: str, timeout: float = 60.0) -> str:
         output = io.BytesIO()
 
         self.proc.stdin.write(query.encode() + b"\n")
         self.proc.stdin.flush()
 
-        events = self.poller.poll(timeout)
-        if not events:
-            raise TimeoutError(f"Disks client returned no output")
+        # The disks app marks the end of a command's output with SEPARATOR on
+        # stdout. Keep polling until we actually observe it: a command may emit
+        # log lines on stderr before (or interleaved with) its stdout result,
+        # and reading only a single stderr line and returning would leave the
+        # stdout separator unconsumed, desyncing every subsequent command. The
+        # timeout is generous so that the slowest sanitizer builds (msan) do not
+        # spuriously time out.
+        while True:
+            events = self.poller.poll(timeout)
+            if not events:
+                raise TimeoutError("Disks client returned no output")
 
-        for fd_num, event in events:
-            if event & (select.EPOLLIN | select.EPOLLPRI):
+            separator_seen = False
+            for fd_num, event in events:
+                if not (event & (select.EPOLLIN | select.EPOLLPRI)):
+                    raise ValueError(f"Failed to read from pipe. Flag {event}")
+
                 file = self._fd_nums[fd_num]
 
                 if file == self.proc.stdout:
                     while True:
                         chunk = file.readline()
+                        if not chunk:
+                            raise ClickHouseDisksException(
+                                "Disks client closed its output unexpectedly"
+                            )
                         if chunk.endswith(self.SEPARATOR):
+                            separator_seen = True
                             break
 
                         output.write(chunk)
@@ -109,8 +125,8 @@ class DisksClient(object):
                     print(error_line)
                     # raise ClickHouseDisksException(error_line.strip().decode())
 
-            else:
-                raise ValueError(f"Failed to read from pipe. Flag {event}")
+            if separator_seen:
+                break
 
         data = output.getvalue().strip().decode()
         return data

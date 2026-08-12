@@ -1,0 +1,77 @@
+-- { echoOn }
+
+EXPLAIN indexes = 1
+SELECT
+    toDate(dt) AS dt,
+    count()
+FROM test_pk
+WHERE (dt >= '2001-01-02') AND (dt <= '2001-01-11') AND (key = '1')
+GROUP BY dt
+ORDER BY dt ASC;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Aggregating
+        Expression (Before GROUP BY)
+          Expression ((WHERE + Change column names to column identifiers))
+            ReadFromMergeTree (default.test_pk)
+            Indexes:
+              PrimaryKey
+                Keys:
+                  dt
+                  key
+                Condition: and((key in [\'1\', \'1\']), and((toDate(dt) in (-Inf, 11333]), (toDate(dt) in [11324, +Inf))))
+                Parts: 1/1
+                Granules: 3401/25000
+                Search Algorithm: generic exclusion search
+              Ranges: 1
+EXPLAIN indexes = 1
+SELECT
+    toDate(dt) AS dt,
+    count()
+FROM test_pk_long
+WHERE (dt >= '2001-01-02') AND (dt <= '2001-01-11') AND (key = '1')
+GROUP BY dt
+ORDER BY dt ASC;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Aggregating
+        Expression (Before GROUP BY)
+          Expression ((WHERE + Change column names to column identifiers))
+            ReadFromMergeTree (default.test_pk_long)
+            Indexes:
+              PrimaryKey
+                Keys:
+                  dt
+                  key
+                Condition: and((key in [\'1\', \'1\']), and((toDate(dt) in (-Inf, 11333]), (toDate(dt) in [11324, +Inf))))
+                Parts: 1/1
+                Granules: 3401/25000
+                Search Algorithm: generic exclusion search
+              Ranges: 1
+EXPLAIN indexes = 1
+SELECT
+    toDate(dt) AS dt,
+    count()
+FROM test_pk_long_back
+WHERE (dt >= '2001-01-02') AND (dt <= '2001-01-11') AND (key = '1')
+GROUP BY dt
+ORDER BY dt ASC;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Aggregating
+        Expression (Before GROUP BY)
+          Expression ((WHERE + Change column names to column identifiers))
+            ReadFromMergeTree (default.test_pk_long_back)
+            Indexes:
+              PrimaryKey
+                Keys:
+                  dt
+                  key
+                Condition: and((key in [\'1\', \'1\']), and((toDate(dt) in (-Inf, 11333]), (toDate(dt) in [11324, +Inf))))
+                Parts: 1/1
+                Granules: 3401/25000
+                Search Algorithm: generic exclusion search
+              Ranges: 1

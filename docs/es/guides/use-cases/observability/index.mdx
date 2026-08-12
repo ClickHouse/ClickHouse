@@ -1,0 +1,44 @@
+---
+slug: /use-cases/observability
+title: 'Observabilidad'
+description: 'Página de inicio de la guía del caso de uso de observabilidad'
+keywords: ['observabilidad', 'logs', 'traces', 'metrics', 'OpenTelemetry', 'Grafana', 'OTel']
+doc_type: 'guide'
+---
+
+ClickHouse ofrece una velocidad, escalabilidad y eficiencia de costos inigualables para la observabilidad. Esta guía presenta dos opciones según tus necesidades:
+
+<div id="clickstack">
+  ## ClickStack - la pila de observabilidad de ClickHouse
+</div>
+
+La pila de observabilidad de ClickHouse es nuestro **enfoque recomendado** para la mayoría de los usuarios.
+
+**ClickStack** es una plataforma de observabilidad lista para producción, basada en ClickHouse y OpenTelemetry (OTel), que unifica logs, trazas, métricas y sesiones en una única solución escalable y de alto rendimiento, capaz de funcionar desde implementaciones de un solo nodo hasta una escala de **varios petabytes**.
+
+| Sección                                                             | Descripción                                                       |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| [Descripción general](/es/clickstack/overview)                         | Introducción a ClickStack y sus características principales       |
+| [Primeros pasos](/es/clickstack/getting-started/index)                 | Guía de inicio rápido e instrucciones básicas de configuración    |
+| [Conjuntos de datos de ejemplo](/es/clickstack/example-datasets/index) | Conjuntos de datos de ejemplo y casos de uso                      |
+| [Arquitectura](/es/clickstack/architecture)                            | Arquitectura del sistema y descripción general de sus componentes |
+| [Implementación](/es/clickstack/deployment/overview)                   | Guías y opciones de implementación                                |
+| [Configuración](/es/clickstack/managing/config)                        | Opciones de configuración y ajustes detallados                    |
+| [Ingesta de datos](/es/clickstack/ingesting-data/index)                | Directrices para ingestar datos en ClickStack                     |
+| [Búsqueda](/es/clickstack/features/search)                             | Cómo buscar y consultar sus datos de observabilidad               |
+| [Producción](/es/clickstack/managing/production)                       | buenas prácticas para implementaciones en producción              |
+
+<div id="build-your-own-stack">
+  ## Crea tu propio stack
+</div>
+
+Para usuarios con **requisitos personalizados** —como canalizaciones de ingestión muy especializadas, diseños de esquema o necesidades extremas de escalado— ofrecemos orientación para crear una pila de observabilidad personalizada con ClickHouse como base de datos central.
+
+| Page                                                                                                      | Description                                                                                                                                                                                     |
+| --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Introducción](/es/guides/use-cases/observability/build-your-own/introduction)                               | Esta guía está pensada para quienes desean crear su propia solución de observabilidad con ClickHouse, centrada en logs y trazas.                                                                |
+| [Diseño del esquema](/es/guides/use-cases/observability/build-your-own/schema-design)                        | Descubra por qué se recomienda a los usuarios crear su propio esquema para logs y trazas, junto con algunas buenas prácticas para hacerlo.                                                      |
+| [Gestión de datos](/es/guides/use-cases/observability/build-your-own/managing-data)                          | Las implementaciones de ClickHouse para observabilidad implican invariablemente grandes volúmenes de datos que deben gestionarse. ClickHouse ofrece funcionalidades para facilitar esa gestión. |
+| [Integración con OpenTelemetry](/es/guides/use-cases/observability/build-your-own/integrating-opentelemetry) | Recopilación y exportación de logs y trazas mediante OpenTelemetry con ClickHouse.                                                                                                              |
+| [Uso de herramientas de visualización](/es/guides/use-cases/observability/build-your-own/grafana)            | Aprenda a usar herramientas de visualización para observabilidad con ClickHouse, incluidas HyperDX y Grafana.                                                                                   |
+| [Aplicación de demostración](/es/guides/use-cases/observability/build-your-own/demo-application)             | Explore OpenTelemetry Demo Application, bifurcada para funcionar con ClickHouse para logs y trazas.                                                                                             |

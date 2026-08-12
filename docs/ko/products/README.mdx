@@ -1,0 +1,38 @@
+---
+title: README
+---
+
+<div id="products">
+  # 제품
+</div>
+
+**여기에 들어갈 내용:** ClickHouse의 배포
+옵션과 관리형/연계 제품에 대한 제품별 문서입니다. 각 하위 디렉터리는 독립적으로 구성되며,
+해당 제품 영역의 자체 개요, 시작하기, 가이드, 참고 자료를 포함합니다.
+
+**대상 독자:** 특정 ClickHouse 제품을 사용하는 사용자입니다. 여기의 콘텐츠는
+독자가 해당 제품을 선택했으며, 그 제품에 적용되는 세부 사항
+(청구, 배포 토폴로지, 제품별 기능, Console/API
+동작)을 확인하려고 한다고 가정합니다. 일반적으로 ClickHouse에 적용되는 콘텐츠 — 개념, 쿼리
+패턴, SQL 참고 — 는 여기가 아니라 `/core`에 속합니다.
+
+**하위 디렉터리:**
+
+* `cloud/` — ClickHouse Cloud(서버리스 관리형 서비스)입니다.
+* `clickstack/` — ClickStack, ClickHouse 기반 관측성 스택입니다.
+* `bring-your-own-cloud/` — BYOC: 고객의
+  자체 cloud account에서 실행되는 ClickHouse Cloud입니다. (실제로는 Cloud의 배포 모드이지만, 단순화를 위해 여기서는 분리했습니다)
+* `clickhouse-private/` — ClickHouse Private: 고객 인프라에서 실행되는 자체 호스팅 격리형 배포입니다.
+  (실제로는 Cloud의 배포 모드이지만, 단순화를 위해 여기서는 분리했습니다)
+* `kubernetes-operator/` — Kubernetes에서 cluster를 배포하고
+  관리하기 위한 ClickHouse Kubernetes operator입니다.
+* `managed-postgres/` — ClickHouse Cloud와 네이티브로 통합된
+  Managed Postgres 제공 서비스입니다.
+* `agentic-data-stack/` — 에이전트형 analytics 스택(ClickHouse + LibreChat
+  * Langfuse)입니다.
+* `chdb/` — chDB, ClickHouse의 in-process build입니다.
+
+페이지가 제품과 관계없이 적용되는 ClickHouse engine, function, setting 또는 개념을
+설명한다면, 해당 내용은 `/core`(개념, 가이드 또는
+참고)에 속합니다. 여기에 페이지를 두어야 하는 경우는 해당 제품과 실질적으로 연결되어 있을 때뿐입니다 —
+즉, Console, 청구, 배포 모델 또는 제품 전용 기능과 관련된 경우입니다.

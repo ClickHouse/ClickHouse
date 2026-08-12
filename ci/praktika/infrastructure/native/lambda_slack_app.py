@@ -163,7 +163,7 @@ def publish_home_view(
 
 def handle_slash_command(form: dict):
     user_id = form.get("user_id", [""])[0]
-    command = form.get("command", [""])[0]
+    form.get("command", [""])[0]
     text = form.get("text", [""])[0].strip()
     username = form.get("user_name", [""])[0]
     response_url = form.get("response_url", [""])[0]

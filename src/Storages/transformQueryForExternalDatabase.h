@@ -39,4 +39,13 @@ String transformQueryForExternalDatabase(
     ContextPtr context,
     std::optional<size_t> limit = {});
 
+/** When the data source of an external database integration is a user-provided query (passed to the external
+  * database as is), the query is not rewritten by `transformQueryForExternalDatabase` and no outer predicate can
+  * be pushed down into it. Under `external_table_strict_query = 1` the contract is that an outer filter that
+  * cannot be executed remotely must fail instead of being silently applied locally in ClickHouse. This throws
+  * INCORRECT_QUERY when strict mode is enabled and the outer query has a filter on the source; otherwise it does
+  * nothing (the filter is applied locally, as usual).
+  */
+void rejectOuterFilterForQueryBackedExternalSourceIfStrict(const SelectQueryInfo & query_info, const ContextPtr & context);
+
 }

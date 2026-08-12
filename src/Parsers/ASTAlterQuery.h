@@ -6,6 +6,7 @@
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/IAST.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -51,6 +52,7 @@ public:
 
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
+        MODIFY_CONSTRAINT,
 
         ADD_PROJECTION,
         DROP_PROJECTION,
@@ -125,7 +127,7 @@ public:
      */
     IAST * index = nullptr;
 
-    /** The ADD CONSTRAINT query stores the ConstraintDeclaration there.
+    /** The ADD CONSTRAINT and MODIFY CONSTRAINT queries store the ConstraintDeclaration there.
     */
     IAST * constraint_decl = nullptr;
 
@@ -238,6 +240,8 @@ public:
     String getID(char delim) const override;
 
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
@@ -258,6 +262,9 @@ public:
     AlterObjectType alter_object = AlterObjectType::UNKNOWN;
 
     ASTExpressionList * command_list = nullptr;
+
+    /// Useful if we already have a DDL lock
+    bool no_ddl_lock = false;
 
     bool isSettingsAlter() const;
 
@@ -283,6 +290,8 @@ public:
     String getID(char) const override;
 
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
     {

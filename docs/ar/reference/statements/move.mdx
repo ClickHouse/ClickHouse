@@ -1,0 +1,33 @@
+---
+description: 'توثيق لتعليمة MOVE الخاصة بكيان الوصول'
+sidebarTitle: 'MOVE'
+slug: /sql-reference/statements/move
+title: 'تعليمة MOVE الخاصة بكيان الوصول'
+doc_type: 'reference'
+---
+
+تتيح هذه التعليمة نقل كيان وصول من مخزن وصول إلى مخزن وصول آخر.
+
+الصياغة:
+
+```sql
+MOVE {USER, ROLE, QUOTA, SETTINGS PROFILE, ROW POLICY} name1 [, name2, ...] TO access_storage_type
+```
+
+يوجد حاليًا خمسة مخازن لبيانات الوصول في ClickHouse:
+
+* `local_directory`
+* `memory`
+* `replicated`
+* `users_xml` (ro)
+* `ldap` (ro)
+
+أمثلة:
+
+```sql
+MOVE USER test TO local_directory
+```
+
+```sql
+MOVE ROLE test TO memory
+```

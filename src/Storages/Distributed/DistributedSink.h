@@ -72,6 +72,9 @@ private:
     /// Increments finished_writings_count after each repeat.
     void writeToLocal(const Cluster::ShardInfo & shard_info, const Block & block, size_t repeats);
 
+    /// Async inserts are spooled into a directory named after each element of `dir_names`.
+    void checkDirectoryNameLengths(const Cluster::ShardInfo & shard_info, const std::vector<std::string> & dir_names) const;
+
     void writeToShard(const Cluster::ShardInfo & shard_info, const Block & block, const std::vector<std::string> & dir_names);
 
 
@@ -123,6 +126,9 @@ private:
         size_t shard_index = 0;
         size_t replica_index = 0;
         bool is_local_job = false;
+
+        /// The shard reported an ignorable error (see `skip_unavailable_shards_mode`); discard its data.
+        bool skip = false;
 
         Block current_shard_block;
 

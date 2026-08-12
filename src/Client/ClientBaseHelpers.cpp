@@ -13,7 +13,11 @@
 #include <Interpreters/Context.h>
 #include <base/find_symbols.h>
 #include <Poco/String.h>
+#include <algorithm>
+#include <cctype>
 #include <string_view>
+#include <unordered_set>
+#include <vector>
 
 #if USE_REPLXX
 namespace replxx { char const * ansi_color(Replxx::Color); }
@@ -155,7 +159,95 @@ static size_t countCodePointsWithSeqLength(const String & query, const char * en
     return code_points;
 }
 
-void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context, int cursor_position, bool rainbow_parentheses)
+/// Lexer-based highlighting. Unlike the parser-based path, it never fails: it just tokenizes the input
+/// and colors each token by its kind. It is used as a fallback for input that the parser cannot parse,
+/// most importantly the query fragments that appear throughout the documentation (e.g. `f(x)` or
+/// `ENGINE = MergeTree`). The token kinds and colors mirror the Web UI (`programs/server/play.html`).
+static void highlightWithLexer(const String & query, std::vector<replxx::Replxx::Color> & colors)
+{
+    using namespace replxx;
+
+    /// SQL keywords recognized for highlighting. The lexer reports them as `BareWord`, so they are
+    /// disambiguated from identifiers here. Ported verbatim from `programs/server/play.html`.
+    static const std::unordered_set<std::string_view> keywords = {
+#include <Client/SQLKeywordsForHighlighting.inc>
+    };
+
+    const char * const begin = query.data();
+    const char * const end = begin + query.size();
+
+    /// Tokenize the whole input first so that a `BareWord` can peek at the following token to tell a
+    /// function call (`name(`) from a plain identifier — exactly as the line editor and the Web UI do.
+    std::vector<Token> tokens;
+    Lexer lexer(begin, end);
+    while (true)
+    {
+        Token token = lexer.nextToken();
+        tokens.push_back(token);
+        if (token.isEnd() || token.isError())
+            break;
+    }
+
+    size_t code_point_pos = 0;
+    const char * char_pos = begin;
+    for (size_t i = 0; i < tokens.size(); ++i)
+    {
+        const Token & token = tokens[i];
+        if (token.isEnd())
+            break;
+
+        Replxx::Color color = Replxx::Color::DEFAULT;
+        switch (token.type)
+        {
+            case TokenType::Comment: color = Replxx::Color::GRAY; break;
+            case TokenType::Number: color = replxx::color::rgb666(0, 4, 0); break;
+            case TokenType::StringLiteral:
+            case TokenType::HereDoc: color = Replxx::Color::GREEN; break;
+            case TokenType::QuotedIdentifier: color = replxx::color::rgb666(0, 4, 4); break;
+            case TokenType::BareWord: {
+                String upper(token.begin, token.end);
+                std::transform(
+                    upper.begin(), upper.end(), upper.begin(), [](char c) { return std::toupper(static_cast<unsigned char>(c)); });
+                if (keywords.contains(upper))
+                    color = replxx::color::bold(Replxx::Color::DEFAULT);
+                else
+                {
+                    /// A bare word immediately followed by `(` is a function; otherwise an identifier.
+                    color = Replxx::Color::CYAN;
+                    for (size_t j = i + 1; j < tokens.size(); ++j)
+                    {
+                        if (tokens[j].type == TokenType::Whitespace || tokens[j].type == TokenType::Comment)
+                            continue;
+                        if (tokens[j].type == TokenType::OpeningRoundBracket)
+                            color = Replxx::Color::BROWN;
+                        break;
+                    }
+                }
+                break;
+            }
+            default:
+                if (token.isError())
+                    color = Replxx::Color::RED;
+                /// Operators, brackets and punctuation keep the default color.
+                break;
+        }
+
+        /// Map the token's byte range to code-point positions in `colors`.
+        while (char_pos < token.begin && code_point_pos < colors.size())
+        {
+            ++code_point_pos;
+            char_pos += UTF8::seqLength(*char_pos);
+        }
+        while (char_pos < token.end && code_point_pos < colors.size())
+        {
+            colors[code_point_pos] = color;
+            ++code_point_pos;
+            char_pos += UTF8::seqLength(*char_pos);
+        }
+    }
+}
+
+void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context, int cursor_position, bool rainbow_parentheses, bool lexer_fallback)
 {
     using namespace replxx;
 
@@ -223,15 +315,24 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     }
     catch (...)
     {
-        /// Skip highlighting in the case of exceptions during parsing.
+        /// The parser failed; fall back to lexer-based highlighting if requested, otherwise skip it.
         /// It is ok to ignore unknown exceptions here.
+        if (lexer_fallback)
+            highlightWithLexer(query, colors);
+        return;
+    }
+
+    /// The input could not be parsed as one or more complete queries (common for documentation snippets,
+    /// which are query fragments). Use lexer-based highlighting instead of the partial parser highlights.
+    if (lexer_fallback && !parse_res)
+    {
+        highlightWithLexer(query, colors);
         return;
     }
 
     /// Also if the cursor is at an identifier or alias, highlight all identifiers and aliases with the same name
     const char * cursor_char_position = cursor_position >= 0
-        ? begin + UTF8::computeBytesBeforeCodePoint(
-            reinterpret_cast<const UInt8 *>(begin), query.size(), cursor_position)
+        ? begin + UTF8::computeBytesBeforeCodePoint(reinterpret_cast<const UInt8 *>(begin), query.size(), cursor_position)
         : end;
     const HighlightedRange * highlight_matching_identifiers = nullptr;
 
@@ -512,12 +613,12 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     }
 }
 
-String highlighted(const String & query, const Context & context, bool rainbow_parentheses)
+String highlighted(const String & query, const Context & context, bool rainbow_parentheses, bool lexer_fallback)
 {
     const size_t num_code_points = countCodePointsWithSeqLength(query, query.data() + query.size());
 
     std::vector<replxx::Replxx::Color> colors(num_code_points, replxx::Replxx::Color::DEFAULT);
-    highlight(query, colors, context, 0, rainbow_parentheses);
+    highlight(query, colors, context, 0, rainbow_parentheses, lexer_fallback);
 
     String res;
     size_t query_size = query.size();

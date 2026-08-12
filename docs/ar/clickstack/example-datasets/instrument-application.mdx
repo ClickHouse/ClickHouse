@@ -1,0 +1,32 @@
+---
+slug: /use-cases/observability/clickstack/example-datasets/instrument-app
+title: 'هيّئ تطبيقًا باستخدام Managed ClickStack'
+sidebarTitle: 'عرض توضيحي لمحلّل HackerNews'
+description: 'دليل لتهيئة تطبيق Node.js باستخدام OpenTelemetry وإرسال السجلات والمقاييس والتتبعات إلى Managed ClickStack'
+doc_type: 'guide'
+keywords: ['ClickStack', 'تهيئة التطبيق', 'OpenTelemetry', 'Managed ClickStack', 'Observability']
+---
+
+import InstrumentApplication from '/snippets/ar/clickstack/_instrument_application.mdx';
+
+يوضح هذا الدليل كيفية إضافة OpenTelemetry إلى تطبيق Node.js بسيط وإرسال سجلاته ومقاييسه وتتبعاته إلى [Managed ClickStack](/ar/clickstack/getting-started/managed). جرى تضمين القياس في الواجهة الخلفية من دون أي تغييرات على الشفرة المصدرية للتطبيق.
+
+يُعد [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) تطبيق Node.js صغيرًا ينفّذ استعلامات على مجموعة بيانات HackerNews المستضافة على مثيل ClickHouse التجريبي العام. ويستند كل مخطط وجدول ومربع بحث إلى استعلام ClickHouse حقيقي، لذا ينتج عن كل تفاعل تتبّع يكون فيه الـspan الرئيسي هو استدعاء HTTPS الصادر من الواجهة الخلفية إلى ClickHouse.
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* توفُّر OTel collector وإمكانية الوصول إليه، على أن يكون مُعدًّا لإرسال البيانات إلى خدمة Managed ClickStack لديك. ستحتاج إلى نقطة نهاية OTLP الخاصة به ورمز مميز للاستيعاب.
+* Node 18+ و npm.
+
+<InstrumentApplication />
+
+<div id="learn-more">
+  ## تعرّف على المزيد
+</div>
+
+* [Session Replay](/ar/clickstack/features/session-replay): نظرة عامة على الميزة، وخيارات SDK، وعناصر التحكّم في الخصوصية.
+* [Session Replay Demo](/ar/clickstack/example-datasets/session-replay): عرض توضيحي مستقل مع مثيل ClickStack محلي.
+* [البدء مع ClickStack](/ar/clickstack/getting-started/index): انشر ClickStack وأدخِل أولى بياناتك.
+* [كل مجموعات البيانات التجريبية](/ar/clickstack/example-datasets/index): مجموعات بيانات تجريبية وأدلة أخرى.

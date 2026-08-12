@@ -1,0 +1,421 @@
+---
+sidebarTitle: 'CSV y TSV'
+slug: /integrations/data-formats/csv-tsv
+title: 'Trabajo con datos CSV y TSV en ClickHouse'
+description: 'Página que describe cómo trabajar con datos CSV y TSV en ClickHouse'
+keywords: ['formato CSV', 'formato TSV', 'valores separados por comas', 'valores separados por tabulaciones', 'importación de datos']
+doc_type: 'guide'
+---
+
+ClickHouse permite importar datos desde CSV y exportarlos a CSV. Como los archivos CSV pueden presentar distintas variantes de formato, incluidas filas de encabezado, delimitadores personalizados y símbolos de escape, ClickHouse ofrece formatos y ajustes para gestionar cada caso de forma eficiente.
+
+<div id="importing-data-from-a-csv-file">
+  ## Importar datos desde un archivo CSV
+</div>
+
+Antes de importar los datos, vamos a crear una tabla con una estructura adecuada:
+
+```sql
+CREATE TABLE sometable
+(
+    `path` String,
+    `month` Date,
+    `hits` UInt32
+)
+ENGINE = MergeTree
+ORDER BY tuple(month, path)
+```
+
+Para importar datos del [archivo CSV](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_small.csv) a la tabla `sometable`, podemos pasar el archivo directamente a `clickhouse-client` mediante una tubería:
+
+```bash
+clickhouse-client -q "INSERT INTO sometable FORMAT CSV" < data_small.csv
+```
+
+Tenga en cuenta que usamos [FORMAT CSV](/es/reference/formats/CSV/CSV) para indicarle a ClickHouse que estamos cargando datos en formato CSV. Como alternativa, podemos cargar los datos desde un archivo local mediante la cláusula [FROM INFILE](/es/reference/statements/insert-into#inserting-data-from-a-file):
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data_small.csv'
+FORMAT CSV
+```
+
+Aquí usamos la cláusula `FORMAT CSV` para que ClickHouse reconozca el formato del archivo. También podemos cargar datos directamente desde URL con la función [url()](/es/reference/functions/table-functions/url) o desde archivos en S3 con la función [s3()](/es/reference/functions/table-functions/s3).
+
+<Tip>
+  Podemos omitir la configuración explícita del formato para `file()` e `INFILE`/`OUTFILE`.
+  En ese caso, ClickHouse detectará automáticamente el formato en función de la extensión del archivo.
+</Tip>
+
+<div id="csv-files-with-headers">
+  ### Archivos CSV con encabezados
+</div>
+
+Supongamos que nuestro [archivo CSV incluye encabezados](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_small_headers.csv):
+
+```bash
+head data-small-headers.csv
+```
+
+```response
+"path","month","hits"
+"Akiba_Hebrew_Academy","2017-08-01",241
+"Aegithina_tiphia","2018-02-01",34
+```
+
+Para importar los datos de este archivo, podemos usar el formato [CSVWithNames](/es/reference/formats/CSV/CSVWithNames):
+
+```bash
+clickhouse-client -q "INSERT INTO sometable FORMAT CSVWithNames" < data_small_headers.csv
+```
+
+En este caso, ClickHouse omite la primera fila al importar los datos del archivo.
+
+<Tip>
+  A partir de la [versión](https://github.com/ClickHouse/ClickHouse/releases) 23.1, ClickHouse detecta automáticamente los encabezados en los archivos CSV al usar el formato `CSV`, por lo que no es necesario utilizar `CSVWithNames` ni `CSVWithNamesAndTypes`.
+</Tip>
+
+<div id="csv-files-with-custom-delimiters">
+  ### Archivos CSV con delimitadores personalizados
+</div>
+
+Si el archivo CSV usa un delimitador distinto de la coma, podemos usar la opción [format&#95;csv&#95;delimiter](/es/reference/settings/formats#format_csv_delimiter) para establecer el símbolo correspondiente:
+
+```sql
+SET format_csv_delimiter = ';'
+```
+
+Ahora, al importar desde un archivo CSV, se utilizará el símbolo `;` como delimitador en lugar de una coma.
+
+<div id="skipping-lines-in-a-csv-file">
+  ### Omitir líneas en un archivo CSV
+</div>
+
+A veces, es necesario omitir un cierto número de líneas al importar datos de un archivo CSV. Esto puede hacerse con la opción [input&#95;format&#95;csv&#95;skip&#95;first&#95;lines](/es/reference/settings/formats#input_format_csv_skip_first_lines):
+
+```sql
+SET input_format_csv_skip_first_lines = 10
+```
+
+En este caso, vamos a omitir las diez primeras líneas del archivo CSV:
+
+```sql
+SELECT count(*) FROM file('data-small.csv', CSV)
+```
+
+```response
+┌─count()─┐
+│     990 │
+└─────────┘
+```
+
+El [archivo](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_small.csv) tiene 1k filas, pero ClickHouse solo cargó 990, ya que le indicamos que omitiera las primeras 10.
+
+<Tip>
+  Al usar la función `file()`, en ClickHouse Cloud tendrás que ejecutar los comandos en `clickhouse client` en la máquina donde se encuentra el archivo. Otra opción es usar [`clickhouse-local`](/es/concepts/features/tools-and-utilities/clickhouse-local) para explorar archivos de forma local.
+</Tip>
+
+<div id="treating-null-values-in-csv-files">
+  ### Tratamiento de los valores NULL en archivos CSV
+</div>
+
+Los valores NULL pueden codificarse de distintas maneras según la aplicación que haya generado el archivo. De forma predeterminada, ClickHouse usa `\N` como valor NULL en CSV. Pero podemos cambiarlo con la opción [format&#95;csv&#95;null&#95;representation](/es/reference/settings/formats#format_tsv_null_representation).
+
+Supongamos que tenemos el siguiente archivo CSV:
+
+```bash
+> cat nulls.csv
+Donald,90
+Joe,Nothing
+Nothing,70
+```
+
+Si cargamos datos de este archivo, ClickHouse considerará `Nothing` como un String (lo cual es correcto):
+
+```sql
+SELECT * FROM file('nulls.csv')
+```
+
+```response
+┌─c1──────┬─c2──────┐
+│ Donald  │ 90      │
+│ Joe     │ Nothing │
+│ Nothing │ 70      │
+└─────────┴─────────┘
+```
+
+Si queremos que ClickHouse trate `Nothing` como `NULL`, podemos indicarlo con la siguiente opción:
+
+```sql
+SET format_csv_null_representation = 'Nothing'
+```
+
+Ahora tenemos `NULL` donde debería estar:
+
+```sql
+SELECT * FROM file('nulls.csv')
+```
+
+```response
+┌─c1─────┬─c2───┐
+│ Donald │ 90   │
+│ Joe    │ ᴺᵁᴸᴸ │
+│ ᴺᵁᴸᴸ   │ 70   │
+└────────┴──────┘
+```
+
+<div id="tsv-tab-separated-files">
+  ## Archivos TSV (separados por tabuladores)
+</div>
+
+El formato de datos separados por tabuladores se utiliza ampliamente como formato de intercambio de datos. Para cargar datos desde un [archivo TSV](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_small.tsv) en ClickHouse, se utiliza el formato [TabSeparated](/es/reference/formats/TabSeparated/TabSeparated):
+
+```bash
+clickhouse-client -q "INSERT INTO sometable FORMAT TabSeparated" < data_small.tsv
+```
+
+También existe el formato [TabSeparatedWithNames](/es/reference/formats/TabSeparated/TabSeparatedWithNames), que permite trabajar con archivos TSV que tienen encabezados. Y, al igual que con CSV, podemos omitir las primeras X líneas con la opción [input&#95;format&#95;tsv&#95;skip&#95;first&#95;lines](/es/reference/settings/formats#input_format_tsv_skip_first_lines).
+
+<div id="raw-tsv">
+  ### TSV sin procesar
+</div>
+
+A veces, los archivos TSV se guardan sin aplicar escape a los tabuladores ni a los saltos de línea. Debemos usar [TabSeparatedRaw](/es/reference/formats/TabSeparated/TabSeparatedRaw) para procesar esos archivos.
+
+<div id="exporting-to-csv">
+  ## Exportar a CSV
+</div>
+
+Cualquiera de los formatos de los ejemplos anteriores también puede usarse para exportar datos. Para exportar datos desde una tabla (o una consulta) en formato CSV, usamos la misma cláusula `FORMAT`:
+
+```sql
+SELECT *
+FROM sometable
+LIMIT 5
+FORMAT CSV
+```
+
+```response
+"Akiba_Hebrew_Academy","2017-08-01",241
+"Aegithina_tiphia","2018-02-01",34
+"1971-72_Utah_Stars_season","2016-10-01",1
+"2015_UEFA_European_Under-21_Championship_qualification_Group_8","2015-12-01",73
+"2016_Greater_Western_Sydney_Giants_season","2017-05-01",86
+```
+
+Para añadir un encabezado al archivo CSV, utilizamos el formato [CSVWithNames](/es/reference/formats/CSV/CSVWithNames):
+
+```sql
+SELECT *
+FROM sometable
+LIMIT 5
+FORMAT CSVWithNames
+```
+
+```response
+"path","month","hits"
+"Akiba_Hebrew_Academy","2017-08-01",241
+"Aegithina_tiphia","2018-02-01",34
+"1971-72_Utah_Stars_season","2016-10-01",1
+"2015_UEFA_European_Under-21_Championship_qualification_Group_8","2015-12-01",73
+"2016_Greater_Western_Sydney_Giants_season","2017-05-01",86
+```
+
+<div id="saving-exported-data-to-a-csv-file">
+  ### Guardar los datos exportados en un archivo CSV
+</div>
+
+Para guardar los datos exportados en un archivo, podemos usar la cláusula [INTO...OUTFILE](/es/reference/statements/select/into-outfile):
+
+```sql
+SELECT *
+FROM sometable
+INTO OUTFILE 'out.csv'
+FORMAT CSVWithNames
+```
+
+```response
+36838935 rows in set. Elapsed: 1.304 sec. Processed 36.84 million rows, 1.42 GB (28.24 million rows/s., 1.09 GB/s.)
+```
+
+Observe que ClickHouse tardó solo **~1** segundo en guardar 36 millones de filas en un archivo CSV.
+
+<div id="exporting-csv-with-custom-delimiters">
+  ### Exportación de CSV con delimitadores personalizados
+</div>
+
+Si queremos usar delimitadores distintos de la coma, podemos utilizar para ello la opción de configuración [format&#95;csv&#95;delimiter](/es/reference/settings/formats#format_csv_delimiter):
+
+```sql
+SET format_csv_delimiter = '|'
+```
+
+Ahora ClickHouse usará `|` como delimitador del formato CSV:
+
+```sql
+SELECT *
+FROM sometable
+LIMIT 5
+FORMAT CSV
+```
+
+```response
+"Akiba_Hebrew_Academy"|"2017-08-01"|241
+"Aegithina_tiphia"|"2018-02-01"|34
+"1971-72_Utah_Stars_season"|"2016-10-01"|1
+"2015_UEFA_European_Under-21_Championship_qualification_Group_8"|"2015-12-01"|73
+"2016_Greater_Western_Sydney_Giants_season"|"2017-05-01"|86
+```
+
+<div id="exporting-csv-for-windows">
+  ### Exportación de CSV para Windows
+</div>
+
+Si queremos que un archivo CSV funcione correctamente en un entorno Windows, conviene considerar habilitar la opción [output&#95;format&#95;csv&#95;crlf&#95;end&#95;of&#95;line](/es/reference/settings/formats#output_format_csv_crlf_end_of_line). Esto usará `\r\n` como salto de línea en lugar de `\n`:
+
+```sql
+SET output_format_csv_crlf_end_of_line = 1;
+```
+
+<div id="schema-inference-for-csv-files">
+  ## Inferencia de esquema para archivos CSV
+</div>
+
+En muchos casos, podemos trabajar con archivos CSV desconocidos, por lo que debemos determinar qué tipos usar para las columnas. De forma predeterminada, ClickHouse intentará inferir los formatos de datos a partir de su análisis de un archivo CSV determinado. Esto se conoce como &quot;inferencia de esquema&quot;. Los tipos de datos detectados pueden consultarse mediante la instrucción `DESCRIBE` junto con la función [file()](/es/reference/functions/table-functions/file):
+
+```sql
+DESCRIBE file('data-small.csv', CSV)
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(String) │              │                    │         │                  │                │
+│ c2   │ Nullable(Date)   │              │                    │         │                  │                │
+│ c3   │ Nullable(Int64)  │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+En este caso, ClickHouse pudo inferir de forma eficiente los tipos de las columnas de nuestro archivo CSV. Si no queremos que ClickHouse los infiera, podemos desactivar esta opción con la siguiente opción:
+
+```sql
+SET input_format_csv_use_best_effort_in_schema_inference = 0
+```
+
+En este caso, todos los tipos de columna se tratarán como `String`.
+
+<div id="exporting-and-importing-csv-with-explicit-column-types">
+  ### Exportación e importación de CSV con tipos de columna explícitos
+</div>
+
+ClickHouse también permite definir explícitamente los tipos de columna al exportar datos con [CSVWithNamesAndTypes](/es/reference/formats/CSV/CSVWithNamesAndTypes) (y otros formatos de la familia *WithNames*):
+
+```sql
+SELECT *
+FROM sometable
+LIMIT 5
+FORMAT CSVWithNamesAndTypes
+```
+
+```response
+"path","month","hits"
+"String","Date","UInt32"
+"Akiba_Hebrew_Academy","2017-08-01",241
+"Aegithina_tiphia","2018-02-01",34
+"1971-72_Utah_Stars_season","2016-10-01",1
+"2015_UEFA_European_Under-21_Championship_qualification_Group_8","2015-12-01",73
+"2016_Greater_Western_Sydney_Giants_season","2017-05-01",86
+```
+
+Este formato incluirá dos filas de encabezado: una con los nombres de las columnas y la otra con los tipos de columna. Esto permitirá que ClickHouse (y otras aplicaciones) identifiquen los tipos de columna al cargar datos desde [estos archivos](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_csv_types.csv):
+
+```sql
+DESCRIBE file('data_csv_types.csv', CSVWithNamesAndTypes)
+```
+
+```response
+┌─name──┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ path  │ String │              │                    │         │                  │                │
+│ month │ Date   │              │                    │         │                  │                │
+│ hits  │ UInt32 │              │                    │         │                  │                │
+└───────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Ahora ClickHouse identifica los tipos de columna a partir de una segunda fila de encabezado, en lugar de inferirlos.
+
+<div id="custom-delimiters-separators-and-escaping-rules">
+  ## Delimitadores, separadores y reglas de escape personalizadas
+</div>
+
+En casos complejos, los datos de texto pueden tener un formato muy personalizado y aun así conservar una estructura. ClickHouse tiene un formato especial [CustomSeparated](/es/reference/formats/CustomSeparated/CustomSeparated) para estos casos, que permite definir reglas de escape personalizadas, delimitadores, separadores de línea y símbolos de inicio y fin.
+
+Supongamos que tenemos los siguientes datos en el archivo:
+
+```text
+row('Akiba_Hebrew_Academy';'2017-08-01';241),row('Aegithina_tiphia';'2018-02-01';34),...
+```
+
+Podemos ver que las filas individuales están encerradas en `row()`, las líneas se separan con `,` y los valores individuales se delimitan con `;`. En este caso, podemos usar la siguiente configuración para leer datos de este archivo:
+
+```sql
+SET format_custom_row_before_delimiter = 'row(';
+SET format_custom_row_after_delimiter = ')';
+SET format_custom_field_delimiter = ';';
+SET format_custom_row_between_delimiter = ',';
+SET format_custom_escaping_rule = 'Quoted';
+```
+
+Ahora podemos cargar datos desde nuestro [archivo con formato personalizado](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_small_custom.txt):
+
+```sql
+SELECT *
+FROM file('data_small_custom.txt', CustomSeparated)
+LIMIT 3
+```
+
+```response
+┌─c1────────────────────────┬─────────c2─┬──c3─┐
+│ Akiba_Hebrew_Academy      │ 2017-08-01 │ 241 │
+│ Aegithina_tiphia          │ 2018-02-01 │  34 │
+│ 1971-72_Utah_Stars_season │ 2016-10-01 │   1 │
+└───────────────────────────┴────────────┴─────┘
+```
+
+También podemos usar [CustomSeparatedWithNames](/es/reference/formats/CustomSeparated/CustomSeparatedWithNames) para exportar e importar correctamente los encabezados. Explora los formatos [regex y Template](/es/guides/clickhouse/data-formats/templates-regex) para abordar casos aún más complejos.
+
+<div id="working-with-large-csv-files">
+  ## Trabajar con archivos CSV grandes
+</div>
+
+Los archivos CSV pueden ser grandes, y ClickHouse funciona de forma eficiente con archivos de cualquier tamaño. Los archivos grandes suelen venir comprimidos, y ClickHouse los maneja sin necesidad de descomprimirlos antes de procesarlos. Podemos usar una cláusula `COMPRESSION` durante un insert:
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data_csv.csv.gz'
+COMPRESSION 'gzip' FORMAT CSV
+```
+
+Si se omite una cláusula `COMPRESSION`, ClickHouse seguirá intentando determinar la compresión del archivo en función de su extensión. El mismo enfoque puede utilizarse para exportar archivos directamente en formatos comprimidos:
+
+```sql
+SELECT *
+FROM for_csv
+INTO OUTFILE 'data_csv.csv.gz'
+COMPRESSION 'gzip' FORMAT CSV
+```
+
+Esto creará el archivo comprimido `data_csv.csv.gz`.
+
+<div id="other-formats">
+  ## Otros formatos
+</div>
+
+ClickHouse admite numerosos formatos, tanto de texto como binarios, para cubrir diversos escenarios y plataformas. Consulte más formatos y formas de trabajar con ellos en los siguientes artículos:
+
+* **Formatos CSV y TSV**
+* [Parquet](/es/guides/clickhouse/data-formats/parquet)
+* [Formatos JSON](/es/guides/clickhouse/data-formats/json/intro)
+* [Regex y templates](/es/guides/clickhouse/data-formats/templates-regex)
+* [Formatos nativos y binarios](/es/guides/clickhouse/data-formats/binary)
+* [Formatos SQL](/es/guides/clickhouse/data-formats/sql)
+
+Consulte también [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local), una herramienta portátil y completa para trabajar con archivos locales o remotos sin necesidad de un servidor ClickHouse.

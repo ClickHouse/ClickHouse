@@ -9,6 +9,7 @@ INSERT INTO test VALUES (((1))), (((NULL))), ((NULL));
 
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count(t.v.w) FROM test SETTINGS enable_analyzer = 1;
 SELECT count(t.v.w) FROM test;
+DROP TABLE test;
 
 DROP TABLE IF EXISTS test2;
 CREATE TABLE test2 (t Nullable(Tuple(u Nullable(UInt32)))) ENGINE = MergeTree ORDER BY tuple();
@@ -16,6 +17,7 @@ INSERT INTO test2 VALUES ((1)), ((NULL)), (NULL);
 
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count(t.u) FROM test2 SETTINGS enable_analyzer = 1;
 SELECT count(t.u) FROM test2;
+DROP TABLE test2;
 
 -- Test from https://github.com/ClickHouse/ClickHouse/pull/99490
 DROP TABLE IF EXISTS t_nullable_tuple;
@@ -32,6 +34,6 @@ INSERT INTO t_nullable_tuple SELECT if((number % 5) = 0, (number, toString(numbe
 
 SELECT count(tup.u) FROM t_nullable_tuple SETTINGS optimize_functions_to_subcolumns = 1;
 
--- TODO: These output 1000 but should be 200. This is wrong but is a different bug.
 SELECT count(tup.s) FROM t_nullable_tuple SETTINGS optimize_functions_to_subcolumns = 1;
 SELECT DISTINCT count(tup.s) FROM t_nullable_tuple SETTINGS optimize_functions_to_subcolumns = 1;
+DROP TABLE t_nullable_tuple;

@@ -1,0 +1,13 @@
+-- empty needle matches
+1
+1
+-- empty needle and empty haystack
+1
+1
+-- empty needle with a multi-byte UTF-8 haystack
+1
+1
+-- non-empty needle is unaffected
+1
+1
+0

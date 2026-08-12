@@ -159,7 +159,7 @@ SELECT [1, 2] AS x, toTypeName(x)
 
 ## Working with Data Types {#working-with-data-types}
 
-When creating an array on the fly, ClickHouse automatically defines the argument type as the narrowest data type that can store all the listed arguments. If there are any [Nullable](/sql-reference/data-types/nullable) or literal [NULL](/operations/settings/formats#input_format_null_as_default) values, the type of an array element also becomes [Nullable](../../sql-reference/data-types/nullable.md).
+When creating an array on the fly, ClickHouse automatically defines the argument type as the narrowest data type that can store all the listed arguments. If there are any [Nullable](/sql-reference/data-types/nullable) or literal [NULL](/reference/settings/formats/input-format#input_format_null_as_default) values, the type of an array element also becomes [Nullable](/reference/data-types/nullable).
 
 If ClickHouse couldn't determine the data type, it generates an exception. For instance, this happens when trying to create an array with strings and numbers simultaneously (`SELECT array(1, 'a')`).
 
@@ -208,7 +208,7 @@ SELECT arr.size0, arr.size1, arr.size2 FROM t_arr;
 
 ## Reading nested subcolumns from Array {#reading-nested-subcolumns-from-array}
 
-If nested type `T` inside `Array` has subcolumns (for example, if it's a [named tuple](./tuple.md)), you can read its subcolumns from an `Array(T)` type with the same subcolumn names. The type of a subcolumn will be `Array` of the type of original subcolumn.
+If nested type `T` inside `Array` has subcolumns (for example, if it's a [named tuple](/reference/data-types/tuple)), you can read its subcolumns from an `Array(T)` type with the same subcolumn names. The type of a subcolumn will be `Array` of the type of original subcolumn.
 
 **Example**
 

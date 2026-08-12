@@ -1,3 +1,4 @@
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Databases/removeWhereConditionPlaceholder.h>
@@ -129,6 +130,22 @@ namespace
                         mv_to_dependency = StorageID{table_name.database, target.table_id.getQualifiedName().table, target.inner_uuid};
                         mv_to_dependency->table_name = StorageMaterializedView::generateInnerTableName(mv_to_dependency.value());
                     }
+                    else if (target.kind == ViewTarget::Kind::Samples
+                        || target.kind == ViewTarget::Kind::Tags
+                        || target.kind == ViewTarget::Kind::Metrics)
+                    {
+                        /// External target tables of a TimeSeries table are referential dependencies.
+                        /// Inner target tables (created and owned by the TimeSeries table) are not, the same way
+                        /// the inner "TO" table of a materialized view is not registered as a dependency.
+                        const auto & table_id = target.table_id;
+                        if (!table_id.table_name.empty())
+                        {
+                            QualifiedTableName target_name{table_id.database_name, table_id.table_name};
+                            if (target_name.database.empty())
+                                target_name.database = current_database;
+                            dependencies.emplace(std::move(target_name));
+                        }
+                    }
 
                     if (mv_to_dependency && mv_to_dependency->database_name.empty())
                         mv_to_dependency->database_name = current_database;
@@ -153,7 +170,7 @@ namespace
                     if (create.is_materialized_view)
                     {
                         auto select_copy = create.select->clone();
-                        ApplyWithSubqueryVisitor(global_context).visit(select_copy);
+                        ApplyWithSubqueryVisitor::visit(select_copy);
 
                         /// Use the database where the materialized view is created to resolve nested views.
                         /// The database name can be empty when the AST has been mutated by SharedDatabaseCatalog::serializeCreateQuery

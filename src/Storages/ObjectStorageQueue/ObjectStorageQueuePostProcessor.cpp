@@ -1,4 +1,5 @@
 #include <Common/ProfileEvents.h>
+#include <Common/FailPoint.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPoolTaskTracker.h>
 #include <Disks/IDisk.h>
@@ -28,12 +29,28 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char object_storage_queue_fail_delete[];
+}
+
 #if USE_AWS_S3
 
 namespace S3AuthSetting
 {
     extern const S3AuthSettingsString access_key_id;
     extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsString role_arn;
+    extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString external_id;
+    extern const S3AuthSettingsString http_client;
+    extern const S3AuthSettingsString service_account;
+    extern const S3AuthSettingsString metadata_service;
+    extern const S3AuthSettingsString request_token_path;
+    extern const S3AuthSettingsString google_adc_client_id;
+    extern const S3AuthSettingsString google_adc_client_secret;
+    extern const S3AuthSettingsString google_adc_refresh_token;
 }
 
 #endif
@@ -42,6 +59,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
 }
 
 ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
@@ -72,19 +90,22 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
         try
         {
             doWithRetries([&]{
+                fiu_do_on(FailPoints::object_storage_queue_fail_delete, {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to remove objects");
+                });
                 object_storage->removeObjectsIfExist(objects);
             });
+            ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, objects.size());
         }
         catch (...)
         {
             LOG_WARNING(
                 log,
-                "Failed to tag all {} objects with exception: {}",
+                "Failed to remove all {} objects with exception: {}",
                 objects.size(),
                 getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
             );
         }
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, objects.size());
     }
     else if (after_processing_action == ObjectStorageQueueAction::MOVE)
     {
@@ -114,6 +135,7 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
             doWithRetries([&]{
                 object_storage->tagObjects(objects, tag_key, tag_value);
             });
+            ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTaggedObjects, objects.size());
         }
         catch (...)
         {
@@ -124,7 +146,6 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
                 getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
             );
         }
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTaggedObjects, objects.size());
 #else
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -298,6 +319,24 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             );
             s3_settings->auth_settings[S3AuthSetting::access_key_id] = move_access_key_id;
             s3_settings->auth_settings[S3AuthSetting::secret_access_key] = move_secret_access_key;
+            /// The move uses its own explicit keys, so drop every server-managed mechanism inherited from
+            /// `<s3>` config (role_arn STS, GCP OAuth, and the server's temporary session_token) that would
+            /// otherwise use the server's identity on top of those keys.
+            s3_settings->auth_settings[S3AuthSetting::session_token] = "";
+            s3_settings->auth_settings[S3AuthSetting::role_arn] = "";
+            s3_settings->auth_settings[S3AuthSetting::role_session_name] = "";
+            s3_settings->auth_settings[S3AuthSetting::external_id] = "";
+            s3_settings->auth_settings[S3AuthSetting::http_client] = "";
+            s3_settings->auth_settings[S3AuthSetting::service_account] = "";
+            s3_settings->auth_settings[S3AuthSetting::metadata_service] = "";
+            s3_settings->auth_settings[S3AuthSetting::request_token_path] = "";
+            s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = "";
+            s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = "";
+            s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = "";
+            /// The move uses its own explicit keys, so also drop the request-auth material (headers/access
+            /// headers and SSE-C/SSE-KMS keys) merged from the server `<s3>` config: otherwise the server's
+            /// headers or encryption keys would be sent to the user-supplied move destination.
+            s3_settings->auth_settings.clearServerManagedRequestAuth();
             std::shared_ptr<S3::Client> dst_client = getClient(
                 move_uri,
                 *s3_settings,
@@ -329,7 +368,6 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                             src_client,
                             /*src_bucket=*/ src_bucket,
                             /*src_key=*/ object_from.remote_path,
-                            /*src_offset=*/ 0,
                             /*src_size=*/ object_size,
                             /*dest_s3_client=*/ dst_client,
                             /*dest_bucket=*/ dst_uri.bucket,

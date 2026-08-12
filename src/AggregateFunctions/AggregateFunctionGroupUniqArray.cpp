@@ -38,8 +38,11 @@ namespace
 template <typename T>
 struct AggregateFunctionGroupUniqArrayData
 {
+    /// CRC32 for integer keys, like uniqExact.
+    using Hash = std::conditional_t<is_integer<T>, HashCRC32<T>, DefaultHash<T>>;
+
     /// When creating, the hash table must be small.
-    using Set = HashSetWithStackMemory<T, DefaultHash<T>, 4>;
+    using Set = HashSetWithStackMemory<T, Hash, 4>;
 
     Set value;
 };
@@ -71,14 +74,15 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    /// `final` devirtualizes the per-row call in addBatchSinglePlace (this class has subclasses).
+    void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const final
     {
         if (limit_num_elems && this->data(place).value.size() >= max_elems)
             return;
         this->data(place).value.insert(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         if (!limit_num_elems)
             this->data(place).value.merge(this->data(rhs).value);
@@ -206,7 +210,7 @@ public:
         set.emplace(key_holder, it, inserted);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & cur_set = this->data(place).value;
         auto & rhs_set = this->data(rhs).value;

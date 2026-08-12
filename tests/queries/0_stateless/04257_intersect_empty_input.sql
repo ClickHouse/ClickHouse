@@ -1,3 +1,4 @@
+-- max_rows_to_read is the guard: a regressed short-circuit reads the unbounded side and trips it.
 SELECT count()
 FROM
 (
@@ -5,7 +6,7 @@ FROM
     INTERSECT
     SELECT number FROM system.numbers
 )
-SETTINGS max_execution_time = 2, timeout_overflow_mode = 'throw', max_memory_usage = 50000000, max_untracked_memory = 1;
+SETTINGS max_rows_to_read = 10000000, read_overflow_mode = 'throw', max_memory_usage = 50000000, max_untracked_memory = 1;
 
 SELECT count()
 FROM
@@ -14,7 +15,7 @@ FROM
     INTERSECT
     SELECT number FROM numbers(0)
 )
-SETTINGS max_execution_time = 2, timeout_overflow_mode = 'throw', max_memory_usage = 50000000, max_untracked_memory = 1;
+SETTINGS max_rows_to_read = 10000000, read_overflow_mode = 'throw', max_memory_usage = 50000000, max_untracked_memory = 1;
 
 SELECT count()
 FROM
@@ -23,7 +24,7 @@ FROM
     INTERSECT DISTINCT
     SELECT number FROM system.numbers
 )
-SETTINGS max_execution_time = 2, timeout_overflow_mode = 'throw', max_memory_usage = 50000000, max_untracked_memory = 1;
+SETTINGS max_rows_to_read = 10000000, read_overflow_mode = 'throw', max_memory_usage = 50000000, max_untracked_memory = 1;
 
 SELECT count()
 FROM
@@ -32,4 +33,4 @@ FROM
     INTERSECT DISTINCT
     SELECT number FROM numbers(0)
 )
-SETTINGS max_execution_time = 2, timeout_overflow_mode = 'throw', max_memory_usage = 50000000, max_untracked_memory = 1;
+SETTINGS max_rows_to_read = 10000000, read_overflow_mode = 'throw', max_memory_usage = 50000000, max_untracked_memory = 1;

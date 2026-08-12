@@ -1,0 +1,13 @@
+---
+name: gitlab_base.BadPlurals
+description: |
+  Don't write plural words with the '(s)' construction. 'HTTP(S)' is acceptable.
+extends: existence
+message: "Rewrite '%s' to be plural without parentheses."
+link: https://docs.gitlab.com/development/documentation/styleguide/word_list/#s
+vocab: false
+level: warning
+ignorecase: true
+nonword: true
+tokens:
+  - '(?<!http)\(s\)'

@@ -62,7 +62,7 @@ if __name__ == "__main__":
             continue
 
         try:
-            print(f"  Checking PRs reviewed by me...")
+            print("  Checking PRs reviewed by me...")
             seven_days_ago = (datetime.now() - timedelta(days=INTERVAL_DAYS)).strftime(
                 "%Y-%m-%d"
             )
@@ -88,7 +88,7 @@ if __name__ == "__main__":
             print(f"Error processing approved PRs for {repo}: {e}")
             continue
 
-    print(f"\nSummary:")
+    print("\nSummary:")
     print(f"- Authored and merged: {len(result_merged)} PRs")
     print(f"- Reviewed and merged: {len(result_approved)} PRs")
 

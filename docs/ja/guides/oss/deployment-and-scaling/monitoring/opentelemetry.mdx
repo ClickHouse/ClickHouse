@@ -1,0 +1,139 @@
+---
+description: 'ClickHouse で OpenTelemetry を使用して分散トレーシングとメトリクスを収集するためのガイド'
+sidebarTitle: 'OpenTelemetry による ClickHouse のトレーシング'
+slug: /operations/opentelemetry
+title: 'OpenTelemetry による ClickHouse のトレーシング'
+doc_type: 'guide'
+---
+
+[OpenTelemetry](https://opentelemetry.io/) は、分散アプリケーションからトレースやメトリクスを収集するためのオープン標準です。ClickHouse は OpenTelemetry をある程度サポートしています。
+
+<div id="supplying-trace-context-to-clickhouse">
+  ## ClickHouse にトレースコンテキストを渡す
+</div>
+
+ClickHouse は、[W3C 勧告](https://www.w3.org/TR/trace-context/)で説明されているトレースコンテキストの HTTP ヘッダーを受け付けます。また、ClickHouse サーバー間、またはクライアントとサーバー間の通信に使用されるネイティブプロトコル経由でもトレースコンテキストを受け付けます。手動テストでは、Trace Context 勧告に準拠したトレースコンテキストのヘッダーを、`--opentelemetry-traceparent` および `--opentelemetry-tracestate` フラグを使用して `clickhouse-client` に渡せます。
+
+親トレースコンテキストが渡されていない場合、または渡されたトレースコンテキストが上記の W3C 標準に準拠していない場合、ClickHouse は新しいトレースを開始できます。このときの確率は、[opentelemetry&#95;start&#95;trace&#95;probability](/ja/reference/settings/session-settings#opentelemetry_start_trace_probability) 設定で制御されます。
+
+<div id="propagating-the-trace-context">
+  ## トレースコンテキストの伝播
+</div>
+
+トレースコンテキストは、次のケースでダウンストリームサービスに伝播されます。
+
+* [Distributed](/ja/reference/engines/table-engines/special/distributed) テーブルエンジンを使用する場合など、リモートの ClickHouse サーバーに対するクエリ。
+
+* [url](/ja/reference/functions/table-functions/url) テーブル関数。トレースコンテキスト情報は HTTP ヘッダーで送信されます。
+
+<div id="tracing-clickhouse-keeper-requests">
+  ## ClickHouse Keeper リクエストのトレーシング
+</div>
+
+ClickHouse は、[ClickHouse Keeper](/ja/guides/oss/deployment-and-scaling/keeper/index) へのリクエスト (ZooKeeper 互換の協調サービス) に対する OpenTelemetry トレーシングをサポートしています。この機能により、クライアントからのリクエスト送信からサーバー側での処理まで、Keeper 操作のライフサイクルを詳細に可視化できます。
+
+<div id="enabling-keeper-tracing">
+  ### Keeper のトレーシングを有効にする
+</div>
+
+Keeper リクエストのトレーシングを有効にするには、ZooKeeper/Keeper クライアントの設定で次の項目を設定します。
+
+```xml
+<clickhouse>
+    <zookeeper>
+        <node>
+            <host>keeper1</host>
+            <port>9181</port>
+        </node>
+        <!-- OpenTelemetryトレーシングコンテキストの伝播を有効にする -->
+        <pass_opentelemetry_tracing_context>true</pass_opentelemetry_tracing_context>
+    </zookeeper>
+</clickhouse>
+```
+
+<div id="keeper-span-types">
+  ### Keeper スパンの種類
+</div>
+
+トレーシングが有効な場合、ClickHouse はクライアント側とサーバー側の両方の Keeper 操作に対してスパンを作成します。
+
+**クライアント側のスパン:**
+
+* `zookeeper.create` — 新しいノードを作成
+* `zookeeper.get` — ノードデータを取得
+* `zookeeper.set` — ノードデータを設定
+* `zookeeper.remove` — ノードを削除
+* `zookeeper.list` — 子ノードを一覧表示
+* `zookeeper.exists` — ノードが存在するかどうかを確認
+* `zookeeper.multi` — 複数の操作をアトミックに実行
+* `zookeeper.client.requests_queue` — 送信前にリクエストがキューで待機した時間
+
+**サーバー側のスパン (Keeper) :**
+
+* `keeper.receive_request` — クライアントからのリクエストの受信とパース
+* `keeper.dispatcher.requests_queue` — ディスパッチャー内でのリクエストのキュー待ち
+* `keeper.write.pre_commit` — Raft commit 前の書き込みリクエストの前処理
+* `keeper.write.commit` — Raft commit 後の書き込みリクエストの処理
+* `keeper.read.wait_for_write` — 依存する書き込みの完了待ちとなっている読み取りリクエスト
+* `keeper.read.process` — 読み取りリクエストの処理
+* `keeper.dispatcher.responses_queue` — ディスパッチャー内でのレスポンスのキュー待ち
+* `keeper.send_response` — クライアントへのレスポンスの送信
+
+<div id="sampling-and-performance">
+  ### サンプリングとパフォーマンス
+</div>
+
+トレーシングのオーバーヘッドを抑えるため、Keeper は動的サンプリングを実装しています。サンプリング率は、リクエストサイズに応じて 1/10,000 から 1/10 の範囲で自動的に調整されます。パフォーマンス監視のため、すべてのリクエスト (サンプリングされたものとされていないものの両方) の所要時間がヒストグラムメトリクスに記録されます。
+
+<div id="tracing-the-clickhouse-itself">
+  ## ClickHouse 自体のトレーシング
+</div>
+
+ClickHouse は、各クエリおよびクエリプランニングや分散クエリなどの一部のクエリ実行段階について、`trace spans` を作成します。
+
+このトレーシング情報を活用するには、[Jaeger](https://jaegertracing.io/) や [Prometheus](https://prometheus.io/) など、OpenTelemetry をサポートする監視システムにエクスポートする必要があります。ClickHouse は特定の監視システムへの依存を避けるため、トレーシングデータはシステムテーブル経由でのみ提供します。標準で[必須とされている](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/overview.md#span) OpenTelemetry のトレーススパン情報は、[system.opentelemetry&#95;span&#95;log](/ja/reference/system-tables/opentelemetry_span_log) テーブルに格納されます。
+
+このテーブルはサーバー設定で有効にする必要があります。デフォルト設定ファイル `config.xml` の `opentelemetry_span_log` 要素を参照してください。これはデフォルトで有効になっています。
+
+タグまたは属性は、キーと値を含む 2 つの並列 Array として保存されます。これらを扱うには [ARRAY JOIN](/ja/reference/statements/select/array-join) を使用してください。
+
+<div id="log-query-settings">
+  ## Log-query-settings
+</div>
+
+設定 [log&#95;query&#95;settings](/ja/reference/settings/session-settings) を使用すると、クエリ実行中にクエリ設定の変更を記録できます。有効にすると、クエリ設定に加えられた変更はすべて OpenTelemetry の スパン ログに記録されます。この機能は、クエリのパフォーマンスに影響する可能性がある設定変更を追跡する必要がある本番環境で特に役立ちます。
+
+<div id="integration-with-monitoring-systems">
+  ## 監視システムとのインテグレーション
+</div>
+
+現時点では、ClickHouse から監視システムへトレースデータをエクスポートするための既成ツールはありません。
+
+テスト目的であれば、[system.opentelemetry&#95;span&#95;log](/ja/reference/system-tables/opentelemetry_span_log) table に対して [URL](/ja/reference/engines/table-engines/special/url) エンジンを使用する materialized view を作成し、受信したログデータをトレース collector の HTTP エンドポイントへ送信するように設定できます。たとえば、最小限の スパン データを `http://localhost:9411` で動作している Zipkin インスタンスに、Zipkin v2 JSON フォーマットで送信するには、次のようにします。
+
+```sql
+CREATE MATERIALIZED VIEW default.zipkin_spans
+ENGINE = URL('http://127.0.0.1:9411/api/v2/spans', 'JSONEachRow')
+SETTINGS output_format_json_named_tuples_as_objects = 1,
+    output_format_json_array_of_rows = 1 AS
+SELECT
+    lower(hex(trace_id)) AS traceId,
+    CASE WHEN parent_span_id = 0 THEN '' ELSE lower(hex(parent_span_id)) END AS parentId,
+    lower(hex(span_id)) AS id,
+    operation_name AS name,
+    start_time_us AS timestamp,
+    finish_time_us - start_time_us AS duration,
+    cast(tuple('clickhouse'), 'Tuple(serviceName text)') AS localEndpoint,
+    cast(tuple(
+        attribute.values[indexOf(attribute.names, 'db.statement')]),
+        'Tuple("db.statement" text)') AS tags
+FROM system.opentelemetry_span_log
+```
+
+何らかのエラーが発生した場合、エラーが発生したログデータの一部は、通知されることなく失われます。データが届かない場合は、エラーメッセージが記録されていないかサーバーログを確認してください。
+
+<div id="related-content">
+  ## 関連記事
+</div>
+
+* ブログ: [ClickHouseでオブザーバビリティソリューションを構築する - パート2 - トレース](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)

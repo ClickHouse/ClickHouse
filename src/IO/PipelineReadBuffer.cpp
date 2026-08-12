@@ -28,31 +28,43 @@ bool PipelineReadBuffer::nextImpl()
     if (profile_callback)
         watch.emplace(clock_type);
 
-    auto chunk = executor->readNextChunk();
-    if (chunk.size == 0)
+    /// Detach first: `advance` can free the buffer `working_buffer` / `pos` point into.
+    const size_t consumed = working_buffer.size();
+    detachBuffer();
+    chain.advance(consumed);
+    if (chain.atEnd())
     {
-        LOG_TRACE(log, "nextImpl: EOF at {}", read_position);
-        return false;
+        chain = executor->readNextWindow();
+        if (chain.atEnd())
+        {
+            LOG_TEST(log, "nextImpl: EOF at {}", read_position);
+            return false;
+        }
     }
+
+    auto span = chain.peek();
 
     /// Report the read so `MergeTreeReadPool`'s slow-read backoff still sees it.
     if (profile_callback)
     {
         ProfileInfo info{};
-        info.bytes_requested = chunk.size;
-        info.bytes_read = chunk.size;
+        info.bytes_requested = span.size;
+        info.bytes_read = span.size;
         info.nanoseconds = watch->elapsed();
         profile_callback(info);
     }
 
-    /// `chunk.data` is read-only and owned by the executor; we only expose it,
-    /// never write through it, so dropping const is safe.
-    char * data = const_cast<char *>(chunk.data);
-    internal_buffer = Buffer(data, data + chunk.size);
+    internal_buffer = Buffer(span.data, span.data + span.size);
     working_buffer = internal_buffer;
     pos = working_buffer.begin();
-    read_position = chunk.logical_offset + chunk.size;
+    read_position = span.logical_offset + span.size;
     return true;
+}
+
+void PipelineReadBuffer::detachBuffer()
+{
+    internal_buffer = working_buffer = Buffer(nullptr, nullptr);
+    pos = nullptr;
 }
 
 off_t PipelineReadBuffer::seek(off_t off, int whence)
@@ -77,12 +89,25 @@ off_t PipelineReadBuffer::seek(off_t off, int whence)
     else
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "PipelineReadBuffer::seek: unsupported whence");
 
+    /// If the target lands inside the bytes already in `working_buffer`, just reposition `pos`:
+    /// no executor seek, no dropped window. The compressed reader over-reads a full block and then
+    /// seeks back to a mark inside it; propagating that as a backward seek to the executor would
+    /// refetch and -- since a held source connection is forward-only -- break long-connection reuse.
+    if (!working_buffer.empty()
+        && read_position - working_buffer.size() <= new_pos
+        && new_pos <= read_position)
+    {
+        pos = working_buffer.end() - (read_position - new_pos);
+        return static_cast<off_t>(new_pos);
+    }
+
     LOG_DEBUG(log, "seek to {}", new_pos);
 
-    resetWorkingBuffer();
+    detachBuffer();
+    chain = ChainedBuffers{};
     executor->seek(new_pos);
     read_position = new_pos;
-    return new_pos;
+    return static_cast<off_t>(new_pos);
 }
 
 off_t PipelineReadBuffer::getPosition()
@@ -101,7 +126,8 @@ void PipelineReadBuffer::setReadUntilPosition(size_t position)
     if (position < read_position)
     {
         const size_t current = read_position - available();
-        resetWorkingBuffer();
+        detachBuffer();
+        chain = ChainedBuffers{};
         executor->seek(current);
         read_position = current;
     }

@@ -19,7 +19,7 @@ WITH RECURSIVE search_tree AS (
     FROM tree t, search_tree st
     WHERE t.link = st.id
 )
-SELECT * FROM search_tree;
+SELECT * FROM search_tree ORDER BY ALL;
 
 SELECT '--';
 
@@ -32,6 +32,6 @@ WITH RECURSIVE search_tree AS (
     FROM tree t, search_tree st
     WHERE t.link = st.id
 )
-SELECT * FROM search_tree;
+SELECT * FROM search_tree ORDER BY ALL;
 
 DROP TABLE tree;

@@ -1,0 +1,270 @@
+---
+sidebarTitle: 'Regexp et templates'
+slug: /integrations/data-formats/templates-regexp
+title: 'Importer et exporter des données textuelles personnalisées à l’aide de Template et Regex dans ClickHouse'
+description: 'Page décrivant comment importer et exporter du texte personnalisé à l’aide de Template et Regex dans ClickHouse'
+doc_type: 'guide'
+keywords: ['formats de données', 'templates', 'Regex', 'formats personnalisés', 'analyse syntaxique']
+---
+
+Nous devons souvent traiter des données dans des formats textuels personnalisés. Il peut s’agir d’un format non standard, d’un JSON invalide ou d’un CSV corrompu. L’utilisation de parseurs standard comme CSV ou JSON ne fonctionne pas dans tous ces cas. Mais ClickHouse propose justement des formats puissants pour y faire face : Template et Regex.
+
+<div id="importing-based-on-a-template">
+  ## Importation à partir d’un modèle
+</div>
+
+Supposons que nous voulions importer des données depuis le [fichier journal](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/error.log) :
+
+```bash
+head error.log
+```
+
+```response
+2023/01/15 14:51:17 [error]  client: 7.2.8.1, server: example.com "GET /apple-touch-icon-120x120.png HTTP/1.1"
+2023/01/16 06:02:09 [error]  client: 8.4.2.7, server: example.com "GET /apple-touch-icon-120x120.png HTTP/1.1"
+2023/01/15 13:46:13 [error]  client: 6.9.3.7, server: example.com "GET /apple-touch-icon.png HTTP/1.1"
+2023/01/16 05:34:55 [error]  client: 9.9.7.6, server: example.com "GET /h5/static/cert/icon_yanzhengma.png HTTP/1.1"
+```
+
+Nous pouvons utiliser le format [Template](/fr/reference/formats/Template/Template) pour importer ces données. Nous devons définir une chaîne de modèle contenant des marqueurs de substitution pour les valeurs de chaque ligne de données d’entrée :
+
+```response
+<time> [error] client: <ip>, server: <host> "<request>"
+```
+
+Créons une table pour y importer nos données :
+
+```sql
+CREATE TABLE error_log
+(
+    `time` DateTime,
+    `ip` String,
+    `host` String,
+    `request` String
+)
+ENGINE = MergeTree
+ORDER BY (host, request, time)
+```
+
+Pour importer des données à l’aide d’un modèle spécifique, nous devons enregistrer notre chaîne de modèle dans un fichier ([row.template](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/row.template) dans notre cas) :
+
+```response
+${time:Escaped} [error]  client: ${ip:CSV}, server: ${host:CSV} ${request:JSON}
+```
+
+Nous définissons le nom d’une colonne et la règle d’échappement au format `${name:escaping}`. Plusieurs options sont disponibles ici, comme CSV, JSON, Escaped ou Quoted, qui implémentent les [règles d’échappement correspondantes](/fr/reference/formats/Template/Template).
+
+Nous pouvons maintenant utiliser le fichier fourni comme argument de l’option `format_template_row` lors de l’importation des données (*notez que les fichiers de modèle et de données **ne doivent pas contenir** de symbole `\n` supplémentaire à la fin du fichier*) :
+
+```sql
+INSERT INTO error_log FROM INFILE 'error.log'
+SETTINGS format_template_row = 'row.template'
+FORMAT Template
+```
+
+Et nous pouvons vérifier que nos données ont bien été chargées dans la table :
+
+```sql
+SELECT
+    request,
+    count(*)
+FROM error_log
+GROUP BY request
+```
+
+```response
+┌─request──────────────────────────────────────────┬─count()─┐
+│ GET /img/close.png HTTP/1.1                      │     176 │
+│ GET /h5/static/cert/icon_yanzhengma.png HTTP/1.1 │     172 │
+│ GET /phone/images/icon_01.png HTTP/1.1           │     139 │
+│ GET /apple-touch-icon-precomposed.png HTTP/1.1   │     161 │
+│ GET /apple-touch-icon.png HTTP/1.1               │     162 │
+│ GET /apple-touch-icon-120x120.png HTTP/1.1       │     190 │
+└──────────────────────────────────────────────────┴─────────┘
+```
+
+<div id="skipping-whitespaces">
+  ### Ignorer les espaces
+</div>
+
+Envisagez d&#39;utiliser [TemplateIgnoreSpaces](/fr/reference/formats/Template/TemplateIgnoreSpaces), qui permet d&#39;ignorer les espaces entre les délimiteurs dans un Template :
+
+```text
+Template:               -->  "p1: ${p1:CSV}, p2: ${p2:CSV}"
+TemplateIgnoreSpaces    -->  "p1:${p1:CSV}, p2:${p2:CSV}"
+```
+
+<div id="exporting-data-using-templates">
+  ## Exporter des données à l’aide de modèles
+</div>
+
+Nous pouvons également exporter des données vers n’importe quel format texte à l’aide de modèles. Dans ce cas, nous devons créer deux fichiers :
+
+[Modèle du jeu de résultats](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/output.results), qui définit la structure de l’ensemble du jeu de résultats :
+
+```response
+== Top 10 IPs ==
+${data}
+--- ${rows_read:XML} rows read in ${time:XML} ---
+```
+
+Ici, `rows_read` et `time` sont des métriques système disponibles pour chaque requête. Quant à `data`, il correspond aux lignes générées (`${data}` doit toujours être le premier espace réservé dans ce fichier), à partir d’un modèle défini dans un [**fichier de modèle de ligne**](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/output.rows) :
+
+```response
+${ip:Escaped} generated ${total:Escaped} requests
+```
+
+Utilisons maintenant ces modèles pour exporter la requête suivante :
+
+```sql
+SELECT
+    ip,
+    count() AS total
+FROM error_log GROUP BY ip ORDER BY total DESC LIMIT 10
+FORMAT Template SETTINGS format_template_resultset = 'output.results',
+                         format_template_row = 'output.rows';
+
+== Top 10 IPs ==
+
+9.8.4.6 generated 3 requests
+9.5.1.1 generated 3 requests
+2.4.8.9 generated 3 requests
+4.8.8.2 generated 3 requests
+4.5.4.4 generated 3 requests
+3.3.6.4 generated 2 requests
+8.9.5.9 generated 2 requests
+2.5.1.8 generated 2 requests
+6.8.3.6 generated 2 requests
+6.6.3.5 generated 2 requests
+
+--- 1000 rows read in 0.001380604 ---
+```
+
+<div id="exporting-to-html-files">
+  ### Exportation vers des fichiers HTML
+</div>
+
+Les résultats basés sur des modèles peuvent également être exportés dans des fichiers à l’aide d’une clause [`INTO OUTFILE`](/fr/reference/statements/select/into-outfile). Générons des fichiers HTML à partir des formats [jeu de résultats](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/html.results) et [ligne](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/html.row) fournis :
+
+```sql
+SELECT
+    ip,
+    count() AS total
+FROM error_log GROUP BY ip ORDER BY total DESC LIMIT 10
+INTO OUTFILE 'out.html'
+FORMAT Template
+SETTINGS format_template_resultset = 'html.results',
+         format_template_row = 'html.row'
+```
+
+<div id="exporting-to-xml">
+  ### Exportation au format XML
+</div>
+
+Le format Template peut être utilisé pour générer tous les fichiers texte imaginables, y compris en XML. Il suffit de fournir un modèle approprié et d’effectuer l’exportation.
+
+Vous pouvez également utiliser le format [XML](/fr/reference/formats/XML) pour obtenir des résultats XML standard, métadonnées comprises :
+
+```sql
+SELECT *
+FROM error_log
+LIMIT 3
+FORMAT XML
+```
+
+```xml
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+        <meta>
+                <columns>
+                        <column>
+                                <name>time</name>
+                                <type>DateTime</type>
+                        </column>
+                        ...
+                </columns>
+        </meta>
+        <data>
+                <row>
+                        <time>2023-01-15 13:00:01</time>
+                        <ip>3.5.9.2</ip>
+                        <host>example.com</host>
+                        <request>GET /apple-touch-icon-120x120.png HTTP/1.1</request>
+                </row>
+                ...
+        </data>
+        <rows>3</rows>
+        <rows_before_limit_at_least>1000</rows_before_limit_at_least>
+        <statistics>
+                <elapsed>0.000745001</elapsed>
+                <rows_read>1000</rows_read>
+                <bytes_read>88184</bytes_read>
+        </statistics>
+</result>
+
+```
+
+<div id="importing-data-based-on-regular-expressions">
+  ## Importation de données à l’aide d’expressions régulières
+</div>
+
+Le format [Regexp](/fr/reference/formats/Regexp) permet de gérer des cas plus complexes, lorsque les données d’entrée doivent être analysées de manière plus élaborée. Analysons notre fichier d’exemple [error.log](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/error.log), mais cette fois en capturant le nom du fichier et le protocole afin de les enregistrer dans des colonnes distinctes. Commençons par préparer une nouvelle table :
+
+```sql
+CREATE TABLE error_log
+(
+    `time` DateTime,
+    `ip` String,
+    `host` String,
+    `file` String,
+    `protocol` String
+)
+ENGINE = MergeTree
+ORDER BY (host, file, time)
+```
+
+Nous pouvons maintenant importer des données à l’aide d’une expression régulière :
+
+```sql
+INSERT INTO error_log FROM INFILE 'error.log'
+SETTINGS
+  format_regexp = '(.+?) \\[error\\]  client: (.+), server: (.+?) "GET .+?([^/]+\\.[^ ]+) (.+?)"'
+FORMAT Regexp
+```
+
+ClickHouse insérera les données de chaque groupe de capture dans la colonne correspondante selon leur ordre. Vérifions les données :
+
+```sql
+SELECT * FROM error_log LIMIT 5
+```
+
+```response
+┌────────────────time─┬─ip──────┬─host────────┬─file─────────────────────────┬─protocol─┐
+│ 2023-01-15 13:00:01 │ 3.5.9.2 │ example.com │ apple-touch-icon-120x120.png │ HTTP/1.1 │
+│ 2023-01-15 13:01:40 │ 3.7.2.5 │ example.com │ apple-touch-icon-120x120.png │ HTTP/1.1 │
+│ 2023-01-15 13:16:49 │ 9.2.9.2 │ example.com │ apple-touch-icon-120x120.png │ HTTP/1.1 │
+│ 2023-01-15 13:21:38 │ 8.8.5.3 │ example.com │ apple-touch-icon-120x120.png │ HTTP/1.1 │
+│ 2023-01-15 13:31:27 │ 9.5.8.4 │ example.com │ apple-touch-icon-120x120.png │ HTTP/1.1 │
+└─────────────────────┴─────────┴─────────────┴──────────────────────────────┴──────────┘
+```
+
+Par défaut, ClickHouse renvoie une erreur en cas de lignes non reconnues. Si vous préférez ignorer les lignes non reconnues, activez ce comportement à l’aide de l’option [format&#95;regexp&#95;skip&#95;unmatched](/fr/reference/settings/formats#format_regexp_skip_unmatched) :
+
+```sql
+SET format_regexp_skip_unmatched = 1;
+```
+
+<div id="other-formats">
+  ## Autres formats
+</div>
+
+ClickHouse prend en charge de nombreux formats, textuels comme binaires, afin de couvrir divers scénarios et plateformes. Découvrez d&#39;autres formats et différentes façons de les utiliser dans les articles suivants :
+
+* [Formats CSV et TSV](/fr/guides/clickhouse/data-formats/csv-tsv)
+* [Parquet](/fr/guides/clickhouse/data-formats/parquet)
+* [Formats JSON](/fr/guides/clickhouse/data-formats/json/intro)
+* **Regex et Template**
+* [Formats Native et binaires](/fr/guides/clickhouse/data-formats/binary)
+* [Formats SQL](/fr/guides/clickhouse/data-formats/sql)
+
+Consultez également [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local) - un outil portable complet pour travailler sur des fichiers locaux/distants sans avoir besoin d&#39;un serveur ClickHouse.

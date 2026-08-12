@@ -1,0 +1,155 @@
+---
+description: 'Documentación de la cláusula INTERSECT'
+sidebarTitle: 'INTERSECT'
+slug: /sql-reference/statements/select/intersect
+title: 'Cláusula INTERSECT'
+doc_type: 'reference'
+---
+
+La cláusula `INTERSECT` devuelve solo aquellas filas que aparecen tanto en la primera como en la segunda consulta. Las consultas deben coincidir en el número de columnas, el orden y el tipo. El resultado de `INTERSECT` puede contener filas duplicadas.
+
+Varias sentencias `INTERSECT` se ejecutan de izquierda a derecha si no se especifican paréntesis. El operador `INTERSECT` tiene mayor prioridad que las cláusulas `UNION` y `EXCEPT`.
+
+```sql
+SELECT column1 [, column2 ]
+FROM table1
+[WHERE condition]
+
+INTERSECT
+
+SELECT column1 [, column2 ]
+FROM table2
+[WHERE condition]
+
+```
+
+La condición puede ser cualquier expresión, según sus requisitos.
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+Aquí tienes un ejemplo sencillo que halla la intersección entre los números del 1 al 10 y los números del 3 al 8:
+
+```sql title="Query"
+SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,8);
+```
+
+```response title="Response"
+┌─number─┐
+│      3 │
+│      4 │
+│      5 │
+│      6 │
+│      7 │
+│      8 │
+└────────┘
+```
+
+`INTERSECT` es útil si tienes dos tablas que comparten una o varias columnas. Puedes obtener la intersección de los resultados de dos consultas, siempre que los resultados contengan las mismas columnas. Por ejemplo, supongamos que tenemos unos cuantos millones de filas de datos históricos de criptomonedas que incluyen precios de operaciones y volumen:
+
+```sql title="Query"
+CREATE TABLE crypto_prices
+(
+    trade_date Date,
+    crypto_name String,
+    volume Float32,
+    price Float32,
+    market_cap Float32,
+    change_1_day Float32
+)
+ENGINE = MergeTree
+PRIMARY KEY (crypto_name, trade_date);
+
+INSERT INTO crypto_prices
+   SELECT *
+   FROM s3(
+    'https://learn-clickhouse.s3.us-east-2.amazonaws.com/crypto_prices.csv',
+    'CSVWithNames'
+);
+
+SELECT * FROM crypto_prices
+WHERE crypto_name = 'Bitcoin'
+ORDER BY trade_date DESC
+LIMIT 10;
+```
+
+```response title="Response"
+┌─trade_date─┬─crypto_name─┬──────volume─┬────price─┬───market_cap─┬──change_1_day─┐
+│ 2020-11-02 │ Bitcoin     │ 30771456000 │ 13550.49 │ 251119860000 │  -0.013585099 │
+│ 2020-11-01 │ Bitcoin     │ 24453857000 │ 13737.11 │ 254569760000 │ -0.0031840964 │
+│ 2020-10-31 │ Bitcoin     │ 30306464000 │ 13780.99 │ 255372070000 │   0.017308505 │
+│ 2020-10-30 │ Bitcoin     │ 30581486000 │ 13546.52 │ 251018150000 │   0.008084608 │
+│ 2020-10-29 │ Bitcoin     │ 56499500000 │ 13437.88 │ 248995320000 │   0.012552661 │
+│ 2020-10-28 │ Bitcoin     │ 35867320000 │ 13271.29 │ 245899820000 │   -0.02804481 │
+│ 2020-10-27 │ Bitcoin     │ 33749879000 │ 13654.22 │ 252985950000 │    0.04427984 │
+│ 2020-10-26 │ Bitcoin     │ 29461459000 │ 13075.25 │ 242251000000 │  0.0033826586 │
+│ 2020-10-25 │ Bitcoin     │ 24406921000 │ 13031.17 │ 241425220000 │ -0.0058658565 │
+│ 2020-10-24 │ Bitcoin     │ 24542319000 │ 13108.06 │ 242839880000 │   0.013650347 │
+└────────────┴─────────────┴─────────────┴──────────┴──────────────┴───────────────┘
+```
+
+Ahora supongamos que tenemos una tabla llamada `holdings` que contiene una lista de las criptomonedas que tenemos, junto con el número de monedas:
+
+```sql title="Query"
+CREATE TABLE holdings
+(
+    crypto_name String,
+    quantity UInt64
+)
+ENGINE = MergeTree
+PRIMARY KEY (crypto_name);
+
+INSERT INTO holdings VALUES
+   ('Bitcoin', 1000),
+   ('Bitcoin', 200),
+   ('Ethereum', 250),
+   ('Ethereum', 5000),
+   ('DOGEFI', 10);
+   ('Bitcoin Diamond', 5000);
+```
+
+Podemos usar `INTERSECT` para responder preguntas como **&quot;¿Qué monedas tenemos que hayan cotizado por encima de $100?&quot;**:
+
+```sql title="Query"
+SELECT crypto_name FROM holdings
+INTERSECT
+SELECT crypto_name FROM crypto_prices
+WHERE price > 100
+```
+
+```response title="Response"
+┌─crypto_name─┐
+│ Bitcoin     │
+│ Bitcoin     │
+│ Ethereum    │
+│ Ethereum    │
+└─────────────┘
+```
+
+Esto significa que, en algún momento, Bitcoin y Ethereum cotizaron por encima de los $100, mientras que DOGEFI y Bitcoin Diamond nunca lo hicieron (al menos según los datos que tenemos aquí, en este ejemplo).
+
+<div id="intersect-distinct">
+  ## INTERSECT DISTINCT
+</div>
+
+Observa que, en la consulta anterior, teníamos varias posiciones de Bitcoin y Ethereum que cotizaban por encima de $100. Puede resultar útil eliminar las filas duplicadas, ya que solo repiten lo que ya sabemos. Puedes añadir `DISTINCT` a `INTERSECT` para eliminar las filas duplicadas del resultado:
+
+```sql title="Query"
+SELECT crypto_name FROM holdings
+INTERSECT DISTINCT
+SELECT crypto_name FROM crypto_prices
+WHERE price > 100;
+```
+
+```response title="Response"
+┌─crypto_name─┐
+│ Bitcoin     │
+│ Ethereum    │
+└─────────────┘
+```
+
+**Véase también**
+
+* [UNION](/es/reference/statements/select/union)
+* [EXCEPT](/es/reference/statements/select/except)

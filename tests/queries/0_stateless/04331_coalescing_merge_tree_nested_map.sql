@@ -21,3 +21,23 @@ OPTIMIZE TABLE t_coalescing_nested_map FINAL;
 SELECT k, statsMap.id, statsMap.val FROM t_coalescing_nested_map ORDER BY k;
 
 DROP TABLE t_coalescing_nested_map;
+
+-- Exact #101937 repro: canonical `.key`/`.value` subcolumns with an Array(String) key, merged at
+-- query time via SELECT ... FINAL (the case in the issue, distinct from OPTIMIZE FINAL above).
+DROP TABLE IF EXISTS t_coalescing_nested_map_issue_101937;
+
+CREATE TABLE t_coalescing_nested_map_issue_101937
+(
+    key UInt32,
+    `testMap.key` Array(String),
+    `testMap.value` Array(UInt32)
+)
+ENGINE = CoalescingMergeTree
+ORDER BY key;
+
+INSERT INTO t_coalescing_nested_map_issue_101937 VALUES (1, ['a'], [10]);
+INSERT INTO t_coalescing_nested_map_issue_101937 VALUES (1, ['b'], [20]);
+
+SELECT * FROM t_coalescing_nested_map_issue_101937 FINAL ORDER BY ALL;
+
+DROP TABLE t_coalescing_nested_map_issue_101937;

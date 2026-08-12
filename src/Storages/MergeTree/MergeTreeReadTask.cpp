@@ -61,12 +61,23 @@ void MergeTreeReadTaskColumns::moveAllColumnsFromPrewhere()
     pre_columns.clear();
 }
 
-void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges)
+void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges, const std::vector<MarkRanges> & patches_ranges)
 {
     main->updateAllMarkRanges(ranges);
 
     for (auto & reader : prewhere)
         reader->updateAllMarkRanges(ranges);
+
+    if (patches.size() != patches_ranges.size())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Patches ranges count mismatch, readers: {}, ranges: {}",
+            patches.size(), patches_ranges.size());
+    }
+
+    for (size_t i = 0; i < patches.size(); ++i)
+        patches[i]->getReader()->updateAllMarkRanges(patches_ranges[i]);
 }
 
 MergeTreeReadTask::MergeTreeReadTask(
@@ -87,19 +98,29 @@ MergeTreeReadTask::MergeTreeReadTask(
 {
     if (updater)
     {
-        dataflow_cache_update_cb
-            = [&](const ColumnsWithTypeAndName & columns, size_t read_bytes, std::optional<bool> & should_continue_sampling) -> void
+        dataflow_cache_update_cb = [&](const ColumnsWithTypeAndName & columns,
+                                       const NameSet & partially_read_columns,
+                                       size_t read_bytes,
+                                       std::optional<bool> & should_continue_sampling) -> void
         {
             chassert(updater);
-            const auto & part_columns = info->data_part->getColumns();
-            auto column_sizes = info->data_part->getColumnSizes();
-            updater->recordInputColumns(columns, part_columns, *column_sizes, read_bytes, should_continue_sampling);
+            const auto & part_columns = info->data_part_info->getColumns();
+            /// Cached map by shared pointer -- no per-block copy; null for borrowed parts (no size info).
+            static const std::unordered_map<String, ColumnSize> no_column_sizes;
+            auto column_sizes = info->data_part_info->getColumnSizes();
+            updater->recordInputColumns(
+                columns,
+                partially_read_columns,
+                part_columns,
+                column_sizes ? *column_sizes : no_column_sizes,
+                read_bytes,
+                should_continue_sampling);
         };
     }
 }
 
 /// Returns pointer to the index if all columns in the read step belongs to the read step for that index.
-static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & index_read_tasks, const NamesAndTypesList & columns_to_read)
+static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & index_read_tasks, const NamesAndTypesList & columns_to_read, const IMergeTreeDataPart & data_part)
 {
     if (index_read_tasks.empty())
         return nullptr;
@@ -133,14 +154,23 @@ static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & 
         }
     }
 
-    /// Allow mixing index columns with regular columns when the regular columns are dependencies
-    /// for evaluating default expressions of text index virtual columns (e.g., for partially materialized text indexes).
-    /// In this case, don't return an index task - let the main reader handle all columns.
-    /// The main reader will evaluate the default expression and fill the virtual column.
+    /// Allow mixing index columns with regular columns when the regular columns are dependencies for evaluating
+    /// default expressions of text index virtual columns (e.g., for partially materialized text indexes).
     if (!index_for_step.empty() && has_non_index_columns)
         return nullptr;
 
-    return index_for_step.empty() ? nullptr : &index_read_tasks.at(index_for_step);
+    if (index_for_step.empty())
+        return nullptr;
+
+    /// The index may be not materialized in this part. There is no index file to read, so let
+    /// the main reader handle the step and evaluate the virtual column's default expression instead.
+    const auto & index_task = index_read_tasks.at(index_for_step);
+    const auto & index = index_task.index.index;
+
+    if (!index->getDeserializedFormat(data_part, index->getFileName()))
+        return nullptr;
+
+    return &index_task;
 }
 
 MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
@@ -153,13 +183,11 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 
     auto create_reader = [&](const NamesAndTypesList & columns_to_read, bool is_prewhere)
     {
-        auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(read_info->data_part, read_info->alter_conversions);
-
         return createMergeTreeReader(
-            part_info,
+            read_info->data_part_info,
             columns_to_read,
             extras.storage_snapshot,
-            read_info->data_part->storage.getSettings(),
+            read_info->data_part_info->getStorageSettings(),
             ranges,
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
@@ -174,11 +202,16 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 
     bool is_vector_search = read_info->read_hints.vector_search_results.has_value();
     if (is_vector_search)
-        new_readers.main->data_part_info_for_read->setReadHints(read_info->read_hints, read_info->task_columns.columns);
+        new_readers.main->setReadHints(read_info->read_hints, read_info->task_columns.columns);
 
     for (const auto & pre_columns_per_step : read_info->task_columns.pre_columns)
     {
-        if (const auto * index_read_task = getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step))
+        /// Index-read-tasks (skip-index-on-data-read) are coordinator-only, so the concrete part
+        /// is present whenever the list is non-empty; skip the concrete access otherwise.
+        const IndexReadTask * index_read_task = read_info->index_read_tasks.empty()
+            ? nullptr
+            : getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step, *read_info->data_part_info->getDataPart());
+        if (index_read_task)
         {
             new_readers.prewhere.push_back(createMergeTreeReaderIndex(
                 new_readers.main.get(),
@@ -192,7 +225,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
         }
 
         if (is_vector_search)
-            new_readers.prewhere.back()->data_part_info_for_read->setReadHints(read_info->read_hints, pre_columns_per_step);
+            new_readers.prewhere.back()->setReadHints(read_info->read_hints, pre_columns_per_step);
     }
 
     auto create_patch_reader = [&](size_t part_idx)
@@ -201,7 +234,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             read_info->patch_parts[part_idx].part,
             read_info->task_columns.patch_columns[part_idx],
             extras.storage_snapshot,
-            read_info->data_part->storage.getSettings(),
+            read_info->data_part_info->getStorageSettings(),
             patches_ranges[part_idx],
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
@@ -226,7 +259,8 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
     const Readers & task_readers,
     const PrewhereExprInfo & prewhere_actions,
-    const ReadStepsPerformanceCounters & read_steps_performance_counters)
+    const ReadStepsPerformanceCounters & read_steps_performance_counters,
+    bool collect_predicate_statistics)
 {
     if (prewhere_actions.steps.size() != task_readers.prewhere.size())
     {
@@ -250,13 +284,22 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
             return reader->canReadIncompleteGranules();
         });
 
+    /// Only hand counters to the readers when system.predicate_statistics_log collection is on.
+    /// Otherwise the per-granule counter updates are dead work (see MergeTreeRangeReader).
+    auto index_counter = collect_predicate_statistics
+        ? read_steps_performance_counters.getCounterForIndexStep() : nullptr;
+    auto step_counter = [&](size_t step) -> ReadStepPerformanceCountersPtr
+    {
+        return collect_predicate_statistics ? read_steps_performance_counters.getCountersForStep(step) : nullptr;
+    };
+
     if (task_readers.prepared_index)
     {
         range_readers.emplace_back(
             task_readers.prepared_index.get(),
             Block{},
             /*prewhere_info_=*/ nullptr,
-            read_steps_performance_counters.getCounterForIndexStep(),
+            index_counter,
             /*main_reader_=*/ false,
             can_read_incomplete_granules);
     }
@@ -268,7 +311,7 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
             task_readers.prewhere[i].get(),
             range_readers.empty() ? Block{} : range_readers.back().getSampleBlock(),
             prewhere_actions.steps[i].get(),
-            read_steps_performance_counters.getCountersForStep(counter_idx++),
+            step_counter(counter_idx++),
             /*main_reader_=*/ false,
             can_read_incomplete_granules);
     }
@@ -279,7 +322,7 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
             task_readers.main.get(),
             range_readers.empty() ? Block{} : range_readers.back().getSampleBlock(),
             /*prewhere_info_=*/ nullptr,
-            read_steps_performance_counters.getCountersForStep(counter_idx),
+            step_counter(counter_idx),
             /*main_reader_=*/ true,
             can_read_incomplete_granules);
     }
@@ -291,7 +334,8 @@ void MergeTreeReadTask::initializeReadersChain(
     const PrewhereExprInfo & prewhere_actions,
     MergeTreeIndexBuildContextPtr index_build_context,
     LazyMaterializingRowsPtr lazy_materializing_rows,
-    const ReadStepsPerformanceCounters & read_steps_performance_counters)
+    const ReadStepsPerformanceCounters & read_steps_performance_counters,
+    bool collect_predicate_statistics)
 {
     if (readers_chain.isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Range readers chain is already initialized");
@@ -307,7 +351,9 @@ void MergeTreeReadTask::initializeReadersChain(
     for (const auto & step : prewhere_actions.steps)
         all_prewhere_actions.steps.push_back(step);
 
-    readers_chain = createReadersChain(readers, all_prewhere_actions, read_steps_performance_counters);
+    readers_chain = createReadersChain(
+        readers, all_prewhere_actions, read_steps_performance_counters,
+        collect_predicate_statistics);
 }
 
 void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPtr & index_build_context, const LazyMaterializingRowsPtr & lazy_materializing_rows)
@@ -380,8 +426,8 @@ UInt64 MergeTreeReadTask::estimateNumRows() const
     if (unread_rows_in_current_granule >= rows_to_read)
         return rows_to_read;
 
-    const auto & index_granularity = info->data_part->index_granularity;
-    return index_granularity->countRowsForRows(readers_chain.currentMark(), rows_to_read, readers_chain.numReadRowsInCurrentGranule());
+    const auto & index_granularity = info->data_part_info->getIndexGranularity();
+    return index_granularity.countRowsForRows(readers_chain.currentMark(), rows_to_read, readers_chain.numReadRowsInCurrentGranule());
 }
 
 MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
@@ -459,6 +505,34 @@ bool MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere() const
     /// Only `prepared_index` (a `MergeTreeReaderIndex`) sits ahead of the PREWHERE readers in the
     /// reader chain and is able to skip whole marks via `canSkipMark`.
     return readers.prepared_index && readers.prepared_index->canSkipAnyMark();
+}
+
+bool MergeTreeReadTask::appliesMutationsBeforePrewhere() const
+{
+    /// On-fly mutations (lightweight UPDATE/DELETE) and patch parts are spliced into the readers
+    /// chain ahead of PREWHERE (see initializeReadersChain). They drop or rewrite rows before
+    /// PREWHERE evaluates them, so a mark can become fully non-matching only because of the
+    /// mutation, not because of the PREWHERE predicate itself. Such marks must not be attributed
+    /// to the predicate in the QueryConditionCache, otherwise a later query that shares the same
+    /// predicate but does not apply the mutations (apply_mutations_on_fly = 0) would wrongly skip
+    /// them. The read path already bypasses the cache in this case; this keeps the write path
+    /// symmetric.
+    ///
+    /// Only filters that vary between queries count. A materialized lightweight delete does not:
+    /// `_row_exists` is committed part data, so every query reading the part sees the same rows.
+    /// Its step lands in `mutation_steps` too, hence the checks below instead of testing that list.
+    /// (`apply_deleted_mask = 0` is the exception and skips the cache entirely, see
+    /// MergeTreeReaderSettings::createFromContext.)
+    if (!info->patch_parts.empty())
+        return true;
+
+    /// Not `alter_conversions->hasMutations()`: a pending mutation that touches no column this
+    /// query reads produces no step and rewrites nothing the query observes.
+    if (info->has_on_fly_mutation_steps)
+        return true;
+
+    /// An unmaterialized lightweight delete is applied from the mutations snapshot at read time.
+    return info->alter_conversions && info->alter_conversions->hasLightweightDelete();
 }
 
 }

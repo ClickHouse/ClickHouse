@@ -47,7 +47,7 @@ def run_git_import(dir):
 
 def create_tables():
     node.query(
-        f"""
+        """
         CREATE TABLE commits
         (
             hash String,
@@ -68,7 +68,7 @@ def create_tables():
     )
 
     node.query(
-        f"""
+        """
         CREATE TABLE file_changes
         (
             change_type Enum('Add' = 1, 'Delete' = 2, 'Modify' = 3, 'Rename' = 4, 'Copy' = 5, 'Type' = 6),
@@ -99,7 +99,7 @@ def create_tables():
     )
 
     node.query(
-        f"""
+        """
         CREATE TABLE line_changes
         (
             sign Int8,
@@ -159,9 +159,9 @@ def insert_into_tables(dir):
 
 
 def drop_tables():
-    node.query(f"DROP TABLE commits")
-    node.query(f"DROP TABLE file_changes")
-    node.query(f"DROP TABLE line_changes")
+    node.query("DROP TABLE commits")
+    node.query("DROP TABLE file_changes")
+    node.query("DROP TABLE line_changes")
 
 
 def test_git_import():

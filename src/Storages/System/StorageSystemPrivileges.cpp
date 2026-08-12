@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemPrivileges.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/SettingsProfile.h>
@@ -154,3 +155,6 @@ void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr,
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemPrivileges) }

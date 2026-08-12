@@ -45,6 +45,6 @@ echo "Installing Python packages into venv..."
 sudo -u "$USER" -i bash -c '$(brew --prefix python@3)/bin/python3 -m venv --upgrade ~/venv && ~/venv/bin/pip install --upgrade boto3'
 
 INIT_ENVIRONMENT=${INIT_ENVIRONMENT:-macos}
-aws s3 cp "s3://github-runners-data/cloud-init/${INIT_ENVIRONMENT}.py" /tmp/runner-init.py
+aws s3 cp --region us-east-1 "s3://github-runners-data/cloud-init/${INIT_ENVIRONMENT}.py" /tmp/runner-init.py
 rm -rf "$HOME/actions-runner/_work"
 sudo -u "$USER" -i bash -c "$HOME/venv/bin/python /tmp/runner-init.py --environment \"$INIT_ENVIRONMENT\""

@@ -24,7 +24,7 @@ def fail_request(_request_number, _method=None):
 
 
 @route("/throttle_request/<_request_number>")
-def fail_request(_request_number):
+def throttle_request(_request_number):
     request_number = int(_request_number)
     if request_number > 0:
         cache["throttle_request_number"] = request_number

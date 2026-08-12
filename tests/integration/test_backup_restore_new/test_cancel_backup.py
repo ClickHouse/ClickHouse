@@ -186,7 +186,7 @@ def test_cancel_backup():
         "CREATE TABLE tbl (x UInt64) ENGINE=MergeTree() ORDER BY tuple() PARTITION BY x%20"
     )
 
-    node.query(f"INSERT INTO tbl SELECT number FROM numbers(500)")
+    node.query("INSERT INTO tbl SELECT number FROM numbers(500)")
 
     try_backup_id_1 = uuid.uuid4().hex
     start_backup(try_backup_id_1)
@@ -196,14 +196,14 @@ def test_cancel_backup():
     start_backup(backup_id)
     wait_backup(backup_id)
 
-    node.query(f"DROP TABLE tbl SYNC")
+    node.query("DROP TABLE tbl SYNC")
 
     try_restore_id_1 = uuid.uuid4().hex
     start_restore(try_restore_id_1, backup_id)
     cancel_restore(try_restore_id_1)
 
     # IF EXISTS because it's unknown whether RESTORE had managed to create a table before it got cancelled.
-    node.query(f"DROP TABLE IF EXISTS tbl SYNC")
+    node.query("DROP TABLE IF EXISTS tbl SYNC")
 
     restore_id = uuid.uuid4().hex
     start_restore(restore_id, backup_id)
@@ -216,7 +216,7 @@ def test_shutdown_cancel_backup():
         "CREATE TABLE tbl (x UInt64) ENGINE=MergeTree() ORDER BY tuple() PARTITION BY x%5"
     )
 
-    node.query(f"INSERT INTO tbl SELECT number FROM numbers(500)")
+    node.query("INSERT INTO tbl SELECT number FROM numbers(500)")
 
     backup_id = uuid.uuid4().hex
     start_backup(backup_id)

@@ -14,39 +14,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int MALFORMED_AI_PROVIDER_RESPONSE;
 }
-
-namespace
-{
-String extractProviderError(const std::string & response_body, int status_code)
-{
-    try
-    {
-        Poco::JSON::Parser err_parser;
-        auto err_json = err_parser.parse(response_body);
-        auto err_obj = err_json.extract<Poco::JSON::Object::Ptr>();
-        if (err_obj && err_obj->has("error"))
-        {
-            auto err = err_obj->getObject("error");
-            if (err)
-            {
-                String msg = err->optValue<String>("message", "");
-                String type = err->optValue<String>("type", "");
-                if (!msg.empty())
-                    return fmt::format("HTTP {} [{}]: {}", status_code, type, msg);
-            }
-        }
-    }
-    catch (...) {} // NOLINT(bugprone-empty-catch) Ok: we throw error with full response body below
-
-    size_t max_len = 256;
-    return fmt::format("HTTP {} (response truncated to {} chars): {}", status_code, max_len,
-        response_body.substr(0, std::min(response_body.size(), max_len)));
-}
-}
-
 
 static constexpr auto DEFAULT_ANTHROPIC_API_VERSION = "2023-06-01";
 
@@ -132,9 +101,9 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
     auto status = http_response.getStatus();
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
     {
-        throw Exception(
-            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-            "Anthropic provider error: {}", extractProviderError(response_body, static_cast<int>(status)));
+        throw AIProviderHTTPException(
+            status,
+            PreformattedMessage::create("Anthropic provider error: {}", formatProviderError(static_cast<int>(status), response_body)));
     }
 
     Poco::JSON::Parser parser;

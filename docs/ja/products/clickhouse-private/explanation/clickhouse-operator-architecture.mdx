@@ -1,0 +1,160 @@
+---
+noindex: true
+title: "ClickHouse Operator アーキテクチャ"
+sidebarTitle: "アーキテクチャ"
+description: "このドキュメントでは、Kubernetes 上で稼働する ClickHouse クラスターのライフサイクルを管理する ClickHouse Operator のアーキテクチャと内部の仕組みについて説明します"
+---
+
+このドキュメントでは、Kubernetes 上で稼働する ClickHouse クラスターのライフサイクルを管理する ClickHouse Operator のアーキテクチャと内部の仕組みについて説明します。
+
+<div id="operator-overview">
+  ## オペレーター概要
+</div>
+
+ClickHouse Operator は、登録された `ClickHouseCluster` カスタムリソースのプロビジョニングとリコンサイル、およびクラスターのライフサイクル全体の管理を担います。主な責務は次のとおりです。
+
+* **サーバーコンポーネントと Keeper コンポーネントのデプロイおよび終了**
+* **クラスターの状態の制御** (稼働中、停止中など) 
+* **バックアップリクエストの処理**
+* **スケールインまたはレプリカ削除後の PVC** (PersistentVolumeClaims) のクリーンアップ
+* **レプリカの追加または削除による**クラスターの水平スケーリング
+
+この オペレーター は `ClickHouseCluster` カスタムリソースの変更を監視し、実際のクラスターの状態が CR で宣言された望ましい状態と一致するようにリコンサイルします。
+
+<div id="instance-lifecycle">
+  ## インスタンスのライフサイクル
+</div>
+
+ClickHouseのインスタンスは、作成から終了までの間に、定義された一連の状態を遷移します。以下の図は、その遷移を示しています。
+
+<Frame caption="インスタンスのライフサイクル">
+  ![インスタンスのライフサイクル](/images/instance-lifecycle.png)
+</Frame>
+
+このライフサイクルを理解しておくことは、クラスターが想定外の状態にある理由を診断したり、スケーリングやアップグレードなどの操作を計画したりする際に重要です。
+
+<div id="one-clickhousecluster-per-namespace">
+  ## ネームスペースごとに 1 つの ClickHouseCluster
+</div>
+
+オペレーターは、Kubernetes の各ネームスペースに `ClickHouseCluster` カスタムリソースがちょうど 1 つだけ存在することを前提としています。同じネームスペースに複数の `ClickHouseCluster` インスタンスをデプロイすると、どのリソースがどのクラスターに属するのかをオペレーターが判別できないため、リコンサイルの競合が発生します。
+
+`onprem-clickhouse-cluster` Helm チャートは、ネームスペース内の `ClickHouseCluster` を 1 つに制限する `ResourceQuota` を作成することで、Kubernetes API サーバーのレベルでこの制約を強制します。
+
+```yaml
+apiVersion: v1
+kind: ResourceQuota
+spec:
+  hard:
+    count/clickhouseclusters.clickhouse.com: "1"
+```
+
+このクォータはデフォルトで有効になっています (Helm の values では `resourceQuota.enabled: true`) 。無効にしないでください。無効にすると、オペレーターがクラスターをリコンサイルできなくなり、クラスターの状態が悪化します。
+
+複数の ClickHouse クラスターを運用する必要がある場合は、それぞれを別々のネームスペースにデプロイしてください。
+
+<div id="statefulset-architecture-multists">
+  ## StatefulSet アーキテクチャ (MultiSTS)
+</div>
+
+オペレーターは **MultiStatefulSet (MultiSTS)&#x20;**&#x20;モデルを採用しており、**各レプリカはそれぞれ専用の StatefulSet によって管理されます** (ClickHouse server ポッドごとに 1 つの StatefulSet) 。この設計により、個々のレプリカをより細かく制御できるようになり、他に影響を与えずに特定のレプリカを削除する必要があるスケールインのような操作で特に重要です。
+
+<Frame caption="MultiSTS レイアウト">
+  ![MultiSTS レイアウト](/images/multists-layout.png)
+</Frame>
+
+MultiSTS では、レプリカは順序番号ベースの識別から切り離されるため、オペレーターは各レプリカを個別に管理できます。
+
+<div id="replicastatemap">
+  ## ReplicaStateMap
+</div>
+
+MultiSTS のレプリカは、ポッドの稼働期間やライフサイクルを判断する決定論的な手段として ordinal index に依存できないため、オペレーター は各 StatefulSet の状態を、CR の `.status.replicaStateMap` フィールドに格納されたマップで追跡します。
+
+ReplicaStateMap のサンプルは次のとおりです。
+
+```yaml
+replicaStateMap:
+  c-navy-wl-64-server-5hvvzxe:
+    createdAt: "2023-08-03T13:25:40Z"
+    isBackupPod: true
+    state: Pending
+    updatedAt: "2023-08-03T13:25:40Z"
+  c-navy-wl-64-server-fvnytjb:
+    createdAt: "2023-08-03T13:25:40Z"
+    state: Pending
+    updatedAt: "2023-08-03T13:25:40Z"
+  c-navy-wl-64-server-un85gpo:
+    createdAt: "2023-08-03T13:25:40Z"
+    state: Pending
+    updatedAt: "2023-08-03T13:25:40Z"
+```
+
+<div id="replica-states">
+  ### レプリカの状態
+</div>
+
+各レプリカは、次のいずれかの状態を取ります。
+
+| State               | Description                                                               |
+| ------------------- | ------------------------------------------------------------------------- |
+| **Pending**         | レプリカはマップに登録されていますが、まだ正常に稼働している状態には達していません。追加されると、オペレーターが Ready への移行を進めます。 |
+| **Ready**           | レプリカは稼働中で、正常な状態です。                                                        |
+| **Stopped**         | レプリカは意図的に停止されています。                                                        |
+| **Condemned**       | レプリカはスケールイン操作中に廃棄対象としてマークされています。                                          |
+| **Dropped**         | レプリカは完全に削除されています。                                                         |
+| **VolumeRestoring** | レプリカの永続ボリュームはバックアップから復元中です。                                               |
+| **VolumeRestored**  | レプリカの永続ボリュームは復元され、使用可能な状態です。                                              |
+
+<div id="backup-pod-designation">
+  ### バックアップポッドの指定
+</div>
+
+任意の時点で、**バックアップポッド** (`isBackupPod: true`) に指定されるレプリカは必ず1つだけです。バックアップ操作はこのレプリカ上で実行されます。オペレーターは、バックアップ操作が中断されないよう、スケールイン時にバックアップレプリカを廃棄対象としてマークしないようにしていますが、万一その状況が発生した場合にも備えて、コード上ではこのエッジケースに防御的に対処しています。
+
+> **警告:** ReplicaStateMap における状態追跡は、オペレーターの内部状態管理のためだけのものであり、外部コンポーネントから利用すべきではありません。
+
+<div id="parallel-vs-rolling-reconciliation">
+  ## 並列リコンサイルとローリングリコンサイル
+</div>
+
+オペレーターは、変更内容に応じて 2 つの異なるリコンサイル戦略を使い分けます。
+
+* **並列リコンサイル** は、StatefulSet の spec における変更がレプリカ数だけである場合に使用されます。この場合、既存のポッドに影響を及ぼす変更はないため、すべての StatefulSet を同時に更新できます。
+
+* **ローリングリコンサイル** は、それ以外のすべての spec 変更 (configuration の更新、イメージの変更、resource の調整など) に使用されます。この場合は補助的なアップグレードループが起動し、StatefulSet を 1 つずつリコンサイルします。その際、PodDisruptionBudget の `maxUnavailable` 設定に従うことで、ロールアウト中にクラスターが許容される中断数を超えないようにします。
+
+<div id="horizontal-scaling">
+  ## 水平スケーリング
+</div>
+
+<div id="scale-out">
+  ### スケールアウト
+</div>
+
+MultiSTS モードでのスケールアウトはシンプルです。ReplicaStateMap に新しいレプリカ名が追加されると、オペレーター は対応する StatefulSet を作成し、それをリコンサイルします。以降のリコンサイルループにより、新しく作成されたレプリカはクラスター内のほかのレプリカと同じ最新状態に保たれます。
+
+<div id="scale-in">
+  ### スケールイン
+</div>
+
+スケールインは、削除対象のレプリカがまだトラフィックを受けていたり、同期が必要なデータを保持していたりする可能性があるため、大幅に複雑になります。オペレーターは、レプリカを安全に削除するために複数の手順を踏みます。
+
+<div id="condemned-replicas">
+  #### 廃棄対象のレプリカ
+</div>
+
+実際のレプリカ数が必要な数を上回ると、余分なレプリカは **廃棄対象** としてマークされます。ReplicaStateMap では、その状態が Ready から 廃棄対象 に遷移し、これによりオペレーターは安全に削除すべきレプリカを把握できます。
+
+<div id="scale-in-flow">
+  #### スケールインのフロー
+</div>
+
+スケールインのプロセスは、次の手順で進みます。
+
+1. **トポロジーキーを削除** -- 廃棄対象のレプリカは `TopologySpreadConstraint` の偏り計算から除外され、以後はポッドのスケジューリング判断に影響しなくなります。
+2. **すべての StatefulSet が Ready になるまで待機** -- いずれかの StatefulSet が Ready 状態でない場合、スケールインは保留され、リコンサイルは再度キューに入れられます。
+3. **[`SYSTEM SYNC REPLICA ... LIGHTWEIGHT`](https://clickhouse.com/docs/sql-reference/statements/system#sync-replica) を実行** -- 廃棄対象のレプリカ上のすべてのデータが、削除前に同期されていることを保証します。バックアップポッドで実行されます。
+4. **廃棄対象の StatefulSet を削除** -- StatefulSet が削除され、それらのエントリが ReplicaStateMap から削除されます。
+5. **[`SYSTEM DROP REPLICA`](https://clickhouse.com/docs/sql-reference/statements/system#drop-replica) を実行** -- 残っている Ready 状態のレプリカで、削除されたレプリカのメタデータを ClickHouse Keeper から削除します。
+6. **PVC にクリーンアップ用のラベルを付与** -- 削除された StatefulSet に属する PVC には `clickhouse.com/delete-pvc` というラベルが付与されます。これは「PVC leaking」と呼ばれ、この時点でオペレーターの責務は終了します。実際の PVC の削除は、PersistentVolumeClaimCleaner が引き継いで処理します。

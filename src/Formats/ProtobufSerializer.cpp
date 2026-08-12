@@ -140,7 +140,9 @@ namespace
     // Should we omit null values (zero for numbers / empty string for strings) while storing them.
     bool shouldSkipZeroOrEmpty(const FieldDescriptor & field_descriptor, bool google_wrappers_special_treatment = false)
     {
-        if (!field_descriptor.is_optional())
+        /// `FieldDescriptor::is_optional` was removed along with the rest of the label accessors;
+        /// a singular field is one that is neither repeated nor required.
+        if (field_descriptor.is_repeated() || field_descriptor.is_required())
             return false;
         if (field_descriptor.containing_type()->options().map_entry())
             return false;
@@ -1970,15 +1972,18 @@ namespace
     };
 
 
-    /// Wraps a structure (field, Message, etc) which is a member of OneOf (protobuf union)
+    /// Wraps a protobuf `oneof` member and updates its presence column.
+    /// The nested serializer can be null for a known message branch whose payload
+    /// has no matching target columns. In that case the wrapper records presence,
+    /// and `ProtobufReader` skips the unread field payload before reading the next field.
     class ProtobufSerializerOneOf : public ProtobufSerializer
     {
     public:
-        explicit ProtobufSerializerOneOf(std::unique_ptr<ProtobufSerializer> nested_serializer_, std::string_view oneof_column_name_, size_t presence_column_idx_, int field_tag_)
+        explicit ProtobufSerializerOneOf(std::unique_ptr<ProtobufSerializer> nested_serializer_, std::string_view oneof_column_name_, size_t presence_column_idx_, int presence_value_)
             : nested_serializer(std::move(nested_serializer_))
             , oneof_column_name(oneof_column_name_)
             , presence_column_idx(presence_column_idx_)
-            , field_tag(field_tag_)
+            , presence_value(presence_value_)
         {
         }
 
@@ -1999,7 +2004,8 @@ namespace
                     cols.push_back(columns[i]->getPtr());
                 }
             }
-            nested_serializer->setColumns(cols.data(), cols.size());
+            if (nested_serializer)
+                nested_serializer->setColumns(cols.data(), cols.size());
         }
 
         void setColumns(const MutableColumnPtr * columns, size_t num_columns) override
@@ -2022,35 +2028,43 @@ namespace
             {
                 if (row_num < presence_column->size())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid protobuf data: OneOf has more than one value to track via column `{}`", oneof_column_name);
-                presence_column->insert(field_tag);
+                presence_column->insert(presence_value);
             }
-            nested_serializer->readRow(row_num);
+            if (nested_serializer)
+                nested_serializer->readRow(row_num);
         }
 
         void insertDefaults(size_t row_num) override
         {
+            /// Sibling `oneof` wrappers share this column; another branch may have
+            /// already inserted the value for the current row.
             if (row_num >= presence_column->size())
                 presence_column->insert(0);
 
-            nested_serializer->insertDefaults(row_num);
+            if (nested_serializer)
+                nested_serializer->insertDefaults(row_num);
         }
 
         void resetState() override
         {
-            nested_serializer->resetState();
+            if (nested_serializer)
+                nested_serializer->resetState();
         }
 
         void describeTree(WriteBuffer & out, size_t indent) const override
         {
             writeIndent(out, indent) << "ProtobufSerializerOneOf " << oneof_column_name << ", idx " << presence_column_idx << "->\n";
-            nested_serializer->describeTree(out, indent + 1);
+            if (nested_serializer)
+                nested_serializer->describeTree(out, indent + 1);
+            else
+                writeIndent(out, indent + 1) << "No serializer\n";
         }
 
     private:
         const std::unique_ptr<ProtobufSerializer> nested_serializer;
         std::string_view oneof_column_name;
         size_t presence_column_idx;
-        int field_tag;
+        int presence_value;
         MutableColumnPtr presence_column;
     };
 
@@ -2559,7 +2573,7 @@ namespace
             if (!num_columns_)
                 wrongNumberOfColumns(num_columns_, ">0");
 
-            std::vector<ColumnPtr> field_columns;
+            Columns field_columns;
             for (const FieldInfo & info : field_infos)
             {
                 if (info.field_serializer)
@@ -2834,39 +2848,6 @@ namespace
         bool has_missing_columns = false;
         int last_field_tag = 0;
         size_t last_field_index = static_cast<size_t>(-1);
-    };
-
-    class ProtobufSerializerEmptyMessage : public ProtobufSerializer
-    {
-    public:
-        void setColumns([[maybe_unused]] const ColumnPtr * columns, size_t num_columns) override
-        {
-            if (num_columns != 0)
-                wrongNumberOfColumns(num_columns, "0");
-        }
-
-        void setColumns([[maybe_unused]] const MutableColumnPtr * columns, size_t num_columns) override
-        {
-            if (num_columns != 0)
-                wrongNumberOfColumns(num_columns, "0");
-        }
-
-        void writeRow(size_t) override
-        {
-        }
-
-        void readRow(size_t) override
-        {
-        }
-
-        void insertDefaults(size_t) override
-        {
-        }
-
-        void describeTree(WriteBuffer & out, size_t indent) const override
-        {
-            writeIndent(out, indent) << "ProtobufSerializerEmptyMessage\n";
-        }
     };
 
     /// Serializes a top-level envelope message in the protobuf schema.
@@ -3534,36 +3515,34 @@ namespace
             {
                 throw Exception(
                     ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD,
-                    "Column `{}` is not suitable as OneOf presence indicator. Ensure that Enum has all tags and there is one extra with "
-                    "value 0 that indicates absence of the element.",
+                    "Column `{}` is not suitable as OneOf presence indicator. Ensure that the Enum contains the value 0 "
+                    "(which indicates an omitted element) and the tag number of every oneof case that has a matching column.",
                     oneof_name);
             };
 
-            /// oneof presence indicator contains all tags
-            ///   although it is Ok if there is discrepancy in names
-            auto check_enum = [&throw_incompatible_oneof](const auto * data_type_enum, const OneofDescriptor * oneof_descriptor)
+            /// A materialized branch must have both its tag and the omitted marker 0 in
+            /// the presence Enum. An unmaterialized message branch may omit its tag: it
+            /// preserves the tag when available and otherwise records 0. Extra Enum
+            /// values are allowed to keep the table schema independent of the full
+            /// protobuf `oneof` definition.
+            auto check_enum
+                = [&throw_incompatible_oneof](const auto * data_type_enum, int field_tag, std::string_view oneof_name, bool strict_oneof_presence_check) -> int
             {
-                int64_t expected_size = data_type_enum->getValues().size();
-
-                if (expected_size == oneof_descriptor->field_count() + 1)
+                bool has_omitted_marker = false;
+                bool has_field_tag = false;
+                for (const auto & elem : data_type_enum->getValues())
                 {
-                    boost::container::flat_set<size_t> enum_values_sorted;
-                    enum_values_sorted.reserve(expected_size);
-                    boost::container::flat_set<size_t> oneof_values_sorted;
-                    oneof_values_sorted.reserve(expected_size);
+                    has_omitted_marker |= (elem.second == 0);
+                    has_field_tag |= (elem.second == field_tag);
 
-                    for (const auto & elem : data_type_enum->getValues())
-                        enum_values_sorted.insert(elem.second);
-                    for (int fnum = 0; fnum < oneof_descriptor->field_count(); ++fnum)
-                        oneof_values_sorted.insert(oneof_descriptor->field(fnum)->number());
-
-                    oneof_values_sorted.insert(0); // 'omitted' marker
-
-                    if (oneof_values_sorted == enum_values_sorted)
-                        return;
+                    if (has_omitted_marker && has_field_tag)
+                        return field_tag;
                 }
 
-                throw_incompatible_oneof(oneof_descriptor->name());
+                if (!has_omitted_marker || strict_oneof_presence_check)
+                    throw_incompatible_oneof(oneof_name);
+
+                return 0;
             };
 
             auto check_int_type_suitable_for_oneof_presence
@@ -3581,7 +3560,7 @@ namespace
                                                const DataTypePtr * data_types_,
                                                std::vector<size_t> & used_columns_for_field) -> bool
             {
-                if (oneof_presence && serializer_ptr_ref && oneof_descriptor)
+                if (oneof_presence && oneof_descriptor)
                 {
                     auto expected_name = oneof_descriptor->name();
 
@@ -3592,21 +3571,23 @@ namespace
 
                         if (ColumnNameWithProtobufFieldNameComparator::equals(name, expected_name))
                         {
+                            bool strict_oneof_presence_check = (serializer_ptr_ref != nullptr);
+                            int oneof_presence_value = field_tag;
                             if (data_type_id == TypeIndex::Enum8)
                             {
                                 const auto * data_type_enum8 = assert_cast<const DataTypeEnum8 *>(data_types_[idx].get());
-                                check_enum(data_type_enum8, oneof_descriptor);
+                                oneof_presence_value = check_enum(data_type_enum8, field_tag, oneof_descriptor->name(), strict_oneof_presence_check);
                             }
                             else if (data_type_id == TypeIndex::Enum16)
                             {
                                 const auto * data_type_enum16 = assert_cast<const DataTypeEnum16 *>(data_types_[idx].get());
-                                check_enum(data_type_enum16, oneof_descriptor);
+                                oneof_presence_value = check_enum(data_type_enum16, field_tag, oneof_descriptor->name(), strict_oneof_presence_check);
                             }
                             else
                                 check_int_type_suitable_for_oneof_presence(data_type_id, oneof_descriptor->name());
 
                             serializer_ptr_ref = std::make_unique<ProtobufSerializerOneOf>(
-                                std::move(serializer_ptr_ref), oneof_descriptor->name(), used_columns_for_field.size(), field_tag);
+                                std::move(serializer_ptr_ref), oneof_descriptor->name(), used_columns_for_field.size(), oneof_presence_value);
 
                             used_columns_for_field.push_back(idx);
                             return true;
@@ -3812,21 +3793,38 @@ namespace
 
             if (oneof_presence)
             {
+                /// Synthesize a oneof-presence-only branch only when this message field has no
+                /// remaining nested columns to materialize its payload. Otherwise the normal
+                /// nested-serializer path must handle the branch.
+                auto field_has_matching_nested_columns = [&](const FieldDescriptor & field_descriptor)
+                {
+                    for (size_t idx : collections::range(num_columns))
+                    {
+                        if (used_column_indices_sorted.contains(idx))
+                            continue;
+
+                        std::string_view suffix;
+                        if (columnNameStartsWithFieldName(column_names[idx], field_descriptor, suffix) && !suffix.empty())
+                            return true;
+                    }
+
+                    return false;
+                };
+
                 for (int i : collections::range(message_descriptor.field_count()))
                 {
                     const auto & field_descriptor = *message_descriptor.field(i);
                     const auto * oneof_descriptor = field_descriptor.containing_oneof();
 
                     if (!oneof_descriptor || field_descriptors_in_use.contains(&field_descriptor)
-                        || field_descriptor.type() != FieldTypeId::TYPE_MESSAGE)
+                        || field_descriptor.type() != FieldTypeId::TYPE_MESSAGE
+                        || !field_descriptor.message_type()
+                        || field_has_matching_nested_columns(field_descriptor))
                     {
                         continue;
                     }
 
-                    if (const auto * message_type = field_descriptor.message_type(); !message_type || message_type->field_count() != 0)
-                        continue;
-
-                    std::unique_ptr<ProtobufSerializer> field_serializer = std::make_unique<ProtobufSerializerEmptyMessage>();
+                    std::unique_ptr<ProtobufSerializer> field_serializer;
                     std::vector<size_t> idxs;
                     bool wrapped = maybe_add_oneof_wrapper(
                         field_serializer, oneof_descriptor, field_descriptor.number(), num_columns, column_names, data_types, idxs);

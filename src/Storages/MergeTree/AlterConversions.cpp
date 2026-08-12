@@ -137,6 +137,17 @@ bool AlterConversions::hasLightweightDelete() const
     return all_updated_columns.contains(RowExistsColumn::name);
 }
 
+bool AlterConversions::hasDeleteMutation() const
+{
+    /// A lightweight DELETE arrives as a DELETE-typed command too, so this also covers it; the
+    /// distinct point of this predicate is the ordinary ALTER DELETE, which adds nothing to
+    /// all_updated_columns and does not set _row_exists.
+    for (const auto & command : mutation_commands)
+        if (command.type == MutationCommand::Type::DELETE)
+            return true;
+    return false;
+}
+
 bool AlterConversions::isSupportedDataMutation(MutationCommand::Type type)
 {
     return type == MutationCommand::UPDATE || type == MutationCommand::DELETE;

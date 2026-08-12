@@ -1,6 +1,7 @@
 -- Test: Map subcolumns in PREWHERE when the whole map is also read.
 -- Verifies via EXPLAIN that FunctionToSubcolumnsPass rewrites m['key'] to m.key_<key>
 -- in PREWHERE, while the full map is still read for SELECT. Also checks correctness.
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;

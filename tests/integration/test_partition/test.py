@@ -1,4 +1,3 @@
-import logging
 
 import pytest
 
@@ -61,7 +60,7 @@ def test_partition_simple(partition_table_simple):
 
 def partition_complex_assert_columns_txt():
     data_path = instance.query(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='test' AND name='partition_complex'"
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='test' AND name='partition_complex'"
     ).strip()
     parts = TSV(
         q(
@@ -250,7 +249,7 @@ def test_attach_check_all_parts(attach_check_all_parts_table):
     wait_for_delete_inactive_parts(instance, "test.attach_partition")
 
     data_path = instance.query(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='test' AND name='attach_partition'"
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='test' AND name='attach_partition'"
     ).strip()
 
     path_to_detached = f"{data_path}/detached/"
@@ -335,7 +334,7 @@ def test_drop_detached_parts(drop_detached_parts_table):
     q("ALTER TABLE test.drop_detached DETACH PARTITION 1")
 
     data_path = instance.query(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='test' AND name='drop_detached'"
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='test' AND name='drop_detached'"
     ).strip()
 
     path_to_detached = f"{data_path}/detached/"
@@ -526,7 +525,7 @@ def test_detached_part_dir_exists(started_cluster):
         "SETTINGS compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1, old_parts_lifetime=0"
     )
     data_path = q(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='detached_part_dir_exists'"
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='detached_part_dir_exists'"
     ).strip()
 
     q("insert into detached_part_dir_exists select 1")  # will create all_1_1_0
@@ -583,7 +582,7 @@ def test_make_clone_in_detached(started_cluster):
     )
 
     path = instance.query(
-        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='clone_in_detached'"
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='clone_in_detached'"
     ).strip()
 
     # broken part already detached

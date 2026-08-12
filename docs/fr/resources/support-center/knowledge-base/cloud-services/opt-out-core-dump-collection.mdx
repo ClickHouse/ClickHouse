@@ -1,0 +1,71 @@
+---
+date: 2026-02-04
+title: 'Comment désactiver la collecte des rapports de plantage'
+description: 'Cet article explique comment désactiver la collecte des rapports de plantage sur ClickHouse Cloud'
+tags: ['Gestion du Cloud']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+À partir du **27 février 2026**, ClickHouse Cloud commencera à collecter des rapports de plantage en cas de plantage du serveur. Cela s’inscrit dans notre engagement à améliorer la fiabilité du service pour tous nos utilisateurs.
+
+La collecte des rapports de plantage nous aide à :
+
+* Identifier et comprendre les causes d’un plantage
+* Corriger les problèmes plus rapidement
+* Améliorer en continu votre expérience du service
+
+<div id="whats-collected">
+  ## Ce qui est collecté
+</div>
+
+Lorsqu&#39;un plantage se produit, les rapports de plantage capturent un instantané de l&#39;état du serveur à cet instant. Nous tenons à être transparents : cela peut inclure des informations sensibles présentes en mémoire, telles que :
+
+* Identifiants de connexion
+* Clés de chiffrement
+* Chaînes de requête
+* Autres données présentes en mémoire au moment du plantage
+
+<div id="how-we-protect-your-data">
+  ### Comment nous protégeons vos données
+</div>
+
+Nous prenons la sécurité de ces données au sérieux :
+
+* **Stockage régional** : Toutes les données restent dans la même région que votre service
+* **Sécurité renforcée** : Nous appliquons des protections supplémentaires à toutes les données collectées
+* **Rétention limitée** : Les données ne sont conservées que le temps nécessaire au débogage, puis supprimées en toute sécurité
+
+<div id="services-automatically-excluded">
+  ## Services automatiquement exclus
+</div>
+
+Certains services sont automatiquement exclus de la collecte des rapports de plantage :
+
+* Services soumis à des exigences de conformité **HIPAA**
+* Services soumis à des exigences de conformité **PCI**
+* Services **BYOC** (Bring Your Own Cloud)
+
+<div id="how-to-opt-out">
+  ## Comment refuser de participer
+</div>
+
+Si vous préférez ne pas participer à la collecte des rapports de plantage, vous pouvez facilement vous retirer :
+
+1. Accédez à la [ClickHouse Cloud Console](https://clickhouse.cloud)
+2. Sélectionnez votre service
+3. Cliquez sur l&#39;onglet **Settings**
+4. Faites défiler la page jusqu&#39;à « Share crash reports with ClickHouse »
+5. Désactivez l&#39;option pour ne plus participer
+
+<Image img="/images/crash-reports.png" size="md" alt="Où trouver l'option de retrait dans l'interface Cloud" />
+
+<Note>
+  Outre le paramètre au niveau du service, nous prenons également en charge la configuration des préférences au niveau de l&#39;organisation. Si ce paramètre est désactivé, c&#39;est-à-dire si vous refusez la collecte des rapports de plantage, tous les services existants et nouveaux seront automatiquement exclus. Si vous activez cette préférence, c&#39;est-à-dire si vous choisissez d&#39;y participer, vous pouvez la désactiver individuellement au niveau du service pour la remplacer et refuser la collecte.
+</Note>
+
+<Image img="/images/cloud/crash-reports-collection.png" size="md" alt="Collecte des rapports de plantage" />

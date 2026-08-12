@@ -5,7 +5,14 @@ body:
   - type: markdown
     attributes:
       value: |
-        > Make sure that `git diff` result is empty and you've just pulled fresh master. Try cleaning up cmake cache. Just in case, official build instructions are published here: https://clickhouse.com/docs/en/development/build/
+        > Thanks for helping us improve the documentation! Please describe what's wrong, missing, or unclear below. If you opened this from the "Raise issue" button on the docs site, the page you were viewing is filled in for you; otherwise, please add a link to the affected page.
+  - type: input
+    id: page
+    attributes:
+      label: Documentation page
+      description: The documentation page this issue is about. Pre-filled when the issue is opened from the "Raise issue" button on the docs site.
+    validations:
+      required: false
   - type: textarea
     attributes:
       label: Company or project name

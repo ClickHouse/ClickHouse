@@ -1,3 +1,5 @@
+#include <ranges>
+#include <algorithm>
 #include <exception>
 #include <optional>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
@@ -195,15 +197,17 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
     else
         options.PageSizeHint = settings.get()->list_object_keys_size;
 
-    for (auto blob_list_response = client_ptr->ListBlobs(options); blob_list_response.HasPage(); blob_list_response.MoveToNextPage())
+    /// Re-issue ListBlobs per page through the client wrapper (which strips the endpoint prefix); the SDK's
+    /// MoveToNextPage refetches pages 2..N directly and would leave the raw Azure prefix on their blob names.
+    while (true)
     {
+        auto blob_list_response = client_ptr->ListBlobs(options);
+
         ProfileEvents::increment(ProfileEvents::AzureListObjects);
         if (client_ptr->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
 
-        const auto & blobs_list = blob_list_response.Blobs;
-
-        for (const auto & blob : blobs_list)
+        for (const auto & blob : blob_list_response.Blobs)
         {
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 blob.Name,
@@ -220,6 +224,11 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
         if (max_keys && children.size() >= max_keys)
             break;
+
+        if (!blob_list_response.NextPageToken.HasValue() || blob_list_response.NextPageToken.Value().empty())
+            break;
+
+        options.ContinuationToken = blob_list_response.NextPageToken;
     }
 }
 
@@ -308,7 +317,10 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
             auth_method,
             connection_params.client_options,
             object.remote_path,
-            write_settings.use_adaptive_write_buffer ? write_settings.adaptive_write_buffer_initial_size : buf_size,
+            /// The adaptive initial size must not exceed buf_size (the maximum); this writer
+            /// forwards the value straight to the allocator, so an out-of-range adaptive
+            /// initial size would otherwise abort the server (see WriteBufferFromFileDescriptor).
+            write_settings.use_adaptive_write_buffer ? std::min(write_settings.adaptive_write_buffer_initial_size, buf_size) : buf_size,
             patchSettings(write_settings),
             settings.get(),
             connection_params.getContainer(),

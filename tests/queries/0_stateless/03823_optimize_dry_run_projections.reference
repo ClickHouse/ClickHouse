@@ -16,3 +16,9 @@ all_2_2_0	p_sum	2
 all_3_3_0	p_sum	2
 profile events projections
 OPTIMIZE TABLE t_dry_run_proj DRY RUN PARTS \'all_1_1_0\', \'all_2_2_0\', \'all_3_3_0\';	Optimize	2	11	6	10
+dry run with block number column
+projection part columns after merge with block number column
+key	UInt64
+sum(value)	AggregateFunction(sum, UInt64)
+check table with block number column
+1

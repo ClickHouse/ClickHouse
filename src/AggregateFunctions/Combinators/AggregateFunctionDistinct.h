@@ -264,7 +264,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto argument_columns = prepareArgumentColumns();
         this->data(place).merge(this->data(rhs), argument_columns, arena);
@@ -367,10 +367,15 @@ public:
         ConstAggregateDataPtr rhs_place,
         Arena * arena) const override
     {
-        merge(place, rhs_place, arena);
+        this->merge(place, rhs_place, arena);
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
+
+    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
+    {
+        return nested_func->getArgumentsThatCanBeOnlyNull();
+    }
 
     AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function,

@@ -1,11 +1,12 @@
 -- Tags: no-parallel-replicas
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab
 (
     col LowCardinality(String),
-    INDEX idx col type text(tokenizer='array')
+    INDEX idx col type text(tokenizer='splitByNonAlpha')
 )
 ENGINE = MergeTree ORDER BY tuple();
 

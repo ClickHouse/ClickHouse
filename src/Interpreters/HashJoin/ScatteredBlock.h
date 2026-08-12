@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnReplicated.h>
 #include <Core/Block.h>
 #include <base/defines.h>
 #include <Common/PODArray.h>
@@ -282,6 +283,36 @@ struct ScatteredBlock : private boost::noncopyable
         selector = Selector(std::move(new_selector));
     }
 
+    /// Creates ColumnReplicated to lazily apply index from `selector` to the `block`
+    void filterBySelectorLazily()
+    {
+        if (block.empty() || !wasScattered())
+            return;
+
+        if (selector.isContinuousRange())
+        {
+            filterBySelector();
+            return;
+        }
+
+        /// The general case when `selector` is non-trivial (likely the result of applying a filter)
+        auto indexes_col = selector.getIndexes().getPtr();
+        auto columns = block.getColumns();
+        transformColumnsWithSharedIndex(
+            columns,
+            [&](const ColumnPtr & index) { return index->index(selector.getIndexes(), /*limit*/ 0); },
+            [&](ColumnPtr & col)
+            {
+                if (col->isConst())
+                    col = col->index(selector.getIndexes(), /*limit*/ 0);
+                else
+                    col = ColumnReplicated::create(col, indexes_col);
+            }
+        );
+        block.setColumns(columns);
+        selector = Selector(block.rows());
+    }
+
     /// Applies `selector` to the `block` in-place
     void filterBySelector()
     {
@@ -291,19 +322,20 @@ struct ScatteredBlock : private boost::noncopyable
         if (selector.isContinuousRange())
         {
             const auto range = selector.getRange();
-            for (size_t i = 0; i < block.columns(); ++i)
-            {
-                auto & col = block.getByPosition(i);
-                col.column = col.column->cut(range.first, range.second - range.first);
-            }
+            auto columns = block.getColumns();
+            transformColumnsWithSharedIndex(
+                columns,
+                [&](const ColumnPtr & col) { return col->cut(range.first, range.second - range.first); });
+            block.setColumns(columns);
             selector = Selector(block.rows());
             return;
         }
 
         /// The general case when `selector` is non-trivial (likely the result of applying a filter)
         auto columns = block.getColumns();
-        for (auto & col : columns)
-            col = col->index(selector.getIndexes(), /*limit*/ 0);
+        transformColumnsWithSharedIndex(
+            columns,
+            [&](const ColumnPtr & col) { return col->index(selector.getIndexes(), /*limit*/ 0); });
         block.setColumns(columns);
         selector = Selector(block.rows());
     }
@@ -335,6 +367,31 @@ private:
 };
 
 using ScatteredBlocks = std::vector<ScatteredBlock>;
+
+/// A right-side block as stored by HashJoin for the build/probe lifetime. Owns the (already projected)
+/// columns together with the partition `selector` and the `block_no` that row refs (`RowRef`)
+/// index through `StoredColumnsIndex`. Replaces the former `ColumnsInfo` + `ScatteredColumns` split:
+/// the column bundle is inlined here, so the emit path can resolve a column to a direct `IColumn *`
+/// (see `StoredColumnsIndex::EmitColumn`) instead of going through a `ColumnsInfo` wrapper.
+struct StoredBlock
+{
+    Columns columns;
+    /// For each column: a pointer to it as `ColumnReplicated` if it is one, otherwise nullptr. Lets the
+    /// emit loop insert from a replicated column without a per-row virtual call / cast.
+    PODArray<const ColumnReplicated *> replicated_columns;
+    detail::Selector selector;
+    UInt32 block_no = 0;
+
+    StoredBlock() = default;
+    explicit StoredBlock(Columns columns_);
+    StoredBlock(Columns columns_, detail::Selector selector_);
+
+    /// Must be called after `columns` are replaced in-place (e.g. by cloneResized). The raw pointers in
+    /// `replicated_columns` point into the old column objects and dangle once those objects are released.
+    void rebuildReplicatedColumns();
+
+    size_t allocatedBytes() const;
+};
 
 struct ExtraScatteredBlocks
 {

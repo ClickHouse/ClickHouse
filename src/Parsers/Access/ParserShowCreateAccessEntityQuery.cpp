@@ -142,7 +142,9 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
         }
         case AccessEntityType::QUOTA:
         {
-            if (!atQueryOutputTail(pos, expected) && parseIdentifiersOrStringLiterals(pos, expected, names))
+            if (ParserKeyword{Keyword::CURRENT}.ignore(pos, expected))
+                current_quota = true;
+            else if (!atQueryOutputTail(pos, expected) && parseIdentifiersOrStringLiterals(pos, expected, names))
             {
             }
             else if (plural)

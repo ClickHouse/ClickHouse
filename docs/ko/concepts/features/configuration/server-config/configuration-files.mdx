@@ -1,0 +1,479 @@
+---
+description: '이 페이지에서는 ClickHouse 서버를 XML 또는 YAML 구문의 설정 파일로 구성하는 방법을 설명합니다.'
+sidebarTitle: '설정 파일'
+slug: /operations/configuration-files
+title: '설정 파일'
+doc_type: 'guide'
+---
+
+<Note>
+  XML 기반 settings profiles 및 설정 파일은 ClickHouse Cloud에서 지원되지 않습니다. 따라서 ClickHouse Cloud에서는 `config.xml` 파일을 찾을 수 없습니다. 대신 SQL 명령을 사용해 settings profiles를 통해 설정을 관리해야 합니다.
+
+  자세한 내용은 [&quot;설정 구성&quot;](/ko/products/cloud/reference/settings)을 참조하십시오.
+</Note>
+
+ClickHouse 서버는 XML 또는 YAML 구문의 설정 파일로 구성할 수 있습니다.
+대부분의 설치 방식에서 ClickHouse 서버는 `/etc/clickhouse-server/config.xml`을 기본 설정 파일로 사용해 실행되지만, 서버 시작 시 명령줄 옵션 `--config-file` 또는 `-C`를 사용하여 설정 파일 위치를 수동으로 지정할 수도 있습니다.
+추가 설정 파일은 기본 설정 파일을 기준으로 하는 `config.d/` 디렉터리(예: `/etc/clickhouse-server/config.d/`)에 둘 수 있습니다.
+이 디렉터리의 파일과 기본 설정은 ClickHouse 서버에 구성이 적용되기 전에 전처리 단계에서 병합됩니다.
+설정 파일은 알파벳순으로 병합됩니다.
+업데이트를 단순화하고 모듈화를 개선하려면 기본 `config.xml` 파일은 수정하지 않고, 추가 사용자 지정은 `config.d/`에 두는 것이 모범 사례입니다.
+ClickHouse Keeper 구성은 `/etc/clickhouse-keeper/keeper_config.xml`에 있습니다.
+마찬가지로 Keeper용 추가 설정 파일은 `/etc/clickhouse-keeper/keeper_config.d/`에 두어야 합니다.
+
+XML과 YAML 설정 파일은 함께 사용할 수 있습니다. 예를 들어 기본 설정 파일로 `config.xml`을 두고, 추가 설정 파일로 `config.d/network.xml`, `config.d/timezone.yaml`, `config.d/keeper.yaml`을 둘 수 있습니다.
+단일 설정 파일 안에서 XML과 YAML을 혼합하는 것은 지원되지 않습니다.
+XML 설정 파일은 최상위 태그로 `<clickhouse>...</clickhouse>`를 사용해야 합니다.
+YAML 설정 파일에서는 `clickhouse:`가 선택 사항이며, 없으면 파서가 이를 자동으로 삽입합니다.
+
+<div id="merging">
+  ## 구성 병합
+</div>
+
+두 개의 설정 파일(일반적으로 기본 설정 파일과 `config.d/`의 다른 설정 파일)은 다음과 같이 병합됩니다:
+
+* 노드(즉, 요소로 이어지는 경로)가 두 파일에 모두 존재하고 `replace` 또는 `remove` 속성이 없으면, 해당 노드는 병합된 설정 파일에 포함되며 두 노드의 자식 요소가 모두 포함되어 재귀적으로 병합됩니다.
+* 두 노드 중 하나에 `replace` 속성이 있으면, 해당 노드는 병합된 설정 파일에 포함되지만 `replace` 속성이 있는 노드의 자식 요소만 포함됩니다.
+* 두 노드 중 하나에 `remove` 속성이 있으면, 해당 노드는 병합된 설정 파일에 포함되지 않습니다(이미 존재하는 경우 삭제됩니다).
+
+예를 들어, 두 개의 설정 파일이 다음과 같다고 가정하겠습니다:
+
+```xml title="config.xml"
+<clickhouse>
+    <config_a>
+        <setting_1>1</setting_1>
+    </config_a>
+    <config_b>
+        <setting_2>2</setting_2>
+    </config_b>
+    <config_c>
+        <setting_3>3</setting_3>
+    </config_c>
+</clickhouse>
+```
+
+및
+
+```xml title="config.d/other_config.xml"
+<clickhouse>
+    <config_a>
+        <setting_4>4</setting_4>
+    </config_a>
+    <config_b replace="replace">
+        <setting_5>5</setting_5>
+    </config_b>
+    <config_c remove="remove">
+        <setting_6>6</setting_6>
+    </config_c>
+</clickhouse>
+```
+
+그 결과 머지된 설정 파일은 다음과 같습니다:
+
+```xml
+<clickhouse>
+    <config_a>
+        <setting_1>1</setting_1>
+        <setting_4>4</setting_4>
+    </config_a>
+    <config_b>
+        <setting_5>5</setting_5>
+    </config_b>
+</clickhouse>
+```
+
+<div id="from_env_zk">
+  ### 환경 변수 및 ZooKeeper 노드를 사용한 치환
+</div>
+
+요소의 값이 환경 변수의 값으로 대체되도록 지정하려면 `from_env` 속성을 사용할 수 있습니다.
+
+예를 들어, 환경 변수 `$MAX_QUERY_SIZE = 150000`이 설정되어 있으면:
+
+```xml
+<clickhouse>
+    <profiles>
+        <default>
+            <max_query_size from_env="MAX_QUERY_SIZE"/>
+        </default>
+    </profiles>
+</clickhouse>
+```
+
+결과 구성은 다음과 같습니다:
+
+```xml
+<clickhouse>
+    <profiles>
+        <default>
+            <max_query_size>150000</max_query_size>
+        </default>
+    </profiles>
+</clickhouse>
+```
+
+`from_zk`(ZooKeeper 노드)를 사용해도 동일하게 할 수 있습니다:
+
+```xml
+<clickhouse>
+    <postgresql_port from_zk="/zk_configs/postgresql_port"/>
+</clickhouse>
+```
+
+```shell
+# clickhouse-keeper-client
+/ :) touch /zk_configs
+/ :) create /zk_configs/postgresql_port "9005"
+/ :) get /zk_configs/postgresql_port
+9005
+```
+
+그러면 다음과 같은 구성이 됩니다:
+
+```xml
+<clickhouse>
+    <postgresql_port>9005</postgresql_port>
+</clickhouse>
+```
+
+<div id="default-values">
+  #### 기본값
+</div>
+
+`from_env` 또는 `from_zk` 속성이 있는 요소에는 `replace="1"` 속성을 추가로 지정할 수 있습니다(`replace="1"`은 `from_env`/`from_zk`보다 앞에 와야 합니다).
+이 경우 요소에 기본값을 정의할 수 있습니다.
+값이 설정되어 있으면 요소는 환경 변수 또는 ZooKeeper 노드의 값을 사용하고, 그렇지 않으면 기본값을 사용합니다.
+
+앞선 예시를 다시 살펴보되, `MAX_QUERY_SIZE`가 설정되지 않았다고 가정합니다:
+
+```xml
+<clickhouse>
+    <profiles>
+        <default>
+            <max_query_size replace="1" from_env="MAX_QUERY_SIZE">150000</max_query_size>
+        </default>
+    </profiles>
+</clickhouse>
+```
+
+그러면 다음과 같은 구성이 됩니다:
+
+```xml
+<clickhouse>
+    <profiles>
+        <default>
+            <max_query_size>150000</max_query_size>
+        </default>
+    </profiles>
+</clickhouse>
+```
+
+<div id="substitution-with-file-content">
+  ## 파일 내용으로 치환
+</div>
+
+파일 내용을 사용해 구성의 일부를 대체할 수도 있습니다. 이는 두 가지 방식으로 수행할 수 있습니다.
+
+* *값 치환*: 요소에 `incl` 속성이 있으면 해당 값이 참조된 파일의 내용으로 대체됩니다. 기본적으로 치환 값을 담은 파일의 경로는 `/etc/metrika.xml`입니다. 이 값은 서버 구성의 [`include_from`](/ko/reference/settings/server-settings/settings#include_from) 요소에서 변경할 수 있습니다. 치환 값은 이 파일의 `/clickhouse/substitution_name` 요소에 지정합니다. `incl`에 지정된 치환이 존재하지 않으면 로그에 기록됩니다. 누락된 치환에 대해 ClickHouse가 로그를 남기지 않도록 하려면 `optional="true"` 속성을 지정하십시오(예: [macros](/ko/reference/settings/server-settings/settings#macros) 설정).
+* *요소 치환*: 전체 요소를 치환 값으로 바꾸려면 요소 이름으로 `include`를 사용하십시오. 요소 이름 `include`는 `from_zk = "/path/to/node"` 속성과 함께 사용할 수 있습니다. 이 경우 요소 값은 `/path/to/node`에 있는 ZooKeeper 노드의 내용으로 대체됩니다. 전체 XML 하위 트리를 ZooKeeper 노드에 저장한 경우에도 동일하게 작동하며, 해당 트리가 원본 요소에 완전히 삽입됩니다.
+
+이에 대한 예시는 아래와 같습니다.
+
+```xml
+<clickhouse>
+    <!-- `/profiles-in-zookeeper` ZK 경로에서 찾은 XML 서브트리를 `<profiles>` 요소에 추가합니다. -->
+    <profiles from_zk="/profiles-in-zookeeper" />
+
+    <users>
+        <!-- `/users-in-zookeeper` ZK 경로에서 찾은 서브트리로 `include` 요소를 대체합니다. -->
+        <include from_zk="/users-in-zookeeper" />
+        <include from_zk="/other-users-in-zookeeper" />
+    </users>
+</clickhouse>
+```
+
+치환 콘텐츠를 추가하는 대신 기존 구성과 병합하려면 속성 `merge="true"`를 사용할 수 있습니다. 예시: `<include from_zk="/some_path" merge="true">`. 이 경우 기존 구성은 치환 콘텐츠와 병합되며, 기존 구성의 설정은 치환 콘텐츠의 값으로 대체됩니다.
+
+<div id="encryption">
+  ## 구성 암호화 및 숨기기
+</div>
+
+대칭 암호화를 사용해 구성 항목을 암호화할 수 있습니다. 예를 들어 평문 비밀번호 또는 개인 키를 암호화할 수 있습니다.
+이렇게 하려면 먼저 [암호화 코덱](/ko/reference/statements/create/table#encryption-codecs)을 구성한 다음, 암호화할 요소에 `encrypted_by` 속성을 추가하고 그 값으로 암호화 코덱 이름을 지정합니다.
+
+속성 `from_zk`, `from_env`, `incl` 또는 요소 `include`와 달리, 전처리된 파일에서는 치환(즉, 암호화된 값의 복호화)이 수행되지 않습니다.
+복호화는 서버 프로세스의 런타임에서만 수행됩니다.
+
+예시:
+
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex>00112233445566778899aabbccddeeff</key_hex>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+    <interserver_http_credentials>
+        <user>admin</user>
+        <password encrypted_by="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
+속성 [`from_env`](#from_env_zk)와 [`from_zk`](#from_env_zk)는 `encryption_codecs`에도 적용할 수 있습니다:
+
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex from_env="CLICKHOUSE_KEY_HEX"/>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+    <interserver_http_credentials>
+        <user>admin</user>
+        <password encrypted_by="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex from_zk="/clickhouse/aes128_key_hex"/>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+    <interserver_http_credentials>
+        <user>admin</user>
+        <password encrypted_by="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
+암호화 키와 암호화된 값은 두 config 파일 중 어느 쪽에나 정의할 수 있습니다.
+
+예시 `config.xml`은 다음과 같습니다:
+
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex from_zk="/clickhouse/aes128_key_hex"/>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+</clickhouse>
+```
+
+다음은 `users.xml`의 예시입니다:
+
+```xml
+<clickhouse>
+
+    <users>
+        <test_user>
+            <password encrypted_by="AES_128_GCM_SIV">96280000000D000000000030D4632962295D46C6FA4ABF007CCEC9C1D0E19DA5AF719C1D9A46C446</password>
+            <profile>default</profile>
+        </test_user>
+    </users>
+
+</clickhouse>
+```
+
+값을 암호화하려면 (예시) 프로그램인 `encrypt_decrypt`를 사용할 수 있습니다:
+
+```bash
+./encrypt_decrypt /etc/clickhouse-server/config.xml -e AES_128_GCM_SIV abcd
+```
+
+```text
+961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85
+```
+
+암호화된 구성 요소를 사용하더라도 암호화된 요소는 전처리된 설정 파일에 계속 표시됩니다.
+이것이 ClickHouse 배포 환경에서 문제가 된다면 두 가지 대안이 있습니다. 전처리된 파일의 접근 권한을 600으로 설정하거나 속성 `hide_in_preprocessed`를 사용하십시오.
+
+예시:
+
+```xml
+<clickhouse>
+
+    <interserver_http_credentials hide_in_preprocessed="true">
+        <user>admin</user>
+        <password>secret</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
+<div id="user-settings">
+  ## 사용자 설정
+</div>
+
+`config.xml` 파일에서 사용자 설정, 프로필, 쿼터에 대한 별도의 구성을 지정할 수 있습니다. 이 구성의 상대 경로는 `users_config` 요소에서 설정합니다. 기본값은 `users.xml`입니다. `users_config`를 생략하면 사용자 설정, 프로필, 쿼터를 `config.xml`에 직접 지정합니다.
+
+사용자 구성은 `config.xml` 및 `config.d/`와 마찬가지로 별도의 파일로 분리할 수 있습니다.
+디렉터리 이름은 `.xml` 접미사를 제거한 `users_config` 설정값에 `.d`를 덧붙여 정의합니다.
+기본적으로 `users_config`의 기본값이 `users.xml`이므로 `users.d` 디렉터리를 사용합니다.
+
+설정 파일은 먼저 설정을 고려하여 [병합](#merging)되며, 그 이후에 include가 처리된다는 점에 유의하십시오.
+
+<div id="example">
+  ## XML 예시
+</div>
+
+예를 들어, 사용자별로 다음과 같이 별도의 구성 파일을 둘 수 있습니다.
+
+```bash
+$ cat /etc/clickhouse-server/users.d/alice.xml
+```
+
+```xml
+<clickhouse>
+    <users>
+      <alice>
+          <profile>analytics</profile>
+            <networks>
+                  <ip>::/0</ip>
+            </networks>
+          <password_sha256_hex>...</password_sha256_hex>
+          <quota>analytics</quota>
+      </alice>
+    </users>
+</clickhouse>
+```
+
+<div id="example-1">
+  ## YAML 예시
+</div>
+
+여기에서 YAML로 작성된 기본 구성을 확인할 수 있습니다: [`config.yaml.example`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example).
+
+ClickHouse 구성에서는 YAML 포맷과 XML 포맷 사이에 몇 가지 차이점이 있습니다.
+아래에는 YAML 포맷으로 구성을 작성할 때 유용한 팁을 정리했습니다.
+
+텍스트 값을 가진 XML 태그는 YAML의 키-값 쌍으로 표현됩니다.
+
+```yaml
+key: value
+```
+
+해당 XML:
+
+```xml
+<key>value</key>
+```
+
+중첩된 XML 노드는 YAML 맵으로 나타냅니다:
+
+```yaml
+map_key:
+  key1: val1
+  key2: val2
+  key3: val3
+```
+
+해당 XML:
+
+```xml
+<map_key>
+    <key1>val1</key1>
+    <key2>val2</key2>
+    <key3>val3</key3>
+</map_key>
+```
+
+동일한 XML 태그를 여러 번 생성하려면 YAML 시퀀스를 사용하십시오.
+
+```yaml
+seq_key:
+  - val1
+  - val2
+  - key1: val3
+  - map:
+      key2: val4
+      key3: val5
+```
+
+해당 XML:
+
+```xml
+<seq_key>val1</seq_key>
+<seq_key>val2</seq_key>
+<seq_key>
+    <key1>val3</key1>
+</seq_key>
+<seq_key>
+    <map>
+        <key2>val4</key2>
+        <key3>val5</key3>
+    </map>
+</seq_key>
+```
+
+XML 속성을 지정하려면 `@` 접두사가 붙은 속성 키를 사용할 수 있습니다. `@`는 YAML 표준에서 예약된 문자이므로 큰따옴표로 감싸야 합니다:
+
+```yaml
+map:
+  "@attr1": value1
+  "@attr2": value2
+  key: 123
+```
+
+대응하는 XML:
+
+```xml
+<map attr1="value1" attr2="value2">
+    <key>123</key>
+</map>
+```
+
+YAML 시퀀스에서도 속성을 사용할 수 있습니다.
+
+```yaml
+seq:
+  - "@attr1": value1
+  - "@attr2": value2
+  - 123
+  - abc
+```
+
+해당 XML:
+
+```xml
+<seq attr1="value1" attr2="value2">123</seq>
+<seq attr1="value1" attr2="value2">abc</seq>
+```
+
+앞서 설명한 구문으로는 XML 속성이 있는 XML 텍스트 노드를 YAML로 표현할 수 없습니다. 이러한 특수한 경우에는
+`#text` 속성 키를 사용하면 됩니다:
+
+```yaml
+map_key:
+  "@attr1": value1
+  "#text": value2
+```
+
+해당하는 XML:
+
+```xml
+<map_key attr1="value1">value2</map>
+```
+
+<div id="implementation-details">
+  ## 구현 세부 사항
+</div>
+
+서버는 시작할 때 각 구성 파일에 대해 `file-preprocessed.xml` 파일도 생성합니다. 이 파일에는 적용이 완료된 모든 치환과 재정의가 포함되며, 참고용으로 제공됩니다. 구성 파일에서 ZooKeeper 치환을 사용했지만 서버 시작 시 ZooKeeper를 사용할 수 없는 경우, 서버는 전처리된 파일에서 구성을 로드합니다.
+
+서버는 구성 파일의 변경 사항뿐 아니라 치환과 재정의를 수행할 때 사용된 파일 및 ZooKeeper 노드의 변경 사항도 추적하고, 사용자와 클러스터의 설정을 즉시 다시 로드합니다. 즉, 서버를 재시작하지 않고도 클러스터, 사용자 및 해당 설정을 수정할 수 있습니다.

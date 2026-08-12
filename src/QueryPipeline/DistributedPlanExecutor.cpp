@@ -1,3 +1,4 @@
+#include <chrono>
 #include <condition_variable>
 #include <future>
 #include <memory>
@@ -24,6 +25,7 @@
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/Sinks/NativeCompressedSink.h>
 #include <Common/ThreadStatus.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -43,14 +45,15 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/executeQuery.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
@@ -63,6 +66,13 @@ namespace CurrentMetrics
     extern const Metric TaskTrackerThreadsScheduled;
 }
 
+namespace ProfileEvents
+{
+    extern const Event DistributedPlanRemoteTasks;
+    extern const Event DistributedPlanLocalExecution;
+    extern const Event DistributedPlanHostsUsed;
+}
+
 
 namespace DB
 {
@@ -70,6 +80,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool distributed_plan_execute_locally;
+    extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 max_rows_to_transfer;
 }
 
 namespace ErrorCodes
@@ -79,6 +91,13 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int QUERY_WAS_CANCELLED;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int CANNOT_SCHEDULE_TASK;
+}
+
+namespace FailPoints
+{
+    extern const char distributed_plan_status_check_reenqueue_fault[];
+    extern const char distributed_plan_record_failure_while_starting_tasks[];
 }
 
 class TaskParameters : public IParameterLookup
@@ -193,34 +212,71 @@ public:
     {
     }
 
+    /// Appends a data chunk. Throws if the exchange is cancelled, so the producer stops early.
+    /// Drops the chunk if the reader is detached.
     void appendChunk(Chunk chunk)
     {
         LOG_TEST(log, "Appending chunk to exchange '{}', rows {}", name, chunk.getNumRows());
 
         std::lock_guard lock(mutex);
+        if (cancelled)
+            throwCancelled();
+        if (reader_detached)
+            return;
         chunks.emplace_back(std::move(chunk));
         has_data.notify_one();
     }
 
-    /// Wake any waiter so it stops instead of blocking forever for a chunk that will never arrive
-    /// (the producing task was cancelled before sending the end-of-data marker).
-    void cancel()
+    /// Appends the end-of-data marker. Allowed after a cancel: the queued stream is complete,
+    /// so a draining consumer may still use it.
+    void finish()
+    {
+        LOG_TEST(log, "Finishing exchange '{}'", name);
+
+        std::lock_guard lock(mutex);
+        chunks.emplace_back(Chunk{});
+        has_data.notify_one();
+    }
+
+    /// Wake any waiter. Consumers get `reason_` (or a generic cancellation error) instead of
+    /// end-of-data, so an aborted stream cannot pass for a complete one.
+    void cancel(std::exception_ptr reason_)
     {
         std::lock_guard lock(mutex);
         cancelled = true;
+        if (!reason)
+            reason = reason_;
         has_data.notify_all();
     }
 
-    Chunk getChunk()
+    /// The reader stopped and does not need more data, e.g. its pipeline finished early.
+    /// Wakes a blocked `getChunk`; chunks appended after this are dropped. Unlike `cancel`,
+    /// this is not a failure: the producer continues.
+    void detachReader()
+    {
+        std::lock_guard lock(mutex);
+        reader_detached = true;
+        has_data.notify_all();
+    }
+
+    /// Waits up to `timeout` for a chunk. Returns std::nullopt if nothing arrived in time.
+    /// An empty chunk is the producer's end-of-data marker. Chunks queued before a cancel are
+    /// still handed out; once a cancelled queue is empty, throws the cancellation reason.
+    std::optional<Chunk> getChunk(std::chrono::milliseconds timeout)
     {
         LOG_TEST(log, "Waiting for chunk from exchange '{}'", name);
 
         Chunk chunk;
         {
             std::unique_lock lock(mutex);
-            has_data.wait(lock, [this] { return !chunks.empty() || cancelled; });
+            if (!has_data.wait_for(lock, timeout, [this] { return !chunks.empty() || cancelled || reader_detached; }))
+                return std::nullopt;
+            /// The reader is stopping and does not need more data.
+            if (reader_detached)
+                return std::nullopt;
+            /// The wait ended with an empty queue only when cancelled.
             if (chunks.empty())
-                return {};   /// Cancelled: report end of data.
+                throwCancelled();
             chunk = std::move(chunks.front());
             chunks.pop_front();
         }
@@ -231,12 +287,23 @@ public:
     }
 
 private:
+    [[noreturn]] void throwCancelled() const
+    {
+        if (reason)
+            std::rethrow_exception(reason);
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+            "Distributed query was cancelled before exchange '{}' transferred all data", name);
+    }
+
     LoggerPtr log = getLogger("InMemoryExchange");
     String name;
     std::mutex mutex;
     std::condition_variable has_data;
     DequeWithMemoryTracking<Chunk> chunks;
     bool cancelled = false;
+    bool reader_detached = false;
+    /// The first failure passed to `cancel`.
+    std::exception_ptr reason;
 };
 
 using InMemoryExchangePtr = std::shared_ptr<InMemoryExchange>;
@@ -254,25 +321,29 @@ public:
         {
             element = std::make_shared<InMemoryExchange>(exchange_id);
             /// A task built concurrently with the cancellation may look up its exchange after
-            /// cancelQuery already ran; hand it out pre-cancelled so its reads do not block forever.
-            if (cancelled_queries.contains(query_id))
-                element->cancel();
+            /// cancelQuery already ran; hand it out pre-cancelled so its reads fail right away.
+            if (auto cancelled_it = cancelled_queries.find(query_id); cancelled_it != cancelled_queries.end())
+                element->cancel(cancelled_it->second);
         }
         return element;
     }
 
-    /// Cancel every exchange of the query so waiting tasks unblock. The exchanges stay in the
-    /// registry so a result reader that looks one up afterwards still finds the produced chunks and
-    /// their end-of-data marker; removeQuery drops them once the whole query pipeline is destroyed.
-    void cancelQuery(const String & query_id)
+    /// Cancel every exchange of the query so waiting tasks stop, reporting `failure` as the
+    /// reason (null for a plain cancellation). The exchanges stay in the registry so a result
+    /// reader that looks one up afterwards still finds the produced chunks and their end-of-data
+    /// marker; removeQuery drops them once the whole query pipeline is destroyed.
+    void cancelQuery(const String & query_id, std::exception_ptr failure)
     {
         std::lock_guard lock(mutex);
-        cancelled_queries.insert(query_id);
+        auto [cancelled_it, inserted] = cancelled_queries.emplace(query_id, failure);
+        /// Keep the first failure, but let a later one replace a plain cancellation.
+        if (!inserted && !cancelled_it->second && failure)
+            cancelled_it->second = failure;
         auto it = exchanges_by_query_id.find(query_id);
         if (it == exchanges_by_query_id.end())
             return;
         for (auto & [_, exchange] : it->second)
-            exchange->cancel();
+            exchange->cancel(failure);
     }
 
     /// Drop the query's exchanges from the registry. Called when the query pipeline is destroyed.
@@ -293,7 +364,8 @@ private:
     using InMemoryExchangeMap = UnorderedMapWithMemoryTracking<String, InMemoryExchangePtr>;
 
     UnorderedMapWithMemoryTracking<String, InMemoryExchangeMap> exchanges_by_query_id TSA_GUARDED_BY(mutex);
-    UnorderedSetWithMemoryTracking<String> cancelled_queries TSA_GUARDED_BY(mutex);
+    /// Cancelled query -> its root failure (null for a plain cancellation).
+    UnorderedMapWithMemoryTracking<String, std::exception_ptr> cancelled_queries TSA_GUARDED_BY(mutex);
     std::mutex mutex;
 };
 
@@ -333,12 +405,16 @@ private:
 
         void consume(Chunk chunk) override
         {
+            /// Zero-row chunks are scheduling ticks from an upstream `SourceFromInMemoryExchange`;
+            /// forwarding them would only grow the queue and wake the consumer for nothing.
+            if (!chunk.hasRows() && chunk.getChunkInfos().empty())
+                return;
             exchange->appendChunk(std::move(chunk));
         }
 
         void onFinish() override
         {
-            exchange->appendChunk({});
+            exchange->finish();
         }
 
     private:
@@ -356,23 +432,70 @@ private:
 
         String getName() const override { return "SourceFromInMemoryExchange"; }
 
-        Chunk generate() override
+        std::optional<Chunk> tryGenerate() override
         {
-            return exchange->getChunk();
+            /// This source's own pipeline is being torn down: stop quietly, its output is
+            /// discarded anyway.
+            if (isCancelled())
+                return std::nullopt;
+
+            /// A processor must not block the pipeline thread, so wait with a timeout. On the
+            /// timeout, push a chunk with no rows: a source that yields without producing output
+            /// stays ready and gets rescheduled at once, monopolizing the thread, while pushed
+            /// output makes the port full and lets other processors run.
+            auto chunk = exchange->getChunk(waitTimeout());
+            if (!chunk)
+                return Chunk(getPort().getHeader().cloneEmptyColumns(), 0);
+            if (chunk->empty())
+                return std::nullopt;   /// End-of-data marker.
+            return chunk;
         }
 
-        /// Wake a generate() blocked in getChunk; pipeline cancellation alone cannot interrupt it.
+        /// Wake the timed wait so the source stops right away instead of on its next poll.
         void onCancel() noexcept override
         {
-            exchange->cancel();
+            exchange->detachReader();
         }
 
     private:
+        /// A stream with no columns (case of `SELECT count()`) cannot fill the output port, so this
+        /// source polls instead of yielding - keep its wait short so other processors run sooner.
+        std::chrono::milliseconds waitTimeout() const
+        {
+            return getPort().getHeader().empty() ? std::chrono::milliseconds(1) : std::chrono::milliseconds(10);
+        }
+
         InMemoryExchangePtr exchange;
     };
 
     const String query_id;
 };
+
+
+/// Drops zero-row chunks emitted as scheduling ticks by `SourceFromInMemoryExchange`; without
+/// this filter they would escape the exchange path, e.g. to the client as empty `Data` packets.
+class SkipZeroRowChunksTransform final : public ISimpleTransform
+{
+public:
+    explicit SkipZeroRowChunksTransform(SharedHeader header_)
+        : ISimpleTransform(header_, header_, /*skip_empty_chunks_=*/ true)
+    {
+    }
+
+    String getName() const override { return "SkipZeroRowChunksTransform"; }
+
+    void transform(Chunk & chunk) override
+    {
+        /// Keep zero-row chunks that carry chunk infos: they are not ticks.
+        if (!chunk.hasRows() && chunk.getChunkInfos().empty())
+            chunk = Chunk();
+    }
+};
+
+std::shared_ptr<IProcessor> makeSkipZeroRowChunksTransform(SharedHeader header)
+{
+    return std::make_shared<SkipZeroRowChunksTransform>(std::move(header));
+}
 
 
 /// A wrapper that looks up exchanges by their kind and delegates to the corresponding exchange lookup: Persistent or Streaming
@@ -546,7 +669,7 @@ ExchangeLookupPtr createExchangeLookup(
         return std::make_shared<AllKindsExchangeLookup>(exchanges_, persisted_exchanges, /*streaming_exchange_lookup=*/nullptr);
     }
 
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     auto streaming_exchange_port = context->getConfigRef().getUInt("distributed_query.streaming_exchange_port", 0);
     if (streaming_exchange_port == 0)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -565,29 +688,43 @@ ExchangeLookupPtr createExchangeLookup(
             "set it, force `distributed_plan_force_exchange_kind = 'Persisted'`, or enable "
             "`distributed_plan_execute_locally` for in-process testing");
 
+    /// A task from an older initiator (version 1) ships no per-stream ports; fall back to this
+    /// node's configured exchange port to preserve the previous single-port behavior.
+    ExchangeStreamSources sources_with_ports = exchange_stream_sources;
+    for (auto & [stream, address] : sources_with_ports.stream_hosts)
+        if (address.port == 0)
+            address.port = static_cast<UInt16>(streaming_exchange_port);
+
     auto streaming_exchanges = createStreamingExchangeLookup(
-        query_id, ExchangeConnections::instance(), exchange_stream_sources, static_cast<UInt16>(streaming_exchange_port));
+        query_id, ExchangeConnections::instance(), sources_with_ports);
     return std::make_shared<AllKindsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges);
 #else
     UNUSED(exchange_stream_sources);
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-        "Streaming exchanges are only supported on Linux; "
+        "Streaming exchanges are only supported on Linux and macOS; "
         "use `distributed_plan_force_exchange_kind = 'Persisted'`");
 #endif
 }
 
 
-static String serializeQueryPlan(const QueryPlan & query_plan)
+static String serializeQueryPlan(const QueryPlan & query_plan, const ContextPtr & context)
 {
+    /// A shipped set must be complete, so the overflow mode is always throw;
+    /// `transfer_overflow_mode = 'break'` does not apply to it.
+    const auto & settings = context->getSettingsRef();
+    SizeLimits sets_transfer_limits(
+        settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], OverflowMode::THROW);
+
     WriteBufferFromOwnString out;
-    query_plan.serialize(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    query_plan.serializeForDistributedTask(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, sets_transfer_limits);
     return out.str();
 }
 
 static QueryPlan deserializeQueryPlan(const String & serialized_query_plan, ContextPtr context)
 {
     ReadBufferFromString in(serialized_query_plan);
-    auto plan_and_sets = QueryPlan::deserialize(in, context);
+    /// Trusted server-to-server plan fragment: decode types without the input complexity limit.
+    auto plan_and_sets = QueryPlan::deserialize(in, context, 0);
     return QueryPlan::makeSets(std::move(plan_and_sets), context);
 }
 
@@ -617,7 +754,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     LOG_TRACE(logger, "Task '{}' input exchange streams: [{}], output exchange streams: [{}]",
         task.task_id, fmt::join(input_exchange_streams, ", "), fmt::join(output_exchange_streams, ", "));
 
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     /// Release this task's pending streaming exchange connections on the worker when it ends. A
     /// consumer that never connects (e.g. its query was cancelled) would otherwise leave them behind.
     /// Only this task's output streams are dropped, so sibling tasks of the same query are unaffected.
@@ -667,7 +804,9 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     }
 
-    ASTPtr ast_stub = make_intrusive<ASTSelectQuery>(); /// FIXME: this is only used to populate query_kind
+    /// No AST: this fragment is built from a serialized query plan, not parsed. The query-log
+    /// helpers below treat a null AST as QueryKind::Select, which is correct here.
+    const ASTPtr no_ast;
     UInt64 query_plan_hash = sipHash64(task_description.serialized_query_plan);
 
     auto query_log_elem = logQueryStart(
@@ -675,9 +814,10 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         context,
         /*query_for_logging*/ task.task_id,
         query_plan_hash,
-        ast_stub, pipeline,
+        no_ast, pipeline,
         /*interpreter*/ nullptr,
         /*internal*/ false,
+        /*log_as_internal*/ false,
         /*database*/ "",
         /*table*/ "",
         /*async_insert*/ false);
@@ -705,12 +845,12 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
             executor.setCancelCallback(is_cancelled, 100);
         executor.execute();
 
-        logQueryFinish(query_log_elem, context, ast_stub, std::move(pipeline), false,
-            query_span, QueryResultCacheUsage::None, false);
+        logQueryFinish(query_log_elem, context, no_ast, std::move(pipeline), false,
+            query_span, QueryResultCacheUsage::None, false, /*log_as_internal*/ false);
     }
     catch (...)
     {
-        logQueryException(query_log_elem, context, execute_task_watch, ast_stub, query_span, false, true);
+        logQueryException(query_log_elem, context, execute_task_watch, no_ast, query_span, false, /*log_as_internal*/ false, true);
         throw;
     }
 }
@@ -739,7 +879,7 @@ std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const Stri
     return {nullptr, object_storage_path};
 }
 
-static void executeTask(const UUID & unique_query_id, const DistributedQueryTaskDescription & task, ContextPtr context, std::shared_ptr<std::atomic<bool>> is_cancelled)
+static void executeTask(const UUID & unique_query_id, const DistributedQueryTaskDescription & task, ContextPtr context, DistributedQueryCancellationPtr cancellation)
 {
     auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(toString(unique_query_id), context);
 
@@ -751,15 +891,15 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
     auto query_scope = QueryScope::create(task_context);
     setThreadName(ThreadName::DISTRIBUTED_QUERY_TASK);
 
-    doExecuteTask(task, object_storage, object_storage_path, toString(unique_query_id), std::move(task_context), [is_cancelled]() -> bool { return *is_cancelled; });
+    doExecuteTask(task, object_storage, object_storage_path, toString(unique_query_id), std::move(task_context), [cancellation]() -> bool { return cancellation->isCancelled(); });
 }
 
 /// Runs tasks in local threads. Useful for testing and debugging.
 class DistributedQueryPlanExecutorLocal final : public DistributedQueryPlanExecutor
 {
 public:
-    DistributedQueryPlanExecutorLocal(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, std::shared_ptr<std::atomic<bool>> is_cancelled_)
-        : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, makeContextForLocalExecution(context_), std::move(is_cancelled_))
+    DistributedQueryPlanExecutorLocal(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, DistributedQueryCancellationPtr cancellation_)
+        : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, makeContextForLocalExecution(context_), std::move(cancellation_))
     {
     }
 
@@ -777,7 +917,7 @@ public:
         /// InMemoryExchange::getChunk never returns. The exchanges are not removed here: the result
         /// reader still drains final_result after the driver finishes; removal happens when the query
         /// pipeline is destroyed (see makeInMemoryExchangesCleaner).
-        InMemoryExchanges::instance()->cancelQuery(toString(unique_query_id));
+        InMemoryExchanges::instance()->cancelQuery(toString(unique_query_id), cancellation->getFailure());
 
         joinAllThreads();
         stage_tasks.clear();
@@ -797,7 +937,7 @@ protected:
         std::promise<void> task_promise;
         std::future<void> future = task_promise.get_future();
 
-        threads.emplace_back([promise = std::move(task_promise), query_id = unique_query_id, task_description, ctx = context, is_cancelled = this->is_cancelled]() mutable
+        threads.emplace_back([promise = std::move(task_promise), query_id = unique_query_id, task_description, ctx = context, cancellation = this->cancellation]() mutable
         {
             ThreadStatus thread_status;
             /// The task attaches its own query context and thread group inside executeTask (matching
@@ -805,7 +945,7 @@ protected:
 
             try
             {
-                executeTask(query_id, task_description, ctx, is_cancelled);
+                executeTask(query_id, task_description, ctx, cancellation);
                 promise.set_value();
             }
             catch (...)
@@ -824,7 +964,7 @@ protected:
         started_tasks.reserve(stage.tasks.size());
         started_threads.reserve(stage.tasks.size());
         DistributedQueryTaskDescription task_description;
-        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
+        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
 
         for (const auto & task : stage.tasks)
@@ -911,18 +1051,57 @@ private:
 };
 
 
+/// Resolve a worker's endpoint on the initiator from the cluster config (with server-level
+/// fallbacks). The single place a future port source would plug in.
+static WorkerAddress resolveWorkerAddress(
+    const String & host, UInt16 cluster_stateless_worker_port, UInt16 cluster_streaming_exchange_port, ContextPtr context)
+{
+    WorkerAddress address;
+    address.host = host;
+
+    auto server_level_exchange_port = context->getConfigRef().getUInt("distributed_query.streaming_exchange_port", 0);
+    /// Reject out-of-range values instead of silently narrowing them to a different or unset port.
+    if (server_level_exchange_port > 65535)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "`distributed_query.streaming_exchange_port` must be in range 0..65535, got {}", server_level_exchange_port);
+    address.streaming_exchange_port = cluster_streaming_exchange_port != 0
+        ? cluster_streaming_exchange_port
+        : static_cast<UInt16>(server_level_exchange_port);
+
+    /// Fall back to the global client port, then the interserver port (read lazily, since
+    /// getInterserverIOAddress throws when unconfigured, so an explicit per-node port avoids it).
+    UInt64 dispatch_port = cluster_stateless_worker_port;
+    if (dispatch_port == 0)
+        dispatch_port = context->getConfigRef().getUInt("stateless_worker_client.port", 0);
+    if (dispatch_port == 0)
+        dispatch_port = context->getInterserverIOAddress().second;
+    if (dispatch_port == 0 || dispatch_port > 65535)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Resolved stateless worker port for host '{}' must be in range 1..65535, got {}", host, dispatch_port);
+    address.stateless_worker_port = static_cast<UInt16>(dispatch_port);
+
+    return address;
+}
+
+UInt64 chooseTaskSerializationVersion(const ExchangeStreamSources & exchange_stream_sources, UInt64 server_exchange_port)
+{
+    for (const auto & stream : exchange_stream_sources.stream_hosts)
+        if (stream.second.port != server_exchange_port)
+            return 2;
+    return 1;
+}
+
 TaskToHostMap::TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
 {
-    fillHostnames(context_);
+    fillWorkerAddresses(context_);
     assignHostsForTasks(distributed_query_plan_);
 }
 
-void TaskToHostMap::fillHostnames(ContextPtr context)
+void TaskToHostMap::fillWorkerAddresses(ContextPtr context)
 {
     if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Stateless worker client is not enabled in configuration");
 
-    String host;
     String cluster_name = context->getConfigRef().getString("stateless_worker_client.cluster", "");
     if (!cluster_name.empty())
     {
@@ -938,16 +1117,17 @@ void TaskToHostMap::fillHostnames(ContextPtr context)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Stateless worker cluster '{}' must have a single shard, got {}", cluster_name, shard_addresses.size());
         for (const auto & replica : shard_addresses[0])
-            hostnames.push_back(replica.host_name);
+            worker_addresses.push_back(
+                resolveWorkerAddress(replica.host_name, replica.stateless_worker_port, replica.streaming_exchange_port, context));
     }
     else
     {
-        host = context->getConfigRef().getString("stateless_worker_client.host");
+        String host = context->getConfigRef().getString("stateless_worker_client.host");
         if (!host.empty())
-            hostnames.push_back(host);
+            worker_addresses.push_back(resolveWorkerAddress(host, 0, 0, context));
     }
 
-    if (hostnames.empty())
+    if (worker_addresses.empty())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "No hosts specified for stateless worker client");
 }
 
@@ -958,11 +1138,11 @@ void TaskToHostMap::assignHostsForTasks(const DistributedQueryPlan & distributed
     {
         for (const auto & task : stage.tasks)
         {
-            const auto & assigned_host = hostnames[current_host];
-            current_host = (current_host + 1) % hostnames.size();
-            task_hosts[task.task_id] = assigned_host;
+            const auto & assigned_worker = worker_addresses[current_host];
+            current_host = (current_host + 1) % worker_addresses.size();
+            task_hosts[task.task_id] = assigned_worker;
             for (const auto & output_stream : task.output_exchange_streams)
-                exchange_stream_source_hosts[output_stream.toString()] = assigned_host;
+                exchange_stream_source_hosts[output_stream.toString()] = {assigned_worker.host, assigned_worker.streaming_exchange_port};
         }
     }
 }
@@ -977,19 +1157,26 @@ public:
         const DistributedQueryPlan & distributed_query_plan_,
         TaskToHostMapPtr task_to_host_map_,
         ContextPtr context_,
-        std::shared_ptr<std::atomic<bool>> is_cancelled_)
-        : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, std::move(context_), std::move(is_cancelled_))
+        DistributedQueryCancellationPtr cancellation_)
+        : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, std::move(context_), std::move(cancellation_))
         , task_to_host_map(std::move(task_to_host_map_))
-        , running_tasks(8, context, is_cancelled, logger)
+        , running_tasks(8, context, cancellation, logger)
     {
         QueryStatusPtr query_status = context->getProcessListElement();
-        LOG_DEBUG(logger, "Hosts for running distributed query: [{}]", fmt::join(task_to_host_map->getHostnames(), ", "));
+        Strings worker_hosts;
+        for (const auto & worker : task_to_host_map->getWorkerAddresses())
+            worker_hosts.push_back(worker.host);
+        LOG_DEBUG(logger, "Hosts for running distributed query: [{}]", fmt::join(worker_hosts, ", "));
+        UnorderedSetWithMemoryTracking<String> distinct_hosts;
+        for (const auto & [task_id, host] : task_to_host_map->getTaskHosts())
+            distinct_hosts.insert(host.host);
+        ProfileEvents::increment(ProfileEvents::DistributedPlanHostsUsed, distinct_hosts.size());
     }
 
     void cleanup() override
     {
         running_tasks.cancel();
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_DARWIN)
         /// Drop any still-pending exchange connection slots that belong to this query
         /// (the peer was cancelled or never arrived). Without this they would leak
         /// FutureConnection/eventfd entries in the ExchangeConnections singleton for
@@ -1009,11 +1196,11 @@ protected:
     class TaskTracker
     {
     public:
-        TaskTracker(Int64 max_in_flight_requests_, ContextPtr context_, std::shared_ptr<std::atomic<bool>> is_cancelled_, LoggerPtr logger_)
+        TaskTracker(Int64 max_in_flight_requests_, ContextPtr context_, DistributedQueryCancellationPtr cancellation_, LoggerPtr logger_)
             : context(std::move(context_))
             , query_status(context->getProcessListElement())
             , max_in_flight_requests(max_in_flight_requests_)
-            , is_cancelled(std::move(is_cancelled_))
+            , cancellation(std::move(cancellation_))
             , thread_pool(CurrentMetrics::TaskTrackerThreads, CurrentMetrics::TaskTrackerThreadsActive, CurrentMetrics::TaskTrackerThreadsScheduled,
                 max_in_flight_requests, max_in_flight_requests, 2 * max_in_flight_requests)
             , logger(std::move(logger_))
@@ -1021,7 +1208,17 @@ protected:
 
         ~TaskTracker()
         {
-            thread_pool.wait();
+            /// wait() joins the status-check threads (needed: it runs while logger/lock/context are
+            /// still alive), but it can rethrow a stored worker exception, which must not escape a
+            /// destructor.
+            try
+            {
+                thread_pool.wait();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
         }
 
         /// Add started task to be tracked
@@ -1084,7 +1281,7 @@ protected:
 
         /// Cancel all unfinished tasks. Collects task info under lock, then
         /// sends HTTP cancel requests without holding lock so that
-        /// `checkStatusFunc` threads can observe `is_cancelled` and exit.
+        /// `checkStatusFunc` threads can observe the cancellation and exit.
         void cancel()
         {
             VectorWithMemoryTracking<RunningTaskInfo> tasks_to_cancel;
@@ -1151,19 +1348,22 @@ protected:
         }
 
     private:
+        /// Log the in-flight exception, store it as the query's first failure, and request
+        /// cancellation. Called from the worker lambda's catch blocks so a failed status check
+        /// or a failed re-enqueue surfaces through `checkCancelled` instead of escaping the
+        /// thread (which would be rethrown by ~TaskTracker and terminate the server).
+        void recordFailure()
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            cancellation->recordCurrentException();
+        }
+
         void checkCancelled()
         {
             if (query_status)
                 query_status->checkTimeLimit();
 
-            {
-                std::lock_guard exception_lock(lock);
-                if (first_exception)
-                    std::rethrow_exception(first_exception);
-            }
-
-            if (*is_cancelled)
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+            cancellation->throwIfCancelled();
         }
 
         /// Thead function to check one task. If the task is not finished, adds the task back to the queue for checking.
@@ -1318,13 +1518,8 @@ protected:
                     }
                     catch (...)
                     {
-                        tryLogCurrentException(__PRETTY_FUNCTION__);
-                        {
-                            std::lock_guard exception_lock(lock);
-                            if (!first_exception)
-                                first_exception = std::current_exception();
-                        }
-                        *is_cancelled = true;
+                        /// recordFailure() logs and stores the exception. Ok.
+                        recordFailure();
                     }
                     /// Decrement the in-flight counter before scheduling the next check so
                     /// the next `enqueueGetStatus` is not gated by an already-finished slot.
@@ -1332,7 +1527,22 @@ protected:
                     /// inside `checkStatusFunc` sees a full pipeline, all in-flight checks
                     /// then decrement to zero, and no further check is ever scheduled.
                     --in_flight_request_count;
-                    enqueueGetStatus();
+                    /// The re-enqueue must not escape the worker lambda: scheduleOrThrow can throw
+                    /// (CANNOT_SCHEDULE_TASK on shutdown, MEMORY_LIMIT_EXCEEDED), and an escaping
+                    /// exception is rethrown by thread_pool.wait() in ~TaskTracker.
+                    try
+                    {
+                        fiu_do_on(FailPoints::distributed_plan_status_check_reenqueue_fault,
+                        {
+                            throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected re-enqueue fault");
+                        });
+                        enqueueGetStatus();
+                    }
+                    catch (...)
+                    {
+                        /// recordFailure() logs and stores the exception. Ok.
+                        recordFailure();
+                    }
                 });
             ++in_flight_request_count;
         }
@@ -1362,29 +1572,23 @@ protected:
         /// Queue of stages that have unfinished tasks to be checked
         DequeWithMemoryTracking<StageInfoPtr> stages_to_check TSA_GUARDED_BY(lock);
         UnorderedMapWithMemoryTracking<String, std::shared_future<void>> stage_results TSA_GUARDED_BY(lock);
-        std::shared_ptr<std::atomic<bool>> is_cancelled;
-        std::exception_ptr first_exception TSA_GUARDED_BY(lock);
+        DistributedQueryCancellationPtr cancellation;
         ThreadPool thread_pool;
         LoggerPtr logger;
     };
 
     RunningTaskInfo buildTaskInfo(const DistributedQueryTaskDescription & task_description) const
     {
-        const String host = task_to_host_map->getTaskHosts().at(task_description.task.task_id);
+        const auto & worker = task_to_host_map->getTaskHosts().at(task_description.task.task_id);
         String stateless_worker_endpoint_uri;
         {
-            auto default_port = context->getInterserverIOAddress().second;
-            auto port = context->getConfigRef().getUInt("stateless_worker_client.port", default_port);
-            if (port == 0 || port > 65535)
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                    "`stateless_worker_client.port` must be in range 1..65535, got {}", port);
             String default_endpoint = context->getConfigRef().getString("stateless_worker_server.endpoint", "localhost");
             auto endpoint = context->getConfigRef().getString("stateless_worker_client.endpoint", "stateless_worker/" + default_endpoint);
             Poco::URI stateless_worker_uri;
             /// Match the interserver scheme so a server with interserver_https_port is not sent plaintext.
             stateless_worker_uri.setScheme(context->getInterserverScheme());
-            stateless_worker_uri.setHost(host);
-            stateless_worker_uri.setPort(static_cast<UInt16>(port));
+            stateless_worker_uri.setHost(worker.host);
+            stateless_worker_uri.setPort(worker.stateless_worker_port);
             stateless_worker_uri.addQueryParameter("endpoint", endpoint);
             stateless_worker_endpoint_uri = stateless_worker_uri.toString();
         }
@@ -1397,14 +1601,31 @@ protected:
     {
         DistributedQueryTaskDescription task_description;
         task_description.initial_query_id = context->getCurrentQueryId();
-        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
+        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = context->getSettingsRef().changes();
 
         const String unique_temp_file_path = toString(unique_query_id);
+        const auto server_exchange_port = context->getConfigRef().getUInt("distributed_query.streaming_exchange_port", 0);
 
         for (const auto & task : stage.tasks)
         {
+            /// Reproduce the ordering a failing worker task creates: a task fails and records its
+            /// exception while this loop is still dispatching the rest of the stage, so the next
+            /// `checkCancelled` observes the cancellation. It must report the recorded failure.
+            fiu_do_on(FailPoints::distributed_plan_record_failure_while_starting_tasks,
+            {
+                try
+                {
+                    throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected task failure while starting tasks");
+                }
+                catch (...)
+                {
+                    /// `recordCurrentException` stores it as the query's first failure. Ok.
+                    cancellation->recordCurrentException();
+                }
+            });
+
             checkCancelled();
 
             task_description.task = task;
@@ -1416,6 +1637,7 @@ protected:
                 String input_stream_name = input_stream.toString();
                 task_description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
             }
+            task_description.serialization_version = chooseTaskSerializationVersion(task_description.exchange_stream_sources, server_exchange_port);
 
             /// Send the task before registering it: status polling does not tolerate
             /// UnknownTaskId, so a tracker poll racing the start would abort the query.
@@ -1433,6 +1655,7 @@ protected:
                 throw;
             }
             running_tasks.addTask(stage_name, task_info);
+            ProfileEvents::increment(ProfileEvents::DistributedPlanRemoteTasks);
         }
     }
 
@@ -1446,12 +1669,55 @@ protected:
 };
 
 
-DistributedQueryPlanExecutor::DistributedQueryPlanExecutor(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, std::shared_ptr<std::atomic<bool>> is_cancelled_)
+void DistributedQueryCancellation::recordCurrentException()
+{
+    /// Publish the failure and the flag in one critical section. Setting the flag outside it would
+    /// let a waiter that already read no failure still see the flag and report `Query was cancelled`.
+    std::lock_guard lock(mutex);
+    /// A bare cancellation is not a root cause: a task stopped by the cancellation of its
+    /// exchange must not become the query's reported failure.
+    auto exception = std::current_exception();
+    if (!first_exception && getExceptionErrorCode(exception) != ErrorCodes::QUERY_WAS_CANCELLED)
+        first_exception = exception;
+    cancelled = true;
+}
+
+std::exception_ptr DistributedQueryCancellation::getFailure() const
+{
+    std::lock_guard lock(mutex);
+    return first_exception;
+}
+
+void DistributedQueryCancellation::rethrowIfFailedLocked() const
+{
+    if (first_exception)
+        std::rethrow_exception(first_exception);
+}
+
+void DistributedQueryCancellation::rethrowIfFailed() const
+{
+    std::lock_guard lock(mutex);
+    rethrowIfFailedLocked();
+}
+
+void DistributedQueryCancellation::throwIfCancelled() const
+{
+    /// One critical section for both, so a failure recorded by `recordCurrentException` is always
+    /// seen together with the flag it set.
+    std::lock_guard lock(mutex);
+    rethrowIfFailedLocked();
+
+    if (cancelled)
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+}
+
+
+DistributedQueryPlanExecutor::DistributedQueryPlanExecutor(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, DistributedQueryCancellationPtr cancellation_)
     : unique_query_id(unique_query_id_)
     , distributed_query_plan(distributed_query_plan_)
     , context(std::move(context_))
     , query_status(context->getProcessListElement())
-    , is_cancelled(std::move(is_cancelled_))
+    , cancellation(std::move(cancellation_))
     , logger(getLogger("DistributedQueryPlanExecutor"))
 {
 }
@@ -1461,8 +1727,10 @@ void DistributedQueryPlanExecutor::checkCancelled() const
     if (query_status)
         query_status->checkTimeLimit();
 
-    if (*is_cancelled)
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+    /// A task failure cancels the query, so report that failure rather than the cancellation it
+    /// caused; otherwise the real error would stay in the log and the client would see only
+    /// `Query was cancelled`.
+    cancellation->throwIfCancelled();
 }
 
 void DistributedQueryPlanExecutor::startStageWithDependencies(const String & stage_name, UnorderedSetWithMemoryTracking<String> & executed_stages)
@@ -1566,21 +1834,24 @@ std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
     const DistributedQueryPlan & distributed_query_plan,
     TaskToHostMapPtr task_to_host_map,
     ContextPtr context,
-    std::shared_ptr<std::atomic<bool>> is_cancelled)
+    DistributedQueryCancellationPtr cancellation)
 {
     bool run_locally = context->getSettingsRef()[Setting::distributed_plan_execute_locally];
     std::unique_ptr<DistributedQueryPlanExecutor> executor;
     if (run_locally)
-        executor = std::make_unique<DistributedQueryPlanExecutorLocal>(unique_query_id, distributed_query_plan, context, is_cancelled);
+    {
+        ProfileEvents::increment(ProfileEvents::DistributedPlanLocalExecution);
+        executor = std::make_unique<DistributedQueryPlanExecutorLocal>(unique_query_id, distributed_query_plan, context, cancellation);
+    }
     else
-        executor = std::make_unique<DistributedQueryPlanExecutorRemote>(unique_query_id, distributed_query_plan, task_to_host_map, context, is_cancelled);
+        executor = std::make_unique<DistributedQueryPlanExecutorRemote>(unique_query_id, distributed_query_plan, task_to_host_map, context, cancellation);
 
     return executor;
 }
 
-void cancelDistributedQueryInMemoryExchanges(const UUID & unique_query_id)
+void cancelDistributedQueryInMemoryExchanges(const UUID & unique_query_id, std::exception_ptr failure)
 {
-    InMemoryExchanges::instance()->cancelQuery(toString(unique_query_id));
+    InMemoryExchanges::instance()->cancelQuery(toString(unique_query_id), failure);
 }
 
 }

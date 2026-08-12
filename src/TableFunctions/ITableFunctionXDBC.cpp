@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -208,10 +209,21 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr contex
     bool use_nulls = context->getSettingsRef()[Setting::external_table_functions_use_nulls];
     columns_info_uri.addQueryParameter("external_table_functions_use_nulls", toString(use_nulls));
 
+    /// `startBridgeIfNot` above has already verified the bridge responds, so this metadata
+    /// request talks to a known-alive local subprocess. Do not retry it: if the bridge (or the
+    /// ODBC/JDBC driver behind it) stops responding mid-request, retrying `http_max_tries` times,
+    /// each blocking for up to `http_receive_timeout`, keeps the query running for minutes during
+    /// query analysis, where it cannot observe cancellation (`KILL QUERY`, `max_execution_time`).
+    /// That is what surfaces as a "possible deadlock" in the stress-test hung check. Make a single
+    /// attempt and let the error propagate instead.
+    ReadSettings read_settings;
+    read_settings.http_settings.max_tries = 1;
+
     Poco::Net::HTTPBasicCredentials credentials{};
     auto buf = BuilderRWBufferFromHTTP(columns_info_uri)
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                    .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                   .withSettings(read_settings)
                    .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(
                         context->getSettingsRef(),
                         context->getServerSettings()))
@@ -238,11 +250,162 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & /*ast_function*/, Cont
 
 void registerTableFunctionJDBC(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionJDBC>({});
+    factory.registerFunction<TableFunctionJDBC>({.description = R"DOCS_MD(
+<Note>
+clickhouse-jdbc-bridge contains experimental codes and is no longer supported. It may contain reliability issues and security vulnerabilities. Use it at your own risk. 
+ClickHouse recommend using built-in table functions in ClickHouse which provide a better alternative for ad-hoc querying scenarios (Postgres, MySQL, MongoDB, etc).
+</Note>
+
+JDBC table function returns table that is connected via JDBC driver.
+
+This table function requires separate [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge) program to be running.
+It supports Nullable types (based on DDL of remote table that is queried).
+
+## Syntax {#syntax}
+
+```sql
+jdbc(datasource, external_database, external_table)
+jdbc(datasource, external_table)
+jdbc(named_collection)
+```
+
+## Examples {#examples}
+
+Instead of an external database name, a schema can be specified:
+
+```sql
+SELECT * FROM jdbc('jdbc:mysql://localhost:3306/?user=root&password=root', 'schema', 'table')
+```
+
+```sql
+SELECT * FROM jdbc('mysql://localhost:3306/?user=root&password=root', 'select * from schema.table')
+```
+
+```sql
+SELECT * FROM jdbc('mysql-dev?p1=233', 'num Int32', 'select toInt32OrZero(''{{p1}}'') as num')
+```
+
+```sql
+SELECT *
+FROM jdbc('mysql-dev?p1=233', 'num Int32', 'select toInt32OrZero(''{{p1}}'') as num')
+```
+
+```sql
+SELECT a.datasource AS server1, b.datasource AS server2, b.name AS db
+FROM jdbc('mysql-dev?datasource_column', 'show databases') a
+INNER JOIN jdbc('self?datasource_column', 'show databases') b ON a.Database = b.name
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
 }
 
 void registerTableFunctionODBC(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionODBC>({});
+    factory.registerFunction<TableFunctionODBC>({.description = R"DOCS_MD(
+Returns table that is connected via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
+
+## Syntax {#syntax}
+
+```sql
+odbc(datasource, external_database, external_table)
+odbc(datasource, external_table)
+odbc(named_collection)
+```
+
+## Arguments {#arguments}
+
+| Argument            | Description                                                            |
+|---------------------|------------------------------------------------------------------------|
+| `datasource` | Name of the section with connection settings in the `odbc.ini` file. |
+| `external_database` | Name of a database in an external DBMS.                                |
+| `external_table`    | Name of a table in the `external_database`.                            |
+
+These parameters can also be passed using [named collections](/concepts/features/configuration/server-config/named-collections).
+
+To safely implement ODBC connections, ClickHouse uses a separate program `clickhouse-odbc-bridge`. If the ODBC driver is loaded directly from `clickhouse-server`, driver problems can crash the ClickHouse server. ClickHouse automatically starts `clickhouse-odbc-bridge` when it is required. The ODBC bridge program is installed from the same package as the `clickhouse-server`.
+
+The fields with the `NULL` values from the external table are converted into the default values for the base data type. For example, if a remote MySQL table field has the `INT NULL` type it is converted to 0 (the default value for ClickHouse `Int32` data type).
+
+## Usage Example {#usage-example}
+
+**Getting data from the local MySQL installation via ODBC**
+
+This example is checked for Ubuntu Linux 18.04 and MySQL server 5.7.
+
+Ensure that unixODBC and MySQL Connector are installed.
+
+By default (if installed from packages), ClickHouse starts as user `clickhouse`. Thus you need to create and configure this user in the MySQL server.
+
+```bash
+$ sudo mysql
+```
+
+```sql
+mysql> CREATE USER 'clickhouse'@'localhost' IDENTIFIED BY 'clickhouse';
+mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'clickhouse' WITH GRANT OPTION;
+```
+
+Then configure the connection in `/etc/odbc.ini`.
+
+```bash
+$ cat /etc/odbc.ini
+[mysqlconn]
+DRIVER = /usr/local/lib/libmyodbc5w.so
+SERVER = 127.0.0.1
+PORT = 3306
+DATABASE = test
+USERNAME = clickhouse
+PASSWORD = clickhouse
+```
+
+You can check the connection using the `isql` utility from the unixODBC installation.
+
+```bash
+$ isql -v mysqlconn
++-------------------------+
+| Connected!                            |
+|                                       |
+...
+```
+
+Table in MySQL:
+
+```text
+mysql> CREATE TABLE `test`.`test` (
+    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+    ->   `int_nullable` INT NULL DEFAULT NULL,
+    ->   `float` FLOAT NOT NULL,
+    ->   `float_nullable` FLOAT NULL DEFAULT NULL,
+    ->   PRIMARY KEY (`int_id`));
+Query OK, 0 rows affected (0,09 sec)
+
+mysql> insert into test (`int_id`, `float`) VALUES (1,2);
+Query OK, 1 row affected (0,00 sec)
+
+mysql> select * from test;
++------+----------+-----+----------+
+| int_id | int_nullable | float | float_nullable |
++------+----------+-----+----------+
+|      1 |         NULL |     2 |           NULL |
++------+----------+-----+----------+
+1 row in set (0,00 sec)
+```
+
+Retrieving data from the MySQL table in ClickHouse:
+
+```sql
+SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
+```
+
+```text
+┌─int_id─┬─int_nullable─┬─float─┬─float_nullable─┐
+│      1 │            0 │     2 │              0 │
+└────────┴──────────────┴───────┴────────────────┘
+```
+
+## Related {#see-also}
+
+- [ODBC dictionaries](/reference/statements/create/dictionary/sources/odbc)
+- [ODBC table engine](/reference/engines/table-engines/integrations/odbc).
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
 }
 }

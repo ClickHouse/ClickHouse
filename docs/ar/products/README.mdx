@@ -1,0 +1,39 @@
+---
+title: README
+---
+
+<div id="products">
+  # المنتجات
+</div>
+
+**ما الذي يوضع هنا:** الوثائق الخاصة بمنتجات ClickHouse لخيارات النشر
+ومنتجاته المُدارة/المصاحبة. كل دليل فرعي مستقل بذاته
+وله صفحة overview خاصة به، وقسم Getting Started، والأدلة، والمواد
+المرجعية الخاصة بنطاق ذلك المنتج.
+
+**الجمهور المستهدف:** المستخدمون الذين يعملون مع منتج محدد من ClickHouse. يفترض المحتوى هنا
+أن القارئ قد اختار المنتج ويريد التفاصيل التي تنطبق عليه
+(الفوترة، وطوبولوجيا النشر، والميزات الخاصة بالمنتج، وسلوك
+الـ Console/API). أما المحتوى الذي ينطبق على ClickHouse بشكل عام — المفاهيم، وأنماط الاستعلام،
+ومرجع SQL — فينتمي إلى `/core`، وليس هنا.
+
+**الأدلة الفرعية:**
+
+* `cloud/` — ClickHouse Cloud (خدمة مُدارة بلا خوادم).
+* `clickstack/` — ClickStack، حزمة observability المدعومة بواسطة ClickHouse.
+* `bring-your-own-cloud/` — BYOC: ClickHouse Cloud يعمل داخل
+  cloud account الخاص بالعميل. (وهو فعليًا deployment mode من Cloud، لكنه مفصول هنا للتبسيط)
+* `clickhouse-private/` — ClickHouse Private: نشر self-hosted ومعزول
+  على البنية التحتية الخاصة بالعميل. (وهو فعليًا deployment mode من Cloud، لكنه مفصول هنا للتبسيط)
+* `kubernetes-operator/` — مُشغِّل ClickHouse لـ Kubernetes من أجل نشر
+  وإدارة المجموعات على Kubernetes.
+* `managed-postgres/` — خدمة Managed Postgres، مدمجة أصلاً مع
+  ClickHouse Cloud.
+* `agentic-data-stack/` — حزمة agentic analytics ‏(ClickHouse + LibreChat
+  * Langfuse).
+* `chdb/` — chDB، بنية ClickHouse التي تعمل داخل العملية.
+
+إذا كانت الصفحة تشرح ClickHouse engine، أو function، أو setting، أو مفهومًا
+ينطبق بغض النظر عن المنتج، فهي تنتمي إلى `/core` (المفاهيم، أو الأدلة، أو
+المرجع). لا تضع صفحة هنا إلا إذا كانت مرتبطة بالمنتج بشكل جوهري —
+بـ Console الخاص به، أو الفوترة، أو deployment model، أو الميزات الحصرية للمنتج.

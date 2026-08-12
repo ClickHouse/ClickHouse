@@ -1,0 +1,20 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic
+title: 'Elastic から ClickStack への移行'
+description: 'Elastic から ClickHouse Observability Stack へ移行するためのランディングページ'
+show_related_blogs: true
+keywords: ['Elasticsearch']
+doc_type: 'landing-page'
+---
+
+このガイドでは、Elastic Stack から ClickStack への移行について、包括的な進め方を紹介します。特に、リスクを最小限に抑えつつ、オブザーバビリティのワークロードにおける ClickHouse の強みを活かせる並行運用の戦略に重点を置いています。
+
+| Section                                                            | Description                                       |
+| ------------------------------------------------------------------ | ------------------------------------------------- |
+| [Introduction](/ja/clickstack/migration/elastic/intro)                | 移行プロセスの概要と主な検討事項                                  |
+| [Concepts](/ja/clickstack/migration/elastic/concepts)                 | Elastic と ClickStack の対応する概念を理解する                 |
+| [Types](/ja/clickstack/migration/elastic/types)                       | Elasticsearch の types を ClickHouse の対応する型にマッピングする |
+| [Search](/ja/clickstack/migration/elastic/search)                     | 検索機能とクエリ構文を比較する                                   |
+| [Migrating Data](/ja/clickstack/migration/elastic/migrating-data)     | データ移行と並行運用の戦略                                     |
+| [Migrating Agents](/ja/clickstack/migration/elastic/migrating-agents) | Elastic エージェントから OpenTelemetry への移行               |
+| [Migrating SDKs](/ja/clickstack/migration/elastic/migrating-sdks)     | Elastic APM エージェントを OpenTelemetry SDKs に置き換える     |
