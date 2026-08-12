@@ -256,6 +256,24 @@ def send_test_data():
                     140: 5,
                 },
             ),
+            # Two series of the same metric which differ only by `instance` and go stale at the same time,
+            # so that they collapse to a single labelset under `ignoring(instance)` vector matching.
+            (
+                {"__name__": "stale_pair", "instance": "a"},
+                {
+                    100: 1,
+                    110: 2,
+                    120: STALE_NAN,
+                },
+            ),
+            (
+                {"__name__": "stale_pair", "instance": "b"},
+                {
+                    100: 10,
+                    110: 20,
+                    120: STALE_NAN,
+                },
+            ),
         ]
     )
 
@@ -1069,6 +1087,33 @@ def test_function_over_time():
 
     # Behavior: Prometheus instant selectors reject a series if the newest lookback sample is stale.
     do_query_test("stale_gauge", 125, '{"resultType": "vector", "result": []}', [])
+
+    # Behavior: a stale series is absent for the rest of the evaluation, not merely valueless. Both
+    # `stale_pair` series are stale at 125 and collapse to the same labelset under `ignoring(instance)`,
+    # so Prometheus returns an empty result instead of reporting duplicate series for the match.
+    do_query_test(
+        "stale_pair + ignoring(instance) stale_pair",
+        125,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+    do_query_test("stale_pair", 125, '{"resultType": "vector", "result": []}', [])
+
+    # But a series which is stale only at some evaluation timestamps stays present at the others.
+    do_range_query_test(
+        "stale_gauge",
+        125,
+        145,
+        20,
+        '{"resultType": "matrix", "result": ['
+        '{"metric": {"__name__": "stale_gauge"}, "values": [[145, "5"]]}]}',
+        [
+            [
+                "[('__name__','stale_gauge')]",
+                "[('1970-01-01 00:02:25.000',5)]",
+            ],
+        ],
+    )
 
     # Behavior: Prometheus matrix selectors skip stale markers before range functions see samples.
     do_query_test(

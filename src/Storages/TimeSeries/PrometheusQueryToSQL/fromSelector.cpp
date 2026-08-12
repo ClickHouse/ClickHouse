@@ -62,6 +62,16 @@ namespace
                     "arrayMap",
                     makeASTLambda({"x"}, makeFilterStaleMarkerValue(make_intrusive<ASTIdentifier>("x"))),
                     make_intrusive<ASTIdentifier>(ColumnNames::Values));
+
+                /// A series whose every selected sample is a stale marker is absent in Prometheus, so its row
+                /// must not survive here either: downstream duplicate-series checks (vector matching,
+                /// `dropMetricName`) count rows, and two such rows collapsing to the same labelset would
+                /// otherwise raise a duplicate-series exception for series Prometheus does not return at all.
+                builder.where = makeASTFunction(
+                    "arrayExists",
+                    makeASTLambda({"x"}, makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("x"))),
+                    values->clone());
+
                 values->setAlias(ColumnNames::Values);
                 builder.select_list.push_back(std::move(values));
 
