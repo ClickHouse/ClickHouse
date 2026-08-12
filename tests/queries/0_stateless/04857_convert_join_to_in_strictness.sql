@@ -2,6 +2,8 @@
 
 SET enable_analyzer = 1;
 SET join_algorithm = 'hash';
+-- The conversion declines while a join or transfer limit is active, and the test profile sets all four.
+SET max_rows_in_join = 0, max_bytes_in_join = 0, max_rows_to_transfer = 0, max_bytes_to_transfer = 0;
 
 DROP TABLE IF EXISTS t_left;
 DROP TABLE IF EXISTS t_right;
@@ -66,6 +68,11 @@ ORDER BY val SETTINGS any_join_distinct_right_table_keys = 1, query_plan_convert
 SELECT val FROM t_left ANY INNER JOIN t_right ON t_left.id = t_right.id
 ORDER BY val SETTINGS any_join_distinct_right_table_keys = 1, query_plan_convert_join_to_in = 1;
 
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT val FROM t_left ANY INNER JOIN t_right ON t_left.id = t_right.id
+    SETTINGS any_join_distinct_right_table_keys = 1, query_plan_convert_join_to_in = 1
+) WHERE explain ILIKE '%CreatingSets%';
+
 SELECT '-- a JOIN row limit is enforced whether or not the join is converted';
 SELECT val FROM t_left SEMI LEFT JOIN t_right ON t_left.id = t_right.id
 ORDER BY val SETTINGS query_plan_convert_join_to_in = 0, max_rows_in_join = 1; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
@@ -89,6 +96,23 @@ SELECT count() > 0 FROM (
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1 SELECT val FROM t_left SEMI LEFT JOIN t_right ON t_left.id = t_right.id
     SETTINGS query_plan_convert_join_to_in = 1, max_rows_to_transfer = 1, transfer_overflow_mode = 'break'
+) WHERE explain ILIKE '%CreatingSets%';
+
+SELECT '-- equal numeric limits are not equal behaviour: the two regimes bound different quantities';
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT val FROM t_left SEMI LEFT JOIN t_right ON t_left.id = t_right.id
+    SETTINGS query_plan_convert_join_to_in = 1, max_rows_in_join = 5, max_rows_to_transfer = 5
+) WHERE explain ILIKE '%CreatingSets%';
+
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT val FROM t_left SEMI LEFT JOIN t_right ON t_left.id = t_right.id
+    SETTINGS query_plan_convert_join_to_in = 1, max_bytes_in_join = 1000000, max_bytes_to_transfer = 1000000
+) WHERE explain ILIKE '%CreatingSets%';
+
+SELECT '-- a differing overflow mode alone does not block the conversion';
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT val FROM t_left SEMI LEFT JOIN t_right ON t_left.id = t_right.id
+    SETTINGS query_plan_convert_join_to_in = 1, join_overflow_mode = 'break'
 ) WHERE explain ILIKE '%CreatingSets%';
 
 SELECT '-- a Join engine table keeps its declared strictness check';

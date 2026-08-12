@@ -165,6 +165,12 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (!isInnerOrLeft(join_operator.kind))
         return 0;
 
+    /// The join limits bound its stored right side, the transfer limits bound only the set's hash
+    /// table: different allocations, so an active limit on either side can change which rows survive.
+    if (join_settings.max_rows_in_join || join_settings.max_bytes_in_join
+        || settings.network_transfer_limits.hasLimits())
+        return 0;
+
     /// The Join engine validates the query's kind and strictness against its declared ones, and
     /// replacing the join with IN skips that check. Single-child steps can sit above the source.
     auto is_storage_join = [](const QueryPlan::Node * side_node)
@@ -180,14 +186,6 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         return false;
     };
     if (is_storage_join(parent_node->children.back()))
-        return 0;
-
-    /// The join enforces max_rows_in_join/max_bytes_in_join while the replacement set enforces the
-    /// transfer limits, so any difference between the two regimes would change the result.
-    const auto & set_limits = settings.network_transfer_limits;
-    if (join_settings.max_rows_in_join != set_limits.max_rows
-        || join_settings.max_bytes_in_join != set_limits.max_bytes
-        || join_settings.join_overflow_mode != set_limits.overflow_mode)
         return 0;
 
     /// Do not support many condition for now.

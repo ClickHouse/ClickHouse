@@ -3,6 +3,8 @@ SET enable_analyzer = 1;
 SET join_algorithm = 'hash';
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 SET query_plan_merge_filters = 1; -- Filter nodes must be merged for stable EXPLAIN output
+-- The conversion declines while a join or transfer limit is active, and the test profile sets all four.
+SET max_rows_in_join = 0, max_bytes_in_join = 0, max_rows_to_transfer = 0, max_bytes_to_transfer = 0;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;

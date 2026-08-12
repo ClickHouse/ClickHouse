@@ -29,6 +29,7 @@ b
 a
 a2
 b
+1
 -- a JOIN row limit is enforced whether or not the join is converted
 -- and a transfer row limit does not silently truncate the result
 a
@@ -40,4 +41,9 @@ b
 -- a query that sets either limit is not converted
 0
 0
+-- equal numeric limits are not equal behaviour: the two regimes bound different quantities
+0
+0
+-- a differing overflow mode alone does not block the conversion
+1
 -- a Join engine table keeps its declared strictness check
