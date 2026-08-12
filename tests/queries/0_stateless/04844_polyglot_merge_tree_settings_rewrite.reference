@@ -1,0 +1,3 @@
+index_granularity = 1024
+x	Int32
+y	String

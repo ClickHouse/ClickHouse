@@ -1483,10 +1483,21 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
     return !have_error;
 }
 
-void ClientBase::pinOutboundDialectForJSONDialect(const String & outbound_query)
+void ClientBase::pinOutboundDialect(const String & outbound_query, bool outbound_text_is_serialized_ast)
 {
     if (!current_query_parsed_as_json_dialect)
+    {
+        /// A foreign-dialect query is sent verbatim with its parse-time `dialect` pinned, so the server
+        /// reparses (for polyglot: transpiles) exactly the text the client classified — see
+        /// `processParsedSingleQuery`. When a client-side AST->SQL rewrite replaced that text, what is
+        /// being sent is the *already transpiled* AST serialized back to ClickHouse SQL, so the server
+        /// must parse it as SQL instead of running it through the transpiler a second time (e.g.
+        /// `clickhouse-client --dialect=polyglot --allow_merge_tree_settings --index_granularity=...`
+        /// rewrites a `CREATE TABLE`).
+        if (current_query_sent_verbatim && outbound_text_is_serialized_ast)
+            client_context->setSetting("dialect", String("clickhouse"));
         return;
+    }
 
     /// The client parsed this query as JSON (`clickhouse_json` dialect), but the server re-parses the
     /// outbound text using the session `dialect`. Determine the form of the text actually being sent:
@@ -1527,6 +1538,10 @@ std::optional<Settings> ClientBase::settingsWithoutCompatibilityDerived() const
 
 void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 {
+    /// Whether `query` below is no longer the text the client parsed, but that parse serialized back to
+    /// ClickHouse SQL. It decides how the server has to parse the outbound text (see `pinOutboundDialect`).
+    bool outbound_text_is_serialized_ast = false;
+
     /// Rewrite query only when we have query parameters.
     /// Note that if query is rewritten, comments in query are lost.
     /// But the user often wants to see comments in server logs, query log, processlist, etc.
@@ -1540,7 +1555,10 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
         /// Get new query after substitutions.
         if (visitor.getNumberOfReplacedParameters())
+        {
             query = parsed_query->formatWithSecretsOneLine();
+            outbound_text_is_serialized_ast = true;
+        }
         chassert(!query.empty());
     }
 
@@ -1557,6 +1575,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             }
 
             query = parsed_query->formatWithSecretsOneLine();
+            outbound_text_is_serialized_ast = true;
         }
     }
 
@@ -1663,11 +1682,11 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
     const auto & settings = client_context->getSettingsRef();
     const Int32 signals_before_stop = settings[Setting::partial_result_on_first_cancel] ? 2 : 1;
 
-    /// `query` may have been rewritten from JSON to SQL above; pin the transport dialect to match
-    /// before sending so the server parses it the same way the client did. Must run before
-    /// `settingsWithoutCompatibilityDerived` snapshots the settings, so the pinned `dialect` is
-    /// included in the settings sent to the server.
-    pinOutboundDialectForJSONDialect(query);
+    /// `query` may have been rewritten above (from JSON, or from a foreign dialect, to SQL); pin the
+    /// transport dialect to match before sending so the server parses it the same way the client did.
+    /// Must run before `settingsWithoutCompatibilityDerived` snapshots the settings, so the pinned
+    /// `dialect` is included in the settings sent to the server.
+    pinOutboundDialect(query, outbound_text_is_serialized_ast);
 
     const auto settings_without_compat = settingsWithoutCompatibilityDerived();
     const Settings * settings_to_send = settings_without_compat ? &*settings_without_compat : &settings;
@@ -2234,6 +2253,9 @@ bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
 
 void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
 {
+    /// See the same variable in `processOrdinaryQuery`.
+    bool outbound_text_is_serialized_ast = false;
+
     if (!query_parameters.empty()
         && connection->getServerRevision(connection_parameters.timeouts) < DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
     {
@@ -2243,7 +2265,10 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
 
         /// Get new query after substitutions.
         if (visitor.getNumberOfReplacedParameters())
+        {
             query = parsed_query->formatWithSecretsOneLine();
+            outbound_text_is_serialized_ast = true;
+        }
         chassert(!query.empty());
     }
 
@@ -2263,11 +2288,11 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     query_interrupt_handler.start();
     SCOPE_EXIT({ query_interrupt_handler.stop(); });
 
-    /// `query` may have been rewritten from JSON to SQL above; pin the transport dialect to match
-    /// before sending so the server parses it the same way the client did.
+    /// `query` may have been rewritten above (from JSON, or from a foreign dialect, to SQL); pin the
+    /// transport dialect to match before sending so the server parses it the same way the client did.
     /// Must run before `settingsWithoutCompatibilityDerived` snapshots the settings, so the pinned
     /// `dialect` is included in the settings sent to the server.
-    pinOutboundDialectForJSONDialect(query);
+    pinOutboundDialect(query, outbound_text_is_serialized_ast);
 
     const auto settings_without_compat = settingsWithoutCompatibilityDerived();
     const Settings * settings_to_send
@@ -2788,8 +2813,8 @@ void ClientBase::processParsedSingleQuery(
         /// The AST was produced under these settings (see parseQuery), so the decision how to send the
         /// very same text — and the settings that govern its server-side reparse — must be derived from
         /// them, not from the settings the query itself installs for its own execution. The outbound
-        /// transport dialect for `clickhouse_json` is pinned in `pinOutboundDialectForJSONDialect`;
-        /// verbatim (foreign) dialects are pinned below, after `applySettingsFromServerIfNeeded`.
+        /// transport dialect for `clickhouse_json` is pinned in `pinOutboundDialect`; verbatim (foreign)
+        /// dialects are pinned below, after `applySettingsFromServerIfNeeded`.
         const Dialect parse_dialect = client_context->getSettingsRef()[Setting::dialect];
         const Field parse_dialect_value = client_context->getSettingsRef().get("dialect");
         /// Every parse-time setting that governed the polyglot classifier's parse of this text — the
@@ -2851,6 +2876,7 @@ void ClientBase::processParsedSingleQuery(
         /// same query onto the native path (where e.g. `insert->data`, already cleared by the polyglot
         /// parser, would be expected to carry the inline data).
         const bool send_query_verbatim = parse_dialect != Dialect::clickhouse && parse_dialect != Dialect::clickhouse_json;
+        current_query_sent_verbatim = send_query_verbatim;
 
         if (send_query_verbatim)
         {
