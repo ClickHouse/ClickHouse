@@ -63,7 +63,7 @@ TEST(AIAgentProtocol, ParseArgumentsAsEncodedString)
     EXPECT_EQ(step.tool_calls[0].arguments.at("q").get<std::string>(), "SELECT 1");
 }
 
-TEST(AIAgentProtocol, ParseCloseTagInsideJsonString)
+TEST(AIAgentProtocol, ParseCloseTagInsideJSONString)
 {
     /// The close tag inside a JSON string literal (e.g. a query selecting that very text)
     /// must not terminate the block early.
@@ -78,7 +78,7 @@ TEST(AIAgentProtocol, ParseCloseTagInsideJsonString)
     EXPECT_EQ(step.text, "done");
 }
 
-TEST(AIAgentProtocol, ParseEscapedQuotesInsideJsonString)
+TEST(AIAgentProtocol, ParseEscapedQuotesInsideJSONString)
 {
     size_t counter = 1;
     auto step = AIServerFunctionTransport::parseResponse(

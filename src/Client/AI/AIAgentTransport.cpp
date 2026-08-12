@@ -204,7 +204,7 @@ namespace
 
 /// The position right after the end of the JSON value starting at `start` (which must point
 /// at `{` or `[`), respecting string literals and escapes, or `npos` if the value never closes.
-size_t findJsonValueEnd(const String & s, size_t start)
+size_t findJSONValueEnd(const String & s, size_t start)
 {
     size_t depth = 0;
     bool in_string = false;
@@ -270,7 +270,7 @@ AIAgentStep AIServerFunctionTransport::parseResponse(const String & response, si
             ++json_pos;
         if (json_pos < response.size() && response[json_pos] == '{')
         {
-            if (size_t json_end = findJsonValueEnd(response, json_pos); json_end != String::npos)
+            if (size_t json_end = findJSONValueEnd(response, json_pos); json_end != String::npos)
             {
                 size_t tag_pos = json_end;
                 while (tag_pos < response.size() && isWhitespaceASCII(response[tag_pos]))
