@@ -99,14 +99,18 @@ bool canOptimizeToSubcolumn(QueryTreeNodePtr column_source, const String & subco
     /// A column stored with automatic (non-native) LowCardinality serialization is dictionary-encoded
     /// and does not have the regular subcolumns of its data type available on disk (e.g. the String
     /// `.size` substream). Reading such a subcolumn would fail, so the optimization must be skipped.
-    if (auto hints = table_node->getStorage()->tryGetSerializationHints())
+    /// The cheap flag is checked first, because fetching the hints takes a lock and copies them.
+    if (table_node->getStorage()->hasAutomaticLowCardinalitySerialization())
     {
-        for (const auto & [name, info] : *hints)
+        if (auto hints = table_node->getStorage()->tryGetSerializationHints())
         {
-            if (info
-                && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY)
-                && (subcolumn_name == name || subcolumn_name.starts_with(name + ".")))
-                return false;
+            for (const auto & [name, info] : *hints)
+            {
+                if (info
+                    && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY)
+                    && (subcolumn_name == name || subcolumn_name.starts_with(name + ".")))
+                    return false;
+            }
         }
     }
 

@@ -92,6 +92,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
     extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsUInt64 max_uniq_number_for_low_cardinality;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
@@ -816,6 +817,17 @@ getColumnsForNewDataPart(
     else
         settings = storage_serialization_settings;
 
+    /// Automatic `LowCardinality` serialization does not depend on sparse serialization, so an info that
+    /// carries the `LowCardinality` kind must be kept even when sparse serialization is disabled -
+    /// otherwise a mutation would silently drop the encoding.
+    const bool auto_low_cardinality
+        = (*source_part->storage.getSettings())[MergeTreeSetting::max_uniq_number_for_low_cardinality] != 0;
+    auto needs_serialization_info = [&](const IDataType & type)
+    {
+        return (!settings.isAlwaysDefault() && settings.canUseSparseSerialization(type))
+            || (auto_low_cardinality && isStringOrFixedString(type));
+    };
+
     SerializationInfoByName new_serialization_infos(settings);
     for (const auto & [name, old_info] : serialization_infos)
     {
@@ -848,7 +860,7 @@ getColumnsForNewDataPart(
             if (rewrites_all_columns && storage_column && !storage_column->type->equals(*source_type))
             {
                 const auto & storage_type = storage_column->type;
-                if (settings.isAlwaysDefault() || !settings.canUseSparseSerialization(*storage_type))
+                if (!needs_serialization_info(*storage_type))
                     continue;
 
                 auto rebuilt_info = storage_type->createSerializationInfo(settings);
@@ -866,7 +878,7 @@ getColumnsForNewDataPart(
         auto old_type = part_columns.getPhysical(name).type;
         auto new_type = updated_header.getByName(new_name).type;
 
-        if (settings.isAlwaysDefault() || !settings.canUseSparseSerialization(*new_type))
+        if (!needs_serialization_info(*new_type))
             continue;
 
         auto new_info = new_type->createSerializationInfo(settings);

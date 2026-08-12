@@ -322,6 +322,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 parts_to_throw_insert;
     extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsUInt64 max_uniq_number_for_low_cardinality;
     extern const MergeTreeSettingsBool remove_empty_parts;
     extern const MergeTreeSettingsBool remove_rolled_back_parts_immediately;
     extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
@@ -12255,11 +12256,28 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     const auto & storage_columns = metadata_snapshot->getColumns();
 
-    serialization_hints = SerializationInfoByName(storage_columns.getAllPhysical(), settings);
+    const auto physical_columns = storage_columns.getAllPhysical();
+    serialization_hints = SerializationInfoByName(physical_columns, settings);
+
+    /// `SerializationInfoByName` creates entries only for the columns eligible for sparse serialization.
+    /// Automatic `LowCardinality` serialization does not depend on sparse serialization, so entries for
+    /// eligible columns have to be created here as well - otherwise a part's `LowCardinality` kind would
+    /// have nowhere to be aggregated into and the hints would claim the table has no such column.
+    if ((*getSettings())[MergeTreeSetting::max_uniq_number_for_low_cardinality] != 0)
+    {
+        for (const auto & column : physical_columns)
+        {
+            if (isStringOrFixedString(column.type) && !serialization_hints.contains(column.name))
+                serialization_hints.emplace(column.name, column.type->createSerializationInfo(settings));
+        }
+    }
+
     auto range = getDataPartsStateRange(DataPartState::Active);
 
     for (const auto & part : range)
         updateSerializationHintsForPart(part, storage_columns, serialization_hints, false);
+
+    updateHasAutomaticLowCardinality();
 }
 
 template <typename AddedParts, typename RemovedParts>
@@ -12277,6 +12295,23 @@ void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, con
 
     for (const auto & part : removed_parts)
         updateSerializationHintsForPart(part, storage_columns, serialization_hints, true);
+
+    updateHasAutomaticLowCardinality();
+}
+
+void MergeTreeData::updateHasAutomaticLowCardinality()
+{
+    bool has_low_cardinality = false;
+    for (const auto & [_, info] : serialization_hints)
+    {
+        if (info && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
+        {
+            has_low_cardinality = true;
+            break;
+        }
+    }
+
+    has_automatic_low_cardinality.store(has_low_cardinality, std::memory_order_relaxed);
 }
 
 SerializationInfoByName MergeTreeData::getSerializationHints() const
