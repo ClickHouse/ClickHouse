@@ -30,7 +30,7 @@ ClickHouse의 파티셔닝은 컬럼 또는 SQL 표현식에 따라 디스크에
 
 <Image img="/images/use-cases/observability/observability-14.webp" alt="파티션" size="md" />
 
-데이터 파트는 디스크에서 각 파티션과 논리적으로 연결되며(공통 폴더 이름 접두사를 통해), 각 파티션별로 분리해서 쿼리할 수 있습니다. 아래 예시에서 기본 `otel_logs` 스키마(schema)는 `toDate(Timestamp)` 표현식을 사용해 일 단위로 파티셔닝됩니다. 행이 ClickHouse에 삽입되면 이 표현식이 각 행에 대해 평가되며, 그 결과에 해당하는 파티션으로 라우팅됩니다(해당 날짜의 첫 번째 행이면 파티션이 생성됩니다).
+데이터 파트는 디스크에서 각 파티션과 논리적으로 연결되며(공통 폴더 이름 접두사를 통해), 각 파티션별로 분리해서 쿼리할 수 있습니다. 아래 예시에서 기본 `otel_logs` 스키마(schema)는 `toDate(Timestamp)` 표현식을 사용해 일 단위로 파티셔닝됩니다. 행이 ClickHouse에 삽입되면 이 표현식이 각 행에 대해 평가되며, 해당 파티션이 이미 있으면 그 파티션으로 라우팅됩니다(해당 날짜의 첫 번째 행이면 파티션이 생성됩니다).
 
 ```sql
 CREATE TABLE default.otel_logs
@@ -91,10 +91,10 @@ WHERE `table` = 'otel_logs'
 
 ```sql
 CREATE TABLE otel_logs_archive AS otel_logs
---아카이브 테이블로 데이터 이동
+--move data to archive table
 ALTER TABLE otel_logs
         (MOVE PARTITION tuple('2019-01-26') TO TABLE otel_logs_archive
---데이터 이동 확인
+--confirm data has been moved
 SELECT
         Timestamp::Date AS day,
         count() AS c

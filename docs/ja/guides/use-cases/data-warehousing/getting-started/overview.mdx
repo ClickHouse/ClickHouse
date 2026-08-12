@@ -18,9 +18,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 このガイドのスクリーンショットは [ClickHouse Cloud](https://console.clickhouse.cloud) の SQL コンソールで取得したものです。すべてのクエリは Cloud とセルフマネージド環境の両方で動作します。
 
 <Steps>
-  <Step>
-    ## Iceberg データを直接クエリする
-
+  <Step title="Iceberg データを直接クエリする" id="query-directly">
     最も手早く始めるには、[`icebergS3()`](/ja/reference/functions/table-functions/iceberg) テーブル関数を使います。S3 上の Icebergテーブルを指定すれば、セットアップ不要ですぐにクエリできます。
 
     スキーマを確認します:
@@ -48,9 +46,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     **詳細はこちら:** [オープンテーブルフォーマットの直接クエリ](/ja/guides/use-cases/data-warehousing/getting-started/querying-directly) では、4 つのフォーマットすべてに加え、分散読み取り向けのクラスター バリアントやストレージバックエンドのオプション (S3、Azure、HDFS、local) について説明しています。
   </Step>
 
-  <Step>
-    ## 永続的なテーブルエンジンを作成する
-
+  <Step title="永続的なテーブルエンジンを作成する" id="table-engine">
     繰り返しアクセスする場合は、Iceberg テーブルエンジンを使ってテーブルを作成すると、毎回 path を指定する必要がありません。データは S3 に保持されたままで、複製されません:
 
     ```sql
@@ -75,9 +71,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     このテーブルエンジンでは、データキャッシュ、メタデータキャッシュ、スキーマ進化、タイムトラベルをサポートしています。テーブルエンジンの機能の詳細については[直接クエリ](/ja/guides/use-cases/data-warehousing/getting-started/querying-directly)ガイドを、機能の完全な比較については[サポートマトリクス](/ja/guides/use-cases/data-warehousing/support-matrix)を参照してください。
   </Step>
 
-  <Step>
-    ## カタログに接続する
-
+  <Step title="カタログに接続する" id="connect-catalog">
     ほとんどの organizations では、テーブルメタデータとデータの検出を一元化するために、データカタログを介して Iceberg テーブルを管理します。ClickHouse は、[`DataLakeCatalog`](/ja/reference/engines/database-engines/datalake) データベースエンジンを使用してカタログに接続し、カタログ内のすべてのテーブルを ClickHouse のデータベースとして公開できます。こちらのほうがスケーラブルな方法であり、新しい Iceberg テーブルが作成されても、追加作業なしで常に ClickHouse からアクセスできます。
 
     以下は、[AWS Glue](/ja/guides/use-cases/data-warehousing/glue-catalog) に接続する例です。
@@ -111,9 +105,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     **詳細:** [データカタログへの接続](/ja/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) では、Delta と Iceberg の例を交えながら、Unity Catalog のセットアップ全体を順を追って説明しています。
   </Step>
 
-  <Step>
-    ## クエリを実行する
-
+  <Step title="クエリを実行する" id="issue-query">
     上記で使用した方法が table function、table engine、カタログのいずれであっても、同じ ClickHouse SQL をそのまま使用できます。
 
     ```sql
@@ -136,9 +128,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     クエリの構文はまったく同じで、変わるのは `FROM` 句だけです。データソースが変わっても、ClickHouse SQL のすべての関数、JOIN、集計は同じように使用できます。
   </Step>
 
-  <Step>
-    ## ClickHouse にデータの一部を読み込む
-
+  <Step title="ClickHouse にデータの一部を読み込む" id="load-data">
     Iceberg を直接クエリするのは便利ですが、パフォーマンスはネットワークスループットとファイルレイアウトに左右されます。分析用途では、データをネイティブな MergeTree テーブルに読み込んでください。
 
     まず、Iceberg テーブルに対してフィルタしたクエリを実行し、ベースラインを確認します。
@@ -199,9 +189,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     **詳細はこちら:** [MergeTree による分析の高速化](/ja/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) では、スキーマ最適化、全文索引、そしてパフォーマンスの比較を導入前後で包括的に解説しています。
   </Step>
 
-  <Step>
-    ## Iceberg への書き戻し
-
+  <Step title="Iceberg への書き戻し" id="write-back">
     ClickHouse は Iceberg テーブルにデータを書き戻すこともできるため、リバース ETL ワークフローを実現できます。これにより、集計結果やデータの一部を公開し、他のツール (Spark、Trino、DuckDB など) で利用できるようになります。
 
     出力先となる Iceberg テーブルを作成します。
@@ -239,10 +227,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   ## 次のステップ
 </div>
 
-ここまででワークフロー全体を確認できたので、次は各領域をさらに掘り下げて見ていきましょう。
+ここまででワークフロー全体を確認できたので、各領域をさらに詳しく見ていきましょう。
 
-* [直接クエリを実行する](/ja/guides/use-cases/data-warehousing/getting-started/querying-directly) — 4 つのフォーマットすべて、クラスターのバリエーション、テーブルエンジン、キャッシュ
-* [カタログに接続する](/ja/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — Delta と Iceberg を使った Unity Catalog の完全なチュートリアル
-* [分析を高速化する](/ja/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — スキーマの最適化、インデックス化、約 40 倍の高速化デモ
-* [データレイクに書き込む](/ja/guides/use-cases/data-warehousing/getting-started/writing-data) — 生データの書き込み、集計データの書き込み、型マッピング
+* [直接クエリする](/ja/guides/use-cases/data-warehousing/getting-started/querying-directly) — 4 つのフォーマット、クラスター構成のバリエーション、テーブルエンジン、キャッシュ
+* [カタログへの接続](/ja/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — Delta と Iceberg を含む Unity Catalog の完全ガイド
+* [分析の高速化](/ja/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — スキーマの最適化、索引付け、約 40 倍高速化のデモ
+* [データレイクへの書き込み](/ja/guides/use-cases/data-warehousing/getting-started/writing-data) — 生データの書き込み、集計データの書き込み、型マッピング
 * [サポートマトリクス](/ja/guides/use-cases/data-warehousing/support-matrix) — フォーマットとストレージバックエンドごとの機能比較
+* [ベストプラクティス](/ja/guides/use-cases/data-warehousing/getting-started/best-practices) — アクセス方法の選択、パフォーマンス設定、ワークロードパターン

@@ -1,23 +1,41 @@
 ---
 slug: /guides/developer/overview
-sidebarTitle: 'نظرة عامة على الأدلة المتقدمة'
-description: 'نظرة عامة على الأدلة المتقدمة'
-title: 'الأدلة المتقدمة'
-keywords: ['أدلة ClickHouse المتقدمة', 'أدلة المطورين', 'تحسين الاستعلامات', 'العروض المادية', 'إزالة التكرار', 'السلاسل الزمنية', 'تنفيذ الاستعلامات']
-doc_type: 'guide'
+sidebarTitle: 'نظرة عامة'
+description: 'نظرة عامة على أدلة ClickHouse'
+title: 'أدلة ClickHouse'
+keywords: ['أدلة ClickHouse', 'تنسيقات البيانات', 'نمذجة البيانات', 'مُعدِّلات الدوال التجميعية', 'الترقيات', 'أفضل الممارسات', 'النشر', 'التوسع']
+doc_type: 'landing-page'
+mode: wide
 ---
 
-يضم هذا القسم الأدلة المتقدمة التالية:
+يضم هذا القسم الأدلة التالية:
 
-| الدليل                                                                                                                                | الوصف                                                                                                                                                                                                                                                                                                                |
-| ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [لغات الاستعلام البديلة](/ar/concepts/features/configuration/settings/alternative-query-languages)                                       | دليل حول اللهجات البديلة المدعومة وكيفية استخدامها. ويتضمن أمثلة على الاستعلامات في كل لهجة.                                                                                                                                                                                                                         |
-| [العروض المادية المتسلسلة](/ar/concepts/features/materialized-views/cascading-materialized-views)                                        | دليل يشرح كيفية إنشاء العروض المادية وربطها على نحو متسلسل، ودمج عدة جداول مصدر في جدول وجهة واحد. ويتضمن مثالًا على استخدام العروض المادية المتسلسلة لتجميع البيانات حسب الشهر والسنة لمجموعة من أسماء النطاقات.                                                                                                    |
-| [تصحيح مشكلات الذاكرة](/ar/concepts/features/performance/troubleshoot/debugging-memory-issues)                                           | دليل حول كيفية تصحيح مشكلات الذاكرة في ClickHouse.                                                                                                                                                                                                                                                                   |
-| [إزالة تكرار عمليات الإدراج عند إعادة المحاولة](/ar/concepts/features/operations/insert/deduplicating-inserts-on-retries)                | دليل يشرح كيفية التعامل مع الحالات التي قد تضطر فيها إلى إعادة محاولة عمليات الإدراج الفاشلة.                                                                                                                                                                                                                        |
-| [استراتيجيات إزالة التكرار](/ar/concepts/features/operations/insert/deduplication)                                                       | دليل يتناول إزالة تكرار البيانات بالتفصيل، وهي تقنية لإزالة الصفوف المكررة من قاعدة البيانات. كما يوضح الفروق بينها وبين إزالة التكرار المعتمدة على primary key في أنظمة OLTP، ويشرح نهج ClickHouse في إزالة التكرار، وكيفية التعامل مع سيناريوهات البيانات المكررة ضمن استعلامات ClickHouse.                        |
-| [ملء الفجوات في بيانات السلاسل الزمنية](/ar/guides/use-cases/real-time-analytics/time-series/time-series-filling-gaps)                   | دليل يقدّم رؤى حول إمكانات ClickHouse في التعامل مع بيانات السلاسل الزمنية، بما في ذلك تقنيات ملء الفجوات في البيانات لإنشاء تمثيل أكثر اكتمالًا واستمرارية لمعلومات السلاسل الزمنية.                                                                                                                                |
-| [إدارة البيانات باستخدام TTL (وقت البقاء)](/ar/concepts/features/operations/delete/ttl)                                                  | دليل يناقش كيفية استخدام العبارة `WITH FILL` لملء الفجوات في بيانات السلاسل الزمنية. ويغطي كيفية ملء الفجوات بقيم 0، وكيفية تحديد نقطة بداية لملء الفجوات، وكيفية ملء الفجوات حتى نقطة نهاية محددة، وكيفية استيفاء القيم لإجراء الحسابات التراكمية.                                                                  |
-| [الإجراءات المخزنة ومعلمات الاستعلام](/ar/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements)                    | دليل يوضح أن ClickHouse لا يدعم الإجراءات المخزنة التقليدية، ويقدّم بدائل موصى بها تشمل الدوال المعرّفة من قبل المستخدم (UDFs)، والعروض ذات المعلمات، والعروض المادية، والتنسيق الخارجي. كما يتناول معلمات الاستعلام لكتابة استعلامات مُعلَّمة آمنة (على غرار prepared statements).                                  |
-| [فهم تنفيذ الاستعلام باستخدام المحلّل](/ar/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer) | دليل يوضّح تنفيذ استعلامات ClickHouse من خلال تقديم أداة المحلّل. ويشرح كيف يقسّم المحلّل الاستعلام إلى سلسلة من الخطوات، بما يتيح لك تصوّر عملية التنفيذ كاملةً واستكشاف أخطائها وإصلاحها للوصول إلى أفضل أداء ممكن.                                                                                                |
-| [استخدام JOINs في ClickHouse](/ar/concepts/features/operations/select/joining-tables)                                                    | دليل يبسّط ربط الجداول في ClickHouse. ويغطي أنواع الربط المختلفة (`INNER`, `LEFT`, `RIGHT` وغيرها)، ويستعرض أفضل الممارسات لتنفيذ عمليات ربط فعّالة (مثل وضع الجداول الأصغر على اليمين)، ويقدّم رؤى حول خوارزميات الربط الداخلية في ClickHouse لمساعدتك على تحسين استعلاماتك عند التعامل مع علاقات البيانات المعقدة. |
+<CardGroup cols={2}>
+  <Card title="تنسيقات البيانات" icon="file-lines" href="/ar/guides/clickhouse/data-formats/intro">
+    أمثلة على الاستيراد من تنسيقات بيانات متعددة والتصدير إليها، بما في ذلك CSV وTSV وParquet وJSON والتنسيقات الثنائية وSQL dumps والقوالب ذات التعبيرات النمطية.
+  </Card>
+
+  <Card title="نمذجة البيانات" icon="diagram-project" href="/ar/guides/clickhouse/data-modelling/index">
+    أدلة حول نمذجة البيانات في ClickHouse، بما في ذلك تصميم المخطط، والفهارس الأولية المتفرقة، وإلغاء التطبيع، واستكمال البيانات التاريخية، وضغط البيانات.
+  </Card>
+
+  <Card title="الأداء والمراقبة" icon="gauge-high" href="/ar/guides/clickhouse/performance-and-monitoring/query-optimization">
+    أدلة لتحسين أداء الاستعلامات، وفهم المُحلِّل، والتحديد الديناميكي للأعمدة.
+  </Card>
+
+  <Card title="أمثلة على مُعدِّلات التجميع" icon="calculator" href="/ar/guides/clickhouse/examples/aggregate-function-combinators/anyIf">
+    أمثلة على استخدام مُعدِّلات الدوال التجميعية مثل `-If` و`-Map` و`-SimpleState` و`-State` و`-Merge` و`-Resample` و`-Array` و`-ForEach`.
+  </Card>
+
+  <Card title="ترقية ClickHouse المُدار ذاتيًا" icon="circle-arrow-up" href="/ar/guides/oss/update">
+    دليل لترقية تثبيت ClickHouse المُدار ذاتيًا، بما في ذلك مسارات الترقية واعتبارات توافق الإصدارات.
+  </Card>
+
+  <Card title="أفضل ممارسات OSS" icon="list-check" href="/ar/guides/oss/best-practices/sizing-and-hardware-recommendations">
+    توصيات بشأن تحديد الحجم والأجهزة وأفضل ممارسات الاستخدام لـ ClickHouse مفتوح المصدر.
+  </Card>
+
+  <Card title="النشر والتوسع" icon="server" href="/ar/guides/oss/deployment-and-scaling/index">
+    أدلة للنشر تتضمن أمثلة على نشر ClickHouse لأغراض التوسع و/أو تحمّل الأعطال، بما في ذلك إعداد ClickHouse Keeper ومراقبته.
+  </Card>
+</CardGroup>

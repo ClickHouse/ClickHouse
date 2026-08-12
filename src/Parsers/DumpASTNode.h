@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Common/logger_useful.h>
-#include <Poco/Util/Application.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <Parsers/IAST.h>
 

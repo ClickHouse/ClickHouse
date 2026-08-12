@@ -143,7 +143,11 @@ DROP TABLE IF EXISTS t_mv_104791_other_target;
 
 CREATE TABLE t_mv_104791_target (id UInt32, x UInt32) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t_mv_104791_other_target (id UInt32, x UInt32) ENGINE = MergeTree ORDER BY id;
-CREATE MATERIALIZED VIEW t_mv_104791 REFRESH EVERY 1 HOUR TO t_mv_104791_target AS SELECT 1 AS id, 2 AS x;
+-- APPEND keeps this fixture creatable on a Replicated database, which refuses a
+-- non-APPEND refreshable view over a non-replicated target; EMPTY suppresses the
+-- initial refresh so the ATTACH cases see an untouched target. Neither reaches the
+-- ATTACH rejection surface under test, which is decided before storage construction.
+CREATE MATERIALIZED VIEW t_mv_104791 REFRESH EVERY 1 HOUR APPEND TO t_mv_104791_target EMPTY AS SELECT 1 AS id, 2 AS x;
 DETACH TABLE t_mv_104791;
 
 -- 18. ATTACH MV with a different REFRESH schedule: silently dropped before this

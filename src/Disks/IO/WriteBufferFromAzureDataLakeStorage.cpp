@@ -4,6 +4,8 @@
 
 #include <base/sleep.h>
 
+#include <Poco/URI.h>
+
 #include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/AzureBlobStorage/isRetryableAzureException.h>
@@ -48,9 +50,20 @@ String prefixedBlobPath(const AzureBlobStorage::Endpoint & endpoint, const Strin
     return full;
 }
 
+}
+
 String buildAdlsGen2FileUrl(const AzureBlobStorage::Endpoint & endpoint, const String & blob_path_)
 {
     Poco::URI uri(endpoint.getContainerEndpoint());
+
+    /// OneLake serves reads from the Blob host but writes only from the DFS host,
+    /// so retarget the Fabric Blob host to DFS for the write client.
+    const String blob_suffix = ".blob.fabric.microsoft.com";
+    const String dfs_suffix = ".dfs.fabric.microsoft.com";
+    String host = uri.getHost();
+    if (host.ends_with(blob_suffix))
+        uri.setHost(host.substr(0, host.size() - blob_suffix.size()) + dfs_suffix);
+
     String path = uri.getPath();
     if (!path.empty() && path.back() != '/')
         path += '/';
@@ -59,14 +72,13 @@ String buildAdlsGen2FileUrl(const AzureBlobStorage::Endpoint & endpoint, const S
     return uri.toString();
 }
 
-}
-
 constexpr size_t ADLFS_MAX_RETRIES = 10;
 
 bool isAdlsGen2Endpoint(const AzureBlobStorage::Endpoint & endpoint)
 {
-    return endpoint.storage_account_url.contains("dfs.fabric.microsoft.com")
-        || endpoint.storage_account_url.contains("blob.fabric.microsoft.com");
+    /// Only real Microsoft Fabric / OneLake hosts, matched at a label boundary.
+    const String host = Poco::URI(endpoint.storage_account_url).getHost();
+    return host.ends_with(".dfs.fabric.microsoft.com") || host.ends_with(".blob.fabric.microsoft.com");
 }
 
 Azure::Storage::Files::DataLake::DataLakeFileClient makeAdlsGen2FileClient(

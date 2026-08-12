@@ -36,9 +36,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Note>
 
 <Steps>
-  <Step>
-    ### إنشاء peering connection
-
+  <Step title="إنشاء peering connection" id="step-1-create-a-peering-connection">
     في هذا المثال، نُعدّ peering بين شبكة BYOC VPC وشبكة VPC أخرى موجودة بالفعل.
 
     1. انتقل إلى &quot;VPC Network&quot; في مشروع Google Cloud الخاص بـ ClickHouse BYOC.
@@ -59,9 +57,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     يجب أن تصبح خدمة ClickHouse الآن متاحة من شبكة VPC المترابطة.
   </Step>
 
-  <Step>
-    ### الوصول إلى خدمة ClickHouse عبر peering connection
-
+  <Step title="الوصول إلى خدمة ClickHouse عبر peering connection" id="step-2-access-ch-service-via-peering">
     للوصول إلى ClickHouse بشكل خاص، يتم توفير موازن تحميل خاص وendpoint لاتصال آمن من شبكة VPC المترابطة الخاصة بالمستخدم. ويتبع private endpoint تنسيق public endpoint نفسه مع اللاحقة `-private`. على سبيل المثال:
 
     * **Public endpoint**: `h5ju65kv87.mhp0y4dmph.us-east1.gcp.byoc.clickhouse.cloud`
@@ -76,17 +72,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يوفّر GCP PSC ‏(Private Service Connect) اتصالًا خاصًا وآمنًا بخدمات ClickHouse BYOC لديك من دون الحاجة إلى VPC peering أو بوابات الإنترنت.
 
 <Steps>
-  <Step>
-    ### اطلب إعداد خدمة PSC
-
+  <Step title="اطلب إعداد خدمة PSC" id="step-1-request-psc-setup">
     تواصل مع [ClickHouse Support](https://clickhouse.com/cloud/bring-your-own-cloud) لطلب إعداد خدمة PSC لبيئة نشر BYOC لديك. لا يلزم تقديم أي معلومات محددة في هذه المرحلة—يكفي فقط توضيح أنك تريد إعداد اتصال PSC.
 
     سيتولى ClickHouse Support تفعيل مكونات البنية التحتية اللازمة، بما في ذلك **موازن التحميل الخاص** و**خدمة PSC**.
   </Step>
 
-  <Step>
-    ### الحصول على اسم خدمة GCP PSC واسم DNS
-
+  <Step title="الحصول على اسم خدمة GCP PSC واسم DNS" id="step-2-obtain-gcp-service-attachment-and-dns-name-for-private-service-connect">
     سيوفّر لك ClickHouse Support اسم خدمة PSC. ويمكنك أيضًا العثور عليه في ClickHouse Cloud console ضمن &quot;Organization&quot; -&gt; &quot;Infrastructure&quot;، ثم النقر على اسم البنية التحتية لعرض التفاصيل.
 
     <Image img="/images/cloud/reference/byoc-privatelink-gcp-1.webp" size="lg" alt="نقطة نهاية BYOC PSC" border />
@@ -100,9 +92,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     <Image img="/images/cloud/reference/byoc-privatelink-gcp-4.webp" size="lg" alt="نقطة نهاية BYOC PSC" border />
   </Step>
 
-  <Step>
-    ### أنشئ نقطة نهاية PSC في شبكتك
-
+  <Step title="أنشئ نقطة نهاية PSC في شبكتك" id="step-3-create-endpoint">
     بعد أن يقوم ClickHouse Support بتمكين خدمة PSC من جانبهم، ستحتاج إلى إنشاء نقطة نهاية PSC في شبكة تطبيق العميل لديك للاتصال بخدمة ClickHouse PSC.
 
     1. **إنشاء نقطة نهاية PSC**:
@@ -124,9 +114,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     <Image img="/images/cloud/reference/byoc-privatelink-gcp-6.webp" size="lg" alt="تفاصيل نقطة نهاية PSC لـ BYOC" border />
   </Step>
 
-  <Step>
-    ### تعيين اسم private DNS لنقطة النهاية
-
+  <Step title="تعيين اسم private DNS لنقطة النهاية" id="step-4-set-private-dns-name-for-endpoint">
     <Note>
       توجد عدة طرق لتهيئة DNS. يُرجى إعداد DNS بما يتناسب مع حالة الاستخدام الخاصة بك.
     </Note>
@@ -134,9 +122,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     تحتاج إلى توجيه جميع النطاقات الفرعية (wildcard) لـ &quot;اسم DNS&quot;، والمأخوذ من خطوة [الحصول على اسم خدمة GCP PSC واسم DNS](#step-2-obtain-gcp-service-attachment-and-dns-name-for-private-service-connect)، إلى عنوان IP الخاص بـ PSC endpoint في GCP. ويضمن ذلك أن تتمكن الخدمات/المكوّنات داخل VPC/الشبكة لديك من حله بشكل صحيح.
   </Step>
 
-  <Step>
-    ### أضِف معرّف اتصال PSC الخاص بنقطة النهاية إلى قائمة السماح لكل خدمة
-
+  <Step title="أضِف معرّف اتصال PSC الخاص بنقطة النهاية إلى قائمة السماح لكل خدمة" id="step-5-add-endpoint-id-allowlist">
     بمجرد إنشاء نقطة نهاية PSC الخاصة بك وتصبح الحالة &quot;Accepted&quot;، يجب إضافة معرّف اتصال PSC الخاص بنقطة النهاية إلى قائمة السماح لكل **خدمة ClickHouse** تريد الوصول إليها عبر PSC.
 
     **تواصل مع ClickHouse Support**:
@@ -146,9 +132,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     * سيضيف ClickHouse Support معرّفات اتصال نقطة النهاية إلى قائمة السماح الخاصة بالخدمة
   </Step>
 
-  <Step>
-    ### الاتصال بـ ClickHouse عبر PSC
-
+  <Step title="الاتصال بـ ClickHouse عبر PSC" id="step-6-connect-via-psc-endpoint">
     بعد إضافة معرّفات اتصال نقاط النهاية إلى قائمة السماح، يمكنك الاتصال بخدمة ClickHouse الخاصة بك باستخدام نقطة نهاية PSC.
 
     يكون تنسيق نقطة نهاية PSC مشابهًا لتنسيق نقطة النهاية العامة، لكنه يتضمن نطاقًا فرعيًا `p`. على سبيل المثال:

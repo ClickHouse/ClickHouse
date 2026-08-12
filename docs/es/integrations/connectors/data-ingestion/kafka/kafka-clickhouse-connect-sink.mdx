@@ -264,12 +264,8 @@ El conector puede consumir datos de varios topics
 }
 ```
 
-<div id="using-with-different-data-formats">
-  #### Uso con distintos formatos de datos
-</div>
-
 <div id="avro-schema-support">
-  ##### Compatibilidad con esquemas Avro
+  ### Compatibilidad con esquemas Avro
 </div>
 
 ```json
@@ -286,7 +282,7 @@ El conector puede consumir datos de varios topics
 ```
 
 <div id="avro-type-mapping">
-  ###### Asignación de tipos de Avro
+  #### Asignación de tipos de Avro
 </div>
 
 La asignación de tipos siguiente está definida por `io.confluent.connect.avro.AvroConverter`, la implementación oficial de serialización/deserialización de Avro en Kafka Connect. Consulta la [documentación](https://docs.confluent.io/platform/current/connect/userguide.html#avro) de Kafka Connect para obtener información avanzada sobre la lógica de conversión.
@@ -312,12 +308,12 @@ La asignación de tipos siguiente está definida por `io.confluent.connect.avro.
 | array        | ARRAY/MAP             | ✅          | El valor predeterminado es ARRAY. Se resuelve como MAP si el campo se construyó originalmente mediante `AvroData.fromConnectSchema` ([fuente](https://github.com/confluentinc/schema-registry/blob/174907bfc0d9424e8d02e788f450f4afcdda1750/avro-data/src/main/java/io/confluent/connect/avro/AvroData.java#L943)) |
 | map          | MAP                   | ✅          |                                                                                                                                                                                                                                                                                                                    |
 | union        | STRUCT/`<T>`          | ⚠️         | El valor predeterminado es STRUCT. Se resuelve como el tipo singleton `T` en la definición de la unión si `flatten.singleton.unions=true` (consulta la [documentación](https://docs.confluent.io/cloud/current/connectors/reference/connector-configuration.html#value-converter-flatten-singleton-unions))        |
-| fixed        | BYTES                 | ⚠️         | El tipo lógico `decimal` para fixed no es compatible (consulta más abajo)                                                                                                                                                                                                                                          |
+| fixed        | BYTES                 | ⚠️         | El tipo lógico `decimal` de fixed no es compatible (consulta más abajo)                                                                                                                                                                                                                                            |
 
 Consulta [Tipos de datos compatibles](#supported-data-types) para ver la asignación entre los tipos de Kafka Connect y los tipos de ClickHouse.
 
 <div id="unsupported-avro-schemas">
-  ###### Esquemas de Avro no compatibles
+  #### Esquemas de Avro no compatibles
 </div>
 
 Los siguientes esquemas de Avro no son compatibles con el conector:
@@ -365,7 +361,7 @@ Los siguientes esquemas de Avro no son compatibles con el conector:
 ```
 
 <div id="protobuf-schema-support">
-  ##### Compatibilidad con esquemas de Protobuf
+  ### Compatibilidad con esquemas de Protobuf
 </div>
 
 ```json
@@ -384,7 +380,7 @@ Los siguientes esquemas de Avro no son compatibles con el conector:
 Tenga en cuenta: si tiene problemas por clases faltantes, no todos los entornos incluyen el convertidor de protobuf y es posible que necesite una versión alternativa del JAR que incluya las dependencias.
 
 <div id="proto-type-mapping">
-  ###### Asignación de tipos de Protobuf
+  #### Asignación de tipos de Protobuf
 </div>
 
 La asignación de tipos que aparece a continuación está definida por `io.confluent.connect.protobuf.ProtobufConverter`, la implementación oficial de serialización/deserialización de Protobuf en Kafka Connect. Consulta la [documentación](https://docs.confluent.io/platform/current/connect/userguide.html#json-schema-and-protobuf) de Kafka Connect para obtener información avanzada sobre la lógica de conversión.
@@ -395,45 +391,48 @@ La asignación de tipos que aparece a continuación está definida por `io.confl
 
 ️⚠️: Compatibilidad parcial
 
-| Tipo de Protobuf                        | Tipo de Kafka Connect                   | Compatible | Notas                                                                                                                                                                                                                |
-| --------------------------------------- | --------------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| double                                  | FLOAT64                                 | ✅          |                                                                                                                                                                                                                      |
-| float                                   | FLOAT32                                 | ✅          |                                                                                                                                                                                                                      |
-| int32                                   | INT8/INT16/INT32                        | ✅          | El valor predeterminado es INT32. Se resuelve como INT8 si el esquema tiene la opción `connect.type=int8` (de forma análoga, INT16 si `connect.type=int16`)                                                          |
-| sint32                                  | INT8/INT16/INT32                        | ✅          | El valor predeterminado es INT32. Se resuelve como INT8 si el esquema tiene la opción `connect.type=int8` (de forma análoga, INT16 si `connect.type=int16`)                                                          |
-| sfixed32                                | INT8/INT16/INT32                        | ✅          | El valor predeterminado es INT32. Se resuelve como INT8 si el esquema tiene la opción `connect.type=int8` (de forma análoga, INT16 si `connect.type=int16`)                                                          |
-| uint32                                  | INT64                                   | ✅          |                                                                                                                                                                                                                      |
-| fixed32                                 | INT64                                   | ✅          |                                                                                                                                                                                                                      |
-| int64                                   | INT64                                   | ✅          |                                                                                                                                                                                                                      |
-| uint64                                  | INT64                                   | ✅          |                                                                                                                                                                                                                      |
-| sint64                                  | INT64                                   | ✅          |                                                                                                                                                                                                                      |
-| fixed64                                 | INT64                                   | ✅          |                                                                                                                                                                                                                      |
-| sfixed64                                | INT64                                   | ✅          |                                                                                                                                                                                                                      |
-| bool                                    | BOOLEAN                                 | ✅          |                                                                                                                                                                                                                      |
-| string                                  | STRING                                  | ✅          |                                                                                                                                                                                                                      |
-| bytes                                   | BYTES                                   | ✅          |                                                                                                                                                                                                                      |
-| enum                                    | INT32/STRING                            | ✅          | El valor predeterminado es STRING. Se resuelve como INT32 si `int.for.enums=true` (consulta la [documentación de Schema Registry](https://docs.confluent.io/platform/current/schema-registry/connect.html#protobuf)) |
-| message                                 | STRUCT                                  | ⚠️         | Consulta la sección de esquemas no compatibles más abajo                                                                                                                                                             |
-| repeated T (where T is not a map entry) | ARRAY                                   | ✅          |                                                                                                                                                                                                                      |
-| `map<K, V>`                             | MAP                                     | ✅          |                                                                                                                                                                                                                      |
-| oneof                                   | STRUCT                                  | ⚠️         | Consulta la sección más abajo sobre cómo traducir oneof a un esquema de ClickHouse                                                                                                                                   |
-| google.protobuf.DoubleValue             | FLOAT64                                 | ✅          |                                                                                                                                                                                                                      |
-| google.protobuf.FloatValue              | FLOAT32                                 | ✅          |                                                                                                                                                                                                                      |
-| google.protobuf.Int64Value              | INT64                                   | ✅          |                                                                                                                                                                                                                      |
-| google.protobuf.UInt64Value             | INT64                                   | ✅          |                                                                                                                                                                                                                      |
-| google.protobuf.UInt32Value             | INT64                                   | ✅          |                                                                                                                                                                                                                      |
-| google.protobuf.Int32Value              | INT32                                   | ✅          |                                                                                                                                                                                                                      |
-| google.protobuf.BoolValue               | BOOLEAN                                 | ✅          |                                                                                                                                                                                                                      |
-| google.protobuf.StringValue             | STRING                                  | ✅          |                                                                                                                                                                                                                      |
-| google.protobuf.BytesValue              | BYTES                                   | ✅          |                                                                                                                                                                                                                      |
-| google.protobuf.Timestamp               | org.apache.kafka.connect.data.Timestamp | ✅          |                                                                                                                                                                                                                      |
-| google.type.Date                        | org.apache.kafka.connect.data.Date      | ✅          |                                                                                                                                                                                                                      |
-| google.type.TimeOfDay                   | org.apache.kafka.connect.data.Time      | ✅          |                                                                                                                                                                                                                      |
+| Tipo de Protobuf                        | Tipo de Kafka Connect                   | Tipo de ClickHouse                             | Compatible | Notas                                                                                                                                                                                                                  |
+| :-------------------------------------- | :-------------------------------------- | :--------------------------------------------- | :--------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| double                                  | FLOAT64                                 | Float64                                        | ✅          |                                                                                                                                                                                                                        |
+| float                                   | FLOAT32                                 | Float32                                        | ✅          |                                                                                                                                                                                                                        |
+| int32                                   | INT8/INT16/INT32                        | Int32                                          | ✅          | El valor predeterminado es INT32. Se interpreta como INT8 si el esquema tiene la opción `connect.type=int8` (de forma análoga para INT16 si `connect.type=int16`)                                                      |
+| sint32                                  | INT8/INT16/INT32                        | Int32                                          | ✅          | El valor predeterminado es INT32. Se interpreta como INT8 si el esquema tiene la opción `connect.type=int8` (de forma análoga para INT16 si `connect.type=int16`)                                                      |
+| sfixed32                                | INT8/INT16/INT32                        | Int32                                          | ✅          | El valor predeterminado es INT32. Se interpreta como INT8 si el esquema tiene la opción `connect.type=int8` (de forma análoga para INT16 si `connect.type=int16`)                                                      |
+| uint32                                  | INT64                                   | UInt32                                         | ✅          |                                                                                                                                                                                                                        |
+| fixed32                                 | INT64                                   | UInt32                                         | ✅          |                                                                                                                                                                                                                        |
+| int64                                   | INT64                                   | Int64                                          | ✅          |                                                                                                                                                                                                                        |
+| uint64                                  | INT64                                   | UInt64                                         | ✅          |                                                                                                                                                                                                                        |
+| sint64                                  | INT64                                   | Int64                                          | ✅          |                                                                                                                                                                                                                        |
+| fixed64                                 | INT64                                   | UInt64                                         | ✅          |                                                                                                                                                                                                                        |
+| sfixed64                                | INT64                                   | Int64                                          | ✅          |                                                                                                                                                                                                                        |
+| bool                                    | BOOLEAN                                 | Bool                                           | ✅          |                                                                                                                                                                                                                        |
+| string                                  | STRING                                  | String                                         | ✅          |                                                                                                                                                                                                                        |
+| bytes                                   | BYTES                                   | String                                         | ✅          |                                                                                                                                                                                                                        |
+| enum                                    | INT32/STRING                            | Int32                                          | ✅          | El valor predeterminado es STRING. Se interpreta como INT32 si `int.for.enums=true` (consulta la [documentación de Schema Registry](https://docs.confluent.io/platform/current/schema-registry/connect.html#protobuf)) |
+| message                                 | STRUCT                                  | Tuple / JSON                                   | ⚠️         | Consulta la sección de esquemas no compatibles más abajo                                                                                                                                                               |
+| repeated T (where T is not a map entry) | ARRAY                                   | Array(T)                                       | ✅          |                                                                                                                                                                                                                        |
+| `map<K, V>`                             | MAP                                     | Map(K, V)                                      | ✅          |                                                                                                                                                                                                                        |
+| oneof                                   | STRUCT                                  | Tuple / Variant                                | ⚠️         | Consulta la sección siguiente sobre cómo traducir oneof al esquema de ClickHouse                                                                                                                                       |
+| google.protobuf.DoubleValue             | FLOAT64                                 | Nullable(Float64)                              | ✅          |                                                                                                                                                                                                                        |
+| google.protobuf.FloatValue              | FLOAT32                                 | Nullable(Float32)                              | ✅          |                                                                                                                                                                                                                        |
+| google.protobuf.Int64Value              | INT64                                   | Nullable(Int64)                                | ✅          |                                                                                                                                                                                                                        |
+| google.protobuf.UInt64Value             | INT64                                   | Nullable(UInt64)                               | ✅          |                                                                                                                                                                                                                        |
+| google.protobuf.UInt32Value             | INT64                                   | Nullable(UInt32)                               | ✅          |                                                                                                                                                                                                                        |
+| google.protobuf.Int32Value              | INT32                                   | Nullable(Int32)                                | ✅          |                                                                                                                                                                                                                        |
+| google.protobuf.BoolValue               | BOOLEAN                                 | Nullable(Bool)                                 | ✅          |                                                                                                                                                                                                                        |
+| google.protobuf.StringValue             | STRING                                  | Nullable(String)                               | ✅          |                                                                                                                                                                                                                        |
+| google.protobuf.BytesValue              | BYTES                                   | Nullable(String)                               | ✅          |                                                                                                                                                                                                                        |
+| google.protobuf.Timestamp               | org.apache.kafka.connect.data.Timestamp | DateTime64(3)                                  | ✅          |                                                                                                                                                                                                                        |
+| google.type.Date                        | org.apache.kafka.connect.data.Date      | Date                                           | ✅          |                                                                                                                                                                                                                        |
+| google.type.TimeOfDay                   | org.apache.kafka.connect.data.Time      | Int32 / Int64                                  | ✅          |                                                                                                                                                                                                                        |
+| google.protobuf.Duration                | STRUCT                                  | Tuple(`seconds` Int64, `nano` Nullable(Int32)) | ✅          |                                                                                                                                                                                                                        |
+| google.protobuf.Any                     | *N/A*                                   | *N/A*                                          | ❌          |                                                                                                                                                                                                                        |
+| google.protobuf.Empty                   | *N/A*                                   | *N/A*                                          | ❌          |                                                                                                                                                                                                                        |
 
 Consulta [Tipos de datos compatibles](#supported-data-types) para ver la asignación entre los tipos de Kafka Connect y los de ClickHouse.
 
 <div id="oneof-translation">
-  ###### Nota sobre la conversión de campos `oneof` en columnas de ClickHouse
+  #### Nota sobre la conversión de campos `oneof` en columnas de ClickHouse
 </div>
 
 El conector no admite convertir uniones de Protobuf (`oneof`) al tipo Variant de ClickHouse. En su lugar, enumera los campos `oneof` como campos anulables individuales en el esquema de tu tabla de ClickHouse.
@@ -465,7 +464,7 @@ CREATE TABLE IF NOT EXISTS `StringIntUnion`
 ```
 
 <div id="unsupported-proto-schemas">
-  ###### Esquemas Protobuf no compatibles
+  #### Esquemas Protobuf no compatibles
 </div>
 
 Los siguientes esquemas Protobuf no son compatibles con el conector:
@@ -483,12 +482,12 @@ message TwoRecords {
     TypeB type_b = 3;
   }
 
-  // se traduce a Nullable(Tuple(label String)) en ClickHouse, lo cual no es compatible
+  // translates to Nullable(Tuple(label String)) in ClickHouse, which is unsupported
   message TypeA {
     string label = 1;
   }
 
-  // se traduce a Nullable(Tuple(count Int32)) en ClickHouse, lo cual no es compatible
+  // translates to Nullable(Tuple(count Int32)) in ClickHouse, which is unsupported
   message TypeB {
     int32 count = 1;
   }
@@ -498,7 +497,7 @@ message TwoRecords {
 Desde la versión 26.1 de CH, se admite este esquema cuando `allow_experimental_nullable_tuple_type=1` (consulta [esta página de la documentación](/es/reference/settings/session-settings#allow_experimental_nullable_tuple_type)).
 
 <div id="json-schema-support">
-  ##### Compatibilidad con esquemas JSON
+  ### Compatibilidad con esquemas JSON
 </div>
 
 ```json
@@ -513,7 +512,7 @@ Desde la versión 26.1 de CH, se admite este esquema cuando `allow_experimental_
 ```
 
 <div id="string-support">
-  ##### Compatibilidad con el convertidor String
+  ### Compatibilidad con el convertidor String
 </div>
 
 El conector admite el convertidor String en diferentes formatos de ClickHouse: [JSON](/es/reference/formats/JSON/JSONEachRow), [CSV](/es/reference/formats/CSV/CSV) y [TSV](/es/reference/formats/TabSeparated/TabSeparated).

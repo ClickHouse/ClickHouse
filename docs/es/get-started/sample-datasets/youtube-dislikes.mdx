@@ -26,9 +26,7 @@ A continuación se indican los pasos para crear una tabla en ClickHouse Cloud e 
 </div>
 
 <Steps>
-  <Step>
-    ### Exploración de datos
-
+  <Step title="Exploración de datos" id="data-exploration">
     Veamos qué aspecto tienen los datos. La función de tabla `s3cluster` devuelve una tabla, así que podemos `DESCRIBE` el resultado:
 
     ```sql
@@ -67,9 +65,7 @@ A continuación se indican los pasos para crear una tabla en ClickHouse Cloud e 
     ```
   </Step>
 
-  <Step>
-    ### Crear la tabla
-
+  <Step title="Crear la tabla" id="create-the-table">
     A partir del esquema inferido, ajustamos los tipos de datos y añadimos una clave primaria.
     Defina la siguiente tabla:
 
@@ -103,9 +99,7 @@ A continuación se indican los pasos para crear una tabla en ClickHouse Cloud e 
     ```
   </Step>
 
-  <Step>
-    ### Insertar datos
-
+  <Step title="Insertar datos" id="insert-data">
     El siguiente comando transmite los registros de los archivos de S3 a la tabla `youtube`.
 
     <Warning>
@@ -150,9 +144,7 @@ A continuación se indican los pasos para crear una tabla en ClickHouse Cloud e 
     * Usamos `ifNull` para evitar valores `NULL` en nuestra tabla. Si un valor entrante es `NULL`, la función `ifNull` establece el valor como una cadena vacía
   </Step>
 
-  <Step>
-    ### Cuenta el número de filas
-
+  <Step title="Cuenta el número de filas" id="count-row-numbers">
     Abre una nueva pestaña en SQL Console de ClickHouse Cloud (o una nueva ventana de `clickhouse-client`) y observa cómo aumenta el recuento.
     Llevará un tiempo insertar 4.56B filas, según los recursos de tu server. (Sin ajustar ninguna configuración, tarda unas 4.5 horas.)
 
@@ -168,9 +160,7 @@ A continuación se indican los pasos para crear una tabla en ClickHouse Cloud e 
     ```
   </Step>
 
-  <Step>
-    ### Explora los datos
-
+  <Step title="Explora los datos" id="explore-the-data">
     Una vez insertados los datos, cuenta cuántos «No me gusta» tienen tus videos o canales favoritos. Veamos cuántos videos ha subido ClickHouse:
 
     ```sql

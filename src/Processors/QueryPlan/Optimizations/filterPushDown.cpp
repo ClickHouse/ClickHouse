@@ -1,5 +1,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
+#include <Core/Block.h>
 #include <Common/assert_cast.h>
 
 #include <Common/logger_useful.h>
@@ -26,6 +27,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 
 #include <Storages/StorageMerge.h>
@@ -1018,6 +1020,29 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             return updated_steps;
     }
 
+    if (const auto * window = typeid_cast<WindowStep *>(child.get()))
+    {
+        /// A predicate on the PARTITION BY columns of a window is safe to apply before the
+        /// window: it only removes whole partitions, and dropping a partition never changes
+        /// any window value on a surviving row (regardless of the window function or frame).
+        /// Predicates on the window result stay above. Same reasoning as for aggregation keys.
+        Names partition_keys;
+        for (const auto & sort_column : window->getWindowDescription().partition_by)
+            partition_keys.push_back(sort_column.column_name);
+
+        if (partition_keys.empty())
+            return 0;
+
+        /// Pass true (as for aggregation), which disables pushing non-deterministic conjuncts.
+        /// A predicate must be deterministic in the partition key, not merely reference only it:
+        /// a non-deterministic conjunct such as `rand64(key) % 2 = 0` removes arbitrary rows
+        /// inside a surviving partition before the window runs, which can change which row
+        /// becomes row_number() = 1. Unlike SortingStep, the window value depends on the set of
+        /// rows in the partition, so non-deterministic filters are not safe to move below it.
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, partition_keys))
+            return updated_steps;
+    }
+
     if (const auto * limit_by = typeid_cast<LimitByStep *>(child.get()))
     {
         /// A predicate on the LIMIT BY key columns removes whole groups, so the surviving
@@ -1156,6 +1181,16 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * union_step = typeid_cast<UnionStep *>(child.get()))
     {
+        /// This rewrite forces every union branch input header to the pushed-down filter's
+        /// output header, which assumes the union forwards each branch unchanged. Skip it
+        /// when the union normalizes a branch (its output differs from some input header),
+        /// e.g. it drops a Const that diverged across branches. Otherwise a branch still
+        /// outputting Const would get a full input header and the mismatch would move here.
+        const auto & union_output = *union_step->getOutputHeader();
+        for (const auto & input_header : union_step->getInputHeaders())
+            if (!blocksHaveEqualStructure(*input_header, union_output))
+                return 0;
+
         /// Union does not change header.
         /// We can push down filter and update header.
         auto union_input_headers = child->getInputHeaders();

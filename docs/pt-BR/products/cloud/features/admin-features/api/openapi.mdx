@@ -2,69 +2,89 @@
 sidebarTitle: 'Gerenciamento de chaves de API'
 slug: /cloud/manage/openapi
 title: 'Gerenciamento de chaves de API'
-description: 'O ClickHouse Cloud fornece uma API com OpenAPI que permite gerenciar programaticamente sua conta e aspectos dos seus serviços.'
+description: 'A ClickHouse Cloud oferece uma API baseada em OpenAPI que permite gerenciar programaticamente sua conta e aspectos dos seus serviços.'
 doc_type: 'guide'
 keywords: ['api', 'openapi', 'rest api', 'documentation', 'cloud management']
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-O ClickHouse Cloud fornece uma API com OpenAPI que permite gerenciar programaticamente sua conta e aspectos dos seus serviços.
+ClickHouse Cloud fornece uma API que usa OpenAPI e permite gerenciar programaticamente sua conta e aspectos dos seus serviços.
 
 <Note>
-  Este documento aborda a ClickHouse Cloud API. Para endpoints de API do banco de dados, consulte [Cloud Endpoints API](/pt-BR/products/cloud/guides/sql-console/query-endpoints)
+  Este documento aborda a ClickHouse Cloud API. Para endpoints de API de banco de dados, consulte [Cloud Endpoints API](/pt-BR/products/cloud/guides/sql-console/query-endpoints)
 </Note>
 
-1. Você pode usar a aba **API Keys** no menu à esquerda para criar e gerenciar suas chaves de API.
+<Steps>
+  <Step title="Abra a página API Keys">
+    Você pode usar a aba **API Keys** no menu à esquerda para criar e gerenciar suas chaves de API.
 
-<Image img="/images/cloud/manage/openapi1.webp" size="sm" alt="Aba API Keys" border />
+    <Image img="/images/cloud/manage/openapi1.webp" size="sm" alt="Aba API Keys" border />
+  </Step>
 
-2. A página **API Keys** exibirá inicialmente uma solicitação para criar sua primeira chave de API, como mostrado abaixo. Depois que a primeira chave for criada, você poderá criar novas chaves usando o botão `New API Key`, que aparece no canto superior direito.
+  <Step title="Comece a criar uma chave de API">
+    A página **API Keys** exibirá inicialmente uma solicitação para criar sua primeira chave de API, como mostrado abaixo. Depois que a primeira chave for criada, você poderá criar novas chaves usando o botão `New API Key`, que aparece no canto superior direito.
 
-<Image img="/images/cloud/manage/openapi2.webp" size="md" alt="Página API Keys" border />
+    <Image img="/images/cloud/manage/openapi2.webp" size="md" alt="Página API Keys" border />
+  </Step>
 
-3. Para criar uma chave de API, especifique o nome da chave, as permissões e o tempo de expiração e, em seguida, clique em `Generate API Key`.
+  <Step title="Configure a chave de API">
+    Especifique o nome da chave, as permissões e o prazo de expiração.
 
-<br />
+    <Note>
+      As permissões correspondem aos [predefined roles](/pt-BR/products/cloud/reference/security/console-roles) do ClickHouse Cloud. A função developer tem permissões somente leitura para os serviços atribuídos, e a função admin tem permissões completas de leitura e gravação.
+    </Note>
 
-<Note>
-  As permissões correspondem aos [roles predefinidos](/pt-BR/products/cloud/reference/security/console-roles) do ClickHouse Cloud. O role developer tem permissões somente leitura para os serviços atribuídos, e o role admin tem permissões completas de leitura e gravação.
-</Note>
+    <Tip>
+      **Query API Endpoints**
 
-<Tip>
-  **Query API Endpoints**
+      Para usar chaves de API com [Query API Endpoints](/pt-BR/products/cloud/guides/sql-console/query-endpoints), defina Organization Role como `Member` (no mínimo) e conceda à Service Role acesso a `Query Endpoints`.
+    </Tip>
 
-  Para usar chaves de API com [Query API Endpoints](/pt-BR/products/cloud/guides/sql-console/query-endpoints), defina Organization Role como `Member` (no mínimo) e conceda ao Service Role acesso a `Query Endpoints`.
-</Tip>
+    <Image img="/images/cloud/manage/openapi3.png" size="md" alt="Formulário de criação de chave de API" border />
+  </Step>
 
-<Image img="/images/cloud/manage/openapi3.png" size="md" alt="Formulário de criação de chave de API" border />
+  <Step title="Adicione endereços IP permitidos">
+    Para restringir quais clientes podem usar a chave de API, na seção **Allow access to this API Key**, selecione **Specific locations**. Insira um endereço IP ou intervalo CIDR, como `203.0.113.1` ou `203.0.113.0/24`, e adicione outras entradas conforme necessário.
 
-4. A próxima tela exibirá o ID da chave e o segredo da chave. Copie esses valores e guarde-os em um local seguro, como um cofre. Esses valores não serão exibidos depois que você sair desta tela.
+    Os Query API endpoints respeitam allowlists de IP no nível da chave de API. Como as requisições são encaminhadas por proxy de dentro da infraestrutura do ClickHouse, allowlists de IP no nível do serviço não se aplicam. Consulte [IP Access Control](/pt-BR/cloud/features/query-api-endpoints#ip-access-control) para mais detalhes.
 
-<Image img="/images/cloud/manage/openapi4.webp" size="md" alt="Detalhes da chave de API" border />
+    <Image img="/images/cloud/guides/query-endpoints/specific-locations.webp" size="md" alt="Endereços IP permitidos configurados para uma chave de API" border />
 
-5. A ClickHouse Cloud API usa [HTTP Basic Authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication) para verificar a validade das suas chaves de API. Veja um exemplo de como usar suas chaves de API para enviar solicitações à ClickHouse Cloud API com `curl`:
+    Clique em **Generate API Key** quando terminar de configurar a chave.
+  </Step>
 
-```bash
-$ KEY_ID=mykeyid
-$ KEY_SECRET=mykeysecret
+  <Step title="Salve as credenciais da chave de API">
+    A próxima tela exibirá seu Key ID e Key secret. Copie esses valores e guarde-os em um local seguro, como um cofre. Eles não serão exibidos novamente depois que você sair desta tela.
 
-$ curl --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organizations
-```
+    <Image img="/images/cloud/manage/openapi4.webp" size="md" alt="Detalhes da chave de API" border />
+  </Step>
 
-6. Ao voltar para a página **API Keys**, você verá o nome da chave, os últimos quatro caracteres do ID da chave, as permissões, o status, a data de expiração e o criador. Nesta tela, você pode editar o nome da chave, as permissões e a data de expiração. As chaves também podem ser desativadas ou excluídas nesta tela.
+  <Step title="Autentique requisições de API">
+    A ClickHouse Cloud API usa [HTTP Basic Authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication) para verificar a validade das suas chaves de API. Veja um exemplo de como usar suas chaves de API para enviar requisições à ClickHouse Cloud API com `curl`:
 
-<br />
+    ```bash
+    $ KEY_ID=mykeyid
+    $ KEY_SECRET=mykeysecret
 
-<Note>
-  Excluir uma chave de API é uma ação permanente. Todos os serviços que usam a chave perderão imediatamente o acesso ao ClickHouse Cloud.
-</Note>
+    $ curl --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organizations
+    ```
+  </Step>
 
-<Image img="/images/cloud/manage/openapi5.webp" size="md" alt="Página de gerenciamento de API Keys" border />
+  <Step title="Gerencie chaves de API existentes">
+    Ao retornar à página **API Keys**, você verá o nome da chave, os quatro últimos caracteres do Key ID, as permissões, o status, a data de expiração e o criador. Nesta tela, você pode editar o nome da chave, as permissões e a expiração. As chaves também podem ser desabilitadas ou excluídas nesta tela.
+
+    <Note>
+      Excluir uma chave de API é uma ação permanente. Todos os serviços que usam essa chave perderão imediatamente o acesso ao ClickHouse Cloud.
+    </Note>
+
+    <Image img="/images/cloud/manage/openapi5.webp" size="md" alt="Página de gerenciamento de API Keys" border />
+  </Step>
+</Steps>
 
 <div id="endpoints">
   ## Endpoints
 </div>
 
-Para mais detalhes sobre os endpoints, consulte a [referência da API](/pt-BR/api-reference/organization/get-list-of-available-organizations).
+Para mais detalhes sobre os endpoints, consulte a [referência da API](/pt-BR/products/cloud/api-reference/organization/get-list-of-available-organizations).
 Use sua chave de API e seu API Secret com a URL base `https://api.clickhouse.cloud/v1`.

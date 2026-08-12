@@ -1,0 +1,208 @@
+{
+  "groups": [
+    {
+      "group": "ClickPipes для объектного хранилища",
+      "icon": "/images/integrations/logos/clickpipes_for_amazon_s3.svg",
+      "pages": [
+        {
+          "group": "Amazon S3",
+          "icon": "/images/integrations/logos/amazon_s3_logo.svg",
+          "pages": [
+            "ru/integrations/clickpipes/object-storage/amazon-s3/overview",
+            "ru/integrations/clickpipes/object-storage/amazon-s3/get-started",
+            "ru/integrations/clickpipes/object-storage/amazon-s3/unordered-mode"
+          ]
+        },
+        {
+          "group": "Google Cloud Storage",
+          "icon": "/images/integrations/logos/gcs.svg",
+          "pages": [
+            "ru/integrations/clickpipes/object-storage/google-cloud-storage/overview",
+            "ru/integrations/clickpipes/object-storage/google-cloud-storage/get-started",
+            "ru/integrations/clickpipes/object-storage/google-cloud-storage/unordered-mode"
+          ]
+        },
+        {
+          "group": "Azure Blob Storage",
+          "icon": "/images/integrations/logos/azureblobstorage.svg",
+          "pages": [
+            "ru/integrations/clickpipes/object-storage/azure-blob-storage/overview",
+            "ru/integrations/clickpipes/object-storage/azure-blob-storage/get-started"
+          ]
+        }
+      ],
+      "root": "ru/integrations/clickpipes/home"
+    },
+    {
+      "group": "ClickPipes для Postgres",
+      "icon": "/images/integrations/logos/postgresql.svg",
+      "pages": [
+        "ru/integrations/clickpipes/postgres/deduplication",
+        "ru/integrations/clickpipes/postgres/ordering-keys",
+        "ru/integrations/clickpipes/postgres/toast",
+        "ru/integrations/clickpipes/postgres/connecting-to-postgresql",
+        "ru/integrations/clickpipes/postgres/inserting-data",
+        "ru/integrations/clickpipes/postgres/schema-changes",
+        "ru/integrations/clickpipes/postgres/faq",
+        "ru/integrations/clickpipes/postgres/postgres-generated-columns",
+        "ru/integrations/clickpipes/postgres/parallel-initial-load",
+        "ru/integrations/clickpipes/postgres/lifecycle",
+        "ru/integrations/clickpipes/postgres/auth",
+        {
+          "group": "Operations",
+          "pages": [
+            "ru/integrations/clickpipes/postgres/add-table",
+            "ru/integrations/clickpipes/postgres/pause-and-resume",
+            "ru/integrations/clickpipes/postgres/remove-table",
+            "ru/integrations/clickpipes/postgres/table-resync",
+            "ru/integrations/clickpipes/postgres/resync",
+            "ru/integrations/clickpipes/postgres/controlling-sync",
+            "ru/integrations/clickpipes/postgres/scaling"
+          ]
+        },
+        {
+          "group": "Источник",
+          "pages": [
+            "ru/integrations/clickpipes/postgres/source/alloydb",
+            "ru/integrations/clickpipes/postgres/source/rds",
+            "ru/integrations/clickpipes/postgres/source/aurora",
+            "ru/integrations/clickpipes/postgres/source/supabase",
+            "ru/integrations/clickpipes/postgres/source/google-cloudsql",
+            "ru/integrations/clickpipes/postgres/source/azure-flexible-server-postgres",
+            "ru/integrations/clickpipes/postgres/source/neon-postgres",
+            "ru/integrations/clickpipes/postgres/source/crunchy-postgres",
+            "ru/integrations/clickpipes/postgres/source/generic",
+            "ru/integrations/clickpipes/postgres/source/timescale",
+            "ru/integrations/clickpipes/postgres/source/planetscale"
+          ]
+        }
+      ],
+      "root": "ru/integrations/clickpipes/postgres/index"
+    },
+    {
+      "group": "ClickPipes для Kafka",
+      "icon": "/images/integrations/logos/kafka.svg",
+      "pages": [
+        "ru/integrations/clickpipes/kafka/create-kafka-clickpipe",
+        "ru/integrations/clickpipes/kafka/schema-registries",
+        "ru/integrations/clickpipes/kafka/reference",
+        "ru/integrations/clickpipes/kafka/best-practices",
+        "ru/integrations/clickpipes/kafka/faq"
+      ],
+      "root": "ru/integrations/clickpipes/kafka/index"
+    },
+    {
+      "group": "ClickPipes для Kinesis",
+      "icon": "/images/integrations/logos/amazon_kinesis_logo.svg",
+      "pages": [
+        "ru/integrations/clickpipes/kinesis/overview",
+        "ru/integrations/clickpipes/kinesis/auth"
+      ],
+      "root": "ru/integrations/clickpipes/kinesis/index"
+    },
+    {
+      "group": "ClickPipes для GCP Pub/Sub",
+      "icon": "/images/integrations/logos/google_pubsub.svg",
+      "pages": [
+        "ru/integrations/clickpipes/pubsub/overview",
+        "ru/integrations/clickpipes/pubsub/auth"
+      ],
+      "root": "ru/integrations/clickpipes/pubsub/index"
+    },
+    {
+      "group": "ClickPipes для MySQL",
+      "icon": "/images/integrations/logos/mysql.svg",
+      "pages": [
+        "ru/integrations/clickpipes/mysql/faq",
+        "ru/integrations/clickpipes/mysql/datatypes",
+        "ru/integrations/clickpipes/mysql/parallel-initial-load",
+        "ru/integrations/clickpipes/mysql/schema-changes",
+        "ru/integrations/clickpipes/mysql/lifecycle",
+        {
+          "group": "Operations",
+          "pages": [
+            "ru/integrations/clickpipes/mysql/add-table",
+            "ru/integrations/clickpipes/mysql/pause-and-resume",
+            "ru/integrations/clickpipes/mysql/remove-table",
+            "ru/integrations/clickpipes/mysql/table-resync",
+            "ru/integrations/clickpipes/mysql/resync",
+            "ru/integrations/clickpipes/mysql/controlling-sync",
+            "ru/integrations/clickpipes/mysql/scaling"
+          ]
+        },
+        {
+          "group": "Источник",
+          "pages": [
+            "ru/integrations/clickpipes/mysql/source/rds",
+            "ru/integrations/clickpipes/mysql/source/aurora",
+            "ru/integrations/clickpipes/mysql/source/gcp",
+            "ru/integrations/clickpipes/mysql/source/azure-flexible-server-mysql",
+            "ru/integrations/clickpipes/mysql/source/generic",
+            "ru/integrations/clickpipes/mysql/source/rds-maria",
+            "ru/integrations/clickpipes/mysql/source/generic-maria"
+          ]
+        }
+      ],
+      "root": "ru/integrations/clickpipes/mysql/index"
+    },
+    {
+      "group": "ClickPipes для MongoDB",
+      "icon": "/images/integrations/logos/mongodb.svg",
+      "pages": [
+        "ru/integrations/clickpipes/mongodb/datatypes",
+        "ru/integrations/clickpipes/mongodb/quickstart",
+        "ru/integrations/clickpipes/mongodb/lifecycle",
+        "ru/integrations/clickpipes/mongodb/faq",
+        {
+          "group": "Operations",
+          "pages": [
+            "ru/integrations/clickpipes/mongodb/add-table",
+            "ru/integrations/clickpipes/mongodb/remove-table",
+            "ru/integrations/clickpipes/mongodb/pause-and-resume",
+            "ru/integrations/clickpipes/mongodb/table-resync",
+            "ru/integrations/clickpipes/mongodb/resync",
+            "ru/integrations/clickpipes/mongodb/controlling-sync",
+            "ru/integrations/clickpipes/mongodb/scaling"
+          ]
+        },
+        {
+          "group": "Источник",
+          "pages": [
+            "ru/integrations/clickpipes/mongodb/source/atlas",
+            "ru/integrations/clickpipes/mongodb/source/generic",
+            "ru/integrations/clickpipes/mongodb/source/documentdb"
+          ]
+        }
+      ],
+      "root": "ru/integrations/clickpipes/mongodb/index"
+    },
+    {
+      "group": "ClickPipes для BigQuery",
+      "icon": "/images/logo-bigquery.svg",
+      "pages": [
+        "ru/integrations/clickpipes/bigquery/overview",
+        "ru/integrations/clickpipes/bigquery/get-started"
+      ]
+    },
+    {
+      "group": "Программный доступ",
+      "icon": "code",
+      "pages": [
+        "ru/integrations/clickpipes/programmatic-access/openapi",
+        "ru/integrations/clickpipes/programmatic-access/terraform"
+      ]
+    },
+    {
+      "group": "Другое",
+      "icon": "ellipsis",
+      "pages": [
+        "ru/integrations/clickpipes/aws-privatelink",
+        "ru/integrations/clickpipes/dynamodb",
+        "ru/integrations/clickpipes/monitoring"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-clickpipes.svg",
+  "item": "ClickPipes",
+  "root": "ru/integrations/clickpipes/home"
+}

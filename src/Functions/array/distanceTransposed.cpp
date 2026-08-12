@@ -10,7 +10,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/LloydMaxQuantization.h>
+#include <Common/LloydMaxQuantizer.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
@@ -20,6 +20,7 @@
 #include <Common/TargetSpecific.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <algorithm>
 #include <optional>
 
 /// Include immintrin. Otherwise `simsimd` fails to build: `unknown type name '__bfloat16'`
@@ -449,7 +450,10 @@ public:
         const size_t used_dims = parsed->used_dims;
         const size_t num_planes = parsed->num_planes;
 
-        /// First, check that the reference vector sizes match the reconstructed dimension
+        /// Check that the reference vector has at least as many elements as the reconstructed dimension.
+        /// A larger reference vector is allowed: only its first `used_dims` elements are used and the rest are truncated.
+        /// This lets a full-size query vector be reused for Matryoshka-style partial-dimension search (a smaller `used_dims`)
+        /// without having to slice it first.
         const ColumnArray & reference_vector = *assert_cast<const ColumnArray *>(extractFromConst(arguments.back().column).get());
         const auto & offsets = reference_vector.getOffsets();
 
@@ -458,10 +462,10 @@ public:
         {
             for (size_t i = 0; i < reference_vector.size(); ++i)
             {
-                if (offsets[i] - offsets[i - 1] != used_dims)
+                if (offsets[i] - offsets[i - 1] < used_dims)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "The reference vector in the last argument of function {} has wrong size. Got: {}, expected: {}",
+                        "The reference vector in the last argument of function {} is too small. Got: {}, expected at least: {}",
                         getName(),
                         offsets[i] - offsets[i - 1],
                         used_dims);
@@ -505,9 +509,14 @@ public:
             }
             else
             {
+                /// Downcast only while the centre-fill midpoint (the most significant dropped bit) stays representable in the
+                /// narrower calculation word, i.e. `precision` is strictly below the narrow width. At `precision == 16` a Float32
+                /// element still drops 16 mantissa bits and its midpoint is the bit just below a BFloat16 word, so that boundary
+                /// case must keep the full Float32 width; a BFloat16 element at `precision == 16` drops nothing and stays BFloat16.
                 auto calc_type
-                    = (precision <= 16 ? TypeToTypeIndex<BFloat16>
-                                       : (precision <= 32 ? TypeToTypeIndex<Float32> : TypeToTypeIndex<Float64>));
+                    = (precision < 16 || std::is_same_v<RefT, BFloat16>
+                           ? TypeToTypeIndex<BFloat16>
+                           : (precision <= 32 ? TypeToTypeIndex<Float32> : TypeToTypeIndex<Float64>));
 
                 /// Float64 cannot be downcasted to Float32 or BFloat16 in an easy way by reordering bits. That is why with it we always do
                 /// calculations in full width. Alternatively, we could static_cast each element when calculating, but it is slower.
@@ -661,6 +670,11 @@ private:
     /// RefT is the type of the reference vector, CalcT is the type used for calculation.
     /// `planes` holds `num_groups * precision` FixedString bit-plane columns in group-major order (plane[g * precision + b]).
     /// Each stride group is untransposed into its own contiguous slice of the reconstructed `used_dims`-element vector.
+    /// A value truncated to `precision` bit planes is reconstructed to the centre of its coarse cell (the most significant dropped
+    /// bit is set), mirroring `LloydMax::transposedDequantLUT` on the quantized path - but only while the centre stays a bounded,
+    /// value-space-meaningful estimate: for a float that is sign-only truncation (`precision == 1`) or mantissa truncation
+    /// (`precision > exponent_bits`); once `precision` truncates exponent bits the bounded lower edge is kept instead of a
+    /// centre that would jump across binades. See the reconstruction block below for the full reasoning.
     template <typename RefT, typename CalcT, bool ref_is_const>
     ColumnPtr executeDistanceCalculation(
         const ColumnArray & col_y,
@@ -710,6 +724,16 @@ private:
         VectorWithMemoryTracking<CalcT> block(block_size * padded_array_size);
         auto block_row = [&](size_t r) -> CalcT * { return block.data() + r * padded_array_size; };
 
+        /// A value truncated to `precision` bit planes is rounded to the centre of its coarse cell by setting the most significant
+        /// dropped bit (the direct analogue of `top | (1 << (7 - precision))` in `LloydMax::transposedDequantLUT`). Zero-filling the
+        /// dropped bits would instead reconstruct the cell's lower edge, which biases every value towards zero and degenerates at low
+        /// precision: e.g. for BFloat16 at precision 1 only the sign bit survives, so every value would be reconstructed as +-0.0 and
+        /// the distance would be the same for every row. When `precision` covers the whole word, the fill is zero; the dispatch in
+        /// `executeImpl` downcasts to a narrower CalcT only while `precision` is strictly below the narrow width, so this happens
+        /// exactly when `precision` covers the whole *element* and no bits are dropped at all. `centre_fill` is a single bit strictly
+        /// below the `precision` kept planes.
+        const Word centre_fill = precision < sizeof(Word) * 8 ? static_cast<Word>(Word(1) << (sizeof(Word) * 8 - 1 - precision)) : Word(0);
+
 #if USE_SIMSIMD
         simsimd_metric_dense_punned_t simd_kernel = resolveSimdKernel<CalcT>();
         /// SimSIMD's i8 kernels accumulate in int32, which overflows for large dimensions (the scalar
@@ -728,8 +752,9 @@ private:
         for (size_t base_row = 0; base_row < input_rows_count; base_row += block_size)
         {
             const size_t rows_in_block = std::min(block_size, input_rows_count - base_row);
+            const size_t words_in_block = rows_in_block * padded_array_size;
 
-            memset(block.data(), 0, rows_in_block * padded_array_size * sizeof(CalcT));
+            memset(block.data(), 0, words_in_block * sizeof(CalcT));
 
             /// Untranspose, for each stride group, its `precision` bit planes into that group's slice of every row of the block
             for (size_t group = 0; group < num_groups; ++group)
@@ -744,6 +769,107 @@ private:
                         const UInt8 * src = reinterpret_cast<const UInt8 *>(col.getChars().data()) + (base_row + r) * bytes_per_group;
                         untranspose_kernel(
                             src, reinterpret_cast<Word *>(block_row(r) + group * padded_group), padded_group, bit_mask);
+                    }
+                }
+            }
+
+            /// Reconstruct each truncated cell by setting the most significant dropped bit (`centre_fill`), rounding to the coarse
+            /// cell's centre - but only where that is a bounded, value-space-meaningful approximation. The centre is applied:
+            ///
+            ///  - `Int8` element type (the raw sibling of `...TransposedQuantized`): the code is a linear integer, so its centre
+            ///    is the bounded midpoint of the code range. It is applied to every word (including exact `0`), matching the
+            ///    `...TransposedQuantized` LUT which likewise reconstructs every truncated code to its cell centre.
+            ///
+            ///  - `precision == 1` for a float: only the sign bit is kept (pure sign quantization). The single dropped bit set is
+            ///    the top exponent bit, reconstructing a bounded +-2.0, so every value keeps just its sign as +-2.0. This is the
+            ///    fix for the degenerate 1-bit reconstruction; it is applied to every word - including exact `0`, whose sign bit
+            ///    is `0`, so it takes `+2.0` and stays distinguishable from a genuine positive instead of collapsing every
+            ///    positive back to `0` and defeating the sign quantization.
+            ///
+            ///  - `precision > exponent_bits` for a float: the whole exponent is kept and only mantissa bits are dropped, so the
+            ///    centre is the bounded midpoint within the value's own binade. A word whose exponent and kept mantissa bits are
+            ///    all zero is the zero cell (a genuine `+0`/`-0` or subnormal), so it is left at exact zero rather than a tiny fake
+            ///    magnitude; this keeps a stored `0` at `0` and avoids injecting a spurious direction that would otherwise make
+            ///    reduced-precision cosine distance report identical zero vectors as maximally dissimilar. A word is in this zero
+            ///    cell exactly when it is still zero *after masking off the sign bit* - so both `+0.0` (an all-zero word) and
+            ///    `-0.0` (only the sign bit kept) stay zero; `centre_fill` lies strictly below the kept planes, so any word
+            ///    outside the zero cell keeps at least one non-sign bit and is centred. The non-finite cell (all exponent bits
+            ///    set) is carved out for the same reason: `+-inf` has a zero kept mantissa, so OR-ing `centre_fill` would flip it
+            ///    to a `NaN` and change the IEEE category of a legitimate input; it is left untouched so `+-inf` stays exactly
+            ///    infinite. The policy for this inherently ambiguous cell is explicit and lossy: a stored `NaN` keeps its `NaN`
+            ///    category only if at least one of its set mantissa bits survives the `precision` truncation (the truncated word
+            ///    then still has a non-zero kept mantissa and reads back as a `NaN`); a `NaN` whose payload sits entirely in the
+            ///    dropped mantissa bits truncates to the `+-inf` encoding and is indistinguishable from a genuine `+-inf` at this
+            ///    precision, so it reconstructs to `+-inf`. We preserve the canonical infinity encoding exactly rather than
+            ///    fabricate a `NaN` here, because doing so would corrupt a genuinely stored `+-inf`; either way the value stays
+            ///    non-finite.
+            ///
+            /// For a float at `2 <= precision <= exponent_bits` the most significant dropped bit is an *exponent* bit, so setting
+            /// it is a multiplicative jump across many binades - not a usable approximation in value space, and (once squared in
+            /// the kernel) architecture-sensitive. There the bounded lower edge of the coarse exponent cell is kept instead (no
+            /// centre), as before this reconstruction change: a smaller `precision` then trades accuracy for speed without blowing
+            /// magnitudes up by orders of magnitude, as the function contract requires.
+            constexpr bool is_int8 = std::is_same_v<CalcT, Int8>;
+            /// BFloat16 and Float32 both carry an 8-bit exponent; Float64 carries 11. Unused for Int8.
+            constexpr size_t exponent_bits = std::is_same_v<CalcT, Float64> ? 11 : 8;
+
+            const bool apply_centre = is_int8 || precision == 1 || precision > exponent_bits;
+            const bool collapse_zero_cell = !is_int8 && precision > exponent_bits;
+
+            if (centre_fill && apply_centre)
+            {
+                Word * words = reinterpret_cast<Word *>(block.data());
+                /// Centre only the `used_dims` real lanes of each row. A non-strided `QBit` whose `dimension` is not a multiple
+                /// of 8 leaves a padded tail (`[used_dims, padded_array_size)`) in every row; it was `memset` to zero and the
+                /// distance kernel is asked for exactly `used_dims` elements, so leaving the tail zero (instead of OR-ing
+                /// `centre_fill` into it) keeps the padding unable to contribute to any distance, independent of how a given
+                /// kernel handles trailing lanes.
+                if constexpr (is_int8)
+                {
+                    /// Int8 has no exponent; every truncated code is centred unconditionally (matching the quantized LUT).
+                    for (size_t r = 0; r < rows_in_block; ++r)
+                    {
+                        Word * row = words + r * padded_array_size;
+                        for (size_t d = 0; d < used_dims; ++d)
+                            row[d] |= centre_fill;
+                    }
+                }
+                else if (collapse_zero_cell)
+                {
+                    /// Two IEEE categories are carved out of the midpoint rule (the quantized LUT likewise only reconstructs
+                    /// finite cells), both detected after masking off the sign bit:
+                    ///  - the zero cell: `+0.0` (an all-zero word) and `-0.0` (only the sign bit kept) must stay zero rather than
+                    ///    gain a spurious tiny magnitude from `centre_fill`, which would otherwise turn a stored `-0.0` into a
+                    ///    non-zero negative subnormal;
+                    ///  - the non-finite cell (all exponent bits set): `+-inf` has a zero kept mantissa, so OR-ing `centre_fill`
+                    ///    would flip it to a `NaN` and change the IEEE category of a legitimate input. Leaving it untouched keeps
+                    ///    `+-inf` exactly infinite, and keeps a `NaN` a `NaN` whenever a set mantissa bit survives the truncation;
+                    ///    a `NaN` whose payload lies entirely in the dropped bits truncates to the `+-inf` encoding and therefore
+                    ///    reconstructs to `+-inf` (see the reconstruction-policy comment above - this cell is inherently ambiguous
+                    ///    at reduced precision, and preserving the canonical infinity avoids corrupting a genuine `+-inf`).
+                    /// Only the finite, non-zero words in between are centred. `exponent_bits` is only meaningful for a float, so
+                    /// this branch (and its `exponent_mask`) is guarded from the `Int8` instantiation by `is_int8` above.
+                    constexpr Word non_sign_mask = static_cast<Word>(~(Word(1) << (sizeof(Word) * 8 - 1)));
+                    constexpr Word exponent_mask
+                        = static_cast<Word>(((Word(1) << exponent_bits) - 1) << (sizeof(Word) * 8 - 1 - exponent_bits));
+                    for (size_t r = 0; r < rows_in_block; ++r)
+                    {
+                        Word * row = words + r * padded_array_size;
+                        for (size_t d = 0; d < used_dims; ++d)
+                        {
+                            const Word magnitude = row[d] & non_sign_mask;
+                            if (magnitude != 0 && (magnitude & exponent_mask) != exponent_mask)
+                                row[d] |= centre_fill;
+                        }
+                    }
+                }
+                else
+                {
+                    for (size_t r = 0; r < rows_in_block; ++r)
+                    {
+                        Word * row = words + r * padded_array_size;
+                        for (size_t d = 0; d < used_dims; ++d)
+                            row[d] |= centre_fill;
                     }
                 }
             }

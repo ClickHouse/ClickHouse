@@ -22,3 +22,20 @@ $CLICKHOUSE_CLIENT --enable_analyzer=1 -q "SELECT * FROM ${CLICKHOUSE_DATABASE}_
 $CLICKHOUSE_CLIENT --enable_analyzer=1 -q "SELECT * FROM ${CLICKHOUSE_DATABASE}_missing.functions" 2>&1 | grep -c -F "Maybe you meant system.functions?" || true
 $CLICKHOUSE_CLIENT --enable_analyzer=0 -q "SELECT * FROM ${CLICKHOUSE_DATABASE}_missing.functions" 2>&1 | grep -oF -m1 "UNKNOWN_DATABASE"
 $CLICKHOUSE_CLIENT --enable_analyzer=0 -q "SELECT * FROM ${CLICKHOUSE_DATABASE}_missing.functions" 2>&1 | grep -c -F "Maybe you meant system.functions?" || true
+
+# A database-qualified name reports a different message per analyzer
+# (`Unknown table expression identifier` vs `Table ... does not exist`), but both must suggest the
+# same table, whether it lives in the named database or in another one.
+# The cross-database search compares bare table names, so an identically named table in a
+# concurrent test's database is a distance-0 match and would win: tie the name to the database.
+tbl="table_test_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT -q "CREATE DATABASE ${CLICKHOUSE_DATABASE}_other"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.${tbl} (i Int64) ENGINE = Memory"
+for analyzer in 1 0; do
+    $CLICKHOUSE_CLIENT --enable_analyzer=$analyzer -q "SELECT * FROM ${CLICKHOUSE_DATABASE}.${tbl}1" 2>&1 \
+        | grep -oF -m1 "Maybe you meant ${CLICKHOUSE_DATABASE}.${tbl}?" | sed "s/${tbl}/{tbl}/g; s/${CLICKHOUSE_DATABASE}/{db}/g"
+    $CLICKHOUSE_CLIENT --enable_analyzer=$analyzer -q "SELECT * FROM ${CLICKHOUSE_DATABASE}_other.${tbl}1" 2>&1 \
+        | grep -oF -m1 "Maybe you meant ${CLICKHOUSE_DATABASE}.${tbl}?" | sed "s/${tbl}/{tbl}/g; s/${CLICKHOUSE_DATABASE}/{db}/g"
+done
+$CLICKHOUSE_CLIENT -q "DROP TABLE ${CLICKHOUSE_DATABASE}.${tbl}"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE ${CLICKHOUSE_DATABASE}_other"

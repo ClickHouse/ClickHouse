@@ -387,6 +387,11 @@ void SerializationString::deserializeBinaryBulkWithoutSizeStream(
     ISerialization::deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, state, cache);
 }
 
+void SerializationString::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+{
+    writeString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+}
+
 void SerializationString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
@@ -753,6 +758,12 @@ struct DeserializeBinaryBulkStateStringWithSizeStream : public ISerialization::D
         res->size_column = size_column;
         return res;
     }
+
+    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
+    {
+        if (size_column)
+            callback(size_column);
+    }
 };
 
 void SerializationString::deserializeBinaryBulkStatePrefix(
@@ -860,7 +871,10 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     stream->readBigStrict(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
     data.resize(initial_size + bytes_to_read);
     column = std::move(mutable_column);
-    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, num_read_rows);
+    /// Unlike the sizes column above, `column` never receives the skipped `rows_offset` rows (they were
+    /// only skipped over in the data stream, not inserted), so it only grew by `num_read_rows - rows_offset`
+    /// rows in this call — that is what a later cache lookup must be able to take off its tail.
+    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, num_read_rows - rows_offset);
     settings.path.pop_back();
 }
 

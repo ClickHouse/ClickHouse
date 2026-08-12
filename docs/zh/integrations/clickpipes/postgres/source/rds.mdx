@@ -97,7 +97,24 @@ postgres=> SHOW rds.logical_replication ;
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication 将包含指定表生成的一组变更事件，后续将用于摄取复制 stream。
+`clickpipes` publication 定义了将变更事件流式传输到 ClickPipes 的那组表。除非你打算复制每一张表，否则我们不建议使用 `FOR ALL TABLES`，因为包含不必要的表会增加从 Postgres 到 ClickPipes 的 WAL 流量，并降低整体复制效率。
+
+<div id="iam-authentication">
+  ### 使用 IAM 身份验证 (可选)
+</div>
+
+无需使用密码，您可以通过 AWS IAM 基于角色的访问控制对 ClickPipes 用户进行身份验证。按如下方式创建该用户，然后授予其与上文所示相同的 schema 和复制特权：
+
+```sql
+CREATE USER clickpipes_iam_user;
+GRANT rds_iam TO clickpipes_iam_user;
+```
+
+<Note>
+  用于复制的 IAM 身份验证要求将 `rds.iam_auth_for_replication` 参数设为 `1`。PostgreSQL 11 及更高版本支持此功能；在更早的版本中，你只能运行 `Initial Load Only` ClickPipes。
+</Note>
+
+有关设置 ClickPipes 以通过这种方式进行身份验证所需的 IAM 角色和策略的完整步骤，请参阅 [AWS IAM DB authentication (RDS/Aurora)](/zh/integrations/clickpipes/postgres/auth)。
 
 <div id="configure-network-access">
   ## 配置网络访问

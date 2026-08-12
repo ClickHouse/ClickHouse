@@ -205,15 +205,15 @@ Les utilisateurs ont deux principales façons d’intégrer Grafana :
 Nous fournissons ci-dessous des instructions sur l’utilisation de ces options, en nous concentrant sur les détails propres au ClickHouse Cloud Prometheus Endpoint.
 
 <div id="grafana-cloud-with-metrics-endpoint">
-  ### Grafana Cloud avec endpoint de métrique
+  ### Grafana Cloud avec endpoint de métriques
 </div>
 
 * Connectez-vous à votre compte Grafana Cloud
-* Ajoutez une nouvelle connexion en sélectionnant **endpoint de métrique**
+* Ajoutez une nouvelle connexion en sélectionnant **endpoint de métriques**
 * Configurez l’URL de scraping pour qu’elle pointe vers l’endpoint Prometheus et utilisez l’authentification de base pour configurer votre connexion avec la clé API/le secret
 * Testez la connexion pour vous assurer qu’elle fonctionne
 
-<Image img="/images/integrations/prometheus-grafana-metrics-endpoint.webp" size="md" alt="Configurer l’endpoint de métrique Grafana" border />
+<Image img="/images/integrations/prometheus-grafana-metrics-endpoint.webp" size="md" alt="Configurer l’endpoint de métriques Grafana" border />
 
 <br />
 
@@ -276,7 +276,7 @@ prometheus.scrape "clickhouse_cloud" {
 }
 ```
 
-Notez que le paramètre de configuration `honor_labels` doit être défini sur `true` pour que le libellé d’instance soit correctement renseigné.
+Notez que le paramètre de configuration `honor_labels` doit être défini sur `true` pour que le label d’instance soit correctement renseigné.
 
 <div id="grafana-self-managed-with-alloy">
   ### Grafana autogéré avec Alloy
@@ -316,7 +316,7 @@ Une fois la configuration effectuée, vous devriez voir les métriques liées à
 
 <br />
 
-Notez que le paramètre de configuration `honor_labels` doit être défini sur `true` pour que l&#39;instance label soit correctement renseigné.
+Notez que le paramètre de configuration `honor_labels` doit être défini sur `true` pour que l&#39;label d’instance soit correctement renseigné.
 
 <div id="integrating-with-datadog">
   ## Intégration avec Datadog
@@ -341,11 +341,11 @@ instances:
 <Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="Intégration Prometheus-Datadog" />
 
 <div id="related">
-  ## Pages connexes
+  ## Pages associées
 </div>
 
-* [Vue d’ensemble du monitoring](/fr/products/cloud/features/monitoring/overview) — Comparez les différentes approches de monitoring pour ClickHouse Cloud
-* [Monitoring dans Cloud Console](/fr/products/cloud/features/monitoring/cloud-console) — Des tableaux de bord intégrés, sans outil externe
-* [Intégrations communautaires et partenaires](/fr/products/cloud/features/monitoring/integrations) — Intégration de l’agent Datadog et solutions de la communauté
-* [Interroger les tables système](/fr/products/cloud/features/monitoring/system-tables) — Accès SQL direct aux métriques système
-* [Endpoint Prometheus de Managed Postgres](/fr/products/managed-postgres/monitoring/prometheus) — Collectez les métriques de vos services Managed Postgres
+* [Vue d’ensemble de Monitoring](/fr/products/cloud/features/monitoring/overview) — Comparez toutes les approches de monitoring pour ClickHouse Cloud
+* [Monitoring dans Cloud Console](/fr/products/cloud/features/monitoring/cloud-console) — Tableaux de bord intégrés ne nécessitant aucun outil externe
+* [Intégrations de la communauté et des partenaires](/fr/products/cloud/features/monitoring/integrations) — Intégration de l’agent Datadog et solutions de la communauté
+* [Interrogation des tables système](/fr/products/cloud/features/monitoring/system-tables) — Accès SQL direct aux métriques système
+* [Managed Postgres Prometheus endpoint](/fr/products/managed-postgres/monitoring/prometheus) — Récupérez les métriques de vos services Managed Postgres

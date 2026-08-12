@@ -642,7 +642,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedFilter("All")}
             >
-              Todos
+              All
             </button>
             {integrationTypes.map((type) => (
               <button
@@ -670,7 +670,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedTier("All")}
             >
-              Todos los niveles
+              All tiers
             </button>
             {integrationTiers.map((tier) => (
               <button

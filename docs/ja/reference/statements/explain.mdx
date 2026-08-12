@@ -24,7 +24,7 @@ picture-in-picture"
 構文:
 
 ```sql
-EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE] [setting = value, ...]
+EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABLE OVERRIDE | WHATIF] [setting = value, ...]
     [
       SELECT ... |
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
@@ -39,22 +39,23 @@ EXPLAIN SELECT sum(number) FROM numbers(10) UNION ALL SELECT sum(number) FROM nu
 ```
 
 ```sql
+Output: sum(number)
+
 Union
-  Expression (Projection)
-    Expression (Before ORDER BY and SELECT)
-      Aggregating
-        Expression (Before GROUP BY)
-          SettingQuotaAndLimits (Set limits and quota after reading from storage)
-            ReadFromStorage (SystemNumbers)
-  Expression (Projection)
-    MergingSorted (Merge sorted streams for ORDER BY)
-      MergeSorting (Merge sorted blocks for ORDER BY)
-        PartialSorting (Sort each block for ORDER BY)
-          Expression (Before ORDER BY and SELECT)
-            Aggregating
-              Expression (Before GROUP BY)
-                SettingQuotaAndLimits (Set limits and quota after reading from storage)
-                  ReadFromStorage (SystemNumbers)
+├──Aggregating
+│  │  Keys:
+│  │  Aggregates: sum(number)
+│  │  Skip merging: 0
+│  └──ReadFromSystemNumbers
+│        Output: number
+└──Sorting (Sorting for ORDER BY)
+   │  Sort description: sum(number) ASC
+   └──Aggregating
+      │  Keys:
+      │  Aggregates: sum(number)
+      │  Skip merging: 0
+      └──ReadFromSystemNumbers
+            Output: number
 ```
 
 <div id="explain-types">
@@ -66,6 +67,9 @@ Union
 * `QUERY TREE` — クエリツリー レベルでの最適化後のクエリツリー。
 * `PLAN` — クエリ実行プラン。
 * `PIPELINE` — クエリ実行パイプライン。
+* `ANALYZE` — クエリを実行し、計測されたランタイムメトリクスを実行計画に注釈として付加します。
+* `ESTIMATE` — クエリの処理中にテーブルから読み取ると見積もられる行数、マーク数、パーツ数。
+* `TABLE OVERRIDE` — テーブル関数のスキーマに対するテーブルオーバーライドの検証済み結果。
 
 <div id="explain-ast">
   ### EXPLAIN AST
@@ -193,39 +197,49 @@ QUERY id: 0
 * `description` — ステップの説明を表示します。デフォルト: 1。
 * `indexes` — 使用された索引、フィルタリングされたパーツ数、および適用された各索引についてフィルタリングされたグラニュール数を表示します。デフォルト: 0。[MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブルでサポートされています。ClickHouse &gt;= v25.9 以降、このステートメントが適切な出力を示すのは、`SETTINGS use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0` とともに使用した場合のみです。
 * `projections` — 解析されたすべてのプロジェクションと、プロジェクションの主キー条件に基づくパーツレベルのフィルタリングへの影響を表示します。各プロジェクションについて、このセクションには、プロジェクションの主キーを使って評価されたパーツ数、行数、マーク数、範囲数などの統計が含まれます。また、このフィルタリングにより、プロジェクション自体を読み取ることなくスキップされた data parts の数も表示します。プロジェクションが実際に読み取りに使用されたのか、それともフィルタリングのために解析されただけなのかは、`description` フィールドで判別できます。デフォルト: 0。[MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブルでサポートされています。
-* `actions` — ステップの actions に関する詳細情報を表示します。デフォルト: 0。
+* `actions` — ステップの actions に関する詳細情報を表示します。デフォルト: 1。
 * `sorting` — ソート済みの出力を生成する各プランステップについて、ソートの説明を表示します。デフォルト: 0。
 * `keep_logical_steps` — joins について、物理的な join 実装に変換せずに、論理プランステップを保持します。デフォルト: 0。
 * `json` — クエリプランのステップを [JSON](/ja/reference/formats/JSON/JSON) フォーマットの 1 行として出力します。デフォルト: 0。不要なエスケープを避けるため、[TabSeparatedRaw (TSVRaw)](/ja/reference/formats/TabSeparated/TabSeparatedRaw) フォーマットの使用を推奨します。
 * `input_headers` — ステップの入力ヘッダーを表示します。デフォルト: 0。主に、入力ヘッダーと出力ヘッダーの不一致に関する問題をデバッグする開発者にのみ有用です。
 * `column_structure` — ヘッダー内のカラム構造を、名前と型に加えて表示します。デフォルト: 0。主に、入力ヘッダーと出力ヘッダーの不一致に関する問題をデバッグする開発者にのみ有用です。
-* `distributed` — 分散テーブルまたは並列レプリカについて、リモートノードで実行されるクエリプランを表示します。デフォルト: 0。
-* `compact` — 有効にすると、プランから expression ステップと詳細な action 情報 (入力、関数、別名、出力位置) を非表示にします。`actions = 1` の場合にのみ効果があります。デフォルト: 0。
-* `pretty` — インデントの代わりに罫線文字 (├──、└──、│) を使ってプランツリーを表示し、階層構造を視覚化します。さらに、join ステップのプロパティもインラインで整形して表示します。デフォルト: 0。
+* `distributed` — 分散テーブルまたは並列レプリカについて、リモートノードで実行されるクエリプランを表示します。`json` と同時にはサポートされません。デフォルト: 0。
+* `compact` — 有効にすると、プランから expression ステップと詳細な action 情報 (入力、関数、別名、出力位置) を非表示にします。`actions = 1` の場合にのみ効果があります。デフォルト: 1。
+* `pretty` — インデントの代わりに罫線文字 (├──、└──、│) を使ってプランツリーを表示し、階層構造を視覚化します。さらに、join ステップのプロパティもインラインで整形して表示します。デフォルト: 1。
 
-`json=1` の場合、ステップ名には一意のステップ識別子を表す追加の接尾辞が含まれます。
+<Note>
+  デフォルトでは、`explain_query_plan_default = 'pretty'` であるため、`actions`、`compact`、`pretty` は `1` に初期化され、プランはコンパクトで見やすく、action 注釈付きの形式で描画されます。`EXPLAIN` ステートメントでこれらのオプションのいずれかを明示的に指定した場合 (たとえば、`EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) は、常にその指定がデフォルトを上書きします。
+
+  ClickHouse 26.7 より前では、`actions`、`compact`、`pretty` のデフォルトは `0` でした。その出力は、`explain_query_plan_default = 'legacy'` を設定する (グローバル、またはクエリごとの `SETTINGS` で設定する) か、`compatibility` を `26.7` より古い任意のバージョンに設定することで、引き続き取得できます。
+
+  `json` と `distributed` オプションでは、`explain_query_plan_default = 'pretty'` の場合でも、`pretty` のデフォルト (`actions`、`compact`、`pretty`) は有効になりません。出力に action の詳細を含めるには、`actions = 1` を手動で設定してください。
+</Note>
 
 例:
 
 ```sql
-EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
+EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4  LIMIT 1;
 ```
 
 ```sql
-Union
-  Expression (Projection)
-  Expression (Before ORDER BY and SELECT)
-    Aggregating
-      Expression (Before GROUP BY)
-        SettingQuotaAndLimits (Set limits and quota after reading from storage)
-          ReadFromStorage (SystemNumbers)
+Output: sum(number)
+
+Limit (preliminary LIMIT)
+│  Limit 1
+│  Offset 0
+└──Aggregating
+   │  Keys: number MOD 4
+   │  Aggregates: sum(number)
+   │  Skip merging: 0
+   └──ReadFromSystemNumbers
+         Output: number
 ```
 
 <Note>
   Step およびクエリのコスト見積もりはサポートされていません。
 </Note>
 
-`json = 1` の場合、クエリプランは JSON フォーマットで表現されます。各ノードは、常に `Node Type` と `Plans` というキーを持つ辞書です。`Node Type` は step 名を表す文字列です。`Plans` は子 step の説明を含む配列です。その他のオプションのキーが、ノードの種類や設定に応じて追加されることがあります。
+`json = 1` の場合、クエリプランは JSON フォーマットで表されます。各ノードは辞書で、常に `Node Type`、`Node Id`、`Plans` のキーを持ちます。`Node Type` はステップ名を表す文字列で、`Node Id` は一意のステップ識別子です (数値の接尾辞が付いたステップ名。例: `Union_10`) 。`Plans` は子ステップの説明を含む配列です。その他の任意のキーは、ノードの種類や設定に応じて追加されることがあります。
 
 例:
 
@@ -266,7 +280,7 @@ EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw;
 ]
 ```
 
-`description` = 1 の場合、ステップに `Description` キーが追加されます：
+`description` = 1 の場合、`Description` キーがステップに追加されます。
 
 ```json
 {
@@ -370,18 +384,18 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 ]
 ```
 
-`projections` = 1 の場合、`Projections` キーが追加されます。これには、解析されたプロジェクションの配列が含まれます。各プロジェクションは、次のキーを持つ JSON として記述されます。
+`projections` = 1 を指定すると、`Projections` キーが追加されます。これには、分析されたプロジェクションの配列が含まれます。各プロジェクションは、以下のキーを持つ JSON として記述されます：
 
 * `Name` — プロジェクション名。
-* `Condition` — 使用されたプロジェクションの主キー条件。
-* `Description` — プロジェクションがどのように使用されるかの説明 (例: パーツレベルのフィルタリング) 。
+* `Condition` — プロジェクションで使用された主キー条件。
+* `Description` — プロジェクションの使用方法の説明 (例: パーツレベルのフィルタリング) 。
 * `Selected Parts` — プロジェクションによって選択されたパーツ数。
 * `Selected Marks` — 選択されたマーク数。
 * `Selected Ranges` — 選択された範囲数。
 * `Selected Rows` — 選択された行数。
 * `Filtered Parts` — パーツレベルのフィルタリングによってスキップされたパーツ数。
 
-例:
+例：
 
 ```json
 "Node Type": "ReadFromMergeTree",
@@ -470,24 +484,39 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 ]
 ```
 
-`compact = 1` を指定すると、各 `Expression` ステップが削除されます。また、`actions = 1` を設定すると、`Actions` および `Positions` の行が非表示になり、ステップの説明のみが残ります。
+`compact = 0` かつ `actions = 1` を指定すると、`Expression` ステップとともに式に関する詳細情報を確認できます：
 
 ```sql
-EXPLAIN actions = 1, compact = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
+EXPLAIN actions = 1, compact = 0 SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
 ```
 
 ```text
-Aggregating
-Keys: modulo(__table1.number, 4_UInt8)
-Aggregates:
-    sum(__table1.number)
-      Function: sum(UInt64) → UInt64
-      Arguments: __table1.number
-Skip merging: 0
-  ReadFromSystemNumbers
+Output: sum(number)
+
+Expression ((Project names + Projection))
+│  Actions: INPUT : 0 -> sum(__table1.number) UInt64 : 0
+│           INPUT :: 1 -> modulo(__table1.number, 4_UInt8) UInt8 : 1
+│           ALIAS sum(__table1.number) :: 0 -> sum(number) UInt64 : 2
+│  Positions: 2
+└──Aggregating
+   │  Keys: number MOD 4
+   │  Aggregates: sum(number)
+   │  Skip merging: 0
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      │  Actions: INPUT : 0 -> number UInt64 : 0
+      │           COLUMN Const(UInt8) -> 4_UInt8 UInt8 : 1
+      │           ALIAS number :: 0 -> __table1.number UInt64 : 2
+      │           FUNCTION modulo(__table1.number : 2, 4_UInt8 :: 1) -> modulo(__table1.number, 4_UInt8) UInt8 : 0
+      │  Positions: 0 2
+      └──ReadFromSystemNumbers
+            Output: number
 ```
 
-`distributed` = 1 を指定すると、ローカルのクエリプランだけでなく、リモートノードで実行されるクエリプランも出力に含まれます。これは、分散クエリの分析とデバッグに役立ちます。
+`distributed` = 1 を指定すると、出力にはローカルのクエリプランだけでなく、リモートノードで実行されるクエリプランも含まれます。これは、分散クエリの分析やデバッグに役立ちます。
+
+<Note>
+  `distributed` は、`pretty` 出力ではリモート分片のプランがプランツリーに統合されないため、`legacy` (非`pretty`) 形式でのみ表示されます。このため、`distributed` を有効にすると、`explain_query_plan_default` の値に関係なく、`pretty` のデフォルト設定 (`actions`、`compact`、`pretty`) は自動的に無効になります。なお、`actions=1` は手動で設定できます。また、`distributed` オプションは `json` と併用できません。
+</Note>
 
 分散テーブルを使用した例:
 
@@ -533,15 +562,15 @@ Expression ((Project names + Projection))
 
 `pretty` = 1 を指定すると、プランツリーはインデントの代わりに罫線文字で表示され、主要なステップの追加情報も表示されます：
 
-* **クエリ出力カラム** は、プランの先頭に表示されます。
-* フィルタ、集約キー、ソート記述、window functions における **式** は、人が読みやすい SQL 風の表記で表示されます (例: `greater(plus(a, 1), 5)` ではなく `a + 1 > 5`) 。わかりやすくするため、内部カラム識別子のプレフィックス (`__table1.` など) は削除されます。
-* **ソースステップ**  (`ReadFromMergeTree` など) には、その出力カラムが表示されます。
-* **フィルタステップ** には、フィルタ条件が SQL 表記で表示されます。runtime join filters がある場合は、それらは別個に表示されます。
-* **集約ステップ** には、キーと aggregate functions がその argument とともに表示されます (例: `sum(c)`、`count()`) 。
-* タプルリテラル由来の **IN セット** にはその値が表示され (大きなセットでは切り詰められます) 、サブクエリベースのセットには `subquery1`、`subquery2` などのラベルが付き、`Set` engine テーブル由来のセットにはテーブル名が表示されます。
-* **Join ステップ** には、数学的記法による join relation、推定結果行数、
-  およびどの出力カラムが左側と右側のどちらに由来するかが表示されます。異なる join type を
-  表すために、次の記号が使用されます。
+* **クエリ出力カラム** はプランの先頭に表示されます。
+* フィルタ、集約キー、ソートの説明、ウィンドウ関数内の **式** は、人が読める SQL 風の表記で表示されます (例: `greater(plus(a, 1), 5)` ではなく `a + 1 > 5`) 。わかりやすさのため、内部カラム識別子のプレフィックス (`__table1.` など) は削除されます。
+* **ソースステップ** (`ReadFromMergeTree` など) には、その出力カラムが表示されます。
+* **フィルタステップ** には、SQL 表記のフィルタ条件が表示されます。ランタイム join フィルタが存在する場合は、それらは別個に表示されます。
+* **集約ステップ** には、キーと、引数付きの集約関数 (例: `sum(c)`、`count()`) が表示されます。
+* タプルリテラルの **IN set** にはその値が表示され (大きな set の場合は切り詰められます) 、サブクエリベースの set には `subquery1`、`subquery2` などのラベルが付き、`Set` engine tables 由来の set にはテーブル名が表示されます。
+* **join ステップ** には、数学的記法を用いた join 関係、推定結果行数、
+  およびどの出力カラムが左側と右側のどちらに由来するかが表示されます。異なる join タイプを
+  表すために、次の記号が使用されます：
 
 | Symbol                 | Join Type       |
 | ---------------------- | --------------- |
@@ -561,18 +590,7 @@ Expression ((Project names + Projection))
 
 `pretty` オプションは `compact = 1` と組み合わせると効果的で、`Expression` ステップと詳細な action 情報が非表示になるため、プランが読みやすくなります。
 
-```sql
-EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
-```
-
-```text
-Expression ((Project names + Projection))
-└──Aggregating
-   └──Expression ((Before GROUP BY + Change column names to column identifiers))
-      └──ReadFromSystemNumbers
-```
-
-JOINを使った、より詳しい例:
+JOINを使った詳しい例:
 
 ```sql
 CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
@@ -585,24 +603,28 @@ SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id FORMAT Raw;
 ```
 
 ```text
-Output: id, value, t2.id, t2.value
+Output: id, value, id, value
 
 Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
 │  Result rows: 100
+│  Join conditions: id = id
 │  Output:
 │    Left:  id, value
 │    Right: id, value
-│  Join conditions: id = id
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
 │     Output: id, value
-└──ReadFromMergeTree (default.t2)
-      Read type: Default
-      Parts: 1 | Granules: 1
-      Output: id, value
+│     Runtime filters: RF1(id, id from default.t2)
+└──BuildRuntimeFilter (Build runtime join filter on id)
+   │  Filter id: RF1
+   │  Source table: default.t2
+   └──ReadFromMergeTree (default.t2)
+         Read type: Default
+         Parts: 1 | Granules: 1
+         Output: id, value
 ```
 
 <div id="explain-pipeline">
@@ -647,6 +669,124 @@ ExpressionTransform
             NumbersRange × 2 0 → 1
 ```
 
+<div id="explain-analyze">
+  ### EXPLAIN ANALYZE
+</div>
+
+`EXPLAIN ANALYZE` は実際にクエリを実行し、結果の行を破棄したうえで、各ステップに実行時に実際に何が起きたかを注記として付けた、`EXPLAIN PLAN` と同じプランツリーを出力します。
+
+設定:
+
+`EXPLAIN ANALYZE` では、`EXPLAIN PLAN` と同じ表示オプションを使用できます ([EXPLAIN PLAN](#explain-plan) セクションを参照) 。
+
+* `header` — [EXPLAIN PLAN](#explain-plan) セクションを参照してください。
+* `description` — [EXPLAIN PLAN](#explain-plan) セクションを参照してください。
+* `projections` — [EXPLAIN PLAN](#explain-plan) セクションを参照してください。
+* `sorting` — [EXPLAIN PLAN](#explain-plan) セクションを参照してください。
+* `input_headers` — [EXPLAIN PLAN](#explain-plan) セクションを参照してください。
+* `column_structure` — [EXPLAIN PLAN](#explain-plan) セクションを参照してください。
+* `actions` — [EXPLAIN PLAN](#explain-plan) セクションを参照してください。デフォルト: 1。
+* `indexes` — [EXPLAIN PLAN](#explain-plan) セクションを参照してください。デフォルト: 1。
+* `compact` — [EXPLAIN PLAN](#explain-plan) セクションを参照してください。デフォルト: 1。
+* `pretty` — [EXPLAIN PLAN](#explain-plan) セクションを参照してください。デフォルト: 1。
+* `processors` — `EXPLAIN ANALYZE` では、各ステージについて、プロセッサごとの経過時間分布 (`min`、`median`、`max`、`sum`) を示す追加の行を出力します。並列プロセッサ間の負荷の偏りを見つけるのに役立ちます。デフォルト: 0。
+
+<Note>
+  `EXPLAIN ANALYZE` はラップされたクエリを実際に実行するため、いくつかの点で、そのクエリと同じように動作し、実行しない `EXPLAIN` 形式とは異なります。
+
+  * **クォータと制限。** クエリを直接実行した場合と同じ [quotas](/ja/concepts/features/configuration/server-config/quotas)
+    に対してカウントされ、同じ [limits](/ja/concepts/features/configuration/settings/query-complexity)
+    (たとえば `query_selects`、`read_rows`) の対象にもなります。プランニング中はクォータの対象外となるテーブル
+    (`system.one` など) についてはカウントされません。
+  * **失敗したトランザクション。** すでに失敗している [transaction](/ja/concepts/features/operations/insert/transactions)
+    (`ROLLED_BACK`) 内では、通常の `SELECT` と同様に `INVALID_TRANSACTION` で拒否されます。
+    先に `ROLLBACK` を実行してください。
+  * **ストリーミング読み取り。** ストリーミング (`FROM ... STREAM`) 読み取りに対しては、
+    そのような読み取りは完了しないため、`NOT_IMPLEMENTED` で拒否されます。
+  * **分散クエリ。** [distributed](/ja/reference/engines/table-engines/special/distributed) モードで実行される
+    クエリではサポートされていません。
+</Note>
+
+例:
+
+```sql
+EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP BY k;
+```
+
+```text
+Query summary:
+  Time:        10.72 ms (planning 6.45 ms · execution 4.26 ms)
+  Read:        1.00 million rows, 8.00 MB (234.49 million rows/s., 1.88 GB/s.)
+  Peak memory: 28.98 KiB
+
+Output: number MOD 10, count()
+
+Expression ((Project names + Projection))
+│  I/O: rows 10 → 10 · 90 B → 90 B
+│    time 21.82 us (0.5%) · parallelism 0.98/1
+└──Aggregating
+   │  Keys: number MOD 10
+   │  Aggregates: count()
+   │  Skip merging: 0
+   │  I/O: rows 1.00 million → 10 (0.00%) · 1.00 MB → 90 B
+   │    Stage (partial aggregation): time 868.45 us (20.4%) · parallelism 3.80/15
+   │    Stage (final aggregation): time 445.27 us (10.4%) · parallelism 1.11/16
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      │  I/O: rows 1.00 million → 1.00 million · 8.00 MB → 1.00 MB
+      │    time 677.07 us (15.9%) · parallelism 4.31/15
+      └──ReadFromSystemNumbers
+            Output: number
+            I/O: rows 0 → 1.00 million · 0 B → 8.00 MB
+              time 993.94 us (23.3%) · parallelism 7.52/15
+```
+
+出力を見てみましょう。まずはヘッダーを見てみましょう。
+
+```txt
+   Query summary:
+     Time:        <total> (planning <planning> · execution <execution>)
+     Read:        <rows> rows, <bytes> (<rows/s>, <bytes/s>)
+     Peak memory: <peak>
+```
+
+* `Time` — 合計時間です。planning (つまり、plan の作成 + plan の最適化 + パイプラインの構築) フェーズと execution (パイプラインの実行) フェーズに分けて表示されます。
+* `Read` — テーブルから読み取られた行数と非圧縮バイト数、および throughput です。これは通常のクエリのフッターで &quot;Processed&quot; として報告される数値と同じです。
+* `Peak memory` — クエリが使用したピークメモリです。
+
+次に、クエリプランに表示される新しい行を見ていきましょう。
+
+```txt
+I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
+  [Stage (<stage>): ]time <t> (<share>%) · parallelism <avg>/<max>
+```
+
+行数とバイト数は、ステップ全体について一度だけ報告されます (`I/O` 行) 。時間と並列度は、ステップ内の各ステージごとに、その下のインデントされた行に報告されます。
+
+* `rows <in> → <out>` — ステップに入力された行数と、ステップから出力された行数です。`(<selectivity>`%) は、そのステップがデータをどの程度絞り込んだか (`out/in`) 、または増やしたかを示します。入力行数と出力行数が同じ場合、および入力行数が `0` の場合は表示されません。
+* `<bytes_in> → <bytes_out>` — ステップ内を流れる非圧縮のインメモリバイト数です (両方ともゼロの場合は省略されます) 。
+* `time <t> (<share>%)` — そのステージがアクティブだった実時間と、クエリ実行時間に占める割合です (つまり、build time は含みません) 。ステージやステップは同時実行されるため、この割合の合計が 100% を超えることがあります。
+* `parallelism <avg>/<max>` — このステージ内で同時に動作していた CPU スレッド数の平均値と、そのステージで使用可能な最大値です。値が最大値に近いほど、そのステージは十分に並列化されていたことを示します。1 に近い場合は、ほぼ直列に実行されていたことを示します。
+* `Stage (<stage>)` — ステージ名です。ステージが 1 つだけのステップでは、`Stage (...)` ラベルは付かず、時間の行が直接出力されます。複数のステージを持つステップでは、各ステージごとにラベル付きの行が 1 行ずつ出力されます。たとえば `Aggregating` では `Stage (partial aggregation)` と `Stage (final aggregation)` が表示され、ハッシュ結合では `Stage (build)` と `Stage (probe)` が表示されます。
+
+<Note>
+  ClickHouse は、プランステップ内のタスク実行だけでなく、プランステップ自体の実行も並列化します。`parallelism` メトリクスが反映するのは、このステップの処理だけです。他のステップも同時に実行されることがあるため、この数値から、このステップの並列度をクエリ全体と比較することはできません。
+</Note>
+
+<Note>
+  `parallelism` の最大値は、次の 2 つのうち小さい方として計算されます。
+
+  1. プランステップ内のタスク総数
+  2. `max_threads` で設定されたクエリ処理スレッドの最大数
+</Note>
+
+`processors = 1` の場合、各ステージの下に追加の行が出力され、そのステージのプロセッサごとの経過時間の分布が表示されます。
+
+```txt
+Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
+```
+
+`<n>` はそのステージのプロセッサ数です。`median` と `max` の間に大きなギャップがある場合は、並列プロセッサ間で負荷に偏りがあることを示します。
+
 <div id="explain-estimate">
   ### EXPLAIN ESTIMATE
 </div>
@@ -672,6 +812,128 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 │ default  │ ttt   │     1 │  128 │     8 │
 └──────────┴───────┴───────┴──────┴───────┘
 ```
+
+<div id="explain-whatif">
+  ### EXPLAIN WHATIF
+</div>
+
+仮想的なスキップ索引をディスク上に*マテリアライズ*することなく、それが `SELECT` クエリにもたらす効果を見積もります。[`CREATE HYPOTHETICAL INDEX`](/ja/reference/statements/hypothetical-index#create-hypothetical-index) で 1 つ以上の候補を定義し、`EXPLAIN WHATIF SELECT ...` を実行すると、各候補について、適用可否、推定読み取りマーク数、推定バイト数、スキップ率を確認できます。
+
+**構文**
+
+```sql
+EXPLAIN WHATIF [empirical = 0] SELECT ...
+```
+
+**設定**
+
+* `empirical` — `1` (デフォルト) では、スキップ率 (上限値) を測定するため、ベースラインで絞り込まれたグラニュールに対してメモリ内で索引を適用します。`0` ではその処理をスキップします。いずれの場合も、`empirical` で結果が得られない場合 (無効になっている、または索引をメモリ内で評価できない場合) 、推定器はカラム [STATISTICS](/ja/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) にフォールバックし、それも利用できなければ、最終的に適用可否のみのサマリーにフォールバックします。
+
+**出力**
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       db.t
+  parts:       1
+  marks:       100
+  est_bytes:   1.50 MiB             (only when the query reads rows)
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    15.00 KiB           (only when baseline bytes are known)
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical | statistical | applicability_only
+  empirical_status: ok | unsupported | disabled
+  sampled_parts:    50 / 100        (only when source = empirical)
+  sampled_marks:    50 / 100        (only when source = empirical)
+  elapsed_us:       631             (only when source = empirical)
+```
+
+* `source` — 推定値の算出方法を示します。
+  * `empirical`: ベースラインで pruned されたグラニュールを対象に、メモリ内で索引を構築し、その索引によってスキップされるグラニュール数を数えます。これは上限値です。制限事項については [`CREATE HYPOTHETICAL INDEX`](/ja/reference/statements/hypothetical-index#limitations) を参照してください。
+  * `statistical`: カラム STATISTICS から導出されます。empirical が無効化されている場合 (`empirical = 0`) 、または empirical で結果を生成できず、かつ関連するカラムにカラム STATISTICS が定義されている場合に使用されます。
+  * `applicability_only`: 索引は predicate に適用可能ですが、empirical と statistical のいずれでも結果を生成できなかったことを示します (たとえば `empirical = 0` でカラム STATISTICS が定義されていない場合) 。保守的な上限として `skip_ratio: 0.0%` を返します。
+* `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`。テーブル全体のうち、PK、partition、既存の索引による pruning を通過した割合、つまり仮想索引への入力となる部分を示します。
+* `est_bytes` — 読み取られるバイト数の推定値です。テーブルの平均行サイズから導出されるため概算であり、ストレージや圧縮によって変動します。ベースラインの行はクエリが行を読み取る場合にのみ表示され、候補ごとの行はベースラインのバイト推定値がわかっている場合にのみ表示されます。
+
+この設定は `WHATIF` と `SELECT` の間にインラインで記述します。`SETTINGS` キーワードはありません (これは、他の `EXPLAIN` バリアントでオプションを受け付ける方法と一致しています) 。
+
+テーブルに仮想索引が定義されていない場合、`EXPLAIN WHATIF` は `status: not_applicable` を返し、作成を促すヒントを表示します。
+
+**結合行 (複数候補)**
+
+2 つ以上の候補が empirical で評価されると、`EXPLAIN WHATIF` は候補ごとの行の後に `(combined: idx_a, idx_b, ...)` という名前の追加ブロックを 1 つ付加します。これは、それらすべての索引を同時に持つ場合の総合的な効果を示します。実際の読み取りでは、あるグラニュールが保持されるのは、それが *すべて* のスキップ索引を通過した場合だけなので、結合推定値は各候補で生き残るグラニュールの積集合になります。したがって、この `skip_ratio` は少なくとも最良の単一候補と同等以上になります。相補的な索引は組み合わせることでより多くを prune し、冗長な索引では変化しません。
+
+寄与するのは `source: empirical` の候補だけです。これは、結合された行が各 グラニュール ごとの生存集合の積集合を取って構築されるためです。`statistical` または `applicability_only` と推定された候補には グラニュール ごとのデータがないため除外されます。その結果、結合ブロックが表示されるのは少なくとも 2 つの候補が経験則ベースの推定を生成した場合だけで、それ以外の場合 (たとえば `empirical = 0` の場合) には省略されます。その推定フィールドは、`elapsed_us` が `0` である点を除き、候補ごとの経験則ベースのブロックと同じです — 結合推定は候補ごとのスキャンから導出されるものであり、新たなスキャンではありません。合成された `(combined: ...)` という名前はレポート用ラベルにすぎず、`force_data_skipping_indices` では使用できません。
+
+**経験則ベースの例**
+
+```sql
+CREATE TABLE t (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 100;
+
+INSERT INTO t SELECT number, number FROM numbers(10000);
+
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+
+EXPLAIN WHATIF SELECT * FROM t WHERE b = 42;
+```
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       default.t
+  parts:       1
+  marks:       100
+  est_bytes:   85.52 KiB
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    875.00 B
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical
+  empirical_status: ok
+  sampled_parts:    1 / 1
+  sampled_marks:    100 / 100
+```
+
+仮に `minmax` を使うと、100 個のマークを 1 個まで絞り込めます — `skip_ratio: 99.0%`。(`est_bytes` は平均行サイズに基づく推定値のため、正確な値は変動します。)
+
+**統計の例**
+
+[カラム STATISTICS](/ja/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)はデフォルトで無効になっています。`statistical` パスを試すには、まず対象のカラムでこれらを定義し、materialize mutation が完了するまで待ちます:
+
+```sql
+ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
+```
+
+次に、推定器がカラム STATISTICS を使用するよう、経験則ベースのパスを無効にします：
+
+```sql
+EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
+```
+
+```text
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    1.66 KiB
+  skip_ratio:   99.9%
+
+Estimation:
+  source:           statistical
+  empirical_status: disabled
+```
+
+この数値は、`b < 10` のカラム STATISTICS における選択性 (10000 行中およそ 10 行) に基づくもので、`skip_ratio` の上限として報告されます。`sampled_parts` / `sampled_marks` はなく、データは読み取られていません。
+
+どちらの方法も利用できない場合 (たとえば `empirical = 0` で、かつカラム STATISTICS が定義されていない場合) 、推定器は `source: applicability_only` と保守的な `skip_ratio: 0.0%` を報告します。
 
 <div id="explain-table-override">
   ### EXPLAIN TABLE OVERRIDE

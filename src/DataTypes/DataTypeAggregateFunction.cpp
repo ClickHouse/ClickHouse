@@ -362,7 +362,7 @@ void registerDataTypeAggregateFunction(DataTypeFactory & factory)
 All [Aggregate functions](/sql-reference/aggregate-functions) in ClickHouse have
 an implementation-specific intermediate state that can be serialized to an
 `AggregateFunction` data type and stored in a table. This is usually done by
-means of a [materialized view](../../sql-reference/statements/create/view.md).
+means of a [materialized view](/reference/statements/create/view).
 
 There are two aggregate function [combinators](/sql-reference/aggregate-functions/combinators)
 commonly used with the `AggregateFunction` type:
@@ -450,7 +450,7 @@ SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP
 
 ## Usage Example {#usage-example}
 
-See [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) engine description.
+See [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/aggregatingmergetree) engine description.
 
 ## Related Content {#related-content}
 

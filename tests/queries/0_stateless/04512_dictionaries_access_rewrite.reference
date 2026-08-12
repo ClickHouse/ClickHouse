@@ -1,0 +1,6 @@
+create_dictionary
+OK
+drop_dictionary
+OK
+dictget
+OK

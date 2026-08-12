@@ -109,6 +109,24 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
+        # Endpoint returning an error whose message/type contain control characters, used to assert
+        # they are sanitized before landing in the logged exception.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_error_control_chars AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/error_control_chars', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        # Endpoint returning a non-JSON error body with control characters, exercising the
+        # raw-body fallback of the error formatter.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_error_nonjson AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/error_nonjson', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
         # `api_key` is optional (some providers, e.g. a local Ollama, need no auth).
         # This collection omits it so we can assert no `Authorization` header is sent.
         instance.query(
@@ -121,28 +139,24 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"CREATE NAMED COLLECTION ai_embed AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings', "
-            f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
         instance.query(
             f"CREATE NAMED COLLECTION ai_embed_error AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_error', "
-            f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
         instance.query(
             f"CREATE NAMED COLLECTION ai_embed_dup_index AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_dup_index', "
-            f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
         instance.query(
             f"CREATE NAMED COLLECTION ai_embed_wrong_count AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_wrong_count', "
-            f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
         # Endpoints that drop the connection for the first N requests (armed via /set-flaky),
@@ -158,13 +172,15 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"CREATE NAMED COLLECTION ai_embed_flaky AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_flaky', "
-            f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
 
         instance.query("CREATE TABLE test_input (x String) ENGINE = Memory")
         instance.query(
             "CREATE TABLE test_input_nullable (x Nullable(String)) ENGINE = Memory"
+        )
+        instance.query(
+            "CREATE TABLE test_input_pairs (id UInt8, a Nullable(String), b Nullable(String)) ENGINE = Memory"
         )
 
         yield cluster
@@ -247,6 +263,31 @@ def test_generate_content_error_throw(started_cluster):
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
 
 
+def test_generate_content_error_sanitizes_control_chars(started_cluster):
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_error_control_chars'))",
+        settings=AI_SETTINGS,
+    )
+    assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
+    # Control characters in the provider's error message/type are replaced with spaces, so the whole
+    # message stays on one line (no forged log lines) while the text is still readable.
+    assert "[err type]: start mid end BEL done" in error
+    # The raw control sequences must not survive.
+    assert "start\nmid" not in error
+    assert "mid\tend" not in error
+
+
+def test_generate_content_error_nonjson_sanitized(started_cluster):
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_error_nonjson'))",
+        settings=AI_SETTINGS,
+    )
+    assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
+    # A non-JSON body falls back to the truncated raw body, sanitized to a single readable line.
+    assert "Internal Error: stack trace here" in error
+    assert "Error:\nstack" not in error
+
+
 def test_generate_content_error_graceful(started_cluster):
     result = instance.query(
         "SELECT aiGenerate('hello', map('credentials', 'ai_error'))",
@@ -295,10 +336,10 @@ def test_generate_model_override_with_default_credentials(started_cluster):
 
 
 def test_embed_model_override_with_default_credentials(started_cluster):
-    """Same for aiEmbed: `map('model', ...)` overrides the embedding model on the request, with the
-    collection selected via `ai_function_embedding_default_credentials`."""
+    """Same for aiEmbed: the required positional `model` argument sets the embedding model on the
+    request, with the collection selected via `ai_function_embedding_default_credentials`."""
     instance.query(
-        "SELECT aiEmbed('hi', map('model', 'override-embed-model'))",
+        "SELECT aiEmbed('hi', 'override-embed-model')",
         settings={**AI_SETTINGS, "ai_function_embedding_default_credentials": "ai_embed"},
     )
     assert json.loads(last_request()["body"])["model"] == "override-embed-model"
@@ -562,7 +603,7 @@ def parse_embedding(s):
 def test_embed_basic(started_cluster):
     """Single-row aiEmbed returns an `Array(Float32)` of the model's native size."""
     result = instance.query(
-        "SELECT aiEmbed('hello', map('credentials', 'ai_embed'))",
+        "SELECT aiEmbed('hello', 'test-embed-model', map('credentials', 'ai_embed'))",
         settings=AI_SETTINGS,
     )
     vec = parse_embedding(result)
@@ -570,12 +611,24 @@ def test_embed_basic(started_cluster):
     assert any(v != 0.0 for v in vec)
 
 
+def test_embed_rejects_model_in_named_collection(started_cluster):
+    """aiEmbed takes `model` as a positional argument and never reads it from the named collection.
+    A collection that defines `model` (e.g. the text collection `ai_mock`) is rejected rather than
+    silently ignored."""
+    error = instance.query_and_get_error(
+        "SELECT aiEmbed('hello', 'test-embed-model', map('credentials', 'ai_mock'))",
+        settings=AI_SETTINGS,
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "defines 'model'" in error
+
+
 def test_embed_uses_embedding_default_credentials(started_cluster):
     """End-to-end default-credentials path for embeddings: with no `credentials` in the call, a real
     (non-empty) request must actually use `ai_function_embedding_default_credentials`. Confirms the
     embedding default is applied on the request path, not only for the zero-row fast path."""
     result = instance.query(
-        "SELECT aiEmbed('hello')",
+        "SELECT aiEmbed('hello', 'test-embed-model')",
         settings={**AI_SETTINGS, "ai_function_embedding_default_credentials": "ai_embed"},
     )
     vec = parse_embedding(result)
@@ -588,7 +641,7 @@ def test_embed_multiple_rows(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('alpha'), ('beta'), ('gamma')")
     result = instance.query(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input ORDER BY x",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input ORDER BY x",
         settings=AI_SETTINGS,
     )
     rows = [parse_embedding(line) for line in result.strip().split("\n")]
@@ -601,7 +654,7 @@ def test_embed_multiple_rows(started_cluster):
 def test_embed_with_dimensions(started_cluster):
     """The `dimensions` argument is forwarded to the provider and honored in the response."""
     result = instance.query(
-        "SELECT aiEmbed('hello world', map('credentials', 'ai_embed', 'dimensions', '16'))",
+        "SELECT aiEmbed('hello world', 'test-embed-model', map('credentials', 'ai_embed', 'dimensions', '16'))",
         settings=AI_SETTINGS,
     )
     vec = parse_embedding(result)
@@ -616,7 +669,7 @@ def test_embed_null_and_empty_input(started_cluster):
     )
     qid = unique_query_id("embed_null_empty")
     result = instance.query(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input_nullable ORDER BY x NULLS FIRST",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input_nullable ORDER BY x NULLS FIRST",
         settings=AI_SETTINGS,
         query_id=qid,
     )
@@ -642,7 +695,7 @@ def test_embed_profile_events_token_accounting(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('abc'), ('de'), ('fghi')")
     qid = unique_query_id("embed_tokens")
     instance.query(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings=AI_SETTINGS,
         query_id=qid,
     )
@@ -662,7 +715,7 @@ def test_embed_batching(started_cluster):
     )
     qid = unique_query_id("embed_batch")
     instance.query(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings={**AI_SETTINGS, "ai_function_embedding_max_batch_size": 2},
         query_id=qid,
     )
@@ -676,7 +729,7 @@ def test_embed_batching(started_cluster):
 def test_embed_error_throw(started_cluster):
     """By default, provider errors propagate as `RECEIVED_ERROR_FROM_REMOTE_IO_SERVER`."""
     error = instance.query_and_get_error(
-        "SELECT aiEmbed('hello', map('credentials', 'ai_embed_error'))",
+        "SELECT aiEmbed('hello', 'test-embed-model', map('credentials', 'ai_embed_error'))",
         settings=AI_SETTINGS,
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
@@ -687,7 +740,7 @@ def test_embed_error_graceful(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('a'), ('b')")
     result = instance.query(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed_error')) FROM test_input",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed_error')) FROM test_input",
         settings={
             **AI_SETTINGS,
             "ai_function_throw_on_error": 0,
@@ -701,7 +754,7 @@ def test_embed_error_graceful(started_cluster):
 def test_embed_duplicate_index_rejected(started_cluster):
     """`OpenAIProvider::embed` rejects responses with duplicate `index` values."""
     error = instance.query_and_get_error(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed_dup_index')) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed_dup_index')) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
         settings={**AI_SETTINGS, "ai_function_max_retries": 0},
     )
     assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
@@ -711,7 +764,7 @@ def test_embed_duplicate_index_rejected(started_cluster):
 def test_embed_wrong_count_rejected(started_cluster):
     """`OpenAIProvider::embed` rejects responses whose `data` size != number of inputs."""
     error = instance.query_and_get_error(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed_wrong_count')) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed_wrong_count')) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
         settings={**AI_SETTINGS, "ai_function_max_retries": 0},
     )
     assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
@@ -722,7 +775,7 @@ def test_embed_empty_input_table(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     qid = unique_query_id("embed_zero_rows")
     result = instance.query(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings=AI_SETTINGS,
         query_id=qid,
     )
@@ -742,7 +795,7 @@ def test_embed_quota_input_tokens_exceeded(started_cluster):
     # Each batch costs `sum(len(text))` input tokens. With batch_size=1 and rows
     # of length 5 ("row_0".."row_3"), the second batch pushes us over a 5-token cap.
     result = instance.query(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings={
             **AI_SETTINGS,
             "ai_function_embedding_max_batch_size": 1,
@@ -817,7 +870,7 @@ def test_embed_retries_on_network_error(started_cluster):
     set_flaky(2)
     qid = unique_query_id("embed_retry_net")
     result = instance.query(
-        "SELECT aiEmbed('hello', map('credentials', 'ai_embed_flaky'))",
+        "SELECT aiEmbed('hello', 'test-embed-model', map('credentials', 'ai_embed_flaky'))",
         settings={
             **AI_SETTINGS,
             "ai_function_max_retries": 5,
@@ -925,12 +978,39 @@ def test_generate_retry_respects_api_call_quota(started_cluster):
     assert int(events["rows_skipped"]) == 1
 
 
+def test_function_name_header(started_cluster):
+    """The OpenAI provider tags every request with an `X-ClickHouse-AI-Function` header carrying the
+    SQL name of the calling function, so the upstream endpoint can tell which function made the call.
+    Covers the chat path (aiGenerate/aiClassify/aiExtract/aiTranslate) and the embedding path
+    (aiEmbed, aiSimilarity)."""
+    cases = [
+        ("aiGenerate", "SELECT aiGenerate('hi', map('credentials', 'ai_mock'))"),
+        (
+            "aiClassify",
+            "SELECT aiClassify('hi', ['a', 'b'], map('credentials', 'ai_mock'))",
+        ),
+        ("aiExtract", "SELECT aiExtract('hi', 'the price', map('credentials', 'ai_mock'))"),
+        ("aiTranslate", "SELECT aiTranslate('hi', 'French', map('credentials', 'ai_mock'))"),
+        (
+            "aiEmbed",
+            "SELECT aiEmbed('hi', 'test-embed-model', map('credentials', 'ai_embed'))",
+        ),
+        (
+            "aiSimilarity",
+            "SELECT aiSimilarity('cat', 'kitten', 'test-embed-model', map('credentials', 'ai_embed'))",
+        ),
+    ]
+    for name, query in cases:
+        instance.query(query, settings=AI_SETTINGS)
+        assert last_request()["headers"].get("x-clickhouse-ai-function") == name
+
+
 def test_embed_retry_respects_api_call_quota(started_cluster):
     """The embedding path enforces the same per-attempt API-call quota: a retriable HTTP 500 is not
     retried past `ai_function_max_api_calls_per_query`."""
     qid = unique_query_id("embed_quota_caps_retries")
     result = instance.query(
-        "SELECT aiEmbed('server error', map('credentials', 'ai_embed_error'))",
+        "SELECT aiEmbed('server error', 'test-embed-model', map('credentials', 'ai_embed_error'))",
         settings={
             **AI_SETTINGS,
             "ai_function_max_retries": 5,
@@ -948,3 +1028,271 @@ def test_embed_retry_respects_api_call_quota(started_cluster):
     assert int(events["api_calls"]) == 1
     assert int(events["rows_processed"]) == 0
     assert int(events["rows_skipped"]) == 1
+
+
+def test_embed_const_nullable_operand(started_cluster):
+    """`aiEmbed` reads its text via the same `isNullAt`/`getDataAt` path, so a `ColumnConst(ColumnNullable)`
+    input works: a const NULL yields an empty array with no request, a const non-null value is embedded."""
+    qid = unique_query_id("embed_const_null")
+    null_result = instance.query(
+        "SELECT aiEmbed(CAST(NULL AS Nullable(String)), 'test-embed-model', map('credentials', 'ai_embed'))",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    assert parse_embedding(null_result) == []
+    # The const NULL yields `[]` locally, so no embedding request is made.
+    assert int(get_profile_events(qid)["api_calls"]) == 0
+    value_result = instance.query(
+        "SELECT aiEmbed(CAST('cat' AS Nullable(String)), 'test-embed-model', map('credentials', 'ai_embed'))",
+        settings=AI_SETTINGS,
+    )
+    assert len(parse_embedding(value_result)) > 0
+
+
+# ---------------------------------------------------------------------------
+# aiSimilarity
+# ---------------------------------------------------------------------------
+
+
+def parse_nullable_float(s):
+    """Parse a TabSeparated `Nullable(Float32)` cell; `\\N` -> None."""
+    s = s.strip()
+    return None if s == "\\N" else float(s)
+
+
+def mock_embedding(text, dim):
+    """Mirror of `make_embedding_vector` in mock_ai_server.py, to compute expected scores."""
+    if not text:
+        return [0.0] * dim
+    return [round(((ord(text[i % len(text)]) * (i + 1)) % 1000) / 1000.0, 3) for i in range(dim)]
+
+
+def expected_similarity(t1, t2, dim=4):
+    """Cosine similarity of the two mock vectors, in [-1, 1] (matches the C++ function)."""
+    import math
+
+    a = mock_embedding(t1, dim)
+    b = mock_embedding(t2, dim)
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    if na == 0 or nb == 0:
+        return None
+    return max(-1.0, min(1.0, dot / (na * nb)))
+
+
+def test_similarity_identical_is_one(started_cluster):
+    """Identical texts score exactly 1.0 (cosine of a vector with itself)."""
+    qid = unique_query_id("sim_identical")
+    result = instance.query(
+        "SELECT aiSimilarity('hello', 'hello', 'test-embed-model', map('credentials', 'ai_embed'))",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    assert parse_nullable_float(result) == pytest.approx(1.0, abs=1e-6)
+    events = get_profile_events(qid)
+    # Both operands are embedded in a single batch (one HTTP request).
+    assert int(events["api_calls"]) == 1
+    assert int(events["rows_processed"]) == 1
+
+
+def test_similarity_matches_cosine_formula(started_cluster):
+    """Two different texts score the exact cosine similarity value."""
+    qid = unique_query_id("sim_formula")
+    result = instance.query(
+        "SELECT aiSimilarity('cat', 'kitten', 'test-embed-model', map('credentials', 'ai_embed'))",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    score = parse_nullable_float(result)
+    assert score == pytest.approx(expected_similarity("cat", "kitten"), abs=1e-4)
+    assert -1.0 <= score <= 1.0
+    events = get_profile_events(qid)
+    # `rows_processed` is row-level: one row produced one score, even though two texts were embedded.
+    assert int(events["rows_processed"]) == 1
+
+
+def test_similarity_uses_embedding_default_credentials(started_cluster):
+    """With no `credentials` in the call, the embedding default-credentials setting is used end-to-end."""
+    result = instance.query(
+        "SELECT aiSimilarity('hello', 'hello', 'test-embed-model')",
+        settings={**AI_SETTINGS, "ai_function_embedding_default_credentials": "ai_embed"},
+    )
+    assert parse_nullable_float(result) == pytest.approx(1.0, abs=1e-6)
+
+
+def test_similarity_rows_processed_is_row_level(started_cluster):
+    """`rows_processed` counts rows that received a score, not embeddings — a row embeds up to two operands,
+    so the two counts are not equal."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('a'), ('a'), ('a')")
+    qid = unique_query_id("sim_rows_processed")
+    result = instance.query(
+        "SELECT aiSimilarity(x, 'q', 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input ORDER BY x",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    scores = [parse_nullable_float(line) for line in result.strip().split("\n")]
+    assert all(s == pytest.approx(expected_similarity("a", "q"), abs=1e-4) for s in scores)
+    events = get_profile_events(qid)
+    # The 3 rows embed 6 operands (x and 'q' per row) in a single batch, but all 3 rows receive a score,
+    # so rows_processed counts rows (3), not embeddings (6).
+    assert int(events["api_calls"]) == 1
+    assert int(events["rows_processed"]) == 3
+
+
+def test_similarity_null_and_empty_operands(started_cluster):
+    """A NULL or empty operand yields a NULL score; the non-empty operands are embedded."""
+    instance.query("TRUNCATE TABLE test_input_nullable")
+    instance.query("INSERT INTO test_input_nullable VALUES (NULL), (''), ('hi')")
+    qid = unique_query_id("sim_null_empty")
+    result = instance.query(
+        "SELECT aiSimilarity(x, 'hi', 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input_nullable ORDER BY x NULLS FIRST",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    scores = [parse_nullable_float(line) for line in result.strip().split("\n")]
+    # NULL and '' -> NULL; 'hi' vs 'hi' -> 1.0.
+    assert scores[0] is None
+    assert scores[1] is None
+    assert scores[2] == pytest.approx(1.0, abs=1e-6)
+    events = get_profile_events(qid)
+    # The non-empty operands are embedded in a single batch (one HTTP request).
+    assert int(events["api_calls"]) == 1
+    assert int(events["rows_processed"]) == 1
+
+
+def test_similarity_with_dimensions(started_cluster):
+    """`dimensions` is forwarded to the provider; the score is still computed over the larger vectors."""
+    result = instance.query(
+        "SELECT aiSimilarity('cat', 'kitten', 'test-embed-model', map('credentials', 'ai_embed', 'dimensions', '16'))",
+        settings=AI_SETTINGS,
+    )
+    score = parse_nullable_float(result)
+    assert score == pytest.approx(expected_similarity("cat", "kitten", dim=16), abs=1e-4)
+
+
+def test_similarity_error_graceful(started_cluster):
+    """With `ai_function_throw_on_error = 0`, a failed embedding makes the score NULL, and the row is
+    counted as skipped (row-level, not per embedding)."""
+    qid = unique_query_id("sim_error_graceful")
+    result = instance.query(
+        "SELECT aiSimilarity('a', 'b', 'test-embed-model', map('credentials', 'ai_embed_error'))",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_throw_on_error": 0,
+            "ai_function_max_retries": 0,
+        },
+        query_id=qid,
+    )
+    assert parse_nullable_float(result) is None
+    events = get_profile_events(qid)
+    assert int(events["rows_processed"]) == 0
+    assert int(events["rows_skipped"]) == 1
+
+
+def test_similarity_error_throw(started_cluster):
+    """By default, a provider embedding error propagates."""
+    error = instance.query_and_get_error(
+        "SELECT aiSimilarity('a', 'b', 'test-embed-model', map('credentials', 'ai_embed_error'))",
+        settings=AI_SETTINGS,
+    )
+    assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
+
+
+def test_similarity_null_operand_skips_embedding(started_cluster):
+    """A NULL operand forces the row to NULL locally, so the other operand is never embedded. Even with
+    the default `ai_function_throw_on_error = 1` against a failing provider the query must not abort,
+    because the would-be-failing embedding request is never issued for that row."""
+    instance.query("TRUNCATE TABLE test_input_nullable")
+    instance.query("INSERT INTO test_input_nullable VALUES (NULL)")
+    qid = unique_query_id("sim_null_skip")
+    result = instance.query(
+        "SELECT aiSimilarity(x, 'server error', 'test-embed-model', map('credentials', 'ai_embed_error')) FROM test_input_nullable",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    assert parse_nullable_float(result) is None
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 0
+    assert int(events["rows_processed"]) == 0
+    assert int(events["rows_skipped"]) == 0
+
+
+def test_similarity_empty_input_table(started_cluster):
+    """Zero-row input makes no API calls."""
+    instance.query("TRUNCATE TABLE test_input")
+    qid = unique_query_id("sim_zero_rows")
+    result = instance.query(
+        "SELECT aiSimilarity(x, x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    assert result.strip() == ""
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 0
+    assert int(events["rows_processed"]) == 0
+
+
+def test_similarity_pairs_never_cross_rows(started_cluster):
+    """Each row is scored against its own two operands, never against a neighbouring row's text.
+
+    The embedding list is gapped with respect to rows: a row whose operand is NULL or empty
+    contributes no entry at all. A positional mapping (`inputs[2 * row]`) would therefore shift
+    every row after the first skipped one onto a neighbour's text, and the batch boundary would
+    shift it again. The texts are chosen so that the mock's vectors are far apart: a correct pair
+    scores exactly 1.0, while every possible cross-row pairing scores at most 0.95.
+    """
+    instance.query("TRUNCATE TABLE test_input_pairs")
+    instance.query(
+        "INSERT INTO test_input_pairs VALUES "
+        "(1, 'aa', 'aa'), (2, NULL, 'z0'), (3, 'z0', '0z'), (4, '0zh', ''), (5, '0zh', '0zh')"
+    )
+    qid = unique_query_id("sim_pairs")
+    result = instance.query(
+        "SELECT aiSimilarity(a, b, 'test-embed-model', map('credentials', 'ai_embed')) "
+        "FROM test_input_pairs ORDER BY id",
+        # 3 rows embed 2 operands each; a batch of 3 splits row 3's operands across two requests.
+        settings={**AI_SETTINGS, "ai_function_embedding_max_batch_size": 3},
+        query_id=qid,
+    )
+    scores = [parse_nullable_float(line) for line in result.strip().split("\n")]
+    expected = [
+        expected_similarity("aa", "aa"),
+        None,
+        expected_similarity("z0", "0z"),
+        None,
+        expected_similarity("0zh", "0zh"),
+    ]
+    assert len(scores) == 5
+    for score, want in zip(scores, expected):
+        if want is None:
+            assert score is None
+        else:
+            assert score == pytest.approx(want, abs=1e-4)
+    # Rows 1 and 5 pair a text with itself, so anything but an exact 1.0 means a mispairing.
+    assert scores[0] == pytest.approx(1.0, abs=1e-6)
+    assert scores[4] == pytest.approx(1.0, abs=1e-6)
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 2
+    assert int(events["rows_processed"]) == 3
+
+
+def test_similarity_const_nullable_operand(started_cluster):
+    """`ColumnConst(ColumnNullable)` operands (a NULL or a value cast to Nullable(String) as a literal)
+    are read via the same `isNullAt`/`getDataAt` path: a const NULL yields NULL, and const non-null
+    values embed and score normally."""
+    qid = unique_query_id("sim_const_null")
+    null_result = instance.query(
+        "SELECT aiSimilarity(CAST(NULL AS Nullable(String)), 'hi', 'test-embed-model', map('credentials', 'ai_embed'))",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    assert parse_nullable_float(null_result) is None
+    # The const NULL operand short-circuits the row, so no embedding request is made.
+    assert int(get_profile_events(qid)["api_calls"]) == 0
+    value_result = instance.query(
+        "SELECT aiSimilarity(CAST('cat' AS Nullable(String)), CAST('kitten' AS Nullable(String)), 'test-embed-model', map('credentials', 'ai_embed'))",
+        settings=AI_SETTINGS,
+    )
+    assert parse_nullable_float(value_result) == pytest.approx(expected_similarity("cat", "kitten"), abs=1e-4)
