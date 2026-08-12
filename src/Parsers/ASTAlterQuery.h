@@ -51,7 +51,6 @@ public:
 
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
-        MODIFY_CONSTRAINT,
 
         ADD_PROJECTION,
         DROP_PROJECTION,
@@ -126,7 +125,7 @@ public:
      */
     IAST * index = nullptr;
 
-    /** The ADD CONSTRAINT and MODIFY CONSTRAINT queries store the ConstraintDeclaration there.
+    /** The ADD CONSTRAINT query stores the ConstraintDeclaration there.
     */
     IAST * constraint_decl = nullptr;
 
@@ -179,11 +178,8 @@ public:
     /// Target column name
     IAST * rename_to = nullptr;
 
-    /// For MODIFY COLUMN ADD ENUM VALUES
-    ASTPtr add_enum_values;
-
     /// For MODIFY REFRESH
-    IAST * refresh = nullptr;
+    ASTPtr refresh;
 
     bool detach = false;        /// true for DETACH PARTITION
 
@@ -203,7 +199,7 @@ public:
 
     bool first = false;         /// option for ADD_COLUMN, MODIFY_COLUMN
 
-    DataDestinationType move_destination_type{}; /// option for MOVE PART/PARTITION
+    DataDestinationType move_destination_type; /// option for MOVE PART/PARTITION
 
     String move_destination_name;             /// option for MOVE PART/PARTITION
 
@@ -227,7 +223,7 @@ public:
     String to_table;
 
     String snapshot_name;
-    IAST * snapshot_desc{};
+    IAST * snapshot_desc;
 
     /// For EXECUTE command (e.g. expire_snapshots)
     String execute_command_name;
@@ -260,9 +256,6 @@ public:
 
     ASTExpressionList * command_list = nullptr;
 
-    /// Useful if we already have a DDL lock
-    bool no_ddl_lock = false;
-
     bool isSettingsAlter() const;
 
     bool isFreezeAlter() const;
@@ -278,11 +271,6 @@ public:
     bool isMovePartitionToDiskOrVolumeAlter() const;
 
     bool isCommentAlter() const;
-
-    /// Every command modifies settings or comments: any mix of MODIFY SETTING /
-    /// RESET SETTING / COMMENT COLUMN / MODIFY COMMENT / comment-only MODIFY COLUMN.
-    /// The single-type isSettingsAlter / isCommentAlter miss such mixed batches.
-    bool isSettingsOrCommentAlter() const;
 
     String getID(char) const override;
 

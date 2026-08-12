@@ -37,7 +37,7 @@ bool isStringOrNull(const IDataType & type)
 }
 
 /// A function to read file as a string.
-class FunctionFile final : public IFunction
+class FunctionFile : public IFunction
 {
 public:
     static constexpr auto name = "file";
@@ -179,7 +179,7 @@ REGISTER_FUNCTION(File)
 Reads a file as a string and loads the data into the specified column.
 The file content is not interpreted.
 
-Also see the [`file`](/reference/functions/table-functions/file) table function.
+Also see the [`file`](../table-functions/file.md) table function.
         )";
     FunctionDocumentation::Syntax syntax = "file(path[, default])";
     FunctionDocumentation::Arguments arguments = {

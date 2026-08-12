@@ -301,12 +301,6 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     FormatStateStacked nested_dont_need_parens = frame;
     nested_need_parens.need_parens = true;
     nested_dont_need_parens.need_parens = false;
-    /// `list_element_index` describes the node's position among the direct elements of the
-    /// enclosing expression list and is only meaningful one level deep. Operands reached
-    /// through an operator (tupleElement, arrayElement, etc.) are not list elements, so reset
-    /// it here; the argument-list loops below re-set it explicitly per argument when needed.
-    nested_need_parens.list_element_index = 0;
-    nested_dont_need_parens.list_element_index = 0;
 
     if (auto * query = tryGetQueryArgument())
     {
@@ -449,14 +443,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
           * They are needed only if this expression is included in another expression with the operator.
           */
 
-        bool is_like_with_escape = false;
-        if (arguments->children.size() == 3
-            && (name == "like" || name == "ilike" || name == "notLike" || name == "notILike"))
-        {
-            if (const auto * escape_literal = arguments->children[2]->as<ASTLiteral>())
-                is_like_with_escape = escape_literal->value.getType() == Field::Types::String;
-        }
-        if (!written && (arguments->children.size() == 2 || is_like_with_escape))
+        if (!written && arguments->children.size() == 2)
         {
             static constexpr std::array<FunctionOperatorMapping, 21> operators =
             {{
@@ -493,40 +480,28 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 bool need_parens_around_in = frame.need_parens || (is_in_operator && in_function_args);
                 if (need_parens_around_in)
                     ostr << '(';
-                /// Our wrapping `(...)` (either from need_parens_around_in here, or from the
-                /// `parenthesized` flag handled in IAST::format) already isolates this IN from
-                /// the enclosing function-argument list, so descendants must not add another
-                /// layer of parens for the same reason. Clear `current_function` for the
-                /// children so a nested IN sees `in_function_args == false`. Without this, a
-                /// query like `f(1, 2 IN ((3 IN (4, 5)) AS x))` formats as
-                /// `f(1, (2 IN ((3 IN (4, 5)) AS x)))`, the re-parse sets `parenthesized=true`
-                /// on the outer IN (so `IAST::format` emits the outer parens and resets
-                /// `current_function`), and the second format drops the inner `(3 IN (4, 5))`,
-                /// breaking the format-parse-format round-trip check.
-                if (need_parens_around_in)
-                {
-                    nested_need_parens.current_function = nullptr;
-                    nested_dont_need_parens.current_function = nullptr;
-                }
                 arguments->children[0]->format(ostr, settings, state, nested_need_parens);
                 ostr << it->operator_name;
 
-                /// Format `x IN 1` as `x IN (1)`: put parens around the right-hand side even if
-                /// there is a single element in the set (some external databases the query can be
-                /// forwarded to require them). Self-grouping forms — subqueries, function calls,
-                /// tuple and array literals — emit their own brackets; an aliased right-hand side
-                /// is wrapped in parens by the generic aliased-expression handling.
+                /// Format x IN 1 as x IN (1): put parens around rhs even if there is a single element in set.
                 const auto * second_arg_func = arguments->children[1]->as<ASTFunction>();
                 const auto * second_arg_literal = arguments->children[1]->as<ASTLiteral>();
                 bool is_literal_tuple_or_array = second_arg_literal
                     && (second_arg_literal->value.getType() == Field::Types::Tuple
                         || second_arg_literal->value.getType() == Field::Types::Array);
 
-                bool extra_parens_around_in_rhs = is_in_operator
-                    && !arguments->children[1]->as<ASTSubquery>() && !second_arg_func && !is_literal_tuple_or_array
-                    && arguments->children[1]->tryGetAlias().empty();
+                /** Conditions for extra parens:
+                 *  1. Is IN operator
+                 *  2. 2nd arg is not subquery, function, or literal tuple or array
+                 *  3. If the 2nd argument has alias, we ignore condition 2 and add extra parens
+                 *
+                 *  Condition 3 is needed to avoid inconsistency in format-parse-format debug check in executeQuery.cpp
+                 */
+                bool extra_parents_around_in_rhs = is_in_operator
+                    && ((!arguments->children[1]->as<ASTSubquery>() && !second_arg_func && !is_literal_tuple_or_array)
+                        || !arguments->children[1]->tryGetAlias().empty());
 
-                if (extra_parens_around_in_rhs)
+                if (extra_parents_around_in_rhs)
                 {
                     ostr << '(';
                     /// We have just emitted `(` around the right-hand side, so suppress the
@@ -536,15 +511,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     arguments->children[1]->format(ostr, settings, state, inner_frame);
                     ostr << ')';
                 }
-                else
-                    arguments->children[1]->format(ostr, settings, state, nested_need_parens);
 
-                /// LIKE/ILIKE with ESCAPE clause: format the 3rd argument as ESCAPE 'char'
-                if (is_like_with_escape)
-                {
-                    ostr << " ESCAPE ";
-                    arguments->children[2]->format(ostr, settings, state, nested_dont_need_parens);
-                }
+                if (!extra_parents_around_in_rhs)
+                    arguments->children[1]->format(ostr, settings, state, nested_need_parens);
 
                 if (need_parens_around_in)
                     ostr << ')';
@@ -556,7 +525,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 if (frame.need_parens)
                     ostr << '(';
 
-                /// Don't allow moving operators like '-' before parens,
+                /// Don't allow moving operators like '-' before parents,
                 /// otherwise (-(42))[3] will be formatted as -(42)[3] that will be parsed as -(42[3]);
                 nested_need_parens.allow_moving_operators_before_parens = false;
                 arguments->children[0]->format(ostr, settings, state, nested_need_parens);
@@ -636,7 +605,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                             ostr << '(';
                         }
 
-                        /// Don't allow moving operators like '-' before parens,
+                        /// Don't allow moving operators like '-' before parents,
                         /// otherwise (-(42)).1 will be formatted as -(42).1 that will be parsed as -((42).1)
                         nested_need_parens.allow_moving_operators_before_parens = false;
                         arguments->children[0]->format(ostr, settings, state, nested_need_parens);
@@ -731,10 +700,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             written = true;
         }
 
-        /// Note: `frame.need_parens` cannot be set here together with a non-empty alias:
-        /// the generic aliased-expression handling consumes it (emitting the wrapping parens)
-        /// before calling `formatImplWithoutAlias`.
-        if (!written && arguments->children.size() >= 2 && name == "tuple"sv && isOperator())
+        if (!written && arguments->children.size() >= 2 && name == "tuple"sv && isOperator() && !(frame.need_parens && !alias.empty()))
         {
             ostr << '(';
 
@@ -788,11 +754,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     /// If the function has a NULLS modifier (IGNORE NULLS / RESPECT NULLS), we must always print
     /// parentheses, otherwise the modifier cannot be parsed back (e.g. `count IGNORE NULLS` is not parseable).
     bool has_nulls_action = getNullsAction() != NullsAction::EMPTY;
-    /// A window function must always print its parentheses too: `f() OVER (...)` re-parses with the empty
-    /// `()`, so dropping them (e.g. when `noEmptyArgs()` was set on a no-argument window function parsed in a
-    /// CODEC/engine context) would make the formatting inconsistent across a parse round-trip.
-    bool need_parens
-        = (arguments && !arguments->children.empty()) || !noEmptyArgs() || has_nulls_action || isWindowFunction();
+    bool need_parens = (arguments && !arguments->children.empty()) || !noEmptyArgs() || has_nulls_action;
 
     if (need_parens)
         ostr << '(';
@@ -866,16 +828,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             /// Mark that we're formatting an argument of this function (needed for IN operator parentheses)
             if (arguments->children.size() > 1)
                 nested_dont_need_parens.current_function = this;
-            /// When formatting in function-call form (operators disabled, e.g. `EXPLAIN SYNTAX`),
-            /// the function call's own `(arg1, arg2, ...)` parens already group each argument, so the
-            /// argument's own `parenthesized` flag would emit redundant parens like
-            /// `multiply((plus(1, 2)), 3)` for `(1 + 2) * 3`. Suppress them. We leave the normal
-            /// formatting path (`allow_operators = true`) unchanged so non-`EXPLAIN SYNTAX` queries
-            /// keep round-tripping the user's parens.
-            FormatStateStacked argument_frame = nested_dont_need_parens;
-            if (!frame.allow_operators)
-                argument_frame.wrapped_in_parens = true;
-            argument->format(ostr, settings, state, argument_frame);
+            argument->format(ostr, settings, state, nested_dont_need_parens);
         }
 
     }

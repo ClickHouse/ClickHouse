@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/DateTimeTransforms.h>
-#include <base/arithmeticOverflow.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -31,7 +30,6 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
-    extern const int DECIMAL_OVERFLOW;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -46,7 +44,7 @@ enum class ToStartOfIntervalOverload
     Origin      /// toStartOfInterval(time, interval, origin) or toStartOfInterval(time, interval, origin, timezone)
 };
 
-class FunctionToStartOfInterval final : public IFunction
+class FunctionToStartOfInterval : public IFunction
 {
 private:
     ToStartOfIntervalOverload overload;
@@ -86,7 +84,7 @@ public:
         if (overload == ToStartOfIntervalOverload::Origin)
             origin_column = arguments[2];
 
-        const DateLUTImpl * time_zone_tmp = nullptr;
+        const DateLUTImpl * time_zone_tmp;
 
         if (isDateTimeOrDateTime64(time_column.type) || isDateTimeOrDateTime64(result_type))
         {
@@ -244,9 +242,20 @@ private:
             const bool is_small_interval = (unit == IntervalKind::Kind::Nanosecond || unit == IntervalKind::Kind::Microsecond || unit == IntervalKind::Kind::Millisecond);
             const bool is_result_date = isDateOrDate32(result_type);
 
-            /// For large intervals the result scale equals the argument scale: seconds for the non-DateTime64
-            /// argument types and scale_multiplier for DateTime64 arguments.
-            const Int64 result_scale = (isDateTime64(result_type) && !is_small_interval) ? scale_multiplier : 1;
+            Int64 result_scale = scale_multiplier;
+            Int64 origin_scale = 1;
+
+            if (isDateTime64(result_type)) /// We have origin scale only in case if arguments are DateTime64.
+                origin_scale = assert_cast<const DataTypeDateTime64 &>(*origin_column.type).getScaleMultiplier();
+            else if (!is_small_interval) /// In case of large interval and arguments are not DateTime64, we should not have scale in result.
+                result_scale = 1;
+
+            if (is_small_interval)
+                result_scale = assert_cast<const DataTypeDateTime64 &>(*result_type).getScaleMultiplier();
+
+            /// In case if we have a difference between time arguments and Interval, we need to calculate the difference between them
+            /// to get the right precision for the result. In case of large intervals, we should not have scale difference.
+            Int64 scale_diff = is_small_interval ? std::max(result_scale / origin_scale, origin_scale / result_scale) : 1;
 
             static constexpr Int64 SECONDS_PER_DAY = 86'400;
 
@@ -257,32 +266,16 @@ private:
                 if (origin > time_arg)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The origin must be before the end date / date with time");
 
-                if (is_small_interval)
-                {
-                    result_data[i] = static_cast<typename ResultDataType::FieldType>(
-                        ToStartOfInterval<unit>::execute(time_arg, num_units, time_zone, scale_multiplier, origin));
-                    continue;
-                }
-
-                if (is_result_date) /// All internal calculations of ToStartOfInterval<...> expect arguments to be seconds.
+                if (is_result_date) /// All internal calculations of ToStartOfInterval<...> expect arguments to be seconds or milli-, micro-, nanoseconds.
                 {
                     time_arg *= SECONDS_PER_DAY;
                     origin *= SECONDS_PER_DAY;
                 }
 
-                /// The time and origin arguments have the same scale, so their difference is expressed in the
-                /// argument scale, which for large intervals equals result_scale. ToStartOfInterval returns
-                /// the offset as a whole number of interval units.
-                Int64 time_diff = 0;
-                if (common::subOverflow(time_arg, origin, time_diff))
-                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
-                        "The difference between the time argument ({}) and the origin ({}) of function {} does not fit into Int64",
-                        time_arg, origin, getName());
+                Int64 offset = ToStartOfInterval<unit>::execute(time_arg - origin, num_units, time_zone, result_scale, origin);
 
-                Int64 offset = ToStartOfInterval<unit>::execute(time_diff, num_units, time_zone, result_scale, origin);
-
-                /// The offset is a whole number of seconds or days, convert it to the result scale.
-                offset *= result_scale;
+                /// In case if arguments are DateTime64 with large interval, we should apply scale on it.
+                offset *= (!is_small_interval) ? result_scale : 1;
 
                 if (is_result_date) /// Convert back to date after calculations.
                 {
@@ -290,8 +283,9 @@ private:
                     origin /= SECONDS_PER_DAY;
                 }
 
-                result_data[i] = static_cast<ResultDataType::FieldType>(origin + offset);
-            }
+                result_data[i] = (result_scale < origin_scale) ? static_cast<ResultDataType::FieldType>((origin + offset) / scale_diff)
+                                                               : static_cast<ResultDataType::FieldType>((origin + offset) * scale_diff);
+        }
         }
         else // Overload: Default
         {
@@ -304,7 +298,7 @@ private:
 };
 
 
-class FunctionToStartOfIntervalOverloadResolver final : public IFunctionOverloadResolver
+class FunctionToStartOfIntervalOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "toStartOfInterval";
@@ -344,8 +338,8 @@ public:
             DateTime64
         };
 
-        ResultType result_type = ResultType::Date;
-        ToStartOfIntervalOverload overload = ToStartOfIntervalOverload::Default;
+        ResultType result_type;
+        ToStartOfIntervalOverload overload;
         auto check_second_argument = [&]
         {
             const DataTypePtr & type_arg2 = arguments[1].type;

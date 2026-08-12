@@ -15,7 +15,7 @@ namespace DB
   *   arrayRemove(['a', NULL, 'b', NULL], NULL) -> ['a', 'b']
   */
 
-class FunctionArrayRemove final : public IFunction
+class FunctionArrayRemove : public IFunction
 {
 public:
     static constexpr auto name = "arrayRemove";

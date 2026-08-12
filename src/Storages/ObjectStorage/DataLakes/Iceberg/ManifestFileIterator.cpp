@@ -5,7 +5,6 @@
 
 #include <compare>
 #include <optional>
-#include <unordered_set>
 
 #include <Interpreters/IcebergMetadataLog.h>
 
@@ -225,6 +224,7 @@ ManifestFileIterator::~ManifestFileIterator() = default;
 std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer_,
     const IcebergPathFromMetadata & path_to_manifest_file_,
+    Int32 format_version_,
     const IcebergPathResolver & path_resolver_,
     IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number_,
@@ -242,11 +242,6 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         std::nullopt,
         std::nullopt);
 
-    /// The manifest file's own format version governs how it is parsed. A v2 table may
-    /// still reference v1 manifests produced before an external upgrade from v1 to v2,
-    /// and those must remain readable (the Iceberg spec assigns them sequence_number = 0).
-    const Int32 manifest_format_version = static_cast<Int32>(manifest_file_deserializer_->getFormatVersionFromManifestFileMetadata());
-
     for (const auto & column_name : {f_status, f_data_file})
     {
         if (!manifest_file_deserializer_->hasPath(column_name))
@@ -254,7 +249,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
                 DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", column_name);
     }
 
-    if (manifest_format_version > 1 && !manifest_file_deserializer_->hasPath(f_sequence_number))
+    if (format_version_ > 1 && !manifest_file_deserializer_->hasPath(f_sequence_number))
         throw Exception(
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", f_sequence_number);
 
@@ -268,7 +263,6 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     const Poco::JSON::Array::Ptr & partition_specification = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
 
     DB::NamesAndTypesList partition_columns_description;
-    std::unordered_set<String> partition_columns_seen;
     auto partition_key_ast = make_intrusive<ASTFunction>();
     partition_key_ast->name = "tuple";
     partition_key_ast->arguments = make_intrusive<DB::ASTExpressionList>();
@@ -310,11 +304,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
             continue;
 
         partition_key_ast->as<ASTFunction>()->arguments->children.emplace_back(std::move(partition_ast));
-        /// One source column may back several partition fields (e.g. hours(ts) and identity ts).
-        /// The tuple key AST keeps one child per field, but getKeyFromAST resolves identifiers
-        /// against these input columns, which must contain each source column at most once.
-        if (partition_columns_seen.insert(numeric_column_name).second)
-            partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics->type));
+        partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics->type));
     }
 
     std::optional<DB::KeyDescription> partition_key_description;
@@ -327,7 +317,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     return std::shared_ptr<ManifestFileIterator>(new ManifestFileIterator(
         std::move(manifest_file_deserializer_),
         path_to_manifest_file_,
-        manifest_format_version,
+        format_version_,
         path_resolver_,
         schema_processor,
         inherited_sequence_number_,
@@ -402,7 +392,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
 
     /// Compute inherited/resolved fields
 
-    Int64 resolved_snapshot_id = 0;
+    Int64 resolved_snapshot_id;
     if (parsed_entry->parsed_snapshot_id.has_value())
     {
         resolved_snapshot_id = *parsed_entry->parsed_snapshot_id;

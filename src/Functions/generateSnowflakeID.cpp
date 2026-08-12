@@ -4,7 +4,6 @@
 #include <Functions/FunctionsRandom.h>
 #include <Functions/FunctionHelpers.h>
 #include <Core/ServerUUID.h>
-#include <Core/UUID.h>
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
 #include <base/types.h>
@@ -111,7 +110,7 @@ SnowflakeIdRange getRangeOfAvailableIds(const SnowflakeId & available, uint64_t 
     }
 
     /// 3. `end = begin + input_rows_count`
-    SnowflakeId end{};
+    SnowflakeId end;
     const uint64_t seq_nums_in_current_timestamp_left = (max_machine_seq_num - begin.machine_seq_num + 1);
     if (input_rows_count >= seq_nums_in_current_timestamp_left)
         /// if sequence numbers in current timestamp is not enough for rows --> depending on how many elements input_rows_count overflows, forward timestamp by at least 1 tick
@@ -133,7 +132,7 @@ struct Data
     SnowflakeId reserveRange(uint64_t machine_id, size_t input_rows_count)
     {
         uint64_t available_snowflake_id = lowest_available_snowflake_id.load();
-        SnowflakeIdRange range{};
+        SnowflakeIdRange range;
         do
         {
             range = getRangeOfAvailableIds(toSnowflakeId(available_snowflake_id), machine_id, input_rows_count);
@@ -155,7 +154,7 @@ uint64_t generateSnowflakeID()
     return fromSnowflakeId(snowflake_id);
 }
 
-class FunctionGenerateSnowflakeID final : public IFunction
+class FunctionGenerateSnowflakeID : public IFunction
 {
 public:
     static constexpr auto name = "generateSnowflakeID";
@@ -235,7 +234,7 @@ See section ["Snowflake ID generation"](#snowflake-id-generation) for implementa
     FunctionDocumentation::Syntax syntax = "generateSnowflakeID([expr, [machine_id]])";
     FunctionDocumentation::Arguments arguments = {
         {"expr", "An arbitrary [expression](/sql-reference/syntax#expressions) used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned Snowflake ID. Optional."},
-        {"machine_id", "A machine ID, the lowest 10 bits are used. [Int64](/reference/data-types/int-uint). Optional."}
+        {"machine_id", "A machine ID, the lowest 10 bits are used. [Int64](../data-types/int-uint.md). Optional."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the Snowflake ID.", {"UInt64"}};
     FunctionDocumentation::Examples examples = {

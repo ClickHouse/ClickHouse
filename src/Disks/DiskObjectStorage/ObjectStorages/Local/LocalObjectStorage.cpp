@@ -95,8 +95,8 @@ ReadSettings LocalObjectStorage::patchSettings(const ReadSettings & read_setting
 {
     auto modified_settings{read_settings};
     /// Other options might break assertions in AsynchronousBoundedReadBuffer.
-    modified_settings.local_fs_settings.method = LocalFSReadMethod::pread;
-    modified_settings.local_fs_settings.direct_io_threshold = 0; /// Disable.
+    modified_settings.local_fs_method = LocalFSReadMethod::pread;
+    modified_settings.direct_io_threshold = 0; /// Disable.
     return IObjectStorage::patchSettings(modified_settings);
 }
 
@@ -259,15 +259,13 @@ private:
 std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t> read_hint,
-    bool /* use_external_buffer */,
-    bool /* restrict_seek */) const
+    std::optional<size_t> read_hint) const
 {
     auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
     LOG_TEST(log, "Read object: {}", resolved_path);
     auto buf = createReadBufferFromFileBase(resolved_path, patchSettings(read_settings), read_hint);
 
-    if (read_settings.remote_fs_settings.enable_blob_storage_log)
+    if (read_settings.enable_blob_storage_log_for_read_operations)
     {
         auto blob_storage_log = BlobStorageLogWriter::create(settings.disk_name);
         if (blob_storage_log)
@@ -424,7 +422,7 @@ std::optional<ObjectMetadata> tryStatResolvedPath(const std::string & resolved_p
     auto time = fs::last_write_time(resolved_path, error);
     if (error)
     {
-        if (isVanishedEntryError(error))
+        if (error == std::errc::no_such_file_or_directory)
             return {};
         throw fs::filesystem_error("Got unexpected error while getting last write time", resolved_path, error);
     }
@@ -514,16 +512,7 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
     while (!pending_dirs.empty())
     {
-        const fs::path dir = std::move(pending_dirs.back());
-        pending_dirs.pop_back();
-
-        std::error_code ec;
-        fs::directory_iterator it(dir, ec);
-        if (ec)
-        {
-            /// The directory itself vanished (or a path component was replaced)
-            /// before we could open it: omit only this subtree, keep the rest.
-            throw_unless_vanished(ec, dir);
+        if (entry.is_directory())
             continue;
         }
 
@@ -565,15 +554,7 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
                     children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry_path, std::move(*metadata)));
             }
 
-            it.increment(ec);
-            if (ec)
-            {
-                /// `increment` resets the iterator to end() on error; a vanished
-                /// entry only affects this directory, the worklist preserves the rest.
-                throw_unless_vanished(ec, dir);
-                break;
-            }
-        }
+        children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry.path(), getObjectMetadata(entry.path(), false)));
     }
 }
 
