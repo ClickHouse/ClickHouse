@@ -543,10 +543,10 @@ IStorage::ColumnSizeByName StorageMaterializedPostgreSQL::getColumnSizes() const
 }
 
 
-IStorage::ColumnSizeByName StorageMaterializedPostgreSQL::getColumnSizes(const Names & columns) const
+IStorage::ColumnSizeByName StorageMaterializedPostgreSQL::getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const
 {
     if (auto nested = tryGetNested())
-        return nested->getColumnSizes(columns);
+        return nested->getColumnSizes(columns, calculate_subcolumn_sizes);
     return {};
 }
 
