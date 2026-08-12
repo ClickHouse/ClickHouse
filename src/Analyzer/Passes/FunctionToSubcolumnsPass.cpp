@@ -1019,7 +1019,13 @@ private:
             }
         };
 
-        const auto & metadata_snapshot = table_node.getStorageSnapshot()->metadata;
+        /// Use the storage's current metadata, not the resolution-time snapshot. For a table in a
+        /// database with lazy_load_tables, the snapshot is built from the StorageTableProxy stub,
+        /// which is seeded only with columns and has no primary key or secondary indices; the real
+        /// metadata becomes visible after the nested storage is materialized, which happens by the
+        /// time this pass runs. With the stub, all key columns would be missed and rewrites of
+        /// indexed columns would break index analysis.
+        const auto metadata_snapshot = table_node.getStorage()->getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
         const auto & primary_key_columns = metadata_snapshot->getColumnsRequiredForPrimaryKey();
         const auto & partition_key_columns = metadata_snapshot->getColumnsRequiredForPartitionKey();
 
