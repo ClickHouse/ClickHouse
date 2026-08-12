@@ -13,6 +13,7 @@
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 
 
 namespace DB
@@ -28,6 +29,16 @@ void ExpressionStatistics::dump(WriteBuffer & out) const
     for (const auto & column : column_statistics)
         out << "`" << column.first << "` NDV : " << column.second.num_distinct_values
             << " avg_bytes: " << column.second.avg_bytes << "\n";
+    std::unordered_set<const void *> visited_classes;
+    for (const auto & [member, class_ptr] : equivalences.getMemberToClassMap())
+    {
+        if (!class_ptr || !visited_classes.insert(class_ptr.get()).second)
+            continue;
+        out << "equal columns:";
+        for (const auto & class_member : *class_ptr)
+            out << " `" << class_member << "`";
+        out << "\n";
+    }
 }
 
 String ExpressionStatistics::dump() const

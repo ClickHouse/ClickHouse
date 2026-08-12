@@ -2,6 +2,7 @@
 
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Common/EquivalenceClasses.h>
 #include <Core/Block.h>
 #include <base/types.h>
 #include <limits>
@@ -30,6 +31,9 @@ struct ExpressionStatistics
 
     /// Statistics for output columns of the expression
     std::unordered_map<String, ColumnStats> column_statistics;
+
+    /// Classes of output columns that hold equal values on every row.
+    EquivalenceClasses<String> equivalences;
 
     void dump(WriteBuffer & out) const;
     String dump() const;

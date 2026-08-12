@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Columns/ColumnConst.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -198,6 +199,9 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
     std::unordered_set<String> left_bound_columns;
     std::unordered_set<String> right_bound_columns;
 
+    /// Equality key pairs, for the output column equivalences.
+    std::vector<std::pair<String, String>> equi_pairs;
+
     for (const auto & predicate_expression : join_step.getJoinOperator().expression)
     {
         const auto & predicate = predicate_expression.asBinaryPredicate();
@@ -215,6 +219,8 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
             std::swap(left_column_actions, right_column_actions);
         const auto & left_column = left_column_actions.getColumnName();
         const auto & right_column = right_column_actions.getColumnName();
+
+        equi_pairs.emplace_back(left_column, right_column);
 
         bool left_already_bound = !left_bound_columns.insert(left_column).second;
         bool right_already_bound = !right_bound_columns.insert(right_column).second;
@@ -283,6 +289,15 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
         statistics.estimated_row_count, left_statistics.estimated_row_count, right_statistics.estimated_row_count);
     statistics.max_row_count = clampJoinMaxRowCount(join_operator.kind, join_operator.strictness,
         statistics.max_row_count, left_statistics.max_row_count, right_statistics.max_row_count);
+
+    /// Column equivalences: both inputs' classes survive (the sides do not share column names).
+    /// An inner join also makes its equality keys equal on every output row, so each key pair
+    /// links the two classes; other kinds keep unmatched rows, where the equality does not hold.
+    statistics.equivalences = left_statistics.equivalences;
+    statistics.equivalences.merge(right_statistics.equivalences);
+    if (join_operator.kind == JoinKind::Inner)
+        for (const auto & [left_column, right_column] : equi_pairs)
+            statistics.equivalences.add(left_column, right_column);
 
     /// Width comes from the actual join output columns; summing both inputs double-counts join keys and
     /// can include columns the join does not emit. Use the inputs' known column sizes where available:
@@ -387,10 +402,182 @@ namespace QueryPlanOptimizations
 void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions);
 }
 
+/// Output names that carry an input column through unchanged: `INPUT`/`ALIAS` chains only.
+/// Value equality between renamed columns survives; a computed expression changes the values,
+/// so it must not keep an equivalence.
+static std::unordered_map<String, Names> identityOutputNames(const ActionsDAG & actions)
+{
+    std::unordered_map<String, Names> input_to_outputs;
+    for (const auto * output : actions.getOutputs())
+    {
+        const auto * node = output;
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.front();
+        if (node->type == ActionsDAG::ActionType::INPUT)
+            input_to_outputs[node->result_name].push_back(output->result_name);
+    }
+    return input_to_outputs;
+}
+
+static EquivalenceClasses<String> remapEquivalences(
+    const EquivalenceClasses<String> & equivalences, const ActionsDAG & actions)
+{
+    auto input_to_outputs = identityOutputNames(actions);
+    EquivalenceClasses<String> result;
+    std::unordered_set<const void *> visited_classes;
+    for (const auto & [member, class_ptr] : equivalences.getMemberToClassMap())
+    {
+        if (!class_ptr || !visited_classes.insert(class_ptr.get()).second)
+            continue;
+        Names renamed;
+        for (const auto & class_member : *class_ptr)
+        {
+            auto it = input_to_outputs.find(class_member);
+            if (it != input_to_outputs.end())
+                renamed.insert(renamed.end(), it->second.begin(), it->second.end());
+        }
+        /// A class with fewer than two surviving members says nothing, and `add` skips it.
+        for (size_t i = 1; i < renamed.size(); ++i)
+            result.add(renamed[0], renamed[i]);
+    }
+    return result;
+}
+
+namespace
+{
+
+/// Selectivity constants for predicates without usable statistics; the same values that
+/// `ConditionSelectivityEstimator` uses for the reads.
+constexpr Float64 default_equality_selectivity = 0.01;
+constexpr Float64 default_range_selectivity = 0.33;
+constexpr Float64 default_unknown_selectivity = 0.33;
+constexpr Float64 default_like_selectivity = 0.1;
+
+const ActionsDAG::Node * skipAliases(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    return node;
+}
+
+}
+
+/// The TRUE fraction of a filter expression, estimated from the input column NDVs and
+/// equivalence classes. The input of a standalone filter is an arbitrary subplan (e.g. an
+/// aggregation for `HAVING`), so there are no table statistics here, and the column statistics
+/// carry no value ranges: an equality uses 1/NDV, everything else uses the default factors.
+Float64 estimatePredicateSelectivity(const ActionsDAG::Node * node, const ExpressionStatistics & input_statistics)
+{
+    node = skipAliases(node);
+    /// A constant filter column: the planner removes an always-false filter, so assume true.
+    if (node->type == ActionsDAG::ActionType::COLUMN)
+        return 1.0;
+    if (node->type != ActionsDAG::ActionType::FUNCTION)
+        return default_unknown_selectivity;
+
+    const String & name = node->function_base->getName();
+
+    if (name == "and")
+    {
+        Float64 selectivity = 1.0;
+        for (const auto * child : node->children)
+            selectivity *= estimatePredicateSelectivity(child, input_statistics);
+        return selectivity;
+    }
+    if (name == "or")
+    {
+        Float64 none_passes = 1.0;
+        for (const auto * child : node->children)
+            none_passes *= 1.0 - estimatePredicateSelectivity(child, input_statistics);
+        return 1.0 - none_passes;
+    }
+    if (name == "not" && node->children.size() == 1)
+        return 1.0 - estimatePredicateSelectivity(node->children.front(), input_statistics);
+
+    /// A runtime join filter repeats the join selectivity, which the join estimate carries.
+    if (name == "__applyFilter")
+        return 1.0;
+    if (name == "like" || name == "ilike")
+        return default_like_selectivity;
+    if (name == "notLike" || name == "notILike")
+        return 1.0 - default_like_selectivity;
+    if (name == "isNull")
+        return default_equality_selectivity;
+    if (name == "isNotNull")
+        return 1.0 - default_equality_selectivity;
+
+    const bool is_equals = name == "equals";
+    const bool is_not_equals = name == "notEquals";
+    const bool is_range = name == "less" || name == "greater" || name == "lessOrEquals" || name == "greaterOrEquals";
+    if ((is_equals || is_not_equals || is_range) && node->children.size() == 2)
+    {
+        if (is_range)
+            return default_range_selectivity;
+
+        const auto * left = skipAliases(node->children[0]);
+        const auto * right = skipAliases(node->children[1]);
+        const bool left_is_constant = left->column && isColumnConst(*left->column);
+        const bool right_is_constant = right->column && isColumnConst(*right->column);
+
+        auto column_ndv = [&](const ActionsDAG::Node * side) -> UInt64
+        {
+            auto it = input_statistics.column_statistics.find(side->result_name);
+            return it != input_statistics.column_statistics.end() ? it->second.num_distinct_values : 0;
+        };
+
+        Float64 equal_selectivity = default_equality_selectivity;
+        if (!left_is_constant && !right_is_constant)
+        {
+            /// Two columns. An equality the plan below already enforces (e.g. the keys of an
+            /// inner join under this filter) holds on every row; otherwise the join-equality
+            /// formula 1 / max(NDV) applies.
+            auto left_class = input_statistics.equivalences.getClass(left->result_name);
+            if (left_class && left_class == input_statistics.equivalences.getClass(right->result_name))
+                equal_selectivity = 1.0;
+            else if (UInt64 max_ndv = std::max(column_ndv(left), column_ndv(right)))
+                equal_selectivity = 1.0 / Float64(max_ndv);
+        }
+        else
+        {
+            const auto * column_side = left_is_constant ? right : left;
+            if (UInt64 ndv = column_ndv(column_side))
+                equal_selectivity = 1.0 / Float64(ndv);
+        }
+        return is_equals ? equal_selectivity : 1.0 - equal_selectivity;
+    }
+
+    return default_unknown_selectivity;
+}
+
+
 ExpressionStatistics StatisticsDerivation::deriveFilterStatistics(const FilterStep & filter_step, const ExpressionStatistics & input_statistics)
 {
     ExpressionStatistics result_statistics = input_statistics;
     QueryPlanOptimizations::remapColumnStats(result_statistics.column_statistics, filter_step.getExpression());
+    result_statistics.equivalences = remapEquivalences(input_statistics.equivalences, filter_step.getExpression());
+
+    const ActionsDAG::Node * filter_node = nullptr;
+    for (const auto & dag_node : filter_step.getExpression().getNodes())
+    {
+        if (dag_node.result_name == filter_step.getFilterColumnName())
+        {
+            filter_node = &dag_node;
+            break;
+        }
+    }
+
+    if (filter_node)
+    {
+        const Float64 selectivity = estimatePredicateSelectivity(filter_node, input_statistics);
+        result_statistics.estimated_row_count *= selectivity;
+        result_statistics.min_row_count = 0;
+        /// A column cannot have more distinct values than there are rows.
+        for (auto & [column_name, column_stats] : result_statistics.column_statistics)
+            if (Float64(column_stats.num_distinct_values) > result_statistics.estimated_row_count)
+                column_stats.num_distinct_values = UInt64(result_statistics.estimated_row_count);
+        LOG_TEST(getLogger("StatisticsDerivation"), "Filter '{}' selectivity: {}", filter_step.getFilterColumnName(), selectivity);
+    }
+
     return result_statistics;
 }
 
@@ -398,6 +585,7 @@ ExpressionStatistics StatisticsDerivation::deriveExpressionStatistics(const Expr
 {
     ExpressionStatistics result_statistics = input_statistics;
     QueryPlanOptimizations::remapColumnStats(result_statistics.column_statistics, expression_step.getExpression());
+    result_statistics.equivalences = remapEquivalences(input_statistics.equivalences, expression_step.getExpression());
     /// Keep the input row width: most projections pass columns through, and the input width may carry
     /// storage-derived or hinted byte sizes that a header-based type-default estimate would discard.
     /// TODO: recompute only for added/dropped columns (needs per-column widths); an arrayJoin also
@@ -444,6 +632,22 @@ ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const Agg
     /// Aggregation changes the schema (group-by keys + aggregate states), recompute from output
     /// header with the keys' known value sizes.
     aggregation_statistics.estimated_bytes_per_row = estimateRowWidth(*aggregating_step.getOutputHeader(), aggregation_statistics.column_statistics);
+
+    /// Group keys pass through with their values, so their equivalences survive; the column
+    /// statistics at this point hold exactly the group keys.
+    std::unordered_set<const void *> visited_classes;
+    for (const auto & [member, class_ptr] : input_statistics.equivalences.getMemberToClassMap())
+    {
+        if (!class_ptr || !visited_classes.insert(class_ptr.get()).second)
+            continue;
+        Names kept;
+        for (const auto & class_member : *class_ptr)
+            if (aggregation_statistics.column_statistics.contains(class_member))
+                kept.push_back(class_member);
+        for (size_t i = 1; i < kept.size(); ++i)
+            aggregation_statistics.equivalences.add(kept[0], kept[i]);
+    }
+
     return aggregation_statistics;
 }
 

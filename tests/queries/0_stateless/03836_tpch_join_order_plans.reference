@@ -252,8 +252,8 @@ Expression (Project names)
 Expression (Project names)
   GatherExchange
     Expression ((Before ORDER BY + Projection))
-      Filter (HAVING)
-        Sorting
+      Sorting
+        Filter (HAVING)
           Aggregating
             Expression ((Before GROUP BY + ))
               ShuffleExchange
@@ -312,13 +312,12 @@ Expression ((Project names + Projection))
                 ReadFromMergeTree (ParallelRead default.lineitem)
 -- Q15
 Expression (Project names)
-  GatherExchange
-    Expression ((Before ORDER BY + (Projection + )))
-      Sorting
-        JoinLogical (Shuffle HashJoin )
-          Expression (Change column names to column identifiers)
-            ShuffleExchange
-              ReadFromMergeTree (ParallelRead default.supplier)
+  Expression ((Before ORDER BY + (Projection + )))
+    Sorting
+      JoinLogical (Local HashJoin )
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.supplier)
+        GatherExchange
           Filter ((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection))))))))
             Aggregating
               Expression (Before GROUP BY)
@@ -446,8 +445,8 @@ Expression (Project names)
               Expression ((Before GROUP BY + WHERE))
                 JoinLogical (Shuffle HashJoin (by exists(__table8).__table2.l_orderkey) )
                   Expression (Create result for always true EXISTS expression)
-                    Filter (WHERE)
-                      ShuffleExchange
+                    ShuffleExchange
+                      Filter (WHERE)
                         JoinLogical (Broadcast HashJoin )
                           Expression ((WHERE + Change column names to column identifiers))
                             ReadFromMergeTree (ParallelRead default.lineitem)

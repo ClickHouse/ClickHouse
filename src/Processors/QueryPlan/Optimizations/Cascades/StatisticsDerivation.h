@@ -20,6 +20,10 @@ Float64 clampJoinRowCount(JoinKind kind, JoinStrictness strictness, Float64 base
 /// `left * right`. Exposed for testing.
 Float64 clampJoinMaxRowCount(JoinKind kind, JoinStrictness strictness, Float64 product, Float64 left, Float64 right);
 
+/// The TRUE fraction of a filter expression, estimated from the input column NDVs and
+/// equivalence classes. Exposed for testing.
+Float64 estimatePredicateSelectivity(const ActionsDAG::Node * node, const ExpressionStatistics & input_statistics);
+
 
 class Memo;
 class JoinStepLogical;
