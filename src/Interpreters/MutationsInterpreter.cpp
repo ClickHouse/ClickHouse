@@ -1173,6 +1173,14 @@ void MutationsInterpreter::prepare(bool dry_run)
                 throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Refused to materialize column {} because the sort key depends on it. Doing so could break the sort order", backQuote(command.column_name));
             }
 
+            /// Same for the partition key: rewriting a column it depends on would leave the rows
+            /// in parts whose partition IDs and names were computed from the old values.
+            Names partition_columns = metadata_snapshot->getColumnsRequiredForPartitionKey();
+            if (std::find(partition_columns.begin(), partition_columns.end(), command.column_name) != partition_columns.end())
+            {
+                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Refused to materialize column {} because the partition key depends on it. Doing so could leave rows in wrong partitions", backQuote(command.column_name));
+            }
+
             const auto & column = columns_desc.get(command.column_name);
 
             if (!column.default_desc.expression)
