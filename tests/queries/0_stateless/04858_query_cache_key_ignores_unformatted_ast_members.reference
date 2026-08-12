@@ -1,3 +1,5 @@
+INTO OUTFILE modifiers do not reach the key
+1
 settings reset with DEFAULT do not reach the key
 1
 a setting that does affect the result still separates keys

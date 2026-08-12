@@ -174,6 +174,12 @@ bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
         ast_with_output->reset(ast_with_output->compression);
         ast_with_output->reset(ast_with_output->compression_level);
 
+        /// The modifiers are formatted only inside the `INTO OUTFILE` branch, so with `out_file`
+        /// gone they can no longer reach the output; leaving them set keeps them in the tree hash.
+        ast_with_output->setIsOutfileAppend(false);
+        ast_with_output->setIsOutfileTruncate(false);
+        ast_with_output->setIsIntoOutfileWithStdout(false);
+
         return true;
     }
 
