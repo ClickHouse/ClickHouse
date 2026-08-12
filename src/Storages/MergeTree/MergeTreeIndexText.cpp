@@ -910,13 +910,6 @@ size_t computeCommonPrefixLength(const std::string_view lhs, const std::string_v
     return common_prefix_length;
 }
 
-/// Never serialize a token the reader would reject, so we can't build an unreadable index.
-void checkTokenSize(size_t token_size)
-{
-    if (token_size > SerializationString::MAX_STRING_SIZE)
-        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size: {}. The maximum is: {}.", token_size, SerializationString::MAX_STRING_SIZE);
-}
-
 template <typename TokenGetter>
 void serializeTokensRaw(
     const TokenGetter & token_getter,
@@ -930,7 +923,7 @@ void serializeTokensRaw(
     for (size_t i = block_begin; i < block_end; ++i)
     {
         auto current_token = token_getter(i);
-        checkTokenSize(current_token.size());
+        TextIndexSerialization::checkTokenSize(current_token.size());
         writeVarUInt(current_token.size(), ostr);
         ostr.write(current_token.data(), current_token.size());
     }
@@ -949,7 +942,7 @@ void serializeTokensFrontCoding(
     size_t block_end)
 {
     const auto & first_token = token_getter(block_begin);
-    checkTokenSize(first_token.size());
+    TextIndexSerialization::checkTokenSize(first_token.size());
     writeVarUInt(first_token.size(), ostr);
     ostr.write(first_token.data(), first_token.size());
 
@@ -957,7 +950,7 @@ void serializeTokensFrontCoding(
     for (size_t i = block_begin + 1; i < block_end; ++i)
     {
         auto current_token = token_getter(i);
-        checkTokenSize(current_token.size());
+        TextIndexSerialization::checkTokenSize(current_token.size());
         auto lcp = computeCommonPrefixLength(previous_token, current_token);
         writeVarUInt(lcp, ostr);
         writeVarUInt(current_token.size() - lcp, ostr);
@@ -1110,6 +1103,12 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
     }
 
     return info;
+}
+
+void TextIndexSerialization::checkTokenSize(size_t token_size)
+{
+    if (token_size > SerializationString::MAX_STRING_SIZE)
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size: {}. The maximum is: {}.", token_size, SerializationString::MAX_STRING_SIZE);
 }
 
 void TextIndexSerialization::serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format)
@@ -1438,6 +1437,7 @@ DictionarySparseIndex serializeTokensAndPostings(
         chassert(dictionary_mark.offset_in_decompressed_block == 0);
 
         const auto & first_token = sorted_tokens[block_begin].token;
+        TextIndexSerialization::checkTokenSize(first_token.size());
         sparse_index_offsets_data.emplace_back(dictionary_mark.offset_in_compressed_file);
         sparse_index_str.insertData(first_token.data(), first_token.size());
 

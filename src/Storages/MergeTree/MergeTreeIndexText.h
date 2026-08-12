@@ -315,6 +315,8 @@ struct TextIndexSerialization
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
+    /// Reject a token the reader would refuse (throws `TOO_LARGE_STRING_SIZE`); call before copying a token elsewhere.
+    static void checkTokenSize(size_t token_size);
     static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, bool has_positions, WriteBuffer & ostr);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
