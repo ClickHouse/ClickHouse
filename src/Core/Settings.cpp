@@ -6262,10 +6262,9 @@ allowed. Non-replicated local-disk engines such as `Log` and `Set` are rejected.
 table is rejected when its storage policy contains a local disk and allowed when every disk in its storage policy
 is remote.
 
-`Distributed`, `Remote`, and `RemoteSecure` tables with an ordinary table target are rejected because they can
-store the background `INSERT` queue on local disk. A `Remote` or `RemoteSecure` table with a table-function
-target, such as `Remote('127.0.0.1', numbers(10))`, is allowed because it is read-only and does not create that
-queue.
+`Distributed`, `Remote`, and `RemoteSecure` tables are allowed. Their optional local background `INSERT` queue
+is a transient send buffer, not data of the table itself. It is not replicated, and setting
+`distributed_foreground_insert = 1` avoids the queue.
 
 Cloud default value: `1`.
 )", 0) \
