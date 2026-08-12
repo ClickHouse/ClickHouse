@@ -36,8 +36,10 @@ class time_zone;
 
 #define DAYNUM_OFFSET_EPOCH 25567
 
-/// Max int value of Date32, DATE LUT cache size minus daynum_offset_epoch
-#define DATE_LUT_MAX_EXTEND_DAY_NUM (DATE_LUT_SIZE - DAYNUM_OFFSET_EPOCH)
+/// Min and max value of Date32: day numbers (days relative to 1970-01-01) of
+/// DATE_LUT_MIN_REPRESENTABLE_YEAR-01-01 and DATE_LUT_MAX_REPRESENTABLE_YEAR-12-31.
+#define DATE_LUT_MIN_EXTEND_DAY_NUM (-719528)
+#define DATE_LUT_MAX_EXTEND_DAY_NUM 2932896
 
 /// A constant to add to time_t so every supported time point becomes non-negative and still has the same remainder of division by 3600.
 /// If we treat "remainder of division" operation in the sense of modular arithmetic (not like in C++).
@@ -266,6 +268,10 @@ private:
     static constexpr Int64 max_representable_day_index = 2958463;  /// 9999-12-31
     static constexpr Time min_representable_time = -62167219200;   /// 0000-01-01 00:00:00 UTC
     static constexpr Time max_representable_time = 253402300799;   /// 9999-12-31 23:59:59 UTC
+
+    /// The Date32 range is the whole representable window.
+    static_assert(DATE_LUT_MIN_EXTEND_DAY_NUM == min_representable_day_index - daynum_offset_epoch);
+    static_assert(DATE_LUT_MAX_EXTEND_DAY_NUM == max_representable_day_index - daynum_offset_epoch);
 
     /// std::chrono::system_clock::from_time_t can overflow for extreme Int64 inputs, so the cctz escape paths
     /// bound the UTC timestamp to this window before constructing a time point. It is wider than the
@@ -1765,6 +1771,9 @@ public:
     /// Create DayNum from year, month, day of month.
     ExtendedDayNum makeDayNum(Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num = 0) const
     {
+        if (unlikely(isMakeDateOutOfRange(year, month, day_of_month)))
+            return makeDayNumOutOfRange(year, month, day_of_month);
+
         if (unlikely(year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return ExtendedDayNum(default_error_day_num);
 
@@ -1773,6 +1782,9 @@ public:
 
     std::optional<ExtendedDayNum> tryToMakeDayNum(Int16 year, UInt8 month, UInt8 day_of_month) const
     {
+        if (unlikely(isMakeDateOutOfRange(year, month, day_of_month)))
+            return makeDayNumOutOfRange(year, month, day_of_month);
+
         if (unlikely(year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return std::nullopt;
 
