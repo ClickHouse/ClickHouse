@@ -229,3 +229,81 @@ def test_wait_query_runner():
     node_query_runner.query("SYSTEM WAIT QUERY RUNNER runner")
     assert node_query_runner.query("SELECT x FROM target ORDER BY x") == "1\n2\n3\n"
     node_query_runner.query("DROP TABLE runner")
+
+
+# QueryRunnerThreads and QueryRunnerThreadsScheduled are single counters shared by every
+# QueryRunner table in the server, so the tests below have to run on a server nothing else is
+# using. That is what an integration test gives them: each xdist worker gets its own instance.
+
+
+def query_runner_metric(name):
+    return int(node_query_runner.query(f"SELECT value FROM system.metrics WHERE metric = '{name}'"))
+
+
+def test_idle_table_holds_no_threads():
+    # A previous test's worker may still be winding down, hence the retry on entry.
+    assert_eq_with_retry(
+        node_query_runner, "SELECT value FROM system.metrics WHERE metric = 'QueryRunnerThreads'", "0"
+    )
+    node_query_runner.query(
+        "CREATE OR REPLACE TABLE idle_runner (query String) ENGINE = QueryRunner SETTINGS threads = 1024"
+    )
+    # Not a retry: the threads used to appear synchronously in CREATE, so waiting would let a
+    # regression pass. Before the fix this reads 1024.
+    assert query_runner_metric("QueryRunnerThreads") == 0
+    node_query_runner.query("DROP TABLE idle_runner")
+
+
+def test_threads_released_after_work():
+    node_query_runner.query("CREATE OR REPLACE TABLE worked_dst (x UInt64) ENGINE = MergeTree ORDER BY tuple()")
+    node_query_runner.query(
+        "CREATE OR REPLACE TABLE worked_runner (query String) ENGINE = QueryRunner "
+        "SETTINGS mode = 'synchronous', threads = 4"
+    )
+    node_query_runner.query(
+        "INSERT INTO worked_runner SELECT 'INSERT INTO default.worked_dst VALUES (1)' FROM numbers(4)"
+    )
+    assert node_query_runner.query("SELECT count() FROM worked_dst") == "4\n"
+    # A table that has run queries must end up holding no threads either, not just a never-used one.
+    # Retrying is correct here: a worker retires shortly after it observes that it is not needed.
+    assert_eq_with_retry(
+        node_query_runner, "SELECT value FROM system.metrics WHERE metric = 'QueryRunnerThreads'", "0"
+    )
+    node_query_runner.query("DROP TABLE worked_runner")
+
+
+def test_queries_outstanding_at_drop_are_abandoned():
+    node_query_runner.query("CREATE OR REPLACE TABLE dropped_dst (x UInt64) ENGINE = MergeTree ORDER BY tuple()")
+    node_query_runner.query(
+        "CREATE OR REPLACE TABLE dropped_runner (query String) ENGINE = QueryRunner "
+        "SETTINGS mode = 'asynchronous', threads = 1, max_queue_size = 32"
+    )
+    node_query_runner.query(
+        "INSERT INTO dropped_runner "
+        "SELECT 'INSERT INTO default.dropped_dst SELECT sleep(0.4)' FROM numbers(24)"
+    )
+    # One query runs at a time and each takes 0.4s, so the rest are still outstanding. Proven rather
+    # than assumed: without this the arm would also pass if the DROP had nothing left to abandon.
+    assert query_runner_metric("QueryRunnerThreadsScheduled") > 1
+    node_query_runner.query("DROP TABLE dropped_runner")
+    # The abandoned queries did not run, and the DROP returned instead of waiting for them.
+    assert int(node_query_runner.query("SELECT count() FROM dropped_dst")) < 24
+
+
+def test_capacity_bound():
+    threads, max_queue_size = 1, 1
+    node_query_runner.query("CREATE OR REPLACE TABLE refused_dst (x UInt64) ENGINE = MergeTree ORDER BY tuple()")
+    node_query_runner.query(
+        "CREATE OR REPLACE TABLE tiny_runner (query String) ENGINE = QueryRunner "
+        f"SETTINGS mode = 'asynchronous', threads = {threads}, max_queue_size = {max_queue_size}"
+    )
+    node_query_runner.query(
+        "INSERT INTO tiny_runner SELECT 'INSERT INTO default.refused_dst SELECT sleep(2)' FROM numbers(32)"
+    )
+    # A table accepts threads + max_queue_size queries at a time and refuses the surplus. Each
+    # accepted query sleeps for 2s, so nothing finishes while the remaining 30 are submitted and
+    # both counts below are exact rather than timing dependent.
+    assert query_runner_metric("QueryRunnerThreadsScheduled") == threads + max_queue_size
+    node_query_runner.query("SYSTEM WAIT QUERY RUNNER tiny_runner")
+    assert int(node_query_runner.query("SELECT count() FROM refused_dst")) == threads + max_queue_size
+    node_query_runner.query("DROP TABLE tiny_runner")
