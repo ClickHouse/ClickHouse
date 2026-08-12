@@ -219,6 +219,13 @@ ContextPtr getShippedFragmentContext(const QueryTreeNodePtr & query_tree, Contex
 /// them would make the initiator-local rebuild and the remote replicas choose different `#split_i` topologies
 /// for the same shipped fragment.
 ///
+/// `merge_tree_determine_task_size_by_prewhere_columns` and `merge_tree_min_bytes_per_task_for_remote_reading`
+/// are on the list because `MergeTreeReadPoolBase::calculateMinMarksPerTask` consults them (for parts stored on
+/// remote disks) when the reading pipeline is built, and the derived `min_marks_per_task` is not local to the
+/// replica: the snapshot replica writes it into the coordinator's first announcement and the followers reuse it.
+/// Under the outer value the initiator-local fragment would announce a task size that disagrees with what the
+/// remote replicas derive from the shipped fragment's own settings.
+///
 /// `fragment_context` is taken per reading step, not once for the whole fragment: with
 /// `parallel_replicas_allow_view_over_mergetree` a view can expand into a `UNION ALL` whose branches carry their
 /// own `SETTINGS`, and the analyzer gives each branch its own `QueryNode` context. Each branch is planned by its
@@ -239,6 +246,8 @@ static ContextPtr makeShippedFragmentReadingContext(const ContextPtr & context, 
         "merge_tree_min_rows_for_concurrent_read_for_remote_filesystem",
         "merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem",
         "merge_tree_min_read_task_size",
+        "merge_tree_determine_task_size_by_prewhere_columns",
+        "merge_tree_min_bytes_per_task_for_remote_reading",
     };
 
     if (!fragment_context || fragment_context.get() == context.get())
