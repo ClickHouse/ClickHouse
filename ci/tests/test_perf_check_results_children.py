@@ -24,6 +24,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -31,6 +32,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 import ci.jobs.performance_tests as performance_tests
 from ci.jobs.performance_tests import (
     build_check_results_children,
+    read_ci_checks_results,
     too_many_slow,
 )
 from ci.praktika.result import Result
@@ -200,6 +202,117 @@ def test_only_the_candidate_side_is_kept():
     assert children[0].duration == 2.0
 
 
+def test_orphaned_reference_side_still_lists_its_query():
+    # `read_ci_checks_results` imports the intact rows of a torn ci-checks.tsv,
+    # and rows are emitted "::old" before "::new", so a cut tail leaves a query
+    # represented by its "::old" side alone. Dropping it loses the query and its
+    # history link, and breaks the one-row-per-query count.
+    columns = [
+        ("pull_request_number", "UInt32"),
+        ("commit_sha", "LowCardinality(String)"),
+        ("check_name", "LowCardinality(String)"),
+        ("check_status", "LowCardinality(String)"),
+        ("check_duration_ms", "UInt64"),
+        ("check_start_time", "DateTime"),
+        ("test_name", "LowCardinality(String)"),
+        ("test_status", "LowCardinality(String)"),
+        ("test_duration_ms", "Float64"),
+        ("report_url", "String"),
+        ("pull_request_url", "String"),
+        ("commit_url", "String"),
+        ("task_url", "String"),
+        ("base_ref", "String"),
+        ("base_repo", "String"),
+        ("head_ref", "String"),
+        ("head_repo", "String"),
+    ]
+
+    def row(test_name, test_status, duration_ms):
+        return "\t".join(
+            ["0", "6c5c34bf", "Performance Comparison (arm_release, master_head, 1/6)"]
+            + ["success", "4740000", "2026-07-26 22:11:03"]
+            + [test_name, test_status, duration_ms]
+            + ["https://report", "https://pr", "", "", "", "", "", ""]
+        )
+
+    rows = [
+        row("q_a.xml #0::old", "unstable", "1000"),
+        row("q_a.xml #0::new", "unstable", "1100"),
+        row("q_b.xml #1::old", "unstable", "2000"),
+        row("q_b.xml #1::new", "unstable", "2100"),
+    ]
+    text = "\n".join(
+        ["\t".join(c for c, _ in columns), "\t".join(t for _, t in columns)]
+        + [row("", "2 unstable", "0")]
+        + rows
+    ) + "\n"
+    # Cut inside the final "::new" row, the ENOSPC shape compare.sh leaves.
+    truncated = text[: text.rindex(rows[3]) + 30]
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "ci-checks.tsv"
+        path.write_text(truncated, encoding="utf8")
+        parsed, malformed, complete = read_ci_checks_results(path)
+
+    assert complete is True
+    assert malformed == 1
+    # The fixture is only meaningful if the parser really did leave an orphan.
+    assert [r.name for r in parsed] == [
+        "q_a.xml #0::old",
+        "q_a.xml #0::new",
+        "q_b.xml #1::old",
+    ]
+
+    tests = Result(name="Tests", status=Result.Status.OK, results=parsed)
+    children = build_check_results_children(tests, CHECK_NAME_PATTERN)
+    assert [(c.name, c.status) for c in children] == [
+        ("q_a.xml #0", "unstable"),
+        ("q_b.xml #1", "unstable"),
+    ]
+    # The orphan's link must resolve, so it keeps the side CIDB stored.
+    assert _link_test_name(children[1]) == "q_b.xml #1::old"
+
+
+def test_reference_side_alone_keeps_its_own_duration():
+    tests = Result(
+        name="Tests",
+        status=Result.Status.OK,
+        results=[Result(name="q #1::old", status="slower", duration=4.0)],
+    )
+    children = build_check_results_children(tests, CHECK_NAME_PATTERN)
+    assert [(c.name, c.status, c.duration) for c in children] == [("q #1", "slower", 4.0)]
+
+
+def test_side_order_in_the_file_does_not_change_the_representative():
+    # The importer preserves compare.sh's order, but the selection must not
+    # depend on it: the candidate side wins from either position.
+    for names in (["q #1::old", "q #1::new"], ["q #1::new", "q #1::old"]):
+        tests = Result(
+            name="Tests",
+            status=Result.Status.OK,
+            results=[
+                Result(name=names[0], status="unstable", duration=1.0),
+                Result(name=names[1], status="unstable", duration=2.0),
+            ],
+        )
+        children = build_check_results_children(tests, CHECK_NAME_PATTERN)
+        assert [c.name for c in children] == ["q #1"], names
+        assert _link_test_name(children[0]) == "q #1::new", names
+
+
+def test_query_order_is_preserved():
+    tests = Result(
+        name="Tests",
+        status=Result.Status.OK,
+        results=[
+            Result(name=name, status="unstable")
+            for name in ("q_c #0::old", "q_c #0::new", "q_a #1::old", "q_a #1::new")
+        ],
+    )
+    children = build_check_results_children(tests, CHECK_NAME_PATTERN)
+    assert [c.name for c in children] == ["q_c #0", "q_a #1"]
+
+
 def test_successful_queries_are_not_listed():
     tests = Result(
         name="Tests",
@@ -217,8 +330,8 @@ def test_successful_queries_are_not_listed():
 
 def test_suffixless_row_passes_through_unchanged():
     # Nothing emits such a row today. Dropping it silently would be the wrong
-    # failure mode if compare.sh ever stopped splitting sides, so the filter
-    # skips "::old" instead of requiring "::new".
+    # failure mode if compare.sh ever stopped splitting sides, so a query with
+    # no side suffix is represented by itself.
     tests = Result(
         name="Tests",
         status=Result.Status.OK,

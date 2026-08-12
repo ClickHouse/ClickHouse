@@ -654,23 +654,27 @@ def build_check_results_children(tests_result, check_name_pattern):
     Results" an explicit status, and `Result.create_from` aggregates children
     only when no status is given.
     """
-    children = []
+    # compare.sh emits a row per side, but a truncated ci-checks.tsv can leave a
+    # query with either side alone, so group by query name and represent each
+    # group by its candidate side when it survived.
+    side_priority = {"::new": 0, "": 1, "::old": 2}
+    chosen = {}
     for tr in tests_result.results:
-        # compare.sh emits a row per side; skipping "::old" rather than requiring
-        # "::new" lets a suffixless row through instead of dropping it.
-        if tr.name.endswith("::old"):
-            continue
         if tr.status not in ("slower", "unstable"):
             continue
-        sub = Result(
-            name=tr.name.removesuffix("::new"),
-            status=tr.status,
-            duration=tr.duration,
-        )
+        side = next((s for s in ("::new", "::old") if tr.name.endswith(s)), "")
+        base = tr.name[: len(tr.name) - len(side)]
+        previous = chosen.get(base)
+        if previous is None or side_priority[side] < side_priority[previous[0]]:
+            chosen[base] = (side, tr)
+
+    children = []
+    for base, (_, tr) in chosen.items():
+        sub = Result(name=base, status=tr.status, duration=tr.duration)
         sub.set_label(
             "query history",
-            # The suffixed name: CIDB's test_name keeps it, and the link
-            # filters on an exact match.
+            # The represented row's own name: CIDB's test_name keeps the side
+            # suffix, and the link filters on an exact match.
             link=build_perf_query_history_link(tr.name, check_name_pattern),
             hint="Performance history for this query on master",
         )
