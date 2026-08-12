@@ -17,33 +17,44 @@ namespace DB
   * an already-accepted definition (server startup, replicated or `ON CLUSTER` DDL replay,
   * `RESTORE` from backup, a short `ATTACH TABLE t`) is exempt, so existing tables always load.
   *
-  * When the definition declares its columns, the header-dependent checks (unknown columns, full
-  * coverage of the schema, ambiguous dotted paths) run as well; a definition relying on schema
-  * inference gets only the header-independent checks at this point — the engine then reruns the
-  * full validation through `validateParquetFieldIdSettingsAfterSchemaInference` once the schema
-  * and format are resolved.
+  * When the definition declares its columns and `definition_columns_match_writer_header` is true,
+  * the header-dependent checks (unknown columns, full coverage of the schema, ambiguous dotted
+  * paths) run as well. Pass `definition_columns_match_writer_header = false` when the engine may
+  * write a header that differs from the declared column list — an object-storage table with a
+  * `PARTITION BY` clause, whose `hive` partition strategy keeps the partition columns out of the
+  * data file unless `partition_columns_in_data_file` is enabled. A definition relying on schema
+  * inference likewise gets only the header-independent checks at this point. In both cases the
+  * engine reruns the full validation through `validateParquetFieldIdSettingsWithResolvedHeader`
+  * once the real writer header is known.
   *
   * Throws `BAD_ARGUMENTS` on an invalid definition. No-op when Parquet support is compiled out.
   */
 void validateParquetFieldIdSettingsInDefinition(
-    const StorageFactory::Arguments & args, const String & format_name, const FormatSettings & format_settings);
+    const StorageFactory::Arguments & args,
+    const String & format_name,
+    const FormatSettings & format_settings,
+    bool definition_columns_match_writer_header = true);
 
-/** Second phase of the validation above, run after the engine has resolved its schema and format.
-  * A definition without a column list (or with `format = 'auto'`) passes the first phase with only
-  * the header-independent checks, because the engine infers the real Parquet header later during
-  * `CREATE` (`StorageFile::setStorageMetadata`, the `IStorageURLBase` constructor,
-  * `StorageObjectStorage::resolveSchemaAndFormat`). Once that header is known — it is the one the
-  * engine freezes and every write will use — the header-dependent checks (unknown columns, full
-  * coverage, ambiguous dotted paths) must run against it, or the definition would be accepted and
-  * only fail on the first `INSERT`. The same definition-supplied / fresh-definition / Parquet
-  * gates apply, so replayed definitions and ambient values are exempt exactly as in the first
-  * phase. Call it only when the first phase ran without the final schema, i.e. when the
-  * definition's column list was empty or its format was still `auto`.
+/** Second phase of the validation above, run once the engine knows the header the Parquet writer
+  * will actually receive. A definition without a column list (or with `format = 'auto'`) passes
+  * the first phase with only the header-independent checks, because the engine infers the real
+  * schema later during `CREATE` (`StorageFile::setStorageMetadata`, the `IStorageURLBase`
+  * constructor, `StorageObjectStorage::resolveSchemaAndFormat`); a partitioned object-storage
+  * definition passes it the same way, because its partition strategy may drop the partition
+  * columns from the written file (`HiveStylePartitionStrategy::getFormatHeader` with
+  * `partition_columns_in_data_file = 0`). Once the writer header is known — the resolved physical
+  * columns, or the partition strategy's format header — the header-dependent checks (unknown
+  * columns, full coverage, ambiguous dotted paths) must run against it, or the definition would
+  * be accepted and only fail on the first `INSERT`. The same definition-supplied /
+  * fresh-definition / Parquet gates apply, so replayed definitions and ambient values are exempt
+  * exactly as in the first phase. Call it only when the first phase ran without the final writer
+  * header, i.e. when the definition's column list was empty, its format was still `auto`, or the
+  * table is partitioned.
   */
-void validateParquetFieldIdSettingsAfterSchemaInference(
+void validateParquetFieldIdSettingsWithResolvedHeader(
     const StorageFactory::Arguments & args,
     const String & resolved_format_name,
-    const NamesAndTypesList & resolved_columns,
+    const NamesAndTypesList & writer_header_columns,
     const FormatSettings & format_settings);
 
 }

@@ -67,29 +67,37 @@ void validateParquetFieldIdSettingsInDefinitionImpl(
 #endif
 
 void validateParquetFieldIdSettingsInDefinition(
-    const StorageFactory::Arguments & args, const String & format_name, const FormatSettings & format_settings)
+    const StorageFactory::Arguments & args,
+    const String & format_name,
+    const FormatSettings & format_settings,
+    bool definition_columns_match_writer_header)
 {
 #if USE_PARQUET
-    validateParquetFieldIdSettingsInDefinitionImpl(args, format_name, args.columns.getAllPhysical(), format_settings);
+    validateParquetFieldIdSettingsInDefinitionImpl(
+        args,
+        format_name,
+        definition_columns_match_writer_header ? args.columns.getAllPhysical() : NamesAndTypesList{},
+        format_settings);
 #else
     (void)args;
     (void)format_name;
     (void)format_settings;
+    (void)definition_columns_match_writer_header;
 #endif
 }
 
-void validateParquetFieldIdSettingsAfterSchemaInference(
+void validateParquetFieldIdSettingsWithResolvedHeader(
     const StorageFactory::Arguments & args,
     const String & resolved_format_name,
-    const NamesAndTypesList & resolved_columns,
+    const NamesAndTypesList & writer_header_columns,
     const FormatSettings & format_settings)
 {
 #if USE_PARQUET
-    validateParquetFieldIdSettingsInDefinitionImpl(args, resolved_format_name, resolved_columns, format_settings);
+    validateParquetFieldIdSettingsInDefinitionImpl(args, resolved_format_name, writer_header_columns, format_settings);
 #else
     (void)args;
     (void)resolved_format_name;
-    (void)resolved_columns;
+    (void)writer_header_columns;
     (void)format_settings;
 #endif
 }

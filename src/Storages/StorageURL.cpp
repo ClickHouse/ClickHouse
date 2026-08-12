@@ -2558,16 +2558,25 @@ void registerStorageURL(StorageFactory & factory)
 
             auto config = StorageURL::getConfiguration(engine_args, context, &args.table_id);
 
-            /// The frozen format settings make an invalid definition-supplied Parquet `field_id`
-            /// map fail every later `INSERT` — validate a fresh definition up front instead.
-            /// When the definition relies on schema or format inference, the header-dependent
-            /// checks rerun after the storage has resolved them.
-            validateParquetFieldIdSettingsInDefinition(args, config.format, format_settings);
-            const bool validate_field_ids_after_inference = args.columns.empty() || config.format == "auto";
-
             const bool use_object_storage
                 = config.http_method.empty()
                 && urlPathHasListableGlobs(config.url);
+
+            /// The frozen format settings make an invalid definition-supplied Parquet `field_id`
+            /// map fail every later `INSERT` — validate a fresh definition up front instead.
+            /// When the definition relies on schema or format inference, the header-dependent
+            /// checks rerun after the storage has resolved them. The object-storage path defers
+            /// them for a partitioned table as well: its partition strategy may keep the
+            /// partition columns out of the data file, so the declared column list is not the
+            /// header the Parquet writer will receive. (The plain `StorageURL` path partitions
+            /// only through a `{_partition_id}` placeholder in the URL, which never drops columns
+            /// from the written file.)
+            const bool partitioned_object_storage = use_object_storage && partition_by != nullptr;
+            validateParquetFieldIdSettingsInDefinition(
+                args, config.format, format_settings,
+                /* definition_columns_match_writer_header */ !partitioned_object_storage);
+            const bool validate_field_ids_with_resolved_header
+                = args.columns.empty() || config.format == "auto" || partitioned_object_storage;
 
             if (!use_object_storage)
             {
@@ -2586,10 +2595,10 @@ void registerStorageURL(StorageFactory & factory)
                     partition_by,
                     /* distributed_processing */ false);
 
-                if (validate_field_ids_after_inference)
+                if (validate_field_ids_with_resolved_header)
                 {
                     const auto metadata = storage->getInMemoryMetadataPtr(context, false);
-                    validateParquetFieldIdSettingsAfterSchemaInference(
+                    validateParquetFieldIdSettingsWithResolvedHeader(
                         args, storage->getFormatName(), metadata->getColumns().getAllPhysical(), format_settings);
                 }
 
@@ -2650,11 +2659,21 @@ void registerStorageURL(StorageFactory & factory)
                 /* is_table_function */ false,
                 /* lazy_init */ false);
 
-            if (validate_field_ids_after_inference)
+            if (validate_field_ids_with_resolved_header)
             {
-                const auto metadata = storage->getInMemoryMetadataPtr(context, false);
-                validateParquetFieldIdSettingsAfterSchemaInference(
-                    args, storage->getFormatName(), metadata->getColumns().getAllPhysical(), format_settings);
+                /// Validate against the very header the sink hands to the Parquet writer: the
+                /// partition strategy's format header for a partitioned table (see
+                /// `StorageObjectStorageSink`), the resolved physical columns otherwise.
+                NamesAndTypesList writer_header_columns;
+                if (configuration->partition_strategy)
+                    writer_header_columns = configuration->partition_strategy->getFormatHeader().getNamesAndTypesList();
+                else
+                {
+                    const auto metadata = storage->getInMemoryMetadataPtr(context, false);
+                    writer_header_columns = metadata->getColumns().getAllPhysical();
+                }
+                validateParquetFieldIdSettingsWithResolvedHeader(
+                    args, storage->getFormatName(), writer_header_columns, format_settings);
             }
 
             return storage;

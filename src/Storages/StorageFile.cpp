@@ -2752,7 +2752,7 @@ void registerStorageFile(StorageFactory & factory)
                 if (validate_field_ids_after_inference)
                 {
                     const auto metadata = storage->getInMemoryMetadataPtr(context, false);
-                    validateParquetFieldIdSettingsAfterSchemaInference(
+                    validateParquetFieldIdSettingsWithResolvedHeader(
                         factory_args,
                         storage->getFormatName(),
                         metadata->getColumns().getAllPhysical(),

@@ -17,6 +17,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/IPartitionStrategy.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/validateParquetFieldIdSettingsInDefinition.h>
 #include <Poco/Logger.h>
@@ -99,8 +100,15 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     /// definition-supplied `field_id` map would be accepted here and then fail every `INSERT` —
     /// validate a fresh definition up front instead. When the definition relies on schema or
     /// format inference, the header-dependent checks rerun after the storage has resolved them.
-    validateParquetFieldIdSettingsInDefinition(args, configuration->format, *format_settings);
-    const bool validate_field_ids_after_inference = args.columns.empty() || configuration->format == "auto";
+    /// A `PARTITION BY` clause defers them the same way: the partition strategy may reshape the
+    /// written file — the `hive` strategy keeps the partition columns out of the data file unless
+    /// `partition_columns_in_data_file` is enabled — so the declared column list is not the header
+    /// the Parquet writer will receive.
+    const bool has_partition_by = args.storage_def->partition_by != nullptr;
+    validateParquetFieldIdSettingsInDefinition(
+        args, configuration->format, *format_settings, /* definition_columns_match_writer_header */ !has_partition_by);
+    const bool validate_field_ids_with_resolved_header
+        = args.columns.empty() || configuration->format == "auto" || has_partition_by;
 
     ASTPtr partition_by;
     if (args.storage_def->partition_by)
@@ -156,11 +164,20 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         partition_by,
         order_by);
 
-    if (validate_field_ids_after_inference)
+    if (validate_field_ids_with_resolved_header)
     {
-        const auto metadata = storage->getInMemoryMetadataPtr(args.getLocalContext(), false);
-        validateParquetFieldIdSettingsAfterSchemaInference(
-            args, storage->getFormatName(), metadata->getColumns().getAllPhysical(), *format_settings);
+        /// Validate against the very header the sink hands to the Parquet writer: the partition
+        /// strategy's format header for a partitioned table (see `StorageObjectStorageSink`), the
+        /// resolved physical columns otherwise.
+        NamesAndTypesList writer_header_columns;
+        if (configuration->partition_strategy)
+            writer_header_columns = configuration->partition_strategy->getFormatHeader().getNamesAndTypesList();
+        else
+        {
+            const auto metadata = storage->getInMemoryMetadataPtr(args.getLocalContext(), false);
+            writer_header_columns = metadata->getColumns().getAllPhysical();
+        }
+        validateParquetFieldIdSettingsWithResolvedHeader(args, storage->getFormatName(), writer_header_columns, *format_settings);
     }
 
     return storage;
