@@ -143,7 +143,11 @@ static ColumnPtr recursiveRemoveLowCardinalityImpl(const ColumnPtr & column, boo
     /// when function will be executed.
     else if (const auto * column_function = typeid_cast<const ColumnFunction *>(column.get()))
     {
-        if (column_function->isShortCircuitArgument())
+        /// Only for the `remove_native` variant: the conversion applies to the future result column
+        /// indiscriminately, so it cannot be restricted to non-native LowCardinality. Leaving it out
+        /// keeps `recursiveRemoveNonNativeLowCardinality` from materializing genuine LowCardinality(T)
+        /// results of short circuit arguments.
+        if (remove_native && column_function->isShortCircuitArgument())
             res = column_function->recursivelyConvertResultToFullColumnIfLowCardinality();
     }
     else if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
