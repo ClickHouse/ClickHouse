@@ -60,6 +60,9 @@ struct JoinSettings
 {
     std::vector<JoinAlgorithm> join_algorithms;
 
+    /// The block nested loop join is not one of `join_algorithms`: it executes what no algorithm can.
+    bool allow_block_nested_loop_join;
+
     UInt64 max_block_size;
 
     UInt64 max_rows_in_join;

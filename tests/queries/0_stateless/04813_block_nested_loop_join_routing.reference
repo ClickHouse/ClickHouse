@@ -21,3 +21,7 @@ equi mixed	0
 equi disjunction	0
 ie join	0
 ie join step	1
+off inner cross	1
+off equi	3
+off ie join step	1
+on again	4

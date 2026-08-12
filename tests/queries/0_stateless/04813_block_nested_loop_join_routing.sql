@@ -62,5 +62,28 @@ SELECT count() FROM bnl_l l ASOF JOIN bnl_r r ON l.x < r.x AND l.y > r.y; -- { s
 SELECT count() FROM bnl_l l LEFT JOIN bnl_r r ON arrayJoin([l.x < r.y, l.x > r.y]); -- { serverError INVALID_JOIN_ON_EXPRESSION }
 SELECT count() FROM bnl_l l FULL JOIN bnl_r r ON arrayJoin([l.x < r.y]); -- { serverError INVALID_JOIN_ON_EXPRESSION }
 
+-- `compatibility` with a version before the operator shipped rejects what reaches it, as that
+-- version did. Checked before the setting is assigned explicitly, which would shadow it.
+SET compatibility = '26.7';
+SELECT count() FROM bnl_l l LEFT JOIN bnl_r r ON l.x < r.y; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SET compatibility = '';
+
+-- The same switch on its own.
+SET allow_block_nested_loop_join = 0;
+SELECT count() FROM bnl_l l LEFT JOIN bnl_r r ON l.x < r.y; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SELECT count() FROM bnl_l l FULL JOIN bnl_r r ON l.x != r.x; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SELECT count() FROM bnl_l l LEFT ANY JOIN bnl_r r ON l.y > 1; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SELECT count() FROM bnl_l l LEFT JOIN bnl_r r ON l.x = r.x OR l.y < r.y; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+
+-- Only the operator is off: the paths above it still claim what they claimed.
+SELECT 'off inner cross', count() FROM (EXPLAIN SELECT count() FROM bnl_l l JOIN bnl_r r ON l.x < r.y) WHERE explain LIKE '%Type: cross%';
+SELECT 'off equi', count() FROM bnl_l l LEFT JOIN bnl_r r ON l.x = r.x;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
+SELECT 'off ie join step', count() FROM (EXPLAIN SELECT count() FROM bnl_l l LEFT JOIN bnl_r r ON l.x < r.x AND l.y > r.y) WHERE explain LIKE '%IEJoin%';
+SET join_algorithm = 'direct,parallel_hash,hash';
+
+SET allow_block_nested_loop_join = 1;
+SELECT 'on again', count() FROM bnl_l l LEFT JOIN bnl_r r ON l.x < r.y;
+
 DROP TABLE bnl_l;
 DROP TABLE bnl_r;

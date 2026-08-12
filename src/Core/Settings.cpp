@@ -3697,6 +3697,18 @@ Possible values:
  Same as `direct,hash`, i.e. try to use direct join and hash join (in this order).
 
 )", 0) \
+    DECLARE(Bool, allow_block_nested_loop_join, true, R"(
+Allow the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition) to execute a `JOIN` whose `ON` section determines no join key.
+
+The operator is the last resort of join planning, reached only when no [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) can execute the condition, so it is not selected through that setting. It examines every pair of rows, which costs the product of the two tables' row counts.
+
+When disabled, such a query is rejected with `INVALID_JOIN_ON_EXPRESSION` while it is being planned, as it was before the operator existed. Conditions the earlier planning paths claim are unaffected: an `ALL INNER JOIN` still becomes a `CROSS JOIN` with a filter, and `ie_join`, when enabled, still claims its pairs of inequalities.
+
+Possible values:
+
+- 0 — Reject a `JOIN` with no join key.
+- 1 — Execute it as a block nested loop join.
+)", 0) \
     DECLARE(UInt64, cross_to_inner_join_rewrite, 1, R"(
 Use inner join instead of comma/cross join if there are joining expressions in the WHERE section. Values: 0 - no rewrite, 1 - apply if possible for comma/cross, 2 - force rewrite all comma joins, cross - if possible
 )", 0) \

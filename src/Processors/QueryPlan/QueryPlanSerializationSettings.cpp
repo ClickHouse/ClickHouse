@@ -62,6 +62,7 @@ namespace DB
     DECLARE(Float, totals_auto_threshold, 0.5, "The threshold for totals_mode = 'auto'.", 0) \
     \
     DECLARE(JoinAlgorithm, join_algorithm, "direct,parallel_hash,hash", "Specifies which JOIN algorithm is used.", 0) \
+    DECLARE(Bool, allow_block_nested_loop_join, true, "Allow the block nested loop join to execute a JOIN whose ON section determines no join key, instead of rejecting it.", 0) \
     \
     DECLARE(UInt64, max_rows_in_join, 0, "Maximum size of the hash table for JOIN (in number of rows).", 0) \
     DECLARE(UInt64, max_bytes_in_join, 0, "Maximum size of the hash table for JOIN (in number of bytes in memory).", 0) \

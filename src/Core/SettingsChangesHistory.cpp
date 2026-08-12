@@ -44,6 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.8",
         {
             {"max_insert_threads", 1, 0, "Changed the default from 1 (no parallel execution) to auto (0), which resolves to the number of CPU cores available to the server, reduced under memory pressure via `max_insert_threads_min_free_memory_per_thread`. This parallelizes `INSERT SELECT` by default. Set to 1 to restore the previous single-threaded behavior."},
+            {"allow_block_nested_loop_join", false, true, "New setting that gates the block nested loop join, which executes a `JOIN` whose `ON` section determines no join key instead of rejecting it with `INVALID_JOIN_ON_EXPRESSION`. The compatibility value 0 restores the previous behavior."},
             {"unique_key_probe_implementation", "auto", "auto", "New setting: selects the UNIQUE KEY probe implementation (currently only the simple baseline exists)"},
             {"use_indexes_refiner_in_read_pools", false, false, "New setting to drop mark ranges fully filtered out by skip indexes or a projection index before read tasks are created in MergeTree read pools."},
             {"s3_base", "", "", "New setting to specify the base URL for resolving relative URLs in the s3 table function and the S3 table engine."},

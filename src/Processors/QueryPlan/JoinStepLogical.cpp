@@ -1046,7 +1046,8 @@ static bool tryAddDisjunctiveConditions(
     const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context,
     std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors,
-    bool throw_on_error)
+    bool throw_on_error,
+    std::string_view error_hint)
 {
     if (join_expressions.size() != 1)
         return false;
@@ -1078,7 +1079,8 @@ static bool tryAddDisjunctiveConditions(
             if (!throw_on_error)
                 return false;
 
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}", formatJoinCondition({expr}));
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}{}",
+                formatJoinCondition({expr}), error_hint);
         }
 
         if (auto left_pre_filter_condition = concatConditions(join_condition, JoinTableSide::Left))
@@ -1500,12 +1502,20 @@ static QueryPlanNode buildPhysicalJoinImpl(
                 /// it subsumes. Both work today, so taking them over needs perf validation first.
                 /// TODO: build the smaller side rather than always the right one, which means
                 /// swapping the inputs here as `IEJoinStep::swap_inputs` does.
-                bool can_use_block_nested_loop = BlockNestedLoopJoinStep::isSupportedJoinType(
+                const bool is_supported_by_block_nested_loop = BlockNestedLoopJoinStep::isSupportedJoinType(
                     join_operator.kind, join_operator.strictness);
+                bool can_use_block_nested_loop = is_supported_by_block_nested_loop && join_settings.allow_block_nested_loop_join;
+
+                /// Point at the setting only when it is what stands in the way, and not when the
+                /// join type is one the operator cannot express anyway.
+                const std::string_view error_hint = is_supported_by_block_nested_loop
+                    ? ", set allow_block_nested_loop_join = 1 to execute it as a block nested loop join"
+                    : "";
 
                 is_disjunctive_condition = tryAddDisjunctiveConditions(
                     join_expression, table_join_clauses, used_expressions, join_settings, planning_context,
-                    join_operator.shared_runtime_filter_descriptors, !can_convert_to_cross && !can_use_block_nested_loop);
+                    join_operator.shared_runtime_filter_descriptors, !can_convert_to_cross && !can_use_block_nested_loop,
+                    error_hint);
 
                 if (!is_disjunctive_condition)
                 {
@@ -1518,8 +1528,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
                     else if (can_use_block_nested_loop)
                         use_block_nested_loop = true;
                     else
-                        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
-                            formatJoinCondition(join_expression));
+                        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}{}",
+                            formatJoinCondition(join_expression), error_hint);
                 }
             }
         }
