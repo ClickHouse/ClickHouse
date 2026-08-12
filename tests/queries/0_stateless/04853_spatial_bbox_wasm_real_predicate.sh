@@ -54,7 +54,10 @@ WHERE wasm_point_in_rect(geom, [(2., 2.), (5., 2.), (5., 5.), (2., 5.), (2., 2.)
 SELECT count() FROM test_spatial_bbox_wasm_real_predicate
 WHERE wasm_point_in_rect(geom, [(100., 100.), (200., 100.), (200., 200.), (100., 200.), (100., 100.)]);
 
-SELECT trimLeft(explain) FROM (
+-- Extract via regex rather than trimLeft: the plan tree's box-drawing prefix (e.g. "│   ")
+-- before these lines varies in depth with query settings (ParallelReplicas, storage, etc.),
+-- so a plain trimLeft of leading whitespace does not strip it reliably across CI configurations.
+SELECT extract(explain, 'Name: idx_bbox|Granules: [0-9]+/[0-9]+') FROM (
     EXPLAIN indexes = 1 SELECT count() FROM test_spatial_bbox_wasm_real_predicate
     WHERE wasm_point_in_rect(geom, [(100., 100.), (200., 100.), (200., 200.), (100., 200.), (100., 100.)])
 ) WHERE explain LIKE '%Name: idx_bbox%' OR explain LIKE '%Granules: 0/%';
