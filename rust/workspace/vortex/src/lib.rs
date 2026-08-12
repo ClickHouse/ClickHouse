@@ -21,18 +21,15 @@ use std::sync::Arc;
 
 use arrow_array::cast::AsArray;
 use arrow_array::ffi::{from_ffi, to_ffi, FFI_ArrowArray, FFI_ArrowSchema};
-use arrow_array::{Array, ArrayRef as ArrowArrayRef, RecordBatch, StructArray};
-use arrow_schema::{DataType, Field, Fields, Schema, SchemaRef};
+use arrow_array::{Array, RecordBatch, StructArray};
+use arrow_schema::{Field, Schema, SchemaRef};
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use vortex::array::arrays::dict::DictArraySlotsExt;
-use vortex::array::arrays::struct_::StructArrayExt;
-use vortex::array::arrays::{Constant, Dict, Struct};
 use vortex::array::buffer::BufferHandle;
 use vortex::array::{ArrayRef, ExecutionCtx, VortexSessionExecute};
 use vortex::arrow::ArrowSessionExt;
 use vortex::buffer::{Alignment, ByteBufferMut};
-use vortex::dtype::{DType, FieldName, Nullability};
+use vortex::dtype::{FieldName, Nullability};
 use vortex::error::{vortex_err, VortexResult};
 use vortex::expr::{get_item, is_null, lit, not, root, select, Expression};
 use vortex::file::{OpenOptionsSessionExt, VortexFile, WriteOptionsSessionExt};
@@ -64,8 +61,7 @@ pub struct VortexFFIReader {
 
 pub struct VortexFFIScanner {
     session: VortexSession,
-    /// The canonical Arrow schema of the projected columns; per-batch schemas may differ from it
-    /// when an encoding is preserved (e.g. a dictionary-encoded column).
+    /// The canonical Arrow schema of the projected columns.
     schema: SchemaRef,
     chunks: Box<dyn Iterator<Item = VortexResult<ArrayRef>>>,
 }
@@ -306,90 +302,13 @@ pub unsafe extern "C" fn vortex_ffi_scanner_create(
     }
 }
 
-/// Returns the Arrow target field for exporting `array` while keeping its dictionary structure,
-/// or `None` when the array should be exported canonically. Only arrays whose values are
-/// scalar-like (numbers, booleans, strings, binaries) are exported as Arrow dictionaries,
-/// because those are the types ClickHouse can read into a `LowCardinality` column.
-fn dictionary_export_field(
-    array: &ArrayRef,
-    session: &VortexSession,
-    name: &str,
-) -> VortexResult<Option<Field>> {
-    fn is_dictionary_value_dtype(dtype: &DType) -> bool {
-        matches!(dtype, DType::Bool(_) | DType::Primitive(..) | DType::Utf8(_) | DType::Binary(_))
-    }
-
-    // Nullable arrays are exported canonically: their validity lives in the dictionary codes,
-    // and the Arrow dictionary export does not carry it over, so the nulls would be replaced by
-    // the values stored under the mask.
-    if array.dtype().nullability() != Nullability::NonNullable {
-        return Ok(None);
-    }
-
-    let make_field = |codes: &DType, values: &DType| -> VortexResult<Field> {
-        let codes_type = session.arrow().to_arrow_field("", codes)?.data_type().clone();
-        let values_type = session.arrow().to_arrow_field("", values)?.data_type().clone();
-        Ok(Field::new(
-            name,
-            DataType::Dictionary(Box::new(codes_type), Box::new(values_type)),
-            true,
-        ))
-    };
-
-    if let Ok(dict) = array.clone().try_downcast::<Dict>() {
-        if is_dictionary_value_dtype(dict.values().dtype()) {
-            return Ok(Some(make_field(dict.codes().dtype(), dict.values().dtype())?));
-        }
-        return Ok(None);
-    }
-
-    if let Ok(constant) = array.clone().try_downcast::<Constant>() {
-        let dtype = constant.scalar().dtype().clone();
-        if !constant.scalar().is_null() && is_dictionary_value_dtype(&dtype) {
-            let codes = DType::Primitive(vortex::dtype::PType::U8, Nullability::NonNullable);
-            return Ok(Some(make_field(&codes, &dtype)?));
-        }
-        return Ok(None);
-    }
-
-    Ok(None)
-}
-
-/// Exports one scanned chunk as an Arrow struct array. Fields that are dictionary-encoded (or
-/// constant) are exported as Arrow dictionary arrays instead of being fully decoded, so the
-/// dictionary structure survives the format boundary; everything else is exported canonically.
+/// Exports one scanned chunk as an Arrow struct array in the canonical layout of `schema`.
 fn export_chunk(
     chunk: ArrayRef,
     schema: &SchemaRef,
     session: &VortexSession,
     ctx: &mut ExecutionCtx,
 ) -> VortexResult<StructArray> {
-    let chunk = match chunk.try_downcast::<Struct>() {
-        Ok(struct_array) => {
-            let mut fields = Vec::with_capacity(schema.fields().len());
-            let mut arrays: Vec<ArrowArrayRef> = Vec::with_capacity(schema.fields().len());
-            for (i, field_array) in struct_array.iter_unmasked_fields().enumerate() {
-                let schema_field = schema.field(i);
-                let target = dictionary_export_field(field_array, session, schema_field.name())?;
-                let arrow_array = session.arrow().execute_arrow(
-                    field_array.clone(),
-                    Some(target.as_ref().unwrap_or(schema_field)),
-                    ctx,
-                )?;
-                fields.push(Arc::new(Field::new(
-                    schema_field.name(),
-                    arrow_array.data_type().clone(),
-                    true,
-                )));
-                arrays.push(arrow_array);
-            }
-            return Ok(StructArray::new(Fields::from(fields), arrays, None));
-        }
-        Err(chunk) => chunk,
-    };
-
-    // The scanned chunk is not a plain struct array (e.g. it is chunked): export it canonically
-    // as a whole.
     let struct_field = Field::new_struct("", schema.fields().clone(), false);
     let arrow = session.arrow().execute_arrow(chunk, Some(&struct_field), ctx)?;
     Ok(arrow.as_struct().clone())
