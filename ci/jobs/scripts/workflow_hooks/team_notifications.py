@@ -1,5 +1,9 @@
+import os
+import subprocess
 import sys
+import tempfile
 
+from ci.praktika import Secret
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 
@@ -16,6 +20,11 @@ INTEGRATIONS_DOCS_PREFIXES = (
 DOCS_TEAM = "docs"
 CLICKPIPES_TEAM = "clickpipes"
 INTEGRATIONS_ECOSYSTEM_TEAM = "integrations-ecosystem"
+
+TEAM_REVIEW_TOKEN = Secret.Config(
+    name="/ci/robot-ch-test-poll-copilot",
+    type=Secret.Type.AWS_SSM_PARAMETER,
+)
 
 
 def normalize_path(file):
@@ -47,6 +56,41 @@ def get_docs_teams_to_request(changed_files):
     return teams
 
 
+def request_docs_team_reviews(team_slugs):
+    if not team_slugs:
+        return True
+
+    token = TEAM_REVIEW_TOKEN.get_value()
+    with tempfile.TemporaryDirectory() as gh_config_dir:
+        gh_env = os.environ.copy()
+        gh_env["GH_CONFIG_DIR"] = gh_config_dir
+        gh_env.pop("GH_TOKEN", None)
+        gh_env.pop("GITHUB_TOKEN", None)
+        subprocess.run(
+            ["gh", "auth", "login", "--with-token"],
+            input=token,
+            text=True,
+            check=True,
+            env=gh_env,
+        )
+
+        previous_env = {
+            name: os.environ.get(name)
+            for name in ("GH_CONFIG_DIR", "GH_TOKEN", "GITHUB_TOKEN")
+        }
+        os.environ["GH_CONFIG_DIR"] = gh_config_dir
+        os.environ.pop("GH_TOKEN", None)
+        os.environ.pop("GITHUB_TOKEN", None)
+        try:
+            return GH.request_team_reviews(team_slugs)
+        finally:
+            for name, value in previous_env.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+
+
 def check():
     info = Info()
 
@@ -56,8 +100,8 @@ def check():
         "most likely failed to fetch the PR file list from the GitHub API. "
         "See the Config Workflow logs for the underlying error."
     )
-    if info.event_action == "opened":
-        GH.request_team_reviews(get_docs_teams_to_request(changed_files))
+    if info.event_action in ("opened", "synchronize"):
+        request_docs_team_reviews(get_docs_teams_to_request(changed_files))
 
     if any(
         file.startswith(prefix)
