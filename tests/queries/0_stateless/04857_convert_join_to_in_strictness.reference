@@ -47,3 +47,15 @@ b
 -- a differing overflow mode alone does not block the conversion
 1
 -- a Join engine table keeps its declared strictness check
+-- a key with dynamic structure is not converted: the IN function rejects such an argument
+a
+b
+a
+b
+0
+-- including a Dynamic nested inside a composite key type
+a
+b
+a
+b
+0

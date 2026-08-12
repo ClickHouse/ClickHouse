@@ -173,7 +173,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     /// The Join engine validates the query's kind and strictness against its declared ones, and
     /// replacing the join with IN skips that check. Single-child steps can sit above the source.
-    auto is_storage_join = [](const QueryPlan::Node * side_node)
+    auto isStorageJoin = [](const QueryPlan::Node * side_node)
     {
         for (const auto * node = side_node; node; )
         {
@@ -185,7 +185,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         }
         return false;
     };
-    if (is_storage_join(parent_node->children.back()))
+    if (isStorageJoin(parent_node->children.back()))
         return 0;
 
     /// Do not support many condition for now.
@@ -207,6 +207,12 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         else
             return 0;
     }
+
+    /// The IN function rejects arguments with dynamic structure, so such a key cannot be
+    /// filtered by a set even though the join accepts it.
+    for (const auto & [lhs, rhs] : key_pairs)
+        if (lhs.getType()->hasDynamicStructure() || rhs.getType()->hasDynamicStructure())
+            return 0;
 
     bool build_set_from_left_part = false;
 

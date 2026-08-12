@@ -2,6 +2,7 @@
 -- are not present in the expression DAG's outputs (e.g. after convertJoinToIn adds qualified names).
 -- https://s3.amazonaws.com/clickhouse-test-reports/json.html?REF=master&sha=47a1a42015008dee146876fbbcce728e4bcb993e&name_0=MasterCI&name_1=Stress%20test%20%28arm_asan%2C%20s3%29
 
+SET enable_analyzer = 1;
 SET join_algorithm = 'hash';
 -- The conversion declines while a join or transfer limit is active, and the test profile sets all four.
 SET max_rows_in_join = 0, max_bytes_in_join = 0, max_rows_to_transfer = 0, max_bytes_to_transfer = 0;

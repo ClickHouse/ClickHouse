@@ -127,5 +127,48 @@ SELECT count() FROM (SELECT val FROM t_left SEMI LEFT JOIN t_join_any ON t_left.
 SETTINGS query_plan_convert_join_to_in = 1; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
 
 DROP TABLE t_join_any;
+
+SELECT '-- a key with dynamic structure is not converted: the IN function rejects such an argument';
+DROP TABLE IF EXISTS t_dyn_left;
+DROP TABLE IF EXISTS t_dyn_right;
+CREATE TABLE t_dyn_left (id Dynamic, val String) ENGINE = Memory;
+CREATE TABLE t_dyn_right (id Dynamic) ENGINE = Memory;
+INSERT INTO t_dyn_left VALUES (1, 'a'), (2, 'b'), (9, 'nomatch');
+INSERT INTO t_dyn_right VALUES (1), (2);
+
+SELECT val FROM t_dyn_left SEMI LEFT JOIN t_dyn_right ON t_dyn_left.id = t_dyn_right.id
+ORDER BY val SETTINGS allow_dynamic_type_in_join_keys = 1, query_plan_convert_join_to_in = 0;
+
+SELECT val FROM t_dyn_left SEMI LEFT JOIN t_dyn_right ON t_dyn_left.id = t_dyn_right.id
+ORDER BY val SETTINGS allow_dynamic_type_in_join_keys = 1, query_plan_convert_join_to_in = 1;
+
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT val FROM t_dyn_left SEMI LEFT JOIN t_dyn_right ON t_dyn_left.id = t_dyn_right.id
+    SETTINGS allow_dynamic_type_in_join_keys = 1, query_plan_convert_join_to_in = 1
+) WHERE explain ILIKE '%CreatingSets%';
+
+SELECT '-- including a Dynamic nested inside a composite key type';
+DROP TABLE IF EXISTS t_arr_left;
+DROP TABLE IF EXISTS t_arr_right;
+CREATE TABLE t_arr_left (id Array(Dynamic), val String) ENGINE = Memory;
+CREATE TABLE t_arr_right (id Array(Dynamic)) ENGINE = Memory;
+INSERT INTO t_arr_left VALUES ([1], 'a'), ([2], 'b'), ([9], 'nomatch');
+INSERT INTO t_arr_right VALUES ([1]), ([2]);
+
+SELECT val FROM t_arr_left SEMI LEFT JOIN t_arr_right ON t_arr_left.id = t_arr_right.id
+ORDER BY val SETTINGS allow_dynamic_type_in_join_keys = 1, query_plan_convert_join_to_in = 0;
+
+SELECT val FROM t_arr_left SEMI LEFT JOIN t_arr_right ON t_arr_left.id = t_arr_right.id
+ORDER BY val SETTINGS allow_dynamic_type_in_join_keys = 1, query_plan_convert_join_to_in = 1;
+
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT val FROM t_arr_left SEMI LEFT JOIN t_arr_right ON t_arr_left.id = t_arr_right.id
+    SETTINGS allow_dynamic_type_in_join_keys = 1, query_plan_convert_join_to_in = 1
+) WHERE explain ILIKE '%CreatingSets%';
+
+DROP TABLE t_arr_left;
+DROP TABLE t_arr_right;
+DROP TABLE t_dyn_left;
+DROP TABLE t_dyn_right;
 DROP TABLE t_left;
 DROP TABLE t_right;
