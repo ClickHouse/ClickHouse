@@ -41,6 +41,11 @@ SELECT 1 FROM view(WITH t(p, q) AS (SELECT 1, 2 UNION ALL SELECT 3, 4) SELECT t.
 SELECT 1 FROM view(WITH t(x) AS ((SELECT 1 UNION ALL SELECT 2) UNION ALL SELECT 3) SELECT t.x FROM t) ty;
 SELECT 1 FROM remote('127.0.0.1', view(WITH t(x) AS (SELECT 1 UNION ALL SELECT 2) SELECT t.x FROM t)) ty;
 
+-- A recursive CTE names its own alias list from inside its body, so it reads the restored list
+-- rather than a qualified reference to it.
+SELECT 1 FROM view(WITH RECURSIVE t(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM t WHERE x < 3) SELECT t.x FROM t ORDER BY t.x) ty;
+WITH RECURSIVE t(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM t WHERE x < 3) SELECT t.x FROM t ORDER BY t.x;
+
 -- These two read the AST of the `view` argument, which is the one place an unresolved alias list is
 -- printed, and assert the list is emitted there while an `IN` rewrite is active. The unresolved-only
 -- guard on the emission is pinned separately, by the column-pruning rows further down.

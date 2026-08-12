@@ -496,7 +496,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
             with_element_ast->children.push_back(with_element_ast->subquery);
             with_element_ast->is_materialized = with_query_node ? with_query_node->isMaterialized() : with_union_node->isMaterialized();
 
-            /// `ASTWithElement::aliases` is not a `children` entry.
+            /// The parser leaves `ASTWithElement::aliases` out of `children`, so match it here.
             const auto & cte_column_aliases = getColumnAliasesToRestore(with_node);
             if (!cte_column_aliases.empty())
             {
