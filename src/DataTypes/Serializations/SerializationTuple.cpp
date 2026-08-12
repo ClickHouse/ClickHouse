@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 
@@ -819,43 +820,88 @@ ReturnType SerializationTuple::deserializeTextCSVImpl(IColumn & column, ReadBuff
     const auto interior_settings = getInteriorTupleCSVSettings(settings, size);
     if (!settings.csv.deserialize_separate_columns_into_tuple)
         return deserialize_whole_tuple(istr);
-    if (!tupleMayUseWholeCSVField(settings, elems, interior_settings))
+    if (settings.csv.tuple_delimiter_matches_field_delimiter || !interior_settings || istr.eof())
+        return deserializeTextCSVSeparateColumns<ReturnType>(column, istr, settings, elems);
+
+    const bool may_use_whole_csv_field = tupleMayUseWholeCSVField(settings, elems, interior_settings);
+    const char first_char = *istr.position();
+    const bool quoted_field = (settings.csv.allow_double_quotes && first_char == '"')
+        || (settings.csv.allow_single_quotes && first_char == '\'');
+    if (!quoted_field && first_char != '(' && !may_use_whole_csv_field)
         return deserializeTextCSVSeparateColumns<ReturnType>(column, istr, settings, elems);
 
     auto * borrowed_buf = dynamic_cast<PeekableReadBuffer *>(&istr);
-    if (!borrowed_buf || settings.csv.custom_delimiter.empty())
+    if (!borrowed_buf)
     {
         PeekableReadBuffer peekable_buf(istr, true);
-        PeekableReadBufferCheckpoint checkpoint(peekable_buf);
-
-        String value;
-        bool whole_tuple = tryReadCSV(value, peekable_buf, settings.csv);
-        if (whole_tuple && !peekable_buf.eof()
-            && *peekable_buf.position() == settings.csv.tuple_delimiter
-            && !settings.csv.tuple_delimiter_matches_field_delimiter)
+        const auto try_local_whole_tuple = [&]()
         {
-            whole_tuple = false;
-        }
+            String value;
+            bool whole_tuple = tryReadCSV(value, peekable_buf, settings.csv);
+            if (whole_tuple && !peekable_buf.eof()
+                && *peekable_buf.position() == settings.csv.tuple_delimiter
+                && !settings.csv.tuple_delimiter_matches_field_delimiter)
+            {
+                whole_tuple = false;
+            }
 
-        if (whole_tuple && !peekable_buf.eof() && !settings.csv.force_quote_date_time_types
-            && settings.csv.custom_delimiter.empty())
+            if (whole_tuple && !peekable_buf.eof() && !settings.csv.force_quote_date_time_types
+                && settings.csv.custom_delimiter.empty())
+            {
+                whole_tuple = *peekable_buf.position() == settings.csv.delimiter
+                    || *peekable_buf.position() == '\r'
+                    || *peekable_buf.position() == '\n';
+            }
+
+            if (whole_tuple)
+            {
+                ReadBufferFromString value_buf(value);
+                whole_tuple = tryDeserializeText(column, value_buf, settings, true);
+            }
+            return whole_tuple;
+        };
+
+        if constexpr (throw_exception)
         {
-            whole_tuple = *peekable_buf.position() == settings.csv.delimiter
-                || *peekable_buf.position() == '\r'
-                || *peekable_buf.position() == '\n';
-        }
+            {
+                PeekableReadBufferCheckpoint checkpoint(peekable_buf);
+                if (!try_local_whole_tuple())
+                {
+                    peekable_buf.rollbackToCheckpoint();
+                    deserializeTextCSVSeparateColumns<void>(column, peekable_buf, settings, elems);
+                }
+            }
 
-        if (whole_tuple)
+            if (likely(!peekable_buf.hasUnreadData()))
+                return;
+
+            column.popBack(1);
+            throw Exception(
+                ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Cannot safely continue parsing a CSV tuple after a speculative read crossed the input buffer boundary");
+        }
+        else
         {
-            ReadBufferFromString value_buf(value);
-            whole_tuple = tryDeserializeText(column, value_buf, settings, true);
+            bool result;
+            {
+                PeekableReadBufferCheckpoint checkpoint(peekable_buf);
+                if (try_local_whole_tuple())
+                    result = true;
+                else
+                {
+                    peekable_buf.rollbackToCheckpoint();
+                    result = deserializeTextCSVSeparateColumns<bool>(column, peekable_buf, settings, elems);
+                }
+            }
+
+            if (peekable_buf.hasUnreadData())
+            {
+                if (result)
+                    column.popBack(1);
+                return false;
+            }
+            return result;
         }
-
-        if (whole_tuple)
-            return ReturnType(true);
-
-        peekable_buf.rollbackToCheckpoint();
-        return deserializeTextCSVSeparateColumns<ReturnType>(column, peekable_buf, settings, elems);
     }
 
     PeekableReadBuffer & peekable_buf = *borrowed_buf;
@@ -863,23 +909,27 @@ ReturnType SerializationTuple::deserializeTextCSVImpl(IColumn & column, ReadBuff
 
     String value;
     bool whole_tuple = tryReadCSV(value, peekable_buf, settings.csv);
-    bool custom_delimiter_matches = whole_tuple
-        && !peekable_buf.eof()
-        && customDelimiterFollows(peekable_buf, settings.csv.custom_delimiter);
+    const bool boundary_follows = whole_tuple
+        && (peekable_buf.eof()
+            || (settings.csv.custom_delimiter.empty()
+                ? settings.csv.force_quote_date_time_types
+                    || *peekable_buf.position() == settings.csv.delimiter
+                    || *peekable_buf.position() == '\r'
+                    || *peekable_buf.position() == '\n'
+                : customDelimiterFollows(peekable_buf, settings.csv.custom_delimiter)));
 
     const bool tuple_delimiter_follows = whole_tuple
         && !peekable_buf.eof()
         && *peekable_buf.position() == settings.csv.tuple_delimiter
         && !settings.csv.tuple_delimiter_matches_field_delimiter;
 
-    if (tuple_delimiter_follows && custom_delimiter_matches)
+    if (tuple_delimiter_follows && boundary_follows && may_use_whole_csv_field)
     {
         peekable_buf.rollbackToCheckpoint();
         bool flattened_tuple = deserializeTextCSVSeparateColumns<bool>(column, peekable_buf, settings, elems);
         if (flattened_tuple)
         {
-            /// CSV quoting can currently force this ambiguity only for temporal elements and their wrappers.
-            /// Keep the legacy flattened interpretation; revisit this tie-break if other types gain that behavior.
+            /// Keep the legacy flattened interpretation when both parses are valid.
             return ReturnType(true);
         }
 
@@ -888,7 +938,7 @@ ReturnType SerializationTuple::deserializeTextCSVImpl(IColumn & column, ReadBuff
         whole_tuple = tryReadCSV(reread_value, peekable_buf, settings.csv);
         chassert(!whole_tuple || reread_value == value);
     }
-    else if (tuple_delimiter_follows)
+    else if (tuple_delimiter_follows && !boundary_follows)
         whole_tuple = false;
 
     if (whole_tuple)
