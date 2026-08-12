@@ -414,6 +414,11 @@ void optimizeJoinByShards(QueryPlan::Node & root, bool only_parallel_sorted_merg
             if (only_parallel_sorted_merge)
                 is_algo_supported = full_sorting_merge_join
                     && full_sorting_merge_join->getSelectedAlgorithm() == JoinAlgorithm::PARALLEL_SORTED_MERGE;
+            else if (full_sorting_merge_join && full_sorting_merge_join->getSelectedAlgorithm() == JoinAlgorithm::SORTED_MERGE)
+                /// `sorted_merge` is the explicitly single-stream variant: the algorithm name encodes the
+                /// parallelism choice, so the blanket `query_plan_join_shard_by_pk_ranges` opt-in must not
+                /// turn it into `parallel_sorted_merge`.
+                is_algo_supported = false;
 
             bool can_split_left_table = frame.results.front() != std::nullopt && is_algo_supported && !join->hasDelayedBlocks();
             // std::cerr << "can_split_left_table " << can_split_left_table << std::endl;
