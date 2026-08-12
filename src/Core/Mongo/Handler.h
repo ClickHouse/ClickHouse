@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <Core/Mongo/Document.h>
 #include <Core/Mongo/MongoProtocol.h>
 #include <Core/Mongo/Wire/OpMessage.h>
@@ -21,6 +22,13 @@ String modifyFilter(const String & json);
 /// way the filter of a `find` is normalized (see `modifyFilter`): `$match` uses the query syntax,
 /// where a nested document names nested fields rather than holding a value.
 String serializePipeline(const rapidjson::Value & pipeline);
+
+/** A numeric option of a wire command that must be a whole number, such as the `limit` and the
+  * `skip` of `find` and `count`. Drivers and the shell send whole numbers as BSON doubles, so an
+  * integral double is accepted; a fractional one is an error rather than a silent truncation to
+  * a bound the client never asked for. Returns nothing when the member is absent or null.
+  */
+std::optional<Int64> getWholeNumberOption(const rapidjson::Value & json, const char * name, const char * command);
 
 /** The target of a Mongo command: the collection named by the command field itself and the
   * database taken from the `$db` field of the command document. Mongo databases are mapped

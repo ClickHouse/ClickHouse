@@ -1570,3 +1570,36 @@ def test_find_sort_rejects_invalid_directions(started_cluster):
     assert ids == [2, 1]
 
     collection.drop()
+
+
+def test_find_and_count_bounds_must_be_whole_numbers(started_cluster):
+    """The `limit` and the `skip` of a wire `find` or `count` must be whole numbers: a BSON
+    double such as 1.5 used to be silently truncated to a bound the client never asked for.
+    An integral double stays accepted, because the shell sends every number as a double."""
+    client = make_client()
+    database = client["db"]
+    collection = database["whole_bounds"]
+    collection.drop()
+    collection.insert_many([{"id": i} for i in range(1, 6)])
+
+    for command in (
+        {"find": "whole_bounds", "limit": 1.5},
+        {"find": "whole_bounds", "skip": 2.5},
+        {"count": "whole_bounds", "limit": 1.5},
+        {"count": "whole_bounds", "skip": 2.5},
+        {"find": "whole_bounds", "limit": "3"},
+        {"count": "whole_bounds", "skip": True},
+    ):
+        with pytest.raises(pymongo.errors.OperationFailure) as error:
+            database.command(command)
+        assert "must be a whole number" in str(error.value) or "must be a number" in str(error.value)
+
+    assert database.command({"count": "whole_bounds", "limit": 2.0})["n"] == 2
+    reply = database.command({"find": "whole_bounds", "limit": 2.0, "skip": 1.0, "sort": {"id": 1}})
+    assert [document["id"] for document in reply["cursor"]["firstBatch"]] == [2, 3]
+
+    with pytest.raises(pymongo.errors.OperationFailure) as error:
+        database.command({"find": "whole_bounds", "skip": -1})
+    assert "must not be negative" in str(error.value)
+
+    collection.drop()

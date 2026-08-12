@@ -21,23 +21,6 @@ extern const int BAD_ARGUMENTS;
 namespace DB::MongoProtocol
 {
 
-namespace
-{
-
-/// The count options `limit` and `skip` bound the documents being counted. Mongo reads a
-/// negative `limit` as its absolute value, the same way `find` does.
-Int64 getCountOption(const rapidjson::Value & json, const char * name)
-{
-    auto it = json.FindMember(name);
-    if (it == json.MemberEnd() || it->value.IsNull())
-        return 0;
-    if (!it->value.IsNumber())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '{}' of a 'count' command must be a number", name);
-    return it->value.IsInt64() ? it->value.GetInt64() : static_cast<Int64>(it->value.GetDouble());
-}
-
-}
-
 std::vector<Document> CountHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
     const auto & document = documents[0].documents[0];
@@ -60,8 +43,10 @@ std::vector<Document> CountHandler::handle(const std::vector<OpMessageSection> &
         serialized_filter = modifyFilter(buffer.GetString());
     }
 
-    auto limit = getCountOption(json_representation, "limit");
-    auto skip = getCountOption(json_representation, "skip");
+    /// The count options `limit` and `skip` bound the documents being counted. Mongo reads a
+    /// negative `limit` as its absolute value, the same way `find` does.
+    auto limit = getWholeNumberOption(json_representation, "limit", "count").value_or(0);
+    auto skip = getWholeNumberOption(json_representation, "skip", "count").value_or(0);
     if (skip < 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'skip' of a 'count' command must not be negative");
 
@@ -69,7 +54,7 @@ std::vector<Document> CountHandler::handle(const std::vector<OpMessageSection> &
     if (skip != 0)
         mongo_dialect_query += fmt::format(".skip({})", skip);
     if (limit != 0)
-        mongo_dialect_query += fmt::format(".limit({})", limit < 0 ? -limit : limit);
+        mongo_dialect_query += fmt::format(".limit({})", limit < 0 ? -static_cast<UInt64>(limit) : static_cast<UInt64>(limit));
 
     auto parser = Mongo::ParserMongoQuery(10000, 10000, 10000);
     auto ast = Mongo::parseMongoQuery(

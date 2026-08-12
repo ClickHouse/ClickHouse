@@ -74,8 +74,10 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
     }
     serialized_filter = modifyFilter(serialized_filter);
 
-    auto serialized_limit = serializeMember(json_representation, "limit");
-    auto serialized_skip = serializeMember(json_representation, "skip");
+    auto limit = getWholeNumberOption(json_representation, "limit", "find");
+    auto skip = getWholeNumberOption(json_representation, "skip", "find");
+    if (skip && *skip < 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'skip' of a 'find' command must not be negative");
 
     auto sorting = serializeMember(json_representation, "sort");
     if (!sorting.empty())
@@ -85,16 +87,13 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
     /// as `db.<collection>` keeps the text independent of the database name, which may itself
     /// be `db`.
     auto mongo_dialect_query = fmt::format("db.{}.find({})", collection.collection, serialized_filter);
-    if (!serialized_limit.empty())
-    {
-        /// Mongo reads `limit: 0` as no limit at all and a negative limit as its absolute
-        /// value, the same way `count` does.
-        int limit = std::stoi(serialized_limit);
-        if (limit != 0)
-            mongo_dialect_query += fmt::format(".limit({})", limit < 0 ? -limit : limit);
-    }
-    if (!serialized_skip.empty())
-        mongo_dialect_query += fmt::format(".skip({})", std::stoi(serialized_skip));
+    /// Mongo reads `limit: 0` as no limit at all and a negative limit as its absolute
+    /// value, the same way `count` does. The magnitude is taken in the unsigned domain,
+    /// where negating the smallest `Int64` is well-defined.
+    if (limit && *limit != 0)
+        mongo_dialect_query += fmt::format(".limit({})", *limit < 0 ? -static_cast<UInt64>(*limit) : static_cast<UInt64>(*limit));
+    if (skip && *skip != 0)
+        mongo_dialect_query += fmt::format(".skip({})", *skip);
     if (!sorting.empty())
         mongo_dialect_query += fmt::format(".sort({})", sorting);
 

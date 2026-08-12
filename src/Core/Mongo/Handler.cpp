@@ -1,5 +1,6 @@
 #include <Core/Mongo/Handler.h>
 
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -704,6 +705,30 @@ String serializePipeline(const rapidjson::Value & pipeline)
     rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
     normalized.Accept(writer);
     return buffer.GetString();
+}
+
+std::optional<Int64> getWholeNumberOption(const rapidjson::Value & json, const char * name, const char * command)
+{
+    auto it = json.FindMember(name);
+    if (it == json.MemberEnd() || it->value.IsNull())
+        return std::nullopt;
+
+    if (!it->value.IsNumber())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '{}' of a '{}' command must be a number", name, command);
+
+    if (it->value.IsDouble())
+    {
+        const double value = it->value.GetDouble();
+        /// The bound excludes 2^63 itself: it is representable as a double but not as an `Int64`.
+        if (value != std::trunc(value) || value < -9223372036854775808.0 || value >= 9223372036854775808.0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '{}' of a '{}' command must be a whole number", name, command);
+        return static_cast<Int64>(value);
+    }
+
+    if (it->value.IsUint64() && it->value.GetUint64() > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '{}' of a '{}' command is too large", name, command);
+
+    return it->value.GetInt64();
 }
 
 String CollectionRef::getQualifiedName() const
