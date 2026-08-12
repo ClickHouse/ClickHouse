@@ -53,8 +53,18 @@ public:
     /// into a single stream.
     void skipStreamMerging() { skip_stream_merging = true; }
 
+    /// When the input streams are not disjoint, they can be made so: repartitioning them by the hash of
+    /// the DISTINCT columns sends equal key values into the same stream, so the deduplication runs in
+    /// parallel instead of on a single thread. It reorders the output, so it may only be enabled when
+    /// nothing downstream relies on the order of this step - see `applyOrder`.
+    void enableParallelDistinct() { parallel_distinct = true; }
+
 private:
     void updateOutputHeader() override;
+
+    /// Repartitions the pipeline by the hash of the DISTINCT columns. Returns `false` if it did not,
+    /// in which case the streams still have to be merged into one before deduplicating.
+    bool scatterStreamsByHash(QueryPipelineBuilder & pipeline) const;
 
     SizeLimits set_size_limits;
     UInt64 limit_hint;
@@ -62,6 +72,7 @@ private:
     bool pre_distinct;
     SortDescription distinct_sort_desc;
     bool skip_stream_merging = false;
+    bool parallel_distinct = false;
 };
 
 }

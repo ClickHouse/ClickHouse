@@ -6147,6 +6147,13 @@ Not applied when [max_rows_in_distinct](#max_rows_in_distinct) or [max_bytes_in_
     DECLARE(Bool, force_distinct_partitions_independently, false, R"(
 Force independent `DISTINCT` evaluation per partition when it is applicable, but the cost heuristic decided not to use it. Only bypasses the cost heuristic of [allow_distinct_partitions_independently](#allow_distinct_partitions_independently); the remaining conditions still apply.
 )", 0) \
+    DECLARE(Bool, allow_parallel_distinct, true, R"(
+Evaluate the final `DISTINCT` on separate threads by repartitioning its input streams by the hash of the `DISTINCT` columns, so that equal values meet in the same stream. Without it the final `DISTINCT` merges all streams into one and deduplicates them on a single thread.
+
+Unlike [allow_distinct_partitions_independently](#allow_distinct_partitions_independently), this does not require the partition expression to be related to the `DISTINCT` columns, and applies to any source. The number of streams it deduplicates in is capped independently of `max_threads`, because splitting every block across more streams costs more than the extra parallelism buys.
+
+Not applied when the input is already globally sorted, because then `DISTINCT` keeps the order of its input and the repartitioning would break it. Not applied when [max_rows_in_distinct](#max_rows_in_distinct) or [max_bytes_in_distinct](#max_bytes_in_distinct) is set: those limits are enforced by the single `DISTINCT` transform that sees the whole merged result, so the single stream is kept to preserve their global meaning.
+)", 0) \
     DECLARE(UInt64, max_number_of_partitions_for_independent_aggregation, 128, R"(
 Maximal number of partitions in table to apply independent aggregation per partition. Part of the cost heuristic of [allow_aggregate_partitions_independently](#allow_aggregate_partitions_independently).
 )", 0) \

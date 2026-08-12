@@ -61,6 +61,7 @@ struct QueryPlanOptimizationSettings
     bool aggregate_partitions_independently;
     bool limit_by_partitions_independently;
     bool distinct_partitions_independently;
+    bool parallel_distinct;
     bool remove_redundant_distinct;
     bool try_use_vector_search;
     bool convert_join_to_in;

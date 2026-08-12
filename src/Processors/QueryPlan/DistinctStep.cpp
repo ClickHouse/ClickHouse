@@ -6,8 +6,11 @@
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/scatterByPartition.h>
 #include <IO/Operators.h>
+#include <Columns/IColumn.h>
 #include <Common/JSONBuilder.h>
+#include <Core/ColumnNumbers.h>
 #include <Core/SortDescription.h>
 
 namespace DB
@@ -68,14 +71,83 @@ void DistinctStep::updateLimitHint(UInt64 hint)
         limit_hint = std::max(hint, limit_hint);
 }
 
+/// The columns the DISTINCT is computed on, derived exactly as `DistinctTransform` derives them:
+/// an empty list of columns means every column of the header, and constant columns are not part of the key.
+static ColumnNumbers getKeyColumnPositions(const Block & header, const Names & columns)
+{
+    const size_t num_columns = columns.empty() ? header.columns() : columns.size();
+
+    ColumnNumbers key_column_positions;
+    key_column_positions.reserve(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        const size_t position = columns.empty() ? i : header.getPositionByName(columns[i]);
+        const auto & column = header.getByPosition(position).column;
+        if (column && !isColumnConst(*column))
+            key_column_positions.push_back(position);
+    }
+
+    return key_column_positions;
+}
+
+bool DistinctStep::scatterStreamsByHash(QueryPipelineBuilder & pipeline) const
+{
+    if (!parallel_distinct)
+        return false;
+
+    /// With a sorted input the transform below deduplicates range by range of equal values, holding one
+    /// range at a time instead of a hash table of everything. Scattering the rows would destroy the order
+    /// it relies on, and each stream would need a hash table of its own again.
+    if (!distinct_sort_desc.empty())
+        return false;
+
+    /// `max_rows_in_distinct` / `max_bytes_in_distinct` are enforced by the single final transform that
+    /// sees the whole merged input. Deduplicating per stream would turn them into independent per-stream
+    /// limits, so in that case we keep the single stream and the limits stay global.
+    if (set_size_limits.max_rows != 0 || set_size_limits.max_bytes != 0)
+        return false;
+
+    /// With a limit the transform stops as soon as it has enough values, so the single stream is not the
+    /// bottleneck it is otherwise. Keeping it also keeps the values that a `LIMIT` without `ORDER BY`
+    /// returns: the first ones in the order the input arrives, rather than an arbitrary subset.
+    if (limit_hint != 0)
+        return false;
+
+    /// Every input chunk is split across all partitions, so the work the scatter adds grows with their
+    /// number: measured against the un-scattered pipeline on `SELECT DISTINCT number FROM
+    /// numbers_mt(4e7)`, the total CPU time grows by 8% at 4 partitions, 20% at 16 and 96% at 96.
+    /// Past a point that outweighs deduplicating in more threads, so do not follow `max_threads` up.
+    static constexpr size_t max_partitions = 16;
+
+    const size_t num_streams = pipeline.getNumStreams();
+    const size_t num_partitions = std::min(pipeline.getNumThreads(), max_partitions);
+    if (num_streams <= 1 || num_partitions <= 1)
+        return false;
+
+    auto key_column_positions = getKeyColumnPositions(*pipeline.getSharedHeader(), columns);
+    if (key_column_positions.empty())
+        return false;
+
+    scatterByPartition(pipeline, num_partitions, key_column_positions);
+    return true;
+}
+
 void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     /// The final distinct deduplicates across the whole input, so it needs all data in a single
     /// stream; the pre-distinct only reduces the data, deduplicating each stream independently.
     /// However, when the input streams carry disjoint sets of the DISTINCT key values, each stream
     /// can be deduplicated independently, so we keep the streams and skip merging them into one.
+    bool scattered = false;
     if (!pre_distinct && !skip_stream_merging)
-        pipeline.resize(1);
+    {
+        /// The streams may also be made disjoint on the spot: repartitioning them by the hash of the
+        /// DISTINCT columns routes equal key values into the same stream, which is all the deduplication
+        /// below needs to run in parallel.
+        scattered = scatterStreamsByHash(pipeline);
+        if (!scattered)
+            pipeline.resize(1);
+    }
 
     pipeline.addSimpleTransform(
         [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
@@ -91,6 +163,11 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 
             return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns);
         });
+
+    /// The step is declared to return a single stream. Collecting the scattered streams back costs
+    /// nothing - they are already deduplicated, and no two of them hold the same key value.
+    if (scattered)
+        pipeline.resize(1);
 }
 
 void DistinctStep::describeActions(FormatSettings & settings) const
