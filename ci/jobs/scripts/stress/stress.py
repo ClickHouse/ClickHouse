@@ -5,6 +5,8 @@ import argparse
 import logging
 import os
 import random
+import shlex
+import shutil
 import signal
 import subprocess
 import time
@@ -391,15 +393,35 @@ def install_thread_pool_fault_injection() -> None:
 
     logging.info("Installing thread-pool fault-injection config: %s -> %s", src, dst)
     subprocess.run(["ln", "-sf", src, dst], check=True)
-    call_with_retry(make_query_command("SYSTEM RELOAD CONFIG"), timeout=30, retry_count=5)
+    if not call_with_retry(make_query_command("SYSTEM RELOAD CONFIG"), timeout=30, retry_count=5):
+        # Fail-close before the verify query: a stale non-zero probability left
+        # over from an earlier reload would otherwise mask the reload failure.
+        raise RuntimeError(
+            "SYSTEM RELOAD CONFIG failed after all retries; "
+            "cannot activate thread-pool fault injection"
+        )
 
-    # Fail-close: `call_with_retry` is silent on persistent failure, so verify
-    # the injector probability is actually non-zero after reload.
+    # The reload succeeded, but still verify the injector probability is
+    # actually non-zero. The verify query gets the same retry treatment as the
+    # reload itself: right after `SYSTEM RELOAD CONFIG` a debug server under
+    # ThreadFuzzer can be slow enough to exceed the client's 15 s
+    # `receive_timeout`, and a single timeout here must not kill the whole
+    # stress job.
     verify_query = make_query_command(
         "SELECT value FROM system.server_settings "
         "WHERE name = 'cannot_allocate_thread_fault_injection_probability'"
     )
-    value = check_output(verify_query, shell=True, timeout=30, text=True).strip()
+    retry_count = 5
+    value = ""
+    for i in range(retry_count):
+        try:
+            value = check_output(verify_query, shell=True, timeout=30, text=True).strip()
+            break
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            if i + 1 == retry_count:
+                raise
+            logging.info("Verify query failed (%s), retrying", str(e))
+            time.sleep(i)
     if not value or float(value) <= 0:
         raise RuntimeError(
             f"cannot_allocate_thread_fault_injection_probability is {value!r} after reload"
@@ -525,7 +547,10 @@ def compress_stress_logs(output_path: Path, files_prefix: str) -> None:
 
 def call_with_retry(
     query: str, timeout: int | float = 30, retry_count: int = 5
-) -> None:
+) -> bool:
+    """Return whether the command eventually succeeded, so that callers which
+    must not proceed after a persistent failure can fail close instead of
+    silently continuing."""
     logging.info("Running command: %s", str(query))
     for i in range(retry_count):
         try:
@@ -538,7 +563,8 @@ def call_with_retry(
             logging.info("Command returned %s, retrying", str(code))
             time.sleep(i)
         else:
-            break
+            return True
+    return False
 
 
 def execute_bash(full_command, timeout=120):
@@ -736,15 +762,17 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main():
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-    args = parse_args()
+def collect_stacktrace_dumps(output_folder: Path) -> None:
+    # stdout keeps only a trimmed preview of the server stacktrace dumps;
+    # the full dumps are written to the working directory.
+    for stacktrace_log in ("sql_stacktraces.log", "c_stacktraces.log"):
+        path = Path.cwd() / stacktrace_log
+        if path.exists():
+            # Not rename: source and destination are different mounts.
+            shutil.move(path, output_folder / stacktrace_log)
 
-    if args.drop_databases and not args.hung_check:
-        raise argparse.ArgumentTypeError(
-            "--drop-databases only used in hung check (--hung-check)"
-        )
 
+def run_stress_test(args: argparse.Namespace) -> None:
     call_with_retry(make_query_command("SELECT 1"), timeout=0.5, retry_count=20)
 
     # Create random query/client killer unless disabled or in upgrade check mode
@@ -823,11 +851,49 @@ def main():
             )
             hung_check_log = args.output_folder / "hung_check.log"  # type: Path
             with Popen(["/usr/bin/tee", hung_check_log], stdin=PIPE) as tee:
-                res = call(
-                    cmd, shell=True, stdout=tee.stdin, stderr=STDOUT, timeout=600
-                )
-                if tee.stdin is not None:
-                    tee.stdin.close()
+                try:
+                    # Own session, so that on timeout the whole process
+                    # tree can be killed at once; otherwise survivors keep
+                    # appending to the dumps while they are collected.
+                    with Popen(
+                        cmd,
+                        shell=True,
+                        stdout=tee.stdin,
+                        stderr=STDOUT,
+                        start_new_session=True,
+                    ) as hung_check:
+                        try:
+                            res = hung_check.wait(timeout=600)
+                        except subprocess.TimeoutExpired:
+                            os.killpg(hung_check.pid, signal.SIGKILL)
+                            # The test runner starts each test in its own
+                            # session, out of reach of the killpg above,
+                            # but records the pgid in a file for exactly
+                            # this situation. The test command may carry
+                            # options (e.g. in the upgrade check), while
+                            # cleanup needs only the executable.
+                            test_runner = shlex.split(args.test_cmd)[0]
+                            call([test_runner, "--cleanup"], timeout=60)
+                            raise
+                finally:
+                    if tee.stdin is not None:
+                        tee.stdin.close()
+                    try:
+                        # EOF on the pipe means every process that
+                        # inherited it as stdout/stderr has exited: the
+                        # barrier that keeps the collection of the dumps
+                        # from racing a live writer.
+                        tee.wait(timeout=60)
+                    except subprocess.TimeoutExpired:
+                        # A writer survived both kills, e.g. a process
+                        # in uninterruptible sleep dies only once its
+                        # kernel wait completes. Give up on the barrier:
+                        # a dump with a torn tail beats losing it to the
+                        # job timeout.
+                        logging.warning(
+                            "Some hung check process survived the kill"
+                        )
+                        tee.kill()
             if res != 0 and have_long_running_queries:
                 logging.info("Hung check failed with exit code %d", res)
 
@@ -891,6 +957,24 @@ def main():
                 logging.info("No queries hung")
 
     logging.info("Stress test finished")
+
+
+def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    args = parse_args()
+
+    if args.drop_databases and not args.hung_check:
+        raise argparse.ArgumentTypeError(
+            "--drop-databases only used in hung check (--hung-check)"
+        )
+
+    try:
+        run_stress_test(args)
+    finally:
+        # Any exit path can leave dumps behind: the upgrade check runs
+        # without the hung check, and the test run can raise before the
+        # hung check is reached.
+        collect_stacktrace_dumps(args.output_folder)
 
 
 if __name__ == "__main__":
