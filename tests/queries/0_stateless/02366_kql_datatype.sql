@@ -56,9 +56,8 @@ print timespan(10s); -- 	        10 seconds
 print timespan(100ms); -- 	        100 millisecond
 print timespan(10microsecond); -- 	10 microseconds
 print timespan(1tick); --           100 nanoseconds
---print timespan(1.5h) / timespan(30m);
--- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
--- print timespan('12.23:12:23') / timespan(1s);
+print timespan(1.5h) / timespan(30m);
+print timespan('12.23:12:23') / timespan(1s);
 print '-- null';
 print isnull(null);
 print bool(null), int(null), long(null), real(null), double(null);
@@ -114,9 +113,8 @@ print totimespan(1tick);
 print totimespan('0.00:01:00');
 -- [removed in the KQL rewrite] KQL literal totimespan(...) at position 7 could not read the timespan
 -- print totimespan('abc');
--- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
--- print totimespan('12.23:12:23') / totimespan(1s);
--- print totimespan(strcat('12.', '23', ':12:', '23')) / timespan(1s); -> 1120343
+print totimespan('12.23:12:23') / totimespan(1s);
+print totimespan(strcat('12.', '23', ':12:', '23')) / timespan(1s);
 print '-- tolong()';
 print tolong('123');
 print tolong('abc');

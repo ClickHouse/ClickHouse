@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnConst.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNullable.h>

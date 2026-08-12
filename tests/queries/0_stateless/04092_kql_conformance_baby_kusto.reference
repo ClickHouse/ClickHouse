@@ -222,6 +222,7 @@ nan
 -- BinOp_Multiply1 --
 2	14	32.5	60
 -- BinOp_Divide1 --
+3	10	2	5	1.5
 -- BinOp_Modulo1 --
 4
 0

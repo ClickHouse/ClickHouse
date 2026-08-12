@@ -554,8 +554,7 @@ _dt | project v = a + c;
 print '-- BinOp_Multiply1 --';
 print a=2*1, b=4*3.5, c=6.5*5, d=8.0*7.5;
 print '-- BinOp_Divide1 --';
--- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
--- print a=6/2, b=5/0.5, c=10./5, d=2.5/0.5, e=15ms/10ms;
+print a=6/2, b=5/0.5, c=10./5, d=2.5/0.5, e=15ms/10ms;
 set dialect='clickhouse';
 DROP TABLE IF EXISTS _dt;
 CREATE TABLE _dt (a Nullable(Int64), b Nullable(Int64)) ENGINE = Memory;
