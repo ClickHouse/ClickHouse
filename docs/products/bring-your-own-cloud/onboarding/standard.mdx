@@ -82,7 +82,13 @@ You will be prompted to set up the infrastructure, including object storage buck
 
 - **Region**: All **public regions** listed in our [supported regions](/products/cloud/reference/supported-regions) documentation are available for BYOC deployments. Private regions aren't currently supported.
 
-- **VPC/VNet CIDR range**: By default, we use `10.0.0.0/16` for the BYOC VPC (AWS/GCP) or VNet (Azure) CIDR range. If you plan to use VPC/VNet peering with another account, ensure the CIDR ranges don't overlap. Allocate a proper CIDR range for BYOC, with a minimum size of `/23` on AWS and Azure to accommodate necessary workloads. On AWS, a `/23` VPC yields `/25` private subnets and accommodates only about 30 server pods — every replica consumes IP addresses, so allocate a larger range (at least `/22` is recommended) if you expect the deployment to grow. **On GCP the minimum is `/20`**, because ClickHouse assigns half of the range you provide to the GKE cluster pod range, and that pod range must be at least `/21` for the cluster to provision. The same `/21` pod range requirement applies when you bring your own VPC — see [GCP customized setup](/products/bring-your-own-cloud/onboarding/customization-gcp).
+- **VPC/VNet CIDR range**: By default, we use `10.0.0.0/16` for the BYOC VPC (AWS/GCP) or VNet (Azure) CIDR range. If you plan to use VPC/VNet peering with another account, ensure the CIDR ranges don't overlap. The minimum size differs by cloud:
+
+    - **AWS**: `/23`
+    - **Azure**: `/23`
+    - **GCP**: `/20`. ClickHouse assigns half of the range you provide to the GKE cluster pod range, and that pod range must be at least `/21` for the cluster to provision. The same `/21` pod range requirement applies when you bring your own VPC — see [GCP customized setup](/products/bring-your-own-cloud/onboarding/customization-gcp).
+
+    These are floors, not recommendations: every replica consumes IP addresses, so larger deployments need a larger range.
 
 - **Availability Zones**: If you plan to use VPC peering, aligning availability zones between the source and BYOC accounts can help reduce cross-AZ traffic costs. For example, in AWS, availability zone suffixes (`a`, `b`, `c`) may represent different physical zone IDs across accounts. See the [AWS guide](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) for details.
 
