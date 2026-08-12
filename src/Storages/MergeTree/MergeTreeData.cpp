@@ -5131,6 +5131,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     if (!merging_params.sign_column.empty())
         columns_alter_type_forbidden.insert(merging_params.sign_column);
 
+    bool share_nested_offsets = (*getSettings())[MergeTreeSetting::share_nested_offsets];
+
     /// `ALTER CLEAR COLUMN` is a `DROP_COLUMN` with `clear` set, and it keeps the column in the metadata,
     /// so it could also be checked in the per-command loop below. It is rejected by the same rule, so both
     /// are handled here to keep the check in a single place.
@@ -5139,12 +5141,14 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         if (command.type != AlterCommand::DROP_COLUMN)
             continue;
 
+        const char * verb = command.clear ? "CLEAR" : "DROP";
+
         if (columns_in_keys.contains(command.column_name))
         {
             throw Exception(
                 ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                 "Trying to ALTER {} key {} column which is a part of key expression",
-                command.clear ? "CLEAR" : "DROP",
+                verb,
                 backQuoteIfNeed(command.column_name));
         }
 
@@ -5153,14 +5157,36 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             throw Exception(
                 ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                 "Trying to ALTER {} column {} whose subcolumns ({}) are part of key expression",
-                command.clear ? "CLEAR" : "DROP",
+                verb,
                 backQuoteIfNeed(command.column_name),
                 boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
+        }
+
+        /// When shared nested offsets are enabled, a name that is not a column of the table denotes
+        /// the whole Nested group `<name>.*`, and the command affects every column of the group.
+        if (share_nested_offsets && old_columns.hasNested(command.column_name))
+        {
+            std::vector<String> key_columns_in_group;
+            for (const auto & nested_column : old_columns.getNested(command.column_name))
+            {
+                if (columns_in_keys.contains(nested_column.name) || column_to_subcolumns_used_in_keys.contains(nested_column.name))
+                    key_columns_in_group.push_back(backQuoteIfNeed(nested_column.name));
+            }
+
+            if (!key_columns_in_group.empty())
+            {
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER {} whole Nested group {} whose columns ({}) are part of key expression",
+                    verb,
+                    backQuoteIfNeed(command.column_name),
+                    boost::join(key_columns_in_group, ", "));
+            }
         }
     }
 
     removeImplicitStatistics(new_metadata.columns);
-    commands.apply(new_metadata, local_context, (*getSettings())[MergeTreeSetting::share_nested_offsets]);
+    commands.apply(new_metadata, local_context, share_nested_offsets);
 
     /// The `Quantize(...)` codec is immutable via ALTER: it cannot be added, removed, or changed, and the TYPE of a
     /// Quantize-coded column cannot be changed either. Both reach `ColumnsDescription::modify` as metadata-only changes

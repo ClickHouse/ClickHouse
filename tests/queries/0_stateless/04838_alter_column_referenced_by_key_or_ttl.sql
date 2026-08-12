@@ -51,3 +51,28 @@ CREATE TABLE test (d Date, e Date, a UInt64) ENGINE = MergeTree ORDER BY a TTL d
 ALTER TABLE test DROP COLUMN d, MODIFY TTL e + INTERVAL 1 DAY;
 ALTER TABLE test DROP COLUMN e; -- { serverError UNKNOWN_IDENTIFIER }
 DROP TABLE test;
+
+-- With shared nested offsets a name that is not a column denotes the whole Nested group <name>.*,
+-- and dropping or clearing the group is rejected when any column of the group is used in a key
+CREATE TABLE test (`n.a` UInt64, `n.b` UInt64, x UInt64) ENGINE = MergeTree ORDER BY `n.a`;
+ALTER TABLE test DROP COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test DROP COLUMN IF EXISTS n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test CLEAR COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test DROP COLUMN `n.b`;
+DROP TABLE test;
+
+-- The same for a real Nested column and for a group column inside a key expression
+CREATE TABLE test (n Nested(a UInt64, b UInt64), x UInt64) ENGINE = MergeTree PARTITION BY intDiv(`n.b`, 10) ORDER BY (x, `n.a`);
+ALTER TABLE test DROP COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test CLEAR COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE test;
+
+-- A group with no key columns inside can still be dropped
+CREATE TABLE test (n Nested(a UInt64, b UInt64), x UInt64) ENGINE = MergeTree ORDER BY x;
+ALTER TABLE test DROP COLUMN n;
+DROP TABLE test;
+
+-- Without shared nested offsets the name does not denote the group and the check does not apply
+CREATE TABLE test (`n.a` UInt64, x UInt64) ENGINE = MergeTree ORDER BY `n.a` SETTINGS share_nested_offsets = 0;
+ALTER TABLE test DROP COLUMN n; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
+DROP TABLE test;

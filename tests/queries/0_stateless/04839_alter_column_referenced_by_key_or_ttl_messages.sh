@@ -25,6 +25,16 @@ $CLICKHOUSE_CLIENT -q "
 " 2>&1 | grep -m1 -oF 'Trying to ALTER CLEAR column a whose subcolumns (`a.x`) are part of key expression'
 
 $CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS nested_group;
+    CREATE TABLE nested_group (\`n.a\` UInt64, \`n.b\` UInt64, x UInt64) ENGINE = MergeTree ORDER BY \`n.a\`;
+    ALTER TABLE nested_group DROP COLUMN n;
+" 2>&1 | grep -m1 -oF 'Trying to ALTER DROP whole Nested group n whose columns (`n.a`) are part of key expression'
+
+$CLICKHOUSE_CLIENT -q "
+    ALTER TABLE nested_group CLEAR COLUMN n;
+" 2>&1 | grep -m1 -oF 'Trying to ALTER CLEAR whole Nested group n whose columns (`n.a`) are part of key expression'
+
+$CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS sign_column;
     CREATE TABLE sign_column (a UInt64, s Int8) ENGINE = CollapsingMergeTree(s) ORDER BY a;
     ALTER TABLE sign_column DROP COLUMN s;
