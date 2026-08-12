@@ -184,10 +184,26 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
             data_file_record_count);
     }
 
-    const bool use_cache = context->getSettingsRef()[Setting::use_puffin_files_cache];
+    const bool use_cache_setting = context->getSettingsRef()[Setting::use_puffin_files_cache];
+    auto cache = use_cache_setting ? context->getPuffinFilesCache() : nullptr;
+
+    /// puffin_files_cache_size=0 means the LRU accepts no entries ("disabled" in server settings).
+    /// Take the same uncached path as use_puffin_files_cache=0 so we keep filesystem cache and
+    /// skip etag HEAD / getOrSet (which would disable filesystem cache on the miss loader).
+    const bool use_cache = cache && cache->maxSizeInBytes() != 0;
     if (!use_cache)
     {
-        LOG_TRACE(log, "Not using Puffin files cache for '{}', because the setting use_puffin_files_cache is false", puffin_path);
+        if (!use_cache_setting)
+        {
+            LOG_TRACE(log, "Not using Puffin files cache for '{}', because the setting use_puffin_files_cache is false", puffin_path);
+        }
+        else
+        {
+            LOG_TRACE(
+                log,
+                "Not using Puffin files cache for '{}', because puffin_files_cache_size is 0",
+                puffin_path);
+        }
         return loadDeletionVectorUncached(
             object_storage,
             puffin_path,
@@ -250,7 +266,6 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
             false);
     }
 
-    auto cache = context->getPuffinFilesCache();
     return cache->getOrSetDeletionVector(*cache_key, [&]()
     {
         return loadDeletionVectorUncached(
