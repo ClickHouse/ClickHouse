@@ -18,6 +18,19 @@ namespace
         PrometheusQueryTree query_tree{input};
         return typeid_cast<const PrometheusQueryTree::StringLiteral &>(*query_tree.getRoot()).string;
     }
+
+    void expectRoundTrip(std::string_view input, std::string_view expected)
+    {
+        PrometheusQueryTree query_tree{input};
+        const auto serialized = query_tree.toString();
+        EXPECT_EQ(serialized, expected) << input;
+
+        PrometheusQueryTree reparsed;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_TRUE(reparsed.tryParse(serialized, 3, &error_message, &error_pos))
+            << input << ": " << error_message << " at position " << error_pos;
+    }
 }
 
 
@@ -48,18 +61,41 @@ PrometheusQueryTree(INSTANT_VECTOR):
         __name__ EQ 'up'
         service.name RE 'api.*'
 )");
+
+    expectRoundTrip(R"({""="value"})", R"({""="value"})");
+    expectRoundTrip(R"({"métric.name","服务.name"="api"})", R"({"métric.name","服务.name"="api"})");
 }
 
 
 TEST(PromQLParser, InvalidQuotedSelectorIdentifiers)
 {
-    for (const auto query : {R"({""})", R"({""="value"})", R"({"\xff"})"})
+    for (const auto query : {R"({""})", R"({"\xff"})"})
     {
         PrometheusQueryTree query_tree;
         String error_message;
         size_t error_pos = 0;
         EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
         EXPECT_FALSE(error_message.empty()) << query;
+    }
+}
+
+
+TEST(PromQLParser, EmptyMetricNameMatcher)
+{
+    for (const auto query : {R"({__name__="",a="x"})", R"({"__name__"="",a="x"})"})
+        expectRoundTrip(query, R"({__name__="",a="x"})");
+}
+
+
+TEST(PromQLParser, DuplicateMetricName)
+{
+    for (const auto query : {R"(up{"other.metric"})", R"(up{"up"})", R"(up{"__name__"="other"})"})
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_NE(error_message.find("metric name must not be set twice"), String::npos) << query;
     }
 }
 

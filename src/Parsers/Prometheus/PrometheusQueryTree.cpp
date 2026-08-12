@@ -377,6 +377,8 @@ String PrometheusQueryTree::InstantSelector::toString(const PrometheusQueryTree 
     }
 
     bool metric_name_is_legacy = has_metric_name && isLegacyMetricName(matchers[metric_name_pos].label_value);
+    bool metric_name_is_quoted
+        = has_metric_name && !metric_name_is_legacy && !matchers[metric_name_pos].label_value.empty();
 
     String str;
     if (metric_name_is_legacy)
@@ -393,7 +395,7 @@ String PrometheusQueryTree::InstantSelector::toString(const PrometheusQueryTree 
             const auto & matcher = matchers[i];
             if (need_comma)
                 str += ",";
-            if (i == metric_name_pos)
+            if (i == metric_name_pos && metric_name_is_quoted)
             {
                 str += formatMetricName(matcher.label_value);
             }
@@ -410,7 +412,7 @@ String PrometheusQueryTree::InstantSelector::toString(const PrometheusQueryTree 
                 case MatcherType::NRE: matcher_type_str = "!~"; break;
             }
             chassert(!matcher_type_str.empty());
-            if (i != metric_name_pos)
+            if (i != metric_name_pos || !metric_name_is_quoted)
             {
                 str += matcher_type_str;
                 str += quotePromQLString(matcher.label_value);

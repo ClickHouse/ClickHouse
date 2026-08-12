@@ -193,6 +193,11 @@ namespace
             return convertCodePointPositionToByteOffset(promql_query, ctx->getSymbol()->getStartIndex());
         }
 
+        size_t getStartPos(const antlr4::Token * token) const
+        {
+            return convertCodePointPositionToByteOffset(promql_query, token->getStartIndex());
+        }
+
         bool parseStringLiteral(const antlr4::tree::TerminalNode * ctx, String & result)
         {
             String error_message;
@@ -326,7 +331,7 @@ namespace
             if (!parseStringLiteral(string_ctx, identifier))
                 return false;
 
-            if (identifier.empty() || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(identifier.data()), identifier.size()))
+            if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(identifier.data()), identifier.size()))
             {
                 error_listener.setError("invalid selector identifier", getStartPos(string_ctx));
                 return false;
@@ -418,7 +423,8 @@ namespace
             auto new_node = std::make_unique<InstantSelector>();
 
             MatcherList matchers;
-            if (auto * metric_name_ctx = ctx->metricName())
+            auto * metric_name_ctx = ctx->metricName();
+            if (metric_name_ctx)
                 matchers.push_back(getMatcherForMetricName(metric_name_ctx));
 
             if (auto * label_matcher_list_ctx = ctx->labelMatcherList())
@@ -435,6 +441,14 @@ namespace
                         chassert(error_listener.hasError());
                         return nullptr;
                     }
+
+                    if (metric_name_ctx && matcher.label_name == "__name__")
+                    {
+                        error_listener.setError(
+                            "metric name must not be set twice", getStartPos(label_matcher_ctx->getStart()));
+                        return nullptr;
+                    }
+
                     matchers.push_back(std::move(matcher));
                 }
             }
