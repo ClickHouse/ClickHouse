@@ -1492,10 +1492,7 @@ private:
         auto impl = resolver->build(gathered.element_args);
 
         /// A `Nothing` element type has no values, so it cannot be executed and yields a `ColumnNothing`
-        /// the callers cannot consume. Synthesise a result only where the null maps provably mask every
-        /// read: a DIRECT `Nothing` argument paired with its OWN all-set null map. A nested `Nothing`
-        /// (e.g. inside a `Tuple`) is described by neither top-level null map, so it must throw --
-        /// including for an empty range, so that validity never depends on the data.
+        /// the callers cannot consume.
         if (isNothing(impl->getResultType()))
         {
             auto masked = [&](size_t arg, const NullMap * null_map)
