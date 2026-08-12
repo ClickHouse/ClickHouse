@@ -3,24 +3,17 @@
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/88123:
-# `OPTIMIZE TABLE` on an Iceberg table containing a data file in a non-Parquet
-# format (e.g. `ORC`) that is newer than all position delete files used to throw
-# `Logical error: 'ChunkInfoRowNumbers does not exist'`. The compaction pipeline
-# applied `IcebergBitmapPositionDeleteTransform` to every data file, and the
-# transform requires `ChunkInfoRowNumbers` in every chunk, which only the Parquet
-# input formats attach. After the fix the transform is skipped for data files
-# without attached position deletes, so the compaction succeeds and the position
-# deletes are still applied to the Parquet data files that have them.
+# an Iceberg table mixing data-file formats, where a non-Parquet data file (`ORC`)
+# is newer than all position delete files. Position deletes are applied through
+# `IcebergBitmapPositionDeleteTransform`, which requires `ChunkInfoRowNumbers` in
+# every chunk, and only the Parquet input formats attach it. A data file with
+# attached position deletes is guaranteed to be Parquet, but one without them may
+# be in any format, so the transform must be skipped for it.
 #
-# The bug lived in the synchronous compaction path (`compactIcebergTable` ->
-# `writeDataFiles`) used by the open-source build. The cloud build routes
-# `OPTIMIZE` through a different background code path (gated by a member flag
-# rather than the query-level `allow_experimental_iceberg_compaction` setting),
-# so there `OPTIMIZE` reports a regular user-facing exception instead of running
-# the compaction. It must never raise a `LOGICAL_ERROR` on any build; and on the
-# open-source build `OPTIMIZE` must additionally succeed, so the synchronous
-# compaction path this PR changed is actually exercised (a plain failure there
-# would otherwise pass silently and leave the fix untested).
+# The `OPTIMIZE TABLE` part of this test was removed together with Iceberg data
+# compaction, which no longer runs. The read path applies the same transform per
+# data file, which is what is asserted here: the position delete applies to the
+# Parquet data file that has one, and the ORC row survives.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -44,33 +37,6 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --mutations_sync=2 --query "A
 # are attached to it, and the ORC input format does not provide `ChunkInfoRowNumbers`.
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO TABLE FUNCTION icebergLocal('${TABLE_PATH}', 'ORC') VALUES (2)"
 
-${CLICKHOUSE_CLIENT} --query "SELECT c0 FROM ${TABLE} ORDER BY c0"
-
-# On the cloud build `OPTIMIZE` for Iceberg is gated by a member flag rather than
-# the query-level `allow_experimental_iceberg_compaction` setting, so it reports a
-# user-facing exception instead of running the compaction changed by this PR.
-IS_CLOUD=$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'")
-
-# This used to throw `Logical error: 'ChunkInfoRowNumbers does not exist'`.
-# Capture the client's stderr so a regular user-facing exception on the cloud
-# build does not trip the "having stderror" check, then classify the outcome.
-OPTIMIZE_ERR=$(${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE ${TABLE}" 2>&1)
-
-if echo "${OPTIMIZE_ERR}" | grep -qF 'Logical error'; then
-    # The regression: a logical error must never be raised, on any build.
-    echo "FAIL: OPTIMIZE crashed with Logical error"
-elif [[ "${IS_CLOUD}" = "1" ]]; then
-    # Cloud routes `OPTIMIZE` through a background path; a user-facing exception is expected.
-    echo "OPTIMIZE did not crash with Logical error"
-elif [[ -n "${OPTIMIZE_ERR}" ]]; then
-    # Open-source build must run the synchronous compaction path successfully.
-    echo "FAIL: OPTIMIZE failed on the open-source build: ${OPTIMIZE_ERR}"
-else
-    echo "OPTIMIZE did not crash with Logical error"
-fi
-
-# The position delete is applied (during compaction on the open-source build, at
-# read time on the cloud build) and the ORC row survives it.
 ${CLICKHOUSE_CLIENT} --query "SELECT c0 FROM ${TABLE} ORDER BY c0"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE} SYNC"

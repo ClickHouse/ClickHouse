@@ -1949,24 +1949,17 @@ value: 993
 
 ### Compaction {#iceberg-writes-compaction}
 
-ClickHouse supports compaction iceberg table. Currently, it can merge position delete files into data files while updating metadata. Previous snapshot IDs and timestamps remain unchanged, so the time-travel feature can still be used with the same values.
+Data compaction (merging position delete files into data files) is not implemented: `OPTIMIZE TABLE` on an Iceberg table reports `NOT_IMPLEMENTED`. It does not publish the rewritten generation, so no reader would select it.
 
-How to use it:
+Manifest compaction is supported and consolidates a table's manifest files:
 
 ```sql
 SET allow_experimental_iceberg_compaction = 1
 
-OPTIMIZE TABLE iceberg_writes_example;
-
-SELECT *
-FROM iceberg_writes_example
-FORMAT VERTICAL;
-
-Row 1:
-──────
-x: Ivanov
-y: 993
+OPTIMIZE TABLE iceberg_writes_example MANIFEST;
 ```
+
+To reclaim files, use [`expire_snapshots`](#iceberg-expire-snapshots) and [`remove_orphan_files`](#iceberg-remove-orphan-files).
 
 ### Expire Snapshots {#iceberg-expire-snapshots}
 

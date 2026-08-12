@@ -843,39 +843,6 @@ def test_schema_evolution_modify_type_write(node, manager):
 
 
 # ===================================================================
-# Compaction
-# ===================================================================
-
-
-def test_compaction(request, node, manager):
-    """OPTIMIZE TABLE on Iceberg table after DELETE preserves data."""
-    if request.node.callspec.params.get("manager") == "azure":
-        pytest.xfail(
-            "Compaction fails on Azure HNS-enabled storage: "
-            "'This operation is not permitted on a non-empty directory' (ClickHouse bug)"
-        )
-    ch_tbl = f"iceberg_compact_{uuid.uuid4().hex[:8]}"
-    sql, _ = manager.create_writable_table_sql(
-        ch_tbl,
-        "x Nullable(String), y Nullable(Int32)",
-    )
-    node.query(sql)
-    node.query(f"INSERT INTO {ch_tbl} VALUES ('a', 1), ('b', 2)")
-    node.query(
-        f"ALTER TABLE {ch_tbl} DELETE WHERE y = 2",
-        settings={"mutations_sync": 1},
-    )
-    node.query(
-        f"OPTIMIZE TABLE {ch_tbl}",
-        settings={"allow_experimental_iceberg_compaction": 1},
-    )
-    result = node.query(
-        f"SELECT x, y FROM {ch_tbl} ORDER BY y FORMAT TSV"
-    ).strip()
-    assert result == "a\t1"
-
-
-# ===================================================================
 # Error handling
 # ===================================================================
 

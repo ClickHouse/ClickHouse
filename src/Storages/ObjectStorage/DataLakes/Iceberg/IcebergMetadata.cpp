@@ -466,18 +466,12 @@ bool IcebergMetadata::optimize(
 #else
     if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
     {
-        const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-        auto snapshots_info = getHistory(context);
-        compactIcebergTable(
-            snapshots_info,
-            persistent_components,
-            object_storage,
-            data_lake_settings,
-            format_settings,
-            sample_block,
-            context,
-            write_format);
-        return true;
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "OPTIMIZE TABLE is not yet supported for Iceberg data compaction: the rewritten generation is not published "
+            "(no version increment, no version hint and no catalog commit), so no reader would select it, while the "
+            "previous generation's files are deleted even though retained snapshots still reference them. "
+            "Use OPTIMIZE TABLE ... MANIFEST to compact manifests, or expire_snapshots / remove_orphan_files to reclaim files");
     }
     else
     {
