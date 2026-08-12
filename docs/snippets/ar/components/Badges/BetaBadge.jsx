@@ -17,7 +17,7 @@ export const BetaBadge = ({ link, galaxyTrack, galaxyEvent }) => {
 
     return (
         <a
-            href="/ar/reference/settings/beta-and-experimental-features#beta-features"
+            href="/docs/ar/reference/settings/beta-and-experimental-features#beta-features"
             className="betaBadge"
         >
             <span>ميزة Beta</span>
