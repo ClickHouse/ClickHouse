@@ -88,6 +88,11 @@ namespace
         return mode == ObjectStorageQueueMode::UNORDERED;
     }
 
+    bool isExclusive(ObjectStorageQueueMode mode)
+    {
+        return mode == ObjectStorageQueueMode::EXCLUSIVE;
+    }
+
     UInt128 getMetadataCacheKey(const std::string & path)
     {
         SipHash hash;
@@ -117,8 +122,8 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , zookeeper_path(zookeeper_path_)
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
     , cleanup_processed_files(isUnordered(mode) && table_metadata.hasTrackedFilesLimit())
-    , cleanup_failed_files(table_metadata.hasTrackedFilesLimit())
-    , cleanup_processing_files(use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
+    , cleanup_failed_files(!isExclusive(mode) && table_metadata.hasTrackedFilesLimit())
+    , cleanup_processing_files(!isExclusive(mode) && use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
     , use_persistent_processing_nodes(use_persistent_processing_nodes_)
