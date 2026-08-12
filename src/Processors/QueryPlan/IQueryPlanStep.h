@@ -75,7 +75,7 @@ public:
     struct Serialization;
     struct Deserialization;
 
-    virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/) const {}
+    virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/, UInt64 /*version*/) const {}
     virtual void serialize(Serialization & /*ctx*/) const;
     virtual bool isSerializable() const { return false; }
 
