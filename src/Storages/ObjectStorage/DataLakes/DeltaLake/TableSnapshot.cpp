@@ -846,12 +846,14 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
 std::optional<size_t> TableSnapshot::getTotalRows() const
 {
     std::lock_guard lock(mutex);
+    initOrUpdateSchemaIfChanged();
     return getSnapshotStats().total_rows;
 }
 
 std::optional<size_t> TableSnapshot::getTotalBytes() const
 {
     std::lock_guard lock(mutex);
+    initOrUpdateSchemaIfChanged();
     return getSnapshotStats().total_bytes;
 }
 
@@ -1015,6 +1017,12 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
 
         auto read_schema = getReadSchemaFromSnapshot(state->scan.get(), state->engine.get());
         auto partition_columns = getPartitionColumnsFromSnapshot(state->snapshot.get());
+
+        /// Both names are logical here; the rename to physical names happens later, on copies.
+        for (const auto & column_name : partition_columns)
+            if (!table_schema.tryGetByName(column_name))
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
+                    "Partition column {} is not present in the table schema", column_name);
 
         LOG_TRACE(
             log, "Table logical schema: {}, read schema: {}, "

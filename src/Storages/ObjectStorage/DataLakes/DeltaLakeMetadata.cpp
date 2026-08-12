@@ -344,7 +344,7 @@ struct DeltaLakeMetadataImpl
                                 if (!name_and_type)
                                 {
                                     throw Exception(
-                                        ErrorCodes::LOGICAL_ERROR,
+                                        ErrorCodes::INCORRECT_DATA,
                                         "No such column in schema: {} (schema: {})",
                                         partition_name, file_schema.toNamesAndTypesDescription());
                                 }
@@ -594,7 +594,7 @@ struct DeltaLakeMetadataImpl
                         if (!name_and_type)
                         {
                             throw Exception(
-                                ErrorCodes::LOGICAL_ERROR,
+                                ErrorCodes::INCORRECT_DATA,
                                 "No such column in schema: {} (schema: {})",
                                 partition_name, file_schema.toString());
                         }

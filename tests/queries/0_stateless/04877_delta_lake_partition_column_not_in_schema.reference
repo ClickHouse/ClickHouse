@@ -1,0 +1,11 @@
+-- control: a declared partition column reads fine on both readers
+4	4	1
+4	4	1
+-- delta-kernel reader: rejected with or without a predicate
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+-- delta-kernel reader: an explicit schema does not answer count() from statistics
+BAD_ARGUMENTS
+-- legacy reader
+INCORRECT_DATA
