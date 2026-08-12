@@ -663,7 +663,9 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
                 if (settings.reconsider_json_shared_data_placement && containsJSONObjectType(*sample_type))
                 {
                     setSharedDataPathMatcherRecursively(*mutable_column, sample_type);
-                    mutable_column->chooseDynamicStructureForMerge({column.column}, /*max_dynamic_subcolumns=*/ std::nullopt);
+                    /// Re-decide placement only at the JSON nodes themselves: a plain Dynamic column
+                    /// nested alongside JSON (e.g. in a Tuple) must keep its structure untouched.
+                    chooseJSONSharedDataStructureForMergeRecursively(*mutable_column, *column.column, sample_type);
 
                     auto normalized_column = mutable_column->cloneEmpty();
                     normalized_column->insertRangeFrom(*column.column, 0, column.column->size());
