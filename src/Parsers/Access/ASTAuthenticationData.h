@@ -26,8 +26,12 @@ public:
     {
         auto clone = make_intrusive<ASTAuthenticationData>(*this);
         clone->cloneChildren();
+        if (valid_until)
+            clone->valid_until = valid_until->clone();
         return clone;
     }
+
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     bool hasSecretParts() const override;
 

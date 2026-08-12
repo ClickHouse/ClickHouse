@@ -66,6 +66,7 @@
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
 #include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
+#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
@@ -462,6 +463,7 @@ namespace
             set.emplace(typeid(ASTSystemQuery));
             /// Access-control DDL with an explicitly audited hash, and the nested classes their
             /// trees are built from.
+            set.emplace(typeid(ASTAuthenticationData));
             set.emplace(typeid(ASTCheckGrantQuery));
             set.emplace(typeid(ASTCreateMaskingPolicyQuery));
             set.emplace(typeid(ASTCreateQuotaQuery));
