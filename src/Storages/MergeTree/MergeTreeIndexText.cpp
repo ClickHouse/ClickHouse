@@ -30,7 +30,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
-#include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
@@ -407,25 +406,6 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     is_empty = false;
     analyzer = std::make_unique<TextIndexAnalyzer>(condition_text);
 
-    /// Push the row ranges still readable after the analysis of the primary key and prior skip indexes into the analyzer.
-    if (state.readable_ranges)
-    {
-        const auto & index_granularity = *state.part.index_granularity;
-        std::vector<RowsRange> readable_row_ranges;
-        readable_row_ranges.reserve(state.readable_ranges->size());
-
-        for (const auto & range : *state.readable_ranges)
-        {
-            size_t row_begin = index_granularity.getMarkStartingRow(range.begin);
-            size_t row_end = index_granularity.getMarkStartingRow(range.end);
-
-            if (row_begin < row_end)
-                readable_row_ranges.emplace_back(row_begin, row_end - 1);
-        }
-
-        analyzer->setReadableRows(std::move(readable_row_ranges));
-    }
-
     auto text_index_header = loadHeader(*index_stream, state);
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(text_index_header->codec_type);
     auto postings_serialization = PostingsSerialization(std::move(postings_codec), text_index_header->version);
@@ -744,7 +724,7 @@ size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
 
 bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query) const
 {
-    if (query.tokens.empty())
+    if (query.getTokens().empty())
         return false;
 
     return hasAnyTokensImpl(query);
@@ -752,7 +732,7 @@ bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query)
 
 bool MergeTreeIndexGranuleText::hasAnyQueryPatterns(const TextSearchQuery & query) const
 {
-    if (query.patterns.empty())
+    if (query.getPatterns().empty())
         return false;
 
     return hasAnyTokensImpl(query);
@@ -767,7 +747,7 @@ bool MergeTreeIndexGranuleText::hasAnyTokensImpl(const TextSearchQuery & query) 
         return false;
 
     /// Pattern bypass means analysis is incomplete, so conservatively return true.
-    if (query_builder.is_bypassed && !query.patterns.empty())
+    if (query_builder.is_bypassed && !query.getPatterns().empty())
         return true;
 
     if (!current_range.has_value())
@@ -794,7 +774,7 @@ bool MergeTreeIndexGranuleText::hasAnyTokensImpl(const TextSearchQuery & query) 
 
 bool MergeTreeIndexGranuleText::hasAllQueryTokens(const TextSearchQuery & query) const
 {
-    if (query.tokens.empty())
+    if (query.getTokens().empty())
         return false;
 
     return hasAllQueryTokensOrEmpty(query);
@@ -802,7 +782,7 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokens(const TextSearchQuery & query)
 
 bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const
 {
-    if (query.tokens.empty())
+    if (query.getTokens().empty())
         return true;
 
     const auto & query_builder = analyzer->getQueryBuilder(query);
@@ -812,7 +792,7 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
         return false;
 
     /// Pattern bypass means analysis is incomplete, so conservatively return true.
-    if (query_builder.is_bypassed && !query.patterns.empty())
+    if (query_builder.is_bypassed && !query.getPatterns().empty())
         return true;
 
     if (!current_range.has_value())

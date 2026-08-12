@@ -292,7 +292,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
 
             if (!this->allow_not_deterministic || rg.nextLargeNumber() < 971)
             {
-                switch (t.engine.value)
+                switch (t.teng)
                 {
                     case TableEngineValues::S3:
                     case TableEngineValues::S3Queue:
@@ -544,8 +544,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         const auto & engineSettings = myfunc
             ? mySQLTFSettings
             : allTableSettings.at(
-                  t.isS3QueueEngine() ? TableEngineValues::S3
-                                      : (t.isAzureQueueEngine() ? TableEngineValues::AzureBlobStorage : t.engine.value));
+                  t.isS3QueueEngine() ? TableEngineValues::S3 : (t.isAzureQueueEngine() ? TableEngineValues::AzureBlobStorage : t.teng));
 
         if (!engineSettings.empty() && rg.nextSmallNumber() < 8)
         {
@@ -565,11 +564,11 @@ auto StatementGenerator::getQueryTableLambda()
             /* When a query is going to be compared against another ClickHouse server, make sure all tables exist in that server */
             && (this->peer_query != PeerQuery::ClickHouseOnly || tt.hasClickHousePeer())
             /* Don't use tables backing not deterministic views in query oracles */
-            && (tt.isDeterministic() || this->allow_not_deterministic)
+            && (tt.is_deterministic || this->allow_not_deterministic)
             /* Don't use tables with Dolor integration when async requests can insert between oracle queries */
             && (tt.integration != IntegrationCall::Dolor || !fc.allow_async_requests || this->allow_not_deterministic)
             /* May require MergeTree table */
-            && (req != TableRequirement::RequireMergeTree || tt.isMergeTreeFamily(true))
+            && (req != TableRequirement::RequireMergeTree || tt.isMergeTreeFamily())
             /* May by replaced by a table engine */
             && (req != TableRequirement::RequireReplaceable || tt.isEngineReplaceable());
     };
@@ -741,9 +740,9 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
     const auto has_mergetree_table_lambda = getQueryTableLambda<TableRequirement::RequireMergeTree>();
     const auto has_replaceable_table_lambda = getQueryTableLambda<TableRequirement::RequireReplaceable>();
     const auto has_view_lambda
-        = [&](const SQLView & vv) { return vv.isAttached() && (vv.isDeterministic() || this->allow_not_deterministic); };
+        = [&](const SQLView & vv) { return vv.isAttached() && (vv.is_deterministic || this->allow_not_deterministic); };
     const auto has_dictionary_lambda
-        = [&](const SQLDictionary & d) { return d.isAttached() && (d.isDeterministic() || this->allow_not_deterministic); };
+        = [&](const SQLDictionary & d) { return d.isAttached() && (d.is_deterministic || this->allow_not_deterministic); };
 
     const bool has_table = collectionHas<SQLTable>(has_table_lambda);
     const bool has_mergetree_table = collectionHas<SQLTable>(has_mergetree_table_lambda);
@@ -1308,9 +1307,9 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
         }
         break;
     }
-    const bool supports_final = (t && t->supportsFinal(true) && (this->enforce_final || rg.nextSmallNumber() < 3))
+    const bool supports_final = (t && t->supportsFinal() && (this->enforce_final || rg.nextSmallNumber() < 3))
         || (v && v->supportsFinal() && (this->enforce_final || rg.nextSmallNumber() < 3)) || rg.nextLargeNumber() < 4;
-    const bool supports_sample = t && t->isMergeTreeFamily(true);
+    const bool supports_sample = t && t->isMergeTreeFamily();
     return {supports_final, supports_sample};
 }
 
@@ -1742,7 +1741,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
                 expr1 = ein->mutable_expr()->mutable_expr();
                 if (rg.nextBool())
                 {
-                    ExprList * elist = rg.nextBool() ? ein->mutable_in_type()->mutable_tuple() : ein->mutable_in_type()->mutable_array();
+                    ExprList * elist = rg.nextBool() ? ein->mutable_tuple() : ein->mutable_array();
                     const uint32_t nclauses = rg.nextSmallNumber();
 
                     for (uint32_t i = 0; i < nclauses; i++)
@@ -1757,7 +1756,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
                 }
                 else
                 {
-                    addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), ein->mutable_in_type()->mutable_single_expr());
+                    addWhereSide(rg, available_cols, gcol.getType(), gcol.getSpecial(), ein->mutable_single_expr());
                 }
             }
             else
@@ -2628,7 +2627,7 @@ void StatementGenerator::generateTopSelect(
         {
             const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables)).get();
             t.setName(est, false);
-            supports_final = t.supportsFinal(true);
+            supports_final = t.supportsFinal();
         }
         else if (has_v && choice-- == 0)
         {

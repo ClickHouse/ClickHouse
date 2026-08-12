@@ -1,11 +1,8 @@
 #pragma once
 
-#include <concepts>
 #include <vector>
 #include <Core/Joins.h>
 #include <Common/EquivalenceClasses.h>
-#include <Common/logger_useful.h>
-#include <base/types.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -22,12 +19,6 @@ enum class JoinMethod : UInt8
     Hash,
     Merge,
 };
-
-template <std::unsigned_integral T>
-inline String toBinaryString(T value)
-{
-    return toString(BitSet::fromUInt(value));
-}
 
 struct DPJoinEntry
 {

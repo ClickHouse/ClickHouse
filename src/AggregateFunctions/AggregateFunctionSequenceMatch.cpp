@@ -37,7 +37,6 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 namespace
@@ -118,13 +117,6 @@ struct AggregateFunctionSequenceMatchData final
         size_t size = 0;
         readBinary(size, buf);
 
-        /// Guard against allocation bombs (mirrors windowFunnel): a crafted state
-        /// can declare a huge size and make reserve allocate gigabytes before any
-        /// event is read.
-        if (size > 100'000'000)
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                "Too large size ({}) of the state of sequenceMatch/sequenceCount", size);
-
         /// If we lose these flags, functionality is broken
         /// If we serialize/deserialize these flags, we have compatibility issues
         /// If we set these flags to 1, we have a minor performance penalty, which seems acceptable
@@ -177,7 +169,7 @@ public:
         this->data(place).add(timestamp, events);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }

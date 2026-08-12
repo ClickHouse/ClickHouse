@@ -9,7 +9,6 @@ namespace BuzzHouse
 
 enum class DumpOracleStrategy
 {
-    DO_NOTHING = 0,
     REINSERT_TABLE = 1,
     OPTIMIZE = 2,
     REATTACH = 3,

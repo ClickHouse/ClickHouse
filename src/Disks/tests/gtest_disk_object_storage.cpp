@@ -13,12 +13,14 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadPipeline.h>
 #include <IO/ReadSettings.h>
+#include <IO/SharedThreadPools.h>
 
 #include <Common/tests/gtest_global_context.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/FailPoint.h>
 #include <Common/thread_local_rng.h>
 #include <Core/Defines.h>
+#include <Core/ServerUUID.h>
 
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
@@ -87,6 +89,13 @@ void setUpConfig(const std::string & file_name)
                     <metadata_request_size>100</metadata_request_size>
                 </data_background_cleanup>
             </local_object_storage_disk>
+            <local_plain_rewritable_disk>
+                <type>object_storage</type>
+                <object_storage_type>local_blob_storage</object_storage_type>
+                <path>local_plain_rewritable_dir/</path>
+                <metadata_type>plain_rewritable</metadata_type>
+                <use_fake_transaction>false</use_fake_transaction>
+            </local_plain_rewritable_disk>
         </disks>
     </storage_configuration>
 
@@ -134,6 +143,9 @@ public:
 
     static void SetUpTestSuite()
     {
+        DB::ServerUUID::setRandomForUnitTests();
+        DB::getIOThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+
         setUpConfig(config_path);
         DB::ConfigProcessor config_processor(config_path, true, true);
         auto config = config_processor.loadConfig(false);
@@ -170,6 +182,7 @@ public:
 
         fs::remove_all("./local_blob_storage_dir");
         fs::remove_all("./metadata_storage_dir");
+        fs::remove_all("./local_plain_rewritable_dir");
     }
 
     void waitBlobsCount(DB::DiskPtr disk, size_t needed_count)
@@ -198,13 +211,12 @@ public:
         return test_info->name();
     }
 
-    DB::DiskPtr getDiskObjectStorage()
+    DB::DiskPtr getDiskObjectStorage(const std::string & name = "local_object_storage_disk")
     {
-        if (!initialized_disks.empty())
-            return initialized_disks.begin()->second;
+        if (auto it = initialized_disks.find(name); it != initialized_disks.end())
+            return it->second;
 
         auto & factory = DB::DiskFactory::instance();
-        std::string name = "local_object_storage_disk";
         std::string prefix = "storage_configuration.disks." + name;
         auto disk = factory.create(
             name,
@@ -704,6 +716,28 @@ TEST_F(DiskObjectStorageTest, HardLinkAndRewriteFileTxCommitFail)
     EXPECT_FALSE(disk->existsFile(new_file_name));
 
     waitBlobsCount(disk, 1);
+}
+
+TEST_F(DiskObjectStorageTest, CopyEmptyFileToPlainRewritable)
+{
+    auto from_disk = getDiskObjectStorage();
+    auto to_disk = getDiskObjectStorage("local_plain_rewritable_disk");
+
+    std::string file_name = getTestName() + "_file";
+
+    {
+        auto wb = from_disk->writeFile(file_name);
+        wb->finalize();
+    }
+
+    EXPECT_TRUE(from_disk->existsFile(file_name));
+    EXPECT_EQ(from_disk->getFileSize(file_name), 0);
+
+    from_disk->copyFile(file_name, *to_disk, file_name, {});
+
+    EXPECT_TRUE(to_disk->existsFile(file_name));
+    EXPECT_EQ(to_disk->getFileSize(file_name), 0);
+    EXPECT_EQ(readAll(*to_disk->readFile(file_name, {})), "");
 }
 
 TEST_F(DiskObjectStorageTest, TruncateFileToZero)

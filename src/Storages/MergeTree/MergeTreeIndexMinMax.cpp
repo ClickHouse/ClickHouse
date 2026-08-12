@@ -34,7 +34,7 @@ MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const String & index_na
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
     const String & index_name_,
     const Block & index_sample_block_,
-    Ranges && hyperrectangle_)
+    std::vector<Range> && hyperrectangle_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , hyperrectangle(std::move(hyperrectangle_))

@@ -466,6 +466,43 @@ bool isLowCardinalityType(const IDataType & type)
     return typeid_cast<const DataTypeLowCardinality *>(&type) != nullptr;
 }
 
+bool hasLowCardinalityTypes(const ColumnsWithTypeAndName & args)
+{
+    for (const auto & column : args)
+    {
+        /// recursiveRemoveLowCardinality returns the very same type object when nothing was removed.
+        if (column.type && recursiveRemoveLowCardinality(column.type).get() != column.type.get())
+            return true;
+    }
+    return false;
+}
+
+bool allArgumentColumnsAreConstant(const ColumnsWithTypeAndName & args)
+{
+    for (const auto & column : args)
+    {
+        if (!column.column || !isColumnConst(*column.column))
+            return false;
+    }
+    return true;
+}
+
+bool convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
+{
+    bool converted = false;
+    for (auto & column : args)
+    {
+        auto column_without_low_cardinality = recursiveRemoveLowCardinality(column.column);
+        auto type_without_low_cardinality = recursiveRemoveLowCardinality(column.type);
+
+        converted |= type_without_low_cardinality.get() != column.type.get();
+
+        column.column = std::move(column_without_low_cardinality);
+        column.type = std::move(type_without_low_cardinality);
+    }
+    return converted;
+}
+
 /// Note that, for historical reasons, most of the functions use the first argument size to determine which is the
 /// size of all the columns. When short circuit optimization was introduced, `input_rows_count` was also added for
 /// all functions, but many have not been adjusted

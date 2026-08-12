@@ -548,6 +548,7 @@ ContextMutablePtr makeContext()
     context->setSetting("allow_suspicious_low_cardinality_types", 1);
     context->setSetting("allow_experimental_nlp_functions", 1);
     context->setSetting("allow_deprecated_error_prone_window_functions", 1);
+    context->setSetting("allow_deprecated_snowflake_conversion_functions", 1);
     context->setSetting("allow_not_comparable_types_in_comparison_functions", 1);
     context->setSetting("allow_experimental_time_time64_type", 1);
     context->setSetting("allow_introspection_functions", 1);
@@ -1763,7 +1764,7 @@ struct FunctionsStressTestThread
 
         /// Execute on each row separately.
 
-        MutableColumns mutable_valid_args;
+        std::vector<MutableColumnPtr> mutable_valid_args;
         MutableColumnPtr mutable_result;
         std::optional<size_t> any_failed_row;
         for (size_t row_idx = 0; row_idx < options.rows_per_batch; ++row_idx)

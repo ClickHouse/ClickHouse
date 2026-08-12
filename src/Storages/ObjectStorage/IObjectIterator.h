@@ -53,8 +53,7 @@ struct ObjectInfo
 
     FileBucketInfoPtr file_bucket_info;
 
-    String getIdentifier(bool include_file_bucket_info = true) const;
-    String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
+    String getIdentifier() const;
 };
 
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;

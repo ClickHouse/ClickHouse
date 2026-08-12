@@ -81,9 +81,8 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
                     ostr << ',';
                 ostr << indent_str;
 
-                /// An unnamed element is represented by an empty name, which has
-                /// nothing to serialize, so skip it.
-                if (i < element_names.size() && !element_names[i].empty())
+                /// Print element name if present
+                if (i < element_names.size())
                     ostr << backQuoteIfNeed(element_names[i]) << ' ';
 
                 /// Print the type
@@ -98,8 +97,8 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
                 if (i > 0)
                     ostr << ", ";
 
-                /// As in the multiline branch above, skip an unnamed (empty-name) element.
-                if (i < element_names.size() && !element_names[i].empty())
+                /// Print element name if present
+                if (i < element_names.size())
                     ostr << backQuoteIfNeed(element_names[i]) << ' ';
 
                 /// Print the type

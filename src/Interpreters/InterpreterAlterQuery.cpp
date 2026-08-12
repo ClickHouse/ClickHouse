@@ -468,7 +468,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (modify_query)
     {
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor(getContext()).visit(*modify_query);
+        ApplyWithSubqueryVisitor::visit(*modify_query);
     }
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
@@ -673,11 +673,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::DROP_CONSTRAINT:
         {
             required_access.emplace_back(AccessType::ALTER_DROP_CONSTRAINT, database, table);
-            break;
-        }
-        case ASTAlterCommand::MODIFY_CONSTRAINT:
-        {
-            required_access.emplace_back(AccessType::ALTER_MODIFY_CONSTRAINT, database, table);
             break;
         }
         case ASTAlterCommand::ADD_PROJECTION:

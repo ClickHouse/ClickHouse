@@ -3,7 +3,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <unordered_set>
-#include <boost/functional/hash.hpp>
 #include <boost/rational.hpp> /// For calculations related to sampling coefficients.
 
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -79,6 +78,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool per_part_index_stats;
+    extern const SettingsBool apply_deleted_mask;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString force_data_skipping_indices;
     extern const SettingsBool force_index_by_date;
@@ -1371,7 +1371,6 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & select_query_info,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
-    const std::optional<TopKFilterInfo> & top_k_filter_info,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ContextPtr & context,
     LoggerPtr log)
@@ -1379,6 +1378,9 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     const auto & settings = context->getSettingsRef();
     if (!settings[Setting::use_query_condition_cache]
             || !settings[Setting::allow_experimental_analyzer]
+            /// `apply_deleted_mask = 0` must return deleted rows, so it cannot reuse entries written
+            /// by normal reads: those may exclude a granule whose only matching rows are deleted.
+            || !settings[Setting::apply_deleted_mask]
             || (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag)
             || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
             || select_query_info.isFinal()
@@ -1393,21 +1395,9 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         size_t granules_dropped = 0;
     };
 
-    auto drop_mark_ranges = [&](const ActionsDAG::Node * dag, bool apply_top_k_salt)
+    auto drop_mark_ranges = [&](const ActionsDAG::Node * dag)
     {
-        /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
-        /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
-        size_t condition_hash = dag->getHash();
-
-        /// Mirror the salting done by `updateQueryConditionCache` on the WHERE write path: when the
-        /// read goes through a TopK filter, the cached granule decisions are valid only for the same
-        /// TopK plan, so the WHERE cache key must be partitioned by the TopK parameters. The PREWHERE
-        /// write path in `MergeTreeSelectProcessor::read` does not (yet) apply this salt, so we must
-        /// not apply it on the PREWHERE read path either — otherwise the keys diverge and the lookup
-        /// always misses.
-        if (apply_top_k_salt && top_k_filter_info)
-            boost::hash_combine(condition_hash, top_k_filter_info->condition_hash);
-
+        UInt64 condition_hash = dag->getHash();
         Stats stats;
         for (auto it = parts_with_ranges.begin(); it != parts_with_ranges.end();)
         {
@@ -1500,7 +1490,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         {
             if (outputs->result_name == prewhere_info->prewhere_column_name)
             {
-                auto stats = drop_mark_ranges(outputs, /*apply_top_k_salt=*/ false);
+                auto stats = drop_mark_ranges(outputs);
                 LOG_DEBUG(log,
                         "Query condition cache has dropped {}/{} granules for PREWHERE condition {}.",
                         stats.granules_dropped,
@@ -1514,7 +1504,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     if (const auto & filter_actions_dag = select_query_info.filter_actions_dag)
     {
         const auto * output = filter_actions_dag->getOutputs().front();
-        auto stats = drop_mark_ranges(output, /*apply_top_k_salt=*/ true);
+        auto stats = drop_mark_ranges(output);
         LOG_DEBUG(log,
                 "Query condition cache has dropped {}/{} granules for WHERE condition {}.",
                 stats.granules_dropped,
@@ -1682,9 +1672,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         exact_ranges = nullptr;
 
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
-    const auto & sorting_key = metadata_snapshot->getSortingKey();
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
-    std::vector<bool> reverse_flags;
+
+    /// Which key columns are reverse-sorted.
+    const KeyOrder & key_order = key_condition.getKeyOrder();
+    chassert(key_order.matchesPrefix(metadata_snapshot->getSortingKey().reverse_flags, primary_key.column_names.size()));
 
     const auto index = part->getIndex();
     const bool use_sparse_pk_representation
@@ -1723,7 +1715,6 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             chassert(i < index->size());
             chassert(index->at(i));
             index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
-            reverse_flags.push_back(!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i]);
         }
 
         //// Get PK columns potentially used in `KeyCondition` Filter
@@ -1765,16 +1756,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             for (size_t i = 0; i < num_key_columns; ++i)
             {
                 if (i < index->size())
-                {
                     index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
-                    reverse_flags.push_back(!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i]);
-                }
                 else
-                {
                     /// The column of the primary key was not loaded in memory - we'll skip it.
                     index_columns->emplace_back();
-                    reverse_flags.push_back(false);
-                }
 
                 key_types.emplace_back(primary_key.data_types[i]);
             }
@@ -1831,27 +1816,24 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                 if (range.end == marks_count)
                 {
-                    /// Last mark: the right boundary of every key column is +inf. The left and right
-                    /// boundaries are equal only when the left boundary value is also +inf, i.e. when the
-                    /// value at range.begin is NULL (create_field_ref maps NULL to +inf for NULL_LAST
-                    /// ordering). A non-nullable column is never NULL, so its boundaries are never equal.
+                    /// Last mark: the boundary at the unknown physical end of the part is the column's
+                    /// directional extreme. The boundaries are known to be equal only when the range
+                    /// starts with a NULL and NULLs are stored physically last on the column — then the
+                    /// column is NULL up to the end of the part (NULL's value-space stand-in, +inf,
+                    /// equals the extreme). A non-nullable column is never NULL, so its boundaries are
+                    /// never known to be equal.
                     for (size_t i = 0; i < num_key_columns; ++i)
                     {
                         const auto & col = (*index_columns)[i].column;
                         chassert(col);
-                        equal_boundaries_mask[i] = col->isNullAt(range.begin);
+                        equal_boundaries_mask[i] = col->isNullAt(range.begin) && key_order.nullsAreStoredLast(i);
                     }
 
                     for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
                     {
                         const size_t key_col = used_key_indices[sparse_pos];
-
-                        auto & left = reverse_flags[key_col] ? sparse_key_right[sparse_pos] : sparse_key_left[sparse_pos];
-                        auto & right = reverse_flags[key_col] ? sparse_key_left[sparse_pos] : sparse_key_right[sparse_pos];
-
-                        create_field_ref(range.begin, key_col, left);
-
-                        right = POSITIVE_INFINITY;
+                        create_field_ref(range.begin, key_col, sparse_key_left[sparse_pos]);
+                        sparse_key_right[sparse_pos] = key_order.physicalEndExtreme(key_col);
                     }
                 }
                 else
@@ -1870,12 +1852,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
                     {
                         const size_t key_col = used_key_indices[sparse_pos];
-
-                        auto & left = reverse_flags[key_col] ? sparse_key_right[sparse_pos] : sparse_key_left[sparse_pos];
-                        auto & right = reverse_flags[key_col] ? sparse_key_left[sparse_pos] : sparse_key_right[sparse_pos];
-
-                        create_field_ref(range.begin, key_col, left);
-                        create_field_ref(range.end, key_col, right);
+                        create_field_ref(range.begin, key_col, sparse_key_left[sparse_pos]);
+                        create_field_ref(range.end, key_col, sparse_key_right[sparse_pos]);
                     }
                 }
 
@@ -1892,32 +1870,35 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
-                    auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
-                    auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
                     if ((*index_columns)[i].column)
-                        create_field_ref(range.begin, i, left);
+                    {
+                        create_field_ref(range.begin, i, index_left[i]);
+                        /// The value at the unknown physical end of the part is the directional extreme.
+                        index_right[i] = key_order.physicalEndExtreme(i);
+                    }
                     else
-                        left = NEGATIVE_INFINITY;
-
-                    right = POSITIVE_INFINITY;
+                    {
+                        /// Key column not loaded in the in-memory index: unknown at both boundaries.
+                        /// The (start, end) extreme pair makes the decomposition take the whole
+                        /// universe at this column, a safe over-approximation.
+                        index_left[i] = key_order.physicalStartExtreme(i);
+                        index_right[i] = key_order.physicalEndExtreme(i);
+                    }
                 }
             }
             else
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
-                    auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
-                    auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
                     if ((*index_columns)[i].column)
                     {
-                        create_field_ref(range.begin, i, left);
-                        create_field_ref(range.end, i, right);
+                        create_field_ref(range.begin, i, index_left[i]);
+                        create_field_ref(range.end, i, index_right[i]);
                     }
                     else
                     {
-                        /// If the PK column was not loaded in memory - exclude it from the analysis.
-                        left = NEGATIVE_INFINITY;
-                        right = POSITIVE_INFINITY;
+                        index_left[i] = key_order.physicalStartExtreme(i);
+                        index_right[i] = key_order.physicalEndExtreme(i);
                     }
                 }
             }
@@ -2128,44 +2109,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         if (check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false)
                         {
                             /// key_condition.matchesExactContinuousRange returned true, but the
-                            /// range doesn't seem to be continuous. Something's broken - most likely a
-                            /// function reported inaccurate monotonicity (see the issue below).
-                            ///
-                            /// Log every participating condition (the key condition as well as the optional
-                            /// _part_offset and total-offset conditions), the part and the offending mark ranges
-                            /// before throwing, so the occurrence (typically found by a stress test or the fuzzer)
-                            /// is actionable. check_in_range combines all useful conditions, so any of them could
-                            /// be the culprit - in particular, a bad _part_offset / total-offset condition can trip
-                            /// this branch while the primary key_condition is empty or unrelated.
-                            /// The thrown message is deliberately kept constant: CI derives the failure's name
-                            /// from the exception's format string, so the details go to the log instead of the
-                            /// message to keep failures grouped under a single stable name.
+                            /// range doesn't seem to be continuous. Something's broken.
                             /// TODO: Remove the #ifndef and always throw after
                             ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
 #ifndef NDEBUG
-                            auto describe_condition = [](const KeyCondition & condition)
-                            {
-                                return fmt::format("(relaxed: {}): {}", condition.isRelaxed(), condition.toString());
-                            };
-
-                            String conditions_description = fmt::format(
-                                "key condition (useful: {}) {}", key_condition_useful, describe_condition(key_condition));
-                            if (part_offset_condition_useful)
-                                conditions_description += fmt::format("; part offset condition {}", describe_condition(*part_offset_condition));
-                            if (total_offset_condition_useful)
-                                conditions_description += fmt::format("; total offset condition {}", describe_condition(*total_offset_condition));
-
-                            LOG_ERROR(
-                                log,
-                                "Inconsistent KeyCondition behavior: matchesExactContinuousRange() reported an exact "
-                                "continuous range, but the mark range [{}, {}) (exact subrange [{}, {})) of part {} is "
-                                "not exactly continuous. This is most likely caused by a function reporting inaccurate "
-                                "monotonicity (see https://github.com/ClickHouse/ClickHouse/issues/90461). "
-                                "Participating conditions: {}",
-                                result_range.begin, result_range.end,
-                                result_exact_range.begin, result_exact_range.end,
-                                part_name,
-                                conditions_description);
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent KeyCondition behavior");
 #endif
                         }
@@ -2280,7 +2227,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     if (index_helper->isTextIndex())
     {
         MergeTreeIndexGranulePtr granule;
-        reader.read(0, condition.get(), granule, all_match ? nullptr : &ranges);
+        reader.read(0, condition.get(), granule);
         auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
 
         for (const auto & range : ranges)
@@ -2374,7 +2321,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
             {
                 if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 {
-                    reader.read(index_mark, condition.get(), granule, /*readable_ranges=*/ nullptr);
+                    reader.read(index_mark, condition.get(), granule);
                 }
 
                 if (index_helper->isVectorSimilarityIndex())

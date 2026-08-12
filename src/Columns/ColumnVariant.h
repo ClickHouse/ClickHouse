@@ -365,7 +365,7 @@ public:
     bool hasStatistics() const override;
     void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
 
-    void validateState(bool allow_logical_error = true) const;
+    void validateState() const;
 
 private:
     void insertFromImpl(const IColumn & src_, size_t n, const VectorWithMemoryTracking<ColumnVariant::Discriminator> * global_discriminators_mapping);

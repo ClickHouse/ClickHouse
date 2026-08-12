@@ -2,7 +2,6 @@
 
 SET enable_analyzer = 1;
 SET use_join_disjunctions_push_down = 1;
-SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t04330;
 DROP TABLE IF EXISTS nr04330;

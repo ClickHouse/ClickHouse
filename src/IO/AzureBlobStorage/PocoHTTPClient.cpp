@@ -348,6 +348,18 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
                 poco_request.set(header.name, header.value);
         }
 
+        /// Some SDK clients (e.g. Key Vault) do not set the `Content-Length` header themselves
+        /// and rely on the transport to compute it from the body stream (the removed curl-based
+        /// transport did that). Without it the request body is sent with no framing at all,
+        /// and Azure responds with `411 Length Required`. Body-less requests get a `NullBodyStream`,
+        /// so mirror the curl transport and skip only the methods that never carry a body.
+        if (method != "GET" && method != "HEAD"
+            && !poco_request.has(Poco::Net::HTTPRequest::CONTENT_LENGTH))
+        {
+            if (const auto * request_body_stream = request.GetBodyStream())
+                poco_request.setContentLength(request_body_stream->Length());
+        }
+
         if (method == "GET" || method == "HEAD")
             request_throttler.throttleHTTPGet();
         else if (method == "PUT" || method == "POST" || method == "PATCH")
@@ -504,23 +516,6 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
     }
 }
 
-}
-
-/// Default transport for SDK pipelines created without an explicit transport,
-/// e.g. internal pipelines of `ManagedIdentityCredential` and `WorkloadIdentityCredential`.
-/// The SDK is built with `BUILD_TRANSPORT_CUSTOM_ADAPTER` and has no other transport.
-std::shared_ptr<Azure::Core::Http::HttpTransport> AzureSdkGetCustomHttpTransport()
-{
-    static const DB::RemoteHostFilter remote_host_filter;
-    static auto transport = std::make_shared<DB::PocoAzureHTTPClient>(
-        DB::PocoAzureHTTPClientConfiguration{
-            .remote_host_filter = remote_host_filter,
-            .max_redirects = 10,
-            .for_disk_azure = false,
-            .request_throttler = {},
-            .extra_headers = {},
-        });
-    return transport;
 }
 
 #endif

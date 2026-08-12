@@ -54,38 +54,46 @@ namespace Setting
     extern const SettingsBool reject_expensive_hyperscan_regexps;
 }
 
-TextSearchQuery::TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, VectorWithMemoryTracking<String> tokens_, std::vector<OptimizedRegularExpression> patterns_)
+TextSearchQuery::TextSearchQuery(
+    String function_name_,
+    TextSearchMode search_mode_,
+    TextIndexDirectReadMode direct_read_mode_,
+    VectorWithMemoryTracking<String> tokens_,
+    std::vector<OptimizedRegularExpression> patterns_,
+    VectorWithMemoryTracking<String> phrase_tokens_)
     : function_name(std::move(function_name_))
     , search_mode(search_mode_)
     , direct_read_mode(direct_read_mode_)
     , tokens(std::move(tokens_))
     , patterns(std::move(patterns_))
+    , phrase_tokens(std::move(phrase_tokens_))
 {
     std::sort(tokens.begin(), tokens.end());
+    initializeHash();
 }
 
-SipHash TextSearchQuery::getHash() const
+void TextSearchQuery::initializeHash()
 {
-    SipHash hash;
-    hash.update(function_name);
-    hash.update(search_mode);
-    hash.update(direct_read_mode);
+    SipHash hash_state;
+    hash_state.update(function_name);
+    hash_state.update(search_mode);
+    hash_state.update(direct_read_mode);
 
-    hash.update(tokens.size());
+    hash_state.update(tokens.size());
     for (const auto & token : tokens)
     {
-        hash.update(token.size());
-        hash.update(token);
+        hash_state.update(token.size());
+        hash_state.update(token);
     }
 
     if (!patterns.empty())
     {
-        hash.update(patterns.size());
+        hash_state.update(patterns.size());
         for (const auto & pattern : patterns)
         {
             if (const auto & re2 = pattern.getRE2())
             {
-                hash.update(re2->pattern());
+                hash_state.update(re2->pattern());
             }
             else
             {
@@ -93,24 +101,24 @@ SipHash TextSearchQuery::getHash() const
                 bool is_trivial = false;
                 bool required_substring_is_prefix = false;
                 pattern.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
-                hash.update(required_substring);
-                hash.update(is_trivial);
-                hash.update(required_substring_is_prefix);
+                hash_state.update(required_substring);
+                hash_state.update(is_trivial);
+                hash_state.update(required_substring_is_prefix);
             }
         }
     }
 
     if (!phrase_tokens.empty())
     {
-        hash.update(phrase_tokens.size());
+        hash_state.update(phrase_tokens.size());
         for (const auto & token : phrase_tokens)
         {
-            hash.update(token.size());
-            hash.update(token);
+            hash_state.update(token.size());
+            hash_state.update(token);
         }
     }
 
-    return hash;
+    hash = hash_state.get128();
 }
 
 MergeTreeIndexConditionText::MergeTreeIndexConditionText(
@@ -175,8 +183,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     {
         for (const auto & search_query : element.text_search_queries)
         {
-            all_search_tokens_set.insert(search_query->tokens.begin(), search_query->tokens.end());
-            all_search_queries[search_query->getHash().get128()] = search_query;
+            all_search_tokens_set.insert(search_query->getTokens().begin(), search_query->getTokens().end());
+            all_search_queries[search_query->getHash()] = search_query;
         }
 
         if (requiresReadingAllTokens(element))
@@ -312,17 +320,17 @@ TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const Acti
 
 std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
 {
-    if (query.tokens.empty() && query.patterns.empty() && query.direct_read_mode == TextIndexDirectReadMode::Hint)
+    if (query.getTokens().empty() && query.getPatterns().empty() && query.getDirectReadMode() == TextIndexDirectReadMode::Hint)
         return std::nullopt;
 
     auto query_hash = query.getHash();
-    auto it = all_search_queries.find(query_hash.get128());
+    auto it = all_search_queries.find(query_hash);
 
     if (it == all_search_queries.end())
         return std::nullopt;
 
     auto hash_str = getSipHash128AsHexString(query_hash);
-    String virtual_column_name = fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.function_name, hash_str);
+    String virtual_column_name = fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.getFunctionName(), hash_str);
 
     virtual_column_to_search_query[virtual_column_name] = it->second;
     return virtual_column_name;
@@ -487,7 +495,7 @@ std::string MergeTreeIndexConditionText::getDescription() const
 
 bool MergeTreeIndexConditionText::hasSearchPatterns() const
 {
-    return std::ranges::any_of(all_search_queries, [](const auto & query) { return !query.second->patterns.empty(); });
+    return std::ranges::any_of(all_search_queries, [](const auto & query) { return !query.second->getPatterns().empty(); });
 }
 
 bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const
@@ -853,6 +861,11 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         auto make_map_function = [&](VectorWithMemoryTracking<String> tokens)
         {
+            /// Empty needles produce no tokens that can be searched for --> fall back to brute force scan.
+            /// See function "equals" for a longer explanation.
+            if (tokens.empty())
+                return false;
+
             out.function = RPNElement::FUNCTION_EQUALS;
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
             return true;
@@ -880,16 +893,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "equals")
     {
-        /// Special case: Don't use the index if the needle is empty.
-        /// - Reason 1: The index doesn't index empty values (regardless of the tokenizer). So this needle
-        ///   is invalid.
-        /// - Reason 2: We also end up here if optimizer rule `optimize_empty_string_comparisons` (default: 1)
-        ///   is disabled, i.e. `col = ''` is _not_ rewritten into `empty(col)`. The latter doesn't
-        ///   use the index (because it doesn't support `empty`). For consistency, make sure `equals('')`
-        ///   behaves the same.
-        if (value_field.safeGet<String>().empty())
-            return false;
-
         auto tokens = stringToTokens(value_field);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
@@ -1084,8 +1087,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 std::sort(unique_tokens.begin(), unique_tokens.end());
             }
 
-            auto query = std::make_shared<TextSearchQuery>(function_name, TextSearchMode::Phrase, direct_read_mode, std::move(unique_tokens));
-            query->phrase_tokens = std::move(phrase_tokens);
+            auto query = std::make_shared<TextSearchQuery>(
+                function_name,
+                TextSearchMode::Phrase,
+                direct_read_mode,
+                std::move(unique_tokens),
+                std::vector<OptimizedRegularExpression>{},
+                std::move(phrase_tokens));
+
             out.function = RPNElement::FUNCTION_HAS_PHRASE;
             out.text_search_queries.emplace_back(std::move(query));
             return true;
@@ -1256,17 +1265,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 return false;
             }
 
-            /// `multiMatchAny` is executed by vectorscan, which compiles each pattern as a NUL-terminated
-            /// C-string (`hs_compile_multi` takes no length), so it stops at the first NUL byte. The regexp
-            /// analyzer below is binary-safe and keeps the NUL as a literal, so it would extract a required
-            /// substring spanning the NUL that the matcher never requires, and the index would wrongly prune
-            /// granules that the function matches. Truncate the pattern at the first NUL to analyze exactly
-            /// what vectorscan sees. (This differs from `match`, which is executed by binary-safe re2.)
-            String pattern_string = pattern.safeGet<String>();
-            if (const auto nul_pos = pattern_string.find('\0'); nul_pos != String::npos)
-                pattern_string.resize(nul_pos);
-
-            auto tokens_for_queries = regexpToTokensForQueries(pattern_string);
+            auto tokens_for_queries = regexpToTokensForQueries(pattern.safeGet<String>());
 
             if (tokens_for_queries.empty())
             {
@@ -1282,6 +1281,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "has")
     {
         auto tokens = stringToTokens(value_field);
+
+        /// Empty needles produce no tokens that can be searched for, fall back to brute force scan.
+        /// See function "equals" for a longer explanation.
+        if (tokens.empty())
+            return false;
+
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;

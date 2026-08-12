@@ -9,8 +9,6 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/Base64.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Parsers/ParserPreparedStatement.h>
@@ -416,7 +414,7 @@ public:
     String user;
     String database;
     // includes username, may also include database and other runtime parameters
-    UnorderedMapWithMemoryTracking<String, String> parameters;
+    std::unordered_map<String, String> parameters;
 
     explicit StartupMessage(Int32 payload_size_) : FirstMessage(payload_size_) {}
 
@@ -763,7 +761,7 @@ class BindQuery : FrontMessage
 public:
     String portal_name;
     String function_name;
-    VectorWithMemoryTracking<String> parameters;
+    std::vector<String> parameters;
     Int16 num_params{};
 
     void deserialize(ReadBuffer & in) override
@@ -1003,10 +1001,10 @@ public:
 class RowDescription : BackendMessage
 {
 private:
-    const VectorWithMemoryTracking<FieldDescription> & fields_descr;
+    const std::vector<FieldDescription> & fields_descr;
 
 public:
-    explicit RowDescription(const VectorWithMemoryTracking<FieldDescription> & fields_descr_) : fields_descr(fields_descr_) {}
+    explicit RowDescription(const std::vector<FieldDescription> & fields_descr_) : fields_descr(fields_descr_) {}
 
     void serialize(WriteBuffer & out) const override
     {
@@ -1063,10 +1061,10 @@ public:
 class DataRow : BackendMessage
 {
 private:
-    const VectorWithMemoryTracking<std::shared_ptr<ISerializable>> & row;
+    const std::vector<std::shared_ptr<ISerializable>> & row;
 
 public:
-    explicit DataRow(const VectorWithMemoryTracking<std::shared_ptr<ISerializable>> & row_) : row(row_) {}
+    explicit DataRow(const std::vector<std::shared_ptr<ISerializable>> & row_) : row(row_) {}
 
     void serialize(WriteBuffer & out) const override
     {
@@ -1211,9 +1209,9 @@ public:
 
 class CopyOutData : public BackendMessage
 {
-    VectorWithMemoryTracking<char> data;
+    std::vector<char> data;
 public:
-    explicit CopyOutData(VectorWithMemoryTracking<char> data_)
+    explicit CopyOutData(std::vector<char> data_)
         : data(data_)
     {
     }
@@ -1383,7 +1381,7 @@ public:
 
     static Command classifyQuery(const String & query)
     {
-        static const VectorWithMemoryTracking<std::pair<String, Command>> query_patterns = {
+        static const std::vector<std::pair<String, Command>> query_patterns = {
             {"CREATE TEMPORARY TABLE", Command::CREATE_TABLE},
             {"CREATE TABLE", Command::CREATE_TABLE},
             {"CREATE DATABASE", Command::CREATE_DATABASE},
@@ -1656,10 +1654,10 @@ class AuthenticationManager
 {
 private:
     LoggerPtr log = getLogger("AuthenticationManager");
-    UnorderedMapWithMemoryTracking<AuthenticationType, std::shared_ptr<AuthenticationMethod>> type_to_method = {};
+    std::unordered_map<AuthenticationType, std::shared_ptr<AuthenticationMethod>> type_to_method = {};
 
 public:
-    explicit AuthenticationManager(const VectorWithMemoryTracking<std::shared_ptr<AuthenticationMethod>> & auth_methods)
+    explicit AuthenticationManager(const std::vector<std::shared_ptr<AuthenticationMethod>> & auth_methods)
     {
         for (const std::shared_ptr<AuthenticationMethod> & method : auth_methods)
         {
@@ -1785,11 +1783,11 @@ public:
     }
 
 private:
-    UnorderedMapWithMemoryTracking<String, String> statements;
+    std::unordered_map<String, String> statements;
     std::optional<size_t> limit_statements;
     std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> bind_query;
 
-    String getStatement(const String & function_name, const VectorWithMemoryTracking<String> & arguments)
+    String getStatement(const String & function_name, const std::vector<String> & arguments)
     {
         auto it = statements.find(function_name);
         if (it == statements.end())

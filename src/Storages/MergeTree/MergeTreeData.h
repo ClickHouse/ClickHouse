@@ -1104,6 +1104,8 @@ public:
         return column_sizes;
     }
 
+    ColumnSizeByName getColumnSizes(const Names & columns) const override;
+
     IndexSizeByName getSecondaryIndexSizes() const override
     {
         /// Always keep locks order parts_lock -> sizes_lock
@@ -1685,6 +1687,14 @@ protected:
         bool attach,
         bool allow_empty_sorting_key,
         bool allow_nullable_key_,
+        ContextPtr local_context) const;
+
+    /// Runs the same metadata validation as `setProperties` but without publishing
+    /// `new_metadata`. Lets `alter()` validate against freshly changed settings before
+    /// the durable commit.
+    void checkMetadataProperties(
+        const StorageInMemoryMetadata & new_metadata,
+        const StorageInMemoryMetadata & old_metadata,
         ContextPtr local_context) const;
 
     void setProperties(

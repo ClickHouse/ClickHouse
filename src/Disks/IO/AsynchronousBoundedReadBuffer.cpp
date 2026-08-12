@@ -526,11 +526,4 @@ size_t AsynchronousBoundedReadBuffer::readBigAt(char * to, size_t n, size_t rang
     return impl->readBigAt(to, n, range_begin, progress_callback);
 }
 
-std::optional<Field> AsynchronousBoundedReadBuffer::getMetadata(const String & name) const
-{
-    if (auto * provider = dynamic_cast<IReadBufferMetadataProvider *>(impl.get()))
-        return provider->getMetadata(name);
-    return std::nullopt;
-}
-
 }
