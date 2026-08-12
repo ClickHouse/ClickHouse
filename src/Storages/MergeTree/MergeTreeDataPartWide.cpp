@@ -271,7 +271,7 @@ void MergeTreeDataPartWide::loadIndexGranularity()
     if (columns.empty())
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
-    auto any_column_filename = getFileNameForColumn(columns.front());
+    auto any_column_filename = getFirstFileNameForColumn(columns.front());
     if (!any_column_filename)
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
             "There are no files for column {} in part {}",
@@ -569,32 +569,26 @@ std::optional<time_t> MergeTreeDataPartWide::getColumnModificationTime(const Str
     }
 }
 
-std::optional<String> MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & column) const
+std::optional<String> MergeTreeDataPartWide::getFirstFileNameForColumn(const NameAndTypePair & column) const
 {
-    std::optional<String> filename;
-
-    /// Fallback when serializations are not loaded yet (called from loadColumns()). The column is
-    /// present only if every one of its own non-ephemeral streams exists; a single stream may be
-    /// shared with a sibling (Nested offsets under share_nested_offsets) and does not imply presence.
-    if (getSerializations().empty())
+    if (!columns_substreams.empty())
     {
-        bool all_streams_present = true;
-        column.type->getDefaultSerialization()->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
-        {
-            if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
-                return;
+        const auto * substreams = columns_substreams.tryGetColumnSubstreams(column.name);
+        if (!substreams || substreams->empty())
+            return std::nullopt;
 
-            auto stream_name = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, getDataPartStorage(), storage.getSettings());
-            if (!stream_name)
-                all_streams_present = false;
-            else if (!filename.has_value())
-                filename = stream_name;
-        });
+        /// This method may be called when checksums are not initialized yet.
+        if (!checksums.empty())
+            return getStreamNameOrHash((*substreams)[0], DATA_FILE_EXTENSION, checksums);
 
-        return all_streams_present ? filename : std::nullopt;
+        return getStreamNameOrHash((*substreams)[0], DATA_FILE_EXTENSION, getDataPartStorage());
     }
 
-    getSerialization(column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    std::optional<String> filename;
+
+    /// Fallback when serializations are not loaded yet (called from loadColumns()).
+    SerializationPtr serialization = getSerializations().empty() ? column.type->getDefaultSerialization() : getSerialization(column.name);
+    serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
         if (!filename.has_value())
         {

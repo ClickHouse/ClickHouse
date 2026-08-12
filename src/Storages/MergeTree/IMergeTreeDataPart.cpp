@@ -2117,28 +2117,16 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     NamesAndTypesList loaded_columns;
     bool is_readonly_storage = getDataPartStorage().isReadonly();
 
-    const bool has_columns_file = getDataPartStorage().existsFile("columns.txt");
-
-    /// An existing but empty columns.txt is treated like an absent one (both fall through to the
-    /// rebuild-from-metadata branch below), not as a fatal parse error that detaches the part.
-    /// readFile forces local pread, so a zero-byte file reports eof instead of faulting under a
-    /// randomized mmap read method.
-    bool columns_file_loaded = false;
-    if (has_columns_file)
+    auto columns_file = readFileIfExists("columns.txt");
+    if (columns_file && !columns_file->eof())
     {
-        auto in = readFile("columns.txt");
-        if (!in->eof())
-        {
-            loaded_columns.readText(*in);
+        loaded_columns.readText(*columns_file);
 
-            for (auto & column : loaded_columns)
-                setVersionToAggregateFunctions(column.type, true);
-
-            columns_file_loaded = true;
-        }
+        for (auto & column : loaded_columns)
+            setVersionToAggregateFunctions(column.type, true);
     }
-
-    if (!columns_file_loaded)
+    /// If there is no column.txt or it's empty, try to recover it from the metadata.
+    else
     {
         /// We can get list of columns only from columns.txt in compact parts.
         if (require || part_type == Type::Compact || info.isPatch())
@@ -2147,33 +2135,24 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
 
         auto metadata_snapshot = getMetadataSnapshot();
 
-        /// No (or empty) columns.txt: rebuild it. writeColumns rewrites in WriteMode::Rewrite.
-        /// Membership comes from columns_substreams.txt (the physically-written columns, independent
-        /// of on-disk serialization); parts predating it fall back to probing each column's streams.
-        ColumnsSubstreams disk_substreams;
-        if (getDataPartStorage().existsFile(COLUMNS_SUBSTREAMS_FILE_NAME))
-        {
-            auto in = readFile(COLUMNS_SUBSTREAMS_FILE_NAME);
-            if (!in->eof())
-                disk_substreams.readText(*in);
-        }
+        /// No (or empty) columns.txt: rebuild it.
 
-        auto column_is_present = [&](const NameAndTypePair & column)
-        {
-            if (!disk_substreams.empty())
-                return disk_substreams.tryGetColumnSubstreams(column.name) != nullptr;
-            return getFileNameForColumn(column).has_value();
-        };
+        /// Load columns substreams, so we can check if specific column exists in the data part via getFirstFileNameForColumn correctly.
+        loadColumnsSubstreams(/*validate_against_loaded_columns=*/false);
 
         for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
-            if (column_is_present(column))
+        {
+            if (getFirstFileNameForColumn(column).has_value())
                 loaded_columns.push_back(column);
+        }
 
         /// Persistent virtual columns the part carries (getAllPhysical omits them), in the order
         /// writeColumns wrote them: after the physical columns.
         for (const auto & column : metadata_snapshot->virtuals.getNamesAndTypes(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader))
-            if (column_is_present(column))
+        {
+            if (getFirstFileNameForColumn(column).has_value())
                 loaded_columns.push_back(column);
+        }
 
         if (loaded_columns.empty())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
@@ -2183,16 +2162,14 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     }
 
     SerializationInfoByName infos({});
-    if (auto in = readFileIfExists(SERIALIZATION_FILE_NAME))
-        infos = SerializationInfoByName::readJSON(loaded_columns, *in);
+    if (auto serialization_file = readFileIfExists(SERIALIZATION_FILE_NAME))
+        infos = SerializationInfoByName::readJSON(loaded_columns, *serialization_file);
 
     std::optional<int32_t> loaded_metadata_version;
     if (load_metadata_version)
     {
-        if (auto in = readFileIfExists(METADATA_VERSION_FILE_NAME))
-        {
-            readIntText(loaded_metadata_version.emplace(), *in);
-        }
+        if (auto metadata_version_file = readFileIfExists(METADATA_VERSION_FILE_NAME))
+            readIntText(loaded_metadata_version.emplace(), *metadata_version_file);
     }
 
     if (!loaded_metadata_version)
@@ -2217,7 +2194,7 @@ void IMergeTreeDataPart::setColumnsSubstreams(const ColumnsSubstreams & columns_
     columns_substreams = columns_substreams_;
 }
 
-void IMergeTreeDataPart::loadColumnsSubstreams()
+void IMergeTreeDataPart::loadColumnsSubstreams(bool validate_against_loaded_columns)
 {
     if (auto in = readFileIfExists(COLUMNS_SUBSTREAMS_FILE_NAME))
     {
@@ -2252,7 +2229,8 @@ void IMergeTreeDataPart::loadColumnsSubstreams()
             }
         }
 
-        columns_substreams.validateColumns(getColumns().getNames());
+        if (validate_against_loaded_columns)
+            columns_substreams.validateColumns(getColumns().getNames());
     }
     /// In Compact part with marks for substreams we must have substreams file. For other cases it's not mandatory.
     else if (part_type == MergeTreeDataPartType::Compact && index_granularity_info.mark_type.with_substreams)
@@ -3204,7 +3182,10 @@ std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFile(const String & file_nam
 std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFileIfExists(const String & file_name) const
 {
     constexpr size_t size_hint = 4096;  /// These files are small.
-    if (auto res = getDataPartStorage().readFileIfExists(file_name, getReadSettings().adjustBufferSize(size_hint), size_hint))
+    auto read_settings = getReadSettings().adjustBufferSize(size_hint);
+    /// Default read method is pread_threadpool, but there is not much point in it here.
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    if (auto res = getDataPartStorage().readFileIfExists(file_name, read_settings, size_hint))
     {
         if (isCompressedFromFileName(file_name))
             return std::make_unique<CompressedReadBufferFromFile>(std::move(res));

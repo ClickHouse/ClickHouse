@@ -142,7 +142,9 @@ public:
     /// Return information about secondary indexes size on disk for all indexes in part
     IndexSize getTotalSecondaryIndicesSize() const;
 
-    virtual std::optional<String> getFileNameForColumn(const NameAndTypePair & column) const = 0;
+    /// First stream file name (no extension) in the column's serialization, or nullopt if the
+    /// column has no files here. A column may have several stream files; this returns only one.
+    virtual std::optional<String> getFirstFileNameForColumn(const NameAndTypePair & column) const = 0;
 
     virtual ~IMergeTreeDataPart();
 
@@ -803,7 +805,7 @@ private:
     void loadColumns(bool require, bool load_metadata_version);
 
     /// Reads columns substreams from columns_substreams.txt.
-    void loadColumnsSubstreams();
+    void loadColumnsSubstreams(bool validate_against_loaded_columns = true);
 
     /// Loads marks index granularity into memory
     virtual void loadIndexGranularity();

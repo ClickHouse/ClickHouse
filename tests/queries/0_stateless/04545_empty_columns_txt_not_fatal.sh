@@ -148,7 +148,7 @@ run_case_col()
 }
 
 # ---- Case D: wide part with a Tuple column (no <column>.bin stream, only named element streams) ----
-# SerializationTuple emits only element streams, so getFileNameForColumn must enumerate the column's
+# SerializationTuple emits only element streams, so getFirstFileNameForColumn must enumerate the column's
 # streams (not probe a single fixed path) or the whole Tuple is dropped and read back as defaults.
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_empty_columns_tuple"
 ${CLICKHOUSE_CLIENT} --query "
