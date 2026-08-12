@@ -52,6 +52,7 @@
 #include <scann/utils/threads.h>
 #include <scann/utils/types.h>
 #include <scann_persistence_adapter.h>
+#include <scann_status_or.h>
 #include <google/protobuf/text_format.h>
 #pragma GCC diagnostic pop
 
@@ -867,15 +868,17 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
 
     try
     {
-        auto status_or = research_scann::SingleMachineFactoryScann<float>(
-            build_config, std::move(dataset), std::move(build_opts));
-
-        if (!status_or.ok())
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "ScaNN index build failed: {}", status_or.status().ToString());
-
         searcher = std::make_unique<ScannSearcherWrapper>();
-        searcher->inner = std::move(status_or).value();
+        searcher->inner = scann_cmake::unwrapScannStatusOr(
+            research_scann::SingleMachineFactoryScann<float>(
+                build_config, std::move(dataset), std::move(build_opts)),
+            [](const absl::Status & status)
+            {
+                return Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "ScaNN index build failed: {}",
+                    status.ToString());
+            });
         if (use_residual)
             searcher->tree_ah = down_cast<research_scann::TreeAHHybridResidual *>(searcher->inner.get());
     }
@@ -900,15 +903,17 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
 
     /// Tree-AH residual indexes keep their AH codes packed in the leaf searchers and stream them
     /// during serialization. Other ScaNN searchers use the upstream artifact extraction path.
-    auto opts_or = searcher->tree_ah
-        ? research_scann::TreeAHHybridResidualPersistenceAdapter::extractFactoryOptions(*searcher->tree_ah)
-        : searcher->inner->ExtractSingleMachineFactoryOptions();
-    if (!opts_or.ok())
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "ScaNN index build failed: could not extract trained artifacts: {}",
-            opts_or.status().ToString());
-
-    auto & opts = opts_or.value();
+    auto opts = scann_cmake::unwrapScannStatusOr(
+        searcher->tree_ah
+            ? research_scann::TreeAHHybridResidualPersistenceAdapter::extractFactoryOptions(*searcher->tree_ah)
+            : searcher->inner->ExtractSingleMachineFactoryOptions(),
+        [](const absl::Status & status)
+        {
+            return Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "ScaNN index build failed: could not extract trained artifacts: {}",
+                status.ToString());
+        });
 
     if (opts.serialized_partitioner
         && !opts.serialized_partitioner->SerializeToString(&serialized_partitioner_proto))
@@ -1107,15 +1112,17 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized(const 
 
     try
     {
-        auto status_or = research_scann::SingleMachineFactoryScann<float>(
-            config, std::move(dataset), std::move(opts));
-
-        if (!status_or.ok())
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "ScaNN index restore failed: {}", status_or.status().ToString());
-
         searcher = std::make_unique<ScannSearcherWrapper>();
-        searcher->inner = std::move(status_or).value();
+        searcher->inner = scann_cmake::unwrapScannStatusOr(
+            research_scann::SingleMachineFactoryScann<float>(
+                config, std::move(dataset), std::move(opts)),
+            [](const absl::Status & status)
+            {
+                return Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "ScaNN index restore failed: {}",
+                    status.ToString());
+            });
         if (params.distance_name != "L2Distance")
             searcher->tree_ah = down_cast<research_scann::TreeAHHybridResidual *>(searcher->inner.get());
         searcher_owned_memory_bytes = restored_searcher_owned_memory_bytes;
