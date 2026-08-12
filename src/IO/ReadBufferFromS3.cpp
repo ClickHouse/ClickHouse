@@ -18,7 +18,6 @@
 #include <Common/FailPoint.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <base/sleep.h>
 
 #include <cstdint>
@@ -55,6 +54,7 @@ namespace FailPoints
     extern const char s3_read_buffer_throw_expired_token[];
     extern const char s3_send_request_throw_expired_token[];
     extern const char s3_read_inject_etag_mismatch[];
+    extern const char s3_read_buffer_pause_before_cancellation_check[];
 }
 
 namespace ErrorCodes
@@ -225,6 +225,7 @@ bool ReadBufferFromS3::nextImpl()
 
             /// Pause before next attempt.
             sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
+            CurrentThread::checkIfNotCancelled();
             sleep_time_with_backoff_milliseconds *= 2;
 
             /// Try to reinitialize `impl`.
@@ -336,6 +337,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
                 throw;
 
             sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
+            CurrentThread::checkIfNotCancelled();
             sleep_time_with_backoff_milliseconds *= 2;
         }
 
@@ -360,12 +362,8 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
         bucket, key, version_id.empty() ? "Latest" : version_id, read_offset, attempt, request_settings[S3RequestSetting::max_single_read_retries].value,
         getCurrentExceptionMessage(/* with_stacktrace = */ false));
 
-    /// Stop retrying once the query is cancelled (B117): otherwise a killed query's reads keep
-    /// retrying a transient error (e.g. a dropped connection) for many attempts with backoff,
-    /// zombying for minutes and adding load. The SDK's own RetryStrategy makes the same check
-    /// (src/IO/S3/Client.cpp), but this outer ReadBufferFromS3 retry loop did not.
-    if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
-        return false;
+    FailPointInjection::pauseFailPoint(FailPoints::s3_read_buffer_pause_before_cancellation_check);
+    CurrentThread::checkIfNotCancelled();
 
     if (auto * s3_exception = current_exception_cast<S3Exception *>())
     {
