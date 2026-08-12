@@ -528,12 +528,12 @@ class ReleaseInfo:
                     version.githash = CHVersion.get_release_version().githash
                 else:
                     version.githash = Shell.get_output_or_raise("git rev-parse HEAD")
-                    branch_current = CHVersion.get_release_version()
-                    assert not version.is_older(branch_current), (
+                    latest_release_version = CHVersion.get_release_version()
+                    assert not version.is_older(latest_release_version), (
                         f"BUG: refusing to write version [{version.string}] onto "
                         f"branch [{self.release_branch}] whose tip already describes "
-                        f"[{branch_current.string}]; the branch version must never "
-                        f"move backwards"
+                        f"[{latest_release_version.string}]; the branch version must "
+                        f"never move backwards"
                     )
                 version.write()
                 update_contributors(raise_error=True)
