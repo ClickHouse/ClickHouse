@@ -24,11 +24,10 @@ SELECT 'small' AS repr,
        numericIndexedVectorToMap(v)[-1] AS from_map,
        numericIndexedVectorGetValue(v, CAST(-1, 'Int8')) AS from_get_value
 FROM (SELECT groupNumericIndexedVectorState(CAST(idx, 'Int8'), toInt64(7)) AS v
-      FROM (SELECT arrayJoin([-1]) AS idx))
-UNION ALL
+      FROM (SELECT arrayJoin([-1]) AS idx));
+
 SELECT 'promoted' AS repr,
        numericIndexedVectorToMap(v)[-1] AS from_map,
        numericIndexedVectorGetValue(v, CAST(-1, 'Int8')) AS from_get_value
 FROM (SELECT groupNumericIndexedVectorState(CAST(idx, 'Int8'), toInt64(7)) AS v
-      FROM (SELECT arrayJoin(arrayConcat(range(0, 32), [-1])) AS idx))
-ORDER BY repr;
+      FROM (SELECT arrayJoin(arrayConcat(range(0, 32), [-1])) AS idx));
