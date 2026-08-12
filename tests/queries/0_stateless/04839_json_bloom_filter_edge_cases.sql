@@ -27,6 +27,7 @@ CREATE TABLE json_bf_edges
         uuid UUID,
         nf Nullable(Float64),
         lc LowCardinality(String),
+        items Array(Int64),
         arr Array(Int64),
         dyn_arr Array(Dynamic),
         map_s Map(String, Int64),
@@ -40,9 +41,9 @@ ORDER BY id
 SETTINGS index_granularity = 2;
 
 INSERT INTO json_bf_edges FORMAT JSONEachRow
-{"id":1,"j":{"n":-9223372036854775808,"u":18446744073709551615,"f":-0.0,"dec":1.2300,"big_dec":10000000000000000.01,"day":"1970-01-02","dt":"1970-01-01 00:00:01.500000000","ip":"192.0.2.1","ip6":"2001:db8::1","uuid":"00000000-0000-0000-0000-000000000001","nf":-0.0,"lc":"low-one","arr":[1,2,3],"dyn_arr":[1,"one",true],"map_s":{"first":7,"second":7},"map_lc":{"first":70,"second":71},"tup":{"a":9,"b":"tuple-one"},"nullable":"present"}}
-{"id":2,"j":{"n":42,"u":42,"f":1.5,"dec":2.3400,"big_dec":10000000000000000.02,"day":"1970-01-03","dt":"1970-01-01 00:00:02.500000000","ip":"192.0.2.2","ip6":"2001:db8::2","uuid":"00000000-0000-0000-0000-000000000002","nf":1.5,"lc":"low-two","arr":[3,4,5],"dyn_arr":[2,"two",false],"map_s":{"first":8},"map_lc":{"first":80},"tup":{"a":10,"b":"tuple-two"},"nullable":null}}
-{"id":3,"j":{"n":0,"u":0,"f":0.0,"dec":0,"big_dec":0,"day":"1970-01-01","dt":"1970-01-01 00:00:00.000000000","ip":"0.0.0.0","ip6":"::","uuid":"00000000-0000-0000-0000-000000000000","nf":0.0,"lc":"","arr":[],"dyn_arr":[],"map_s":{},"map_lc":{},"tup":{"a":0,"b":""}}}
+{"id":1,"j":{"n":-9223372036854775808,"u":18446744073709551615,"f":-0.0,"dec":1.2300,"big_dec":10000000000000000.01,"day":"1970-01-02","dt":"1970-01-01 00:00:01.500000000","ip":"192.0.2.1","ip6":"2001:db8::1","uuid":"00000000-0000-0000-0000-000000000001","nf":-0.0,"lc":"low-one","items":[11,12],"arr":[1,2,3],"dyn_arr":[1,"one",true],"map_s":{"first":7,"second":7},"map_lc":{"first":70,"second":71},"tup":{"a":9,"b":"tuple-one"},"nullable":"present"}}
+{"id":2,"j":{"n":42,"u":42,"f":1.5,"dec":2.3400,"big_dec":10000000000000000.02,"day":"1970-01-03","dt":"1970-01-01 00:00:02.500000000","ip":"192.0.2.2","ip6":"2001:db8::2","uuid":"00000000-0000-0000-0000-000000000002","nf":1.5,"lc":"low-two","items":[21],"arr":[3,4,5],"dyn_arr":[2,"two",false],"map_s":{"first":8},"map_lc":{"first":80},"tup":{"a":10,"b":"tuple-two"},"nullable":null}}
+{"id":3,"j":{"n":0,"u":0,"f":0.0,"dec":0,"big_dec":0,"day":"1970-01-01","dt":"1970-01-01 00:00:00.000000000","ip":"0.0.0.0","ip6":"::","uuid":"00000000-0000-0000-0000-000000000000","nf":0.0,"lc":"","items":[],"arr":[],"dyn_arr":[],"map_s":{},"map_lc":{},"tup":{"a":0,"b":""}}}
 ;
 
 SELECT 'int64 min', groupArray(id) FROM json_bf_edges WHERE j.n = -9223372036854775808 SETTINGS force_data_skipping_indices = 'idx';
@@ -60,6 +61,7 @@ SELECT 'nullable negative zero', arraySort(groupArray(id)) FROM json_bf_edges WH
 SELECT 'low cardinality path', groupArray(id) FROM json_bf_edges WHERE j.lc = 'low-two' SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'typed in', arraySort(groupArray(id)) FROM json_bf_edges WHERE j.n IN (-9223372036854775808, 42) SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'constant left', groupArray(id) FROM json_bf_edges WHERE 42 = j.n SETTINGS force_data_skipping_indices = 'idx';
+SELECT 'reserved items field', groupArray(id) FROM json_bf_edges WHERE has(j.items, 12) SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'array has', groupArray(id) FROM json_bf_edges WHERE has(j.arr, 4) SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'array hasAny', groupArray(id) FROM json_bf_edges WHERE hasAny(j.arr, [2, 99]) SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'array hasAll', groupArray(id) FROM json_bf_edges WHERE hasAll(j.arr, [3, 4]) SETTINGS force_data_skipping_indices = 'idx';

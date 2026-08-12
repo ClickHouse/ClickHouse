@@ -532,6 +532,34 @@ struct JSONPathMatch
     JSONBloomRole role = JSONBloomRole::Scalar;
 };
 
+bool isStructuralJSONSubcolumn(const DataTypeObject & object_type, const String & path)
+{
+    const auto delimiter = path.rfind('.');
+    if (delimiter == String::npos || object_type.getTypedPaths().contains(path))
+        return false;
+
+    const auto last_component = path.substr(delimiter + 1);
+    if (last_component != "null"
+        && last_component != "keys"
+        && last_component != "values"
+        && last_component != "items"
+        && !last_component.starts_with("key_")
+        && !(last_component.starts_with("size")
+            && last_component.size() > 4
+            && std::ranges::all_of(last_component.substr(4), [](char c) { return c >= '0' && c <= '9'; })))
+        return false;
+
+    for (size_t prefix_end = delimiter; prefix_end != String::npos; prefix_end = path.rfind('.', prefix_end - 1))
+    {
+        const auto typed_path = object_type.getTypedPaths().find(path.substr(0, prefix_end));
+        if (typed_path != object_type.getTypedPaths().end()
+            && typed_path->second->tryGetSubcolumnType(path.substr(prefix_end + 1)))
+            return true;
+    }
+
+    return false;
+}
+
 std::optional<JSONPathMatch> tryMatchDirectJSONPath(const RPNBuilderTreeNode & node, const Block & header)
 {
     const auto * dag_node = node.getDAGNode();
@@ -609,16 +637,7 @@ std::optional<JSONPathMatch> tryMatchDirectJSONPath(const RPNBuilderTreeNode & n
         if (path.empty())
             return std::nullopt;
 
-        const auto delimiter = path.rfind('.');
-        const auto last_component = path.substr(delimiter == String::npos ? 0 : delimiter + 1);
-        if (last_component == "null"
-            || last_component == "keys"
-            || last_component == "values"
-            || last_component == "items"
-            || last_component.starts_with("key_")
-            || (last_component.starts_with("size")
-                && last_component.size() > 4
-                && std::ranges::all_of(last_component.substr(4), [](char c) { return c >= '0' && c <= '9'; })))
+        if (isStructuralJSONSubcolumn(object_type, path))
             return std::nullopt;
 
         return JSONPathMatch{std::move(path), subcolumn_type, nullptr, JSONBloomRole::Scalar};
