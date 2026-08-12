@@ -70,6 +70,46 @@ SELECT count(explain) FROM (EXPLAIN SELECT id FROM tab WHERE hasToken(text, 'alp
 
 DROP TABLE tab;
 
+SELECT 'Read limits (max_partitions_to_read / max_concurrent_queries) fall back to the reader';
+
+CREATE TABLE tab_limits (
+	id UInt64,
+	part UInt64,
+	text String,
+	INDEX idx text TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+PARTITION BY part
+ORDER BY id;
+
+INSERT INTO tab_limits SELECT number, number % 4, if(number % 2 = 0, 'alpha beta', 'gamma') FROM numbers(1000);
+
+SELECT '-- fires without a limit';
+SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab_limits WHERE hasToken(text, 'alpha')) WHERE explain LIKE '%Trivial count from text index%';
+
+SELECT '-- does not fire when max_partitions_to_read is set; count still correct';
+SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab_limits WHERE hasToken(text, 'alpha') SETTINGS max_partitions_to_read = 1) WHERE explain LIKE '%Trivial count from text index%';
+SELECT count() FROM tab_limits WHERE hasToken(text, 'alpha') SETTINGS max_partitions_to_read = 100;
+
+DROP TABLE tab_limits;
+
+CREATE TABLE tab_concurrent (
+	id UInt64,
+	text String,
+	INDEX idx text TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS max_concurrent_queries = 1, min_marks_to_honor_max_concurrent_queries = 1;
+
+INSERT INTO tab_concurrent SELECT number, if(number % 2 = 0, 'alpha beta', 'gamma') FROM numbers(1000);
+
+SELECT '-- does not fire when the table sets max_concurrent_queries; count still correct';
+SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab_concurrent WHERE hasToken(text, 'alpha')) WHERE explain LIKE '%Trivial count from text index%';
+SELECT count() FROM tab_concurrent WHERE hasToken(text, 'alpha');
+
+DROP TABLE tab_concurrent;
+
 SELECT 'Multi-block postings (small block size exercises read_postings, block skipping, intersection)';
 
 CREATE TABLE tab_blocks (

@@ -35,6 +35,15 @@ Inject trivial count optimization from the text index into the query plan
 741
 -- does not fire: not a bare count()
 0
+Read limits (max_partitions_to_read / max_concurrent_queries) fall back to the reader
+-- fires without a limit
+1
+-- does not fire when max_partitions_to_read is set; count still correct
+0
+500
+-- does not fire when the table sets max_concurrent_queries; count still correct
+0
+500
 Multi-block postings (small block size exercises read_postings, block skipping, intersection)
 -- fires with a multi-block token
 └──ReadFromTextIndexCount (Trivial count from text index (idx, tokens = [\'common\', \'rare\']))

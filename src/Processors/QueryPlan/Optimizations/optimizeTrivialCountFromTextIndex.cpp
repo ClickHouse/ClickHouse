@@ -17,6 +17,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
@@ -33,6 +34,12 @@ namespace Setting
 {
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool serialize_query_plan;
+    extern const SettingsInt64 max_partitions_to_read;
+}
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsInt64 max_partitions_to_read;
+    extern const MergeTreeSettingsUInt64 max_concurrent_queries;
 }
 }
 
@@ -181,6 +188,17 @@ bool guardsHold(const ReadFromMergeTree & reading)
     /// `ReadFromTextIndexCount` is not serializable; skip when the plan may be serialized and shipped.
     if (context->getSettingsRef()[Setting::serialize_query_plan])
         return false;
+
+    /// Skip when a read limit is configured, so the reader's `checkLimits` enforces it instead.
+    {
+        const auto & data_settings = *reading.getMergeTreeData().getSettings();
+        const Int64 max_partitions_to_read = context->getSettingsRef()[Setting::max_partitions_to_read].changed
+            ? context->getSettingsRef()[Setting::max_partitions_to_read]
+            : data_settings[MergeTreeSetting::max_partitions_to_read];
+
+        if (max_partitions_to_read > 0 || data_settings[MergeTreeSetting::max_concurrent_queries] > 0)
+            return false;
+    }
 
     /// A transaction may see Outdated parts that the cardinalities do not reflect.
     if (context->getCurrentTransaction())
