@@ -8,8 +8,19 @@
  * constant), not about real geometric computation, so the guest never needs
  * to decode the buffered input at all.
  *
+ * `point_in_rect` is a genuine (if trivial) spatial predicate: axis-aligned
+ * rectangle containment, i.e. the same relation as the `bbox_op_rcontains`
+ * bbox shortcut used by `st_within` in a real GEOS-backed WASM UDF geometry
+ * library, just operating directly on a `Point` and a
+ * `Tuple(Float64, Float64, Float64, Float64)` bbox instead of on parsed WKB
+ * geometries. It is used as a non-`pointInPolygon` reference for the
+ * `spatial_bbox` index's `isSpatialPredicate()`-based extraction, to show
+ * pruning also works for a predicate whose semantics are unrelated to
+ * `pointInPolygon`'s ring/hole assembly.
+ *
  * Exports:
- *   always_true - BUFFERED_V1 UInt8, ignores input, writes "1\n" per row.
+ *   always_true   - BUFFERED_V1 UInt8, ignores input, writes "1\n" per row.
+ *   point_in_rect - BUFFERED_V1 UInt8 via RowBinary: (Point, Tuple(Float64 x 4)) -> UInt8.
  *
  * Build via build.mk:
  *   make -f build.mk
@@ -56,5 +67,35 @@ Span * always_true(Span * input, uint32_t n)
         res->data[i * 2 + 1] = '\n';
     }
     res->size = n * 2;
+    return res;
+}
+
+static double read_f64le(const uint8_t * p)
+{
+    uint64_t u = 0;
+    for (int i = 7; i >= 0; i--)
+        u = (u << 8) | p[i];
+    double d;
+    __builtin_memcpy(&d, &u, sizeof(d));
+    return d;
+}
+
+/* RowBinary row layout: Point (x, y) then Tuple(min_x, min_y, max_x, max_y), 6 LE float64s. */
+Span * point_in_rect(Span * input, uint32_t n)
+{
+    Span * res = clickhouse_create_buffer(n);
+    if (!res) return NULL;
+    const uint8_t * p = input->data;
+    for (uint32_t i = 0; i < n; i++)
+    {
+        double x = read_f64le(p);      p += 8;
+        double y = read_f64le(p);      p += 8;
+        double min_x = read_f64le(p);  p += 8;
+        double min_y = read_f64le(p);  p += 8;
+        double max_x = read_f64le(p);  p += 8;
+        double max_y = read_f64le(p);  p += 8;
+        res->data[i] = (x >= min_x && x <= max_x && y >= min_y && y <= max_y) ? 1 : 0;
+    }
+    res->size = n;
     return res;
 }
