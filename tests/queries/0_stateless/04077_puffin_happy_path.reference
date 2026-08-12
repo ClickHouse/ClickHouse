@@ -19,6 +19,12 @@ deletion-vector-v1	-1	-1	4	44		['cardinality','referenced-data-file']	['2','/dat
 /data/table/part-00000.parquet	[2,5]
 /data/table/part-00000.parquet	2
 /data/table/part-00000.parquet	5
+--- mixed_blob_types.puffin ---
+apache-datasketches-theta-v1	-1	-1	4	16		[]	[]
+deletion-vector-v1	-1	-1	20	44		['cardinality','referenced-data-file']	['2','/data/table/part-00000.parquet']
+/data/table/part-00000.parquet	[2,5]
+/data/table/part-00000.parquet	2
+/data/table/part-00000.parquet	5
 --- dense_range_100k.puffin ---
 100000	0	99999
 --- subset without deleted_rows ---

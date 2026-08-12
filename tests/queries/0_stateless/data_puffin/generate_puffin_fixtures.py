@@ -605,6 +605,48 @@ def generate_invalid_file_metadata_properties() -> None:
     )
 
 
+def generate_mixed_blob_types() -> None:
+    """DV plus a non-DV blob: footer parse and Puffin SQL must tolerate the sketch entry."""
+    ok = OUTPUT_DIR / "file_properties_ok.puffin"
+    if not ok.exists():
+        raise SystemExit("file_properties_ok.puffin required to build mixed_blob_types.puffin")
+
+    sketch = b"\x00" * 16
+    puffin = ok.read_bytes()
+    blob_end = puffin.index(PUFFIN_MAGIC, 4)
+    dv = puffin[4:blob_end]
+
+    footer = {
+        "blobs": [
+            {
+                "type": "apache-datasketches-theta-v1",
+                "fields": [],
+                "snapshot-id": -1,
+                "sequence-number": -1,
+                "offset": 4,
+                "length": len(sketch),
+                "properties": {},
+            },
+            {
+                "type": "deletion-vector-v1",
+                "fields": [],
+                "snapshot-id": -1,
+                "sequence-number": -1,
+                "offset": 4 + len(sketch),
+                "length": len(dv),
+                "properties": default_dv_properties(cardinality="2"),
+            },
+        ]
+    }
+    write_fixture(
+        "mixed_blob_types.puffin",
+        build_puffin_file_from_blobs(
+            [sketch, dv],
+            json.dumps(footer, separators=(", ", ": ")).encode("utf-8"),
+        ),
+    )
+
+
 def generate_unparseable_footer_json() -> None:
     """Malformed JSON / oversize integers must fail with BAD_ARGUMENTS, not STD_EXCEPTION."""
     write_raw_footer_fixture("malformed_footer_json.puffin", b"{")
@@ -640,6 +682,7 @@ def main() -> None:
     generate_missing_footer_leading_magic()
     generate_invalid_file_metadata_properties()
     generate_unparseable_footer_json()
+    generate_mixed_blob_types()
 
     generate_cardinality_mismatch_large_bitmap()
     generate_dense_range_100k()
