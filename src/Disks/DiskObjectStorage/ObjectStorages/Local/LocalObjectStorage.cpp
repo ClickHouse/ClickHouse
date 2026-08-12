@@ -512,10 +512,6 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
     while (!pending_dirs.empty())
     {
-        if (entry.is_directory())
-            continue;
-        }
-
         const fs::path dir = std::move(pending_dirs.back());
         pending_dirs.pop_back();
 
