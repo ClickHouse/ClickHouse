@@ -36,8 +36,9 @@ SELECT bitmapToArray(subBitmap(bitmapBuild(arrayConcat(CAST(range(31), 'Array(In
 -- -128..-96 => unsigned 128..160
 SELECT bitmapMin(bitmapBuild(arrayMap(x -> toInt8(x - 128), range(33))));
 SELECT bitmapMax(bitmapBuild(arrayMap(x -> toInt8(x - 128), range(33))));
-SELECT bitmapContains(bitmapBuild(arrayConcat(CAST(range(31), 'Array(Int8)'), [-1]::Array(Int8))), 255);
-SELECT bitmapContains(bitmapBuild(arrayConcat(CAST(range(31), 'Array(Int8)'), [-1]::Array(Int8))), 254);
+-- 33 elements, so the bitmap is promoted: the small set holds up to 32
+SELECT bitmapContains(bitmapBuild(arrayConcat(CAST(range(32), 'Array(Int8)'), [-1]::Array(Int8))), 255);
+SELECT bitmapContains(bitmapBuild(arrayConcat(CAST(range(32), 'Array(Int8)'), [-1]::Array(Int8))), 254);
 -- promoted empty: bitmapMin must keep UINT32_MAX
 SELECT bitmapMin(bitmapXor(bitmapBuild(CAST(range(33), 'Array(UInt8)')), bitmapBuild(CAST(range(33), 'Array(UInt8)'))));
 SELECT bitmapMin(bitmapXor(bitmapBuild(CAST(range(33), 'Array(UInt16)')), bitmapBuild(CAST(range(33), 'Array(UInt16)'))));
