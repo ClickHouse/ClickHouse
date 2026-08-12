@@ -20,9 +20,9 @@ class ColumnIdMappingStore
 public:
     virtual ~ColumnIdMappingStore() = default;
 
-    /// The stored mapping, `nullopt` when the table has none; throws when the settings say it must
-    /// exist.  Returns it rather than publishing it.
-    virtual std::optional<ColumnIdMapping> load(bool attach) = 0;
+    /// The stored mapping, `nullopt` when the table has none -- the answer for every table that never
+    /// opted into column IDs.  Returns it rather than publishing it.
+    virtual std::optional<ColumnIdMapping> load() = 0;
 
     /// Store @mapping durably, wherever this table's mapping belongs.
     virtual void store(const ColumnIdMapping & mapping) = 0;
@@ -39,7 +39,7 @@ class DiskColumnIdMappingStore : public ColumnIdMappingStore
 public:
     DiskColumnIdMappingStore(MergeTreeData & data_, LoggerPtr log_);
 
-    std::optional<ColumnIdMapping> load(bool attach) override;
+    std::optional<ColumnIdMapping> load() override;
     void store(const ColumnIdMapping & mapping) override;
     void remove() noexcept override;
 

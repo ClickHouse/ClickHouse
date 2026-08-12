@@ -9,7 +9,6 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <filesystem>
 
@@ -23,14 +22,8 @@ namespace Setting
     extern const SettingsBool fsync_metadata;
 }
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
-}
-
 namespace ErrorCodes
 {
-    extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -41,7 +34,7 @@ DiskColumnIdMappingStore::DiskColumnIdMappingStore(MergeTreeData & data_, Logger
 {
 }
 
-std::optional<ColumnIdMapping> DiskColumnIdMappingStore::load(bool attach)
+std::optional<ColumnIdMapping> DiskColumnIdMappingStore::load()
 {
     const auto column_ids_path = fs::path(data.getRelativeDataPath()) / MergeTreeData::COLUMN_IDS_FILE_NAME;
 
@@ -50,18 +43,13 @@ std::optional<ColumnIdMapping> DiskColumnIdMappingStore::load(bool attach)
     if (!authoritative_disk->isBroken())
         mapping_buf = authoritative_disk->readFileIfExists(column_ids_path, getReadSettings());
 
+    /// This file, not `serialization_info_version`, is what makes a table use column IDs. The setting's
+    /// default comes from the server config, so every table that never named it inherits whatever the
+    /// config says today: demanding a mapping on that basis would refuse to load every table that
+    /// predates a change of the default. A mapping that really did go missing is caught from the
+    /// evidence instead, by `IMergeTreeDataPart::loadColumns`.
     if (!mapping_buf)
-    {
-        /// Not rebuildable: DROP + re-ADD of one name makes the two columns' files indistinguishable
-        /// by column ID alone, so a rebuild from the schema could mix them.
-        if (attach
-            && (*data.getSettings())[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS)
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Table {} has `serialization_info_version = 'with_column_ids'` but `{}` cannot be read "
-                "from disk `{}` and cannot be rebuilt. Restore the table from backup.",
-                data.getStorageID().getNameForLogs(), column_ids_path.string(), authoritative_disk->getName());
         return {};
-    }
 
     auto loaded_mapping = ColumnIdMapping::deserialize(*mapping_buf);
     skipWhitespaceIfAny(*mapping_buf);

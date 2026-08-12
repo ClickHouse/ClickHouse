@@ -44,7 +44,9 @@ $CLIENT --query "ATTACH TABLE t_corrupt_mapping" 2>&1 \
 
 # Scenario 2: column_ids.json is ENTIRELY absent (deleted out-of-band).  The table must refuse
 # to load rather than silently loading with no mapping and returning defaults for every
-# non-identity column.
+# non-identity column.  What refuses is the part, not the setting: a part written under column
+# IDs cannot be read without the mapping, and that error fails the load instead of detaching
+# the part as broken.
 $CLIENT --query "CREATE TABLE t_missing_mapping (a UInt32, b String, c Float64) ENGINE = MergeTree ORDER BY a
 SETTINGS serialization_info_version = 'with_column_ids', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0"
 
@@ -61,7 +63,7 @@ $CLIENT --query "DETACH TABLE t_missing_mapping SYNC"
 rm -f "${table_dir}column_ids.json"
 
 $CLIENT --query "ATTACH TABLE t_missing_mapping" 2>&1 \
-    | grep -q "cannot be read" && echo "absent_mapping_refused" || echo "absent_mapping_loaded"
+    | grep -q "has no active column-ID mapping" && echo "absent_mapping_refused" || echo "absent_mapping_loaded"
 
 # Discriminator independent of stderr: after a refusal the table must NOT be present;
 # the buggy silent load leaves it present.

@@ -5,3 +5,6 @@ loaded after refusal: 0
 copy not adopted
 1	
 2	y
+reset: SUPPORT_IS_DISABLED
+modify: SUPPORT_IS_DISABLED
+1	x

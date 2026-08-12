@@ -8,10 +8,8 @@ namespace DB
 
 class MergeTreeData;
 
-/// Publishes @data's stored mapping into its metadata. `attach` distinguishes a pre-existing table
-/// (which must have a stored mapping once it opted into column IDs) from CREATE, which persists the
-/// mapping only after the storage is constructed.
-void loadColumnIdMapping(MergeTreeData & data, bool attach);
+/// Publishes @data's stored mapping into its metadata. A table without one does not use column IDs.
+void loadColumnIdMapping(MergeTreeData & data);
 
 /// Republishes the mapping trimmed to what @data's metadata still names. Throws `CORRUPTED_DATA`
 /// when metadata names a column the mapping does not cover, or when two live columns share one ID.

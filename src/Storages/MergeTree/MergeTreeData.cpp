@@ -375,6 +375,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int CORRUPTED_DATA;
+    extern const int COLUMN_ID_MAPPING_MISSING;
     extern const int BAD_TYPE_OF_FIELD;
     extern const int BAD_ARGUMENTS;
     extern const int INVALID_PARTITION_VALUE;
@@ -2615,6 +2616,11 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         /// Don't count the part as broken if there was a retryalbe error
         /// during loading, such as "not enough memory" or network error.
         if (isRetryableException(std::current_exception()))
+            throw;
+
+        /// Nor when the part is intact and the table's mapping is what went missing -- detaching would
+        /// take every column-ID part with it, emptying the table without an error.
+        if (getExceptionErrorCode(std::current_exception()) == ErrorCodes::COLUMN_ID_MAPPING_MISSING)
             throw;
 
         mark_broken();
@@ -4873,6 +4879,22 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
 
 }
 
+/// The storage policy a settings change leaves in force, mirroring `MergeTreeData::getStoragePolicy`:
+/// `disk` wins over `storage_policy`. Nothing when the `disk` value does not name a registered disk --
+/// an inline `disk(...)` definition this early, which `resolveDiskSetting` registers later and
+/// `changeSettingsImpl` then compatibility-checks.
+static StoragePolicyPtr policyAfterSettingsChange(const MergeTreeSettings & settings, const ContextPtr & context)
+{
+    if (!settings[MergeTreeSetting::disk].changed)
+        return context->getStoragePolicy(settings[MergeTreeSetting::storage_policy]);
+
+    const String & disk_name = settings[MergeTreeSetting::disk];
+    if (!context->getDisksMap().contains(disk_name))
+        return nullptr;
+
+    return context->getStoragePolicyFromDisk(disk_name);
+}
+
 void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
     /// Reject schema-changing ALTER while a streaming query holds a subscription on this storage.
@@ -4976,23 +4998,25 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     "Column IDs cannot be deactivated once active.",
                     getStorageID().getNameForLogs());
 
-            /// `column_ids.json` is held on the storage policy's first disk and read from nowhere else --
-            /// a copy elsewhere cannot be proven current at load time. A policy that starts with a
-            /// different disk would strand it, and no ALTER can move it and commit the policy atomically.
-            /// Appending a volume, which is what tiering does, keeps the first disk and is unaffected.
-            /// Naming a `disk` instead resolves to a single-disk policy, which `checkStoragePolicy` then
-            /// refuses unless it is the disk the table already uses -- so it cannot move this file.
-            const auto & policy_after_alter = (*result_settings)[MergeTreeSetting::storage_policy].value;
-            if (!policy_after_alter.empty() && policy_after_alter != (*getSettings())[MergeTreeSetting::storage_policy].value)
+            /// `column_ids.json` is held on the storage policy's first disk and read from nowhere else
+            /// -- a copy elsewhere cannot be proven current at load time. So an ALTER that moves that
+            /// disk would strand the file, and no ALTER can move it and commit the settings in one
+            /// durable step. Compare the disk, not the policy name: `disk` and `storage_policy` both
+            /// decide it (`getStoragePolicy`), and a RESET of either is visible only in the recomputed
+            /// values -- `RESET SETTING disk` moves the table back to the default policy while
+            /// `changeSettingsImpl` never sees a `disk` entry to compatibility-check. Appending a volume,
+            /// which is what tiering does, keeps the first disk and is accepted.
+            auto policy_after_alter = policyAfterSettingsChange(*result_settings, local_context);
+            if (policy_after_alter)
             {
                 auto disk_now = getStoragePolicy()->getDisks().front()->getName();
-                auto disk_after = local_context->getStoragePolicy(policy_after_alter)->getDisks().front()->getName();
+                auto disk_after = policy_after_alter->getDisks().front()->getName();
                 if (disk_now != disk_after)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Cannot change `storage_policy` of table {} to '{}': `{}` is held on disk `{}`, the "
-                        "policy's first, and the new policy starts with `{}` instead. A policy that keeps "
+                        "Cannot move table {} to storage policy '{}': `{}` is held on disk `{}`, the "
+                        "policy's first, and the new one starts with `{}` instead. A policy that keeps "
                         "`{}` first -- appending volumes, as tiering does -- is accepted.",
-                        getStorageID().getNameForLogs(), policy_after_alter, COLUMN_IDS_FILE_NAME,
+                        getStorageID().getNameForLogs(), policy_after_alter->getName(), COLUMN_IDS_FILE_NAME,
                         disk_now, disk_after, disk_now);
             }
         }
@@ -5011,15 +5035,16 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     "Wait for them to finish (see system.mutations), then retry.",
                     getStorageID().getNameForLogs(), queued_mutations.size());
 
-            /// One ALTER cannot both activate the mapping and switch storage policy: the first write of
-            /// `column_ids.json` would have to pick a disk out of a policy that is not committed yet.
-            /// Split into two statements -- either order works, since a policy change keeps every disk
-            /// the mapping may already sit on.
-            if ((*result_settings)[MergeTreeSetting::storage_policy].value != (*getSettings())[MergeTreeSetting::storage_policy].value)
+            /// One ALTER cannot both activate the mapping and move the table's disks: the first write of
+            /// `column_ids.json` would have to pick a disk out of settings that are not committed yet.
+            /// Split into two statements -- either order works.
+            auto policy_after_alter = policyAfterSettingsChange(*result_settings, local_context);
+            if (policy_after_alter && policy_after_alter->getDisks().front() != getStoragePolicy()->getDisks().front())
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "Cannot enable `serialization_info_version = 'with_column_ids'` for table {} in the "
-                    "same ALTER that changes `storage_policy`. Use two separate ALTER statements.",
-                    getStorageID().getNameForLogs());
+                    "same ALTER that moves the table to storage policy '{}'. Use two separate ALTER "
+                    "statements.",
+                    getStorageID().getNameForLogs(), policy_after_alter->getName());
         }
     }
 

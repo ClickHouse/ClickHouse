@@ -98,3 +98,30 @@ $CLIENT --query "ATTACH TABLE t_off_disk" 2>/dev/null || true
 $CLIENT --query "SELECT a, b FROM t_off_disk ORDER BY a"
 
 $CLIENT --query "DROP TABLE IF EXISTS t_off_disk SYNC" 2>/dev/null || true
+
+# 3. Section 2 reads the mapping from the policy's first disk and nowhere else, so an ALTER that moves
+#    that disk would strand it. Both settings decide it -- `disk` wins over `storage_policy` -- and a
+#    RESET shows up only in the recomputed settings: `RESET SETTING disk` sends the table back to the
+#    default policy without `changeSettingsImpl` ever seeing a `disk` entry to compatibility-check.
+#    Unrefused, it left a table that could not ATTACH.
+
+$CLIENT --query "DROP TABLE IF EXISTS t_move_disk SYNC"
+$CLIENT --query "
+    CREATE TABLE t_move_disk (a UInt32, b String)
+    ENGINE = MergeTree ORDER BY a
+    SETTINGS disk = 'disk1_02961',
+             serialization_info_version = 'with_column_ids',
+             min_bytes_for_wide_part = 0;
+"
+echo "INSERT INTO t_move_disk VALUES (1, 'x')" | $CLIENT
+
+echo "reset: $($CLIENT --query "ALTER TABLE t_move_disk RESET SETTING disk" 2>&1 | grep -o 'SUPPORT_IS_DISABLED' | head -1)"
+echo "modify: $($CLIENT --query "ALTER TABLE t_move_disk MODIFY SETTING disk = 'disk2_02961'" 2>&1 | grep -o 'SUPPORT_IS_DISABLED' | head -1)"
+
+# Neither ALTER landed, so the mapping is still on the disk the table reads it from.
+$CLIENT --query "ALTER TABLE t_move_disk RENAME COLUMN b TO d"
+$CLIENT --query "DETACH TABLE t_move_disk SYNC"
+$CLIENT --query "ATTACH TABLE t_move_disk"
+$CLIENT --query "SELECT a, d FROM t_move_disk ORDER BY a"
+
+$CLIENT --query "DROP TABLE IF EXISTS t_move_disk SYNC"

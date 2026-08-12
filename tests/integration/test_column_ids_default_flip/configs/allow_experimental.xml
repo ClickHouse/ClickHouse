@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_experimental_column_ids>1</allow_experimental_column_ids>
+        </default>
+    </profiles>
+</clickhouse>

@@ -139,6 +139,7 @@ namespace ErrorCodes
     extern const int NO_FILE_IN_DATA_PART;
     extern const int EXPECTED_END_OF_FILE;
     extern const int CORRUPTED_DATA;
+    extern const int COLUMN_ID_MAPPING_MISSING;
     extern const int NOT_FOUND_EXPECTED_DATA_PART;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
     extern const int BAD_TTL_FILE;
@@ -879,6 +880,9 @@ std::optional<NameAndTypePair> IMergeTreeDataPart::tryGetColumn(const ColumnId &
     return {};
 }
 
+/// Why a caller with a current column name must come through here: the part keeps the names it was
+/// loaded with, so a metadata-only RENAME leaves them stale and only the id still matches. A legacy
+/// column carries no id, and `getColumnId` falls back to the name, so this degrades to a name lookup.
 std::optional<NameAndTypePair> IMergeTreeDataPart::tryGetColumnBySnapshotName(
     const String & current_name, const StorageMetadataPtr & snapshot) const
 {
@@ -2437,11 +2441,13 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
         const auto columns_format_version = loaded_columns.readText(*in);
 
         /// The IDs in the name slot resolve to nothing without the mapping, so the columns would
-        /// silently read as defaults under names like `1`.
+        /// silently read as defaults under names like `1`. Its own error code so that
+        /// `MergeTreeData::loadDataPart` can tell it from a corrupt part.
         if (columns_format_version == NamesAndTypesList::FORMAT_VERSION_WITH_COLUMN_IDS && !column_id_mapping)
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
+            throw Exception(ErrorCodes::COLUMN_ID_MAPPING_MISSING,
                 "Part {} was written under column IDs (columns.txt format version {}) but table {} has no active "
-                "column-ID mapping. The part belongs to another table, or the table's `column_ids.json` is gone.",
+                "column-ID mapping. The part belongs to another table, or the table's `column_ids.json` is gone -- "
+                "restore it from a backup, it cannot be rebuilt.",
                 name, columns_format_version, storage.getStorageID().getNameForLogs());
 
         for (auto & column : loaded_columns)

@@ -229,7 +229,7 @@ StorageMergeTree::StorageMergeTree(
 {
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
     column_id_mapping_store = std::make_unique<DiskColumnIdMappingStore>(*this, log.load());
-    loadColumnIdMapping(*this, LoadingStrictnessLevel::ATTACH <= mode);
+    loadColumnIdMapping(*this);
     reconcileColumnIdMappingWithMetadata(*this);
 
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);

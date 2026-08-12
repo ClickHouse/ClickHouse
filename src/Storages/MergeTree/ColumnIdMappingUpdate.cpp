@@ -123,8 +123,8 @@ void ColumnIdMappingUpdate::persistBeforeSchemaCommit(ColumnIdAlterPlan & plan, 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Column ID mapping update: persistBeforeSchemaCommit called twice");
 
     /// The planner folds activation into `new_mapping` only when the ALTER also touches columns, so a
-    /// settings-only activation builds the identity mapping here: the load path fails closed when the
-    /// setting says `with_column_ids` and `column_ids.json` is absent.
+    /// settings-only activation builds the identity mapping here -- otherwise the table would carry the
+    /// setting with no `column_ids.json`, which is exactly the state that means "no column IDs".
     auto planned = std::move(plan.new_mapping);
     if (!planned && data.columnIdActivationPending())
         planned = ColumnIdMapping::createIdentity(metadata_to_publish.getColumns().getAllPhysical());

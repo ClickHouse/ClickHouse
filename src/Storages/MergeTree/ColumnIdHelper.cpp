@@ -71,9 +71,9 @@ void checkNoColumnNamesShareColumnId(const MergeTreeData & data, const ColumnIdM
 
 }
 
-void loadColumnIdMapping(MergeTreeData & data, bool attach)
+void loadColumnIdMapping(MergeTreeData & data)
 {
-    auto loaded_mapping = data.getColumnIdMappingStore().load(attach);
+    auto loaded_mapping = data.getColumnIdMappingStore().load();
     if (!loaded_mapping)
         return;
 
