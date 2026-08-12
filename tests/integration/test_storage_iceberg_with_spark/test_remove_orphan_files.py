@@ -1,4 +1,7 @@
+import base64
 import io
+import json
+import re
 import time
 
 import pytest
@@ -76,6 +79,163 @@ class OrphanTestEnv:
 
     def add_orphan_metadata(self, filename="v0.metadata.json"):
         self.add_orphan(subdir="metadata", filename=filename)
+
+    def write_version_hint(self, value):
+        """Overwrite metadata/version-hint.text with `value`.
+
+        A hint naming an older version than the newest committed metadata file is the
+        steady state left behind whenever the hint advance does not happen: the PUT of
+        version-hint.text failed (its failure is swallowed, the INSERT is still acked),
+        or another engine committed without touching ClickHouse's hint."""
+        payload = str(value)
+        if self.storage_type == "local":
+            path = f"{LOCAL_TABLE_PREFIX}/{self.table_name}/metadata/version-hint.text"
+            self.instance.exec_in_container(
+                ["bash", "-c", f"printf '%s' '{payload}' > {path}"]
+            )
+        elif self.storage_type == "azure":
+            blob_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{self.table_name}/metadata/version-hint.text"
+            self.cluster.blob_service_client.get_blob_client(
+                self.cluster.azure_container_name, blob_path,
+            ).upload_blob(payload.encode(), overwrite=True)
+        else:
+            key = f"{S3_TABLE_PREFIX}/{self.table_name}/metadata/version-hint.text"
+            data = payload.encode()
+            self.cluster.minio_client.put_object(
+                self.cluster.minio_bucket, key, io.BytesIO(data), len(data),
+            )
+
+    def read_version_hint(self):
+        if self.storage_type == "local":
+            path = f"{LOCAL_TABLE_PREFIX}/{self.table_name}/metadata/version-hint.text"
+            return self.instance.exec_in_container(["bash", "-c", f"cat {path}"]).strip()
+        elif self.storage_type == "azure":
+            blob_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{self.table_name}/metadata/version-hint.text"
+            return self.cluster.blob_service_client.get_blob_client(
+                self.cluster.azure_container_name, blob_path,
+            ).download_blob().readall().decode().strip()
+        else:
+            key = f"{S3_TABLE_PREFIX}/{self.table_name}/metadata/version-hint.text"
+            return self.cluster.minio_client.get_object(
+                self.cluster.minio_bucket, key,
+            ).read().decode().strip()
+
+    def newest_metadata_version(self):
+        """Highest N among the vN.metadata.json objects present in storage."""
+        versions = []
+        for path in self.list_files():
+            name = path.rsplit("/", 1)[-1]
+            match = re.fullmatch(r"v(\d+)\.metadata\.json", name)
+            if match:
+                versions.append(int(match.group(1)))
+        assert versions, "No vN.metadata.json objects found in storage"
+        return max(versions)
+
+    def metadata_files_with_version(self, version):
+        """Metadata object names that the server parses as `version`.
+
+        Mirrors the three accepted shapes: vN.metadata.json, vN-<uuid>.metadata.json
+        and N-<uuid>.metadata.json."""
+        names = []
+        for path in self.list_files():
+            name = path.rsplit("/", 1)[-1]
+            if not name.endswith(".metadata.json"):
+                continue
+            match = re.match(r"v?(\d+)[.-]", name)
+            if match and int(match.group(1)) == version:
+                names.append(name)
+        return sorted(names)
+
+    def copy_metadata_file(self, src_name, dst_name):
+        """Byte-copy an existing metadata object to a second name."""
+        if self.storage_type == "local":
+            metadata_dir = f"{LOCAL_TABLE_PREFIX}/{self.table_name}/metadata"
+            self.instance.exec_in_container(
+                ["bash", "-c", f"cp {metadata_dir}/{src_name} {metadata_dir}/{dst_name}"]
+            )
+        elif self.storage_type == "azure":
+            base = f"/var/lib/clickhouse/user_files/iceberg_data/default/{self.table_name}/metadata"
+            payload = self.cluster.blob_service_client.get_blob_client(
+                self.cluster.azure_container_name, f"{base}/{src_name}",
+            ).download_blob().readall()
+            self.cluster.blob_service_client.get_blob_client(
+                self.cluster.azure_container_name, f"{base}/{dst_name}",
+            ).upload_blob(payload, overwrite=True)
+        else:
+            base = f"{S3_TABLE_PREFIX}/{self.table_name}/metadata"
+            payload = self.cluster.minio_client.get_object(
+                self.cluster.minio_bucket, f"{base}/{src_name}",
+            ).read()
+            self.cluster.minio_client.put_object(
+                self.cluster.minio_bucket, f"{base}/{dst_name}",
+                io.BytesIO(payload), len(payload),
+            )
+
+    def read_metadata_file(self, name):
+        if self.storage_type == "local":
+            path = f"{LOCAL_TABLE_PREFIX}/{self.table_name}/metadata/{name}"
+            return self.instance.exec_in_container(["bash", "-c", f"cat {path}"])
+        elif self.storage_type == "azure":
+            blob_path = (
+                f"/var/lib/clickhouse/user_files/iceberg_data/default/"
+                f"{self.table_name}/metadata/{name}"
+            )
+            return self.cluster.blob_service_client.get_blob_client(
+                self.cluster.azure_container_name, blob_path,
+            ).download_blob().readall().decode()
+        else:
+            return self.cluster.minio_client.get_object(
+                self.cluster.minio_bucket,
+                f"{S3_TABLE_PREFIX}/{self.table_name}/metadata/{name}",
+            ).read().decode()
+
+    def write_metadata_file(self, name, payload):
+        """Overwrite a metadata object out of band.
+
+        The parsed JSON is cached per (table uuid, path) with no invalidation, so a rewrite
+        of an existing name stays invisible until the cache is dropped."""
+        data = payload.encode()
+        if self.storage_type == "local":
+            path = f"{LOCAL_TABLE_PREFIX}/{self.table_name}/metadata/{name}"
+            # base64 via argv: the JSON carries quotes and braces that no amount of shell
+            # quoting survives intact, and exec_in_container has no stdin channel.
+            encoded = base64.b64encode(data).decode()
+            self.instance.exec_in_container(
+                ["bash", "-c", f"printf '%s' '{encoded}' | base64 -d > {path}"]
+            )
+        elif self.storage_type == "azure":
+            blob_path = (
+                f"/var/lib/clickhouse/user_files/iceberg_data/default/"
+                f"{self.table_name}/metadata/{name}"
+            )
+            self.cluster.blob_service_client.get_blob_client(
+                self.cluster.azure_container_name, blob_path,
+            ).upload_blob(data, overwrite=True)
+        else:
+            self.cluster.minio_client.put_object(
+                self.cluster.minio_bucket,
+                f"{S3_TABLE_PREFIX}/{self.table_name}/metadata/{name}",
+                io.BytesIO(data), len(data),
+            )
+        self.instance.query("SYSTEM DROP ICEBERG METADATA CACHE")
+
+    def remove_metadata_file(self, name):
+        if self.storage_type == "local":
+            path = f"{LOCAL_TABLE_PREFIX}/{self.table_name}/metadata/{name}"
+            self.instance.exec_in_container(["bash", "-c", f"rm {path}"])
+        elif self.storage_type == "azure":
+            blob_path = (
+                f"/var/lib/clickhouse/user_files/iceberg_data/default/"
+                f"{self.table_name}/metadata/{name}"
+            )
+            self.cluster.blob_service_client.get_blob_client(
+                self.cluster.azure_container_name, blob_path,
+            ).delete_blob()
+        else:
+            self.cluster.minio_client.remove_object(
+                self.cluster.minio_bucket,
+                f"{S3_TABLE_PREFIX}/{self.table_name}/metadata/{name}",
+            )
 
     # -- storage queries ----------------------------------------------------
 
@@ -609,3 +769,289 @@ def test_remove_orphan_files_preserves_version_hint(started_cluster_iceberg_with
     env.assert_data_intact()
     assert not env.exists("data", "orphan-version-hint.parquet"), \
         "The orphan data file should still have been deleted"
+
+
+@pytest.mark.parametrize("storage_type", ["local", "s3"])
+def test_remove_orphan_files_stale_version_hint_keeps_committed_snapshot(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """A version hint naming an older version must not make a committed snapshot orphan.
+
+    remove_orphan_files roots reachability at the authoritative current metadata. When the
+    hint lags -- its PUT failed, or another engine committed without touching it -- the
+    newest committed snapshot is still live and every one of its objects must survive."""
+    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_stale_hint")
+    env.populate(3, use_version_hint=True)
+
+    newest = env.newest_metadata_version()
+    assert newest >= 2, f"Need at least two metadata versions to stale the hint, got v{newest}"
+    assert env.exists("metadata", "version-hint.text"), \
+        "Fixture did not create metadata/version-hint.text"
+
+    # A planted orphan keeps the case honest: a binary that simply stops deleting passes
+    # the survival assertions below but fails this one.
+    env.add_orphan("data", "orphan-stale-hint.parquet")
+
+    env.write_version_hint(newest - 1)
+    # Guard: without an effective rewrite that differs from the newest version present,
+    # "stale hint" is a fiction and the case would pass on the unfixed binary.
+    assert env.read_version_hint() == str(newest - 1), \
+        "version-hint.text rewrite did not take effect"
+
+    data_before = [f for f in env.list_files()
+                   if "/data/" in f and f.endswith(".parquet")
+                   and "orphan-stale-hint" not in f]
+    assert data_before, "Fixture produced no committed data files"
+
+    time.sleep(2)
+    # older_than must be pinned to now: with the default 3-day window the age gate spares
+    # every fresh object and the case passes without the fix.
+    env.remove_orphans(older_than=env.now_ts())
+
+    data_after = [f for f in env.list_files()
+                  if "/data/" in f and f.endswith(".parquet")
+                  and "orphan-stale-hint" not in f]
+    assert sorted(data_after) == sorted(data_before), (
+        "remove_orphan_files deleted data files of the committed snapshot that the stale "
+        f"version hint does not name.\n  Before: {sorted(data_before)}\n  After:  {sorted(data_after)}"
+    )
+    assert env.exists("metadata", f"v{newest}.metadata.json"), (
+        f"remove_orphan_files deleted v{newest}.metadata.json, the committed metadata file "
+        "that the stale version hint does not name"
+    )
+    assert not env.exists("data", "orphan-stale-hint.parquet"), \
+        "The planted orphan should still have been deleted"
+
+    # Restore the hint so the read path resolves the committed version, then assert the
+    # user-visible consequence directly: no rows may be missing.
+    env.write_version_hint(newest)
+    env.assert_data_intact()
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_remove_orphan_files_stale_version_hint_dry_run_reports_no_orphans(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """dry_run under a stale hint must not report the committed snapshot as orphan.
+
+    dry_run returns before the metadata-version recheck, so it is the arm that shows the
+    reachability root itself is authoritative rather than the recheck compensating. It
+    deletes nothing, so the reported counts depend on the root alone and not on any
+    backend's removal path; one backend therefore covers it."""
+    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_stale_hint_dry")
+    env.populate(3, use_version_hint=True)
+    env.add_orphan("data", "orphan-stale-hint-dry.parquet")
+
+    newest = env.newest_metadata_version()
+    env.write_version_hint(newest - 1)
+    assert env.read_version_hint() == str(newest - 1), \
+        "version-hint.text rewrite did not take effect"
+
+    time.sleep(2)
+    counts = env.remove_orphans(older_than=env.now_ts(), dry_run=1)
+
+    assert counts["deleted_data_files_count"] == 1, (
+        "dry_run must report exactly the planted orphan-stale-hint-dry.parquet, so a "
+        "classification that returned nothing at all cannot pass this arm: "
+        f"{counts}"
+    )
+    assert counts["deleted_manifest_files_count"] == 0, f"got {counts}"
+    assert counts["deleted_manifest_lists_count"] == 0, f"got {counts}"
+    assert env.exists("data", "orphan-stale-hint-dry.parquet"), \
+        "dry_run deleted the file it only reported"
+    env.write_version_hint(newest)
+    env.assert_data_intact()
+
+
+@pytest.mark.parametrize("storage_type", ["local", "s3"])
+def test_insert_under_stale_version_hint_succeeds(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """A write must advance past the newest committed metadata, not past the hint.
+
+    A writer that resolves its next version through a lagging hint keeps aiming at a
+    version already present in storage, so its conditional commit is refused every time
+    and the retry budget runs out. The write path therefore resolves the authoritative
+    current version, the same root the cleanup path uses."""
+    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_stale_hint_insert")
+    env.populate(3, use_version_hint=True)
+
+    newest = env.newest_metadata_version()
+    assert newest >= 2, f"Need at least two metadata versions to stale the hint, got v{newest}"
+
+    env.write_version_hint(newest - 1)
+    # Guard: without an effective rewrite that differs from the newest version present,
+    # "stale hint" is a fiction and the case would pass on the unfixed binary.
+    assert env.read_version_hint() == str(newest - 1), \
+        "version-hint.text rewrite did not take effect"
+
+    # Pre-fix this exhausts the writer's retry budget and raises DATALAKE_DATABASE_ERROR
+    # ("Write into iceberg was not successful"); each attempt regenerates the same target
+    # version, which already exists.
+    env.instance.query(
+        f"INSERT INTO {env.table_name} VALUES (4);", settings=ICEBERG_SETTINGS
+    )
+    env._n_rows = 4
+
+    # Not throwing is not enough: the commit has to have produced a newer metadata file.
+    assert env.newest_metadata_version() > newest, (
+        f"INSERT reported success but no metadata file newer than v{newest} exists, so "
+        "nothing was committed"
+    )
+
+    # The hint is advanced by the successful write, so the read path already resolves the
+    # new version; assert the user-visible consequence directly.
+    env.assert_data_intact()
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_remove_orphan_files_refuses_ambiguous_metadata_version(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """Two metadata files the resolver ranks equal must make the cleanup refuse, not guess.
+
+    Without a catalog the cleanup root comes from a listing, and max_element returns the
+    first of equal elements -- so listing order, which has no relation to which state is
+    live, picks the root. An external engine committing NNNNN-<uuid>.metadata.json from the
+    same base as ClickHouse's vN.metadata.json is enough to produce the tie. Deleting on a
+    guess is unrecoverable, so refuse and name the files. The verdict comes from the
+    resolver itself, so it is backend-independent; one backend covers it."""
+    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_ambiguous")
+    env.populate(3, use_version_hint=True)
+
+    newest = env.newest_metadata_version()
+    twin_name = f"{newest:05d}-{get_uuid_str()}.metadata.json"
+    env.copy_metadata_file(f"v{newest}.metadata.json", twin_name)
+
+    # Without an actual tie at the chosen root the case would pass on the unfixed binary.
+    same_version = env.metadata_files_with_version(newest)
+    assert same_version == sorted([f"v{newest}.metadata.json", twin_name]), (
+        f"Fixture did not produce exactly two files parsing to v{newest}: {same_version}"
+    )
+
+    env.add_orphan("data", "orphan-ambiguous.parquet")
+    committed_before = sorted(env.list_files())
+
+    time.sleep(2)
+    for extra in ("", ", dry_run = 1"):
+        error = env.instance.query_and_get_error(
+            f"ALTER TABLE {env.table_name} EXECUTE remove_orphan_files("
+            f"older_than = '{env.now_ts()}'{extra});",
+            settings=ICEBERG_SETTINGS,
+        )
+        assert "BAD_ARGUMENTS" in error, f"dry_run='{extra}' should refuse, got: {error}"
+        assert "ranks equal to 1 other metadata file(s)" in error, (
+            f"Refusal should name the ambiguity, got: {error}"
+        )
+        assert twin_name in error, f"Refusal should name the offending files, got: {error}"
+
+    # The planted orphan surviving is what shows the refusal happened before any deletion
+    # rather than after part of it.
+    assert sorted(env.list_files()) == committed_before, (
+        "A refused remove_orphan_files must not have deleted anything.\n"
+        f"  Before: {committed_before}\n  After:  {sorted(env.list_files())}"
+    )
+    env.assert_data_intact()
+
+    # Positive control: with the ambiguity resolved the command runs and does its job, so
+    # the case cannot pass by the command being broken outright.
+    env.remove_metadata_file(twin_name)
+    counts = env.remove_orphans(older_than=env.now_ts())
+    assert counts["deleted_data_files_count"] == 1, (
+        f"After removing the twin the planted orphan should be deleted: {counts}"
+    )
+    assert not env.exists("data", "orphan-ambiguous.parquet")
+    env.assert_data_intact()
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_remove_orphan_files_refuses_last_updated_ms_tie(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """A tie under `iceberg_recent_metadata_file_by_last_updated_ms_field` must also refuse.
+
+    That policy ranks candidates by the last-updated-ms field rather than by the version
+    number, so two files with DIFFERENT versions and one timestamp are the ambiguous pair
+    and a version-keyed check sees nothing wrong at all. A copy of the newest file under the
+    next version number is such a pair: the timestamp it carries is equal by construction."""
+    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_ms_tie")
+    env.populate(
+        3,
+        additional_settings=["iceberg_recent_metadata_file_by_last_updated_ms_field = true"],
+    )
+
+    newest = env.newest_metadata_version()
+    newest_name = f"v{newest}.metadata.json"
+    twin_name = f"v{newest + 1}.metadata.json"
+    env.copy_metadata_file(newest_name, twin_name)
+
+    # The two versions differ, so a version-keyed check finds no ambiguity here at all.
+    assert env.metadata_files_with_version(newest) == [newest_name]
+    assert env.metadata_files_with_version(newest + 1) == [twin_name]
+
+    env.add_orphan("data", "orphan-ms-tie.parquet")
+    committed_before = sorted(env.list_files())
+
+    time.sleep(2)
+    error = env.instance.query_and_get_error(
+        f"ALTER TABLE {env.table_name} EXECUTE remove_orphan_files("
+        f"older_than = '{env.now_ts()}');",
+        settings=ICEBERG_SETTINGS,
+    )
+    assert "BAD_ARGUMENTS" in error, f"A last-updated-ms tie should refuse, got: {error}"
+    assert "ranks equal to 1 other metadata file(s)" in error, error
+    assert twin_name in error or newest_name in error, (
+        f"Refusal should name the tied file, got: {error}"
+    )
+
+    assert sorted(env.list_files()) == committed_before, (
+        "A refused remove_orphan_files must not have deleted anything.\n"
+        f"  Before: {committed_before}\n  After:  {sorted(env.list_files())}"
+    )
+    env.assert_data_intact()
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_remove_orphan_files_allows_shared_directory_with_table_uuid(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """A same-version file belonging to ANOTHER table must not block the cleanup.
+
+    With `iceberg_metadata_table_uuid` the resolver keeps only the candidates carrying that
+    uuid, so a neighbour table sharing the metadata directory is never a candidate and
+    nothing about it is ambiguous. Refusing on it would break a supported layout, which is
+    what a check keyed on the version number alone does."""
+    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_shared_dir")
+    env.populate(3)
+
+    newest = env.newest_metadata_version()
+    newest_name = f"v{newest}.metadata.json"
+    our_uuid = json.loads(env.read_metadata_file(newest_name))["table-uuid"]
+
+    # A neighbour table's metadata: same parsed version, different table-uuid.
+    neighbour = json.loads(env.read_metadata_file(newest_name))
+    neighbour["table-uuid"] = get_uuid_str()
+    neighbour_name = f"{newest:05d}-{get_uuid_str()}.metadata.json"
+    env.write_metadata_file(neighbour_name, json.dumps(neighbour))
+
+    # Fixture check: the two DO collide on version, so a version-keyed guard would refuse.
+    assert env.metadata_files_with_version(newest) == sorted([newest_name, neighbour_name])
+
+    # Re-attach to the same data with the uuid pinned. `if_not_exists` is what makes this an
+    # attach rather than a create: a create refuses a path that already holds metadata.
+    env.instance.query(f"DROP TABLE {env.table_name};")
+    create_iceberg_table(
+        env.storage_type, env.instance, env.table_name, env.cluster, "(x Int)", 2,
+        if_not_exists=True,
+        additional_settings=[f"iceberg_metadata_table_uuid = '{our_uuid}'"],
+    )
+
+    env.add_orphan("data", "orphan-shared-dir.parquet")
+
+    time.sleep(2)
+    counts = env.remove_orphans(older_than=env.now_ts())
+    assert counts["deleted_data_files_count"] == 1, (
+        f"The planted orphan should have been deleted, not refused: {counts}"
+    )
+    assert not env.exists("data", "orphan-shared-dir.parquet")
+    env.assert_data_intact()

@@ -3,6 +3,7 @@ import json
 import logging
 import random
 import re
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -931,6 +932,383 @@ def test_optimize_manifest_with_catalog(started_cluster):
     # The metadata-only rewrite must not change the data.
     rows_after = node.query(f"SELECT symbol, bid, ask FROM {table_ref} ORDER BY ALL")
     assert rows_after == rows_before
+
+
+def test_remove_orphan_files_with_catalog(started_cluster):
+    # On a catalog-managed table, reachability for remove_orphan_files is rooted at the
+    # metadata file the catalog has committed. A metadata file that merely sits at a higher
+    # version number in storage is not the table state, so the objects of the committed
+    # snapshots must survive while that file is itself collected as an orphan.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_orphan_with_catalog_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int)")
+
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    # Several inserts, so the committed state spans several snapshots and several data files.
+    for value in (1, 2, 3):
+        node.query(f"INSERT INTO {table_ref} VALUES ({value});", settings=write_settings)
+
+    catalog = load_catalog_impl(started_cluster)
+    committed_location = catalog.load_table(f"{root_namespace}.{table_name}").metadata_location
+    bucket = "warehouse-rest"
+    assert committed_location.startswith(f"s3://{bucket}/"), committed_location
+    committed_key = committed_location[len(f"s3://{bucket}/"):]
+
+    def metadata_versions():
+        # Version numbers of the vN / NNNNN-<uuid> metadata files present in storage,
+        # mapped to their object keys.
+        out = {}
+        prefix = f"{table_name}/metadata/"
+        for name in list_s3_objects(started_cluster.minio_client, bucket, prefix):
+            if not name.endswith(".metadata.json"):
+                continue
+            match = re.match(r"v?(\d+)[.-]", name)
+            if match:
+                out[int(match.group(1))] = prefix + name
+        return out
+
+    versions = metadata_versions()
+    committed_version = max(v for v, key in versions.items() if key == committed_key)
+    assert committed_version == max(versions), (
+        f"expected the catalog pointer to be the highest version in storage before the "
+        f"divergence, got v{committed_version} of {sorted(versions)}"
+    )
+
+    earlier_version = min(v for v in versions if v < committed_version)
+    stale_content = _get_s3_object_bytes(
+        started_cluster.minio_client, bucket, versions[earlier_version]
+    )
+    uncommitted_key = (
+        f"{table_name}/metadata/{committed_version + 1:05d}-{uuid.uuid4()}.metadata.json"
+    )
+    # A well-formed metadata file that no catalog pointer names, holding an earlier state of
+    # this table: what a writer that built metadata from a stale base and never committed it
+    # to the catalog leaves behind. Resolving by storage version picks it, and it does not
+    # reference the objects the later commits added.
+    _put_s3_object_bytes(started_cluster.minio_client, bucket, uncommitted_key, stale_content)
+
+    def data_files():
+        return sorted(
+            name for name in list_s3_objects(
+                started_cluster.minio_client, bucket, f"{table_name}/"
+            )
+            if name.startswith("data/") and name.endswith(".parquet")
+        )
+
+    data_before = data_files()
+    assert len(data_before) >= 3, data_before
+    rows_before = node.query(f"SELECT x FROM {table_ref} ORDER BY x")
+    assert rows_before == "1\n2\n3\n", rows_before
+
+    time.sleep(2)
+    # older_than is pinned to now: the default age window spares every fresh object, so an
+    # unpinned run would pass on any binary.
+    node.query(
+        f"ALTER TABLE {table_ref} EXECUTE remove_orphan_files("
+        f"older_than = '{time.strftime('%Y-%m-%d %H:%M:%S')}');",
+        settings={"allow_insert_into_iceberg": 1, "allow_iceberg_remove_orphan_files": 1},
+    )
+
+    assert data_files() == data_before, (
+        "remove_orphan_files deleted data files of snapshots the catalog has committed.\n"
+        f"  Before: {data_before}\n  After:  {data_files()}"
+    )
+    assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == rows_before
+    assert committed_key in metadata_versions().values(), (
+        f"remove_orphan_files deleted {committed_key}, the metadata file the catalog points at"
+    )
+    # The oracle is file existence plus a data read, and this arm keeps it honest: a binary
+    # that simply stopped deleting would satisfy every assertion above.
+    remaining = list_s3_objects(started_cluster.minio_client, bucket, f"{table_name}/")
+    assert uncommitted_key[len(table_name) + 1:] not in remaining, (
+        f"the uncommitted {uncommitted_key} is an orphan relative to the committed state "
+        "and should have been deleted"
+    )
+
+
+def test_remove_orphan_files_recheck_detects_same_number_pointer_switch(started_cluster):
+    # A commit landing mid-scan must abort the deletion even when the new metadata file
+    # carries the version number the scan started from. `vN.metadata.json` and
+    # `NNNNN-<uuid>.metadata.json` both parse to N, so a pointer that moves between two such
+    # files leaves the number unchanged while the reachable set changes underneath the scan.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_orphan_same_number_{uuid.uuid4().hex[:8]}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int)")
+
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    table_identifier = f"{root_namespace}.{table_name}"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    # One manifest per insert. The scan reads them one by one under a per-read delay, and the
+    # count sets how long the window between the two metadata resolutions stays open.
+    inserted = list(range(1, 16))
+    for value in inserted:
+        node.query(f"INSERT INTO {table_ref} VALUES ({value});", settings=write_settings)
+
+    catalog = load_catalog_impl(started_cluster)
+    bucket = "warehouse-rest"
+    committed_location = catalog.load_table(table_identifier).metadata_location
+    assert committed_location.startswith(f"s3://{bucket}/"), committed_location
+    committed_key = committed_location[len(f"s3://{bucket}/"):]
+
+    def metadata_versions():
+        # Every vN / NNNNN-<uuid> metadata object present, grouped by the version it parses to.
+        out = {}
+        prefix = f"{table_name}/metadata/"
+        for name in list_s3_objects(started_cluster.minio_client, bucket, prefix):
+            if not name.endswith(".metadata.json"):
+                continue
+            match = re.match(r"v?(\d+)[.-]", name)
+            if match:
+                out.setdefault(int(match.group(1)), []).append(prefix + name)
+        return out
+
+    committed_name = committed_key.rsplit("/", 1)[1]
+    committed_version = int(re.match(r"v?(\d+)[.-]", committed_name).group(1))
+    prefix = f"{table_name}/metadata/"
+    if committed_name.startswith("v"):
+        twin_key = f"{prefix}{committed_version:05d}-{uuid.uuid4()}.metadata.json"
+    else:
+        twin_key = f"{prefix}v{committed_version}.metadata.json"
+    assert twin_key != committed_key, twin_key
+    _put_s3_object_bytes(
+        started_cluster.minio_client, bucket, twin_key,
+        _get_s3_object_bytes(started_cluster.minio_client, bucket, committed_key),
+    )
+    # Both names must parse to one number, or the case would be testing a version change and
+    # would pass on a binary that only compares numbers.
+    assert sorted(metadata_versions()[committed_version]) == sorted([committed_key, twin_key]), (
+        f"expected {committed_key} and {twin_key} to be the only v{committed_version} objects, "
+        f"got {metadata_versions()}"
+    )
+
+    def data_files():
+        return sorted(
+            name for name in list_s3_objects(
+                started_cluster.minio_client, bucket, f"{table_name}/"
+            )
+            if name.startswith("data/") and name.endswith(".parquet")
+        )
+
+    data_before = data_files()
+    assert len(data_before) >= len(inserted), data_before
+    rows_expected = "".join(f"{value}\n" for value in inserted)
+
+    # The failpoint delays each manifest read, so the scan spans the swap instead of finishing
+    # before it; without it the whole command takes ~0.2s. The delay is inside the cache-miss
+    # path, so nothing may read this table between here and the scan or the reads come from
+    # the manifest cache at full speed and the window closes.
+    node.query("SYSTEM ENABLE FAILPOINT iceberg_slow_manifest_read")
+    try:
+        time.sleep(2)
+
+        scan_finished = threading.Event()
+        # The command resolves the current metadata twice before the recheck: the format-version
+        # gate, then the scan root. Waiting for the second resolution puts the swap inside the
+        # scan's manifest reads, so the margin is the failpoint's delay rather than a scheduling
+        # accident. Scoped to this statement's query id, so neither another statement against
+        # this table nor an earlier repeat of this case can satisfy the wait. In ERE the braces
+        # of the log's query-id field have to be bracketed to stay literal.
+        orphans_query_id = str(uuid.uuid4())
+        scan_root_resolved = (
+            f"[{{]{orphans_query_id}[}}] <Test> IcebergRemoveOrphanFiles: "
+            "Explicit metadata file path is specified"
+        )
+
+        def swap_pointer():
+            # Re-register the same table at the twin, once the scan has resolved the root it
+            # will classify against. Skipped outright if the scan beat it, so a closed window is
+            # reported as such instead of surfacing as a confusing failure inside the swap.
+            node.wait_for_log_line(scan_root_resolved, repetitions=2, timeout=120)
+            if scan_finished.is_set():
+                return False
+            catalog.drop_table(table_identifier)
+            catalog.register_table(table_identifier, f"s3://{bucket}/{twin_key}")
+            return True
+
+        def remove_orphans():
+            try:
+                return node.query(
+                    f"ALTER TABLE {table_ref} EXECUTE remove_orphan_files("
+                    f"older_than = '{time.strftime('%Y-%m-%d %H:%M:%S')}');",
+                    settings={"allow_insert_into_iceberg": 1, "allow_iceberg_remove_orphan_files": 1},
+                    query_id=orphans_query_id,
+                )
+            finally:
+                scan_finished.set()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            swap = pool.submit(swap_pointer)
+            orphans = pool.submit(remove_orphans)
+            error = None
+            try:
+                orphans.result(timeout=600)
+            except QueryRuntimeException as exception:
+                error = str(exception)
+            swapped = swap.result(timeout=600)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_slow_manifest_read")
+
+    assert swapped, (
+        "the scan finished before the pointer could be moved, so this run never exercised the "
+        "recheck; the failpoint delay or the manifest count is too small to keep the window open"
+    )
+    assert error is not None, (
+        "remove_orphan_files completed while the current metadata file changed under it; "
+        f"the pointer moved from {committed_key} to {twin_key}, both v{committed_version}"
+    )
+    assert "changed during orphan scan" in error, error
+    assert committed_key in error and twin_key in error, (
+        f"the refusal must name both metadata files so the operator can tell which commit "
+        f"won: {error}"
+    )
+    # Fail closed: the scan classified against the old root, so nothing may have been deleted.
+    assert data_files() == data_before, (
+        "remove_orphan_files deleted data files despite refusing.\n"
+        f"  Before: {data_before}\n  After:  {data_files()}"
+    )
+    # The twin is an orphan of the root the scan started from, and it is what the catalog points
+    # at by the time the command finishes. Listing rather than querying it: a parsed metadata
+    # document is served from the metadata cache, so a deleted twin still reads back.
+    remaining = list_s3_objects(started_cluster.minio_client, bucket, f"{table_name}/")
+    assert twin_key[len(table_name) + 1:] in remaining, (
+        f"the file the catalog now points at was deleted by a command that then refused: "
+        f"{twin_key} is gone"
+    )
+    assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == rows_expected
+
+
+def _count_manifest_list_entries(minio_client, bucket, metadata):
+    # Number of manifests in the current snapshot's manifest list, i.e. the value the compaction
+    # threshold pre-check compares against `iceberg_manifest_min_count_to_compact`.
+    current = metadata["current-snapshot-id"]
+    manifest_list = next(
+        s["manifest-list"] for s in metadata["snapshots"] if s["snapshot-id"] == current
+    )
+    assert manifest_list.startswith(f"s3://{bucket}/"), manifest_list
+    raw = _get_s3_object_bytes(minio_client, bucket, manifest_list[len(f"s3://{bucket}/"):])
+    reader = DataFileReader(io.BytesIO(raw), DatumReader())
+    entries = len(list(reader))
+    reader.close()
+    return entries
+
+
+def test_optimize_manifest_with_catalog_ignores_uncommitted_metadata(started_cluster):
+    # OPTIMIZE TABLE ... MANIFEST reads the table state from the metadata file the catalog has
+    # committed. A metadata file that merely sits at a higher version number in storage is not
+    # the table state, so compaction must consolidate the committed snapshot and leave that file
+    # untouched. This asserts where the rewrite is rooted; with a transactional catalog a wrongly
+    # rooted rewrite is refused at commit time, so it is not a data-loss exposure here.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_optimize_with_catalog_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int)")
+
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+    min_count_to_compact = 2
+
+    # Unpartitioned table: each insert commits a snapshot adding one data manifest, so the
+    # committed manifest list has one entry per insert and is above the threshold below.
+    num_inserts = 5
+    for value in range(1, num_inserts + 1):
+        node.query(f"INSERT INTO {table_ref} VALUES ({value});", settings=write_settings)
+
+    catalog = load_catalog_impl(started_cluster)
+    committed_location = catalog.load_table(f"{root_namespace}.{table_name}").metadata_location
+    bucket = "warehouse-rest"
+    assert committed_location.startswith(f"s3://{bucket}/"), committed_location
+    committed_key = committed_location[len(f"s3://{bucket}/"):]
+
+    def metadata_versions():
+        out = {}
+        prefix = f"{table_name}/metadata/"
+        for name in list_s3_objects(started_cluster.minio_client, bucket, prefix):
+            if not name.endswith(".metadata.json"):
+                continue
+            match = re.match(r"v?(\d+)[.-]", name)
+            if match:
+                out[int(match.group(1))] = prefix + name
+        return out
+
+    versions = metadata_versions()
+    committed_version = max(v for v, key in versions.items() if key == committed_key)
+    assert committed_version == max(versions), (
+        f"expected the catalog pointer to be the highest version in storage before the "
+        f"divergence, got v{committed_version} of {sorted(versions)}"
+    )
+
+    earlier_version = max(v for v in versions if v < committed_version)
+    stale_content = _get_s3_object_bytes(
+        started_cluster.minio_client, bucket, versions[earlier_version]
+    )
+    # The planted state must itself be above the compaction threshold, otherwise a wrongly rooted
+    # binary takes the "compaction is not needed" early return and the case would pass on any
+    # binary. Count the manifest-list entries of the planted state's current snapshot, which is
+    # exactly what the threshold pre-check reads.
+    stale_manifests = _count_manifest_list_entries(
+        started_cluster.minio_client, bucket, json.loads(stale_content)
+    )
+    assert stale_manifests > min_count_to_compact, (
+        f"planted state v{earlier_version} has {stale_manifests} manifests, at or below the "
+        f"threshold {min_count_to_compact}: a wrongly rooted binary would skip compaction entirely"
+    )
+
+    uncommitted_key = (
+        f"{table_name}/metadata/{committed_version + 1:05d}-{uuid.uuid4()}.metadata.json"
+    )
+    # A well-formed metadata file that no catalog pointer names, holding an earlier state of this
+    # table: what a writer that built metadata from a stale base and never committed it leaves
+    # behind. Resolving by storage version picks it up.
+    _put_s3_object_bytes(started_cluster.minio_client, bucket, uncommitted_key, stale_content)
+
+    def current_snapshot_id():
+        table = catalog.load_table(f"{root_namespace}.{table_name}")
+        assert table.current_snapshot() is not None, "expected a current snapshot after inserts"
+        return table.metadata.current_snapshot_id
+
+    snapshot_id_before = current_snapshot_id()
+    rows_before = node.query(f"SELECT x FROM {table_ref} ORDER BY ALL")
+    assert rows_before == "1\n2\n3\n4\n5\n", rows_before
+
+    node.query(
+        f"OPTIMIZE TABLE {table_ref} MANIFEST",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_manifest_min_count_to_compact": min_count_to_compact,
+            "allow_insert_into_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    # Rooted at the committed pointer, the rewrite consolidates the committed snapshot and commits
+    # a successor through the catalog.
+    assert current_snapshot_id() != snapshot_id_before, (
+        "OPTIMIZE TABLE ... MANIFEST did not commit a new snapshot through the catalog"
+    )
+    # A rewrite rooted at the planted state would publish the pre-insert-5 rows as the successor.
+    assert node.query(f"SELECT x FROM {table_ref} ORDER BY ALL") == rows_before
+
+    remaining = list_s3_objects(started_cluster.minio_client, bucket, f"{table_name}/")
+    assert uncommitted_key[len(table_name) + 1:] in remaining, (
+        f"compaction must ignore {uncommitted_key}, not delete it"
+    )
 
 
 @pytest.mark.parametrize(

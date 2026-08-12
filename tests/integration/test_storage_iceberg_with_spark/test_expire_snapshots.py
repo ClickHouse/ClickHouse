@@ -58,6 +58,37 @@ def update_iceberg_metadata(instance, table_name, updater_fn):
     _write_iceberg_metadata(instance, table_name, meta, prev_path)
 
 
+def _newest_metadata_version(instance, table_name):
+    """Highest N among the vN.metadata.json files present in the metadata directory."""
+    metadata_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/metadata"
+    listing = instance.exec_in_container(
+        ["bash", "-c", f"ls {metadata_dir}/v*.metadata.json"]
+    )
+    versions = [
+        int(m.group(1))
+        for m in (re.fullmatch(r"v(\d+)\.metadata\.json", os.path.basename(line))
+                  for line in listing.split() if line)
+        if m
+    ]
+    assert versions, f"No vN.metadata.json files found in {metadata_dir}"
+    return max(versions)
+
+
+def _write_version_hint(instance, table_name, value):
+    """Overwrite metadata/version-hint.text with `value`.
+
+    A hint naming an older version than the newest committed metadata file is the steady
+    state left behind whenever the hint advance does not happen: its write failed, or
+    another engine committed without touching ClickHouse's hint."""
+    path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/metadata/version-hint.text"
+    instance.exec_in_container(["bash", "-c", f"printf '%s' '{value}' > {path}"])
+
+
+def _read_version_hint(instance, table_name):
+    path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/metadata/version-hint.text"
+    return instance.exec_in_container(["bash", "-c", f"cat {path}"]).strip()
+
+
 def _fix_version_hint_for_spark(table_name):
     """Rewrite version-hint.text as a plain version number.
     ClickHouse writes the full filename (e.g. 'v3.metadata.json');
@@ -1020,3 +1051,52 @@ def test_expire_snapshots_requires_experimental_setting(started_cluster_iceberg_
     result = expire_snapshots(instance, TABLE_NAME)
     parse_expire_result(result)
     assert_data_intact(instance, TABLE_NAME, 2)
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_expire_snapshots_under_stale_version_hint(started_cluster_iceberg_with_spark, storage_type):
+    """A version hint naming an older version must not make expire_snapshots unusable.
+
+    expire_snapshots computes the version it commits from the authoritative current
+    metadata. Resolved through a lagging hint it would target a version already present in
+    storage, so its conditional write is refused on every attempt and the retry budget runs
+    out with nothing expired.
+
+    Local-only: reads and rewrites the metadata directory directly, like the other cases
+    in this module that inspect versions."""
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = make_table_name("test_expire_stale_hint", storage_type)
+
+    create_iceberg_table(
+        storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark,
+        "(x Int)", 2, use_version_hint=True,
+    )
+    for val in range(1, 4):
+        instance.query(f"INSERT INTO {TABLE_NAME} VALUES ({val});", settings=ICEBERG_SETTINGS)
+
+    newest = _newest_metadata_version(instance, TABLE_NAME)
+    assert newest >= 2, f"Need at least two metadata versions to stale the hint, got v{newest}"
+    _write_version_hint(instance, TABLE_NAME, newest - 1)
+    # Guard: without an effective rewrite that differs from the newest version present,
+    # "stale hint" is a fiction and the case would pass on the unfixed binary.
+    assert _read_version_hint(instance, TABLE_NAME) == str(newest - 1), \
+        "version-hint.text rewrite did not take effect"
+
+    # Let the snapshots age past the retention window used below, so the command reaches
+    # its commit path instead of returning "no snapshots to expire".
+    time.sleep(3)
+
+    # Pre-fix this raises LIMIT_EXCEEDED ("Too many unsuccessful retries to expire iceberg
+    # snapshots") because every attempt regenerates a metadata version that already exists.
+    result = expire_snapshots(
+        instance, TABLE_NAME, FAR_FUTURE,
+        args=["retain_last = 1", "retention_period = '1ms'"],
+    )
+    parse_expire_result(result)
+
+    # Not throwing is not enough: the commit has to have produced a newer metadata file.
+    assert _newest_metadata_version(instance, TABLE_NAME) > newest, (
+        f"expire_snapshots reported success but no metadata file newer than v{newest} "
+        "exists, so nothing was committed"
+    )
+    assert_data_intact(instance, TABLE_NAME, 3)

@@ -681,7 +681,7 @@ ExpireSnapshotsResult expireSnapshots(
     {
         FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
         auto log = getLogger("IcebergExpireSnapshots");
-        auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+        auto [last_version, metadata_path, compression_method, tied_metadata_paths] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
             table_name,

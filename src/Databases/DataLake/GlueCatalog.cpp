@@ -613,7 +613,7 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
 
     try
     {
-        auto [metadata_version, metadata_path, compression_method] = DB::Iceberg::getLatestOrExplicitMetadataFileAndVersion(
+        auto [metadata_version, metadata_path, compression_method, tied_metadata_paths] = DB::Iceberg::getLatestOrExplicitMetadataFileAndVersion(
             object_storage, table_path, *storage_settings, nullptr, getContext(), log.get(), std::nullopt, DB::CompressionMethod::None);
 
         LOG_TRACE(log, "Resolved metadata path '{}' (version {}) for table location '{}'", metadata_path, metadata_version, table_location);

@@ -231,7 +231,8 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
     return MetadataFileWithInfo{
         .version = parseMetadataVersion(version_str, file_name),
         .path = path,
-        .compression_method = getCompressionMethodFromMetadataFile(path)};
+        .compression_method = getCompressionMethodFromMetadataFile(path),
+        .tied_paths = {}};
 }
 
 /// Resolve metadata filename from version hint content.
@@ -1175,7 +1176,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             String filename = std::filesystem::path(path).filename();
             if (isTemporaryMetadataFile(filename))
                 continue;
-            auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
+            auto [version, metadata_file_path, compression_method, tied_metadata_paths] = getMetadataFileAndVersion(path);
 
             if (need_all_metadata_files_parsing)
             {
@@ -1229,24 +1230,29 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         }
 
         /// Get the latest version of metadata file: v<V>.metadata.json
-        const ShortMetadataFileInfo & latest_metadata_file_info = [&]()
+        auto ranks_below = [selection_way](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b)
         {
             if (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
-            {
-                return *std::max_element(
-                    metadata_files_with_versions.begin(),
-                    metadata_files_with_versions.end(),
-                    [](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b) { return a.last_updated_ms < b.last_updated_ms; });
-            }
-            else
-            {
-                return *std::max_element(
-                    metadata_files_with_versions.begin(),
-                    metadata_files_with_versions.end(),
-                    [](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b) { return a.version < b.version; });
-            }
-        }();
-        return MetadataFileWithInfo{latest_metadata_file_info.version, latest_metadata_file_info.path, getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
+                return a.last_updated_ms < b.last_updated_ms;
+            return a.version < b.version;
+        };
+
+        const ShortMetadataFileInfo & latest_metadata_file_info
+            = *std::max_element(metadata_files_with_versions.begin(), metadata_files_with_versions.end(), ranks_below);
+
+        /// max_element returns the first of equal elements, so any other candidate ranking
+        /// equal to the winner was separated from it by listing order.
+        Strings tied_paths;
+        for (const auto & candidate : metadata_files_with_versions)
+            if (candidate.path != latest_metadata_file_info.path && !ranks_below(candidate, latest_metadata_file_info)
+                && !ranks_below(latest_metadata_file_info, candidate))
+                tied_paths.push_back(candidate.path);
+
+        return MetadataFileWithInfo{
+            latest_metadata_file_info.version,
+            latest_metadata_file_info.path,
+            getCompressionMethodFromMetadataFile(latest_metadata_file_info.path),
+            std::move(tied_paths)};
     };
 
     /// We'll query latest metadata from either cache or the actual remote catalog with a certain configured tolerance of staleness
@@ -1277,9 +1283,9 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const std::optional<String> & table_uuid,
     CompressionMethod known_compression_method,
     bool force_fetch_latest_metadata,
-    bool ignore_explicit_metadata_file_path)
+    bool ignore_metadata_pointer_overrides)
 {
-    if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed && !ignore_explicit_metadata_file_path)
+    if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed && !ignore_metadata_pointer_overrides)
     {
         auto explicit_metadata_path = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
         if (explicit_metadata_path.contains('\0'))
@@ -1317,7 +1323,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
         return getLatestMetadataFileAndVersion(
             object_storage, table_path, data_lake_settings, metadata_cache, local_context, normalizeUuid(explicit_table_uuid), true, force_fetch_latest_metadata);
     }
-    else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value)
+    else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value && !ignore_metadata_pointer_overrides)
     {
         auto version_hint_path = std::filesystem::path(table_path) / "metadata" / "version-hint.text";
         std::string metadata_file;
@@ -1352,7 +1358,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     Poco::Logger * log,
     const std::optional<String> & table_uuid,
     CompressionMethod known_compression_method,
-    bool ignore_explicit_metadata_file_path)
+    bool ignore_metadata_pointer_overrides)
 {
     if (!catalog)
         return getLatestOrExplicitMetadataFileAndVersion(
@@ -1365,7 +1371,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
             table_uuid,
             known_compression_method,
             /* force_fetch_latest_metadata */ true,
-            ignore_explicit_metadata_file_path);
+            ignore_metadata_pointer_overrides);
 
     DataLake::TableMetadata table_metadata;
     table_metadata.withDataLakeSpecificProperties().withLocation();
@@ -1383,6 +1389,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     effective_settings[DataLakeStorageSetting::iceberg_metadata_file_path]
         = table_metadata.getMetadataLocation(specific_properties->iceberg_metadata_file_location);
 
+    /// A catalog's pointer IS the committed state, so it is resolved rather than overridden.
     return getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         table_path,
@@ -1393,7 +1400,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
         table_uuid,
         known_compression_method,
         /* force_fetch_latest_metadata */ true,
-        /* ignore_explicit_metadata_file_path */ false);
+        /* ignore_metadata_pointer_overrides */ false);
 }
 
 
