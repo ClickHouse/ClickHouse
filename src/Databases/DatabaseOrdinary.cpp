@@ -493,7 +493,7 @@ void DatabaseOrdinary::loadTableLazy(
     /// is registered again when the proxy is materialized, which is harmless.
     if (query.storage && query.storage->engine && query.storage->engine->arguments)
     {
-        if (auto collection_name = tryGetUsedNamedCollectionName(query.storage->engine->arguments->children))
+        if (auto collection_name = tryGetUsedNamedCollectionName(query.storage->engine->name, query.storage->engine->arguments->children))
             NamedCollectionFactory::instance().addDependency(*collection_name, table_id);
     }
 

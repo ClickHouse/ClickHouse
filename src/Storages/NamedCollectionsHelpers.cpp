@@ -6,6 +6,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -226,20 +227,23 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     return collection_copy;
 }
 
-std::optional<std::string> tryGetUsedNamedCollectionName(const ASTs & asts)
+std::optional<std::string> tryGetUsedNamedCollectionName(const String & engine_name, const ASTs & asts)
 {
-    auto collection_name = getCollectionName(asts);
-    if (!collection_name.has_value())
+    /// Only engines that resolve their arguments through named collections can reference one by an
+    /// identifier as the first argument; for other engines an identifier means something else (a
+    /// cluster name for `Distributed`, a database name for `Buffer`, ...), and a collection that
+    /// happens to have the same name must not be considered used by the table.
+    const auto & storages = StorageFactory::instance().getAllStorages();
+    auto it = storages.find(engine_name);
+    if (it == storages.end() || !it->second.features.supports_named_collections)
         return std::nullopt;
 
-    NamedCollectionFactory::instance().loadIfNot();
-
-    /// The first argument of an engine is an identifier for other reasons too (a cluster name, for
-    /// example), so it names a collection only if a collection with that name exists.
-    if (!NamedCollectionFactory::instance().exists(*collection_name))
-        return std::nullopt;
-
-    return collection_name;
+    /// Whether a collection with that name currently exists is deliberately not checked: for these
+    /// engines the identifier can only reference a named collection, so the signal is stable across
+    /// restarts, and a dependency on a collection that is missing right now protects the table when
+    /// the collection is created (or recreated after an unchecked drop) later. A dependency on a
+    /// collection that never appears is harmless.
+    return getCollectionName(asts);
 }
 
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(

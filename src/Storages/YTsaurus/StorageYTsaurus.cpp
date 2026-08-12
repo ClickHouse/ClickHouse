@@ -168,6 +168,7 @@ void registerStorageYTsaurus(StorageFactory & factory)
     },
     {
         .supports_settings = true,
+        .supports_named_collections = true,
         .source_access_type = AccessTypeObjects::Source::YTSAURUS,
         .has_builtin_setting_fn = YTsaurusSettings::hasBuiltin
     },

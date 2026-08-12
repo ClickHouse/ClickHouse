@@ -32,12 +32,13 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> * complex_args = nullptr,
     const StorageID * dependent_table_id = nullptr);
 
-/// The name of the existing named collection the engine arguments of a table definition name, if any.
-/// The collection is always the first argument, as in `tryGetNamedCollectionWithOverrides` above.
-/// For a table whose storage is not built (a lazily loaded one), this is the only way to learn which
+/// The name of the named collection the engine arguments of a table definition reference, if any.
+/// The collection is always the first argument, as in `tryGetNamedCollectionWithOverrides` above, and
+/// only engines whose `StorageFeatures::supports_named_collections` is set can reference one. For a
+/// table whose storage is not built (a lazily loaded one), this is the only way to learn which
 /// collection its stored definition uses. It performs no access check: the caller inspects stored
 /// metadata during loading, not a query of a user.
-std::optional<std::string> tryGetUsedNamedCollectionName(const ASTs & asts);
+std::optional<std::string> tryGetUsedNamedCollectionName(const String & engine_name, const ASTs & asts);
 
 /// Helper function to get named collection for dictionary source.
 /// Dictionaries have collection name as name argument of dict configuration and other arguments are overrides.
