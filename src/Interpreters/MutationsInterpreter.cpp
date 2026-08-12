@@ -64,6 +64,8 @@
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
+#include <deque>
+
 namespace ProfileEvents
 {
     extern const Event MutationAffectedRowsUpperBound;
@@ -650,6 +652,69 @@ static void validateUpdateColumns(
     }
 }
 
+/// Returns the MATERIALIZED columns that have to be recalculated because `changed_columns` are
+/// changed by a mutation, grouped by dependency level: level 0 holds the columns whose expressions
+/// read a changed column directly, level N the columns that read a level N-1 column. A column
+/// reachable at several levels is placed at the deepest one, so recalculating one level per
+/// mutation stage guarantees that an expression never reads a stale value of a MATERIALIZED
+/// column it depends on.
+static std::vector<NameSet> getAffectedMaterializedByLevel(
+    const NameSet & changed_columns,
+    const std::unordered_map<String, Names> & column_to_dependent_materialized)
+{
+    std::unordered_map<String, size_t> level_of_column;
+    std::deque<String> queue;
+
+    for (const auto & column_name : changed_columns)
+    {
+        level_of_column.emplace(column_name, 0);
+        queue.push_back(column_name);
+    }
+
+    while (!queue.empty())
+    {
+        auto column_name = std::move(queue.front());
+        queue.pop_front();
+
+        auto it = column_to_dependent_materialized.find(column_name);
+        if (it == column_to_dependent_materialized.end())
+            continue;
+
+        size_t level = level_of_column.at(column_name) + 1;
+
+        /// The graph of MATERIALIZED dependencies is acyclic, so a level can never exceed the
+        /// number of MATERIALIZED columns. Bail out instead of looping forever if it ever does.
+        if (level > column_to_dependent_materialized.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cyclic dependency between MATERIALIZED columns");
+
+        for (const auto & dependent : it->second)
+        {
+            auto [level_it, inserted] = level_of_column.emplace(dependent, level);
+            if (!inserted)
+            {
+                if (level_it->second >= level)
+                    continue;
+                level_it->second = level;
+            }
+
+            queue.push_back(dependent);
+        }
+    }
+
+    std::vector<NameSet> levels;
+    for (const auto & [column_name, level] : level_of_column)
+    {
+        if (level == 0)
+            continue;
+
+        if (levels.size() < level)
+            levels.resize(level);
+        levels[level - 1].insert(column_name);
+    }
+
+    return levels;
+}
+
 /// Returns ASTs of updated nested subcolumns, if all of subcolumns were updated.
 /// They are used to validate sizes of nested arrays.
 /// If some of subcolumns were updated and some weren't,
@@ -752,6 +817,11 @@ void MutationsInterpreter::prepare(bool dry_run)
 
     /// We need to know which columns affect which MATERIALIZED columns, data skipping indices
     /// and projections to recalculate them if dependencies are updated.
+    /// `column_to_dependent_materialized` holds every edge of the MATERIALIZED dependency graph,
+    /// including MATERIALIZED -> MATERIALIZED ones, so that a column that depends on an updated
+    /// column only transitively is recalculated as well. `column_to_affected_materialized` maps
+    /// an updated column to the transitive closure reachable from it.
+    std::unordered_map<String, Names> column_to_dependent_materialized;
     std::unordered_map<String, Names> column_to_affected_materialized;
     if (!updated_columns.empty())
     {
@@ -796,9 +866,18 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 for (const auto & dependency : required_columns)
-                    if (updated_columns.contains(dependency))
-                        column_to_affected_materialized[dependency].push_back(column.name);
+                    column_to_dependent_materialized[dependency].push_back(column.name);
             }
+        }
+
+        for (const auto & updated_column : updated_columns)
+        {
+            Names affected;
+            for (const auto & level : getAffectedMaterializedByLevel({updated_column}, column_to_dependent_materialized))
+                affected.insert(affected.end(), level.begin(), level.end());
+
+            if (!affected.empty())
+                column_to_affected_materialized.emplace(updated_column, std::move(affected));
         }
 
         validateUpdateColumns(source, metadata_snapshot, updated_columns, column_to_affected_materialized, context);
@@ -816,6 +895,13 @@ void MutationsInterpreter::prepare(bool dry_run)
         return true;
     };
 
+    /// MATERIALIZED columns that the UPDATE commands below will rewrite. Their data changes
+    /// without a type change and without being named in the query, so skip indices, projections
+    /// and statistics reading them have to be rebuilt just like for a directly updated column.
+    NameSet recalculated_materialized_columns;
+    for (const auto & [_, affected] : column_to_affected_materialized)
+        recalculated_materialized_columns.insert(affected.begin(), affected.end());
+
     if (settings.recalculate_dependencies_of_updated_columns)
     {
         /// Patch-updated columns change data without a type change, so they must
@@ -824,6 +910,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         /// above because they are not user-issued UPDATEs.
         NameSet columns_for_dependencies = updated_columns;
         columns_for_dependencies.insert(patch_updated_columns.begin(), patch_updated_columns.end());
+        columns_for_dependencies.insert(recalculated_materialized_columns.begin(), recalculated_materialized_columns.end());
         dependencies = getAllColumnDependencies(metadata_snapshot, columns_for_dependencies, has_dependency);
     }
 
@@ -930,13 +1017,13 @@ void MutationsInterpreter::prepare(bool dry_run)
                 ? nullptr
                 : getPartitionAndPredicateExpressionForMutationCommand(alter.get());
 
-            for (const auto & [column_name, update_expr] : column_to_update)
-            {
-                auto materialized_it = column_to_affected_materialized.find(column_name);
-                if (materialized_it != column_to_affected_materialized.end())
-                    for (const auto & mat_column : materialized_it->second)
-                        affected_materialized.emplace(mat_column);
-            }
+            NameSet updated_by_command;
+            for (const auto & [column_name, _] : column_to_update)
+                updated_by_command.insert(column_name);
+
+            auto affected_materialized_levels = getAffectedMaterializedByLevel(updated_by_command, column_to_dependent_materialized);
+            for (const auto & level : affected_materialized_levels)
+                affected_materialized.insert(level.begin(), level.end());
 
             for (const auto & [column_name, update_expr] : column_to_update)
             {
@@ -1039,13 +1126,16 @@ void MutationsInterpreter::prepare(bool dry_run)
                 stages.back().column_to_updated.emplace(column_name, updated_column);
             }
 
-            if (!affected_materialized.empty())
+            /// One stage per dependency level: a MATERIALIZED column that reads another
+            /// recalculated MATERIALIZED column must be evaluated after it, otherwise it would
+            /// see the stale on-disk value.
+            for (const auto & affected_materialized_level : affected_materialized_levels)
             {
                 stages.emplace_back(context);
                 for (const auto & column : columns_desc)
                 {
                     if (column.default_desc.kind == ColumnDefaultKind::Materialized
-                        && affected_materialized.contains(column.name)
+                        && affected_materialized_level.contains(column.name)
                         && column.default_desc.expression)
                     {
                         auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
@@ -1564,7 +1654,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             [&](const auto & col)
             {
                 return updated_columns.contains(col) || changed_columns.contains(col)
-                    || patch_updated_columns.contains(col);
+                    || patch_updated_columns.contains(col) || recalculated_materialized_columns.contains(col);
             });
 
         if (changed)
@@ -1610,7 +1700,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             [&](const auto & col)
             {
                 return updated_columns.contains(col) || changed_columns.contains(col)
-                    || patch_updated_columns.contains(col);
+                    || patch_updated_columns.contains(col) || recalculated_materialized_columns.contains(col);
             });
 
         if (changed)

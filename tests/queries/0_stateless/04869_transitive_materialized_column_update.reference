@@ -1,0 +1,30 @@
+chain
+10	11	12	13
+20	21	22	23
+30	31	32	33
+diamond
+1	2	20	22
+5	6	60	66
+ephemeral
+1	8	108
+2	8	108
+1	8	9
+2	8	10
+key column
+projection
+1000500500
+1000500500
+1000501500
+1000501500
+skip index
+10000
+on the fly
+21
+22
+23
+20	21	22	23
+0
+on the fly, ephemeral
+108
+8
+2	8	108
