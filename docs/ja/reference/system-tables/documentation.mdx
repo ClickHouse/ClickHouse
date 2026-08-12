@@ -39,7 +39,9 @@ doc_type: 'reference'
 * 非同期メトリクス (`Asynchronous Metric`)
 * システムテーブル (`System Table`)
 
-設定 (あらゆる種類) については、その設定の説明に加えて、型とデフォルト値もドキュメントとして格納されます。廃止された設定は公開されません。システムテーブルについては、テーブルコメントに加えて、そのカラムの一覧 (各カラムの名前、型、説明) がドキュメントとして格納されます。
+設定 (あらゆる種類) については、その設定の説明に加えて、型とデフォルト値もドキュメントとして格納されます。廃止された設定は公開されません。また、ClickHouse のバージョン間における設定のデフォルト値の変更履歴も含まれます。設定が導入されたバージョンと、それ以降のデフォルト値のすべての変更について、以前の値、新しい値、変更理由が記録されます。これは `compatibility` 設定および [`system.settings_changes`](/ja/reference/system-tables/settings_changes) の基盤となるデータと同一であるため、その仕組みが導入されて以降に記録された変更を対象とします。デフォルト値が一度も変更されていない古い設定には履歴がなく、`compatibility` の対象外であるサーバー設定にも履歴はありません。設定の別名で記録された変更は、`compatibility` が適用するのと同様に、その設定の履歴に属します。そのため、リネームされた設定の履歴はリネーム時点で途切れません。例外は、その別名を登録することのみを目的として別名で書き込まれたレコードで、これは別名だけの履歴となります。別名には、その名前自身の履歴が含まれます。つまり、その別名で書き込まれたすべてのレコードに加え、別名として登録したレコードも含まれます。履歴ファイルでは、このレコードが同じ設定の別の名前で書き込まれることがあります。
+
+システムテーブルについては、テーブルコメントに加えて、そのカラムの一覧 (各カラムの名前、型、説明) がドキュメントとして格納されます。
 
 `source` カラムには、エンティティのドキュメントが定義されているソースファイルのパスが、リポジトリルートからの相対パスで格納されます。ほとんどのエンティティでは、ドキュメントオブジェクトが構築される場所 (コンポーネントの登録箇所) で自動的に取得されます。種類ごとに単一のソースファイルでドキュメント化されているもの (設定、プロファイルイベント、現在のメトリクスなど) については、そのファイルが格納されます。
 
@@ -69,7 +71,7 @@ WHERE type = 'Table Engine' AND name = 'MergeTree'
 FORMAT TSVRaw;
 ```
 
-同じ名前が複数の種類のエンティティを指すことがあります (たとえば、`file` table function と `file` Dictionary ソース の両方があります) 。そのため、あらゆる種類をまたいで名前を調べられると便利です。
+同じ名前が複数の種類のエンティティを指すことがあります (たとえば、`file` テーブル関数 と `file` Dictionary ソース の両方があります) 。そのため、あらゆる種類をまたいで名前を調べられると便利です。
 
 ```sql title="Query"
 SELECT type, name
@@ -87,6 +89,15 @@ GROUP BY type
 ORDER BY count() DESC;
 ```
 
+設定が導入されたバージョンと、それ以降のデフォルト値の変更を確認します:
+
+```sql title="Query"
+SELECT description
+FROM system.documentation
+WHERE type = 'Setting' AND name = 'async_insert_max_data_size'
+FORMAT TSVRaw;
+```
+
 <div id="see-also">
   ## 関連項目
 </div>
@@ -100,4 +111,5 @@ ORDER BY count() DESC;
 * [`system.settings`](/ja/reference/system-tables/settings) — 設定。
 * [`system.merge_tree_settings`](/ja/reference/system-tables/merge_tree_settings) — MergeTree 設定。
 * [`system.server_settings`](/ja/reference/system-tables/server_settings) — サーバー設定。
+* [`system.settings_changes`](/ja/reference/system-tables/settings_changes) — 設定のデフォルト値の変更履歴。
 * [`system.formats`](/ja/reference/system-tables/formats) — フォーマット。
