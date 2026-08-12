@@ -244,8 +244,8 @@ DataTypePtr DataTypeVariant::doTransformChildren(const ChildTransform & transfor
     if (!changed)
         return shared_from_this();
 
-    /// Keep the existing discriminator order: the transform only assigns versions and never merges
-    /// two distinct variants into the same type, so the fixed-order constructor is safe here.
+    /// Keep discriminator order; safe because the transform only assigns versions and never merges
+    /// two distinct variants into one type.
     return std::make_shared<DataTypeVariant>(new_variants, FixedDiscriminatorOrder{});
 }
 

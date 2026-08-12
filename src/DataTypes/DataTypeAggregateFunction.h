@@ -85,16 +85,12 @@ public:
 
 /// Assigns a serialization version to every nested DataTypeAggregateFunction in `type`.
 ///
-/// Each versioned leaf is replaced by - never mutated into - a copy carrying the version, so that
-/// concurrent serializations of a shared type object do not race on it. A single data type object
-/// is shared between concurrent queries: it lives in the table's column description and is aliased
-/// by the headers of their result blocks. `type` is reassigned only if some leaf actually changes.
+/// The type object is shared across concurrent queries (it lives in the table's column description),
+/// so each versioned leaf is replaced by a copy carrying the version rather than mutated in place,
+/// avoiding a data race; `type` is reassigned only if some leaf changes. The generic transformChildren
+/// traversal covers every container and preserves custom names.
 ///
-/// The traversal is generic: it recurses through `IDataType::transformChildren`, so every container
-/// type is covered and custom type names such as `Nested` and `SimpleAggregateFunction` are preserved.
-///
-/// `if_empty` keeps an already-explicit version; `revision` picks the version from the
-/// server/client revision (nullopt forces version 0).
+/// `if_empty` keeps an already-explicit version; `revision` picks the version (nullopt forces 0).
 void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision = std::nullopt);
 
 /// Checks type of any nested type is DataTypeAggregateFunction.

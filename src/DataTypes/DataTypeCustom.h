@@ -14,8 +14,8 @@ class WriteBuffer;
 struct FormatSettings;
 class IColumn;
 class IDataTypeCustomName;
-/// Shared so a copy of a type can carry the same custom name, and so a name can return itself from
-/// `transformChildren` via `shared_from_this`.
+/// Shared so a copy of a type can carry the same custom name, and so transformChildren can return
+/// the name via shared_from_this.
 using DataTypeCustomNamePtr = std::shared_ptr<const IDataTypeCustomName>;
 
 /** Allow to customize an existing data type and set a different name and/or text serialization/deserialization methods.
@@ -28,9 +28,8 @@ public:
 
     virtual String getName() const = 0;
 
-    /// Returns a copy with any embedded child types transformed, or itself when it embeds none (the
-    /// common case). A name that embeds types (e.g. Nested) overrides this to stay in sync with a
-    /// rebuilt type. See IDataType::transformChildren.
+    /// A copy with any embedded child types transformed, or itself when it embeds none (the common
+    /// case). Overridden by names that embed types (e.g. Nested) to stay in sync with a rebuilt type.
     virtual DataTypeCustomNamePtr transformChildren(const ChildTransform &) const { return shared_from_this(); }
 };
 

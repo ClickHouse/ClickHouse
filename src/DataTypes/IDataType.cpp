@@ -350,8 +350,8 @@ DataTypePtr IDataType::transformChildren(const ChildTransform & transform) const
     if (result.get() == this)
         return result;
 
-    /// Carry customization onto the rebuilt object. The custom name is transformed too, so a name
-    /// that embeds child types (e.g. Nested) stays in sync; others return themselves unchanged.
+    /// Carry customization over; the custom name is transformed too so one that embeds child types
+    /// (e.g. Nested) stays in sync.
     if (auto customization = cloneCustomization())
     {
         if (custom_name)

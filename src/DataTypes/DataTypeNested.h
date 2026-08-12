@@ -23,9 +23,8 @@ public:
     const DataTypes & getElements() const { return elems; }
     const Names & getNames() const { return names; }
 
-    /// The Nested name embeds its element types, so rebuild it from the transformed elements. Built
-    /// from the types directly, not the printed name: version 0 is deliberately not printed, so a
-    /// name round trip would lose a leaf pinned to version 0.
+    /// Rebuild the name from the transformed elements (its element types are embedded). Uses the
+    /// types directly, not the printed name: version 0 is not printed, so a round trip would drop it.
     DataTypeCustomNamePtr transformChildren(const ChildTransform & transform) const override;
 };
 
