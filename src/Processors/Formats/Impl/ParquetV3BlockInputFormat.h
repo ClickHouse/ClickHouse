@@ -47,7 +47,11 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     /// format metadata cache is bypassed unless the read is pinned to the generation the cache key
     /// names) and compares this digest, so an assignment computed from a stale cached footer - or
     /// from a different generation of the same path - fails close with `FILE_CHANGED_WHILE_READING`
-    /// instead of silently applying another generation's row-group layout. The field travels over
+    /// instead of silently applying another generation's row-group layout. A pruning restriction
+    /// derived from the query condition cache (`omitted_row_groups_are_pruned`) carries the digest
+    /// stored with the cache entry - the footer its marks were computed from - and fails close by
+    /// being dropped instead of thrown: it restricts a single whole-file reader, so reading the
+    /// whole file is the safe reaction (see `validateBucketAssignment`). The field travels over
     /// the cluster protocol from
     /// `DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_PARQUET_FILE_ROW_GROUP_COUNT` on, so a
     /// distributed bucketed read is guarded the same way; an older worker cannot carry it, which
@@ -64,7 +68,8 @@ struct ParquetFileBucketInfo : public FileBucketInfo
         return "Parquet";
     }
     std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(
-        const std::vector<size_t> & matching_row_groups, size_t file_num_row_groups) const override;
+        const std::vector<size_t> & matching_row_groups, size_t file_num_row_groups,
+        UInt64 file_metadata_digest) const override;
     UInt64 getMinProtocolVersion() const override;
     bool coversWholeFile() const override;
 };
@@ -145,6 +150,8 @@ public:
     void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
 
     std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const override;
+
+    UInt64 getFileMetadataDigest() const override;
 
 private:
     Chunk read() override;

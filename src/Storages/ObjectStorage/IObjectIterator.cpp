@@ -175,8 +175,10 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
                 if (has_cache_entry)
                 {
                     /// The bucket produced by the splitter already carries the file's total row-group
-                    /// count, so pass 0 ("unknown") here to keep it rather than overwrite it.
-                    auto filtered = file_bucket->filterByMatchingRowGroups(matching_row_groups, /*file_num_row_groups=*/ 0);
+                    /// count and the digest of the footer the split was computed from, so pass 0
+                    /// ("unknown") for both here to keep them rather than overwrite them.
+                    auto filtered = file_bucket->filterByMatchingRowGroups(
+                        matching_row_groups, /*file_num_row_groups=*/ 0, /*file_metadata_digest=*/ 0);
                     if (!filtered)
                         continue;
                     copy_object_info.file_bucket_info = std::move(filtered);

@@ -62,9 +62,15 @@ struct FileBucketInfo
     /// number of row groups in the file as known by the caller (0 = unknown). When it is non-zero the
     /// returned bucket carries it, so the read path keeps the fail-close
     /// `checkFileMatchesBucketAssignment` guard against a concurrent overwrite; when it is zero the
-    /// bucket keeps whatever total this prototype already had.
+    /// bucket keeps whatever total this prototype already had. `file_metadata_digest` is the digest
+    /// of the file-level metadata (e.g. the Parquet footer) the matching row groups were computed
+    /// from, as stored with the query-condition-cache entry (see
+    /// `QueryConditionCache::Entry::file_metadata_digest`); when non-zero the returned bucket carries
+    /// it so the read fails close unless the file it actually opens has that exact metadata, and when
+    /// it is zero the bucket keeps whatever digest this prototype already had.
     virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(
-        const std::vector<size_t> & matching_row_groups, size_t file_num_row_groups) const = 0;
+        const std::vector<size_t> & matching_row_groups, size_t file_num_row_groups,
+        UInt64 file_metadata_digest) const = 0;
 
     /// The minimum negotiated cluster-processing protocol version a worker must support to carry this
     /// bucket without silently losing a fail-close guard. A worker below this version must not receive
@@ -169,6 +175,13 @@ public:
     void needOnlyCount() { need_only_count = true; }
 
     virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
+
+    /// Digest of the file-level metadata (e.g. the Parquet footer) this read was driven by, or 0 if
+    /// unknown (not parsed yet, or the format does not support it). Stored with the query-condition
+    /// -cache entry written from `getMatchedBuckets`, so a later read may only apply the cached
+    /// marks to a file whose metadata produces the same digest (the marks name row groups of that
+    /// exact metadata). See `QueryConditionCache::Entry::file_metadata_digest`.
+    virtual UInt64 getFileMetadataDigest() const { return 0; }
 
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }

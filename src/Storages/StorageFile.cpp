@@ -1856,55 +1856,6 @@ Chunk StorageFileSource::generate()
 
             chassert(file_num > 0);
 
-            /// For real local files, build a synthetic RelativePathWithMetadata so the
-            /// format-level metadata cache (e.g. Parquet footer cache) is reachable. The
-            /// "etag" is just any version identifier the cache compares for equality —
-            /// for local files we use the precomputed `current_file_cache_version`
-            /// (sub-second mtime + inode + size) so an in-place rewrite invalidates
-            /// the cache even when the new file has the same length and is written
-            /// within the same wall-clock second.
-            ///
-            /// Gated on `use_parquet_metadata_cache`: when it is disabled we leave the
-            /// metadata empty so `getInputWithMetadata` is not used, the plain input
-            /// creator is taken instead, and `ParquetV3BlockInputFormat` receives a null
-            /// cache — neither reading from nor populating `ParquetMetadataCache`. This
-            /// matches `StorageObjectStorageSource`.
-            ///
-            /// Deliberately NOT gated on `current_file_version_settled`. That gate belongs to the
-            /// query condition cache below, which draws a stronger conclusion from the token: it
-            /// skips whole row groups without reading them, so a token that cannot yet prove a
-            /// rewrite must fail close. The format metadata cache only reuses a parsed footer,
-            /// and reusing it for a file whose token has not settled is exactly the behaviour
-            /// master already has and pins in `04207_parquet_metadata_cache_local_file` - a
-            /// freshly written file is the common case, and bypassing the cache for it would
-            /// reparse the footer on every query. See the thread on this gate for the rationale.
-            ///
-            /// Gated on `!file_bucket_info`: a source assigned one bucket of a parallel
-            /// single-file split must parse the footer of the bytes it actually opened, not a
-            /// cached one. While the token has not settled it cannot prove which file generation
-            /// a cache entry describes (an in-place rewrite that keeps the inode and the byte
-            /// size in the same timestamp tick reuses the token), so a stale entry would let
-            /// `checkFileMatchesBucketAssignment` validate the bucket against the very footer the
-            /// assignment was computed from and silently apply a previous generation's row-group
-            /// layout to the file. Parsing the opened bytes instead makes the footer-digest guard
-            /// (`ParquetFileBucketInfo::footer_digest`) compare the assignment against the real
-            /// file and fail close with `FILE_CHANGED_WHILE_READING` on a mismatch. The plain
-            /// path keeps the cache: with no bucket assignment there is nothing to
-            /// cross-validate, which is the master-pinned residual described above.
-            std::optional<RelativePathWithMetadata> object_with_metadata;
-            if (getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache]
-                && !storage->use_table_fd && !storage->archive_info && !current_path.empty()
-                && current_file_size.has_value() && current_file_last_modified.has_value()
-                && current_file_cache_version.has_value()
-                && !file_bucket_info)
-            {
-                ObjectMetadata md;
-                md.size_bytes = *current_file_size;
-                md.last_modified = *current_file_last_modified;
-                md.etag = *current_file_cache_version;
-                object_with_metadata.emplace(current_path, std::move(md));
-            }
-
             /// Consult the Query Condition Cache. If a previous query with the same predicate already
             /// determined that some row groups in this exact file version contain no matching rows,
             /// restrict the reader to the surviving row groups (or skip the whole file). This mirrors
@@ -1915,11 +1866,11 @@ Chunk StorageFileSource::generate()
             /// formats that expose bucket splitting (Parquet) ever populate the cache, so other
             /// formats miss. A source assigned one bucket of a parallel single-file split
             /// (`file_bucket_info` is set) also bypasses the cache and reads exactly its planned
-            /// assignment, matching the object-storage path. The gate repeats the "real local
-            /// file" preconditions instead of reusing `object_with_metadata`: that optional is
-            /// additionally gated on `use_parquet_metadata_cache`, and disabling the format
-            /// metadata cache must not disable the (independent) query condition cache, whose
-            /// write path below has no such dependency either.
+            /// assignment, matching the object-storage path. The gate deliberately does not
+            /// depend on `object_with_metadata` (built below): that optional is additionally
+            /// gated on `use_parquet_metadata_cache`, and disabling the format metadata cache
+            /// must not disable the (independent) query condition cache, whose write path below
+            /// has no such dependency either.
             FileBucketInfoPtr buckets_to_read;
             QueryConditionCachePtr query_condition_cache;
             if (!storage->use_table_fd && !storage->archive_info && !current_path.empty()
@@ -1931,8 +1882,10 @@ Chunk StorageFileSource::generate()
             if (query_condition_cache)
             {
                 const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
+                UInt64 cached_file_metadata_digest = 0;
                 auto matching_marks = query_condition_cache->read(
-                    storage->getStorageID().uuid, cache_file_key, *format_filter_info->condition_hash);
+                    storage->getStorageID().uuid, cache_file_key, *format_filter_info->condition_hash,
+                    /*increment_profile_events=*/true, &cached_file_metadata_digest);
                 if (matching_marks.has_value())
                 {
                     const auto & marks = *matching_marks;
@@ -1952,24 +1905,106 @@ Chunk StorageFileSource::generate()
                     if (matching_row_groups.empty())
                     {
                         /// The whole file is known not to match the condition — skip it entirely.
-                        read_buf.reset();
-                        continue;
-                    }
-
-                    if (auto bucket_prototype = FormatFactory::instance().getFileBucketInfo(storage->format_name))
-                    {
-                        /// Pass the total row-group count (equal to the number of cached marks) so the
-                        /// cache-derived bucket fails close via `checkFileMatchesBucketAssignment` if the
-                        /// file is rewritten with a different number of row groups, matching the
-                        /// splitter and cluster-task read paths.
-                        buckets_to_read = bucket_prototype->filterByMatchingRowGroups(matching_row_groups, marks.size());
-                        if (!buckets_to_read)
+                        /// The marks describe the generation the (settled) version token names, so
+                        /// re-verify the token at the moment of the decision: if it still holds,
+                        /// that generation is the file's current content and skipping it returns
+                        /// exactly its (empty) result; a rewrite an instant later is a concurrent
+                        /// modification that even a full read may linearize before. If the token no
+                        /// longer holds, the file changed after it was opened: the marks describe a
+                        /// generation that is gone, so ignore them and fall through to a plain
+                        /// unrestricted read, failing close on the caches and the stat-derived
+                        /// `_size` / `_time` virtuals exactly like the post-open bracket above.
+                        if (fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
                         {
                             read_buf.reset();
                             continue;
                         }
+                        current_file_cache_version.reset();
+                        current_file_version_settled = false;
+                        current_file_size.reset();
+                        current_file_last_modified.reset();
                     }
+                    else if (cached_file_metadata_digest != 0)
+                    {
+                        if (auto bucket_prototype = FormatFactory::instance().getFileBucketInfo(storage->format_name))
+                        {
+                            /// Pass the total row-group count (equal to the number of cached marks) and
+                            /// the digest of the footer the marks were computed from (stored with the
+                            /// cache entry), so the cache-derived restriction is only applied if the
+                            /// footer parsed from the bytes this reader actually opens produces the
+                            /// same digest - the marks name row groups of that exact footer. On a
+                            /// mismatch (the file was rewritten between the cache write and this read
+                            /// in a way the version token could not prove) the format drops the
+                            /// restriction and reads the whole file (see `validateBucketAssignment`).
+                            buckets_to_read = bucket_prototype->filterByMatchingRowGroups(
+                                matching_row_groups, marks.size(), cached_file_metadata_digest);
+                            if (!buckets_to_read)
+                            {
+                                read_buf.reset();
+                                continue;
+                            }
+                        }
+                    }
+                    /// `cached_file_metadata_digest == 0` means the entry carries no digest to tie the
+                    /// marks to a file generation (it was written by a format or code version that
+                    /// reported none). Applying such marks could prune row groups of a different
+                    /// generation than the one this reader opens, so fail close by not pruning at
+                    /// all - mirroring the unpinned object-storage path in
+                    /// `StorageObjectStorageSource::createReader`.
                 }
+            }
+
+            /// For real local files, build a synthetic RelativePathWithMetadata so the
+            /// format-level metadata cache (e.g. Parquet footer cache) is reachable. The
+            /// "etag" is just any version identifier the cache compares for equality —
+            /// for local files we use the precomputed `current_file_cache_version`
+            /// (sub-second mtime + inode + size) so an in-place rewrite invalidates
+            /// the cache even when the new file has the same length and is written
+            /// within the same wall-clock second.
+            ///
+            /// Gated on `use_parquet_metadata_cache`: when it is disabled we leave the
+            /// metadata empty so `getInputWithMetadata` is not used, the plain input
+            /// creator is taken instead, and `ParquetV3BlockInputFormat` receives a null
+            /// cache — neither reading from nor populating `ParquetMetadataCache`. This
+            /// matches `StorageObjectStorageSource`.
+            ///
+            /// Deliberately NOT gated on `current_file_version_settled`. That gate belongs to the
+            /// query condition cache above, which draws a stronger conclusion from the token: it
+            /// skips whole row groups without reading them, so a token that cannot yet prove a
+            /// rewrite must fail close. The format metadata cache only reuses a parsed footer,
+            /// and reusing it for a file whose token has not settled is exactly the behaviour
+            /// master already has and pins in `04207_parquet_metadata_cache_local_file` - a
+            /// freshly written file is the common case, and bypassing the cache for it would
+            /// reparse the footer on every query. See the thread on this gate for the rationale.
+            ///
+            /// Gated on `!file_bucket_info` and `!buckets_to_read`: a source whose read is
+            /// restricted to a subset of the file's row groups - one bucket of a parallel
+            /// single-file split, or a query-condition-cache pruning restriction built above -
+            /// must parse the footer of the bytes it actually opened, not a cached one. While
+            /// the token has not settled it cannot prove which file generation a cache entry
+            /// describes (an in-place rewrite that keeps the inode and the byte size in the same
+            /// timestamp tick reuses the token), so a stale entry would let the fail-close guard
+            /// validate the restriction against the very footer it was computed from and
+            /// silently apply a previous generation's row-group layout to the file. Parsing the
+            /// opened bytes instead makes the footer-digest guard
+            /// (`ParquetFileBucketInfo::footer_digest`) compare the restriction against the real
+            /// file, and fail close on a mismatch - `FILE_CHANGED_WHILE_READING` for a split
+            /// bucket, dropping the restriction for cache-derived pruning (see
+            /// `validateBucketAssignment`). The plain path keeps the cache: with no restriction
+            /// there is nothing to cross-validate, which is the master-pinned residual described
+            /// above.
+            std::optional<RelativePathWithMetadata> object_with_metadata;
+            if (getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache]
+                && !storage->use_table_fd && !storage->archive_info && !current_path.empty()
+                && current_file_size.has_value() && current_file_last_modified.has_value()
+                && current_file_cache_version.has_value()
+                && !file_bucket_info && !buckets_to_read)
+            {
+                ObjectMetadata md;
+                md.size_bytes = *current_file_size;
+                md.last_modified = *current_file_last_modified;
+                md.etag = *current_file_cache_version;
+                object_with_metadata.emplace(current_path, std::move(md));
             }
 
             if (object_with_metadata.has_value())
@@ -2134,6 +2169,11 @@ Chunk StorageFileSource::generate()
                         if (auto query_condition_cache = getContext()->getQueryConditionCache())
                         {
                             const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
+                            /// Store the digest of the footer the marks were computed from alongside
+                            /// them: the marks name row groups of that exact footer, so a later read
+                            /// may only apply them after verifying the footer of the bytes it
+                            /// actually opens produces the same digest (see the cache-read path
+                            /// above and `ParquetFileBucketInfo::footer_digest`).
                             query_condition_cache->write(
                                 storage->getStorageID().uuid,
                                 cache_file_key,
@@ -2141,7 +2181,8 @@ Chunk StorageFileSource::generate()
                                 format_filter_info->filter_actions_dag->dumpNames(),
                                 unmatched_ranges,
                                 total_groups,
-                                /*has_final_mark=*/false);
+                                /*has_final_mark=*/false,
+                                input_format->getFileMetadataDigest());
                         }
                     }
                 }

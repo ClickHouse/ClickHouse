@@ -100,7 +100,7 @@ namespace
         void deserialize(ReadBuffer &, size_t) override {}
         String getIdentifier() const override { return "stub"; }
         String getFormatName() const override { return "Parquet"; }
-        std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> &, size_t) const override { return nullptr; }
+        std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> &, size_t, UInt64) const override { return nullptr; }
         UInt64 getMinProtocolVersion() const override { return min_protocol_version; }
         UInt64 min_protocol_version;
     };

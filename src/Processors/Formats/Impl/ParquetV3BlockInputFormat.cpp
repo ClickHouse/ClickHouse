@@ -50,14 +50,18 @@ static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_set
 /// silently undercount. Comparing the total row-group count fails close in both directions.
 /// `file_num_row_groups == 0` means the count is unknown (e.g. an older serialized bucket) and
 /// skips the check.
-static void checkFileMatchesBucketAssignment(const ParquetFileBucketInfo & bucket, const parquet::format::FileMetaData & file_metadata)
+///
+/// How a mismatch fails close depends on what the omitted row groups are (see
+/// `FileBucketInfo::omitted_row_groups_are_pruned`). For a split bucket the assignment is a
+/// contract between several sources - dropping it would re-read the other buckets' row groups and
+/// duplicate rows - so `checkFileMatchesBucketAssignment` throws. A pruning assignment (derived
+/// from the query condition cache) is a restriction of a single whole-file reader, so the safe
+/// reaction is to ignore it and read the whole file: the caller checks
+/// `bucketAssignmentMatchesFile` and resets the assignment instead of failing the query.
+static bool bucketAssignmentMatchesFile(const ParquetFileBucketInfo & bucket, const parquet::format::FileMetaData & file_metadata)
 {
     if (bucket.file_num_row_groups != 0 && file_metadata.row_groups.size() != bucket.file_num_row_groups)
-        throw Exception(
-            ErrorCodes::FILE_CHANGED_WHILE_READING,
-            "The Parquet file has {} row groups, but the parallel single-file bucket assignment was computed for a file "
-            "with {} row groups. The file was likely modified concurrently while a parallel single-file read was in progress",
-            file_metadata.row_groups.size(), bucket.file_num_row_groups);
+        return false;
 
     /// A matching row-group count can still hide a rewrite. Locally, an in-place rewrite that keeps the
     /// inode, the byte size and the filesystem timestamp tick is invisible to the file-version token,
@@ -68,10 +72,50 @@ static void checkFileMatchesBucketAssignment(const ParquetFileBucketInfo & bucke
     /// on any footer-visible difference, including the per-column statistics that change with the
     /// data values (see `ParquetFileBucketInfo::footer_digest` for the exactness contract).
     if (bucket.footer_digest != 0 && computeParquetFooterDigest(file_metadata) != bucket.footer_digest)
+        return false;
+
+    return true;
+}
+
+static void checkFileMatchesBucketAssignment(const ParquetFileBucketInfo & bucket, const parquet::format::FileMetaData & file_metadata)
+{
+    if (bucket.file_num_row_groups != 0 && file_metadata.row_groups.size() != bucket.file_num_row_groups)
+        throw Exception(
+            ErrorCodes::FILE_CHANGED_WHILE_READING,
+            "The Parquet file has {} row groups, but the parallel single-file bucket assignment was computed for a file "
+            "with {} row groups. The file was likely modified concurrently while a parallel single-file read was in progress",
+            file_metadata.row_groups.size(), bucket.file_num_row_groups);
+
+    if (bucket.footer_digest != 0 && computeParquetFooterDigest(file_metadata) != bucket.footer_digest)
         throw Exception(
             ErrorCodes::FILE_CHANGED_WHILE_READING,
             "The Parquet file's footer differs from the one the parallel single-file bucket assignment was computed from. "
             "The file was likely modified concurrently while a parallel single-file read was in progress");
+}
+
+/// Fail-close dispatch on the two assignment kinds described above `bucketAssignmentMatchesFile`:
+/// a stale pruning assignment is dropped (the reader falls back to the whole file), a stale split
+/// assignment throws. Returns the assignment to use (possibly null).
+static ParquetFileBucketInfoPtr validateBucketAssignment(
+    const ParquetFileBucketInfoPtr & buckets_to_read, const parquet::format::FileMetaData & file_metadata)
+{
+    if (!buckets_to_read)
+        return nullptr;
+    if (buckets_to_read->omitted_row_groups_are_pruned)
+    {
+        if (!bucketAssignmentMatchesFile(*buckets_to_read, file_metadata))
+        {
+            LOG_DEBUG(
+                getLogger("ParquetV3BlockInputFormat"),
+                "Ignoring a query-condition-cache row-group restriction: the file's footer no longer matches "
+                "the one the cached marks were computed from (the file was likely modified concurrently). "
+                "Reading the whole file instead.");
+            return nullptr;
+        }
+        return buckets_to_read;
+    }
+    checkFileMatchesBucketAssignment(*buckets_to_read, file_metadata);
+    return buckets_to_read;
 }
 
 ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
@@ -134,8 +178,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             reader.emplace();
             reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
             reader->reader.file_metadata = getFileMetadata(reader->reader.prefetcher);
-            if (buckets_to_read)
-                checkFileMatchesBucketAssignment(*buckets_to_read, reader->reader.file_metadata);
+            buckets_to_read = validateBucketAssignment(buckets_to_read, reader->reader.file_metadata);
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
             reader->init(
                 parser_shared_resources,
@@ -174,6 +217,7 @@ Chunk ParquetV3BlockInputFormat::read()
         parquet::format::FileMetaData file_metadata = getFileMetadata(temp_prefetcher);
 
         size_t num_rows = 0;
+        buckets_to_read = validateBucketAssignment(buckets_to_read, file_metadata);
         if (buckets_to_read)
         {
             /// Only count rows in the assigned row groups. Otherwise multiple sources
@@ -186,10 +230,9 @@ Chunk ParquetV3BlockInputFormat::read()
             /// overwritten between the footer read and this count on the object-storage
             /// path, which - unlike the local `StorageFile` path - has no file-version
             /// guard). Fail close rather than silently dropping a row group and returning
-            /// an undercount. The out-of-range check below catches a shrunk file; the
-            /// total-count check here also catches a file that grew (every old id still in
-            /// range, but new row groups assigned to no bucket).
-            checkFileMatchesBucketAssignment(*buckets_to_read, file_metadata);
+            /// an undercount (`validateBucketAssignment` above). The out-of-range check
+            /// below catches a shrunk file; the total-count check also catches a file that
+            /// grew (every old id still in range, but new row groups assigned to no bucket).
             for (size_t rg : buckets_to_read->row_group_ids)
             {
                 if (rg >= file_metadata.row_groups.size())
@@ -244,6 +287,13 @@ std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat:
             matched.push_back(row_group.row_group_idx);
     }
     return std::make_pair(std::move(matched), reader->reader.file_metadata.row_groups.size());
+}
+
+UInt64 ParquetV3BlockInputFormat::getFileMetadataDigest() const
+{
+    if (!reader)
+        return 0;
+    return computeParquetFooterDigest(reader->reader.file_metadata);
 }
 
 void ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
@@ -363,19 +413,23 @@ ParquetFileBucketInfo::ParquetFileBucketInfo(const std::vector<size_t> & row_gro
 }
 
 std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups(
-    const std::vector<size_t> & matching_row_groups, size_t caller_file_num_row_groups) const
+    const std::vector<size_t> & matching_row_groups, size_t caller_file_num_row_groups,
+    UInt64 file_metadata_digest) const
 {
     /// A caller that knows the file's total row-group count (e.g. the object-storage
     /// query-condition-cache read path, where it equals the number of cached marks) passes it here so
     /// the resulting bucket carries the same fail-close `checkFileMatchesBucketAssignment` guard as
-    /// splitter- and cluster-derived buckets. 0 means "unknown"; keep whatever this prototype carries.
+    /// splitter- and cluster-derived buckets. Likewise for the digest of the footer the cached marks
+    /// were computed from, stored with the query-condition-cache entry. 0 means "unknown"; keep
+    /// whatever this prototype carries.
     const size_t result_file_num_row_groups = caller_file_num_row_groups != 0 ? caller_file_num_row_groups : file_num_row_groups;
+    const UInt64 result_footer_digest = file_metadata_digest != 0 ? file_metadata_digest : footer_digest;
     if (matching_row_groups.empty())
         return nullptr;
     if (row_group_ids.empty())
     {
         auto result = std::make_shared<ParquetFileBucketInfo>(matching_row_groups, result_file_num_row_groups);
-        result->footer_digest = footer_digest;
+        result->footer_digest = result_footer_digest;
         /// The row groups left out here were dropped by the query condition cache, i.e. pruned - no
         /// other reader picks them up. See `FileBucketInfo::omitted_row_groups_are_pruned`.
         result->omitted_row_groups_are_pruned = true;
@@ -394,7 +448,7 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
     /// filter to a fresh prototype (they are gated on there being no split), so this path only
     /// affects a hypothetical cache-filtered split.
     auto result = std::make_shared<ParquetFileBucketInfo>(std::move(filtered), result_file_num_row_groups);
-    result->footer_digest = footer_digest;
+    result->footer_digest = result_footer_digest;
     return result;
 }
 

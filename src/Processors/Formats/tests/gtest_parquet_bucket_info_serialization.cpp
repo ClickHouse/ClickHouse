@@ -198,7 +198,7 @@ TEST(ParquetFileBucketInfoSerialization, FilterByMatchingRowGroupsKeepsFooterDig
     info.footer_digest = 0xdeadbeef;
 
     auto filtered = std::dynamic_pointer_cast<ParquetFileBucketInfo>(
-        info.filterByMatchingRowGroups({2, 5}, /*file_num_row_groups=*/7));
+        info.filterByMatchingRowGroups({2, 5}, /*file_num_row_groups=*/7, /*file_metadata_digest=*/0));
     ASSERT_NE(filtered, nullptr);
     EXPECT_EQ(filtered->row_group_ids, (std::vector<size_t>{2, 5}));
     EXPECT_EQ(filtered->footer_digest, 0xdeadbeefu);
@@ -207,7 +207,7 @@ TEST(ParquetFileBucketInfoSerialization, FilterByMatchingRowGroupsKeepsFooterDig
     ParquetFileBucketInfo prototype;
     prototype.footer_digest = 0xdeadbeef;
     auto from_prototype = std::dynamic_pointer_cast<ParquetFileBucketInfo>(
-        prototype.filterByMatchingRowGroups({1, 3}, /*file_num_row_groups=*/4));
+        prototype.filterByMatchingRowGroups({1, 3}, /*file_num_row_groups=*/4, /*file_metadata_digest=*/0));
     ASSERT_NE(from_prototype, nullptr);
     EXPECT_EQ(from_prototype->footer_digest, 0xdeadbeefu);
 }
@@ -218,7 +218,7 @@ TEST(ParquetFileBucketInfoSerialization, FilterByMatchingRowGroupsKeepsFooterDig
 TEST(ParquetFileBucketInfoSerialization, CacheFilteredPrototypeMarksOmittedAsPruned)
 {
     ParquetFileBucketInfo prototype;
-    auto from_prototype = prototype.filterByMatchingRowGroups({0, 2}, /*file_num_row_groups=*/4);
+    auto from_prototype = prototype.filterByMatchingRowGroups({0, 2}, /*file_num_row_groups=*/4, /*file_metadata_digest=*/0);
     ASSERT_NE(from_prototype, nullptr);
     EXPECT_TRUE(from_prototype->omitted_row_groups_are_pruned);
 

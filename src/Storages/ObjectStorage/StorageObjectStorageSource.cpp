@@ -802,6 +802,9 @@ Chunk StorageObjectStorageSource::generate()
                         if (!unmatched_ranges.empty() && query_condition_cache_key)
                         {
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+                            /// Store the digest of the footer the marks were computed from alongside
+                            /// them, so the cache-read path can tie a pruning restriction to the
+                            /// exact file generation (see `ParquetFileBucketInfo::footer_digest`).
                             query_condition_cache->write(
                                 storage_id.uuid,
                                 *query_condition_cache_key,
@@ -809,8 +812,8 @@ Chunk StorageObjectStorageSource::generate()
                                 format_filter_info->filter_actions_dag->dumpNames(),
                                 unmatched_ranges,
                                 total_groups,
-                                false
-                            );
+                                /*has_final_mark=*/false,
+                                input_format->getFileMetadataDigest());
                         }
                     }
                 }
@@ -949,9 +952,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
             std::optional<QueryConditionCache::MatchingMarks> matching_marks;
+            UInt64 cached_file_metadata_digest = 0;
             if (query_condition_cache_key)
                 matching_marks = query_condition_cache->read(
-                    storage_id.uuid, *query_condition_cache_key, *format_filter_info->condition_hash);
+                    storage_id.uuid, *query_condition_cache_key, *format_filter_info->condition_hash,
+                    /*increment_profile_events=*/true, &cached_file_metadata_digest);
             if (matching_marks.has_value())
             {
                 const auto & marks = *matching_marks;
@@ -976,11 +981,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     object_info->getFileFormat().value_or(configuration->format));
                 if (file_bucket_info)
                 {
-                    /// Pass the total row-group count (equal to the number of cached marks) so the
-                    /// cache-derived bucket fails close via `checkFileMatchesBucketAssignment` if the
-                    /// object is overwritten with a different number of row groups, matching the
-                    /// splitter and cluster-task read paths.
-                    auto filtered = file_bucket_info->filterByMatchingRowGroups(matching_row_groups, total_row_groups);
+                    /// Pass the total row-group count (equal to the number of cached marks) and the
+                    /// digest of the footer the marks were computed from (stored with the cache
+                    /// entry), so the cache-derived bucket fails close if the object is overwritten
+                    /// with a different number of row groups or a footer-visible rewrite, matching
+                    /// the splitter and cluster-task read paths. The pinned read (the gate above)
+                    /// already ties the opened bytes to the listed etag; the digest is an additional
+                    /// exact guard and 0 (an entry without one) keeps today's behaviour.
+                    auto filtered = file_bucket_info->filterByMatchingRowGroups(
+                        matching_row_groups, total_row_groups, cached_file_metadata_digest);
                     if (!filtered)
                         continue;
                     object_info->file_bucket_info = std::move(filtered);
