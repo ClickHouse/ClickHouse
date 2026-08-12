@@ -14,13 +14,16 @@ static size_t trySplitJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
     if (!join_step || node->children.size() != 2 || typeid_cast<JoinStepLogicalLookup *>(node->children.back()->step.get()))
         return 0;
 
+    const auto & lhs_header = node->children.front()->step->getOutputHeader();
+    const auto & rhs_header = node->children.back()->step->getOutputHeader();
+
     size_t num_new_nodes = 0;
     for (auto [idx, side]: {std::make_pair(0, JoinTableSide::Left), std::make_pair(1, JoinTableSide::Right)})
     {
         auto & child_node = *node->children.at(idx);
-        const auto & header = child_node.step->getOutputHeader();
-        auto fitler_dag = join_step->getFilterActions(side, header);
-        if (!fitler_dag)
+        const auto & header = side == JoinTableSide::Left ? lhs_header : rhs_header;
+        auto filter_dag = join_step->getFilterActions(side, lhs_header, rhs_header);
+        if (!filter_dag)
             continue;
         const auto & filter_column_name = fitler_dag->dag.getOutputs()[fitler_dag->filter_pos]->result_name;
         QueryPlanStepPtr step = std::make_unique<FilterStep>(header, std::move(fitler_dag->dag), filter_column_name, fitler_dag->remove_filter);

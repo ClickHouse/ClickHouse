@@ -1533,19 +1533,152 @@ void JoinStepLogical::buildPhysicalJoin(
     node = std::move(new_node);
 }
 
-std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterActions(JoinTableSide side, const SharedHeader & stream_header)
+using NameToColumnMap = std::unordered_map<std::string_view, ColumnWithTypeAndName>;
+
+static const ColumnConst * findInlinableConstant(const ActionsDAG::Node * node, const NameToColumnMap & constants)
+{
+    if (node->type != ActionsDAG::ActionType::INPUT)
+        return nullptr;
+
+    auto it = constants.find(node->result_name);
+    if (it == constants.end() || !it->second.type->equals(*node->result_type))
+        return nullptr;
+
+    return typeid_cast<const ColumnConst *>(it->second.column.get());
+}
+
+static void inlineConstantInputs(ActionsDAG & dag, const NameToColumnMap & constants)
+{
+    std::unordered_set<const ActionsDAG::Node *> bound_inputs(dag.getInputs().begin(), dag.getInputs().end());
+
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::INPUT || bound_inputs.contains(&node))
+            continue;
+
+        const auto * constant = findInlinableConstant(&node, constants);
+        if (!constant)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Cannot evaluate condition, column {} is neither available in the stream nor a known constant",
+                node.result_name);
+
+        ActionsDAG::Node const_node;
+        const_node.type = ActionsDAG::ActionType::COLUMN;
+        const_node.result_name = node.result_name;
+        const_node.result_type = node.result_type;
+        const_node.column = ColumnConst::create(constant->getDataColumnPtr(), 0);
+
+        const_cast<ActionsDAG::Node &>(node) = std::move(const_node);
+    }
+}
+
+static bool areOppositeJoinSides(const JoinActionRef & lhs, const JoinActionRef & rhs)
+{
+    return (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
+}
+
+static bool canBeEvaluatedOnSide(
+    const JoinActionRef & condition, JoinTableSide side, const NameToColumnMap & constants)
+{
+    if (side == JoinTableSide::Left && (condition.fromLeft() || condition.fromNone()))
+        return true;
+    if (side == JoinTableSide::Right && condition.fromRight())
+        return true;
+
+    if (constants.empty())
+        return false;
+
+    /// Skip evalutation of equiality conditions, since it's used for join key extraction
+    auto [op, lhs, rhs] = condition.asBinaryPredicate();
+    bool is_equality = op == JoinConditionOperator::Equals || op == JoinConditionOperator::NullSafeEquals;
+    if (is_equality && areOppositeJoinSides(lhs, rhs))
+        return false;
+
+    bool reads_own_column = false;
+    std::stack<JoinActionRef> stack;
+    stack.push(condition);
+
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    while (!stack.empty())
+    {
+        auto action = stack.top();
+        stack.pop();
+
+        const auto * raw_node = action.getNode();
+        if (!visited.insert(raw_node).second)
+            continue;
+
+        if (raw_node->type == ActionsDAG::ActionType::INPUT)
+        {
+            if (side == JoinTableSide::Left ? action.fromLeft() : action.fromRight())
+                reads_own_column = true;
+            else if (!findInlinableConstant(raw_node, constants))
+                return false;
+        }
+        else if (raw_node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            for (const auto & argument : action.getArguments())
+                stack.push(argument);
+        }
+        else if (raw_node->type == ActionsDAG::ActionType::FUNCTION
+            && raw_node->function_base
+            && raw_node->function_base->isDeterministic())
+        {
+            for (const auto & argument : action.getArguments())
+                stack.push(argument);
+        }
+        else if (raw_node->type == ActionsDAG::ActionType::COLUMN)
+        {
+            /// Column represent a constant value, so it can be evaluated on any side
+            continue;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    return reads_own_column;
+}
+
+std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterActions(
+    JoinTableSide side, const SharedHeader & left_header, const SharedHeader & right_header)
 {
     if (!canPushDownFromOn(join_operator, side))
         return {};
 
-    /// Check if condition can be extracted completely
-    const bool allow_join_on_const = TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH);
+    const auto & stream_header = side == JoinTableSide::Left ? left_header : right_header;
+    const auto & opposite_header = side == JoinTableSide::Right ? left_header : right_header;
 
-    auto & join_expression = join_operator.expression;
-    if (auto filter_condition = concatConditions(join_expression, side, /*can_extract_everything=*/allow_join_on_const))
-        return ActionsDAG::createActionsForConjunction({filter_condition.getNode()}, stream_header->getColumnsWithTypeAndName());
+    NameToColumnMap header_constants;
+    {
+        for (const auto & column : opposite_header->getColumnsWithTypeAndName())
+            if (column.column && isColumnConst(*column.column))
+                header_constants.emplace(column.name, column);
+    }
 
-    return {};
+    ActionsDAG::NodeRawConstPtrs extracted;
+    std::vector<JoinActionRef> kept;
+    kept.reserve(join_operator.expression.size());
+    for (const auto & condition : join_operator.expression)
+    {
+        if (canBeEvaluatedOnSide(condition, side, header_constants))
+            extracted.push_back(toBoolIfNeeded(condition).getNode());
+        else
+            kept.push_back(condition);
+    }
+
+    if (extracted.empty())
+        return {};
+
+    auto filter_actions = ActionsDAG::createActionsForConjunction(extracted, stream_header->getColumnsWithTypeAndName());
+    if (!filter_actions)
+        return {};
+
+    inlineConstantInputs(filter_actions->dag, header_constants);
+
+    join_operator.expression = std::move(kept);
+    return filter_actions;
 }
 
 static void remapNodes(ActionsDAG::NodeRawConstPtrs & keys, const ActionsDAG::NodeMapping & node_map)
