@@ -31,7 +31,7 @@ using ProjectionName = String;
 using ProjectionNames = std::vector<ProjectionName>;
 
 struct Settings;
-enum class AggregateFunctionStateVariant;
+enum class AggregateFunctionStateVariant : UInt8;
 
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h first.
   * And additional documentation for each method, where special cases are described in detail.
