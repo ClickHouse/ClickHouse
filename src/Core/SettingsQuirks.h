@@ -19,9 +19,10 @@ inline constexpr UInt64 MAX_SANE_READ_BUFFER_SIZE = 256 * 1024 * 1024; /// 256 M
 /// Update some settings defaults to avoid some known issues.
 void applySettingsQuirks(Settings & settings, LoggerPtr log = nullptr);
 
-/// When make_distributed_plan is enabled, adjust the settings that control features distributed
-/// query plans do not support yet. Applied whenever settings changes are applied to a context, so
-/// that every context driving analysis, planning or task execution sees the adjusted values.
+/// Enable make_distributed_plan when a non-zero distributed_plan_workers_num implies it, then, when
+/// it is enabled, adjust the settings that control features distributed query plans do not support
+/// yet. Applied whenever settings changes are applied to a context, so that every context driving
+/// analysis, planning or task execution sees the adjusted values.
 void adjustSettingsForMakeDistributedPlan(Settings & settings);
 
 /// Verify that some settings have sane values. Alters the value to a reasonable one if not

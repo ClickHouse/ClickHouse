@@ -1,0 +1,14 @@
+off while the workers num is zero
+false
+implied by a per-query workers num
+true
+the implied plan still adjusts the settings it does not support
+false
+implied by a session workers num
+true
+the query distributes with make_distributed_plan left alone
+distributes
+an explicit value wins over the implication
+false
+and keeps winning when the workers num changes again
+false

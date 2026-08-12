@@ -48,6 +48,7 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool make_distributed_plan;
+    extern const SettingsUInt64 distributed_plan_workers_num;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
@@ -100,6 +101,11 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
 /// let the worker re-run the rewrite over its pinned part list instead of disabling it.
 void adjustSettingsForMakeDistributedPlan(Settings & settings)
 {
+    /// Stateless Workers only run the stages of a distributed plan, so asking for Workers implies
+    /// asking for the plan. An explicit value still wins, so a fragment can turn the plan back off.
+    if (settings[Setting::distributed_plan_workers_num] != 0 && !settings.isChanged("make_distributed_plan"))
+        settings[Setting::make_distributed_plan] = true;
+
     if (!settings[Setting::make_distributed_plan])
         return;
 

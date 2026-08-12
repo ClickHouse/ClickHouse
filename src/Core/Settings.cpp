@@ -8605,6 +8605,8 @@ Method to compress `.metadata.json` file.
     DECLARE(Bool, make_distributed_plan, false, R"(
 Make distributed query plan.
 
+It is enabled automatically when `distributed_plan_workers_num` is not zero, unless it is set explicitly.
+
 Enabling it automatically adjusts settings that control features not supported by distributed query plans yet:
 - `enable_parallel_replicas = 0` and `automatic_parallel_replicas_mode = 0` — the distributed plan does its own work distribution;
 - `correlated_subqueries_use_in_memory_buffer = 0`;
@@ -8625,7 +8627,9 @@ Default number of tasks for parallel reading in distributed query. Tasks are spr
 Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
 )", 0) \
     DECLARE(UInt64, distributed_plan_workers_num, 0, R"(
-How many stateless workers will be used to execute this query. Zero disables stateless-worker leasing for distributed plans.
+How many Stateless Workers will be used to execute this query. Zero disables Stateless Worker leasing for distributed plans.
+
+A non-zero value enables `make_distributed_plan` unless that setting is set explicitly.
 )", EXPERIMENTAL) \
     DECLARE(String, distributed_plan_force_exchange_kind, "", R"(
 Force specified kind of Exchange operators between distributed query stages.
