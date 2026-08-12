@@ -33,7 +33,21 @@ Allow long-running DDL queries (CREATE AS SELECT and POPULATE) in Replicated dat
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Allow to create only Replicated tables in database with engine Replicated
+Allow creating a table in a database with the `Replicated` engine when acknowledged user data is replicated,
+is not stored in local storage, or cannot be written.
+
+Allowed tables:
+
+- Tables whose storage replicates data, such as `ReplicatedMergeTree`.
+- Tables with no local on-disk data, such as `Memory`, `Null`, `Merge`, `Dictionary`, and `S3`.
+- Read-only `Remote` and `RemoteSecure` tables whose target is a table function, such as
+  `Remote('127.0.0.1', numbers(10))`.
+
+Rejected tables:
+
+- Non-replicated engines with local data, such as `MergeTree`, `Log`, and `Set`.
+- `Distributed` tables.
+- `Remote` and `RemoteSecure` tables with an ordinary remote table target.
 
 Cloud default value: `1`.
 

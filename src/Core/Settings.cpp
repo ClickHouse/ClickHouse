@@ -6250,14 +6250,21 @@ Possible values:
 Execute DETACH TABLE as DETACH TABLE PERMANENTLY if database engine is Replicated
 )", 0) \
     DECLARE(Bool, database_replicated_allow_only_replicated_engine, false, R"(
-Allow creating a table in a database with the `Replicated` engine only if the table does not keep
-unreplicated data in local storage.
+Allow creating a table in a database with the `Replicated` engine when acknowledged user data is replicated,
+is not stored in local storage, or cannot be written.
 
-Tables with a replicated engine (such as `ReplicatedMergeTree`) and tables that do not write data to local
-storage (such as `Memory`, `Null`, `Merge`, and `Dictionary`) are allowed. Engines that keep unreplicated data
-in local storage, such as `MergeTree`, `Log`, `Set`, `Distributed`, and `Remote` or `RemoteSecure` with an
-ordinary table target, are rejected, because their data would exist on a single replica only, while the table
-metadata is replicated to all of them.
+Allowed tables:
+
+- Tables whose storage replicates data, such as `ReplicatedMergeTree`.
+- Tables with no local on-disk data, such as `Memory`, `Null`, `Merge`, `Dictionary`, and `S3`.
+- Read-only `Remote` and `RemoteSecure` tables whose target is a table function, such as
+  `Remote('127.0.0.1', numbers(10))`.
+
+Rejected tables:
+
+- Non-replicated engines with local data, such as `MergeTree`, `Log`, and `Set`.
+- `Distributed` tables.
+- `Remote` and `RemoteSecure` tables with an ordinary remote table target.
 
 Cloud default value: `1`.
 )", 0) \
