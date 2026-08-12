@@ -1782,11 +1782,26 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     /// Fuzz CREATE DICTIONARY: swap layout type and fuzz lifetime
     if (create.is_dictionary && create.dictionary)
     {
-        /// Swap layout among parameter-free layout types
+        /// Swap layout among parameter-free layout types. `direct` is the odd one out: it rejects a
+        /// `LIFETIME` clause as redundant, while every other layout requires one, so the clause has to
+        /// move with the layout or the swap is rejected whichever way it goes.
         if (create.dictionary->layout && fuzz_rand() % 5 == 0)
         {
             static const Strings simple_layouts = {"flat", "hashed", "sparse_hashed", "direct"};
-            create.dictionary->layout->layout_type = simple_layouts[fuzz_rand() % simple_layouts.size()];
+            auto & layout_type = create.dictionary->layout->layout_type;
+            layout_type = simple_layouts[fuzz_rand() % simple_layouts.size()];
+
+            if (layout_type == "direct")
+            {
+                create.dictionary->reset(create.dictionary->lifetime);
+            }
+            else if (!create.dictionary->lifetime)
+            {
+                auto lifetime = make_intrusive<ASTDictionaryLifetime>();
+                lifetime->max_sec = static_cast<UInt64>(fuzz_rand() % 3600) + 1;
+                lifetime->min_sec = fuzz_rand() % (lifetime->max_sec + 1);
+                create.dictionary->set(create.dictionary->lifetime, lifetime);
+            }
         }
 
         /// Fuzz layout parameters (e.g. size_in_cells for cache, max_stored_keys for ssd_cache).
