@@ -7,8 +7,6 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 
-#include <fmt/ranges.h>
-
 
 namespace
 {
@@ -47,20 +45,9 @@ namespace Setting
 {
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
-    extern const SettingsBool make_distributed_plan;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsUInt64 automatic_parallel_replicas_mode;
-    extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
-    extern const SettingsBool use_skip_indexes_on_data_read;
-    extern const SettingsBool compile_expressions;
-    extern const SettingsBool query_plan_direct_read_from_text_index;
     extern const SettingsNonZeroUInt64 input_format_parquet_max_block_size;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
-    extern const SettingsNonZeroUInt64 max_read_buffer_size;
-    extern const SettingsUInt64 max_read_buffer_size_local_fs;
-    extern const SettingsUInt64 max_read_buffer_size_remote_fs;
-    extern const SettingsUInt64 prefetch_buffer_size;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
     extern const SettingsUInt64 min_external_table_block_size_rows;
@@ -95,54 +82,6 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
     }
 }
 
-/// TODO: This is a temporary workaround (issues #109476, #109329). Remove each override once
-/// distributed plans support the corresponding feature - e.g. for the text index direct read,
-/// let the worker re-run the rewrite over its pinned part list instead of disabling it.
-void adjustSettingsForMakeDistributedPlan(Settings & settings)
-{
-    if (!settings[Setting::make_distributed_plan])
-        return;
-
-    Strings adjusted;
-
-    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0)
-    {
-        settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
-        adjusted.emplace_back("enable_parallel_replicas = 0");
-    }
-    if (settings[Setting::automatic_parallel_replicas_mode] != 0)
-    {
-        settings[Setting::automatic_parallel_replicas_mode] = 0;
-        adjusted.emplace_back("automatic_parallel_replicas_mode = 0");
-    }
-    if (settings[Setting::correlated_subqueries_use_in_memory_buffer])
-    {
-        settings[Setting::correlated_subqueries_use_in_memory_buffer] = false;
-        adjusted.emplace_back("correlated_subqueries_use_in_memory_buffer = 0");
-    }
-    if (settings[Setting::use_skip_indexes_on_data_read])
-    {
-        settings[Setting::use_skip_indexes_on_data_read] = false;
-        adjusted.emplace_back("use_skip_indexes_on_data_read = 0");
-    }
-    if (settings[Setting::compile_expressions])
-    {
-        settings[Setting::compile_expressions] = false;
-        adjusted.emplace_back("compile_expressions = 0");
-    }
-    if (settings[Setting::query_plan_direct_read_from_text_index])
-    {
-        settings[Setting::query_plan_direct_read_from_text_index] = false;
-        adjusted.emplace_back("query_plan_direct_read_from_text_index = 0");
-    }
-
-    if (!adjusted.empty())
-        LOG_DEBUG(
-            getLogger("adjustSettingsForMakeDistributedPlan"),
-            "Adjusted settings not supported by distributed query plans (make_distributed_plan is enabled): {}",
-            fmt::join(adjusted, ", "));
-}
-
 void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
 {
     UInt64 max_threads = current_settings[Setting::max_threads];
@@ -175,22 +114,6 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
     CHECK_MAX_VALUE(input_format_parquet_max_block_size)
 
 #undef CHECK_MAX_VALUE
-
-#define CHECK_READ_BUFFER_SIZE(SETTING_VALUE) \
-    if (UInt64 buffer_size = current_settings[Setting::SETTING_VALUE]; buffer_size > MAX_SANE_READ_BUFFER_SIZE) \
-    { \
-        if (log) \
-            LOG_WARNING( \
-                log, "Sanity check: '{}' value is too high ({}). Reduced to {}", #SETTING_VALUE, buffer_size, MAX_SANE_READ_BUFFER_SIZE); \
-        current_settings[Setting::SETTING_VALUE] = MAX_SANE_READ_BUFFER_SIZE; \
-    }
-
-    CHECK_READ_BUFFER_SIZE(max_read_buffer_size)
-    CHECK_READ_BUFFER_SIZE(max_read_buffer_size_local_fs)
-    CHECK_READ_BUFFER_SIZE(max_read_buffer_size_remote_fs)
-    CHECK_READ_BUFFER_SIZE(prefetch_buffer_size)
-
-#undef CHECK_READ_BUFFER_SIZE
 
 
     if (auto max_block_size = current_settings[Setting::max_block_size]; max_block_size == 0)

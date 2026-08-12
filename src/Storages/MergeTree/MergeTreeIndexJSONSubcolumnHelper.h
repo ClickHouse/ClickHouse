@@ -19,9 +19,8 @@ struct JSONSubcolumnIndexInfo
 };
 
 /// Try to match a column name from the filter DAG to a JSON index column in the header.
-/// Scans the index columns, not the dot positions of `column_name`, so cost is independent of the
-/// name's length. JSON columns whose own names contain dots are handled (e.g., `my.json` JSON or
-/// `t Tuple(json JSON)` with index on `JSONAllPaths(t.json)`); the shortest matching one wins.
+/// Iterates all dot positions in `column_name` to handle JSON columns whose names contain dots
+/// (e.g., `my.json` JSON or `t Tuple(json JSON)` with index on `JSONAllPaths(t.json)`).
 ///
 /// The `json_function_name` parameter specifies which index function to look for (e.g. "JSONAllPaths",
 /// "JSONAllValues").

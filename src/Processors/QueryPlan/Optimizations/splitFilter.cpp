@@ -25,8 +25,8 @@ static size_t trySplitJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
         auto filter_dag = join_step->getFilterActions(side, lhs_header, rhs_header);
         if (!filter_dag)
             continue;
-        const auto & filter_column_name = filter_dag->dag.getOutputs()[filter_dag->filter_pos]->result_name;
-        QueryPlanStepPtr step = std::make_unique<FilterStep>(header, std::move(filter_dag->dag), filter_column_name, filter_dag->remove_filter);
+        const auto & filter_column_name = fitler_dag->dag.getOutputs()[fitler_dag->filter_pos]->result_name;
+        QueryPlanStepPtr step = std::make_unique<FilterStep>(header, std::move(fitler_dag->dag), filter_column_name, fitler_dag->remove_filter);
         step->setStepDescription("Join filter");
 
         auto * new_node = &nodes.emplace_back(std::move(child_node));
@@ -53,7 +53,19 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
     if (expr.hasStatefulFunctions())
         return 0;
 
-    const auto * filter_dag_node = expr.tryFindInOutputs(filter_column_name);
+    bool filter_name_clashs_with_input = false;
+    if (filter_step->removesFilterColumn())
+    {
+        for (const auto * input : expr.getInputs())
+        {
+            if (input->result_name == filter_column_name)
+            {
+                filter_name_clashs_with_input = true;
+                break;
+            }
+        }
+    }
+
     auto split = expr.splitActionsForFilter(filter_column_name);
 
     if (split.second.trivial())
@@ -69,8 +81,20 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
     node->children.swap(filter_node.children);
     node->children.push_back(&filter_node);
 
-    /// The filter node may have been renamed by the split to avoid clashing with an input of the same name.
-    std::string split_filter_name = split.split_nodes_mapping.at(filter_dag_node)->result_name;
+    std::string split_filter_name = filter_column_name;
+    if (filter_name_clashs_with_input)
+    {
+        split_filter_name = "__split_filter";
+
+        for (auto & filter_output : split.first.getOutputs())
+        {
+            if (filter_output->result_name == filter_column_name)
+            {
+                filter_output = &split.first.addAlias(*filter_output, split_filter_name);
+                break;
+            }
+        }
+    }
 
     filter_node.step = std::make_unique<FilterStep>(
             filter_node.children.at(0)->step->getOutputHeader(),

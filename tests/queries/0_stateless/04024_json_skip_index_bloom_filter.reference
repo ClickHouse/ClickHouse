@@ -93,15 +93,6 @@ Tuple(JSON) subcolumn
 Skip
 Parts: 1/2
 Granules: 1/4
-ambiguous JSON column: path present in the shorter column
-Parts: 1/1
-Granules: 1/1
-ambiguous JSON column: path present only in the longer column
-Parts: 0/1
-Granules: 0/1
-result: ambiguous JSON column
-1
-0
 result: equals
 1
 result: typed subcolumn

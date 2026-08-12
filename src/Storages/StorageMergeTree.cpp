@@ -6,7 +6,6 @@
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/MergeSelectorAlgorithm.h>
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
@@ -48,7 +47,6 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSinkPatch.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -63,7 +61,6 @@
 #include <Common/FailPoint.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -87,7 +84,6 @@ namespace FailPoints
     extern const char mt_select_parts_to_mutate_max_part_size[];
     extern const char storage_shared_merge_tree_mutate_pause_before_wait[];
     extern const char storage_merge_tree_background_schedule_merge_fail[];
-    extern const char mt_skip_scheduling_merge_once[];
     extern const char mt_alter_throw_in_start_mutation[];
     extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
@@ -126,14 +122,12 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
     extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_mutations_ms;
-    extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_parts_interval_seconds;
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_temporary_directories_interval_seconds;
     extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
     extern const MergeTreeSettingsSeconds temporary_directories_lifetime;
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool table_readonly;
-    extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
 namespace ErrorCodes
@@ -220,7 +214,7 @@ StorageMergeTree::StorageMergeTree(
 
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
 
-    if (mode < LoadingStrictnessLevel::ATTACH && !getDataPartsForInternalUsage().empty() && !isTableReadonly())
+    if (mode < LoadingStrictnessLevel::ATTACH && !getDataPartsForInternalUsage().empty() && !isStaticStorage())
         throw Exception(ErrorCodes::INCORRECT_DATA,
                         "Data directory for table already containing data parts - probably "
                         "it was unclean DROP table or manual intervention. "
@@ -237,10 +231,9 @@ StorageMergeTree::StorageMergeTree(
 
 void StorageMergeTree::startup()
 {
-    /// Do not schedule any background jobs if the table is read-only.
-    if (isTableReadonly())
+    /// Do not schedule any background jobs if current storage has static data files.
+    if (isStaticStorage())
         return;
-    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::startup");
 
     clearEmptyParts();
 
@@ -455,8 +448,6 @@ void StorageMergeTree::alter(
     ContextPtr local_context,
     AlterLockHolder & table_lock_holder)
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::alter");
-
     /// Allow MODIFY_SETTING/RESET_SETTING through even when the table is readonly,
     /// so that the `table_readonly` flag can be toggled back.
     bool only_setting_changes = std::all_of(commands.begin(), commands.end(), [](const auto & c)
@@ -477,20 +468,20 @@ void StorageMergeTree::alter(
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
 
-    auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context, /*with_alters*/ false, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets]);
+    auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context);
     if (!maybe_mutation_commands.empty())
         delayMutationOrThrowIfNeeded(nullptr, local_context);
 
     Int64 mutation_version = -1;
 
     removeImplicitStatistics(new_metadata.columns);
-    commands.apply(new_metadata, local_context, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets]);
+    commands.apply(new_metadata, local_context);
 
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
-    /// Check that the resulting metadata does not exceed max_query_size before mutating any in-memory state.
-    checkMetadataDoesNotExceedMaxQuerySize(table_id, new_metadata, local_context);
+    if (!query_settings[Setting::allow_suspicious_primary_key])
+        MergeTreeData::verifySortingKey(new_metadata.sorting_key);
 
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())
@@ -504,7 +495,7 @@ void StorageMergeTree::alter(
             setInMemoryMetadata(new_metadata);
         }
 
-        /// Safe because the early max_query_size check already passed.
+        /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
     }
     else if (commands.isCommentAlter())
@@ -514,16 +505,11 @@ void StorageMergeTree::alter(
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             setInMemoryMetadata(new_metadata);
         }
-        /// Safe because the early max_query_size check already passed.
+        /// It is safe to ignore exceptions here as only the comment changed, which is not validated in `alterTable`
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
     }
     else
     {
-        /// Re-verify the key only when the ALTER actually changed it (see #104463).
-        if (!query_settings[Setting::allow_suspicious_primary_key]
-            && MergeTreeData::sortingKeyChanged(old_metadata.sorting_key, new_metadata.sorting_key))
-            MergeTreeData::verifySortingKey(new_metadata.sorting_key);
-
         /// Validate the new CREATE query before taking the lock below. Validation
         /// runs through `QueryAnalyzer`, which acquires `storage_snapshot_cache_mutex`.
         /// Query resolution paths acquire `currently_processing_in_background_mutex`
@@ -552,28 +538,6 @@ void StorageMergeTree::alter(
                 LOG_DEBUG(log, "Cannot change metadata with barrier alter query, will wait for mutation {}", prev_mutation);
                 waitForMutation(prev_mutation, /* from_another_mutation */ true);
                 LOG_DEBUG(log, "Mutation {} finished", prev_mutation);
-            }
-        }
-        else
-        {
-            int64_t mutation_to_wait = 0;
-            {
-                std::lock_guard lock(currently_processing_in_background_mutex);
-                for (const auto & [version, mutation_entry] : current_mutations_by_version | std::views::reverse)
-                {
-                    if (mutation_entry.commands->containBarrierCommand())
-                    {
-                        mutation_to_wait = version;
-                        break;
-                    }
-                }
-            }
-
-            if (mutation_to_wait != 0)
-            {
-                LOG_DEBUG(log, "Cannot change metadata while rename mutation {} is not finished, will wait for it", mutation_to_wait);
-                waitForMutation(mutation_to_wait, /* from_another_mutation */ true);
-                LOG_DEBUG(log, "Mutation {} finished", mutation_to_wait);
             }
         }
 
@@ -967,8 +931,6 @@ void StorageMergeTree::addPreparedMutationEntry(PreparedMutationEntry prepared)
 
 Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context)
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::startMutation");
-
     /// File I/O (`writeFile` + `sync` + `moveFile`) happens in `prepareMutationEntry`
     /// outside the mutex; only the in-memory registration is locked. Holding the
     /// mutex across the file I/O would block merge selection for its full duration.
@@ -1087,8 +1049,6 @@ void StorageMergeTree::waitForMutation(Int64 version, const String & mutation_id
 
 void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::setMutationCSN");
-
     LOG_INFO(log, "Writing CSN {} for mutation {}", csn, mutation_id);
     UInt64 version = MergeTreeMutationEntry::parseFileName(mutation_id);
 
@@ -1145,7 +1105,7 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
         bool res = update_lock->sync_lock.try_lock_for(std::chrono::milliseconds(timeout_ms));
 
         if (!res)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to get lock in {} ms for lightweight update with sync mode", timeout_ms);
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to get lock in {} ms for lightwegiht update with sync mode", timeout_ms);
 
         LOG_TRACE(log, "Got lock for lightweight update in sync mode");
     }
@@ -1424,8 +1384,6 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 
 CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::killMutation");
-
     assertNotReadonly();
 
     LOG_TRACE(log, "Killing mutation {}", mutation_id);
@@ -1492,8 +1450,6 @@ void StorageMergeTree::loadDeduplicationLog()
 
 void StorageMergeTree::loadMutations()
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::loadMutations");
-
     /// Called only from the constructor, before this storage is published to any
     /// database, so no other thread holds a reference and the lock is unnecessary.
     /// Avoiding it also breaks a TSan lock-order edge between `DatabaseAtomic::mutex`
@@ -2047,8 +2003,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     if (shutdown_called)
         return false;
 
-    if (isTableReadonly())
-        return false;
+    chassert(!isStaticStorage());
 
     FailPointInjection::pauseFailPoint(FailPoints::mt_merge_selecting_task_pause_when_scheduled);
 
@@ -2122,18 +2077,6 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
         auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, /* deduplicate */ false, Names{}, cleanup, merge_entry, shared_lock, common_assignee_trigger);
         task->setCurrentTransaction(std::move(transaction_for_merge), std::move(txn));
-
-        /// Test hook: pretend the background pool is full for a manually scheduled merge and drop
-        /// the selected merge without scheduling it. The merge must be retried (its queue entry in
-        /// ManualMergeSelector must not be lost), otherwise SYSTEM SYNC MERGES would hang.
-        if ((*getSettings())[MergeTreeSetting::merge_selector_algorithm] == MergeSelectorAlgorithm::MANUAL)
-        {
-            fiu_do_on(FailPoints::mt_skip_scheduling_merge_once,
-            {
-                return false;
-            });
-        }
-
         bool scheduled = assignee.scheduleMergeMutateTask(task);
         /// The problem that we already booked a slot for TTL merge, but a merge list entry will be created only in a prepare method
         /// in MergePlainMergeTreeTask. So, this slot will never be freed.
@@ -2189,8 +2132,6 @@ UInt64 StorageMergeTree::getNextMutationVersion(UInt64 data_version, std::unique
 
 size_t StorageMergeTree::clearOldMutations(bool truncate)
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::clearOldMutations");
-
     size_t finished_mutations_to_keep = (*getSettings())[MergeTreeSetting::finished_mutations_to_keep];
     if (!truncate && !finished_mutations_to_keep)
         return 0;
@@ -2672,12 +2613,6 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 
             auto parts = getVisibleDataPartsVector(query_context);
 
-            /// Do not remove parts whose creating transaction has not committed yet:
-            /// removing such a part would discard a write that may still commit.
-            /// Only needed when transactions are in use; otherwise every part is already committed.
-            if (transactions_enabled.load(std::memory_order_relaxed))
-                std::erase_if(parts, [](const auto & part) { return !part->version->isVisible(Tx::MaxCommittedCSN, Tx::EmptyTID); });
-
             auto future_parts = initCoverageWithNewEmptyParts(parts);
 
             LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}. With txn {}",
@@ -3097,11 +3032,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         Int64 temp_index = insert_increment.get();
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, getLevelForAdoptedPart(src_data, src_part->info.level));
 
-        IDataPartStorage::ClonePartParams clone_params
-        {
-            .txn = local_context->getCurrentTransaction(),
-            .invalidated_columns_to_write = {BlockNumberColumn::name, BlockOffsetColumn::name},
-        };
+        IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
         if (replace)
         {
             /// Replace can only work on the same disk
@@ -3203,15 +3134,6 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     if (dest_uk_metadata_snapshot->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "MOVE PARTITION TO a destination table with UNIQUE KEY is not supported");
-
-    /// A read-only destination table (the `table_readonly` MergeTree setting, used e.g. for rotated
-    /// system log tables) must not have parts moved into it. The source-side gate in
-    /// `MergeTreeData::alterPartition` only rejects `MOVE PARTITION ... TO TABLE` when the *source*
-    /// is read-only, because the command is dispatched through the source table; when the source is
-    /// writable and only the destination is read-only that gate does not fire, so the destination
-    /// has to be checked here, before any parts are cloned into it.
-    dest_table_storage->assertNotReadonly();
-
     bool are_policies_partition_op_compatible = getStoragePolicy()->isCompatibleForPartitionOps(dest_table_storage->getStoragePolicy());
 
     if (!are_policies_partition_op_compatible)
@@ -3284,7 +3206,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     for (const DataPartPtr & src_part : src_parts)
     {
         if (!dest_table_storage->canReplacePartition(src_part))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Cannot move partition '{}' because part '{}' has inconsistent granularity with table",
                             partition_id, src_part->name);
 
@@ -3296,7 +3218,6 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         {
             .txn = local_context->getCurrentTransaction(),
             .copy_instead_of_hardlink = (*getSettings())[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
-            .invalidated_columns_to_write = {BlockNumberColumn::name, BlockOffsetColumn::name},
         };
 
         auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(
@@ -3326,31 +3247,34 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         auto [new_empty_covering_src_parts, _] = createEmptyDataParts(*this, future_parts, txn);
 
         Transaction dest_transaction(*dest_table_storage, txn.get());
-        Transaction src_transaction(*this, txn.get());
-
+        std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
         {
             auto dest_data_parts_lock = dest_table_storage->lockParts();
-            auto src_data_parts_lock = lockParts();
-
-            std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
 
             for (auto & part : dst_parts)
             {
                 block_holders.push_back(dest_table_storage->fillNewPartName(part, dest_data_parts_lock));
                 dest_table_storage->renameTempPartAndReplaceUnlocked(part, dest_transaction, dest_data_parts_lock, /*rename_in_transaction=*/true);
             }
+        }
+
+        Transaction src_transaction(*this, txn.get());
+        {
+            auto src_data_parts_lock = lockParts();
 
             for (auto & part : new_empty_covering_src_parts)
             {
                 renameTempPartAndReplaceUnlocked(part, src_data_parts_lock, src_transaction, /*rename_in_transaction=*/true);
             }
-
-            dest_transaction.renameParts();
-            dest_transaction.commit(dest_data_parts_lock);
-
-            src_transaction.renameParts();
-            src_transaction.commit(src_data_parts_lock);
         }
+
+        dest_transaction.renameParts();
+        dest_transaction.commit();
+
+        src_transaction.renameParts();
+        src_transaction.commit();
+
+        clearOldPartsFromFilesystem();
 
         /// Note: same elapsed time and profile events for all parts is used
         PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
@@ -3360,8 +3284,6 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed()), ExecutionStatus::fromCurrentException("", true));
         throw;
     }
-
-    clearOldPartsFromFilesystem();
 }
 
 ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
@@ -3424,7 +3346,6 @@ IStorage::DataValidationTasksPtr StorageMergeTree::getCheckTaskList(
 
 std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list)
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::checkDataNext");
     auto * data_validation_tasks = assert_cast<DataValidationTasks *>(check_task_list.get());
     auto local_context = data_validation_tasks->context;
     if (auto part = data_validation_tasks->next())
@@ -3647,14 +3568,11 @@ PreparedSetsCachePtr StorageMergeTree::getPreparedSetsCache(Int64 mutation_id)
     return cache;
 }
 
-bool StorageMergeTree::isTableReadonly() const
-{
-    return isStaticStorage() || (*getSettings())[MergeTreeSetting::table_readonly];
-}
-
 void StorageMergeTree::assertNotReadonly() const
 {
-    if (isTableReadonly())
+    if (isStaticStorage())
+        throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode due to static storage");
+    if ((*getSettings())[MergeTreeSetting::table_readonly])
         throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode");
 }
 

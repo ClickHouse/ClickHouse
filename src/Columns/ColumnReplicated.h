@@ -9,6 +9,7 @@ class Collator;
 namespace DB
 {
 
+
 /** Column for replicated representation.
  *  It stores original column and indexes in this column.
  *  Used to perform lazy column replication.

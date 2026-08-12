@@ -15,12 +15,6 @@ struct DeserializeBinaryBulkStateStringWithoutSizeStream : public ISerialization
     bool need_string_data = false;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override;
-
-    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-    {
-        if (column)
-            callback(column);
-    }
 };
 
 class SerializationString final : public ISerialization
@@ -80,7 +74,6 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
     void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
