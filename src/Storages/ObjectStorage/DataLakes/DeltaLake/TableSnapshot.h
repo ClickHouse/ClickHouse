@@ -121,6 +121,9 @@ private:
 
     void initOrUpdateSnapshot() const TSA_REQUIRES(mutex);
     void initOrUpdateSchemaIfChanged() const TSA_REQUIRES(mutex);
+    /// Row and byte counts come from the snapshot's file statistics and need no converted
+    /// schema, so a table whose column types ClickHouse cannot represent still reports them.
+    void validatePartitionColumnsForStats() const TSA_REQUIRES(mutex);
 
     SnapshotStats getSnapshotStats() const TSA_REQUIRES(mutex);
     SnapshotStats getSnapshotStatsImpl() const TSA_REQUIRES(mutex);

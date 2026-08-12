@@ -71,6 +71,38 @@ $CLICKHOUSE_LOCAL -q "
     SETTINGS engine_file_truncate_on_insert = 1"
 echo '{"version":1,"size":1}' > "$DIR/ckpt/_delta_log/_last_checkpoint"
 
+# "variant" has no partition columns at all, and one column of a type ClickHouse cannot
+# represent yet. Statistics come from the snapshot's file stats, so they stay available.
+mkdir -p "$DIR/variant/_delta_log"
+$CLICKHOUSE_LOCAL -q "
+    INSERT INTO FUNCTION file('$DIR/variant/part-00000-c000.snappy.parquet', Parquet, 'id Int64')
+    SELECT number FROM numbers(7)
+    SETTINGS engine_file_truncate_on_insert = 1"
+python3 - "$DIR/variant" <<'EOF'
+import json, os, sys
+
+table_dir = sys.argv[1]
+data = "part-00000-c000.snappy.parquet"
+fields = [{"name": "id", "type": "long", "nullable": True, "metadata": {}},
+          {"name": "v", "type": "variant", "nullable": True, "metadata": {}}]
+actions = [
+    {"protocol": {"minReaderVersion": 3, "minWriterVersion": 7,
+                  "readerFeatures": ["variantType"], "writerFeatures": ["variantType"]}},
+    {"metaData": {"id": "114462-variant",
+                  "format": {"provider": "parquet", "options": {}},
+                  "schemaString": json.dumps({"type": "struct", "fields": fields}),
+                  "partitionColumns": [],
+                  "configuration": {}, "createdTime": 1600000000000}},
+    {"add": {"path": data, "partitionValues": {},
+             "size": os.path.getsize(os.path.join(table_dir, data)),
+             "modificationTime": 1600000000000, "dataChange": True,
+             "stats": json.dumps({"numRecords": 7})}},
+]
+with open(os.path.join(table_dir, "_delta_log", "00000000000000000000.json"), "w") as log:
+    for action in actions:
+        log.write(json.dumps(action) + "\n")
+EOF
+
 echo '-- control: a declared partition column reads fine on both readers'
 $CLICKHOUSE_LOCAL -q "SELECT id, s, p FROM deltaLakeLocal('$DIR/good') WHERE id > 3"
 $CLICKHOUSE_LOCAL -q "SELECT id, s, p FROM deltaLakeLocal('$DIR/good') WHERE id > 3 SETTINGS allow_delta_kernel_rs = 0"
@@ -91,6 +123,12 @@ $CLICKHOUSE_LOCAL --multiquery "
 CREATE TABLE t2 (\`id\` Int64, \`s\` String) ENGINE = DeltaLakeLocal('$DIR/bad');
 SELECT total_rows IS NULL, total_bytes IS NULL FROM system.tables WHERE name = 't2';
 " 2>&1 | grep -E "^1\s+1$|BAD_ARGUMENTS"
+
+echo '-- delta-kernel reader: an unpartitioned table still publishes statistics'
+$CLICKHOUSE_LOCAL --multiquery "
+CREATE TABLE t3 (\`id\` Int64) ENGINE = DeltaLakeLocal('$DIR/variant');
+SELECT total_rows IS NULL, total_bytes IS NULL FROM system.tables WHERE name = 't3';
+" 2>&1 | grep -E "^0\s+0$|NOT_IMPLEMENTED"
 
 echo '-- legacy reader: json log branch'
 $CLICKHOUSE_LOCAL -q "SELECT * FROM deltaLakeLocal('$DIR/bad') FORMAT Null SETTINGS allow_delta_kernel_rs = 0" 2>&1 | grep -oF "INCORRECT_DATA"

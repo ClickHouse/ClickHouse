@@ -9,6 +9,8 @@ BAD_ARGUMENTS
 BAD_ARGUMENTS
 -- delta-kernel reader: no row or byte statistics are published either
 1	1
+-- delta-kernel reader: an unpartitioned table still publishes statistics
+0	0
 -- legacy reader: json log branch
 INCORRECT_DATA
 -- legacy reader: checkpoint branch
