@@ -1829,6 +1829,10 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
                         transaction_start_time,
                         "Some objects still exist after delete");
 
+                    for (const auto & object : successful_objects)
+                        if (std::ranges::find(failed_to_delete_paths, object.remote_path) == failed_to_delete_paths.end())
+                            files_metadata->releaseExclusiveProcessing(object.remote_path);
+
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Some objects still exist after delete: {}",
