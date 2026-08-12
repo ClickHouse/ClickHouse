@@ -4261,10 +4261,10 @@ Block ClientBase::fetchInternalQueryResult(const String & query, const NameToNam
 
     /// This is a complete query exchange on the shared connection, so it follows the same
     /// resynchronization discipline as the regular queries: recover from a previous failed
-    /// exchange first, arm the flag for the time of the exchange (so that a client failure here
-    /// does not leave the connection silently desynchronized for the next query), and clear it
-    /// when the exchange terminates in a protocol-consistent way - with `EndOfStream` or with a
-    /// server exception.
+    /// exchange first, arm the flag for the time of the exchange (so that a transport or client
+    /// failure here does not leave the connection silently desynchronized for the next query),
+    /// and clear it when the exchange terminates in a protocol-consistent way - with
+    /// `EndOfStream` or with a server exception.
     if (connection_needs_resynchronization)
         resynchronizeConnectionAfterError();
 
