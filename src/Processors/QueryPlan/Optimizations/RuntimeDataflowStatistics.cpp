@@ -98,10 +98,10 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
 }
 
 /// Tries to estimate compressed size of a column by serializing a sample of it.
-static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTypeAndName & column)
+static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTypeAndName & column, const CompressionCodecPtr & codec)
 {
     NullWriteBuffer null_buf;
-    CompressedWriteBuffer compressed_buf(null_buf);
+    CompressedWriteBuffer compressed_buf(null_buf, codec);
     auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(DBMS_TCP_PROTOCOL_VERSION, column);
     // To avoid spending too much time on serialization, we limit the number of rows to serialize.
     const auto limit = std::max<size_t>(std::min(8192ul, column_to_write->size()), column_to_write->size() / 10);
@@ -134,7 +134,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistic
     {
         for (const auto & col : cols)
         {
-            auto [sample, compressed] = estimateCompressedColumnSize(col);
+            auto [sample, compressed] = estimateCompressedColumnSize(col, CompressionCodecFactory::instance().getDefaultCodec());
             sample_bytes += sample;
             compressed_bytes += compressed;
         }
@@ -222,7 +222,8 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     const NameSet & partially_read_columns,
     const NamesAndTypesList & part_columns,
     const ColumnSizeByName & column_sizes,
-    const ColumnSize & part_total_size,
+    const ColumnCodecByName & column_codecs,
+    const CompressionCodecPtr & default_codec,
     size_t read_bytes,
     std::optional<bool> & should_continue_sampling)
 {
@@ -267,20 +268,6 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
             /// serializes and handles such columns fine), so give up on the statistics for this query.
             markUnsupportedCase();
         }
-        else if (part_total_size.data_uncompressed && part_total_size.data_compressed)
-        {
-            /// Compact parts keep no per-column sizes, but the part as a whole has measured totals.
-            /// Use that ratio rather than re-compressing a sample: the sample would be compressed with
-            /// the built-in default codec, which is simply wrong when the data is stored with another
-            /// one (e.g. ZSTD), and the error propagates into `effective_max_reading_threads`.
-            const auto part_ratio = static_cast<double>(part_total_size.data_compressed)
-                / static_cast<double>(part_total_size.data_uncompressed);
-            for (const auto & column : input_columns)
-            {
-                sample_bytes += column.column->byteSize();
-                compressed_bytes += static_cast<size_t>(static_cast<double>(column.column->byteSize()) * part_ratio);
-            }
-        }
         else
         {
             if (!should_continue_sampling.has_value())
@@ -294,7 +281,12 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
                     // Paranoid check in case some, e.g., prewhere filter columns are present among the input columns
                     if (part_columns.contains(column.name))
                     {
-                        const auto [sample, compressed] = estimateCompressedColumnSize(column);
+                        /// The sample has to go through the codec the column is really stored with:
+                        /// compressing it with the default one instead overestimates everything stored
+                        /// with a stronger codec, and the error carries into `effective_max_reading_threads`.
+                        const auto codec_it = column_codecs.find(column.name);
+                        const auto [sample, compressed] = estimateCompressedColumnSize(
+                            column, codec_it == column_codecs.end() ? default_codec : codec_it->second);
                         sample_bytes += sample;
                         compressed_bytes += compressed;
                     }

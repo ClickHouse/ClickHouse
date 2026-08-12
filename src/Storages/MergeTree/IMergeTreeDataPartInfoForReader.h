@@ -1,4 +1,5 @@
 #pragma once
+#include <Compression/ICompressionCodec.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
@@ -95,9 +96,8 @@ public:
     /// callback) reuse the part's cached map instead of copying it on every block.
     virtual ColumnSize getColumnSize(const String & column_name) const = 0;
     virtual std::shared_ptr<const std::unordered_map<String, ColumnSize>> getColumnSizes() const = 0;
-    /// Compressed/uncompressed totals for the whole part. Compact parts keep no per-column sizes, so
-    /// this is the only measured compression ratio available for them.
-    virtual ColumnSize getTotalColumnsSize() const = 0;
+    /// The codec the part was written with, before any per-column `CODEC` override.
+    virtual CompressionCodecPtr getDefaultCompressionCodec() const = 0;
     virtual ColumnSize getSubcolumnSize(const String & subcolumn_name) const = 0;
 
     /// MergeTree settings governing how the part is read.

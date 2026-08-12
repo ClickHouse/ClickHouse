@@ -82,6 +82,26 @@
                  </replica>
              </shard>
         </test_cluster_two_replicas_different_databases_internal_replication>
+        <!-- Three replicas in one shard *and* an interserver secret, so that parallel replicas
+             propagate the initial user's identity and access is re-checked on the replicas. -->
+        <test_cluster_one_shard_three_replicas_secret>
+            <secret>123457</secret>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_one_shard_three_replicas_secret>
         <test_cluster_interserver_secret>
             <secret>123457</secret>
             <shard>

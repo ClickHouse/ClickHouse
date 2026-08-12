@@ -78,7 +78,7 @@ public:
         return data_part->getColumnSizes();
     }
 
-    ColumnSize getTotalColumnsSize() const override { return data_part->getTotalColumnsSize(); }
+    CompressionCodecPtr getDefaultCompressionCodec() const override { return data_part->default_codec; }
 
     ColumnSize getSubcolumnSize(const String & subcolumn_name) const override { return data_part->getSubcolumnSize(subcolumn_name); }
 

@@ -1,3 +1,4 @@
+#include <Compression/CompressionFactory.h>
 #include <IO/Operators.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -98,10 +99,20 @@ MergeTreeReadTask::MergeTreeReadTask(
 {
     if (updater)
     {
-        /// Cannot change for the lifetime of the part, and reading it takes a lock, so resolve it once
-        /// rather than on every block. Zero for parts whose checksums are not loaded.
-        const auto part_total_size = info->data_part_info->getTotalColumnsSize();
-        dataflow_cache_update_cb = [this, part_total_size](const ColumnsWithTypeAndName & columns,
+        /// Resolved once rather than per block, and taken from the table metadata because a part does
+        /// not record the codecs of its columns: `default_codec` is only the part-wide default, and a
+        /// part's `ColumnsDescription` is built from a `NamesAndTypesList`, which carries no codec.
+        const auto default_codec = info->data_part_info->getDefaultCompressionCodec();
+        const auto & metadata_columns = readers.main->getStorageSnapshot()->metadata->getColumns();
+        ColumnCodecByName resolved_codecs;
+        for (const auto & name : info->task_columns.getAllColumnNames())
+        {
+            const auto * description = metadata_columns.tryGet(name);
+            if (description && description->codec)
+                resolved_codecs.emplace(name, CompressionCodecFactory::instance().get(description->codec, description->type.get(), default_codec));
+        }
+
+        dataflow_cache_update_cb = [this, default_codec, column_codecs = std::move(resolved_codecs)](const ColumnsWithTypeAndName & columns,
                                                            const NameSet & partially_read_columns,
                                                            size_t read_bytes,
                                                            std::optional<bool> & should_continue_sampling) -> void
@@ -116,7 +127,8 @@ MergeTreeReadTask::MergeTreeReadTask(
                 partially_read_columns,
                 part_columns,
                 column_sizes ? *column_sizes : no_column_sizes,
-                part_total_size,
+                column_codecs,
+                default_codec,
                 read_bytes,
                 should_continue_sampling);
         };

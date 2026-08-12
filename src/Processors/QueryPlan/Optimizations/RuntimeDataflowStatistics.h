@@ -8,6 +8,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Processors/Chunk.h>
 #include <Processors/ISimpleTransform.h>
+#include <Compression/ICompressionCodec.h>
 #include <Storages/ColumnSize.h>
 #include <Common/CacheBase.h>
 
@@ -61,6 +62,9 @@ private:
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache();
 
+/// Only columns whose `CODEC` overrides the part's default; resolved once per read task.
+using ColumnCodecByName = std::unordered_map<std::string, CompressionCodecPtr>;
+
 class RuntimeDataflowStatisticsCacheUpdater
 {
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
@@ -110,7 +114,8 @@ public:
         const NameSet & partially_read_columns,
         const NamesAndTypesList & part_columns,
         const ColumnSizeByName & column_sizes,
-        const ColumnSize & part_total_size,
+        const ColumnCodecByName & column_codecs,
+        const CompressionCodecPtr & default_codec,
         size_t read_bytes,
         std::optional<bool> & should_continue_sampling);
 
