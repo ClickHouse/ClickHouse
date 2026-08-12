@@ -548,13 +548,11 @@ class ReleaseInfo:
                 return True
 
             def commit_and_push_bump() -> None:
-                # A non-recovery release must produce a bump; only a recovery may find it already there.
-                if not stage_bump():
-                    assert self.is_recovery, (
-                        f"no version bump to stage on {self.release_branch}: a "
-                        f"non-recovery release must advance the version"
-                    )
-                    return
+                # prepare already refused (before the tag push) any create release
+                # that would not advance the version, so a bump must exist here.
+                assert stage_bump(), (
+                    f"BUG: no version bump to stage on {self.release_branch}"
+                )
                 if dry_run:
                     Shell.check(f"{GIT_PREFIX} show HEAD", verbose=True)
                     # Undo the preview commit but restore only the generated files,
