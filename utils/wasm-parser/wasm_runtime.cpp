@@ -17,11 +17,11 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Core/Settings.h>
 
-#include <csetjmp>
+#include <wasm_sjlj.h>
+
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <exception>
 #include <string>
 #include <typeinfo>
@@ -261,6 +261,13 @@ const AccessControl & Context::getAccessControl() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no access control in WebAssembly");
 }
 
+/// `Interpreters/Context.cpp` is not built either, and these two are defined there. There is no
+/// server context in a browser, so they stay null and every `Context::getGlobalContextInstance`
+/// in the parser - the `storage_shared_set_join_use_inner_uuid` lookup in `CreateQueryUUIDs`, the
+/// access-control lookups in `AccessRightsElement` - takes its contextless branch.
+ContextPtr ContextData::global_context_instance;
+ContextPtr ContextData::background_context_instance;
+
 /// No timezone database is linked in (see `getTimeZone` above), so nothing validates.
 void SettingFieldTimezone::validateTimezone(const std::string &) {}
 
@@ -306,37 +313,13 @@ const SettingFieldTimezone & Settings::operator[](SettingsTimezone) const
 /// those only the type name can be reported, and the module stops. The comparison is exact rather
 /// than a `dynamic_cast` - there is no RTTI hierarchy walk available here - so a hypothetical class
 /// derived from `DB::Exception` also lands in the second case, which is the safe direction.
+///
+/// The boundary itself is in `wasm_sjlj.c`, which is not part of the LTO unit; see the comment
+/// there for why the two calls cannot live in this file.
 /// ---------------------------------------------------------------------------------------------
-
-namespace
-{
-
-jmp_buf recovery_point;
-bool recovery_armed = false;
-
-/// Not a `std::string`: filling this in must not allocate, or a throw from the allocation would
-/// re-enter `__cxa_throw`.
-char recovery_message[1024];
-
-}
 
 extern "C"
 {
-
-jmp_buf * chParserRecoveryPoint()
-{
-    return &recovery_point;
-}
-
-void chParserArmRecovery(bool armed)
-{
-    recovery_armed = armed;
-}
-
-const char * chParserRecoveryMessage()
-{
-    return recovery_message;
-}
 
 void * __cxa_allocate_exception(size_t size) noexcept
 {
@@ -359,19 +342,8 @@ void __cxa_free_exception(void *) noexcept
         /// `DB::Exception` derives from `Poco::Exception`, whose `what()` is the message.
         const char * message = static_cast<const DB::Exception *>(thrown)->what();
 
-        if (recovery_armed)
-        {
-            /// Disarm first: this is the only path that can be re-entered.
-            recovery_armed = false;
-
-            size_t length = std::strlen(message);
-            if (length > sizeof(recovery_message) - 1)
-                length = sizeof(recovery_message) - 1;
-            std::memcpy(recovery_message, message, length);
-            recovery_message[length] = 0;
-
-            longjmp(recovery_point, 1);
-        }
+        if (chParserRecoveryArmed())
+            chParserLongjmp(message);
 
         std::fprintf(stderr, "ClickHouse parser: unrecoverable error: %s\n", message);
         std::abort();

@@ -898,7 +898,7 @@ const FormatSettingsExplorer = () => {
               <div key={item.value.name} className="flex min-w-max items-baseline whitespace-nowrap">
                 <span aria-hidden="true" style={{ display: "inline-block", width: "1rem" }} />
                 {branch(branchPrefix(childContinuations, itemIsLast))}
-                <a href={item.value.href} className="no-underline hover:underline">
+                <a href={`/docs${item.value.href}`} className="no-underline hover:underline">
                   {item.value.name}
                 </a>
               </div>
