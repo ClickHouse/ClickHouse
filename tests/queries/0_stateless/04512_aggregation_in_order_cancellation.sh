@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Tags: long, no-fasttest, no-flaky-check
-# no-flaky-check: this asserts cancellation latency (a cancelled query must stop before a
-# wall-clock timeout), so repeated concurrent reruns under sanitizers only race on wall clock.
-# Same as the sibling KILL cancellation tests 03984_kill_query_with_fill and
-# 04028_kill_query_expression_cancelled.
+# no-flaky-check: the flaky check reruns a changed test against the same, already fixed binary, so
+# repeating this one there cannot show the cancellation regression it exists to catch. Every normal
+# job runs it.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -19,8 +18,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # We force ONE long consume() call: all rows in a single part and a single input chunk (large read-block
 # settings, no concurrent-read split) with max_block_size / aggregation_in_order_max_block_bytes large enough
 # that consume() does not return early. A single UInt64 key column keeps the per-key aggregation state tiny
-# (peak query memory well under a GiB), so the parallel flaky check can run several copies at once without
-# memory pressure -- an earlier wide fixture starved under contention and hit the per-run timeout. The single
+# (peak query memory well under a GiB), so several copies can run at once without memory pressure. The single
 # part is built by one squashed INSERT (min_insert_block_size_rows covers all rows) so no OPTIMIZE FINAL merge
 # is needed. We KILL the query once every row is read, so it is inside that single consume() loop with all keys
 # still to aggregate. WITH the fix KILL SYNC returns in a fraction of a second; WITHOUT it it blocks for the
@@ -85,17 +83,28 @@ while [[ $($CLICKHOUSE_CLIENT --query "SELECT read_rows >= 40000000 FROM system.
     sleep 0.1
 done
 
-# KILL SYNC waits until the query is actually cancelled and returns one row per matched query with its final
-# kill_status. WITH the fix this returns in a fraction of a second (the per-interval isCancelled() check returns
-# after one interval, regardless of size); WITHOUT it it blocks for the several seconds the single consume() over
-# 40M keys needs to finish (measured ~4-6s release, ~11s debug, ~28-48s under sanitizers). timeout 3 sits between
-# the two: it always elapses well before the unfixed blocking time and long after the fixed case. We print the
-# kill_status ("finished") only if the KILL completed in time AND actually matched and cancelled our still-running
-# query; a missing fix (KILL times out) or a no-match KILL both fail to print "finished", so the reference will
-# not match.
-kill_status=$(timeout 3 $CLICKHOUSE_CLIENT --query \
+# KILL SYNC returns one row per matched query with its final kill_status. The outer timeout only keeps the test
+# bounded if the KILL never returns at all; the latency assertion is on the KILL's server-side duration below.
+kill_id="04512_agg_in_order_kill_${CLICKHOUSE_DATABASE}_$$"
+kill_status=$(timeout 120 $CLICKHOUSE_CLIENT --query_id "$kill_id" --query \
     "KILL QUERY WHERE query_id = '$query_id' SYNC" 2>/dev/null | cut -f1)
-[[ "$kill_status" == "finished" ]] && echo "cancelled" || echo "not cancelled in time"
+
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
+
+# Bound the KILL's server-side duration rather than the wall clock of the client invocation, which also covers
+# clickhouse-client startup and connect and so grows with load on the runner. A cancellation observed at the
+# next key interval costs the single 100ms poll sleep in InterpreterKillQueryQuery; one that waits for the
+# aggregation loop costs seconds. Take the latest row for this KILL so that a missing one still fails the
+# assertion (empty -> neither branch) rather than passing as an empty aggregate.
+kill_verdict=$($CLICKHOUSE_CLIENT --query "
+    SELECT if(query_duration_ms < 3000, 'quick', 'slow')
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND type = 'QueryFinish' AND query_id = '$kill_id'
+    ORDER BY event_time_microseconds DESC LIMIT 1")
+
+# "finished" proves the KILL matched and cancelled our still-running query, "quick" that it did not wait for
+# the aggregation loop.
+[[ "$kill_status" == "finished" && "$kill_verdict" == "quick" ]] && echo "cancelled" || echo "not cancelled in time"
 
 wait
 
