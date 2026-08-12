@@ -399,6 +399,12 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
         /// Disable buffering when `read_in_order_use_virtual_row_per_block` is enabled, these optimizations are incompatible.
         /// Buffering would need to flush virtual rows, otherwise virtual rows lose their purpose while reading from the stream.
         /// But flushing a virtual row between every block effectively turns buffering into a no-op.
+        ///
+        /// Buffering combined with the initial virtual rows is fine: after `BufferChunksTransform`
+        /// delivers a virtual row it does not read ahead until the merge actually demands data
+        /// from that source, so buffering does not defeat the deferral of the sources behind
+        /// virtual rows (and the prefetch window below keeps its meaning). Once the merge
+        /// releases a source, buffering works for it as usual.
         bool use_virtual_row_per_block = apply_virtual_row_conversions && sort_settings.read_in_order_use_virtual_row_per_block;
         if (use_buffering && sort_settings.read_in_order_use_buffering && !use_virtual_row_per_block)
         {
