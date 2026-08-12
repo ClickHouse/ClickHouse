@@ -71,6 +71,12 @@ void LogFrequencyLimiterImpl::cleanup(time_t too_old_threshold_s)
 std::mutex LogSeriesLimiter::mutex;
 time_t LogSeriesLimiter::last_cleanup = 0;
 
+LogSeriesLimiter::SeriesRecords & LogSeriesLimiter::getSeriesRecords()
+{
+    static SeriesRecords records;
+    return records;
+}
+
 LogSeriesLimiter::LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, time_t interval_s_)
     : logger(std::move(logger_))
 {

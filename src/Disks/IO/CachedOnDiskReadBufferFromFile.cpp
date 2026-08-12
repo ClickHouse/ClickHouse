@@ -1,5 +1,7 @@
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <algorithm>
+#include <chrono>
+#include <optional>
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
@@ -666,7 +668,18 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
                     return create(ReadType::CACHED);
                 }
 
-                download_state = file_segment.wait(offset);
+                download_state = file_segment.wait(
+                    offset, info_.cache_settings.wait_for_concurrent_download_timeout_milliseconds);
+
+                if (download_state == FileSegment::State::DOWNLOADING && !canStartFromCache(offset, file_segment))
+                {
+                    LOG_TEST(
+                        log, "Bypassing cache because waiting for a concurrent download did not succeed within the timeout. "
+                        "File segment info: {}", file_segment.getInfoForLog());
+
+                    return create(ReadType::REMOTE_FS_READ_BYPASS_CACHE);
+                }
+
                 continue;
             }
             case FileSegment::State::DOWNLOADED:
@@ -1507,7 +1520,8 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
     bool skip_cache_on_disk_failure,
     LoggerPtr log)
 {
-    LOG_TEST(log, "Reading file segment: {}", getInfoForLog(&state, info, offset));
+    if (info.cache_settings.verbose_logging)
+        LOG_TEST(log, "Reading file segment: {}", getInfoForLog(&state, info, offset));
 
     const auto & current_read_range = file_segment.range();
     chassert(current_read_range.contains(offset));
@@ -1667,8 +1681,9 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
         {
             size_t remaining_size_to_read = std::min(current_read_range.right, info.read_until_position - 1) - offset + 1;
 
-            LOG_TEST(log, "Remaining size to read: {}, read: {}. Resizing buffer to {}",
-                     remaining_size_to_read, size, state.buf->offset() + std::min(size, remaining_size_to_read));
+            if (info.cache_settings.verbose_logging)
+                LOG_TEST(log, "Remaining size to read: {}, read: {}. Resizing buffer to {}",
+                         remaining_size_to_read, size, state.buf->offset() + std::min(size, remaining_size_to_read));
 
             if (size > remaining_size_to_read)
             {
@@ -1797,9 +1812,9 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             file_segment.getInfoForLog());
     }
 
-    // No necessary because of the SCOPE_EXIT above, but useful for logging below.
-    LOG_TEST(log, "Read {} bytes (buffer size: {}). Read info: {}",
-             size, state.buf->internalBuffer().size(), getInfoForLog(&state, info, offset + size));
+    if (info.cache_settings.verbose_logging)
+        LOG_TEST(log, "Read {} bytes (buffer size: {}). Read info: {}",
+                 size, state.buf->internalBuffer().size(), getInfoForLog(&state, info, offset + size));
 
     return size;
 }
@@ -1970,9 +1985,10 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
             skip_cache_on_disk_failure,
             log);
 
-        LOG_TEST(
-            log, "ReadBigAt() read {} bytes at offset: {}. Total: {}/{}",
-            size, offset, read_bytes + size, n);
+        if (current_info.cache_settings.verbose_logging)
+            LOG_TEST(
+                log, "ReadBigAt() read {} bytes at offset: {}. Total: {}/{}",
+                size, offset, read_bytes + size, n);
 
         offset += size;
         read_bytes += size;

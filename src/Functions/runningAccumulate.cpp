@@ -5,6 +5,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/checkAggregateStateCanBeFinalized.h>
 #include <Interpreters/Context.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
@@ -96,7 +97,7 @@ public:
         return type->getReturnType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         const ColumnAggregateFunction * column_with_states
             = typeid_cast<const ColumnAggregateFunction *>(&*arguments.at(0).column);
@@ -104,6 +105,8 @@ public:
         if (!column_with_states)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
                     arguments.at(0).column->getName(), getName());
+
+        checkAggregateStateCanBeFinalized(*column_with_states, result_type, getName());
 
         ColumnPtr column_with_groups;
 

@@ -31,3 +31,35 @@ SELECT k FROM t_text_defer_final FINAL PREWHERE hasPhrase(text, 'hello');
 SELECT k FROM t_text_defer_final FINAL PREWHERE hasPhrase(text, 'goodbye');
 
 DROP TABLE t_text_defer_final;
+
+SELECT '= a later text-index rewrite reaches the deferred prewhere =';
+
+DROP TABLE IF EXISTS t_text_defer_final_pp;
+
+CREATE TABLE t_text_defer_final_pp
+(
+    k Int32,
+    text String,
+    v UInt64,
+    INDEX idx(text) TYPE text(tokenizer = ngrams(3), preprocessor = lower(text))
+)
+ENGINE = ReplacingMergeTree(v)
+ORDER BY k;
+
+-- k = 1 keeps the matching mixed-case row as the FINAL winner (v = 2 beats v = 1);
+-- k = 2 never matches, so the deduplication stays meaningful
+INSERT INTO t_text_defer_final_pp VALUES (1, 'Nothing Here', 1), (2, 'Goodbye World', 1);
+INSERT INTO t_text_defer_final_pp VALUES (1, 'Hello World', 2);
+
+-- The predicate must also appear in WHERE: a deferred PREWHERE is excluded from index analysis and
+-- `text` is not a sorting-key column, so the WHERE copy is the only thing that registers the text
+-- index and lets a later rewrite fire. Mixed case on disk plus a lower-case needle means only the
+-- preprocessor-rewritten predicate matches, so a stale deferred filter would return nothing.
+-- `use_skip_indexes_if_final` is randomized by the runner and unregisters the index when false.
+SELECT k FROM t_text_defer_final_pp FINAL PREWHERE hasPhrase(text, 'hello world') WHERE hasPhrase(text, 'hello world')
+SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1;
+
+SELECT count() FROM (EXPLAIN actions=1 SELECT k FROM t_text_defer_final_pp FINAL PREWHERE hasPhrase(text, 'hello world') WHERE hasPhrase(text, 'hello world') SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1) WHERE explain LIKE '%Deferred prewhere filter column%';
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT k FROM t_text_defer_final_pp FINAL PREWHERE hasPhrase(text, 'hello world') WHERE hasPhrase(text, 'hello world') SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1) WHERE explain LIKE '%Name: idx%';
+
+DROP TABLE t_text_defer_final_pp;

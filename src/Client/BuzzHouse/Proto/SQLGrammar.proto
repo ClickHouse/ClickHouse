@@ -52,6 +52,7 @@ enum SQLTableFunc {
     TFmergeTreeAnalyzeIndexesUUID = 47;
     TFmergeTreeIndex = 48;
     TFmergeTreeProjection = 49;
+    TFmergeTreeCodecBlockCounts = 88;
     TFmergeTreeTextIndex = 50;
     TFmongodb = 51;
     TFmysql = 52;
@@ -1003,7 +1004,7 @@ message TableFunction {
         RemoteFunc remote = 4;
         MySQLFunc mysql = 5;
         PostgreSQLFunc postgresql = 6;
-        SQLiteFunc sqite = 7;
+        SQLiteFunc sqite = 7; /// For style check
         ObjectStoreFunc object_func = 8;
         MergeFunc merge = 9;
         ClusterFunc cluster = 10;
@@ -1021,9 +1022,10 @@ message TableFunction {
         MergeTreeTextIndexFunc mttxtidx = 22;
         MergeTreeAnalyzeIndexesFunc mtanindex = 23;
         SQLTableFuncCall func = 24;
+        ExprSchemaTable mtcodecblocks = 25;
     }
-    optional SettingValues setting_values = 25;
-    repeated HTTPHeader http_headers = 26;
+    optional SettingValues setting_values = 26;
+    repeated HTTPHeader http_headers = 27;
 }
 
 message SampleClause {
@@ -1448,11 +1450,11 @@ message TypeName {
 }
 
 enum ColumnStat {
-    STAT_MinMax = 1;
-    STAT_TDigest = 2;
-    STAT_Uniq = 3;
-    STAT_CountMin = 4;
-    STAT_Basic = 5;
+    STAT_TDigest = 1;
+    STAT_Uniq = 2;
+    STAT_CountMin = 3;
+    STAT_Basic = 4;
+    STAT_Uniq_V2 = 5;
 }
 
 message ColumnStatistics {
@@ -1632,6 +1634,8 @@ enum TableEngineValues {
     PaimonS3 = 57;
     PaimonAzure = 58;
     PaimonLocal = 59;
+    Remote = 60;
+    RemoteSecure = 61;
 }
 
 enum TableEngineOption {
@@ -1920,6 +1924,7 @@ message OptimizeTable {
     optional bool cleanup = 8;
     optional SettingValues setting_values = 9;
     optional string format = 10;
+    optional bool manifest = 11;
 }
 
 message Exchange {
@@ -2495,6 +2500,20 @@ message SystemCommand {
         ExprSchemaTable pause_view = 106;
         bool pause_views = 107;
         string restart_disk = 108;
+        bool unload_dictionaries = 109;
+        ExprSchemaTable unload_dictionary = 110;
+        /// Engine-agnostic background controls for streaming engines and refreshable views.
+        /// None of them accept `ON CLUSTER`, so don't set `can_set_cluster` when printing.
+        ExprSchemaTable stop_background = 111;
+        ExprSchemaTable start_background = 112;
+        ExprSchemaTable pause_background = 113;
+        ExprSchemaTable cancel_background = 114;
+        ExprSchemaTable refresh_background = 115;
+        bool stop_all_background = 116;
+        bool start_all_background = 117;
+        bool pause_all_background = 118;
+        bool cancel_all_background = 119;
+        bool refresh_all_background = 120;
     }
 }
 
@@ -2716,6 +2735,7 @@ message ExplainOption {
         pretty = 23;
         empirical = 24;
         compact_repeated_processor_chains = 25;
+        processors = 26;
     }
     required ExplainOpt opt = 1;
     required uint32 val = 2;
@@ -2732,6 +2752,7 @@ message ExplainQuery {
         TABLE_OVERRIDE = 7;
         CURRENT_TRANSACTION = 8;
         WHATIF = 9;
+        ANALYZE = 10;
     }
     optional string execute_as = 1;
     optional bool is_explain = 2;
