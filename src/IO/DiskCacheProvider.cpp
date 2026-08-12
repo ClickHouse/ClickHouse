@@ -367,15 +367,19 @@ CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
     }
 
     const bool already_mine = seg.isDownloader();
+    /// `getOrSetDownloader` returns the current downloader id; it equals our `getCallerId()` exactly
+    /// when we win the role - so `captured` folds the "did we win it" check into that one call.
+    bool captured = false;
     if (!already_mine)
-        seg.getOrSetDownloader();
+        captured = seg.getOrSetDownloader() == FileSegment::getCallerId();
+    const bool mine = already_mine || captured;
 
-    /// Arm the release the moment we NEWLY win the role, BEFORE the (memory-tracked, throwable) reads
-    /// and pushes below. Winning the role must always pair with a reset: if anything below throws, the
-    /// FillClaim destructor runs `release` on unwind, so the segment never leaks DOWNLOADING (which
-    /// would abort the foreground holder dtor on `chassert(!is_last_holder)`) and never self-deadlocks
-    /// a later `waitAndRead` on this thread. Capture the segment ptr (a shared ref), not the writer.
-    if (!already_mine && seg.isDownloader())
+    /// Arm the release the moment we NEWLY win the role (`captured`), BEFORE the (memory-tracked,
+    /// throwable) reads and pushes below. Winning the role must always pair with a reset: if anything
+    /// below throws, the FillClaim destructor runs `release` on unwind, so the segment never leaks
+    /// DOWNLOADING (which would abort the foreground holder dtor on `chassert(!is_last_holder)`) and
+    /// never self-deadlocks a later `waitAndRead` on this thread. Capture the segment ptr, not the writer.
+    if (captured)
     {
         c.release = [seg_ptr = segment, logger = log]() noexcept
         {
@@ -400,7 +404,7 @@ CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
     if (avail_hi > lo)
         c.available.push_back(ByteRange{lo, avail_hi - lo});
 
-    if (seg.isDownloader())
+    if (mine)
     {
         const size_t fetch_lo = std::max(lo, cwo_file);
         if (fetch_lo < hi)
