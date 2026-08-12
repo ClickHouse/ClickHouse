@@ -183,11 +183,11 @@ public:
     /// branch `new_view_target` starts are walked over the edges `collectAllDependencies` follows (a
     /// view's own target plus `getDependentViews`), validating each view hop against a stale dependency
     /// the way `observePath` does. Dependent views are taken at every node, including one whose
-    /// `noPushingToViewsOnInserts()` holds and which a direct `INSERT` writes alone, so at such a node the
-    /// walk is a superset: it also covers that storage's background consumer, whose insert does push to
-    /// the views, and it errs towards `Hazardous` rather than past a real one. Capability is tested only on
-    /// concrete sinks - a view is written *through*, never *to* - and `Alias` and proxy hops are resolved
-    /// to the storage they hand the write to, which materializes and starts up a lazily loaded one.
+    /// `noPushingToViewsOnInserts()` holds and whose views only its background consumer's insert builds, so
+    /// there the walk is a superset: it errs towards `Hazardous`, never past a real one.
+    /// Capability is tested only on concrete sinks - a view is written *through*, never *to* - and `Alias`
+    /// and proxy hops are resolved to the storage they hand the write to, which materializes and starts up
+    /// a lazily loaded one.
     /// A `Buffer` or a `Distributed` ends a branch: the write it forwards runs as an `INSERT` of its own,
     /// whose sinks this walk does not model, so a topology mixing a forwarded and a direct branch into one
     /// such storage is outside the answer. `Undecided` is reported instead of `NotHazardous` whenever a
