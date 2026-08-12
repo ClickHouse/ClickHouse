@@ -25,6 +25,16 @@ ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }
 ALTER TABLE time_decay_feature_gate
     ADD COLUMN blocked ExponentialTimeDecayingFloat64(10); -- { serverError ILLEGAL_COLUMN }
 
+-- Type names accepted by scalar functions must not bypass the experimental
+-- setting. These fail while resolving the type, before processing the value.
+SELECT _CAST(tuple(1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
+SELECT accurateCastOrDefault(tuple(1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
+SELECT defaultValueOfTypeName('ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
+SELECT reinterpret(toUInt64(0), 'ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
+SELECT JSONExtract('{"value":1,"time":0,"decay_length":10}', 'ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
+SELECT JSONExtractKeysAndValues('{}', 'ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
+SELECT getTypeSerializationStreams('ExponentialTimeDecayingFloat64(10)'); -- { serverError ILLEGAL_COLUMN }
+
 -- All scalar operations on the experimental value type remain gated.
 SELECT exponentialTimeDecayingValueAt(value, toFloat64(1)) FROM time_decay_feature_gate; -- { serverError UNKNOWN_FUNCTION }
 SELECT exponentialTimeDecayingDecayLength(value) FROM time_decay_feature_gate; -- { serverError UNKNOWN_FUNCTION }

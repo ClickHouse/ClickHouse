@@ -160,7 +160,8 @@ public:
     static FunctionOverloadResolverPtr create(ContextPtr context_, CastType cast_type, bool internal, std::optional<CastDiagnostic> diagnostic)
     {
         if (internal)
-            return std::make_unique<CastOverloadResolverImpl>(context_, cast_type, internal, diagnostic, false /*keep_nullable*/, DataTypeValidationSettings{});
+            return std::make_unique<CastOverloadResolverImpl>(
+                context_, cast_type, internal, diagnostic, false /*keep_nullable*/, DataTypeValidationSettings(context_->getSettingsRef()));
 
         const auto & settings_ref = context_->getSettingsRef();
         return std::make_unique<CastOverloadResolverImpl>(

@@ -41,6 +41,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <IO/WriteBufferFromString.h>
 #include "config.h"
 
@@ -694,6 +695,7 @@ public:
     explicit JSONOverloadResolver(ContextPtr context)
         : allow_simdjson(context->getSettingsRef()[Setting::allow_simdjson])
         , format_settings(getFormatSettings(context))
+        , data_type_validation_settings(context->getSettingsRef())
     {}
 
     bool isVariadic() const override { return true; }
@@ -711,6 +713,7 @@ public:
             has_nothing_argument |= isNothing(arg.type);
 
         DataTypePtr json_return_type = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
+        validateDataType(json_return_type, data_type_validation_settings);
         NullPresence null_presence = getNullPresense(arguments);
         DataTypePtr return_type;
         if (has_nothing_argument)
@@ -733,6 +736,7 @@ public:
 private:
     const bool allow_simdjson;
     FormatSettings format_settings;
+    DataTypeValidationSettings data_type_validation_settings;
 };
 
 struct NameJSONHas { static constexpr auto name{"JSONHas"}; };

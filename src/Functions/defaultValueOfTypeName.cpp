@@ -4,6 +4,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Core/Field.h>
 #include <Columns/ColumnConst.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 
 
 namespace DB
@@ -22,9 +24,14 @@ class FunctionDefaultValueOfTypeName final : public IFunction
 {
 public:
     static constexpr auto name = "defaultValueOfTypeName";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionDefaultValueOfTypeName>();
+        return std::make_shared<FunctionDefaultValueOfTypeName>(context->getSettingsRef());
+    }
+
+    explicit FunctionDefaultValueOfTypeName(const Settings & settings)
+        : data_type_validation_settings(settings)
+    {
     }
 
     String getName() const override
@@ -52,7 +59,9 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be a constant string describing type.",
                 getName());
 
-        return DataTypeFactory::instance().get(col_type_const->getValue<String>());
+        auto result_type = DataTypeFactory::instance().get(col_type_const->getValue<String>());
+        validateDataType(result_type, data_type_validation_settings);
+        return result_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -60,6 +69,9 @@ public:
         const IDataType & type = *result_type;
         return type.createColumnConst(input_rows_count, type.getDefault());
     }
+
+private:
+    DataTypeValidationSettings data_type_validation_settings;
 };
 
 }

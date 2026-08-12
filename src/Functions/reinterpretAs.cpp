@@ -1,6 +1,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 
+#include <Interpreters/Context.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
+
 #include <Core/callOnTypeIndex.h>
 
 #include <Columns/ColumnConst.h>
@@ -44,7 +47,12 @@ class FunctionReinterpret final : public IFunction
 public:
     static constexpr auto name = "reinterpret";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionReinterpret>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionReinterpret>(context->getSettingsRef()); }
+
+    explicit FunctionReinterpret(const Settings & settings)
+        : data_type_validation_settings(settings)
+    {
+    }
 
     String getName() const override { return name; }
 
@@ -71,6 +79,7 @@ public:
                 arguments.back().type->getName());
 
         DataTypePtr to_type = DataTypeFactory::instance().get(type_col->getValue<String>());
+        validateDataType(to_type, data_type_validation_settings);
 
         WhichDataType result_reinterpret_type(to_type);
 
@@ -127,6 +136,9 @@ public:
 
         return to_type;
     }
+
+private:
+    DataTypeValidationSettings data_type_validation_settings;
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {

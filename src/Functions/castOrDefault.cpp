@@ -16,6 +16,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
@@ -46,7 +47,11 @@ public:
         return std::make_shared<FunctionCastOrDefault>(context);
     }
 
-    explicit FunctionCastOrDefault(ContextPtr context_) : keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable]) { }
+    explicit FunctionCastOrDefault(ContextPtr context_)
+        : keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable])
+        , data_type_validation_settings(context_->getSettingsRef())
+    {
+    }
 
     String getName() const override { return name; }
 
@@ -79,6 +84,7 @@ public:
                 arguments[1].type->getName());
 
         DataTypePtr result_type = DataTypeFactory::instance().get(type_column_typed->getValue<String>());
+        validateDataType(result_type, data_type_validation_settings);
 
         if (keep_nullable && arguments.front().type->isNullable())
             result_type = makeNullable(result_type);
@@ -194,8 +200,8 @@ public:
     }
 
 private:
-
     bool keep_nullable;
+    DataTypeValidationSettings data_type_validation_settings;
 };
 
 class FunctionCastOrDefaultTyped final : public IFunction

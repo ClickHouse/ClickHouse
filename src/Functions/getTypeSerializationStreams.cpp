@@ -7,6 +7,8 @@
 #include <Core/Field.h>
 #include <Columns/ColumnString.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 
 namespace DB
 {
@@ -19,9 +21,14 @@ class FunctionGetTypeSerializationStreams final : public IFunction
 {
 public:
     static constexpr auto name = "getTypeSerializationStreams";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionGetTypeSerializationStreams>();
+        return std::make_shared<FunctionGetTypeSerializationStreams>(context->getSettingsRef());
+    }
+
+    explicit FunctionGetTypeSerializationStreams(const Settings & settings)
+        : data_type_validation_settings(settings)
+    {
     }
 
     String getName() const override
@@ -44,6 +51,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto type = getType(arguments[0]);
+        validateDataType(type, data_type_validation_settings);
 
         SerializationPtr serialization = type->getDefaultSerialization();
         auto col_res_strings_column = ColumnString::create();
@@ -63,6 +71,8 @@ public:
     }
 
 private:
+    DataTypeValidationSettings data_type_validation_settings;
+
     static DataTypePtr getType(const ColumnWithTypeAndName & argument)
     {
         const IColumn * arg_column = argument.column.get();
