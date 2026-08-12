@@ -169,6 +169,7 @@ add_headers_and_sources(dbms Common/Scheduler/Workload)
 
 add_headers_and_sources(dbms Core/YTsaurus)
 add_headers_and_sources(dbms Storages/YTsaurus)
+add_headers_and_sources(dbms Storages/BigQuery)
 
 add_headers_and_sources(dbms Core/Streaming)
 add_headers_and_sources(dbms Storages/Streaming)
