@@ -80,6 +80,7 @@ public:
     /// for LEFT/RIGHT join use previously joined row from other table.
     Chunk value;
 
+    bool count_matches = false;
     /// key of the last equal range of each side that found a partner on the other side
     MatchedRanges matched;
 };

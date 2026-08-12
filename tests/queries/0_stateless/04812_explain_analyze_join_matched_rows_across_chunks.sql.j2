@@ -37,7 +37,7 @@ SELECT '{{ kind }}' AS kind, {{ block_size }} AS max_block_size,
         = maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Left: rows%') AS all_left_rows_matched,
     maxIf(extract(explain, 'rows ([0-9]+)'), explain LIKE '%Right: rows%')
         = maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Right: rows%') AS all_right_rows_matched
-FROM (EXPLAIN ANALYZE SELECT count() FROM left_side AS l {{ kind }} JOIN right_side AS r ON l.k = r.k SETTINGS join_algorithm = 'full_sorting_merge', max_block_size = {{ block_size }});
+FROM (EXPLAIN ANALYZE matches=1 SELECT count() FROM left_side AS l {{ kind }} JOIN right_side AS r ON l.k = r.k SETTINGS join_algorithm = 'full_sorting_merge', max_block_size = {{ block_size }});
 {% endfor -%}
 {% endfor -%}
 
