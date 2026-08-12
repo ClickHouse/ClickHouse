@@ -89,7 +89,6 @@ NameToNameVector pruneRetainedNames(ColumnIdMapping & mapping, const ColumnIdAlt
 ColumnIdMappingUpdate::ColumnIdMappingUpdate(MergeTreeData & data_, LoggerPtr log_)
     : data(data_)
     , log(std::move(log_))
-    , published_policy(data_.getStoragePolicy())
     , published_before(data_.getColumnIdMapping())
 {
 }
@@ -98,11 +97,6 @@ ColumnIdMappingUpdate::~ColumnIdMappingUpdate()
 {
     if (state != State::Empty && state != State::Committed)
         restoreFile();
-}
-
-void ColumnIdMappingUpdate::writeToDisk(const ColumnIdMapping & mapping_to_write) const
-{
-    data.getColumnIdMappingStore().store(mapping_to_write, target_policy ? target_policy : data.getStoragePolicy());
 }
 
 void ColumnIdMappingUpdate::stampInto(StorageInMemoryMetadata & metadata_to_publish) const
@@ -123,26 +117,10 @@ bool ColumnIdMappingUpdate::isAlreadyPublished(const ColumnIdMapping & planned, 
     return sameMapping(planned, *published_before);
 }
 
-void ColumnIdMappingUpdate::copyToTargetPolicy()
-{
-    if (!target_policy || !published_before || !published_before->isActive())
-        return;
-
-    writeToDisk(*published_before);
-    state = State::Copied;
-
-    failpointAfterMappingPersist();
-}
-
-void ColumnIdMappingUpdate::persistBeforeSchemaCommit(
-    ColumnIdAlterPlan & plan,
-    StorageInMemoryMetadata & metadata_to_publish,
-    const StoragePolicyPtr & target_policy_)
+void ColumnIdMappingUpdate::persistBeforeSchemaCommit(ColumnIdAlterPlan & plan, StorageInMemoryMetadata & metadata_to_publish)
 {
     if (state != State::Empty)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Column ID mapping update: persistBeforeSchemaCommit called twice");
-
-    target_policy = target_policy_;
 
     /// The planner folds activation into `new_mapping` only when the ALTER also touches columns, so a
     /// settings-only activation builds the identity mapping here: the load path fails closed when the
@@ -152,14 +130,11 @@ void ColumnIdMappingUpdate::persistBeforeSchemaCommit(
         planned = ColumnIdMapping::createIdentity(metadata_to_publish.getColumns().getAllPhysical());
 
     if (!planned || isAlreadyPublished(*planned, plan))
-    {
-        copyToTargetPolicy();
         return;
-    }
 
     failpointBeforeMappingPersist();
 
-    writeToDisk(*planned);
+    data.getColumnIdMappingStore().store(*planned);
     mapping = std::move(planned);
     state = State::Written;
 
@@ -183,7 +158,7 @@ void ColumnIdMappingUpdate::persistAfterSchemaCommit(const ColumnIdAlterPlan & p
         ColumnIdMapping pruned = *mapping;
         auto size_renames = pruneRetainedNames(pruned, plan);
 
-        writeToDisk(pruned);
+        data.getColumnIdMappingStore().store(pruned);
 
         mapping = std::move(pruned);
         column_size_renames = std::move(size_renames);
@@ -203,7 +178,7 @@ void ColumnIdMappingUpdate::restoreFile() noexcept
     try
     {
         if (published_before)
-            data.getColumnIdMappingStore().store(*published_before, published_policy);
+            data.getColumnIdMappingStore().store(*published_before);
         else
             data.getColumnIdMappingStore().remove();
     }

@@ -12,8 +12,9 @@ namespace DB
 
 class MergeTreeData;
 
-/// A table's durable home for its column-ID mapping.  One implementation per engine: a file on the
-/// storage policy for `MergeTree`, Keeper for a future `ReplicatedMergeTree`.
+/// A table's durable home for its column-ID mapping: persistence only, and the sole owner of WHERE
+/// the mapping lives.  One implementation per engine: a file on the storage policy for `MergeTree`,
+/// Keeper for a future `ReplicatedMergeTree`.  What to write is `ColumnIdMappingUpdate`'s business.
 class ColumnIdMappingStore
 {
 public:
@@ -23,8 +24,8 @@ public:
     /// exist.  Returns it rather than publishing it.
     virtual std::optional<ColumnIdMapping> load(bool attach) = 0;
 
-    /// Store @mapping durably.  @target_policy is the policy the table uses once the ALTER commits.
-    virtual void store(const ColumnIdMapping & mapping, const StoragePolicyPtr & target_policy) = 0;
+    /// Store @mapping durably, wherever this table's mapping belongs.
+    virtual void store(const ColumnIdMapping & mapping) = 0;
 
     /// Undo an activation that never committed.  Best-effort by contract.
     virtual void remove() noexcept = 0;
@@ -39,12 +40,12 @@ public:
     DiskColumnIdMappingStore(MergeTreeData & data_, LoggerPtr log_);
 
     std::optional<ColumnIdMapping> load(bool attach) override;
-    void store(const ColumnIdMapping & mapping, const StoragePolicyPtr & target_policy) override;
+    void store(const ColumnIdMapping & mapping) override;
     void remove() noexcept override;
 
 private:
-    /// The one disk that holds `column_ids.json`: the policy's first.
-    DiskPtr getAuthoritativeDisk(const StoragePolicyPtr & policy) const;
+    /// The one disk that holds `column_ids.json`: the storage policy's first.
+    DiskPtr getAuthoritativeDisk() const;
 
     MergeTreeData & data;
     LoggerPtr log;

@@ -164,10 +164,9 @@ void MergeTreeReaderCompact::findPositionForMissedNested(size_t pos)
 
     auto column_to_read_with_subcolumns = getColumnConvertedToSubcolumnOfNested(column_in_storage);
 
-    /// Both rebuilds above drop the column id -- one constructs a fresh pair, the other looks the
-    /// column up in a Nested-collected list, which is keyed by name. `findColumnForOffsets` matches
-    /// in id space, and an id-less pair falls back to its own name there, which is what it must not
-    /// do: a name is exactly what a metadata-only DROP or RENAME leaves stale. Carry the id over.
+    /// Both rebuilds above drop the column id, and an id-less pair falls back to its own name --
+    /// exactly what a metadata-only DROP or RENAME leaves stale, while `findColumnForOffsets` matches
+    /// in id space. Carry the id over.
     column_to_read_with_subcolumns.setColumnId(column.getColumnId());
 
     auto column_for_offsets = findColumnForOffsets(column_to_read_with_subcolumns);

@@ -45,7 +45,7 @@ std::optional<ColumnIdMapping> DiskColumnIdMappingStore::load(bool attach)
 {
     const auto column_ids_path = fs::path(data.getRelativeDataPath()) / MergeTreeData::COLUMN_IDS_FILE_NAME;
 
-    const DiskPtr authoritative_disk = getAuthoritativeDisk(data.getStoragePolicy());
+    const DiskPtr authoritative_disk = getAuthoritativeDisk();
     std::unique_ptr<ReadBufferFromFileBase> mapping_buf;
     if (!authoritative_disk->isBroken())
         mapping_buf = authoritative_disk->readFileIfExists(column_ids_path, getReadSettings());
@@ -71,26 +71,30 @@ std::optional<ColumnIdMapping> DiskColumnIdMappingStore::load(bool attach)
 
 /// One copy, not one per disk like `format_version.txt`: parts are self-describing (`columns.txt`
 /// stores the IDs), so no disk ever reads its own copy of the mapping.
-DiskPtr DiskColumnIdMappingStore::getAuthoritativeDisk(const StoragePolicyPtr & policy) const
+DiskPtr DiskColumnIdMappingStore::getAuthoritativeDisk() const
 {
-    const auto & disks = policy->getDisks();
+    const auto & disks = data.getStoragePolicy()->getDisks();
     if (disks.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Storage policy for table {} has no disks to hold `{}`",
             data.getStorageID().getNameForLogs(), MergeTreeData::COLUMN_IDS_FILE_NAME);
+
+    /// Only ever the first disk, never "wherever a copy turns up": a copy elsewhere cannot be proven
+    /// current at load time, and adopting a stale one resurrects DROP + re-ADD bytes under a reused
+    /// name. `MergeTreeData::checkAlterIsPossible` refuses the policy changes that would move it.
     return disks.front();
 }
 
-void DiskColumnIdMappingStore::store(const ColumnIdMapping & mapping, const StoragePolicyPtr & target_policy)
+void DiskColumnIdMappingStore::store(const ColumnIdMapping & mapping)
 {
     const fs::path table_path = data.getRelativeDataPath();
     const auto column_ids_path = table_path / MergeTreeData::COLUMN_IDS_FILE_NAME;
     const auto column_ids_tmp_path = table_path / (String(MergeTreeData::COLUMN_IDS_FILE_NAME) + ".tmp");
 
-    auto disk = getAuthoritativeDisk(target_policy);
+    auto disk = getAuthoritativeDisk();
     if (disk->isBroken() || disk->isReadOnly() || disk->isWriteOnce())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Cannot store `{}` for table {}: the storage policy's first disk `{}` is not writable. "
+            "Cannot store `{}` for table {}: disk `{}` is not writable. "
             "Put a writable disk first in the policy.",
             MergeTreeData::COLUMN_IDS_FILE_NAME, data.getStorageID().getNameForLogs(), disk->getName());
 
@@ -122,7 +126,7 @@ void DiskColumnIdMappingStore::store(const ColumnIdMapping & mapping, const Stor
 
     /// Best-effort: drop any stale copy on the other disks (e.g. left by the old
     /// multi-disk format) so exactly one authoritative copy exists.
-    for (const auto & other : target_policy->getDisks())
+    for (const auto & other : data.getStoragePolicy()->getDisks())
     {
         if (other->getName() == disk->getName())
             continue;

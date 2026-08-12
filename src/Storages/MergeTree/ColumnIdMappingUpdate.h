@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <Disks/IStoragePolicy.h>
 #include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Common/Logger.h>
 
@@ -14,7 +13,8 @@ class MergeTreeData;
 struct ColumnIdAlterPlan;
 struct StorageInMemoryMetadata;
 
-/// The state machine owns one change to a table's column-ID mapping, from the plan to the publish.
+/// The state machine owns one change to a table's column-ID mapping, from the plan to the publish:
+/// WHAT to store and when, while `ColumnIdMappingStore` owns where it lands and how.
 class ColumnIdMappingUpdate
 {
 public:
@@ -26,7 +26,7 @@ public:
     ColumnIdMappingUpdate(const ColumnIdMappingUpdate &) = delete;
     ColumnIdMappingUpdate & operator=(const ColumnIdMappingUpdate &) = delete;
 
-    void persistBeforeSchemaCommit(ColumnIdAlterPlan & plan, StorageInMemoryMetadata & metadata_to_publish, const StoragePolicyPtr & target_policy_);
+    void persistBeforeSchemaCommit(ColumnIdAlterPlan & plan, StorageInMemoryMetadata & metadata_to_publish);
 
     void persistAfterSchemaCommit(const ColumnIdAlterPlan & plan, StorageInMemoryMetadata & metadata_to_publish);
 
@@ -39,7 +39,6 @@ private:
     enum class State
     {
         Empty,
-        Copied,
         Written,
         Pruned,
         Committed,
@@ -48,11 +47,6 @@ private:
     /// True when writing `planned` would only replace the published pointer with an equal mapping.
     bool isAlreadyPublished(const ColumnIdMapping & planned, const ColumnIdAlterPlan & plan) const;
 
-    /// Places the unchanged mapping on the disk the table uses after a policy switch.
-    void copyToTargetPolicy();
-
-    void writeToDisk(const ColumnIdMapping & mapping_to_write) const;
-
     void stampInto(StorageInMemoryMetadata & metadata_to_publish) const;
 
     void restoreFile() noexcept;
@@ -60,11 +54,6 @@ private:
     MergeTreeData & data;
     LoggerPtr log;
 
-    /// Rollback target. Not the live policy: a failed ALTER may not have got its settings back --
-    /// see `MergeTreeData::tryRevertSettings`.
-    StoragePolicyPtr published_policy;
-    /// Set only when the ALTER switches policy; null means "the disk it is already on".
-    StoragePolicyPtr target_policy;
     ColumnIdMappingPtr published_before;
     std::optional<ColumnIdMapping> mapping;
     NameToNameVector column_size_renames;

@@ -448,7 +448,7 @@ public:
         Names getProbablyWrittenFiles(const IMergeTreeDataPart & part) const;
         /// The only place a minmax file name is spelled. Its argument comes from one of the
         /// getFileColumnName overloads below -- i.e. an already resolved (minmaxColumnId) and
-        /// escaped key, never a raw logical column name.
+        /// escaped key, never a raw column name.
         static String getFileName(const String & file_column_name) { return "minmax_" + file_column_name + ".idx"; }
         /// For Store
         static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);
@@ -924,7 +924,7 @@ private:
     /// When a column ID mapping is active, every entry in the on-disk column list (columns.txt)
     /// is a column ID rather than a current column name. Translate each back to its column name
     /// and attach the column ID as metadata.
-    NamesAndTypesList remapColumnIdsToLogicalNames(
+    NamesAndTypesList remapColumnIdsToColumnNames(
         const NamesAndTypesList & loaded_columns,
         const ColumnIdMapping & mapping) const;
 

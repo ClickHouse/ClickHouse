@@ -115,6 +115,10 @@ void reconcileColumnIdMappingWithMetadata(MergeTreeData & data)
         checkNoColumnNamesShareColumnId(data, *final_mapping);
 }
 
+/// `getColumnId()` of the part's column of that name, so a metadata-only RENAME cannot orphan the
+/// artifacts. A name the part does not hold passes through as an id -- the same fallback
+/// `getColumnId()` itself makes. For the subcolumn-aware form that keys `getSerialization`, see
+/// `NameAndTypePair::getStorageKey`.
 ColumnId getColumnIdInPart(const NamesAndTypesList & part_columns, const String & column_name)
 {
     auto column = part_columns.tryGetByName(column_name);

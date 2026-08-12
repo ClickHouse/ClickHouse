@@ -1081,10 +1081,6 @@ public:
         /// Side effects that must follow the caller's publish; see `tryApplySettingsSideEffects`.
         bool start_background_moves = false;
         bool restart_statistics_cache = false;
-
-        /// Set only when this change switches storage policy: the policy whose authoritative disk
-        /// the column-ID mapping must be on before the switch. Null means "wherever it is".
-        StoragePolicyPtr column_id_mapping_policy;
     };
 
     void changeSettings(const ASTPtr & new_settings, AlterLockHolder & table_lock_holder, bool run_sanity_checks = true);

@@ -2365,7 +2365,7 @@ void IMergeTreeDataPart::loadUUID()
 /// or a dropped column's stale key could be re-bound to a live sibling's stream. A key that is no
 /// longer live keeps its slot -- compact ordinals must not shift -- under a placeholder name, since
 /// a duplicate column name would make the reloaded part unresolvable.
-NamesAndTypesList IMergeTreeDataPart::remapColumnIdsToLogicalNames(
+NamesAndTypesList IMergeTreeDataPart::remapColumnIdsToColumnNames(
     const NamesAndTypesList & loaded_columns,
     const ColumnIdMapping & mapping) const
 {
@@ -2451,7 +2451,7 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
         /// resolves. The other already holds ids and current names, and remapping would overwrite
         /// each id with the name -- every stream would then be sought under a name no file carries.
         if (column_id_mapping)
-            loaded_columns = remapColumnIdsToLogicalNames(loaded_columns, *column_id_mapping);
+            loaded_columns = remapColumnIdsToColumnNames(loaded_columns, *column_id_mapping);
     }
     else
     {

@@ -538,7 +538,7 @@ void StorageMergeTree::alter(
         {
             settings_result = changeSettingsWithoutPublish(new_metadata.settings_changes, table_lock_holder, new_metadata);
 
-            mapping_update.persistBeforeSchemaCommit(column_id_plan, new_metadata, settings_result.column_id_mapping_policy);
+            mapping_update.persistBeforeSchemaCommit(column_id_plan, new_metadata);
 
             /// Safe because the early max_query_size check already passed.
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
@@ -632,7 +632,7 @@ void StorageMergeTree::alter(
                 if (!maybe_mutation_commands.empty())
                     prepared.emplace(prepareMutationEntry(maybe_mutation_commands, local_context));
 
-                mapping_update.persistBeforeSchemaCommit(column_id_plan, new_metadata, settings_result.column_id_mapping_policy);
+                mapping_update.persistBeforeSchemaCommit(column_id_plan, new_metadata);
 
                 /// Not under `currently_processing_in_background_mutex`: `alterTable` takes
                 /// `DatabaseAtomic::mutex`, which would invert lock order with the

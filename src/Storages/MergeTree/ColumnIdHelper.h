@@ -17,11 +17,8 @@ void loadColumnIdMapping(MergeTreeData & data, bool attach);
 /// when metadata names a column the mapping does not cover, or when two live columns share one ID.
 void reconcileColumnIdMappingWithMetadata(MergeTreeData & data);
 
-/// The id a part's per-column artifacts carry for a column -- `minmax_<id>.idx`,
-/// `statistics_<id>.stats`, `ttl.txt` entries: `getColumnId()` of the part's column of that name, so a
-/// metadata-only RENAME cannot orphan them. A name the part does not hold passes through as an id, the
-/// same fallback `getColumnId()` itself makes. Whole columns only -- for the subcolumn-aware form that
-/// keys `getSerialization`, see `NameAndTypePair::getStorageKey`.
+/// The id a part's per-column artifacts carry for @column_name -- `minmax_<id>.idx`,
+/// `statistics_<id>.stats`, `ttl.txt` entries. Whole columns only.
 ColumnId getColumnIdInPart(const NamesAndTypesList & part_columns, const String & column_name);
 
 /// Inverse of getColumnIdInPart.

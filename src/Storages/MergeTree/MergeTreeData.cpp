@@ -612,7 +612,7 @@ void MergeTreeData::setColumnIdMapping(ColumnIdMapping mapping_)
 
 void MergeTreeData::persistMapping(ColumnIdMapping mapping)
 {
-    getColumnIdMappingStore().store(mapping, getStoragePolicy());
+    getColumnIdMappingStore().store(mapping);
     setColumnIdMapping(std::move(mapping));
 }
 
@@ -4943,7 +4943,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     });
     /// Effective settings after this ALTER, recomputed from defaults the way `changeSettings` does --
     /// applying onto the current settings would let `RESET SETTING` slip through unnoticed.
-    auto column_ids_after_alter = [&]
+    auto settings_after_alter = [&]
     {
         StorageInMemoryMetadata result_metadata = *storage_metadata_snapshot;
         commands.apply(result_metadata, local_context);
@@ -4955,31 +4955,72 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 local_context,
                 /*is_loading_from_existing_metadata=*/true);
 
-        return (*result_settings)[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS;
+        return result_settings;
     };
 
-    /// The table's files are already named by column IDs, so the mapping stays
-    /// authoritative no matter what the settings say -- reject the lie.
-    if (hasActiveColumnIdMapping() && has_settings_commands && !column_ids_after_alter())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Cannot change `serialization_info_version` away from 'with_column_ids' for table {}: "
-            "the table has a column ID mapping and its data files are named by column IDs. "
-            "Column IDs cannot be deactivated once active.",
-            getStorageID().getNameForLogs());
-
-    /// A queued mutation was planned against logical file names -- a queued RENAME COLUMN expects to
-    /// move files. Activating the mapping makes names metadata-only, so the mapping and that mutation
-    /// disagree about what the part's files are called, and the mutation drops the very column it was
-    /// renaming. The mutation is already durable, so the activation is what gets refused.
-    if (!hasActiveColumnIdMapping() && has_settings_commands)
+    if (has_settings_commands)
     {
-        auto queued_mutations = getUnfinishedMutationCommands();
-        if (!queued_mutations.empty() && column_ids_after_alter())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Cannot enable `serialization_info_version = 'with_column_ids'` for table {} while {} "
-                "mutation(s) are still running: they were planned against the current file names. "
-                "Wait for them to finish (see system.mutations), then retry.",
-                getStorageID().getNameForLogs(), queued_mutations.size());
+        auto result_settings = settings_after_alter();
+        bool result_enables_column_ids
+            = (*result_settings)[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS;
+        bool column_ids_active = hasActiveColumnIdMapping();
+
+        if (column_ids_active)
+        {
+            /// The table's files are already named by column IDs, so the mapping stays
+            /// authoritative no matter what the settings say -- reject the lie.
+            if (!result_enables_column_ids)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Cannot change `serialization_info_version` away from 'with_column_ids' for table {}: "
+                    "the table has a column ID mapping and its data files are named by column IDs. "
+                    "Column IDs cannot be deactivated once active.",
+                    getStorageID().getNameForLogs());
+
+            /// `column_ids.json` is held on the storage policy's first disk and read from nowhere else --
+            /// a copy elsewhere cannot be proven current at load time. A policy that starts with a
+            /// different disk would strand it, and no ALTER can move it and commit the policy atomically.
+            /// Appending a volume, which is what tiering does, keeps the first disk and is unaffected.
+            /// Naming a `disk` instead resolves to a single-disk policy, which `checkStoragePolicy` then
+            /// refuses unless it is the disk the table already uses -- so it cannot move this file.
+            const auto & policy_after_alter = (*result_settings)[MergeTreeSetting::storage_policy].value;
+            if (!policy_after_alter.empty() && policy_after_alter != (*getSettings())[MergeTreeSetting::storage_policy].value)
+            {
+                auto disk_now = getStoragePolicy()->getDisks().front()->getName();
+                auto disk_after = local_context->getStoragePolicy(policy_after_alter)->getDisks().front()->getName();
+                if (disk_now != disk_after)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Cannot change `storage_policy` of table {} to '{}': `{}` is held on disk `{}`, the "
+                        "policy's first, and the new policy starts with `{}` instead. A policy that keeps "
+                        "`{}` first -- appending volumes, as tiering does -- is accepted.",
+                        getStorageID().getNameForLogs(), policy_after_alter, COLUMN_IDS_FILE_NAME,
+                        disk_now, disk_after, disk_now);
+            }
+        }
+
+        if (!column_ids_active && result_enables_column_ids)
+        {
+            /// A queued mutation was planned against the current file names -- a queued RENAME COLUMN
+            /// expects to move files. Activating the mapping makes names metadata-only, so the mapping
+            /// and that mutation disagree about what the part's files are called, and the mutation
+            /// drops the very column it was renaming. The mutation is durable, so the activation loses.
+            auto queued_mutations = getUnfinishedMutationCommands();
+            if (!queued_mutations.empty())
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Cannot enable `serialization_info_version = 'with_column_ids'` for table {} while {} "
+                    "mutation(s) are still running: they were planned against the current file names. "
+                    "Wait for them to finish (see system.mutations), then retry.",
+                    getStorageID().getNameForLogs(), queued_mutations.size());
+
+            /// One ALTER cannot both activate the mapping and switch storage policy: the first write of
+            /// `column_ids.json` would have to pick a disk out of a policy that is not committed yet.
+            /// Split into two statements -- either order works, since a policy change keeps every disk
+            /// the mapping may already sit on.
+            if ((*result_settings)[MergeTreeSetting::storage_policy].value != (*getSettings())[MergeTreeSetting::storage_policy].value)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Cannot enable `serialization_info_version = 'with_column_ids'` for table {} in the "
+                    "same ALTER that changes `storage_policy`. Use two separate ALTER statements.",
+                    getStorageID().getNameForLogs());
+        }
     }
 
     /// Block the case of alter table add projection for special merge trees.
@@ -6032,9 +6073,6 @@ MergeTreeData::SettingsChangeResult MergeTreeData::changeSettingsImpl(
         MergeTreeSettings::resolveDiskSetting(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
 
         StoragePolicyPtr new_storage_policy = nullptr;
-        /// Captured out of the per-change loop and reported to the caller, which must place
-        /// `column_ids.json` on the new policy's authoritative disk before the switch.
-        StoragePolicyPtr pending_storage_policy = nullptr;
 
         for (const auto & change : new_changes)
         {
@@ -6073,7 +6111,6 @@ MergeTreeData::SettingsChangeResult MergeTreeData::changeSettingsImpl(
                     /// FIXME how would that be done while reloading configuration???
 
                     has_storage_policy_changed = true;
-                    pending_storage_policy = new_storage_policy;
                 }
             }
         }
@@ -6131,8 +6168,7 @@ MergeTreeData::SettingsChangeResult MergeTreeData::changeSettingsImpl(
 
         return {
             .start_background_moves = has_storage_policy_changed,
-            .restart_statistics_cache = has_refresh_statistics_interval_changed != 0,
-            .column_id_mapping_policy = pending_storage_policy};
+            .restart_statistics_cache = has_refresh_statistics_interval_changed != 0};
     }
 
     return {};
@@ -10805,7 +10841,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (my_mapping && my_mapping->getNameToId() != src_mapping->getNameToId())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Tables have different column ID mappings; "
-            "partition operations require identical logical-to-ID column mappings");
+            "partition operations require identical column-name-to-ID mappings");
 
     return *src_data;
 }
@@ -12258,24 +12294,23 @@ static void updateSerializationHintsForPart(
 
     for (const auto & part_column : part->getColumns())
     {
-        /// Part records are keyed by the stamped column ID; hints by the current
-        /// column name. Join them through the part's stamped column list.
-        auto info = part_infos.tryGet(part_column.getColumnId().value());
-        if (!info)
-            continue;
-
-        String hint_name = part_column.name;
+        /// The part's records are keyed by the stamped column id, the hints by the name the current
+        /// schema uses -- which a metadata-only RENAME moved out from under the part.
+        const auto & column_id = part_column.getColumnId();
+        String current_name = part_column.name;
         if (column_id_mapping)
-            if (auto name = column_id_mapping->tryGetColumnName(part_column.getColumnId()))
-                hint_name = *name;
+            current_name = column_id_mapping->tryGetColumnName(column_id).value_or(part_column.name);
 
-        auto new_hint = hints.tryGet(hint_name);
-        if (!new_hint)
+        auto info = part_infos.tryGet(column_id.value());
+        auto new_hint = hints.tryGet(current_name);
+        if (!info || !new_hint)
             continue;
 
         /// Structure may change after alter. Do not add info for such items.
         /// Instead it will be updated on commit of the result part of alter.
-        if (part_columns.tryGetPhysical(part_column.name) != storage_columns.tryGetPhysical(hint_name))
+        auto column_in_part = part_columns.tryGetPhysical(part_column.name);
+        auto column_in_storage = storage_columns.tryGetPhysical(current_name);
+        if (!column_in_part || !column_in_storage || !column_in_part->type->equals(*column_in_storage->type))
             continue;
 
         chassert(new_hint->structureEquals(*info));
