@@ -778,13 +778,9 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
     column_storage_key_to_position.reserve(new_columns.size());
     size_t pos = 0;
 
-    /// The part's internal maps are keyed by the stable storage id (`getColumnId()`),
-    /// not the column name. For a table without column ids the id falls back to the name, so
-    /// this is identical to name-keying; for an id table the key survives a metadata-only RENAME
-    /// (the part is not reloaded), so a site that resolves by id off the schema it holds finds the
-    /// right on-disk slot without threading a mapping in. Name-based entry points resolve name -> id
-    /// first: against the operation's schema (`tryGetColumnBySnapshotName`) for a current column name,
-    /// or against this part's own columns (`tryGetColumnByNameUnsafe`) for a bare part-own name.
+    /// Every map below is keyed by the stable storage id ("parts speak only IDs", ColumnIdMapping.h),
+    /// which a metadata-only RENAME cannot stale out -- and which falls back to the name for a table
+    /// without ids, so this is identical to name-keying there.
     for (const auto & column : columns)
         column_storage_key_to_position.emplace(column.getColumnId().value(), pos++);
 
@@ -2469,11 +2465,9 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
         auto metadata_snapshot = getMetadataSnapshot();
         /// If there is no file with a list of columns, write it down.
         auto columns_to_load = metadata_snapshot->getColumns().getAllPhysical();
-        /// Lenient, not strict: for a projection part this fallback rebuilds columns from
-        /// projection metadata (synthetic aggregates like `sum(c)`, `_parent_part_offset`) and
-        /// stamps them against the PARENT table's mapping, where those names are legitimately
-        /// absent and non-virtual — the strict stamp would (wrongly) throw. loadColumns stamps a
-        /// part's own columns, so "unmapped ⇒ name-keyed" is correct here.
+        /// Lenient: a projection part rebuilds its columns from projection metadata (synthetic
+        /// aggregates, `_parent_part_offset`) yet stamps against the PARENT table's mapping, where
+        /// those names are legitimately absent -- the strict stamp would wrongly throw.
         if (column_id_mapping)
             column_id_mapping->stampColumnIdsLenient(columns_to_load);
 
@@ -2517,8 +2511,9 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     setColumns(loaded_columns, infos, *loaded_metadata_version);
 }
 
-/// The substream keys in `columns_substreams.txt` are column names only for a part written without
-/// column ids; for an id part they are ids, which a check against column names can never match.
+/// `columns_substreams.txt` keys its columns by the name they had when the part was written, which a
+/// metadata-only RENAME leaves stale, while the substreams under them are id-keyed. Neither side of
+/// that comparison holds for an id part, so only check where the file is fully name-keyed.
 void IMergeTreeDataPart::validateSubstreamColumnNames(const ColumnsSubstreams & substreams) const
 {
     if (!has_stamped_column_ids)

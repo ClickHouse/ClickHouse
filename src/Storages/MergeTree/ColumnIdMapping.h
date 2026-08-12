@@ -112,37 +112,19 @@ public:
 
     Names columnNames() const;
 
-    /// Ingress stamp for both write (new part) and read (query resolution): set `column_id`
-    /// on each `NameAndTypePair` by name→id lookup. No-op when the mapping is inactive.
-    ///  - An already-stamped column (a part-local id) is preserved — re-stamping from the
-    ///    live mapping would clobber it after a DROP + re-ADD that reuses the name.
-    ///  - A mapped column gets its id.
-    ///  - A virtual column (`isVirtualColumn`, covering persistent virtuals stored in the
-    ///    part and ephemeral ones like `_part_offset`) is left UNSTAMPED (empty id). An empty
-    ///    id is equivalent to name-keyed on disk for every consumer, so this is the same as
-    ///    the old write behavior of stamping a virtual to its own name.
-    ///  - Any other unmapped column is a real physical column: a schema/mapping desync, which
-    ///    throws `LOGICAL_ERROR` rather than silently mis-resolving.
-    /// Called before `convertToSubcolumns`, so a flattened-Nested field is still a flat `n.x`
-    /// pair whose full dotted name is directly in the mapping.
+    /// Ingress stamp for both write (new part) and read (query resolution): set `column_id` on each
+    /// `NameAndTypePair` that carries none yet (an existing one is a part-local id and is kept).
+    /// Throws `LOGICAL_ERROR` for a physical column the mapping does not hold.
+    /// Must be called before `convertToSubcolumns`, while a flattened-Nested field is still `n.x`.
     void stampColumnIds(NamesAndTypesList & columns) const;
 
-    /// Lenient counterpart to `stampColumnIds`: a mapped column gets its id, everything else is
-    /// left UNSTAMPED (empty id ≡ name-keyed on disk). Never throws. Used where an unmapped
-    /// non-virtual name is legitimate rather than a desync:
-    ///  - projection-part write — synthetic aggregate columns (`sum(c)`) are outside the base
-    ///    table's mapping;
-    ///  - the ALTER collision pre-check (`checkColumnFilenamesForCollision`) — validates a
-    ///    not-yet-applied schema whose new/renamed columns aren't in the live mapping yet;
-    ///  - `loadColumns`' no-`columns.txt` fallback — a projection part rebuilds its columns from
-    ///    projection metadata (synthetic aggregates, `_parent_part_offset`) and stamps them with
-    ///    the PARENT table's mapping, so those names are legitimately absent.
+    /// Lenient counterpart to `stampColumnIds` for callers whose columns are legitimately outside
+    /// the mapping (projection aggregates, a not-yet-applied schema): leaves those unstamped
+    /// instead of throwing.
     void stampColumnIdsLenient(NamesAndTypesList & columns) const;
 
-    /// Identity mapping: every column gets column_id == column_name — the
-    /// initial state of both a new table and an existing one at activation.
-    /// The counter is initialized past the highest numeric column name to
-    /// avoid collisions (e.g. a table with column "2" starts the counter at 3).
+    /// Identity mapping: every column gets column_id == column_name — the initial state of both a
+    /// new table and an existing one at activation.
     static ColumnIdMapping createIdentity(const NamesAndTypesList & columns);
 
     void serialize(WriteBuffer & buf) const;

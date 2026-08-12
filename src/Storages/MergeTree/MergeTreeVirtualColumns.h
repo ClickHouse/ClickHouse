@@ -60,11 +60,9 @@ struct PartitionValueColumn
     static DataTypePtr type(const KeyDescription * partition_key);
 };
 
-/// Whether a column is a persistent virtual column that is physically stored
-/// inside data parts (as opposed to computed on the fly).  These columns are
-/// NOT managed by the column ID mapping and should be passed through
-/// unchanged during column remapping.
-/// Keep in sync when adding new persistent virtual columns.
+/// Whether a column is a virtual column physically stored inside data parts, rather than computed
+/// on the fly. Not managed by the column ID mapping, so column remapping passes it through.
+/// Keep in sync with the `addPersistent` calls in `getMergeTreeVirtuals`.
 inline bool isPersistentVirtualColumn(const String & column_name)
 {
     return column_name == RowExistsColumn::name
@@ -72,10 +70,9 @@ inline bool isPersistentVirtualColumn(const String & column_name)
         || column_name == BlockOffsetColumn::name;
 }
 
-/// The canonical MergeTree virtual-column registry — the single source of truth for which
-/// virtual columns a MergeTree table exposes, with their types/materialization places.
-/// `_partition_value` is only added when a partition key is present. `MergeTreeData::createVirtuals`
-/// forwards here, and `isVirtualColumn` derives its name set from here, so the two cannot drift.
+/// The one registry of the virtual columns a MergeTree table exposes, with their types and
+/// materialization places; `_partition_value` only when a partition key is present. Both
+/// `MergeTreeData::createVirtuals` and `isVirtualColumn` derive from it, so they cannot drift.
 VirtualColumnsDescription getMergeTreeVirtuals(const KeyDescription * partition_key);
 
 /// Whether a column is any MergeTree virtual column (ephemeral or persistent) — the full set

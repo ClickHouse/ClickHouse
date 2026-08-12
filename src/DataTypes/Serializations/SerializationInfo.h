@@ -152,12 +152,9 @@ public:
 
     static SerializationInfoByName readJSON(const NamesAndTypesList & columns, ReadBuffer & in);
 
-    /// Reads infos of a part written with column IDs active. On-disk records are keyed
-    /// by the same token as the part's columns.txt (the stamped column ID, or the logical
-    /// name for pre-activation parts); they stay keyed by the column ID in memory, so a
-    /// metadata-only RENAME cannot invalidate the keys. `columns` is the part's stamped
-    /// column list, used to resolve each record's data type. Records of columns absent
-    /// from the part (dropped-column orphans) are skipped.
+    /// Reads infos of a part written with column IDs active: on-disk records are keyed by the same
+    /// token as that part's columns.txt, and stay keyed by column ID in memory. `columns` is the
+    /// part's stamped column list; a record no column of it claims (an orphan) is skipped.
     static SerializationInfoByName readJSONWithColumnIds(const NamesAndTypesList & columns, ReadBuffer & in);
 
     static SerializationInfoByName readJSONFromString(const NamesAndTypesList & columns, const std::string & str);

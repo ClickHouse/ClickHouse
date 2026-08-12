@@ -4998,14 +4998,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     "Column IDs cannot be deactivated once active.",
                     getStorageID().getNameForLogs());
 
-            /// `column_ids.json` is held on the storage policy's first disk and read from nowhere else
-            /// -- a copy elsewhere cannot be proven current at load time. So an ALTER that moves that
-            /// disk would strand the file, and no ALTER can move it and commit the settings in one
-            /// durable step. Compare the disk, not the policy name: `disk` and `storage_policy` both
-            /// decide it (`getStoragePolicy`), and a RESET of either is visible only in the recomputed
-            /// values -- `RESET SETTING disk` moves the table back to the default policy while
-            /// `changeSettingsImpl` never sees a `disk` entry to compatibility-check. Appending a volume,
-            /// which is what tiering does, keeps the first disk and is accepted.
+            /// No ALTER can move the file and commit the settings in one durable step, so refuse the
+            /// move. Compare the recomputed first disk, not the policy name: `disk` and `storage_policy`
+            /// both decide it, and a RESET of either shows up only in the recomputed value.
             auto policy_after_alter = policyAfterSettingsChange(*result_settings, local_context);
             if (policy_after_alter)
             {
@@ -5023,10 +5018,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
         if (!column_ids_active && result_enables_column_ids)
         {
-            /// A queued mutation was planned against the current file names -- a queued RENAME COLUMN
-            /// expects to move files. Activating the mapping makes names metadata-only, so the mapping
-            /// and that mutation disagree about what the part's files are called, and the mutation
-            /// drops the very column it was renaming. The mutation is durable, so the activation loses.
+            /// A queued RENAME COLUMN expects to move files; once names are metadata-only it would
+            /// instead drop the column it was renaming. The mutation is durable, so activation loses.
             auto queued_mutations = getUnfinishedMutationCommands();
             if (!queued_mutations.empty())
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -7732,13 +7725,9 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const Data
     addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
 }
 
-/// Aggregate sizes are keyed by CURRENT column name.  A part loaded before a
-/// metadata-only RENAME still stamps the old name, so derive the key from the
-/// stamped column ID; `renameColumnSizesEntry` re-keys the aggregate on RENAME.
-/// An orphan (a dropped column's stream still present in an old part) has no live column name;
-/// `nullopt` skips it, so its bytes never land in the size aggregate. Keying it by its id-token
-/// instead would risk colliding with a live column whose column name equals that token (the id
-/// and name namespaces are both plain strings), attributing the dropped column's bytes to it.
+/// Aggregate sizes are keyed by CURRENT column name, which a part loaded before a metadata-only
+/// RENAME no longer carries -- so go through the stamped ID. `nullopt` for an orphan (a dropped
+/// column's stream): its id-token could collide with a live column's name and misattribute the bytes.
 static std::optional<String> columnSizesKey(const NameAndTypePair & column, const ColumnIdMapping * mapping)
 {
     if (mapping)
@@ -11287,12 +11276,9 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
     runner.waitForAllToFinishAndRethrowFirstError();
 
-    /// Off-line readers (`mergeTreeParts()`, clickhouse-local) need the mapping
-    /// alongside the frozen parts to resolve non-identity IDs.  A shadow tree is
-    /// an immutable, portable, PER-DISK artifact consumed one disk at a time, so
-    /// -- unlike the mutable live copy -- write `column_ids.json` into EACH disk's
-    /// shadow subtree that produced a frozen part.  Per-disk redundancy is correct
-    /// here precisely because the shadow never changes (no torn-write concern).
+    /// Off-line readers (`mergeTreeParts()`, clickhouse-local) need the mapping beside the frozen
+    /// parts to resolve non-identity IDs, and a shadow tree is consumed one disk at a time -- so
+    /// copy it per disk here, which the live copy cannot be because the shadow never changes.
     if (column_id_mapping && column_id_mapping->isActive() && !result.empty())
     {
         const auto column_ids_in_freeze = fs::path(backup_path) / relative_data_path / COLUMN_IDS_FILE_NAME;

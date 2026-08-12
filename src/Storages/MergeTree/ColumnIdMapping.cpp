@@ -145,12 +145,6 @@ std::optional<String> ColumnIdMapping::tryGetColumnName(const ColumnId & column_
 
 String ColumnIdMapping::allocateColumnId()
 {
-    /// The counter is monotonically increasing and never recycled.
-    /// This guarantees that DROP column "x" followed by ADD column "x"
-    /// always gets a different column ID, even if the column name
-    /// is reused.  Old parts still reference the old column ID,
-    /// which is now orphaned — the reader's loadColumns remapping
-    /// (column-ID-first algorithm) will correctly skip it.
     active = true;
     auto id = next_column_id;
     next_column_id = safeIncrementColumnId(next_column_id);
@@ -216,12 +210,9 @@ void ColumnIdMapping::beginRename(const String & old_column_name, const String &
 
     auto column_id = it->second;
 
-    /// Reject renaming a column to a name equal to another active column's ID. On-disk
-    /// artifacts (streams, minmax, sizes) are keyed by the column id, so a column name that equals
-    /// a foreign column's id makes name-vs-id resolution ambiguous -- reachable via a mutation that
-    /// then reads/writes the wrong streams (silent data corruption). Allowing it safely would need
-    /// id-vs-name disambiguation at every by-name resolution site; until then, reject it loudly.
-    /// The self-case (a column adopting its own id as its name) is fine.
+    /// A name equal to a FOREIGN column's id would make every by-name resolution of an on-disk
+    /// artifact ambiguous, so a mutation could read or write the wrong streams. Disambiguating that
+    /// at each such site costs more than the feature is worth; the self-case is harmless.
     if (id_to_name.contains(new_column_name) && new_column_name != column_id)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Cannot rename column '{}' to '{}': the new name collides with an existing column ID",
@@ -327,13 +318,9 @@ ColumnIdMapping ColumnIdMapping::fromString(const String & str)
         mapping.id_to_name[column_id] = column_name;
     }
 
-    /// During two-phase rename, both old and new names map to the
-    /// same column ID.  The `operator[]` above may have picked either
-    /// winner depending on JSON key iteration order.  Rebuild the reverse
-    /// map deterministically: for each column ID with multiple names,
-    /// prefer the lexicographically smallest one.  This is arbitrary
-    /// but stable; `reconcileColumnIdMappingWithMetadata` will remove
-    /// the stale entry immediately after startup anyway.
+    /// A mid-rename file maps two names to one id, and the loop above let JSON key order pick the
+    /// reverse winner. Redo it on the lexicographically smallest name -- arbitrary but stable;
+    /// reconciliation drops the stale name right after startup anyway.
     if (mapping.id_to_name.size() < mapping.name_to_id.size())
     {
         mapping.id_to_name.clear();
@@ -359,11 +346,9 @@ void ColumnIdMapping::stampColumnIds(NamesAndTypesList & columns) const
 
     for (auto & column : columns)
     {
-        /// Preserve an already-stamped part-local id. Some read callers (e.g.
-        /// getListOfStreamsForColumn, for subcolumn sizes) pass columns already stamped with
-        /// the part's real id; re-stamping from the (possibly live) mapping would clobber it
-        /// after a DROP + re-ADD name reuse. On the write path columns arrive id-less, so
-        /// this guard is a no-op there.
+        /// A read caller can pass a column already stamped with the part's real id (e.g.
+        /// getListOfStreamsForColumn, for subcolumn sizes); re-stamping from the live mapping would
+        /// clobber it after a DROP + re-ADD name reuse. Write-path columns arrive id-less.
         if (!column.column_id.empty())
             continue;
 

@@ -10,10 +10,9 @@
 namespace DB
 {
 
-/// Stable on-disk storage identifier of a column. Wraps a String, but is a distinct type so a
-/// logical column name (also a String) cannot be passed where an id is expected. The ctor is
-/// explicit for exactly that reason -- crossing the name/id boundary must be spelled out.
-/// A default-constructed (empty) id means "no id" -- the traditional name-as-file-name behavior.
+/// Stable on-disk storage identifier of a column. A distinct type, and an explicit ctor, so that a
+/// logical column name (also a String) cannot cross into id space without being spelled out.
+/// Empty means "no id" -- the traditional name-as-file-name behavior.
 class ColumnId
 {
 public:

@@ -1175,13 +1175,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             create_query_zk_retries_info);
     }
 
-    /// Validate the experimental gate BEFORE the `StorageMergeTree` constructor
-    /// runs.  The constructor calls `initializeDirectoriesAndFormatVersion`,
-    /// which creates the table's data directory and writes `format_version.txt`
-    /// as visible side effects.  If `allow_experimental_column_ids` is missing
-    /// and the throw happened after construction, normal drop cleanup could
-    /// not run (the database never received a StoragePtr) and a retry would
-    /// observe an existing data directory.
+    /// Before the `StorageMergeTree` constructor, which creates the data directory and writes
+    /// `format_version.txt`: throwing after that leaves those behind with no StoragePtr for drop
+    /// cleanup to work from, so a retry would find an existing data directory.
     if (args.mode == LoadingStrictnessLevel::CREATE
         && (*storage_settings)[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS
         && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_column_ids])

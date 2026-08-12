@@ -17,9 +17,8 @@ using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 
 using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
-/// Both name each file after the column's id in `part_columns` (see getColumnIdInPart).
-
-/// Serialize statistics into a single packed archive file (statistics.packed).
+/// Serialize statistics into a single packed archive file (statistics.packed), each entry named
+/// after the column's id in `part_columns` (see getColumnIdInPart).
 std::unique_ptr<WriteBufferFromFileBase> serializeStatisticsPacked(
     IDataPartStorage & data_part_storage,
     MergeTreeDataPartChecksums & out_checksums,
@@ -28,7 +27,7 @@ std::unique_ptr<WriteBufferFromFileBase> serializeStatisticsPacked(
     const CompressionCodecPtr & compression_codec,
     const WriteSettings & write_settings);
 
-/// Serialize statistics as separate compressed files (column_name.stats each).
+/// Serialize statistics as separate compressed files, one per column, named as above.
 WrittenFiles serializeStatisticsWide(
     IDataPartStorage & data_part_storage,
     MergeTreeDataPartChecksums & out_checksums,

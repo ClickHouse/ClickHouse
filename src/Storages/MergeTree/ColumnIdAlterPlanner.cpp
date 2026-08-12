@@ -103,9 +103,8 @@ bool isRenamedUnderParent(const AlterCommands & commands, const String & column_
     return false;
 }
 
-/// Legality of a single RENAME COLUMN on the metadata-only path.  For
-/// flattened Nested siblings, the shared offset stream name is derived from
-/// the Nested prefix of the column ID, so a cross-parent rename is safe
+/// Legality of a single RENAME COLUMN on the metadata-only path. A flattened Nested group's shared
+/// offset stream is named from the Nested prefix of the column ID, so a cross-parent rename is safe
 /// only when that prefix stays coherent for the whole group.
 void validateTwoPhaseRename(
     const AlterCommand & command, const AlterCommands & commands, const ColumnIdMapping & mapping, bool nested_offsets_shared)
@@ -138,10 +137,9 @@ void validateTwoPhaseRename(
             column_id);
     }
 
-    /// Partial cross-parent Nested move is unsafe: leaving a sibling under the old parent name
-    /// makes two Nested parents read and write through one offsets stream. A sibling shares that
-    /// stream either through the same column-ID prefix, or -- for a plain-counter sibling, which a
-    /// mapping written before one-pass allocation can hold -- through the old parent name.
+    /// A sibling left under the old parent name would make two Nested parents read and write through
+    /// one offsets stream. A sibling shares that stream through an equal column-ID prefix, or -- for a
+    /// plain-counter sibling, which an older mapping can hold -- through the old parent name.
     const String old_parent_prefix = old_parent + ".";
     for (const auto & [other_name, other_column_id] : mapping.getNameToId())
     {
@@ -165,12 +163,9 @@ void validateTwoPhaseRename(
     }
 }
 
-/// A name the table ALREADY has must not be claimed by this ALTER -- as an `ADD COLUMN` or as a
-/// RENAME's target -- even when the same ALTER drops or renames the column holding it.
-/// `AlterCommands::validate` accepts that, being order-aware, but the mapping cannot represent it:
-/// phase 1 keeps the old name until the metadata commit, so `beginRename` sees the claimed name
-/// twice, and once phase 2 prunes the entry the claim resolves to the old column's ID -- its bytes
-/// (see ColumnIdMapping.h). So collect the claims and reject any that the old schema holds.
+/// `AlterCommands::validate` is order-aware and accepts freeing a name and re-claiming it in one
+/// ALTER; the mapping cannot represent that, because phase 1 holds the freed name until the metadata
+/// commit and the claim would resolve to the old column's ID -- its bytes (see ColumnIdMapping.h).
 /// A claim is a column as it BECOMES, hence the new schema when expanding a Nested parent.
 void rejectNameReuse(
     const AlterCommands & commands, const std::set<String> & old_col_names, const std::set<String> & new_col_names)
@@ -210,10 +205,9 @@ void rejectNameReuse(
             fmt::join(reused_names, "', '"));
 }
 
-/// Allocates column IDs for the columns this ALTER adds.  Flattened Nested
-/// siblings share a compound ID prefix and incremental child additions reuse
-/// it, so the shared offset stream (e.g. "5.size0") stays coherent across
-/// old and new parts.
+/// Allocates column IDs for the columns this ALTER adds. Flattened Nested siblings share a compound
+/// ID prefix, which an incremental child addition reuses, so the group's one offset stream
+/// (e.g. "5.size0") stays coherent across old and new parts.
 void allocateNewColumnIds(
     const StorageInMemoryMetadata & new_metadata,
     const std::set<String> & old_col_names,
@@ -246,10 +240,9 @@ void allocateNewColumnIds(
     }
 
     /// The compound id prefix a flattened Nested parent's children take ("5" for "5.x"), so the group
-    /// shares one offsets stream. Empty means the group keeps the plain-counter convention instead:
-    /// a plain id derives its offsets stream from the LOGICAL parent, so a dotted new child beside
-    /// plain siblings would open a second stream inside one Nested group. Resolved once per parent:
-    /// inherited from an already-mapped sibling, or a fresh counter id when the group has none.
+    /// shares one offsets stream. Empty means the group keeps the plain-counter convention instead,
+    /// where the stream is named from the LOGICAL parent -- a dotted new child beside plain siblings
+    /// would then open a second stream inside one Nested group. Resolved once per parent.
     std::map<String, String> id_parent_by_nested_parent;
 
     auto nested_id_parent = [&](const String & parent) -> const String &
@@ -354,9 +347,7 @@ ColumnIdAlterPlan prepareColumnIdMappingForAlter(
     /// the cross-parent Nested rule in that mode; mirror that here.
     bool nested_offsets_shared = effective_new_settings[MergeTreeSetting::share_nested_offsets];
 
-    /// Two-phase rename: `beginRename` keeps both old and new column names
-    /// in the mapping so the persisted state is crash-safe.  After metadata
-    /// commit, `finishRename` removes the old entry.
+    /// Phase 1 of each rename; `plan.rename_old_names` carries the rest to phase 2.
     std::set<String> rename_targets;
     for (const auto & command : commands)
     {

@@ -173,8 +173,7 @@ protected:
 private:
     std::shared_ptr<MergeTreeMarksLoader> createMarksLoader(const MergeTreeDataPartPtr & part, const String & prefix_name, size_t num_columns)
     {
-        auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
-            part, std::make_shared<AlterConversions>());
+        auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part, std::make_shared<AlterConversions>());
         auto local_context = getContext();
 
         return std::make_shared<MergeTreeMarksLoader>(

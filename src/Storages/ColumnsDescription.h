@@ -107,10 +107,8 @@ struct ColumnDescription
     ColumnStatisticsDescription statistics;
 
     /// Stable on-disk storage ID, mirroring NameAndTypePair::column_id (empty ⇒ use `name`).
-    /// In-memory only: NOT serialized by writeText/readText or into the CREATE AST -- the
-    /// on-disk source of truth is column_ids.json. `operator==` ignores it (it is a
-    /// storage-physical attribute, not a logical-schema difference), matching
-    /// NameAndTypePair::operator==.
+    /// In-memory only -- column_ids.json is the on-disk source of truth, so neither writeText nor
+    /// the CREATE AST carries it, and `operator==` ignores it as NameAndTypePair::operator== does.
     ColumnId column_id;
 
     ColumnDescription() = default;

@@ -43,10 +43,9 @@ std::optional<ColumnIdMapping> DiskColumnIdMappingStore::load()
     if (!authoritative_disk->isBroken())
         mapping_buf = authoritative_disk->readFileIfExists(column_ids_path, getReadSettings());
 
-    /// This file, not `serialization_info_version`, is what makes a table use column IDs. The setting's
-    /// default comes from the server config, so every table that never named it inherits whatever the
-    /// config says today: demanding a mapping on that basis would refuse to load every table that
-    /// predates a change of the default. A mapping that really did go missing is caught from the
+    /// This file, not `serialization_info_version`, is what makes a table use column IDs: the setting
+    /// defaults from the server config, so requiring a mapping on its say-so would refuse every table
+    /// that predates a change of that default. A mapping that really is gone is caught from the
     /// evidence instead, by `IMergeTreeDataPart::loadColumns`.
     if (!mapping_buf)
         return {};

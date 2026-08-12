@@ -61,17 +61,8 @@ public:
     String name;
     DataTypePtr type;
 
-    /// The name used for on-disk storage files (.bin, .mrk, etc.).
-    ///
-    /// When a table has a ColumnIdMapping (serialization_info_version =
-    /// 'with_column_ids'), each column is assigned a stable, counter-allocated
-    /// column ID (e.g. "1", "2", "3") that never changes across renames or
-    /// drops. This decouples the file names on disk from the logical column names
-    /// visible to users, enabling metadata-only RENAME and DROP without rewriting
-    /// data files.
-    ///
-    /// When empty (the default), the logical `name` is used as the file name --
-    /// this is the traditional behavior for tables without column ID mapping.
+    /// Stable key of this column's on-disk files, stamped from the table's ColumnIdMapping
+    /// (see ColumnIdMapping.h). Empty means those files are named after `name` instead.
     ColumnId column_id;
 
 private:

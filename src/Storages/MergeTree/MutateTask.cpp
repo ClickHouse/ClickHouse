@@ -244,11 +244,10 @@ static NameSet getRemovedStatistics(const StorageMetadataPtr & metadata_snapshot
     return removed_stats;
 }
 
-/// A metadata-only RENAME under column IDs neither reloads the part nor records the rename in
-/// alter_conversions (the stamped ID carries it), so the split branches below would otherwise
-/// reason over the part's stale load-time names. Rewrites @part_columns into the current-schema
-/// domain, leaving only names the schema still has -- plus the persistent virtuals, which the mapping
-/// never holds and no ALTER can rename or drop.
+/// Rewrites @part_columns into the current-schema name domain, keeping only names the schema still
+/// has plus the persistent virtuals (which no ALTER can rename or drop). Without this the split
+/// branches below would reason over the part's stale load-time names: a metadata-only RENAME neither
+/// reloads the part nor records itself in alter_conversions.
 static void remapPartColumnsToCurrentNames(
     ColumnsDescription & part_columns,
     const NamesAndTypesList & part_id_columns,
@@ -763,12 +762,10 @@ getColumnsForNewDataPart(
     for (const auto & column : source_part->getColumns())
         part_column_by_id.emplace(column.getColumnId().value(), column);
 
-    /// This function speaks two name domains. A part is not reloaded by a metadata-only ALTER, so a
-    /// column's own name -- what `part_columns` and the part's records are keyed by -- can be stale,
-    /// while `storage_columns`, `updated_header` and the commands use the name the CURRENT schema
-    /// gives it. Resolving the current name to an id bridges them; `nullopt` for an orphan a DROP
-    /// left in the part -- real files, no current name, nothing for the new part to claim. No name
-    /// fallback: a stale slot may carry the name the schema has since given to a different column.
+    /// Bridges the two name domains this function speaks: a part's own (possibly stale) names and the
+    /// CURRENT schema's, which `storage_columns`, `updated_header` and the commands use. `nullopt` for
+    /// an orphan a DROP left behind. Never falls back to the name -- a stale slot may hold a name the
+    /// schema has since given to a different column.
     auto part_column_for = [&](const String & current_name) -> std::optional<NameAndTypePair>
     {
         /// A persistent virtual is outside the mapping and outside the schema: it is its own id.
@@ -1471,11 +1468,9 @@ static NameToNameVector collectFilesForRenames(
             }
             else if (command.type == MutationCommand::Type::UPDATE || command.type == MutationCommand::Type::READ_COLUMN || command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
-                /// Remove files for streams that exist in source_part but were removed in new_part
-                /// by MODIFY/MATERIALIZE COLUMN. Each part is asked for its OWN column list, so
-                /// streams resolve via that part's stamped id; comparing by a single name set would
-                /// falsely flag live files after a metadata-only RENAME (source carries the stale
-                /// name, new the current).
+                /// Remove files for streams that exist in source_part but were removed in new_part by
+                /// MODIFY/MATERIALIZE COLUMN. Each part is asked for its OWN column list: one shared
+                /// name set would falsely flag live files after a metadata-only RENAME.
                 auto old_streams = getStreamCounts(source_part, source_part->checksums, source_part->getColumns().getNames());
                 auto new_streams = getStreamCounts(new_part, source_part->checksums, new_part->getColumns().getNames());
 
