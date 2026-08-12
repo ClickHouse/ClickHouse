@@ -939,31 +939,41 @@ void KeeperServer::stopLeaderMetricsPolling()
 
 void KeeperServer::collectLeaderMetrics()
 {
-    std::lock_guard lock(leader_unavailable_metrics_mutex);
-    if (!leader_unavailable_polling_task)
-        return;
+    nuraft::ptr<nuraft::delayed_task> polling_task;
+    int32_t poll_interval_ms;
+    {
+        std::lock_guard lock(leader_unavailable_metrics_mutex);
+        if (!leader_unavailable_polling_task)
+            return;
 
-    const UInt64 now_ms = getNowMonotonicMs();
-    if (!raft_instance->is_leader_alive())
-    {
-        if (leader_unavailable_since_ms == 0)
-            leader_unavailable_since_ms = now_ms;
-        if (election_since_ms == 0)
-            election_since_ms = now_ms;
-    }
-    else
-    {
-        if (leader_unavailable_since_ms != 0 && raft_instance->is_leader())
+        const UInt64 now_ms = getNowMonotonicMs();
+        if (!raft_instance->is_leader_alive())
         {
-            last_leader_unavailable_time_ms = now_ms - leader_unavailable_since_ms;
-            sum_leader_unavailable_time_ms += *last_leader_unavailable_time_ms;
-            ++cnt_leader_unavailable_time;
+            if (leader_unavailable_since_ms == 0)
+                leader_unavailable_since_ms = now_ms;
+            if (election_since_ms == 0)
+                election_since_ms = now_ms;
         }
-        leader_unavailable_since_ms = 0;
-        election_since_ms = 0;
+        else
+        {
+            if (leader_unavailable_since_ms != 0 && raft_instance->is_leader())
+            {
+                last_leader_unavailable_time_ms = now_ms - leader_unavailable_since_ms;
+                sum_leader_unavailable_time_ms += *last_leader_unavailable_time_ms;
+                ++cnt_leader_unavailable_time;
+            }
+            leader_unavailable_since_ms = 0;
+            election_since_ms = 0;
+        }
+
+        polling_task = *leader_unavailable_polling_task;
+        poll_interval_ms = leader_unavailable_poll_interval_ms;
     }
 
-    asio_service->schedule(*leader_unavailable_polling_task, leader_unavailable_poll_interval_ms);
+    /// The optional is the authoritative stopped state. If shutdown resets it
+    /// between releasing the lock and scheduling this task, its callback returns
+    /// without scheduling another poll.
+    asio_service->schedule(polling_task, poll_interval_ms);
 }
 
 void KeeperServer::finishLeaderElectionMetrics()
