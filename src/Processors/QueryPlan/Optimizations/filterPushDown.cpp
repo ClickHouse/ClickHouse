@@ -8,6 +8,7 @@
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/getLeastSupertype.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -689,33 +690,92 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             equivalent_right_stream_column_to_left_stream_column[rhs_original_name] = lhs_column;
     }
 
-    /// Re-register the cross-type equi-key pairs that `buildEquialentSetsForJoinStepLogical` skips: its
+    /// Register the cross-type equi-key pairs that `buildEquialentSetsForJoinStepLogical` skips: its
     /// Union-Find needs the two input types to be equal, plain name substitution does not.
     ///
-    /// What substitution does need is that the replacement column has the type the replaced name carries
-    /// in the JOIN output, since that is what the filter's nodes were typed against. This is weaker than
-    /// input-type equality, which is what admits a cross-type `USING` (the output holds the cast type),
-    /// and stronger where it matters: under `join_use_nulls` the output is widened and the unwidened
-    /// input column would contradict the predicate's own result type.
+    /// Substitution needs two other things. The replacement must carry the type the replaced name has
+    /// in the JOIN output, because that is what the filter's nodes were typed against, and it must
+    /// evaluate to the value that output column holds, because the filter's own semantics are defined
+    /// on that value.
+    ///
+    /// A cross-type equi-key gives both once the replacement is cast the way the JOIN casts that key:
+    /// the two sides are compared in their least supertype, so `CAST(<opposite side>, supertype)` is
+    /// exactly what is behind the JOIN output column. Demanding that the JOIN output type is that
+    /// supertype keeps the cast widening - a narrowing one would change what the predicate returns -
+    /// and rejects a column the JOIN altered for an unrelated reason, such as `join_use_nulls` widening
+    /// it to `Nullable`, where the replacement no longer matches the output.
+    ///
+    /// The cast node itself is only added once we know a filter really reaches that side, so the two
+    /// lists below carry what is needed to build it.
+    struct CrossTypeReplacement
+    {
+        JoinActionRef source;
+        DataTypePtr target_type;
+        String name;
+    };
+    std::vector<CrossTypeReplacement> cross_type_replacements_for_left_stream;
+    std::vector<CrossTypeReplacement> cross_type_replacements_for_right_stream;
+
     if (logical_join
         && (!left_stream_filter_push_down_input_columns_available
             || !right_stream_filter_push_down_input_columns_available))
     {
-        const auto & join_output_header = *child->getOutputHeader();
-        auto substitutable = [&](const String & replaced_name, const ColumnWithTypeAndName & replacement)
+        const auto & join_output_header = *join_header;
+
+        auto create_cast_name = [&](const String & replaced_name)
         {
+            String name = fmt::format("__filterpushdown_cast{}", replaced_name);
+            int counter = 0;
+            for (; left_stream_input_header->has(name) || right_stream_input_header->has(name); ++counter)
+                name = fmt::format("__filterpushdown_cast_{}{}", counter, replaced_name);
+            return name;
+        };
+
+        /// Makes `replaced_name` substitutable by the opposite side's key, cast to `supertype`.
+        auto add_replacement = [&](
+            std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_columns,
+            std::vector<CrossTypeReplacement> & replacements,
+            const String & replaced_name,
+            const JoinActionRef & source,
+            const DataTypePtr & supertype)
+        {
+            if (equivalent_columns.contains(replaced_name))
+                return;
+
             const auto * replaced = join_output_header.findByName(replaced_name);
-            return replaced && replaced->type->equals(*replacement.type);
+            if (!replaced || !replaced->type->equals(*supertype))
+                return;
+
+            /// The side that already has the supertype is not cast by the JOIN either.
+            if (source.getType()->equals(*supertype))
+            {
+                equivalent_columns[replaced_name] = source.getColumn();
+                return;
+            }
+
+            auto name = create_cast_name(replaced_name);
+            equivalent_columns[replaced_name] = ColumnWithTypeAndName(nullptr, supertype, name);
+            replacements.push_back({source, supertype, std::move(name)});
         };
 
         forEachEquiJoinKey(logical_join->getJoinOperator(), [&](const JoinActionRef & lhs, const JoinActionRef & rhs)
         {
-            const auto & lhs_name = lhs.getColumnName();
-            const auto & rhs_name = rhs.getColumnName();
-            if (!equivalent_left_stream_column_to_right_stream_column.contains(lhs_name) && substitutable(lhs_name, rhs.getColumn()))
-                equivalent_left_stream_column_to_right_stream_column[lhs_name] = rhs.getColumn();
-            if (!equivalent_right_stream_column_to_left_stream_column.contains(rhs_name) && substitutable(rhs_name, lhs.getColumn()))
-                equivalent_right_stream_column_to_left_stream_column[rhs_name] = lhs.getColumn();
+            /// Equal types are already covered by the equivalent sets above.
+            if (lhs.getType()->equals(*rhs.getType()))
+                return;
+
+            auto supertype = tryGetLeastSupertype(DataTypes{lhs.getType(), rhs.getType()});
+            if (!supertype)
+                return;
+
+            add_replacement(
+                equivalent_left_stream_column_to_right_stream_column,
+                cross_type_replacements_for_right_stream,
+                lhs.getColumnName(), rhs, supertype);
+            add_replacement(
+                equivalent_right_stream_column_to_left_stream_column,
+                cross_type_replacements_for_left_stream,
+                rhs.getColumnName(), lhs, supertype);
         });
     }
 
@@ -845,6 +905,24 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         return required_actions;
     };
 
+    /// Materializes the casts the cross-type equi-key substitutions above refer to by name, so that
+    /// `fix_predicate_for_join_logical_step` can compute them from the stream's own input columns.
+    auto add_cross_type_replacement_actions = [&](
+        const std::vector<CrossTypeReplacement> & replacements,
+        const auto & filter_dag_inputs,
+        std::vector<JoinActionRef> & required_actions)
+    {
+        for (const auto & replacement : replacements)
+        {
+            auto is_used = [&](const auto * input) { return input->result_name == replacement.name; };
+            if (std::ranges::none_of(filter_dag_inputs, is_used))
+                continue;
+
+            required_actions.push_back(JoinActionRef::transform({replacement.source},
+                [&](ActionsDAG & dag, auto && args) { return &dag.addCast(*args.at(0), replacement.target_type, replacement.name, nullptr); }));
+        }
+    };
+
     if (join_filter_push_down_actions.left_stream_filter_to_push_down)
     {
         if (logical_join)
@@ -857,6 +935,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
                     lhs = JoinActionRef::transform({lhs}, [&](ActionsDAG & dag, auto && args) { return &dag.addAlias(*args.at(0), it->second); });
                 required_actions_from_join.push_back(lhs);
             }
+            add_cross_type_replacement_actions(cross_type_replacements_for_left_stream, filter_dag_inputs, required_actions_from_join);
             auto pre_filter_dag = JoinExpressionActions::getSubDAG(required_actions_from_join);
             *join_filter_push_down_actions.left_stream_filter_to_push_down = fix_predicate_for_join_logical_step(
                 std::move(*join_filter_push_down_actions.left_stream_filter_to_push_down), std::move(pre_filter_dag));
@@ -891,6 +970,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
                     rhs = JoinActionRef::transform({rhs}, [&](ActionsDAG & dag, auto && args) { return &dag.addAlias(*args.at(0), it->second); });
                 required_actions_from_join.push_back(rhs);
             }
+            add_cross_type_replacement_actions(cross_type_replacements_for_right_stream, filter_dag_inputs, required_actions_from_join);
             auto pre_filter_dag = JoinExpressionActions::getSubDAG(required_actions_from_join);
             *join_filter_push_down_actions.right_stream_filter_to_push_down = fix_predicate_for_join_logical_step(
                 std::move(*join_filter_push_down_actions.right_stream_filter_to_push_down), std::move(pre_filter_dag));

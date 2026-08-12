@@ -25,3 +25,20 @@ FULL JOIN, side-qualified equi-key predicate: unmatched rows preserved
 5	0
 FULL JOIN, side-qualified equi-key predicates on both sides: only the matched row survives
 2	Value_2	2	Value_2
+RIGHT JOIN USING, Int32 / UInt32 keys widened to Int64: left MergeTree prunes granules
+1
+RIGHT JOIN USING, Int32 / UInt32 keys widened to Int64: result
+1
+RIGHT JOIN USING, Int32 / Int64 keys widened to Int64: left MergeTree prunes granules
+1
+RIGHT JOIN USING, Int32 / Int64 keys widened to Int64: result
+1
+RIGHT JOIN ON, cross-type equi-key: left MergeTree prunes granules
+1
+RIGHT JOIN USING, cross-type: unmatched right row preserved
+5
+1000000000
+RIGHT JOIN ON, predicate on the wider side: no narrowing substitution
+1
+RIGHT JOIN USING, cross-type, join_use_nulls: result
+1

@@ -42,9 +42,9 @@ SELECT count() > 0 FROM (
 SELECT 'RIGHT ANTI JOIN USING, equi-key WHERE: correctness preserved';
 SELECT k FROM mt AS l RIGHT ANTI JOIN (SELECT toUInt64(0) AS k UNION ALL SELECT toUInt64(1000000000) AS k) AS r USING (k) WHERE k = 1000000000 ORDER BY k;
 
--- A substitution is only registered when the replacement column already carries the type the replaced
--- name has in the JOIN output, so `join_use_nulls` widening the output never leaves the pushed-down
--- predicate bound to a column of a different type.
+-- A substitution has to carry the type the replaced name has in the `JOIN` output, and the only type
+-- reachable by casting the opposite key is the least supertype of the two. `join_use_nulls` widens the
+-- output past that supertype, so nothing is substituted and the predicate stays above the `JOIN`.
 SET join_use_nulls = 1;
 
 SELECT 'RIGHT JOIN USING, equi-key WHERE, join_use_nulls: left MergeTree prunes granules';
@@ -101,3 +101,54 @@ SELECT * FROM u1 AS lhs FULL JOIN u2 AS rhs ON lhs.id = rhs.id WHERE lhs.id != 0
 
 DROP TABLE u1;
 DROP TABLE u2;
+
+-- A `USING` supertype that is wider than one or both inputs. The replacement is then the same `CAST`
+-- the `JOIN` applies to its key, so the left input is still read through the primary key.
+
+DROP TABLE IF EXISTS mt_i32;
+CREATE TABLE mt_i32 (k Int32) ENGINE = MergeTree ORDER BY k
+    SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+INSERT INTO mt_i32 SELECT number FROM numbers(1000000);
+
+SELECT 'RIGHT JOIN USING, Int32 / UInt32 keys widened to Int64: left MergeTree prunes granules';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN indexes = 1
+    SELECT k FROM mt_i32 AS l RIGHT JOIN (SELECT 1::UInt32 AS k) AS r USING (k) WHERE k = 1
+) WHERE explain LIKE '%Granules: 1/%';
+
+SELECT 'RIGHT JOIN USING, Int32 / UInt32 keys widened to Int64: result';
+SELECT k FROM mt_i32 AS l RIGHT JOIN (SELECT 1::UInt32 AS k) AS r USING (k) WHERE k = 1 ORDER BY k;
+
+SELECT 'RIGHT JOIN USING, Int32 / Int64 keys widened to Int64: left MergeTree prunes granules';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN indexes = 1
+    SELECT k FROM mt_i32 AS l RIGHT JOIN (SELECT 1::Int64 AS k) AS r USING (k) WHERE k = 1
+) WHERE explain LIKE '%Granules: 1/%';
+
+SELECT 'RIGHT JOIN USING, Int32 / Int64 keys widened to Int64: result';
+SELECT k FROM mt_i32 AS l RIGHT JOIN (SELECT 1::Int64 AS k) AS r USING (k) WHERE k = 1 ORDER BY k;
+
+SELECT 'RIGHT JOIN ON, cross-type equi-key: left MergeTree prunes granules';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN indexes = 1
+    SELECT l.k FROM mt_i32 AS l RIGHT JOIN (SELECT 1::Int64 AS k) AS r ON l.k = r.k WHERE r.k = 1
+) WHERE explain LIKE '%Granules: 1/%';
+
+SELECT 'RIGHT JOIN USING, cross-type: unmatched right row preserved';
+SELECT k FROM mt_i32 AS l RIGHT JOIN (SELECT 5::UInt32 AS k UNION ALL SELECT 1000000000::UInt32 AS k) AS r USING (k) WHERE k >= 5 ORDER BY k;
+
+-- The opposite direction would need a narrowing `CAST`, which is not a substitution, so the predicate
+-- stays above the `JOIN` and the wider key value survives it.
+SELECT 'RIGHT JOIN ON, predicate on the wider side: no narrowing substitution';
+SELECT count() FROM (
+    SELECT l.k FROM mt_i32 AS l RIGHT JOIN (SELECT 1::Int64 AS k) AS r ON l.k = r.k WHERE l.k = 1
+);
+
+SET join_use_nulls = 1;
+
+SELECT 'RIGHT JOIN USING, cross-type, join_use_nulls: result';
+SELECT k FROM mt_i32 AS l RIGHT JOIN (SELECT 1::UInt32 AS k) AS r USING (k) WHERE k = 1 ORDER BY k;
+
+SET join_use_nulls = 0;
+
+DROP TABLE mt_i32;
