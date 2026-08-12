@@ -46,3 +46,11 @@ SELECT * FROM (
     UNION ALL
     SELECT 2 AS k, * FROM view(SELECT COLUMNS('x') APPLY(quantile(0.9)) FROM (SELECT number AS x FROM numbers(11)))
 ) ORDER BY k;
+
+-- A per-column PRIMARY KEY is normalized into the storage definition by the parser; the leftover
+-- `primary_key_specifier` on the columns must not survive, or the AST would not round-trip
+-- format+parse to the same tree hash (which the debug build verifies for every query).
+DROP TABLE IF EXISTS t_04836;
+CREATE TABLE t_04836 (a UInt8 PRIMARY KEY, b String PRIMARY KEY) ENGINE = MergeTree;
+SELECT primary_key FROM system.tables WHERE database = currentDatabase() AND name = 't_04836';
+DROP TABLE t_04836;

@@ -483,6 +483,12 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
                     primary_key_from_columns = makeASTOperator("tuple");
                 auto column_identifier = make_intrusive<ASTIdentifier>(cd->name);
                 primary_key_from_columns->children[0]->as<ASTExpressionList>()->children.push_back(column_identifier);
+                /// The specifier's meaning has been transferred to `primary_key_from_columns`, which
+                /// `ParserCreateQuery` normalizes into the storage definition. Clear it so the final
+                /// AST is the same as for a query that spelled the primary key at the table level:
+                /// formatting prints only the storage-level PRIMARY KEY, so a kept flag would not
+                /// survive a format+parse round trip, and the tree hash would differ.
+                cd->primary_key_specifier = false;
             }
             columns->children.push_back(elem);
         }

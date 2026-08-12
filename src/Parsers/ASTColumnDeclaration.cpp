@@ -198,6 +198,12 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
         ttl->format(ostr, format_settings, state, nested_frame);
     }
 
+    /// The specifier survives only where the parser does not normalize it away (`ALTER TABLE ...
+    /// ADD/MODIFY COLUMN`): `ParserCreateQuery` moves per-column PRIMARY KEY into the storage
+    /// definition and clears it. Not printing it would silently drop it from the formatted query.
+    if (primary_key_specifier)
+        ostr << ' ' << "PRIMARY KEY";
+
     if (auto collation = getCollation())
     {
         ostr << ' '  << "COLLATE"  << ' ';
