@@ -772,7 +772,8 @@ static void applyJSONSharedDataPathPoliciesForMutation(
     const MergeTreeData::DataPartPtr & source_part,
     const PatchPartsForReader & patch_parts,
     const AlterConversionsPtr & alter_conversions,
-    bool allow_repromotion)
+    bool allow_repromotion,
+    const NameSet * touched_columns = nullptr)
 {
     for (auto & result_column : result_columns)
     {
@@ -781,7 +782,9 @@ static void applyJSONSharedDataPathPoliciesForMutation(
         if (auto storage_column = current_storage_columns.tryGetByName(result_column.name))
             result_column.type = replaceJSONSharedDataPathPolicy(result_column.type, storage_column->type);
 
-        if (allow_repromotion)
+        /// Untouched columns are hardlinked byte for byte from the source part, so their physical
+        /// data still needs whatever provenance protects it, regardless of allow_repromotion.
+        if (allow_repromotion && (!touched_columns || touched_columns->contains(result_column.name)))
             continue;
 
         /// MutateTask::prepare() already logs newly saturated provenance for this part; pass no logger.
@@ -1157,13 +1160,25 @@ getColumnsForNewDataPart(
         }
     }
 
+    /// Columns present in updated_header were rewritten by the interpreter above; the rest were
+    /// hardlinked byte for byte from the source part (see the loop above). An APPLY PATCHES-only
+    /// mutation also physically rewrites the columns its patches update, without routing them
+    /// through updated_header (the interpreter reads the patch transparently, with no update
+    /// expression of its own), so union that independent signal in too.
+    NameSet touched_columns = updated_header.getNamesAndTypesList().getNameSet();
+    if (alter_conversions)
+    {
+        const auto & columns_updated_in_patches = alter_conversions->getColumnsUpdatedInPatches();
+        touched_columns.insert(columns_updated_in_patches.begin(), columns_updated_in_patches.end());
+    }
     applyJSONSharedDataPathPoliciesForMutation(
         storage_columns,
         current_storage_columns,
         source_part,
         patch_parts,
         alter_conversions,
-        allow_json_shared_data_paths_repromotion);
+        allow_json_shared_data_paths_repromotion,
+        &touched_columns);
 
     return {storage_columns, new_serialization_infos, new_columns_substreams};
 }

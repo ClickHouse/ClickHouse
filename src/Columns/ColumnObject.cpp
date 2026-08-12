@@ -2033,7 +2033,7 @@ void ColumnObject::setSharedDataPathMatcher(JSONPathRegexpMatcherPtr matcher, St
     shared_data_path_prefix = std::move(path_prefix);
 }
 
-void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnObject::choosePathPlacementForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "chooseDynamicStructureForMerge should be called only on empty Object column");
@@ -2154,6 +2154,11 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
         }
         column->chooseDynamicStructureForMerge(dynamic_path_source_columns, max_dynamic_subcolumns);
     }
+}
+
+void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+{
+    choosePathPlacementForMerge(source_columns, max_dynamic_subcolumns);
 
     /// Typed paths also can contain types with dynamic structure.
     for (auto & [path, column] : typed_paths)
@@ -2230,6 +2235,100 @@ void setSharedDataPathMatcherRecursively(IColumn & column, const DataTypePtr & t
             auto & tuple_column = map_column->getNestedData();
             setSharedDataPathMatcherRecursively(tuple_column.getColumn(0), map_type->getKeyType());
             setSharedDataPathMatcherRecursively(tuple_column.getColumn(1), map_type->getValueType());
+        }
+    }
+}
+
+void chooseJSONSharedDataStructureForMergeRecursively(IColumn & mutable_column, const IColumn & source_column, const DataTypePtr & type)
+{
+    IColumn * mutable_current = &mutable_column;
+    const IColumn * source_current = &source_column;
+    while (true)
+    {
+        if (auto * sparse = typeid_cast<ColumnSparse *>(mutable_current))
+        {
+            mutable_current = &sparse->getValuesColumn();
+            source_current = &assert_cast<const ColumnSparse &>(*source_current).getValuesColumn();
+        }
+        else if (auto * replicated = typeid_cast<ColumnReplicated *>(mutable_current))
+        {
+            mutable_current = &*replicated->getNestedColumn();
+            source_current = &*assert_cast<const ColumnReplicated &>(*source_current).getNestedColumn();
+        }
+        else
+            break;
+    }
+
+    /// A JSON node: re-decide its own dynamic-vs-shared path placement from the data (this also covers
+    /// each selected dynamic path's own Dynamic structure, which is part of that placement decision).
+    if (const auto * object_type = typeid_cast<const DataTypeObject *>(type.get()))
+    {
+        auto * mutable_object = typeid_cast<ColumnObject *>(mutable_current);
+        if (!mutable_object)
+            return;
+
+        mutable_object->choosePathPlacementForMerge({source_current->getPtr()}, /*max_dynamic_subcolumns=*/ std::nullopt);
+
+        /// Typed paths are fixed by the type and never participate in shared/dynamic placement (see the
+        /// constructor comment on shared_data_path_rules), so this JSON node's own re-decision above must
+        /// not reach them. Recurse into each independently instead of calling chooseDynamicStructureForMerge
+        /// on this node, which would also unconditionally reshape every typed path, JSON-related or not.
+        const auto & source_object = assert_cast<const ColumnObject &>(*source_current);
+        for (const auto & [path, nested_type] : object_type->getTypedPaths())
+        {
+            auto mutable_it = mutable_object->getTypedPaths().find(path);
+            auto source_it = source_object.getTypedPaths().find(path);
+            if (mutable_it != mutable_object->getTypedPaths().end() && source_it != source_object.getTypedPaths().end())
+                chooseJSONSharedDataStructureForMergeRecursively(*mutable_it->second, *source_it->second, nested_type);
+        }
+        return;
+    }
+
+    /// No JSON anywhere in this subtree: keep the source's exact structure, unaffected by repromotion.
+    if (!containsJSONObjectType(*type))
+    {
+        if (mutable_current->hasDynamicStructure())
+            mutable_current->takeExactDynamicStructureFrom(*source_current);
+        return;
+    }
+
+    /// JSON is reachable somewhere below; keep walking down to isolate it from non-JSON siblings.
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        if (auto * mutable_nullable = typeid_cast<ColumnNullable *>(mutable_current))
+            chooseJSONSharedDataStructureForMergeRecursively(
+                mutable_nullable->getNestedColumn(), assert_cast<const ColumnNullable &>(*source_current).getNestedColumn(), nullable_type->getNestedType());
+        return;
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        if (auto * mutable_array = typeid_cast<ColumnArray *>(mutable_current))
+            chooseJSONSharedDataStructureForMergeRecursively(
+                mutable_array->getData(), assert_cast<const ColumnArray &>(*source_current).getData(), array_type->getNestedType());
+        return;
+    }
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        if (auto * mutable_tuple = typeid_cast<ColumnTuple *>(mutable_current))
+        {
+            const auto & source_tuple = assert_cast<const ColumnTuple &>(*source_current);
+            const auto & element_types = tuple_type->getElements();
+            for (size_t i = 0; i != element_types.size(); ++i)
+                chooseJSONSharedDataStructureForMergeRecursively(mutable_tuple->getColumn(i), source_tuple.getColumn(i), element_types[i]);
+        }
+        return;
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        if (auto * mutable_map = typeid_cast<ColumnMap *>(mutable_current))
+        {
+            auto & mutable_tuple = mutable_map->getNestedData();
+            const auto & source_tuple = assert_cast<const ColumnMap &>(*source_current).getNestedData();
+            chooseJSONSharedDataStructureForMergeRecursively(mutable_tuple.getColumn(0), source_tuple.getColumn(0), map_type->getKeyType());
+            chooseJSONSharedDataStructureForMergeRecursively(mutable_tuple.getColumn(1), source_tuple.getColumn(1), map_type->getValueType());
         }
     }
 }

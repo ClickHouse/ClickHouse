@@ -215,6 +215,12 @@ public:
     bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeExactDynamicStructureFrom(const IColumn & source) override;
     void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
+    /// The dynamic-vs-shared path placement part of chooseDynamicStructureForMerge, without its final
+    /// typed_paths loop. Typed paths are fixed by the type and never participate in shared/dynamic
+    /// placement, so callers that only need to reconsider placement (not a full dynamic-structure merge)
+    /// should call this instead of chooseDynamicStructureForMerge, which calls this and then also merges
+    /// each typed path's own dynamic structure.
+    void choosePathPlacementForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns);
     void fixDynamicStructure() override;
 
     /// Sets the immutable `SHARED REGEXP` matcher from the type. `path_prefix` is non-empty only for
@@ -433,5 +439,15 @@ private:
 /// Rebinds every nested `ColumnObject` policy from the corresponding `DataTypeObject`. Used when a
 /// column is cloned from a source part but the result header carries a different active/history set.
 void setSharedDataPathMatcherRecursively(IColumn & column, const DataTypePtr & type);
+
+/// Re-derives shared-vs-dynamic placement (like a real merge would) only at `JSON` nodes reachable
+/// through `Nullable`/`Array`/`Tuple`/`Map`, mirroring the recursion of setSharedDataPathMatcherRecursively
+/// above. At each `JSON` node, only its own dynamic-vs-shared path selection is re-derived (via
+/// ColumnObject::choosePathPlacementForMerge); its typed paths are recursed into independently, so a
+/// typed path's own dynamic structure (or further-nested JSON) is never swept into that re-decision.
+/// Every dynamic-structured node outside of a JSON subtree (for example a plain sibling `Dynamic`
+/// column) instead keeps its exact existing structure from `source_column`, unaffected by JSON
+/// re-promotion.
+void chooseJSONSharedDataStructureForMergeRecursively(IColumn & mutable_column, const IColumn & source_column, const DataTypePtr & type);
 
 }
