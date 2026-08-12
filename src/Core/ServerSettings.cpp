@@ -2103,6 +2103,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "named_collections",
         "named_collections_storage",
 
+        /// Query rewrite rules
+        "query_rules_storage",
+
         /// Networking and protocols
         "protocols",
         "grpc",
