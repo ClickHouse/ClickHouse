@@ -74,6 +74,9 @@ bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node);
 /// distribute an expression must not do so when the expression contains one.
 bool containsCorrelatedSubquery(const QueryTreeNodePtr & node);
 
+/// Returns true, if the node or any node in its subtree is a subquery/union.
+bool containsSubquery(const QueryTreeNodePtr & node);
+
 /* Checks, if column source is not registered in scopes that appear
  * before nearest query scope.
  * If column appears to be correlated in the scope than it be registered

@@ -49,41 +49,6 @@ bool isArrayJoinFunction(const FunctionNode & function_node)
     return function_node.getFunctionName() == "arrayJoin";
 }
 
-bool isQueryOrUnion(const QueryTreeNodePtr & node)
-{
-    if (!node)
-        return false;
-    const auto node_type = node->getNodeType();
-    return node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION;
-}
-
-bool containsSubquery(const QueryTreeNodePtr & node)
-{
-    std::vector<const IQueryTreeNode *> nodes_to_check;
-    nodes_to_check.push_back(node.get());
-
-    while (!nodes_to_check.empty())
-    {
-        const auto * current = nodes_to_check.back();
-        nodes_to_check.pop_back();
-
-        if (!current)
-            continue;
-
-        const auto node_type = current->getNodeType();
-        if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
-            return true;
-
-        for (const auto & child : current->getChildren())
-        {
-            if (child)
-                nodes_to_check.push_back(child.get());
-        }
-    }
-
-    return false;
-}
-
 std::optional<ArrayJoinProducerInfo> tryGetArrayJoinProducer(const QueryTreeNodePtr & node)
 {
     if (const auto * function_node = node->as<FunctionNode>())
@@ -160,7 +125,7 @@ void collectArrayJoinProducers(const QueryTreeNodePtr & node, std::vector<ArrayJ
     }
 
     /// Do not collect producers from subqueries nested inside the conjunct.
-    if (isQueryOrUnion(node))
+    if (isQueryOrUnionNode(node))
         return;
 
     for (const auto & child : node->getChildren())
@@ -188,7 +153,7 @@ bool isDeterministicAndStateless(const QueryTreeNodePtr & node, const ArrayJoinP
         if (matchesArrayJoinProducer(current, producer_to_ignore))
             continue;
 
-        if (isQueryOrUnion(current))
+        if (isQueryOrUnionNode(current))
             return false;
 
         if (const auto * function_node = current->as<FunctionNode>())
@@ -259,7 +224,7 @@ public:
 
     static bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
     {
-        return !isQueryOrUnion(child);
+        return !isQueryOrUnionNode(child);
     }
 
     void visitImpl(QueryTreeNodePtr & node) const
@@ -314,7 +279,7 @@ public:
 
     static bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
     {
-        return !isQueryOrUnion(child);
+        return !isQueryOrUnionNode(child);
     }
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -358,7 +323,7 @@ public:
     static bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
     {
         /// Only rewrite arrayJoin nodes in the current query scope.
-        return !isQueryOrUnion(child);
+        return !isQueryOrUnionNode(child);
     }
 
     void visitImpl(QueryTreeNodePtr & node) const
