@@ -1730,6 +1730,7 @@ StorageMerge::DatabaseTablesIterators StorageMerge::DatabaseNameOrRegexp::getDat
 
 void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
+    const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache*/ false);
     std::optional<NameDependencies> name_deps{};
     for (const auto & command : commands)
     {
@@ -1743,7 +1744,8 @@ void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, ContextP
         {
             if (!name_deps)
                 name_deps = getDependentViewsByColumn(local_context);
-            const auto & deps_mv = name_deps.value()[command.column_name];
+            const auto deps_mv = getDependentViewsForDroppedColumn(
+                name_deps.value(), metadata_snapshot->getColumns(), command.column_name, /*share_nested_offsets*/ true);
             if (!deps_mv.empty())
             {
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
