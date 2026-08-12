@@ -5845,7 +5845,7 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    DECLARE(UInt64, input_format_parquet_min_bytes_to_split, 256 * 1024 * 1024, R"(
+    DECLARE(UInt64, input_format_parquet_min_bytes_to_split, 2ULL * 1024 * 1024 * 1024, R"(
 When reading a single local Parquet file, it is parallelized across multiple sources (each reading a
 subset of the file's row groups) only if the total compressed size of the columns the query reads is at
 least this value. Below the threshold the file is read by a single source, avoiding per-source setup
