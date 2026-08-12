@@ -1402,6 +1402,17 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
     std::vector<std::string> batch_file_paths;
     batch_file_paths.reserve(keeper_multi_batch_size);
 
+    /// Snapshot generations before starting Keeper deletes
+    /// to prevent race where file re-fails with new generation before cache removal
+    std::unordered_map<std::string, uint64_t> generations_snapshot;
+    {
+        auto all_entries = local_file_statuses.dump();
+        for (const auto & entry : all_entries)
+        {
+            generations_snapshot[entry.mapped->path] = entry.mapped->generation.load();
+        }
+    }
+
     size_t nodes_to_remove = check_nodes_limit && nodes_limit_exceeded
         ? nodes.size() - nodes_limit
         : 0;
@@ -1418,7 +1429,20 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
             /// Full batch succeeded - clear cache for all requests in this batch
             for (const auto & file_path : batch_file_paths)
             {
-                local_file_statuses.remove(getMetadataCacheKey(file_path));
+                using KeyType = UInt128;
+                using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+                local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                    [&generations_snapshot, &file_path](const KeyType &, const StatusPtr & status)
+                    {
+                        if (status->path == file_path)
+                        {
+                            auto it = generations_snapshot.find(file_path);
+                            if (it != generations_snapshot.end() && status->generation.load() == it->second)
+                                return true;
+                        }
+                        return false;
+                    }
+                ));
             }
 
             if (node_limit)
@@ -1432,7 +1456,21 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
             {
                 if (remove_responses[i]->error == Coordination::Error::ZOK)
                 {
-                    local_file_statuses.remove(getMetadataCacheKey(batch_file_paths[i]));
+                    const auto & file_path = batch_file_paths[i];
+                    using KeyType = UInt128;
+                    using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+                    local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                        [&generations_snapshot, &file_path](const KeyType &, const StatusPtr & status)
+                        {
+                            if (status->path == file_path)
+                            {
+                                auto it = generations_snapshot.find(file_path);
+                                if (it != generations_snapshot.end() && status->generation.load() == it->second)
+                                    return true;
+                            }
+                            return false;
+                        }
+                    ));
 
                     if (node_limit)
                         --nodes_to_remove;
@@ -1450,7 +1488,21 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
                     {
                         /// ZOK: retry succeeded. ZNONODE: first attempt already deleted the node
                         /// before the multi aborted. Either way, the node is gone - clear cache.
-                        local_file_statuses.remove(getMetadataCacheKey(batch_file_paths[i]));
+                        const auto & file_path = batch_file_paths[i];
+                        using KeyType = UInt128;
+                        using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+                        local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                            [&generations_snapshot, &file_path](const KeyType &, const StatusPtr & status)
+                            {
+                                if (status->path == file_path)
+                                {
+                                    auto it = generations_snapshot.find(file_path);
+                                    if (it != generations_snapshot.end() && status->generation.load() == it->second)
+                                        return true;
+                                }
+                                return false;
+                            }
+                        ));
 
                         if (node_limit)
                             --nodes_to_remove;
