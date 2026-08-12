@@ -62,7 +62,22 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE t_parse_threads_err"
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count(), sum(id) FROM t_parse_threads_err"
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS asynchronous_insert_log"
+# The log elements are queued by the flush, so retry until all five entries are visible.
+for _ in {1..100}
+do
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS asynchronous_insert_log"
+    logged=$(${CLICKHOUSE_CLIENT} -q "
+        SELECT count()
+        FROM system.asynchronous_insert_log
+        WHERE database = currentDatabase() AND table = 't_parse_threads_err'
+    ")
+    if [[ "$logged" -ge 5 ]]
+    then
+        break
+    fi
+    sleep 0.1
+done
+
 ${CLICKHOUSE_CLIENT} -q "
     SELECT status, count(), sum(rows)
     FROM system.asynchronous_insert_log
