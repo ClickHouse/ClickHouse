@@ -5,12 +5,13 @@ These tests pin the contract that the conversion of the legacy hand-written
 ``.github/workflows/create_release.yml`` into a Praktika-generated workflow
 must keep:
 
-  * every ``create_release.py`` CLI flag that ``release_job.py`` invokes is a
-    real argparse option (catches the orchestrator drifting from the tool),
-  * every workflow-dispatch input that ``release_job.py`` reads is declared by
+  * every ``create_release`` function the orchestrators (``release_job.py`` and
+    ``new_release_branch_job.py``) call is a real module-level function (catches
+    an orchestrator drifting from the tool),
+  * every workflow-dispatch input the orchestrators read is declared by
     the workflow definition,
-  * ``release_job.py`` points at the moved ``ci/jobs/scripts/create_release.py``
-    and ``ci/jobs/scripts/artifactory.py``,
+  * the orchestrators import ``create_release`` directly and call
+    ``ci/jobs/scripts/artifactory.py`` at its moved location,
   * the generated workflow keeps the release-safety invariants (a ``release``
     concurrency group, the ``workflow_call`` reuse contract used by
     ``auto_releases.yml``, and boolean dispatch inputs),
@@ -37,6 +38,8 @@ sys.path.insert(0, REPO_ROOT)
 
 CREATE_RELEASE = os.path.join(REPO_ROOT, "ci/jobs/scripts/create_release.py")
 RELEASE_JOB = os.path.join(REPO_ROOT, "ci/jobs/release_job.py")
+NEW_RELEASE_JOB = os.path.join(REPO_ROOT, "ci/jobs/new_release_branch_job.py")
+ORCHESTRATORS = (RELEASE_JOB, NEW_RELEASE_JOB)
 WORKFLOW_DEF = os.path.join(REPO_ROOT, "ci/workflows/create_release.py")
 WORKFLOW_YML = os.path.join(REPO_ROOT, ".github/workflows/create_release.yml")
 
@@ -60,30 +63,28 @@ def _head_sha(repo):
     ).stdout.strip()
 
 
-def _argparse_long_flags(path):
-    """Every ``--long-option`` registered via ``add_argument`` in ``path``."""
-    flags = set()
-    for node in ast.walk(ast.parse(_read(path))):
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "add_argument"
-        ):
-            for arg in node.args:
-                if (
-                    isinstance(arg, ast.Constant)
-                    and isinstance(arg.value, str)
-                    and arg.value.startswith("--")
-                ):
-                    flags.add(arg.value)
-    return flags
+# create_release no longer has a CLI; the orchestrators call its functions
+# directly, and so do these end-to-end tests. This points create_release at the
+# temp repo (run from it, with the `gh` stub on PATH) so its actions can be
+# called in-process, exactly as the orchestrators call them.
+def _use_release_repo(monkeypatch, repo, bindir):
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "test/clickhouse")
 
 
-def _create_release_subcommands_used():
-    """The ``--flag`` that immediately follows each ``create_release.py`` call."""
-    return set(
-        re.findall(r"create_release\.py\s+(--[a-z0-9-]+)", _read(RELEASE_JOB))
-    )
+def _create_release_callables_used(path):
+    """The ``create_release.<name>`` functions an orchestrator calls directly."""
+    return set(re.findall(r"create_release\.([a-z_][a-z0-9_]*)", _read(path)))
+
+
+def _module_functions(path):
+    """Every top-level ``def`` in a module."""
+    return {
+        node.name
+        for node in ast.parse(_read(path)).body
+        if isinstance(node, ast.FunctionDef)
+    }
 
 
 def _workflow_input_names():
@@ -97,88 +98,95 @@ def _workflow_input_names():
     return names
 
 
-def _workflow_inputs_read_by_job():
+def _workflow_inputs_read_by_job(path):
     """Input names the job reads via ``Info.get_workflow_input_value`` / ``_wi``."""
-    text = _read(RELEASE_JOB)
+    text = _read(path)
     return set(
         re.findall(r'_wi\(\s*["\']([a-z0-9-]+)["\']', text)
         + re.findall(r'get_workflow_input_value\(\s*["\']([a-z0-9-]+)["\']', text)
     )
 
 
-def test_release_job_only_uses_existing_create_release_flags():
-    defined = _argparse_long_flags(CREATE_RELEASE)
-    used = _create_release_subcommands_used()
-    assert used, "release_job.py should invoke create_release.py with flags"
-    missing = used - defined
-    assert not missing, (
-        f"release_job.py invokes create_release.py flags that do not exist: "
-        f"{sorted(missing)} (defined: {sorted(defined)})"
-    )
+def test_orchestrators_only_call_existing_create_release_functions():
+    defined = _module_functions(CREATE_RELEASE)
+    for job in ORCHESTRATORS:
+        used = _create_release_callables_used(job)
+        assert used, f"{os.path.basename(job)} should call create_release functions"
+        missing = used - defined
+        assert not missing, (
+            f"{os.path.basename(job)} calls create_release functions that do not "
+            f"exist: {sorted(missing)} (defined: {sorted(defined)})"
+        )
 
 
-def test_workflow_declares_every_input_the_job_reads():
+def test_workflow_declares_every_input_the_jobs_read():
     declared = _workflow_input_names()
-    read = _workflow_inputs_read_by_job()
-    assert read, "release_job.py should read workflow-dispatch inputs"
-    missing = read - declared
-    assert not missing, (
-        f"release_job.py reads workflow inputs not declared in the workflow "
-        f"definition: {sorted(missing)} (declared: {sorted(declared)})"
-    )
+    for job in ORCHESTRATORS:
+        read = _workflow_inputs_read_by_job(job)
+        assert read, f"{os.path.basename(job)} should read workflow-dispatch inputs"
+        missing = read - declared
+        assert not missing, (
+            f"{os.path.basename(job)} reads workflow inputs not declared in the "
+            f"workflow definition: {sorted(missing)} (declared: {sorted(declared)})"
+        )
 
 
-def test_release_job_points_at_moved_paths():
+def test_orchestrators_point_at_moved_paths():
+    for job in ORCHESTRATORS:
+        text = _read(job)
+        # create_release is imported and called directly, not spawned as a subprocess.
+        assert "from ci.jobs.scripts import create_release" in text
+        assert "tests/ci/create_release.py" not in text
+        assert "./ci/jobs/create_release.py" not in text
+    # Package export/test still shells out to artifactory.py at its moved path.
+    release_text = _read(RELEASE_JOB)
+    assert "./ci/jobs/scripts/artifactory.py" in release_text
+    assert "./ci/jobs/artifactory.py" not in release_text
+    assert "tests/ci/artifactory.py" not in release_text
+
+
+def test_release_job_dispatches_new_type_to_its_own_file():
     text = _read(RELEASE_JOB)
-    assert "./ci/jobs/scripts/create_release.py" in text
-    assert "./ci/jobs/scripts/artifactory.py" in text
-    # Both files were moved out of tests/ci (and are scripts, not jobs); the
-    # orchestrator must not call the old locations.
-    assert "tests/ci/create_release.py" not in text
-    assert "./ci/jobs/create_release.py" not in text
-    assert "./ci/jobs/artifactory.py" not in text
-    assert "tests/ci/artifactory.py" not in text
+    assert "from ci.jobs.new_release_branch_job import" in text
+    assert 'args.release_type == "new"' in text
 
 
-def test_enqueue_is_last_and_patch_bump_is_deferred():
-    """The PR enqueue must be the last release step, and the patch bump deferred.
-
-    Enqueue runs last so the release PR's `CH Inc sync` check gets the maximum
-    time (the whole publish) to complete before we add the PR to the merge queue.
-    The patch version bump is still deferred to near the end (after the changelog
-    PR is created, not right after the tag push): that keeps the branch tip equal
-    to the released commit through publishing, so a rerun after any failure sees
-    an un-bumped branch and prepare recovers the existing release instead of
-    minting a below-tip one. The "new" release bump stays early (it opens the
-    master bump PR the enqueue later merges).
-    """
+def test_patch_bump_is_deferred_and_enqueue_is_last():
+    """In the patch flow the version bump is deferred past the changelog PR, and
+    the enqueue is the last release step, so the release PR's `CH Inc sync` check
+    gets the whole publish to complete before the PR joins the merge queue.
+    Deferring the bump keeps the branch tip at the released commit through
+    publishing, so a rerun after any failure recovers rather than minting a
+    below-tip release. The 'new' bump lives in ``new_release_branch_job.py``."""
     text = _read(RELEASE_JOB)
-    # Match the actual create_release.py invocations, not prose in comments.
-    bump_positions = [
-        m.start()
-        for m in re.finditer(r"create_release\.py --create-bump-version-pr", text)
-    ]
-    # The enqueue step is an in-process function call (merge_created_prs), anchored
-    # by its unique step name rather than a CLI string.
-    merge_pos = text.find('name="Update Release Info and Merge Created PRs"')
+    bump_pos = text.find("command=create_release.create_bump_version_pr")
     changelog_pr_pos = text.find('name="Create ChangeLog PR"')
-    assert len(bump_positions) >= 2, (
-        "expected a separate 'new' and deferred 'patch' --create-bump-version-pr"
+    merge_pos = text.find('name="Update Release Info and Merge Created PRs"')
+    assert bump_pos != -1, "patch flow should bump the version"
+    assert changelog_pr_pos != -1, "patch flow should create the changelog PR"
+    assert merge_pos != -1, "patch flow should enqueue the release PR"
+    assert changelog_pr_pos < bump_pos < merge_pos, (
+        "the patch bump must be deferred past the changelog PR and the enqueue last"
     )
-    assert merge_pos != -1, "release_job.py should have the enqueue step"
-    assert changelog_pr_pos != -1, "release_job.py should have the Create ChangeLog PR step"
-    # Enqueue is the last release action: after both version bumps.
-    assert all(p < merge_pos for p in bump_positions), (
-        "the enqueue step must run after both version bumps (it is the last step)"
-    )
-    # The 'new' bump is early (before the changelog PR step); the 'patch' bump is
-    # deferred to after it.
-    assert min(bump_positions) < changelog_pr_pos, (
-        "the 'new' version bump must run early (before the changelog PR step)"
-    )
-    assert max(bump_positions) > changelog_pr_pos, (
-        "the 'patch' version bump must be deferred to after the changelog PR step"
-    )
+    # Exactly one bump here; the 'new' bump is in the other orchestrator.
+    assert text.count("command=create_release.create_bump_version_pr") == 1
+
+
+def test_new_release_branch_bumps_before_enqueue_and_omits_patch_steps():
+    text = _read(NEW_RELEASE_JOB)
+    bump_pos = text.find("command=create_release.create_bump_version_pr")
+    merge_pos = text.find('name="Update Release Info and Merge Created PRs"')
+    assert bump_pos != -1 and merge_pos != -1
+    assert bump_pos < merge_pos, "the new bump opens the master PR the enqueue then merges"
+    # The new flow carries none of the patch-only publishing/recovery machinery.
+    for absent in (
+        'name="Create ChangeLog PR"',
+        "create_release.create_gh_release",
+        "artifactory.py",
+        "only_repo",
+        "only_docker",
+    ):
+        assert absent not in text, f"unexpected patch-only reference in new flow: {absent}"
 
 
 def test_generated_workflow_preserves_release_invariants():
@@ -301,8 +309,8 @@ SET(VERSION_STRING 26.6.2.1)
 """
 
 
-def test_dry_run_patch_release_end_to_end(tmp_path):
-    """Drive create_release.py through a whole patch release in --dry-run.
+def test_dry_run_patch_release_end_to_end(tmp_path, monkeypatch, capfd):
+    """Drive create_release through a whole patch release in --dry-run.
 
     Builds a synthetic ClickHouse release branch (``26.6`` with a previous
     ``v26.6.1.1-stable`` tag) and runs the release steps that are hermetic in
@@ -363,15 +371,6 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
     git("remote", "add", "origin", str(repo))
     git("fetch", "-q", "origin")
 
-    # create_release.py resolves `s3_helper`/`ssh` relative to its own location
-    # and computes the contributors "executer" as its path relative to cwd, so
-    # it must live inside the repo it operates on (as it does in production).
-    # Symlink the real ci/ and tests/ trees in (left untracked) and run that
-    # in-repo copy.
-    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
-    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
-    script = str(repo / "ci" / "jobs" / "scripts" / "create_release.py")
-
     commit_sha = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=repo,
@@ -390,36 +389,10 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
     gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
     gh_stub.chmod(0o755)
 
-    env = {
-        **os.environ,
-        "PYTHONPATH": REPO_ROOT,
-        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
-        "GITHUB_REPOSITORY": "test/clickhouse",
-    }
+    _use_release_repo(monkeypatch, repo, bindir)
+    from ci.jobs.scripts import create_release
 
-    def step(*flags):
-        result = subprocess.run(
-            [sys.executable, script, *flags],
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0, (
-            f"step {flags} failed (rc={result.returncode})\n"
-            f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
-        )
-        return result
-
-    step(
-        "--prepare-release-info",
-        "--ref",
-        "26.6",  # new release from the branch tip
-        "--release-type",
-        "patch",
-        "--dry-run",
-    )
-
+    create_release.prepare_release_info(ref="26.6", release_type="patch", dry_run=True)
     with open("/tmp/release_info.json", encoding="utf-8") as f:
         info = json.load(f)
     assert info["release_type"] == "patch"
@@ -430,17 +403,19 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
     assert info["create_new_release"] is True
     assert info["is_branch_release"] is True  # gates the deferred version bump
 
-    step("--push-release-tag", "--dry-run")
+    create_release.push_release_tag(dry_run=True)
     # The dry-run bump writes the file, prints its diff, then reverts it. The diff
     # must show the patch advancing 26.6.2 -> 26.6.3 (post-release bump).
-    bump = step("--create-bump-version-pr", "--dry-run")
-    assert "SET(VERSION_PATCH 3)" in bump.stdout
-    assert "26.6.3.1" in bump.stdout
-    final = step("--post-status", "--dry-run")
-    assert "New release" in final.stdout
+    capfd.readouterr()  # drop output captured so far
+    create_release.create_bump_version_pr(dry_run=True)
+    bump_out = capfd.readouterr().out
+    assert "SET(VERSION_PATCH 3)" in bump_out
+    assert "26.6.3.1" in bump_out
+    create_release.post_status()
+    assert "New release" in capfd.readouterr().out
 
 
-def test_prepare_recovers_from_tag(tmp_path):
+def test_prepare_recovers_from_tag(tmp_path, monkeypatch):
     """Dispatching an existing release tag recovers (re-publishes) that release.
 
     Recovery is expressed by passing the version tag: ``prepare`` must set
@@ -484,41 +459,16 @@ def test_prepare_recovers_from_tag(tmp_path):
     git("remote", "add", "origin", str(repo))
     git("fetch", "-q", "origin")
 
-    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
-    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
-    script = str(repo / "ci" / "jobs" / "scripts" / "create_release.py")
-
     bindir = tmp_path / "bin"
     bindir.mkdir()
     gh_stub = bindir / "gh"
     gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
     gh_stub.chmod(0o755)
-    env = {
-        **os.environ,
-        "PYTHONPATH": REPO_ROOT,
-        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
-        "GITHUB_REPOSITORY": "test/clickhouse",
-    }
+    _use_release_repo(monkeypatch, repo, bindir)
+    from ci.jobs.scripts import create_release
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            script,
-            "--prepare-release-info",
-            "--ref",
-            "v26.6.2.1-stable",  # recovery via the release tag
-            "--release-type",
-            "patch",
-            "--dry-run",
-        ],
-        cwd=repo,
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, (
-        f"recovery prepare failed (rc={result.returncode})\n"
-        f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+    create_release.prepare_release_info(
+        ref="v26.6.2.1-stable", release_type="patch", dry_run=True  # recovery via the release tag
     )
     with open("/tmp/release_info.json", encoding="utf-8") as f:
         info = json.load(f)
@@ -528,7 +478,7 @@ def test_prepare_recovers_from_tag(tmp_path):
     assert info["is_branch_release"] is True
 
 
-def test_recovery_of_unbumped_branch_bumps_version(tmp_path):
+def test_recovery_of_unbumped_branch_bumps_version(tmp_path, monkeypatch, capfd):
     """Heal: recovering an un-bumped branch must still advance the version file.
 
     The tag sits at the branch tip with no post-release bump commit, so this is a
@@ -572,46 +522,30 @@ def test_recovery_of_unbumped_branch_bumps_version(tmp_path):
     git("remote", "add", "origin", str(repo))
     git("fetch", "-q", "origin")
 
-    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
-    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
-    script = str(repo / "ci" / "jobs" / "scripts" / "create_release.py")
-
     bindir = tmp_path / "bin"
     bindir.mkdir()
     gh_stub = bindir / "gh"
     gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
     gh_stub.chmod(0o755)
-    env = {
-        **os.environ,
-        "PYTHONPATH": REPO_ROOT,
-        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
-        "GITHUB_REPOSITORY": "test/clickhouse",
-    }
+    _use_release_repo(monkeypatch, repo, bindir)
+    from ci.jobs.scripts import create_release
 
-    def step(*flags):
-        result = subprocess.run(
-            [sys.executable, script, *flags], cwd=repo, env=env,
-            capture_output=True, text=True,
-        )
-        assert result.returncode == 0, (
-            f"step {flags} failed (rc={result.returncode})\n"
-            f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
-        )
-        return result
-
-    step("--prepare-release-info", "--ref", "v26.6.2.1-stable",
-         "--release-type", "patch", "--dry-run")
+    create_release.prepare_release_info(
+        ref="v26.6.2.1-stable", release_type="patch", dry_run=True
+    )
     with open("/tmp/release_info.json", encoding="utf-8") as f:
         info = json.load(f)
     assert info["create_new_release"] is False  # recovery
     assert info["is_branch_release"] is True  # branch not advanced -> gates the bump
 
-    bump = step("--create-bump-version-pr", "--dry-run")
-    assert "SET(VERSION_PATCH 3)" in bump.stdout  # 26.6.2 -> 26.6.3
-    assert "26.6.3.1" in bump.stdout
+    capfd.readouterr()  # drop output captured so far
+    create_release.create_bump_version_pr(dry_run=True)
+    bump_out = capfd.readouterr().out
+    assert "SET(VERSION_PATCH 3)" in bump_out  # 26.6.2 -> 26.6.3
+    assert "26.6.3.1" in bump_out
 
 
-def test_prepare_recovers_already_released_commit(tmp_path):
+def test_prepare_recovers_already_released_commit(tmp_path, monkeypatch):
     """A rerun that keeps the original commit SHA degrades to recovery.
 
     ``auto_releases.yml`` dispatches ``ref=<commit_sha>``, and GitHub's "Re-run
@@ -667,41 +601,17 @@ def test_prepare_recovers_already_released_commit(tmp_path):
     git("remote", "add", "origin", str(repo))
     git("fetch", "-q", "origin")
 
-    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
-    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
-    script = str(repo / "ci" / "jobs" / "scripts" / "create_release.py")
-
     bindir = tmp_path / "bin"
     bindir.mkdir()
     gh_stub = bindir / "gh"
     gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
     gh_stub.chmod(0o755)
-    env = {
-        **os.environ,
-        "PYTHONPATH": REPO_ROOT,
-        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
-        "GITHUB_REPOSITORY": "test/clickhouse",
-    }
+    _use_release_repo(monkeypatch, repo, bindir)
+    from ci.jobs.scripts import create_release
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            script,
-            "--prepare-release-info",
-            "--ref",
-            commit_sha,  # raw SHA of an already-released commit (the rerun case)
-            "--release-type",
-            "patch",
-            "--dry-run",
-        ],
-        cwd=repo,
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, (
-        f"rerun recovery prepare failed (rc={result.returncode})\n"
-        f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+    # Raw SHA of an already-released commit (the rerun case).
+    create_release.prepare_release_info(
+        ref=commit_sha, release_type="patch", dry_run=True
     )
     with open("/tmp/release_info.json", encoding="utf-8") as f:
         info = json.load(f)
@@ -711,7 +621,7 @@ def test_prepare_recovers_already_released_commit(tmp_path):
     assert info["is_branch_release"] is True
 
 
-def test_prepare_refuses_out_of_order_commit(tmp_path):
+def test_prepare_refuses_out_of_order_commit(tmp_path, monkeypatch):
     """A commit ref that is behind the branch tip's release must fail.
 
     The branch tip's version file already describes a newer release
@@ -777,43 +687,21 @@ def test_prepare_refuses_out_of_order_commit(tmp_path):
     git("remote", "add", "origin", str(repo))
     git("fetch", "-q", "origin")
 
-    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
-    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
-    script = str(repo / "ci" / "jobs" / "scripts" / "create_release.py")
-
     bindir = tmp_path / "bin"
     bindir.mkdir()
     gh_stub = bindir / "gh"
     gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
     gh_stub.chmod(0o755)
-    env = {
-        **os.environ,
-        "PYTHONPATH": REPO_ROOT,
-        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
-        "GITHUB_REPOSITORY": "test/clickhouse",
-    }
+    _use_release_repo(monkeypatch, repo, bindir)
+    from ci.jobs.scripts import create_release
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            script,
-            "--prepare-release-info",
-            "--ref",
-            commit_sha,
-            "--release-type",
-            "patch",
-            "--dry-run",
-        ],
-        cwd=repo,
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode != 0, "out-of-order release should have failed"
-    assert "out-of-order release" in (result.stdout + result.stderr)
+    with pytest.raises(RuntimeError, match="out-of-order release"):
+        create_release.prepare_release_info(
+            ref=commit_sha, release_type="patch", dry_run=True
+        )
 
 
-def test_prepare_recovers_superseded_release_without_rebumping(tmp_path):
+def test_prepare_recovers_superseded_release_without_rebumping(tmp_path, monkeypatch):
     """Recovering a superseded release via its tag must NOT re-bump the branch.
 
     The branch tip is a newer release (``26.6.4``) than the recovered ``26.6.3``,
@@ -874,41 +762,17 @@ def test_prepare_recovers_superseded_release_without_rebumping(tmp_path):
     git("remote", "add", "origin", str(repo))
     git("fetch", "-q", "origin")
 
-    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
-    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
-    script = str(repo / "ci" / "jobs" / "scripts" / "create_release.py")
-
     bindir = tmp_path / "bin"
     bindir.mkdir()
     gh_stub = bindir / "gh"
     gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
     gh_stub.chmod(0o755)
-    env = {
-        **os.environ,
-        "PYTHONPATH": REPO_ROOT,
-        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
-        "GITHUB_REPOSITORY": "test/clickhouse",
-    }
+    _use_release_repo(monkeypatch, repo, bindir)
+    from ci.jobs.scripts import create_release
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            script,
-            "--prepare-release-info",
-            "--ref",
-            "v26.6.3.1-stable",  # recover the superseded release via its tag
-            "--release-type",
-            "patch",
-            "--dry-run",
-        ],
-        cwd=repo,
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, (
-        f"superseded recovery prepare failed (rc={result.returncode})\n"
-        f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+    # Recover the superseded release via its tag.
+    create_release.prepare_release_info(
+        ref="v26.6.3.1-stable", release_type="patch", dry_run=True
     )
     with open("/tmp/release_info.json", encoding="utf-8") as f:
         info = json.load(f)
@@ -918,7 +782,7 @@ def test_prepare_recovers_superseded_release_without_rebumping(tmp_path):
     assert info["is_branch_release"] is False
 
 
-def test_prepare_refuses_stale_commit_even_when_it_is_a_tagged_release(tmp_path):
+def test_prepare_refuses_stale_commit_even_when_it_is_a_tagged_release(tmp_path, monkeypatch):
     """A bare SHA of an older *tagged* release is still out-of-order, not recovery.
 
     Recovery is expressed by the ref being a release *tag name*; passing the raw
@@ -981,43 +845,22 @@ def test_prepare_refuses_stale_commit_even_when_it_is_a_tagged_release(tmp_path)
     git("remote", "add", "origin", str(repo))
     git("fetch", "-q", "origin")
 
-    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
-    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
-    script = str(repo / "ci" / "jobs" / "scripts" / "create_release.py")
-
     bindir = tmp_path / "bin"
     bindir.mkdir()
     gh_stub = bindir / "gh"
     gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
     gh_stub.chmod(0o755)
-    env = {
-        **os.environ,
-        "PYTHONPATH": REPO_ROOT,
-        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
-        "GITHUB_REPOSITORY": "test/clickhouse",
-    }
+    _use_release_repo(monkeypatch, repo, bindir)
+    from ci.jobs.scripts import create_release
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            script,
-            "--prepare-release-info",
-            "--ref",
-            commit_sha,  # raw SHA of an older tagged release, not the tag name
-            "--release-type",
-            "patch",
-            "--dry-run",
-        ],
-        cwd=repo,
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode != 0, "stale tagged commit should have failed"
-    assert "out-of-order release" in (result.stdout + result.stderr)
+    # Raw SHA of an older tagged release, not the tag name.
+    with pytest.raises(RuntimeError, match="out-of-order release"):
+        create_release.prepare_release_info(
+            ref=commit_sha, release_type="patch", dry_run=True
+        )
 
 
-def test_prepare_creates_from_branch_ref(tmp_path):
+def test_prepare_creates_from_branch_ref(tmp_path, monkeypatch):
     """A branch ref whose tip is after the latest release tag creates the next
     release — it is never treated as out-of-order, even if a version file lags.
 
@@ -1070,42 +913,15 @@ def test_prepare_creates_from_branch_ref(tmp_path):
     git("remote", "add", "origin", str(repo))
     git("fetch", "-q", "origin")
 
-    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
-    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
-    script = str(repo / "ci" / "jobs" / "scripts" / "create_release.py")
-
     bindir = tmp_path / "bin"
     bindir.mkdir()
     gh_stub = bindir / "gh"
     gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
     gh_stub.chmod(0o755)
-    env = {
-        **os.environ,
-        "PYTHONPATH": REPO_ROOT,
-        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
-        "GITHUB_REPOSITORY": "test/clickhouse",
-    }
+    _use_release_repo(monkeypatch, repo, bindir)
+    from ci.jobs.scripts import create_release
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            script,
-            "--prepare-release-info",
-            "--ref",
-            "26.6",
-            "--release-type",
-            "patch",
-            "--dry-run",
-        ],
-        cwd=repo,
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, (
-        f"branch release prepare failed (rc={result.returncode})\n"
-        f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
-    )
+    create_release.prepare_release_info(ref="26.6", release_type="patch", dry_run=True)
     with open("/tmp/release_info.json", encoding="utf-8") as f:
         info = json.load(f)
     assert info["release_tag"] == "v26.6.2.2-stable"
@@ -1113,7 +929,7 @@ def test_prepare_creates_from_branch_ref(tmp_path):
     assert info["is_branch_release"] is True
 
 
-def test_prepare_fails_closed_on_stale_branch_version_file(tmp_path):
+def test_prepare_fails_closed_on_stale_branch_version_file(tmp_path, monkeypatch):
     """A branch ref whose tip version file still describes an already-published
     release must fail closed, not mint a colliding tag.
 
@@ -1165,40 +981,18 @@ def test_prepare_fails_closed_on_stale_branch_version_file(tmp_path):
     git("remote", "add", "origin", str(repo))
     git("fetch", "-q", "origin")
 
-    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
-    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
-    script = str(repo / "ci" / "jobs" / "scripts" / "create_release.py")
-
     bindir = tmp_path / "bin"
     bindir.mkdir()
     gh_stub = bindir / "gh"
     gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
     gh_stub.chmod(0o755)
-    env = {
-        **os.environ,
-        "PYTHONPATH": REPO_ROOT,
-        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
-        "GITHUB_REPOSITORY": "test/clickhouse",
-    }
+    _use_release_repo(monkeypatch, repo, bindir)
+    from ci.jobs.scripts import create_release
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            script,
-            "--prepare-release-info",
-            "--ref",
-            "26.6",
-            "--release-type",
-            "patch",
-            "--dry-run",
-        ],
-        cwd=repo,
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode != 0, "stale branch version file should have failed"
-    assert "is stale" in (result.stdout + result.stderr)
+    with pytest.raises(RuntimeError, match="is stale"):
+        create_release.prepare_release_info(
+            ref="26.6", release_type="patch", dry_run=True
+        )
 
 
 # --- ReleaseInfo._enqueue_release_pr (merge_prs helper) ----------------------
