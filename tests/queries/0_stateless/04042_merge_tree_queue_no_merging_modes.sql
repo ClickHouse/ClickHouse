@@ -26,6 +26,10 @@ CREATE TABLE mtq_aggregating(a UInt64) ENGINE = AggregatingMergeTreeQueue ORDER 
 
 select 'ORDER BY is forbidden';
 CREATE TABLE mtq_order(a UInt64) ENGINE = MergeTreeQueue ORDER BY a; -- { serverError BAD_ARGUMENTS }
+-- An explicit sort direction never matches the plain ascending commit-order key and must be
+-- rejected the same way, even when the column names match (used to throw a logical error).
+CREATE TABLE mtq_order(a UInt64) ENGINE = MergeTreeQueue ORDER BY (_block_number DESC, _block_offset DESC); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE mtq_order(a UInt64) ENGINE = MergeTreeQueue ORDER BY a DESC; -- { serverError BAD_ARGUMENTS }
 
 select 'PRIMARY KEY is forbidden';
 CREATE TABLE mtq_pk(a UInt64) ENGINE = MergeTreeQueue PRIMARY KEY a; -- { serverError BAD_ARGUMENTS }

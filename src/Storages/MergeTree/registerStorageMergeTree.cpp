@@ -29,6 +29,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSetQuery.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -754,7 +755,15 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
                 auto key_expr_list = extractKeyExpressionList(key_ast->ptr());
                 return key_expr_list->children
-                        | std::views::transform([&](const auto & child) { return child->getColumnName(); })
+                        | std::views::transform([&](const ASTPtr & child) -> std::string
+                        {
+                            /// An element with an explicit sort direction (`ASTStorageOrderByElement` survives parsing
+                            /// only when `DESC` is present) has no column name and never matches the plain ascending
+                            /// commit-order key, so map it to an empty name to reject it below with `BAD_ARGUMENTS`.
+                            if (child->as<ASTStorageOrderByElement>())
+                                return {};
+                            return child->getColumnName();
+                        })
                         | std::ranges::to<std::vector<std::string>>();
             };
 
