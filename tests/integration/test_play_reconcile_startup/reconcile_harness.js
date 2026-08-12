@@ -469,8 +469,14 @@ async function runScenario(js, config) {
     /// (see the dirty-startup scenario): run `config.duringLoad(sandbox)` inside the `openDelayMs`
     /// window, before `reconcileStartup` takes over the workspace (`bootstrap_settled`).
     if (config.duringLoad) {
-        await sleep(config.duringLoadDelayMs || 5);
+        /// The bootstrap is synchronous and `IndexedDB.open` can only resolve through a
+        /// `setTimeout`, so yielding to microtasks alone keeps the interaction before the open.
+        await Promise.resolve();
+        if (vm.runInContext('bootstrap_settled', sandbox))
+            throw new Error('duringLoad ran after reconciliation settled: the load window closed early');
         config.duringLoad(sandbox);
+        if (!vm.runInContext('bootstrap_dirty', sandbox))
+            throw new Error('duringLoad did not mark the bootstrap workspace dirty');
     }
     /// Startup is asynchronous: `reconcileStartup` awaits IndexedDB and ends with the debounced
     /// `scheduleSave` (400 ms), whose `persist` writes the reconciled workspace back. Wait for
