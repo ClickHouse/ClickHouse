@@ -21,9 +21,12 @@ DOCS_TEAM = "docs"
 CLICKPIPES_TEAM = "clickpipes"
 INTEGRATIONS_ECOSYSTEM_TEAM = "integrations-ecosystem"
 
-TEAM_REVIEW_TOKEN = Secret.Config(
-    name="/ci/robot-ch-test-poll-copilot",
-    type=Secret.Type.AWS_SSM_PARAMETER,
+TEAM_REVIEW_TOKENS = tuple(
+    Secret.Config(name=name, type=Secret.Type.AWS_SSM_PARAMETER)
+    for name in (
+        "/ci/robot-ch-test-poll-copilot",
+        "/ci/robot-ch-test-poll-1-copilot",
+    )
 )
 
 
@@ -60,35 +63,44 @@ def request_docs_team_reviews(team_slugs):
     if not team_slugs:
         return True
 
-    token = TEAM_REVIEW_TOKEN.get_value()
-    with tempfile.TemporaryDirectory() as gh_config_dir:
-        gh_env = os.environ.copy()
-        gh_env["GH_CONFIG_DIR"] = gh_config_dir
-        gh_env.pop("GH_TOKEN", None)
-        gh_env.pop("GITHUB_TOKEN", None)
-        subprocess.run(
-            ["gh", "auth", "login", "--with-token"],
-            input=token,
-            text=True,
-            check=True,
-            env=gh_env,
-        )
+    for token_config in TEAM_REVIEW_TOKENS:
+        with tempfile.TemporaryDirectory() as gh_config_dir:
+            gh_env = os.environ.copy()
+            gh_env["GH_CONFIG_DIR"] = gh_config_dir
+            gh_env.pop("GH_TOKEN", None)
+            gh_env.pop("GITHUB_TOKEN", None)
+            try:
+                subprocess.run(
+                    ["gh", "auth", "login", "--with-token"],
+                    input=token_config.get_value(),
+                    text=True,
+                    check=True,
+                    env=gh_env,
+                )
+            except subprocess.CalledProcessError:
+                print(
+                    f"WARNING: Failed to authenticate team review robot "
+                    f"[{token_config.name}]"
+                )
+                continue
 
-        previous_env = {
-            name: os.environ.get(name)
-            for name in ("GH_CONFIG_DIR", "GH_TOKEN", "GITHUB_TOKEN")
-        }
-        os.environ["GH_CONFIG_DIR"] = gh_config_dir
-        os.environ.pop("GH_TOKEN", None)
-        os.environ.pop("GITHUB_TOKEN", None)
-        try:
-            return GH.request_team_reviews(team_slugs)
-        finally:
-            for name, value in previous_env.items():
-                if value is None:
-                    os.environ.pop(name, None)
-                else:
-                    os.environ[name] = value
+            previous_env = {
+                name: os.environ.get(name)
+                for name in ("GH_CONFIG_DIR", "GH_TOKEN", "GITHUB_TOKEN")
+            }
+            os.environ["GH_CONFIG_DIR"] = gh_config_dir
+            os.environ.pop("GH_TOKEN", None)
+            os.environ.pop("GITHUB_TOKEN", None)
+            try:
+                return GH.request_team_reviews(team_slugs)
+            finally:
+                for name, value in previous_env.items():
+                    if value is None:
+                        os.environ.pop(name, None)
+                    else:
+                        os.environ[name] = value
+
+    raise RuntimeError("Failed to authenticate any team review robot")
 
 
 def check():

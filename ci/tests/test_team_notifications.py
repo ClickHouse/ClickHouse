@@ -1,4 +1,6 @@
 import os
+import subprocess
+from types import SimpleNamespace
 
 import pytest
 
@@ -84,9 +86,9 @@ def test_request_docs_team_reviews_uses_isolated_robot_session(monkeypatch):
     monkeypatch.setenv("GH_TOKEN", "app-token")
     monkeypatch.setenv("GITHUB_TOKEN", "workflow-token")
     monkeypatch.setattr(
-        team_notifications.TEAM_REVIEW_TOKEN,
-        "get_value",
-        lambda: "robot-token",
+        team_notifications,
+        "TEAM_REVIEW_TOKENS",
+        (SimpleNamespace(name="robot", get_value=lambda: "robot-token"),),
     )
 
     def fake_auth(command, input, text, check, env):
@@ -125,6 +127,34 @@ def test_request_docs_team_reviews_uses_isolated_robot_session(monkeypatch):
     assert os.environ["GH_CONFIG_DIR"] == "original-config"
     assert os.environ["GH_TOKEN"] == "app-token"
     assert os.environ["GITHUB_TOKEN"] == "workflow-token"
+
+
+def test_request_docs_team_reviews_tries_next_robot(monkeypatch):
+    tokens = []
+
+    monkeypatch.setattr(
+        team_notifications,
+        "TEAM_REVIEW_TOKENS",
+        (
+            SimpleNamespace(name="robot-1", get_value=lambda: "bad-token"),
+            SimpleNamespace(name="robot-2", get_value=lambda: "good-token"),
+        ),
+    )
+
+    def fake_auth(command, input, text, check, env):
+        tokens.append(input)
+        if input == "bad-token":
+            raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(team_notifications.subprocess, "run", fake_auth)
+    monkeypatch.setattr(
+        team_notifications.GH,
+        "request_team_reviews",
+        staticmethod(lambda team_slugs: team_slugs == ["docs"]),
+    )
+
+    assert team_notifications.request_docs_team_reviews(["docs"])
+    assert tokens == ["bad-token", "good-token"]
 
 
 def test_check_requests_docs_teams(monkeypatch):
