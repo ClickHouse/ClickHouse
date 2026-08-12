@@ -374,7 +374,7 @@ class ReleaseInfo:
         # ahead once the whole release has succeeded, when no rerun is pending.
         # That keeps reruns recoverable without consulting release tags here.
         if Git.tag_exists(commit_ref):
-            recover = True
+            self.is_recovery = True
             assert release_tag == commit_ref, (
                 f"ref [{commit_ref}] is a release tag but the version at its commit "
                 f"describes [{release_tag}]; refusing to re-publish a different "
@@ -408,7 +408,7 @@ class ReleaseInfo:
                     f"bump on the branch, then dispatch its tip, or pass a "
                     f"release tag to recover an existing release."
                 )
-            recover = True
+            self.is_recovery = True
         else:
             # Creating (not recovering). The recovery branches above are exempt.
             if release_type == "patch":
@@ -430,8 +430,7 @@ class ReleaseInfo:
                     f"released as [{line_tags.split()[0]}]; the post-release version "
                     f"bump was lost — bump the branch before releasing"
                 )
-            recover = False
-        self.is_recovery = recover
+            self.is_recovery = False
         self.release_type = release_type
         return self
 
