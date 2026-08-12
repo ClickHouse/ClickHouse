@@ -129,10 +129,10 @@ public:
     void drop() override;
 
     bool storesDataOnDisk() const override { return data_volume != nullptr; }
-    /// `Distributed`, `Remote`, and `RemoteSecure` with an ordinary table target can acknowledge an `INSERT`
-    /// after storing its data in the local background queue. A table-function target is read-only, so `write`
-    /// rejects it before user data can be queued.
-    bool hasUnreplicatedLocalTableData() const override { return storesDataOnDisk() && !remote_table_function_ptr; }
+    /// `Distributed`, `Remote`, and `RemoteSecure` with an ordinary table target can store the background
+    /// `INSERT` queue on local disk. A table-function target is read-only, so `write` rejects it before a
+    /// queue can be created.
+    bool hasUnreplicatedLocalDiskData() const override { return storesDataOnDisk() && !remote_table_function_ptr; }
     Strings getDataPaths() const override;
 
     ActionLock getActionLock(StorageActionBlockType type) override;

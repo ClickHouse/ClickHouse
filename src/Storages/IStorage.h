@@ -712,12 +712,10 @@ public:
     /// NOTE: may not be equivalent to !getDataPaths().empty()
     virtual bool storesDataOnDisk() const { return false; }
 
-    /// Returns true if the table can keep unreplicated data in local storage.
-    /// Such a table cannot be created in a `Replicated` database, because its data would exist on a single
-    /// replica only, while the table metadata is replicated to all of them.
-    /// Transient auxiliary files are not taken into account unless they can contain user data acknowledged by an
-    /// `INSERT`, such as the background queue of a `Distributed` table.
-    virtual bool hasUnreplicatedLocalTableData() const { return storesDataOnDisk() && !supportsReplication(); }
+    /// Returns true if the table can store unreplicated data on local disk.
+    /// Such a table cannot be created in a `Replicated` database while
+    /// `database_replicated_allow_only_replicated_engine` is enabled.
+    virtual bool hasUnreplicatedLocalDiskData() const { return storesDataOnDisk() && !supportsReplication(); }
 
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }

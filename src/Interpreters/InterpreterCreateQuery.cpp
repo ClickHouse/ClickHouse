@@ -2411,13 +2411,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
-        if (res->hasUnreplicatedLocalTableData() && database && database->getEngineName() == "Replicated")
+        if (res->hasUnreplicatedLocalDiskData() && database && database->getEngineName() == "Replicated")
             throw Exception(ErrorCodes::UNKNOWN_STORAGE,
-                            "Only tables that do not keep unreplicated data in local storage are allowed "
-                            "in a Replicated database, because such data would exist on a single replica only, "
-                            "while the table metadata is replicated to all of them. "
-                            "Disable the setting database_replicated_allow_only_replicated_engine "
-                            "to lift this restriction");
+                            "Only tables with a replicated engine or tables which do not store data on local disk "
+                            "are allowed in a Replicated database");
     }
 
     if (from_path && !res->storesDataOnDisk())

@@ -69,9 +69,9 @@ public:
     }
 
     bool storesDataOnDisk() const override { return true; }
-    /// Report the restrictive answer instead of loading the nested table just to find out whether it really
-    /// keeps something locally.
-    bool hasUnreplicatedLocalTableData() const override { return true; }
+    /// Report the restrictive answer instead of loading the nested table just to find out whether it stores
+    /// data on local disk.
+    bool hasUnreplicatedLocalDiskData() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
     bool isView() const override { return false; }
 

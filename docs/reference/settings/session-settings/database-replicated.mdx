@@ -33,21 +33,21 @@ Allow long-running DDL queries (CREATE AS SELECT and POPULATE) in Replicated dat
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Allow creating a table in a database with the `Replicated` engine when acknowledged user data is replicated,
-is not stored in local storage, or cannot be written.
+Allow creating a table in a database with the `Replicated` engine only if the table either replicates data
+stored on local disk or does not store data on local disk.
 
-Allowed tables:
+This restriction applies only to local on-disk data. It does not guarantee the durability of in-memory data or
+of data stored outside the server's local disks. The check uses each storage's `storesDataOnDisk` and
+`supportsReplication` capabilities.
 
-- Tables whose storage replicates data, such as `ReplicatedMergeTree`.
-- Tables with no local on-disk data, such as `Memory`, `Null`, `Merge`, `Dictionary`, and `S3`.
-- Read-only `Remote` and `RemoteSecure` tables whose target is a table function, such as
-  `Remote('127.0.0.1', numbers(10))`.
+For example, `ReplicatedMergeTree`, in-memory engines such as `Memory` and `Buffer`, metadata-only engines
+such as `Merge` and `Alias`, and external-storage or data lake engines such as `S3` and `AzureBlobStorage` are
+allowed. Non-replicated local-disk engines such as `MergeTree`, `Log`, and `Set` are rejected.
 
-Rejected tables:
-
-- Non-replicated engines with local data, such as `MergeTree`, `Log`, and `Set`.
-- `Distributed` tables.
-- `Remote` and `RemoteSecure` tables with an ordinary remote table target.
+`Distributed`, `Remote`, and `RemoteSecure` tables with an ordinary table target are rejected because they can
+store the background `INSERT` queue on local disk. A `Remote` or `RemoteSecure` table with a table-function
+target, such as `Remote('127.0.0.1', numbers(10))`, is allowed because it is read-only and does not create that
+queue.
 
 Cloud default value: `1`.
 
