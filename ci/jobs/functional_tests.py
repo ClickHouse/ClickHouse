@@ -1387,6 +1387,13 @@ def main():
     if test_result:
         test_result.sort()
 
+    # On a test timeout or a failed hung check the full server stacktrace
+    # dumps land in the working directory (stdout keeps a trimmed preview).
+    for stacktrace_log in ("sql_stacktraces.log", "c_stacktraces.log"):
+        stacktrace_log_path = Path(stacktrace_log)
+        if stacktrace_log_path.exists():
+            debug_files.append(stacktrace_log_path)
+
     R = Result.create_from(
         results=results,
         stopwatch=stop_watch,
