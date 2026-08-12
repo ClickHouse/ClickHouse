@@ -12,9 +12,13 @@ SET send_logs_level = 'fatal';
 -- The engine still runs queries, and every submitted query is accounted for exactly once.
 CREATE TABLE dst (x UInt64) ENGINE = Memory;
 CREATE TABLE runner (query String, database String) ENGINE = QueryRunner SETTINGS mode = 'synchronous', threads = 2;
-INSERT INTO runner VALUES ('INSERT INTO dst VALUES (1)', {CLICKHOUSE_DATABASE:String}), ('INSERT INTO dst VALUES (2)', {CLICKHOUSE_DATABASE:String});
+INSERT INTO runner VALUES
+    ('INSERT INTO dst VALUES (1)', {CLICKHOUSE_DATABASE:String}),
+    ('INSERT INTO dst VALUES (2)', {CLICKHOUSE_DATABASE:String}),
+    ('INSERT INTO dst VALUES (3)', {CLICKHOUSE_DATABASE:String}),
+    ('INSERT INTO dst VALUES (4)', {CLICKHOUSE_DATABASE:String});
 SYSTEM WAIT QUERY RUNNER runner;
-SELECT count() <= 2 AND count() > 0 FROM dst;
+SELECT count() <= 4 AND count() > 0 FROM dst;
 
 -- A table accepts at most threads + max_queue_size queries at a time, here 1 + 1, and refuses the
 -- surplus. Every refused query is still accounted for, so the INSERT returns and SYSTEM WAIT does
@@ -29,14 +33,18 @@ INSERT INTO tiny_runner SELECT 'INSERT INTO refused_dst SELECT sleep(1)', {CLICK
 SYSTEM WAIT QUERY RUNNER tiny_runner;
 SELECT count() <= 1 + 1 AND count() > 0 FROM refused_dst;
 
--- A failing query does not disable the table: queries submitted after it still run. Two of them are
--- submitted so that the lower bound survives a single refusal.
+-- A failing query does not disable the table: queries submitted after it still run. Four of them are
+-- submitted so that the lower bound survives several refusals.
 CREATE TABLE dst_after_failure (x UInt64) ENGINE = Memory;
 CREATE TABLE failing_runner (query String, database String) ENGINE = QueryRunner SETTINGS mode = 'synchronous', threads = 2;
 INSERT INTO failing_runner VALUES ('SELECT throwIf(1)', {CLICKHOUSE_DATABASE:String});
-INSERT INTO failing_runner VALUES ('INSERT INTO dst_after_failure VALUES (7)', {CLICKHOUSE_DATABASE:String}), ('INSERT INTO dst_after_failure VALUES (8)', {CLICKHOUSE_DATABASE:String});
+INSERT INTO failing_runner VALUES
+    ('INSERT INTO dst_after_failure VALUES (7)', {CLICKHOUSE_DATABASE:String}),
+    ('INSERT INTO dst_after_failure VALUES (8)', {CLICKHOUSE_DATABASE:String}),
+    ('INSERT INTO dst_after_failure VALUES (9)', {CLICKHOUSE_DATABASE:String}),
+    ('INSERT INTO dst_after_failure VALUES (10)', {CLICKHOUSE_DATABASE:String});
 SYSTEM WAIT QUERY RUNNER failing_runner;
-SELECT count() <= 2 AND count() > 0 FROM dst_after_failure;
+SELECT count() <= 4 AND count() > 0 FROM dst_after_failure;
 
 -- Queries still outstanding when the table goes away are abandoned rather than executed against a
 -- dropped table, and the DROP completes instead of hanging on them. Asynchronous mode is required:
