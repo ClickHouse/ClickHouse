@@ -1829,6 +1829,9 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
                     "Some objects still exist after delete: {}",
                     failed_to_delete_paths);
             }
+            else
+                for (const auto & object : successful_objects)
+                    files_metadata->releaseExclusiveProcessing(object.remote_path);
         }
     }
 
