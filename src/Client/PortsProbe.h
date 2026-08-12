@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Poco/Net/SocketAddress.h>
+#include <Poco/Net/StreamSocket.h>
 #include <Poco/Timespan.h>
 
 #include <optional>
@@ -12,22 +13,33 @@ namespace DB
 /// Result of concurrently probing TCP connectivity to the plain and the secure native protocol ports.
 struct PortsProbeResult
 {
-    enum class Choice
+    /// A port that accepted a connection, together with that connection.
+    struct Endpoint
     {
-        PreferSecure, /// The secure port is reachable. Connect to it with TLS.
-        PlainOnly,    /// Only the plain port answered. Connect to it; the secure port may serve as a fallback.
-        Neither,      /// No port answered.
+        /// The address that answered. The host can resolve to several addresses, and only some of them
+        /// may be reachable, so the caller has to connect to this one instead of starting over from the
+        /// first resolved address: otherwise the connection waits out the timeout of every address that
+        /// the probe has already found unresponsive.
+        Poco::Net::SocketAddress address;
+
+        /// The connection the probe has established, handed over to the caller so that the real
+        /// connection reuses it instead of opening a second one to the same endpoint. Otherwise every
+        /// automatically detected connection would leave a short-lived session on the server, which
+        /// sends nothing and is logged as `Client has not sent any data.`
+        ///
+        /// The socket is left non-blocking, as `connectNB` leaves it.
+        Poco::Net::StreamSocket socket;
     };
 
-    Choice choice = Choice::Neither;
+    /// The endpoints that answered, if any.
+    ///
+    /// `secure` is set when the secure port answered within the preference window, i.e. when TLS is to
+    /// be used. `plain` may be set alongside it, and then its connection is ready to be used if the
+    /// secure connection turns out to be unusable after all (an untrusted certificate, for example).
+    std::optional<Endpoint> plain;
+    std::optional<Endpoint> secure;
 
-    /// The address that answered on the chosen port. The host can resolve to several addresses, and only
-    /// some of them may be reachable, so the caller has to connect to this one instead of starting over
-    /// from the first resolved address: otherwise the connection waits out the timeout of every address
-    /// that the probe has already found unresponsive.
-    std::optional<Poco::Net::SocketAddress> address;
-
-    /// A description of the per-address failures, for Choice::Neither.
+    /// A description of the per-address failures, when neither port answered.
     String failure_reason;
 
     /// Whether some probe hit the timeout instead of failing outright. Affects the reported error code.
@@ -44,8 +56,9 @@ struct PortsProbeResult
 /// a plain port that merely answered faster, without stalling plain-only servers, which is the most
 /// common setup).
 ///
-/// Only raw TCP reachability is checked, concurrently for all addresses and ports, bounded by `timeout` in total.
-/// The caller performs the actual connection afterwards.
+/// Only raw TCP reachability is checked, concurrently for all addresses and ports, bounded by `timeout` in
+/// total. The connection to the chosen endpoint is returned to the caller, which completes the handshake
+/// on it; the connections to the endpoints that lost the race are closed.
 PortsProbeResult probePlainAndSecurePorts(
     const String & host,
     const String & bind_host,

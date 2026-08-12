@@ -29,6 +29,12 @@ struct Probe
     String failure;
 };
 
+PortsProbeResult::Endpoint makeEndpoint(const Probe & probe)
+{
+    /// Poco sockets are reference-counted handles, so the connection outlives the probe it came from.
+    return PortsProbeResult::Endpoint{probe.address, probe.socket};
+}
+
 }
 
 PortsProbeResult probePlainAndSecurePorts(
@@ -74,15 +80,6 @@ PortsProbeResult probePlainAndSecurePorts(
     /// The moment the first probe of the plain port connected: starts the secure preference window.
     std::optional<UInt64> plain_connected_at_us;
 
-    /// The probes are all created before this loop, so pointers into `probes` stay valid.
-    auto chosen = [](PortsProbeResult::Choice choice, const Probe & probe)
-    {
-        PortsProbeResult result;
-        result.choice = choice;
-        result.address = probe.address;
-        return result;
-    };
-
     while (true)
     {
         const Probe * plain_connected = nullptr;
@@ -106,13 +103,26 @@ PortsProbeResult probePlainAndSecurePorts(
             }
         }
 
+        /// TLS is preferred, so the secure port wins as soon as it answers. The plain port is reported
+        /// alongside it when it has answered too: the secure connection can still turn out to be unusable,
+        /// and then the caller falls back to a connection that is already established.
         if (secure_connected)
-            return chosen(PortsProbeResult::Choice::PreferSecure, *secure_connected);
+        {
+            PortsProbeResult result;
+            result.secure = makeEndpoint(*secure_connected);
+            if (plain_connected)
+                result.plain = makeEndpoint(*plain_connected);
+            return result;
+        }
 
         const UInt64 elapsed_us = watch.elapsedMicroseconds();
 
         if (plain_connected && (!secure_pending || elapsed_us >= *plain_connected_at_us + window_us))
-            return chosen(PortsProbeResult::Choice::PlainOnly, *plain_connected);
+        {
+            PortsProbeResult result;
+            result.plain = makeEndpoint(*plain_connected);
+            return result;
+        }
 
         if (!any_pending)
             break;
@@ -124,7 +134,11 @@ PortsProbeResult probePlainAndSecurePorts(
         if (elapsed_us >= deadline_us)
         {
             if (plain_connected)
-                return chosen(PortsProbeResult::Choice::PlainOnly, *plain_connected);
+            {
+                PortsProbeResult result;
+                result.plain = makeEndpoint(*plain_connected);
+                return result;
+            }
 
             for (auto & probe : probes)
             {
@@ -187,7 +201,6 @@ PortsProbeResult probePlainAndSecurePorts(
 
     /// Neither port answered: report the failure of every probed address.
     PortsProbeResult result;
-    result.choice = PortsProbeResult::Choice::Neither;
     for (const auto & probe : probes)
     {
         if (!result.failure_reason.empty())

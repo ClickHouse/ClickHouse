@@ -89,6 +89,16 @@ public:
     /// It is the address to pass to `setPreferredAddress` of a subsequent connection to the same host.
     std::optional<Poco::Net::SocketAddress> getResolvedAddress() const;
 
+    /// Hand over an already-established TCP connection to `address`, to be used instead of opening a new
+    /// one. The socket has to be connected and non-blocking; the handshake (including the TLS handshake
+    /// for a secure connection) is still performed by this class. It is used only for the first connect,
+    /// so a later reconnect opens a connection of its own.
+    void setAdoptedSocket(const Poco::Net::SocketAddress & address, const Poco::Net::StreamSocket & socket)
+    {
+        adopted_address = address;
+        adopted_socket = socket;
+    }
+
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
     void setThrottler(const ThrottlerPtr & throttler_) override
     {
@@ -235,6 +245,10 @@ private:
     /// See setPreferredAddress.
     std::optional<Poco::Net::SocketAddress> preferred_address;
 
+    /// See setAdoptedSocket. Consumed by the first connect.
+    std::optional<Poco::Net::SocketAddress> adopted_address;
+    std::optional<Poco::Net::StreamSocket> adopted_socket;
+
     /// For messages in log and in exceptions.
     String description;
     String full_description;
@@ -323,6 +337,11 @@ private:
     std::optional<FormatSettings> format_settings;
 
     void connect(const ConnectionTimeouts & timeouts);
+
+    /// Establishes the transport for `connect`: either by connecting to one of the addresses the host
+    /// resolves to, or by taking over a connection that has already been established (see setAdoptedSocket).
+    void connectToAnyAddress(const ConnectionTimeouts & timeouts);
+    void adoptSocket(Poco::Net::StreamSocket connected_socket);
     void sendHello();
 
     void cancel() noexcept;

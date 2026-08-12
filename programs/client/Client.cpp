@@ -583,31 +583,48 @@ void Client::connect()
             connection_parameters.jwt_provider = jwt_provider;
 #endif
 
-            /// Candidate ports for the connection, in the order of preference. Normally there is a single
-            /// candidate, resolved by `ConnectionParameters`. But when neither the port nor the TLS mode is
-            /// specified explicitly, both the plain and the secure default ports are probed concurrently,
-            /// and TLS is preferred: it is enabled automatically whenever the secure port answers. The
-            /// probing is concurrent because waiting for a connection attempt to time out first would take
-            /// too long (for example, play.clickhouse.com serves TLS on 9440 while the plain port is
-            /// silently firewalled).
-            std::vector<std::pair<UInt16, Protocol::Secure>> candidates;
-            candidates.emplace_back(connection_parameters.port, connection_parameters.security);
+            /// Candidate endpoints for the connection, in the order of preference. Normally there is a
+            /// single candidate, resolved by `ConnectionParameters`. But when neither the port nor the TLS
+            /// mode is specified explicitly, both the plain and the secure default ports are probed
+            /// concurrently, and TLS is preferred: it is enabled automatically whenever the secure port
+            /// answers. The probing is concurrent because waiting for a connection attempt to time out
+            /// first would take too long (for example, play.clickhouse.com serves TLS on 9440 while the
+            /// plain port is silently firewalled).
+            struct Candidate
+            {
+                UInt16 port;
+                Protocol::Secure security;
 
-            /// The address that is known to answer, if any: the host can resolve to several addresses,
-            /// and the connection has to start with this one. It is either found by the probing below or
-            /// remembered from the connection that has already worked for this address (see below), because
-            /// a reconnect does not probe the ports again.
-            std::optional<Poco::Net::SocketAddress> answering_address = hosts_and_ports[attempted_address_index].address;
+                /// The address that is known to answer on this port, if any: the host can resolve to
+                /// several addresses, and the connection has to start with this one, or it pays a whole
+                /// connection timeout for every unresponsive address in front of the working one.
+                std::optional<Poco::Net::SocketAddress> address;
 
-            /// The address to start the secure fallback candidate from, if it is known (see below).
-            std::optional<Poco::Net::SocketAddress> secure_answering_address;
+                /// The connection the probe has already established to `address`, if any. It is taken over
+                /// by the `Connection` instead of opening a second one, so that the automatic choice does
+                /// not leave a short-lived session on the server for every client connection.
+                std::optional<Poco::Net::StreamSocket> socket;
+            };
+
+            std::vector<Candidate> candidates;
 
             const bool port_unspecified = !hosts_and_ports[attempted_address_index].port.has_value() && !config().has("port");
             const bool secure_unspecified = !hosts_and_ports[attempted_address_index].secure.has_value() && !config().has("secure")
                 && !config().has("no-secure") && !isCloudEndpoint(host.toUnderType());
 
-            if (port_unspecified && secure_unspecified)
+            /// Without TLS support in the build there is nothing to choose between: probing the secure port
+            /// would only replace a working plain connection with `SUPPORT_IS_DISABLED`, which
+            /// `Connection::connect` throws for every secure connection in such a build.
+#if USE_SSL
+            const bool build_supports_tls = true;
+#else
+            const bool build_supports_tls = false;
+#endif
+            const bool detect_transport = port_unspecified && secure_unspecified && build_supports_tls;
+
+            if (detect_transport)
             {
+                const auto plain_port = connection_parameters.port;
                 const auto secure_port = static_cast<UInt16>(config().getInt("tcp_port_secure", DBMS_DEFAULT_SECURE_PORT));
 
                 /// TLS is preferred: the secure port wins whenever it answers, even if the plain port
@@ -622,7 +639,7 @@ void Client::connect()
                     probe = probePlainAndSecurePorts(
                         connection_parameters.host,
                         connection_parameters.bind_host,
-                        connection_parameters.port,
+                        plain_port,
                         secure_port,
                         connection_parameters.timeouts.connection_timeout,
                         secure_preference_window);
@@ -637,57 +654,82 @@ void Client::connect()
                     throw;
                 }
 
-                answering_address = probe.address;
-
-                switch (probe.choice)
+                if (probe.secure)
                 {
-                    case PortsProbeResult::Choice::PreferSecure:
-                        candidates.front() = {secure_port, Protocol::Secure::Enable};
-                        break;
-                    case PortsProbeResult::Choice::PlainOnly:
-#if USE_SSL
-                        candidates.emplace_back(secure_port, Protocol::Secure::Enable);
+                    candidates.push_back({secure_port, Protocol::Secure::Enable, probe.secure->address, probe.secure->socket});
 
-                        /// If the plain connection fails at the native protocol level and the secure
-                        /// fallback candidate is tried (see below), it has to start from an address that
-                        /// is known to answer as well, and not from the first resolved address of the
-                        /// host: the secure port of the address that answered on the plain port (the
-                        /// same backend is the best guess for its secure port). Otherwise the fallback
-                        /// pays a whole connection timeout for every unresponsive address in front of
-                        /// the working one, which is exactly the delay the probing exists to avoid.
-                        if (probe.address)
-                            secure_answering_address = Poco::Net::SocketAddress(probe.address->host(), secure_port);
-#endif
-                        break;
-                    case PortsProbeResult::Choice::Neither:
-                        /// See above: no connection was made, so the resolved addresses may be stale.
-                        DNSResolver::instance().removeHostFromCache(connection_parameters.host);
-                        throw NetException(
-                            probe.timed_out ? ErrorCodes::SOCKET_TIMEOUT : ErrorCodes::NETWORK_ERROR,
-                            "Cannot connect to {} on port {} or on the secure port {}: {}",
-                            connection_parameters.host,
-                            connection_parameters.port,
-                            secure_port,
-                            probe.failure_reason);
+                    /// TLS was not requested, it was chosen automatically, so a secure port that turns out
+                    /// to be unusable must not make the client fail: the plain port is what it would have
+                    /// connected to if there were no automatic choice at all, so falling back to it takes
+                    /// nothing away from the user. The common case is a server whose secure port has a
+                    /// self-signed or otherwise untrusted certificate, which every client that does not
+                    /// pass `--accept-invalid-certificate` rejects.
+                    if (probe.plain)
+                        candidates.push_back({plain_port, Protocol::Secure::Disable, probe.plain->address, probe.plain->socket});
+                    else
+                        candidates.push_back({plain_port, Protocol::Secure::Disable, {}, {}});
+                }
+                else if (probe.plain)
+                {
+                    candidates.push_back({plain_port, Protocol::Secure::Disable, probe.plain->address, probe.plain->socket});
+
+                    /// The plain port answered the probe, but the connection to it can still fail at the
+                    /// native protocol level, e.g. when a proxy in front of the server accepts TCP there
+                    /// but serves only TLS. The secure port is then worth a try; start it from the secure
+                    /// port of the address that answered on the plain port, because the same backend is
+                    /// the best guess for where its secure port is.
+                    candidates.push_back(
+                        {secure_port,
+                         Protocol::Secure::Enable,
+                         Poco::Net::SocketAddress(probe.plain->address.host(), secure_port),
+                         {}});
+                }
+                else
+                {
+                    /// See above: no connection was made, so the resolved addresses may be stale.
+                    DNSResolver::instance().removeHostFromCache(connection_parameters.host);
+                    throw NetException(
+                        probe.timed_out ? ErrorCodes::SOCKET_TIMEOUT : ErrorCodes::NETWORK_ERROR,
+                        "Cannot connect to {} on port {} or on the secure port {}: {}",
+                        connection_parameters.host,
+                        plain_port,
+                        secure_port,
+                        probe.failure_reason);
                 }
             }
+            else
+            {
+                candidates.push_back(
+                    {connection_parameters.port,
+                     connection_parameters.security,
+                     hosts_and_ports[attempted_address_index].address,
+                     {}});
+            }
 
-            std::exception_ptr plain_connection_error;
+            /// Names a candidate the way the messages below refer to it.
+            auto describe = [&](const Candidate & candidate)
+            {
+                return fmt::format(
+                    "{}:{}{}",
+                    connection_parameters.host,
+                    candidate.port,
+                    candidate.security == Protocol::Secure::Enable ? " with TLS" : "");
+            };
+
+            /// The failure of the candidate that was tried first, when the connection moved on to the next.
+            std::exception_ptr first_error;
+            size_t first_error_index = 0;
 
             for (size_t candidate_index = 0; candidate_index < candidates.size(); ++candidate_index)
             {
-                connection_parameters.port = candidates[candidate_index].first;
-                connection_parameters.security = candidates[candidate_index].second;
+                const auto & candidate = candidates[candidate_index];
 
-                /// Connect to the address that is known to answer, but only on the port it has answered
-                /// on: the secure fallback candidate has its own answering address (see above).
-                connection_parameters.preferred_address.reset();
-                if (answering_address && answering_address->port() == connection_parameters.port)
-                    connection_parameters.preferred_address = answering_address;
-                else if (secure_answering_address && secure_answering_address->port() == connection_parameters.port)
-                    connection_parameters.preferred_address = secure_answering_address;
+                connection_parameters.port = candidate.port;
+                connection_parameters.security = candidate.security;
+                connection_parameters.preferred_address = candidate.address;
+                connection_parameters.adopted_socket = candidate.socket;
 
-                const bool secure_auto_detected = secure_unspecified && connection_parameters.security == Protocol::Secure::Enable;
+                const bool secure_auto_detected = secure_unspecified && candidate.security == Protocol::Secure::Enable;
 
                 if (is_interactive)
                     output_stream << "Connecting to "
@@ -701,6 +743,8 @@ void Client::connect()
                 try
                 {
                     connection = Connection::createConnection(connection_parameters, client_context);
+                    /// The connection has taken the probed socket over; do not keep a handle to it here.
+                    connection_parameters.adopted_socket.reset();
 
                     if (max_client_network_bandwidth)
                     {
@@ -720,52 +764,78 @@ void Client::connect()
                 }
                 catch (Exception & e)
                 {
-                    /// The plain port accepted the TCP connection, but the connection itself failed
-                    /// (e.g. a proxy in front of the server accepts TCP on the plain port but only
-                    /// serves TLS there). Retry with TLS on the secure port before giving up,
-                    /// but only for connection-level failures.
+                    /// The port accepted the TCP connection, but the connection itself failed: e.g. a proxy
+                    /// in front of the server accepts TCP on the plain port but only serves TLS there, or
+                    /// the certificate of the automatically chosen secure port is not trusted. Try the other
+                    /// port before giving up, but only for connection-level failures.
                     ///
                     /// A TLS-only listener on the plain port answers the native `Hello` with a TLS
                     /// alert record, whose first byte the client reads as an unexpected packet type,
                     /// so `Connection::receiveHello` throws `UNEXPECTED_PACKET_FROM_SERVER`; that is
                     /// the normal outcome of the "plain port serves TLS" case and must be retriable.
                     ///
-                    /// A timeout is not retriable, in contrast: a plain port that accepts the connection
-                    /// and then does not answer belongs to a server that is unresponsive rather than to a
-                    /// TLS listener, and the secure port of the same server is not going to answer either.
-                    /// Retrying it would double the time the client waits before it reports the failure,
-                    /// which is exactly the delay this feature is supposed to avoid.
+                    /// A timeout is not retriable, in contrast: a port that accepts the connection and then
+                    /// does not answer belongs to a server that is unresponsive rather than to a listener of
+                    /// the wrong protocol, and the other port of the same server is not going to answer
+                    /// either. Retrying it would double the time the client waits before it reports the
+                    /// failure, which is exactly the delay this feature is supposed to avoid. The exception
+                    /// is a fallback to a port whose connection the probe has already established: it costs
+                    /// no connection attempt at all, so nothing is doubled, and it makes an automatically
+                    /// chosen secure port that accepts connections and then never answers fall back to the
+                    /// plain port that does, instead of failing outright.
                     const bool is_connection_error = e.code() == ErrorCodes::NETWORK_ERROR
                         || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
                         || e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_SERVER
                         || e.code() == ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER;
+                    const bool is_transport_error = is_connection_error || e.code() == ErrorCodes::SOCKET_TIMEOUT;
 
-                    if (candidate_index + 1 < candidates.size() && is_connection_error)
+                    const bool next_is_already_connected
+                        = candidate_index + 1 < candidates.size() && candidates[candidate_index + 1].socket.has_value();
+
+                    if (candidate_index + 1 < candidates.size() && (is_connection_error || (is_transport_error && next_is_already_connected)))
                     {
-                        plain_connection_error = std::current_exception();
+                        first_error = std::current_exception();
+                        first_error_index = candidate_index;
                         if (is_interactive)
-                            std::cerr << "Connection to " << connection_parameters.host << ":" << connection_parameters.port
-                                      << " failed, trying the secure port " << candidates[candidate_index + 1].first
-                                      << " with TLS." << std::endl;
+                            std::cerr << "Connection to " << describe(candidate) << " failed, trying "
+                                      << describe(candidates[candidate_index + 1]) << "." << std::endl;
                         continue;
                     }
 
-                    if (plain_connection_error && is_connection_error)
+                    if (first_error && is_transport_error)
                     {
-                        /// Both the plain and the secure connection attempts failed at the connection level.
-                        /// Report the failure of the plain connection as the primary error: that is the port
-                        /// the client would have used if there were no automatic detection.
-                        const auto & secure_error = e.message();
-                        const auto secure_port = connection_parameters.port;
-                        connection_parameters.port = candidates.front().first;
-                        connection_parameters.security = candidates.front().second;
+                        /// Both candidates failed at the connection level. Report the failure of the plain
+                        /// port as the primary error, whichever order the two were tried in: that is the
+                        /// port the client would have used if there were no automatic choice.
+                        const auto & other = candidates[first_error_index];
+                        auto note = [](const String & endpoint, const String & message)
+                        {
+                            return fmt::format("(also failed to connect to {}: {})", endpoint, message);
+                        };
+
+                        if (candidate.security == Protocol::Secure::Disable)
+                        {
+                            String first_message;
+                            try
+                            {
+                                std::rethrow_exception(first_error);
+                            }
+                            catch (Exception & first_e)
+                            {
+                                first_message = first_e.message();
+                            }
+                            e.addMessage(note(describe(other), first_message));
+                            throw;
+                        }
+
+                        const auto message = e.message();
                         try
                         {
-                            std::rethrow_exception(plain_connection_error);
+                            std::rethrow_exception(first_error);
                         }
-                        catch (Exception & plain_e)
+                        catch (Exception & first_e)
                         {
-                            plain_e.addMessage("(also failed to connect with TLS to the secure port {}: {})", secure_port, secure_error);
+                            first_e.addMessage(note(describe(candidate), message));
                             throw;
                         }
                     }
@@ -784,7 +854,7 @@ void Client::connect()
             /// answered on it.
             hosts_and_ports[attempted_address_index].port = connection_parameters.port;
             hosts_and_ports[attempted_address_index].secure = connection_parameters.security == Protocol::Secure::Enable;
-            if (port_unspecified && secure_unspecified)
+            if (detect_transport)
                 hosts_and_ports[attempted_address_index].transport_auto_detected = true;
             if (hosts_and_ports[attempted_address_index].transport_auto_detected)
             {

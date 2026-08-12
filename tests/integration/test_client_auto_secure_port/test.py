@@ -2,7 +2,7 @@
 plain (9000) and the secure (9440) native ports concurrently. TLS is preferred: the secure port
 is chosen whenever it is reachable (e.g. servers listening on both ports, or servers whose plain
 port is firewalled, like play.clickhouse.com), and the plain port is used only when the secure
-port does not answer."""
+port does not answer or the connection to it turns out to be unusable."""
 
 import ipaddress
 import threading
@@ -273,7 +273,7 @@ def test_an_unresponsive_server_is_not_waited_for_twice():
             ]
         )
         assert "SOCKET_TIMEOUT" in output, output
-        assert "also failed to connect with TLS" not in output, output
+        assert "also failed to connect" not in output, output
     finally:
         firewall_secure_port(add=False)
         swallow_established_packets(9000, add=False)
@@ -594,6 +594,55 @@ def test_the_remembered_address_is_refreshed_when_the_connection_falls_through()
         )
         for server in (node_both_ports, node_extra):
             server.query("DROP TABLE IF EXISTS refresh_trigger")
+
+
+def test_an_untrusted_certificate_falls_back_to_the_plain_port():
+    # The certificate of `node_both_ports` is self-signed, so a client that does not pass
+    # `--accept-invalid-certificate` (as every other test here does) rejects it. TLS was not asked for,
+    # it was chosen automatically, so this must not be an error: the client falls back to the plain
+    # port, which is what it would have connected to if there were no automatic choice at all.
+    # Self-signed certificates on the secure port of a server that also serves the plain port are
+    # common, and such deployments have to keep working.
+    query_id = str(uuid.uuid4())
+    result = node_plain_only.exec_in_container(
+        [
+            "clickhouse",
+            "client",
+            "--host",
+            node_both_ports.name,
+            "--query_id",
+            query_id,
+            "--query",
+            "SELECT 1",
+        ]
+    )
+    assert result == "1\n"
+    node_both_ports.query("SYSTEM FLUSH LOGS query_log")
+    assert (
+        int(
+            node_both_ports.query(
+                f"SELECT is_secure FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish' LIMIT 1"
+            )
+        )
+        == 0
+    )
+
+
+def test_the_probe_leaves_no_extra_connection_on_the_plain_port():
+    # The connection the probe established to the chosen port is handed over to the client instead of
+    # being discarded and opened again. Otherwise every automatically detected connection would leave a
+    # short-lived session on the server that sends no data, which the server logs as
+    # `Client has not sent any data.` and counts against `max_connections`.
+    #
+    # `node_plain_only` serves the plain port only, which is the common case: the secure probe is
+    # refused, and the connection of the plain probe becomes the connection of the client.
+    marker = "Client has not sent any data"
+    before = int(node_plain_only.count_in_log(marker))
+    assert (
+        run_client(node_plain_only, "--query", "SELECT 1", from_node=node_both_ports)
+        == "1\n"
+    )
+    assert int(node_plain_only.count_in_log(marker)) == before
 
 
 def test_explicit_port_is_not_upgraded():
