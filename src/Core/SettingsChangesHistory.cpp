@@ -43,6 +43,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"output_format_image_time_multiplier_seconds", 1, 1, "New setting controlling the numerator of the time unit of the `t` column, which makes image output formats such as `PNG` produce an animation."},
+            {"output_format_image_time_divisor_seconds", 60, 60, "New setting controlling the denominator of the time unit of the `t` column, which makes image output formats such as `PNG` produce an animation."},
+            {"output_format_image_streaming_animation", false, false, "New setting controlling whether image output formats such as `PNG` write each frame of an animation as soon as the next value of `t` is seen, instead of buffering all the frames in memory."},
             {"reader_executor_window_size", 4194304, 4194304, "New experimental ReaderExecutor setting: bytes served per read window."},
             {"reader_executor_block_size", 1048576, 1048576, "New experimental ReaderExecutor setting: buffer chunk size for source reads."},
             {"input_format_json_max_string_column_growth_step", 0, 0, "New setting to cap the power-of-two growth of the JSON column's internal String buffers while materializing JSON, bounding over-allocation."},
