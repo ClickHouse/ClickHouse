@@ -274,6 +274,48 @@ ASTPtr makeToDecimal(ASTPtr argument)
     return makeASTFunction("plus", makeASTFunction("toDecimal128", argument->clone(), makeLiteral(Field(UInt64(0)))), std::move(guard));
 }
 
+/** The lowering of `$toDate`. Mongo reads a numeric argument as Unix *milliseconds*, while
+  * `toDateTime64` reads a number as seconds - `{"$toDate": 1546300800000}` is 2019 in Mongo,
+  * not the year 2282 - so a numeric argument goes through `fromUnixTimestamp64Milli` instead.
+  * A literal carries its type here; any other argument dispatches on `toTypeName`, which the
+  * analyzer folds into a constant, so exactly one of the branches survives the analysis.
+  */
+ASTPtr makeToDate(ASTPtr argument)
+{
+    const auto parsed = [](ASTPtr arg)
+    {
+        return makeASTFunction("toDateTime64", std::move(arg), makeLiteral(Field(UInt64(3))), makeLiteral(Field(String("UTC"))));
+    };
+
+    if (const auto * literal = argument->as<ASTLiteral>())
+    {
+        switch (literal->value.getType())
+        {
+            case Field::Types::Int64:
+            case Field::Types::UInt64:
+            case Field::Types::Float64:
+                /// A fractional count of milliseconds truncates, as a BSON double does.
+                return makeASTFunction(
+                    "fromUnixTimestamp64Milli", makeASTFunction("toInt64", std::move(argument)), makeLiteral(Field(String("UTC"))));
+            default:
+                return parsed(std::move(argument));
+        }
+    }
+
+    /// Neither branch may throw for the type of the other: the losing branch is dropped by the
+    /// analyzer and skipped by short-circuit evaluation, but with the old analyzer and
+    /// `short_circuit_function_evaluation = 'disable'` it still runs. `toFloat64OrZero` over
+    /// `toString` reads any type without throwing; the string it produces for a number is the
+    /// number itself, and the branch taken for a string never uses it.
+    auto milliseconds = makeASTFunction(
+        "fromUnixTimestamp64Milli",
+        makeASTFunction("toInt64", makeASTFunction("toFloat64OrZero", makeASTFunction("toString", argument->clone()))),
+        makeLiteral(Field(String("UTC"))));
+    auto is_a_number = makeASTFunction(
+        "match", makeASTFunction("toTypeName", argument->clone()), makeLiteral(Field(String("^(U?Int|Float|Decimal)"))));
+    return makeASTFunction("if", std::move(is_a_number), std::move(milliseconds), parsed(argument->clone()));
+}
+
 ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
 {
     if (auto it = direct_functions.find(name); it != direct_functions.end())
@@ -329,7 +371,7 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
     {
         auto arguments = parseArguments(argument);
         requireArgumentCount(name, arguments, 1);
-        return makeASTFunction("toDateTime64", arguments[0], makeLiteral(Field(UInt64(3))), makeLiteral(Field(String("UTC"))));
+        return makeToDate(arguments[0]);
     }
 
     if (name == "$first" || name == "$last")
