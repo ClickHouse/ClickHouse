@@ -84,8 +84,8 @@ namespace ErrorCodes
 namespace
 {
 
-/// Column names from the `name (col1, col2, ...)` alias list of a CTE or a table expression.
-/// Duplicates are rejected: they would silently collapse columns during identifier resolution.
+/// Column names from the `name (col1, col2, ...)` alias list of a CTE/table expression
+/// Duplicates are rejected, they would collapse columns during identifier resolution
 Names getColumnAliasNames(const ASTPtr & column_aliases)
 {
     const auto & column_aliases_list = column_aliases->as<const ASTExpressionList &>();
