@@ -34,6 +34,7 @@
 #include <base/unaligned.h>
 #include <Processors/Formats/Impl/PuffinBlockInputFormat.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <Storages/ObjectStorage/DataLakes/PuffinDeletionVectorReader.h>
 
 #include <IO/ReadHelpers.h>
 
@@ -516,12 +517,7 @@ PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin file too small");
         checkMagic(result.data.data(), "header");
 
-        std::vector<UInt8> tmp(DEFAULT_BLOCK_SIZE);
-        while (!buf.eof())
-        {
-            size_t n = buf.read(reinterpret_cast<char *>(tmp.data()), tmp.size());
-            result.data.insert(result.data.end(), tmp.data(), tmp.data() + n);
-        }
+        appendReadBufferWithAbsoluteSizeLimit(buf, result.data, PUFFIN_NON_SEEKABLE_MAX_BUFFERED_SIZE);
 
         ReadBufferFromMemory mem_buf(result.data.data(), result.data.size());
         result.blobs = readPuffinFooterFromSeekableImpl(mem_buf, result.data.size());
