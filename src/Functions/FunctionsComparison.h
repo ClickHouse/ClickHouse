@@ -107,27 +107,21 @@ static bool hasAlignedStringVsNonStringElement(const DataTypePtr & left_type, co
 }
 
 /// For the array element-comparison path: a bare `Nothing` position carries no value, so the element
-/// comparator declares `Nothing` and the comparison cannot be executed. Each side is classified
-/// independently: a property of one side (its own null map) never decides a position on the other side.
-/// Two `Nothing` shapes stay decidable: `Nullable(Nothing)`, decided by its own all-set null map, and
-/// `Array(Nothing)`, which shares a supertype with `Array(T)` and so never reaches this branch.
-/// `Array` and `Map` are deliberately not descended, to stay in step with
-/// `FunctionsNullSafeCmp::containsNothing` (`FunctionsNullSafeCmp.h:39-53`); deeper positions are still
-/// covered because the caller recurses once per array level.
+/// comparator declares `Nothing` and the comparison cannot be executed.
 static bool containsUndecidableNothing(const DataTypePtr & type)
 {
-    const auto inner = removeLowCardinality(type);
+    const auto inner_type = removeLowCardinality(type);
 
-    if (isNothing(inner))
+    if (isNothing(inner_type))
         return true;
 
-    if (inner->isNullable())
+    if (inner_type->isNullable())
     {
-        const auto nested = removeNullable(inner);
+        const auto nested = removeNullable(inner_type);
         return isNothing(nested) ? false : containsUndecidableNothing(nested);
     }
 
-    if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(inner.get()))
+    if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(inner_type.get()))
     {
         for (const auto & element : tuple_type->getElements())
             if (containsUndecidableNothing(element))
