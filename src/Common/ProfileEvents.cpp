@@ -1101,6 +1101,8 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageQueueTaggedObjects, "Number of objects tagged as part of after_processing = tag", ValueType::Number) \
     M(ObjectStorageQueueInsertIterations, "Number of insert iterations", ValueType::Number) \
     M(ObjectStorageQueueCommitRequests, "Number of keeper requests to commit files as either failed or processed", ValueType::Number) \
+    M(ObjectStorageQueueBucketLockLostOwnership, "Number of times ownership of a bucket lock was detected as lost in S3(Azure)Queue. Non-zero value indicates too small persistent_processing_node_ttl_seconds or a bug", ValueType::Number) \
+    M(ObjectStorageQueueBucketLockRefreshes, "Number of successful bucket lock refreshes in S3(Azure)Queue", ValueType::Number) \
     M(ObjectStorageQueueSuccessfulCommits, "Number of successful keeper commits", ValueType::Number) \
     M(ObjectStorageQueueUnsuccessfulCommits, "Number of unsuccessful keeper commits", ValueType::Number) \
     M(ObjectStorageQueueCancelledFiles, "Number cancelled files in StorageS3(Azure)Queue", ValueType::Number) \
@@ -1547,7 +1549,11 @@ The server successfully detected this situation and will download merged part fr
     M(DataLakeUnityCatalogGetSchemasMicroseconds, "Total time of 'get schemas' requests to Iceberg Unity catalog.", ValueType::Microseconds) \
     M(DataLakeUnityCatalogGetCredentials, "Number of 'get credentials' requests to Iceberg Unity catalog.", ValueType::Number) \
     M(DataLakeUnityCatalogGetCredentialsMicroseconds, "Total time of 'get credentials' requests to Iceberg Unity catalog.", ValueType::Microseconds) \
-
+    \
+    M(ObjectStorageClusterSentToMatchedReplica, "Number of tasks in ObjectStorageCluster request sent to matched replica.", ValueType::Number) \
+    M(ObjectStorageClusterSentToNonMatchedReplica, "Number of tasks in ObjectStorageCluster request sent to non-matched replica.", ValueType::Number) \
+    M(ObjectStorageClusterProcessedTasks, "Number of processed tasks in ObjectStorageCluster request.", ValueType::Number) \
+    M(ObjectStorageClusterWaitingMicroseconds, "Time of waiting for tasks in ObjectStorageCluster request.", ValueType::Microseconds) \
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
     #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M) APPLY_FOR_EXTERNAL_EVENTS(M)

@@ -2517,6 +2517,11 @@ Show internal aliases (such as __table1) in EXPLAIN PLAN instead of those specif
 Maximum length of step description in EXPLAIN PLAN.
 )", 0) \
     \
+    DECLARE(Bool, enable_alias_marker, true, R"(
+Enable __aliasMarker injection for ALIAS column expressions when using the analyzer.
+This stabilizes action node names across planner/analyzer stages without changing query semantics.
+)", 0) \
+    \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
 This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.
 )", 0) \
@@ -7433,7 +7438,7 @@ Enables delta-kernel writes feature.
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
     DECLARE(FileLikeEngineDefaultPartitionStrategy, file_like_engine_default_partition_strategy, FileLikeEngineDefaultPartitionStrategy::HIVE, R"(
-Default partition strategy for file like engines.
+Default partition strategy for file like engines. Applied only when the path does not contain a `{_partition_id}` placeholder: such a path is compatible only with the `wildcard` strategy, so it always implies `wildcard`.
 )", 0) \
     DECLARE(Bool, use_iceberg_partition_pruning, true, R"(
 Use Iceberg partition pruning for Iceberg tables
@@ -7638,6 +7643,14 @@ When enabled, the new analyzer mimics the legacy behavior of moving non-aggregat
     DECLARE(Bool, analyzer_compatibility_prefer_alias_over_subcolumn, false, R"(
 When a multi-part identifier like `b.id` could refer to either the column `id` of a table aliased `b` or to a Tuple subcolumn `b.id` of some other column, prefer the alias-prefix interpretation (column `id` of `b`). By default the new analyzer prefers the subcolumn. Enable to match the old analyzer's resolution.
     )", 0) \
+    DECLARE(Bool, analyzer_compatibility_apply_final_to_all_joined_tables, false, R"(
+Restores the behavior of versions before 26.6, where the `FINAL` modifier specified on the left-most table of a JOIN was incorrectly applied to all other joined tables as well (for engines that support `FINAL`, e.g. `ReplacingMergeTree`). By default `FINAL` applies only to the table it is written on. Enable for compatibility with queries that rely on the old behavior; the recommended fix is to write `FINAL` explicitly on every table that needs it.
+
+Possible values:
+
+- 0 - `FINAL` applies only to the table it is specified on.
+- 1 - `FINAL` on the left-most table of a JOIN is applied to all joined tables.
+)", 0) \
     DECLARE(Bool, enable_identifier_resolve_cache, true, R"(
 Enable the identifier resolution cache in the query analyzer. The cache shares resolved alias nodes to prevent AST explosion when the same alias is referenced multiple times. Set to false to disable caching if incorrect results are suspected.
     )", 0) \
@@ -8028,6 +8041,12 @@ Maximum size (in bytes) of the order-preserving binary encoding of a single `UNI
     DECLARE(Bool, allow_experimental_unique_key, false, R"(
 Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_hybrid_table, false, R"(
+Allows creation of tables with the [Hybrid](../../engines/table-engines/special/hybrid.md) table engine.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, hybrid_table_auto_cast_columns, true, R"(
+Automatically cast columns to the schema defined in Hybrid tables when remote segments expose different physical types. Works only with analyzer. Enabled by default, does nothing if (experimental) Hybrid tables are disabled; disable it if it causes issues. Segment schemas are cached when the Hybrid table is created or attached; if a segment schema changes later, detach/attach or recreate the Hybrid table so the cached headers stay in sync.
+)", 0) \
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
 )", EXPERIMENTAL) \
@@ -8224,6 +8243,19 @@ Removes unnecessary exchanges in distributed query plan. Disable it for debuggin
     DECLARE(UInt64, distributed_plan_workers_num, 0, R"(
 How many stateless workers will be used to execute this query. Zero disables stateless-worker leasing for distributed plans.
 )", EXPERIMENTAL) \
+    DECLARE(UInt64, lock_object_storage_task_distribution_ms, 500, R"(
+In object storage distribution queries do not distribute tasks on non-prefetched nodes until prefetched node is active.
+Determines how long the free executor node (one that finished processing all of it assigned tasks) should wait before "stealing" tasks from queue of currently busy executor nodes.
+
+Possible values:
+
+- 0  - steal tasks immediately after freeing up.
+- >0 - wait for specified period of time before stealing tasks.
+
+Having this `>0` helps with cache reuse and might improve overall query time.
+Because busy node might have warmed-up caches for this specific task, while free node needs to fetch lots of data from S3.
+Which might take longer than just waiting for the busy node and generate extra traffic.
+)", EXPERIMENTAL) \
     DECLARE(String, distributed_plan_force_exchange_kind, "", R"(
 Force specified kind of Exchange operators between distributed query stages.
 
@@ -8277,6 +8309,9 @@ When the hash join build side was converted to a FixedHashMap (see `enable_join_
 )", 0) \
     DECLARE(Bool, rewrite_in_to_join, false, R"(
 Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_iceberg_read_optimization, true, R"(
+Allow Iceberg read optimization based on Iceberg metadata.
 )", EXPERIMENTAL) \
     \
     /** Experimental timeSeries* aggregate functions. */ \
@@ -8343,9 +8378,6 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
     DECLARE(Bool, allow_experimental_ai_functions, false, R"(
 Enable experimental AI functions (e.g. `aiGenerateContent`). These functions make external HTTP calls to AI providers.
 )", EXPERIMENTAL) \
-    DECLARE(String, ai_function_credentials, "", R"(
-Name of the named collection that AI functions use for provider credentials and configuration (`provider`, `endpoint`, `model`, optional `api_key`, etc.). When empty, an exception is raised.
-)", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_request_timeout_sec, 60, R"(
 Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_function_max_retries`.
 )", EXPERIMENTAL) \
@@ -8376,6 +8408,12 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, ai_function_embedding_max_batch_size, 100, R"(
 Maximum number of texts to include in a single HTTP request made by `aiEmbed`. Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
+)", EXPERIMENTAL) \
+    DECLARE(String, ai_function_text_default_credentials, "", R"(
+Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint differs from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
+)", EXPERIMENTAL) \
+    DECLARE(String, ai_function_embedding_default_credentials, "", R"(
+Name of the named collection used by `aiEmbed` when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. `aiEmbed` takes `model` as a required positional argument, not from the named collection. Kept separate from `ai_function_text_default_credentials` because an embeddings endpoint differs from a chat one.
 )", EXPERIMENTAL) \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \
@@ -8498,7 +8536,8 @@ Maximum number of texts to include in a single HTTP request made by `aiEmbed`. T
     MAKE_OBSOLETE(M, BoolAuto, insert_select_deduplicate, Field{"auto"}) \
     MAKE_OBSOLETE(M, Bool, use_text_index_dictionary_cache, false) \
     MAKE_OBSOLETE(M, Bool, query_plan_use_logical_join_step, true) \
-    MAKE_OBSOLETE(M, Bool, query_plan_use_new_logical_join_step, true)
+    MAKE_OBSOLETE(M, Bool, query_plan_use_new_logical_join_step, true) \
+    MAKE_OBSOLETE(M, Bool, allow_retries_in_cluster_requests, false)
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 

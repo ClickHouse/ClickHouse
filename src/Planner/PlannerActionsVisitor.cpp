@@ -7,6 +7,7 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SetUtils.h>
@@ -16,6 +17,7 @@
 #include <Analyzer/WindowNode.h>
 
 #include <DataTypes/DataTypeSet.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/FieldToDataType.h>
 
@@ -49,6 +51,7 @@ namespace Setting
     extern const SettingsBool enable_named_columns_in_function_tuple;
     extern const SettingsBool transform_null_in;
     extern const SettingsInt64 optimize_const_name_size;
+    extern const SettingsBool format_display_secrets_in_show_and_select;
 }
 
 namespace ErrorCodes
@@ -193,7 +196,25 @@ public:
             case QueryTreeNodeType::FUNCTION:
             {
                 const auto & function_node = node->as<FunctionNode &>();
-                if (function_node.getFunctionName() == "__actionName")
+                if (function_node.getFunctionName() == "__aliasMarker")
+                {
+                    /// Perform sanity check, because user may call this function with unexpected arguments
+                    const auto & function_argument_nodes = function_node.getArguments().getNodes();
+                    if (function_argument_nodes.size() == 2)
+                    {
+                        if (const auto * second_argument = function_argument_nodes.at(1)->as<ConstantNode>())
+                        {
+                            if (isString(second_argument->getResultType()))
+                                result = second_argument->getValue().safeGet<String>();
+                        }
+                    }
+
+                    /// Empty node name is not allowed and leads to logical errors
+                    if (result.empty())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __aliasMarker is internal and should not be used directly");
+                    break;
+                }
+                else if (function_node.getFunctionName() == "__actionName")
                 {
                     /// Perform sanity check, because user may call this function with unexpected arguments
                     const auto & function_argument_nodes = function_node.getArguments().getNodes();
@@ -388,7 +409,7 @@ public:
             }
             default:
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid action query tree node {}", node->formatASTForErrorMessage());
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid action query tree node {} (node_type: {})", node->formatASTForErrorMessage(), static_cast<int>(node_type));
             }
         }
 
@@ -622,7 +643,7 @@ public:
     }
 
     const ActionsDAG::Node * addConstantIfNecessary(
-        const std::string & node_name, ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic)
+        const std::string & node_name, ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic, bool is_masked_secret = false)
     {
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
@@ -637,7 +658,7 @@ public:
                 return it->second;
         }
 
-        const auto * node = &actions_dag.addColumn(std::move(column), std::move(type), std::move(name), is_deterministic);
+        const auto * node = &actions_dag.addColumn(std::move(column), std::move(type), std::move(name), is_deterministic, is_masked_secret);
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -985,7 +1006,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }();
 
     actions_stack[0].addConstantIfNecessary(
-        constant_node_name, constant_node.getColumn(), constant_type, constant_node_name, constant_node.isDeterministic());
+        constant_node_name, constant_node.getColumn(), constant_type, constant_node_name, constant_node.isDeterministic(),
+        /* is_masked_secret= */ constant_node.isMasked());
 
     size_t actions_stack_size = actions_stack.size();
     if (actions_stack_size > 1)
@@ -1200,9 +1222,68 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     return { function_node_name, Levels(exists_function_level) };
 }
 
+/// A secret function argument can be a constant that the planner folds in from a column or subquery
+/// after the query-tree masking ran, so it is not flagged as a secret in the tree (e.g. the key of
+/// `encrypt(..., k)` where `k` is `'secret' AS k` in a subquery). Flag such constant argument nodes so
+/// plan dumps render them as `[HIDDEN]`. The finder runs only when secrets are hidden (the caller
+/// gates on the setting).
+void markFoldedSecretConstants(const FunctionNode & function_node, const ActionsDAG::NodeRawConstPtrs & children)
+{
+    auto secret_arguments = FunctionSecretArgumentsFinderTreeNode(function_node).getResult();
+    if (!secret_arguments.hasSecrets())
+        return;
+
+    auto mark = [&](size_t index)
+    {
+        /// Any node carrying a constant column is a folded secret value, whether it is a plain COLUMN
+        /// node or a FUNCTION node folded to a constant (e.g. `concat(k1, k2)`); flag either.
+        if (index < children.size() && children[index]->column && !children[index]->is_masked_secret)
+            const_cast<ActionsDAG::Node *>(children[index])->is_masked_secret = true;
+    };
+
+    for (size_t i = secret_arguments.start; i < secret_arguments.start + secret_arguments.count; ++i)
+        mark(i);
+    for (const auto & [index, _] : secret_arguments.masked_arguments)
+        mark(index);
+    for (const auto & [index, _] : secret_arguments.replaced_arguments)
+        mark(index);
+}
+
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitFunction(const QueryTreeNodePtr & node)
 {
     const auto & function_node = node->as<FunctionNode &>();
+
+    if (function_node.getFunctionName() == "__aliasMarker")
+    {
+        const auto & function_arguments = function_node.getArguments().getNodes();
+        if (function_arguments.size() != 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __aliasMarker expects 2 arguments");
+
+        const auto * alias_id_node = function_arguments.at(1)->as<ConstantNode>();
+        if (!alias_id_node || !isString(alias_id_node->getResultType()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __aliasMarker is internal and should not be used directly");
+
+        const auto & alias_id = alias_id_node->getValue().safeGet<String>();
+        if (alias_id.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __aliasMarker is internal and should not be used directly");
+
+        auto [child_name, levels] = visitImpl(function_arguments.at(0));
+        if (alias_id == child_name)
+            return {child_name, levels};
+
+        size_t level = levels.max();
+        const auto * child_node = actions_stack[level].getNodeOrThrow(child_name);
+        actions_stack[level].addAliasIfNecessary(alias_id, child_node);
+
+        size_t actions_stack_size = actions_stack.size();
+        for (size_t i = level + 1; i < actions_stack_size; ++i)
+        {
+            auto & actions_stack_node = actions_stack[i];
+            actions_stack_node.addInputColumnIfNecessary(alias_id, function_node.getResultType());
+        }
+
+        return {alias_id, levels};
+    }
 
     if (function_node.getFunctionName() == "indexHint")
         return visitIndexHintFunction(node);
@@ -1283,6 +1364,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     size_t level = levels.max();
     for (auto & function_argument_node_name : function_arguments_node_names)
         children.push_back(actions_stack[level].getNodeOrThrow(function_argument_node_name));
+
+    if (!planner_context->getQueryContext()->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+        markFoldedSecretConstants(function_node, children);
 
     if (function_node.getFunctionName() == "arrayJoin")
     {
