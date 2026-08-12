@@ -698,7 +698,8 @@ def test_table_comment_is_preserved(pulsar_cluster):
             )
             == "Pulsar comment\n"
         )
-        assert "COMMENT 'Pulsar comment'" in instance.query(
+        # The client returns the statement TSV-escaped, so the quotes arrive as `\'`.
+        assert "COMMENT \\'Pulsar comment\\'" in instance.query(
             "SHOW CREATE TABLE test.pulsar_reader"
         )
 
