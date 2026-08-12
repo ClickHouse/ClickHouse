@@ -29,8 +29,8 @@ Replace `your_enum_type` with the name of your enum type and `'new_value'` with 
 
 Constraint violations can occur during logical replication when the replication order causes a conflict with an existing constraint on the target.
 
-- **Unique constraints**: CDC workloads may replay operations that temporarily violate uniqueness before a subsequent update resolves it.
-- **Check constraints**: A check constraint on the target may be stricter than the source, or an intermediate state during replication may not satisfy the constraint.
+- **Unique constraints**: We apply changes as batched `MERGE`/`UPSERT` operations that write the latest value per primary key, so the order of operations for a given key may not match the ordering the unique index expects. This can temporarily violate a `UNIQUE` constraint within the transaction, even though the constraint holds once the `MERGE` completes. Postgres cannot defer unique index checks the way it defers foreign keys, so there is no way to postpone the check to the end of the transaction. This does not affect data consistency: row identity is defined by the primary key, and the `MERGE` logic is keyed on that same primary key.
+- **Check constraints**: A check constraint on the target may be stricter than the source, or an intermediate state during a batched `MERGE` may not satisfy the constraint even though the final state does. As with unique constraints, this does not affect data consistency, since the `MERGE` is keyed on the primary key that defines row identity.
 
 To unblock replication, drop the offending constraint on the target Postgres:
 
