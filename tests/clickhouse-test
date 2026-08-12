@@ -210,6 +210,10 @@ CGROUP_VERSION = detect_cgroup_version()
 
 BASH = "/bin/bash"
 
+# Appended to output rescued from a timed-out command, so a consumer that saves
+# or previews it cannot present a partial dump as a complete one.
+TRUNCATED_ON_TIMEOUT_MARKER = "[output truncated: command timed out]"
+
 def shell_get_output(
     cmd: str, timeout: Optional[float] = None, keep_output_on_error: bool = False
 ) -> str:
@@ -238,6 +242,21 @@ def shell_get_output(
             return (e.output or "").strip()
         print(
             f"Error running command {cmd!r}: {e}\n{trim_for_log(e.output)}",
+            file=sys.stderr,
+        )
+        return ""
+    except subprocess.TimeoutExpired as e:
+        # TimeoutExpired is not a CalledProcessError subclass, so without this
+        # branch keep_output_on_error does not apply to a timeout and everything
+        # the child had already written is dropped. Output is bytes here even
+        # under text=True, so decode with the same error policy as the call.
+        output = e.output or b""
+        if isinstance(output, bytes):
+            output = output.decode("utf-8", errors="replace")
+        if keep_output_on_error and output.strip():
+            return f"{output.strip()}\n{TRUNCATED_ON_TIMEOUT_MARKER}"
+        print(
+            f"Error running command {cmd!r}: {e}\n{trim_for_log(output)}",
             file=sys.stderr,
         )
         return ""
@@ -1050,12 +1069,18 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
+# Per-PID lldb budget for a release build, and for any caller that cannot tell
+# which flavor the server is. `thread backtrace all` on a slow build costs far
+# more than this, so LLDB_SLOW_BUILD_TIMEOUT applies where the flavor is known.
+LLDB_TIMEOUT = 30
+LLDB_SLOW_BUILD_TIMEOUT = 120
+
+
 # collect server stacktraces using lldb (used uniformly on Linux and macOS)
-def get_stacktraces_from_lldb(pid):
-    # 30s ceiling: `thread backtrace all` should finish in seconds even on a
-    # debug build with many threads; anything beyond that means lldb itself
-    # is wedged (e.g. signal-handler deadlock on the inferior). Killing lldb
-    # leaves the server process untouched.
+def get_stacktraces_from_lldb(pid, timeout: float = LLDB_TIMEOUT):
+    # The budget bounds a wedged lldb (e.g. signal-handler deadlock on the
+    # inferior); it is not an estimate of the work, which scales with the
+    # binary's unwind/symbol cost. Killing lldb leaves the server untouched.
     # macOS restricts task_for_pid(): in --batch mode a non-root lldb cannot
     # attach to the server on a CI runner (the user is not in the _developer
     # group and there is no interactive authorization), so it exits 1. The
@@ -1070,7 +1095,7 @@ def get_stacktraces_from_lldb(pid):
     # it, instead of shell_get_output flooding stderr with nothing attached.
     return shell_get_output(
         f"{sudo}{lldb} --batch -p {pid} -o 'thread backtrace all' -o 'detach' -o 'quit'",
-        timeout=30,
+        timeout=timeout,
         keep_output_on_error=True,
     )
 
@@ -1261,19 +1286,57 @@ def _append_stacktrace_log(filename: str, block: str) -> None:
         print(f"Could not write {filename}: {e}", file=sys.stderr)
 
 
-def print_c_stacktraces(args) -> None:
+def lldb_timeout_for_build(args) -> float:
+    """Per-PID lldb budget for this server's build flavor.
+
+    Debug, sanitizer and coverage builds are far more expensive to unwind and
+    symbolize, the same reason `MergeTreeSettingsRandomizer.get_random_settings`
+    raises its granularity bounds on a `slow_build`.
+
+    Reads `args.build_flags`, never the module-level RELEASE_NON_SANITIZED /
+    SANITIZED globals: a spawned worker re-imports the module with those back at
+    their defaults, so a globals-based budget would silently pick the release
+    value on exactly the aarch64 checks that set the spawn start method.
+
+    The flags are absent on the startup-failure path, which calls this before
+    `collect_build_flags` runs; keep the release budget there rather than
+    guessing or paying for a binary probe on an abort path.
+    """
+    build_flags = getattr(args, "build_flags", None)
+    if build_flags is None:
+        return LLDB_TIMEOUT
+    slow_build = (
+        any(flag in build_flags for flag in BuildFlags.SANITIZERS)
+        or BuildFlags.DEBUG in build_flags
+        or BuildFlags.WITH_COVERAGE in build_flags
+    )
+    return LLDB_SLOW_BUILD_TIMEOUT if slow_build else LLDB_TIMEOUT
+
+
+def print_c_stacktraces(
+    args,
+    per_pid_timeout: Optional[float] = None,
+    total_timeout: float = LLDB_SLOW_BUILD_TIMEOUT,
+) -> None:
     """C++-side backtraces via lldb.  Works whenever the server process
     exists and is debuggable, independent of whether SQL is reachable.
 
     Every call site is one of two situations: we're aborting the whole
     run (SERVER_DIED, hung-check, check_server_started) or terminating
-    the one wedged test (timeout_handler).  lldb's "thread backtrace all"
-    pause is on the order of seconds — acceptable in both cases against
-    the diagnostic value.
+    the one wedged test (timeout_handler).
+
+    `per_pid_timeout` None means derive it from the build flavor.
+    `total_timeout` bounds the whole pid loop, which can span up to 20
+    processes; it is an independent limit, not a multiple of the per-PID one.
+    A caller inside a fired one-shot `signal.alarm` must pass both, because
+    that alarm cannot bound work running in its own handler.
 
     Skipped under ASan, where attaching a debugger disables
     LeakSanitizer detections.
     """
+    if per_pid_timeout is None:
+        per_pid_timeout = lldb_timeout_for_build(args)
+
     if is_asan_build(args):
         print(
             colored(
@@ -1302,15 +1365,30 @@ def print_c_stacktraces(args) -> None:
         )
         return
 
-    for pid in all_pids:
+    deadline = time() + total_timeout
+    for index, pid in enumerate(all_pids):
+        remaining = deadline - time()
+        if remaining <= 0:
+            # Report the shortfall: a silently truncated loop reads as "these
+            # processes had nothing to dump".
+            print(
+                f"Ran out of the {total_timeout:.0f}s lldb budget: "
+                f"skipping {len(all_pids) - index} of {len(all_pids)} processes "
+                f"({', '.join(str(p) for p in all_pids[index:])})."
+            )
+            break
         label = "main server" if pid == server_pid else "replica"
         print(f"\nCollecting C stacktraces from {label} process {pid} with lldb:")
-        bt = get_stacktraces_from_lldb(pid)
+        bt = get_stacktraces_from_lldb(pid, timeout=min(per_pid_timeout, remaining))
         if bt and len(bt) >= 1000:
+            truncated = TRUNCATED_ON_TIMEOUT_MARKER in bt
             block = f"=== PID {pid} ({label}) ===\n{bt}"
             _append_stacktrace_log(C_STACKTRACES_LOG, block)
             print(trim_for_log(block, 100))
-            print(f"(full lldb backtrace saved to {C_STACKTRACES_LOG})")
+            print(
+                f"({'partial' if truncated else 'full'} lldb backtrace saved to "
+                f"{C_STACKTRACES_LOG})"
+            )
         else:
             print(f"Got suspiciously small stacktraces from {pid}: {bt}")
 
@@ -4834,7 +4912,14 @@ def run_tests_array(
                         # stay around either way and can be captured at
                         # end-of-run.
                         print_sql_stacktraces(args)
-                        print_c_stacktraces(args)
+                        # This handler runs after the one-shot alarm fired, so
+                        # the alarm can no longer bound it, and what is left of
+                        # the job's outer timeout has to cover stop_tests() too.
+                        # Hence the tighter pair here than at the abort paths,
+                        # where no outer alarm is pending.
+                        print_c_stacktraces(
+                            args, per_pid_timeout=LLDB_TIMEOUT, total_timeout=60
+                        )
                         stop_tests()
                     raise TimeoutError("Test execution timed out")
 
