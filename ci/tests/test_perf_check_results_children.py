@@ -95,6 +95,9 @@ def test_row_count_equals_query_count_from_parent_message():
     for fixture, _, pre_fix_count in CASES:
         root = _load(fixture)
         expected = sum(_parse_message_counts(root.info).values())
+        # A fixture whose message lost its counts would make every assertion
+        # below trivially true.
+        assert expected > 0, f"{fixture}: no counts in {root.info!r}"
         children = build_check_results_children(
             root.get_sub_result_by_name("Tests"), CHECK_NAME_PATTERN
         )
@@ -116,6 +119,7 @@ def test_row_count_equals_distinct_query_names():
             for r in tests.results
             if r.status in NON_SUCCESS_STATUSES
         }
+        assert distinct, fixture
         children = build_check_results_children(tests, CHECK_NAME_PATTERN)
         assert {c.name for c in children} == distinct, fixture
 
@@ -126,6 +130,7 @@ def test_rows_carry_the_compare_sh_verdict_not_fail():
         root = _load(fixture)
         tests = root.get_sub_result_by_name("Tests")
         children = build_check_results_children(tests, CHECK_NAME_PATTERN)
+        assert children, fixture
         verdicts = {
             _base_name(r.name): r.status
             for r in tests.results
@@ -161,6 +166,7 @@ def test_displayed_names_carry_no_side_suffix():
         children = build_check_results_children(
             root.get_sub_result_by_name("Tests"), CHECK_NAME_PATTERN
         )
+        assert children, fixture
         for child in children:
             assert "::" not in child.name, f"{fixture}: {child.name}"
 
@@ -174,6 +180,7 @@ def test_history_link_keeps_the_suffixed_name():
         children = build_check_results_children(
             root.get_sub_result_by_name("Tests"), CHECK_NAME_PATTERN
         )
+        assert children, fixture
         for child in children:
             assert _link_test_name(child) == f"{child.name}::new", fixture
 
