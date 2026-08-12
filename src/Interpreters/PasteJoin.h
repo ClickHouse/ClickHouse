@@ -27,6 +27,10 @@ public:
     }
 
     std::string getName() const override { return "PasteJoin"; }
+
+    /// PASTE is a join kind rather than a `join_algorithm` value, but it is still reported here so
+    /// that a query whose only join is a paste join does not show an empty list of algorithms.
+    std::string_view getAlgorithm() const override { return "PASTE"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override

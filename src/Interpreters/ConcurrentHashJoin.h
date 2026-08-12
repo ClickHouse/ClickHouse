@@ -55,6 +55,8 @@ public:
     ~ConcurrentHashJoin() override;
 
     std::string getName() const override { return "ConcurrentHashJoin"; }
+
+    std::string_view getAlgorithm() const override { return toString(JoinAlgorithm::PARALLEL_HASH); }
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool addBlockToJoin(const Block & right_block_, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;

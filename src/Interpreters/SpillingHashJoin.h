@@ -72,6 +72,7 @@ public:
     ~SpillingHashJoin() override;
 
     std::string getName() const override;
+    std::string_view getAlgorithm() const override;
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     bool addBlockToJoin(const Block & block, bool check_limits) override;

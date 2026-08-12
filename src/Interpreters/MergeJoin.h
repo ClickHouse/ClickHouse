@@ -36,6 +36,8 @@ public:
     };
 
     std::string getName() const override { return "PartialMergeJoin"; }
+
+    std::string_view getAlgorithm() const override { return toString(JoinAlgorithm::PARTIAL_MERGE); }
     /// PartialMergeJoin re-sorts left blocks by the join key (once per right block), so it does not
     /// preserve the left stream's original order. See issues #109216 and #110662.
     bool preservesLeftBlockOrder() const override { return false; }

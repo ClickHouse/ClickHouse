@@ -1,16 +1,18 @@
-04654_join_count_asof_new	1	['LEFT']	['ASOF']	0
-04654_join_count_asof_old	1	['LEFT']	['ASOF']	0
-04654_join_count_cross_new	1	['CROSS']	['UNSPECIFIED']	0
-04654_join_count_cross_old	1	['CROSS']	['UNSPECIFIED']	0
-04654_join_count_filled_new	1	['LEFT']	['ANY']	0
-04654_join_count_filled_old	1	['LEFT']	['ANY']	0
-04654_join_count_grace_spill	1	['INNER']	['ALL']	1
-04654_join_count_inner_new	1	['INNER']	['ALL']	0
-04654_join_count_inner_old	1	['INNER']	['ALL']	0
-04654_join_count_merge_spill	1	['INNER']	['ALL']	1
-04654_join_count_none_new	0	[]	[]	0
-04654_join_count_none_old	0	[]	[]	0
-04654_join_count_paste_new	1	['PASTE']	['UNSPECIFIED']	0
-04654_join_count_paste_old	1	['PASTE']	['UNSPECIFIED']	0
-04654_join_count_two_new	2	['INNER']	['ALL']	0
-04654_join_count_two_old	2	['INNER']	['ALL']	0
+04654_join_count_asof_new	1	['HASH']	['LEFT']	['ASOF']	0
+04654_join_count_asof_old	1	['HASH']	['LEFT']	['ASOF']	0
+04654_join_count_cross_new	1	['HASH']	['CROSS']	['UNSPECIFIED']	0
+04654_join_count_cross_old	1	['HASH']	['CROSS']	['UNSPECIFIED']	0
+04654_join_count_filled_new	1	['HASH']	['LEFT']	['ANY']	0
+04654_join_count_filled_old	1	['HASH']	['LEFT']	['ANY']	0
+04654_join_count_fsm	1	['FULL_SORTING_MERGE']	['INNER']	['ALL']	0
+04654_join_count_grace_spill	1	['GRACE_HASH']	['INNER']	['ALL']	1
+04654_join_count_inner_new	1	['HASH']	['INNER']	['ALL']	0
+04654_join_count_inner_old	1	['HASH']	['INNER']	['ALL']	0
+04654_join_count_merge_spill	1	['PARTIAL_MERGE']	['INNER']	['ALL']	1
+04654_join_count_none_new	0	[]	[]	[]	0
+04654_join_count_none_old	0	[]	[]	[]	0
+04654_join_count_paste_new	1	['PASTE']	['PASTE']	['UNSPECIFIED']	0
+04654_join_count_paste_old	1	['PASTE']	['PASTE']	['UNSPECIFIED']	0
+04654_join_count_switch	1	['GRACE_HASH','HASH']	['INNER']	['ALL']	1
+04654_join_count_two_new	2	['HASH']	['INNER']	['ALL']	0
+04654_join_count_two_old	2	['HASH']	['INNER']	['ALL']	0

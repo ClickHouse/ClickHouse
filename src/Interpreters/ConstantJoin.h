@@ -28,6 +28,8 @@ public:
     ConstantJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block_, bool any_take_last_row_ = false);
 
     std::string getName() const override { return "ConstantJoin"; }
+
+    std::string_view getAlgorithm() const override { return "CONSTANT"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     bool isCloneSupported() const override

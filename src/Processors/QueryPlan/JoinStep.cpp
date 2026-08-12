@@ -86,7 +86,7 @@ void countExecutedJoin(const JoinPtr & join)
     const auto & table_join = join->getTableJoin();
     auto kind = table_join.kind();
     auto strictness = table_join.strictness();
-    counters->addJoin(kind, strictness);
+    counters->addJoin(kind, strictness, join->getAlgorithm());
 }
 
 std::vector<size_t> getPermutationForBlock(
