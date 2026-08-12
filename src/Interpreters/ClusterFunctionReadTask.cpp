@@ -83,6 +83,20 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
     auto protocol_version
         = std::min(static_cast<UInt64>(worker_protocol_version), static_cast<UInt64>(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION));
 
+    /// Fail closed: protocol < 2 omits `schema_transform`, so workers would skip data-lake schema
+    /// evolution and return wrong columns / values.
+    if (protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA
+        && data_lake_metadata.schema_transform
+        && !data_lake_metadata.schema_transform->getInputs().empty())
+    {
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Worker protocol version {} cannot carry `schema_transform`, which is required for "
+            "distributed data-lake reads with schema evolution (minimum protocol version: {})",
+            protocol_version,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA);
+    }
+
     /// Fail closed: downgrading would omit deletion / selection vectors and return deleted rows.
     if (protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_EXCLUDED_ROWS
         && hasNonEmptyExcludedRows(data_lake_metadata))

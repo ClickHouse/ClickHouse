@@ -2,9 +2,12 @@
 
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Common/Exception.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/ProtocolDefines.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
 #include <config.h>
 
@@ -23,6 +26,60 @@ extern const int UNKNOWN_PROTOCOL;
 /// Cluster-protocol fail-closed behavior for Iceberg deletion vectors / equality / position
 /// deletes and file buckets. Master-only APIs (`read_source_index`,
 /// `derive_file_name_from_url_path`, `getIdentifier(bool)`) are intentionally not covered here.
+
+TEST(ClusterFunctionReadTaskResponse, RejectsSchemaTransformOnProtocolBeforeDataLakeMetadata)
+{
+    ClusterFunctionReadTaskResponse response;
+    response.path = "/path/file.parquet";
+    response.data_lake_metadata.schema_transform
+        = std::make_shared<ActionsDAG>(NamesAndTypesList{{"x", std::make_shared<DataTypeUInt64>()}});
+
+    String serialized;
+    WriteBufferFromString out(serialized);
+    try
+    {
+        response.serialize(out, DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION);
+        FAIL() << "Expected exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNKNOWN_PROTOCOL);
+        EXPECT_NE(e.message().find("schema_transform"), std::string::npos);
+    }
+}
+
+TEST(ClusterFunctionReadTaskResponse, AllowsEmptySchemaTransformOnProtocolBeforeDataLakeMetadata)
+{
+    ClusterFunctionReadTaskResponse response;
+    response.path = "/path/file.parquet";
+    response.data_lake_metadata.schema_transform = std::make_shared<ActionsDAG>();
+
+    String serialized;
+    WriteBufferFromString out(serialized);
+    response.serialize(out, DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION);
+    out.finalize();
+    EXPECT_FALSE(serialized.empty());
+}
+
+TEST(ClusterFunctionReadTaskResponse, RoundTripsSchemaTransformOnSupportedProtocol)
+{
+    ClusterFunctionReadTaskResponse response;
+    response.path = "/path/file.parquet";
+    response.data_lake_metadata.schema_transform
+        = std::make_shared<ActionsDAG>(NamesAndTypesList{{"x", std::make_shared<DataTypeUInt64>()}});
+
+    String serialized;
+    WriteBufferFromString out(serialized);
+    response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA);
+    out.finalize();
+
+    ReadBufferFromString in(serialized);
+    ClusterFunctionReadTaskResponse deserialized;
+    deserialized.deserialize(in);
+
+    ASSERT_TRUE(deserialized.data_lake_metadata.schema_transform);
+    EXPECT_FALSE(deserialized.data_lake_metadata.schema_transform->getInputs().empty());
+}
 
 TEST(ClusterFunctionReadTaskResponse, RejectsNonEmptyExcludedRowsOnOldProtocol)
 {
