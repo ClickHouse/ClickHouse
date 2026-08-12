@@ -103,7 +103,7 @@ public:
 
     const JoinSettings & getSettings() const { return join_settings; }
 
-    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
+    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
@@ -117,7 +117,11 @@ public:
     }
 
     void addConditions(ActionsDAG actions_dag);
-    std::optional<ActionsDAG::ActionsForFilterPushDown> getFilterActions(JoinTableSide side, const SharedHeader & stream_header);
+
+    /// Extract the part of the JOIN ON expression that can be evaluated on `side` alone, to be applied
+    /// as a filter on that input.
+    std::optional<ActionsDAG::ActionsForFilterPushDown> getFilterActions(
+        JoinTableSide side, const SharedHeader & left_header, const SharedHeader & right_header);
 
     struct ActionsDAGWithKeys
     {
@@ -257,6 +261,14 @@ private:
 };
 
 std::string_view joinTypePretty(JoinKind join_kind, JoinStrictness strictness);
+
+/// Whether the IEJoin algorithm is preferred for this join: `ie_join` is listed first in
+/// `join_algorithm` and the ON expression has two inequality conditions the operator can take.
+/// For optimization passes that would otherwise claim the join for a hash-family algorithm
+/// (e.g. runtime filters). The condition eligibility is the same one the conversion to the
+/// physical step applies, so `true` means IEJoin takes the join unless the right side is a
+/// prepared `Join` storage (which those passes exclude on their own).
+bool isIEJoinPreferred(const JoinOperator & join_operator, const JoinSettings & join_settings);
 
 
 }

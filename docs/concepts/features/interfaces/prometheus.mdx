@@ -43,6 +43,10 @@ This section is similar to [<http_handlers>](/concepts/features/interfaces/http)
                 <errors>true</errors>
                 <histograms>true</histograms>
                 <dimensional_metrics>true</dimensional_metrics>
+                <labels>
+                    <environment>production</environment>
+                    <shard from_env="SHARD_NAME"></shard>
+                </labels>
             </handler>
         </my_rule_1>
     </handlers>
@@ -62,6 +66,7 @@ Settings:
 | `errors`                     | true       | Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](/reference/system-tables/errors) as well. |
 | `histograms`                 | true       | Expose histogram metrics from [system.histogram_metrics](/reference/system-tables/histogram_metrics) |
 | `dimensional_metrics`        | true       | Expose dimensional metrics from [system.dimensional_metrics](/reference/system-tables/dimensional_metrics) |
+| `labels`                     | none       | Constant labels added to every exposed metric. Each child element defines one label: the element name is the label name (which must match `[a-zA-Z_][a-zA-Z0-9_]*`) and the element value is the label value. Label values support standard config substitutions such as the `from_env` attribute. A label name is rejected when it starts with `__` (reserved by Prometheus), or when it would collide with a label this endpoint already writes for one of its enabled sections. The reserved set therefore follows the endpoint's active export surface: `le` when `histograms` is enabled; the `ClickHouse_Info` labels (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`) when `info` is enabled; and any label used by an exposed histogram or dimensional metric family (for example, `group`, `direction`, or `operation_type`) when `histograms` or `dimensional_metrics` is enabled. Because it depends on what the endpoint actually exposes, a name can be valid on one endpoint but rejected on another. |
 
 Check (replace `127.0.0.1` with the IP addr or hostname of your ClickHouse server):
 ```bash
