@@ -1,5 +1,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/quoteString.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -70,6 +71,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int NOT_IMPLEMENTED;
+    extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int BACKUP_ENTRY_NOT_FOUND;
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
@@ -718,8 +720,10 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
     total_size_rows += new_rows;
 }
 
-void StorageMemory::checkAlterIsPossible(const AlterCommands & commands, ContextPtr) const
+void StorageMemory::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
+    const auto metadata_snapshot = getInMemoryMetadataPtr(context, /*bypass_metadata_cache*/ false);
+    std::optional<NameDependencies> name_deps{};
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
@@ -728,6 +732,20 @@ void StorageMemory::checkAlterIsPossible(const AlterCommands & commands, Context
             && command.type != AlterCommand::Type::MODIFY_SETTING)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
                 command.type, getName());
+
+        if (command.type == AlterCommand::Type::DROP_COLUMN && !command.clear)
+        {
+            if (!name_deps)
+                name_deps = getDependentViewsByColumn(context);
+            const auto deps_mv = getDependentViewsForDroppedColumn(
+                name_deps.value(), metadata_snapshot->getColumns(), command.column_name, /*share_nested_offsets*/ true);
+            if (!deps_mv.empty())
+            {
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER DROP column {} which is referenced by materialized view {}",
+                    backQuoteIfNeed(command.column_name), toString(deps_mv));
+            }
+        }
     }
 }
 

@@ -78,6 +78,16 @@ ALTER TABLE test_merge DROP COLUMN n;
 DROP TABLE test_merge;
 DROP TABLE test;
 
+-- The same protection for the Memory engine
+CREATE TABLE test (`n.a` UInt64, `n.b` UInt64, x UInt64) ENGINE = Memory;
+CREATE MATERIALIZED VIEW test_mv ENGINE = Null AS SELECT `n.a`, x FROM test;
+ALTER TABLE test DROP COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test DROP COLUMN IF EXISTS n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test DROP COLUMN x; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE test_mv;
+ALTER TABLE test DROP COLUMN n;
+DROP TABLE test;
+
 -- Dropping the group is rejected while an unfinished mutation touches a column of the group
 CREATE TABLE test (`n.a` UInt64, x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO test VALUES (1, 1);
