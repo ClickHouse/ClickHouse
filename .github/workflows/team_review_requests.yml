@@ -3,10 +3,10 @@ name: Documentation Team Review Requests
 on:
   pull_request:
     branches: [master]
-    types: [opened, reopened, synchronize]
+    types: [opened]
   pull_request_target:
     branches: [master]
-    types: [opened, reopened, synchronize, labeled]
+    types: [labeled]
 
 concurrency:
   group: documentation-team-review-requests-${{ github.event_name }}-${{ github.event.pull_request.number }}

@@ -74,23 +74,15 @@ def test_check_requests_teams_for_internal_pr(monkeypatch):
     )
     monkeypatch.setattr(
         team_review_requests.GH,
-        "reconcile_team_reviews",
+        "request_team_reviews",
         staticmethod(
-            lambda teams, managed_teams, pr, repo: requested.append(
-                (teams, managed_teams, pr, repo)
-            )
-            or True
+            lambda teams, pr, repo: requested.append((teams, pr, repo)) or True
         ),
     )
 
     assert team_review_requests.check(make_event(internal=True))
     assert requested == [
-        (
-            ["clickpipes", "docs"],
-            team_review_requests.MANAGED_DOCS_TEAMS,
-            42,
-            "ClickHouse/ClickHouse",
-        )
+        (["clickpipes", "docs"], 42, "ClickHouse/ClickHouse")
     ]
 
 
@@ -103,12 +95,9 @@ def test_check_requests_teams_for_approved_fork_pr(monkeypatch):
     )
     monkeypatch.setattr(
         team_review_requests.GH,
-        "reconcile_team_reviews",
+        "request_team_reviews",
         staticmethod(
-            lambda teams, managed_teams, pr, repo: requested.append(
-                (teams, managed_teams, pr, repo)
-            )
-            or True
+            lambda teams, pr, repo: requested.append((teams, pr, repo)) or True
         ),
     )
 
@@ -116,44 +105,7 @@ def test_check_requests_teams_for_approved_fork_pr(monkeypatch):
         make_event(internal=False, labels=["can be tested"])
     )
     assert requested == [
-        (
-            ["integrations-ecosystem", "docs"],
-            team_review_requests.MANAGED_DOCS_TEAMS,
-            42,
-            "ClickHouse/ClickHouse",
-        )
-    ]
-
-
-def test_check_reconciles_stale_teams_when_src_changes(monkeypatch):
-    reconciliations = []
-    monkeypatch.setattr(
-        team_review_requests,
-        "get_changed_files",
-        lambda repository, pr: [
-            "docs/integrations/clickpipes/home.mdx",
-            "src/Core/Block.cpp",
-        ],
-    )
-    monkeypatch.setattr(
-        team_review_requests.GH,
-        "reconcile_team_reviews",
-        staticmethod(
-            lambda teams, managed_teams, pr, repo: reconciliations.append(
-                (teams, managed_teams, pr, repo)
-            )
-            or True
-        ),
-    )
-
-    assert team_review_requests.check(make_event(internal=True))
-    assert reconciliations == [
-        (
-            [],
-            team_review_requests.MANAGED_DOCS_TEAMS,
-            42,
-            "ClickHouse/ClickHouse",
-        )
+        (["integrations-ecosystem", "docs"], 42, "ClickHouse/ClickHouse")
     ]
 
 
@@ -165,7 +117,7 @@ def test_check_skips_unapproved_fork_pr(monkeypatch):
     )
     monkeypatch.setattr(
         team_review_requests.GH,
-        "reconcile_team_reviews",
+        "request_team_reviews",
         staticmethod(
             lambda *_args, **_kwargs: pytest.fail("unexpected review request")
         ),
