@@ -122,6 +122,15 @@ struct FindReadingStepContext
 
     std::list<JoinStep *> joins_to_keep_in_order = {};
 
+    /// Set to true when the traversal tunnels through an order-preserving join - a `JoinStep`
+    /// or a `FilledJoinStep` (`StorageJoin` / Dictionary) - on the way to the reading step.
+    /// Both run one `JoiningTransform` per probe-side stream, so callers use this to keep the
+    /// per-stream reading pipeline parallel (see `passed_residual_cpu_step`). Unlike
+    /// `joins_to_keep_in_order` (which is limited to `JoinStep`, the only type that needs
+    /// `keepLeftPipelineInOrder`), this covers `FilledJoinStep` too: a filled join has no
+    /// build-side pipeline to synchronize with and preserves the probe order as is.
+    bool passed_order_preserving_join = false;
+
     /// Set to true when the traversal descends through an order-preserving step that performs
     /// per-row CPU work above the reading step (a residual `FilterStep`, i.e. a `WHERE` not pushed
     /// into `PREWHERE`, an `ArrayJoinStep`, or a non-trivial `ExpressionStep`). Callers use this
@@ -185,8 +194,12 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
                 && !join_ptr->hasDelayedBlocks() && join_ptr->preservesLeftBlockOrder())
             {
                 auto * reading_step = findReadingStep(*node.children.front(), data);
-                if (auto * join_step = typeid_cast<JoinStep *>(step); reading_step && join_step)
-                    data.joins_to_keep_in_order.push_back(join_step);
+                if (reading_step)
+                {
+                    data.passed_order_preserving_join = true;
+                    if (auto * join_step = typeid_cast<JoinStep *>(step))
+                        data.joins_to_keep_in_order.push_back(join_step);
+                }
                 return reading_step;
             }
         }
@@ -1275,13 +1288,15 @@ InputOrderInfoPtr buildInputOrderInfo(
                 && order_info.input_order->sort_description_for_merging.size() >= description.size())
                 reading->setPreferMultipleStreams();
 
-            /// When the order is preserved through a `JOIN` (`keepLeftPipelineInOrder`), the join
-            /// keeps exactly the probe-side streams it receives and runs one `JoiningTransform`
-            /// per stream (`QueryPipelineBuilder::joinPipelinesRightLeft` skips the resize). If
+            /// When the order is preserved through a `JOIN`, the join keeps exactly the
+            /// probe-side streams it receives and runs one `JoiningTransform` per stream: a
+            /// `JoinStep` with `keepLeftPipelineInOrder` skips the resize in
+            /// `QueryPipelineBuilder::joinPipelinesRightLeft`, and a `FilledJoinStep`
+            /// (`StorageJoin` / Dictionary) is a simple per-stream transform to begin with. If
             /// `PrefetchingConcatProcessor` collapsed a single-part filtered read into one stream,
             /// all that per-stream join work would be serialized. Keep the streams parallel; they
             /// are merged later, in the `SortingStep` above the join.
-            if (!find_reading_ctx.joins_to_keep_in_order.empty())
+            if (find_reading_ctx.passed_order_preserving_join)
                 reading->setPreferMultipleStreams();
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1308,7 +1323,7 @@ InputOrderInfoPtr buildInputOrderInfo(
             if (find_reading_ctx.passed_residual_cpu_step
                 || (sorting.hasLimitByHint()
                     && order_info.input_order->sort_description_for_merging.size() >= description.size())
-                || !find_reading_ctx.joins_to_keep_in_order.empty())
+                || find_reading_ctx.passed_order_preserving_join)
                 merge->setPreferMultipleStreams();
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
