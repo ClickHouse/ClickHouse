@@ -99,6 +99,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <TableFunctions/ITableFunction.h>
 
+#include <array>
 #include <filesystem>
 #include <iostream>
 #include <limits>
@@ -2791,8 +2792,27 @@ void ClientBase::processParsedSingleQuery(
         /// verbatim (foreign) dialects are pinned below, after `applySettingsFromServerIfNeeded`.
         const Dialect parse_dialect = client_context->getSettingsRef()[Setting::dialect];
         const Field parse_dialect_value = client_context->getSettingsRef().get("dialect");
-        const Field parse_allow_polyglot_value = client_context->getSettingsRef().get("allow_experimental_polyglot_dialect");
-        const Field parse_polyglot_dialect_value = client_context->getSettingsRef().get("polyglot_dialect");
+        /// Every parse-time setting that governed the polyglot classifier's parse of this text — the
+        /// settings passed to `ParserPolyglotQuery` (see parseQuery) — and that the server consults
+        /// when it reparses the very same verbatim text (see `executeQuery`). All of them are pinned
+        /// below, not only the dialect: e.g. flipping `allow_settings_after_format_in_insert` from
+        /// inside the query would otherwise make the server read the `SETTINGS ...` clause of an
+        /// `INSERT ... VALUES SETTINGS ... (...)` as `Values` payload, diverging from the parse the
+        /// client already accepted.
+        static constexpr std::array polyglot_parse_setting_names{
+            "allow_experimental_polyglot_dialect",
+            "polyglot_dialect",
+            "allow_settings_after_format_in_insert",
+            "implicit_select",
+            "max_query_size",
+            "max_parser_depth",
+            "max_parser_backtracks"};
+        std::array<Field, polyglot_parse_setting_names.size()> parse_polyglot_values;
+        if (parse_dialect == Dialect::polyglot)
+        {
+            for (size_t i = 0; i < polyglot_parse_setting_names.size(); ++i)
+                parse_polyglot_values[i] = client_context->getSettingsRef().get(polyglot_parse_setting_names[i]);
+        }
         current_query_parsed_as_json_dialect = parse_dialect == Dialect::clickhouse_json;
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
         connection->setFormatSettings(getFormatSettings(client_context));
@@ -2847,8 +2867,8 @@ void ClientBase::processParsedSingleQuery(
             client_context->setSetting("dialect", parse_dialect_value);
             if (parse_dialect == Dialect::polyglot)
             {
-                client_context->setSetting("allow_experimental_polyglot_dialect", parse_allow_polyglot_value);
-                client_context->setSetting("polyglot_dialect", parse_polyglot_dialect_value);
+                for (size_t i = 0; i < polyglot_parse_setting_names.size(); ++i)
+                    client_context->setSetting(polyglot_parse_setting_names[i], parse_polyglot_values[i]);
             }
         }
 

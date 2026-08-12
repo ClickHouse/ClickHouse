@@ -41,3 +41,6 @@ SYNTAX_ERROR
 42
 --- inline data survives a dialect switch in the INSERT's own SETTINGS clause (expect: 125 8) ---
 125	8
+--- parse limits are pinned for the server-side reparse (expect: 7, 42) ---
+7
+42

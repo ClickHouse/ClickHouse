@@ -156,5 +156,14 @@ $CLICKHOUSE_CLIENT $POLY_CH -q "INSERT INTO t SETTINGS dialect = 'clickhouse' VA
 echo "--- inline data survives a dialect switch in the INSERT's own SETTINGS clause (expect: 125 8) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 
+# The pinning covers every parse-time setting the classifier consumed, not only the dialect: the
+# server reparses the verbatim text under the same parser settings the client parsed it with. Here
+# the query's own SETTINGS clause shrinks the parse limits; without the pin the server would reparse
+# the very same text the client already accepted with `max_parser_depth = 1` (or reject it against
+# `max_query_size = 1`) and fail, even though the settings only apply to the query's execution.
+echo "--- parse limits are pinned for the server-side reparse (expect: 7, 42) ---"
+$CLICKHOUSE_CLIENT $POLY_CH -q "SELECT 3 + 4 SETTINGS max_parser_depth = 1"
+$CLICKHOUSE_CLIENT $POLY_CH -q "SELECT 41 + 1 SETTINGS max_query_size = 1"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE b"
