@@ -655,20 +655,34 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
             /// So we need to save them from the first block and set them later to all next blocks.
             if (has_dynamic_structure)
             {
-                /// Rebind the empty target to the destination policy before taking the incoming
-                /// structure. This avoids `JSON` -> `String` -> `JSON` conversion for policy-only changes.
-                if (use_target_type)
-                    setSharedDataPathMatcherRecursively(*mutable_column, sample_type);
-
-                mutable_column->takeExactDynamicStructureFrom(*column.column);
-
-                /// Normalize the first block too: it defines the sample and otherwise would keep
-                /// dynamic paths rejected by the destination policy.
-                if (!column.column->dynamicStructureEquals(*mutable_column))
+                /// Re-promotion: re-decide shared-vs-dynamic placement from the data like merges do
+                /// (see ColumnGathererStream::initialize) instead of preserving the incoming placement.
+                if (settings.reconsider_json_shared_data_placement)
                 {
+                    setSharedDataPathMatcherRecursively(*mutable_column, sample_type);
+                    mutable_column->chooseDynamicStructureForMerge({column.column}, /*max_dynamic_subcolumns=*/ std::nullopt);
+
                     auto normalized_column = mutable_column->cloneEmpty();
                     normalized_column->insertRangeFrom(*column.column, 0, column.column->size());
                     column.column = std::move(normalized_column);
+                }
+                else
+                {
+                    /// Rebind the empty target to the destination policy before taking the incoming
+                    /// structure. This avoids `JSON` -> `String` -> `JSON` conversion for policy-only changes.
+                    if (use_target_type)
+                        setSharedDataPathMatcherRecursively(*mutable_column, sample_type);
+
+                    mutable_column->takeExactDynamicStructureFrom(*column.column);
+
+                    /// Normalize the first block too: it defines the sample and otherwise would keep
+                    /// dynamic paths rejected by the destination policy.
+                    if (!column.column->dynamicStructureEquals(*mutable_column))
+                    {
+                        auto normalized_column = mutable_column->cloneEmpty();
+                        normalized_column->insertRangeFrom(*column.column, 0, column.column->size());
+                        column.column = std::move(normalized_column);
+                    }
                 }
             }
             if (column.column->hasStatistics())

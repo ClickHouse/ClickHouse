@@ -56,6 +56,17 @@ FROM format(
     '{"j":{"foo":1,"foobar":2,"keep":3}}')
 SETTINGS type_json_use_partial_match_to_skip_paths_by_regexp = 1;
 
+-- FULL applies per rule: the partial rule still matches substrings while the FULL rule
+-- requires an exact full-path match.
+SELECT
+    'mixed per-rule modes',
+    arraySort(JSONDynamicPaths(j)),
+    arraySort(JSONSharedDataPaths(j))
+FROM format(
+    JSONEachRow,
+    'j JSON(max_dynamic_paths=10, SHARED REGEXP \'foo\', SHARED REGEXP FULL \'^bar$\')',
+    '{"j":{"foo":1,"foobar":2,"xfoox":3,"bar":4,"barbaz":5,"keep":6}}');
+
 -- Typed paths and SKIP paths take precedence over SHARED REGEXP.
 SELECT
     j.foo,
@@ -70,6 +81,13 @@ SELECT empty(JSONAllPaths(j))
 FROM format(
     JSONEachRow,
     'j JSON(max_dynamic_paths=10, SKIP foo, SHARED REGEXP \'foo\')',
+    '{"j":{"foo":7}}');
+
+-- A path matching both SKIP REGEXP and SHARED REGEXP is discarded, not stored in shared data.
+SELECT empty(JSONAllPaths(j))
+FROM format(
+    JSONEachRow,
+    'j JSON(max_dynamic_paths=10, SKIP REGEXP \'foo\', SHARED REGEXP \'foo\')',
     '{"j":{"foo":7}}');
 
 -- A sub-object exposes root paths without their prefix. Matching must still use the original,
