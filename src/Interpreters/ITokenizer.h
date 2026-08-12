@@ -34,7 +34,9 @@ public:
         Array,
         SparseGrams,
         AsciiCJK,
+#if USE_ICU
         Icu,
+#endif
 #if USE_MECAB
         Japanese,
 #endif
@@ -364,6 +366,25 @@ struct SparseGramsTokenizer final : public ITokenizerHelper<SparseGramsTokenizer
     bool isStateful() const override { return true; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
+    /// Streams tokens straight to the callback instead of pulling one at a time via `nextInString`.
+    /// Emits the same tokens in the same order.
+    template <Fn<bool(const char *, size_t)> Callback>
+    void forEachTokenImpl(const char * __restrict data, size_t length, Callback && callback) const
+    {
+        previous_data = data;
+        previous_len = length;
+        sparse_grams_iterator.set(data, data + length);
+
+        Pos token_begin = nullptr;
+        Pos token_end = nullptr;
+        while (sparse_grams_iterator.get(token_begin, token_end))
+            if (callback(token_begin, static_cast<size_t>(token_end - token_begin)))
+                return;
+
+        previous_data = nullptr;
+        previous_len = 0;
+    }
 private:
     size_t min_gram_length;
     size_t max_gram_length;
@@ -444,6 +465,7 @@ struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
     bool supportsStringLike() const override { return true; }
 };
 
+#if USE_ICU
 /// Tokenizer based on ICU's word break iteration (UAX #29). For scripts without whitespace between
 /// words (e.g. Chinese, Japanese, Thai) ICU applies dictionary-based segmentation, so such text is
 /// split into meaningful word tokens rather than single characters.
@@ -467,6 +489,7 @@ struct IcuTokenizer final : public ITokenizerHelper<IcuTokenizer>
 private:
     String locale;
 };
+#endif
 
 /// The Japanese (MeCab) tokenizer is declared in its own header (`JapaneseTokenizer.h`) so that this
 /// widely-included header does not pull in `<mecab.h>`. `forEachToken` dispatches it via the base
@@ -531,7 +554,7 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
         case ITokenizer::Type::SparseGrams:
         {
             const auto & sparse_grams_tokenizer = assert_cast<const SparseGramsTokenizer &>(tokenizer);
-            detail::forEachTokenImpl(sparse_grams_tokenizer, data, length, callback);
+            sparse_grams_tokenizer.forEachTokenImpl(data, length, callback);
             return;
         }
         case ITokenizer::Type::AsciiCJK:
@@ -540,12 +563,14 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
             detail::forEachTokenImpl(ascii_cjk_tokenizer, data, length, callback);
             return;
         }
+#if USE_ICU
         case ITokenizer::Type::Icu:
         {
             const auto & icu_tokenizer = assert_cast<const IcuTokenizer &>(tokenizer);
             detail::forEachTokenImpl(icu_tokenizer, data, length, callback);
             return;
         }
+#endif
 #if USE_MECAB
         case ITokenizer::Type::Japanese:
             /// Dispatch through the base virtual `nextInString` so this header needn't see the
