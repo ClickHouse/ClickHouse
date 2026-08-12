@@ -9,8 +9,9 @@
 # throw LOGICAL_ERROR "No more packets are available.".
 #
 # Two failpoints replace timing: fp1 parks the reader in that window, fp2 parks the same executor's
-# `finish` once it has cancelled and drained, so the reader is only released after the cancel the
-# fix depends on. The query runs under both `use_hedged_requests` values because the fix touches
+# `finish` once it has marked the query cancelled and delegated the drain to the parked reader, so
+# the reader is only released after the cancel the fix depends on. The query runs under both
+# `use_hedged_requests` values because the fix touches
 # `HedgedConnections` and `MultiplexedConnections`; `async_socket_for_remote=0` picks the sync path.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

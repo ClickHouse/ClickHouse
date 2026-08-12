@@ -1092,6 +1092,17 @@ void RemoteQueryExecutor::finish()
                 read_context->cancel();
 
             drain_requested = true;
+
+            /// Test-only, a no-op unless the failpoint is armed. Pause once the cancel has been
+            /// delegated while the reader is still parked at
+            /// `remote_query_executor_receive_packet_pause`: the state that reader will observe
+            /// on wake-up - `was_cancelled` and `drain_requested` set - is already final, which
+            /// is this design's analogue of "cancelled and fully drained". Pausing under
+            /// `was_cancelled_mutex` is fine here: releasing the pause only needs
+            /// `SYSTEM DISABLE FAILPOINT`, which does not touch this executor.
+            if (in_receive_packet_window)
+                FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_finish_drain_pause);
+
             return;
         }
 
@@ -1312,10 +1323,6 @@ void RemoteQueryExecutor::handleDrainPacket(Packet packet)
             break;
     }
 
-    /// Reached only with this executor's own reader parked above, i.e. with its connections
-    /// cancelled and fully drained - the state that reader will observe when it wakes.
-    if (in_receive_packet_window)
-        FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_finish_drain_pause);
 }
 
 void RemoteQueryExecutor::cancel()
