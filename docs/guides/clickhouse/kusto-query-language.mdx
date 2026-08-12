@@ -41,7 +41,9 @@ a timespan.
 `contains`, `startswith`, `endswith`, `has`, `hasprefix`, `hassuffix`, their `_cs`
 (case-sensitive) and `!` (negated) forms, `has_any`, `has_all`, and `matches regex`.
 `in` and `!in` also take a tabular expression whose first column supplies the values
-(`x in (T | project key)`); `in~` takes only a list.
+(`x in (T | project key)`); `in~` takes only a list. A lone name inside `in (...)` that no
+`let` binds reads as a column, since the parser has no schema to tell a column from a table;
+bind the table with `let`, qualify it (`db.table`), or add a pipe to get the tabular form.
 
 **Statements**: `let`, binding a scalar, a whole tabular expression, or a **function**:
 
@@ -146,7 +148,8 @@ Rejected with a parse error, rather than mistranslated:
 - **Timespans are `Interval` values.** `1d` becomes `toIntervalNanosecond(86400000000000)`.
   Set `interval_output_format = 'kusto'` to render them the Kusto way (`1.00:00:00`) rather
   than as a number.
-- **Division follows Kusto**: `7 / 2` is `3`, because both operands are integers. This is
+- **Division follows Kusto**: `7 / 2` is `3`, because both operands are integers, and a
+  timespan divided by a timespan is their real-valued ratio (`15ms / 10ms` is `1.5`). This is
   implemented by `kqlDivide`, which decides from the argument types.
 - **Subtracting two datetimes gives a number of seconds**, where Kusto gives a timespan.
   Adding or subtracting a timespan works as expected.

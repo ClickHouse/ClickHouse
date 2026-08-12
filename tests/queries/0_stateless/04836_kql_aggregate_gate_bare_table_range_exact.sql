@@ -60,8 +60,9 @@ print b;
 let t = true;
 print t;
 
-print '-- in (Table) reads the first column --';
-print v = 2 | where v in (events_04836) | count;
+print '-- in (Table) reads the first column when the name is bound tabular --';
+let E = events_04836;
+print v = 2 | where v in (E) | count;
 
 SET dialect = 'clickhouse';
 

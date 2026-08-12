@@ -655,7 +655,11 @@ bool KQLParser::bodyLooksTabular(size_t begin, size_t end, std::set<String> tabu
 }
 
 bool KQLParser::expressionLooksTabular(
-    size_t begin, size_t end, const std::set<String> & tabular_names, const std::set<String> & scalar_names) const
+    size_t begin,
+    size_t end,
+    const std::set<String> & tabular_names,
+    const std::set<String> & scalar_names,
+    bool unknown_name_is_table) const
 {
     /// Where the bracket at `position` closes, or `end`.
     const auto matching_close = [&](size_t position)
@@ -733,15 +737,17 @@ bool KQLParser::expressionLooksTabular(
         return tokens[begin + 1].type == KQLTokenType::OpeningRoundBracket && matching_close(begin + 1) == end - 1;
     }
 
-    /// A bare name standing alone that is bound to nothing scalar can only be a physical
-    /// table (`let T = StormEvents;`). `true` and `false` are literals, not names.
+    /// A bare name standing alone that is bound to nothing scalar reads as a physical table
+    /// (`let T = StormEvents;`) - except where the caller says a column reference is possible
+    /// too, as inside `in (...)`, where the column wins because the parser has no schema to
+    /// tell them apart. `true` and `false` are literals, not names.
     const String lowered = Poco::toLower(name);
     if (lowered == "true" || lowered == "false")
         return false;
     if (scalar_names.contains(name))
         return false;
     if (begin + 1 == end)
-        return true;
+        return unknown_name_is_table;
 
     /// `db.table` - the other source form `parseSource` accepts. Past an unbound name a `.` can
     /// mean nothing else here: a scalar binding was just excluded, and dynamic member access
@@ -2199,8 +2205,11 @@ ASTPtr KQLParser::tryParseWordOperator(const ASTPtr & left)
 
         /// The right-hand side may also be a whole tabular expression whose first column
         /// supplies the values: `x in (T | project key)`. The classifier that already reads
-        /// `let` right-hand sides decides, over the tokens up to the closing ')'.
-        if (expressionLooksTabular(index, closingBracket(index), scopeTabularNames(), scopeScalarNames()))
+        /// `let` right-hand sides decides, over the tokens up to the closing ')' - except
+        /// that a lone name bound to nothing reads as a column here (`x in (y)`), not as a
+        /// physical table: a `let`-bound tabular name or a `db.table` form is still a table.
+        if (expressionLooksTabular(
+                index, closingBracket(index), scopeTabularNames(), scopeScalarNames(), /*unknown_name_is_table=*/false))
         {
             /// There is no case-insensitive `IN`, and the spelled-out disjunction the list
             /// form uses needs the values at hand, which a subquery's are not.

@@ -21,7 +21,7 @@
 -- a bare scalar binding stays scalar --
 5
 true
--- in (Table) reads the first column --
+-- in (Table) reads the first column when the name is bound tabular --
 1
 -- kqlRangeCount: exact, and a constant nullable argument --
 2

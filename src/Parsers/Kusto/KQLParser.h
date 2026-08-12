@@ -111,9 +111,15 @@ private:
     /// expression - reads as a pipeline rather than a scalar expression. `tabular_names` seeds
     /// the names known to stand for a table and `scalar_names` those known to stand for a
     /// scalar; the range's own `let`s add theirs while scanning. A bare name standing alone
-    /// that neither set knows is a physical table.
+    /// that neither set knows is a physical table when `unknown_name_is_table` says so -
+    /// inside `in (...)` such a name is a column reference instead.
     bool bodyLooksTabular(size_t begin, size_t end, std::set<String> tabular_names, std::set<String> scalar_names);
-    bool expressionLooksTabular(size_t begin, size_t end, const std::set<String> & tabular_names, const std::set<String> & scalar_names) const;
+    bool expressionLooksTabular(
+        size_t begin,
+        size_t end,
+        const std::set<String> & tabular_names,
+        const std::set<String> & scalar_names,
+        bool unknown_name_is_table = true) const;
     /// The names the current scope knows to stand for a table: the tabular bindings and the
     /// tabular-bodied functions. Seeds the classifiers above.
     std::set<String> scopeTabularNames() const;
