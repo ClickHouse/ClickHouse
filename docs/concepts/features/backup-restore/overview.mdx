@@ -194,40 +194,6 @@ Each of the commands above is detailed below:
 | `[SETTINGS ...]`                                                       | See below for complete list of settings                                                                                                              |                                                                                                                         |
 | `[ASYNC]`                                                              | Makes the operation run asynchronously (returns immediately with an ID you can monitor)                                                              |
 
-### Required privileges for the destination {#destination-privileges}
-
-Besides `BACKUP`/`RESTORE` on the objects, the backup location itself is authorized against the
-user's `SOURCES` grants, the same way the matching table functions are:
-
-| Destination | Privilege for `BACKUP` | Privilege for `RESTORE` |
-|---|---|---|
-| `S3(...)` | `WRITE ON S3` | `READ ON S3` |
-| `AzureBlobStorage(...)` | `WRITE ON AZURE` | `READ ON AZURE` |
-| `File(...)` | `WRITE ON FILE` | `READ ON FILE` |
-| `Disk(...)` | none | none |
-
-`S3` and `AzureBlobStorage` accept a filtered grant, matched against the same string the
-corresponding table function uses: the full URL for `S3`, and the blob path alone for
-`AzureBlobStorage`. So `GRANT WRITE ON S3('https://mybucket.s3.amazonaws.com/backups/.*')`
-allows only that prefix, while an `AzureBlobStorage` filter is written against the path inside
-the container, as in `GRANT WRITE ON AZURE('backups/.*')`.
-
-`File` has no path-filter semantics, so it requires the whole-source grant; which paths are
-writable at all remains the `backups.allowed_path` server setting. A destination given as a
-named collection also requires the whole-source grant, because the collection can be re-pointed
-after the check.
-
-`Disk(...)` is not authorized against `SOURCES`: an allowed disk may be local, S3- or
-Azure-backed, so no single source describes it. It is instead restricted to the disks listed in
-the `backups.allowed_disk` server setting.
-
-A `base_backup` is read, so it needs the `READ` direction even when the outer destination is
-being written.
-
-With the `access_control_improvements.enable_read_write_grants` server setting disabled, the
-legacy whole-source syntax applies instead: `GRANT S3 ON *.* TO user` is equivalent to granting
-both directions. See [GRANT](/sql-reference/statements/grant#sources).
-
 ### Settings {#settings}
 
 **Generic backup/restore settings**

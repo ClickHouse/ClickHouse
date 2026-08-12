@@ -564,8 +564,6 @@ The backup destination can be any valid backup [destination](/operations/backup/
 - `database_name_inside_backup` — Name of the database inside the backup.
 - `backup_destination` — Backup destination.
 
-The destination is read, so creating the database requires the `READ` [SOURCES](/sql-reference/statements/grant#sources) grant for it: `READ ON S3`, `READ ON AZURE` or `READ ON FILE`. A `Disk(...)` destination is restricted by the `backups.allowed_disk` server setting instead.
-
 ## Usage example {#usage-example}
 
 Let's make an example with a `Disk` backup destination. Let's first setup backups disk in `storage.xml`:
