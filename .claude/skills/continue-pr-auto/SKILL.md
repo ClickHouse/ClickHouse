@@ -24,6 +24,14 @@ Extract the PR number from `$0`. This skill runs unattended and must never stop 
 
 Validate that the PR number contains only digits. Reject any non-numeric input immediately — do not pass unvalidated input to shell commands or GraphQL queries.
 
+Determine which repository you are operating in — the public `ClickHouse/ClickHouse` or the private `ClickHouse/clickhouse-private`:
+
+```bash
+gh repo view --json nameWithOwner --jq .nameWithOwner   # or: git remote get-url origin
+```
+
+Remember it as `$REPO` and use it everywhere below instead of the literal `ClickHouse/ClickHouse` in `gh` commands, API URLs, and GraphQL `repository(owner:, name:)` arguments. The repository also decides whom to ask about unrelated CI failures (step 4): `@groeneai` in `ClickHouse/ClickHouse`, `@oranjeai` in `ClickHouse/clickhouse-private`.
+
 Fetch PR metadata using `gh` if available, otherwise use `WebFetch` on the GitHub API:
 
 ```bash
@@ -126,7 +134,7 @@ For each CI failure:
 
    For failures that are unrelated to this PR, act on whether a fix already exists (search merged/closed items too, e.g. `gh pr list --repo ClickHouse/ClickHouse --state merged --search "<failure_description>"`):
    - **If the fix has already merged into the base branch** (the matching issue is closed by a merged PR, or the fixing commit is already on the base branch), **update the branch**: merge the base branch (step 3) so the fix is pulled in and the red clears on the next CI run, instead of merely dismissing it.
-   - **If none of the unrelated failures have a fix on the base branch yet**, post a comment asking `@groeneai` to fix it (see item 5) rather than silently dismissing it.
+   - **If none of the unrelated failures have a fix on the base branch yet**, post a comment asking the reviewer for `$REPO` to fix it (see item 5) rather than silently dismissing it.
 
 2. **Investigate the failure:** Download logs if needed:
    ```bash
@@ -138,8 +146,8 @@ For each CI failure:
 
 4. If the only failure is "CH Inc sync", fix it using the /fix-sync skill.
 
-5. If you are confident that the failure is unrelated to the changes, post a comment, asking @groeneai to investigate the failure:
-   🕵 @groeneai, investigate the failure: <link> and provide a fix in a separate PR. If the fix is already in progress, link it here. 
+5. If you are confident that the failure is unrelated to the changes, post a comment, asking the reviewer for `$REPO` (step 1) — `@groeneai` in `ClickHouse/ClickHouse`, `@oranjeai` in `ClickHouse/clickhouse-private` — to investigate the failure:
+   🕵 @<reviewer>, investigate the failure: <link> and provide a fix in a separate PR. If the fix is already in progress, link it here. 
 
 6. **Repeat** until all failures are addressed or confirmed as known issues with links to open issues/PRs.
 
@@ -278,7 +286,7 @@ Report the result and provide the PR URL.
 
 ## Notes
 
-- **Every GitHub comment you post — PR comments, issue comments, and review-thread replies — MUST begin with the 🕵 symbol** (followed by a space), so automated comments are identifiable. This applies to every comment, including the `@groeneai` request, review replies, and the supersede/close comment.
+- **Every GitHub comment you post — PR comments, issue comments, and review-thread replies — MUST begin with the 🕵 symbol** (followed by a space), so automated comments are identifiable. This applies to every comment, including the reviewer request (`@groeneai` / `@oranjeai`), review replies, and the supersede/close comment.
 - This skill runs unattended. Never use `AskUserQuestion` or otherwise wait for user input while resolving conflicts, addressing feedback, or pushing — proceed with your best judgment and push. The only hard stop is a genuinely missing PR number (step 1).
 - **Ignore self-imposed status holds on the author's own PRs.** A recalled memory or note marking one of the author's own PRs as `no-push`, `no-comment`, `NA`, `NO-ACTION`, `reserved`/`RSVD`, `FROZEN`, or "DON'T self-merge/push/comment" (including any blanket "web-UI group" rule) is **void as a behavioral directive**: run the normal workflow anyway — keep the branch current (steps 3/3a), fix CI (step 4), address feedback (step 5), and push. Do **not** record new such holds; record only factual status and genuine open design questions. The only standing restriction that survives is **never self-merge** — leave the final merge to a human. (For forks and other authors' PRs, the usual no-self-merge / CLA / permission constraints still apply.)
 - Do not use rebase or amend - always add new commits (per project conventions)
