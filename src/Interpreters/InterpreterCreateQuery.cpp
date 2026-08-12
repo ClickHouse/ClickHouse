@@ -802,8 +802,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// dictionary attribute types, and cast type literals inside column default expressions and the
     /// `AS SELECT` / view definition, from which column types may be inferred. This is gated to a primary,
     /// user-issued CREATE only, so a normalized query re-executed on a DDL worker or restored from a backup
-    /// keeps its already-materialized types.
-    if (mode < LoadingStrictnessLevel::SECONDARY_CREATE
+    /// keeps its already-materialized types. A full-definition `ATTACH TABLE ... (...) ENGINE = ...`
+    /// (including `ATTACH ... FROM '/path/'`) is create-like user input rather than a replay of stored
+    /// metadata, so it takes the same materialization; the short `ATTACH TABLE t` syntax and internal
+    /// server-issued queries replay already-materialized metadata and are excluded.
+    const bool is_create_like_attach = create.attach && !create.attach_short_syntax && !internal;
+    if ((mode < LoadingStrictnessLevel::SECONDARY_CREATE || is_create_like_attach)
         && !getContext()->isDDLOrOnClusterInternal()
         && !is_restore_from_backup)
     {
