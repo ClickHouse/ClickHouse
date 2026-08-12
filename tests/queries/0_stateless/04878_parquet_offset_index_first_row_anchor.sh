@@ -92,13 +92,14 @@ ${CLICKHOUSE_LOCAL} -q "SELECT id, a FROM file('${GOOD_ARR}', Parquet) WHERE id 
 # A first page that does not start at row 0 is rejected as INCORRECT_DATA.
 # Before the fix the flat read raised LOGICAL_ERROR in skipToRowOrNextPage, and the
 # filtered read of the array column returned rows shifted by the corrupt anchor.
-${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('${BAD_FLAT}', Parquet) FORMAT Null" 2>&1 \
-    | grep -oF "Invalid offset index: first page starts at row" | head -n 1
-${CLICKHOUSE_LOCAL} -q "SELECT id, a FROM file('${BAD_ARR}', Parquet) WHERE id = 10" 2>&1 \
-    | grep -oF "Invalid offset index: first page starts at row" | head -n 1
+BAD_FLAT_ERR=$(${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('${BAD_FLAT}', Parquet) FORMAT Null" 2>&1)
+echo "${BAD_FLAT_ERR}" | grep -oF "Code: 117" | head -n 1
+echo "${BAD_FLAT_ERR}" | grep -oF "Invalid offset index: first page starts at row" | head -n 1
+BAD_ARR_ERR=$(${CLICKHOUSE_LOCAL} -q "SELECT id, a FROM file('${BAD_ARR}', Parquet) WHERE id = 10" 2>&1)
+echo "${BAD_ARR_ERR}" | grep -oF "Code: 117" | head -n 1
+echo "${BAD_ARR_ERR}" | grep -oF "Invalid offset index: first page starts at row" | head -n 1
 
 # A page listed by the offset index that does not hold the requested row is rejected too.
-# The error code is asserted alongside the message, which does not identify a code on its own.
 BAD_TYPE_ERR=$(${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('${BAD_TYPE}', Parquet) FORMAT Null" 2>&1)
 echo "${BAD_TYPE_ERR}" | grep -oF "Code: 117" | head -n 1
 echo "${BAD_TYPE_ERR}" | grep -oF "Page doesn't contain requested row" | head -n 1
