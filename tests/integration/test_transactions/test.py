@@ -850,6 +850,12 @@ def test_kill_transaction_mutation_registration_race(start_cluster):
     kills exactly that transaction.  Identifying the transaction by diffing the
     server-global system.transactions would be racy: background merge/mutation
     scheduling starts its own transactions at any moment.
+
+    Merges are stopped while the orphan is created, so the background mutation
+    selection cannot remove the entry before the test has proven it exists.
+    Without that precondition the assertions below would pass trivially if the
+    producer side of the race were closed (nothing registered at all) and stop
+    exercising the consumer-side cleanup they claim to cover.
     """
     node.query("DROP TABLE IF EXISTS mt_kill_txn_race SYNC")
     node.query(
@@ -858,77 +864,104 @@ def test_kill_transaction_mutation_registration_race(start_cluster):
     )
     node.query("INSERT INTO mt_kill_txn_race SELECT number, 0 FROM numbers(100)")
 
-    session = 42
-    alter_thread = None
+    # Keep the orphaned entry in place until it is observed: selectPartsToMutate
+    # (which removes it) is not reached while merges are stopped.
+    node.query("SYSTEM STOP MERGES mt_kill_txn_race")
+
     try:
-        node.query("SYSTEM ENABLE FAILPOINT mt_start_mutation_pause_before_register")
+        session = 42
+        alter_thread = None
+        try:
+            node.query(
+                "SYSTEM ENABLE FAILPOINT mt_start_mutation_pause_before_register"
+            )
 
-        # Begin the transaction in its own HTTP session and capture its identity
-        # before the ALTER starts, so every later step is bound to exactly this
-        # transaction, no matter what unrelated transactions the server runs.
-        tx(session, "BEGIN TRANSACTION")
-        tid = tx(session, "SELECT transactionID()").strip()
-        assert tid.startswith("("), f"Unexpected transactionID() result: {tid}"
+            # Begin the transaction in its own HTTP session and capture its
+            # identity before the ALTER starts, so every later step is bound to
+            # exactly this transaction, no matter what unrelated transactions
+            # the server runs.
+            tx(session, "BEGIN TRANSACTION")
+            tid = tx(session, "SELECT transactionID()").strip()
+            assert tid.startswith("("), f"Unexpected transactionID() result: {tid}"
 
-        # The ALTER runs inside the transaction begun above and pauses between
-        # the transaction-side and the storage-side mutation registration.  It
-        # is expected to fail: its transaction gets killed.  max_execution_time
-        # bounds the wait on an unfixed server (the time limit is checked every
-        # second while waiting for the mutation, which never completes there).
-        def run_alter():
+            # The ALTER runs inside the transaction begun above and pauses
+            # between the transaction-side and the storage-side mutation
+            # registration.  It is expected to fail: its transaction gets
+            # killed.  max_execution_time bounds the wait on an unfixed server
+            # (the time limit is checked every second while waiting for the
+            # mutation, which never completes there).
+            def run_alter():
+                try:
+                    tx(
+                        session,
+                        "ALTER TABLE mt_kill_txn_race UPDATE value = 1 WHERE 1"
+                        " SETTINGS max_execution_time = 60",
+                    )
+                except Exception:
+                    pass
+
+            alter_thread = threading.Thread(target=run_alter)
+            alter_thread.start()
+
+            # Wait until the ALTER is paused at the failpoint, i.e. the
+            # mutation is already registered in the transaction but not yet in
+            # the storage.
+            node.query(
+                "SYSTEM WAIT FAILPOINT mt_start_mutation_pause_before_register PAUSE"
+            )
+
+            # Kill the transaction while the ALTER is paused.  The rollback's
+            # killMutation sweep runs now and finds nothing to remove.
+            node.query(f"KILL TRANSACTION WHERE tid = {tid}")
+            # Assert that our specific transaction disappears, not that the
+            # whole (server-global) system.transactions table becomes empty.
+            assert_eq_with_retry(
+                node,
+                f"SELECT count() FROM system.transactions WHERE tid = {tid}",
+                "0",
+            )
+        finally:
+            # The cleanup must run even if a setup step above failed: a leaked
+            # pause failpoint or open transaction would poison later tests on
+            # this shared node.
+
+            # Resume the ALTER: on the happy path it now registers the orphaned
+            # mutation entry.
+            node.query(
+                "SYSTEM DISABLE FAILPOINT mt_start_mutation_pause_before_register"
+            )
+
+            # Join before touching the session again: the ALTER holds the
+            # session lock while it runs.
+            if alter_thread is not None:
+                alter_thread.join()
+
+            # Detach the transaction from the HTTP session.  On the happy path
+            # the killed transaction stays attached in rolled-back state and
+            # ROLLBACK merely detaches it; if a failure above left it running,
+            # ROLLBACK rolls it back.  Before BEGIN TRANSACTION succeeded there
+            # is nothing to roll back and ROLLBACK itself fails - ignore that.
             try:
-                tx(
-                    session,
-                    "ALTER TABLE mt_kill_txn_race UPDATE value = 1 WHERE 1"
-                    " SETTINGS max_execution_time = 60",
-                )
+                tx(session, "ROLLBACK")
             except Exception:
                 pass
 
-        alter_thread = threading.Thread(target=run_alter)
-        alter_thread.start()
-
-        # Wait until the ALTER is paused at the failpoint, i.e. the mutation is
-        # already registered in the transaction but not yet in the storage.
-        node.query(
-            "SYSTEM WAIT FAILPOINT mt_start_mutation_pause_before_register PAUSE"
-        )
-
-        # Kill the transaction while the ALTER is paused.  The rollback's
-        # killMutation sweep runs now and finds nothing to remove.
-        node.query(f"KILL TRANSACTION WHERE tid = {tid}")
-        # Assert that our specific transaction disappears, not that the whole
-        # (server-global) system.transactions table becomes empty.
-        assert_eq_with_retry(
-            node,
-            f"SELECT count() FROM system.transactions WHERE tid = {tid}",
-            "0",
-        )
+        # Pin the precondition this test is about: the resumed ALTER registered
+        # exactly one mutation entry whose transaction is gone and was never
+        # committed - the orphan.  With merges stopped, nothing has removed it
+        # yet.  Without this assert the checks below would pass trivially if
+        # nothing had been registered at all.
+        assert (
+            node.query(
+                "SELECT count() FROM system.mutations WHERE database=currentDatabase()"
+                " AND table='mt_kill_txn_race'"
+            ).strip()
+            == "1"
+        ), "The orphaned mutation entry must have been registered"
     finally:
-        # The cleanup must run even if a setup step above failed: a leaked
-        # pause failpoint or open transaction would poison later tests on this
-        # shared node.
-
-        # Resume the ALTER: on the happy path it now registers the orphaned
-        # mutation entry.
-        node.query(
-            "SYSTEM DISABLE FAILPOINT mt_start_mutation_pause_before_register"
-        )
-
-        # Join before touching the session again: the ALTER holds the session
-        # lock while it runs.
-        if alter_thread is not None:
-            alter_thread.join()
-
-        # Detach the transaction from the HTTP session.  On the happy path the
-        # killed transaction stays attached in rolled-back state and ROLLBACK
-        # merely detaches it; if a failure above left it running, ROLLBACK
-        # rolls it back.  Before BEGIN TRANSACTION succeeded there is nothing
-        # to roll back and ROLLBACK itself fails - ignore that.
-        try:
-            tx(session, "ROLLBACK")
-        except Exception:
-            pass
+        # Always restore merges: a failed assertion above must not leave the
+        # shared node with merges disabled for the rest of the module.
+        node.query("SYSTEM START MERGES mt_kill_txn_race")
 
     # The orphaned mutation (its transaction is gone and was never committed)
     # must be removed by the background mutation selection instead of raising
@@ -936,7 +969,7 @@ def test_kill_transaction_mutation_registration_race(start_cluster):
     assert_eq_with_retry(
         node,
         "SELECT count() FROM system.mutations"
-        " WHERE database=currentDatabase() AND table='mt_kill_txn_race' AND is_done = 0",
+        " WHERE database=currentDatabase() AND table='mt_kill_txn_race'",
         "0",
         retry_count=60,
     )
@@ -1422,6 +1455,124 @@ def test_kill_transaction_dead_rename_mutation_does_not_block_alter(start_cluste
     )
 
     node.query("DROP TABLE IF EXISTS mt_kill_txn_dead_rename SYNC")
+
+
+def test_kill_transaction_mutation_killed_during_alter_prewait(start_cluster):
+    """
+    Regression test for a mutation killed while another ALTER is already
+    waiting for it (https://github.com/ClickHouse/ClickHouse/issues/83252).
+
+    Before changing metadata, an ALTER scans current_mutations_by_version for
+    the latest pending mutation that can still be applied (for a non-barrier
+    ALTER: the latest pending RENAME COLUMN mutation) and waits for it.  The
+    scan skips mutations that are already dead when it runs, but the chosen
+    mutation can also die during the wait: KILL TRANSACTION rolls back a
+    transactional mutation at any moment and its killMutation sweep removes the
+    entry.  The waiter must then re-scan and wait for the latest remaining
+    applicable mutation, exactly as if the kill had happened a moment before
+    the scan; failing the ALTER with "Mutation ... was killed" would be
+    spurious, because the mutation it waited for will never change any parts.
+
+    The pause failpoint mt_alter_prewait_pause_before_wait holds the ALTER
+    between the scan and the wait, so KILL TRANSACTION deterministically lands
+    inside the wait window.  Merges are stopped so the rename mutation stays
+    pending until it is killed.
+    """
+    node.query("DROP TABLE IF EXISTS mt_kill_txn_prewait SYNC")
+    node.query(
+        "CREATE TABLE mt_kill_txn_prewait (key UInt64, value UInt64)"
+        " ENGINE=MergeTree ORDER BY key"
+    )
+    node.query("INSERT INTO mt_kill_txn_prewait SELECT number, 0 FROM numbers(100)")
+
+    # The rename mutation must stay pending until its transaction is killed.
+    node.query("SYSTEM STOP MERGES mt_kill_txn_prewait")
+
+    session = 47
+    alter_thread = None
+    alter_errors = []
+    try:
+        tx(session, "BEGIN TRANSACTION")
+        tid = tx(session, "SELECT transactionID()").strip()
+        assert tid.startswith("("), f"Unexpected transactionID() result: {tid}"
+
+        # alter_sync = 0: the rename's own mutation cannot finish while merges
+        # are stopped, and only the registered live entry is needed.
+        tx(
+            session,
+            "ALTER TABLE mt_kill_txn_prewait RENAME COLUMN value TO renamed"
+            " SETTINGS throw_on_unsupported_query_inside_transaction = 0,"
+            " alter_sync = 0",
+        )
+        assert (
+            node.query(
+                "SELECT count() FROM system.mutations WHERE database=currentDatabase()"
+                " AND table='mt_kill_txn_prewait'"
+            ).strip()
+            == "1"
+        ), "The live rename mutation entry must be registered"
+
+        node.query("SYSTEM ENABLE FAILPOINT mt_alter_prewait_pause_before_wait")
+
+        # The metadata ALTER picks the live rename mutation as the one to wait
+        # for and pauses between the scan and the wait.  It must succeed once
+        # resumed; record failures instead of asserting in the thread.
+        def run_alter():
+            try:
+                node.query(
+                    "ALTER TABLE mt_kill_txn_prewait ADD COLUMN extra UInt8",
+                    settings={"max_execution_time": 60},
+                )
+            except Exception as e:
+                alter_errors.append(e)
+
+        alter_thread = threading.Thread(target=run_alter)
+        alter_thread.start()
+
+        node.query("SYSTEM WAIT FAILPOINT mt_alter_prewait_pause_before_wait PAUSE")
+
+        # Kill the transaction while the ALTER is paused before its wait.  The
+        # rollback's killMutation sweep removes the rename mutation entry, so
+        # the version the ALTER chose no longer exists.
+        node.query(f"KILL TRANSACTION WHERE tid = {tid}")
+        assert (
+            node.query(
+                f"SELECT count() FROM system.transactions WHERE tid = {tid}"
+            ).strip()
+            == "0"
+        ), "The killed transaction must be gone from the running list"
+        assert (
+            node.query(
+                "SELECT count() FROM system.mutations WHERE database=currentDatabase()"
+                " AND table='mt_kill_txn_prewait'"
+            ).strip()
+            == "0"
+        ), "killMutation must have removed the rename mutation entry"
+    finally:
+        # Resume the ALTER: it finds the chosen mutation gone, re-scans, finds
+        # nothing left to wait for, and proceeds to the metadata change.
+        node.query("SYSTEM DISABLE FAILPOINT mt_alter_prewait_pause_before_wait")
+
+        if alter_thread is not None:
+            alter_thread.join()
+
+        try:
+            tx(session, "ROLLBACK")
+        except Exception:
+            pass
+
+        node.query("SYSTEM START MERGES mt_kill_txn_prewait")
+
+    assert not alter_errors, f"The waiting ALTER must succeed: {alter_errors[0]}"
+    assert (
+        node.query(
+            "SELECT count() FROM system.columns WHERE database=currentDatabase()"
+            " AND table='mt_kill_txn_prewait' AND name='extra'"
+        ).strip()
+        == "1"
+    ), "The waiting ALTER must have applied its metadata change"
+
+    node.query("DROP TABLE IF EXISTS mt_kill_txn_prewait SYNC")
 
 
 def test_kill_transaction_mutation_task_selected_before_rollback(start_cluster):
