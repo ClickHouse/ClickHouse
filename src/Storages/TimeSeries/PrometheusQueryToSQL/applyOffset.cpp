@@ -101,7 +101,7 @@ namespace
         UNREACHABLE();
     }
 
-    /// Applies setting a fixed evaluation time: <expression> @ 1609746000
+    /// Applies a fixed evaluation time: <expression> @ 1609746000, @ start(), or @ end()
     SQLQueryPiece setEvaluationTime(
         const PrometheusQueryTree::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
     {
@@ -213,7 +213,7 @@ namespace
 
 SQLQueryPiece applyOffset(const PrometheusQueryTree::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
 {
-    if (offset_node->at_timestamp)
+    if (offset_node->hasAtModifier())
     {
         /// Set fixed evaluation time.
         return setEvaluationTime(offset_node, std::move(expression), context);

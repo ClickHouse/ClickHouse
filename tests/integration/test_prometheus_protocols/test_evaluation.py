@@ -559,6 +559,51 @@ def test_up():
     )
 
 
+def test_at_start_and_end_modifiers():
+    # For an instant query, both modifiers resolve to the evaluation timestamp.
+    do_query_test(
+        "test @ start()",
+        250,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "test"}, "value": [250, "13"]}]}',
+        [["[('__name__','test')]", "1970-01-01 00:04:10.000", "13"]],
+    )
+
+    do_query_test(
+        "test @ end()",
+        250,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "test"}, "value": [250, "13"]}]}',
+        [["[('__name__','test')]", "1970-01-01 00:04:10.000", "13"]],
+    )
+
+    # In a range query the modifier stays fixed at the range boundary.
+    do_range_query_test(
+        "test @ start()",
+        130,
+        250,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[130, "3"], [190, "3"], [250, "3"]]}]}',
+        [["[('__name__','test')]", "[('1970-01-01 00:02:10.000',3),('1970-01-01 00:03:10.000',3),('1970-01-01 00:04:10.000',3)]"]],
+    )
+
+    do_range_query_test(
+        "test @ end()",
+        130,
+        250,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[130, "13"], [190, "13"], [250, "13"]]}]}',
+        [["[('__name__','test')]", "[('1970-01-01 00:02:10.000',13),('1970-01-01 00:03:10.000',13),('1970-01-01 00:04:10.000',13)]"]],
+    )
+
+    do_range_query_test(
+        "last_over_time(test[45s] @ end())",
+        130,
+        250,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[130, "13"], [190, "13"], [250, "13"]]}]}',
+        [["[('__name__','test')]", "[('1970-01-01 00:02:10.000',13),('1970-01-01 00:03:10.000',13),('1970-01-01 00:04:10.000',13)]"]],
+    )
+
+
 def test_range_selectors():
     do_query_test(
         "test[30s]",
