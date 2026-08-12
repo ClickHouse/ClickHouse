@@ -679,3 +679,30 @@ def test_event_timestamp_virtual_columns(pulsar_cluster):
         FROM test.view ORDER BY key
         """,
     )
+
+
+def test_table_comment_is_preserved(pulsar_cluster):
+    # The engine must thread the `COMMENT` clause into its storage metadata the
+    # same way the other message-broker engines do; otherwise `SHOW CREATE TABLE`
+    # and `system.tables.comment` silently come back empty after create or attach.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query(
+        pulsar_table("test.pulsar_reader", "comment_topic", "comment_group")
+        + " COMMENT 'Pulsar comment'"
+    )
+
+    def check():
+        assert (
+            instance.query(
+                "SELECT comment FROM system.tables WHERE database = 'test' AND name = 'pulsar_reader'"
+            )
+            == "Pulsar comment\n"
+        )
+        assert "COMMENT 'Pulsar comment'" in instance.query(
+            "SHOW CREATE TABLE test.pulsar_reader"
+        )
+
+    check()
+    instance.query("DETACH TABLE test.pulsar_reader")
+    instance.query("ATTACH TABLE test.pulsar_reader")
+    check()

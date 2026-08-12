@@ -168,6 +168,7 @@ StoragePulsar::StoragePulsar(
     const StorageID & table_id_,
     ContextPtr context_,
     const ColumnsDescription & columns_,
+    const String & comment,
     std::unique_ptr<PulsarSettings> pulsar_settings_,
     LoadingStrictnessLevel mode)
     : IStreamingStorage(table_id_)
@@ -189,6 +190,7 @@ StoragePulsar::StoragePulsar(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setVirtuals(createVirtuals());
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     try
@@ -735,7 +737,7 @@ void registerStoragePulsar(StorageFactory & factory)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "`dead_letter_queue` mode of `pulsar_handle_error_mode` is not supported by the table engine");
 
-        return std::make_shared<StoragePulsar>(args.table_id, args.getContext(), args.columns, std::move(pulsar_settings), args.mode);
+        return std::make_shared<StoragePulsar>(args.table_id, args.getContext(), args.columns, args.comment, std::move(pulsar_settings), args.mode);
     };
 
     factory.registerStorage(
