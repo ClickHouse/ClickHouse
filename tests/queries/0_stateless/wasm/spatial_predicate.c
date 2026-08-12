@@ -11,16 +11,27 @@
  * `point_in_rect` is a genuine (if trivial) spatial predicate: axis-aligned
  * rectangle containment, i.e. the same relation as the `bbox_op_rcontains`
  * bbox shortcut used by `st_within` in a real GEOS-backed WASM UDF geometry
- * library, just operating directly on a `Point` and a
- * `Tuple(Float64, Float64, Float64, Float64)` bbox instead of on parsed WKB
- * geometries. It is used as a non-`pointInPolygon` reference for the
- * `spatial_bbox` index's `isSpatialPredicate()`-based extraction, to show
- * pruning also works for a predicate whose semantics are unrelated to
+ * library, just operating directly on a `Point` and a closed ring literal
+ * describing the rectangle's corners -- `Array(Tuple(Float64, Float64))`,
+ * e.g. `[(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y),
+ * (min_x, min_y)]` -- the same ring syntax `pointInPolygon` itself takes,
+ * instead of a flat `Tuple(Float64 x 4)`. This matters for `GeoBbox.h`'s
+ * extraction: a flat 4-tuple isn't a 2-element point, so extraction
+ * correctly refuses to interpret it and gives up (see the `tuple.size() ==
+ * 2` check in `GeoBbox.h`); a *degenerate* 2-point "ring" is also rejected,
+ * since `boost::geometry::is_valid` treats it as a malformed polygon.
+ * A proper closed ring, however, is a valid polygon that `GeoBbox.h` can
+ * extract a real bbox from, so `spatial_bbox`'s `isSpatialPredicate()`-based
+ * extraction can actually prune granules for this constant argument. It is
+ * used as a non-`pointInPolygon` reference for `spatial_bbox` pruning, to
+ * show pruning also works for a predicate whose semantics are unrelated to
  * `pointInPolygon`'s ring/hole assembly.
  *
  * Exports:
  *   always_true   - BUFFERED_V1 UInt8, ignores input, writes "1\n" per row.
- *   point_in_rect - BUFFERED_V1 UInt8 via RowBinary: (Point, Tuple(Float64 x 4)) -> UInt8.
+ *   point_in_rect - BUFFERED_V1 UInt8 via RowBinary: (Point, Array(Tuple(Float64,Float64))) -> UInt8.
+ *                   Tests point-in-bounding-box of the ring's vertices (not point-in-polygon
+ *                   proper), which is enough for an axis-aligned rectangle ring.
  *
  * Build via build.mk:
  *   make -f build.mk
@@ -80,7 +91,12 @@ static double read_f64le(const uint8_t * p)
     return d;
 }
 
-/* RowBinary row layout: Point (x, y) then Tuple(min_x, min_y, max_x, max_y), 6 LE float64s. */
+/* RowBinary row layout: Point (x, y), then Array(Tuple(Float64,Float64)) -- a ring literal
+ * such as [(min_x,min_y),(max_x,min_y),(max_x,max_y),(min_x,max_y),(min_x,min_y)]. Encoded
+ * as a 1-byte varint length (fine for the small vertex counts a test uses; RowBinary array
+ * lengths >= 128 need multi-byte LEB128, not handled here) followed by that many (x, y)
+ * float64 pairs. Tests point-in-bounding-box of the ring's vertices, sufficient for an
+ * axis-aligned rectangle ring. */
 Span * point_in_rect(Span * input, uint32_t n)
 {
     Span * res = clickhouse_create_buffer(n);
@@ -90,10 +106,19 @@ Span * point_in_rect(Span * input, uint32_t n)
     {
         double x = read_f64le(p);      p += 8;
         double y = read_f64le(p);      p += 8;
-        double min_x = read_f64le(p);  p += 8;
-        double min_y = read_f64le(p);  p += 8;
-        double max_x = read_f64le(p);  p += 8;
-        double max_y = read_f64le(p);  p += 8;
+        uint32_t vertex_count = *p;    p += 1;
+
+        double min_x = 1.0 / 0.0, min_y = 1.0 / 0.0;
+        double max_x = -1.0 / 0.0, max_y = -1.0 / 0.0;
+        for (uint32_t v = 0; v < vertex_count; v++)
+        {
+            double vx = read_f64le(p); p += 8;
+            double vy = read_f64le(p); p += 8;
+            if (vx < min_x) min_x = vx;
+            if (vy < min_y) min_y = vy;
+            if (vx > max_x) max_x = vx;
+            if (vy > max_y) max_y = vy;
+        }
         res->data[i] = (x >= min_x && x <= max_x && y >= min_y && y <= max_y) ? 1 : 0;
     }
     res->size = n;

@@ -24,7 +24,7 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
 CREATE FUNCTION wasm_point_in_rect
     LANGUAGE WASM ABI BUFFERED_V1
     FROM 'spatial_predicate_real' :: 'point_in_rect'
-    ARGUMENTS (geom Point, rect Tuple(Float64, Float64, Float64, Float64)) RETURNS UInt8
+    ARGUMENTS (geom Point, rect Array(Tuple(Float64, Float64))) RETURNS UInt8
     SETTINGS serialization_format = 'RowBinary', is_spatial_predicate = 1;
 
 CREATE TABLE test_spatial_bbox_wasm_real_predicate
@@ -46,12 +46,18 @@ OPTIMIZE TABLE test_spatial_bbox_wasm_real_predicate FINAL;
 
 -- Rectangle [2, 5] x [2, 5]: only points (2,2)..(5,5) qualify -- ids 3..6.
 SELECT count() FROM test_spatial_bbox_wasm_real_predicate
-WHERE wasm_point_in_rect(geom, (2., 2., 5., 5.));
+WHERE wasm_point_in_rect(geom, [(2., 2.), (5., 2.), (5., 5.), (2., 5.), (2., 2.)]);
 
 -- Rectangle entirely outside the data's bbox: proves pruning via the constant rect's bbox
 -- actually happens for this non-pointInPolygon predicate, not just that the result is correct.
+-- The EXPLAIN confirms the spatial_bbox index is consulted and prunes all granules.
 SELECT count() FROM test_spatial_bbox_wasm_real_predicate
-WHERE wasm_point_in_rect(geom, (100., 100., 200., 200.));
+WHERE wasm_point_in_rect(geom, [(100., 100.), (200., 100.), (200., 200.), (100., 200.), (100., 100.)]);
+
+SELECT trimLeft(explain) FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM test_spatial_bbox_wasm_real_predicate
+    WHERE wasm_point_in_rect(geom, [(100., 100.), (200., 100.), (200., 200.), (100., 200.), (100., 100.)])
+) WHERE explain LIKE '%Name: idx_bbox%' OR explain LIKE '%Granules: 0/%';
 
 DROP TABLE test_spatial_bbox_wasm_real_predicate;
 DROP FUNCTION wasm_point_in_rect;
