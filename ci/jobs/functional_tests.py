@@ -835,7 +835,7 @@ def main():
 
         # Reasons recorded by the setup closure that must reach the persisted
         # Result.info (CIDB test_context_raw) even when setup ultimately
-        # succeeds - e.g. a non-fatal minio log-table/restart failure that would
+        # succeeds - e.g. a non-fatal seaweedfs log-table/restart failure that would
         # otherwise be invisible in CIDB (only visible as a report-page warning).
         setup_notes = []
 
@@ -844,10 +844,10 @@ def main():
             # Result.info (hence CIDB test_context_raw) only when it returns a
             # failing value. Print a concise "SETUP FAILURE: <sub-step>" marker
             # at each failure point so the opaque "Start ClickHouse Server"
-            # umbrella can be split into measurable sub-causes (minio /
+            # umbrella can be split into measurable sub-causes (seaweedfs /
             # wait_ready / kafka / stateful) instead of one bucket.
-            if not (CH.start_minio(test_type="stateless") and CH.start_azurite()):
-                print("SETUP FAILURE: minio/azurite did not start")
+            if not (CH.start_seaweedfs(test_type="stateless") and CH.start_azurite()):
+                print("SETUP FAILURE: seaweedfs/azurite did not start")
                 return False
             if not CH.start():
                 print("SETUP FAILURE: clickhouse-server process did not start")
@@ -907,7 +907,7 @@ def main():
                 command=start,
             )
         )
-        # Surface non-fatal setup notes (e.g. minio) into the persisted Result
+        # Surface non-fatal setup notes (e.g. seaweedfs) into the persisted Result
         # so they are queryable in CIDB test_context_raw even on the success path.
         for note in setup_notes:
             results[-1].set_info(note)
@@ -1013,9 +1013,9 @@ def main():
                     # `cp` over a running ELF fails with `Text file busy`,
                     # and `strict=True` ensures a failed switch is not ignored.
                     # Use `stop_server` rather than `terminate` so the auxiliary
-                    # services (Kafka/Redpanda, MinIO and its webhooks) started
+                    # services (Kafka/Redpanda, SeaweedFS) started
                     # in the outer setup keep running for the next build type;
-                    # `terminate` would tear them down, making Kafka/MinIO tests
+                    # `terminate` would tear them down, making Kafka/SeaweedFS tests
                     # spuriously "reproduce" a bug under later build types.
                     # `stop_server` does not guarantee that every descendant
                     # process (transient `clickhouse-client` invocations, stray
@@ -1084,7 +1084,7 @@ def main():
                     # the environment built once in the START stage is gone: for
                     # stateful suites, reload the stateful data and the
                     # `system.zookeeper` config. Auxiliary services
-                    # (Kafka/Redpanda, MinIO) keep running across `stop_server`,
+                    # (Kafka/Redpanda, SeaweedFS) keep running across `stop_server`,
                     # so only the server-side state has to be rebuilt. Without
                     # this a stateful changed test fails only because
                     # `test.hits`/`datasets`/the auxiliary ZooKeeper row
@@ -1387,6 +1387,13 @@ def main():
     if test_result:
         test_result.sort()
 
+    # On a test timeout or a failed hung check the full server stacktrace
+    # dumps land in the working directory (stdout keeps a trimmed preview).
+    for stacktrace_log in ("sql_stacktraces.log", "c_stacktraces.log"):
+        stacktrace_log_path = Path(stacktrace_log)
+        if stacktrace_log_path.exists():
+            debug_files.append(stacktrace_log_path)
+
     R = Result.create_from(
         results=results,
         stopwatch=stop_watch,
@@ -1426,7 +1433,7 @@ def main():
 
             # Auto-detect available LLVM profdata tool
             llvm_profdata = None
-            for ver in ["21", "20", "18", "19", "17", "16", ""]:
+            for ver in ["22", "21", "20", "18", "19", "17", "16", ""]:
                 cmd = f"llvm-profdata{'-' + ver if ver else ''}"
                 if Shell.check(f"command -v {cmd}", verbose=False):
                     llvm_profdata = cmd

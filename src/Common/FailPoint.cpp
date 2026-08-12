@@ -39,8 +39,11 @@ static struct InitFiu
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
     REGULAR(smt_dedup_conflict_part_name_missing) \
+    REGULAR(merge_tree_sink_on_start_random_sleep) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
+    PAUSEABLE_ONCE(remote_query_executor_receive_packet_pause) \
+    PAUSEABLE_ONCE(remote_query_executor_finish_drain_pause) \
     ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(stripe_log_sink_write_fallpoint) \
@@ -169,6 +172,7 @@ static struct InitFiu
     REGULAR(claim_inject_stale_part_dir) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(async_insert_flush_pause_in_executor) \
+    PAUSEABLE(system_replicas_schedule_requests_pause) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
     REGULAR(replicated_merge_tree_all_replicas_stale) \
     REGULAR(zero_copy_lock_zk_fail_before_op) \
@@ -244,8 +248,6 @@ static struct InitFiu
     ONCE(database_iceberg_gcs) \
     REGULAR(rmt_delay_execute_drop_range) \
     REGULAR(rmt_delay_commit_part) \
-    ONCE(rmt_startup_fail_after_being_leader) \
-    REGULAR(rmt_restarting_thread_fail_startup) \
     ONCE(local_object_storage_network_error_during_remove) \
     REGULAR(lightweight_show_tables) \
     REGULAR(smt_part_update_duplicated_part) \
@@ -261,6 +263,10 @@ static struct InitFiu
     REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
+    REGULAR(atomic_populate_fail_before_subscription) \
+    PAUSEABLE(atomic_populate_pause_before_subscription) \
+    PAUSEABLE(atomic_populate_pause_after_view_publication) \
+    PAUSEABLE(atomic_populate_pause_before_source_guard) \
     PAUSEABLE(database_catalog_drop_finally_before_id_erase) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     ONCE(mt_skip_scheduling_merge_once) \
@@ -276,6 +282,13 @@ static struct InitFiu
     PAUSEABLE_ONCE(iceberg_compaction_merge_pause_in_step) \
     REGULAR(tcp_handler_fail_connection_setup) \
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
+    PAUSEABLE(keeper_changelog_read_plan_resolved) \
+    PAUSEABLE(keeper_changelog_removed_from_disk_set) \
+    PAUSEABLE(keeper_changelog_readahead_fill_wedge) \
+    PAUSEABLE(keeper_changelog_readahead_serve_wait) \
+    PAUSEABLE(keeper_changelog_readahead_park_armed) \
+    PAUSEABLE(keeper_changelog_readahead_pre_drain) \
+    REGULAR(keeper_changelog_readahead_fill_exception) \
     REGULAR(distributed_plan_record_failure_while_starting_tasks) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
