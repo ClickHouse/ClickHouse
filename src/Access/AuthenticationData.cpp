@@ -29,7 +29,7 @@
 #endif
 
 #if USE_JWT_CPP
-#include <picojson/picojson.h>
+#include <Access/ParseJSON.h>
 #endif
 
 namespace CurrentMetrics
@@ -737,7 +737,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         {
             String value = checkAndGetLiteralArgument<String>(args[arg_idx++], "claims");
             picojson::value json_obj;
-            auto error = picojson::parse(json_obj, value);
+            auto error = parseWholeJSON(json_obj, value);
             if (!error.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad JWT claims: {}", error);
             if (!json_obj.is<picojson::object>())

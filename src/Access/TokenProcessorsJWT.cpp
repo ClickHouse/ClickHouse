@@ -1,6 +1,7 @@
 #include "TokenProcessors.h"
 
 #if USE_JWT_CPP
+#include <Access/ParseJSON.h>
 #include <Common/Base64.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -189,7 +190,7 @@ bool check_claims(const String & claims, const picojson::value::object & payload
     if (claims.empty())
         return true;
     picojson::value json;
-    auto errors = picojson::parse(json, claims);
+    auto errors = parseWholeJSON(json, claims);
     if (!errors.empty())
         throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Bad JWT claims: {}", errors);
     if (!json.is<picojson::object>())

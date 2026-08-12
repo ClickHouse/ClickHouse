@@ -1,6 +1,7 @@
 #include "TokenProcessors.h"
 
 #if USE_JWT_CPP
+#include <Access/ParseJSON.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -28,7 +29,7 @@ namespace
     /// Reduce complexity by using picojson.
     picojson::object parseJSON(const String & json_string) {
         picojson::value jsonValue;
-        std::string err = picojson::parse(jsonValue, json_string);
+        std::string err = parseWholeJSON(jsonValue, json_string);
 
         if (!err.empty()) {
             throw std::runtime_error("JSON parsing error: " + err);
