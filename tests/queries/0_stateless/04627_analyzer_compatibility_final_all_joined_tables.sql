@@ -1,11 +1,6 @@
 -- Compatibility setting for the fix of FINAL leaking onto other tables of a JOIN
 -- (https://github.com/ClickHouse/ClickHouse/pull/108979).
 
--- The setting `analyzer_compatibility_apply_final_to_all_joined_tables` has an effect only when
--- the analyzer is enabled. The old analyzer has different semantics of FINAL in JOIN (it ignores
--- FINAL on the right table), so pin the analyzer explicitly.
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_left;
 DROP TABLE IF EXISTS t_right;
 

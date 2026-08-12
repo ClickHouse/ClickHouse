@@ -8,8 +8,6 @@
 #include <base/DayNum.h>
 #include <base/IPv4andIPv6.h>
 #include <Common/AllocatorWithMemoryTracking.h>
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <fmt/format.h>
 
@@ -20,7 +18,7 @@ constexpr Null NEGATIVE_INFINITY{Null::Value::NegativeInfinity};
 constexpr Null POSITIVE_INFINITY{Null::Value::PositiveInfinity};
 
 class Field;
-using FieldVector = VectorWithMemoryTracking<Field>;
+using FieldVector = std::vector<Field, AllocatorWithMemoryTracking<Field>>;
 
 /// Array and Tuple use the same storage type -- FieldVector, but we declare
 /// distinct types for them, so that the caller can choose whether it wants to
@@ -43,7 +41,7 @@ DEFINE_FIELD_VECTOR(Map); /// TODO: use map instead of vector.
 
 #undef DEFINE_FIELD_VECTOR
 
-using FieldMap = MapWithMemoryTracking<String, Field, std::less<>>;
+using FieldMap = std::map<String, Field, std::less<>, AllocatorWithMemoryTracking<std::pair<const String, Field>>>;
 
 #define DEFINE_FIELD_MAP(X) \
 struct X : public FieldMap \
@@ -315,43 +313,6 @@ public:
             || which == Types::Decimal64
             || which == Types::Decimal128
             || which == Types::Decimal256;
-    }
-
-    /// Whether values of the type are single scalar values with a plain value comparison, as opposed
-    /// to composite values (Array, Tuple, Map, Object — compared element-wise, where elements of
-    /// different types are ordered by type index rather than by value) and opaque values
-    /// (AggregateFunctionState, CustomType).
-    static bool isScalar(Types::Which which)
-    {
-        switch (which)
-        {
-            case Types::Null:
-            case Types::UInt64:
-            case Types::Int64:
-            case Types::Float64:
-            case Types::UInt128:
-            case Types::Int128:
-            case Types::String:
-            case Types::Decimal32:
-            case Types::Decimal64:
-            case Types::Decimal128:
-            case Types::Decimal256:
-            case Types::UInt256:
-            case Types::Int256:
-            case Types::UUID:
-            case Types::Bool:
-            case Types::IPv4:
-            case Types::IPv6:
-                return true;
-            case Types::Array:
-            case Types::Tuple:
-            case Types::Map:
-            case Types::Object:
-            case Types::CustomType:
-            case Types::AggregateFunctionState:
-                return false;
-        }
-        UNREACHABLE();
     }
 
     Field() : Field(Null{}) {}

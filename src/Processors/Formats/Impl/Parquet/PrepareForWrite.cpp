@@ -831,8 +831,6 @@ static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
             const auto & variant_name = variants[i]->getCustomName() ? variants[i]->getCustomName()->getName() : variants[i]->getName();
             if (variant_name == WKBPointTransform::name)
                 transforms[i] = std::make_shared<WKBPointTransform>();
-            else if (variant_name == WKBMultiPointTransform::name)
-                transforms[i] = std::make_shared<WKBMultiPointTransform>();
             else if (variant_name == WKBLineStringTransform::name || variant_name == "Ring")
                 transforms[i] = std::make_shared<WKBLineStringTransform>();
             else if (variant_name == WKBPolygonTransform::name)
@@ -876,8 +874,6 @@ static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
     std::shared_ptr<IWKBTransform> transform;
     if (type->getCustomName()->getName() == WKBPointTransform::name)
         transform = std::make_shared<WKBPointTransform>();
-    if (type->getCustomName()->getName() == WKBMultiPointTransform::name)
-        transform = std::make_shared<WKBMultiPointTransform>();
     if (type->getCustomName()->getName() == WKBLineStringTransform::name)
         transform = std::make_shared<WKBLineStringTransform>();
     if (type->getCustomName()->getName() == WKBPolygonTransform::name)

@@ -232,7 +232,7 @@ REGISTER_FUNCTION(HasPhrase)
 Checks if the `input` contains all tokens from the `phrase` in consecutive order.
 
 :::note
-Column `input` should have a [text index](/reference/engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
+Column `input` should have a [text index](../../engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
 If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
 :::
 
@@ -241,7 +241,7 @@ If the column has no text index defined, the `splitByNonAlpha` tokenizer is used
 The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `ngrams`, or `asciiCJK`.
 
 :::note
-When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasPhrase` applies it to both `input` and `phrase` before tokenization.
+When a text index defines a [preprocessor](../../engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasPhrase` applies it to both `input` and `phrase` before tokenization.
 The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
 This inconsistency is tolerated to improve the usability of full-text search.
 :::
@@ -263,15 +263,15 @@ because "brown" appears between "quick" and "fox".
             "SELECT hasPhrase('the quick brown fox jumps', 'quick brown')",
             R"(
 ┌─hasPhrase('the quick brown fox jumps', 'quick brown')─┐
-│                                                     1 │
-└───────────────────────────────────────────────────────┘
+│                                                      1 │
+└────────────────────────────────────────────────────────┘
         )"},
            {"Non-consecutive tokens",
             "SELECT hasPhrase('the quick brown fox jumps', 'quick fox')",
             R"(
 ┌─hasPhrase('the quick brown fox jumps', 'quick fox')─┐
-│                                                   0 │
-└─────────────────────────────────────────────────────┘
+│                                                    0 │
+└──────────────────────────────────────────────────────┘
         )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;

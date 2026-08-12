@@ -554,21 +554,6 @@ struct DeserializeBinaryBulkStateMap : public ISerialization::DeserializeBinaryB
             new_state->bucket_nested_states[bucket] = bucket_nested_states[bucket] ? bucket_nested_states[bucket]->clone() : nullptr;
         return new_state;
     }
-
-    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
-    {
-        if (reading_info_state)
-            callback(reading_info_state);
-        if (nested_state)
-            callback(nested_state);
-        if (buckets_info_state)
-            callback(buckets_info_state);
-        for (const auto & bucket_nested_state : bucket_nested_states)
-        {
-            if (bucket_nested_state)
-                callback(bucket_nested_state);
-        }
-    }
 };
 
 namespace
@@ -1161,7 +1146,7 @@ void SerializationMap::serializeBinaryBulkWithMultipleStreams(
     /// Accumulate statistics from each serialized range.
     /// They will be written to the stream in `serializeBinaryBulkStateSuffix`.
     if (map_state->recalculate_statistics)
-        map_state->statistics.merge(assert_cast<const ColumnMap &>(column).calculateStatisticsForRange(offset, end));
+        map_state->statistics.merge(*assert_cast<const ColumnMap &>(column).calculateStatisticsForRange(offset, end));
 }
 
 void SerializationMap::deserializeBinaryBulkWithMultipleStreams(

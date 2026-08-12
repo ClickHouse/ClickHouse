@@ -74,7 +74,7 @@ public:
 REGISTER_FUNCTION(FinalizeAggregation)
 {
     FunctionDocumentation::Description description = R"(
-Given an aggregation state, this function returns the result of aggregation (or the finalized state when using a [-State](/reference/functions/aggregate-functions/combinators#-state) combinator).
+Given an aggregation state, this function returns the result of aggregation (or the finalized state when using a [-State](../../sql-reference/aggregate-functions/combinators.md#-state) combinator).
 )";
     FunctionDocumentation::Syntax syntax = "finalizeAggregation(state)";
     FunctionDocumentation::Arguments arguments = {
@@ -96,7 +96,6 @@ SELECT finalizeAggregation(arrayReduce('maxState', [1, 2, 3]));
     {
         "Combined with initializeAggregation",
         R"(
-SET allow_deprecated_error_prone_window_functions = 1;
 WITH initializeAggregation('sumState', number) AS one_row_sum_state
 SELECT
     number,

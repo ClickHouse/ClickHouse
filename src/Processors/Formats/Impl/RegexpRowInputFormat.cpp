@@ -200,13 +200,13 @@ The `Regex` format parses every line of imported data according to the provided 
 
 **Usage**
 
-The regular expression from [format_regexp](/reference/settings/formats/format-regexp#format_regexp) setting is applied to every line of imported data. The number of subpatterns in the regular expression must be equal to the number of columns in imported dataset.
+The regular expression from [format_regexp](/operations/settings/settings-formats.md/#format_regexp) setting is applied to every line of imported data. The number of subpatterns in the regular expression must be equal to the number of columns in imported dataset.
 
 Lines of the imported data must be separated by newline character `'\n'` or DOS-style newline `"\r\n"`.
 
-The content of every matched subpattern is parsed with the method of corresponding data type, according to [format_regexp_escaping_rule](/reference/settings/formats/format-regexp#format_regexp_escaping_rule) setting.
+The content of every matched subpattern is parsed with the method of corresponding data type, according to [format_regexp_escaping_rule](/operations/settings/settings-formats.md/#format_regexp_escaping_rule) setting.
 
-If the regular expression does not match the line and [format_regexp_skip_unmatched](/reference/settings/formats/format-regexp#format_regexp_skip_unmatched) is set to 1, the line is silently skipped. Otherwise, exception is thrown.
+If the regular expression does not match the line and [format_regexp_skip_unmatched](/operations/settings/settings-formats.md/#format_regexp_escaping_rule) is set to 1, the line is silently skipped. Otherwise, exception is thrown.
 
 ## Example usage {#example-usage}
 

@@ -2,6 +2,7 @@
 
 import json
 import logging
+import time
 
 from confluent_kafka.avro.cached_schema_registry_client import (
     CachedSchemaRegistryClient,
@@ -46,7 +47,29 @@ def kafka_cluster():
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
-    k.clean_test_database_and_topics(instance, cluster)
+    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
+    admin_client = k.get_admin_client(cluster)
+
+    def get_topics_to_delete():
+        return [t for t in admin_client.list_topics() if not t.startswith("_")]
+
+    topics = get_topics_to_delete()
+    logging.debug(f"Deleting topics: {topics}")
+    result = admin_client.delete_topics(topics)
+    for topic, error in result.topic_error_codes:
+        if error != 0:
+            logging.warning(f"Received error {error} while deleting topic {topic}")
+        else:
+            logging.info(f"Deleted topic {topic}")
+
+    retries = 0
+    topics = get_topics_to_delete()
+    while len(topics) != 0:
+        logging.info(f"Existing topics: {topics}")
+        if retries >= 5:
+            raise Exception(f"Failed to delete topics {topics}")
+        retries += 1
+        time.sleep(0.5)
     yield  # run test
 
 
@@ -288,6 +311,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
             data_prefix = data_prefix + [""]
         if format_opts.get("printable", False) == False:
             raw_message = "hex(_raw_message)"
+        k.kafka_produce(kafka_cluster, topic_name, data_prefix + data_sample)
         create_query = create_query_generator(
             f"kafka_{format_name}",
             "id Int64, blockNo UInt16, val1 String, val2 Float32, val3 UInt8",
@@ -299,10 +323,6 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
                 "kafka_flush_interval_ms": 1000,
             },
         )
-        # Create both materialized views, then detach/re-attach the Kafka table,
-        # before producing any message. Creating the first view starts the
-        # streaming loop, so producing earlier lets the loop consume and commit
-        # the broken message before the errors view is attached, leaving it empty.
         instance.query(
             f"""
             DROP TABLE IF EXISTS test.kafka_{format_name};
@@ -318,12 +338,8 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
             CREATE MATERIALIZED VIEW test.kafka_errors_{format_name}_mv ENGINE=MergeTree ORDER BY tuple() AS
                 SELECT {raw_message} as raw_message, _error as error, _topic as topic, _partition as partition, _offset as offset FROM test.kafka_{format_name}
                 WHERE length(_error) > 0;
-
-            DETACH TABLE test.kafka_{format_name};
-            ATTACH TABLE test.kafka_{format_name};
             """
         )
-        k.kafka_produce(kafka_cluster, topic_name, data_prefix + data_sample)
 
     raw_expected = """\
 0	0	AM	0.5	1	{topic_name}	0	{offset_0}

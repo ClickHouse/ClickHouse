@@ -236,15 +236,6 @@ void MultiplexedConnections::sendMergeTreeReadTaskResponse(const ParallelReadRes
 }
 
 
-void MultiplexedConnections::sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response)
-{
-    std::lock_guard lock(cancel_mutex);
-    if (cancelled)
-        return;
-    current_connection->sendMergeTreeAllRangesAnnouncementResponse(response);
-}
-
-
 Packet MultiplexedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);

@@ -196,10 +196,7 @@ struct ActionsAndName
 
 static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::Node * filter_node)
 {
-    /// avoid_duplicate_inputs: the split promotes the atom into an input of the remainder DAG, copying its
-    /// name verbatim. Duplicate names are legal inside a DAG but break the `Block` invariant, so a colliding
-    /// input has to be renamed (`split` adds an `ALIAS` so the original name stays resolvable).
-    auto split_result = dag.split({filter_node}, true, true);
+    auto split_result = dag.split({filter_node}, true);
     dag = std::move(split_result.second);
 
     const auto * split_filter_node = split_result.split_nodes_mapping[filter_node];
@@ -430,7 +427,7 @@ QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
     String filter_column_name;
     readStringBinary(filter_column_name, ctx.in);
 
-    ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
+    ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
 
     return std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
 }

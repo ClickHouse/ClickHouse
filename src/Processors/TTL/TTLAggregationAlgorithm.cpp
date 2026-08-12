@@ -119,8 +119,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         static_cast<float>(settings[Setting::min_chunk_bytes_for_parallel_parsing]),
         /*stats_collecting_params_=*/{},
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
-        settings[Setting::serialize_string_in_memory_with_zero_byte],
-        /*enable_parallel_single_level_merge_=*/false);
+        settings[Setting::serialize_string_in_memory_with_zero_byte]);
 
     aggregator = std::make_unique<Aggregator>(header, params);
 

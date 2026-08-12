@@ -87,7 +87,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
     extern const MergeTreeSettingsUInt64 packed_skip_index_max_bytes;
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
-    extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
@@ -750,7 +749,6 @@ getColumnsForNewDataPart(
     {
         static_cast<double>((*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         false,
-        (*source_part->storage.getSettings())[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
         serialization_infos.getSettings().version,
         serialization_infos.getSettings().string_serialization_version,
         serialization_infos.getSettings().nullable_serialization_version,
@@ -761,7 +759,6 @@ getColumnsForNewDataPart(
     {
         static_cast<double>((*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         false,
-        (*source_part->storage.getSettings())[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
         (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
         (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
         (*source_part->storage.getSettings())[MergeTreeSetting::nullable_serialization_version],
@@ -1083,9 +1080,6 @@ static NameSet collectFilesToSkip(
 
     /// Do not hardlink this file because it's always rewritten at the end of mutation.
     files_to_skip.insert(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
-
-    /// We need to hardlink this file because otherwise hardlinked persistent virtual columns may be rolled back.
-    files_to_skip.erase(IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME);
 
     auto skip_index = [&files_to_skip, &mrk_extension, &source_part](const MergeTreeIndexPtr & index)
     {
@@ -1913,36 +1907,10 @@ void PartMergerWriter::createBuildTextIndexesTask()
 
 void PartMergerWriter::calculateProjection(size_t projection_idx, const Block & block, UInt64 starting_offset)
 {
-    const auto & projection = *ctx->projections_to_build[projection_idx];
-
-    /// When mutations like CLEAR COLUMN do not include all columns in the pipeline output,
-    /// projections that depend on those columns still need to be rebuilt (e.g., for non-full
-    /// part storage). Add any missing required columns with default values so that projection
-    /// calculation does not fail with "Not found column in block".
-    Block block_for_projection;
-    bool added_missing_columns = false;
-    for (const auto & col_name : projection.required_columns)
-    {
-        if (!block.has(col_name))
-        {
-            if (!added_missing_columns)
-            {
-                block_for_projection = block;
-                added_missing_columns = true;
-            }
-            auto column_desc = ctx->metadata_snapshot->getColumns().getPhysical(col_name);
-            block_for_projection.insert(
-                {column_desc.type->createColumnConstWithDefaultValue(block.rows())->convertToFullColumnIfConst(),
-                 column_desc.type,
-                 col_name});
-        }
-    }
-    const Block & projection_input = added_missing_columns ? block_for_projection : block;
-
     Chunk squashed_chunk;
     {
         ProfileEventTimeIncrement<Microseconds> projection_watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
-        Block block_to_squash = projection.calculate(projection_input, starting_offset, ctx->context);
+        Block block_to_squash = ctx->projections_to_build[projection_idx]->calculate(block, starting_offset, ctx->context);
 
         /// Everything is deleted by lightweight delete
         if (block_to_squash.rows() == 0)
@@ -2211,6 +2179,25 @@ private:
         /// inherit data for every contained index, including ones we're about to drop or that
         /// were rebuilt elsewhere. Force every surviving in-archive index to be recomputed so
         /// the writer rebuilds skp_idx.packed from scratch.
+        const auto * source_disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&ctx->source_part->getDataPartStorage());
+        auto is_in_packed_archive = [&](const IMergeTreeIndex & index)
+        {
+            if (!source_disk_storage)
+                return false;
+            /// Match the partial-mutation detector: enumerate the index's substreams (text
+            /// indices have .dct/.pst suffixes alongside the base; bloom-family and minmax
+            /// just have the base substream). Probing only ".idx" / ".idx2" misses the side
+            /// streams and would treat a mixed-layout text index as not in the archive,
+            /// losing its packed side streams during a full rewrite.
+            const String file_name = index.getFileName();
+            for (const auto & sub : index.getSubstreams())
+            {
+                if (source_disk_storage->isFileInPackedSkipIndicesArchive(file_name + sub.suffix + sub.extension))
+                    return true;
+            }
+            return false;
+        };
+
         MergeTreeIndices skip_indices;
         for (const auto & idx : indices)
         {
@@ -2222,18 +2209,12 @@ private:
 
             auto index_ptr = MergeTreeIndexFactory::instance().get(ctx->metadata_snapshot, idx, *ctx->data->getSettings());
 
-            /// Inert indices (a removed index type kept only for attach compatibility) have no data
-            /// on disk and cannot be recomputed: skip them entirely so the rewrite does not try to
-            /// aggregate them and there is nothing to hardlink.
-            if (index_ptr->isInert())
-                continue;
-
             /// For packed part we need to recalculate all indices because they are stored inside packed parts format
             /// For compact parts we need to recalculate indices because rewrite of compact part may produce a little bit different data part
             /// with different number of marks.
             bool need_recalculate = ctx->materialized_indices.contains(idx.name)
                 || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot))
-                || ctx->source_part->isSkipIndexInPackedArchive(*index_ptr);
+                || is_in_packed_archive(*index_ptr);
 
             if (need_recalculate)
             {
@@ -2629,7 +2610,6 @@ private:
         (*ctx->mutate_entry)->columns_written = ctx->storage_columns.size() - ctx->updated_header.columns();
 
         ctx->new_data_part->checksums = ctx->source_part->checksums;
-        ctx->new_data_part->invalidated_system_columns = ctx->source_part->invalidated_system_columns;
 
         /// When the archive will not be hardlinked from source (packed_skip_index_archive_dirty),
         /// the inherited skp_idx.packed entry must not survive untouched into the new part's
@@ -2818,22 +2798,6 @@ private:
                     projection_part->checksums.getTotalChecksumUInt128());
             }
 
-            /// Remove orphan `<name>.proj` checksum entries inherited from the source part.
-            /// Such an entry points at a directory missing from the new part, so the projection
-            /// is marked broken on the next consistency-checking load (server startup or `ATTACH`).
-            /// An inherited entry is an orphan when both hold:
-            ///   1. the directory was not hardlinked into the new part, and
-            ///   2. the rebuild produced no projection part (zero-row rebuild, or drop/throw mode).
-            /// A projection that was rebuilt above is in `getProjectionParts()`, so this loop and the
-            /// one above operate on disjoint sets and never fight over the same checksum entry.
-            for (const auto & projection : ctx->metadata_snapshot->getProjections())
-            {
-                const auto projection_file = projection.getDirectoryName();
-                if (ctx->files_to_skip.contains(projection_file)
-                    && !ctx->new_data_part->getProjectionParts().contains(projection.name))
-                    ctx->new_data_part->checksums.files.erase(projection_file);
-            }
-
             auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();
             if (!new_columns_substreams.empty())
             {
@@ -2963,17 +2927,9 @@ private:
         MergeTreePartition partition = ctx->new_data_part->partition;
         std::string part_name = ctx->new_data_part->getNewName(part_info);
 
-        auto [mutable_empty_part, tmp_dir_holder] = ctx->data->createEmptyPart(
+        auto [mutable_empty_part, _] = ctx->data->createEmptyPart(
             part_info, partition, part_name, ctx->new_data_part->getMetadataSnapshot(), ctx->txn);
-        /// Drop the wrapped mutation's old part (living under tmp_mut_<part>) first, while its
-        /// directory holder in ctx->temporary_directory_lock is still alive, so the old temp dir is
-        /// never cleaned up without a temporary_parts entry (the lock-before-cleanup invariant). Only
-        /// then install the new tmp_empty_<part> holder. The local tmp_dir_holder keeps tmp_empty_<part>
-        /// registered across this reorder, so both directories stay protected at all times. Installing
-        /// the holder keeps temporary_parts authoritative for every createEmptyPart caller (see
-        /// createEmptyPart), so the entry outlives the physical tmp_empty_<part> directory.
         ctx->new_data_part = std::move(mutable_empty_part);
-        ctx->temporary_directory_lock = std::move(tmp_dir_holder);
     }
 };
 
@@ -3184,12 +3140,6 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             bool inserted = false;
             auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
 
-            /// Inert indices (a removed index type kept only for attach compatibility) have no data
-            /// and cannot be recomputed. Carry them forward untouched instead of aggregating them,
-            /// otherwise the mutation loops forever failing to build the index.
-            if (index_ptr->isInert())
-                continue;
-
             if (dynamic_cast<const MergeTreeIndexText *>(index_ptr.get()))
                 inserted = ctx->text_indices_to_recalc.insert(index_ptr).second;
             else
@@ -3211,6 +3161,19 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
     /// On the other hand, a mutation that only touches per-file indices (or materializes a brand
     /// new index that isn't packed) leaves the archive untouched.
     const auto * source_disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&source_part->getDataPartStorage());
+
+    auto index_is_in_archive = [&](const IMergeTreeIndex & idx) -> bool
+    {
+        if (!source_disk_storage)
+            return false;
+        const auto file_name = idx.getFileName();
+        for (const auto & sub : idx.getSubstreams())
+        {
+            if (source_disk_storage->isFileInPackedSkipIndicesArchive(file_name + sub.suffix + sub.extension))
+                return true;
+        }
+        return false;
+    };
 
     if (source_disk_storage)
     {
@@ -3260,7 +3223,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             || (source_has_archive && writer_can_open_archive);
         if (!archive_dirty)
             for (const auto & idx : ctx->indices_to_recalc)
-                if (source_part->isSkipIndexInPackedArchive(*idx)) { archive_dirty = true; break; }
+                if (index_is_in_archive(*idx)) { archive_dirty = true; break; }
 
         if (archive_dirty)
         {
@@ -3342,11 +3305,7 @@ bool MutateTask::prepare()
     };
 
     auto mutations_snapshot = ctx->data->getMutationsSnapshot(params);
-    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ctx->source_part, mutations_snapshot, ctx->context
-#if CLICKHOUSE_CLOUD
-        , nullptr
-#endif
-    );
+    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ctx->source_part, mutations_snapshot, ctx->context);
     auto context_for_reading = Context::createCopy(ctx->context);
 
     /// Allow mutations to work when force_index_by_date or force_primary_key is on.
@@ -3453,16 +3412,12 @@ bool MutateTask::prepare()
                 "Part {} is fully deleted, creating empty part with mutation version {}",
                 ctx->source_part->name, ctx->future_part->part_info.mutation);
 
-            auto [empty_part, tmp_dir_holder] = ctx->data->createEmptyPart(
+            auto [empty_part, _] = ctx->data->createEmptyPart(
                 ctx->future_part->part_info,
                 ctx->source_part->partition,
                 ctx->future_part->name,
                 ctx->source_part->getMetadataSnapshot(),
                 ctx->txn);
-            /// Keep the temporary-directory holder alive until the part is renamed/committed, so
-            /// the in-memory `temporary_parts` entry outlives the physical `tmp_empty_<part>`
-            /// directory, keeping the holder authoritative for every createEmptyPart caller.
-            ctx->temporary_directory_lock = std::move(tmp_dir_holder);
 
             ProfileEvents::increment(ProfileEvents::MutationCreatedEmptyParts);
             promise.set_value(std::move(empty_part));
@@ -3555,20 +3510,6 @@ bool MutateTask::prepare()
 
     String tmp_part_dir_name = prefix + ctx->future_part->name;
     ctx->temporary_directory_lock = ctx->data->getTemporaryPartDirectoryHolder(tmp_part_dir_name);
-
-    /// Reclaim a stale leftover temporary directory (a mutation interrupted or rolled back and retried
-    /// with the same deterministic name) BEFORE constructing the part storage. Otherwise packed storage
-    /// seeds its archive reader and snapshots the mark layout from the leftover data.packed, and
-    /// finalizeWriter later carries every logical file the new mutation did not rewrite into the new
-    /// part. The temporary-directory lock above guarantees no concurrent operation owns this name.
-    {
-        auto relative_tmp_dir = fs::path(ctx->data->getRelativeDataPath()) / tmp_part_dir_name;
-        if (ctx->disk->existsDirectory(relative_tmp_dir))
-        {
-            LOG_WARNING(ctx->log, "Removing old temporary directory {}", (fs::path(ctx->disk->getPath()) / relative_tmp_dir).string());
-            ctx->disk->removeRecursive(relative_tmp_dir);
-        }
-    }
 
     auto builder = ctx->data->getDataPartBuilder(ctx->future_part->name, single_disk_volume, tmp_part_dir_name, getReadSettings());
     builder.withPartFormat(ctx->future_part->part_format);

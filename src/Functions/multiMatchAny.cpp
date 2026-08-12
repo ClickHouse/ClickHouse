@@ -1,3 +1,4 @@
+#include <Functions/multiMatchAny.h>
 #include <Functions/FunctionsMultiStringSearch.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/MultiMatchAnyImpl.h>
@@ -56,6 +57,11 @@ If you only want to search multiple substrings in a string, you can use function
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMultiMatchAny>(documentation);
+}
+
+FunctionOverloadResolverPtr createInternalMultiMatchAnyOverloadResolver(bool allow_hyperscan, size_t max_hyperscan_regexp_length, size_t max_hyperscan_regexp_total_length, bool reject_expensive_hyperscan_regexps)
+{
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiMatchAny>(allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps));
 }
 
 }

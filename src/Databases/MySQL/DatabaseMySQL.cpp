@@ -319,7 +319,7 @@ void DatabaseMySQL::fetchLatestTablesStructureIntoCache(
                 StorageID(database_name, table_name),
                 std::move(mysql_pool),
                 database_name_in_mysql,
-                TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
+                table_name,
                 /* replace_query_ */ false,
                 /* on_duplicate_clause = */ "",
                 ColumnsDescription{columns_name_and_type},
@@ -720,23 +720,23 @@ SETTINGS enable_compression = 1;
 
 | MySQL                            | ClickHouse                                                   |
 |----------------------------------|--------------------------------------------------------------|
-| UNSIGNED TINYINT                 | [UInt8](/reference/data-types/int-uint)          |
-| TINYINT                          | [Int8](/reference/data-types/int-uint)           |
-| UNSIGNED SMALLINT                | [UInt16](/reference/data-types/int-uint)         |
-| SMALLINT                         | [Int16](/reference/data-types/int-uint)          |
-| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](/reference/data-types/int-uint)         |
-| INT, MEDIUMINT                   | [Int32](/reference/data-types/int-uint)          |
-| UNSIGNED BIGINT                  | [UInt64](/reference/data-types/int-uint)         |
-| BIGINT                           | [Int64](/reference/data-types/int-uint)          |
-| FLOAT                            | [Float32](/reference/data-types/float)           |
-| DOUBLE                           | [Float64](/reference/data-types/float)           |
-| DATE                             | [Date](/reference/data-types/date)               |
-| DATETIME, TIMESTAMP              | [DateTime](/reference/data-types/datetime)       |
-| BINARY                           | [FixedString](/reference/data-types/fixedstring) |
+| UNSIGNED TINYINT                 | [UInt8](../../sql-reference/data-types/int-uint.md)          |
+| TINYINT                          | [Int8](../../sql-reference/data-types/int-uint.md)           |
+| UNSIGNED SMALLINT                | [UInt16](../../sql-reference/data-types/int-uint.md)         |
+| SMALLINT                         | [Int16](../../sql-reference/data-types/int-uint.md)          |
+| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](../../sql-reference/data-types/int-uint.md)         |
+| INT, MEDIUMINT                   | [Int32](../../sql-reference/data-types/int-uint.md)          |
+| UNSIGNED BIGINT                  | [UInt64](../../sql-reference/data-types/int-uint.md)         |
+| BIGINT                           | [Int64](../../sql-reference/data-types/int-uint.md)          |
+| FLOAT                            | [Float32](../../sql-reference/data-types/float.md)           |
+| DOUBLE                           | [Float64](../../sql-reference/data-types/float.md)           |
+| DATE                             | [Date](../../sql-reference/data-types/date.md)               |
+| DATETIME, TIMESTAMP              | [DateTime](../../sql-reference/data-types/datetime.md)       |
+| BINARY                           | [FixedString](../../sql-reference/data-types/fixedstring.md) |
 
-All other MySQL data types are converted into [String](/reference/data-types/string).
+All other MySQL data types are converted into [String](../../sql-reference/data-types/string.md).
 
-[Nullable](/reference/data-types/nullable) is supported.
+[Nullable](../../sql-reference/data-types/nullable.md) is supported.
 
 ## Global variables support {#global-variables-support}
 
