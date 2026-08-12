@@ -14,6 +14,7 @@ services:
             - type: ${POSTGRES_LOGS_FS:-tmpfs}
               source: ${POSTGRES2_DIR:-}
               target: /postgres/
+        cpus: 3
     postgres3:
         image: postgres
         stop_grace_period: 5s
@@ -29,6 +30,7 @@ services:
             - type: ${POSTGRES_LOGS_FS:-tmpfs}
               source: ${POSTGRES3_DIR:-}
               target: /postgres/
+        cpus: 3
     postgres4:
         image: postgres
         stop_grace_period: 5s
@@ -44,3 +46,4 @@ services:
             - type: ${POSTGRES_LOGS_FS:-tmpfs}
               source: ${POSTGRES4_DIR:-}
               target: /postgres/
+        cpus: 3

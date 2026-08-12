@@ -1,0 +1,30 @@
+analyzer=1, LC(String), ROLLUP
+0	a
+1	\N
+analyzer=0, LC(String), ROLLUP
+0	a
+1	\N
+analyzer=1, LC(UInt16), GROUPING SETS
+1024	2048
+1024	\N
+analyzer=0, LC(UInt16), GROUPING SETS
+1024	2048
+1024	\N
+analyzer=1, LC(UInt16), CUBE
+1024	2048
+1024	\N
+\N	2048
+\N	\N
+analyzer=0, LC(UInt16), CUBE
+1024	2048
+1024	\N
+\N	2048
+\N	\N
+analyzer=1, LC(UInt16), ROLLUP
+1024	2048
+1024	\N
+\N	\N
+analyzer=0, LC(UInt16), ROLLUP
+1024	2048
+1024	\N
+\N	\N

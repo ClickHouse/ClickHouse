@@ -1,18 +1,20 @@
-#include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/Utils.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
+#include <Core/Block.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeSet.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/tuple.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/TableJoin.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 
 
 namespace DB::ErrorCodes
@@ -37,15 +39,15 @@ struct NamePair
 
 using NamePairs = std::vector<NamePair>;
 
-InConversion buildInConversion(
-    const SharedHeader & header,
+static InConversion buildInConversion(
+    const SharedHeader & lhs_input_header,
     const NamePairs & name_pairs,
     std::unique_ptr<QueryPlan> in_source,
     bool transform_null_in,
     SizeLimits size_limits,
     size_t max_size_for_index)
 {
-    ActionsDAG lhs_dag(header->getColumnsWithTypeAndName());
+    ActionsDAG lhs_dag(lhs_input_header->getColumnsWithTypeAndName());
     std::unordered_map<std::string_view, const ActionsDAG::Node *> lhs_outputs;
     for (const auto & output : lhs_dag.getOutputs())
         lhs_outputs.emplace(output->result_name, output);
@@ -67,7 +69,7 @@ InConversion buildInConversion(
 
         auto jt = rhs_outputs.find(name_pair.rhs_name);
         if (jt == rhs_outputs.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find left key {} in JOIN step", name_pair.lhs_name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find right key {} in JOIN step", name_pair.lhs_name);
         rhs_dag.getOutputs().push_back(jt->second);
     }
 
@@ -82,7 +84,7 @@ InConversion buildInConversion(
         left_columns.front() :
         &lhs_dag.addFunction(func_tuple_builder, std::move(left_columns), {});
 
-    auto generateRandomHash =[]()
+    auto get_random_hash = []()
     {
         auto uuid = UUIDHelpers::generateV4();
         return FutureSet::Hash(UUIDHelpers::getLowBytes(uuid), UUIDHelpers::getHighBytes(uuid));
@@ -90,18 +92,11 @@ InConversion buildInConversion(
 
     /// right parameter of IN function
     auto future_set = std::make_shared<FutureSetFromSubquery>(
-        generateRandomHash(),
-        nullptr,
-        std::move(in_source),
-        nullptr,
-        nullptr,
-        transform_null_in,
-        size_limits,
-        max_size_for_index);
+        get_random_hash(), nullptr, std::move(in_source), nullptr, nullptr, transform_null_in, size_limits, max_size_for_index);
 
-    ColumnPtr set_col = ColumnSet::create(1, future_set);
+    ColumnConst::Ptr set_col = ColumnConst::create(ColumnSet::create(1, future_set), 0);
     const ActionsDAG::Node * in_rhs_arg =
-        &lhs_dag.addColumn({set_col, std::make_shared<DataTypeSet>(), "set column"});
+        &lhs_dag.addColumn(std::move(set_col), std::make_shared<DataTypeSet>(), "set column");
 
     /// IN function
     auto func_in = FunctionFactory::instance().get("in", nullptr);
@@ -144,6 +139,12 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     auto * join = typeid_cast<JoinStepLogical *>(parent.get());
     if (!join)
+        return 0;
+
+    /// The set created here uses `transform_null_in = false` and transfer limits, which the
+    /// serialized set record does not carry; a distributed-plan worker would rebuild the set
+    /// with its task settings and could get a different membership policy. Keep the join.
+    if (settings.make_distributed_plan)
         return 0;
 
     /// Let's support only hash algorithm, because full sorting join may be more memory efficient than IN.
@@ -246,7 +247,15 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         nullptr);
 
     auto join_output_actions_dag = cloneSubDAGWithHeader(output_header, JoinExpressionActions::getSubDAG(join_output_actions));
-    creating_sets_step->setStepDescription("Create sets after JOIN -> IN optimiation");
+
+    /// Materialize constant columns in the join output actions DAG.
+    /// JoinStepLogical materializes the `__join_result_dummy` constant column in its output header,
+    /// but the replacement ExpressionStep does not, causing a block structure mismatch.
+    for (auto & output_node : join_output_actions_dag.getOutputs())
+        if (output_node->column)
+            output_node = &join_output_actions_dag.materializeNode(*output_node, /*materialize_sparse=*/ false);
+
+    creating_sets_step->setStepDescription("Create sets after JOIN -> IN optimization");
     parent = std::move(creating_sets_step);
     parent_node->children = {lhs_in_node};
 

@@ -167,7 +167,7 @@ The string must be UTF8-encoded, otherwise the behavior is undefined.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation_encode = {description_encode, syntax_encode, arguments_encode, returned_value_encode, examples_encode, introduced_in, category};
+    FunctionDocumentation documentation_encode = {description_encode, syntax_encode, arguments_encode, {}, returned_value_encode, examples_encode, introduced_in, category};
 
     FunctionDocumentation::Description description_decode = R"(
 Returns the UTF8-encoded plaintext of a [Punycode](https://en.wikipedia.org/wiki/Punycode)-encoded string.
@@ -189,7 +189,7 @@ If no valid Punycode-encoded string is given, an exception is thrown.
         )"
     }
     };
-    FunctionDocumentation documentation_decode = {description_decode, syntax_decode, arguments_decode, returned_value_decode, examples_decode, introduced_in, category};
+    FunctionDocumentation documentation_decode = {description_decode, syntax_decode, arguments_decode, {}, returned_value_decode, examples_decode, introduced_in, category};
 
     FunctionDocumentation::Description description_try_decode = R"(
 Like `punycodeDecode` but returns an empty string if no valid Punycode-encoded string is given.
@@ -210,7 +210,7 @@ Like `punycodeDecode` but returns an empty string if no valid Punycode-encoded s
         )"
     }
     };
-    FunctionDocumentation documentation_try_decode = {description_try_decode, syntax_try_decode, arguments_try_decode, returned_value_try_decode, examples_try_decode, introduced_in, category};
+    FunctionDocumentation documentation_try_decode = {description_try_decode, syntax_try_decode, arguments_try_decode, {}, returned_value_try_decode, examples_try_decode, introduced_in, category};
 
     factory.registerFunction<FunctionPunycodeEncode>(documentation_encode);
     factory.registerFunction<FunctionPunycodeDecode>(documentation_decode);

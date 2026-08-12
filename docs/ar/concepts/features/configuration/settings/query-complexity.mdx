@@ -1,0 +1,129 @@
+---
+description: 'إعدادات تفرض قيودًا على تعقيد الاستعلام.'
+sidebarTitle: 'قيود تعقيد الاستعلام'
+slug: /operations/settings/query-complexity
+title: 'قيود تعقيد الاستعلام'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+كجزء من [الإعدادات](/ar/concepts/features/configuration/settings/overview)، يوفّر ClickHouse
+إمكانية فرض قيود على تعقيد الاستعلامات. ويساعد ذلك على الحماية من
+الاستعلامات التي قد تستهلك الموارد بشكل كبير، مما يضمن تنفيذًا
+أكثر أمانًا وقابليةً للتنبؤ، خصوصًا عند استخدام واجهة المستخدم.
+
+تنطبق جميع القيود تقريبًا فقط على استعلامات `SELECT`، وفي
+معالجة الاستعلامات الموزعة، تُطبَّق القيود على كل خادم على حدة.
+
+يتحقق ClickHouse عمومًا من القيود فقط بعد اكتمال
+معالجة أجزاء البيانات، بدلًا من التحقق من القيود لكل صف. وقد
+يؤدي ذلك إلى حدوث حالة تُنتهك فيها القيود أثناء
+معالجة الجزء.
+
+<div id="overflow_mode_setting">
+  ## إعدادات `overflow_mode`
+</div>
+
+تحتوي معظم القيود أيضًا على إعداد `overflow_mode`، الذي يحدّد ما يحدث
+عند تجاوز الحدّ، ويمكن أن يأخذ إحدى القيمتين التاليتين:
+
+* `throw`: إثارة استثناء (افتراضيًا).
+* `break`: إيقاف تنفيذ الاستعلام وإرجاع النتيجة الجزئية، كما لو أن
+  بيانات المصدر قد نفدت.
+
+<div id="group_by_overflow_mode_settings">
+  ## إعدادات `group_by_overflow_mode`
+</div>
+
+يتضمن إعداد `group_by_overflow_mode` أيضًا
+القيمة `any`:
+
+* `any` : واصِل التجميع للمفاتيح التي دخلت إلى المجموعة، ولكن لا
+  تُضِف مفاتيح جديدة إلى المجموعة.
+
+<div id="relevant-settings">
+  ## قائمة الإعدادات
+</div>
+
+تُستخدم الإعدادات التالية لفرض قيود على تعقيد الاستعلام.
+
+<Note>
+  يمكن أن تكون قيمة القيود المفروضة على &quot;الحد الأقصى لكمية شيء ما&quot; هي `0`،
+  ما يعني أنها &quot;دون قيود&quot;.
+</Note>
+
+| الإعداد                                                                                                                       | وصف مختصر                                                                                                                                           |
+| ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`max_memory_usage`](/ar/reference/settings/session-settings#max_memory_usage)                                                   | الحد الأقصى لمقدار ذاكرة RAM التي يمكن استخدامها لتنفيذ استعلام على خادم واحد.                                                                      |
+| [`max_memory_usage_for_user`](/ar/reference/settings/session-settings#max_memory_usage_for_user)                                 | الحد الأقصى لمقدار ذاكرة RAM التي يمكن استخدامها لتنفيذ استعلامات المستخدم على خادم واحد.                                                           |
+| [`max_rows_to_read`](/ar/reference/settings/session-settings#max_rows_to_read)                                                   | الحد الأقصى لعدد الصفوف التي يمكن قراءتها من جدول عند تنفيذ استعلام.                                                                                |
+| [`max_bytes_to_read`](/ar/reference/settings/session-settings#max_bytes_to_read)                                                 | الحد الأقصى لعدد البايتات (من البيانات غير المضغوطة) التي يمكن قراءتها من جدول عند تنفيذ استعلام.                                                   |
+| [`read_overflow_mode_leaf`](/ar/reference/settings/session-settings#read_overflow_mode_leaf)                                     | يحدد ما يحدث عندما يتجاوز حجم البيانات المقروءة أحد حدود العقد الطرفية.                                                                             |
+| [`max_rows_to_read_leaf`](/ar/reference/settings/session-settings#max_rows_to_read_leaf)                                         | الحد الأقصى لعدد الصفوف التي يمكن قراءتها من جدول محلي على عقدة طرفية عند تنفيذ استعلام موزّع.                                                      |
+| [`max_bytes_to_read_leaf`](/ar/reference/settings/session-settings#max_bytes_to_read_leaf)                                       | الحد الأقصى لعدد البايتات (من البيانات غير المضغوطة) التي يمكن قراءتها من جدول محلي على عقدة طرفية عند تنفيذ استعلام موزّع.                         |
+| [`read_overflow_mode_leaf`](/ar/reference/settings/session-settings#read_overflow_mode_leaf)                                     | يحدد ما يحدث عندما يتجاوز حجم البيانات المقروءة أحد حدود العقد الطرفية.                                                                             |
+| [`max_rows_to_group_by`](/ar/reference/settings/session-settings#max_rows_to_group_by)                                           | الحد الأقصى لعدد المفاتيح الفريدة الناتجة عن التجميع.                                                                                               |
+| [`group_by_overflow_mode`](/ar/reference/settings/session-settings#group_by_overflow_mode)                                       | يحدد ما يحدث عندما يتجاوز عدد المفاتيح الفريدة للتجميع الحد المسموح.                                                                                |
+| [`max_bytes_before_external_group_by`](/ar/reference/settings/session-settings#max_bytes_before_external_group_by)               | يفعّل أو يعطّل تنفيذ عبارات `GROUP BY` باستخدام الذاكرة الخارجية.                                                                                   |
+| [`max_bytes_ratio_before_external_group_by`](/ar/reference/settings/session-settings#max_bytes_ratio_before_external_group_by)   | نسبة الذاكرة المتاحة المسموح باستخدامها لـ `GROUP BY`. وعند بلوغها، تُستخدم الذاكرة الخارجية للتجميع.                                               |
+| [`max_bytes_before_external_sort`](/ar/reference/settings/session-settings#max_bytes_before_external_sort)                       | يفعّل أو يعطّل تنفيذ عبارات `ORDER BY` باستخدام الذاكرة الخارجية.                                                                                   |
+| [`max_bytes_ratio_before_external_sort`](/ar/reference/settings/session-settings#max_bytes_ratio_before_external_sort)           | نسبة الذاكرة المتاحة المسموح باستخدامها لـ `ORDER BY`. وعند بلوغها، يُستخدم الفرز الخارجي.                                                          |
+| [`max_rows_to_sort`](/ar/reference/settings/session-settings#max_rows_to_sort)                                                   | الحد الأقصى لعدد الصفوف قبل الفرز. يتيح ذلك تقييد استهلاك الذاكرة أثناء الفرز.                                                                      |
+| [`max_bytes_to_sort`](/ar/reference/settings/session-settings#max_rows_to_sort)                                                  | الحد الأقصى لعدد البايتات قبل الفرز.                                                                                                                |
+| [`sort_overflow_mode`](/ar/reference/settings/session-settings#sort_overflow_mode)                                               | يحدد ما يحدث إذا تجاوز عدد الصفوف المستلمة قبل الفرز أحد الحدود.                                                                                    |
+| [`max_result_rows`](/ar/reference/settings/session-settings#max_result_rows)                                                     | يقيّد عدد الصفوف في النتيجة.                                                                                                                        |
+| [`max_result_bytes`](/ar/reference/settings/session-settings#max_result_bytes)                                                   | يقيّد حجم النتيجة بالبايتات (غير مضغوطة).                                                                                                           |
+| [`result_overflow_mode`](/ar/reference/settings/session-settings#result_overflow_mode)                                           | يحدد ما يجب فعله إذا تجاوز حجم النتيجة أحد الحدود.                                                                                                  |
+| [`max_execution_time`](/ar/reference/settings/session-settings#max_execution_time)                                               | الحد الأقصى لوقت تنفيذ الاستعلام بالثواني.                                                                                                          |
+| [`timeout_overflow_mode`](/ar/reference/settings/session-settings#timeout_overflow_mode)                                         | يحدد ما يجب فعله إذا استمر تنفيذ الاستعلام مدة أطول من `max_execution_time` أو إذا كان وقت التنفيذ التقديري أطول من `max_estimated_execution_time`. |
+| [`max_execution_time_leaf`](/ar/reference/settings/session-settings#max_execution_time_leaf)                                     | مماثل دلاليًا لـ `max_execution_time`، لكنه يُطبَّق فقط على العقد الطرفية في الاستعلامات الموزعة أو البعيدة.                                        |
+| [`timeout_overflow_mode_leaf`](/ar/reference/settings/session-settings#timeout_overflow_mode_leaf)                               | يحدد ما يحدث عندما يستمر تنفيذ الاستعلام على العقدة الطرفية مدة أطول من `max_execution_time_leaf`.                                                  |
+| [`min_execution_speed`](/ar/reference/settings/session-settings#min_execution_speed)                                             | الحد الأدنى لسرعة التنفيذ بالصفوف في الثانية.                                                                                                       |
+| [`min_execution_speed_bytes`](/ar/reference/settings/session-settings#min_execution_speed_bytes)                                 | الحد الأدنى لعدد بايتات التنفيذ في الثانية.                                                                                                         |
+| [`max_execution_speed`](/ar/reference/settings/session-settings#max_execution_speed)                                             | الحد الأقصى لعدد صفوف التنفيذ في الثانية.                                                                                                           |
+| [`max_execution_speed_bytes`](/ar/reference/settings/session-settings#max_execution_speed_bytes)                                 | الحد الأقصى لعدد بايتات التنفيذ في الثانية.                                                                                                         |
+| [`timeout_before_checking_execution_speed`](/ar/reference/settings/session-settings#timeout_before_checking_execution_speed)     | يتحقق، بعد انقضاء الوقت المحدد بالثواني، من أن سرعة التنفيذ ليست بطيئة جدًا (أي لا تقل عن `min_execution_speed`).                                   |
+| [`max_estimated_execution_time`](/ar/reference/settings/session-settings#max_estimated_execution_time)                           | الحد الأقصى لوقت التنفيذ التقديري للاستعلام بالثواني.                                                                                               |
+| [`max_columns_to_read`](/ar/reference/settings/session-settings#max_columns_to_read)                                             | الحد الأقصى لعدد الأعمدة التي يمكن قراءتها من جدول في استعلام واحد.                                                                                 |
+| [`max_temporary_columns`](/ar/reference/settings/session-settings#max_temporary_columns)                                         | الحد الأقصى لعدد الأعمدة المؤقتة التي يجب الاحتفاظ بها في RAM في الوقت نفسه عند تشغيل استعلام، بما في ذلك الأعمدة الثابتة.                          |
+| [`max_temporary_non_const_columns`](/ar/reference/settings/session-settings#max_temporary_non_const_columns)                     | الحد الأقصى لعدد الأعمدة المؤقتة التي يجب الاحتفاظ بها في RAM في الوقت نفسه عند تشغيل استعلام، من دون احتساب الأعمدة الثابتة.                       |
+| [`max_subquery_depth`](/ar/reference/settings/session-settings#max_subquery_depth)                                               | يحدد ما يحدث إذا احتوى الاستعلام على عدد من الاستعلامات الفرعية المتداخلة يتجاوز العدد المحدد.                                                      |
+| [`max_ast_depth`](/ar/reference/settings/session-settings#max_ast_depth)                                                         | الحد الأقصى لعمق التداخل في الشجرة النحوية للاستعلام.                                                                                               |
+| [`max_ast_elements`](/ar/reference/settings/session-settings#max_ast_elements)                                                   | الحد الأقصى لعدد العناصر في الشجرة النحوية للاستعلام.                                                                                               |
+| [`max_rows_in_set`](/ar/reference/settings/session-settings#max_rows_in_set)                                                     | الحد الأقصى لعدد الصفوف في مجموعة البيانات ضمن عبارة IN المُنشأة من استعلام فرعي.                                                                   |
+| [`max_bytes_in_set`](/ar/reference/settings/session-settings#max_bytes_in_set)                                                   | الحد الأقصى لعدد البايتات (للبيانات غير المضغوطة) المستخدمة بواسطة مجموعة في عبارة IN المُنشأة من استعلام فرعي.                                     |
+| [`set_overflow_mode`](/ar/reference/settings/session-settings#max_bytes_in_set)                                                  | يحدد ما يحدث عند تجاوز كمية البيانات أحد الحدود.                                                                                                    |
+| [`max_rows_in_distinct`](/ar/reference/settings/session-settings#max_rows_in_distinct)                                           | الحد الأقصى لعدد الصفوف المختلفة عند استخدام DISTINCT.                                                                                              |
+| [`max_bytes_in_distinct`](/ar/reference/settings/session-settings#max_bytes_in_distinct)                                         | الحد الأقصى لحجم الحالة في الذاكرة، محسوبًا بالبايتات (غير المضغوطة)، التي يستخدمها جدول تجزئة عند استخدام DISTINCT.                                |
+| [`distinct_overflow_mode`](/ar/reference/settings/session-settings#distinct_overflow_mode)                                       | يحدد ما يحدث عند تجاوز كمية البيانات أحد الحدود.                                                                                                    |
+| [`max_rows_to_transfer`](/ar/reference/settings/session-settings#max_rows_to_transfer)                                           | الحد الأقصى للحجم (بالصفوف) الذي يمكن تمريره إلى خادم بعيد أو حفظه في جدول مؤقت عند تنفيذ قسم GLOBAL IN/JOIN.                                       |
+| [`max_bytes_to_transfer`](/ar/reference/settings/session-settings#max_bytes_to_transfer)                                         | الحد الأقصى لعدد البايتات (للبيانات غير المضغوطة) التي يمكن تمريرها إلى خادم بعيد أو حفظها في جدول مؤقت عند تنفيذ قسم GLOBAL IN/JOIN.               |
+| [`transfer_overflow_mode`](/ar/reference/settings/session-settings#transfer_overflow_mode)                                       | يحدد ما يحدث عند تجاوز كمية البيانات أحد الحدود.                                                                                                    |
+| [`max_rows_in_join`](/ar/reference/settings/session-settings#max_rows_in_join)                                                   | يقيّد عدد الصفوف في جدول التجزئة المستخدم عند ضمّ الجداول.                                                                                          |
+| [`max_bytes_in_join`](/ar/reference/settings/session-settings#max_bytes_in_join)                                                 | الحد الأقصى لحجم جدول التجزئة المستخدم عند ضمّ الجداول، بالبايت.                                                                                    |
+| [`join_overflow_mode`](/ar/reference/settings/session-settings#join_overflow_mode)                                               | يحدد الإجراء الذي ينفذه ClickHouse عند بلوغ أيٍّ من حدود join التالية.                                                                              |
+| [`max_partitions_per_insert_block`](/ar/reference/settings/session-settings#max_partitions_per_insert_block)                     | يقيّد الحد الأقصى لعدد الأقسام في كتلة بيانات مُدرجة واحدة، ويُطرَح استثناء إذا كانت الكتلة تحتوي على عدد كبير جدًا من الأقسام.                     |
+| [`throw_on_max_partitions_per_insert_block`](/ar/reference/settings/session-settings#throw_on_max_partitions_per_insert_block)   | يتيح لك التحكم في السلوك عند بلوغ `max_partitions_per_insert_block`.                                                                                |
+| [`max_temporary_data_on_disk_size_for_user`](/ar/reference/settings/session-settings#throw_on_max_partitions_per_insert_block)   | الحد الأقصى لكمية البيانات التي تستهلكها الملفات المؤقتة على القرص، بالبايت، لجميع استعلامات المستخدم المتزامنة قيد التشغيل.                        |
+| [`max_temporary_data_on_disk_size_for_query`](/ar/reference/settings/session-settings#max_temporary_data_on_disk_size_for_query) | الحد الأقصى لكمية البيانات التي تستهلكها الملفات المؤقتة على القرص، بالبايت، لجميع الاستعلامات المتزامنة قيد التشغيل.                               |
+| [`max_sessions_for_user`](/ar/reference/settings/session-settings#max_sessions_for_user)                                         | الحد الأقصى لعدد الجلسات المتزامنة لكل مستخدم مُصادَق عليه على خادم ClickHouse.                                                                     |
+| [`max_partitions_to_read`](/ar/reference/settings/session-settings#max_partitions_to_read)                                       | يقيّد الحد الأقصى لعدد الأقسام التي يمكن الوصول إليها في استعلام واحد.                                                                              |
+
+<div id="obsolete-settings">
+  ## الإعدادات المتقادمة
+</div>
+
+<Note>
+  الإعدادات التالية متقادمة
+</Note>
+
+<div id="max-pipeline-depth">
+  ### max_pipeline_depth
+</div>
+
+الحد الأقصى لعمق مسار المعالجة. وهو يقابل عدد التحويلات التي تمر بها كل
+كتلة بيانات أثناء معالجة الاستعلام. ويُحتسب ضمن حدود
+خادم واحد. وإذا زاد عمق مسار المعالجة عن ذلك، يتم رفع استثناء.

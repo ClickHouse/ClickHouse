@@ -1,0 +1,229 @@
+---
+title: 'Dépannage'
+description: 'Guide de dépannage de l’installation'
+slug: /guides/troubleshooting
+doc_type: 'guide'
+keywords: ['dépannage', 'débogage', 'résolution de problèmes', 'erreurs', 'diagnostic']
+---
+
+<div id="installation">
+  ## Installation
+</div>
+
+<div id="cant-import-gpg-keys-from-keyserverubuntucom-with-apt-key">
+  ### Impossible d&#39;importer des clés GPG depuis keyserver.ubuntu.com avec apt-key
+</div>
+
+La fonctionnalité `apt-key` de [l&#39;outil Advanced Package Tool (APT) est obsolète](https://manpages.debian.org/bookworm/apt/apt-key.8.en.html). Utilisez plutôt la commande `gpg`. Veuillez consulter le [guide d&#39;installation](/fr/get-started/setup/install).
+
+<div id="cant-import-gpg-keys-from-keyserverubuntucom-with-gpg">
+  ### Impossible d&#39;importer les clés GPG depuis keyserver.ubuntu.com avec gpg
+</div>
+
+1. Vérifiez si `gpg` est installé :
+
+```shell
+sudo apt-get install gnupg
+```
+
+<div id="cant-get-deb-packages-from-clickhouse-repository-with-apt-get">
+  ### Impossible de récupérer des paquets deb depuis le dépôt ClickHouse avec apt-get
+</div>
+
+1. Vérifiez les paramètres du pare-feu.
+2. Si vous ne pouvez pas accéder au dépôt, quelle qu’en soit la raison, téléchargez les paquets comme décrit dans l’article [guide d’installation](/fr/get-started/setup/install) et installez-les manuellement à l’aide de la commande `sudo dpkg -i <packages>`. Vous aurez également besoin du paquet `tzdata`.
+
+<div id="cant-update-deb-packages-from-clickhouse-repository-with-apt-get">
+  ### Impossible de mettre à jour les paquets deb depuis le dépôt ClickHouse avec apt-get
+</div>
+
+Ce problème peut survenir lorsque la clé GPG a été modifiée.
+
+Veuillez suivre la procédure indiquée sur la page [setup](/fr/get-started/setup/self-managed/debian-ubuntu) pour mettre à jour la configuration du dépôt.
+
+<div id="you-get-different-warnings-with-apt-get-update">
+  ### Vous obtenez différents avertissements lors de `apt-get update`
+</div>
+
+Les messages d’avertissement complets sont les suivants :
+
+```shell
+N: Skipping acquire of configured file 'main/binary-i386/Packages' as repository 'https://packages.clickhouse.com/deb stable InRelease' doesn't support architecture 'i386'
+```
+
+```shell
+E: Failed to fetch https://packages.clickhouse.com/deb/dists/stable/main/binary-amd64/Packages.gz  File has unexpected size (30451 != 28154). Mirror sync in progress?
+```
+
+```shell
+E: Repository 'https://packages.clickhouse.com/deb stable InRelease' changed its 'Origin' value from 'Artifactory' to 'ClickHouse'
+E: Repository 'https://packages.clickhouse.com/deb stable InRelease' changed its 'Label' value from 'Artifactory' to 'ClickHouse'
+N: Repository 'https://packages.clickhouse.com/deb stable InRelease' changed its 'Suite' value from 'stable' to ''
+N: This must be accepted explicitly before updates for this repository can be applied. See apt-secure(8) manpage for details.
+```
+
+```shell
+Err:11 https://packages.clickhouse.com/deb stable InRelease
+400  Bad Request [IP: 172.66.40.249 443]
+```
+
+Pour résoudre le problème ci-dessus, veuillez utiliser le script suivant :
+
+```shell
+sudo rm /var/lib/apt/lists/packages.clickhouse.com_* /var/lib/dpkg/arch /var/lib/apt/lists/partial/packages.clickhouse.com_*
+sudo apt-get clean
+sudo apt-get autoclean
+```
+
+<div id="cant-get-packages-with-yum-because-of-wrong-signature">
+  ### Impossible de récupérer des paquets avec Yum à cause d’une signature incorrecte
+</div>
+
+Problème possible : le cache est incorrect, peut-être corrompu après la mise à jour de la clé GPG en 2022-09.
+
+La solution consiste à nettoyer le cache et le répertoire lib de Yum :
+
+```shell
+sudo find /var/lib/yum/repos/ /var/cache/yum/ -name 'clickhouse-*' -type d -exec rm -rf {} +
+sudo rm -f /etc/yum.repos.d/clickhouse.repo
+```
+
+Ensuite, suivez le [guide d&#39;installation](/fr/get-started/setup/self-managed/redhat)
+
+<div id="connecting-to-the-server">
+  ## Connexion au serveur
+</div>
+
+Problèmes possibles :
+
+* Le serveur n’est pas démarré.
+* Paramètres de configuration inattendus ou incorrects.
+
+<div id="server-is-not-running">
+  ### Le serveur n&#39;est pas démarré
+</div>
+
+<div id="check-if-server-is-running">
+  #### Vérifiez si le serveur est en cours d’exécution
+</div>
+
+```shell
+sudo service clickhouse-server status
+```
+
+Si le serveur n’est pas démarré, démarrez-le avec la commande :
+
+```shell
+sudo service clickhouse-server start
+```
+
+<div id="check-the-logs">
+  #### Vérifiez les logs
+</div>
+
+Le log principal de `clickhouse-server` se trouve par défaut dans `/var/log/clickhouse-server/clickhouse-server.log`.
+
+Si le server a démarré correctement, vous devriez voir les chaînes suivantes :
+
+* `<Information> Application: starting up.` — Le server a démarré.
+* `<Information> Application: Ready for connections.` — Le server est en cours d’exécution et prêt à accepter des connexions.
+
+Si le démarrage de `clickhouse-server` a échoué en raison d’une erreur de configuration, vous devriez voir la chaîne `<Error>` accompagnée d’une description de l’erreur. Par exemple :
+
+```plaintext
+2019.01.11 15:23:25.549505 [ 45 ] {} <Error> ExternalDictionaries: Failed reloading 'event2id' external dictionary: Poco::Exception. Code: 1000, e.code() = 111, e.displayText() = Connection refused, e.what() = Connection refused
+```
+
+Si vous ne voyez pas d’erreur à la fin du fichier, parcourez tout le fichier à partir de la chaîne :
+
+```plaintext
+<Information> Application: starting up.
+```
+
+Si vous essayez de démarrer une deuxième instance de `clickhouse-server` sur le serveur, vous verrez le message suivant dans le journal :
+
+```plaintext
+2019.01.11 15:25:11.151730 [ 1 ] {} <Information> : Starting ClickHouse 19.1.0 with revision 54413
+2019.01.11 15:25:11.154578 [ 1 ] {} <Information> Application: starting up
+2019.01.11 15:25:11.156361 [ 1 ] {} <Information> StatusFile: Status file ./status already exists - unclean restart. Contents:
+PID: 8510
+Started at: 2019-01-11 15:24:23
+Revision: 54413
+
+2019.01.11 15:25:11.156673 [ 1 ] {} <Error> Application: DB::Exception: Cannot lock file ./status. Another server instance in same directory is already running.
+2019.01.11 15:25:11.156682 [ 1 ] {} <Information> Application: shutting down
+2019.01.11 15:25:11.156686 [ 1 ] {} <Debug> Application: Uninitializing subsystem: Logging Subsystem
+2019.01.11 15:25:11.156716 [ 2 ] {} <Information> BaseDaemon: Stop SignalListener thread
+```
+
+<div id="see-systemd-logs">
+  #### Consultez les logs system.d
+</div>
+
+Si vous ne trouvez aucune information utile dans les logs de `clickhouse-server`, ou s&#39;il n&#39;y a aucun log, vous pouvez consulter les logs de `system.d` à l&#39;aide de la commande :
+
+```shell
+sudo journalctl -u clickhouse-server
+```
+
+<div id="start-clickhouse-server-in-interactive-mode">
+  #### Démarrer clickhouse-server en mode interactif
+</div>
+
+```shell
+sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-server/config.xml
+```
+
+Cette commande démarre le serveur en mode interactif avec les paramètres standard du script de démarrage automatique. Dans ce mode, `clickhouse-server` affiche tous les messages d’événement dans la console.
+
+<div id="configuration-parameters">
+  ### Paramètres de configuration
+</div>
+
+Vérifiez :
+
+1. Paramètres Docker :
+
+   * Si vous exécutez ClickHouse dans Docker sur un réseau IPv6, assurez-vous que `network=host` est défini.
+
+2. Paramètres de l&#39;endpoint.
+   * Vérifiez les paramètres [listen&#95;host](/fr/reference/settings/server-settings/settings#listen_host) et [tcp&#95;port](/fr/reference/settings/server-settings/settings#tcp_port).
+   * Par défaut, le serveur ClickHouse n&#39;accepte que les connexions localhost.
+
+3. Paramètres du protocole HTTP :
+
+   * Vérifiez les paramètres du protocole pour l&#39;API HTTP.
+
+4. Paramètres de connexion sécurisée.
+
+   * Vérifiez :
+     * Le paramètre [tcp&#95;port&#95;secure](/fr/reference/settings/server-settings/settings#tcp_port_secure).
+     * Les paramètres des [certificats SSL](/fr/reference/settings/server-settings/settings#openssl).
+   * Utilisez les paramètres appropriés lors de la connexion. Par exemple, utilisez le paramètre `port_secure` avec `clickhouse_client`.
+
+5. Paramètres utilisateur :
+
+   * Il se peut que vous utilisiez un nom d&#39;utilisateur ou un mot de passe incorrect.
+
+<div id="query-processing">
+  ## Traitement des requêtes
+</div>
+
+Si ClickHouse ne peut pas traiter la requête, il envoie une description de l&#39;erreur au client. Dans `clickhouse-client`, la description de l&#39;erreur s&#39;affiche dans la console. Si vous utilisez l&#39;interface HTTP, ClickHouse envoie la description de l&#39;erreur dans le corps de la réponse. Par exemple :
+
+```shell
+$ curl 'http://localhost:8123/' --data-binary "SELECT a"
+Code: 47, e.displayText() = DB::Exception: Unknown identifier: a. Note that there are no tables (FROM clause) in your query, context: required_names: 'a' source_tables: table_aliases: private_aliases: column_aliases: public_columns: 'a' masked_columns: array_join_columns: source_columns: , e.what() = DB::Exception
+```
+
+Si vous démarrez `clickhouse-client` avec le paramètre `stack-trace`, ClickHouse renvoie la stack trace du serveur accompagnée de la description d&#39;une erreur.
+
+Il se peut qu&#39;un message signale une connexion interrompue. Dans ce cas, vous pouvez relancer la requête. Si la connexion s&#39;interrompt chaque fois que vous exécutez la requête, vérifiez les logs du serveur pour y rechercher des erreurs.
+
+<div id="efficiency-of-query-processing">
+  ## Efficacité du traitement des requêtes
+</div>
+
+Si vous constatez que ClickHouse fonctionne trop lentement, vous devez analyser la charge que vos requêtes font peser sur les ressources du serveur et sur le réseau.
+
+Vous pouvez utiliser l’utilitaire `clickhouse-benchmark` pour analyser les requêtes. Il affiche le nombre de requêtes traitées par seconde, le nombre de lignes traitées par seconde et les percentiles des temps d’exécution des requêtes.

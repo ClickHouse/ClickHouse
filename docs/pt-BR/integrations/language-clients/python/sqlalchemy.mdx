@@ -1,0 +1,149 @@
+---
+sidebarTitle: 'SQLAlchemy'
+keywords: ['clickhouse', 'python', 'sqlalchemy', 'integrate']
+description: 'Suporte do ClickHouse ao SQLAlchemy'
+slug: /integrations/language-clients/python/sqlalchemy
+title: 'Suporte ao SQLAlchemy'
+doc_type: 'reference'
+---
+
+O ClickHouse Connect inclui um dialeto SQLAlchemy (`clickhousedb`) baseado no driver principal. Ele é voltado para as APIs Core do SQLAlchemy e oferece suporte ao SQLAlchemy 1.4.40+ e 2.0.x.
+
+<div id="sqlalchemy-connect">
+  ## Conecte-se com SQLAlchemy
+</div>
+
+Crie um engine usando URLs `clickhousedb://` ou `clickhousedb+connect://`. Os parâmetros de consulta correspondem a configurações do ClickHouse, opções do cliente e opções de transporte HTTP/TLS.
+
+```python
+from sqlalchemy import create_engine, text
+
+engine = create_engine(
+    "clickhousedb://user:password@host:8123/mydb?compression=zstd"
+)
+
+with engine.begin() as conn:
+    rows = conn.execute(text("SELECT version()"))
+    print(rows.scalar())
+```
+
+Observações sobre parâmetros de URL/consulta:
+
+* Configurações do ClickHouse: passe como parâmetros de consulta (por exemplo, `use_skip_indexes=0`).
+* Opções do cliente: `compression` (alias para `compress`), `query_limit`, timeouts e muito mais.
+* Opções de HTTP/TLS: opções para o pool HTTP e TLS (por exemplo, `ch_http_max_field_name_size=99999`, `ca_cert=certifi`).
+
+Consulte [Argumentos de conexão e Configurações](/pt-BR/integrations/language-clients/python/driver-api#connection-arguments) nas seções abaixo para ver a lista completa de opções suportadas. Elas também podem ser fornecidas por meio do DSN do SQLAlchemy.
+
+<div id="sqlalchemy-core-queries">
+  ## Consultas do Core
+</div>
+
+O dialeto oferece suporte a consultas `SELECT` do SQLAlchemy Core com junções, filtros, ordenação, cláusulas `LIMIT`/`OFFSET` e `DISTINCT`.
+
+```python
+from sqlalchemy import MetaData, Table, select
+
+metadata = MetaData(schema="mydb")
+users = Table("users", metadata, autoload_with=engine)
+orders = Table("orders", metadata, autoload_with=engine)
+
+# SELECT básico
+with engine.begin() as conn:
+    rows = conn.execute(select(users.c.id, users.c.name).order_by(users.c.id).limit(10)).fetchall()
+
+# JOINs (INNER/LEFT OUTER/FULL OUTER/CROSS)
+with engine.begin() as conn:
+    stmt = (
+        select(users.c.name, orders.c.product)
+        .select_from(users.join(orders, users.c.id == orders.c.user_id))
+    )
+    rows = conn.execute(stmt).fetchall()
+```
+
+Há suporte a Lightweight `DELETE` com uma cláusula `WHERE` obrigatória:
+
+```python
+from sqlalchemy import delete
+
+with engine.begin() as conn:
+    conn.execute(delete(users).where(users.c.name.like("%temp%")))
+```
+
+<div id="sqlalchemy-ddl-reflection">
+  ## DDL e reflexão
+</div>
+
+Você pode criar bancos de dados e tabelas usando os auxiliares de DDL fornecidos e os construtos de tipo/engine. Há suporte à reflexão de tabelas (incluindo tipos de coluna e engine).
+
+```python
+import sqlalchemy as db
+from sqlalchemy import MetaData
+from clickhouse_connect.cc_sqlalchemy.ddl.custom import CreateDatabase, DropDatabase
+from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import MergeTree
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import UInt32, String, DateTime64
+
+with engine.begin() as conn:
+    # Bancos de dados
+    conn.execute(CreateDatabase("example_db", exists_ok=True))
+
+    # Tabelas
+    metadata = MetaData(schema="example_db")
+    table = db.Table(
+        "events",
+        metadata,
+        db.Column("id", UInt32, primary_key=True),
+        db.Column("user", String),
+        db.Column("created_at", DateTime64(3)),
+        MergeTree(order_by="id"),
+    )
+    table.create(conn)
+
+    # Reflexão
+    reflected = db.Table("events", metadata, autoload_with=engine)
+    assert reflected.engine is not None
+```
+
+As colunas refletidas incluem atributos específicos do dialeto, como `clickhousedb_default_type`, `clickhousedb_codec_expression` e `clickhousedb_ttl_expression`, quando estiverem presentes no servidor.
+
+<div id="sqlalchemy-inserts">
+  ## Inserções (Core e ORM básico)
+</div>
+
+As inserções funcionam tanto com o SQLAlchemy Core quanto com modelos ORM simples, para maior praticidade.
+
+```python
+# Insert principal
+with engine.begin() as conn:
+    conn.execute(table.insert().values(id=1, user="joe"))
+
+# Insert básico com ORM
+from sqlalchemy.orm import declarative_base, Session
+
+Base = declarative_base(metadata=MetaData(schema="example_db"))
+
+class User(Base):
+    __tablename__ = "users"
+    __table_args__ = (MergeTree(order_by=["id"]),)
+    id = db.Column(UInt32, primary_key=True)
+    name = db.Column(String)
+
+Base.metadata.create_all(engine)
+
+with Session(engine) as session:
+    session.add(User(id=1, name="Alice"))
+    session.bulk_save_objects([User(id=2, name="Bob")])
+    session.commit()
+```
+
+<div id="scope-and-limitations">
+  ## Escopo e limitações
+</div>
+
+* Foco principal: habilitar recursos do SQLAlchemy Core, como `SELECT` com `JOIN`s (`INNER`, `LEFT OUTER`, `FULL OUTER`, `CROSS`), `WHERE`, `ORDER BY`, `LIMIT`/`OFFSET` e `DISTINCT`.
+* `DELETE` apenas com `WHERE`: o dialeto oferece suporte a lightweight `DELETE`, mas exige uma cláusula `WHERE` explícita para evitar exclusões acidentais de toda a tabela. Para limpar uma tabela, use `TRUNCATE TABLE`.
+* Sem `UPDATE`: o ClickHouse é otimizado para inserções. O dialeto não implementa `UPDATE`. Se você precisar alterar dados, aplique as transformações antes e reinsira os dados, ou use SQL textual explícito (por exemplo, `ALTER TABLE ... UPDATE`) por sua conta e risco.
+* DDL e reflexão: há suporte para criar bancos de dados e tabelas, e a reflexão retorna tipos de coluna e metadados de motores de tabela. Metadados tradicionais de PK/FK/índice não estão disponíveis, porque o ClickHouse não aplica essas restrições.
+* Escopo do ORM: modelos declarativos e inserções via `Session.add(...)`/`bulk_save_objects(...)` funcionam por conveniência. Recursos avançados do ORM (gerenciamento de relacionamentos, atualizações de unidade de trabalho, operações em cascata, semântica de carregamento eager/lazy) não são compatíveis.
+* Semântica de chave primária: `Column(..., primary_key=True)` é usado pelo SQLAlchemy apenas para identidade de objeto. Isso não cria uma restrição no servidor no ClickHouse. Defina `ORDER BY` (e `PRIMARY KEY`, se desejado) por meio de motores de tabela (por exemplo, `MergeTree(order_by=...)`).
+* Transações e recursos do servidor: transações em duas fases, sequências, `RETURNING` e níveis avançados de isolamento não são compatíveis. `engine.begin()` fornece um gerenciador de contexto do Python para agrupar instruções, mas não executa nenhum controle transacional real (`commit`/rollback não têm efeito).

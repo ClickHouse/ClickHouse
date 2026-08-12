@@ -17,7 +17,7 @@ namespace
         ostr << " RENAME TO " << quoteString(new_name);
     }
 
-    void formatAuthenticationData(const std::vector<std::shared_ptr<ASTAuthenticationData>> & authentication_methods, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    void formatAuthenticationData(const std::vector<boost::intrusive_ptr<ASTAuthenticationData>> & authentication_methods, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
         // safe because this method is only called if authentication_methods.size > 1
         // if the first type is present, include the `WITH` keyword
@@ -138,6 +138,12 @@ namespace
     }
 
 
+    void formatRoles(const ASTRolesOrUsersSet & roles, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    {
+        ostr << " ROLE ";
+        roles.format(ostr, settings);
+    }
+
     void formatDefaultRoles(const ASTRolesOrUsersSet & default_roles, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
         ostr << " DEFAULT ROLE ";
@@ -178,31 +184,34 @@ String ASTCreateUserQuery::getID(char) const
 
 ASTPtr ASTCreateUserQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateUserQuery>(*this);
+    auto res = make_intrusive<ASTCreateUserQuery>(*this);
     res->children.clear();
     res->authentication_methods.clear();
 
     if (names)
-        res->names = std::static_pointer_cast<ASTUserNamesWithHost>(names->clone());
+        res->names = boost::static_pointer_cast<ASTUserNamesWithHost>(names->clone());
+
+    if (roles)
+        res->roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
 
     if (default_roles)
-        res->default_roles = std::static_pointer_cast<ASTRolesOrUsersSet>(default_roles->clone());
+        res->default_roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(default_roles->clone());
 
     if (default_database)
-        res->default_database = std::static_pointer_cast<ASTDatabaseOrNone>(default_database->clone());
+        res->default_database = boost::static_pointer_cast<ASTDatabaseOrNone>(default_database->clone());
 
     if (grantees)
-        res->grantees = std::static_pointer_cast<ASTRolesOrUsersSet>(grantees->clone());
+        res->grantees = boost::static_pointer_cast<ASTRolesOrUsersSet>(grantees->clone());
 
     if (settings)
-        res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
+        res->settings = boost::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
 
     if (alter_settings)
-        res->alter_settings = std::static_pointer_cast<ASTAlterSettingsProfileElements>(alter_settings->clone());
+        res->alter_settings = boost::static_pointer_cast<ASTAlterSettingsProfileElements>(alter_settings->clone());
 
     for (const auto & authentication_method : authentication_methods)
     {
-        auto ast_clone = std::static_pointer_cast<ASTAuthenticationData>(authentication_method->clone());
+        auto ast_clone = boost::static_pointer_cast<ASTAuthenticationData>(authentication_method->clone());
         res->authentication_methods.push_back(ast_clone);
         res->children.push_back(ast_clone);
     }
@@ -236,13 +245,7 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
     if (new_name)
         formatRenameTo(*new_name, ostr, format);
 
-    if (authentication_methods.empty())
-    {
-        // If identification (auth method) is missing from query, we should serialize it in the form of `NO_PASSWORD` unless it is alter query
-        if (!alter)
-            ostr << " IDENTIFIED WITH no_password";
-    }
-    else
+    if (!authentication_methods.empty())
     {
         if (add_identified_with)
             ostr << " ADD";
@@ -263,6 +266,9 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
 
     if (default_database)
         formatDefaultDatabase(*default_database, ostr, format);
+
+    if (roles)
+        formatRoles(*roles, ostr, format);
 
     if (default_roles)
         formatDefaultRoles(*default_roles, ostr, format);

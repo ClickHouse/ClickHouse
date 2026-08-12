@@ -1,14 +1,19 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Core/Settings.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <base/scope_guard.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 
 namespace DB
 {
@@ -38,10 +43,15 @@ ReadFromFormatInfo prepareReadingFromFormat(
     Strings columns_to_read;
     for (const auto & column_name : requested_columns)
     {
-        if (auto virtual_column = storage_snapshot->virtual_columns->tryGet(column_name))
+        if (auto virtual_column = storage_snapshot->metadata->virtuals.tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
+        {
             info.requested_virtual_columns.emplace_back(std::move(*virtual_column));
-        else if (auto it = hive_parameters.hive_partition_columns_to_read_from_file_path_map.find(column_name); it != hive_parameters.hive_partition_columns_to_read_from_file_path_map.end())
+        }
+        else if (auto it = hive_parameters.hive_partition_columns_to_read_from_file_path_map.find(column_name);
+                 it != hive_parameters.hive_partition_columns_to_read_from_file_path_map.end())
+        {
             info.hive_partition_columns_to_read_from_file_path.emplace_back(it->first, it->second);
+        }
         else
             columns_to_read.push_back(column_name);
     }
@@ -66,12 +76,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
         {
             columns_to_read = filterTupleColumnsToRead(info.requested_columns);
         }
-        else if (columns_to_read.empty())
-        {
-            /// If only virtual columns were requested, just read the smallest column.
-            columns_to_read.push_back(ExpressionActions::getSmallestColumn(columns_in_data_file).name);
-        }
-        else
+        else if (!columns_to_read.empty())
         {
             /// We need to replace all subcolumns with their nested columns (e.g `a.b`, `a.b.c`, `x.y` -> `a`, `x`),
             /// because most formats cannot extract subcolumns on their own.
@@ -89,6 +94,12 @@ ReadFromFormatInfo prepareReadingFromFormat(
                 }
             }
             columns_to_read = std::move(new_columns_to_read);
+        }
+
+        /// If only virtual columns were requested, just read the smallest column.
+        if (columns_to_read.empty())
+        {
+            columns_to_read.push_back(ExpressionActions::getSmallestColumn(columns_in_data_file).name);
         }
 
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
@@ -253,21 +264,35 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
 
 ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info)
 {
-    chassert(prewhere_info);
+    chassert(prewhere_info || row_level_filter);
 
-    if (info.prewhere_info || info.row_level_filter)
+    if (info.prewhere_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "updateFormatPrewhereInfo called more than once");
 
     ReadFromFormatInfo new_info;
     new_info.prewhere_info = prewhere_info;
+    new_info.row_level_filter = row_level_filter;
 
     /// Removes columns that are only used as prewhere input.
-    /// Adds prewhere result column if !remove_prewhere_column.
-    new_info.format_header = SourceStepWithFilter::applyPrewhereActions(info.format_header, row_level_filter, prewhere_info);
+    /// Adds prewhere outputs (the actual prewhere filter column is only added if
+    /// !remove_prewhere_column; but there may also be subexpressions computed by prewhere
+    /// expression and preserved for use further down the query pipeline).
+    /// If row_level_filter was already applied in a previous call, don't re-apply it;
+    /// only apply the new prewhere_info on top.
+    new_info.format_header = SourceStepWithFilter::applyPrewhereActions(
+        info.format_header, info.row_level_filter ? nullptr : row_level_filter, prewhere_info);
 
     /// We assume that any format that supports prewhere also supports subset of subcolumns, so we
     /// don't need to replace subcolumns with their nested columns etc.
     new_info.source_header = new_info.format_header;
+
+    /// Hive partition columns come from the file path, not the data file, so prewhere column
+    /// pruning above does not concern them. Carry them over and keep their position before the
+    /// virtual columns (as in prepareReadingFromFormat), otherwise the source skips appending them
+    /// to the chunk and selecting a hive column while filtering a real one fails.
+    new_info.hive_partition_columns_to_read_from_file_path = info.hive_partition_columns_to_read_from_file_path;
+    for (const auto & column_from_file_path : new_info.hive_partition_columns_to_read_from_file_path)
+        new_info.source_header.insert({column_from_file_path.type->createColumn(), column_from_file_path.type, column_from_file_path.name});
 
     new_info.requested_virtual_columns = info.requested_virtual_columns;
     for (const auto & requested_virtual_column : new_info.requested_virtual_columns)
@@ -278,12 +303,12 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
         new_info.requested_columns.emplace_back(col.name, col.type);
         if (info.format_header.has(col.name))
         {
+            /// Column read from file.
             new_info.columns_description.add(info.columns_description.get(col.name));
         }
         else
         {
-            chassert(col.name == prewhere_info->prewhere_column_name);
-            chassert(!prewhere_info->remove_prewhere_column);
+            /// Column produced by prewhere expression.
             new_info.columns_description.add(ColumnDescription(col.name, col.type));
         }
     }
@@ -304,8 +329,9 @@ SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMet
     if (!storage_ptr)
         return SerializationInfoByName{{}};
 
+    const auto storage_metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(context, false);
     const auto & our_columns = metadata_snapshot->getColumns();
-    const auto & storage_columns = storage_ptr->getInMemoryMetadataPtr()->getColumns();
+    const auto & storage_columns = storage_metadata_snapshot->getColumns();
     auto storage_hints = storage_ptr->getSerializationHints();
     SerializationInfoByName res({});
 
@@ -369,7 +395,7 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     ctx.in >> "\n";
 
     result.hive_partition_columns_to_read_from_file_path.readTextWithNamesInStorage(ctx.in);
-    bool has_prewhere_info;
+    bool has_prewhere_info = false;
     readBinary(has_prewhere_info, ctx.in);
     if (has_prewhere_info)
         result.prewhere_info = std::make_shared<PrewhereInfo>(PrewhereInfo::deserialize(ctx));
@@ -377,6 +403,45 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     ctx.in >> "\n";
 
     return result;
+}
+
+Block buildAllowedFilterInputs(
+    const StorageSnapshotPtr & storage_snapshot,
+    const Block & source_header,
+    const PrewhereInfoPtr & prewhere_info,
+    const FilterDAGInfoPtr & row_level_filter)
+{
+    Block base = storage_snapshot->metadata->getSampleBlock();
+    for (const auto & col : source_header)
+        if (!base.has(col.name))
+            base.insert(col);
+    return FormatFilterInfo::buildKeyConditionInputs(std::move(base), prewhere_info, row_level_filter);
+}
+
+void prepareEagerKeyConditionSets(
+    const std::shared_ptr<const ActionsDAG> & filter_actions_dag,
+    const StorageSnapshotPtr & storage_snapshot,
+    const Block & source_header,
+    const PrewhereInfoPtr & prewhere_info,
+    const FilterDAGInfoPtr & row_level_filter,
+    const ContextPtr & context)
+{
+    if (!filter_actions_dag)
+        return;
+
+    auto allowed_inputs = buildAllowedFilterInputs(
+        storage_snapshot, source_header, prewhere_info, row_level_filter);
+    if (auto split = VirtualColumnUtils::splitFilterDagForAllowedInputs(
+            filter_actions_dag->getOutputs().at(0), &allowed_inputs, context,
+            /*allow_partial_result=*/ true))
+        VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(*split, context);
+}
+
+size_t clampClusterFunctionNumStreams(UInt64 num_streams)
+{
+    /// 256 * cores is the ceiling max_threads gets in Context::setSetting; reuse it so a *Cluster
+    /// read step never reserves/resizes a pipe vector for a pathological user-supplied value.
+    return std::min<UInt64>(num_streams, 256 * getNumberOfCPUCoresToUse());
 }
 
 }

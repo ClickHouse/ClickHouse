@@ -1,7 +1,8 @@
 import dataclasses
 import os
-from typing import List
+from typing import Dict, List
 
+from .settings import Settings
 from .utils import Shell, Utils
 
 
@@ -17,6 +18,10 @@ class Docker:
         path: str
         depends_on: List[str]
         platforms: List[str]
+        # Extra `--build-arg NAME=VALUE` passed to `docker buildx build` for this
+        # image (e.g. apt_archive / apt_ports_archive to point apt at an in-region
+        # mirror). Images that don't declare the arg silently ignore it.
+        build_args: Dict[str, str] = dataclasses.field(default_factory=dict)
 
     @classmethod
     def build(
@@ -41,7 +46,13 @@ class Docker:
         print(
             f"Docker inspect results for {config.name}:{tag}: exit code [{code}], out [{out}], err [{err}]"
         )
-        if "no such manifest" in err:
+        # A successful inspect is the only evidence that the image is already there.
+        # A missing tag in an existing repository reports "no such manifest", but the
+        # first ever build of a new image reports "denied: requested access to the
+        # resource is denied" instead, because the repository itself does not exist
+        # yet - and treating that as "image exists" leaves the manifest merge with
+        # nothing to merge.
+        if code != 0:
             tags_substr = f" -t {config.name}:{tag}"
 
             from_tag = ""
@@ -59,7 +70,22 @@ class Docker:
                     continue
                 platforms.append(platform)
 
-            command = f"docker buildx build --builder default {tags_substr} {from_tag} --platform {','.join(platforms)} --cache-to type=inline --cache-from type=registry,ref={config.name} {config.path} {'' if disable_push else ' --push'}"
+            build_args = "".join(
+                f" --build-arg {name}={value}"
+                for name, value in config.build_args.items()
+            )
+
+            if disable_push:
+                push_out = ""
+            else:
+                push_out = (
+                    " --output type=image,push=true"
+                    f",compression={Settings.DOCKER_LAYER_COMPRESSION}"
+                    f",compression-level={Settings.DOCKER_LAYER_COMPRESSION_LEVEL}"
+                    ",force-compression=true"
+                )
+
+            command = f"docker buildx build {tags_substr} {from_tag}{build_args} --platform {','.join(platforms)} --provenance=mode=max --sbom=true {config.path}{push_out}"
 
             return Result.from_commands_run(
                 name=name,
@@ -94,19 +120,20 @@ class Docker:
             else:
                 assert f"Not supported platform [{platform}]"
 
+        # Use imagetools create instead of manifest create/push: when images are
+        # built with --sbom=true --provenance=mode=max, buildx produces OCI image
+        # indices (not plain manifests), which docker manifest create cannot handle.
+        # imagetools create works correctly with both plain manifests and indices,
+        # preserving attestation manifests in the merged result.
+        src_refs = " ".join(f"{config.name}:{t}" for t in tags[1:])
         commands = [
-            "docker manifest create --amend "
-            + " ".join(f"{config.name}:{t}" for t in tags)
+            f"docker buildx imagetools create --tag {config.name}:{digests[config.name]} {src_refs}"
         ]
-        commands.append(f"docker manifest push {config.name}:{digests[config.name]}")
 
         if add_latest:
-            tags[0] = "latest"
-            commands += [
-                "docker manifest create --amend "
-                + " ".join(f"{config.name}:{t}" for t in tags)
-            ]
-            commands.append(f"docker manifest push {config.name}:latest")
+            commands.append(
+                f"docker buildx imagetools create --tag {config.name}:latest {src_refs}"
+            )
 
         return Result.from_commands_run(
             name=f"merge: {config.name}:{digests[config.name]} (latest={add_latest})",

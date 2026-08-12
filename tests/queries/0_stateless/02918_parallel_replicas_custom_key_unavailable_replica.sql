@@ -4,6 +4,7 @@ CREATE TABLE 02918_parallel_replicas (x String, y Int32) ENGINE = MergeTree ORDE
 
 INSERT INTO 02918_parallel_replicas SELECT toString(number), number % 4 FROM numbers(1000);
 
+SET automatic_parallel_replicas_mode = 0;
 SET prefer_localhost_replica=0;
 
 --- if we try to query unavaialble replica, connection will be retried

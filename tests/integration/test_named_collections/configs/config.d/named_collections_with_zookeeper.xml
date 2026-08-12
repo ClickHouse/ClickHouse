@@ -10,6 +10,8 @@
     </collection1>
   </named_collections>
 
+  <display_secrets_in_show_and_select>1</display_secrets_in_show_and_select>
+
   <remote_servers>
       <replicated_nc_nodes_cluster>
           <shard>

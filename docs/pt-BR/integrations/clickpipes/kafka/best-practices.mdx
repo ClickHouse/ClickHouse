@@ -1,0 +1,182 @@
+---
+sidebarTitle: 'Boas práticas'
+description: 'Detalha as boas práticas a seguir ao trabalhar com ClickPipes do Kafka.'
+slug: /integrations/clickpipes/kafka/best-practices
+title: 'Boas práticas'
+doc_type: 'guide'
+keywords: ['boas práticas do Kafka', 'ClickPipes', 'compressão', 'autenticação', 'dimensionamento']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<div id="compression">
+  ## Compressão de mensagens
+</div>
+
+Recomendamos fortemente o uso de compressão nos seus tópicos do Kafka. A compressão pode gerar uma economia significativa nos custos de transferência de dados, com praticamente nenhum impacto no desempenho.
+Para saber mais sobre compressão de mensagens no Kafka, recomendamos começar por este [guia](https://www.confluent.io/blog/apache-kafka-message-compression/).
+
+<div id="limitations">
+  ## Limitações
+</div>
+
+* [`DEFAULT`](/pt-BR/reference/statements/create/table#default) não é suportado.
+* As mensagens individuais são limitadas, por padrão, a 16 MB (sem compactação) ao usar o menor tamanho de réplica (XS), e a 32 MB (sem compactação) com réplicas maiores.  As mensagens que excederem esse limite serão rejeitadas com erro.  Se precisar de mensagens maiores, entre em contato com o suporte.
+
+<div id="delivery-semantics">
+  ## Semântica de entrega
+</div>
+
+O ClickPipes do Kafka oferece semântica de entrega `at-least-once` (uma das abordagens mais usadas). Gostaríamos muito de receber seu feedback sobre a semântica de entrega no [formulário de contato](https://clickhouse.com/company/contact?loc=clickpipes). Se você precisar de semântica `exactly-once`, recomendamos usar nosso sink oficial [`clickhouse-kafka-connect`](https://clickhouse.com/blog/real-time-event-streaming-with-kafka-connect-confluent-cloud-clickhouse).
+
+<div id="authentication">
+  ## Autenticação
+</div>
+
+Para fontes de dados do protocolo Apache Kafka, o ClickPipes oferece suporte à autenticação [SASL/PLAIN](https://docs.confluent.io/platform/current/kafka/authentication_sasl/authentication_sasl_plain.html) com criptografia TLS, bem como a `SASL/SCRAM-SHA-256` e `SASL/SCRAM-SHA-512`. Dependendo da fonte de streaming (Redpanda, MSK etc.), todos ou apenas alguns desses mecanismos de autenticação serão habilitados, conforme a compatibilidade. Se suas necessidades de autenticação forem diferentes, [envie seu feedback](https://clickhouse.com/company/contact?loc=clickpipes).
+
+<div id="warpstream-settings">
+  ## Tamanho de fetch do Warpstream
+</div>
+
+O ClickPipes usa a configuração do Kafka `max.fetch_bytes` para limitar o volume de dados processados por um único nó do ClickPipes em um dado momento. Em algumas situações,
+o Warpstream não respeita essa configuração, o que pode causar falhas inesperadas nos pipes. Recomendamos fortemente definir a configuração específica do Warpstream `kafkaMaxFetchPartitionBytesUncompressedOverride`
+como 8MB (ou menos) ao configurar seu agent do WarpStream para evitar falhas no ClickPipes.
+
+<div id="iam">
+  ### IAM
+</div>
+
+O ClickPipes oferece suporte aos seguintes tipos de autenticação do AWS MSK:
+
+* autenticação [SASL/SCRAM-SHA-512](https://docs.aws.amazon.com/msk/latest/developerguide/msk-password.html)
+* autenticação com [credenciais do IAM ou acesso baseado em função](https://docs.aws.amazon.com/msk/latest/developerguide/how-to-use-iam-access-control.html)
+
+Ao usar a autenticação do IAM para se conectar a um broker do MSK, a role do IAM deve ter as permissões necessárias.
+Abaixo está um exemplo da política de IAM necessária para as APIs do Apache Kafka no MSK:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:Connect"
+            ],
+            "Resource": [
+                "arn:aws:kafka:us-west-2:12345678912:cluster/clickpipes-testing-brokers/b194d5ae-5013-4b5b-ad27-3ca9f56299c9-10"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:DescribeTopic",
+                "kafka-cluster:ReadData"
+            ],
+            "Resource": [
+                "arn:aws:kafka:us-west-2:12345678912:topic/clickpipes-testing-brokers/*"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:AlterGroup",
+                "kafka-cluster:DescribeGroup"
+            ],
+            "Resource": [
+                "arn:aws:kafka:us-east-1:12345678912:group/clickpipes-testing-brokers/*"
+            ]
+        }
+    ]
+}
+```
+
+<div id="configuring-a-trusted-relationship">
+  #### Configurando uma relação de confiança
+</div>
+
+Se você estiver se autenticando no MSK com um ARN de uma função do IAM, precisará adicionar uma relação de confiança à sua instância do ClickHouse Cloud para que a função possa ser assumida.
+
+<Note>
+  O acesso baseado em função só funciona para instâncias do ClickHouse Cloud implantadas na AWS.
+</Note>
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        ...
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::12345678912:role/CH-S3-your-clickhouse-cloud-role"
+            },
+            "Action": "sts:AssumeRole"
+        }
+    ]
+}
+```
+
+<div id="custom-certificates">
+  ### Certificados personalizados
+</div>
+
+O ClickPipes do Kafka oferece suporte ao upload de certificados personalizados para brokers do Kafka que usam certificados de servidor não públicos.
+Também há suporte ao upload de certificados e chaves de cliente para autenticação baseada em TLS mútuo (mTLS).
+
+<div id="performance">
+  ## Desempenho
+</div>
+
+<div id="batching">
+  ### Processamento em lotes
+</div>
+
+O ClickPipes insere dados no ClickHouse em lotes. Isso evita a criação de partes em excesso no banco de dados, o que pode causar problemas de desempenho no cluster.
+
+Os lotes são inseridos quando um dos seguintes critérios é atendido:
+
+* O tamanho do lote atingiu o máximo (100.000 linhas ou 28 MB por 1 GB de memória do pod do Kubernetes)
+* O lote permaneceu aberto pelo tempo máximo (5 segundos)
+
+<div id="latency">
+  ### Latência
+</div>
+
+A latência (definida como o tempo entre a produção da mensagem no Kafka e sua disponibilização no ClickHouse) dependerá de vários fatores (por exemplo, latência do broker, latência da rede e tamanho/formato da mensagem). O [processamento em lotes](#batching) descrito na seção acima também afetará a latência. Recomendamos sempre testar seu caso de uso específico com cargas típicas para determinar a latência esperada.
+
+O ClickPipes não oferece garantias em relação à latência. Se você tiver requisitos específicos de baixa latência, [entre em contato conosco](https://clickhouse.com/company/contact?loc=clickpipes).
+
+<div id="scaling">
+  ### Escalonamento
+</div>
+
+O ClickPipes do Kafka foi projetado para escalar horizontal e verticalmente. Por padrão, criamos um grupo de consumidores com um consumidor. Isso pode ser configurado durante a criação do ClickPipe ou a qualquer momento em **Configurações** -&gt; **Configurações avançadas** -&gt; **Escalonamento**.
+
+O ClickPipes oferece alta disponibilidade com uma arquitetura distribuída entre zonas de disponibilidade.
+Isso exige o escalonamento para pelo menos dois consumidores.
+
+Independentemente do número de consumidores em execução, a tolerância a falhas é nativa.
+Se um consumidor ou a infraestrutura subjacente falhar,
+o ClickPipe reiniciará automaticamente o consumidor e continuará processando mensagens.
+
+<div id="benchmarks">
+  ### Benchmarks
+</div>
+
+Abaixo estão alguns benchmarks informais do ClickPipes do Kafka que podem ser usados para ter uma ideia geral do desempenho de referência. É importante saber que muitos fatores podem afetar o desempenho, incluindo o tamanho das mensagens, os tipos de dados e o formato dos dados. Os resultados podem variar, e o que mostramos aqui não garante o desempenho real.
+
+Detalhes do benchmark:
+
+* Usamos serviços de produção do ClickHouse Cloud com recursos suficientes para garantir que a vazão não fosse limitada pelo processamento de insert no ClickHouse.
+* O serviço do ClickHouse Cloud, o cluster Kafka (Confluent Cloud) e o ClickPipe estavam todos em execução na mesma região (`us-east-2`).
+* O ClickPipe foi configurado com uma única réplica de tamanho L (4 GiB de RAM e 1 vCPU).
+* Os dados de exemplo incluíam dados aninhados com uma combinação de tipos de dados `UUID`, `String` e `Int`. Outros tipos de dados, como `Float`, `Decimal` e `DateTime`, podem ter desempenho inferior.
+* Não houve diferença perceptível de desempenho entre o uso de dados compactados e não compactados.
+
+| Tamanho da réplica | Tamanho da mensagem | Formato dos dados | Vazão  |
+| ------------------ | ------------------- | ----------------- | ------ |
+| Grande (L)         | 1.6kb               | JSON              | 63mb/s |
+| Grande (L)         | 1.6kb               | Avro              | 99mb/s |

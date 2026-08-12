@@ -1,0 +1,239 @@
+---
+noindex: true
+title: "변경 이력"
+---
+
+***
+
+<div id="airgap-2026-06-09">
+  ## airgap-2026-06-09
+</div>
+
+<div id="component-versions">
+  ### 구성 요소 버전
+</div>
+
+| 구성 요소                          | 버전             |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.2.1.258     |
+| clickhouse-operator            | main-1.18587.1 |
+| helm/clickhouse-operator-helm  | 1.18587.1      |
+| helm/onprem-clickhouse-cluster | 1.1.311        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.31.0         |
+| helm/support-bundle            | 1.11.0         |
+
+<div id="new-features">
+  ### 새 기능
+</div>
+
+* feat(airgap): plainRewritableDiskForSystemTables flag 노출 (#35033)
+* feat(operator): arm64 빌드 추가 (#34389)
+* feat(preflight): 캐시 비율 점검 추가 [AIR-127] (#34709)
+* feat(airgap): Shared Catalog 마이그레이션 사전 점검 추가 (#34708)
+* feat(onprem): 네임스페이스당 ClickHouseCluster를 1개로 제한하는 ResourceQuota 추가 (#34615)
+
+<div id="bug-fixes">
+  ### 버그 수정
+</div>
+
+* fix(airgap): 클러스터 설치 전에 CRD가 준비될 때까지 대기하도록 수정 (#34834)
+* fix(onprem): Hydra 자식 항목에 대해 Keeper 레플리카 0개를 허용 (#34693)
+* fix(operator): 푸시된 fips 빌드에 올바른 빌드 인수가 누락되던 문제 수정 (#34600)
+* fix(onprem-clickhouse-cluster): 사용 중단 예정 기능 플래그를 operator가 기대하는 기본값으로 고정 (#34417)
+
+***
+
+<div id="airgap-2026-05-28">
+  ## airgap-2026-05-28
+</div>
+
+<div id="component-versions">
+  ### 구성 요소 버전
+</div>
+
+| 구성 요소                          | 버전             |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.2.1.258     |
+| clickhouse-operator            | main-1.18587.1 |
+| helm/clickhouse-operator-helm  | 1.18587.1      |
+| helm/onprem-clickhouse-cluster | 1.1.298        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.31.0         |
+| helm/support-bundle            | 1.11.0         |
+
+***
+
+<div id="airgap-2026-05-27">
+  ## airgap-2026-05-27
+</div>
+
+<div id="component-versions">
+  ### 구성 요소 버전
+</div>
+
+| 컴포넌트                           | 버전             |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.2.1.258     |
+| clickhouse-operator            | main-1.18587.1 |
+| helm/clickhouse-operator-helm  | 1.18587.1      |
+| helm/onprem-clickhouse-cluster | 1.1.302        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+<div id="new-features">
+  ### 새 기능
+</div>
+
+<div id="new-features">
+  ### 새 기능
+</div>
+
+* feat(airgap): 비공개 문서에 Git SHA 추가 (#34183)
+* feat(airgap): Helm 차트에서 BackupConfiguration 지원 추가 (#33746)
+* feat(airgap): 사전 점검에 지원 중단 예정 기능 플래그 추가 (#33545)
+
+<div id="bug-fixes">
+  ### 버그 수정
+</div>
+
+* fix(docs): airgap 단일 페이지 문서 렌더링 수정 (#34288)
+* fix(airgap): 비공개 문서의 앵커 링크 수정 (#34122)
+
+***
+
+<div id="airgap-2026-05-21">
+  ## airgap-2026-05-21
+</div>
+
+<div id="component-versions">
+  ### 구성 요소 버전
+</div>
+
+| 구성 요소                          | 버전             |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.1.1.1493    |
+| clickhouse-operator            | main-1.18587.1 |
+| helm/clickhouse-operator-helm  | 1.18587.1      |
+| helm/onprem-clickhouse-cluster | 1.1.298        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+<div id="new-features">
+  ### 새 기능
+</div>
+
+* feat(clickhouse-operator): FIPS 컴플라이언스 빌드 플래그 및 런타임 지원 (#29677)
+* feat(onprem-clickhouse-cluster): onprem helm 차트의 gcp 기본 구성에 대한 지원 추가 (#33501)
+
+<div id="bug-fixes">
+  ### 버그 수정
+</div>
+
+* fix(onprem-clickhouse-cluster): enableDynamicSSDCacheConfiguration 비활성화 (#33700)
+* fix(onprem-clickhouse-cluster): 사용하지 않는 `openssl.fips` 설정 제거 (#33881))
+* fix(onprem-clickhouse-cluster): TLS가 필요한 경우 extraConfig에서 cloud.port 제거 (#33548)
+* fix(clickhouse-operator): SsdCacheConfiguration.IsOnEmptyDir를 선택 사항으로 지정 (#33570)
+
+***
+
+<div id="airgap-2026-04-23">
+  ## airgap-2026-04-23
+</div>
+
+<div id="component-versions">
+  ### 구성 요소 버전
+</div>
+
+| 구성 요소                          | 버전             |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.12.1.1497   |
+| clickhouse-keeper              | 26.1.1.1493    |
+| clickhouse-operator            | main-1.18231.1 |
+| helm/clickhouse-operator-helm  | 1.18231.1      |
+| helm/onprem-clickhouse-cluster | 1.1.260        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+<div id="bug-fixes">
+  ### 버그 수정
+</div>
+
+* fix(onprem-helm-chart): storageClass 매개변수와 allowedTopologies를 허용 (#32776)
+
+***
+
+<div id="airgap-2026-04-15">
+  ## airgap-2026-04-15
+</div>
+
+<div id="component-versions">
+  ### 구성 요소 버전
+</div>
+
+| 컴포넌트                           | 버전             |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.10.1.7525   |
+| clickhouse-keeper              | 26.1.1.1493    |
+| clickhouse-operator            | main-1.17847.1 |
+| helm/clickhouse-operator-helm  | 1.17847.1      |
+| helm/onprem-clickhouse-cluster | 1.1.245        |
+| airgap-management              | 1.165.1        |
+| helm/airgap-management         | 1.165.1        |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+<div id="new-features">
+  ### 새 기능
+</div>
+
+* feat(airgap): Shared Catalog 및 Stateless Servers가 기본값으로 활성화되도록 변경 (#32481) — [호환되지 않는 변경 사항](/ko/products/clickhouse-private/reference/breaking-changes) 및 [Shared Catalog로 마이그레이션](/ko/products/clickhouse-private/guides/migrate-to-shared-catalog)을 참조하십시오
+
+<div id="bug-fixes">
+  ### 버그 수정
+</div>
+
+* fix(airgap-management): 백업 복원에 원본 cluster의 S3 connection 사용 (#32612)
+
+***
+
+<div id="airgap-2026-04-14">
+  ## airgap-2026-04-14
+</div>
+
+<div id="component-versions">
+  ### 구성 요소 버전
+</div>
+
+| 구성 요소                          | 버전             |
+| ------------------------------ | -------------- |
+| clickhouse-server              | 25.10.1.7525   |
+| clickhouse-keeper              | 26.1.1.1493    |
+| clickhouse-operator            | main-1.17847.1 |
+| helm/clickhouse-operator-helm  | 1.17847.1      |
+| helm/onprem-clickhouse-cluster | 1.1.234        |
+| airgap-management              | 1.83.1         |
+| helm/airgap-management         | 1.83.1         |
+| helm/preflight-check           | 1.24.1         |
+| helm/support-bundle            | 1.8.1          |
+
+<div id="new-features">
+  ### 새 기능
+</div>
+
+* feat(airgap): onprem-clickhouse-cluster Helm 차트에서 Shared Catalog 지원 추가 (#31779)
+* feat(airgap): onprem-clickhouse-cluster Helm 차트에 무상태 서버 지원 추가 (#32202)
+* feat(airgap): support-bundle Helm 차트 추가 (#32271)
+* feat(airgap): airgap API의 FIPS 컴플라이언스 지원 추가 (#31811)

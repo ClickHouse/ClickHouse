@@ -29,6 +29,10 @@ public:
     /// it uses file_offset_of_buffer_end.
     off_t getPosition() override;
 
+    bool supportsReadAt() override { return impl->supportsReadAt(); }
+
+    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
+
 private:
     std::optional<size_t> read_until_position;
     /// atomic because can be used in log or exception messages while being updated.

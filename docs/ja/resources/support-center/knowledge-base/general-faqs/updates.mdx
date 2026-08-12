@@ -1,0 +1,19 @@
+---
+title: 'ClickHouse はリアルタイム更新をサポートしていますか？'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/updates
+description: 'ClickHouse は論理更新によるリアルタイム更新をサポートしています'
+doc_type: 'reference'
+keywords: ['更新', 'リアルタイム']
+---
+
+ClickHouse は UPDATE ステートメントをサポートしており、INSERT と同等の速度でリアルタイム更新を実行できます。
+
+これは、[パッチパートのデータ構造](https://clickhouse.com/blog/updates-in-clickhouse-2-sql-style-updates#stage-3-patch-parts--updates-the-clickhouse-way) により、SELECT のパフォーマンスに大きな影響を与えることなく、変更をすばやく適用できるためです。
+
+さらに、MVCC (多版同時実行制御) とスナップショット分離により、更新は ACID 特性を備えています。
+
+<Info>
+  論理更新は ClickHouse バージョン 25.7 で初めて導入されました。
+</Info>

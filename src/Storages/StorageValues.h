@@ -44,7 +44,7 @@ public:
     bool supportsTransactions() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
 

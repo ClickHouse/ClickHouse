@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemRoleGrants.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -82,7 +83,7 @@ void StorageSystemRoleGrants::fillData(MutableColumns & res_columns, ContextPtr 
             column_role_name_null_map.push_back(false);
         }
         else
-            assert(false);
+            chassert(false);
 
         column_granted_role_name.insertData(granted_role_name.data(), granted_role_name.length());
         column_granted_role_id.push_back(granted_role_id.toUnderType());
@@ -132,3 +133,6 @@ void StorageSystemRoleGrants::fillData(MutableColumns & res_columns, ContextPtr 
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemRoleGrants) }

@@ -1,0 +1,85 @@
+---
+title: Cómo identificar consultas que utilizan vistas materializadas en ClickHouse
+description: Aprende a consultar los registros de ClickHouse para identificar todas las consultas que involucran vistas materializadas dentro de un intervalo de tiempo determinado.
+date: 2023-03-24
+tags: ['Tablas del sistema']
+keywords: ['Vistas materializadas', 'create_table_query']
+---
+
+***
+
+<div id="question">
+  ## Pregunta
+</div>
+
+¿Cómo puedo mostrar todas las consultas relacionadas con vistas materializadas de los últimos 60 min?
+
+<div id="answer">
+  ## Respuesta
+</div>
+
+Esta consulta mostrará todas las consultas dirigidas a vistas materializadas, teniendo en cuenta que:
+
+* podemos aprovechar el campo `create_table_query` de la tabla `system.tables` para identificar qué tablas son receptoras explícitas (`TO`) de las MV;
+* podemos rastrear hacia atrás (usando `uuid` y la convención de nombres `.inner_id.<uuid>`) qué tablas son receptoras implícitas de las MV;
+
+También podemos configurar cuánto tiempo hacia atrás queremos consultar, cambiando el valor (`60` m de forma predeterminada) en el CTE inicial de la consulta
+
+```sql
+WITH(60) -- predeterminado 60m
+AS timeRange,
+(
+    --preparar nombres de posibles tablas destino ocultas implícitas de MV para *cualquier* tabla con uuid NO NULO
+    SELECT groupArray(
+            concat('default.`.inner_id.', toString(uuid), '`')
+        )
+    FROM clusterAllReplicas(default, system.tables)
+    WHERE notEmpty(uuid)
+) AS MV_implicit_possible_hidden_target_tables_names_array,
+(
+    --captura el nombre de la MV y las tablas destino (si se especifica TO)
+    --TODO parece que extract devuelve solo el primer grupo de captura :( reemplazar con regexpExtract cuando esté disponible
+    SELECT arrayFilter(
+            x->x != '',
+            --eliminar capturas vacías
+            groupArray(
+                extract(
+                    create_table_query,
+                    '^CREATE MATERIALIZED VIEW\s(\w+\.\w+)\s(?:TO\s(\S+))?'
+                )
+            )
+        )
+    FROM clusterAllReplicas(default, system.tables)
+    WHERE engine = 'MaterializedView'
+) AS MV_explicit_target_tables_names_array
+SELECT event_time,
+    query,
+    tables as "MVs tables"
+FROM clusterAllReplicas(default, system.query_log)
+WHERE (
+        -- solo SELECT en los últimos 60m
+        event_time > now() - toIntervalMinute(timeRange)
+        AND startsWith(query, 'SELECT')
+    ) -- verificar si la consulta involucra nombres de tablas destino implícitas de MV
+    AND (
+        hasAny(
+            tables,
+            MV_implicit_possible_hidden_target_tables_names_array
+        )
+        OR -- verificar si la consulta involucra tablas destino explícitas de MV
+        hasAny(tables, MV_explicit_target_tables_names_array)
+    )
+ORDER BY event_time DESC;
+```
+
+salida esperada:
+
+```sql
+| event_time          | query                                                                                          | MVs tables                                                            |
+| ------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| 2023-02-23 08:14:14 | SELECT     rand(),* FROM     default.sum_of_volumes,     default.big_changes,     system.users | ["default.big_changes_mv","default.sum_of_volumes_mv","system.users"] |
+| 2023-02-23 08:04:47 | SELECT     price,* FROM     default.sum_of_volumes,     default.big_changes                    | ["default.big_changes_mv","default.sum_of_volumes_mv"]                |
+
+```
+
+En este ejemplo, `default.big_changes_mv` y `default.sum_of_volumes_mv` son ambas vistas materializadas.

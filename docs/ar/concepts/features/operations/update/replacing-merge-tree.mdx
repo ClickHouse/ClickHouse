@@ -1,0 +1,400 @@
+---
+slug: /guides/replacing-merge-tree
+title: 'العمل باستخدام محرك ReplacingMergeTree'
+description: 'دليل لاستخدام محرك ReplacingMergeTree في ClickHouse'
+keywords: ['replacingmergetree', 'inserts', 'deduplication']
+doc_type: 'guide'
+sidebarTitle: 'العمل باستخدام محرك ReplacingMergeTree'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+في حين أن قواعد البيانات المعاملاتية مُحسّنة لأعباء عمل التحديث والحذف المعاملاتية، فإن قواعد بيانات OLAP توفّر ضمانات أقل لمثل هذه العمليات. وبدلاً من ذلك، فهي مُحسّنة للبيانات غير القابلة للتغيير التي تُدرج على دفعات، بما يتيح استعلامات تحليلية أسرع بكثير. ومع أن ClickHouse يوفّر عمليات التحديث من خلال mutations، بالإضافة إلى وسيلة lightweight لحذف الصفوف، فإن بنيته المعتمدة على الأعمدة تعني أنه ينبغي جدولة هذه العمليات بعناية، كما هو موضح أعلاه. وتُعالَج هذه العمليات بشكل غير متزامن، وتُنفَّذ باستخدام خيط تنفيذ واحد، وتتطلب (في حالة التحديثات) إعادة كتابة البيانات على القرص. لذلك لا ينبغي استخدامها عند وجود أعداد كبيرة من التغييرات الصغيرة.
+ولمعالجة تدفق من صفوف التحديث والحذف مع تجنّب أنماط الاستخدام المذكورة أعلاه، يمكننا استخدام محرك الجداول ReplacingMergeTree في ClickHouse.
+
+<div id="automatic-upserts-of-inserted-rows">
+  ## الإدراجات التلقائية مع التحديث للصفوف المُدرجة
+</div>
+
+يتيح [محرك الجدول ReplacingMergeTree](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree) تطبيق عمليات التحديث على الصفوف من دون الحاجة إلى استخدام أوامر `ALTER` أو عبارة `DELETE` غير الفعّالة، وذلك من خلال إتاحة إدراج نسخ متعددة من الصف نفسه وتحديد إحداها على أنها الإصدار الأحدث. وفي المقابل، تتولى عملية خلفية إزالة الإصدارات الأقدم من الصف نفسه بشكل غير متزامن، بما يحاكي عملية التحديث بكفاءة عبر استخدام عمليات إدراج غير قابلة للتغيير.
+يعتمد ذلك على قدرة محرك الجدول على التعرّف على الصفوف المكررة. ويتحقق هذا باستخدام عبارة `ORDER BY` لتحديد التفرّد، أي إذا كان صفّان يحملان القيم نفسها للأعمدة المحددة في `ORDER BY`، فيُعتبران مكررين. ويتيح عمود `version`، الذي يُحدَّد عند تعريف الجدول، الاحتفاظ بأحدث إصدار من الصف عند التعرّف على صفّين على أنهما مكرران، أي يُحتفَظ بالصف ذي قيمة الإصدار الأعلى.
+نوضّح هذه العملية في المثال أدناه. هنا، تُعرَّف الصفوف بشكل فريد بواسطة العمود A (وهو `ORDER BY` للجدول). ونفترض أن هذه الصفوف أُدرجت على دفعتين، ما أدى إلى تكوّن جزأين من البيانات على القرص. ولاحقًا، خلال عملية خلفية غير متزامنة، تُدمَج هذان الجزآن معًا.
+
+يتيح ReplacingMergeTree أيضًا تحديد عمود deleted إضافي. ويمكن أن يحتوي هذا العمود على 0 أو 1، حيث تشير القيمة 1 إلى أن الصف (ومكرراته) قد حُذف، بينما تُستخدم القيمة 0 في غير ذلك. **ملاحظة: لن تُزال الصفوف المحذوفة وقت الدمج.**
+
+أثناء هذه العملية، يحدث ما يلي خلال دمج الأجزاء:
+
+* الصف الذي تحدده القيمة 1 في العمود A يحتوي على صف تحديث بالإصدار 2 وصف حذف بالإصدار 3 (مع قيمة 1 في عمود deleted). لذلك يُحتفَظ بأحدث صف، والمعلَّم بأنه محذوف.
+* الصف الذي تحدده القيمة 2 في العمود A يحتوي على صفّي تحديث. ويُحتفَظ بالصف الأحدث بقيمة 6 في عمود price.
+* الصف الذي تحدده القيمة 3 في العمود A يحتوي على صف بالإصدار 1 وصف حذف بالإصدار 2. ويُحتفَظ بصف الحذف هذا.
+
+ونتيجةً لعملية الدمج هذه، يصبح لدينا أربعة صفوف تمثل الحالة النهائية:
+
+<br />
+
+<Image img="/images/migrations/postgres-replacingmergetree.webp" size="md" alt="عملية ReplacingMergeTree" />
+
+<br />
+
+لاحظ أن الصفوف المحذوفة لا تُزال أبدًا. ويمكن حذفها قسرًا باستخدام `OPTIMIZE table FINAL CLEANUP`. ويتطلب ذلك الإعداد التجريبي `allow_experimental_replacing_merge_with_cleanup=1`. ولا ينبغي تنفيذ ذلك إلا في ظل الشروط التالية:
+
+1. يجب أن تكون متأكدًا من أنه لن تُدرج أي صفوف بإصدارات قديمة (بالنسبة إلى الصفوف التي يجري حذفها عبر التنظيف) بعد تنفيذ العملية. وإذا أُدرجت هذه الصفوف، فسيُحتفَظ بها بشكل غير صحيح، لأن الصفوف المحذوفة لن تعود موجودة.
+2. تأكد من أن جميع النسخ المتماثلة متزامنة قبل تنفيذ التنظيف. ويمكن تحقيق ذلك باستخدام الأمر:
+
+<br />
+
+```sql
+SYSTEM SYNC REPLICA table
+```
+
+نوصي بإيقاف عمليات الإدراج مؤقتًا بعد التأكد من تحقق (1)، إلى أن يكتمل هذا الأمر وعملية التنظيف اللاحقة.
+
+> لا يُنصح بمعالجة عمليات الحذف باستخدام ReplacingMergeTree إلا في الجداول التي يكون فيها عدد عمليات الحذف منخفضًا إلى متوسط (أقل من 10%)، ما لم يكن بالإمكان جدولة فترات للتنظيف وفق الشروط المذكورة أعلاه.
+
+> نصيحة: قد تتمكن أيضًا من تنفيذ `OPTIMIZE FINAL CLEANUP` على أقسام محددة لم تعد عرضة للتغييرات.
+
+<div id="choosing-a-primarydeduplication-key">
+  ## اختيار مفتاح أساسي/إزالة التكرار
+</div>
+
+أوضحنا أعلاه قيدًا إضافيًا مهمًا يجب استيفاؤه أيضًا في حالة ReplacingMergeTree: يجب أن تحدد قيم الأعمدة في `ORDER BY` الصفّ بشكل فريد عبر التغييرات. لذلك، عند الترحيل من قاعدة بيانات معاملات مثل Postgres، ينبغي تضمين المفتاح الأساسي الأصلي في Postgres ضمن عبارة `ORDER BY` في ClickHouse.
+
+سيكون مستخدمو ClickHouse على دراية بكيفية اختيار الأعمدة في عبارة `ORDER BY` في جداولهم [لتحسين أداء الاستعلامات](/ar/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key). وبوجه عام، ينبغي اختيار هذه الأعمدة بناءً على [الاستعلامات الشائعة وإدراجها بترتيب تصاعدي حسب الكاردينالية](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#an-index-design-for-massive-data-scales). والأهم من ذلك أن ReplacingMergeTree يفرض قيدًا إضافيًا: يجب أن تكون هذه الأعمدة غير قابلة للتغيير، أي إذا كنتم تنسخون البيانات من Postgres، فلا تضيفوا أعمدة إلى هذه العبارة إلا إذا كانت لا تتغير في بيانات Postgres الأساسية. وبينما يمكن أن تتغير أعمدة أخرى، يجب أن تظل هذه الأعمدة متسقة لضمان التعرّف الفريد على الصفوف.
+بالنسبة إلى أحمال العمل التحليلية، فعادةً ما تكون فائدة المفتاح الأساسي في Postgres محدودة لأنكم نادرًا ما ستجرون عمليات بحث نقطية عن صفوف مفردة. ونظرًا لأننا نوصي بترتيب الأعمدة تصاعديًا حسب الكاردينالية، إضافةً إلى أن المطابقات على [الأعمدة المدرجة مبكرًا في ORDER BY تكون عادةً أسرع](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#ordering-key-columns-efficiently)، فينبغي إلحاق المفتاح الأساسي في Postgres بنهاية `ORDER BY` (ما لم تكن له قيمة تحليلية). وإذا كانت عدة أعمدة تكوّن مفتاحًا أساسيًا في Postgres، فينبغي إلحاقها بـ `ORDER BY` مع مراعاة الكاردينالية واحتمال فائدتها للاستعلامات. وقد ترغبون أيضًا في إنشاء مفتاح أساسي فريد باستخدام ربط القيم عبر عمود `MATERIALIZED`.
+
+انظروا إلى جدول posts من مجموعة بيانات Stack Overflow.
+
+```sql
+CREATE TABLE stackoverflow.posts_updateable
+(
+       `Version` UInt32,
+       `Deleted` UInt8,
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime64(3, 'UTC'),
+        `Score` Int32,
+        `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+        `Body` String,
+        `OwnerUserId` Int32,
+        `OwnerDisplayName` String,
+        `LastEditorUserId` Int32,
+        `LastEditorDisplayName` String,
+        `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+        `LastActivityDate` DateTime64(3, 'UTC'),
+        `Title` String,
+        `Tags` String,
+        `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+        `CommentCount` UInt8,
+        `FavoriteCount` UInt8,
+        `ContentLicense` LowCardinality(String),
+        `ParentId` String,
+        `CommunityOwnedDate` DateTime64(3, 'UTC'),
+        `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = ReplacingMergeTree(Version, Deleted)
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate, Id)
+```
+
+نستخدم مفتاح `ORDER BY` بالقيمة `(PostTypeId, toDate(CreationDate), CreationDate, Id)`. ويضمن العمود `Id`، وهو فريد لكل منشور، إمكانية إزالة التكرار من الصفوف. كما يُضاف العمودان `Version` و`Deleted` إلى المخطط حسب الحاجة.
+
+<div id="querying-replacingmergetree">
+  ## الاستعلام عن ReplacingMergeTree
+</div>
+
+أثناء وقت الدمج، يحدِّد ReplacingMergeTree الصفوف المكررة باستخدام قيم أعمدة `ORDER BY` كمُعرّف فريد، ثم يحتفظ فقط بأعلى إصدار أو يزيل جميع التكرارات إذا كان أحدث إصدار يشير إلى الحذف. لكن هذا لا يوفّر سوى صحة نهائية للنتائج؛ فهو لا يضمن إزالة تكرار الصفوف، لذا لا ينبغي الاعتماد عليه.
+
+<Info>
+  **استخدم FINAL لقراءة البيانات بعد إزالة التكرار**
+
+  لأن إزالة التكرار لا تحدث إلا أثناء عمليات الدمج في الخلفية، فقد يُرجع `SELECT` عادي صفوفًا مكررة أو محذوفة. لقراءة نتائج صحيحة في وقت الاستعلام، استخدم المُعدِّل `FINAL`، الذي يُكمل إزالة التكرار واستبعاد الصفوف المحذوفة أثناء تنفيذ الاستعلام.
+</Info>
+
+انظر إلى جدول posts أعلاه. يمكننا استخدام الطريقة المعتادة لتحميل مجموعة البيانات هذه، مع تحديد عمود للحذف وعمود للإصدار، بالإضافة إلى قيم 0. ولأغراض المثال، نحمّل 10000 صف فقط.
+
+```sql
+INSERT INTO stackoverflow.posts_updateable SELECT 0 AS Version, 0 AS Deleted, *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet') WHERE AnswerCount > 0 LIMIT 10000
+```
+
+```response
+0 rows in set. Elapsed: 1.980 sec. Processed 8.19 thousand rows, 3.52 MB (4.14 thousand rows/s., 1.78 MB/s.)
+```
+
+لنتحقق من عدد الصفوف:
+
+```sql
+SELECT count() FROM stackoverflow.posts_updateable
+```
+
+```response
+┌─count()─┐
+│   10000 │
+└─────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+نحدّث الآن إحصاءات ما بعد الإجابة. وبدلًا من تحديث هذه القيم، نُدرج نسخًا جديدة من 5000 صف، ونضيف 1 إلى رقم الإصدار الخاص بها (وهذا يعني وجود 150 صفًا في الجدول). يمكننا محاكاة ذلك باستخدام عبارة `INSERT INTO SELECT` بسيطة:
+
+```sql
+INSERT INTO posts_updateable SELECT
+        Version + 1 AS Version,
+        Deleted,
+        Id,
+        PostTypeId,
+        AcceptedAnswerId,
+        CreationDate,
+        Score,
+        ViewCount,
+        Body,
+        OwnerUserId,
+        OwnerDisplayName,
+        LastEditorUserId,
+        LastEditorDisplayName,
+        LastEditDate,
+        LastActivityDate,
+        Title,
+        Tags,
+        AnswerCount,
+        CommentCount,
+        FavoriteCount,
+        ContentLicense,
+        ParentId,
+        CommunityOwnedDate,
+        ClosedDate
+FROM posts_updateable --select 100 random rows
+WHERE (Id % toInt32(floor(randUniform(1, 11)))) = 0
+LIMIT 5000
+```
+
+```response
+0 rows in set. Elapsed: 4.056 sec. Processed 1.42 million rows, 2.20 GB (349.63 thousand rows/s., 543.39 MB/s.)
+```
+
+بالإضافة إلى ذلك، نحذف 1000 منشورًا عشوائيًا عبر إعادة إدراج الصفوف مع تعيين قيمة العمود `deleted` إلى 1. ويمكن أيضًا محاكاة ذلك باستخدام ‎`INSERT INTO SELECT`‎ بسيط.
+
+```sql
+INSERT INTO posts_updateable SELECT
+        Version + 1 AS Version,
+        1 AS Deleted,
+        Id,
+        PostTypeId,
+        AcceptedAnswerId,
+        CreationDate,
+        Score,
+        ViewCount,
+        Body,
+        OwnerUserId,
+        OwnerDisplayName,
+        LastEditorUserId,
+        LastEditorDisplayName,
+        LastEditDate,
+        LastActivityDate,
+        Title,
+        Tags,
+        AnswerCount + 1 AS AnswerCount,
+        CommentCount,
+        FavoriteCount,
+        ContentLicense,
+        ParentId,
+        CommunityOwnedDate,
+        ClosedDate
+FROM posts_updateable --select 100 random rows
+WHERE (Id % toInt32(floor(randUniform(1, 11)))) = 0 AND AnswerCount > 0
+LIMIT 1000
+```
+
+```response
+0 rows in set. Elapsed: 0.166 sec. Processed 135.53 thousand rows, 212.65 MB (816.30 thousand rows/s., 1.28 GB/s.)
+```
+
+ستكون نتيجة العمليات المذكورة أعلاه 16,000 صفًا، أي 10,000 + 5000 + 1000. لكن في الواقع، ينبغي أن يكون لدينا عدد صفوف أقل من الإجمالي الأصلي بمقدار 1000 فقط، أي 10,000 - 1000 = 9000.
+
+```sql
+SELECT count()
+FROM posts_updateable
+```
+
+```response
+┌─count()─┐
+│   10000 │
+└─────────┘
+1 row in set. Elapsed: 0.002 sec.
+```
+
+ستختلف النتائج بحسب عمليات الدمج التي جرت. يمكننا ملاحظة أن الإجمالي يختلف بسبب الصفوف المكررة. ويعطي تطبيق `FINAL` على الجدول النتيجة الصحيحة.
+
+```sql
+SELECT count()
+FROM posts_updateable
+FINAL
+```
+
+```response
+┌─count()─┐
+│    9000 │
+└─────────┘
+
+1 row in set. Elapsed: 0.006 sec. Processed 11.81 thousand rows, 212.54 KB (2.14 million rows/s., 38.61 MB/s.)
+Peak memory usage: 8.14 MiB.
+```
+
+<div id="final-performance">
+  ## أداء `FINAL`
+</div>
+
+يفرض المُعامل `FINAL` زيادة طفيفة في كلفة الأداء على الاستعلامات.
+ويظهر ذلك بشكل أوضح عندما لا تُجري الاستعلامات تصفيةً على أعمدة المفتاح الأساسي،
+إذ يؤدي ذلك إلى قراءة المزيد من البيانات وزيادة كلفة إزالة التكرار. وإذا
+أجريت التصفية على أعمدة المفتاح باستخدام شرط `WHERE`، فستقل كمية البيانات
+المحمّلة والمُمرَّرة إلى عملية إزالة التكرار.
+
+إذا كان شرط `WHERE` لا يستخدم عمود مفتاح، فإن ClickHouse لا يستفيد حاليًا من تحسين `PREWHERE` عند استخدام `FINAL`. ويهدف هذا التحسين إلى تقليل عدد الصفوف المقروءة للأعمدة غير المُصفّاة. ويمكن العثور [هنا](https://clickhouse.com/blog/clickhouse-postgresql-change-data-capture-cdc-part-1#final-performance) على أمثلة تحاكي `PREWHERE` هذا، وقد يُسهم ذلك في تحسين الأداء.
+
+<div id="exploiting-partitions-with-replacingmergetree">
+  ## الاستفادة من الأقسام باستخدام ReplacingMergeTree
+</div>
+
+يحدث دمج البيانات في ClickHouse على مستوى القسم. عند استخدام ReplacingMergeTree، نوصي المستخدمين بتقسيم جدولهم وفقًا لأفضل الممارسات، بشرط أن تضمن أن **مفتاح التقسيم هذا لا يتغير للصف الواحد**. فهذا يضمن إرسال التحديثات الخاصة بالصف نفسه إلى القسم نفسه في ClickHouse. ويمكنك إعادة استخدام مفتاح التقسيم نفسه المستخدم في Postgres، ما دمت تلتزم بأفضل الممارسات الموضحة هنا.
+
+بافتراض تحقق ذلك، يمكنك استخدام الإعداد `do_not_merge_across_partitions_select_final=1` لتحسين أداء الاستعلام `FINAL`. ويجعل هذا الإعداد الأقسام تُدمج وتُعالَج بشكل مستقل عند استخدام FINAL.
+
+انظر إلى جدول posts التالي، حيث لا نستخدم أي تقسيم:
+
+```sql
+CREATE TABLE stackoverflow.posts_no_part
+(
+        `Version` UInt32,
+        `Deleted` UInt8,
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        ...
+)
+ENGINE = ReplacingMergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate, Id)
+
+INSERT INTO stackoverflow.posts_no_part SELECT 0 AS Version, 0 AS Deleted, *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 182.895 sec. Processed 59.82 million rows, 38.07 GB (327.07 thousand rows/s., 208.17 MB/s.)
+```
+
+للتأكد من أن `FINAL` سيضطر إلى تنفيذ بعض المعالجة، نحدّث مليون صف - بزيادة `AnswerCount` فيها عبر إدراج صفوف مكررة.
+
+```sql
+INSERT INTO posts_no_part SELECT Version + 1 AS Version, Deleted, Id, PostTypeId, AcceptedAnswerId, CreationDate, Score, ViewCount, Body, OwnerUserId, OwnerDisplayName, LastEditorUserId, LastEditorDisplayName, LastEditDate, LastActivityDate, Title, Tags, AnswerCount + 1 AS AnswerCount, CommentCount, FavoriteCount, ContentLicense, ParentId, CommunityOwnedDate, ClosedDate
+FROM posts_no_part
+LIMIT 1000000
+```
+
+حساب مجموع الإجابات لكل سنة باستخدام `FINAL`:
+
+```sql
+SELECT toYear(CreationDate) AS year, sum(AnswerCount) AS total_answers
+FROM posts_no_part
+FINAL
+GROUP BY year
+ORDER BY year ASC
+```
+
+```response
+┌─year─┬─total_answers─┐
+│ 2008 │        371480 │
+...
+│ 2024 │        127765 │
+└──────┴───────────────┘
+
+17 rows in set. Elapsed: 2.338 sec. Processed 122.94 million rows, 1.84 GB (52.57 million rows/s., 788.58 MB/s.)
+Peak memory usage: 2.09 GiB.
+```
+
+كرّر هذه الخطوات نفسها لجدول مُقسَّم بحسب السنة، ثم كرّر الاستعلام أعلاه مع `do_not_merge_across_partitions_select_final=1`.
+
+```sql
+CREATE TABLE stackoverflow.posts_with_part
+(
+        `Version` UInt32,
+        `Deleted` UInt8,
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        ...
+)
+ENGINE = ReplacingMergeTree
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate, Id)
+
+// populate & update omitted
+
+SELECT toYear(CreationDate) AS year, sum(AnswerCount) AS total_answers
+FROM posts_with_part
+FINAL
+GROUP BY year
+ORDER BY year ASC
+```
+
+```response
+┌─year─┬─total_answers─┐
+│ 2008 │       387832  │
+│ 2009 │       1165506 │
+│ 2010 │       1755437 │
+...
+│ 2023 │       787032  │
+│ 2024 │       127765  │
+└──────┴───────────────┘
+
+17 rows in set. Elapsed: 0.994 sec. Processed 64.65 million rows, 983.64 MB (65.02 million rows/s., 989.23 MB/s.)
+```
+
+كما هو موضح، حسَّن التقسيم أداء الاستعلام بشكل ملحوظ في هذه الحالة، إذ أتاح تنفيذ عملية إزالة التكرار بالتوازي على مستوى الأقسام.
+
+<div id="merge-behavior-considerations">
+  ## اعتبارات سلوك الدمج
+</div>
+
+تتجاوز آلية اختيار الدمج في ClickHouse مجرد دمج الأجزاء بشكل بسيط. فيما يلي، نستعرض هذا السلوك في سياق ReplacingMergeTree، بما في ذلك خيارات التهيئة لتمكين دمج أكثر كثافة للبيانات الأقدم، والاعتبارات المتعلقة بالأجزاء الأكبر.
+
+<div id="merge-selection-logic">
+  ### منطق اختيار الدمج
+</div>
+
+مع أن الدمج يهدف إلى تقليل عدد الأجزاء، فإنه يوازن أيضًا بين هذا الهدف وتكلفة تضخيم عمليات الكتابة. لذلك، تُستبعَد بعض نطاقات الأجزاء من الدمج إذا كانت ستؤدي، وفقًا لحسابات داخلية، إلى تضخيم مفرط في عمليات الكتابة. ويساعد هذا السلوك على تجنب الاستخدام غير الضروري للموارد وإطالة العمر الافتراضي لمكونات التخزين.
+
+<div id="merging-behavior-on-large-parts">
+  ### سلوك الدمج على الأجزاء الكبيرة
+</div>
+
+تم تحسين محرك ReplacingMergeTree في ClickHouse لإدارة الصفوف المكررة من خلال دمج أجزاء البيانات، مع الاحتفاظ فقط بأحدث إصدار من كل صف استنادًا إلى مفتاح فريد محدد. ولكن عندما يصل الجزء المدمج إلى عتبة `max_bytes_to_merge_at_max_space_in_pool`، فلن يعود يُختار لمزيد من عمليات الدمج، حتى إذا كان `min_age_to_force_merge_seconds` مضبوطًا. ونتيجة لذلك، لم يعد بالإمكان الاعتماد على عمليات الدمج التلقائية لإزالة التكرارات التي قد تتراكم مع استمرار إدخال البيانات.
+
+لمعالجة ذلك، يمكنك تنفيذ `OPTIMIZE FINAL` لدمج الأجزاء يدويًا وإزالة التكرارات. وعلى عكس عمليات الدمج التلقائية، يتجاوز `OPTIMIZE FINAL` عتبة `max_bytes_to_merge_at_max_space_in_pool`، ويدمج الأجزاء استنادًا فقط إلى الموارد المتاحة، ولا سيما مساحة القرص، إلى أن يبقى جزء واحد فقط في كل قسم. ومع ذلك، قد يستهلك هذا النهج قدرًا كبيرًا من الذاكرة في الجداول الكبيرة، وقد يتطلب تكرار التنفيذ مع إضافة بيانات جديدة.
+
+وللحصول على حل أكثر استدامة يحافظ على الأداء، يُوصى بتقسيم الجدول. ويمكن أن يساعد ذلك في منع أجزاء البيانات من الوصول إلى الحد الأقصى لحجم الدمج، ويقلل من الحاجة إلى عمليات التحسين اليدوية المستمرة.
+
+<div id="partitioning-and-merging-across-partitions">
+  ### التقسيم والدمج عبر الأقسام
+</div>
+
+كما ناقشنا في Exploiting Partitions with ReplacingMergeTree، نوصي بتقسيم الجداول كإحدى أفضل الممارسات. يعزل التقسيم البيانات لتكون عمليات الدمج أكثر كفاءة، ويتجنب الدمج عبر الأقسام، خصوصًا أثناء تنفيذ الاستعلام. وقد جرى تحسين هذا السلوك في الإصدارات 23.12 وما بعدها: إذا كان مفتاح التقسيم بادئة لمفتاح الفرز، فلن يُنفَّذ الدمج عبر الأقسام وقت الاستعلام، مما يؤدي إلى تحسين أداء الاستعلام.
+
+<div id="tuning-merges-for-better-query-performance">
+  ### ضبط عمليات الدمج لتحسين أداء الاستعلام
+</div>
+
+بشكل افتراضي، تكون قيمة `min_age_to_force_merge_seconds` مساوية لـ 0 وقيمة `min_age_to_force_merge_on_partition_only` مساوية لـ false، مما يعطّل هذه الميزات. في هذا الإعداد، سيطبّق ClickHouse سلوك الدمج القياسي من دون فرض عمليات دمج استنادًا إلى عمر القسم.
+
+إذا تم تحديد قيمة لـ `min_age_to_force_merge_seconds`، فسيتجاوز ClickHouse آليات الدمج المعتادة للأجزاء الأقدم من الفترة المحددة. ومع أن هذا يكون فعّالًا عادةً فقط إذا كان الهدف هو تقليل العدد الإجمالي للأجزاء، فإنه قد يحسّن أداء الاستعلام في ReplacingMergeTree عبر تقليل عدد الأجزاء التي تحتاج إلى الدمج وقت تنفيذ الاستعلام.
+
+يمكن ضبط هذا السلوك بمزيد من الدقة عبر تعيين `min_age_to_force_merge_on_partition_only=true`، بحيث يُشترط أن تكون جميع الأجزاء في القسم أقدم من `min_age_to_force_merge_seconds` حتى يتم الدمج المكثّف. يتيح هذا الإعداد للأقسام الأقدم أن تندمج تدريجيًا لتصبح جزءًا واحدًا مع مرور الوقت، مما يدمج البيانات ويحافظ على أداء الاستعلام.
+
+<div id="recommended-settings">
+  ### الإعدادات الموصى بها
+</div>
+
+<Warning>
+  يُعد ضبط سلوك الدمج عملية متقدمة. نوصي بالتشاور مع دعم ClickHouse قبل تفعيل هذه الإعدادات في أعباء العمل الإنتاجية.
+</Warning>
+
+في معظم الحالات، يُفضَّل ضبط `min_age_to_force_merge_seconds` على قيمة منخفضة — أقل بكثير من فترة القسم. يقلل ذلك عدد الأجزاء ويمنع الدمج غير الضروري وقت الاستعلام باستخدام المُعامل `FINAL`.
+
+على سبيل المثال، لنفترض قسمًا شهريًا تم دمجه بالفعل في جزء واحد. إذا أدت عملية insert صغيرة وعارضة إلى إنشاء جزء جديد داخل هذا القسم، فقد يتراجع أداء الاستعلام لأن ClickHouse سيضطر إلى قراءة عدة أجزاء إلى أن يكتمل الدمج. ويمكن أن يضمن ضبط `min_age_to_force_merge_seconds` دمج هذه الأجزاء بسرعة، مما يمنع تدهور أداء الاستعلام.

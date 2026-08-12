@@ -1,0 +1,37 @@
+---
+description: 'ALTER TABLE ... UPDATE SQL 문에 대한 설명서'
+sidebarTitle: 'UPDATE'
+slug: /sql-reference/statements/alter/update
+title: 'ALTER TABLE ... UPDATE SQL 문'
+doc_type: 'reference'
+---
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
+```
+
+지정된 필터링 표현식과 일치하는 데이터를 수정합니다. [뮤테이션](/ko/reference/statements/alter/index#mutations)으로 구현됩니다.
+
+<Note>
+  `ALTER TABLE` 접두사 때문에 이 구문은 SQL을 지원하는 대부분의 다른 시스템과 다릅니다. 이는 OLTP 데이터베이스의 유사한 쿼리와 달리, 이 작업이 자주 사용하도록 설계되지 않은 비용이 큰 작업임을 나타내기 위한 것입니다.
+</Note>
+
+`filter_expr`는 `UInt8` 유형이어야 합니다. 이 쿼리는 `filter_expr`가 0이 아닌 값을 갖는 행에서 지정된 컬럼 값을 해당 표현식의 값으로 업데이트합니다. 값은 `CAST` 연산자를 사용해 컬럼 유형으로 변환됩니다. 프라이머리 키 또는 파티션 키 계산에 사용되는 컬럼은 업데이트할 수 없습니다.
+
+하나의 쿼리에는 쉼표로 구분된 여러 명령을 포함할 수 있습니다.
+
+쿼리 처리의 동기 여부는 [mutations&#95;sync](/ko/reference/settings/session-settings#mutations_sync) 설정으로 정의됩니다. 기본값은 비동기입니다.
+
+**관련 항목**
+
+* [뮤테이션](/ko/reference/statements/alter/index#mutations)
+* [ALTER 쿼리의 동기 여부](/ko/reference/statements/alter/index#synchronicity-of-alter-queries)
+* [mutations&#95;sync](/ko/reference/settings/session-settings#mutations_sync) 설정
+* [경량 `UPDATE`](/ko/reference/statements/update) - patch parts를 사용하는 대체 경량 업데이트
+* [`APPLY PATCHES`](/ko/reference/statements/alter/apply-patches) - 경량 업데이트의 패치를 수동으로 적용합니다
+
+<div id="related-content">
+  ## 관련 문서
+</div>
+
+* 블로그: [ClickHouse에서 업데이트 및 삭제 처리](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

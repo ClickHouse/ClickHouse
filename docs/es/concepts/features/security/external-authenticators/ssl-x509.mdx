@@ -1,0 +1,47 @@
+---
+description: 'Documentación de SSL X.509'
+slug: /operations/external-authenticators/ssl-x509
+title: 'Autenticación mediante certificado SSL X.509'
+doc_type: 'reference'
+---
+
+import SelfManaged from '/snippets/es/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+La [opción SSL &#39;strict&#39;](/es/reference/settings/server-settings/settings#openssl) habilita la validación obligatoria de certificados para las conexiones entrantes. En este caso, solo se pueden establecer conexiones con certificados de confianza. Las conexiones con certificados no confiables serán rechazadas. Por lo tanto, la validación de certificados permite autenticar de forma unívoca una conexión entrante. El campo `Common Name` o la `subjectAltName extension` del certificado se utilizan para identificar al usuario conectado. La `subjectAltName extension` admite el uso de un comodín &#39;*&#39; en la configuración del servidor. Esto permite asociar varios certificados al mismo usuario. Además, la reemisión y la revocación de los certificados no afectan a la configuración de ClickHouse.
+
+Para habilitar la autenticación mediante certificados SSL, se debe especificar una lista de `Common Name` o `Subject Alt Name` para cada usuario de ClickHouse en el archivo de configuración `users.xml `:
+
+**Ejemplo**
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <users>
+        <user_name_1>
+            <ssl_certificates>
+                <common_name>host.domain.com:example_user</common_name>
+                <common_name>host.domain.com:example_user_dev</common_name>
+                <!-- Más nombres -->
+            </ssl_certificates>
+            <!-- Otras configuraciones -->
+        </user_name_1>
+        <user_name_2>
+            <ssl_certificates>
+                <subject_alt_name>DNS:host.domain.com</subject_alt_name>
+                <!-- Más nombres -->
+            </ssl_certificates>
+            <!-- Otras configuraciones -->
+        </user_name_2>
+        <user_name_3>
+            <ssl_certificates>
+                <!-- Compatibilidad con comodines -->
+                <subject_alt_name>URI:spiffe://foo.com/*/bar</subject_alt_name>
+            </ssl_certificates>
+        </user_name_3>
+    </users>
+</clickhouse>
+```
+
+Para que la [`cadena de confianza`](https://en.wikipedia.org/wiki/Chain_of_trust) de SSL funcione correctamente, también es importante asegurarse de que el parámetro [`caConfig`](/es/reference/settings/server-settings/settings#openssl) esté configurado de forma adecuada.

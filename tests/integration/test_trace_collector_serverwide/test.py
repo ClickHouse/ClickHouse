@@ -5,7 +5,6 @@ import time
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -23,7 +22,7 @@ def start_cluster():
 
 
 def test_global_thread_profiler(start_cluster):
-    if node1.is_built_with_sanitizer():
+    if node1.is_built_with_sanitizer() or node1.is_built_with_llvm_coverage():
         return
 
     node1.query(

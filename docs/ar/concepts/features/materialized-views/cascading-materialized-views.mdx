@@ -1,0 +1,378 @@
+---
+slug: /guides/developer/cascading-materialized-views
+title: 'العروض المادية المتسلسلة'
+description: 'كيفية استخدام عدة عروض مادية انطلاقًا من جدول المصدر.'
+keywords: ['عرض مادي', 'تجميع']
+doc_type: 'guide'
+---
+
+يوضح هذا المثال كيفية إنشاء عرض مادي، ثم كيفية إلحاق عرض مادي ثانٍ بالأول على نحو متسلسل. في هذه الصفحة، سترى كيفية تنفيذ ذلك، والإمكانات المتاحة، والقيود. ويمكن تلبية حالات استخدام مختلفة عبر إنشاء عرض مادي يستخدم عرضًا ماديًا ثانيًا بوصفه المصدر.
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/QDAJTKZT8y4?si=1KqPNHHfaKfxtPat" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<br />
+
+مثال:
+
+سنستخدم مجموعة بيانات وهمية تتضمن عدد المشاهدات لكل ساعة لمجموعة من أسماء النطاقات.
+
+هدفنا
+
+1. نحتاج إلى البيانات مجمّعة حسب الشهر لكل اسم نطاق،
+2. ونحتاج أيضًا إلى البيانات مجمّعة حسب السنة لكل اسم نطاق.
+
+يمكنك اختيار أحد هذه الخيارات:
+
+* كتابة استعلامات تقرأ البيانات وتجمعها أثناء طلب SELECT
+* تجهيز البيانات وقت الإدخال بتنسيق جديد
+* تجهيز البيانات وقت الإدخال وفق تجميع محدد.
+
+يتيح لك تجهيز البيانات باستخدام العروض المادية تقليل كمية البيانات والحسابات التي يحتاج ClickHouse إلى تنفيذها، مما يجعل طلبات SELECT أسرع.
+
+<div id="source-table-for-the-materialized-views">
+  ## الجدول المصدر للعروض المادية
+</div>
+
+أنشئ الجدول المصدر. ونظرًا لأن أهدافنا تتمثل في إعداد تقارير عن البيانات المجمّعة لا عن الصفوف الفردية، يمكننا تحليلها وتمرير المعلومات إلى العروض المادية والتخلّص من البيانات الواردة نفسها. وهذا يحقق أهدافنا ويوفّر في التخزين، لذا سنستخدم محرك الجدول `Null`.
+
+```sql
+CREATE DATABASE IF NOT EXISTS analytics;
+```
+
+```sql
+CREATE TABLE analytics.hourly_data
+(
+    `domain_name` String,
+    `event_time` DateTime,
+    `count_views` UInt64
+)
+ENGINE = Null
+```
+
+<Note>
+  يمكنك إنشاء عرض مادي على جدول Null. لذا ستؤثر البيانات المكتوبة إلى الجدول في العرض، لكن البيانات الخام الأصلية ستظل تُهمَل.
+</Note>
+
+<div id="monthly-aggregated-table-and-materialized-view">
+  ## الجدول المُجمَّع الشهري والعرض المادي
+</div>
+
+بالنسبة إلى أول عرض مادي، نحتاج إلى إنشاء جدول `Target`. وفي هذا المثال، سيكون `analytics.monthly_aggregated_data`، وسنخزّن فيه مجموع مرات المشاهدة حسب الشهر واسم النطاق.
+
+```sql
+CREATE TABLE analytics.monthly_aggregated_data
+(
+    `domain_name` String,
+    `month` Date,
+    `sumCountViews` AggregateFunction(sum, UInt64)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY (domain_name, month)
+```
+
+سيكون العرض المادي الذي يوجّه البيانات إلى الجدول الهدف كما يلي:
+
+```sql
+CREATE MATERIALIZED VIEW analytics.monthly_aggregated_data_mv
+TO analytics.monthly_aggregated_data
+AS
+SELECT
+    toDate(toStartOfMonth(event_time)) AS month,
+    domain_name,
+    sumState(count_views) AS sumCountViews
+FROM analytics.hourly_data
+GROUP BY
+    domain_name,
+    month
+```
+
+<div id="yearly-aggregated-table-and-materialized-view">
+  ## الجدول السنوي المجمّع والعرض المادي
+</div>
+
+سنُنشئ الآن العرض المادي الثاني، والذي سيرتبط بجدول الهدف السابق `monthly_aggregated_data`.
+
+سنُنشئ أولًا جدول هدف جديدًا سيخزّن إجمالي المشاهدات المجمّعة سنويًا لكل اسم نطاق.
+
+```sql
+CREATE TABLE analytics.year_aggregated_data
+(
+    `domain_name` String,
+    `year` UInt16,
+    `sumCountViews` UInt64
+)
+ENGINE = SummingMergeTree()
+ORDER BY (domain_name, year)
+```
+
+تحدّد هذه الخطوة نمط المتسلسل. ستستخدم عبارة `FROM` الجدول `monthly_aggregated_data`، وهذا يعني أن تدفّق البيانات سيكون على النحو التالي:
+
+1. تصل البيانات إلى الجدول `hourly_data`.
+2. سيُمرِّر ClickHouse البيانات المستلمة إلى جدول العرض المادي الأول `monthly_aggregated_data`،
+3. أخيرًا، ستُمرَّر البيانات المستلمة في الخطوة 2 إلى `year_aggregated_data`.
+
+```sql
+CREATE MATERIALIZED VIEW analytics.year_aggregated_data_mv
+TO analytics.year_aggregated_data
+AS
+SELECT
+    toYear(toStartOfYear(month)) AS year,
+    domain_name,
+    sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data
+GROUP BY
+    domain_name,
+    year
+```
+
+<Note>
+  من المفاهيم الخاطئة الشائعة عند العمل مع العروض المادية أن البيانات تُقرأ من الجدول. لكن هذه ليست الطريقة التي تعمل بها `العروض المادية`؛ فالبيانات التي تُمرَّر هي block الذي تم insert له، وليست النتيجة النهائية في جدولك.
+
+  لنتخيّل في هذا المثال أن الـ engine المستخدم في `monthly_aggregated_data` هو CollapsingMergeTree. عندها لن تكون البيانات المُمرَّرة إلى الـ العرض المادي الثانية `year_aggregated_data_mv` هي النتيجة النهائية للجدول بعد collapsing، بل سيُمرَّر block البيانات بالحقول المعرّفة كما في `SELECT ... GROUP BY`.
+
+  إذا كنت تستخدم CollapsingMergeTree أو ReplacingMergeTree أو حتى SummingMergeTree، وتخطط لإنشاء عرض مادي متسلسلة، فعليك فهم القيود الموضّحة هنا.
+</Note>
+
+<div id="sample-data">
+  ## بيانات تجريبية
+</div>
+
+الآن حان وقت اختبار العرض المادي المتسلسل لدينا عبر إدراج بعض البيانات:
+
+```sql
+INSERT INTO analytics.hourly_data (domain_name, event_time, count_views)
+VALUES ('clickhouse.com', '2019-01-01 10:00:00', 1),
+       ('clickhouse.com', '2019-02-02 00:00:00', 2),
+       ('clickhouse.com', '2019-02-01 00:00:00', 3),
+       ('clickhouse.com', '2020-01-01 00:00:00', 6);
+```
+
+إذا نفّذت `SELECT` على محتويات `analytics.hourly_data`، فسترى ما يلي لأن محرك الجدول هو `Null`، ولكن جرت معالجة البيانات.
+
+```sql
+SELECT * FROM analytics.hourly_data
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+لقد استخدمنا مجموعة بيانات صغيرة للتأكد من قدرتنا على تتبّع النتيجة ومقارنتها بما نتوقعه. وبمجرد التأكد من أن سير العمل لديك يعمل بشكل صحيح باستخدام مجموعة بيانات صغيرة، يمكنك الانتقال إلى كمية أكبر من البيانات.
+
+<div id="results">
+  ## النتائج
+</div>
+
+إذا حاولت تنفيذ استعلام على الجدول الهدف باختيار الحقل `sumCountViews`، فسترى التمثيل الثنائي (في بعض الطرفيات)، لأن القيمة لا تُخزَّن كرقم بل كنوع AggregateFunction.
+وللحصول على النتيجة النهائية لعملية التجميع، ينبغي استخدام اللاحقة `-Merge`.
+
+يمكنك رؤية المحارف الخاصة المخزَّنة في AggregateFunction باستخدام هذا الاستعلام:
+
+```sql
+SELECT sumCountViews FROM analytics.monthly_aggregated_data
+```
+
+```response
+┌─sumCountViews─┐
+│               │
+│               │
+│               │
+└───────────────┘
+
+3 rows in set. Elapsed: 0.003 sec.
+```
+
+بدلًا من ذلك، لنجرب استخدام اللاحقة `Merge` للحصول على قيمة `sumCountViews`:
+
+```sql
+SELECT
+   sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data;
+```
+
+```response
+┌─sumCountViews─┐
+│            12 │
+└───────────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+في `AggregatingMergeTree` عرّفنا `AggregateFunction` على أنها `sum`، لذا يمكننا استخدام `sumMerge`. وعندما نستخدم الدالة `avg` في `AggregateFunction`، فسنستخدم `avgMerge`، وهكذا.
+
+```sql
+SELECT
+    month,
+    domain_name,
+    sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data
+GROUP BY
+    domain_name,
+    month
+```
+
+يمكننا الآن التحقق من أن الـ العروض المادية تلبّي الهدف الذي حددناه.
+
+والآن بعد أن أصبحت البيانات مخزنة في الجدول الهدف `monthly_aggregated_data`، يمكننا الحصول على البيانات المجمّعة حسب الشهر لكل اسم نطاق:
+
+```sql
+SELECT
+   month,
+   domain_name,
+   sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data
+GROUP BY
+   domain_name,
+   month
+```
+
+```response
+┌──────month─┬─domain_name────┬─sumCountViews─┐
+│ 2020-01-01 │ clickhouse.com │             6 │
+│ 2019-01-01 │ clickhouse.com │             1 │
+│ 2019-02-01 │ clickhouse.com │             5 │
+└────────────┴────────────────┴───────────────┘
+
+3 rows in set. Elapsed: 0.004 sec.
+```
+
+البيانات المُجمَّعة حسب السنة لكل اسم نطاق:
+
+```sql
+SELECT
+   year,
+   domain_name,
+   sum(sumCountViews)
+FROM analytics.year_aggregated_data
+GROUP BY
+   domain_name,
+   year
+```
+
+```response
+┌─year─┬─domain_name────┬─sum(sumCountViews)─┐
+│ 2019 │ clickhouse.com │                  6 │
+│ 2020 │ clickhouse.com │                  6 │
+└──────┴────────────────┴────────────────────┘
+
+2 rows in set. Elapsed: 0.004 sec.
+```
+
+<div id="combining-multiple-source-tables-to-single-target-table">
+  ## دمج عدة جداول مصدر في جدول هدف واحد
+</div>
+
+يمكن أيضًا استخدام العروض المادية لدمج عدة جداول مصدر في الجدول الوجهة نفسه. ويكون ذلك مفيدًا عند إنشاء عرض مادي يماثل منطق `UNION ALL`.
+
+أولًا، أنشئ جدولَي مصدر يمثلان مجموعات مختلفة من المقاييس:
+
+```sql
+CREATE TABLE analytics.impressions
+(
+    `event_time` DateTime,
+    `domain_name` String
+) ENGINE = MergeTree ORDER BY (domain_name, event_time)
+;
+
+CREATE TABLE analytics.clicks
+(
+    `event_time` DateTime,
+    `domain_name` String
+) ENGINE = MergeTree ORDER BY (domain_name, event_time)
+;
+```
+
+ثم أنشئ جدول `Target` باستخدام مجموعة المقاييس الموحَّدة:
+
+```sql
+CREATE TABLE analytics.daily_overview
+(
+    `on_date` Date,
+    `domain_name` String,
+    `impressions` SimpleAggregateFunction(sum, UInt64),
+    `clicks` SimpleAggregateFunction(sum, UInt64)
+) ENGINE = AggregatingMergeTree ORDER BY (on_date, domain_name)
+```
+
+أنشئ عرضين ماديين يشيران إلى الجدول `Target` نفسه. لا تحتاج إلى تضمين الأعمدة المفقودة صراحةً:
+
+```sql
+CREATE MATERIALIZED VIEW analytics.daily_impressions_mv
+TO analytics.daily_overview
+AS
+SELECT
+    toDate(event_time) AS on_date,
+    domain_name,
+    count() AS impressions,
+    0 clicks         ---<<<--- if you omit this, it will be the same 0
+FROM
+    analytics.impressions
+GROUP BY
+    toDate(event_time) AS on_date,
+    domain_name
+;
+
+CREATE MATERIALIZED VIEW analytics.daily_clicks_mv
+TO analytics.daily_overview
+AS
+SELECT
+    toDate(event_time) AS on_date,
+    domain_name,
+    count() AS clicks,
+    0 impressions    ---<<<--- if you omit this, it will be the same 0
+FROM
+    analytics.clicks
+GROUP BY
+    toDate(event_time) AS on_date,
+    domain_name
+;
+```
+
+الآن، عند إدراج قيم، ستُجمَّع هذه القيم ضمن الأعمدة المقابلة لها في جدول `Target`:
+
+```sql
+INSERT INTO analytics.impressions (domain_name, event_time)
+VALUES ('clickhouse.com', '2019-01-01 00:00:00'),
+       ('clickhouse.com', '2019-01-01 12:00:00'),
+       ('clickhouse.com', '2019-02-01 00:00:00'),
+       ('clickhouse.com', '2019-03-01 00:00:00')
+;
+
+INSERT INTO analytics.clicks (domain_name, event_time)
+VALUES ('clickhouse.com', '2019-01-01 00:00:00'),
+       ('clickhouse.com', '2019-01-01 12:00:00'),
+       ('clickhouse.com', '2019-03-01 00:00:00')
+;
+```
+
+مرات الظهور والنقرات المجمّعة في جدول `Target`:
+
+```sql
+SELECT
+    on_date,
+    domain_name,
+    sum(impressions) AS impressions,
+    sum(clicks) AS clicks
+FROM
+    analytics.daily_overview
+GROUP BY
+    on_date,
+    domain_name
+;
+```
+
+من المفترض أن يُظهر هذا الاستعلام شيئًا مثل:
+
+```response
+┌────on_date─┬─domain_name────┬─impressions─┬─clicks─┐
+│ 2019-01-01 │ clickhouse.com │           2 │      2 │
+│ 2019-03-01 │ clickhouse.com │           1 │      1 │
+│ 2019-02-01 │ clickhouse.com │           1 │      0 │
+└────────────┴────────────────┴─────────────┴────────┘
+
+3 rows in set. Elapsed: 0.018 sec.
+```

@@ -15,7 +15,6 @@ namespace ErrorCodes
 
 namespace
 {
-VersionNumber VERSION_UNKNOWN = {0};
 
 /// Example input 'types' vector: {"(U)Int*", "Float*"}
 /// Example output string: [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
@@ -81,6 +80,8 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/sql-reference/data-types/map)";
         else if (type.starts_with("Variant")) /// "Variant(T1, T2, ...)", "Variant(UInt8, String)", ...
             result += "`](/sql-reference/data-types/variant)";
+        else if (type.starts_with("Geometry"))
+            result += "`](/sql-reference/data-types/geo)";
         else if (type.starts_with("LowCardinality")) /// "LowCardinality(T)", "LowCardinality(UInt8)", "LowCardinality(String)", ...
             result += "`](/sql-reference/data-types/lowcardinality)";
         else if (type.starts_with("Nullable")) /// "Nullable(T)", "Nullable(UInt8)", "Nullable(String)", ...
@@ -89,8 +90,12 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/sql-reference/data-types/aggregatefunction)";
         else if (type.starts_with("SimpleAggregateFunction")) /// "SimpleAggregateFunction(agg_func, T)", "SimpleAggregateFunction(any, UInt8)", ...
             result += "`](/sql-reference/data-types/simpleaggregatefunction)";
+        else if (type == "Geo")
+            result += "`](/sql-reference/data-types/geo)";
         else if (type == "Point")
             result += "`](/sql-reference/data-types/geo#point)";
+        else if (type == "MultiPoint")
+            result += "`](/sql-reference/data-types/geo#multipoint)";
         else if (type == "Ring")
             result += "`](/sql-reference/data-types/geo#ring)";
         else if (type == "LineString")
@@ -129,6 +134,7 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
     result += "\n";
     return result;
 }
+}
 
 template <typename Type>
 String argumentsOrParametersAsString(const Type & arguments_or_parameters, const FunctionDocumentation::Syntax & syntax)
@@ -146,8 +152,6 @@ String argumentsOrParametersAsString(const Type & arguments_or_parameters, const
     return result;
 }
 
-}
-
 String FunctionDocumentation::argumentsAsString() const
 {
     return argumentsOrParametersAsString(arguments, syntax);
@@ -155,9 +159,7 @@ String FunctionDocumentation::argumentsAsString() const
 
 String FunctionDocumentation::parametersAsString() const
 {
-    /// TODO Replace dummy parameters by actual parameters
-    Parameters dummy_parameters;
-    return argumentsOrParametersAsString(dummy_parameters, syntax);
+    return argumentsOrParametersAsString(parameters, syntax);
 }
 
 /// Documentation is often defined with raw strings, therefore we need to trim leading and trailing whitespace + newlines.
@@ -200,13 +202,16 @@ String FunctionDocumentation::examplesAsString() const
     for (const auto & [name, query, result] : examples)
     {
         res += "**" + name + "**" + "\n\n";
-        res += "```sql title=""Query""\n";
-        res += boost::algorithm::trim_copy(query) + "\n";
-        res += "```\n\n";
-        res += "```response title=""Response""\n";
-        res += boost::algorithm::trim_copy(result) + "\n";
-        res += "```";
-        res += "\n\n";
+
+        const String trimmed_query = boost::algorithm::trim_copy(query);
+        if (!trimmed_query.empty())
+            res += "```sql title=""Query""\n" + trimmed_query + "\n```\n\n";
+
+        /// Only emit the response block when there is a response; otherwise an empty example
+        /// (e.g. for some internal functions) would render as an empty code box.
+        const String trimmed_result = boost::algorithm::trim_copy(result);
+        if (!trimmed_result.empty())
+            res += "```response title=""Response""\n" + trimmed_result + "\n```\n\n";
     }
     return res;
 }
@@ -225,6 +230,7 @@ String FunctionDocumentation::categoryAsString() const
     {
         {Category::Unknown, ""}, /// Default enum value for default-constructed FunctionDocumentation objects. Be consistent with other default fields (empty).
 
+        {Category::AI, "AI"},
         {Category::Arithmetic, "Arithmetic"},
         {Category::Array, "Arrays"},
         {Category::Bit, "Bit"},
@@ -237,6 +243,7 @@ String FunctionDocumentation::categoryAsString() const
         {Category::Distance, "Distance"},
         {Category::EmbeddedDictionary, "Embedded Dictionary"},
         {Category::Geo, "Geo"},
+        {Category::GeoPolygon, "Geo Polygon"},
         {Category::Encoding, "Encoding"},
         {Category::Encryption, "Encryption"},
         {Category::Financial, "Financial"},
@@ -268,6 +275,8 @@ String FunctionDocumentation::categoryAsString() const
         {Category::UUID, "UUID"},
         {Category::UniqTheta, "UniqTheta"},
 
+        {Category::Internal, "Internal"},
+
         {Category::AggregateFunction, "Aggregate Functions"},
         {Category::TableFunction, "Table Functions"}
     };
@@ -277,5 +286,7 @@ String FunctionDocumentation::categoryAsString() const
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Category has no mapping to string");
 }
+
+FunctionDocumentation FunctionDocumentation::INTERNAL_FUNCTION_DOCS = {"This function is used internally by ClickHouse (for example by the query planner or by other functions) and is not part of the public interface. It should not be used directly and may change or be removed at any time.", "", {}, {}, {"", {}}, {}, FunctionDocumentation::VERSION_UNKNOWN, FunctionDocumentation::Category::Internal};
 
 }

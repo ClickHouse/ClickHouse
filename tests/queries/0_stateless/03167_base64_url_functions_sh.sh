@@ -123,40 +123,33 @@ base64URLEncode() {
     echo -n "$1" | base64 -w0 | tr '+/' '-_' | tr -d '='
 }
 
-base64URLDecode() {
-    local len=$((${#1} % 4))
-    local result="$1"
-    if [ $len -eq 2 ]; then result="$1"'=='
-    elif [ $len -eq 3 ]; then result="$1"'='
-    fi
-    echo "$result" | tr '_-' '/+' | base64 -w0 -d
-}
+# Compute all expected values with the shell upfront (no ClickHouse involved),
+# then check everything in one bulk query instead of two queries per URL.
+# None of the test URLs contain single quotes or SQL-significant backslashes,
+# and base64url output (A-Za-z0-9-_) never contains them either, so plain
+# SQL string interpolation is safe here.
 
-test() {
-    local input="$1"
-    local encode_ch=$(${CLICKHOUSE_CLIENT} --query="SELECT base64URLEncode('$input')")
-    local encode_gold=$(base64URLEncode $input)
-
-    local decode_ch=$(${CLICKHOUSE_CLIENT} --query="SELECT base64URLDecode('$encode_gold')")
-    local decode_gold=$(base64URLDecode $encode_gold)
-
-    if [ "$encode_ch" != "$encode_gold" ]; then
-        echo "Input:    $input"
-        echo "Expected: $encode_gold"
-        echo "Got:      $encode_ch"
-    fi
-
-    if [ "$decode_ch" != "$input" ] || [ "$decode_ch" != "$decode_gold" ]; then
-        echo "Input:    $input"
-        echo "Decode gold: $decode_gold"
-        echo "Got:      $decode_ch"
-    fi
-}
-
-
+values=""
+sep=""
 for url in "${urls[@]}"; do
-    test "$url"
+    expected=$(base64URLEncode "$url")
+    url_sql="${url//\'/\'\'}"  # escape ' → '' (defensive, none expected)
+    values+="${sep}('${url_sql}','${expected}')"
+    sep=","
 done
+
+# One query: check that base64URLEncode matches the shell ground truth
+# and that base64URLDecode is a left inverse (roundtrip).
+# Prints nothing on success; prints failing rows on mismatch.
+${CLICKHOUSE_CLIENT} --query="
+SELECT
+    url,
+    base64URLEncode(url) AS ch_encoded,
+    expected_encoded,
+    base64URLDecode(expected_encoded) AS ch_decoded
+FROM VALUES('url String, expected_encoded String', ${values})
+WHERE ch_encoded != expected_encoded OR ch_decoded != url
+FORMAT TSV"
 
 # special case for '
 decode=$(${CLICKHOUSE_CLIENT} --query="SELECT base64URLDecode(base64URLEncode('http://example.com/!$&\'()*+,;=:@/path'))")

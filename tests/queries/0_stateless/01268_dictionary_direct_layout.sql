@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel, no-fasttest, no-flaky-check
 
 DROP DATABASE IF EXISTS database_for_dict_01268;
 

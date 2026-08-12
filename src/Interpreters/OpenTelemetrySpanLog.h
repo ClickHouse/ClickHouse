@@ -2,18 +2,15 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
 
-struct OpenTelemetrySpanLogElement : public OpenTelemetry::Span
+struct OpenTelemetrySpanLogElement
 {
-    OpenTelemetrySpanLogElement() = default;
-    explicit OpenTelemetrySpanLogElement(const OpenTelemetry::Span & span)
-        : OpenTelemetry::Span(span) {}
+    OpenTelemetry::Span span;
 
     static std::string name() { return "OpenTelemetrySpanLog"; }
 

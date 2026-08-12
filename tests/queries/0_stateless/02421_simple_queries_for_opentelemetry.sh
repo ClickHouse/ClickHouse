@@ -108,7 +108,15 @@ function check_tcp_attributes()
 
 function execute_query_HTTP()
 {
-    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&database=${CLICKHOUSE_DATABASE}&query_id=$1" -d "$2"
+    # A traceparent header (with the sampled flag) forces the request to be traced, and the
+    # Referer / User-Agent headers populate the http.* attributes on the HTTPHandler span.
+    local trace_id
+    trace_id=$(${CLICKHOUSE_CLIENT} -q "SELECT lower(hex(generateUUIDv4()))")
+    ${CLICKHOUSE_CURL} -sS \
+        -H "traceparent: 00-${trace_id}-0000000000000010-01" \
+        -H "referer: some-referer" \
+        -H "user-agent: some-user-agent" \
+        "${CLICKHOUSE_URL}&database=${CLICKHOUSE_DATABASE}&query_id=$1" -d "$2"
 }
 
 function check_http_attributes()
@@ -119,15 +127,17 @@ function check_http_attributes()
   local agent="not found"
   local method="not found"
   
+  # The http.* attributes live on the HTTPHandler (SERVER) span, not on the child query span.
+  # Match it by the query_id embedded in the request URI (clickhouse.uri).
   result=$(${CLICKHOUSE_CLIENT} -q "
       SYSTEM FLUSH LOGS opentelemetry_span_log;
-      SELECT attribute['http.referer'],
-             attribute['http.user.agent'],
-             attribute['http.method']
+      SELECT attribute['http.referer']    AS referer,
+             attribute['http.user.agent'] AS user_agent,
+             attribute['http.method']     AS method
       FROM system.opentelemetry_span_log
       WHERE finish_date >= yesterday()
-      AND operation_name = 'query'
-      AND attribute['clickhouse.query_id'] = '${query_id}'
+      AND operation_name = 'HTTPHandler'
+      AND attribute['clickhouse.uri'] LIKE '%${query_id}%'
       FORMAT JSONEachRow;
     ")
 
@@ -135,16 +145,16 @@ function check_http_attributes()
     echo "Error: No result returned from ClickHouse server"
     return 1
   fi
-  
-  if [[ $result == *"http.referer"* ]]; then
+
+  if [[ $result == *'"referer":"some-referer"'* ]]; then
     referer="present"
   fi
-  
-  if [[ $result == *"http.user.agent"* ]]; then
+
+  if [[ $result == *'"user_agent":"some-user-agent"'* ]]; then
     agent="present"
   fi
 
-  if [[ $result == *"http.method"* ]]; then
+  if [[ $result == *'"method":"POST"'* ]]; then
     method="present"
   fi
 
@@ -191,9 +201,8 @@ query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()")
 execute_query $query_id 'select * from opentelemetry_test format Null'
 check_tcp_attributes $query_id
 
-# Test 7: Executes a TCP SELECT query and checks for http attributes in OpenTelemetry spans.
+# Test 7: Executes an HTTP SELECT query and checks for http attributes in OpenTelemetry spans.
 query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()")
-execute_query "$query_id" 'set opentelemetry_start_trace_probability=1'
 execute_query_HTTP "$query_id" 'select * from opentelemetry_test FORMAT Null'
 check_http_attributes "$query_id"
 #

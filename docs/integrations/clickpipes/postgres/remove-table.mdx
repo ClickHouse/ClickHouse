@@ -1,0 +1,30 @@
+---
+title: 'Removing specific tables from a ClickPipe'
+description: 'Removing specific tables from a ClickPipe'
+sidebarTitle: 'Remove Table'
+slug: /integrations/clickpipes/postgres/removing_tables
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'data ingestion', 'real-time sync']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+In some cases, it makes sense to exclude specific tables from a Postgres ClickPipe - for example, if a table isn't needed for your analytics workload, skipping it can reduce storage and replication costs in ClickHouse.
+
+## Steps to remove specific tables {#remove-tables-steps}
+
+The first step is to remove the table from the pipe. This can be done by the following steps:
+
+1. [Pause](/integrations/clickpipes/postgres/pause-and-resume) the pipe.
+2. Click on Edit Table Settings.
+3. Locate your table - this can be done by searching it in the search bar.
+4. Deselect the table by clicking on the selected checkbox.
+<br/>
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp" border size="md"/>
+
+5. Click update.
+6. Upon successful update, in the **Metrics** tab the status will be **Running**. This table will no longer be replicated by this ClickPipe.

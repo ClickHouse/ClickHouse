@@ -1,0 +1,130 @@
+---
+description: '`eval` 테이블 함수는 상수 표현식을 쿼리 문자열로 평가한 후, 그 결과로 생성된 `SELECT` 쿼리를 실행합니다.'
+sidebarTitle: 'eval'
+slug: /sql-reference/table-functions/eval
+title: 'eval'
+doc_type: '참고'
+---
+
+`eval` 테이블 함수는 인수를 쿼리 문자열로 평가한 후, 해당 문자열을 단일 `SELECT` 쿼리로 실행합니다.
+
+이 테이블 함수는 실험적 기능이며 기본적으로 비활성화되어 있습니다. 사용하려면 `allow_experimental_eval_table_function` 설정을 활성화하십시오:
+
+```sql
+SET allow_experimental_eval_table_function = 1;
+```
+
+또한 기본적으로 활성화되어 있는 분석기([`enable_analyzer`](/ko/reference/settings/session-settings#allow_experimental_analyzer))가 필요합니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+```sql
+eval(expression)
+eval(SELECT ...)
+```
+
+<div id="arguments">
+  ## 인수
+</div>
+
+* `expression` — 쿼리 문자열을 반환하는 상수 표현식입니다. 쿼리 매개변수와 스칼라 서브쿼리를 사용할 수 있습니다.
+* `SELECT ...` — 쿼리 문자열을 반환하는 `SELECT` 쿼리입니다. 이 형식은 스칼라 서브쿼리의 문법적 설탕으로, `eval(SELECT ...)`는 `eval((SELECT ...))`와 동일합니다. 따라서 이 쿼리는 정확히 1개의 행과 1개의 컬럼을 반환해야 합니다.
+
+표현식의 값은 다음 타입 중 하나여야 합니다.
+
+* `String`
+* `Nullable(String)`
+* `LowCardinality(String)`
+* `LowCardinality(Nullable(String))`
+
+값이 `NULL`이면 `eval`은 예외를 발생시킵니다.
+
+<div id="returned-value">
+  ## 반환 값
+</div>
+
+생성된 `SELECT` 쿼리의 결과를 테이블로 반환합니다.
+
+출력 스키마는 `eval` 테이블 함수가 분석되는 시점에 결정되므로, 외부 쿼리에서 생성된 쿼리의 실제 컬럼명과 타입을 참조할 수 있습니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+상수 표현식을 평가합니다:
+
+```sql
+SELECT * FROM eval('SEL' || 'ECT 1 AS x');
+```
+
+결과:
+
+```text
+┌─x─┐
+│ 1 │
+└───┘
+```
+
+쿼리 매개변수를 사용하세요:
+
+```sql
+SET param_q = 'SELECT 2 AS y';
+SELECT * FROM eval({q:String});
+```
+
+결과:
+
+```text
+┌─y─┐
+│ 2 │
+└───┘
+```
+
+쿼리 텍스트를 반환하는 입력 `SELECT` 쿼리를 실행합니다:
+
+```sql
+SELECT * FROM eval(SELECT 'SELECT 3 AS z');
+```
+
+결과:
+
+```text
+┌─z─┐
+│ 3 │
+└───┘
+```
+
+외부 쿼리에서 생성된 스키마를 사용하세요:
+
+```sql
+SELECT x + 1 FROM eval('SELECT 4 AS x');
+```
+
+결과:
+
+```text
+┌─plus(x, 1)─┐
+│          5 │
+└────────────┘
+```
+
+<div id="restrictions">
+  ## 제한 사항
+</div>
+
+* `eval`은 쿼리 분석기(`enable_analyzer = 1`)에서만 작동합니다.
+* 생성된 쿼리는 `INTO OUTFILE` 또는 `FORMAT`과 같은 출력 옵션이 없는 단일 `SELECT` 쿼리여야 합니다. `eval`은 여러 SQL 문을 실행하지 않습니다.
+* 생성된 쿼리는 독립적이어야 합니다. 즉, 자체 범위에서 해석되며 외부 쿼리의 `WITH` 별칭이나 컬럼을 참조할 수 없습니다.
+* 생성된 쿼리에서는 `eval` 테이블 함수를 다시 사용할 수 없습니다.
+* `eval`은 `remote('host', eval(...))`와 같이 다른 테이블 함수의 인수로 사용할 수 없습니다. 생성된 쿼리를 원격 서버에서 실행하려면 `view`로 감싸십시오: `remote('host', view(SELECT * FROM eval(...)))`.
+* 인수는 각 행이나 블록마다 한 번씩이 아니라, 쿼리를 분석하는 동안 한 번만 평가됩니다.
+* 외부 쿼리의 쿼리 로그에는 `eval`이 포함된 원래 쿼리만 기록되며, 생성된 `SELECT` 쿼리는 별도의 사용자 쿼리로 기록되지 않습니다.
+
+<div id="related">
+  ## 관련 항목
+</div>
+
+* [`view` 테이블 함수](/ko/reference/functions/table-functions/view)
+* `allow_experimental_eval_table_function` 설정

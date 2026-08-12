@@ -1,0 +1,21 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <hdd_blob>
+                <type>local_blob_storage</type>
+                <path>/var/lib/clickhouse/local_disk_slru/</path>
+            </hdd_blob>
+            <cache_dynamic_resize_slru>
+                <type>cache</type>
+                <disk>hdd_blob</disk>
+                <max_size>100</max_size>
+                <max_elements>10</max_elements>
+                <max_file_segment_size>10</max_file_segment_size>
+                <boundary_alignment>10</boundary_alignment>
+                <cache_policy>SLRU</cache_policy>
+                <allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>
+                <path>./cache_dynamic_resize_slru/</path>
+            </cache_dynamic_resize_slru>
+        </disks>
+    </storage_configuration>
+</clickhouse>

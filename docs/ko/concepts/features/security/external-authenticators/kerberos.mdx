@@ -1,0 +1,141 @@
+---
+description: '기존에 올바르게 구성된 ClickHouse 사용자는 Kerberos 인증 프로토콜을 통해
+  인증할 수 있습니다.'
+slug: /operations/external-authenticators/kerberos
+title: 'Kerberos'
+doc_type: 'reference'
+---
+
+import SelfManaged from '/snippets/ko/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+기존에 올바르게 구성된 ClickHouse 사용자는 Kerberos 인증 프로토콜을 통해 인증할 수 있습니다.
+
+현재 Kerberos는 `users.xml` 또는 로컬 access control 경로에 정의된 기존 사용자에 대해서만 외부 인증기(external authenticator)로 사용할 수 있습니다. 이러한 사용자는 HTTP request만 사용할 수 있으며, GSS-SPNEGO 메커니즘으로 인증할 수 있어야 합니다.
+
+이 방식을 사용하려면 시스템에서 Kerberos를 구성해야 하며, ClickHouse 구성에서 이를 활성화해야 합니다.
+
+<div id="enabling-kerberos-in-clickhouse">
+  ## ClickHouse에서 Kerberos 활성화
+</div>
+
+Kerberos를 활성화하려면 `config.xml`에 `kerberos` 섹션을 추가해야 합니다. 이 섹션에는 추가 매개변수를 포함할 수 있습니다.
+
+<div id="parameters">
+  #### 매개변수
+</div>
+
+* `principal` - 보안 컨텍스트를 수락할 때 획득하여 사용할 정규 서비스 주체 이름입니다.
+  * 이 매개변수는 선택 사항이며, 생략하면 기본 주체가 사용됩니다.
+
+* `realm` - initiator의 realm이 이에 일치하는 요청으로만 authentication을 제한하는 데 사용할 realm입니다.
+  * 이 매개변수는 선택 사항이며, 생략하면 realm 기준의 추가 필터링은 적용되지 않습니다.
+
+* `keytab` - 서비스 keytab 파일의 경로입니다.
+  * 이 매개변수는 선택 사항이며, 생략하면 서비스 keytab 파일 경로를 `KRB5_KTNAME` 환경 변수에 설정해야 합니다.
+
+예시 (`config.xml`에 추가):
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <kerberos />
+</clickhouse>
+```
+
+주체를 지정하는 경우:
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <kerberos>
+        <principal>HTTP/clickhouse.example.com@EXAMPLE.COM</principal>
+    </kerberos>
+</clickhouse>
+```
+
+realm 기준으로 필터링하는 경우:
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <kerberos>
+        <realm>EXAMPLE.COM</realm>
+    </kerberos>
+</clickhouse>
+```
+
+<Note>
+  `kerberos` 섹션은 하나만 정의할 수 있습니다. `kerberos` 섹션이 여러 개 있으면 ClickHouse는 Kerberos authentication을 비활성화합니다.
+</Note>
+
+<Note>
+  `principal` 및 `realm` 섹션은 동시에 지정할 수 없습니다. `principal`과 `realm` 섹션이 모두 있으면 ClickHouse는 Kerberos authentication을 비활성화합니다.
+</Note>
+
+<div id="kerberos-as-an-external-authenticator-for-existing-users">
+  ## 기존 사용자를 위한 외부 인증기로서의 Kerberos
+</div>
+
+Kerberos는 로컬에 정의된 사용자의 아이덴티티를 확인하는 메서드로 사용할 수 있습니다(`users.xml`에 정의된 사용자 또는 로컬 access control 경로에 정의된 사용자). 현재는 **HTTP 인터페이스**를 통한 요청에만 *kerberized*(GSS-SPNEGO 메커니즘 사용)를 적용할 수 있습니다.
+
+Kerberos 주체 이름 형식은 일반적으로 다음 패턴을 따릅니다.
+
+* *primary/instance@REALM*
+
+*/instance* 부분은 0회 이상 나타날 수 있습니다. **인증이 성공하려면 initiator의 canonical 주체 이름의 *primary* 부분이 Kerberos가 적용된 사용자 이름과 일치해야 합니다**.
+
+<div id="enabling-kerberos-in-users-xml">
+  ### `users.xml`에서 Kerberos 활성화
+</div>
+
+사용자에 대해 Kerberos 인증을 활성화하려면 사용자 정의에서 `password` 또는 이와 유사한 섹션 대신 `kerberos` 섹션을 지정합니다.
+
+매개변수:
+
+* `realm` - 인증이 요청을 시작한 측의 `realm`과 일치하는 요청으로만 제한되도록 사용하는 `realm`입니다.
+  * 이 매개변수는 선택 사항이며, 생략하면 `realm`에 따른 추가 필터링은 적용되지 않습니다.
+
+예시 (`users.xml`에 들어감):
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <users>
+        <!- ... -->
+        <my_user>
+            <!- ... -->
+            <kerberos>
+                <realm>EXAMPLE.COM</realm>
+            </kerberos>
+        </my_user>
+    </users>
+</clickhouse>
+```
+
+<Note>
+  Kerberos 인증은 다른 인증 메커니즘과 함께 사용할 수 없습니다. `kerberos`와 함께 `password`와 같은 다른 섹션이 있으면 ClickHouse가 종료됩니다.
+</Note>
+
+<Info>
+  **알림**
+
+  이제 사용자 `my_user`가 `kerberos`를 사용하므로, 앞서 설명한 대로 기본 `config.xml` 파일에서 Kerberos를 반드시 활성화해야 합니다.
+</Info>
+
+<div id="enabling-kerberos-using-sql">
+  ### SQL을 사용한 Kerberos 활성화
+</div>
+
+ClickHouse에서 [SQL 기반 액세스 제어 및 계정 관리](/ko/concepts/features/security/access-rights#access-control-usage)가 활성화되어 있으면, Kerberos로 식별되는 사용자도 SQL 문으로 생성할 수 있습니다.
+
+```sql
+CREATE USER my_user IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'
+```
+
+...또는 realm으로 필터링하지 않고:
+
+```sql
+CREATE USER my_user IDENTIFIED WITH kerberos
+```

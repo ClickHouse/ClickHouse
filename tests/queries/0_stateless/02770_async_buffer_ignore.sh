@@ -26,7 +26,7 @@ SELECT
     ProfileEvents['ReadBufferFromS3Bytes'],
     ProfileEvents['ReadCompressedBytes']
 FROM system.query_log
-WHERE type = 'QueryFinish'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
     AND current_database = currentDatabase()
     AND query_id='$query_id';
 "

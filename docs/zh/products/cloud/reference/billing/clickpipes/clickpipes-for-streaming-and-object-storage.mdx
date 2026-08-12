@@ -1,0 +1,101 @@
+---
+sidebarTitle: '流式与对象存储'
+slug: /cloud/reference/billing/clickpipes/streaming-and-object-storage
+title: '用于流式和对象存储的 ClickPipes'
+description: '流式和对象存储 ClickPipes 的计费概览'
+doc_type: 'reference'
+keywords: ['billing', 'clickpipes', 'streaming pricing', 'costs', 'pricing']
+---
+
+import ClickPipesFAQ from '/snippets/zh/_clickpipes_faq.mdx';
+
+本节概述了用于流式和对象存储的 ClickPipes 的定价模式。
+
+<div id="what-does-the-clickpipes-pricing-structure-look-like">
+  ## ClickPipes 的定价结构是怎样的？
+</div>
+
+它由两个维度组成：
+
+* **计算资源**：**按单位每小时**计费。
+  计算资源表示运行 ClickPipes 副本 pod (容器组) 的成本，无论它们是否在主动摄取数据。
+  它适用于所有类型的 ClickPipes。
+* **摄取数据**：**按 GB**计费。
+  摄取数据费率适用于所有流式 ClickPipes
+   (Kafka、Confluent、Amazon MSK、Amazon Kinesis、Redpanda、WarpStream、Azure Event Hubs) 
+  针对通过副本 pod (容器组) 传输的数据。摄取数据大小 (GB) 按从数据源接收的字节数计费 (无论是未压缩还是已压缩) 。
+
+<div id="what-are-clickpipes-replicas">
+  ## 什么是 ClickPipes 副本？
+</div>
+
+ClickPipes 通过可独立运行和扩缩容的专用基础设施，从远程数据源摄取数据，
+而不依赖于 ClickHouse Cloud 服务。
+因此，它使用专用的计算副本。
+
+<div id="what-is-the-default-number-of-replicas-and-their-size">
+  ## 默认副本数及其规格是多少？
+</div>
+
+每个 ClickPipe 默认配备 1 个副本，提供 512 MiB RAM 和 0.125 vCPU (XS) 。
+这相当于 **0.0625** 个 ClickHouse 计算单元 (1 个单元 = 8 GiB RAM、2 个 vCPU) 。
+
+<div id="what-are-the-clickpipes-public-prices">
+  ## ClickPipes 的公开定价是多少？
+</div>
+
+* 计算资源：每个单位每小时 $0.20 (默认副本大小下每个副本每小时 $0.0125) 
+* 摄取数据：每 GB $0.04
+
+计算资源这一计费维度的价格取决于 ClickPipe 中副本的**数量**和**大小**。默认副本大小可通过垂直扩缩容进行调整，不同副本大小的定价如下：
+
+| 副本大小           | 计算单元   | RAM     | vCPU   | 每小时价格   |
+| -------------- | ------ | ------- | ------ | ------- |
+| 超小 (XS)  (默认)  | 0.0625 | 512 MiB | 0.125. | $0.0125 |
+| 小 (S)          | 0.125  | 1 GiB   | 0.25   | $0.025  |
+| 中 (M)          | 0.25   | 2 GiB   | 0.5    | $0.05   |
+| 大 (L)          | 0.5    | 4 GiB   | 1.0    | $0.10   |
+| 超大 (XL)        | 1.0    | 8 GiB   | 2.0    | $0.20   |
+
+<div id="how-does-it-look-in-an-illustrative-example">
+  ## 示例中是怎样的？
+</div>
+
+除非另有明确说明，以下示例均假设为单个 M 规格副本。
+
+<table>
+  <thead>
+    <tr>
+      <th />
+
+      <th>24 小时内 100 GB</th>
+      <th>24 小时内 1 TB</th>
+      <th>24 小时内 10 TB</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>流式 ClickPipe</td>
+      <td>(0.25 x 0.20 x 24) + (0.04 x 100) = $5.20</td>
+      <td>(0.25 x 0.20 x 24) + (0.04 x 1000) = $41.20</td>
+      <td>使用 4 个副本：<br /> (0.25 x 0.20 x 24 x 4) + (0.04 x 10000) = $404.80</td>
+    </tr>
+
+    <tr>
+      <td>对象存储 ClickPipe $^*$</td>
+      <td>(0.25 x 0.20 x 24) = $1.20</td>
+      <td>(0.25 x 0.20 x 24) = $1.20</td>
+      <td>(0.25 x 0.20 x 24) = $1.20</td>
+    </tr>
+  </tbody>
+</table>
+
+$^1$ *仅包含用于编排的 ClickPipes compute，
+实际数据传输由底层 ClickHouse 服务承担*
+
+<div id="faq-streaming-and-object-storage">
+  ## 流式和对象存储 ClickPipes 的常见问题
+</div>
+
+<ClickPipesFAQ />

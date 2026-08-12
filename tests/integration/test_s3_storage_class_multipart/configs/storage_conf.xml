@@ -1,0 +1,33 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_intelligent_tiering>
+                <type>s3</type>
+                <!-- Route through the recording mock so the test can inspect the storage class header. -->
+                <endpoint>http://resolver:8081/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <!-- ClickHouse accepts STANDARD and INTELLIGENT_TIERING, but MinIO only accepts STANDARD,
+                     so we use STANDARD here. The test still detects the bug because without the fix no
+                     storage class header is sent for multipart uploads at all.
+                     We use the legacy `s3_storage_class` name (the same one used by the BACKUP command)
+                     to also verify it is accepted as an alias of `s3_storage_class_name`. -->
+                <s3_storage_class>STANDARD</s3_storage_class>
+                <!-- Force every non-trivial file to be uploaded via a multipart upload. -->
+                <s3_max_single_part_upload_size>1</s3_max_single_part_upload_size>
+                <!-- The endpoint is the recording mock, which is only started after the server is up,
+                     so the startup access check cannot reach it yet. -->
+                <skip_access_check>true</skip_access_check>
+            </s3_intelligent_tiering>
+        </disks>
+        <policies>
+            <s3_intelligent_tiering>
+                <volumes>
+                    <main>
+                        <disk>s3_intelligent_tiering</disk>
+                    </main>
+                </volumes>
+            </s3_intelligent_tiering>
+        </policies>
+    </storage_configuration>
+</clickhouse>

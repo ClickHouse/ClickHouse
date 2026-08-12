@@ -1,0 +1,54 @@
+---
+date: 2024-02-14
+title: "¿Cómo lograr la consistencia en la lectura de datos en ClickHouse?"
+description: "Aprende a garantizar la consistencia de los datos al leer desde ClickHouse, tanto si estás conectado al mismo nodo como a un nodo aleatorio."
+tags: ['Rendimiento y optimización']
+keywords: ['Consistencia de lectura']
+---
+
+<div id="question">
+  ## Pregunta
+</div>
+
+Estoy escribiendo datos en ClickHouse Cloud y necesito poder garantizar, al leerlos, que obtengo la información completa más reciente.
+
+<div id="answer">
+  ## Respuesta
+</div>
+
+<div id="talking-to-the-same-node">
+  ### Comunicarse con el mismo nodo
+</div>
+
+Si utiliza el protocolo nativo o una sesión para realizar la escritura/lectura, debería estar conectado a la misma réplica: en este caso, leerá directamente desde el nodo en el que está escribiendo, por lo que la lectura siempre será coherente.
+
+<div id="talking-to-a-random-node">
+  ### Hablar con un nodo aleatorio
+</div>
+
+Si no puedes garantizar que te estás comunicando con el mismo nodo (por ejemplo, si accedes al nodo mediante llamadas HTTPS que un balanceador de carga redistribuye), puedes optar por una de estas dos alternativas:
+
+A)
+
+1. escribe tus datos
+2. conéctate a otra réplica
+3. ejecuta `SYSTEM SYNC REPLICA db.table_name LIGHTWEIGHT`
+4. lee los datos más recientes
+
+Consulta la [referencia](/es/reference/statements/system#sync-replica) de los comandos `SYSTEM`
+
+O
+
+B) lee en cualquier momento con consistencia secuencial
+
+```sql
+SELECT 
+...
+SETTINGS select_sequential_consistency = 1
+```
+
+Ten en cuenta que, al usar ClickHouse Cloud y su motor de tabla [SharedMergeTree](/es/products/cloud/features/infrastructure/shared-merge-tree) predeterminado, no es necesario usar `insert_quorum_parallel`: todas las inserciones en SharedMergeTree son inserciones con quórum (por diseño).
+
+Usar [`SYSTEM SYNC REPLICAS`](/es/reference/statements/system#sync-replica) o [`select_sequential_consistency`](/es/reference/settings/session-settings#select_sequential_consistency) aumentará la carga en ClickHouse Keeper y puede reducir el rendimiento, según la carga del servicio.
+
+El enfoque recomendado es realizar la escritura y la lectura usando la misma sesión o el protocolo nativo (conexión persistente).

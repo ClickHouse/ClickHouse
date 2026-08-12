@@ -35,9 +35,9 @@ namespace DB
 
         bool supportsSelectiveLoad() const override { return true; }
 
-        BlockIO loadIds(const std::vector<UInt64> & ids) override;
+        BlockIO loadIds(const VectorWithMemoryTracking<UInt64> & ids) override;
 
-        BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+        BlockIO loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows) override;
 
         bool isModified() const override { return true; }
 

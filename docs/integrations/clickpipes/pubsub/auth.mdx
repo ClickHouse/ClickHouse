@@ -1,0 +1,143 @@
+---
+slug: /integrations/clickpipes/pubsub/auth
+sidebarTitle: 'Pub/Sub IAM permissions'
+title: 'Pub/Sub IAM permissions'
+description: 'This article describes the GCP IAM permissions ClickPipes requires to authenticate with Google Cloud Pub/Sub and consume data from your topics.'
+doc_type: 'guide'
+keywords: ['Google Cloud Pub/Sub', 'GCP IAM', 'service account']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<Note>
+You can sign up for the Private Preview waitlist [here](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview).
+</Note>
+
+This article describes the GCP IAM permissions ClickPipes requires to authenticate with Google Cloud Pub/Sub and consume data from your topics, and how to set up a service account that grants exactly those permissions.
+
+## Prerequisites {#prerequisite}
+
+To follow this guide, you will need:
+- An active ClickHouse Cloud service
+- A GCP project containing the Pub/Sub topic you want to ingest from
+- IAM permissions in that project to create service accounts and grant roles
+
+## Authentication model {#authentication-model}
+
+ClickPipes for Pub/Sub authenticates with GCP using a [service account JSON key](https://cloud.google.com/iam/docs/keys-create-delete). When you create a pipe, you upload the key file; ClickPipes encrypts it at rest and uses it at runtime to:
+
+- list and read topics in your project,
+- create and delete the [managed subscription](/integrations/clickpipes/pubsub/overview#managed-subscriptions) ClickPipes uses to consume messages,
+- consume messages from that subscription, and
+- (optionally) read native Pub/Sub schemas from the schema registry.
+
+There is no workload identity or inline credential paste option — the service account JSON key is the only supported authentication method today.
+
+## Required permissions {#required-permissions}
+
+ClickPipes requires the following IAM permissions on the GCP project that owns the topic. They cover the full pipe lifecycle: discovery (topic listing, validation, sampling), subscription management, steady-state ingestion, and cleanup.
+
+### Topic access (discovery and validation) {#topic-access}
+
+| Permission                          | Purpose                                                                          |
+|-------------------------------------|----------------------------------------------------------------------------------|
+| `pubsub.topics.list`                | List available topics in the project during discovery                            |
+| `pubsub.topics.get`                 | Validate topic existence and retrieve schema settings                            |
+| `pubsub.topics.attachSubscription`  | Required on the **topic** when creating a subscription against it                |
+
+### Subscription lifecycle (discovery and ingestion) {#subscription-lifecycle}
+
+| Permission                       | Purpose                                                                                            |
+|----------------------------------|----------------------------------------------------------------------------------------------------|
+| `pubsub.subscriptions.create`    | Create the managed subscription (`clickpipes-{pipeID}`) and ephemeral discovery subscriptions      |
+| `pubsub.subscriptions.get`       | Health checks (every 60s), follower polling, subscription validation                               |
+| `pubsub.subscriptions.delete`    | Clean up ephemeral discovery subscriptions and delete the managed subscription on pipe deletion    |
+| `pubsub.subscriptions.consume`   | `Receive()`, `Ack()`, `Nack()`, and seek-to-timestamp operations                                    |
+
+### Schema access (optional — only for native Avro/Protobuf topics) {#schema-access}
+
+| Permission           | Purpose                                                          |
+|----------------------|------------------------------------------------------------------|
+| `pubsub.schemas.get` | Retrieve native schema definitions from the Pub/Sub schema registry |
+
+## Predefined roles {#predefined-roles}
+
+| Role                                                                                                | Sufficient? | Notes                                                                                                                                       |
+|-----------------------------------------------------------------------------------------------------|-------------|---------------------------------------------------------------------------------------------------------------------------------------------|
+| [`roles/pubsub.editor`](https://cloud.google.com/iam/docs/understanding-roles#pubsub.editor)        | Yes         | Covers all required permissions. Broadest option.                                                                                           |
+| [`roles/pubsub.subscriber`](https://cloud.google.com/iam/docs/understanding-roles#pubsub.subscriber)| **No**      | Missing `topics.list`, `topics.attachSubscription`, `subscriptions.create`, `subscriptions.delete`, and `schemas.get`.                       |
+| [`roles/pubsub.viewer`](https://cloud.google.com/iam/docs/understanding-roles#pubsub.viewer)        | **No**      | Read-only — no subscription management or consumption.                                                                                       |
+| Custom role *(recommended)*                                                                         | Yes         | Use the seven core permissions above (plus optional `schemas.get`) for least-privilege access.                                              |
+
+## Setup {#setup}
+
+### Create a custom role (recommended) {#create-custom-role}
+
+For least-privilege access, create a custom role with exactly the permissions ClickPipes needs.
+
+You can do this with the `gcloud` CLI:
+
+```bash
+gcloud iam roles create clickpipes.pubsub.ingestion \
+  --project=YOUR_PROJECT_ID \
+  --title="ClickPipes Pub/Sub Ingestion" \
+  --description="Permissions required by ClickHouse ClickPipes to ingest from Pub/Sub" \
+  --permissions=pubsub.topics.list,pubsub.topics.get,pubsub.topics.attachSubscription,pubsub.subscriptions.create,pubsub.subscriptions.get,pubsub.subscriptions.delete,pubsub.subscriptions.consume \
+  --stage=GA
+```
+
+Or, in the GCP Console, go to **IAM & Admin → Roles → Create role** and add the permissions listed in [Required permissions](#required-permissions).
+
+<Info>
+**Optional permissions**
+
+Append `pubsub.schemas.get` to the `--permissions` list if you ingest from topics that use native Pub/Sub Avro or Protobuf schemas. Leave it out otherwise to keep the role minimal.
+</Info>
+
+If you prefer to skip the custom role, you can grant `roles/pubsub.editor` instead.
+
+### Create a service account {#create-service-account}
+
+Create a dedicated service account for the ClickPipe:
+
+```bash
+gcloud iam service-accounts create clickpipes-pubsub \
+  --project=YOUR_PROJECT_ID \
+  --display-name="ClickPipes Pub/Sub Ingestion"
+```
+
+### Grant the role to the service account {#grant-role}
+
+Bind the role you created (or `roles/pubsub.editor`) to the service account at the project level:
+
+```bash
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:clickpipes-pubsub@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+  --role="projects/YOUR_PROJECT_ID/roles/clickpipes.pubsub.ingestion"
+```
+
+### Create and download a service account key {#create-key}
+
+Create a JSON key for the service account and download it locally:
+
+```bash
+gcloud iam service-accounts keys create clickpipes-pubsub-key.json \
+  --iam-account=clickpipes-pubsub@YOUR_PROJECT_ID.iam.gserviceaccount.com
+```
+
+You will upload this `clickpipes-pubsub-key.json` file in the ClickPipes UI when creating the pipe.
+
+<Info>
+**Treat the key as a secret**
+
+Service account keys grant access to your GCP project. Store the file securely, do not commit it to source control, and rotate it periodically. ClickPipes encrypts the key at rest after upload.
+</Info>
+
+## Notes {#notes}
+
+- `pubsub.topics.attachSubscription` is required on the **topic resource**, not the subscription. This is commonly missed when granting only subscription-level permissions.
+- If your topic does not use a native Pub/Sub schema (Avro or Protobuf), the `pubsub.schemas.get` permission is not needed.
+- Managed subscriptions are named `clickpipes-{pipeID}` with a 60s ack deadline, 7-day message retention, and message ordering enabled.
+- Ephemeral discovery subscriptions are named `clickpipes-discovery-{uuid}` with a 10s ack deadline, 10-minute retention, and a 24-hour auto-expiry TTL.
+- ClickPipes treats `PermissionDenied` and `Unauthenticated` errors as non-retryable — if a permission is missing, the pipe fails fast rather than retrying indefinitely.

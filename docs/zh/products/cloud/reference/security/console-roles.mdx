@@ -1,0 +1,97 @@
+---
+sidebarTitle: '控制台角色和权限'
+slug: /cloud/security/console-roles
+title: '控制台角色和权限'
+description: '本页介绍 ClickHouse Cloud 控制台中的标准角色及对应权限'
+doc_type: 'reference'
+keywords: ['控制台角色', '权限', '访问控制', '安全', 'RBAC']
+---
+
+<div id="organization-roles">
+  ## 组织角色
+</div>
+
+有关分配组织角色的说明，请参阅[管理 Cloud 用户](/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users)。
+
+ClickHouse 提供四种组织级角色用于用户管理。只有 Admin 角色默认可以访问服务。所有其他角色都必须与服务级角色结合使用，才能操作服务。
+
+| 角色             | 说明                                                                      |
+| -------------- | ----------------------------------------------------------------------- |
+| Admin          | 执行组织的所有管理操作并控制所有设置。默认情况下，此角色会分配给组织中的第一个用户，并自动拥有所有服务上的 Service Admin 权限。 |
+| Billing        | 查看用量和发票，并管理付款方式。                                                        |
+| Org API reader | 具有管理组织级设置和用户的 API 权限，但不能访问服务。                                           |
+| Member         | 只能登录，并可管理个人 profile 设置。默认分配给 SAML 单点登录用户。                               |
+
+<div id="service-roles">
+  ## 服务角色
+</div>
+
+有关分配服务角色的说明，请参阅 [管理 Cloud 用户](/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users)。
+
+对于拥有非 Admin 角色的用户，服务权限必须由管理员显式授予。服务管理员角色默认预配置了 SQL 控制台管理员访问权限，但也可以通过修改来减少或移除相关权限。
+
+| 角色            | 说明                       |
+| ------------- | ------------------------ |
+| 服务读取者         | 查看服务和设置。                 |
+| 服务管理员         | 管理服务设置。                  |
+| 服务 API 读取者    | 适用于所有服务的 API 权限，可读取服务设置。 |
+| 服务 API 管理员    | 适用于所有服务的 API 权限，可管理服务设置。 |
+| 基础版服务 API 读取者 | 用于使用查询 API 端点的 API 权限。   |
+
+<div id="sql-console-roles">
+  ## SQL 控制台角色
+</div>
+
+有关分配 SQL 控制台角色的说明，请参阅[管理 SQL 控制台角色分配](/zh/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)。
+
+| Role                  | Description                       |
+| --------------------- | --------------------------------- |
+| SQL console read only | 对服务内的数据库具有只读访问权限。                 |
+| SQL console admin     | 对服务内的数据库具有管理权限，相当于 Default 数据库角色。 |
+
+<div id="console-permissions">
+  ## 控制台权限
+</div>
+
+下表说明了 ClickHouse 控制台和 SQL 控制台的权限。各类别的更多信息链接见其标题。
+
+| Permission                                                                                                                         | Description                                                                              |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| **Organization** ([更多信息](/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users))                              | 组织级权限                                                                                    |
+| control-plane:organization:view                                                                                                    | 查看组织详细信息和只读元数据。                                                                          |
+| control-plane:organization:manage                                                                                                  | 管理组织设置和用户。                                                                               |
+| **Billing** ([更多信息](/zh/products/cloud/reference/billing/index))                                                                      | 账单和发票管理                                                                                  |
+| control-plane:organization:manage-billing                                                                                          | 管理账单设置、付款方式和发票。                                                                          |
+| control-plane:organization:view-billing                                                                                            | 查看账单用量和发票。                                                                               |
+| **API keys** ([更多信息](/zh/products/cloud/features/admin-features/api/index))                                                           | 组织 API 密钥管理                                                                              |
+| control-plane:organization:view-api-keys                                                                                           | 查看组织的 API 密钥。                                                                            |
+| control-plane:organization:create-api-keys                                                                                         | 为组织创建新的 API 密钥。                                                                          |
+| control-plane:organization:update-api-keys                                                                                         | 更新现有 API 密钥及其权限。                                                                         |
+| control-plane:organization:delete-api-keys                                                                                         | 撤销或删除 API 密钥。                                                                            |
+| **Support** ([更多信息](/zh/products/cloud/features/support))                                                                             | 支持请求管理                                                                                   |
+| control-plane:support:manage                                                                                                       | 创建和管理支持请求，以及与 ClickHouse 支持团队的沟通。                                                        |
+| **Service (general)**                                                                                                              | 常规服务级权限                                                                                  |
+| control-plane:service:view                                                                                                         | 查看服务级元数据、设置和状态。                                                                          |
+| control-plane:service:manage                                                                                                       | 管理服务配置和生命周期操作。                                                                           |
+| **Backups** ([更多信息](/zh/products/cloud/features/backups/overview))                                                                    | 服务备份和还原点                                                                                 |
+| control-plane:service:view-backups                                                                                                 | 查看服务的备份和还原点。                                                                             |
+| control-plane:service:manage-backups                                                                                               | 创建、管理和恢复服务备份。                                                                            |
+| **IP access list** ([更多信息](/zh/products/cloud/guides/security/connectivity/setting-ip-filters))                                       | 管理 IP 访问列表和网络过滤                                                                          |
+| control-plane:service:manage-ip-access-list                                                                                        | 管理服务的 IP 访问列表和网络过滤。                                                                      |
+| **Generative AI** ([更多信息](/zh/products/cloud/features/ai-ml/ask-ai))                                                                  | 配置生成式 AI 功能                                                                              |
+| control-plane:service:manage-generative-ai                                                                                         | 配置和管理服务的生成式 AI 功能及设置。                                                                    |
+| **Query API endpoints** ([更多信息](/zh/products/cloud/guides/sql-console/query-endpoints))                                               | 查询 API 端点                                                                                |
+| control-plane:service:view-query-api-endpoints                                                                                     | 查看查询 API 端点及其配置。                                                                         |
+| control-plane:service:manage-query-api-endpoints                                                                                   | 创建和管理查询 API 端点。                                                                          |
+| **Private endpoints** ([更多信息](/zh/products/cloud/guides/security/connectivity/private-networking/index))                              | 专用网络和专用终结点                                                                               |
+| control-plane:service:view-private-endpoints                                                                                       | 查看服务的专用终结点配置。                                                                            |
+| control-plane:service:manage-private-endpoints                                                                                     | 创建和管理专用终结点及专用网络。                                                                         |
+| **ClickPipes** ([更多信息](/zh/integrations/clickpipes/home))                                                                             | ClickPipes 集成                                                                            |
+| control-plane:service:manage-clickpipes                                                                                            | 管理 ClickPipes 集成及相关设置。当前访问 **数据源** 选项卡还需要 `control-plane:service:manage` (“管理和删除所选服务”) 。 |
+| **Scaling** ([更多信息](/zh/products/cloud/features/autoscaling/overview))                                                                | 扩缩容和自动扩缩容配置                                                                              |
+| control-plane:service:view-scaling-config                                                                                          | 查看服务的扩缩容配置和自动扩缩容设置。                                                                      |
+| control-plane:service:manage-scaling-config                                                                                        | 修改扩缩容配置并触发扩缩容操作。                                                                         |
+| **ClickStack** ([更多信息](/zh/clickstack/overview))                                                                                      | ClickStack 可观测性集成                                                                        |
+| control-plane:service:manage-clickstack-api                                                                                        | 管理 ClickStack API 访问及相关集成。                                                               |
+| **SQL console role mapping** ([更多信息](/zh/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)) | 管理 SQL 控制台角色分配                                                                           |
+| sql-console:database:access                                                                                                        | 通过 SQL 控制台免密码访问数据库 (只能与 sql-console-admin 或 sql-console-readonly 一起使用)                   |

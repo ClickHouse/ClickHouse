@@ -4,6 +4,7 @@
 
 #include <Parsers/IAST.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -30,13 +31,15 @@ struct ASTWindowDefinition : public IAST
     String getID(char delimiter) const override;
 
     std::string getDefaultWindowName() const;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
-    void forEachPointerToChild(std::function<void(void**)> f) override
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
-        f(reinterpret_cast<void **>(&partition_by));
-        f(reinterpret_cast<void **>(&order_by));
-        f(reinterpret_cast<void **>(&frame_begin_offset));
-        f(reinterpret_cast<void **>(&frame_end_offset));
+        f(nullptr, &partition_by);
+        f(nullptr, &order_by);
+        f(nullptr, &frame_begin_offset);
+        f(nullptr, &frame_end_offset);
     }
 
 
@@ -54,6 +57,8 @@ struct ASTWindowListElement : public IAST
     ASTPtr clone() const override;
 
     String getID(char delimiter) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

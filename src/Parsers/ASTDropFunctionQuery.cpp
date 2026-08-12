@@ -7,7 +7,7 @@ namespace DB
 
 ASTPtr ASTDropFunctionQuery::clone() const
 {
-    return std::make_shared<ASTDropFunctionQuery>(*this);
+    return make_intrusive<ASTDropFunctionQuery>(*this);
 }
 
 void ASTDropFunctionQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const

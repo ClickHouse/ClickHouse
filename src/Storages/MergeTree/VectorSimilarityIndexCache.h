@@ -21,6 +21,37 @@ namespace CurrentMetrics
 namespace DB
 {
 
+struct VectorSimilarityIndexCacheKey
+{
+    /// Storage-related path of the part - uniquely identifies one part from another
+    String path_to_data_part;
+
+    /// Also have the index name and mark are part of the the key because
+    /// - a table/part can have multiple vector indexes
+    /// - if the vector index granularity is smaller than number of granules/marks in the part, then
+    ///   multiple vector index granules, each starting at 'index_mark' will be created on the part.
+    String index_name;
+    size_t index_mark;
+
+    bool operator==(const VectorSimilarityIndexCacheKey & rhs) const
+    {
+        return (path_to_data_part == rhs.path_to_data_part && index_name == rhs.index_name && index_mark == rhs.index_mark);
+    }
+};
+
+struct VectorSimilarityIndexCacheHashFunction
+{
+    size_t operator()(const VectorSimilarityIndexCacheKey & key) const
+    {
+        SipHash siphash;
+        siphash.update(key.path_to_data_part);
+        siphash.update(key.index_name);
+        siphash.update(key.index_mark);
+
+        return siphash.get64();
+    }
+};
+
 struct VectorSimilarityIndexCacheCell
 {
     /// memoryUsageBytes() gives only approximate results ... adding some excess bytes should make it less bad
@@ -48,27 +79,16 @@ struct VectorSimilarityIndexCacheWeightFunction
     }
 };
 
-
 /// Cache of deserialized vector index granules.
-class VectorSimilarityIndexCache : public CacheBase<UInt128, VectorSimilarityIndexCacheCell, UInt128TrivialHash, VectorSimilarityIndexCacheWeightFunction>
+class VectorSimilarityIndexCache : public CacheBase<VectorSimilarityIndexCacheKey, VectorSimilarityIndexCacheCell, VectorSimilarityIndexCacheHashFunction, VectorSimilarityIndexCacheWeightFunction>
 {
 public:
-    using Base = CacheBase<UInt128, VectorSimilarityIndexCacheCell, UInt128TrivialHash, VectorSimilarityIndexCacheWeightFunction>;
+
+    using Base = CacheBase<VectorSimilarityIndexCacheKey, VectorSimilarityIndexCacheCell, VectorSimilarityIndexCacheHashFunction, VectorSimilarityIndexCacheWeightFunction>;
 
     VectorSimilarityIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
         : Base(cache_policy, CurrentMetrics::VectorSimilarityIndexCacheBytes, CurrentMetrics::VectorSimilarityIndexCacheCells, max_size_in_bytes, max_count, size_ratio)
     {}
-
-    static UInt128 hash(const String & path_to_data_part, const String & index_name, size_t index_mark)
-    {
-        SipHash hash;
-        hash.update(path_to_data_part.size());
-        hash.update(path_to_data_part.data(), path_to_data_part.size());
-        hash.update(index_name.size());
-        hash.update(index_name.data(), index_name.size());
-        hash.update(index_mark);
-        return hash.get128();
-    }
 
     /// LoadFunc should have signature () -> MergeTreeIndexGranulePtr.
     template <typename LoadFunc>
@@ -88,6 +108,11 @@ public:
             ProfileEvents::increment(ProfileEvents::VectorSimilarityIndexCacheHits);
 
         return result.first->granule;
+    }
+
+    void removeEntriesFromCache(const String & path_to_data_part)
+    {
+        Base::remove([path_to_data_part](const Key & key, const MappedPtr &) { return key.path_to_data_part == path_to_data_part; });
     }
 
 private:

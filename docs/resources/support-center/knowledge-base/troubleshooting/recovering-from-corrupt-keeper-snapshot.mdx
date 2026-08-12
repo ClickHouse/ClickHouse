@@ -1,0 +1,243 @@
+---
+date: 2025-01-29
+title: How to recover from a corrupt Keeper snapshot
+tags: ['Troubleshooting']
+keywords: ['Keeper', 'corrupt snapshot']
+description: 'Article describing how to recover from a corrupt Keeper snapshot: how the problem manifests, what a snapshot is and where to find it and possible recovery strategies.'
+---
+
+Corrupt or bad ClickHouse Keeper snapshots can cause significant system instability, such as metadata inconsistencies, read-only states for tables, resource exhaustion, or failed backups. This article covers:
+
+- [What snapshots are and where to find them](#overview)
+- [How the problem manifests](#symptoms)
+- [Possible strategies for recovery](#recovery-strategies) and what each of them means
+
+## Overview of Keeper snapshots {#overview}
+
+### What is a snapshot? {#what-is-snapshot}
+
+A snapshot is a serialized state of Keeper's internal data (such as metadata about clusters, table coordination paths, and configurations) at a specific point in time. Snapshots are vital for resynchronizing Keeper nodes within a cluster, recovering metadata during failures, and start-up or restart processes that rely on a known-good Keeper state.
+
+### Where can I find snapshots? {#where-to-find-snapshots}
+
+Snapshots are stored as files on the local filesystem of Keeper nodes. By default, they are stored at `/var/lib/clickhouse/coordination/snapshots/` or by the custom path specified by `snapshot_storage_path` in your `keeper_server.xml` file. Snapshots are named incrementally (e.g., snapshot.23), with newer ones having higher numbers.
+
+For multi-node clusters, each Keeper node has its own snapshot directory.
+
+<Note>
+Consistency within snapshots across nodes is critical for recovery.
+</Note>
+
+## Key symptoms and manifestations of corrupt Keeper snapshots {#symptoms}
+
+The table below details some common symptoms and manifestations of corrupt Keeper snapshots:
+
+| **Category** | **Issue Type** | **What to look for** |
+|---|---|---|
+| **Operational Issues** | Read-Only Mode | Tables unexpectedly switch to read-only mode |
+| | Query Failures | Persistent query failures with `Coordination::Exception` errors |
+| **Metadata Corruption** | Outdated Metadata | Dropped tables not reflected; operation failures due to stale metadata |
+| **Resource Overload** | System Resource Exhaustion | Keeper nodes consume excessive CPU, memory, or disk space; potential downtime |
+| | Disk Full | Disk full during snapshot creation |
+| **Backup & Restore** | Backup Failures | Backups fail due to missing or inconsistent Keeper metadata |
+| **Snapshot Creation/Transfer** | Keeper Crash | Keeper crash mid-snapshot (look for "SEGFAULT" errors) |
+| | Snapshot Transfer Corruption | Corruption during snapshot transfer between replicas |
+| | Race Condition | Race condition during log compaction - background commit thread accessing deleted logs |
+| | Network Synchronization | Network issues preventing snapshot sync from leader to followers |
+
+**Log Indicators:**
+
+Before diagnosing snapshot corruption, check **Keeper logs** for specific error patterns:
+
+| **Log Type** | **What to Look For** |
+|---|---|
+| **Snapshot corruption errors** | • `Aborting because of failure to load from latest snapshot with index`<br/>• `Failure to load from latest snapshot with index {}: {}. Manual intervention is necessary for recovery`<br/>• `Failed to preprocess stored log at index {}, aborting to avoid inconsistent state`<br/>• Snapshot serialization/loading failures during startup |
+| **Other Keeper issues** | • `Coordination::Exception`<br/>• `Zookeeper::Session Timeout`<br/>• Synchronization or election issues<br/>• Log compaction race conditions |
+
+## Recovering from corrupt Keeper snapshots {#recovery-strategies}
+
+Before touching any files, always:
+
+1. Stop all Keeper nodes to prevent further corruption
+2. Backup everything by copying the entire coordination directory to a safe location
+3. Verify cluster quorum to ensure at least one node has good data
+
+---
+
+### 1. Restore from an existing backup {#restore-from-existing-backup}
+
+You should follow this process if:
+
+- The Keeper metadata or snapshot corruption makes current data unsalvageable.
+- A backup exists with a known-good Keeper state.
+
+Follow the steps below to restore an existing backup:
+
+1. Locate and validate the newest backup for metadata consistency.
+2. Shut down the ClickHouse and Keeper services.
+3. Replace the faulty snapshots and logs with those from the backup directory.
+4. Restart the Keeper cluster and validate metadata synchronization.
+
+<Tip>
+**Backup regularly**
+
+If backups are outdated, you may incur a loss of recent metadata changes. For this reason, we recommend backing up regularly.
+</Tip>
+
+---
+
+### 2. Rollback to an older snapshot {#rollback-to-older-snapshot}
+
+You should follow this process when:
+
+- Recent snapshots are corrupt, but older ones remain usable.
+- Incremental logs are intact for consistent recovery.
+
+Follow the steps below to roll back to an older snapshot:
+
+1. Identify and select a valid older snapshot (e.g., snapshot.19) from the Keeper directory.
+2. Remove newer snapshots and logs.
+3. Restart Keeper so it replays logs to rebuild the metadata state.
+
+<Warning>
+**Metadata desynchronization risk**
+
+There is a risk of metadata desynchronization if snapshots and logs are missing or incomplete.
+</Warning>
+
+---
+
+### 3. Restore metadata using `SYSTEM RESTORE REPLICA` {#restore-metadata-with-system-restore-replica}
+
+You should follow this process when:
+
+- Keeper metadata is lost or corrupted but table data still exists on disk
+- Tables have switched to read-only mode due to missing ZooKeeper/Keeper metadata
+- You need to recreate metadata in Keeper based on locally available data parts
+
+Follow the steps below to restore metadata:
+
+1. Verify that table data exists locally in your clickHouse-server data path, set by `<path>` in your config. (`/var/lib/clickhouse/data/` by default)
+
+2. For each affected table, execute:
+```sql
+SYSTEM RESTART REPLICA [db.]table_name;
+SYSTEM RESTORE REPLICA [db.]table_name;
+```
+
+3. For database-level recovery (if using Replicated database engine):
+```sql
+SYSTEM RESTORE DATABASE REPLICA db_name;
+```
+
+4. Wait for synchronization to complete:
+```sql
+SYSTEM SYNC REPLICA [db.]table_name;
+```
+
+5. Verify recovery by checking `system.replicas` for `is_readonly = 0` and monitoring `system.detached_parts`
+
+<Info>
+**How it works**
+
+`SYSTEM RESTORE REPLICA` detaches all existing parts, recreates metadata in Keeper (as if it's a new empty table), then reattaches all parts. This avoids re-downloading data over the network.
+</Info>
+
+<Warning>
+**Prerequisites**
+
+This only works if local data parts are intact. If data is also corrupted, use strategy #5 (rebuild cluster) instead.
+</Warning>
+
+---
+
+### 4. Drop and recreate replica metadata in Keeper {#drop-and-recreate-replica-metadata}
+
+You should follow this process when:
+
+- The error occurs on a single replica of the cluster and has corrupt or inconsistent metadata in Keeper
+- You encounter errors like "Part XXXXX intersects previous part YYYYY"
+- You need to completely reset a replica's Keeper metadata while preserving local data
+
+Follow the steps below to drop and recreate metadata:
+
+1. On the affected replica, detach the table:
+```sql
+DETACH TABLE [db.]table_name;
+```
+
+2. Remove the replica's metadata from Keeper (execute on any replica):
+```sql
+SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/clickhouse/tables/{shard}/table_name';
+```
+
+To find the correct ZooKeeper path:
+```sql
+SELECT zookeeper_path, replica_name FROM system.replicas WHERE table = 'table_name';
+```
+
+3. Reattach the table (it will be in read-only mode):
+```sql
+ATTACH TABLE [db.]table_name;
+```
+
+4. Restore the replica metadata:
+```sql
+SYSTEM RESTORE REPLICA [db.]table_name;
+```
+
+5. Synchronize with other replicas:
+```sql
+SYSTEM SYNC REPLICA [db.]table_name;
+```
+
+6. Check `system.detached_parts` on all replicas after recovery
+
+<Warning>
+**Execute on all affected replicas**
+
+If the corruption affects multiple replicas, repeat these steps on each one sequentially.
+</Warning>
+
+<Tip>
+**For entire database**
+
+If using a Replicated database, you can use `SYSTEM DROP REPLICA ... FROM DATABASE db_name` instead.
+</Tip>
+
+**Alternative: Using force_restore_data flag**
+
+For automatic recovery of all replicated tables at server startup:
+
+1. Stop ClickHouse server
+2. Create the recovery flag:
+```bash
+sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
+```
+3. Start ClickHouse server
+4. The server will automatically delete the flag and restore all replicated tables
+5. Monitor logs for recovery progress
+
+This approach is useful when multiple tables need recovery simultaneously.
+
+---
+
+### 5. Rebuild Keeper cluster {#rebuild-keeper-cluster}
+
+You should follow this process when:
+
+- No valid snapshots, logs, or backups are available for recovery.
+- You need to recreate the entire Keeper cluster and its metadata.
+
+Follow the steps below to rebuild the Keeper cluster:
+
+1. Fully stop the ClickHouse and Keeper clusters.
+2. Reset each Keeper node by cleaning the snapshot and log directories.
+3. Initialize one Keeper node as the leader and add other nodes incrementally.
+4. Re-import metadata if available from external records.
+
+<Warning>
+**Time-intensive process**
+
+This process is time-intensive and carries a risk of prolonged outage. Total data reconstruction is required.
+</Warning>

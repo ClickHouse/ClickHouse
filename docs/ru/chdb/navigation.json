@@ -1,0 +1,85 @@
+{
+  "groups": [
+    {
+      "group": "Начало работы",
+      "pages": [
+        "ru/chdb/getting-started"
+      ],
+      "root": "ru/chdb/index"
+    },
+    {
+      "group": "Интеграции для языков программирования",
+      "pages": [
+        "ru/chdb/install/python",
+        "ru/chdb/install/nodejs",
+        "ru/chdb/install/go",
+        "ru/chdb/install/rust",
+        "ru/chdb/install/bun",
+        "ru/chdb/install/c"
+      ],
+      "root": "ru/chdb/install/index"
+    },
+    {
+      "group": "DataStore",
+      "pages": [
+        "ru/chdb/datastore/quickstart",
+        "ru/chdb/datastore/factory-methods",
+        "ru/chdb/datastore/query-building",
+        "ru/chdb/datastore/aggregation",
+        "ru/chdb/datastore/accessors",
+        "ru/chdb/datastore/io",
+        "ru/chdb/datastore/execution-model",
+        "ru/chdb/datastore/pandas-compat",
+        "ru/chdb/datastore/class-reference"
+      ],
+      "root": "ru/chdb/datastore/index"
+    },
+    {
+      "group": "Конфигурация",
+      "pages": [
+        "ru/chdb/configuration/execution-engine",
+        "ru/chdb/configuration/function-config",
+        "ru/chdb/configuration/performance-mode"
+      ],
+      "root": "ru/chdb/configuration/index"
+    },
+    {
+      "group": "Отладка",
+      "pages": [
+        "ru/chdb/debugging/explain",
+        "ru/chdb/debugging/logging",
+        "ru/chdb/debugging/profiling"
+      ],
+      "root": "ru/chdb/debugging/index"
+    },
+    {
+      "group": "Руководства для разработчиков",
+      "pages": [
+        "ru/chdb/guides/jupysql",
+        "ru/chdb/guides/querying-pandas",
+        "ru/chdb/guides/querying-apache-arrow",
+        "ru/chdb/guides/querying-s3-bucket",
+        "ru/chdb/guides/querying-parquet",
+        "ru/chdb/guides/query-remote-clickhouse",
+        "ru/chdb/guides/clickhouse-local",
+        "ru/chdb/guides/migration-from-pandas",
+        "ru/chdb/guides/pandas-cookbook",
+        "ru/chdb/guides/pandas-differences",
+        "ru/chdb/guides/pandas-performance",
+        "ru/chdb/guides/pandas-to-sql"
+      ],
+      "root": "ru/chdb/guides/index"
+    },
+    {
+      "group": "Технический справочник",
+      "pages": [
+        "ru/chdb/reference/data-formats",
+        "ru/chdb/reference/sql-reference",
+        "ru/chdb/api/python"
+      ],
+      "root": "ru/chdb/reference/index"
+    }
+  ],
+  "icon": "/images/icons/icon-chdb.svg",
+  "item": "chDB"
+}

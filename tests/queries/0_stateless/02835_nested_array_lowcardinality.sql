@@ -44,6 +44,6 @@ INSERT INTO cool_table SELECT number, range(number), arrayMap(x -> (arrayMap(y -
 
 ALTER TABLE cool_table ADD COLUMN IF NOT EXISTS `n.lc2` Array(Map(LowCardinality(String), UInt64));
 
-SELECT n.lc1, n.lc2 FROM cool_table ORDER BY id;
+SELECT arrayMap(x -> mapSort(x), n.lc1), arrayMap(x -> mapSort(x), n.lc2) FROM cool_table ORDER BY id;
 
 DROP TABLE IF EXISTS cool_table;

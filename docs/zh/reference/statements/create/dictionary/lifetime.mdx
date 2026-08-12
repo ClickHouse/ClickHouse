@@ -1,0 +1,142 @@
+---
+description: '用于自动刷新的字典 LIFETIME 配置'
+sidebarTitle: 'LIFETIME'
+slug: /sql-reference/statements/create/dictionary/lifetime
+title: '使用 LIFETIME 刷新字典数据'
+doc_type: 'reference'
+---
+
+import CloudDetails from '/snippets/zh/_snippet_dictionary_in_cloud.mdx';
+
+ClickHouse 会根据 `LIFETIME` 标签 (以秒为单位定义) 定期更新字典。
+`LIFETIME` 对于完整下载的字典表示更新间隔，对于缓存字典则表示失效间隔。
+
+在更新过程中，仍可查询字典的旧版本。
+除首次使用时加载外，字典更新不会阻塞查询。
+如果更新过程中发生错误，错误会写入服务器日志，查询仍可继续使用字典的旧版本。
+如果字典更新成功，字典的旧版本会[以原子方式](/zh/concepts/core-concepts/glossary#atomicity)替换。
+
+设置示例：
+
+<CloudDetails />
+
+```xml
+<dictionary>
+    ...
+    <lifetime>300</lifetime>
+    ...
+</dictionary>
+```
+
+或
+
+```sql
+CREATE DICTIONARY (...)
+...
+LIFETIME(300)
+...
+```
+
+将 `<lifetime>0</lifetime>` (`LIFETIME(0)`) 设为 0 会阻止字典更新。
+
+你可以设置一个更新时间间隔，ClickHouse 会在该范围内均匀随机选择一个时间点。这对于在大量服务器上更新时分散字典源的负载是必需的。
+
+设置示例：
+
+```xml
+<dictionary>
+    ...
+    <lifetime>
+        <min>300</min>
+        <max>360</max>
+    </lifetime>
+    ...
+</dictionary>
+```
+
+或
+
+```sql
+LIFETIME(MIN 300 MAX 360)
+```
+
+如果 `<min>0</min>` 且 `<max>0</max>`，ClickHouse 不会因超时而重新加载字典。
+在这种情况下，如果字典配置文件发生了更改，或者执行了 `SYSTEM RELOAD DICTIONARY` 命令，ClickHouse 也可能提前重新加载字典。
+
+更新字典时，ClickHouse 服务器会根据[数据源](/zh/reference/statements/create/dictionary/sources/overview)的类型采用不同的逻辑：
+
+* 对于文本文件，会检查修改时间。如果该时间与之前记录的时间不同，则更新字典。
+* 来自其他数据源的字典默认每次都会更新。
+
+对于其他数据源 (ODBC、PostgreSQL、ClickHouse 等) ，你可以设置一个查询，使字典仅在确实发生变化时才更新，而不是每次都更新。为此，请按以下步骤操作：
+
+* 字典表必须有一个字段，并且该字段会在源数据更新时始终发生变化。
+* 数据源的设置中必须指定一个用于获取变化字段的查询。ClickHouse 服务器会将查询结果解释为一行；如果这一行相较于之前的状态发生了变化，则会更新字典。在[数据源](/zh/reference/statements/create/dictionary/sources/overview)的设置中，通过 `<invalidate_query>` 字段指定该查询。
+
+设置示例：
+
+```xml
+<dictionary>
+    ...
+    <odbc>
+      ...
+      <invalidate_query>SELECT update_time FROM dictionary_source where id = 1</invalidate_query>
+    </odbc>
+    ...
+</dictionary>
+```
+
+或
+
+```sql
+...
+SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source where id = 1'))
+...
+```
+
+对于 `Cache`、`ComplexKeyCache`、`SSDCache` 和 `SSDComplexKeyCache` 字典，同时支持同步更新和异步更新。
+
+对于 `Flat`、`Hashed`、`HashedArray`、`ComplexKeyHashed` 字典，也可以只请求自上次更新以来发生变更的数据。如果将 `update_field` 指定为字典源配置的一部分，则会在数据请求中附加上一次更新时间的秒级值。根据源类型 (Executable、HTTP、MySQL、PostgreSQL、ClickHouse 或 ODBC) 的不同，在向外部源请求数据之前，会对 `update_field` 采用不同的处理逻辑。
+
+* 如果 数据源 是 HTTP，`update_field` 会作为查询参数添加，并以上次更新时间作为该参数的值。
+* 如果 数据源 是 Executable，`update_field` 会作为可执行脚本参数添加，并以上次更新时间作为参数值。
+* 如果 数据源 是 ClickHouse、MySQL、PostgreSQL 或 ODBC，则会额外添加一段 `WHERE` 条件，其中 `update_field` 会与上次更新时间进行大于或等于比较。
+  * 默认情况下，这个 `WHERE` 条件会在 SQL 查询的最外层进行检查。或者，也可以使用 `{condition}` 关键字，将该条件放在查询中的其他任意 `WHERE` 子句内进行检查。示例：
+    ```sql
+    ...
+    SOURCE(CLICKHOUSE(...
+        update_field 'added_time'
+        QUERY '
+            SELECT my_arr.1 AS x, my_arr.2 AS y, creation_time
+            FROM (
+                SELECT arrayZip(x_arr, y_arr) AS my_arr, creation_time
+                FROM dictionary_source
+                WHERE {condition}
+            )'
+    ))
+    ...
+    ```
+
+如果设置了 `update_field` 选项，还可以设置额外的 `update_lag` 选项。`update_lag` 选项的值会在请求更新数据之前，从上次更新时间中减去。
+
+设置示例：
+
+```xml
+<dictionary>
+    ...
+        <clickhouse>
+            ...
+            <update_field>added_time</update_field>
+            <update_lag>15</update_lag>
+        </clickhouse>
+    ...
+</dictionary>
+```
+
+或
+
+```sql
+...
+SOURCE(CLICKHOUSE(... update_field 'added_time' update_lag 15))
+...
+```

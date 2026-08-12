@@ -1,0 +1,46 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/redis
+title: 'Redis Dictionary ソース'
+sidebarTitle: 'Redis'
+description: 'ClickHouse で Redis を Dictionary ソースとして設定します。'
+doc_type: 'reference'
+---
+
+設定例:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(REDIS(
+        host 'localhost'
+        port 6379
+        storage_type 'simple'
+        db_index 0
+    ))
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <source>
+        <redis>
+            <host>localhost</host>
+            <port>6379</port>
+            <storage_type>simple</storage_type>
+            <db_index>0</db_index>
+        </redis>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+設定フィールド:
+
+| 設定             | 説明                                                                                                                                                                                                                                                                                                     |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `host`         | Redis のホスト。                                                                                                                                                                                                                                                                                            |
+| `port`         | Redis サーバーのポート。                                                                                                                                                                                                                                                                                        |
+| `storage_type` | キーの操作に使用される Redis 内部ストレージの構造です。`simple` はフラットなキー・バリューマップを使用し、単純キーのレイアウトに加えて、単一カラムの複合キーのレイアウト (`complex_key_cache` や `complex_key_direct` など) もサポートします。`hash_map` は Redis ハッシュを使用し、複合キーに必須です。この場合、キーカラムはちょうど 2 つである必要があります。キーカラムは整数型または文字列型である必要があります。範囲付きレイアウトはサポートされていません。デフォルト値は `simple` です。省略可能です。 |
+| `db_index`     | Redis 論理データベースの数値インデックス。デフォルト値は `0` です。省略可能です。                                                                                                                                                                                                                                                         |

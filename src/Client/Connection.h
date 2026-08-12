@@ -30,6 +30,7 @@ namespace DB
 struct Settings;
 struct TimeoutSetter;
 
+class JWTProvider;
 class Connection;
 struct ConnectionParameters;
 struct ClusterFunctionReadTaskResponse;
@@ -64,7 +65,12 @@ public:
         const String & client_name_,
         Protocol::Compression compression_,
         Protocol::Secure secure_,
-        const String & bind_host_);
+        const String & tls_sni_override_,
+        const String & bind_host_
+#if USE_JWT_CPP && USE_SSL
+        , std::shared_ptr<JWTProvider> jwt_provider_ = nullptr
+#endif
+    );
 
     ~Connection() override;
 
@@ -125,6 +131,8 @@ public:
 
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
 
+    void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) override;
+
     void sendExternalTablesData(ExternalTablesData & data) override;
 
     bool poll(size_t timeout_microseconds/* = 0 */) override;
@@ -142,6 +150,13 @@ public:
 
     bool checkConnected(const ConnectionTimeouts & timeouts) override { return isConnected() && ping(timeouts); }
 
+    /// Note that a server that went away without closing the connection is not detected here, and
+    /// neither is a close that has not arrived yet; that only shows up when the connection is used.
+    /// Pinging the server to find out would add a round trip to every query, and a pong that does
+    /// not arrive in time is indistinguishable from a closed connection, so it would make the client
+    /// drop live sessions under load.
+    bool checkConnectedWithoutRoundTrip() override { return isConnected() && !isStale(); }
+
     void disconnect() override;
 
     /// Send prepared block of data (serialized and, if need, compressed), that will be read from 'input'.
@@ -150,9 +165,7 @@ public:
 
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response);
     /// Send all scalars.
-    void sendScalarsData(Scalars & data);
-    /// Send parts' uuids to excluded them from query processing
-    void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids);
+    void sendScalarsData(Scalars & data) override;
 
     TablesStatusResponse getTablesStatus(const ConnectionTimeouts & timeouts,
                                          const TablesStatusRequest & request);
@@ -174,10 +187,15 @@ public:
 
     bool haveMoreAddressesToConnect() const { return have_more_addresses_to_connect; }
 
+    void setAddressConnectTimeoutExpired() { address_connect_timeout_expired = true; }
+
     void setFormatSettings(const FormatSettings & settings) override
     {
         format_settings = settings;
     }
+
+    UInt64 getParallelReplicasProtocolVersion() const { return server_parallel_replicas_protocol_version; }
+    UInt64 getQueryPlanSerializationVersion() const { return server_query_plan_serialization_version; }
 
 private:
     String host;
@@ -195,6 +213,7 @@ private:
     String quota_key;
 #if USE_JWT_CPP && USE_SSL
     String jwt;
+    std::shared_ptr<JWTProvider> jwt_provider;
 #endif
 
     /// For inter-server authorization
@@ -241,6 +260,7 @@ private:
     String query_id;
     Protocol::Compression compression;        /// Enable data compression for communication.
     Protocol::Secure secure;             /// Enable data encryption for communication.
+    String tls_sni_override;             /// Override for TLS SNI field.
     String bind_host;
 
     /// What compression settings to use while sending data for INSERT queries and external tables.
@@ -263,7 +283,10 @@ private:
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
     std::unique_ptr<NativeWriter> block_out;
 
+    /// True if there are more resolved addresses to try when connecting (hostname may resolve to multiple IPs).
     bool have_more_addresses_to_connect = false;
+    /// Set by async callback when the per-address connect timeout expires, used to abort the current attempt.
+    bool address_connect_timeout_expired = false;
 
     /// Logger is created lazily, for avoid to run DNS request in constructor.
     class LoggerWrapper
@@ -296,22 +319,25 @@ private:
     std::optional<FormatSettings> format_settings;
 
     void connect(const ConnectionTimeouts & timeouts);
-    void sendHello(const Poco::Timespan & handshake_timeout);
+    void sendHello();
 
     void cancel() noexcept;
     void reset() noexcept;
 
 #if USE_SSH
-    void performHandshakeForSSHAuth(const Poco::Timespan & handshake_timeout);
+    void performHandshakeForSSHAuth();
 #endif
 
     void sendAddendum();
-    void receiveHello(const Poco::Timespan & handshake_timeout);
+    void receiveHello();
 
 #if USE_SSL
     void sendClusterNameAndSalt();
 #endif
     bool ping(const ConnectionTimeouts & timeouts);
+
+    /// Whether the connection can no longer serve a request, checked without a round trip.
+    bool isStale();
 
     Block receiveData();
     Block receiveLogData();
@@ -331,7 +357,9 @@ private:
     void initBlockLogsInput();
     void initBlockProfileEventsInput();
 
-    [[noreturn]] void throwUnexpectedPacket(TimeoutSetter & timeout_setter, UInt64 packet_type, const char * expected);
+    void ensureConnected() const;
+
+    [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected, TimeoutSetter * timeout_setter = nullptr);
 };
 
 template <typename Conn>

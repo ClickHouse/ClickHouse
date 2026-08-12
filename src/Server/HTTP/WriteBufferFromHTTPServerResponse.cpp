@@ -2,6 +2,7 @@
 #include <Server/HTTP/exceptionCodeToHTTPStatus.h>
 #include <IO/HTTPCommon.h>
 #include <IO/Progress.h>
+#include <IO/WriteBufferDecorator.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteIntText.h>
@@ -138,13 +139,14 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     HTTPServerResponse & response_,
     bool is_http_method_head_,
-    const ProfileEvents::Event & write_event_)
-    : HTTPWriteBuffer(response_.getSocket(), write_event_)
+    const ProfileEvents::Event & write_event_,
+    size_t buf_size)
+    : HTTPWriteBuffer(response_.getSocket(), write_event_, buf_size)
     , response(response_)
     , is_http_method_head(is_http_method_head_)
 {
     if (response.getChunkedTransferEncoding())
-        setChunked();
+        setChunked(buf_size);
 
     exception_tag = getRandomASCIIString(EXCEPTION_TAG_LENGTH);
 }
@@ -318,7 +320,7 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
                 if (fixedLengthLeft() > EXCEPTION_MARKER.size())
                 {
                     // fixed length buffer drops all excess data
-                    // make sure that we send less than content-lenght bytes at the end
+                    // make sure that we send less than content-length bytes at the end
                     // the aim is to break HTTP
                     breakFixedLength();
                 }
@@ -379,12 +381,8 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             writeString(EXCEPTION_MARKER, out);
             writeCString("\r\n", out);
 
-            // this finish chunk with the error message in case of Transfer-Encoding: chunked
             if (use_compression_buffer)
-            {
                 compression_buffer->next();
-                compression_buffer->finalize();
-            }
             next();
 
             LOG_DEBUG(

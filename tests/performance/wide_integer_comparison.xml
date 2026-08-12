@@ -1,0 +1,48 @@
+<test>
+    <!-- Comparison of 128-bit integer columns. Data shapes are chosen to exercise branch-prediction-hostile
+         patterns: fully random values (random sign for Int128), values that fit in the low 64 bits,
+         and values where half of the rows share the high 64 bits. -->
+
+    <create_query>
+        CREATE TABLE cmp128
+        (
+            u1 UInt128, u2 UInt128,
+            i1 Int128, i2 Int128,
+            small_u1 UInt128, small_u2 UInt128,
+            mixed_u1 UInt128, mixed_u2 UInt128
+        ) ENGINE = Memory
+    </create_query>
+    <fill_query>
+        INSERT INTO cmp128 SELECT
+            bitShiftLeft(toUInt128(cityHash64(number, 1)), 64) + cityHash64(number, 2),
+            bitShiftLeft(toUInt128(cityHash64(number, 3)), 64) + cityHash64(number, 4),
+            toInt128(bitShiftLeft(toUInt128(cityHash64(number, 5)), 64) + cityHash64(number, 6)),
+            toInt128(bitShiftLeft(toUInt128(cityHash64(number, 7)), 64) + cityHash64(number, 8)),
+            toUInt128(cityHash64(number, 9)),
+            toUInt128(cityHash64(number, 10)),
+            bitShiftLeft(toUInt128(cityHash64(number, 11)), 64) + cityHash64(number, 12),
+            bitShiftLeft(toUInt128(cityHash64(number, if(number % 2 = 0, 11, 13))), 64) + cityHash64(number, 14)
+        FROM numbers(10000000)
+    </fill_query>
+
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT count() FROM cmp128 WHERE u1 &lt; u2</query>
+    <query>SELECT count() FROM cmp128 WHERE i1 &lt; i2</query>
+    <query>SELECT count() FROM cmp128 WHERE small_u1 &lt; small_u2</query>
+    <query>SELECT count() FROM cmp128 WHERE mixed_u1 &lt; mixed_u2</query>
+    <query>SELECT count() FROM cmp128 WHERE u1 &gt; u2</query>
+    <query>SELECT count() FROM cmp128 WHERE u1 &lt;= u2</query>
+    <query>SELECT count() FROM cmp128 WHERE i1 &lt;= i2</query>
+    <query>SELECT count() FROM cmp128 WHERE mixed_u1 &lt;= mixed_u2</query>
+    <query>SELECT count() FROM cmp128 WHERE u1 &gt;= u2</query>
+    <query>SELECT count() FROM cmp128 WHERE i1 &gt;= i2</query>
+    <query>SELECT count() FROM cmp128 WHERE mixed_u1 &gt;= mixed_u2</query>
+    <query>SELECT count() FROM cmp128 WHERE u1 &lt; bitShiftLeft(toUInt128(1), 127)</query>
+    <query>SELECT i1 FROM cmp128 ORDER BY i1 LIMIT 10</query>
+    <query>SELECT u1 FROM cmp128 ORDER BY u1 DESC LIMIT 10</query>
+
+    <drop_query>DROP TABLE IF EXISTS cmp128</drop_query>
+</test>

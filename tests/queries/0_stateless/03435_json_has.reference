@@ -1,0 +1,127 @@
+-- Basic path existence
+1	1
+2	1
+3	0
+-- Nested path with dot notation
+1	1
+2	0
+3	0
+1	1
+2	0
+3	0
+-- Non-existent paths
+1	0
+2	0
+3	0
+1	0
+2	0
+3	0
+1	0
+2	0
+3	0
+-- NULL value handling (path exists but value is null)
+1	0
+2	1
+3	0
+-- Constant JSON expressions
+1
+0
+1
+1
+0
+0
+-- Empty string key
+1	1
+-- Array values
+2	1
+4	1
+-- Empty nested object
+3	0
+-- MergeTree engine test
+1	1
+2	1
+3	0
+1	1
+2	0
+3	0
+1	0
+2	0
+3	1
+-- Variable path column
+1	a	1
+2	b	1
+3	c	0
+-- Special characters in keys
+1
+1
+1
+1
+-- Typed paths with constant path argument
+1	1
+2	1
+3	1
+1	1
+2	1
+3	1
+1	1
+2	1
+3	1
+1	0
+2	0
+3	0
+-- Typed paths with variable path argument
+1	x	1
+2	y.z	1
+3	y	1
+4	missing	0
+-- Shared data paths with constant path argument
+1	1
+2	1
+3	0
+1	1
+2	0
+3	0
+1	1
+2	0
+3	0
+1	1
+2	0
+3	0
+1	0
+2	1
+3	0
+1	0
+2	0
+3	1
+1	0
+2	0
+3	0
+-- Shared data paths with variable path argument
+1	a	1
+2	b.c	1
+3	b	0
+4	d	1
+5	missing	0
+-- Mixed: typed paths, dynamic paths, and shared data
+1	1
+2	1
+3	1
+1	1
+2	0
+3	0
+1	1
+2	0
+3	0
+1	0
+2	1
+3	0
+1	0
+2	0
+3	0
+-- Deeply nested paths
+1
+1
+1
+1
+1
+0

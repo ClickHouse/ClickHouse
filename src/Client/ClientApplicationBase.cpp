@@ -5,7 +5,9 @@
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Common/TerminalSize.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/SignalHandlers.h>
+#include <Client/JWTProvider.h>
 
 #include <Common/config_version.h>
 #include "config.h"
@@ -60,8 +62,10 @@ ClientApplicationBase::~ClientApplicationBase()
 {
     try
     {
+#if defined(OS_HAS_SIGNAL_HANDLERS)
         writeSignalIDtoSignalPipe(SignalListener::StopThread);
         signal_listener_thread.join();
+#endif
         HandledSignals::instance().reset();
     }
     catch (...)
@@ -86,10 +90,13 @@ void ClientApplicationBase::setupSignalHandler()
 {
     ClientApplicationBase::getInstance().stopQuery();
 
-    struct sigaction new_act;
+    struct sigaction new_act{};
     memset(&new_act, 0, sizeof(new_act));
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
     new_act.sa_handler = interruptSignalHandler;
+#pragma clang diagnostic pop
     new_act.sa_flags = 0;
 
 #if defined(OS_DARWIN)
@@ -158,6 +165,15 @@ void ClientApplicationBase::init(int argc, char ** argv)
 
     if (argc)
         argv0 = argv[0];
+
+    /// Set application name for help messages based on how the binary was invoked
+    std::string_view argv0_view(argv0 ? argv0 : "");
+    std::string name_with_dash = "clickhouse-" + getName();
+    if (argv0_view.contains(name_with_dash))
+        app_name = name_with_dash;
+    else
+        app_name = "clickhouse " + getName();
+
     readArguments(argc, argv, common_arguments, external_tables_arguments, hosts_and_ports_arguments);
 
     /// Support for Unicode dashes
@@ -212,7 +228,6 @@ void ClientApplicationBase::init(int argc, char ** argv)
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
     query_kind = parseQueryKind(options["query_kind"].as<std::string>());
     profile_events.print = options.contains("print-profile-events");
-    profile_events.delay_ms = options["profile-events-delay-ms"].as<UInt64>();
 
     processOptions(options_description, options, external_tables_arguments, hosts_and_ports_arguments);
 
@@ -257,8 +272,12 @@ void ClientApplicationBase::init(int argc, char ** argv)
     }
 
     fatal_log = createLogger("ClientBase", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+    /// Without signals nothing ever writes to the signal pipe, so there is nothing to listen
+    /// for - and the blocking read of that pipe is all the listener thread does.
     signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
     signal_listener_thread.start(*signal_listener);
+#endif
 }
 
 

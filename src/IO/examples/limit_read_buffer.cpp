@@ -6,9 +6,10 @@
 
 #include <iostream>
 #include <string>
+#include <Examples/clickhouse_examples.h>
 
 
-int main(int argc, char ** argv)
+int mainEntryExampleLimitReadBuffer(int argc, char ** argv)
 {
     using namespace DB;
 

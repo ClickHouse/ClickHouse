@@ -11,7 +11,7 @@ namespace
 
 /// Returns 1 if and only if the argument is constant expression.
 /// This function exists for development, debugging and demonstration purposes.
-class FunctionIsConstant : public IFunction
+class FunctionIsConstant final : public IFunction
 {
 public:
     static constexpr auto name = "isConstant";
@@ -32,6 +32,8 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    bool isDeterministic() const override { return false; }
 
     size_t getNumberOfArguments() const override
     {
@@ -116,7 +118,7 @@ SELECT isConstant(now())
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIsConstant>(documentation);
 }

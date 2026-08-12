@@ -1,0 +1,122 @@
+---
+slug: /cloud/managed-postgres/branching
+sidebarTitle: 'Ramas'
+title: 'Ramas'
+description: 'Cree ramas aisladas de bases de datos a partir de instantáneas de un punto en el tiempo para flujos de trabajo de desarrollo, staging, pruebas y recuperación'
+keywords: ['managed postgres', 'ramas', 'pitr', 'recuperación a un punto en el tiempo', 'staging', 'desarrollo', 'rama de base de datos']
+doc_type: 'guide'
+---
+
+Managed Postgres permite crear ramas aisladas de bases de datos mediante recuperación a un punto en el tiempo (PITR).
+
+Una rama es una instancia de PostgreSQL completamente independiente creada a partir de un punto específico en el tiempo de una base de datos existente. Las ramas pueden usarse para desarrollo, staging, pruebas, depuración, validación de datos o flujos de trabajo de recuperación, sin afectar a la base de datos de origen.
+
+A diferencia de las implementaciones copy-on-write que comparten almacenamiento con la base de datos primaria, las ramas de Managed Postgres se restauran desde copias de seguridad y funcionan como instancias de PostgreSQL independientes.
+
+<div id="branching">
+  ## Cómo funciona la ramificación
+</div>
+
+La creación de ramas se basa en la misma infraestructura de copias de seguridad y recuperación que se usa para la [recuperación a un punto en el tiempo (PITR)](/es/products/managed-postgres/backup-and-restore).
+
+Cuando creas una rama, Managed Postgres restaura una copia de seguridad base desde el almacenamiento de objetos, reaplica los segmentos WAL necesarios para alcanzar el punto de recuperación solicitado y aprovisiona una nueva implementación de PostgreSQL a partir del estado recuperado. Una vez completada la recuperación, la rama funciona de forma independiente de la base de datos de origen.
+
+La rama resultante es una copia completa de la base de datos de origen en el punto en el tiempo seleccionado.
+
+<div id="common-use-cases">
+  ## Casos de uso comunes
+</div>
+
+<div id="dev-and-testing">
+  ### Desarrollo y pruebas
+</div>
+
+Crea una rama a partir de una base de datos de producción o staging para validar cambios en la aplicación, migraciones o nuevas funcionalidades con datos realistas.
+
+<div id="staging-environments">
+  ### Entornos de staging
+</div>
+
+Mantenga un entorno de staging que se parezca lo más posible al de producción sin afectar las cargas de trabajo en producción.
+
+<div id="date-validation">
+  ### Validación de datos
+</div>
+
+Pruebe los cambios de esquema, las estrategias de indexación y las optimizaciones de consultas antes de desplegarlos en producción.
+
+<div id="recovery-and-investigation">
+  ### Recuperación e investigación
+</div>
+
+Recupere una base de datos hasta un momento específico para solucionar problemas, realizar auditorías o validar el comportamiento de la aplicación.
+
+<div id="branch-sizing">
+  ## Dimensionamiento de ramas
+</div>
+
+Las ramas son implementaciones independientes de PostgreSQL y pueden dimensionarse por separado de la base de datos de origen.
+
+Por ejemplo, una implementación de producción puede ejecutarse con una configuración más grande, mientras que una rama de desarrollo o staging puede usar un perfil de cómputo más pequeño para reducir costos. Esto permite a los equipos crear entornos temporales sin necesidad de igualar los recursos de cómputo de producción.
+
+<div id="branch-creation-time">
+  ## Tiempo de creación de ramas
+</div>
+
+Debido a que Managed Postgres usa almacenamiento PostgreSQL respaldado por NVMe, las ramas se restauran a partir de copias de seguridad en lugar de crearse mediante mecanismos copy-on-write a nivel de almacenamiento. Como resultado, la creación de ramas no es instantánea.
+
+Los tiempos habituales de creación de ramas varían de varios minutos a decenas de minutos, según:
+
+* Tamaño de la base de datos
+* Tamaño de la copia de seguridad
+* Punto de recuperación
+* Cantidad de WAL que debe reaplicarse
+* Configuración general del clúster
+
+En la mayoría de los despliegues, las ramas están disponibles en pocos minutos. Las bases de datos más grandes pueden requerir más tiempo.
+
+Si el tiempo de creación de ramas se convierte en un cuello de botella para tu flujo de trabajo, ponte en contacto con el equipo de ClickHouse. En muchos casos, el rendimiento de la recuperación de ramas puede optimizarse en función de las características de la carga de trabajo y los requisitos de recuperación.
+
+<div id="branches-v-local-dev">
+  ## Ramas vs. desarrollo local
+</div>
+
+Una pregunta frecuente es si cada desarrollador debería usar una rama de producción como entorno de desarrollo.
+
+Aunque las ramas son útiles para flujos de trabajo de pruebas, validación y staging, por lo general no son el enfoque recomendado para el desarrollo diario de aplicaciones. Cada rama es una implementación independiente de PostgreSQL que debe restaurarse a partir de copias de seguridad y mantenerse por separado. Crear un gran número de ramas puede aumentar los costes de infraestructura y la complejidad operativa.
+
+Para la mayoría de las organizaciones, recomendamos:
+
+* Usar ramas de PostgreSQL para flujos de trabajo de staging, pruebas, depuración y validación.
+* Usar entornos locales de PostgreSQL para el desarrollo diario.
+* Generar conjuntos de datos sintéticos para desarrollo o usar conjuntos de datos anonimizados cuando corresponda.
+* Evitar el desarrollo diario directamente sobre ramas derivadas de producción.
+
+Este enfoque reduce la carga de los sistemas de producción, agiliza el desarrollo y ayuda a garantizar que los datos de producción sigan estando debidamente protegidos.
+
+Para obtener orientación sobre cómo crear entornos locales de desarrollo de PostgreSQL con Docker, consulta [Entornos de desarrollo local](/es/products/managed-postgres/local-development).
+
+<div id="recommended-workflow">
+  ## Flujo de trabajo recomendado
+</div>
+
+Un flujo de trabajo habitual es el siguiente:
+
+```text
+Production Database
+        │
+        ├─────────────► Branch
+        │                  │
+        │                  ├── Staging
+        │                  ├── Validation
+        │                  ├── Migration Testing
+        │                  └── Incident Investigation
+        │
+        └─────────────► Local Development
+                               │
+                               ├── Docker PostgreSQL
+                               ├── Application Migrations
+                               └── Synthetic Test Data
+```
+
+Las ramas son más adecuadas para entornos que requieren una copia de una base de datos similar a la de producción. Para el desarrollo habitual, los entornos locales de PostgreSQL suelen ofrecer un flujo de trabajo más rápido, más económico y más escalable.

@@ -1,0 +1,6 @@
+---
+users_to_ignore_early_memory_limit_check: default
+max_server_memory_usage: 1000000000
+memory_worker_use_cgroup: false
+cgroups_memory_usage_observer_wait_time: 0
+allow_system_allocate_memory: 1

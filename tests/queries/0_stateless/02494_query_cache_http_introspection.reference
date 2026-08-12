@@ -1,0 +1,7 @@
+First query
+< Expires:
+Second query
+< Age:
+< Expires:
+_q1	0	0	0	1	1
+_q2	1	1	1	0	0

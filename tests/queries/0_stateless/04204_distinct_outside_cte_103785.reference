@@ -1,0 +1,42 @@
+-- Query A: full projection (ID, Qty) - was already correct
+115	100000
+116	130000
+117	150000
+118	150000
+-- Query B: subset projection (Qty only) - used to drop a row
+100000
+130000
+150000
+150000
+-- Query C: subset projection through nested SELECT - used to drop a row
+100000
+130000
+150000
+150000
+-- Query D: DISTINCT in second branch of UNION ALL
+100000
+130000
+150000
+150000
+-- Query E: DISTINCT inside a nested UNION ALL
+100000
+130000
+150000
+150000
+150000
+-- Query F: workaround setting still works as before
+100000
+130000
+150000
+150000
+-- Query G: existing 03023 case - DISTINCT as direct FROM-child (already worked)
+product_0
+product_0
+product_0
+product_1
+product_1
+product_1
+-- Query H: den-crane VALUES-based count(c2) repro from PR #104114
+3
+-- Query I: den-crane VALUES-based count() repro from PR #104114
+3

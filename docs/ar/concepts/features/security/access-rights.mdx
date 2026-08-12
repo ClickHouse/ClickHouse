@@ -1,0 +1,580 @@
+---
+slug: /operations/access-rights
+sidebarTitle: 'المستخدمون والأدوار'
+title: 'التحكم في الوصول وإدارة الحسابات'
+keywords: ['ClickHouse Cloud', 'التحكم في الوصول', 'إدارة المستخدمين', 'RBAC', 'الأمان']
+description: 'يوضح التحكم في الوصول وإدارة الحسابات في ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+يدعم ClickHouse إدارة التحكم في الوصول استنادًا إلى نموذج [RBAC](https://en.wikipedia.org/wiki/Role-based_access_control).
+
+كيانات الوصول في ClickHouse:
+
+* [حساب المستخدم](#user-account-management)
+* [الدور](#role-management)
+* [سياسة الصفوف](#row-policy-management)
+* [ملف تعريف الإعدادات](#settings-profiles-management)
+* [الحصة](#quotas-management)
+
+يمكنك تهيئة كيانات الوصول باستخدام:
+
+* سير عمل معتمد على SQL.
+
+  تحتاج إلى [تمكين](#enabling-access-control) هذه الوظيفة.
+
+* [ملفات التهيئة](/ar/concepts/features/configuration/server-config/configuration-files) الخاصة بالخادم `users.xml` و`config.xml`.
+
+نوصي باستخدام سير العمل المعتمد على SQL. تعمل طريقتا التهيئة كلتاهما في الوقت نفسه، لذا إذا كنت تستخدم ملفات تهيئة الخادم لإدارة الحسابات وحقوق الوصول، فيمكنك الانتقال بسلاسة إلى سير العمل المعتمد على SQL.
+
+<Note>
+  لا يمكنك إدارة كيان الوصول نفسه باستخدام طريقتَي التهيئة كلتيهما في الوقت نفسه.
+</Note>
+
+<Note>
+  إذا كنت تبحث عن إدارة مستخدمي ClickHouse Cloud console، فيُرجى الرجوع إلى هذه [الصفحة](/ar/products/cloud/guides/security/cloud-access-management/manage-cloud-users)
+</Note>
+
+لعرض جميع المستخدمين والأدوار وملفات التعريف وما إلى ذلك، وكذلك جميع الامتيازات الممنوحة لها، استخدم عبارة [`SHOW ACCESS`](/ar/reference/statements/show#show-access).
+
+<div id="access-control-usage">
+  ## نظرة عامة
+</div>
+
+يوفّر خادم ClickHouse افتراضيًا حساب المستخدم `default`، ولا يُسمح لهذا الحساب باستخدام التحكم في الوصول وإدارة الحسابات المعتمدَين على SQL، لكنه يملك جميع الحقوق والأذونات. ويُستخدم حساب المستخدم `default` في كل الحالات التي لا يكون فيها اسم المستخدم محددًا، مثلًا عند تسجيل الدخول من العميل أو في الاستعلامات الموزعة. وفي معالجة الاستعلامات الموزعة، يُستخدم حساب المستخدم `default` إذا لم يحدّد إعداد الخادم أو العنقود الخاصيتين [user and password](/ar/reference/engines/table-engines/special/distributed).
+
+إذا كنت قد بدأت للتو في استخدام ClickHouse، فضع في اعتبارك السيناريو التالي:
+
+1. [فعّل](#enabling-access-control) التحكم في الوصول وإدارة الحسابات المعتمدَين على SQL للمستخدم `default`.
+2. سجّل الدخول إلى حساب المستخدم `default` وأنشئ جميع المستخدمين المطلوبين. ولا تنسَ إنشاء حساب مسؤول (`GRANT ALL ON *.* TO admin_user_account WITH GRANT OPTION`).
+3. [قيّد الأذونات](/ar/concepts/features/configuration/settings/permissions-for-queries) للمستخدم `default`، وعطّل له التحكم في الوصول وإدارة الحسابات المعتمدَين على SQL.
+
+<div id="access-control-properties">
+  ### خصائص الحل الحالي
+</div>
+
+* يمكنك منح أذونات لقواعد البيانات والجداول حتى إن لم تكن موجودة.
+* إذا حُذف جدول، فلن تُسحب الامتيازات المرتبطة به. وهذا يعني أنه حتى إذا أنشأت لاحقًا جدولًا جديدًا بالاسم نفسه، فستظل جميع الامتيازات سارية. ولسحب الامتيازات المرتبطة بالجدول المحذوف، عليك تنفيذ الاستعلام `REVOKE ALL PRIVILEGES ON db.table FROM ALL`، على سبيل المثال.
+* لا توجد إعدادات لمدة صلاحية الامتيازات.
+
+<div id="user-account-management">
+  ### حساب مستخدم
+</div>
+
+حساب المستخدم هو كيان وصول يتيح تخويل شخص ما في ClickHouse. ويحتوي حساب المستخدم على:
+
+* معلومات التعريف.
+* [الامتيازات](/ar/reference/statements/grant#privileges) التي تحدد نطاق الاستعلامات التي يمكن للمستخدم تنفيذها.
+* المضيفون المسموح لهم بالاتصال بخادم ClickHouse.
+* الأدوار المعيّنة والدور الافتراضي.
+* الإعدادات والقيود المُطبَّقة عليها افتراضيًا عند تسجيل دخول المستخدم.
+* ملفات تعريف الإعدادات المعيّنة.
+
+يمكن منح الامتيازات لحساب مستخدم باستخدام استعلام [GRANT](/ar/reference/statements/grant) أو من خلال تعيين [الأدوار](#role-management). ولسحب الامتيازات من مستخدم، يوفّر ClickHouse استعلام [REVOKE](/ar/reference/statements/revoke). ولسرد امتيازات مستخدم، استخدم العبارة [SHOW GRANTS](/ar/reference/statements/show#show-grants).
+
+استعلامات الإدارة:
+
+* [CREATE USER](/ar/reference/statements/create/user)
+* [ALTER USER](/ar/reference/statements/alter/user)
+* [DROP USER](/ar/reference/statements/drop)
+* [SHOW CREATE USER](/ar/reference/statements/show#show-create-user)
+* [SHOW USERS](/ar/reference/statements/show#show-users)
+
+<div id="access-control-settings-applying">
+  ### تطبيق الإعدادات
+</div>
+
+يمكن تهيئة الإعدادات بطرق مختلفة: لحساب مستخدم، وفي الأدوار الممنوحة له، وفي ملفات تعريف الإعدادات. عند تسجيل دخول المستخدم، إذا كان إعداد ما مهيّأً لكيانات وصول مختلفة، فستُطبَّق قيمة هذا الإعداد وقيوده على النحو التالي (من الأعلى إلى الأدنى أولوية):
+
+1. إعدادات حساب المستخدم.
+2. إعدادات الأدوار الافتراضية لحساب المستخدم. إذا كان إعداد ما مهيّأً في بعض الأدوار، فسيكون ترتيب تطبيق الإعداد غير محدد.
+3. الإعدادات من ملفات تعريف الإعدادات المعيّنة لمستخدم أو لأدواره الافتراضية. إذا كان إعداد ما مهيّأً في بعض ملفات التعريف، فسيكون ترتيب تطبيق الإعداد غير محدد.
+4. الإعدادات المطبقة على الخادم بأكمله افتراضيًا أو من [ملف التعريف الافتراضي](/ar/reference/settings/server-settings/settings#default_profile).
+
+<div id="role-management">
+  ### الدور
+</div>
+
+الدور هو حاوية لكيانات الوصول يمكن منحها إلى حساب مستخدم.
+
+يحتوي الدور على:
+
+* [الامتيازات](/ar/reference/statements/grant#privileges)
+* الإعدادات والقيود
+* قائمة الأدوار المسندة
+
+استعلامات الإدارة:
+
+* [CREATE ROLE](/ar/reference/statements/create/role)
+* [ALTER ROLE](/ar/reference/statements/alter/role)
+* [DROP ROLE](/ar/reference/statements/drop#drop-role)
+* [SET ROLE](/ar/reference/statements/set-role)
+* [SET DEFAULT ROLE](/ar/reference/statements/set-role)
+* [SHOW CREATE ROLE](/ar/reference/statements/show#show-create-role)
+* [SHOW ROLES](/ar/reference/statements/show#show-roles)
+
+يمكن منح الامتيازات إلى الدور باستخدام استعلام [GRANT](/ar/reference/statements/grant). ولسحب الامتيازات من دور، يوفّر ClickHouse استعلام [REVOKE](/ar/reference/statements/revoke).
+
+<div id="row-policy-management">
+  #### سياسة الصفوف
+</div>
+
+‏سياسة الصفوف هي عامل تصفية يحدّد الصفوف المتاحة لمستخدم أو Role. وتحتوي سياسة الصفوف على عوامل تصفية لجدول معيّن، بالإضافة إلى قائمة بالأدوار و/أو المستخدمين الذين ينبغي أن تنطبق عليهم سياسة الصفوف هذه.
+
+<Note>
+  لا تكون سياسات الصفوف ذات جدوى إلا إذا كانت لديك صلاحية `readonly` فقط. فإذا كان بإمكانك تعديل table أو نسخ partitions بين tables، فإن ذلك يُلغي القيود التي تفرضها سياسات الصفوف.
+</Note>
+
+استعلامات الإدارة:
+
+* [CREATE ROW POLICY](/ar/reference/statements/create/row-policy)
+* [ALTER ROW POLICY](/ar/reference/statements/alter/row-policy)
+* [DROP ROW POLICY](/ar/reference/statements/drop#drop-row-policy)
+* [SHOW CREATE ROW POLICY](/ar/reference/statements/show#show-create-row-policy)
+* [SHOW POLICIES](/ar/reference/statements/show#show-policies)
+
+<div id="settings-profiles-management">
+  ### ملف تعريف الإعدادات
+</div>
+
+ملف تعريف الإعدادات هو مجموعة من [الإعدادات](/ar/reference/settings/index). ويحتوي على إعدادات وقيود، بالإضافة إلى قائمة بالأدوار و/أو المستخدمين الذين يُطبَّق عليهم هذا الملف.
+
+استعلامات الإدارة:
+
+* [CREATE SETTINGS PROFILE](/ar/reference/statements/create/settings-profile)
+* [ALTER SETTINGS PROFILE](/ar/reference/statements/alter/settings-profile)
+* [DROP SETTINGS PROFILE](/ar/reference/statements/drop#drop-settings-profile)
+* [SHOW CREATE SETTINGS PROFILE](/ar/reference/statements/show#show-create-settings-profile)
+* [SHOW PROFILES](/ar/reference/statements/show#show-profiles)
+
+<div id="quotas-management">
+  ### الحصة
+</div>
+
+تحدّ الحصة من استخدام الموارد. راجع [الحصص](/ar/concepts/features/configuration/server-config/quotas).
+
+تتضمن الحصة مجموعة من الحدود لفترات زمنية معيّنة، بالإضافة إلى قائمة بالأدوار و/أو المستخدمين الذين ينبغي أن يستخدموا هذه الحصة.
+
+استعلامات الإدارة:
+
+* [CREATE QUOTA](/ar/reference/statements/create/quota)
+* [ALTER QUOTA](/ar/reference/statements/alter/quota)
+* [DROP QUOTA](/ar/reference/statements/drop#drop-quota)
+* [SHOW CREATE QUOTA](/ar/reference/statements/show#show-create-quota)
+* [SHOW QUOTA](/ar/reference/statements/show#show-quota)
+* [SHOW QUOTAS](/ar/reference/statements/show#show-quotas)
+
+<div id="enabling-access-control">
+  ### تمكين التحكم في الوصول وإدارة الحسابات المعتمدين على SQL
+</div>
+
+* أنشئ دليلاً لتخزين ملفات التهيئة.
+
+  يخزّن ClickHouse تهيئات كيانات التحكم في الوصول في المجلد المحدد في مَعلَمة إعداد الخادم [access&#95;control&#95;path](/ar/reference/settings/server-settings/settings#access_control_path).
+
+* فعّل التحكم في الوصول وإدارة الحسابات المعتمدين على SQL لحساب مستخدم واحد على الأقل.
+
+  يكون التحكم في الوصول وإدارة الحسابات المعتمدان على SQL معطّلين افتراضيًا لجميع المستخدمين. تحتاج إلى تهيئة مستخدم واحد على الأقل في ملف التهيئة `users.xml`، وتعيين قيم الإعدادات [`access_management`](/ar/concepts/features/configuration/settings/settings-users#access_management-user-setting) و`named_collection_control` و`show_named_collections` و`show_named_collections_secrets` إلى 1.
+
+<div id="defining-sql-users-and-roles">
+  ## تعريف مستخدمي SQL والأدوار
+</div>
+
+<Tip>
+  إذا كنت تستخدم ClickHouse Cloud، فيُرجى الرجوع إلى [إدارة الوصول إلى Cloud](/ar/products/cloud/reference/security/console-roles).
+</Tip>
+
+توضح هذه المقالة أساسيات تعريف مستخدمي SQL والأدوار، وتطبيق هذه الامتيازات والأذونات على قواعد البيانات والجداول والصفوف والأعمدة.
+
+<div id="enabling-sql-user-mode">
+  ### تمكين وضع مستخدم SQL
+</div>
+
+1. فعِّل وضع مستخدم SQL في ملف `users.xml` ضمن المستخدم `<default>`:
+   ```xml
+   <access_management>1</access_management>
+   <named_collection_control>1</named_collection_control>
+   <show_named_collections>1</show_named_collections>
+   <show_named_collections_secrets>1</show_named_collections_secrets>
+   ```
+
+<Note>
+  المستخدم `default` هو المستخدم الوحيد الذي يتم إنشاؤه عند إجراء تثبيت جديد، وهو أيضًا الحساب المستخدم افتراضيًا للاتصال بين العقد.
+
+  في بيئة production، يُنصح بتعطيل هذا المستخدم بعد تهيئة الاتصال بين العقد باستخدام مستخدم SQL مسؤول، وبعد ضبط الاتصال بين العقد باستخدام `<secret>` وبيانات اعتماد العنقود و/أو بيانات اعتماد بروتوكول HTTP وبروتوكول النقل الخاصة بالاتصال بين العقد، لأن الحساب `default` يُستخدم لهذا الغرض.
+</Note>
+
+2. أعد تشغيل العقد لتطبيق التغييرات.
+
+3. شغِّل عميل ClickHouse:
+   ```sql
+   clickhouse-client --user default --password <password>
+   ```
+
+<div id="defining-users">
+  ### تعريف المستخدمين
+</div>
+
+1. أنشئ حساب مسؤول في SQL:
+   ```sql
+   CREATE USER clickhouse_admin IDENTIFIED BY 'password';
+   ```
+2. امنح المستخدم الجديد كامل الصلاحيات الإدارية
+   ```sql
+   GRANT ALL ON *.* TO clickhouse_admin WITH GRANT OPTION;
+   ```
+
+<div id="alter-permissions">
+  ## أذونات `ALTER`
+</div>
+
+تهدف هذه المقالة إلى تزويدك بفهم أوضح لكيفية تحديد الأذونات، وكيف تعمل الأذونات عند استخدام عبارات `ALTER` للمستخدمين ذوي الامتيازات.
+
+تنقسم عبارات `ALTER` إلى عدة فئات، بعضها هرمي وبعضها الآخر ليس كذلك، ويجب تحديده صراحةً.
+
+**مثال على إعداد DB وtable وUSER**
+
+1. باستخدام مستخدم Admin، أنشئ مستخدمًا نموذجيًا
+
+```sql
+CREATE USER my_user IDENTIFIED BY 'password';
+```
+
+2. أنشئ قاعدة بيانات تجريبية
+
+```sql
+CREATE DATABASE my_db;
+```
+
+3. أنشئ جدولًا للعينة
+
+```sql
+CREATE TABLE my_db.my_table (id UInt64, column1 String) ENGINE = MergeTree() ORDER BY id;
+```
+
+4. أنشئ مستخدم مسؤول تجريبيًا لمنح الامتيازات وسحبها
+
+```sql
+CREATE USER my_alter_admin IDENTIFIED BY 'password';
+```
+
+<Note>
+  لمنح الأذونات أو سحبها، يجب أن يمتلك المستخدم المسؤول امتياز `WITH GRANT OPTION`.
+  على سبيل المثال:
+
+  ```sql
+  GRANT ALTER ON my_db.* WITH GRANT OPTION
+  ```
+
+  لتنفيذ `GRANT` أو `REVOKE` للامتيازات، يجب أن يكون المستخدم ممتلكًا لهذه الامتيازات مسبقًا.
+</Note>
+
+**منح الامتيازات أو سحبها**
+
+التسلسل الهرمي لـ `ALTER`:
+
+```response
+├── ALTER (only for table and view)/
+│   ├── ALTER TABLE/
+│   │   ├── ALTER UPDATE
+│   │   ├── ALTER DELETE
+│   │   ├── ALTER COLUMN/
+│   │   │   ├── ALTER ADD COLUMN
+│   │   │   ├── ALTER DROP COLUMN
+│   │   │   ├── ALTER MODIFY COLUMN
+│   │   │   ├── ALTER COMMENT COLUMN
+│   │   │   ├── ALTER CLEAR COLUMN
+│   │   │   └── ALTER RENAME COLUMN
+│   │   ├── ALTER INDEX/
+│   │   │   ├── ALTER ORDER BY
+│   │   │   ├── ALTER SAMPLE BY
+│   │   │   ├── ALTER ADD INDEX
+│   │   │   ├── ALTER DROP INDEX
+│   │   │   ├── ALTER MATERIALIZE INDEX
+│   │   │   └── ALTER CLEAR INDEX
+│   │   ├── ALTER CONSTRAINT/
+│   │   │   ├── ALTER ADD CONSTRAINT
+│   │   │   └── ALTER DROP CONSTRAINT
+│   │   ├── ALTER TTL/
+│   │   │   └── ALTER MATERIALIZE TTL
+│   │   ├── ALTER SETTINGS
+│   │   ├── ALTER MOVE PARTITION
+│   │   ├── ALTER FETCH PARTITION
+│   │   └── ALTER FREEZE PARTITION
+│   └── ALTER LIVE VIEW/
+│       ├── ALTER LIVE VIEW REFRESH
+│       └── ALTER LIVE VIEW MODIFY QUERY
+├── ALTER DATABASE
+├── ALTER USER
+├── ALTER ROLE
+├── ALTER QUOTA
+├── ALTER [ROW] POLICY
+└── ALTER [SETTINGS] PROFILE
+```
+
+1. منح امتيازات `ALTER` لمستخدم أو دور
+
+إن استخدام `GRANT ALTER on *.* TO my_user` يؤثر فقط في أوامر `ALTER TABLE` و`ALTER VIEW` على المستوى الأعلى، أما عبارات `ALTER` الأخرى فيجب منحها أو revokeها بشكل منفصل.
+
+على سبيل المثال، منح امتياز `ALTER` الأساسي:
+
+```sql
+GRANT ALTER ON my_db.my_table TO my_user;
+```
+
+مجموعة الامتيازات الناتجة:
+
+```sql
+SHOW GRANTS FOR  my_user;
+```
+
+```response
+SHOW GRANTS FOR my_user
+
+Query id: 706befbc-525e-4ec1-a1a2-ba2508cc09e3
+
+┌─GRANTS FOR my_user───────────────────────────────────────────┐
+│ GRANT ALTER TABLE, ALTER VIEW ON my_db.my_table TO my_user   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+سيؤدي ذلك إلى منح جميع الأذونات ضمن `ALTER TABLE` و`ALTER VIEW` في المثال أعلاه، لكنه لن يمنح بعض أذونات `ALTER` الأخرى مثل `ALTER ROW POLICY` (ارجع إلى التسلسل الهرمي وسترى أن `ALTER ROW POLICY` ليس تابعًا لـ `ALTER TABLE` أو `ALTER VIEW`). ويجب منح هذه الأذونات أو إلغاؤها صراحةً.
+
+إذا كانت هناك حاجة إلى مجموعة فرعية فقط من أذونات `ALTER`، فيمكن منح كل إذن منها بشكل منفصل، وإذا كانت لذلك الإذن امتيازات فرعية فستُمنح تلقائيًا أيضًا.
+
+على سبيل المثال:
+
+```sql
+GRANT ALTER COLUMN ON my_db.my_table TO my_user;
+```
+
+تُعيَّن الامتيازات كما يلي:
+
+```sql
+SHOW GRANTS FOR my_user;
+```
+
+```response
+SHOW GRANTS FOR my_user
+
+Query id: 47b3d03f-46ac-4385-91ec-41119010e4e2
+
+┌─GRANTS FOR my_user────────────────────────────────┐
+│ GRANT ALTER COLUMN ON default.my_table TO my_user │
+└───────────────────────────────────────────────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+يمنح هذا أيضاً الصلاحيات الفرعية التالية:
+
+```sql
+ALTER ADD COLUMN
+ALTER DROP COLUMN
+ALTER MODIFY COLUMN
+ALTER COMMENT COLUMN
+ALTER CLEAR COLUMN
+ALTER RENAME COLUMN
+```
+
+2. إلغاء امتيازات `ALTER` من المستخدمين والأدوار
+
+تعمل عبارة `REVOKE` بطريقة مشابهة لعبارة `GRANT`.
+
+إذا مُنح مستخدم/دور صلاحيةً فرعية، فيمكنك إما سحب تلك الصلاحية الفرعية مباشرةً، أو سحب الصلاحية ذات المستوى الأعلى التي تنبثق منها.
+
+على سبيل المثال، إذا مُنحت للمستخدم صلاحية `ALTER ADD COLUMN`
+
+```sql
+GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user;
+```
+
+```response
+GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user
+
+Query id: 61fe0fdc-1442-4cd6-b2f3-e8f2a853c739
+
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+SHOW GRANTS FOR my_user;
+```
+
+```response
+SHOW GRANTS FOR my_user
+
+Query id: 27791226-a18f-46c8-b2b4-a9e64baeb683
+
+┌─GRANTS FOR my_user──────────────────────────────────┐
+│ GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user │
+└─────────────────────────────────────────────────────┘
+```
+
+يمكن إلغاء الصلاحية بشكل منفرد:
+
+```sql
+REVOKE ALTER ADD COLUMN ON my_db.my_table FROM my_user;
+```
+
+أو يمكن سحبها من أيٍّ من المستويات الأعلى (سحب جميع الصلاحيات الفرعية لـ COLUMN):
+
+```response
+REVOKE ALTER COLUMN ON my_db.my_table FROM my_user;
+```
+
+```response
+REVOKE ALTER COLUMN ON my_db.my_table FROM my_user
+
+Query id: b882ba1b-90fb-45b9-b10f-3cda251e2ccc
+
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+SHOW GRANTS FOR my_user;
+```
+
+```response
+SHOW GRANTS FOR my_user
+
+Query id: e7d341de-de65-490b-852c-fa8bb8991174
+
+Ok.
+
+0 rows in set. Elapsed: 0.003 sec.
+```
+
+**إضافي**
+
+يجب أن تُمنح الصلاحيات من قِبَل مستخدم يمتلك `WITH GRANT OPTION` والصلاحيات ذاتها في آنٍ واحد.
+
+1. لمنح مستخدم Admin صلاحيةً، والسماح له أيضًا بإدارة مجموعة من الصلاحيات
+   فيما يلي مثال:
+
+```sql
+GRANT SELECT, ALTER COLUMN ON my_db.my_table TO my_alter_admin WITH GRANT OPTION;
+```
+
+يمكن للمستخدم الآن منح أو سحب `ALTER COLUMN` وجميع الامتيازات الفرعية.
+
+**الاختبار**
+
+1. أضِف امتياز `SELECT`
+
+```sql
+ GRANT SELECT ON my_db.my_table TO my_user;
+```
+
+2. أضِف للمستخدم امتياز إضافة عمود
+
+```sql
+GRANT ADD COLUMN ON my_db.my_table TO my_user;
+```
+
+3. سجّل الدخول باستخدام المستخدم محدود الصلاحيات
+
+```bash
+clickhouse-client --user my_user --password password --port 9000 --host <your_clickhouse_host>
+```
+
+4. اختبر إضافة عمود
+
+```sql
+ALTER TABLE my_db.my_table ADD COLUMN column2 String;
+```
+
+```response
+ALTER TABLE my_db.my_table
+    ADD COLUMN `column2` String
+
+Query id: d5d6bfa1-b80c-4d9f-8dcd-d13e7bd401a5
+
+Ok.
+
+0 rows in set. Elapsed: 0.010 sec.
+```
+
+```sql
+DESCRIBE my_db.my_table;
+```
+
+```response
+DESCRIBE TABLE my_db.my_table
+
+Query id: ab9cb2d0-5b1a-42e1-bc9c-c7ff351cb272
+
+┌─name────┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ id      │ UInt64 │              │                    │         │                  │                │
+│ column1 │ String │              │                    │         │                  │                │
+│ column2 │ String │              │                    │         │                  │                │
+└─────────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+4. اختبر حذف عمود
+
+```sql
+ALTER TABLE my_db.my_table DROP COLUMN column2;
+```
+
+```response
+ALTER TABLE my_db.my_table
+    DROP COLUMN column2
+
+Query id: 50ad5f6b-f64b-4c96-8f5f-ace87cea6c47
+
+0 rows in set. Elapsed: 0.004 sec.
+
+Received exception from server (version 22.5.1):
+Code: 497. DB::Exception: Received from chnode1.marsnet.local:9440. DB::Exception: my_user: Not enough privileges. To execute this query it's necessary to have grant ALTER DROP COLUMN(column2) ON my_db.my_table. (ACCESS_DENIED)
+```
+
+5. اختبار alter admin من خلال منح هذا الإذن
+
+```sql
+GRANT SELECT, ALTER COLUMN ON my_db.my_table TO my_alter_admin WITH GRANT OPTION;
+```
+
+6. سجّل الدخول باستخدام حساب المستخدم alter admin
+
+```bash
+clickhouse-client --user my_alter_admin --password password --port 9000 --host <my_clickhouse_host>
+```
+
+7. امنح امتيازًا فرعيًا
+
+```sql
+GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user;
+```
+
+```response
+GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user
+
+Query id: 1c7622fa-9df1-4c54-9fc3-f984c716aeba
+
+Ok.
+```
+
+8. اختبر منح امتياز لا يملكه مستخدم alter admin، وليس امتيازًا فرعيًا ضمن الامتيازات الممنوحة لمستخدم admin.
+
+```sql
+GRANT ALTER UPDATE ON my_db.my_table TO my_user;
+```
+
+```response
+GRANT ALTER UPDATE ON my_db.my_table TO my_user
+
+Query id: 191690dc-55a6-4625-8fee-abc3d14a5545
+
+0 rows in set. Elapsed: 0.004 sec.
+
+Received exception from server (version 22.5.1):
+Code: 497. DB::Exception: Received from chnode1.marsnet.local:9440. DB::Exception: my_alter_admin: Not enough privileges. To execute this query it's necessary to have grant ALTER UPDATE ON my_db.my_table WITH GRANT OPTION. (ACCESS_DENIED)
+```
+
+**الملخص**
+تتبع امتيازات `ALTER` بنية هرمية عند استخدام `ALTER` مع الجداول والعروض، لكنها لا تكون كذلك مع تعليمات `ALTER` الأخرى. يمكن تعيين الأذونات على مستوى تفصيلي أو عبر تجميع الأذونات، كما يمكن سحبها بالطريقة نفسها. يجب أن يمتلك المستخدم الذي يمنح الامتيازات أو يسحبها `WITH GRANT OPTION` لكي يعيّن الامتيازات للمستخدمين، بما في ذلك المستخدم المنفّذ نفسه، ويجب أيضًا أن يكون الامتياز نفسه ممنوحًا له مسبقًا. ولا يمكن للمستخدم المنفّذ سحب امتيازاته الخاصة إذا لم يكن يمتلك بنفسه امتياز `WITH GRANT OPTION`.

@@ -2,14 +2,12 @@ import csv
 import logging
 import os
 import shutil
-from uuid import uuid4
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_mock_servers
-from helpers.test_tools import TSV
 
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
@@ -180,6 +178,50 @@ def test_distributed_insert_select_to_rmt_limit(started_cluster):
                 f"SELECT count(*) FROM {table};"
             ).strip()
         ) == limit
+    )
+
+    node1.query(
+        f"""DROP TABLE IF EXISTS {table} ON CLUSTER '{cluster_name}' SYNC;"""
+    )
+
+
+def test_distributed_insert_select_to_rmt_where(started_cluster):
+    table = "t_rmt_target"
+    cluster_name = "cluster_1_shard_3_replicas"
+
+    node1.query(
+        f"""DROP TABLE IF EXISTS {table} ON CLUSTER '{cluster_name}' SYNC;"""
+    )
+
+    node1.query(
+        f"""
+    CREATE TABLE {table} ON CLUSTER {cluster_name} (a String, b UInt64)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/32c614a9-13af-43c5-848c-a3f62a78e390/{table}', '{{replica}}')
+    ORDER BY (a, b);
+        """
+    )
+
+    node1.query(
+        f"""
+    INSERT INTO {table} SELECT * FROM s3Cluster(
+        '{cluster_name}',
+        'http://minio1:9001/root/data/generated/*.csv', 'minio', '{minio_secret_key}', 'CSV','a String, b UInt64'
+    ) WHERE b = 100
+    SETTINGS
+        parallel_distributed_insert_select=2,
+        -- disable deduplication since all rows identical, and if the batch size will be the same size on different nodes it will be deduplicated
+        insert_deduplicate=0;
+        """
+    )
+
+    node1.query(f"SYSTEM SYNC REPLICA {table}")
+
+    assert (
+        int(
+            node1.query(
+                f"SELECT count(*) FROM {table};"
+            ).strip()
+        ) == 99
     )
 
     node1.query(

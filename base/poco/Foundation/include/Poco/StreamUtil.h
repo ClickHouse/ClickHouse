@@ -84,7 +84,7 @@
 #else
 #    define poco_ios_init(buf) do {                         \
     init(buf);                                              \
-    this->exceptions(std::ios::failbit | std::ios::badbit); \
+    this->exceptions(std::ios::badbit);                     \
 } while (0)
 #endif
 

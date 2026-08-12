@@ -3,4 +3,10 @@
     <query>SELECT count() FROM numbers(1000000000) WHERE materialize(now()) > toUInt32(toDateTime('2020-09-30 00:00:00'))</query>
     <query>SELECT count() FROM numbers(1000000000) WHERE materialize(now()) > toDateTime('2020-09-30 00:00:00')</query>
     <query>SELECT count() FROM numbers(1000000000) WHERE materialize(now()) > toDate('2020-09-30 00:00:00')</query>
+
+    <!-- https://github.com/ClickHouse/ClickHouse/issues/28192 -->
+    <query>SELECT count() FROM numbers(1000000000) WHERE materialize(toDateTime64(1000000, 3)) = toDateTime64(1000000, 3)</query>
+    <query>SELECT count() FROM numbers(1000000000) WHERE materialize(toDecimal64(toDateTime64(1000000, 3), 3)) = toDecimal64(toDateTime64(1000000, 3), 3)</query>
+    <query>SELECT count() FROM numbers(1000000000) WHERE materialize(toUInt64(toDateTime64(1000000, 3))) = toUInt64(toDateTime64(1000000, 3))</query>
+    <query>SELECT count() FROM numbers(1000000000) WHERE materialize(toDateTime(1000000)) = toDateTime(1000000)</query>
 </test>

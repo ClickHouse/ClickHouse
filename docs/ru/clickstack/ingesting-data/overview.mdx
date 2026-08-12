@@ -1,0 +1,43 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/overview
+title: 'Ингестия данных в ClickStack'
+sidebarTitle: 'Обзор'
+description: 'Обзор процесса ингестии данных в ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'обсервабилити', 'журналы', 'мониторинг', 'платформа']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Все данные поступают в Open Source ClickStack или Управляемый ClickStack через **OpenTelemetry Collector (OTel)**. Он служит основной точкой входа для журналов, метрик, трассировок и данных сеансов.
+
+Ключевое различие между архитектурами заключается в том, где размещаются компоненты. В обоих случаях вы запускаете OpenTelemetry Collector для приёма телеметрических данных от ваших приложений. При использовании Open Source ClickStack вы также самостоятельно размещаете и администрируете ClickHouse и интерфейс ClickStack (HyperDX). При использовании Управляемого ClickStack ClickHouse и интерфейс HyperDX размещаются и управляются в ClickHouse Cloud, а встроенная аутентификация и эксплуатационное сопровождение уже обеспечены.
+
+<Tabs>
+  <Tab title="Управляемый ClickStack">
+    <Image img="/images/use-cases/observability/clickstack-managed-architecture-with-flow.webp" alt="Управляемая архитектура с потоком данных" size="md" />
+  </Tab>
+
+  <Tab title="Open Source ClickStack">
+    <Image img="/images/use-cases/observability/clickstack-oss-architecture-with-flow.webp" alt="Простая архитектура с потоком данных" size="md" />
+  </Tab>
+</Tabs>
+
+В обеих моделях развертывания collector предоставляет две конечные точки OTLP:
+
+* **HTTP** - порт `4318`
+* **gRPC** - порт `4317`
+
+Вы можете отправлять данные в эти конечные точки либо напрямую из [языковых SDK](/ru/clickstack/ingesting-data/sdks/index), либо через совместимые с OTel агенты сбора данных, например другие OTel collector, собирающие инфраструктурные метрики и журналы.
+
+Точнее:
+
+* [**Языковые SDK**](/ru/clickstack/ingesting-data/sdks/index) отвечают за сбор телеметрии внутри вашего приложения — в первую очередь **трассировок** и **журналов** — и экспорт этих данных в OpenTelemetry Collector через конечную точку OTLP, которая обеспечивает ингестию в ClickHouse. Подробнее о языковых SDK, доступных в ClickStack, см. в разделе [SDKs](/ru/clickstack/ingesting-data/sdks/index).
+
+* **Агенты сбора данных** — это агенты, развертываемые на периферии: на серверах, узлах Kubernetes или рядом с приложениями. Они собирают инфраструктурную телеметрию (например, журналы и метрики) или принимают события напрямую от приложений, инструментированных с помощью SDK. В этом случае агент работает на том же хосте, что и приложение, часто в виде sidecar или ДемонСета. Эти агенты пересылают данные в центральный OTel collector ClickStack, который выступает в роли [шлюза](/ru/clickstack/ingesting-data/collector#collector-roles) и обычно развертывается в одном экземпляре на кластер, дата-центр или регион. [Шлюз](/ru/clickstack/ingesting-data/collector#collector-roles) получает события OTLP от агентов или приложений и обеспечивает ингестию в ClickHouse. Подробнее см. в разделе [OTel collector](/ru/clickstack/ingesting-data/collector). Такими агентами могут быть другие экземпляры OTel collector или альтернативные технологии, такие как [Fluentd](https://www.fluentd.org/) или [Vector](https://vector.dev/).
+
+<Info>
+  **Совместимость с OpenTelemetry**
+
+  Хотя ClickStack предлагает собственные языковые SDK и собственную сборку OpenTelemetry с расширенной телеметрией и дополнительными возможностями, вы также можете без проблем использовать существующие SDK и агенты OpenTelemetry.
+</Info>

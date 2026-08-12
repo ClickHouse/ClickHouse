@@ -1,0 +1,179 @@
+---
+slug: /optimize/lazy-materialization
+sidebarTitle: 'Ленивая материализация'
+description: 'Статья о том, что такое ленивая материализация в ClickHouse'
+title: 'Ленивая материализация'
+doc_type: 'guide'
+keywords: ['оптимизация', 'ленивая материализация']
+---
+
+В этой статье описано, как работает ленивая материализация и какое место она занимает в более широком стеке оптимизаций ввода-вывода в ClickHouse.
+В ней также приводится реальный пример, показывающий, как ленивая материализация повышает производительность запросов.
+
+<Tip>
+  **Доступно с версии 25.4**
+
+  Ленивая материализация была добавлена в ClickHouse версии 25.4 и включена по умолчанию.
+</Tip>
+
+<div id="overview">
+  ## Обзор
+</div>
+
+За годы развития ClickHouse внедрил ряд многоуровневых оптимизаций, позволяющих существенно сократить I/O.
+Эти методы лежат в основе его скорости и эффективности:
+
+| Оптимизация                                                                                                                                                                                                                                                        | Описание                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [**Столбцовое хранение**](/ru/get-started/about/intro#row-oriented-vs-column-oriented-storage)                                                                                                                                                                        | Позволяет пропускать целые столбцы, не нужные для запроса, а также обеспечивает высокую степень сжатия за счёт группировки схожих значений, что минимизирует I/O при загрузке данных.                                                                                                                                            |
+| [**Разреженные первичные индексы**](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes) | [**вторичные индексы пропуска данных**](/ru/concepts/features/performance/skip-indexes/skipping-indexes) | [**проекции**](/ru/concepts/features/projections/projections) | Отсекают нерелевантные данные, определяя, какие [гранулы](/ru/concepts/core-concepts/glossary#granule) (блоки строк) могут соответствовать фильтрам по *индексированным столбцам*. Эти методы работают на уровне гранул и могут применяться как по отдельности, так и в сочетании друг с другом.                                    |
+| [**PREWHERE**](/ru/reference/statements/select/prewhere)                                                                                                                                                                                                              | Также проверяет соответствие фильтрам по *неиндексированным* столбцам, чтобы заранее отсеять данные, которые иначе пришлось бы загрузить и затем отбросить. Может работать независимо или уточнять набор гранул, выбранных индексами, дополняя отсечение гранул пропуском строк, не соответствующих *всем* фильтрам по столбцам. |
+| [**Кэш условий запроса**](/ru/concepts/features/performance/caches/query-condition-cache)                                                                                                                                                                             | Ускоряет повторяющиеся запросы, запоминая, какие гранулы в прошлый раз соответствовали всем фильтрам. После этого ClickHouse может пропускать чтение и фильтрацию гранул, которые не подошли, даже если структура запроса меняется.                                                                                              |
+
+Хотя перечисленные выше оптимизации I/O могут существенно сократить объём читаемых данных, они всё же исходят из того, что все столбцы для строк, прошедших условие `WHERE`, должны быть загружены до выполнения таких операций, как сортировка, агрегация или `LIMIT`. Но что, если некоторые столбцы не нужны до более позднего этапа, или часть данных, несмотря на прохождение условия `WHERE`, вообще так и не потребуется?
+Здесь на помощь приходит ленивая материализация. Это независимое улучшение, которое дополняет стек оптимизаций I/O:
+
+* Индексирование вместе с `PREWHERE` гарантирует, что обрабатываются только строки, соответствующие фильтрам по столбцам в условии `WHERE`.
+* Ленивая материализация развивает эту идею, откладывая чтение столбцов до момента, когда они действительно потребуются по плану выполнения запроса.
+  Даже после фильтрации сразу загружаются только те столбцы, которые нужны для следующей операции — например, сортировки.
+  Чтение остальных откладывается и, благодаря `LIMIT`, часто выполняется лишь частично — ровно настолько, насколько это нужно для получения итогового результата.
+  Это делает ленивую материализацию особенно эффективной для запросов Top N, где для итогового результата может понадобиться лишь несколько строк из некоторых, нередко больших, столбцов.
+
+<div id="worked-example">
+  ## Подробный пример
+</div>
+
+Мы настоятельно рекомендуем статью в блоге [&quot;ClickHouse gets lazier (and faster): Introducing lazy materialization&quot;](https://clickhouse.com/blog/clickhouse-gets-lazier-and-faster-introducing-lazy-materialization#speed-without-filters-lazy-materialization-in-isolation)
+для более глубокого знакомства с ленивой материализацией. Пример ниже взят из этой статьи и приведён здесь, чтобы показать, как запрос к ClickHouse может выполняться не 219 секунд, а всего 139 миллисекунд (ускорение в 1576 раз) благодаря ленивой материализации.
+
+Чтобы использовать преимущества индексирования и `PREWHERE`, в запросе должны быть фильтры: по столбцам первичного ключа для индексирования и по любым столбцам для `PREWHERE`.
+Ленивая материализация хорошо сочетается с этими механизмами, но, в отличие от других упомянутых выше оптимизаций, может также ускорять запросы вообще без фильтров по столбцам.
+
+Рассмотрим следующий запрос, который находит отзывы Amazon с наибольшим числом полезных голосов независимо от даты, продукта, оценки или статуса верификации и возвращает 3 лучших вместе с их названием, заголовком и полным текстом.
+
+Сначала выполним запрос (с холодными кэшами файловой системы) при отключённой ленивой материализации (с использованием [`query_plan_optimize_lazy_materialization`](/ru/reference/settings/session-settings#query_plan_optimize_lazy_materialization)):
+
+```sql title="Query"
+SELECT
+    helpful_votes,
+    product_title,
+    review_headline,
+    review_body
+FROM amazon.amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 3
+FORMAT Vertical
+SETTINGS
+    query_plan_optimize_lazy_materialization = false;
+```
+
+```response title="Response" highlight={22-23}
+Row 1:
+──────
+helpful_votes:   47524
+product_title:   Kindle: Amazon's Original Wireless Reading Device (1st generation)
+review_headline: Why and how the Kindle changes everything
+review_body:     This is less a \"pros and cons\" review than a hopefully use...
+
+Row 2:
+──────
+helpful_votes:   41393
+product_title:   BIC Cristal For Her Ball Pen, 1.0mm, Black, 16ct (MSLP16-Blk)
+review_headline: FINALLY!
+review_body:     Someone has answered my gentle prayers and FINALLY designed ...
+
+Row 3:
+──────
+helpful_votes:   41278
+product_title:   The Mountain Kids 100% Cotton Three Wolf Moon T-Shirt
+review_headline: Dual Function Design
+review_body:     This item has wolves on it which makes it intrinsically swee...
+
+0 rows in set. Elapsed: 219.071 sec. Processed 150.96 million rows, 71.38 GB (689.08 thousand rows/s., 325.81 MB/s.)
+Peak memory usage: 1.11 GiB.
+```
+
+Затем запрос снова выполняется (опять с холодным файловым кэшем), но на этот раз при включенной ленивой материализации:
+
+```sql title="Query" highlight={11}
+SELECT
+    helpful_votes,
+    product_title,
+    review_headline,
+    review_body
+FROM amazon.amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 3
+FORMAT Vertical
+SETTINGS
+query_plan_optimize_lazy_materialization = true;
+```
+
+<Tip>
+  Обычно не нужно явно задавать `query_plan_optimize_lazy_materialization = true`, чтобы воспользоваться преимуществами ленивой материализации.
+  Она включена по умолчанию.
+</Tip>
+
+```response title="Response" highlight={22-23}
+Row 1:
+──────
+helpful_votes:   47524
+product_title:   Kindle: Amazon's Original Wireless Reading Device (1st generation)
+review_headline: Why and how the Kindle changes everything
+review_body:     This is less a \"pros and cons\" review than a hopefully use...
+
+Row 2:
+──────
+helpful_votes:   41393
+product_title:   BIC Cristal For Her Ball Pen, 1.0mm, Black, 16ct (MSLP16-Blk)
+review_headline: FINALLY!
+review_body:     Someone has answered my gentle prayers and FINALLY designed ...
+
+Row 3:
+──────
+helpful_votes:   41278
+product_title:   The Mountain Kids 100% Cotton Three Wolf Moon T-Shirt
+review_headline: Dual Function Design
+review_body:     This item has wolves on it which makes it intrinsically swee...
+
+0 rows in set. Elapsed: 0.139 sec. Processed 150.96 million rows, 1.81 GB (1.09 billion rows/s., 13.06 GB/s.)
+Peak memory usage: 3.80 MiB.
+```
+
+Сравним производительность при отключенной и включенной ленивой материализации:
+
+| Метрика                    | Ленивая материализация отключена | Ленивая материализация включена | Улучшение      |
+| -------------------------- | -------------------------------- | ------------------------------- | -------------- |
+| Время выполнения           | 219.071 sec                      | 0.139 sec                       | ~1576× быстрее |
+| Объём прочитанных данных   | 71.38 GB                         | 1.81 GB                         | ~40× меньше    |
+| Пиковое потребление памяти | 1.11 GiB                         | 3.80 MiB                        | ~300× меньше   |
+
+<div id="confirm-lazy-materialization">
+  ## Как проверить ленивую материализацию в плане выполнения запроса
+</div>
+
+Для предыдущего запроса использование ленивой материализации можно увидеть, изучив его логический план выполнения с помощью оператора [`EXPLAIN`](/ru/reference/statements/explain):
+
+```sql
+EXPLAIN actions = 1
+SELECT
+    helpful_votes,
+    product_title,
+    review_headline,
+    review_body
+FROM amazon.amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 3
+SETTINGS
+    query_plan_optimize_lazy_materialization = true;
+```
+
+```response highlight={2}
+...
+Lazily read columns: review_headline, review_body, product_title
+  Limit
+    Sorting
+      ReadFromMergeTree
+```
+
+Вы можете читать план операторов снизу вверх и заметить, что ClickHouse откладывает чтение трёх крупных столбцов типа String до выполнения сортировки и применения ограничения.

@@ -1,0 +1,6 @@
+<clickhouse>
+    <!-- Without the sendThread completion guard the dropped request abandons its std::promise,
+         and the broken-promise future_error is a std::logic_error. Make the server abort on it so the
+         regression is caught on every build flavor, not only debug/sanitizer. -->
+    <abort_on_logical_error>true</abort_on_logical_error>
+</clickhouse>
