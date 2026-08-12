@@ -46,8 +46,16 @@ def validate_scenario(s):
     if "workload" in s:
         if not isinstance(wl, dict):
             errs.append("workload_not_dict")
-        elif "duration" in wl:
-            errs.append("workload_duration_not_supported")
+        else:
+            if "duration" in wl:
+                errs.append("workload_duration_not_supported")
+            for k in ("clients", "concurrency"):
+                if k in wl:
+                    try:
+                        if int(wl.get(k)) <= 0:
+                            errs.append(f"workload_{k}_not_positive")
+                    except Exception:
+                        errs.append(f"workload_{k}_not_int")
 
     return errs
 
@@ -72,6 +80,8 @@ def apply_file_defaults_to_scenario(s, defaults):
     sc = copy.deepcopy(s)
     if "topology" not in sc and defaults.get("topology") is not None:
         sc["topology"] = defaults.get("topology")
+    if "backend" not in sc and defaults.get("backend") is not None:
+        sc["backend"] = defaults.get("backend")
     return sc
 
 
@@ -266,7 +276,13 @@ def pytest_generate_tests(metafunc):
 
 
 def expand_matrix_clones(s, backends, topologies):
-    backs = backends or [s.get("backend")]
+    pinned = s.get("backend")
+    if backends and pinned:
+        # A scenario that pins its backend only runs there; the matrix list
+        # cannot widen it (an empty intersection yields no clones).
+        backs = [b for b in backends if b == pinned]
+    else:
+        backs = backends or [pinned]
     topos = topologies or [int(s.get("topology"))]
     clones = []
     for b in backs:

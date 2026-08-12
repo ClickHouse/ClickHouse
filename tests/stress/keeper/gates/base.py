@@ -245,6 +245,14 @@ def ops_ge(summary, min_ops=0.0):
         raise AssertionError(f"ops_ge: {ops:.0f} < {min_ops:.0f}")
 
 
+def watches_fired_ge(summary, min_fired=0.0):
+    """Assert total fired watch notifications is above threshold."""
+    summary = summary or {}
+    fired = float(summary.get("watches_fired", 0) or 0)
+    if fired < float(min_fired):
+        raise AssertionError(f"watches_fired_ge: {fired:.0f} < {min_fired:.0f}")
+
+
 def _zk_count_descendants(zk, path):
     try:
         if not zk.exists(path):
@@ -417,6 +425,19 @@ def no_watcher_hotspot(nodes, ctx=None, max_share=0.95, max_path_share=None):
                 raise AssertionError(
                     f"no_watcher_hotspot: worst_path_share={s:.3f} exceeds {max_path_share:.3f}"
                 )
+
+
+def watch_peak_ge(ctx, min_watches=1):
+    """Assert the in-run peak of cluster-wide watch count reached a minimum."""
+    peak = (ctx or {}).get("watch_peak_total")
+    if peak is None:
+        raise AssertionError(
+            "watch_peak_ge: watch_peak_total missing from context (sampler recorded no in-run peak)"
+        )
+    if float(peak) < float(min_watches):
+        raise AssertionError(
+            f"watch_peak_ge: peak {float(peak):.0f} < {float(min_watches):.0f}"
+        )
 
 
 def ephemerals_gone_within(nodes, max_s=60):
@@ -638,6 +659,11 @@ def _gate_no_watcher_hotspot(g, nodes, leader, ctx, summary):
     )
 
 
+@register_gate("watch_peak_ge")
+def _gate_watch_peak_ge(g, nodes, leader, ctx, summary):
+    return watch_peak_ge(ctx, min_watches=_extract_param(g, "min_watches", 1, float))
+
+
 @register_gate("ephemerals_gone_within")
 def _gate_ephemerals_gone_within(g, nodes, leader, ctx, summary):
     return ephemerals_gone_within(nodes, max_s=_extract_param(g, "max_s", 60, int))
@@ -689,6 +715,11 @@ def _gate_rps_ge(g, nodes, leader, ctx, summary):
 @register_gate("ops_ge")
 def _gate_ops_ge(g, nodes, leader, ctx, summary):
     return ops_ge(summary, min_ops=_extract_param(g, "min_ops", 0, float))
+
+
+@register_gate("watches_fired_ge")
+def _gate_watches_fired_ge(g, nodes, leader, ctx, summary):
+    return watches_fired_ge(summary, min_fired=_extract_param(g, "min_fired", 0, float))
 
 
 @register_gate("count_paths")

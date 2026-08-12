@@ -224,13 +224,16 @@ class MetricsSampler:
     def _snapshot_node(self, ts, n):
         """Sample all metrics from a single node (for continuous sampling).
         ts: single timestamp for this snapshot round (same for all nodes).
+        Returns the node's mntr kv (empty on probe failure).
         """
         def _sample_kv(source, fn):
             try:
                 kv = fn()
                 self._append_kv_rows(ts, n.name, source, kv)
+                return kv
             except Exception as e:
                 print(f"[keeper][_snapshot_node] error getting {source} for node {n.name}: {e}")
+                return None
 
         def _sample_dirs():
             try:
@@ -257,7 +260,7 @@ class MetricsSampler:
             except Exception as e:
                 print(f"[keeper][_snapshot_node] error getting prom metrics for node {n.name}: {e}")
 
-        _sample_kv("mntr", lambda: mntr(n))
+        mntr_kv = _sample_kv("mntr", lambda: mntr(n))
         _sample_dirs()
         _sample_kv("srvr", lambda: srvr_kv(n))
         # lgif: Keeper Raft 4LW only; ZK has no equivalent.
@@ -268,11 +271,22 @@ class MetricsSampler:
         # Note: ch_metrics and ch_async_metrics are NOT collected during continuous sampling
         # They're expensive SQL queries and are only collected in snapshot_stage("post") at the end
         # Time-series data for these metrics is not needed - final values are sufficient
+        return mntr_kv or {}
 
     def _snapshot_once(self):
         ts = ts_ms()
+        total_watches = 0.0
         for n in self.nodes:
-            self._snapshot_node(ts, n)
+            kv = self._snapshot_node(ts, n)
+            try:
+                total_watches += float(kv.get("zk_watch_count", 0) or 0)
+            except (ValueError, TypeError):
+                pass
+        # In-run peak of cluster-wide watch count, read by the watch_peak_ge gate.
+        if self._ctx is not None:
+            peak = self._ctx.get("watch_peak_total")
+            if peak is None or total_watches > float(peak):
+                self._ctx["watch_peak_total"] = total_watches
 
     def _loop(self):
         while not self._stop:

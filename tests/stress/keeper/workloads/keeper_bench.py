@@ -2,6 +2,7 @@ import json
 import os
 import re
 import shlex
+import signal
 import socket
 import subprocess
 import threading
@@ -24,6 +25,20 @@ from keeper.workloads.adapter import servers_arg
 ZOOKEEPER_OPERATION_TIMEOUT_MS = 120000
 ZOOKEEPER_SESSION_TIMEOUT_MS = 300000
 
+# Max sessions a single keeper-bench process can hold: every session runs a send and a
+# receive thread on the process-wide global thread pool (capped at 10000 threads), which
+# the bench worker threads also draw from.  Above this the harness splits the run into
+# multiple bench subprocesses ("shards") and merges their summaries.
+SESSIONS_PER_BENCH = 4000
+# Printed by keeper-bench (stderr) once the setup tree has been created; shard 0 owns
+# setup, and the other shards are only launched after this marker appears so they never
+# race the recursive cleanup + re-create of the workload tree.
+BENCH_SETUP_DONE_MARKER = "---- Created test data ----"
+# Deadline for shard 0's setup-done marker.  keeper-bench prints it right after tree
+# creation, before shard 0 opens any benchmark session, so this only has to cover
+# process startup plus the recursive wipe + re-create of the workload tree.
+BENCH_SETUP_MARKER_WAIT_S = 300
+
 
 def _parse_hosts(servers):
     """Parse space-separated server addresses into list."""
@@ -32,7 +47,7 @@ def _parse_hosts(servers):
     return [p for p in str(servers).split() if p.strip()]
 
 
-def _patch_keeper_bench_config(src, servers, clients, duration_s):
+def _patch_keeper_bench_config(src, servers, clients, duration_s, concurrency=None):
     """Patch keeper-bench config with dynamic values: servers, duration."""
     out = dict(src)
     # Buffer for keeper-bench to finish before scenario timeout; keep positive for short scenarios
@@ -65,11 +80,13 @@ def _patch_keeper_bench_config(src, servers, clients, duration_s):
         template.pop("host", None)
         template.pop("sessions", None)
     
-    # Create connection list with distributed sessions
+    # Create connection list with distributed sessions; zero-session hosts are omitted
+    # so totals below the host count stay exact (sessions_total >= 1 keeps the list non-empty)
     conn_list = []
     for i, h in enumerate(hosts):
         sessions = per_host_base + (1 if i < remainder else 0)
-        conn_list.append({**template, "host": h, "sessions": max(1, sessions)})
+        if sessions:
+            conn_list.append({**template, "host": h, "sessions": sessions})
     
     conn["connection"] = conn_list[0] if len(conn_list) == 1 else conn_list
     conn.pop("host", None)
@@ -78,7 +95,13 @@ def _patch_keeper_bench_config(src, servers, clients, duration_s):
     # concurrency.  Using setdefault would leave the workload YAML's concurrency intact
     # (e.g. prod_mix.yaml has concurrency: 640), causing 640 workers to share `clients`
     # sessions and generating far more load than intended.
-    out["concurrency"] = clients
+    # A scenario can decouple the two via workload.concurrency (worker threads): each
+    # worker picks a random session per request, so all sessions stay alive and get
+    # watch-armed while the request rate is bounded by the worker count.  Required for
+    # very high session counts (thousands), where one worker per session is infeasible.
+    out["concurrency"] = int(concurrency) if concurrency is not None else clients
+    # Zero workers would silently benchmark nothing (no guard in keeper-bench itself).
+    assert out["concurrency"] > 0, f"bench concurrency must be > 0, got {out['concurrency']}"
     # Ensure bench prints periodic progress to stderr so the "Requests executed: N"
     # fallback works when Session expired prevents JSON output.
     # Use `is None` check (not truthiness) because workloads explicitly set report_delay: 0.0
@@ -93,7 +116,7 @@ def _patch_keeper_bench_config(src, servers, clients, duration_s):
 class KeeperBench:
     """Runs keeper-bench workload on host. For ZooKeeper backend, uses node IPs and ZK-specific connection settings."""
     
-    def __init__(self, nodes, ctx, cfg_path, duration_s, replay_path, secure=False):
+    def __init__(self, nodes, ctx, cfg_path, duration_s, replay_path, secure=False, clients=None, concurrency=None):
         # RaftKeeper uses same workload as default (multi-connection); only ZooKeeper uses single-conn + high timeouts
         is_zk = bool(nodes and getattr(nodes[0], "is_zookeeper", False))
         is_raftkeeper = bool(nodes and getattr(nodes[0], "is_raftkeeper", False))
@@ -106,6 +129,20 @@ class KeeperBench:
         self.duration_s = int(duration_s)
         self.replay_path = replay_path
         self.secure = bool(secure)
+        # Per-scenario client count (workload.clients); overrides the workload YAML's
+        # concurrency, is overridden by KEEPER_BENCH_CLIENTS.
+        self.clients = int(clients) if clients is not None else None
+        # Per-scenario worker thread count (workload.concurrency); when set, decouples
+        # bench workers from session count (sessions stay `clients`, load generation
+        # uses this many threads).  Unset = one worker per session (previous behavior).
+        self.concurrency = int(concurrency) if concurrency is not None else None
+        # The ZooKeeper path collapses to a single session and replay forces a single
+        # worker, so these knobs would describe a load shape that never runs there.
+        if (self._is_zookeeper or self.replay_path) and (self.clients is not None or self.concurrency is not None):
+            raise ValueError("workload.clients/workload.concurrency are not supported with the ZooKeeper backend or replay mode: both rewrite sessions/workers")
+        # Computed in run(): subprocess timeout for the current bench attempt, scaled by
+        # session count.  stop() uses it to size the thread-join timeout.
+        self._bench_timeout_s = None
         self.patched_config_path = None
         self.output_json_path = None
         self.bench_output_path = None
@@ -114,6 +151,9 @@ class KeeperBench:
         self._stop = False
         self._result = {}
         self._error = None
+        # Popen handles of spawned bench subprocesses; _kill_bench_procs() tears down
+        # any that are still running (abort paths, stop() after a hung thread).
+        self._bench_procs = []
 
     def _bench_base_cmd(self, cfg_path):
         ch = os.environ.get("CLICKHOUSE_BINARY")
@@ -170,6 +210,8 @@ class KeeperBench:
             summary["write_rps"] = summary.get("write_requests_per_second", 0)
             summary["write_bps"] = summary.get("write_bytes_per_second", 0)
             summary["errors"] = int(data.get("errors", 0))
+            # keeper-bench omits the key when no watch ever fired
+            summary["watches_fired"] = int(data.get("watches_fired", 0))
         except Exception as e:
             print(f"[keeper][bench] Failed to parse JSON output: {e}")
         return summary
@@ -219,6 +261,29 @@ class KeeperBench:
         print(f"[keeper][bench] no quorum after {timeout_s}s ({up}/{len(hosts)} ZK-ready), proceeding anyway")
         return False
 
+    @staticmethod
+    def _total_sessions(bench_cfg):
+        """Total sessions across all connection entries in a patched bench config."""
+        conn = (bench_cfg.get("connections") or {}).get("connection")
+        if isinstance(conn, dict):
+            conn = [conn]
+        if not isinstance(conn, list):
+            return 0
+        return sum(int(c.get("sessions", 1) or 1) for c in conn if isinstance(c, dict))
+
+    def _kill_bench_procs(self):
+        """SIGKILL the process group of every still-running bench subprocess.
+
+        No-op after normal completion: exited procs are skipped, vanished ones raise
+        ProcessLookupError which is swallowed.
+        """
+        for p in self._bench_procs:
+            if p.poll() is None:
+                try:
+                    os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+                except OSError:  # includes ProcessLookupError
+                    pass
+
     def _run_bench_subprocess(self, bench_cfg, patched_cfg_path):
         """Run keeper-bench subprocess and return (out_text, stdout_path, stderr_path).
 
@@ -229,7 +294,15 @@ class KeeperBench:
         # Give bench 180s extra past its timelimit so that if dm_delay kills all nodes near
         # the end of bench's run, bench has time to wait for nodes to come back up, write its
         # output file, and clean up test znodes before being killed by the subprocess timeout.
-        bench_timeout = bench_cfg.get("timelimit", 0) + 180
+        # The bench timelimit clock only starts after all sessions are created, and session
+        # creation is serial (one TCP connect + ZK handshake each) — observed at tens of
+        # sessions per second, so setup takes minutes at thousands of sessions.  Scale the
+        # buffer with the session count (~100ms budget per session on top of the flat 180s);
+        # this is only a kill ceiling, so generous is safe.
+        bench_timeout = bench_cfg.get("timelimit", 0) + 180 + self._total_sessions(bench_cfg) // 10
+        # Track the max across concurrent shard subprocesses; stop() sizes its join
+        # timeout from this.
+        self._bench_timeout_s = max(self._bench_timeout_s or 0, bench_timeout)
 
         stdout_path = f"/tmp/keeper_bench_stdout_{uuid.uuid4().hex[:8]}.log"
         stderr_path = f"/tmp/keeper_bench_stderr_{uuid.uuid4().hex[:8]}.log"
@@ -241,7 +314,7 @@ class KeeperBench:
 
         try:
             cmd = f"{self._bench_base_cmd(patched_cfg_path)} > {shlex.quote(stdout_path)} 2> {shlex.quote(stderr_path)}"
-            host_sh(cmd, timeout=bench_timeout)
+            host_sh(cmd, timeout=bench_timeout, on_start=self._bench_procs.append)
         except subprocess.TimeoutExpired:
             print(f"[keeper][bench] host_sh timed out after {bench_timeout}s; reading output from {stdout_path}")
 
@@ -271,6 +344,9 @@ class KeeperBench:
         self._wait_for_any_server(timeout_s=90)
         cfg_text = yaml.safe_load(Path(self.cfg_path).read_text(encoding="utf-8"))
         clients = int(cfg_text.get("concurrency", DEFAULT_CONCURRENCY))
+        if self.clients is not None:
+            print(f"[keeper][bench] Using clients={self.clients} from scenario workload")
+            clients = self.clients
         # ZooKeeper: single connection + high timeouts to avoid "Session expired".
         if self._is_zookeeper:
             clients = 1
@@ -281,9 +357,22 @@ class KeeperBench:
             print(f"[keeper][bench] ZooKeeper: single connection, operation_timeout={ZOOKEEPER_OPERATION_TIMEOUT_MS//1000}s session_timeout={ZOOKEEPER_SESSION_TIMEOUT_MS//1000}s")
         clients_env = os.environ.get("KEEPER_BENCH_CLIENTS", "").strip()
         if clients_env:
+            if self._is_zookeeper or self.replay_path:
+                raise ValueError("KEEPER_BENCH_CLIENTS is not supported with the ZooKeeper backend or replay mode: both rewrite sessions/workers")
+            if int(clients_env) <= 0:
+                raise ValueError(f"KEEPER_BENCH_CLIENTS must be > 0, got {clients_env!r}")
             print(f"[keeper][bench] Using KEEPER_BENCH_CLIENTS={clients_env} from environment")
             clients = int(clients_env)
-        bench_cfg = _patch_keeper_bench_config(cfg_text, self.servers, clients, self.duration_s)
+        concurrency = self.concurrency if not self._is_zookeeper else None
+        if concurrency is not None:
+            print(f"[keeper][bench] Decoupled workers: sessions={clients} concurrency={concurrency}")
+        # Above the per-process session ceiling, split a generator run into several
+        # bench subprocesses and merge their summaries (fault-free saturation rungs
+        # only).  Replay runs never shard: a replay executes the recorded request
+        # log in a single process (the replay rewrite below forces concurrency 1).
+        if not self._is_zookeeper and not self.replay_path and clients > SESSIONS_PER_BENCH:
+            return self._run_sharded(cfg_text, clients, concurrency)
+        bench_cfg = _patch_keeper_bench_config(cfg_text, self.servers, clients, self.duration_s, concurrency=concurrency)
 
         # Replay mode: remove generator section
         if self.replay_path:
@@ -412,6 +501,163 @@ class KeeperBench:
 
         return self._parse_output_json(out_text)
 
+    def _run_sharded(self, cfg_text, clients, concurrency):
+        """Split a high-session run across several keeper-bench subprocesses.
+
+        A single bench process cannot hold much more than SESSIONS_PER_BENCH sessions
+        (two global-pool threads per session, 10000-thread pool), so `clients` sessions
+        are spread over ceil(clients / SESSIONS_PER_BENCH) concurrent subprocesses:
+
+        - shard 0 keeps the workload's `setup` tree: it alone wipes + creates the tree
+          on startup and removes it on exit; the other shards get `setup` stripped;
+        - shards 1+ launch only after shard 0 prints the setup-done marker (emitted
+          right after tree creation, before any session ramp), and get a shorter
+          timelimit so they finish before shard 0's exit cleanup removes the tree
+          from under them;
+        - per-shard summaries are merged: counters/rates sum, latency percentiles take
+          the max across shards (a conservative upper bound).
+
+        Intended for fault-free saturation rungs; the fault-recovery retry paths of the
+        single-process mode are deliberately not replicated here.
+        """
+        n_shards = (clients + SESSIONS_PER_BENCH - 1) // SESSIONS_PER_BENCH
+        base, rem = divmod(clients, n_shards)
+        shard_sessions = [base + (1 if i < rem else 0) for i in range(n_shards)]
+        if concurrency is None:
+            shard_conc = [None] * n_shards
+        else:
+            # Split the worker total across shards the same way as sessions, so the
+            # cluster-wide total matches the configured concurrency exactly.
+            wbase, wrem = divmod(int(concurrency), n_shards)
+            shard_conc = [wbase + (1 if i < wrem else 0) for i in range(n_shards)]
+            if wbase == 0:
+                # keeper-bench needs at least one worker per process, so with fewer
+                # workers than shards the configured total cannot be preserved.
+                raise AssertionError(
+                    f"workload.concurrency={concurrency} cannot be preserved across "
+                    f"{n_shards} bench processes (each needs >= 1 worker); raise "
+                    f"concurrency to at least {n_shards} or lower clients/"
+                    f"SESSIONS_PER_BENCH sharding pressure"
+                )
+        print(
+            f"[keeper][bench] Sharded run: {clients} sessions over {n_shards} bench "
+            f"processes {shard_sessions}, workers per shard "
+            f"{shard_conc if concurrency is not None else 'one per session'}"
+        )
+
+        results = [None] * n_shards
+        failures = [None] * n_shards
+        launch_t0 = _time.monotonic()
+
+        def _one_shard(i, stagger_s):
+            try:
+                shard_cfg = _patch_keeper_bench_config(
+                    cfg_text, self.servers, shard_sessions[i], self.duration_s, concurrency=shard_conc[i]
+                )
+                if i > 0:
+                    shard_cfg.pop("setup", None)
+                    shard_cfg["timelimit"] = max(1, int(shard_cfg["timelimit"]) - int(stagger_s) - 60)
+                opath = f"/tmp/keeper_bench_out_{uuid.uuid4().hex[:8]}.json"
+                out = shard_cfg.setdefault("output", {})
+                out["file"] = {"path": opath, "with_timestamp": False}
+                out["stdout"] = True
+                cfg_path = f"/tmp/keeper_bench_shard{i}_{uuid.uuid4().hex[:8]}.yaml"
+                Path(cfg_path).write_text(yaml.safe_dump(shard_cfg, sort_keys=False), encoding="utf-8")
+                if i == 0:
+                    self.patched_config_path = cfg_path
+                    self.output_json_path = opath
+                out_text, _stdout_path, stderr_path = self._run_bench_subprocess(shard_cfg, cfg_path)
+                if out_text and out_text.strip().startswith("{"):
+                    results[i] = self._parse_output_json(out_text)
+                    print(f"[keeper][bench] shard {i}: ops={results[i].get('ops')} errors={results[i].get('errors')}")
+                else:
+                    failures[i] = f"shard {i}: no JSON output (stderr: {stderr_path})"
+            except Exception as e:
+                failures[i] = f"shard {i}: {e}"
+
+        th0 = threading.Thread(target=_one_shard, args=(0, 0), daemon=True, name="bench-shard-0")
+        th0.start()
+
+        # Launch the remaining shards only once shard 0 has created the setup tree,
+        # so they cannot race its recursive wipe + re-create.  keeper-bench prints the
+        # marker before establishing its benchmark sessions, so all shards ramp their
+        # sessions in parallel; the wait only covers startup + tree creation.
+        def _marker_seen():
+            p = self.bench_error_path
+            try:
+                return bool(p and Path(p).exists() and BENCH_SETUP_DONE_MARKER in Path(p).read_text(errors="ignore"))
+            except Exception:
+                return False
+
+        marker_wait_s = BENCH_SETUP_MARKER_WAIT_S
+        marker_deadline = _time.monotonic() + marker_wait_s
+        while _time.monotonic() < marker_deadline and th0.is_alive() and not _marker_seen():
+            _time.sleep(2)
+        # Final re-check: a fast shard 0 may have printed the marker and exited
+        # between polls; that is success, not a reason to abort.
+        if not _marker_seen():
+            reason = (
+                "shard 0 exited before printing the setup-done marker"
+                if not th0.is_alive()
+                else f"setup-done marker not seen within {marker_wait_s}s"
+            )
+            # Shard 0 may still be running (e.g. stuck in setup); kill its bench
+            # subprocess so it cannot keep mutating the tree during teardown.
+            self._kill_bench_procs()
+            th0.join(timeout=30)
+            raise AssertionError(
+                f"not launching shards 1..{n_shards - 1}: {reason}"
+                + (f"; {failures[0]}" if failures[0] else "")
+            )
+
+        shard_threads = [th0]
+        for i in range(1, n_shards):
+            # Small launch stagger: each shard opens thousands of TCP connections as
+            # fast as it can, and starting them all at once turns session setup into
+            # an accept/handshake storm on the nodes.
+            _time.sleep(2)
+            stagger_s = _time.monotonic() - launch_t0
+            th = threading.Thread(target=_one_shard, args=(i, stagger_s), daemon=True, name=f"bench-shard-{i}")
+            th.start()
+            shard_threads.append(th)
+
+        join_deadline = _time.monotonic() + (self._bench_timeout_s or self.duration_s + 300) + 120
+        for th in shard_threads:
+            th.join(timeout=max(1, join_deadline - _time.monotonic()))
+
+        for msg in filter(None, failures):
+            print(f"[keeper][bench] SHARD FAILURE: {msg}")
+        summaries = [r for r in results if r]
+        # A lost shard means the advertised session count never materialized, so a
+        # partial merge would silently pass the gates against a much smaller run.
+        if len(summaries) < n_shards:
+            raise AssertionError(
+                f"{n_shards - len(summaries)} of {n_shards} bench shards failed: "
+                f"{[f for f in failures if f]}"
+            )
+
+        merged = self._merge_summaries(summaries)
+        merged["shards"] = n_shards
+        print(f"[keeper][bench] Merged {n_shards} shards: ops={merged.get('ops')} errors={merged.get('errors')}")
+        return merged
+
+    def _merge_summaries(self, summaries):
+        """Merge per-shard bench summaries: sum counters and rates, max percentiles."""
+        merged = {"duration_s": self.duration_s, "bench_duration": self.duration_s}
+        sum_keys = {"ops", "reads", "writes", "errors", "watches_fired", "read_rps", "read_bps", "write_rps", "write_bps"}
+        sum_suffixes = ("_total_requests", "_requests_per_second", "_bytes_per_second")
+        for s in summaries:
+            for k, v in s.items():
+                if k in ("duration_s", "bench_duration"):
+                    continue
+                if k in sum_keys or k.endswith(sum_suffixes):
+                    merged[k] = merged.get(k, 0) + v
+                elif k.endswith("_ms"):
+                    merged[k] = max(merged.get(k, 0.0), v)
+                else:
+                    merged.setdefault(k, v)
+        return merged
+
     def _stderr_fallback_summary(self, ops):
         """Build minimal summary when bench did not write valid JSON (e.g. crashed after time limit)."""
         return {
@@ -448,8 +694,14 @@ class KeeperBench:
         self._stop = True
         if self._th:
             # Join timeout: bench may wait for dm_delay to finish before writing output.
-            # Allow bench subprocess timelimit + 180s slack + extra buffer.
-            self._th.join(timeout=(self.duration_s + 300))
+            # Allow the bench subprocess timeout (session-count-scaled, see
+            # _run_bench_subprocess) + extra buffer; fall back to duration + 300s when
+            # the bench never got as far as computing it.
+            join_timeout = (self._bench_timeout_s + 120) if self._bench_timeout_s else (self.duration_s + 300)
+            self._th.join(timeout=join_timeout)
+            # No-op after normal completion; kills leaked bench subprocesses when the
+            # thread is stuck (e.g. join timed out).
+            self._kill_bench_procs()
             paths = [
                 ("config (original)", self.cfg_path),
                 ("replay", self.replay_path),

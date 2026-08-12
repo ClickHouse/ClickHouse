@@ -204,10 +204,20 @@ def _build_bench_step(scenario, nodes, ctx, replay_path=""):
         # Extract config or replay from scenario
         wl.setdefault("config", scenario_wl.get("config"))
         wl.setdefault("replay", scenario_wl.get("replay"))
+        # Optional per-scenario client count (sessions + concurrency) overriding the
+        # workload YAML's `concurrency`; KEEPER_BENCH_CLIENTS still wins over both.
+        if scenario_wl.get("clients") is not None:
+            wl["clients"] = int(scenario_wl["clients"])
+        # Optional per-scenario worker count decoupling load-generation threads from
+        # the session count (each worker picks a random session per request).  Needed
+        # for very high session counts where one worker per session is infeasible.
+        if scenario_wl.get("concurrency") is not None:
+            wl["concurrency"] = int(scenario_wl["concurrency"])
     
-    # If no workload defined anywhere, use default
-    if not wl:
-        wl = {"config": DEFAULT_WORKLOAD_CONFIG}
+    # If no workload config/replay defined anywhere (a scenario may set only
+    # clients/concurrency), use the default workload config
+    if not (wl.get("config") or wl.get("replay")):
+        wl["config"] = DEFAULT_WORKLOAD_CONFIG
     
     # Convert relative paths to absolute. Paths starting with "tests/" are
     # relative to the project root (cwd); others (e.g. "workloads/...") to WORKDIR.
@@ -828,6 +838,8 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             cfg_path=wl.get("config"),
             duration_s=scenario.get("duration"),
             replay_path=wl.get("replay"),
+            clients=wl.get("clients"),
+            concurrency=wl.get("concurrency"),
         )
         
         fault_runner = None

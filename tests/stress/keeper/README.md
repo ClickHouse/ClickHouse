@@ -173,6 +173,97 @@ To add a read-heavy or write-heavy variant:
 4. Reference it in a scenario YAML (`workload: {config: workloads/read_heavy.yaml}`)
    or point at it via `KEEPER_WORKLOAD_CONFIG` for ad-hoc runs.
 
+## Registry saturation scenarios (on-demand)
+
+`scenarios/registry_saturation.yaml` probes session/watch limits of a
+resource-constrained keeper serving a service-discovery registry. The workload
+(`workloads/registry_watch.yaml`) statistically approximates the classic
+ZooKeeper registry pattern: many clients each hold one session with a
+children-watch armed on a shared registry path (`/registry/servers`) and read
+member entries, while membership churn fires the children-watch on every
+watcher simultaneously. keeper-bench generates requests independently rather
+than reacting to watch events, so a steady dominant list weight stands in for
+the clients' re-list + watch re-arm reaction; watch registration, notification,
+and re-arm traffic still scale with the session count, while the armed watch
+population stays bounded by the list:churn mix ratio (keeper watches are
+one-shot, so every churn op fires and clears all of them at once).
+`workloads/registry_churn.yaml` is the watch-churn variant: a heavier list
+weight keeps ~1000 sessions re-arming one-shot children-watches on the same
+path while a low-rate writer continuously fires and clears them, exercising
+sustained watch arm/fire/notify/re-arm cycling and notification delivery
+under load.
+
+Scenarios:
+
+- `registry-sat-c500` / `-c1000` / `-c2000` / `-c4000` / `-c12000` — session
+  ladder; same mix, only the session count rises. Upper rungs use relaxed gates
+  on purpose: they are for observing where degradation starts (`mntr`
+  session/watch counts, container CPU/memory, p99), not a hard pass/fail. The
+  c12000 rung decouples load generation from the session count
+  (`workload.concurrency: 120` workers over 12000 sessions) and raises the
+  node-side connection limits (`opts.max_connections` / `opts.pids_limit`).
+  Above 4000 sessions the harness transparently splits the run across several
+  bench subprocesses (a single keeper-bench process tops out near 5000
+  sessions: each session holds two threads on its 10000-thread global pool);
+  shard 0 owns the setup tree, the rest join after it is created, and the
+  merged summary sums counters/rates and takes the max of latency percentiles.
+- `registry-watch-churn` — sustained watch arm/fire/notify/re-arm cycling and
+  notification delivery at 1000 watching sessions; the steady-state armed
+  population is bounded by the list:create mix ratio (~2 dozen), not the
+  session count.
+- `registry-expiry-storm` — runs only with faults enabled: `cpu_hog` on all
+  nodes starves keeper past the workload's 30 s session timeout, driving mass
+  session expiry among watchers, then load returns to normal.
+
+Every registry scenario asserts an in-run floor on the cluster-wide watch
+count (`watch_peak_ge`, fed by the metrics sampler's `mntr` samples).
+Post-run watch counts are not asserted: gates run after the bench, when
+sessions — and every watch they held — are already gone. The scenarios also
+pin `backend: default` — session counts and the cpu/mem/pids/connection
+limits are only meaningful there — so they do not matrix-expand onto other
+backends.
+
+These scenarios are not part of the nightly scenario files; run them on demand:
+
+```bash
+export CLICKHOUSE_BINARY=$(pwd)/build/programs/clickhouse
+export PYTHONPATH=.:tests/stress:ci
+
+pytest -p no:cacheprovider --durations=0 -vv -s \
+  tests/stress/keeper/tests/test_scenarios.py \
+  -k 'registry-sat-c500 and default' \
+  --matrix-backends=default
+```
+
+Notes:
+
+- Each bench session is one TCP connection from the host, so check
+  `ulimit -n` before the higher rungs (c2000 needs >2k spare fds, c4000 >4k,
+  c12000 >12k). Each session also runs two client threads on the bench host
+  (send + receive), so c12000 needs ~25k threads' worth of headroom — checking
+  `ulimit -u` is not enough on systemd hosts, where the per-user/scope
+  `TasksMax` (`systemctl show user-<uid>.slice -p TasksMax`) is usually the
+  binding limit. Serial per-shard session setup takes minutes at tens of
+  sessions per second (the harness scales the bench subprocess timeout with
+  the session count).
+- **Per-scenario knobs** used by these scenarios (available to any scenario):
+  - `workload.clients` — overrides the workload YAML's `concurrency`
+    (sessions + bench concurrency). Priority: `KEEPER_BENCH_CLIENTS` env >
+    `workload.clients` > workload YAML `concurrency`.
+  - `workload.concurrency` — decouples bench worker threads from the session
+    count: sessions stay `workload.clients`, while this many workers generate
+    load, each picking a random session per request. Without it, one worker per
+    session is spawned, which is infeasible at very high session counts.
+  - `opts.cpu_limit` / `opts.mem_limit` — Docker resource limits for the
+    keeper containers (default backend only), to emulate small/constrained
+    keeper deployments. Defaults from the integration helper are
+    `cpus: 5` / `mem_limit: 12g`; the registry scenarios pin `4` / `4g`.
+  - `opts.max_connections` — keeper server connection cap (top-level
+    `<max_connections>`, default 4096). One session = one connection = one
+    server thread, so high-session rungs must raise it.
+  - `opts.pids_limit` — container pid/thread cap (integration default 5000);
+    must also rise with per-node connection counts.
+
 ## Early comparison: Default vs RocksDB
 
 > **Note:** RocksDB storage support has been removed from Keeper, so the `rocks` backend is no
@@ -197,7 +288,8 @@ below for 15-minute results across all 10 scenarios and 3 backends.
 ## Reference
 
 - **Workload configs:** `tests/stress/keeper/workloads/` — one YAML per workload type.
-- **Scenarios:** `tests/stress/keeper/scenarios/` — `core_no_faults.yaml`, `core_faults.yaml`.
+- **Scenarios:** `tests/stress/keeper/scenarios/` — `core_no_faults.yaml`, `core_faults.yaml`,
+  `registry_saturation.yaml` (on-demand).
 - **Framework entry point:** `tests/stress/keeper/tests/test_scenarios.py`.
 - **Settings / timeouts:** `tests/stress/keeper/framework/core/settings.py`.
 

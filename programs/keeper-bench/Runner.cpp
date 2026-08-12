@@ -1214,11 +1214,22 @@ void Runner::runBenchmarkFromLog()
 void Runner::runBenchmarkWithGenerator()
 {
     pool.emplace(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, concurrency);
-    createConnections();
 
-    std::cerr << "Preparing to run\n";
-    benchmark_context.startup(*connections[0]);
-    std::cerr << "Prepared\n";
+    /// The ZooKeeper client notifies EventNotifier on session expiry, so it must be
+    /// initialized before the first connection is created.
+    DB::EventNotifier::init();
+
+    /// Create the setup tree on a dedicated connection before establishing the benchmark
+    /// sessions, so external orchestration can key on the setup-done marker without
+    /// waiting for the full session ramp.
+    {
+        auto setup_connection = getConnection(connection_infos[0], 0);
+        std::cerr << "Preparing to run\n";
+        benchmark_context.startup(*setup_connection);
+        std::cerr << "Prepared\n";
+    }
+
+    createConnections();
 
     warmup_complete = warmup_seconds <= 0;
 
@@ -1346,7 +1357,6 @@ void Runner::writeOutputString(const std::string & output_string, int64_t start_
 
 void Runner::createConnections()
 {
-    DB::EventNotifier::init();
     std::cerr << "---- Creating connections ---- " << std::endl;
     for (size_t connection_info_idx = 0; connection_info_idx < connection_infos.size(); ++connection_info_idx)
     {

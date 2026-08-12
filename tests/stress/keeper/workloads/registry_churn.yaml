@@ -1,0 +1,64 @@
+name: registry_churn
+# Watch arm/fire/re-arm churn on a single hot path: ~1000 sessions each arm a
+# one-shot children-watch on the same registry path (list with
+# watch_probability 1.0), while a small write weight mutates the registry's
+# children. Keeper watches are one-shot, so every mutation fires and clears
+# ALL armed children-watches at once and a session only re-arms on its next
+# list — the steady-state armed population is bounded by the list:create mix
+# ratio (70:3 → roughly two dozen), not the session count. This measures
+# sustained watch registration/fire/notify/re-arm cycling and notification
+# delivery under load rather than raw request throughput.
+#
+# Same tree as registry_watch.yaml; the difference is the mix: the dominant
+# list weight keeps re-arming the children-watch on the hot path, gets read
+# the member entries without watches (a data watch on the parent would never
+# fire on child churn), and writes are the metronome.
+concurrency: 1000
+report_delay: 0.0
+continue_on_error: true
+
+connections:
+  operation_timeout_ms: 30000
+  connection_timeout_ms: 400000
+  session_timeout_ms: 30000
+
+setup:
+  node:
+    name: registry
+    node:
+      name: servers
+      node:
+      - repeat: 64
+        name:
+          random_string:
+            size: 12
+        data:
+          random_string:
+            size:
+              min_value: 100
+              max_value: 300
+
+generator:
+  requests:
+    list:
+      path: /registry/servers
+      watch_probability: 1.0
+      weight: 70
+
+    get:
+      path:
+      - children_of: /registry/servers
+      weight: 27
+
+    create:
+      path: /registry/servers
+      name_length:
+        min_value: 8
+        max_value: 16
+      data:
+        random_string:
+          size:
+            min_value: 100
+            max_value: 300
+      remove_factor: 0.5
+      weight: 3
