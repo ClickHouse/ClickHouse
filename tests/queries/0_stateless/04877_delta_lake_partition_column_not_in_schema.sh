@@ -59,6 +59,27 @@ for table, schema_fields in fields.items():
 with open(os.path.join(directory, "bad_schema.json"), "w") as out:
     out.write(json.dumps({"type": "struct", "fields": fields["bad"]}))
 
+# "add_only" leaves partitionColumns empty, so the metaData check passes it and only the
+# later partitionValues lookup can reject its unknown key.
+add_only_dir = os.path.join(directory, "add_only")
+os.makedirs(os.path.join(add_only_dir, "_delta_log"))
+os.makedirs(os.path.join(add_only_dir, "p=1"))
+os.link(os.path.join(directory, "bad", data), os.path.join(add_only_dir, data))
+with open(os.path.join(add_only_dir, "_delta_log", "00000000000000000000.json"), "w") as log:
+    for action in [
+        {"protocol": {"minReaderVersion": 1, "minWriterVersion": 2}},
+        {"metaData": {"id": "114462-add-only",
+                      "format": {"provider": "parquet", "options": {}},
+                      "schemaString": json.dumps({"type": "struct", "fields": fields["bad"]}),
+                      "partitionColumns": [],
+                      "configuration": {}, "createdTime": 1600000000000}},
+        {"add": {"path": data, "partitionValues": {"p": "1"},
+                 "size": os.path.getsize(os.path.join(add_only_dir, data)),
+                 "modificationTime": 1600000000000, "dataChange": True,
+                 "stats": json.dumps({"numRecords": 5})}},
+    ]:
+        log.write(json.dumps(action) + "\n")
+
 # "empty" carries no add action at all, so only a metaData-time check can reject it.
 os.makedirs(os.path.join(directory, "empty", "_delta_log"))
 with open(os.path.join(directory, "empty", "_delta_log", "00000000000000000000.json"), "w") as log:
@@ -145,6 +166,9 @@ $CLICKHOUSE_LOCAL -q "SELECT * FROM deltaLakeLocal('$DIR/bad') WHERE id > 3 FORM
 
 echo '-- legacy reader: json log branch'
 $CLICKHOUSE_LOCAL -q "SELECT * FROM deltaLakeLocal('$DIR/bad') FORMAT Null SETTINGS allow_delta_kernel_rs = 0" 2>&1 | grep -oF "INCORRECT_DATA"
+
+echo '-- legacy reader: json log branch, unknown partitionValues key'
+$CLICKHOUSE_LOCAL -q "SELECT * FROM deltaLakeLocal('$DIR/add_only') FORMAT Null SETTINGS allow_delta_kernel_rs = 0" 2>&1 | grep -oF "INCORRECT_DATA"
 
 echo '-- legacy reader: checkpoint branch'
 $CLICKHOUSE_LOCAL -q "SELECT * FROM deltaLakeLocal('$DIR/ckpt') FORMAT Null SETTINGS allow_delta_kernel_rs = 0" 2>&1 | grep -oF "INCORRECT_DATA"
