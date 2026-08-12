@@ -75,6 +75,39 @@ For tuple subtraction: [tupleMinus](/reference/functions/regular-functions/tuple
 ### ilike function {#ilike-function}
 `a ILIKE b` – The `ilike(a, b)` function.
 
+### similarTo function {#similarto-function}
+`a SIMILAR TO b` – The `similarTo(a, b)` function.
+
+### notSimilarTo function {#notsimilarto-function}
+`a NOT SIMILAR TO b` – The `notSimilarTo(a, b)` function.
+
+`SIMILAR TO` is the SQL-standard pattern matching predicate. Its pattern combines the `LIKE` wildcards `%` (any number of arbitrary characters) and `_` (a single arbitrary character) with the regular expression metacharacters `|`, `*`, `+`, `?`, `{`, `}`, `(`, `)`, `[` and `]`. The metacharacters `^`, `$` and `.` are **not** part of the `SIMILAR TO` grammar and denote the corresponding literal characters. The pattern must match the whole left operand, not a substring of it. `\` escapes any of the metacharacters and itself.
+
+```sql title="Query"
+SELECT
+    'ClickHouse' SIMILAR TO 'Cl_ck[hH]ouse'    AS matches,
+    'ClickHouse' NOT SIMILAR TO 'Cl%ck[0-9]ouse' AS does_not_match;
+```
+
+```text title="Response"
+┌─matches─┬─does_not_match─┐
+│       1 │              1 │
+└─────────┴────────────────┘
+```
+
+### ESCAPE clause {#escape-clause}
+
+`LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `SIMILAR TO` and `NOT SIMILAR TO` accept an optional trailing `ESCAPE 'c'` clause, where `c` is a single ASCII character. It replaces the default backslash as the escape character, and the backslash then loses its special meaning (it denotes a literal backslash):
+
+```sql
+SELECT 'a%b' SIMILAR TO 'a#%b' ESCAPE '#';  -- 1: `#%` is a literal `%`
+SELECT 'axb' SIMILAR TO 'a#%b' ESCAPE '#';  -- 0
+```
+
+The escape character must be followed by a special character of the predicate or by itself; anything else is an error, because an escape before an ordinary character has no effect. Inside a bracket expression such as `[...]` the escape character is not special and denotes itself, following the POSIX and PostgreSQL behavior.
+
+The `ESCAPE` clause can also be combined with the `SOME` / `ALL` array quantifier described [below](#some-all-on-arrays), for example `'a%b' SIMILAR TO SOME(['a#%b', 'z%']) ESCAPE '#'`.
+
 ### BETWEEN function {#between-function}
 `a BETWEEN b AND c` – The same as `a >= b AND a <= c`.
 
@@ -198,9 +231,11 @@ In addition to the subquery form described above, the right-hand side of `SOME` 
 
 `SOME` is the existential quantifier (the SQL synonym for `ANY`). `=` and `<>` are special-cased to `has` / `NOT has` because they have an optimized implementation; the general form falls back to the higher-order `arrayExists` / `arrayAll` functions.
 
-The array form is recognised for the comparison operators `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`, the keyword comparison predicates `IS DISTINCT FROM` and `IS NOT DISTINCT FROM`, and the string-search predicates `LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, and `REGEXP`. The keyword comparison predicates and the string-search predicates are recognised only for the array form, not for the subquery form (which is lowered to `IN`/`NOT IN`). Operators that have no array-quantifier meaning — for example `IN` itself — are **not** rewritten and keep their ordinary meaning.
+The array form is recognised for the comparison operators `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`, the keyword comparison predicates `IS DISTINCT FROM` and `IS NOT DISTINCT FROM`, and the string-search predicates `LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `REGEXP`, `SIMILAR TO`, and `NOT SIMILAR TO`. The keyword comparison predicates and the string-search predicates are recognised only for the array form, not for the subquery form (which is lowered to `IN`/`NOT IN`). Operators that have no array-quantifier meaning — for example `IN` itself — are **not** rewritten and keep their ordinary meaning.
 
-The string-search predicates work because `MatchImpl` (the implementation behind `LIKE` / `ILIKE` / `REGEXP`) supports a constant haystack with a non-constant needle. For example, `'abc' LIKE SOME(['a%', 'b%'])` is rewritten to `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])`, and `'abc' NOT LIKE ALL(['x%', 'y%'])` to `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])`. This matches one string against several patterns; for matching with a single combined pass you can still use a multi-pattern search function such as `multiMatchAny` (regular expressions) or `multiSearchAny` (substrings).
+The string-search predicates work because `MatchImpl` (the implementation behind `LIKE` / `ILIKE` / `REGEXP` / `SIMILAR TO`) supports a constant haystack with a non-constant needle. For example, `'abc' LIKE SOME(['a%', 'b%'])` is rewritten to `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])`, and `'abc' NOT LIKE ALL(['x%', 'y%'])` to `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])`. This matches one string against several patterns; for matching with a single combined pass you can still use a multi-pattern search function such as `multiMatchAny` (regular expressions) or `multiSearchAny` (substrings).
+
+The predicates that support an [`ESCAPE` clause](#escape-clause) keep it in the array form: a trailing `ESCAPE 'c'` after the quantifier applies to every pattern of the array, for example `'a%b' SIMILAR TO SOME(['a#%b', 'z%']) ESCAPE '#'` is rewritten to `arrayExists(x -> similarTo('a%b', x, '#'), ['a#%b', 'z%'])`.
 
 <Info>
 **`ANY` is not supported for the array form**
