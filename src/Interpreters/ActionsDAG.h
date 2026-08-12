@@ -442,9 +442,11 @@ public:
     /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
     SplitResult splitActionsBeforeArrayJoin(const Names & array_joined_columns) const;
 
-    /// Splits actions into two parts. First part has minimal size sufficient for calculation of column_name.
-    /// Outputs of initial actions must contain column_name.
-    SplitResult splitActionsForFilter(const std::string & column_name) const;
+    /// Splits actions into two parts. First part has minimal size sufficient for calculation of
+    /// column_name and additional_split_nodes. Outputs of initial actions must contain column_name.
+    SplitResult splitActionsForFilter(
+        const std::string & column_name,
+        std::unordered_set<const Node *> additional_split_nodes = {}) const;
 
     /// Splits actions into two parts. The first part contains all the calculations required to calculate sort_columns
     /// and additional_split_nodes. The second contains the rest.

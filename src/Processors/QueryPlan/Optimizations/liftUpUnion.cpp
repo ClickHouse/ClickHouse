@@ -1,37 +1,14 @@
-#include <Core/Block.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Processors/QueryPlan/DistinctStep.h>
+#include <Core/Block.h>
 
 namespace DB::QueryPlanOptimizations
 {
-namespace
-{
 
-const ActionsDAG::Node * unwrapAlias(const ActionsDAG::Node * node)
-{
-    while (node->type == ActionsDAG::ActionType::ALIAS)
-        node = node->children.at(0);
-
-    return node;
-}
-
-bool hasSupportedVolumeReducingOutput(const ActionsDAG & actions)
-{
-    for (const auto * output : actions.getOutputs())
-    {
-        if (isSupportedVolumeReducingFunctionRoot(*unwrapAlias(output)))
-            return true;
-    }
-
-    return false;
-}
-
-}
-
-size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
+size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
 {
     if (parent_node->children.empty())
         return 0;
@@ -54,14 +31,6 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
 
     if (auto * expression = typeid_cast<ExpressionStep *>(parent.get()))
     {
-        /// `tryPushDownVolumeReducingFunction` is a local single-child rewrite. If
-        /// `tryLiftUpUnion` first clones a supported volume-reducing root into
-        /// multiple `UnionStep` branches, later local rewrites can prune sibling
-        /// branch headers differently and violate the `UnionStep` invariant that
-        /// all input headers are equal.
-        if (settings.push_down_volume_reducing_functions && hasSupportedVolumeReducingOutput(expression->getExpression()))
-            return 0;
-
         /// Union does not change header.
         /// We can push down expression and update header.
         auto union_input_headers = child->getInputHeaders();
@@ -91,7 +60,8 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
             parent_node->children[i] = &expr_node;
 
             expr_node.step = std::make_unique<ExpressionStep>(
-                expr_node.children.front()->step->getOutputHeader(), expression->getExpression().clone());
+                expr_node.children.front()->step->getOutputHeader(),
+                expression->getExpression().clone());
             expr_node.step->setStepDescription(*expression);
         }
 

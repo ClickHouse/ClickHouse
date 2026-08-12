@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <array>
+#include <unordered_map>
 
 class SipHash;
 
@@ -109,8 +110,14 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 /// Move volume-reducing functions down if possible.
 size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
-/// Whether a root can be kept below a row-reducing step or pushed through one.
-bool isSupportedVolumeReducingFunctionRoot(const ActionsDAG::Node & node);
+/// Volume-reducing function nodes (`length`, `lengthUTF8`, `empty`, `notEmpty`) of `actions`,
+/// grouped by their argument node and restricted to arguments that nothing else in the DAG needs.
+/// For such an argument, computing the functions *replaces* the wide column instead of adding to
+/// it, which is what `tryPushDownVolumeReducingFunction` requires to be worth doing.
+/// `tryExecuteFunctionsAfterSorting` uses the same set to avoid lifting those functions back above
+/// a `SortingStep` they have been pushed below.
+std::unordered_map<const ActionsDAG::Node *, ActionsDAG::NodeRawConstPtrs>
+collectVolumeReducingFunctionsReplacingTheirArgument(const ActionsDAG & actions);
 
 /// Convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values
 size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);

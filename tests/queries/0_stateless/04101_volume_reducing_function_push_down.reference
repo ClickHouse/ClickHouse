@@ -1,15 +1,27 @@
-plan: filter — pushdown applied
+plan: filter reading the argument — pushdown applied
 1
 plan: filter — no pushdown when disabled
 0
-plan: sort+limit — pushdown applied
+plan: filter not reading the argument — pushdown applied
 1
-plan: distinct — barrier respected
+plan: argument still needed above — not pushed
+0
+plan: nested expression (lengthUTF8(s)+1) — pushdown applied
 1
+plan: filter step as parent — pushdown applied
+1
+plan: filter step as parent — no pushdown when disabled
+0
 plan: group by — barrier respected
 0
-plan: nested expression (length(s)+1) — not pushed
+plan: distinct — barrier respected
 0
+plan: wide column removed from the sort
+1
+plan: wide column removed from the filter
+1
+plan: wide column removed from the filter that reads it
+1
 plan: default lift-up not regressed when push-down disabled
 1
 plan: mixed roots keep only volume-reducing functions below sort
@@ -19,6 +31,8 @@ plan: unsupported UUID/IP roots still lift up
 eq: filter
 eq: unsupported UUID/IP roots
 eq: sort+limit
+eq: nested expression
+eq: filter step as parent
 eq: group by
 0	1
 5	1
@@ -30,3 +44,4 @@ eq: join
 eq: distinct subquery
 eq: distinct union subquery
 eq: alias collides with sort key
+eq: stateful function in the same expression
