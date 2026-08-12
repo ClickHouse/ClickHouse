@@ -91,7 +91,14 @@ SET enable_cascades_optimizer = 1;
 -- The test profile installed in CI sets a non-zero max_rows_to_group_by, which keeps
 -- aggregations local.  Pin it to 0 so distributed two-phase aggregation is exercised.
 SET max_rows_to_group_by = 0;
-SET rewrite_in_to_join = 1;
+-- `IN (subquery)` runs as a set built on the initiator (the default): the set values ship with
+-- the worker tasks and filter at the reads. `rewrite_in_to_join` stays off; the explicit
+-- rewrite is covered by 04653 and by the per-query variants below.
+SET rewrite_in_to_join = 0;
+-- Without this, index analysis builds the `IN` sets during planning from the single synthetic
+-- row per table; an empty set prunes the reads to zero ranges and collapses the plan to one
+-- node, so the asserted shape would depend on the fake data instead of the hints.
+SET use_index_for_in_with_subqueries = 0;
 SET correlated_subqueries_use_in_memory_buffer = 0;
 SET allow_experimental_correlated_subqueries = 1;
 -- The CI test profile sets non-zero max_rows_in_join/max_bytes_in_join, which alters the
@@ -415,6 +422,17 @@ WHERE p_partkey = ps_partkey AND p_brand <> 'Brand#45'
     AND ps_suppkey NOT IN (SELECT s_suppkey FROM supplier WHERE s_comment LIKE '%Customer%Complaints%')
 GROUP BY p_brand, p_type, p_size ORDER BY supplier_cnt DESC, p_brand, p_type, p_size;
 
+-- The same query with the explicit `IN` -> `JOIN` rewrite.
+SELECT '-- Q16 rewrite_in_to_join';
+EXPLAIN
+SELECT p_brand, p_type, p_size, count(DISTINCT ps_suppkey) AS supplier_cnt
+FROM partsupp, part
+WHERE p_partkey = ps_partkey AND p_brand <> 'Brand#45'
+    AND p_type NOT LIKE 'MEDIUM POLISHED%' AND p_size IN (49, 14, 23, 45, 19, 3, 36, 9)
+    AND ps_suppkey NOT IN (SELECT s_suppkey FROM supplier WHERE s_comment LIKE '%Customer%Complaints%')
+GROUP BY p_brand, p_type, p_size ORDER BY supplier_cnt DESC, p_brand, p_type, p_size
+SETTINGS rewrite_in_to_join = 1;
+
 -- Q17: Small-quantity orders (lineitem, part + correlated subquery)
 -- Filter: p_brand='Brand#23' (1/25) AND p_container='MED BOX' (1/40) -> ~20K parts.
 SET param__internal_join_table_stat_hints = '{
@@ -443,6 +461,18 @@ WHERE o_orderkey IN (SELECT l_orderkey FROM lineitem GROUP BY l_orderkey HAVING 
     AND c_custkey = o_custkey AND o_orderkey = l_orderkey
 GROUP BY c_name, c_custkey, o_orderkey, o_orderdate, o_totalprice
 ORDER BY o_totalprice DESC, o_orderdate LIMIT 100;
+
+-- The same query with the explicit `IN` -> `JOIN` rewrite: the semi join can reorder with the
+-- other joins, at the price of a second full `lineitem` aggregation on the probe side.
+SELECT '-- Q18 rewrite_in_to_join';
+EXPLAIN
+SELECT c_name, c_custkey, o_orderkey, o_orderdate, o_totalprice, sum(l_quantity)
+FROM customer, orders, lineitem
+WHERE o_orderkey IN (SELECT l_orderkey FROM lineitem GROUP BY l_orderkey HAVING sum(l_quantity) > 300)
+    AND c_custkey = o_custkey AND o_orderkey = l_orderkey
+GROUP BY c_name, c_custkey, o_orderkey, o_orderdate, o_totalprice
+ORDER BY o_totalprice DESC, o_orderdate LIMIT 100
+SETTINGS rewrite_in_to_join = 1;
 
 -- Q19: Discounted revenue (lineitem, part -- complex OR filter)
 -- Filters: l_shipmode IN ('AIR','AIR REG') (2/7) AND l_shipinstruct='DELIVER IN PERSON' (1/4)
@@ -491,6 +521,22 @@ WHERE s_suppkey IN (
                 AND l_shipdate >= '1994-01-01' AND l_shipdate < '1995-01-01'))
     AND s_nationkey = n_nationkey AND n_name = 'CANADA'
 ORDER BY s_name;
+
+-- The same query with the explicit `IN` -> `JOIN` rewrite.
+SELECT '-- Q20 rewrite_in_to_join';
+EXPLAIN
+SELECT s_name, s_address
+FROM supplier, nation
+WHERE s_suppkey IN (
+    SELECT ps_suppkey FROM partsupp
+    WHERE ps_partkey IN (SELECT p_partkey FROM part WHERE p_name LIKE 'forest%')
+        AND ps_availqty > (
+            SELECT 0.5 * sum(l_quantity) FROM lineitem
+            WHERE l_partkey = ps_partkey AND l_suppkey = ps_suppkey
+                AND l_shipdate >= '1994-01-01' AND l_shipdate < '1995-01-01'))
+    AND s_nationkey = n_nationkey AND n_name = 'CANADA'
+ORDER BY s_name
+SETTINGS rewrite_in_to_join = 1;
 
 -- Q21: Suppliers who kept orders waiting (supplier, lineitem, orders, nation + EXISTS subqueries)
 -- Filters: o_orderstatus='F' (-> ~73M orders), n_name='SAUDI ARABIA' (1 nation).

@@ -325,6 +325,22 @@ Expression (Project names)
                   ShuffleExchange
                     ReadFromMergeTree (ParallelRead default.lineitem)
 -- Q16
+DelayedCreatingSets
+  Expression (Project names)
+    Expression ((Before ORDER BY + Projection))
+      Sorting
+        MergingAggregated
+          GatherExchange
+            Aggregating
+              Expression ((Before GROUP BY + ))
+                JoinLogical (Shuffle HashJoin )
+                  Expression ((WHERE + Change column names to column identifiers))
+                    ShuffleExchange
+                      ReadFromMergeTree (ParallelRead default.partsupp)
+                  Expression ((WHERE + Change column names to column identifiers))
+                    ShuffleExchange
+                      ReadFromMergeTree (ParallelRead default.part)
+-- Q16 rewrite_in_to_join
 Expression (Project names)
   Expression ((Before ORDER BY + Projection))
     Sorting
@@ -366,6 +382,28 @@ Expression ((Project names + Projection))
                       ShuffleExchange
                         ReadFromMergeTree (ParallelRead default.part)
 -- Q18
+DelayedCreatingSets
+  Expression (Project names)
+    Limit (preliminary LIMIT)
+      Limit (TopN merge Sorting for ORDER BY)
+        GatherExchange
+          Sorting
+            Expression ((Before ORDER BY + Projection))
+              Aggregating
+                Expression ((Before GROUP BY + ))
+                  JoinLogical (Shuffle HashJoin  swapped)
+                    Expression ((WHERE + Change column names to column identifiers))
+                      ShuffleExchange
+                        ReadFromMergeTree (ParallelRead default.lineitem)
+                    ShuffleExchange
+                      JoinLogical (Shuffle HashJoin  swapped)
+                        Expression ((WHERE + Change column names to column identifiers))
+                          ShuffleExchange
+                            ReadFromMergeTree (ParallelRead default.orders)
+                        Expression (Change column names to column identifiers)
+                          ShuffleExchange
+                            ReadFromMergeTree (ParallelRead default.customer)
+-- Q18 rewrite_in_to_join
 Expression (Project names)
   Limit (preliminary LIMIT)
     Limit (TopN merge Sorting for ORDER BY)
@@ -406,6 +444,17 @@ Expression ((Project names + Projection))
               Expression (( + (WHERE + Change column names to column identifiers)))
                 ReadFromMergeTree (ReplicatedRead default.part)
 -- Q20
+DelayedCreatingSets
+  Expression (Project names)
+    GatherExchange
+      Expression ((Before ORDER BY + (Projection + )))
+        Sorting
+          JoinLogical (Broadcast HashJoin )
+            Expression ((WHERE + Change column names to column identifiers))
+              ReadFromMergeTree (ParallelRead default.supplier)
+            Expression ((WHERE + Change column names to column identifiers))
+              ReadFromMergeTree (ReplicatedRead default.nation)
+-- Q20 rewrite_in_to_join
 Expression (Project names)
   GatherExchange
     Expression ((Before ORDER BY + (Projection + WHERE)))
