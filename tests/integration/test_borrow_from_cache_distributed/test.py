@@ -155,3 +155,41 @@ def test_distributed_on_borrow_from_cache_disk_still_attaches(started_cluster):
     assert "cannot store pending blocks" in error
 
     node.query("DROP DATABASE ordinary_borrow SYNC")
+
+
+def test_distributed_on_borrow_from_cache_disk_can_be_renamed(started_cluster):
+    # A table attached on a non-local disk has no local insert queue directory (see the attach
+    # test above), so `renameOnDisk` must not try to move it: an unconditional
+    # `moveDirectory(relative_data_path, ...)` would fail with `DIRECTORY_DOESNT_EXIST` and break
+    # the compatibility contract that pre-existing tables keep working after an upgrade. Only an
+    # `Ordinary` database moves data on rename (`Atomic` keeps UUID-based paths), so it is the
+    # database engine that reaches `renameOnDisk` here.
+    node.query("DROP DATABASE IF EXISTS ordinary_borrow_rename SYNC")
+    node.query(
+        "CREATE DATABASE ordinary_borrow_rename ENGINE = Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
+    )
+    node.query(
+        "CREATE TABLE ordinary_borrow_rename.underlying (key UInt64) ENGINE = MergeTree ORDER BY key"
+    )
+    node.query(
+        """
+        ATTACH TABLE ordinary_borrow_rename.dist_to_rename (key UInt64)
+        ENGINE = Distributed(test_cluster_local, 'ordinary_borrow_rename', 'underlying', rand(), 'borrowed_policy')
+        """
+    )
+    node.query(
+        "INSERT INTO ordinary_borrow_rename.dist_to_rename SETTINGS distributed_foreground_insert = 1 VALUES (1)"
+    )
+
+    node.query(
+        "RENAME TABLE ordinary_borrow_rename.dist_to_rename TO ordinary_borrow_rename.dist_renamed"
+    )
+
+    # The renamed table stays fully readable and foreground-writable.
+    node.query(
+        "INSERT INTO ordinary_borrow_rename.dist_renamed SETTINGS distributed_foreground_insert = 1 VALUES (2)"
+    )
+    assert node.query("SELECT count() FROM ordinary_borrow_rename.dist_renamed").strip() == "2"
+
+    node.query("DROP DATABASE ordinary_borrow_rename SYNC")

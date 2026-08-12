@@ -2109,6 +2109,11 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 {
     for (const DiskPtr & disk : data_volume->getDisks())
     {
+        /// A table on a disk without a real filesystem path is attached without the local insert
+        /// queue (see `initializeDirectoryQueuesForDisk`), so there is no queue directory to move.
+        if (!disk->isPathOnLocalFilesystem())
+            continue;
+
         disk->createDirectories(new_path_to_table_data);
         disk->moveDirectory(relative_data_path, new_path_to_table_data);
 
