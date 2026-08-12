@@ -48,6 +48,7 @@ SELECT count() FROM tab WHERE hasToken(text, 'alpha') SETTINGS query_plan_direct
 SELECT '-- disabled for shipped plans (ReadFromTextIndexCount is not serializable)';
 SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasToken(text, 'alpha') SETTINGS make_distributed_plan = 1) WHERE explain LIKE '%Trivial count from text index%';
 SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasToken(text, 'alpha') SETTINGS serialize_query_plan = 1) WHERE explain LIKE '%Trivial count from text index%';
+SELECT count() FROM tab WHERE hasToken(text, 'alpha') SETTINGS serialize_query_plan = 1;
 
 SELECT '-- fires: multi-token hasAnyTokens (union)';
 SELECT trimLeft(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasAnyTokens(text, ['alpha', 'zeta'])) WHERE explain LIKE '%ReadFromTextIndexCount%';
@@ -202,6 +203,10 @@ SELECT '-- fires: mapContainsValue';
 SELECT trimLeft(explain) FROM (EXPLAIN SELECT count() FROM tab_map WHERE mapContainsValue(m, 'v0')) WHERE explain LIKE '%ReadFromTextIndexCount%';
 SELECT count() FROM tab_map WHERE mapContainsValue(m, 'v0');
 SELECT count() FROM tab_map WHERE mapContainsValue(m, 'v0') SETTINGS query_plan_optimize_count_from_text_index = 0;
+
+SELECT '-- the owning index is resolved per predicate: idx_keys for keys, idx_values for values';
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT count() FROM tab_map WHERE mapContains(m, 'k0')) WHERE explain LIKE '%Trivial count from text index (idx_keys%';
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT count() FROM tab_map WHERE mapContainsValue(m, 'v0')) WHERE explain LIKE '%Trivial count from text index (idx_values%';
 
 SELECT '-- does not fire: m[k] = v needs a residual recheck (hint mode, not exact)';
 SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab_map WHERE m['k0'] = 'v0') WHERE explain LIKE '%Trivial count from text index%';

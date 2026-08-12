@@ -20,6 +20,7 @@ Inject trivial count optimization from the text index into the query plan
 -- disabled for shipped plans (ReadFromTextIndexCount is not serializable)
 0
 0
+750
 -- fires: multi-token hasAnyTokens (union)
 └──ReadFromTextIndexCount (Trivial count from text index (idx, tokens = [\'alpha\', \'zeta\']))
 1500
@@ -83,6 +84,9 @@ Array and Map carriers reach the optimization through the shared direct-read que
 └──ReadFromTextIndexCount (Trivial count from text index (idx_values, token = \'v0\'))
 500
 500
+-- the owning index is resolved per predicate: idx_keys for keys, idx_values for values
+└──ReadFromTextIndexCount (Trivial count from text index (idx_keys, token = \'k0\'))
+└──ReadFromTextIndexCount (Trivial count from text index (idx_values, token = \'v0\'))
 -- does not fire: m[k] = v needs a residual recheck (hint mode, not exact)
 0
 500

@@ -124,6 +124,49 @@ def expected_results():
     return [expected for _, expected in SEARCH_QUERIES]
 
 
+# The count-from-index rewrite (default on) applies to a bare count() with a
+# text predicate; the arraySort(groupArray(...)) query is not a count.
+COUNT_QUERIES = [q for q, _ in SEARCH_QUERIES if q.lstrip().startswith("SELECT count()")]
+
+
+COUNT_OPTIMIZATION_SETTINGS = {
+    "query_plan_optimize_count_from_text_index": 1,
+    "query_plan_direct_read_from_text_index": 1,
+    "optimize_trivial_count_query": 1,
+}
+
+
+def assert_count_from_index_agrees(node, table):
+    # The rewrite answers count() from posting/dictionary cardinalities instead
+    # of scanning rows. Prove it agrees with the index-scan count on whatever
+    # parts the table currently holds, so its decode is checked against
+    # pre-WithCodec and mixed-format segments, not only new-format ones.
+
+    # Fail loud if the rewrite is not engaged, otherwise the checks below pass
+    # vacuously (both paths would just be the index scan).
+    plan = node.query(
+        ("EXPLAIN " + COUNT_QUERIES[0]).format(table=table),
+        settings=COUNT_OPTIMIZATION_SETTINGS,
+    )
+    assert "ReadFromTextIndexCount" in plan, (
+        f"count-from-index rewrite not engaged after upgrade:\n{plan}"
+    )
+
+    for q in COUNT_QUERIES:
+        optimized = node.query(
+            q.format(table=table),
+            settings=COUNT_OPTIMIZATION_SETTINGS,
+        ).strip()
+        reader = node.query(
+            q.format(table=table),
+            settings={"query_plan_optimize_count_from_text_index": 0},
+        ).strip()
+        assert optimized == reader, (
+            f"count-from-index disagrees with the index scan for `{q}`: "
+            f"optimized={optimized} reader={reader}"
+        )
+
+
 @pytest.mark.parametrize(
     "posting_list_codec",
     [
@@ -159,6 +202,9 @@ def test_text_index_upgrade(started_cluster, posting_list_codec):
         f"text index `idx` not picked up after upgrade:\n{explain}"
     )
 
+    # count-from-index must decode the pre-WithCodec segments on its own path.
+    assert_count_from_index_agrees(node, table)
+
     # Insert a third part via the upgraded binary so the table has both old-
     # and new-format index segments side-by-side.
     node.query(
@@ -189,6 +235,9 @@ def test_text_index_upgrade(started_cluster, posting_list_codec):
     # Mixed run: old-format parts take the materialize fallback; the new-format
     # part can satisfy the lazy-mode preconditions.
     assert run_search_queries(node, table, settings=SEARCH_SETTINGS) == mixed_expected
+
+    # count-from-index across mixed old- and new-format parts in one query.
+    assert_count_from_index_agrees(node, table)
 
     # Confirm the new-format part is indexed for the new token.
     assert (
@@ -225,6 +274,9 @@ def test_text_index_upgrade(started_cluster, posting_list_codec):
         ).strip()
         == "1"
     )
+
+    # count-from-index on the merged new-format part built from mixed segments.
+    assert_count_from_index_agrees(node, table)
 
     node.query(f"DROP TABLE {table} SYNC")
     node.restart_with_original_version()
