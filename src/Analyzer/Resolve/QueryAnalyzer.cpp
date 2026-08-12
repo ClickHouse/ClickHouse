@@ -1067,7 +1067,10 @@ void QueryAnalyzer::expandLimitByAll(QueryNode & query_tree_node_typed)
 }
 
 std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
-    const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context)
+    const std::string & aggregate_function_name,
+    NullsAction action,
+    AggregateFunctionStateVariant state_variant,
+    const ContextPtr & context)
 {
     std::string result_aggregate_function_name = aggregate_function_name;
     auto aggregate_function_name_lowercase = Poco::toLower(aggregate_function_name);
@@ -1097,7 +1100,7 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
     if (need_add_or_null)
     {
         auto properties = AggregateFunctionFactory::instance().tryGetProperties(
-            result_aggregate_function_name, action, AggregateFunctionStateVariant::Window);
+            result_aggregate_function_name, action, state_variant);
         if (!properties || !properties->returns_default_when_only_null)
             result_aggregate_function_name += "OrNull";
     }
@@ -1110,7 +1113,7 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
     if (result_aggregate_function_name.ends_with("OrNull"))
     {
         auto function_properies = AggregateFunctionFactory::instance().tryGetProperties(
-            result_aggregate_function_name, action, AggregateFunctionStateVariant::Window);
+            result_aggregate_function_name, action, state_variant);
         if (function_properies && !function_properies->returns_default_when_only_null)
         {
             size_t function_name_size = result_aggregate_function_name.size();

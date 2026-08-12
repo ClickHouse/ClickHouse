@@ -31,6 +31,7 @@ using ProjectionName = String;
 using ProjectionNames = std::vector<ProjectionName>;
 
 struct Settings;
+enum class AggregateFunctionStateVariant;
 
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h first.
   * And additional documentation for each method, where special cases are described in detail.
@@ -174,7 +175,11 @@ private:
     static void expandLimitByAll(QueryNode & query_tree_node_typed);
 
     static std::string
-    rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context);
+    rewriteAggregateFunctionNameIfNeeded(
+        const std::string & aggregate_function_name,
+        NullsAction action,
+        AggregateFunctionStateVariant state_variant,
+        const ContextPtr & context);
 
     static std::optional<JoinTableSide> getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node);
 

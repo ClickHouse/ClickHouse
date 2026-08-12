@@ -437,3 +437,12 @@ FROM
 (
     SELECT exponentialTimeDecayedSumState(10)(toFloat64(1), toFloat64(0)) AS state
 ); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Regular aggregates use aggregation properties when applying OrNull rewrites.
+SET enable_analyzer = 1;
+SELECT
+    isNull(exponentialTimeDecayedSum(10)(value, time)),
+    isNull(exponentialTimeDecayedAvg(10)(value, time))
+FROM VALUES('value Float64, time Float64', (1, 1))
+WHERE false
+SETTINGS aggregate_functions_null_for_empty = 1;
