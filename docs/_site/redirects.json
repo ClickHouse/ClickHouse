@@ -2676,6 +2676,10 @@
     "source": "/engines/database-engines/backup"
   },
   {
+    "destination": "/reference/engines/database-engines/cluster",
+    "source": "/engines/database-engines/cluster"
+  },
+  {
     "destination": "/reference/engines/database-engines/datalake",
     "source": "/engines/database-engines/datalakecatalog"
   },
@@ -2694,6 +2698,10 @@
   {
     "destination": "/reference/engines/database-engines/postgresql",
     "source": "/engines/database-engines/postgresql"
+  },
+  {
+    "destination": "/reference/engines/database-engines/remote",
+    "source": "/engines/database-engines/remote"
   },
   {
     "destination": "/reference/engines/database-engines/replicated",
@@ -39150,6 +39158,10 @@
   {
     "destination": "/reference/functions/aggregate-functions/flame_graph",
     "source": "/sql-reference/aggregate-functions/reference/flame_graph"
+  },
+  {
+    "destination": "/reference/functions/aggregate-functions/gini",
+    "source": "/sql-reference/aggregate-functions/reference/gini"
   },
   {
     "destination": "/reference/functions/aggregate-functions/groupArray",
