@@ -29,12 +29,14 @@ CREATE TABLE quorum2_pr_pinned (n UInt64) ENGINE = ReplicatedMergeTree('/clickho
 INSERT INTO quorum1_pr_pinned SELECT number FROM numbers(10);
 SYSTEM SYNC REPLICA quorum2_pr_pinned;
 
--- A quorum insert that times out with the second replica not fetching leaves `/quorum/status` set, so
+-- An unsatisfiable quorum insert with the second replica not fetching leaves `/quorum/status` set, so
 -- select_sequential_consistency pins the read below the unconfirmed part: the initiator must see
--- (45, 10), not (435, 30).
+-- (45, 10), not (435, 30). Either error leaves that node set: the insert reports
+-- UNKNOWN_STATUS_OF_INSERT when it waits out its own timeout, and
+-- UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE when a status node is already there when it starts.
 SET insert_quorum = 2, insert_quorum_parallel = 0, insert_quorum_timeout = 0;
 SYSTEM STOP FETCHES quorum2_pr_pinned;
-INSERT INTO quorum1_pr_pinned SELECT number + 10 FROM numbers(20); -- { serverError UNKNOWN_STATUS_OF_INSERT }
+INSERT INTO quorum1_pr_pinned SELECT number + 10 FROM numbers(20); -- { serverError UNKNOWN_STATUS_OF_INSERT,UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE }
 SET insert_quorum = 0;
 
 SET select_sequential_consistency = 1;
