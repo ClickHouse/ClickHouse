@@ -3526,3 +3526,90 @@ def test_move_partition_not_split_when_source_commit_fails(started_cluster):
                 node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
             except Exception:
                 pass
+
+
+SHARED_UUID_RESTORE_SRC = "12345678-abcd-abcd-abcd-12345678ab40"
+SHARED_UUID_RESTORE_DST = "12345678-abcd-abcd-abcd-12345678ab41"
+
+
+def test_restore_fenced_to_admission_epoch(started_cluster):
+    """
+    Regression for the `RESTORE` admission-epoch fence: the restore tasks copy every file of
+    every part into `tmp_restore_*` directories under the table's shared prefix long after the
+    command was admitted, and the final `attachRestoredParts` publishes them. All of those
+    stages are fenced to the leadership epoch sampled at admission (carried through
+    `RestoredPartsHolder`), so a lease lost during the restore — even if reacquired, i.e. under
+    a NEW epoch — must abort the copy loop and must not publish anything.
+
+    The `merge_tree_leader_election_stale_epoch_before_commit` failpoint fires inside
+    `assertWritableLeaderAtEpoch`, deterministically simulating exactly that lose-and-reacquire
+    epoch change between the restore's admission and its per-part fence.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_epoch_before_commit"
+    src = "test_restore_src"
+    dst = "test_restore_dst"
+    backup_destination = (
+        "S3('http://minio1:9001/root/backups/test_restore_fenced', "
+        "'minio', 'ClickHouse_Minio_P@ssw0rd')"
+    )
+    # The destination is pre-created (and its leadership awaited) so that the restore's
+    # admission check passes deterministically and the failpoint provably rejects at the
+    # epoch fence, not at admission. The probe rows of `wait_for_leader` make the table
+    # non-empty, hence `allow_non_empty_tables`; the pre-created definition has a different
+    # UUID than the backed-up one, hence `allow_different_table_def`.
+    restore_settings = "SETTINGS allow_non_empty_tables = true, allow_different_table_def = true"
+    try:
+        create_table_on_first_node(node1, src, SHARED_UUID_RESTORE_SRC)
+        create_table_on_first_node(node1, dst, SHARED_UUID_RESTORE_DST)
+        wait_for_leader([node1], table_name=src)
+        wait_for_leader([node1], table_name=dst)
+
+        node1.query(f"INSERT INTO {src} VALUES (1), (2), (3)")
+        node1.query(f"BACKUP TABLE {src} TO {backup_destination}")
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            rejected = False
+            try:
+                node1.query(
+                    f"RESTORE TABLE {src} AS {dst} FROM {backup_destination} {restore_settings}"
+                )
+            except Exception as e:
+                msg = str(e)
+                assert "Leadership epoch" in msg or "stale lease" in msg, (
+                    f"RESTORE was rejected, but not by the leadership-epoch fence: {msg}"
+                )
+                rejected = True
+            assert rejected, "RESTORE under a stale leadership epoch should have been rejected"
+
+            # The rejection must leave nothing published in the destination.
+            assert int(node1.query(f"SELECT count() FROM {dst} WHERE x > 0").strip()) == 0, (
+                "The rejected RESTORE published parts into the destination"
+            )
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # The decisive check: reload the destination's part set from shared storage, as the
+        # next leader would after a failover. A part streamed or published by the aborted
+        # restore would be picked up here even if the in-memory view looked clean.
+        node1.query(f"DETACH TABLE {dst}")
+        node1.query(f"ATTACH TABLE {dst}")
+        wait_for_leader([node1], table_name=dst)
+        assert int(node1.query(f"SELECT count() FROM {dst} WHERE x > 0").strip()) == 0, (
+            "The aborted RESTORE left parts on the destination's shared storage"
+        )
+
+        # With the failpoint cleared the same RESTORE succeeds and the rows become visible.
+        node1.query(f"RESTORE TABLE {src} AS {dst} FROM {backup_destination} {restore_settings}")
+        assert int(node1.query(f"SELECT count() FROM {dst} WHERE x > 0").strip()) == 3
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        for table in (src, dst):
+            try:
+                node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass
