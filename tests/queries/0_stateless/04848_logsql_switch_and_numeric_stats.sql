@@ -1,7 +1,7 @@
 DROP TABLE IF EXISTS logs_04848;
 CREATE TABLE logs_04848
 (
-    `_time` DateTime,
+    `_time` DateTime('UTC'),
     `_msg` String,
     `level` String,
     `app` String,
