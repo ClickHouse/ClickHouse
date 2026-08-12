@@ -93,6 +93,10 @@ uint64_t getLogIdxFromSnapshotPath(const std::string & snapshot_path);
 /// the same logical index under the same key, e.g. "snapshot_100_<uuid>.bin.zstd" -> "snapshot_100.bin.zstd".
 std::string getCanonicalSnapshotS3Name(const std::string & snapshot_path);
 
+/// Narrow a setting to the int32 that most `nuraft::raft_params` fields are, warning instead of
+/// wrapping when it does not fit.
+int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name, LoggerPtr log);
+
 /// `before_file_remove_op` runs after the copy and before the source removal. Returning
 /// `false` rejects the move: the source is kept, the caller cleans up the copied target.
 void moveFileBetweenDisks(
