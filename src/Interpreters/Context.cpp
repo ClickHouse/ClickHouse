@@ -3325,6 +3325,7 @@ void Context::setSettings(const Settings & settings_)
     *settings = settings_;
     need_recalculate_access = true;
     contextSanityClampSettings(*this, *settings);
+    finalizeSettingsWithLock(lock);
 }
 
 void Context::setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock)
@@ -3372,18 +3373,24 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
     }
 }
 
+void Context::finalizeSettingsWithLock(const std::lock_guard<ContextSharedMutex> &)
+{
+    applySettingsQuirks(*settings);
+    adjustSettingsForMakeDistributedPlan(*settings);
+}
+
 void Context::applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex>& lock)
 {
     for (const SettingChange & change : changes)
         applySettingChangeWithLock(change, lock);
-    applySettingsQuirks(*settings);
-    adjustSettingsForMakeDistributedPlan(*settings);
+    finalizeSettingsWithLock(lock);
 }
 
 void Context::setSetting(std::string_view name, const String & value)
 {
     std::lock_guard lock(mutex);
     setSettingWithLock(name, value, lock);
+    finalizeSettingsWithLock(lock);
 }
 
 void Context::setSetting(std::string_view name, const Field & value)
@@ -3391,6 +3398,7 @@ void Context::setSetting(std::string_view name, const Field & value)
     std::lock_guard lock(mutex);
     setSettingWithLock(name, value, lock);
     contextSanityClampSettingsWithLock(*this, *settings, lock);
+    finalizeSettingsWithLock(lock);
 }
 
 void Context::setServerSetting(std::string_view name, const Field & value)
@@ -3508,6 +3516,7 @@ void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
     std::lock_guard lock(mutex);
     for (const String & name: names)
         settings->setDefaultValue(name);
+    finalizeSettingsWithLock(lock);
 }
 
 std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsConstraintsAndCurrentProfilesWithLock() const
