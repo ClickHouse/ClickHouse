@@ -410,10 +410,12 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
         && !has_multiple_needles)
         return false;
 
+    /// `startsWith` uses a binary search over the ordered token dictionary instead of scanning it.
     if (function_name != "equals"
         && function_name != "has"
         && function_name != "mapContains"
         && function_name != "mapContainsKey"
+        && function_name != "startsWith"
         && !getContext()->getSettingsRef()[Setting::use_text_index_like_evaluation_by_dictionary_scan])
         return false;
 

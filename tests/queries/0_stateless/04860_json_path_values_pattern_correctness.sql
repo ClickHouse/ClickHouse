@@ -49,7 +49,8 @@ SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;
 SELECT groupArray(id) FROM json_path_values_pattern_correctness
 WHERE startsWith(data.value, 'abc')
 SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0,
-    force_data_skipping_indices = 'tokens'; -- { serverError INDEX_NOT_USED }
+    text_index_like_min_pattern_length = 3,
+    force_data_skipping_indices = 'tokens';
 SELECT groupArray(id) FROM json_path_values_pattern_correctness
 WHERE data.value LIKE '%value%'
 SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0,
