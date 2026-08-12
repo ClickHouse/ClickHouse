@@ -118,12 +118,6 @@ doc_type: 'reference'
   デフォルトでは、Kubernetes API エンドポイントはパブリックですが、ClickHouse の NAT IP アドレスのみに制限されています。このデフォルト設定を使用している間は、コントロールプレーンによるクラスター管理に必要なため、ClickHouse の許可リストエントリを削除しないでください。代わりに、ClickHouse チームと調整のうえ、エンドポイントをプライベートアクセス専用に切り替えることもできます。Tailscale (アウトバウンド専用で、トラブルシューティングアクセスにも使用) または AWS では VPC Lattice (プライベートプレビュー) を使用します。詳細は [configuration](/ja/products/bring-your-own-cloud/configuration/configurations) を参照してください。これは Kubernetes API にのみ適用される点に注意してください。クラウドプロバイダー API 呼び出し (たとえば AWS の EKS や EC2) は、クロスアカウントでのロール引き受けを通じて ClickHouse Cloud のネットワークから発信されるため、Tailscale 経由でルーティングすることはできません。詳細は [cloud provider APIs vs the Kubernetes API](/ja/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api) を参照してください。
 </Accordion>
 
-<Accordion title="作成される VPC/VNet の IP 範囲はどのくらいのサイズですか？">
-  デフォルトでは、BYOC VPC (AWS/GCP) または VNet (Azure) に `10.0.0.0/16` を使用します。将来的なスケーリングに備え、少なくとも /22 を予約することを推奨します。
-  ただし、サイズを制限したい場合は、server pod が 30 個に
-  制限される可能性が高い場合に限り、/23 を使用できます。
-</Accordion>
-
 <Accordion title="BYOC ネットワークとオブジェクトストレージ間のネットワーク通信はどのように行われますか？">
   AWS では、Customer BYOC VPC と S3 間のテーブルデータ、バックアップ、ログのトラフィックは、AWS S3 API 経由で HTTPS (ポート 443) を使用します。このトラフィックは S3 ゲートウェイ VPC エンドポイントを経由するため、AWS ネットワーク内に留まり、パブリックインターネットを通過せず、NAT ゲートウェイ料金も発生しません。GCP では、Google API へのアクセスにも同様に Private Google Access を使用します。Azure では、データはお客様のサブスクリプション内の Azure Blob Storage アカウントに保存されます。
 </Accordion>
@@ -146,12 +140,12 @@ doc_type: 'reference'
   現時点ではできません。サービスエンドポイントは、ClickHouse 管理の証明書とともに `clickhouse-byoc.com` 配下にプロビジョニングされます。
 </Accordion>
 
-<Accordion title="AWS PrivateLink、GCP Private Service Connect、Azure プライベートリンクを設定するにはどうすればよいですか？">
-  [AWS](/ja/products/bring-your-own-cloud/onboarding/network-aws)、[GCP](/ja/products/bring-your-own-cloud/onboarding/network-gcp)、[Azure](/ja/products/bring-your-own-cloud/onboarding/network-azure) のネットワーク設定ガイドに従ってください。見落とされがちな点は 2 つあります。エンドポイントの許可リストは**サービスごと**であるため、新しいサービスごとにエンドポイントを再登録する必要があります。また、独自の DNS を運用している場合は、プライベートエンドポイント名の DNS 解決を設定する必要があります。設定後は、コンソールの[「Connection via」セレクター](/ja/products/bring-your-own-cloud/configuration/connect#connection-via)で正しいプライベートエンドポイントのホスト名をコピーしてください。
+<Accordion title="AWS PrivateLink、GCP Private Service Connect、または Azure Private Link はどのように設定しますか？">
+  [AWS](/ja/products/bring-your-own-cloud/onboarding/network-aws)、[GCP](/ja/products/bring-your-own-cloud/onboarding/network-gcp)、および [Azure](/ja/products/bring-your-own-cloud/onboarding/network-azure) のネットワーク設定ガイドに従ってください。見落とされがちな点が 2 つあります。エンドポイントの許可リスト登録は**サービスごと**に行うため、新しいサービスごとにエンドポイントを再度登録する必要があります。また、独自の DNS を運用している場合は、プライベートエンドポイント名の DNS 解決をお客様側で設定する必要があります。設定後、コンソールの [Connection via selector](/ja/products/bring-your-own-cloud/configuration/connect#connection-via) を使用して、正しいプライベートエンドポイントのホスト名をコピーしてください。
 </Accordion>
 
 <Accordion title="別の AWS リージョンから PrivateLink 経由で接続できますか？">
-  はい。ただし、コンソールの **Enable private link** トグルが対象とするのは同一リージョンのコンシューマーのみです。AWS では、エンドポイントサービスのクロスリージョンアクセスはデフォルトで無効になっており、ClickHouse console では管理されません。エンドポイントサービスはお客様の BYOC アカウント内にあるため、ご自身で有効にする必要があります。AWS console でエンドポイントサービスの **Supported regions** リストにコンシューマーリージョンを追加し、コンシューマー側でクロスリージョンオプションを指定してエンドポイントを作成します。ClickHouse がこれらの値を変更またはリセットすることはありません。手順については、[PrivateLink 設定ガイド](/ja/products/bring-your-own-cloud/onboarding/network-aws#setup-privatelink)を参照してください。AWS のリージョン間データ転送料金が適用されます。
+  はい。ただし、コンソールの **Enable private link** トグルが対象とするのは同一リージョンのコンシューマーのみです。AWS では、エンドポイントサービスのクロスリージョンアクセスはデフォルトで無効になっており、ClickHouse コンソール では管理されません。エンドポイントサービスはお客様の BYOC アカウント内にあるため、ご自身で有効にする必要があります。AWS console でエンドポイントサービスの **Supported regions** リストにコンシューマーリージョンを追加し、コンシューマー側でクロスリージョンオプションを指定してエンドポイントを作成します。ClickHouse がこれらの値を変更またはリセットすることはありません。手順については、[PrivateLink 設定ガイド](/ja/products/bring-your-own-cloud/onboarding/network-aws#setup-privatelink)を参照してください。AWS のリージョン間データ転送料金が適用されます。
 </Accordion>
 
 <Accordion title="ファイアウォールまたは egress ルールで許可する必要があるエンドポイントのリストはありますか？">

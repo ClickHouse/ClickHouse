@@ -18,8 +18,8 @@ Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez
 <Steps>
   <Step title="Configure sua VPC existente" id="configure-existing-vpc">
     1. Adicione a tag `clickhouse-byoc="true"` à VPC.
-    2. Aloque pelo menos 3 sub-redes privadas em 3 zonas de disponibilidade diferentes para uso do ClickHouse Cloud.
-    3. Certifique-se de que cada sub-rede tenha um intervalo CIDR mínimo de `/23` (por exemplo, 10.0.0.0/23) para fornecer endereços IP suficientes para a implantação do ClickHouse.
+    2. Aloque exatamente 3 sub-redes privadas em 3 zonas de disponibilidade diferentes para uso do ClickHouse Cloud.
+    3. Certifique-se de que cada sub-rede tenha um intervalo CIDR mínimo de `/25` (por exemplo, 10.0.0.0/25). Um `/25` comporta aproximadamente 10 nós de servidor do ClickHouse por zona de disponibilidade; `/24` é recomendado para a maioria das implantações, e sub-redes maiores para implantações que você espera expandir. Os endereços IP dos pods são alocados da própria sub-rede, portanto, cada réplica consome endereços da sub-rede.
     4. Adicione as tags `kubernetes.io/role/internal-elb=1` e `clickhouse-byoc="true"` a cada sub-rede para permitir a configuração correta do balanceador de carga.
 
     <Image img="/images/cloud/reference/byoc-subnet-1.webp" size="lg" alt="Sub-rede da VPC BYOC" />

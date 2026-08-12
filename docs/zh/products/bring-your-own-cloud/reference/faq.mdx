@@ -118,12 +118,6 @@ doc_type: '参考'
   默认情况下，Kubernetes API 端点为公网端点，但仅允许来自 ClickHouse NAT IP 地址的访问。使用此默认设置时，请勿移除 ClickHouse 允许列表条目，因为控制平面需要这些条目来管理集群。也可在与 ClickHouse 团队协调后，将端点切换为仅私网访问：通过 Tailscale (仅出站，也用于故障排查访问) ，或者在 AWS 上通过 VPC Lattice (私有预览) ——请参阅[配置](/zh/products/bring-your-own-cloud/configuration/configurations)。请注意，这仅适用于 Kubernetes API：云提供商 API 调用 (例如 AWS 上的 EKS 和 EC2) 通过跨账户角色承担从 ClickHouse Cloud 网络发起，绝不能经由 Tailscale 路由——请参阅[云提供商 API 与 Kubernetes API](/zh/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api)。
 </Accordion>
 
-<Accordion title="创建的 VPC/VNet IP 地址范围有多大？">
-  默认情况下，BYOC VPC (AWS/GCP) 或 VNet (Azure) 使用 `10.0.0.0/16`。建议至少预留 /22，以便未来可能的扩容，
-  但如果希望限制范围大小，也可以使用 /23，前提是您的规模预计将限制在
-  30 个服务器 Pod 以内。
-</Accordion>
-
 <Accordion title="BYOC 网络与对象存储之间如何通信？">
   在 AWS 上，您的 Customer BYOC VPC 与 S3 之间的流量通过 AWS S3 API 使用 HTTPS (端口 443) 传输表数据、备份和日志。该流量经由 S3 网关 VPC 端点，因此始终位于 AWS 网络内，不经过公网，也不会产生 NAT 网关费用。在 GCP 上，访问 Google API 同样使用 Private Google Access。在 Azure 上，数据存储在您的订阅中的 Azure Blob 存储账户内。
 </Accordion>
@@ -147,7 +141,7 @@ doc_type: '参考'
 </Accordion>
 
 <Accordion title="如何设置 AWS PrivateLink、GCP Private Service Connect 或 Azure Private Link？">
-  请参阅 [AWS](/zh/products/bring-your-own-cloud/onboarding/network-aws)、[GCP](/zh/products/bring-your-own-cloud/onboarding/network-gcp) 和 [Azure](/zh/products/bring-your-own-cloud/onboarding/network-azure) 网络设置指南。有两点常被忽略：端点允许列表是**按服务**配置的，因此每项新服务都需要重新注册端点；如果您自行管理 DNS，还需要自行配置专用端点名称的 DNS 解析。设置完成后，使用控制台中的 [Connection via selector](/zh/products/bring-your-own-cloud/configuration/connect#connection-via) 复制正确的专用端点主机名。
+  请遵循 [AWS](/zh/products/bring-your-own-cloud/onboarding/network-aws)、[GCP](/zh/products/bring-your-own-cloud/onboarding/network-gcp) 和 [Azure](/zh/products/bring-your-own-cloud/onboarding/network-azure) 的网络设置指南。以下两点经常被忽略：端点允许列表是**按服务**设置的，因此每个新服务都必须再次注册端点；如果您运行自己的 DNS，则必须自行配置私有端点名称的 DNS 解析。设置完成后，使用控制台的[连接方式选择器](/zh/products/bring-your-own-cloud/configuration/connect#connection-via)复制正确的私有端点主机名。
 </Accordion>
 
 <Accordion title="能否通过 PrivateLink 从其他 AWS 区域连接？">

@@ -92,7 +92,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     * **区域**：我们[支持的区域](/zh/products/cloud/reference/supported-regions)文档中列出的所有**公有区域**均可用于 BYOC 部署。目前尚不支持私有区域。
 
-    * **VPC/VNet CIDR 范围**：默认情况下，BYOC VPC (AWS/GCP) 或 VNet (Azure) 的 CIDR 范围为 `10.0.0.0/16`。如果计划与其他账户建立 VPC/VNet 对等连接，请确保 CIDR 范围不重叠。请为 BYOC 分配适当的 CIDR 范围，最小为 `/23`，以容纳所需工作负载。`/23` 的最小范围仅可容纳约 30 个服务器 pod (容器组) ——每个副本都会占用 IP 地址，因此如果预计部署规模会扩大，请分配更大的范围 (建议至少使用 `/22`) 。
+    * **VPC/VNet CIDR 范围**：默认情况下，BYOC VPC (AWS/GCP) 或 VNet (Azure) 的 CIDR 范围为 `10.0.0.0/16`。如果计划与其他账户建立 VPC/VNet 对等连接，请确保 CIDR 范围不重叠。最小范围因云平台而异：
+
+      * **AWS**：`/23`
+      * **Azure**：`/23`
+      * **GCP**：`/20`
+
+      这些是下限，而非建议值：每个副本都会占用 IP 地址，因此规模较大的部署需要更大的范围。
 
     * **可用区**：如果计划使用 VPC 对等连接，将源账户与 BYOC 账户的可用区对齐有助于降低跨可用区流量成本。例如，在 AWS 中，可用区后缀 (`a`、`b`、`c`) 在不同账户中可能对应不同的物理可用区 ID。有关详细信息，请参阅 [AWS 指南](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html)。
 

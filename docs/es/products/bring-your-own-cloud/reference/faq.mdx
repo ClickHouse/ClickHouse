@@ -115,13 +115,7 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="¿Cómo accede el plano de control de ClickHouse a la API de Kubernetes de nuestra cuenta? ¿Se requiere Tailscale?">
-  De forma predeterminada, el endpoint de la API de Kubernetes es público, pero está restringido a las direcciones IP NAT de ClickHouse. Mientras se utilice esta configuración predeterminada, no elimine las entradas de la lista de permitidos de ClickHouse, ya que el plano de control las necesita para administrar el clúster. Como alternativa, el endpoint puede configurarse para acceso exclusivamente privado, en coordinación con el equipo de ClickHouse: mediante Tailscale (solo saliente, también utilizado para el acceso de resolución de problemas) o, en AWS, mediante VPC Lattice (private preview). Consulte la [configuración](/es/products/bring-your-own-cloud/configuration/configurations). Tenga en cuenta que esto se aplica únicamente a la API de Kubernetes: las llamadas a las API del proveedor de Cloud (por ejemplo, EKS y EC2 en AWS) se originan en la red de ClickHouse Cloud mediante la asunción de roles entre cuentas y nunca pueden enrutarse a través de Tailscale. Consulte [las API del proveedor de Cloud frente a la API de Kubernetes](/es/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api).
-</Accordion>
-
-<Accordion title="¿Cuál es el tamaño del rango de IP creado para la VPC/VNet?">
-  De forma predeterminada, usamos `10.0.0.0/16` para la VPC BYOC (AWS/GCP) o la VNet (Azure). Recomendamos reservar al menos /22 para posibles ampliaciones futuras,
-  pero, si prefiere limitar el tamaño, puede usar /23 si es probable que esté limitado
-  a 30 pods de servidor.
+  De forma predeterminada, el endpoint de la API de Kubernetes es público, pero está restringido a las direcciones IP NAT de ClickHouse. Mientras se utilice esta configuración predeterminada, no elimine las entradas de la lista de permitidos de ClickHouse, ya que el plano de control las necesita para administrar el clúster. Como alternativa, el endpoint puede configurarse para acceso exclusivamente privado, en coordinación con el equipo de ClickHouse: mediante Tailscale (solo saliente, también utilizado para el acceso de resolución de problemas) o, en AWS, mediante VPC Lattice (vista previa privada). Consulte la [configuración](/es/products/bring-your-own-cloud/configuration/configurations). Tenga en cuenta que esto se aplica únicamente a la API de Kubernetes: las llamadas a las API del proveedor de nube (por ejemplo, EKS y EC2 en AWS) se originan en la red de ClickHouse Cloud mediante la asunción de roles entre cuentas y nunca pueden enrutarse a través de Tailscale. Consulte [las API del proveedor de nube frente a la API de Kubernetes](/es/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api).
 </Accordion>
 
 <Accordion title="¿Cómo funciona la comunicación de red entre la red BYOC y el almacenamiento de objetos?">
@@ -147,7 +141,7 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="¿Cómo configuramos AWS PrivateLink, GCP Private Service Connect o Azure Private Link?">
-  Siga las guías de configuración de red para [AWS](/es/products/bring-your-own-cloud/onboarding/network-aws), [GCP](/es/products/bring-your-own-cloud/onboarding/network-gcp) y [Azure](/es/products/bring-your-own-cloud/onboarding/network-azure). Hay dos aspectos que suelen pasarse por alto: la lista de permitidos de endpoints es **por servicio**, por lo que debe volver a registrar los endpoints para cada servicio nuevo, y, si utiliza su propio DNS, debe configurar la resolución DNS de los nombres de los endpoints privados. Una vez configurado, use el [selector Conexión mediante](/es/products/bring-your-own-cloud/configuration/connect#connection-via) de la consola para copiar el nombre de host correcto del endpoint privado.
+  Siga las guías de configuración de red para [AWS](/es/products/bring-your-own-cloud/onboarding/network-aws), [GCP](/es/products/bring-your-own-cloud/onboarding/network-gcp) y [Azure](/es/products/bring-your-own-cloud/onboarding/network-azure). Hay dos aspectos que suelen pasarse por alto: la lista de permitidos de endpoints es **por servicio**, por lo que los endpoints deben registrarse de nuevo para cada servicio nuevo, y la resolución DNS de los nombres de endpoint privado debe configurarse de su lado si ejecuta su propio DNS. Una vez configurado, use el [selector de conexión](/es/products/bring-your-own-cloud/configuration/connect#connection-via) de la consola para copiar el nombre de host correcto del endpoint privado.
 </Accordion>
 
 <Accordion title="¿Podemos conectarnos mediante PrivateLink desde otra región de AWS?">
@@ -155,7 +149,7 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="¿Existe una lista de endpoints que debemos permitir en nuestro firewall o en las reglas de salida?">
-  No existe una única lista publicada de endpoints. El clúster requiere acceso saliente a Internet funcional (directamente o mediante NAT), además de acceso privado a las API del proveedor de Cloud; consulte los [requisitos de conectividad de red](/es/products/bring-your-own-cloud/onboarding/customization-aws#ensure-network-connectivity). Si su política de red requiere un inventario explícito, contacte con soporte para revisar su configuración.
+  No existe una única lista publicada de endpoints. El clúster requiere acceso saliente a Internet funcional (directamente o mediante NAT), además de acceso privado a las API del proveedor de nube; consulte los [requisitos de conectividad de red](/es/products/bring-your-own-cloud/onboarding/customization-aws#ensure-network-connectivity). Si su política de red requiere un inventario explícito, contacte con soporte para revisar su configuración.
 </Accordion>
 
 <Accordion title="Nuestras herramientas de seguridad marcaron contenedores con privilegios o montajes de host en el clúster de BYOC; ¿es lo esperado?">
@@ -163,7 +157,7 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="¿Admiten claves de cifrado gestionadas por el cliente (CMEK)?">
-  Actualmente, no para BYOC. Los datos en reposo se cifran con claves gestionadas por el proveedor de Cloud. Consulte la [descripción general](/es/products/cloud/guides/infrastructure/deployment-options/byoc/overview) para ver la lista actual de funcionalidades planificadas.
+  Actualmente, no para BYOC. Los datos en reposo se cifran con claves gestionadas por el proveedor de nube. Consulte la [descripción general](/es/products/cloud/guides/infrastructure/deployment-options/byoc/overview) para ver la lista actual de funcionalidades planificadas.
 </Accordion>
 
 <div id="upgrades-and-maintenance">

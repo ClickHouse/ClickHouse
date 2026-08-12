@@ -118,10 +118,6 @@ doc_type: 'reference'
   기본적으로 Kubernetes API 엔드포인트는 공개되어 있지만 ClickHouse의 NAT IP 주소로만 접근이 제한됩니다. 이 기본 설정을 사용하는 동안에는 컨트롤 플레인이 클러스터를 관리하는 데 필요하므로 ClickHouse 허용 목록 항목을 제거하지 마십시오. ClickHouse 팀과 협의하여 엔드포인트를 비공개 전용 접근으로 전환할 수도 있습니다. Tailscale(아웃바운드 전용이며 문제 해결 접근에도 사용됨) 또는 AWS에서는 VPC Lattice(비공개 프리뷰)를 사용할 수 있습니다. 자세한 내용은 [구성](/ko/products/bring-your-own-cloud/configuration/configurations)을 참조하십시오. 이는 Kubernetes API에만 적용됩니다. 클라우드 제공업체 API 호출(예: AWS의 EKS 및 EC2)은 교차 계정 역할 수임을 통해 ClickHouse Cloud 네트워크에서 시작되며, Tailscale을 통해 라우팅할 수 없습니다. 자세한 내용은 [클라우드 제공업체 API와 Kubernetes API 비교](/ko/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api)를 참조하십시오.
 </Accordion>
 
-<Accordion title="생성되는 VPC/VNet IP 범위의 크기는 어떻게 됩니까?">
-  기본적으로 BYOC VPC(AWS/GCP) 또는 VNet(Azure)에 `10.0.0.0/16`을 사용합니다. 향후 확장에 대비해 최소 /22를 예약하는 것이 좋습니다. 다만 크기를 제한하려는 경우 server pod가 30개로 제한될 가능성이 높다면 /23을 사용할 수 있습니다.
-</Accordion>
-
 <Accordion title="BYOC 네트워크와 객체 스토리지 간 네트워크 통신은 어떻게 이루어집니까?">
   AWS에서는 Customer BYOC VPC와 S3 간의 테이블 데이터, 백업 및 로그 트래픽이 AWS S3 API를 통해 HTTPS(포트 443)를 사용합니다. 이 트래픽은 S3 gateway VPC endpoint를 통해 전송되므로 AWS 네트워크 내에 유지되고, 공용 인터넷을 거치지 않으며 NAT gateway 요금도 발생하지 않습니다. GCP에서도 Google API 접근에 Private Google Access를 사용합니다. Azure에서는 데이터가 구독 내 Azure Blob Storage 계정에 저장됩니다.
 </Accordion>
@@ -145,7 +141,7 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="AWS PrivateLink, GCP Private Service Connect 또는 Azure Private Link는 어떻게 설정합니까?">
-  [AWS](/ko/products/bring-your-own-cloud/onboarding/network-aws), [GCP](/ko/products/bring-your-own-cloud/onboarding/network-gcp), [Azure](/ko/products/bring-your-own-cloud/onboarding/network-azure) 네트워크 설정 가이드를 따르십시오. 흔히 놓치는 두 가지가 있습니다. 엔드포인트 허용 목록은 **서비스별**로 관리되므로 새 서비스를 만들 때마다 엔드포인트를 다시 등록해야 합니다. 또한 자체 DNS를 운영하는 경우 프라이빗 엔드포인트 이름에 대한 DNS 해석을 직접 구성해야 합니다. 설정이 완료되면 콘솔의 [Connection via 셀렉터](/ko/products/bring-your-own-cloud/configuration/connect#connection-via)를 사용하여 올바른 프라이빗 엔드포인트 호스트명을 복사하십시오.
+  [AWS](/ko/products/bring-your-own-cloud/onboarding/network-aws), [GCP](/ko/products/bring-your-own-cloud/onboarding/network-gcp), [Azure](/ko/products/bring-your-own-cloud/onboarding/network-azure)용 네트워크 설정 가이드를 따르십시오. 흔히 놓치는 두 가지가 있습니다. 엔드포인트 허용 목록은 **서비스별**로 적용되므로 새 서비스마다 엔드포인트를 다시 등록해야 하며, 자체 DNS를 운영하는 경우 비공개 엔드포인트 이름의 DNS 확인을 직접 구성해야 합니다. 설정이 완료되면 콘솔의 [Connection via 선택기](/ko/products/bring-your-own-cloud/configuration/connect#connection-via)를 사용하여 올바른 비공개 엔드포인트 호스트 이름을 복사하십시오.
 </Accordion>
 
 <Accordion title="다른 AWS 리전에서 PrivateLink를 통해 연결할 수 있습니까?">

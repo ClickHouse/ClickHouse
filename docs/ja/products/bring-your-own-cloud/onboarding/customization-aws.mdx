@@ -18,8 +18,8 @@ ClickHouse Cloud に新しい VPC をプロビジョニングさせる代わり�
 <Steps>
   <Step title="既存の VPC を設定する" id="configure-existing-vpc">
     1. VPC に `clickhouse-byoc="true"` タグを付与します。
-    2. ClickHouse Cloud で使用できるよう、3 つの異なるアベイラビリティゾーンにまたがるプライベートサブネットを少なくとも 3 つ割り当てます。
-    3. ClickHouse のデプロイメントに十分な IP アドレスを確保できるよう、各サブネットの CIDR 範囲が少なくとも `/23` (例: 10.0.0.0/23) であることを確認します。
+    2. ClickHouse Cloud で使用できるよう、3 つの異なるアベイラビリティゾーンにまたがるプライベートサブネットをちょうど 3 つ割り当てます。
+    3. 各サブネットの CIDR 範囲が少なくとも `/25` (例: 10.0.0.0/25) であることを確認します。`/25` では、アベイラビリティゾーンごとにおよそ 10 台の ClickHouse server ノードをサポートできます。ほとんどのデプロイメントには `/24` を推奨し、拡張が見込まれるデプロイメントにはより大きなサブネットを使用してください。ポッドの IP アドレスはサブネット自体から割り当てられるため、各レプリカがサブネットアドレスを消費します。
     4. ロードバランサーが適切に設定されるよう、各サブネットに `kubernetes.io/role/internal-elb=1` と `clickhouse-byoc="true"` のタグを追加します。
 
     <Image img="/images/cloud/reference/byoc-subnet-1.webp" size="lg" alt="BYOC VPC サブネット" />

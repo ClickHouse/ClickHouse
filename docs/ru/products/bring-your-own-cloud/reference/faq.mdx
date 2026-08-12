@@ -118,12 +118,6 @@ doc_type: 'reference'
   По умолчанию конечная точка Kubernetes API публична, но доступ к ней ограничен NAT IP-адресами ClickHouse. Пока используется этот вариант по умолчанию, не удаляйте записи ClickHouse из списка разрешённых адресов, поскольку они нужны плоскости управления для управления кластером. Вместо этого конечную точку можно переключить на доступ только из частной сети, согласовав это с командой ClickHouse: через Tailscale (только исходящие подключения; также используется для доступа для устранения неполадок) или в AWS через VPC Lattice (закрытая предварительная версия) — см. [конфигурацию](/ru/products/bring-your-own-cloud/configuration/configurations). Обратите внимание: это относится только к Kubernetes API. Вызовы API облачного провайдера (например, EKS и EC2 в AWS) выполняются из сети ClickHouse Cloud с использованием межаккаунтного принятия роли и никогда не могут маршрутизироваться через Tailscale — см. [API облачного провайдера и Kubernetes API](/ru/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api).
 </Accordion>
 
-<Accordion title="Каков размер создаваемого диапазона IP-адресов VPC/VNet?">
-  По умолчанию для BYOC VPC (AWS/GCP) или VNet (Azure) используется `10.0.0.0/16`. Рекомендуется зарезервировать не менее /22 для возможного масштабирования в будущем,
-  но при необходимости ограничить размер можно использовать /23, если предполагается, что число серверных подов будет ограничено
-  30.
-</Accordion>
-
 <Accordion title="Как работает сетевое взаимодействие между сетью BYOC и объектным хранилищем?">
   В AWS трафик между вашим Customer BYOC VPC и S3 для данных таблиц, резервных копий и журналов идёт по HTTPS (порт 443) через AWS S3 API. Этот трафик проходит через шлюзовую конечную точку VPC для S3, поэтому остаётся в сети AWS, не проходит через публичный интернет и не влечёт расходов на NAT-шлюз. В GCP доступ к Google API аналогично использует Private Google Access. В Azure данные хранятся в аккаунтах Azure Blob Storage в рамках вашей подписки.
 </Accordion>
@@ -147,7 +141,7 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Как настроить AWS PrivateLink, GCP Private Service Connect или Azure Private Link?">
-  Следуйте руководствам по настройке сети для [AWS](/ru/products/bring-your-own-cloud/onboarding/network-aws), [GCP](/ru/products/bring-your-own-cloud/onboarding/network-gcp) и [Azure](/ru/products/bring-your-own-cloud/onboarding/network-azure). Часто упускают два момента: конечные точки разрешаются **для каждого сервиса отдельно**, поэтому их необходимо заново регистрировать для каждого нового сервиса; кроме того, если вы используете собственный DNS, разрешение DNS-имен частных конечных точек необходимо настроить со своей стороны. После настройки воспользуйтесь [селектором подключения](/ru/products/bring-your-own-cloud/configuration/connect#connection-via) в консоли, чтобы скопировать правильное имя хоста частной конечной точки.
+  Следуйте руководствам по настройке сети для [AWS](/ru/products/bring-your-own-cloud/onboarding/network-aws), [GCP](/ru/products/bring-your-own-cloud/onboarding/network-gcp) и [Azure](/ru/products/bring-your-own-cloud/onboarding/network-azure). Часто упускают два момента: список разрешённых конечных точек задаётся **для каждого сервиса**, поэтому для каждого нового сервиса конечные точки необходимо регистрировать заново; если вы используете собственный DNS, необходимо настроить разрешение DNS-имён частных конечных точек со своей стороны. После настройки используйте [селектор подключения](/ru/products/bring-your-own-cloud/configuration/connect#connection-via) в консоли, чтобы скопировать правильное имя хоста частной конечной точки.
 </Accordion>
 
 <Accordion title="Можно ли подключиться через PrivateLink из другого региона AWS?">

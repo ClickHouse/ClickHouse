@@ -92,7 +92,13 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     * **리전**: [지원 리전](/ko/products/cloud/reference/supported-regions) 문서에 나열된 모든 **퍼블릭 리전**에서 BYOC를 배포할 수 있습니다. 현재 프라이빗 리전은 지원되지 않습니다.
 
-    * **VPC/VNet CIDR 범위**: 기본적으로 BYOC VPC(AWS/GCP) 또는 VNet(Azure)의 CIDR 범위로 `10.0.0.0/16`을 사용합니다. 다른 계정과 VPC/VNet 피어링을 사용할 계획이라면 CIDR 범위가 겹치지 않도록 하십시오. 필요한 워크로드를 수용할 수 있도록 BYOC에 최소 `/23` 크기의 적절한 CIDR 범위를 할당하십시오. `/23`의 최소 범위로는 서버 파드를 약 30개만 수용할 수 있습니다. 레플리카마다 IP 주소를 사용하므로 배포 규모가 커질 것으로 예상되면 더 큰 범위(최소 `/22` 권장)를 할당하십시오.
+    * **VPC/VNet CIDR 범위**: 기본적으로 BYOC VPC(AWS/GCP) 또는 VNet(Azure)의 CIDR 범위로 `10.0.0.0/16`을 사용합니다. 다른 계정과 VPC/VNet 피어링을 사용할 계획이라면 CIDR 범위가 겹치지 않도록 하십시오. 최소 크기는 Cloud마다 다릅니다:
+
+      * **AWS**: `/23`
+      * **Azure**: `/23`
+      * **GCP**: `/20`
+
+      이는 권장 사항이 아닌 최소 기준입니다. 레플리카마다 IP 주소를 사용하므로 규모가 큰 배포에는 더 큰 범위가 필요합니다.
 
     * **가용 영역**: VPC 피어링을 사용할 계획이라면 소스 계정과 BYOC 계정의 가용 영역을 일치시키면 AZ 간 트래픽 비용을 줄이는 데 도움이 될 수 있습니다. 예를 들어 AWS에서는 가용 영역 접미사(`a`, `b`, `c`)가 계정마다 서로 다른 물리적 영역 ID를 나타낼 수 있습니다. 자세한 내용은 [AWS 가이드](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html)를 참조하십시오.
 

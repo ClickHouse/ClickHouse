@@ -18,8 +18,8 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC plut�
 <Steps>
   <Step title="Configurez votre VPC existant" id="configure-existing-vpc">
     1. Ajoutez le tag `clickhouse-byoc="true"` à votre VPC.
-    2. Allouez au moins 3 sous-réseaux privés répartis sur 3 zones de disponibilité différentes pour que ClickHouse Cloud puisse les utiliser.
-    3. Assurez-vous que chaque sous-réseau dispose d’une plage CIDR minimale de `/23` (par ex. 10.0.0.0/23) afin de fournir suffisamment d’adresses IP pour le déploiement de ClickHouse.
+    2. Allouez exactement 3 sous-réseaux privés répartis sur 3 zones de disponibilité différentes pour que ClickHouse Cloud puisse les utiliser.
+    3. Assurez-vous que chaque sous-réseau dispose d’une plage CIDR minimale de `/25` (par ex. 10.0.0.0/25). Un `/25` prend en charge environ 10 nœuds de serveur ClickHouse par zone de disponibilité ; `/24` est recommandé pour la plupart des déploiements, et des sous-réseaux plus grands pour les déploiements dont vous prévoyez la croissance. Les adresses IP des pods sont allouées à partir du sous-réseau lui-même, donc chaque réplique consomme des adresses du sous-réseau.
     4. Ajoutez les tags `kubernetes.io/role/internal-elb=1` et `clickhouse-byoc="true"` à chaque sous-réseau afin de permettre une configuration correcte de l’équilibreur de charge.
 
     <Image img="/images/cloud/reference/byoc-subnet-1.webp" size="lg" alt="Sous-réseau VPC BYOC" />

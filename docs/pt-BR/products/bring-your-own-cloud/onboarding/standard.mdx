@@ -92,7 +92,13 @@ Prepare uma nova conta da AWS, um projeto do GCP ou uma assinatura do Azure na s
 
     * **Região**: Todas as **regiões públicas** listadas em nossa documentação sobre [regiões compatíveis](/pt-BR/products/cloud/reference/supported-regions) estão disponíveis para implantações BYOC. Atualmente, regiões privadas não são compatíveis.
 
-    * **Intervalo CIDR da VPC/VNet**: Por padrão, usamos `10.0.0.0/16` como intervalo CIDR para a VPC BYOC (AWS/GCP) ou VNet (Azure). Se você planeja usar peering de VPC/VNet com outra conta, certifique-se de que os intervalos CIDR não se sobreponham. Aloque um intervalo CIDR adequado para BYOC, com tamanho mínimo de `/23` para acomodar os workloads necessários. O mínimo de `/23` comporta apenas cerca de 30 pods de servidor — cada réplica consome endereços IP; portanto, aloque um intervalo maior (recomenda-se pelo menos `/22`) se você espera que a implantação cresça.
+    * **Intervalo CIDR da VPC/VNet**: Por padrão, usamos `10.0.0.0/16` como intervalo CIDR para a VPC BYOC (AWS/GCP) ou VNet (Azure). Se você planeja usar peering de VPC/VNet com outra conta, certifique-se de que os intervalos CIDR não se sobreponham. O tamanho mínimo varia conforme a Cloud:
+
+      * **AWS**: `/23`
+      * **Azure**: `/23`
+      * **GCP**: `/20`
+
+      Esses são limites mínimos, não recomendações: cada réplica consome endereços IP; portanto, implantações maiores precisam de um intervalo maior.
 
     * **Zonas de disponibilidade**: Se você planeja usar peering de VPC, alinhar as zonas de disponibilidade entre as contas de origem e BYOC pode ajudar a reduzir os custos de tráfego entre AZs. Por exemplo, na AWS, os sufixos de zona de disponibilidade (`a`, `b`, `c`) podem representar IDs de zonas físicas diferentes entre contas. Consulte o [guia da AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) para mais detalhes.
 

@@ -42,7 +42,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * **三个可用区。** 每个 BYOC 基础设施均跨越三个可用区，以此为 ClickHouse 服务器和 ClickHouse Keeper 提供高可用性。少于三个可用区的区域无法托管 BYOC，且不提供单可用区或双可用区部署。
 * **原样应用 onboarding 制品。** 必须严格按原样应用 CloudFormation 模板或 Terraform 模块——资源名称 (例如 `ClickHouseManagementRole` IAM 角色) 和[文档中规定的基线权限](/zh/products/bring-your-own-cloud/reference/privilege)已硬编码到 ClickHouse 的自动化流程中。任何修改都必须获得 ClickHouse 的明确批准；支持的自定义项通过模板参数提供。请参阅[标准 onboarding](/zh/products/bring-your-own-cloud/onboarding/standard)。
 * **由 ClickHouse 管理的 Kubernetes 集群。** EKS/GKE/AKS 集群由 ClickHouse 创建并全面运营。不支持安装到现有 Kubernetes 集群中，也不得在其上安装集群级 admission controller 或策略引擎。
-* **网络基本要求。** 每种部署都需要正常的 DNS 解析和出站互联网访问 (直接访问或通过 NAT) 。对于由 ClickHouse 管理的 VPC/VNet，CIDR 范围至少必须为 `/23`——`/23` 是最低要求，而非建议值：每个副本都会占用 IP 地址，因此规模较大的部署需要更大的地址范围。客户管理的 VPC 则有各云平台对应的子网要求——请参阅 [AWS](/zh/products/bring-your-own-cloud/onboarding/customization-aws) 和 [GCP](/zh/products/bring-your-own-cloud/onboarding/customization-gcp) 自定义指南。
+* **网络基本要求。** 每种部署都需要正常的 DNS 解析和出站互联网访问 (直接访问或通过 NAT) 。对于由 ClickHouse 管理的 VPC/VNet，在 AWS 和 Azure 上 CIDR 范围至少必须为 `/23`，在 GCP 上至少必须为 `/20`，其中一半范围会分配给 GKE 集群的 Pod 范围。这些是最低要求，而非建议值：每个副本都会占用 IP 地址，因此规模较大的部署需要更大的地址范围。客户管理的 VPC 则有各云平台对应的子网要求——请参阅 [AWS](/zh/products/bring-your-own-cloud/onboarding/customization-aws) 和 [GCP](/zh/products/bring-your-own-cloud/onboarding/customization-gcp) 自定义指南。
 
 <div id="features">
   ## 功能

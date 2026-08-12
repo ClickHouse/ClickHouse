@@ -92,7 +92,13 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     * **リージョン**: BYOC デプロイメントでは、[サポート対象リージョン](/ja/products/cloud/reference/supported-regions)のドキュメントに記載されているすべての**パブリックリージョン**を利用できます。現在、Private Region はサポートされていません。
 
-    * **VPC/VNet CIDR 範囲**: デフォルトでは、BYOC VPC (AWS/GCP) または VNet (Azure) の CIDR 範囲として `10.0.0.0/16` を使用します。別のアカウントとの VPC/VNet peering を予定している場合は、CIDR 範囲が重複しないようにしてください。必要なワークロードを収容できるよう、BYOC には最小サイズ `/23` の適切な CIDR 範囲を割り当ててください。`/23` の最小範囲では、対応できるサーバーポッドは約 30 個に限られます。レプリカごとに IP アドレスを消費するため、デプロイメントの拡張が見込まれる場合は、より大きな範囲 (少なくとも `/22` を推奨) を割り当ててください。
+    * **VPC/VNet CIDR 範囲**: デフォルトでは、BYOC VPC (AWS/GCP) または VNet (Azure) の CIDR 範囲として `10.0.0.0/16` を使用します。別のアカウントとの VPC/VNet peering を予定している場合は、CIDR 範囲が重複しないようにしてください。最小サイズはクラウドによって異なります。
+
+      * **AWS**: `/23`
+      * **Azure**: `/23`
+      * **GCP**: `/20`
+
+      これらは推奨値ではなく下限です。レプリカごとに IP アドレスを消費するため、大規模なデプロイメントにはより大きな範囲が必要です。
 
     * **アベイラビリティゾーン**: VPC peering を予定している場合は、ソースアカウントと BYOC アカウントのアベイラビリティゾーンを揃えることで、AZ 間トラフィックのコスト削減につながる場合があります。たとえば AWS では、アベイラビリティゾーンの接尾辞 (`a`、`b`、`c`) が、アカウントごとに異なる物理ゾーン ID を表すことがあります。詳細については、[AWS ガイド](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html)を参照してください。
 

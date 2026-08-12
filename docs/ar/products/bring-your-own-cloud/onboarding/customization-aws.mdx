@@ -18,8 +18,8 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 <Steps>
   <Step title="قم بتهيئة شبكة VPC الحالية لديك" id="configure-existing-vpc">
     1. أضِف الوسم `clickhouse-byoc="true"` إلى VPC.
-    2. خصّص ما لا يقل عن 3 شبكات فرعية خاصة موزعة على 3 مناطق توافر مختلفة لتستخدمها ClickHouse Cloud.
-    3. تأكد من أن كل شبكة فرعية تحتوي على نطاق CIDR لا يقل عن `/23` (على سبيل المثال، 10.0.0.0/23) لتوفير عدد كافٍ من عناوين IP لنشر ClickHouse.
+    2. خصّص 3 شبكات فرعية خاصة بالضبط موزعة على 3 مناطق توافر مختلفة لتستخدمها ClickHouse Cloud.
+    3. تأكد من أن كل شبكة فرعية تحتوي على نطاق CIDR لا يقل عن `/25` (على سبيل المثال، 10.0.0.0/25). يدعم النطاق `/25` نحو 10 عُقد خوادم ClickHouse لكل منطقة توافر؛ ويُوصى باستخدام `/24` لمعظم عمليات النشر، وشبكات فرعية أكبر لعمليات النشر التي تتوقع نموها. تُخصَّص عناوين IP الخاصة بالـ pod من الشبكة الفرعية نفسها، لذا تستهلك كل نسخة متماثلة عناوين من الشبكة الفرعية.
     4. أضِف الوسمين `kubernetes.io/role/internal-elb=1` و`clickhouse-byoc="true"` إلى كل شبكة فرعية لتمكين التهيئة الصحيحة لموازن التحميل.
 
     <Image img="/images/cloud/reference/byoc-subnet-1.webp" size="lg" alt="الشبكة الفرعية لـ VPC في BYOC" />
@@ -77,7 +77,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     </Note>
   </Step>
 
-  <Step title="قم بإعداد البنية التحتية لـ BYOC" id="set-up-byoc-infrastructure">
+  <Step title="إعداد البنية التحتية لـ BYOC" id="set-up-byoc-infrastructure">
     في ClickHouse Cloud console، قم بتهيئة ما يلي عند إعداد بنية تحتية جديدة:
 
     1. ضمن **تهيئة VPC**، اختر **استخدام شبكة VPC الحالية**.

@@ -18,8 +18,8 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 <Steps>
   <Step title="配置现有 VPC" id="configure-existing-vpc">
     1. 为 VPC 添加标签 `clickhouse-byoc="true"`。
-    2. 在 3 个不同的可用区中，至少分配 3 个私有子网供 ClickHouse Cloud 使用。
-    3. 确保每个子网的最小 CIDR 范围为 `/23` (例如 `10.0.0.0/23`) 以便为 ClickHouse 部署提供足够的 IP 地址。
+    2. 在 3 个不同的可用区中，恰好分配 3 个私有子网供 ClickHouse Cloud 使用。
+    3. 确保每个子网的最小 CIDR 范围为 `/25` (例如 `10.0.0.0/25`)。每个 `/25` 在每个可用区大约支持 10 个 ClickHouse server 节点；大多数部署建议使用 `/24`，预计会扩展的部署则应使用更大的子网。Pod IP 地址从子网本身分配，因此每个副本都会占用子网地址。
     4. 为每个子网添加标签 `kubernetes.io/role/internal-elb=1` 和 `clickhouse-byoc="true"`，以启用正确的负载均衡器配置。
 
     <Image img="/images/cloud/reference/byoc-subnet-1.webp" size="lg" alt="BYOC VPC 子网" />

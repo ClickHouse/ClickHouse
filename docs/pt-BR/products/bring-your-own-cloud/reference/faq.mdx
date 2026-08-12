@@ -118,12 +118,6 @@ doc_type: 'reference'
   Por padrão, o endpoint da API do Kubernetes é público, mas restrito aos endereços IP NAT do ClickHouse. Enquanto essa configuração padrão estiver em uso, não remova as entradas da lista de permissões do ClickHouse, pois o plano de controle precisa delas para gerenciar o cluster. Como alternativa, o endpoint pode ser alterado para acesso exclusivamente privado, em coordenação com a equipe da ClickHouse: via Tailscale (somente de saída, também usado para acesso de troubleshooting) ou, na AWS, via VPC Lattice (prévia privada). Consulte a [configuração](/pt-BR/products/bring-your-own-cloud/configuration/configurations). Observe que isso se aplica apenas à API do Kubernetes: as chamadas de API do provedor de Cloud (por exemplo, EKS e EC2 na AWS) têm origem na rede do ClickHouse Cloud por meio da assunção de funções entre contas e nunca podem ser roteadas pelo Tailscale. Consulte [APIs do provedor de Cloud vs. a API do Kubernetes](/pt-BR/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api).
 </Accordion>
 
-<Accordion title="Qual é o tamanho do intervalo de IP da VPC/VNet criada?">
-  Por padrão, usamos `10.0.0.0/16` para a VPC BYOC (AWS/GCP) ou a VNet (Azure). Recomendamos reservar pelo menos /22 para possíveis expansões futuras,
-  mas, se preferir limitar o tamanho, é possível usar /23 caso seja provável que você fique limitado
-  a 30 pods de servidor.
-</Accordion>
-
 <Accordion title="Como funciona a comunicação de rede entre a rede BYOC e o armazenamento de objetos?">
   Na AWS, o tráfego entre sua VPC BYOC do cliente e o S3 usa HTTPS (porta 443) por meio da API do AWS S3 para dados de tabelas, backups e logs. Esse tráfego passa por um endpoint de gateway de VPC do S3, portanto permanece na rede da AWS, não trafega pela internet pública e não gera cobranças de gateway NAT. No GCP, o acesso às APIs do Google também usa o Private Google Access. No Azure, os dados são armazenados em contas do Azure Blob Storage na sua assinatura.
 </Accordion>
@@ -146,8 +140,8 @@ doc_type: 'reference'
   Ainda não. Os endpoints de serviço são provisionados em `clickhouse-byoc.com` com certificados gerenciados pelo ClickHouse.
 </Accordion>
 
-<Accordion title="Como configurar o AWS PrivateLink, o GCP Private Service Connect ou o Azure Private Link?">
-  Siga os guias de configuração de rede da [AWS](/pt-BR/products/bring-your-own-cloud/onboarding/network-aws), do [GCP](/pt-BR/products/bring-your-own-cloud/onboarding/network-gcp) e do [Azure](/pt-BR/products/bring-your-own-cloud/onboarding/network-azure). Dois pontos frequentemente ignorados: a inclusão de endpoints na lista de permissões é **por serviço**, portanto, os endpoints devem ser registrados novamente para cada novo serviço; além disso, se você usar seu próprio DNS, deverá configurar a resolução de DNS dos nomes dos endpoints privados. Após a configuração, use o [seletor Conexão via](/pt-BR/products/bring-your-own-cloud/configuration/connect#connection-via) no console para copiar o nome de host correto do endpoint privado.
+<Accordion title="Como configuramos o AWS PrivateLink, o GCP Private Service Connect ou o Azure Private Link?">
+  Siga os guias de configuração de rede para [AWS](/pt-BR/products/bring-your-own-cloud/onboarding/network-aws), [GCP](/pt-BR/products/bring-your-own-cloud/onboarding/network-gcp) e [Azure](/pt-BR/products/bring-your-own-cloud/onboarding/network-azure). Dois pontos frequentemente esquecidos: a lista de permissões de endpoints é **por serviço**, portanto os endpoints devem ser registrados novamente para cada novo serviço, e a resolução de DNS dos nomes de endpoints privados deve ser configurada por você se executar seu próprio DNS. Após a configuração, use o [seletor Conexão via](/pt-BR/products/bring-your-own-cloud/configuration/connect#connection-via) do console para copiar o nome de host correto do endpoint privado.
 </Accordion>
 
 <Accordion title="Podemos nos conectar via PrivateLink a partir de uma região AWS diferente?">

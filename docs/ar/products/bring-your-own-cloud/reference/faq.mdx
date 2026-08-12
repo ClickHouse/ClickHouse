@@ -115,27 +115,21 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="كيف يصل مستوى التحكم في ClickHouse إلى واجهة برمجة تطبيقات Kubernetes في حسابنا؟ هل يلزم استخدام Tailscale؟">
-  افتراضيًا، تكون نقطة نهاية واجهة برمجة تطبيقات Kubernetes عامة، لكنها مقيّدة بعناوين IP الخاصة ببوابة NAT لدى ClickHouse. ما دام هذا الإعداد الافتراضي قيد الاستخدام، فلا تحذف إدخالات قائمة السماح الخاصة بـ ClickHouse، إذ يحتاجها مستوى التحكم لإدارة المجموعة. يمكن بدلًا من ذلك تحويل نقطة النهاية إلى وصول خاص فقط، بالتنسيق مع فريق ClickHouse: عبر Tailscale (للخروج فقط، ويُستخدم أيضًا للوصول لأغراض استكشاف الأخطاء وإصلاحها) أو، على AWS، عبر VPC Lattice (معاينة خاصة) — راجع [configuration](/ar/products/bring-your-own-cloud/configuration/configurations). لاحظ أن هذا ينطبق على واجهة برمجة تطبيقات Kubernetes فقط: إذ تنطلق استدعاءات واجهة برمجة تطبيقات موفر السحابة (مثل EKS وEC2 على AWS) من شبكة ClickHouse Cloud عبر افتراض دور عبر الحسابات، ولا يمكن مطلقًا توجيهها عبر Tailscale — راجع [واجهات برمجة تطبيقات موفر السحابة مقابل واجهة برمجة تطبيقات Kubernetes](/ar/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api).
+  افتراضيًا، تكون نقطة نهاية واجهة برمجة تطبيقات Kubernetes عامة، لكنها مقيّدة بعناوين IP الخاصة ببوابة NAT لدى ClickHouse. ما دام هذا الإعداد الافتراضي قيد الاستخدام، فلا تحذف إدخالات قائمة السماح الخاصة بـ ClickHouse، إذ يحتاجها مستوى التحكم لإدارة العنقود. يمكن بدلًا من ذلك تحويل نقطة النهاية إلى وصول خاص فقط، بالتنسيق مع فريق ClickHouse: عبر Tailscale (للخروج فقط، ويُستخدم أيضًا للوصول لأغراض استكشاف الأخطاء وإصلاحها) أو، على AWS، عبر VPC Lattice (معاينة خاصة) — راجع [configuration](/ar/products/bring-your-own-cloud/configuration/configurations). لاحظ أن هذا ينطبق على واجهة برمجة تطبيقات Kubernetes فقط: إذ تنطلق استدعاءات واجهة برمجة تطبيقات موفر السحابة (مثل EKS وEC2 على AWS) من شبكة ClickHouse Cloud عبر افتراض دور عبر الحسابات، ولا يمكن مطلقًا توجيهها عبر Tailscale — راجع [واجهات برمجة تطبيقات موفر السحابة مقابل واجهة برمجة تطبيقات Kubernetes](/ar/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api).
 </Accordion>
 
-<Accordion title="ما حجم نطاق عناوين IP لـ VPC/VNet الذي يتم إنشاؤه؟">
-  افتراضيًا، نستخدم `10.0.0.0/16` لـ VPC الخاص بـ BYOC ‏(AWS/GCP) أو VNet ‏(Azure). نوصي بحجز /22 على الأقل للتوسع المحتمل مستقبلًا،
-  ولكن إذا كنت تفضل تقييد الحجم، فيمكن استخدام /23 إذا كان من المرجح أن يقتصر العدد
-  على 30 حاوية server.
-</Accordion>
-
-<Accordion title="كيف تعمل الاتصالات الشبكية بين شبكة BYOC والتخزين الكائني؟">
+<Accordion title="كيف تعمل الاتصالات الشبكية بين شبكة BYOC وتخزين الكائنات؟">
   على AWS، تستخدم حركة البيانات بين Customer BYOC VPC الخاص بك وS3 بروتوكول HTTPS (المنفذ 443) عبر واجهة برمجة تطبيقات AWS S3 لبيانات table والنسخ الاحتياطية والسجلات. تمر هذه الحركة عبر نقطة نهاية VPC من نوع بوابة لـ S3، لذا تبقى داخل شبكة AWS ولا تعبر الإنترنت العام ولا تترتب عليها رسوم بوابة NAT. وبالمثل، على GCP، يستخدم الوصول إلى واجهات برمجة تطبيقات Google خدمة Private Google Access. وعلى Azure، تُخزَّن البيانات في حسابات Azure Blob Storage ضمن اشتراكك.
 </Accordion>
 
-<Accordion title="البيانات موجودة في bucket خاص بنا — هل يمكننا قراءتها أو تعديلها مباشرةً؟">
-  لا. تُخزَّن كائنات blob لبيانات table ضمن تخطيط مشترك من دون مسارات مخصصة لكل table، لذلك لا يمكن إسناد objects إلى tables، وأي تعديل مباشر قد يؤدي إلى تلف خدماتك. لا تعدّل محتويات bucket مباشرةً مطلقًا؛ وإذا اشتبهت في وجود مشكلة، فافتح طلب دعم.
+<Accordion title="البيانات موجودة في حاوية خاصة بنا — هل يمكننا قراءتها أو تعديلها مباشرةً؟">
+  لا. تُخزَّن كائنات blob لبيانات table ضمن تخطيط مشترك من دون مسارات مخصصة لكل table، لذلك لا يمكن إسناد objects إلى tables، وأي تعديل مباشر قد يؤدي إلى تلف خدماتك. لا تعدّل محتويات حاوية مباشرةً مطلقًا؛ وإذا اشتبهت في وجود مشكلة، فافتح طلب دعم.
 </Accordion>
 
-<Accordion title="ما المنافذ المستخدمة لاتصالات العميل والمجموعة؟">
+<Accordion title="ما المنافذ المستخدمة لاتصالات العميل والعنقود؟">
   تنتهي اتصالات client عند موازن التحميل على منافذ TLS: **8443** (واجهة HTTPS) و**9440** (native protocol عبر TLS)؛ كما يوجّه المنفذ 443 إلى واجهة HTTPS. لا تكون MySQL interface (المنفذ 3306) مكشوفة حاليًا في BYOC — وهي مدرجة في خارطة الطريق (راجع [overview](/ar/products/cloud/guides/infrastructure/deployment-options/byoc/overview)).
 
-  داخل الشبكة، تستخدم الاتصالات الداخلية للمجموعة native protocol على المنفذ 9000، وHTTP على المنفذ 8123، واتصالات interserver على المنفذ 9009 للنسخ المتماثل وdistributed queries. لا تُكشف هذه المنافذ الداخلية ومنافذ ClickHouse Keeper مطلقًا على أي موازن التحميل.
+  داخل الشبكة، تستخدم الاتصالات الداخلية للعنقود native protocol على المنفذ 9000، وHTTP على المنفذ 8123، واتصالات interserver على المنفذ 9009 للنسخ المتماثل وdistributed queries. لا تُكشف هذه المنافذ الداخلية ومنافذ ClickHouse Keeper مطلقًا على أي موازن التحميل.
 </Accordion>
 
 <Accordion title="هل نقاط نهاية خدماتنا مكشوفة للإنترنت العام؟ هل يمكننا جعلها خاصة فقط؟">
@@ -146,19 +140,19 @@ doc_type: 'reference'
   ليس حاليًا. تُوفَّر نقاط نهاية service ضمن `clickhouse-byoc.com` مع certificates مُدارة بواسطة ClickHouse.
 </Accordion>
 
-<Accordion title="كيف نُعِدّ AWS PrivateLink أو GCP Private Service Connect أو Azure Private Link؟">
-  اتبع أدلة إعداد الشبكة لـ [AWS](/ar/products/bring-your-own-cloud/onboarding/network-aws) و[GCP](/ar/products/bring-your-own-cloud/onboarding/network-gcp) و[Azure](/ar/products/bring-your-own-cloud/onboarding/network-azure). ثمة أمران يُغفَل عنهما عادةً: قائمة السماح بالنقاط الطرفية تكون **لكل خدمة**، لذا يجب تسجيل النقاط الطرفية مجددًا لكل خدمة جديدة، ويجب أيضًا إعداد تحليل DNS لأسماء النقاط الطرفية الخاصة من جانبك إذا كنت تدير DNS خاصًا بك. بعد الإعداد، استخدم [محدد Connection via](/ar/products/bring-your-own-cloud/configuration/connect#connection-via) في وحدة التحكم لنسخ اسم مضيف النقطة الطرفية الخاصة الصحيح.
+<Accordion title="كيف نُعد AWS PrivateLink أو GCP Private Service Connect أو Azure Private Link؟">
+  اتبع أدلة إعداد الشبكة لـ [AWS](/ar/products/bring-your-own-cloud/onboarding/network-aws) و[GCP](/ar/products/bring-your-own-cloud/onboarding/network-gcp) و[Azure](/ar/products/bring-your-own-cloud/onboarding/network-azure). هناك أمران غالبًا ما يتم إغفالهما: إضافة نقاط النهاية إلى قائمة السماح تكون **لكل خدمة**، لذا يجب تسجيل نقاط النهاية مجددًا لكل خدمة جديدة، كما يجب إعداد تحليل DNS لأسماء نقاط النهاية الخاصة من جانبك إذا كنت تشغّل DNS الخاص بك. بعد الإعداد، استخدم [محدد Connection via](/ar/products/bring-your-own-cloud/configuration/connect#connection-via) في Console لنسخ اسم مضيف نقطة النهاية الخاصة الصحيح.
 </Accordion>
 
 <Accordion title="هل يمكننا الاتصال عبر PrivateLink من منطقة AWS مختلفة؟">
-  نعم، لكن مفتاح التبديل **Enable private link** في وحدة التحكم لا يشمل سوى المستهلكين ضمن المنطقة نفسها — إذ تعطل AWS الوصول عبر المناطق لخدمات النقاط الطرفية افتراضيًا، ولا تديره ClickHouse console. وبما أن خدمة النقطة الطرفية موجودة في حساب BYOC الخاص بك، فعليك تفعيل ذلك بنفسك: أضف مناطق المستهلكين إلى قائمة **Supported regions** لخدمة النقطة الطرفية في وحدة تحكم AWS، ثم أنشئ النقطة الطرفية مع تفعيل خيار الاتصال عبر المناطق من جانب المستهلك. لن تغيّر ClickHouse هذه القيم أو تعيد ضبطها. راجع [دليل إعداد PrivateLink](/ar/products/bring-your-own-cloud/onboarding/network-aws#setup-privatelink) للاطلاع على الخطوات؛ وتُطبق رسوم AWS لنقل البيانات عبر المناطق.
+  نعم، لكن مفتاح التبديل **Enable private link** في وحدة التحكم لا يشمل سوى المستهلكين ضمن المنطقة نفسها — إذ تعطل AWS الوصول عبر المناطق لخدمات نقاط النهاية افتراضيًا، ولا تديره ClickHouse console. وبما أن خدمة نقطة النهاية موجودة في حساب BYOC الخاص بك، فعليك تفعيل ذلك بنفسك: أضف مناطق المستهلكين إلى قائمة **Supported regions** لخدمة نقطة النهاية في وحدة تحكم AWS، ثم أنشئ نقطة النهاية مع تفعيل خيار الاتصال عبر المناطق من جانب المستهلك. لن تغيّر ClickHouse هذه القيم أو تعيد ضبطها. راجع [دليل إعداد PrivateLink](/ar/products/bring-your-own-cloud/onboarding/network-aws#setup-privatelink) للاطلاع على الخطوات؛ وتُطبق رسوم AWS لنقل البيانات عبر المناطق.
 </Accordion>
 
-<Accordion title="هل توجد قائمة بالنقاط الطرفية التي نحتاج إلى السماح بها في جدار الحماية أو قواعد الخروج لدينا؟">
-  لا توجد قائمة موحدة منشورة بالنقاط الطرفية. تتطلب المجموعة اتصالًا فعالًا بالإنترنت للخروج (مباشرةً أو عبر NAT)، بالإضافة إلى وصول خاص إلى واجهات برمجة تطبيقات موفر السحابة — راجع [متطلبات اتصال الشبكة](/ar/products/bring-your-own-cloud/onboarding/customization-aws#ensure-network-connectivity). إذا كانت سياسة الشبكة لديك تتطلب قائمة صريحة، فاتصل بالدعم لمراجعة إعدادك.
+<Accordion title="هل توجد قائمة بنقاط النهاية التي نحتاج إلى السماح بها في جدار الحماية أو قواعد الخروج لدينا؟">
+  لا توجد قائمة موحدة منشورة بنقاط النهاية. تتطلب العنقود اتصالًا فعالًا بالإنترنت للخروج (مباشرةً أو عبر NAT)، بالإضافة إلى وصول خاص إلى واجهات برمجة تطبيقات موفر السحابة — راجع [متطلبات اتصال الشبكة](/ar/products/bring-your-own-cloud/onboarding/customization-aws#ensure-network-connectivity). إذا كانت سياسة الشبكة لديك تتطلب قائمة صريحة، فاتصل بالدعم لمراجعة إعدادك.
 </Accordion>
 
-<Accordion title="رصدت أدوات الأمان لدينا حاويات ذات امتيازات أو نقاط تحميل للمضيف في مجموعة BYOC — هل هذا متوقع؟">
+<Accordion title="رصدت أدوات الأمان لدينا حاويات ذات امتيازات أو نقاط تحميل للمضيف في عنقود BYOC — هل هذا متوقع؟">
   تتطلب بعض مكونات المنصة، بصورة مشروعة، امتيازات مرتفعة أو وصولًا إلى نظام ملفات المضيف، مثل برنامج تشغيل EBS CSI ووظائف تهيئة العقد ومُصدّر عقد Prometheus (الذي يقرأ `/proc` و`/sys`). إذا أظهرت أداة الفحص لديك نتائج، فشاركها مع الدعم — وسنؤكد ما إذا كانت كل منها مقصودة بحكم التصميم أو تتطلب إجراءً.
 </Accordion>
 
