@@ -196,3 +196,34 @@ TEST(PuffinDeletionVectorFooterBind, RejectsBindToNonDeletionVectorBlob)
         EXPECT_NE(e.message().find("expected deletion-vector-v1"), std::string::npos);
     }
 }
+
+TEST(PuffinDeletionVectorFooterBind, RejectsNonMinusOneSnapshotOrSequence)
+{
+    auto blobs = readFixtureBlobs();
+    ASSERT_FALSE(blobs.empty());
+    blobs[0].snapshot_id = 0;
+
+    try
+    {
+        bindDeletionVectorBlob(blobs, /*content_offset=*/4, /*content_size_in_bytes=*/44, "/data/file_a.parquet", 2);
+        FAIL() << "Expected exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+        EXPECT_NE(e.message().find("snapshot-id and sequence-number must be -1"), std::string::npos);
+    }
+
+    blobs = readFixtureBlobs();
+    blobs[0].sequence_number = 0;
+    try
+    {
+        bindDeletionVectorBlob(blobs, /*content_offset=*/4, /*content_size_in_bytes=*/44, "/data/file_a.parquet", 2);
+        FAIL() << "Expected exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+        EXPECT_NE(e.message().find("snapshot-id and sequence-number must be -1"), std::string::npos);
+    }
+}

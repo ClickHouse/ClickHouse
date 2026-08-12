@@ -47,6 +47,12 @@ done
 launch "$id" meta "$DATA/dv_with_compression_codec.puffin" "must omit 'compression-codec'"
 id=$((id + 1))
 
+for f in dv_snapshot_id_not_minus_one dv_sequence_number_not_minus_one
+do
+    launch "$id" meta "$DATA/$f.puffin" 'snapshot-id and sequence-number must be -1'
+    id=$((id + 1))
+done
+
 for f in invalid_cardinality_non_numeric invalid_cardinality_negative
 do
     launch "$id" meta "$DATA/$f.puffin" "property 'cardinality' must be an unsigned integer"
