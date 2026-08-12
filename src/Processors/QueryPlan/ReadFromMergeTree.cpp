@@ -2084,8 +2084,16 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 for (auto && non_intersecting_parts_range : split_ranges_result.non_intersecting_parts_ranges)
                     non_intersecting_parts_by_primary_key.push_back(std::move(non_intersecting_parts_range));
 
+                /// A layer may produce an empty pipe (the in-order getter creates one source per part,
+                /// and a layer may end up with no parts). An empty pipe has no header, so it must not
+                /// reach `createProjection` or `addMergingFinal` below. Dropping it is safe here:
+                /// unlike the join-by-shards path, the per-layer pipes are simply united, so their
+                /// positions carry no meaning.
                 for (auto && merging_pipe : split_ranges_result.merging_pipes)
-                    pipes.push_back(std::move(merging_pipe));
+                {
+                    if (!merging_pipe.empty())
+                        pipes.push_back(std::move(merging_pipe));
+                }
             }
             else
             {
