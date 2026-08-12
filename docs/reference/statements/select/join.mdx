@@ -466,7 +466,7 @@ For `ON`, `WHERE`, and `GROUP BY` clauses:
 
 ### Performance {#performance}
 
-When running a `JOIN`, there is no optimization of the order of execution in relation to other stages of the query. The join (a search in the right table) is run before filtering in `WHERE` and before aggregation.
+When running a `JOIN`, there is no optimization of the order of execution in relation to other stages of the query. The join (a search in the right table) is run before filtering in `WHERE` and before aggregation. The query plan may still push a `WHERE` filter below the join where doing so returns the same rows; see [PREWHERE](/reference/statements/select/prewhere) for the clause that filters a join input unconditionally.
 
 Each time a query is run with the same `JOIN`, the subquery is run again because the result is not cached. To avoid this, use the special [Join](/reference/engines/table-engines/special/join) table engine, which is a prepared array for joining that is always in RAM.
 

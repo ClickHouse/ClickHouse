@@ -27,7 +27,7 @@ The `PREWHERE` section is executed before `FINAL`, so the results of `FROM ... F
 <Note>
 `PREWHERE` is applied while reading the table it belongs to, so it filters that one input before a [JOIN](/reference/statements/select/join) is performed. `WHERE` is evaluated on the result of the join, and the optimizer is free to move it below the join when that returns the same rows. The same condition can therefore give different results in the two clauses.
 
-For example, `SELECT a.id FROM a LEFT JOIN b ON a.id = b.x PREWHERE b.y > 50` is equivalent to `SELECT a.id FROM a LEFT JOIN (SELECT * FROM b WHERE y > 50) AS b ON a.id = b.x`, and not to the same query with `WHERE b.y > 50`: rows of `b` are removed before the join runs, so rows of `a` that lose their match are returned rather than dropped, with the columns of `b` filled as [join_use_nulls](/reference/settings/session-settings/join#join_use_nulls) specifies.
+For example, `SELECT a.id FROM a LEFT JOIN b ON a.id = b.x PREWHERE b.y > 50` is equivalent to `SELECT a.id FROM a LEFT JOIN (SELECT * FROM b WHERE y > 50) AS b ON a.id = b.x`, and not to the same query with `WHERE b.y > 50`: rows of `b` are removed before the join runs, so rows of `a` that lose their match are returned rather than dropped, with the columns of `b` filled as [join_use_nulls](/reference/settings/session-settings/join#join_use_nulls) specifies. Naming a joined table's column in `PREWHERE` like this requires the [analyzer](/guides/clickhouse/performance-and-monitoring/analyzer) (`enable_analyzer = 1`, the default); with `enable_analyzer = 0` the same query raises `UNKNOWN_IDENTIFIER`.
 </Note>
 
 ## Limitations {#limitations}
