@@ -255,10 +255,19 @@ void ReadFromObjectStorageStep::createIterator()
                        predicate, virtual_columns, context, info.hive_partition_columns_to_read_from_file_path)
                        .has_value();
             if (may_prune_object_set)
+            {
                 consumed_object_sets->markPruned(storage_id.uuid);
+            }
             else
+            {
+                /// Record an empty consumed set before the read starts, so that a read consuming no
+                /// object at all is distinguishable from "this table was never read". Otherwise the
+                /// finalization check would fall back to a fresh listing and could reproduce the
+                /// pre-read hash of an object set the query never read. See `beginCapture`.
+                consumed_object_sets->beginCapture(storage_id.uuid);
                 iterator_wrapper = std::make_shared<CapturingObjectIterator>(
                     std::move(iterator_wrapper), std::move(consumed_object_sets), storage_id.uuid);
+            }
         }
     }
 }

@@ -38,6 +38,15 @@ struct QueryConsumedObjectSets
         bool has_metadata = false;
     };
 
+    /// Called when a read of `table_uuid` installs the capture, before it consumes its first object.
+    /// It creates an empty captured set, so that "the read consumed no object at all" is distinct from
+    /// "nothing was captured for this table". Without it a read that consumes zero objects would make
+    /// `getModificationHash` fall back to a fresh listing at finalization, which reopens the listing
+    /// race in the `A -> {} -> A` direction: the pre-read hash lists `A`, the read sees no object at
+    /// all, and the relist reproduces `A`, so a result produced from no data is stored under the key of
+    /// the object set `A`. With the empty set captured, the two hashes differ and the entry is dropped.
+    void beginCapture(const UUID & table_uuid);
+
     /// Called (possibly concurrently from several read streams) for every object the read consumes.
     void add(const UUID & table_uuid, Object object);
 
@@ -52,8 +61,9 @@ struct QueryConsumedObjectSets
     /// Whether any read of `table_uuid` in this query pruned the object set.
     bool isPruned(const UUID & table_uuid) const;
 
-    /// The objects consumed for `table_uuid`, or nullopt if the read captured nothing for it (e.g. the
-    /// table was not read, or this is the pre-read check that runs before any object was consumed).
+    /// The objects consumed for `table_uuid`, or nullopt if no read of it installed a capture (e.g. the
+    /// table was not read, or this is the pre-read check that runs before the plan was built). A read
+    /// that consumed no object returns an empty vector, not nullopt - see `beginCapture`.
     std::optional<std::vector<Object>> get(const UUID & table_uuid) const;
 
 private:
