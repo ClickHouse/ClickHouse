@@ -226,3 +226,15 @@ SELECT formatQueryFromJSON(parseQueryToJSON('INSERT INTO FUNCTION file(\'data.pa
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('INSERT INTO t SELECT 1'), '"table":{"type":"Identifier","name":"t"}', '"table":{"type":"Identifier","name":"t"},"partition_by":{"type":"Identifier","name":"x"}')); -- { serverError BAD_ARGUMENTS }
 -- More than one destination form (here both `table_function` and `table`) is parser-impossible.
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('INSERT INTO FUNCTION null(\'x UInt8\') SELECT 1 AS x'), '"table_function":', '"table":{"type":"Identifier","name":"t"},"table_function":')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- ALTER ... MOVE: the destination is tied to the `part` form. `ParserAlterQuery` parses `TO SHARD` only
+-- in the `MOVE PART` branch and `TO TABLE` only in the `MOVE PARTITION` branch, so a crossed pair is
+-- parser-impossible: it formats SQL that cannot be parsed back, and `MOVE PART ... TO TABLE` reaches
+-- `getPartitionIDFromQuery`, which downcasts the part-name literal with `as<ASTPartition &>()`.
+-- The parser-produced pairings round-trip:
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MOVE PART \'all_1_1_0\' TO SHARD \'/clickhouse/tables/s2\''));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MOVE PARTITION 1 TO TABLE u'));
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MOVE PART \'all_1_1_0\' TO DISK \'d1\''), '"move_destination_type":"DISK","move_destination_name":"d1"', '"move_destination_type":"TABLE","to_table":"u"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MOVE PARTITION 1 TO VOLUME \'v\''), '"move_destination_type":"VOLUME"', '"move_destination_type":"SHARD"')); -- { serverError BAD_ARGUMENTS }
