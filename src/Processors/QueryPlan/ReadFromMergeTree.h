@@ -337,7 +337,8 @@ public:
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
-    /// Analyze ranges for cardinality estimation without enforcing row limits or memoizing the result.
+    /// Analyze ranges only for an intermediate cardinality estimate, without enforcing row limits
+    /// or memoizing the result. The executed read analyzes again after its final mode is known.
     AnalysisResultPtr selectRangesToReadForEstimation() const;
 
     /// Analyze the ranges to read for a throwaway pre-plan estimate, without consulting or populating
