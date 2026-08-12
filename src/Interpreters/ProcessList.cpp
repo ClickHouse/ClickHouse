@@ -307,7 +307,17 @@ ProcessList::EntryPtr ProcessList::insert(
         auto thread_group = CurrentThread::getGroup();
         if (thread_group)
         {
-            thread_group->performance_counters.setUserCounters(&user_process_list.user_performance_counters);
+            /// For a borrowed group (an async-insert flush registering its own entry from inside
+            /// another query's scope) the chain-walk of `setUserCounters` would land on the OUTER
+            /// query's counters and rebind them to this entry's user - stealing the outer query's
+            /// later user-level `ProfileEvents` (visible in `system.user_processes`) whenever the
+            /// flush runs for a different user. From this point on the flush follows the identity
+            /// it runs as, for `ProfileEvents` exactly as for `memory_tracker` below: re-point the
+            /// group's own counters and detach them from the outer chain.
+            if (thread_group->isBorrowed())
+                thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
+            else
+                thread_group->performance_counters.setUserCounters(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             if (user_process_list.user_temp_data_on_disk)
             {

@@ -90,10 +90,10 @@ using ThrowIfQueryCanceledPredicate = std::function<void()>;
   *
   * Pointing at the borrowed group's own accounting rather than directly at the owner matters because
   * that chain can be re-pointed after the borrowed group is created: `ProcessList::insert` reparents the
-  * current group's `memory_tracker` to the query/user trackers of the query being inserted, which for a
-  * `createForFlushAsyncInsertQueue` group happens after construction (the flush builds its own process
-  * list entry). Caching the construction-time owner would charge such async work to the outer caller's
-  * query and bypass the flush query's own limits.
+  * current group's `memory_tracker` and `performance_counters` to the query/user trackers of the query
+  * being inserted, which for a `createForFlushAsyncInsertQueue` group happens after construction (the
+  * flush builds its own process list entry). Caching the construction-time owner would charge such async
+  * work to the outer caller's query and bypass the flush query's own limits.
   */
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;

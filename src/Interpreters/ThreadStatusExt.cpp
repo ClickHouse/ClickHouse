@@ -162,15 +162,15 @@ ThreadGroupPtr ThreadGroup::getAsyncCallbackGroup(const ThreadGroupPtr & borrowe
     /// group its raw accounting pointers hop through, up to the owning query group. Async work may
     /// outlive all of them, so the companion has to keep the whole chain alive.
     ///
-    /// The chain serves two purposes with different extents. Lifetime: `performance_counters` are never
-    /// re-pointed, so their raw parent chain always traverses every construction-time parent - the whole
-    /// chain must be held. Accounting bookkeeping (`live_async_callback_companions`, which defers user
-    /// memory-tracker resets - see `ProcessListForUser::lingering_query_groups`): `ProcessList::insert`
-    /// may re-point a group's `memory_tracker` away from its construction-time parent
-    /// (`createForFlushAsyncInsertQueue`: the flush registers its own process-list entry, and from then
-    /// on charges that entry's user, not the outer caller that triggered the flush). Counting a group
-    /// the live memory-tracker chain no longer traverses would keep the wrong user's limits lingering,
-    /// so only the prefix still on the live chain is counted.
+    /// The chain serves two purposes with different extents. Lifetime: only `ProcessList::insert`
+    /// re-points a borrowed group's own accounting (`createForFlushAsyncInsertQueue`: the flush
+    /// registers its own process-list entry, and from then on charges that entry's user, not the outer
+    /// caller that triggered the flush) - the accounting of intermediate borrowed groups still traverses
+    /// its construction-time parents, so the whole chain must be held. Accounting bookkeeping
+    /// (`live_async_callback_companions`, which defers user memory-tracker resets - see
+    /// `ProcessListForUser::lingering_query_groups`): counting a group the live memory-tracker chain no
+    /// longer traverses would keep the wrong user's limits lingering, so only the prefix still on the
+    /// live chain is counted.
     std::vector<ThreadGroupPtr> accounting_chain{borrowed};
     size_t counted_groups = 1;
     bool on_live_memory_tracker_chain = true;

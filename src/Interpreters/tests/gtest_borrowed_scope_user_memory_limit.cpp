@@ -5,6 +5,7 @@
 
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
@@ -19,6 +20,11 @@ namespace CurrentMetrics
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
     extern const Metric LocalThreadScheduled;
+}
+
+namespace ProfileEvents
+{
+    extern const Event SelectedRows;
 }
 
 namespace DB
@@ -260,6 +266,81 @@ TEST(BorrowedThreadGroupLifetime, FlushForAnotherUserDoesNotPinFlushingUsersLimi
             << "async allocation from a flush scope must still obey the inserting user's "
                "`max_memory_usage_for_user` after that user's last query left the process list";
         pool->wait();
+    });
+    t.join();
+}
+
+/// The `ProfileEvents` carrier must follow the same identity switch as the `memory_tracker`
+/// carrier. When the flush registers its process-list entry for user B from inside user A's
+/// query scope, only the flush group's own counters may be re-pointed at user B: rewiring the
+/// OUTER query's counters (as a chain-walk up to the topmost process-level counters would do)
+/// steals the wrapper query's later user-level `ProfileEvents` from user A, cross-contaminating
+/// `system.user_processes`. Asserted through `ProcessList::getUserInfo`, the backing of
+/// `system.user_processes`.
+TEST(BorrowedThreadGroupLifetime, FlushForAnotherUserDoesNotStealFlushingUsersProfileEvents)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+
+        /// User A: runs the wrapper query that triggers the flush.
+        auto context_a = Context::createCopy(getContext().context);
+        context_a->makeQueryContext();
+        ClientInfo client_info_a = context_a->getClientInfo();
+        client_info_a.current_user = "borrowed_scope_profile_events_flushing_user";
+        context_a->setClientInfo(client_info_a);
+        context_a->setCurrentQueryId("borrowed_scope_profile_events_flushing_user_query");
+
+        /// User B: owns the flushed inserts.
+        auto context_b = Context::createCopy(getContext().context);
+        context_b->makeQueryContext();
+        ClientInfo client_info_b = context_b->getClientInfo();
+        client_info_b.current_user = "borrowed_scope_profile_events_inserting_user";
+        context_b->setClientInfo(client_info_b);
+        context_b->setCurrentQueryId("borrowed_scope_profile_events_inserting_user_query");
+
+        ProcessList process_list;
+
+        /// User A's wrapper query, the outer scope the flush group is created from.
+        auto root_a = std::make_shared<ThreadGroup>(context_a, 0);
+        CurrentThread::attachToGroupIfDetached(root_a);
+        auto entry_a = process_list.insert(
+            "SYSTEM FLUSH ASYNC INSERT QUEUE", /*normalized_query_hash*/ 0, /*ast*/ nullptr, context_a,
+            /*watch_start_nanoseconds*/ 0, /*is_internal*/ true);
+
+        auto borrowed = ThreadGroup::createForFlushAsyncInsertQueue(context_b, root_a);
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        /// The flush registers its own process-list entry for user B - from here on the flush
+        /// charges user B, for `ProfileEvents` exactly as for memory.
+        CurrentThread::attachToGroupIfDetached(borrowed);
+        auto entry_b = process_list.insert(
+            "INSERT INTO t VALUES", /*normalized_query_hash*/ 0, /*ast*/ nullptr, context_b,
+            /*watch_start_nanoseconds*/ 0, /*is_internal*/ true);
+
+        constexpr ProfileEvents::Count flush_amount = 111;
+        ProfileEvents::increment(ProfileEvents::SelectedRows, flush_amount);
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        /// The wrapper query continues its own work as user A after the inner flush registered
+        /// its entry.
+        constexpr ProfileEvents::Count wrapper_amount = 10000;
+        CurrentThread::attachToGroupIfDetached(root_a);
+        ProfileEvents::increment(ProfileEvents::SelectedRows, wrapper_amount);
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        auto user_info = process_list.getUserInfo(/*get_profile_events*/ true);
+        const auto & counters_a = *user_info.at(client_info_a.current_user).profile_counters;
+        const auto & counters_b = *user_info.at(client_info_b.current_user).profile_counters;
+        EXPECT_EQ(counters_a[ProfileEvents::SelectedRows], wrapper_amount)
+            << "the wrapper query's own `ProfileEvents` must keep counting towards the user that "
+               "runs it after an inner flush registered a process-list entry for another user";
+        EXPECT_EQ(counters_b[ProfileEvents::SelectedRows], flush_amount)
+            << "the flush's `ProfileEvents` must count towards the user whose inserts are flushed, "
+               "and only the flush's - not the outer wrapper query's";
+
+        entry_b.reset();
+        entry_a.reset();
     });
     t.join();
 }
