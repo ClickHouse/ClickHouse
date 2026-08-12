@@ -7,7 +7,6 @@
 
 #include <fmt/format.h>
 
-#include <atomic>
 #include <cerrno>
 
 #if defined(OS_LINUX)
@@ -61,9 +60,7 @@ ssize_t preadNoWait(
         RWF_NOWAIT);
 
     if (res > 0)
-    {
         __msan_unpoison(buf, res);
-    }
 
     return res;
 #else
@@ -94,10 +91,10 @@ bool isPreadNoWaitProbeRejected(ssize_t res, int error)
 namespace
 {
 
-PreadNoWaitSupport probePreadNoWaitSupport()
+String probePreadNoWait()
 {
 #if !defined(OS_LINUX)
-    return {.supported = false, .unsupported_reason = "`preadv2` is only available on Linux"};
+    return "`preadv2` is only available on Linux";
 #else
     /// According to man, Linux 5.9 and 5.10 have a bug in preadv2() with the RWF_NOWAIT:
     /// it can return 0 while not at the end of the file, which is indistinguishable from a real EOF.
@@ -106,51 +103,37 @@ PreadNoWaitSupport probePreadNoWaitSupport()
     /// RedHat-patched kernels might be also affected.
     VersionNumber linux_version(Poco::Environment::osVersion());
     if (linux_version < VersionNumber{5, 11, 0})
-        return {
-            .supported = false,
-            .unsupported_reason = fmt::format(
-                "the Linux kernel is {}, and `preadv2` with the `RWF_NOWAIT` flag can report the end of the file instead of "
-                "the data before Linux 5.11 (see the BUGS section of `man 2 preadv2`), so it is not used; "
-                "upgrade the kernel to 5.11 or newer",
-                linux_version.toString())};
+        return fmt::format(
+            "the Linux kernel is {}, and `preadv2` with the `RWF_NOWAIT` flag can report the end of the file instead of "
+            "the data before Linux 5.11 (see the BUGS section of `man 2 preadv2`); upgrade the kernel to 5.11 or newer",
+            linux_version.toString());
 
     /// The system call can also be unavailable regardless of the kernel version:
     /// a `seccomp` profile of a container runtime can reject it.
     /// An invalid file descriptor is passed on purpose - `seccomp` filters and the system call table
     /// are consulted before the descriptor is looked up, so a system call that is allowed
-    /// answers `EBADF` without reading anything, and any other answer means it was intercepted
-    /// (`isPreadNoWaitProbeRejected`). The per-read classification in `isPreadNoWaitUnavailable`
-    /// stays narrower: a read from a real descriptor fails with `EBADF`, `EAGAIN`, `EINTR` or `EIO`
-    /// even when the system call itself works.
+    /// answers `EBADF` without reading anything, and any other answer means it was intercepted.
+    /// The per-read classification in `isPreadNoWaitUnavailable` stays narrower: a read from a real
+    /// descriptor fails with `EAGAIN`, `EINTR` or `EIO` even when the system call itself works.
     char buf[1] = {};
     ssize_t res = preadNoWait(-1, buf, sizeof(buf), 0);
     if (isPreadNoWaitProbeRejected(res, errno))
-        return {
-            .supported = false,
-            .unsupported_reason = fmt::format(
-                "the `preadv2` system call is not available (the probe with an invalid file descriptor answered {} "
-                "instead of `EBADF`); it is typically rejected by a `seccomp` profile of a container runtime, "
-                "and can be allowed in the runtime configuration",
-                res == -1 ? errnoToString(errno) : std::to_string(res))};
+        return fmt::format(
+            "the `preadv2` system call is not available (the probe with an invalid file descriptor answered {} "
+            "instead of `EBADF`); it is typically rejected by a `seccomp` profile of a container runtime, "
+            "and can be allowed in the runtime configuration",
+            res == -1 ? errnoToString(errno) : std::to_string(res));
 
-    return {.supported = true, .unsupported_reason = {}};
+    return {};
 #endif
 }
 
 }
 
-static std::atomic<bool> pread_no_wait_probed{false};
-
-const PreadNoWaitSupport & getPreadNoWaitSupport()
+const String & preadNoWaitUnavailableReason()
 {
-    static const PreadNoWaitSupport support = probePreadNoWaitSupport();
-    pread_no_wait_probed.store(true, std::memory_order_relaxed);
-    return support;
-}
-
-bool isPreadNoWaitProbed()
-{
-    return pread_no_wait_probed.load(std::memory_order_relaxed);
+    static const String reason = probePreadNoWait();
+    return reason;
 }
 
 }

@@ -16,31 +16,18 @@ namespace DB
 ssize_t preadNoWait(int fd, char * buf, size_t size, size_t offset);
 
 /// Whether this `errno` from `preadNoWait` means that the system call cannot be used at all,
-/// as opposed to a failure to read the data.
+/// as opposed to a failure to read this data at this moment.
 bool isPreadNoWaitUnavailable(int error);
 
-/// Classifies the result of the one-time support probe, which passes an invalid file descriptor:
+/// Classifies the result of the support probe below, which passes an invalid file descriptor:
 /// failing with `EBADF` is the only answer that proves the system call actually ran, so any other
 /// result - e.g. a `seccomp` filter substituting an arbitrary `errno` - means it cannot be used.
 bool isPreadNoWaitProbeRejected(ssize_t res, int error);
 
-/// Whether `preadNoWait` can be used on this system.
-/// The `pread_threadpool` read method needs it to read the data that is already in the page cache
-/// in the calling thread; without it, every read is handed off to a thread pool, which is expensive.
-struct PreadNoWaitSupport
-{
-    bool supported = false;
-    /// Empty if supported. Otherwise, explains what is wrong with this system,
-    /// to be reported in `system.warnings`.
-    String unsupported_reason;
-};
-
+/// Whether `preadNoWait` can be used on this system: the kernel has to be new enough, and the
+/// system call must not be rejected by a `seccomp` profile of a container runtime.
+/// Returns an empty string if it can be used, and the reason why it cannot otherwise.
 /// The system is probed once, on the first call.
-const PreadNoWaitSupport & getPreadNoWaitSupport();
-
-/// Whether the one-time probe has already run in this process. The probe is a raw `preadv2`
-/// system call that a kill-on-deny `seccomp` profile terminates the process for, so the code
-/// paths that do not need the page cache check must never trigger it; tests assert that with this.
-bool isPreadNoWaitProbed();
+const String & preadNoWaitUnavailableReason();
 
 }

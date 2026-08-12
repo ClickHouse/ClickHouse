@@ -1,8 +1,8 @@
 -- Tags: no-fasttest, no-random-settings, no-darwin
 -- - no-fasttest -- requires S3
 -- - no-random-settings -- prefetch is non deterministic
--- - no-darwin -- there is no preadv2 on Darwin, so local reads with local_filesystem_read_method = 'pread_threadpool'
---   are performed with pread in the calling thread and produce no local prefetch activity for the 'default' disk
+-- - no-darwin -- there is no preadv2 on Darwin, so the default local_filesystem_read_method is switched
+--   from 'pread_threadpool' to 'pread' there, and the 'default' disk produces no local prefetch activity
 
 drop table if exists test;
 

@@ -62,15 +62,16 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
 #if defined(OS_LINUX)
     /// Check if data is already in page cache with preadv2 syscall.
-    /// It is not always usable: see `getPreadNoWaitSupport`. Then every read is handed off
-    /// to the thread pool, and `createReadBufferFromFileBase` uses 'pread' instead of this reader.
+    /// It is not usable on every system - see `preadNoWaitUnavailableReason`. Then every read is
+    /// handed off to the thread pool, which is why `applySettingsQuirks` switches the default
+    /// `local_filesystem_read_method` from 'pread_threadpool' to 'pread' on such a system.
     ///
     /// RWF_NOWAIT is ignored for O_DIRECT (mostly, it may return EAGAIN if it cannot lock the inode in case of ext4, see [1])
     ///   [1]: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=548feebec7e93e58b647dba70b3303dcb569c914
     /// The O_DIRECT check comes first: the support check runs a raw `preadv2` probe on the first
-    /// call (see `getPreadNoWaitSupport`), and a kill-on-deny `seccomp` profile must not see
-    /// the probe for a read that never looks at the page cache.
-    if (!request.direct_io && getPreadNoWaitSupport().supported)
+    /// call, and a kill-on-deny `seccomp` profile must not see the probe for a read that never
+    /// looks at the page cache.
+    if (!request.direct_io && preadNoWaitUnavailableReason().empty())
     {
         /// It reports real time spent including the time spent while thread was preempted doing nothing.
         /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
@@ -110,7 +111,8 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
                 {
                     /// No support for the syscall or the flag in the Linux kernel, or it is rejected
                     /// by a `seccomp` profile. It shouldn't happen, because the system call is probed
-                    /// beforehand, but a particular filesystem can still reject the flag.
+                    /// beforehand, but a particular filesystem can still reject the flag
+                    /// (`tmpfs` answers `EOPNOTSUPP`, for example).
                     /// Hand the read off to the thread pool, which reads it with `pread`.
                     break;
                 }

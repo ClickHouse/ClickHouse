@@ -1,11 +1,14 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
+#include <IO/preadNoWait.h>
 #include <Poco/Environment.h>
 #include <Poco/Platform.h>
 #include <Common/VersionNumber.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
+
+#include <mutex>
 
 #include <fmt/ranges.h>
 
@@ -55,6 +58,7 @@ namespace Setting
     extern const SettingsBool compile_expressions;
     extern const SettingsBool query_plan_direct_read_from_text_index;
     extern const SettingsNonZeroUInt64 input_format_parquet_max_block_size;
+    extern const SettingsString local_filesystem_read_method;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsNonZeroUInt64 max_read_buffer_size;
@@ -92,6 +96,36 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
             if (log)
                 LOG_WARNING(log, "use_hedged_requests has been disabled (you can explicitly enable it still)");
         }
+    }
+
+    /// The 'pread_threadpool' read method hands a read off to a thread pool, unless the data is
+    /// already in the page cache, which it checks with the `preadv2` system call and the `RWF_NOWAIT`
+    /// flag. Without that check the hand-off is paid for every read, including the reads that only
+    /// have to copy the data from the page cache, and reading in the calling thread is cheaper.
+    /// The support is probed with a raw system call, so it is only probed when this read method
+    /// is actually requested.
+    if (!settings[Setting::local_filesystem_read_method].changed
+        && settings[Setting::local_filesystem_read_method].value == "pread_threadpool"
+        && !preadNoWaitUnavailableReason().empty())
+    {
+        settings[Setting::local_filesystem_read_method] = "pread";
+
+        /// `applySettingsQuirks` is called for every settings change as well, and the call that
+        /// applies the default profile on startup comes before the one that has a logger,
+        /// so the reason is reported once per process, by whichever call switches it first.
+        static std::once_flag reported;
+        std::call_once(
+            reported,
+            []
+            {
+                LOG_WARNING(
+                    getLogger("SettingsQuirks"),
+                    "The default value of local_filesystem_read_method has been switched from 'pread_threadpool' "
+                    "to 'pread' (you can explicitly set it back still), because {}. That system call is what "
+                    "'pread_threadpool' needs to read the data that is already in the page cache "
+                    "without handing the read off to a thread pool",
+                    preadNoWaitUnavailableReason());
+            });
     }
 }
 

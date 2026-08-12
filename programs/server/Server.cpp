@@ -79,8 +79,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/S3/Credentials.h>
-#include <IO/preadNoWait.h>
-#include <IO/ReadMethod.h>
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
@@ -201,7 +199,6 @@ namespace Setting
 {
     extern const SettingsSeconds http_receive_timeout;
     extern const SettingsSeconds http_send_timeout;
-    extern const SettingsString local_filesystem_read_method;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsSeconds send_timeout;
 }
@@ -846,31 +843,6 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
             Context::WarningType::SERVER_LOGGING_LEVEL_TEST,
             PreformattedMessage::create(
                 "Server logging level is set to 'test' and performance is degraded. This cannot be used in production."));
-
-    /// Only the 'pread_threadpool' read method depends on `preadNoWait`, and the probe
-    /// is a raw `preadv2` system call that a kill-on-deny `seccomp` profile terminates
-    /// the process for. So a server whose default profile selects another method never
-    /// reaches the probe; a session that switches to 'pread_threadpool' later gets the
-    /// same downgrade at read time, just without this startup warning. When the default
-    /// profile does select 'pread_threadpool', the check is genuinely needed: even with
-    /// `min_bytes_to_use_direct_io` set, that is only a threshold, so the reads below it
-    /// (and every read on platforms without O_DIRECT support) still rely on the page
-    /// cache check, reach the probe at read time anyway, and downgrade to 'pread' —
-    /// which is why enabling direct IO must not suppress this warning.
-    if (server.context()->getSettingsRef()[Setting::local_filesystem_read_method].value == "pread_threadpool"
-        && resolveLocalFSReadMethod(LocalFSReadMethod::pread_threadpool, /*direct_io=*/ false) == LocalFSReadMethod::pread)
-        server.context()->addOrUpdateWarningMessage(
-            Context::WarningType::PREAD_NO_WAIT_UNAVAILABLE,
-            PreformattedMessage::create(
-                "This system cannot check whether data is in the page cache without waiting for the disk, because {}. "
-                "The 'pread_threadpool' value of the `local_filesystem_read_method` setting relies on that check to read "
-                "the data that is already in the page cache without handing the read off to a thread pool, "
-                "so queries that use that value perform such reads with 'pread' in the calling thread, "
-                "without handing them off to a thread pool. "
-                "Reads with O_DIRECT (see the `min_bytes_to_use_direct_io` setting) never check the page cache "
-                "and keep using the thread pool. Other values of the setting are not affected.",
-                getPreadNoWaitSupport().unsupported_reason));
-
 #if defined(OS_LINUX)
     try
     {

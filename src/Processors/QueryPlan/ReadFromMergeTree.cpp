@@ -15,7 +15,6 @@
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/ReadMethod.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cluster.h>
@@ -677,16 +676,8 @@ Pipe ReadFromMergeTree::readFromPool(
     bool allow_prefetched_remote = all_parts_are_remote && settings[Setting::allow_prefetched_read_pool_for_remote_filesystem]
         && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.remote_fs_settings.method);
 
-    /// On a system where `preadNoWait` is unusable, 'pread_threadpool' reads with 'pread'
-    /// (see `resolveLocalFSReadMethod`), so the prefetched read pool has no asynchronous readers
-    /// to schedule. Reads with O_DIRECT keep the thread pool, but whether a particular read uses
-    /// O_DIRECT is only known when the buffer is created, so assume here that it does not:
-    /// on such a system the query plans as if the setting was 'pread', which uses
-    /// no prefetched read pool either. This only costs prefetching for the reads
-    /// that do end up with O_DIRECT, and only on such systems.
     bool allow_prefetched_local = all_parts_are_local && settings[Setting::allow_prefetched_read_pool_for_local_filesystem]
-        && MergeTreePrefetchedReadPool::checkReadMethodAllowed(resolveLocalFSReadMethod(
-            reader_settings.read_settings.local_fs_settings.method, /*direct_io=*/ false));
+        && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.local_fs_settings.method);
 
     /** Do not use prefetched read pool if query is trivial limit query.
       * Because time spend during filling per thread tasks can be greater than whole query

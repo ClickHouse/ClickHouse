@@ -10,8 +10,8 @@
 
 # The local prefetched read pool requires the `pread_threadpool` read method, which needs
 # `preadv2` with `RWF_NOWAIT` to check the page cache. The system call does not exist on
-# macOS, so `pread_threadpool` is treated as `pread` there and the pool never runs. These
-# tests assert side effects of the pool (a failpoint inside it / asynchronous_read_counters
+# macOS, so the default read method is switched to `pread` there and the pool never runs.
+# These tests assert side effects of the pool (a failpoint inside it / asynchronous_read_counters
 # in query_log), so they cannot pass on Darwin. This one is a platform gap, not a harness issue.
 02910_prefetch_unexpceted_exception
 04640_query_log_map_columns_serialization

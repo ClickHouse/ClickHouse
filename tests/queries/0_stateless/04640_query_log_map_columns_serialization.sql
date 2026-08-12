@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas, no-darwin
--- no-darwin -- there is no preadv2 on Darwin, so local reads with local_filesystem_read_method = 'pread_threadpool'
---   are performed with pread in the calling thread and asynchronous_read_counters stays empty
+-- no-darwin -- there is no preadv2 on Darwin, so the default local_filesystem_read_method is switched
+--   from 'pread_threadpool' to 'pread' there, and asynchronous_read_counters stays empty
 -- The Settings and asynchronous_read_counters columns of system.query_log are written by
 -- QueryLogElement::appendToBlock straight into the Map subcolumns. This asserts they still
 -- serialize with the right contents and row alignment.
