@@ -7067,11 +7067,10 @@ if __name__ == "__main__":
         # and the test server listens on both, so an unspecified TLS mode would silently switch the whole
         # suite over to TLS - including the tests that assert on the plain port and on `is_secure`.
         #
-        # Only here, and not in `args.client` as well: the command line of a `.sql` test is built from
-        # both, and `--no-secure` cannot be specified more than once.
-        os.environ["CLICKHOUSE_CLIENT_OPT"] = (
-            os.environ.get("CLICKHOUSE_CLIENT_OPT", "") + " --no-secure "
-        )
+        # This covers the `.sql` tests; the shell tests get it from `shell_config.sh`. It must not go into
+        # CLICKHOUSE_CLIENT_OPT, which ends up on the command line of a `.sql` test next to this, and
+        # `--no-secure` cannot be specified more than once.
+        args.client += " --no-secure"
 
     if args.cloud:
         enable_analyzer = os.getenv("CLOUD_ENABLE_ANALYZER", "1")
