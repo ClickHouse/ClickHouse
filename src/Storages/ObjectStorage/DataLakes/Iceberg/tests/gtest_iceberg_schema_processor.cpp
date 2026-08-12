@@ -368,3 +368,40 @@ TEST(IcebergSchemaProcessor, GetSimpleTypeDecimalSignOnlyScaleThrows)
 {
     EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("decimal(20,+)"), DB::Exception);
 }
+
+/// Equal Iceberg type strings can still resolve to different ClickHouse types, because nullability
+/// is carried by the separate `required` key. Relaxing required to optional must therefore produce a
+/// cast node, so the transform's output header matches the schema its consumers were given.
+TEST(IcebergSchemaProcessor, RelaxRequiredToOptionalAcrossSchemaIdsCasts)
+{
+    auto old_schema = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":true,"type":"long"}]})json");
+    auto new_schema = parseSchema(R"json({"schema-id":1,"fields":[{"id":1,"name":"c0","required":false,"type":"long"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(old_schema);
+    processor.addIcebergTableSchema(new_schema);
+
+    auto dag = processor.getSchemaTransformationDagByIds(0, 1);
+    ASSERT_TRUE(dag);
+    const auto & outputs = dag->getOutputs();
+    ASSERT_EQ(outputs.size(), 1u);
+    EXPECT_EQ(outputs[0]->result_type->getName(), "Nullable(Int64)");
+    EXPECT_EQ(outputs[0]->type, DB::ActionsDAG::ActionType::FUNCTION);
+}
+
+/// Tightening optional to required is not legal evolution, so the field keeps the old input node
+/// unchanged. A cast here would target the non-nullable type and reject any row holding NULL.
+TEST(IcebergSchemaProcessor, TightenOptionalToRequiredAcrossSchemaIdsIsPassthrough)
+{
+    auto old_schema = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"long"}]})json");
+    auto new_schema = parseSchema(R"json({"schema-id":1,"fields":[{"id":1,"name":"c0","required":true,"type":"long"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(old_schema);
+    processor.addIcebergTableSchema(new_schema);
+
+    auto dag = processor.getSchemaTransformationDagByIds(0, 1);
+    ASSERT_TRUE(dag);
+    const auto & outputs = dag->getOutputs();
+    ASSERT_EQ(outputs.size(), 1u);
+    EXPECT_EQ(outputs[0]->result_type->getName(), "Nullable(Int64)");
+    EXPECT_EQ(outputs[0]->type, DB::ActionsDAG::ActionType::INPUT);
+}
