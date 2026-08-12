@@ -21,12 +21,12 @@ SET enable_analyzer = 1;
 -- The `INVOKER` view stays fully optimizable: the outer predicate descends below the
 -- `ARRAY JOIN` and observes the row the empty array hides. This is the positive control
 -- proving that the oracle discriminates.
-SELECT 'invoker, new analyzer:';
+SELECT 'invoker, analyzer:';
 SELECT count() FROM v04840_invoker WHERE throwIf(key = 42, 'DISCLOSED') = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 -- The `DEFINER` view is a barrier: the predicate stays above the `ARRAY JOIN`, so it never sees
 -- the hidden row.
-SELECT 'definer, new analyzer:', count() FROM v04840_definer WHERE throwIf(key = 42, 'DISCLOSED') = 0;
+SELECT 'definer, analyzer:', count() FROM v04840_definer WHERE throwIf(key = 42, 'DISCLOSED') = 0;
 
 -- Plan shape: in the definer's plan, every `throwIf` line comes before the `ARRAY JOIN` line.
 SELECT 'definer keeps the predicate above the ARRAY JOIN:',
@@ -39,9 +39,9 @@ FROM
 
 SET enable_analyzer = 0;
 
-SELECT 'invoker, old analyzer:';
+SELECT 'invoker, legacy analyzer:';
 SELECT count() FROM v04840_invoker WHERE throwIf(key = 42, 'DISCLOSED') = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
-SELECT 'definer, old analyzer:', count() FROM v04840_definer WHERE throwIf(key = 42, 'DISCLOSED') = 0;
+SELECT 'definer, legacy analyzer:', count() FROM v04840_definer WHERE throwIf(key = 42, 'DISCLOSED') = 0;
 
 SET enable_analyzer = DEFAULT;
 
