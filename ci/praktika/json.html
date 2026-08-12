@@ -758,6 +758,7 @@
         const lowerStatus = status.toLowerCase();
         if (lowerStatus === 'xfail') return 'status-other';  // expected failure: gray (known, not alarming)
         if (lowerStatus === 'xpass') return 'status-fail';    // unexpected pass: red
+        if (lowerStatus === 'slower') return 'status-fail';    // perf regression: red, as shouldShowRow counts it
         if (lowerStatus.includes('success') || lowerStatus === 'ok') return 'status-success';
         if (lowerStatus.includes('fail')) return 'status-fail';
         if (lowerStatus.includes('pending')) return 'status-pending';
