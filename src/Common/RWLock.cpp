@@ -34,7 +34,7 @@ namespace ErrorCodes
 }
 
 
-/// Comma-separated owner query_ids (with owner count when > 1). For diagnostics/logging only.
+/// Comma-separated owner `query_id`s, each followed by its owner count when greater than 1.
 static String formatOwnerQueryIds(const std::unordered_map<String, size_t> & owner_queries)
 {
     WriteBufferFromOwnString out;
@@ -154,7 +154,7 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
                 if (throw_in_fast_path)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "RWLockImpl::getLock(): RWLock is already locked in exclusive mode "
-                        "(requested for query_id '{}', which already holds {} lock(s); current owners: {})",
+                        "(requested for query_id '{}', which already holds {} lock(s); current owner query_ids: {})",
                         query_id, owner_query_it->second, formatOwnerQueryIds(owner_queries));
                 return nullptr;
             }
@@ -165,7 +165,7 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
                 if (throw_in_fast_path)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "RWLockImpl::getLock(): Cannot acquire exclusive lock while RWLock is already locked "
-                        "(requested for query_id '{}', which already holds {} read lock(s); current owners: {})",
+                        "(requested for query_id '{}', which already holds {} read lock(s); current owner query_ids: {})",
                         query_id, owner_query_it->second, formatOwnerQueryIds(owner_queries));
                 return nullptr;
             }
@@ -408,7 +408,7 @@ std::unordered_map<String, size_t> RWLockImpl::getOwnerQueryIds() const
 
 String RWLockImpl::getOwnerQueryIdsDescription() const
 {
-    /// Format the owners copied by getOwnerQueryIds() without holding internal_state_mtx.
+    /// Formats the copy made by `getOwnerQueryIds`, so `internal_state_mtx` is not held here.
     return formatOwnerQueryIds(getOwnerQueryIds());
 }
 
