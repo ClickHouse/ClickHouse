@@ -1213,9 +1213,11 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         self.restore_system_metadata_files_from_remote_database_disk()
 
+        # Caches created via the disk() function live one level deeper, under
+        # disks/<name>/status.
         cache_status_files = glob.glob(
             f"{self.ch_var_lib_dir}/filesystem_caches/*/status"
-        )
+        ) + glob.glob(f"{self.ch_var_lib_dir}/filesystem_caches/disks/*/status")
         if cache_status_files:
             print(
                 f"WARNING: Server died? Removing cache status files: {cache_status_files}"
