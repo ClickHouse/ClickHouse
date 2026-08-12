@@ -496,7 +496,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
             with_element_ast->children.push_back(with_element_ast->subquery);
             with_element_ast->is_materialized = with_query_node ? with_query_node->isMaterialized() : with_union_node->isMaterialized();
 
-            /// Restore the CTE column alias list, e.g. `WITH t(x) AS (SELECT 1)`; `aliases` is deliberately kept out of `children`.
+            /// `ASTWithElement::aliases` is not a `children` entry.
             const auto & cte_column_aliases = getColumnAliasesToRestore(with_node);
             if (!cte_column_aliases.empty())
             {
