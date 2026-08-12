@@ -1,5 +1,5 @@
 {
-  "settings": 1283,
+  "settings": 1282,
   "anchorRoutes": {
     "add_http_cors_header": "/reference/settings/session-settings/other",
     "additional_result_filter": "/reference/settings/session-settings/additional",
@@ -1275,7 +1275,6 @@
     "use_variant_as_common_type": "/reference/settings/session-settings/use-variant",
     "use_variant_default_implementation_for_comparisons": "/reference/settings/session-settings/use-variant",
     "use_with_fill_by_sorting_prefix": "/reference/settings/session-settings/use",
-    "uuid_type_version": "/reference/settings/session-settings/other",
     "validate_enum_literals_in_operators": "/reference/settings/session-settings/validate",
     "validate_mutation_query": "/reference/settings/session-settings/validate",
     "validate_polygons": "/reference/settings/session-settings/validate",
