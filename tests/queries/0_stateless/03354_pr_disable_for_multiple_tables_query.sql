@@ -92,9 +92,11 @@ select count() from (select * from X as s inner join Y as j on s.id = j.id where
 system flush logs query_log;
 select count() > 0 from system.query_log
     where type = 'QueryStart' and not is_initial_query and event_date >= yesterday()
+        and (current_database = currentDatabase() or has(databases, currentDatabase()))
         and log_comment = '03354_in_subquery_kill_switch_on';
 select count() from system.query_log
     where type = 'QueryStart' and not is_initial_query and event_date >= yesterday()
+        and (current_database = currentDatabase() or has(databases, currentDatabase()))
         and log_comment = '03354_in_subquery_kill_switch_off';
 
 -- The legacy (pre-analyzer) interpreter must respect the setting as well: with
