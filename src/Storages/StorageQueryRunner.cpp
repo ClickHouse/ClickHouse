@@ -224,7 +224,6 @@ struct QueryRunnerJob
     SettingsChanges settings_changes;
     std::shared_ptr<const QueryRunnerJobOrigin> origin;
     std::shared_ptr<CountDownLatch> batch;
-    UInt64 seq = 0;
 };
 
 /// Used to cancel the remote queries and unblock the dispatcher's workers on shutdown.
