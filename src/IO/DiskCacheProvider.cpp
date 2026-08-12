@@ -379,7 +379,7 @@ CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
     /// below throws, the FillClaim destructor runs `release` on unwind, so the segment never leaks
     /// DOWNLOADING (which would abort the foreground holder dtor on `chassert(!is_last_holder)`) and
     /// never self-deadlocks a later `waitAndRead` on this thread. Capture the segment ptr, not the writer.
-    if (captured)
+    if (!already_mine && captured)
     {
         c.release = [seg_ptr = segment, logger = log]() noexcept
         {
