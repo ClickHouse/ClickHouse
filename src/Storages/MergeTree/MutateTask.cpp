@@ -3,6 +3,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MutateTask.h>
 
@@ -12,6 +13,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/NestedUtils.h>
 #include <Disks/SingleDiskVolume.h>
@@ -45,6 +47,7 @@
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/Statistics/Statistics.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/FailPoint.h>
 #include <Common/Jemalloc.h>
@@ -81,6 +84,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool allow_json_shared_data_paths_repromotion;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
@@ -694,6 +698,58 @@ static bool isDeletedMaskUpdated(const MutationCommand & command, const NameSet 
     return false;
 }
 
+static DataTypePtr mergeJSONSharedDataPathRulesFromPatchParts(
+    DataTypePtr type,
+    const String & column_name,
+    const PatchPartsForReader & patch_parts)
+{
+    for (const auto & patch : patch_parts)
+    {
+        String patch_source_name = column_name;
+        if (const auto & patch_conversions = patch.part->getAlterConversions();
+            patch_conversions && patch_conversions->isColumnRenamed(patch_source_name))
+            patch_source_name = patch_conversions->getColumnOldName(patch_source_name);
+
+        if (auto patch_column = patch.part->tryGetColumn(patch_source_name))
+            type = mergeJSONSharedDataPathRules(type, patch_column->type);
+    }
+
+    return type;
+}
+
+static void applyJSONSharedDataPathPoliciesForMutation(
+    NamesAndTypesList & result_columns,
+    const NamesAndTypesList & current_storage_columns,
+    const NamesAndTypesList & source_columns,
+    const PatchPartsForReader & patch_parts,
+    const NameToNameMap & renamed_columns_to_from,
+    bool allow_repromotion)
+{
+    for (auto & result_column : result_columns)
+    {
+        /// Start with the current table policy. This also updates untouched wide-part columns whose
+        /// physical files are hardlinked from a part written under an older policy.
+        if (auto storage_column = current_storage_columns.tryGetByName(result_column.name))
+            result_column.type = replaceJSONSharedDataPathPolicy(result_column.type, storage_column->type);
+
+        if (allow_repromotion)
+            continue;
+
+        /// Keep the source policy as durable placement provenance by default. Resolve a renamed
+        /// result column back to the physical source column before reading its policy.
+        const auto renamed_it = renamed_columns_to_from.find(result_column.name);
+        const auto & source_name = renamed_it == renamed_columns_to_from.end() ? result_column.name : renamed_it->second;
+        if (auto source_column = source_columns.tryGetByName(source_name))
+            result_column.type = mergeJSONSharedDataPathRules(result_column.type, source_column->type);
+
+        /// An applicable lightweight-update patch can contain the only physical value for a
+        /// column, and therefore the only policy that placed that value in shared data. Resolve
+        /// the current logical name through the patch part's own pending renames before retaining
+        /// its policy as provenance in the resulting part.
+        result_column.type = mergeJSONSharedDataPathRulesFromPatchParts(result_column.type, result_column.name, patch_parts);
+    }
+}
+
 /// Get the columns list of the resulting part in the same order as storage_columns.
 static std::tuple<NamesAndTypesList, SerializationInfoByName, ColumnsSubstreams>
 getColumnsForNewDataPart(
@@ -704,7 +760,9 @@ getColumnsForNewDataPart(
     const SerializationInfoByName & serialization_infos,
     const MutationCommands & commands_for_interpreter,
     const MutationCommands & commands_for_removes,
-    bool rewrites_all_columns)
+    const PatchPartsForReader & patch_parts,
+    bool rewrites_all_columns,
+    bool allow_json_shared_data_paths_repromotion)
 {
     MutationCommands all_commands;
     all_commands.insert(all_commands.end(), commands_for_interpreter.begin(), commands_for_interpreter.end());
@@ -781,6 +839,10 @@ getColumnsForNewDataPart(
             storage_columns_set.insert(name);
         }
     }
+
+    /// The wide-part logic below may replace types of hardlinked columns with source-part types.
+    /// Keep an immutable view of the current destination schema for policy rebinding afterward.
+    const NamesAndTypesList current_storage_columns = storage_columns;
 
     SerializationInfo::Settings source_part_serialization_settings = SerializationInfo::Settings
     {
@@ -899,7 +961,17 @@ getColumnsForNewDataPart(
 
     /// In compact parts we read all columns, because they all stored in a single file
     if (!isWidePart(source_part) || !isFullPartStorage(source_part->getDataPartStorage()))
-        return {updated_header.getNamesAndTypesList(), new_serialization_infos, {}};
+    {
+        auto result_columns = updated_header.getNamesAndTypesList();
+        applyJSONSharedDataPathPoliciesForMutation(
+            result_columns,
+            current_storage_columns,
+            source_part->getColumns(),
+            patch_parts,
+            renamed_columns_to_from,
+            allow_json_shared_data_paths_repromotion);
+        return {std::move(result_columns), new_serialization_infos, {}};
+    }
 
     const auto & source_columns = source_part->getColumns();
     std::unordered_map<String, DataTypePtr> source_columns_name_to_type;
@@ -1044,6 +1116,14 @@ getColumnsForNewDataPart(
             }
         }
     }
+
+    applyJSONSharedDataPathPoliciesForMutation(
+        storage_columns,
+        current_storage_columns,
+        source_columns,
+        patch_parts,
+        renamed_columns_to_from,
+        allow_json_shared_data_paths_repromotion);
 
     return {storage_columns, new_serialization_infos, new_columns_substreams};
 }
@@ -1680,6 +1760,7 @@ struct MutationContext
     FutureMergedMutatedPartPtr future_part;
     MergeTreeData::DataPartPtr source_part;
     StorageMetadataPtr metadata_snapshot;
+    StorageMetadataPtr mutation_metadata_snapshot;
     StorageSnapshotPtr storage_snapshot;
     DiskPtr disk;
 
@@ -2641,7 +2722,7 @@ private:
         const bool has_block_columns = new_part_columns.contains(BlockNumberColumn::name) && new_part_columns.contains(BlockOffsetColumn::name);
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
         ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(ctx->metadata_snapshot->getPartitionKey(), ctx->data->getSettings(), has_block_columns ? MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET : MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
-        ctx->all_gathered_data.statistics = ColumnsStatistics(ctx->metadata_snapshot->getColumns());
+        ctx->all_gathered_data.statistics = ColumnsStatistics(ctx->mutation_metadata_snapshot->getColumns());
 
         MutationHelpers::processStatisticsChanges(
             ctx->files_to_skip,
@@ -2650,7 +2731,7 @@ private:
             ctx->stats_to_recalc,
             ctx->for_file_renames,
             *ctx->source_part,
-            ctx->metadata_snapshot);
+            ctx->mutation_metadata_snapshot);
 
         /// This task rewrites every column, so all statistics objects were created empty from the
         /// current metadata above and all of them have to be computed.
@@ -2659,7 +2740,7 @@ private:
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
             ctx->data->getSettings(),
-            ctx->metadata_snapshot,
+            ctx->mutation_metadata_snapshot,
             ctx->new_data_part->getColumns(),
             skip_indices,
             ctx->compression_codec,
@@ -2775,7 +2856,7 @@ private:
             ctx->stats_to_recalc,
             ctx->for_file_renames,
             *ctx->source_part,
-            ctx->metadata_snapshot);
+            ctx->mutation_metadata_snapshot);
 
         /// This task rewrites only some of the columns and carries the rest over from the source
         /// part. Only the statistics `processStatisticsChanges` has just replaced with empty
@@ -3014,16 +3095,14 @@ private:
             /// projection/index recalculation (e.g. CLEAR COLUMN provides a default
             /// value so that dependent projections are rebuilt correctly). Such columns
             /// must NOT be written to the main part – only the projection needs them.
-            /// Filter the writer's column list to the columns that actually belong to
-            /// the new part.
+            /// Filter the writer's column list to columns that belong to the new part and use the
+            /// part-recorded type so `JSON` placement provenance is visible to the writer.
             NamesAndTypesList columns_for_writer;
             {
-                NameSet new_part_columns_set;
-                for (const auto & col : ctx->new_data_part->getColumns())
-                    new_part_columns_set.insert(col.name);
+                const auto & new_part_columns = ctx->new_data_part->getColumns();
                 for (const auto & col : ctx->updated_header.getNamesAndTypesList())
-                    if (new_part_columns_set.contains(col.name))
-                        columns_for_writer.push_back(col);
+                    if (auto new_part_column = new_part_columns.tryGetByName(col.name))
+                        columns_for_writer.push_back(*new_part_column);
             }
 
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
@@ -3295,6 +3374,7 @@ MutateTask::MutateTask(
     ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
+    ctx->mutation_metadata_snapshot = metadata_snapshot_;
 }
 
 
@@ -3716,6 +3796,7 @@ bool MutateTask::prepare()
         , nullptr
 #endif
     );
+    const auto patch_parts = alter_conversions->getAllPatches();
     auto context_for_reading = Context::createCopy(ctx->context);
 
     /// Allow mutations to work when force_index_by_date or force_primary_key is on.
@@ -3864,6 +3945,47 @@ bool MutateTask::prepare()
 
     bool lightweight_delete_mode = false;
 
+    ctx->mutation_metadata_snapshot = ctx->metadata_snapshot;
+    if (!(*ctx->data->getSettings())[MergeTreeSetting::allow_json_shared_data_paths_repromotion])
+    {
+        std::shared_ptr<StorageInMemoryMetadata> mutation_metadata;
+        std::optional<ColumnsDescription> mutation_columns;
+        for (const auto & storage_column : ctx->metadata_snapshot->getColumns().getAllPhysical())
+        {
+            String source_name = storage_column.name;
+            if (alter_conversions->isColumnRenamed(source_name))
+                source_name = alter_conversions->getColumnOldName(source_name);
+
+            DataTypePtr type_with_provenance = storage_column.type;
+            if (auto source_column = ctx->source_part->tryGetColumn(source_name))
+                type_with_provenance = mergeJSONSharedDataPathRules(type_with_provenance, source_column->type);
+
+            type_with_provenance = MutationHelpers::mergeJSONSharedDataPathRulesFromPatchParts(
+                std::move(type_with_provenance), storage_column.name, patch_parts);
+
+            if (!type_with_provenance->equals(*storage_column.type))
+            {
+                if (!mutation_metadata)
+                {
+                    mutation_metadata = std::make_shared<StorageInMemoryMetadata>(*ctx->metadata_snapshot);
+                    mutation_columns.emplace(mutation_metadata->getColumns());
+                }
+
+                mutation_columns->modify(storage_column.name, [&](ColumnDescription & description)
+                {
+                    description.type = type_with_provenance;
+                    if (!description.statistics.empty())
+                        description.statistics.data_type = type_with_provenance;
+                });
+            }
+        }
+        if (mutation_metadata)
+        {
+            mutation_metadata->setColumns(std::move(*mutation_columns));
+            ctx->mutation_metadata_snapshot = std::move(mutation_metadata);
+        }
+    }
+
     if (!ctx->for_interpreter.empty())
     {
         /// Always disable filtering in mutations: we want to read and write all rows because for updates we rewrite only some of the
@@ -3873,8 +3995,8 @@ bool MutateTask::prepare()
 
         ctx->interpreter = std::make_unique<MutationsInterpreter>(
             *ctx->data, ctx->source_part, alter_conversions,
-            ctx->metadata_snapshot, ctx->for_interpreter,
-            ctx->metadata_snapshot->getColumns().getNamesOfPhysical(), context_for_reading, settings);
+            ctx->mutation_metadata_snapshot, ctx->for_interpreter,
+            ctx->mutation_metadata_snapshot->getColumns().getNamesOfPhysical(), context_for_reading, settings);
 
         ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
         ctx->indices_to_drop_names = ctx->interpreter->grabDroppedIndices();
@@ -3941,7 +4063,8 @@ bool MutateTask::prepare()
 
     auto [new_columns, new_infos, new_columns_substreams] = MutationHelpers::getColumnsForNewDataPart(
         ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
-        ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames, rewrites_all_columns);
+        ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames, patch_parts, rewrites_all_columns,
+        (*ctx->data->getSettings())[MergeTreeSetting::allow_json_shared_data_paths_repromotion]);
 
     ctx->new_data_part->setColumns(new_columns, new_infos, ctx->metadata_snapshot->getMetadataVersion());
     if (!new_columns_substreams.empty())
@@ -4024,7 +4147,8 @@ bool MutateTask::prepare()
                 projections_to_skip.emplace_back(&projection);
         }
 
-        ctx->stats_to_recalc = MutationHelpers::getStatisticsToRecalculate(ctx->metadata_snapshot, ctx->materialized_statistics);
+        ctx->stats_to_recalc = MutationHelpers::getStatisticsToRecalculate(
+            ctx->mutation_metadata_snapshot, ctx->materialized_statistics);
 
         auto all_indices_to_recalc = ctx->indices_to_recalc;
         all_indices_to_recalc.insert(ctx->text_indices_to_recalc.begin(), ctx->text_indices_to_recalc.end());

@@ -1,0 +1,13 @@
+before alter	0	8	2	0
+2	0
+after metadata reload provenance	1	2	2
+after metadata alter	0	8	2	0
+after preserving merge provenance	1	1
+after preserving merge	0	8	2	0
+after unrelated mutation reload provenance	1	1
+after mutation reload provenance	1	1
+after preserving mutation	0	8	2	0
+after rename reload provenance	1	1
+after rename	0	8	2	0
+after opted-in rewrite provenance	1	0
+after opted-in rewrite	8	0	0	2

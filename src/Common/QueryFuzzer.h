@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/JSONPathRegexpMatcher.h>
 
 #include <map>
 #include <unordered_map>
@@ -275,6 +276,8 @@ private:
         std::unordered_map<String, DataTypePtr> typed_paths = {},
         std::unordered_set<String> paths_to_skip = {},
         std::vector<String> path_regexps_to_skip = {},
+        std::vector<JSONPathRegexpRule> shared_data_path_rules = {},
+        String shared_data_path_prefix = {},
         std::optional<size_t> source_max_dynamic_paths = std::nullopt,
         std::optional<size_t> source_max_dynamic_types = std::nullopt);
     /// An (Simple)AggregateFunction re-validated via the factory; nullptr if the aggregate rejects the

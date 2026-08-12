@@ -38,14 +38,14 @@ ColumnGathererStream::ColumnGathererStream(
     size_t block_preferred_size_bytes_,
     std::optional<size_t> max_dynamic_subcolumns_,
     bool is_result_sparse_,
-    std::vector<String> path_regexps_shared_data_)
+    DataTypePtr result_type_)
     : sources(num_inputs)
     , row_sources_buf(row_sources_buf_)
     , block_preferred_size_rows(block_preferred_size_rows_)
     , block_preferred_size_bytes(block_preferred_size_bytes_)
     , max_dynamic_subcolumns(max_dynamic_subcolumns_)
     , is_result_sparse(is_result_sparse_)
-    , path_regexps_shared_data(std::move(path_regexps_shared_data_))
+    , result_type(std::move(result_type_))
 {
     if (num_inputs == 0)
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There are no streams to gather");
@@ -83,9 +83,7 @@ void ColumnGathererStream::initialize(Inputs inputs)
 
     if (result_column->hasDynamicStructure())
     {
-        /// If this is a JSON column with SHARED REGEXP patterns, make sure matching paths are
-        /// never selected as dynamic paths below, regardless of their statistics.
-        setPathRegexpsSharedDataForMergeRecursively(*result_column, path_regexps_shared_data);
+        setSharedDataPathMatcherRecursively(*result_column, result_type);
         result_column->chooseDynamicStructureForMerge(source_columns, max_dynamic_subcolumns);
     }
     if (result_column->hasStatistics())
@@ -222,10 +220,10 @@ ColumnGathererTransform::ColumnGathererTransform(
     size_t block_preferred_size_bytes_,
     std::optional<size_t> max_dynamic_subcolumns_,
     bool is_result_sparse_,
-    std::vector<String> path_regexps_shared_data_)
+    DataTypePtr result_type_)
     : IMergingTransform<ColumnGathererStream>(
         num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
-        num_inputs, *row_sources_buf_, block_preferred_size_rows_, block_preferred_size_bytes_, max_dynamic_subcolumns_, is_result_sparse_, std::move(path_regexps_shared_data_))
+        num_inputs, *row_sources_buf_, block_preferred_size_rows_, block_preferred_size_bytes_, max_dynamic_subcolumns_, is_result_sparse_, std::move(result_type_))
     , row_sources_buf_holder(std::move(row_sources_buf_))
     , log(getLogger("ColumnGathererStream"))
 {

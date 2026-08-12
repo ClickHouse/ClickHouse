@@ -37,6 +37,10 @@ public:
     ASTPtr skip_path;
     ASTPtr skip_path_regexp;
     ASTPtr shared_path_regexp;
+    /// `SHARED REGEXP FULL '...'` is used when a persisted part contains full-match rules.
+    /// User-facing declarations normally select this mode with
+    /// `shared_regexp_use_partial_match=0`.
+    bool shared_path_regexp_full_match = false;
     ASTPtr parameter;
 
     /** Get the text that identifies this element. */
@@ -49,4 +53,3 @@ protected:
 
 
 }
-

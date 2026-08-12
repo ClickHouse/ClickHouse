@@ -66,10 +66,11 @@ constexpr size_t MAX_ARRAY_SIZE = 1000000;
 
 /// In future we can introduce more arguments in the JSON data type definition.
 /// To support such changes, use versioning in the serialization of JSON type.
-/// Version 1 adds path_regexps_shared_data (SHARED REGEXP patterns) after path_regexps_to_skip.
-/// This is the highest version this build can write/read; the encoder only writes it for JSON types
-/// that actually need it (i.e. have non-empty path_regexps_shared_data), writing version 0 otherwise
-/// to keep the wire format unchanged for JSON types that don't use the new syntax.
+/// Version 1 adds `SHARED REGEXP` rules (match mode + pattern) and the derived sub-object path prefix
+/// after `path_regexps_to_skip`.
+/// This is the highest version this build can write/read; the encoder only writes it for `JSON` types
+/// that actually need it, writing version 0 otherwise
+/// to keep the wire format unchanged for `JSON` types that don't use the new syntax.
 const UInt8 TYPE_JSON_SERIALIZATION_VERSION = 1;
 
 BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
@@ -523,12 +524,13 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
                 break;
 
             const auto & object_type = assert_cast<const DataTypeObject &>(*type);
-            const auto & path_regexps_shared_data = object_type.getPathRegexpsSharedData();
-            /// Only bump the on-wire version for types that actually use SHARED REGEXP: this keeps the
-            /// encoding of every JSON type that doesn't use the new syntax byte-identical to what an
+            const auto & shared_data_path_rules = object_type.getSharedDataPathRules();
+            const auto & shared_data_path_prefix = object_type.getSharedDataPathPrefix();
+            /// Only bump the on-wire version for types that actually use `SHARED REGEXP`: this keeps the
+            /// encoding of every `JSON` type that doesn't use the new syntax byte-identical to what an
             /// older ClickHouse version writes/expects, so mixed-version clusters (e.g. during a
             /// rolling upgrade) keep working for all JSON columns that don't use the new feature.
-            const UInt8 serialization_version = path_regexps_shared_data.empty() ? 0 : TYPE_JSON_SERIALIZATION_VERSION;
+            const UInt8 serialization_version = shared_data_path_rules.empty() && shared_data_path_prefix.empty() ? 0 : TYPE_JSON_SERIALIZATION_VERSION;
             /// Write version of the serialization because we can add new arguments in the JSON type.
             writeBinary(serialization_version, buf);
             writeVarUInt(object_type.getMaxDynamicPaths(), buf);
@@ -550,9 +552,13 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
                 writeStringBinary(regexp, buf);
             if (serialization_version >= 1)
             {
-                writeVarUInt(path_regexps_shared_data.size(), buf);
-                for (const auto & regexp : path_regexps_shared_data)
-                    writeStringBinary(regexp, buf);
+                writeVarUInt(shared_data_path_rules.size(), buf);
+                for (const auto & rule : shared_data_path_rules)
+                {
+                    writeBinary(static_cast<UInt8>(rule.mode), buf);
+                    writeStringBinary(rule.pattern, buf);
+                }
+                writeStringBinary(shared_data_path_prefix, buf);
             }
             break;
         }
@@ -880,23 +886,38 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
                 path_regexps_to_skip.push_back(regexp);
             }
 
-            /// path_regexps_shared_data was introduced in version 1. Older peers encode version 0
+            /// `SHARED REGEXP` rules were introduced in version 1. Older peers encode version 0
             /// and never write this field, so it stays empty when reading their data.
-            std::vector<String> path_regexps_shared_data;
+            std::vector<JSONPathRegexpRule> shared_data_path_rules;
+            String shared_data_path_prefix;
             if (serialization_version >= 1)
             {
-                size_t path_regexps_shared_data_size = 0;
-                readVarUInt(path_regexps_shared_data_size, buf);
-                if (path_regexps_shared_data_size > MAX_ARRAY_SIZE)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Too many path regexps for shared data during JSON type decoding: {}. Maximum: {}", path_regexps_shared_data_size, MAX_ARRAY_SIZE);
+                size_t rules_size = 0;
+                readVarUInt(rules_size, buf);
+                if (rules_size > JSONPathRegexpMatcher::MAX_RULES)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Too many SHARED REGEXP rules during JSON type decoding: {}. Maximum: {}", rules_size, JSONPathRegexpMatcher::MAX_RULES);
 
-                path_regexps_shared_data.reserve(path_regexps_shared_data_size);
-                for (size_t i = 0; i != path_regexps_shared_data_size; ++i)
+                shared_data_path_rules.reserve(rules_size);
+                size_t total_pattern_bytes = 0;
+                for (size_t i = 0; i != rules_size; ++i)
                 {
+                    UInt8 raw_mode = 0;
+                    readBinary(raw_mode, buf);
+                    if (raw_mode > static_cast<UInt8>(JSONPathRegexpMatchMode::Full))
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown SHARED REGEXP match mode during JSON type decoding: {}", static_cast<unsigned int>(raw_mode));
+
+                    size_t regexp_size = 0;
+                    readVarUInt(regexp_size, buf);
+                    if (regexp_size > JSONPathRegexpMatcher::MAX_PATTERN_BYTES
+                        || regexp_size > JSONPathRegexpMatcher::MAX_TOTAL_PATTERN_BYTES - total_pattern_bytes)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "SHARED REGEXP patterns are too large during JSON type decoding");
                     String regexp;
-                    readStringBinary(regexp, buf);
-                    path_regexps_shared_data.push_back(regexp);
+                    regexp.resize(regexp_size);
+                    buf.readStrict(regexp.data(), regexp_size);
+                    total_pattern_bytes += regexp_size;
+                    shared_data_path_rules.push_back({std::move(regexp), static_cast<JSONPathRegexpMatchMode>(raw_mode)});
                 }
+                readStringBinary(shared_data_path_prefix, buf, JSONPathRegexpMatcher::MAX_PATTERN_BYTES);
             }
 
             return std::make_shared<DataTypeObject>(
@@ -906,7 +927,8 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
                 path_regexps_to_skip,
                 max_dynamic_paths,
                 max_dynamic_types,
-                path_regexps_shared_data);
+                shared_data_path_rules,
+                shared_data_path_prefix);
         }
     }
 

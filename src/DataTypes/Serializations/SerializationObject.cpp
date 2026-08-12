@@ -80,7 +80,6 @@ SerializationObject::SerializationObject(
     const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_,
     const std::unordered_set<String> & paths_to_skip_,
     const std::vector<String> & path_regexps_to_skip_,
-    const std::vector<String> & path_regexps_shared_data_,
     const DataTypePtr & dynamic_type_,
     const SerializationPtr & dynamic_serialization_)
     : typed_paths_types(typed_paths_types_)
@@ -99,8 +98,6 @@ SerializationObject::SerializationObject(
     std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
     for (const auto & regexp_str : path_regexps_to_skip_)
         path_regexps_to_skip.emplace_back(regexp_str);
-    for (const auto & regexp_str : path_regexps_shared_data_)
-        path_regexps_shared_data.emplace_back(regexp_str);
 }
 
 bool SerializationObject::shouldSkipPath(const String & path) const
@@ -113,17 +110,6 @@ bool SerializationObject::shouldSkipPath(const String & path) const
         return true;
 
     for (const auto & regexp : path_regexps_to_skip)
-    {
-        if (re2::RE2::FullMatch(path, regexp))
-            return true;
-    }
-
-    return false;
-}
-
-bool SerializationObject::shouldForceSharedData(const String & path) const
-{
-    for (const auto & regexp : path_regexps_shared_data)
     {
         if (re2::RE2::FullMatch(path, regexp))
             return true;
@@ -1383,20 +1369,6 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
                     {
                         typed_it->second->deserializeBinary(*typed_column, istr, settings);
                     }
-                }
-                /// Path matches a SHARED REGEXP rule from the type declaration: it must always be
-                /// stored in shared data and must never be promoted to a dynamic-path subcolumn.
-                /// Since this rule is a fixed property of the column's type and is checked here before
-                /// any dynamic path can be added for this path, no occurrence of this path can already
-                /// be a dynamic path at this point.
-                else if (shouldForceSharedData(path))
-                {
-                    String value;
-                    Field field;
-                    readParsedValueIntoString(value, istr, [&](ReadBuffer & buf){ dynamic_serialization->deserializeBinary(field, buf, settings); });
-                    /// Don't write nulls into shared data.
-                    if (!field.isNull())
-                        paths_and_values_for_shared_data.emplace_back(std::move(path), std::move(value));
                 }
                 /// Check if we have this path in dynamic paths.
                 else if (auto dynamic_it = dynamic_paths.find(path); dynamic_it != dynamic_paths.end())

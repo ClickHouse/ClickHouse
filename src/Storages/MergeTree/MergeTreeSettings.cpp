@@ -333,6 +333,12 @@ Possible values:
 
 Only version `v3` supports changing the shared data serialization version.
 )", 0) \
+    DECLARE(Bool, allow_json_shared_data_paths_repromotion, false, R"(
+Allows MergeTree rewrites to promote JSON paths that were previously kept in shared data by a
+removed `SHARED REGEXP` rule. The default preserves the historical placement policy in merged
+parts. Enable this setting explicitly and run a mutation or `OPTIMIZE ... FINAL` to discard retired
+rules; rules still present in the current column type always remain enforced.
+)", 0) \
     DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version, "advanced", R"(
 Serialization version for shared data inside JSON data type.
 

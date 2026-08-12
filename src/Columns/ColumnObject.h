@@ -7,13 +7,11 @@
 #include <Columns/ColumnString.h>
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/JSONPathRegexpMatcher.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <Common/SetWithMemoryTracking.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/re2.h>
-
-#include <list>
 
 namespace DB
 {
@@ -81,7 +79,9 @@ public:
         size_t max_dynamic_paths_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
-        const StatisticsPtr & statistics_ = {});
+        const StatisticsPtr & statistics_ = {},
+        JSONPathRegexpMatcherPtr shared_data_path_matcher_ = {},
+        String shared_data_path_prefix_ = {});
 
     static MutablePtr create(
         UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
@@ -90,9 +90,16 @@ public:
         size_t max_dynamic_paths_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
-        const StatisticsPtr & statistics_ = {});
+        const StatisticsPtr & statistics_ = {},
+        JSONPathRegexpMatcherPtr shared_data_path_matcher_ = {},
+        String shared_data_path_prefix_ = {});
 
-    static MutablePtr create(UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
+    static MutablePtr create(
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
+        size_t max_dynamic_paths_,
+        size_t max_dynamic_types_,
+        JSONPathRegexpMatcherPtr shared_data_path_matcher_ = {},
+        String shared_data_path_prefix_ = {});
 
     std::string getName() const override;
 
@@ -209,15 +216,11 @@ public:
     void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override;
 
-    /// Sets the SHARED REGEXP patterns (from the column's DataTypeObject) that this column must
-    /// respect: paths matching one of these patterns are never turned into a dynamic path (by
-    /// `tryToAddNewDynamicPath`, and therefore also by `chooseDynamicStructureForMerge`, which relies
-    /// on it), regardless of their statistics or of spare dynamic-path budget, since they must always
-    /// be stored in shared data. Set automatically by `DataTypeObject::createColumn()` and propagated
-    /// by `cloneEmpty()`/`cloneResized()`; callers normally don't need to call this directly (kept
-    /// public for the merge machinery, which sets it explicitly on columns assembled outside of
-    /// `createColumn()`, e.g. `MergedData::initialize`).
-    void setPathRegexpsSharedDataForMerge(const std::vector<String> & path_regexps_shared_data_);
+    /// Sets the immutable `SHARED REGEXP` matcher from the type. `path_prefix` is non-empty only for
+    /// query-time sub-object views; stored `JSON` paths are always matched root-relative.
+    void setSharedDataPathMatcher(JSONPathRegexpMatcherPtr matcher, String path_prefix = {});
+    const JSONPathRegexpMatcherPtr & getSharedDataPathMatcher() const { return shared_data_path_matcher; }
+    const String & getSharedDataPathPrefix() const { return shared_data_path_prefix; }
 
     const PathToColumnMap & getTypedPaths() const { return typed_paths; }
     PathToColumnMap & getTypedPaths() { return typed_paths; }
@@ -279,6 +282,7 @@ public:
     /// Try to add new dynamic path. Returns pointer to the new dynamic
     /// path column or nullptr if limit on dynamic paths is reached.
     ColumnDynamic * tryToAddNewDynamicPath(std::string_view path);
+    bool tryToAddNewDynamicPath(std::string_view path, MutableColumnPtr & column);
     /// Throws an exception if cannot add.
     void addNewDynamicPath(std::string_view path);
     void addNewDynamicPath(std::string_view path, MutableColumnPtr column);
@@ -416,21 +420,15 @@ private:
     /// Statistics on the number of non-null values for each dynamic path and for some shared data paths in the MergeTree data part.
     /// Calculated during serializing of data part in MergeTree. Used to determine the set of dynamic paths for the merged part.
     StatisticsPtr statistics;
-    /// SHARED REGEXP patterns from the column's DataTypeObject, set via `setPathRegexpsSharedDataForMerge`.
-    /// Consulted by `tryToAddNewDynamicPath`, so paths matching one of these patterns are never turned
-    /// into a dynamic path by any caller (parsing, generic insert, insertFrom/insertRangeFrom, merge).
-    /// Empty by default (no restriction).
-    std::list<re2::RE2> path_regexps_shared_data_for_merge;
+    JSONPathRegexpMatcherPtr shared_data_path_matcher;
+    String shared_data_path_prefix;
 
-    /// Copies `path_regexps_shared_data_for_merge` onto another ColumnObject, e.g. a clone produced by
-    /// `cloneEmpty()`/`cloneResized()`. RE2 objects aren't copyable, so this goes through the original
-    /// pattern strings. No-op if empty.
-    void copyPathRegexpsSharedDataForMerge(IColumn & to) const;
+    bool shouldForceSharedData(std::string_view path) const;
+    void copySharedDataPathMatcher(IColumn & to) const;
 };
 
-/// If `column` is a ColumnObject (optionally wrapped in any combination of Nullable/Sparse/Replicated),
-/// calls `setPathRegexpsSharedDataForMerge` on it with `path_regexps_shared_data`. No-op otherwise or
-/// if `path_regexps_shared_data` is empty. Must be called before `chooseDynamicStructureForMerge`.
-void setPathRegexpsSharedDataForMergeRecursively(IColumn & column, const std::vector<String> & path_regexps_shared_data);
+/// Rebinds every nested `ColumnObject` policy from the corresponding `DataTypeObject`. Used when a
+/// column is cloned from a source part but the result header carries a different active/history set.
+void setSharedDataPathMatcherRecursively(IColumn & column, const DataTypePtr & type);
 
 }

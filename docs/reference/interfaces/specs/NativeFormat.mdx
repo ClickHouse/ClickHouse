@@ -187,6 +187,8 @@ A decoder dispatches on the `type` string. Type strings often carry parameters i
 **Binary type encoding**
 
 The `type` field is a textual `String` only in the default mode. When the query setting `output_format_native_encode_types_in_binary_format = 1` is set, this field is instead a **binary type encoding** — the same tag-based encoding documented in [data type binary encoding](/reference/data-types/data-types-binary-encoding) — and flattened `Dynamic` type lists use the same binary encoding for their per-type names. A decoder that always reads field 2 as a length-prefixed string would treat the first binary type tag as a string length and desynchronize, so it must know which mode the stream uses.
+
+Within that binary type encoding, the `JSON` tag (`0x30`) is followed by a separate `UInt8` type-encoding version. Version `0` ends after the typed paths, skipped paths, and skipped-path regular expressions. Version `1` then writes a `VarUInt` count of `SHARED REGEXP` rules; each rule is one match-mode byte (`0` = partial, `1` = full) followed by its pattern as a `String`. A final `String` stores the internal root-relative path prefix used by derived JSON sub-object types. Writers keep using version `0` when no `SHARED REGEXP` policy is present, so existing JSON type encodings remain byte-identical. This type-encoding version is independent of the JSON column serialization/state versions described later on this page.
 </Info>
 
 ```mermaid

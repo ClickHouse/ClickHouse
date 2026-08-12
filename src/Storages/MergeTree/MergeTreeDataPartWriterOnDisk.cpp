@@ -17,8 +17,10 @@
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
+#include <DataTypes/DataTypeObject.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/PackedFilesWriter.h>
@@ -626,20 +628,55 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
     /// If block sample is empty, initialize it using current block (it will be the first block to write).
     if (block_sample.empty())
     {
+        use_target_type_for_dynamic_columns.reserve(block.columns());
         for (size_t i = 0; i != block.columns(); ++i)
         {
             auto & column = block.getByPosition(i);
+            const bool has_dynamic_structure = column.column->hasDynamicStructure();
+            DataTypePtr sample_type = column.type;
+            bool use_target_type = false;
+            if (has_dynamic_structure)
+            {
+                if (auto target_column = columns_list.tryGetByName(column.name);
+                    target_column && isJSONSharedDataPathPolicyOnlyChange(column.type.get(), target_column->type.get()))
+                {
+                    sample_type = target_column->type;
+                    use_target_type = true;
+                }
+            }
+            use_target_type_for_dynamic_columns.push_back(use_target_type);
+
             ColumnWithTypeAndName sample_column;
             sample_column.name = column.name;
-            sample_column.type = column.type;
+            sample_column.type = sample_type;
             auto mutable_column = column.column->cloneEmpty();
             /// Set of streams may depend on dynamic structure and statistics.
             /// For example: ColumnObject, ColumnDynamic, ColumnMap (with adaptive number of buckets).
             /// So we need to save them from the first block and set them later to all next blocks.
-            if (column.column->hasDynamicStructure())
+            if (has_dynamic_structure)
+            {
+                /// Rebind the empty target to the destination policy before taking the incoming
+                /// structure. This avoids `JSON` -> `String` -> `JSON` conversion for policy-only changes.
+                if (use_target_type)
+                    setSharedDataPathMatcherRecursively(*mutable_column, sample_type);
+
                 mutable_column->takeExactDynamicStructureFrom(*column.column);
+
+                /// Normalize the first block too: it defines the sample and otherwise would keep
+                /// dynamic paths rejected by the destination policy.
+                if (!column.column->dynamicStructureEquals(*mutable_column))
+                {
+                    auto normalized_column = mutable_column->cloneEmpty();
+                    normalized_column->insertRangeFrom(*column.column, 0, column.column->size());
+                    column.column = std::move(normalized_column);
+                }
+            }
             if (column.column->hasStatistics())
                 mutable_column->takeOrCalculateStatisticsFrom({column.column});
+
+            if (use_target_type)
+                column.type = sample_type;
+
             sample_column.column = std::move(mutable_column);
             block_sample.insert(std::move(sample_column));
         }
@@ -652,6 +689,7 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
         {
             auto & column = block.getByPosition(i);
             const auto & sample_column = block_sample.getByPosition(i);
+            const bool use_target_type = i < use_target_type_for_dynamic_columns.size() && use_target_type_for_dynamic_columns[i];
 
             /// Check if the dynamic structure of this column is different from the sample column.
             if (column.column->hasDynamicStructure() && !column.column->dynamicStructureEquals(*sample_column.column))
@@ -665,6 +703,9 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
                 new_column->insertRangeFrom(*column.column, 0, column.column->size());
                 column.column = std::move(new_column);
             }
+
+            if (use_target_type)
+                column.type = sample_column.type;
 
             /// Take statistics from sample column.
             if (column.column->hasStatistics())
