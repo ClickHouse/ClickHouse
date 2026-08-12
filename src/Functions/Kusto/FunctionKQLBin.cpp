@@ -1,7 +1,9 @@
 #include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
@@ -72,6 +74,12 @@ private:
         return std::move(plan).finish(name, arguments);
     }
 
+    static DataTypePtr retypedAsTicks(const DataTypePtr & original)
+    {
+        const DataTypePtr ticks = std::make_shared<DataTypeInt64>();
+        return original->isNullable() ? makeNullable(ticks) : ticks;
+    }
+
     FunctionBasePtr delegate(const ColumnsWithTypeAndName & arguments) const
     {
         if (arguments.size() != 2)
@@ -93,9 +101,8 @@ private:
             return FunctionFactory::instance().get("divide", getContext())->build(null_arguments);
         }
 
-        /// A datetime rounded by an interval is exactly `toStartOfInterval`. Kusto returns null
-        /// for a negative bin size; `toStartOfInterval` only takes a constant interval, so the
-        /// sign is known here.
+        /// A datetime is rounded by an interval. The bin size may be a column, so the rounding
+        /// cannot delegate to `toStartOfInterval`, which only takes a constant interval.
         if (isDateOrDate32OrDateTimeOrDateTime64(value_type))
         {
             if (!isInterval(bin_type))
@@ -104,13 +111,46 @@ private:
                     "Function {} rounds a datetime by a timespan, but the second argument has type {}",
                     getName(),
                     arguments[1].type->getName());
-            if (arguments[1].column && isColumnConst(*arguments[1].column))
+
+            const IntervalKind interval_kind = assert_cast<const DataTypeInterval &>(*bin_type).getKind();
+
+            /// A calendar-length bin (a month has no fixed number of nanoseconds) cannot take
+            /// the span formula below; `toStartOfInterval` handles it. The KQL dialect itself
+            /// never produces such a bin - a timespan is always fixed-length. Kusto returns
+            /// null for a negative bin size; `toStartOfInterval` would throw, and it only
+            /// takes a constant interval, so the sign is known here.
+            if (!interval_kind.isFixedLength())
             {
-                const Field interval = assert_cast<const ColumnConst &>(*arguments[1].column).getField();
-                if (!interval.isNull() && interval.safeGet<Int64>() < 0)
-                    return buildNullResult(arguments);
+                if (arguments[1].column && isColumnConst(*arguments[1].column))
+                {
+                    const Field interval = assert_cast<const ColumnConst &>(*arguments[1].column).getField();
+                    if (!interval.isNull() && interval.safeGet<Int64>() < 0)
+                        return buildNullResult(arguments);
+                }
+                return FunctionFactory::instance().get("toStartOfInterval", getContext())->build(arguments);
             }
-            return FunctionFactory::instance().get("toStartOfInterval", getContext())->build(arguments);
+
+            /// `epoch + bin(value - epoch, binSize)` over integer nanoseconds, the same lowering
+            /// `kqlBinAt` uses with the Unix epoch as the fixed point - the origin
+            /// `toStartOfInterval` aligns fixed-length bins to, so the alignment is unchanged.
+            /// `kqlBin` over the ticks turns a negative bin size into a null per row.
+            KQLPlanBuilder plan(getContext());
+            const size_t value_slot = plan.argument(arguments[0].type);
+            size_t bin_slot = plan.argument(retypedAsTicks(arguments[1].type));
+            const size_t epoch = plan.constant(std::make_shared<DataTypeDateTime>("UTC"), Field(UInt64(0)));
+
+            if (interval_kind.toAvgNanoseconds() != 1)
+            {
+                const size_t ticks = plan.constant(std::make_shared<DataTypeInt64>(), Field(interval_kind.toAvgNanoseconds()));
+                bin_slot = plan.step("multiply", {bin_slot, ticks});
+            }
+
+            const size_t unit = plan.constant(std::make_shared<DataTypeString>(), Field("nanosecond"));
+            const size_t difference = plan.step("dateDiff", {unit, epoch, value_slot});
+            const size_t rounded = plan.step("kqlBin", {difference, bin_slot});
+            const size_t shift = plan.step("toIntervalNanosecond", {rounded});
+            plan.step("plus", {epoch, shift});
+            return std::move(plan).finish(name, arguments);
         }
 
         /// A timespan rounded by a timespan is integer arithmetic over the intervals' ticks:
@@ -132,14 +172,8 @@ private:
 
         KQLPlanBuilder plan(getContext());
 
-        const auto retyped_as_ticks = [](const DataTypePtr & original) -> DataTypePtr
-        {
-            const DataTypePtr ticks = std::make_shared<DataTypeInt64>();
-            return original->isNullable() ? makeNullable(ticks) : ticks;
-        };
-
-        size_t value_slot = plan.argument(intervals ? retyped_as_ticks(arguments[0].type) : arguments[0].type);
-        size_t bin_slot = plan.argument(intervals ? retyped_as_ticks(arguments[1].type) : arguments[1].type);
+        size_t value_slot = plan.argument(intervals ? retypedAsTicks(arguments[0].type) : arguments[0].type);
+        size_t bin_slot = plan.argument(intervals ? retypedAsTicks(arguments[1].type) : arguments[1].type);
         const size_t zero = plan.constant(std::make_shared<DataTypeUInt8>(), Field(UInt64(0)));
 
         /// The KQL dialect makes every timespan an `IntervalNanosecond`, so equal kinds count
