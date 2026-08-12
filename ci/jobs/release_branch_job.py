@@ -1,9 +1,10 @@
 """ClickHouse new-release-branch pipeline job.
 
 Cuts a new release branch off the given ref: pushes the release tag and the
-branch, and opens the master version-bump PR (merged by the enqueue step). The
-"patch" release type lives in `release_job.py`, which dispatches here for "new";
-each flow is a single linear step sequence in its own file.
+branch, and opens the master version-bump PR (merged by the enqueue step). Run by
+the `CreateReleaseBranch` workflow; the "patch" release is the separate
+`release_job.py` / `CreateRelease` workflow. Each flow is a single linear step
+sequence in its own file.
 
 INVARIANT: every run starts in a clean, empty GitHub Actions `_work` directory -
 the runner is ephemeral and the workspace is a fresh `actions/checkout` (a depth-1
@@ -13,7 +14,6 @@ reuse. The repo is always shallow at the start (hence the unconditional
 `--unshallow`), and no leftover files/branches/credentials can exist.
 """
 
-import argparse
 import json
 import os
 from pathlib import Path
@@ -34,42 +34,17 @@ REPO_PATH = Utils.cwd()
 RELEASE_INFO_FILE = "/tmp/release_info.json"
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="Cuts a new ClickHouse release branch",
-    )
-    parser.add_argument(
-        "--ref",
-        type=str,
-        default=None,
-        help="Git reference (branch or commit sha) from which the release was created",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Do not make any actual changes, just show what will be done",
-    )
-    args = parser.parse_args()
+def main():
+    stopwatch = Utils.Stopwatch()
 
-    # When CLI args are absent, fall back to workflow inputs (CI runs).
+    # Parameters come from the workflow inputs (workflow_dispatch / workflow_call), read via praktika Info — there is no CLI.
     def _wi(name: str) -> str:
         value = Info.get_workflow_input_value(name)
         return "" if value is None else str(value)
 
-    if args.ref is None:
-        args.ref = _wi("ref")
-    if not args.dry_run:
-        args.dry_run = _wi("dry-run").lower() == "true"
-
-    assert args.ref, "ref must be set via --ref or workflow dispatch input 'ref'"
-
-    return args
-
-
-def main():
-    stopwatch = Utils.Stopwatch()
-    args = parse_args()
+    ref = _wi("ref")
+    assert ref, "workflow input 'ref' must be set"
+    dry_run = _wi("dry-run").lower() == "true"
 
     # Imported here (not at module top) so create_release's boto3 dependency is only pulled on the release machine, not at praktika config time.
     from ci.jobs.scripts import create_release
@@ -119,14 +94,14 @@ def main():
     step(
         name="Prepare Release Info",
         command=create_release.prepare_release_info,
-        command_kwargs=dict(ref=args.ref, release_type="new", dry_run=args.dry_run),
+        command_kwargs=dict(ref=ref, release_type="new", dry_run=dry_run),
         workdir=REPO_PATH,
     )
 
     # This run creates the branch iff its master version-bump PR does not exist yet;
     # a rerun where it already exists (open) skips creation and only enqueues it.
     # `release_pr_absent` is that signal, and `release_pr_needs_merge` drives the merge.
-    if args.dry_run:
+    if dry_run:
         # No gh reads on dry-run: preview the full create-then-merge path.
         release_pr_absent = True
         release_pr_needs_merge = True
@@ -154,21 +129,21 @@ def main():
         step(
             name="Push Git Tag for the Release",
             command=create_release.push_release_tag,
-            command_kwargs=dict(dry_run=args.dry_run),
+            command_kwargs=dict(dry_run=dry_run),
             workdir=REPO_PATH,
         )
 
         step(
             name="Push New Release Branch",
             command=create_release.push_new_release_branch,
-            command_kwargs=dict(dry_run=args.dry_run),
+            command_kwargs=dict(dry_run=dry_run),
             workdir=REPO_PATH,
         )
 
         step(
             name="Bump CH Version and Update Contributors' List",
             command=create_release.create_bump_version_pr,
-            command_kwargs=dict(dry_run=args.dry_run),
+            command_kwargs=dict(dry_run=dry_run),
             workdir=REPO_PATH,
         )
 
@@ -188,7 +163,7 @@ def main():
         step(
             name="Update Release Info and Merge Created PRs",
             command=create_release.merge_prs,
-            command_kwargs=dict(dry_run=args.dry_run),
+            command_kwargs=dict(dry_run=dry_run),
             workdir=REPO_PATH,
         )
 

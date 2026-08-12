@@ -6,7 +6,7 @@ These tests pin the contract that the conversion of the legacy hand-written
 must keep:
 
   * every ``create_release`` function the orchestrators (``release_job.py`` and
-    ``new_release_branch_job.py``) call is a real module-level function (catches
+    ``release_branch_job.py``) call is a real module-level function (catches
     an orchestrator drifting from the tool),
   * every workflow-dispatch input the orchestrators read is declared by
     the workflow definition,
@@ -38,7 +38,7 @@ sys.path.insert(0, REPO_ROOT)
 
 CREATE_RELEASE = os.path.join(REPO_ROOT, "ci/jobs/scripts/create_release.py")
 RELEASE_JOB = os.path.join(REPO_ROOT, "ci/jobs/release_job.py")
-NEW_RELEASE_JOB = os.path.join(REPO_ROOT, "ci/jobs/new_release_branch_job.py")
+NEW_RELEASE_JOB = os.path.join(REPO_ROOT, "ci/jobs/release_branch_job.py")
 ORCHESTRATORS = (RELEASE_JOB, NEW_RELEASE_JOB)
 WORKFLOW_DEF = os.path.join(REPO_ROOT, "ci/workflows/create_release.py")
 WORKFLOW_YML = os.path.join(REPO_ROOT, ".github/workflows/create_release.yml")
@@ -158,10 +158,10 @@ def test_orchestrators_point_at_moved_paths():
 def test_each_workflow_runs_its_own_job_script():
     # CreateRelease drives the patch orchestrator; CreateReleaseBranch the new one.
     assert "ci/jobs/release_job.py" in _read(WORKFLOW_DEF)
-    assert "ci/jobs/new_release_branch_job.py" in _read(NEW_WORKFLOW_DEF)
+    assert "ci/jobs/release_branch_job.py" in _read(NEW_WORKFLOW_DEF)
     # The patch job no longer dispatches to the new flow — it is a separate workflow.
     release_text = _read(RELEASE_JOB)
-    assert "from ci.jobs.new_release_branch_job import" not in release_text
+    assert "from ci.jobs.release_branch_job import" not in release_text
     assert 'release_type == "new"' not in release_text
 
 
@@ -171,7 +171,7 @@ def test_patch_bump_is_deferred_and_enqueue_is_last():
     gets the whole publish to complete before the PR joins the merge queue.
     Deferring the bump keeps the branch tip at the released commit through
     publishing, so a rerun after any failure recovers rather than minting a
-    below-tip release. The 'new' bump lives in ``new_release_branch_job.py``."""
+    below-tip release. The 'new' bump lives in ``release_branch_job.py``."""
     text = _read(RELEASE_JOB)
     bump_pos = text.find("command=create_release.create_bump_version_pr")
     changelog_pr_pos = text.find('name="Create ChangeLog PR"')

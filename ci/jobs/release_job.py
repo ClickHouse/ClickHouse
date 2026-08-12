@@ -8,7 +8,6 @@ reuse. The repo is always shallow at the start (hence the unconditional
 `--unshallow`), and no leftover files/branches/credentials can exist.
 """
 
-import argparse
 import json
 import os
 import re
@@ -63,72 +62,28 @@ _GPG_SIGNING_KEY_SECRET = Secret.Config(
 REPO_PATH = Utils.cwd()
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="Runs the ClickHouse release pipeline",
-    )
-    parser.add_argument(
-        "--ref",
-        type=str,
-        default=None,
-        help="Git reference (branch or commit sha) from which the release was created",
-    )
-    parser.add_argument(
-        "--assignee",
-        type=str,
-        default=None,
-        help="GitHub login to assign the changelog PR to",
-    )
-    parser.add_argument(
-        "--only-repo",
-        action="store_true",
-        help="Run only repo updates (skip tag push, branch push, version bump)",
-    )
-    parser.add_argument(
-        "--only-docker",
-        action="store_true",
-        help="Run only docker builds (skip tag push, branch push, version bump)",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Do not make any actual changes, just show what will be done",
-    )
-    args = parser.parse_args()
-
-    # When CLI args are absent, fall back to workflow inputs (CI runs).
-    # workflow_dispatch passes strings; workflow_call passes native types
-    # (e.g. booleans), so coerce to str before the callers do `.lower()`.
-    def _wi(name: str) -> str:
-        value = Info.get_workflow_input_value(name)
-        return "" if value is None else str(value)
-
-    if args.ref is None:
-        args.ref = _wi("ref")
-    if not args.dry_run:
-        args.dry_run = _wi("dry-run").lower() == "true"
-    if not args.only_repo:
-        args.only_repo = _wi("only-repo").lower() == "true"
-    if not args.only_docker:
-        args.only_docker = _wi("only-docker").lower() == "true"
-    if args.assignee is None:
-        args.assignee = _wi("assignee")
-
-    assert args.ref, "ref must be set via --ref or workflow dispatch input 'ref'"
-
-    return args
-
-
 RELEASE_INFO_FILE = "/tmp/release_info.json"
 
 
 def main():
     stopwatch = Utils.Stopwatch()
-    args = parse_args()
+
+    # Parameters come from the workflow inputs (workflow_dispatch / workflow_call),
+    # read via praktika Info — there is no CLI. workflow_call passes native types
+    # (e.g. booleans), so coerce to str before `.lower()`.
+    def _wi(name: str) -> str:
+        value = Info.get_workflow_input_value(name)
+        return "" if value is None else str(value)
+
+    ref = _wi("ref")
+    assert ref, "workflow input 'ref' must be set"
+    dry_run = _wi("dry-run").lower() == "true"
+    only_repo = _wi("only-repo").lower() == "true"
+    only_docker = _wi("only-docker").lower() == "true"
+    assignee = _wi("assignee")
 
     # This job runs the "patch" release only; cutting a new release branch is the
-    # separate CreateReleaseBranch workflow (new_release_branch_job.py).
+    # separate CreateReleaseBranch workflow (release_branch_job.py).
     # Imported here (not at module top) so create_release's boto3 dependency is
     # only pulled on the release machine, not at praktika config time.
     from ci.jobs.scripts import create_release
@@ -142,7 +97,7 @@ def main():
     if os.path.exists(RELEASE_INFO_FILE):
         os.remove(RELEASE_INFO_FILE)
 
-    dry_run_flag = "--dry-run" if args.dry_run else ""
+    dry_run_flag = "--dry-run" if dry_run else ""
     original_branch = Shell.get_output("git rev-parse --abbrev-ref HEAD", strict=True)
     # Per-run GNUPGHOME for the signing key (set when the GPG import step runs);
     # removed by the cleanup step so the private key never persists on a reused
@@ -224,7 +179,7 @@ def main():
     # is part of the release contract, so a missing/expired registry token must
     # stop the run before partial publication. Gated on !dry_run so it
     # also covers only-repo / only-docker recovery runs.
-    if not args.dry_run:
+    if not dry_run:
 
         def docker_login():
             Shell.check(
@@ -241,9 +196,9 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if not args.only_docker:
+    if not only_docker:
         # Skipped on dry-run (local convenience).
-        if not args.dry_run:
+        if not dry_run:
             step(
                 # The tools are baked into the release-maker image; fail closed rather than fetch third-party code on a credentialed host.
                 name="Verify release tools",
@@ -271,7 +226,7 @@ def main():
             _write_secret_file(
                 os.path.expanduser("~/.r2_auth_test"), _R2_AUTH_TEST_SECRET.get_value()
             )
-            if not args.dry_run:
+            if not dry_run:
                 _write_secret_file(
                     os.path.expanduser("~/.r2_auth"), _R2_AUTH_PROD_SECRET.get_value()
                 )
@@ -312,7 +267,7 @@ def main():
     step(
         name="Prepare Release Info",
         command=create_release.prepare_release_info,
-        command_kwargs=dict(ref=args.ref, release_type="patch", dry_run=args.dry_run),
+        command_kwargs=dict(ref=ref, release_type="patch", dry_run=dry_run),
         workdir=REPO_PATH,
     )
 
@@ -334,7 +289,7 @@ def main():
     # would otherwise fall through to the creation steps below (push tag, bump
     # version, PRs) and produce a partial new release, so reject that misuse and
     # require the release tag instead.
-    if ok and create_new_release and (args.only_repo or args.only_docker):
+    if ok and create_new_release and (only_repo or only_docker):
 
         def _require_recovery_ref():
             raise RuntimeError(
@@ -353,7 +308,7 @@ def main():
     # only-repo/only-docker: a cheap recovery run can create a missing release PR
     # or enqueue an open-but-unmerged one (e.g. when the original run's enqueue
     # lost the race with a still-pending `CH Inc sync` required check).
-    if args.dry_run:
+    if dry_run:
         # No gh reads on dry-run (it may be a local run without gh auth): fall
         # back to the fresh-release signal so the generation is still previewed.
         release_pr_absent = create_new_release
@@ -380,7 +335,7 @@ def main():
     # Fail-fast: verify the release packages exist (this downloads them) before
     # pushing the tag or opening the changelog PR, so a missing-artifacts run
     # aborts without leaving a tag / PR behind.
-    if not args.only_docker:
+    if not only_docker:
         step(
             name="Download All Release Artifacts",
             command=create_release.download_packages,
@@ -391,7 +346,7 @@ def main():
         step(
             name="Push Git Tag for the Release",
             command=create_release.push_release_tag,
-            command_kwargs=dict(dry_run=args.dry_run),
+            command_kwargs=dict(dry_run=dry_run),
             workdir=REPO_PATH,
         )
 
@@ -431,7 +386,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if ok and not args.dry_run and release_pr_absent:
+    if ok and not dry_run and release_pr_absent:
         with open(RELEASE_INFO_FILE) as f:
             release_tag = json.load(f)["release_tag"]
 
@@ -561,8 +516,8 @@ def main():
                         f" --body-file {body_file_path}"
                         f" --label 'do not test'"
                         + (
-                            f" --assignee {shlex.quote(args.assignee)}"
-                            if args.assignee
+                            f" --assignee {shlex.quote(assignee)}"
+                            if assignee
                             else ""
                         )
                     )
@@ -576,7 +531,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if not args.only_repo and not args.only_docker:
+    if not only_repo and not only_docker:
         # Restore the working tree after the changelog/version-bump steps, which
         # dirty it. A no-op on recovery / out-of-order runs (they skip the
         # changelog steps); the always-run "Checkout Back" below is the safety net
@@ -593,11 +548,11 @@ def main():
         step(
             name="Create GH Release",
             command=create_release.create_gh_release,
-            command_kwargs=dict(dry_run=args.dry_run),
+            command_kwargs=dict(dry_run=dry_run),
             workdir=REPO_PATH,
         )
 
-    if not args.only_docker:
+    if not only_docker:
         for name, flag in (
             ("Export TGZ Packages", "--export-tgz"),
             ("Test TGZ Packages", "--test-tgz"),
@@ -615,7 +570,7 @@ def main():
                 workdir=REPO_PATH,
             )
 
-    if ok and not args.dry_run:
+    if ok and not dry_run:
         with open(RELEASE_INFO_FILE) as f:
             release_info = json.load(f)
         release_tag = release_info["release_tag"]
@@ -807,11 +762,11 @@ def main():
     # step already failed, so a failed publish leaves the branch un-bumped and
     # recoverable.
     # Gated on `is_branch_release` so an un-bumped recovery still completes the bump.
-    if is_branch_release and not (args.only_repo or args.only_docker):
+    if is_branch_release and not (only_repo or only_docker):
         step(
             name="Bump CH Version and Update Contributors' List",
             command=create_release.create_bump_version_pr,
-            command_kwargs=dict(dry_run=args.dry_run),
+            command_kwargs=dict(dry_run=dry_run),
             workdir=REPO_PATH,
         )
 
@@ -826,7 +781,7 @@ def main():
         step(
             name="Update Release Info and Merge Created PRs",
             command=create_release.merge_prs,
-            command_kwargs=dict(dry_run=args.dry_run),
+            command_kwargs=dict(dry_run=dry_run),
             workdir=REPO_PATH,
         )
 

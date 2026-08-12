@@ -1025,7 +1025,7 @@ def checkout_new(ref: str) -> Iterator[None]:
 
 
 # Release actions, called directly by the job orchestrators (release_job.py for
-# "patch", new_release_branch_job.py for "new"). Each opens its own
+# "patch", release_branch_job.py for "new"). Each opens its own
 # ReleaseContextManager (state is passed between them via RELEASE_INFO_FILE, not
 # in-memory), so the callers stay a flat list of named steps.
 
