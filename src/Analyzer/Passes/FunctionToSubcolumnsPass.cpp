@@ -1019,12 +1019,8 @@ private:
             }
         };
 
-        /// Use the storage's current metadata, not the resolution-time snapshot. For a table in a
-        /// database with lazy_load_tables, the snapshot is built from the StorageTableProxy stub,
-        /// which is seeded only with columns and has no primary key or secondary indices; the real
-        /// metadata becomes visible after the nested storage is materialized, which happens by the
-        /// time this pass runs. With the stub, all key columns would be missed and rewrites of
-        /// indexed columns would break index analysis.
+        /// Use the storage's current metadata, not the resolution-time snapshot: for a table from a
+        /// database with lazy_load_tables it is the StorageTableProxy stub without keys and indices.
         const auto metadata_snapshot = table_node.getStorage()->getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
         const auto & primary_key_columns = metadata_snapshot->getColumnsRequiredForPrimaryKey();
         const auto & partition_key_columns = metadata_snapshot->getColumnsRequiredForPartitionKey();
@@ -1202,7 +1198,14 @@ public:
             auto table_name = chain_table->getStorage()->getStorageID().getFullTableName();
             Identifier qualified_name({table_name, column.name});
 
-            if (!identifiers_to_optimize.everywhere.contains(qualified_name))
+            bool should_optimize = identifiers_to_optimize.everywhere.contains(qualified_name);
+            if (!should_optimize
+                && identifiers_to_optimize.filter_only.contains(qualified_name)
+                && !in_where_prewhere_stack.empty()
+                && in_where_prewhere_stack.back())
+                should_optimize = true;
+
+            if (!should_optimize)
                 return;
 
             auto it = chained_node_transformers.find({column.type->getTypeId(), chain_func->getFunctionName()});
@@ -1297,9 +1300,6 @@ void FunctionToSubcolumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPt
 
     if (only_filter_clauses)
     {
-        /// Restrict all rewrites to WHERE/PREWHERE: rewrites in other clauses could
-        /// change the block header, which must stay stable when the query is executed
-        /// on a shard of a distributed query.
         identifiers_to_optimize.filter_only.insert(
             identifiers_to_optimize.everywhere.begin(), identifiers_to_optimize.everywhere.end());
         identifiers_to_optimize.everywhere.clear();

@@ -265,13 +265,9 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     {
         query_tree_pass_manager.runOnlyResolve(query_tree);
 
-        /// A query executed on a shard of a distributed query skips optimization passes (see above),
-        /// and the initiator cannot apply the optimization to subcolumns either, because it does not
-        /// know the real schema and the indexes of the tables on shards
-        /// (StorageDistributed::supportsOptimizationToSubcolumns returns false).
-        /// Rewrites inside WHERE and PREWHERE cannot change the header, so they are safe to apply
-        /// here, where the storage metadata is known. Without this, e.g. `map['key']` reads the
-        /// whole Map on every shard instead of a single key subcolumn.
+        /// Shards of distributed queries run only the resolve passes, and the initiator cannot
+        /// rewrite functions to subcolumns because it does not know the shards' schema and indexes.
+        /// Rewrites inside WHERE/PREWHERE do not change the header, so they are applied here.
         bool is_query_on_shard = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
             || select_query_options.is_local_plan_for_distributed_query
             || select_query_options.build_logical_plan;

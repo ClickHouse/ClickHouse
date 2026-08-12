@@ -1,12 +1,8 @@
 -- Tags: no-replicated-database
 
--- The index guard of FunctionToSubcolumnsPass must see the table's real metadata even when the
--- table lives in a database with lazy_load_tables = 1. Right after ATTACH, such a table is wrapped
--- in a StorageTableProxy whose stub metadata is seeded only with columns: no primary key and no
--- secondary indices. If the guard reads the stub, it considers no column index-protected, rewrites
--- mapValues(attributes) -> attributes.values, and the text index on mapValues(attributes) is
--- silently not used. force_data_skipping_indices turns that into INDEX_NOT_USED (code 277), so a
--- successful query with the correct count proves the index is used on first access after ATTACH.
+-- The index guard of FunctionToSubcolumnsPass must see the real metadata of a table from a
+-- database with lazy_load_tables = 1 (right after ATTACH the resolution-time metadata is the
+-- StorageTableProxy stub without indices, and the rewrite used to defeat the text index).
 
 SET enable_full_text_index = 1;
 SET enable_analyzer = 1;

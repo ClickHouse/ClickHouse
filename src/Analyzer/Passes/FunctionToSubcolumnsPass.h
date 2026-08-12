@@ -22,10 +22,8 @@ class FunctionToSubcolumnsPass final : public IQueryTreePass
 public:
     FunctionToSubcolumnsPass() = default;
 
-    /// With only_filter_clauses, rewrites are applied only inside WHERE and PREWHERE.
-    /// Used for queries executed on shards of distributed queries: rewrites in other
-    /// clauses could change the block header expected by the initiator, while rewrites
-    /// inside WHERE/PREWHERE cannot.
+    /// With only_filter_clauses, rewrites are applied only inside WHERE and PREWHERE, so the
+    /// block header cannot change (needed for queries executed on shards of distributed queries).
     explicit FunctionToSubcolumnsPass(bool only_filter_clauses_) : only_filter_clauses(only_filter_clauses_) {}
 
     String getName() override { return "FunctionToSubcolumns"; }
