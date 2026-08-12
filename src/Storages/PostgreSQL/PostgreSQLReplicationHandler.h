@@ -343,6 +343,15 @@ private:
     /// single-table engine, whose one failed snapshot load has to abort the whole startup.
     void releaseLeadershipAfterFailedStartup();
 
+    /// Give up the leadership at `shutdown` (graceful stop: `DETACH`, a non-last `DROP`, server shutdown).
+    /// Unlike the failed-startup release, nothing re-enters the election afterwards: the leader node lives
+    /// under the server's shared Keeper session, so an unconfirmed removal could leave it alive - with no
+    /// `removeLeakedOwnLeaderNode` ever running for it - and keep every peer on standby until that shared
+    /// session finally closes. So the removal is confirmed here: an ambiguous failure is resolved by
+    /// re-checking the node and removing it again (owner- and version-checked) while the removal remains
+    /// unconfirmed and the node still provably belongs to this replica's live session.
+    void releaseLeadershipAtShutdown();
+
     /// Remove a <keeper_path>/leader node that this replica created itself and then stopped tracking, which
     /// can only be a leftover of a leadership release whose removal could not be confirmed. Returns true when
     /// the path is free afterwards, so the election can be retried at once. A node held by a live peer, or by

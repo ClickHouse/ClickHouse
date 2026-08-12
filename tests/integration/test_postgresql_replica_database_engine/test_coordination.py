@@ -3293,3 +3293,86 @@ def test_hard_stop_during_non_last_teardown_keeps_replica_registered(started_clu
     assert not replication_slot_exists()
     assert not publication_exists()
     assert not marker_znode_exists(instance2)
+
+
+def test_graceful_stop_releases_leader_even_when_removal_fails(started_cluster):
+    # `shutdown` of the active worker releases /leader with a *confirmed* removal: the node lives under
+    # the server's shared Keeper session, which outlives the database, and after `shutdown` this replica
+    # never re-enters the election, so an unconfirmed (lost-response) removal would keep every peer on
+    # standby for as long as that shared session lives - with nobody left to remove the stale node.
+    # Inject a failure of the first, session-fenced removal and check that the re-check path still frees
+    # /leader and the peer takes over promptly (the dropped replica's server - and with it the Keeper
+    # session the node lives under - keeps running, so a session expiry cannot be what freed it).
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    create_coordinated_db("test_table")
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+
+    leader_name = wait_for_leader(instance)
+    if leader_name == "coord_instance1":
+        leader_node, leader_manager, standby_node = instance, pg_manager, instance2
+    else:
+        leader_node, leader_manager, standby_node = instance2, pg_manager2, instance
+
+    leader_node.query(
+        "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_leader_release_at_shutdown"
+    )
+    try:
+        # A non-last DROP DATABASE stops this replica's worker gracefully while its server keeps running.
+        leader_manager.drop_materialized_db()
+    finally:
+        leader_node.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_leader_release_at_shutdown"
+        )
+
+    new_leader = wait_for_leader(standby_node, expected=None, not_equal=leader_name)
+    assert new_leader != leader_name
+
+    # New changes flow through the new active worker.
+    standby_node.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+    )
+    check_tables_are_synchronized(standby_node, "test_table")
+    assert (
+        int(standby_node.query("SELECT count() FROM test_database.test_table")) == 200
+    )
+
+
+def test_full_attach_database_definition_is_validated(started_cluster):
+    # A user ATTACH DATABASE that spells out the full engine definition is fresh user input, exactly
+    # like a CREATE, so the coordination validator applies to it; only replaying an already-persisted
+    # definition (server startup, and the short `ATTACH DATABASE name` syntax) is exempt. Without this,
+    # a combination that CREATE rejects - here a coordinated keeper path with the default plain
+    # ReplacingMergeTree nested engine, with which the standbys would hold no data - could be brought in
+    # through ATTACH and would never be re-validated later.
+    error = instance.query_and_get_error(
+        f"ATTACH DATABASE test_attach_full_def "
+        f"UUID '11111111-2222-3333-4444-555555555555' "
+        f"ENGINE = MaterializedPostgreSQL("
+        f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'postgres', '{pg_pass}') "
+        f"SETTINGS materialized_postgresql_keeper_path = '{KEEPER_PATH}'"
+    )
+    assert "ReplicatedReplacingMergeTree" in error
+    assert "test_attach_full_def" not in instance.query("SHOW DATABASES").split()
+
+
+def test_full_attach_table_definition_is_validated(started_cluster):
+    # Same as test_full_attach_database_definition_is_validated, for the single-table engine: a user
+    # ATTACH TABLE with a full table definition must go through the coordination validator like a
+    # CREATE TABLE (only a replay of persisted metadata - server startup, short-syntax ATTACH - is
+    # exempt).
+    error = instance.query_and_get_error(
+        f"ATTACH TABLE test_attach_table_full_def "
+        f"UUID '11111111-2222-3333-4444-666666666666' (key Int64, value Int64) "
+        f"ENGINE = MaterializedPostgreSQL("
+        f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'test_table', 'postgres', '{pg_pass}') "
+        f"PRIMARY KEY key "
+        f"SETTINGS materialized_postgresql_keeper_path = '{KEEPER_PATH}'",
+        settings={"allow_experimental_materialized_postgresql_table": 1},
+    )
+    assert "ReplicatedReplacingMergeTree" in error
+    assert "test_attach_table_full_def" not in instance.query("SHOW TABLES").split()

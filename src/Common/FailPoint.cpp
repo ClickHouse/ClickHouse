@@ -40,6 +40,7 @@ static struct InitFiu
     REGULAR(rmt_dedup_conflict_part_name_missing) \
     REGULAR(smt_dedup_conflict_part_name_missing) \
     REGULAR(materialized_postgresql_fail_teardown_after_shutdown) \
+    REGULAR(materialized_postgresql_fail_leader_release_at_shutdown) \
     REGULAR(materialized_postgresql_fail_load_from_snapshot) \
     REGULAR(materialized_postgresql_fail_nested_table_drop) \
     REGULAR(materialized_postgresql_fail_nested_drop_on_detach) \

@@ -89,6 +89,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char materialized_postgresql_fail_teardown_after_shutdown[];
+    extern const char materialized_postgresql_fail_leader_release_at_shutdown[];
     extern const char materialized_postgresql_fail_load_from_snapshot[];
     extern const char materialized_postgresql_fail_add_table_to_replication[];
     extern const char materialized_postgresql_pause_before_register_replica[];
@@ -902,10 +903,83 @@ void PostgreSQLReplicationHandler::shutdown()
     }
 
     /// Release the ephemeral leader node so a peer can take over promptly (rather than waiting for the
-    /// Keeper session to expire). Reset the node before its backing session.
+    /// Keeper session to expire). The release is confirmed, not best-effort: the node lives under the
+    /// server's shared Keeper session, which survives this handler (except at server shutdown), and after
+    /// `shutdown` this replica never re-enters the election, so an unconfirmed removal could leave a stale
+    /// /leader behind that keeps every peer on standby indefinitely. Reset the node before its backing
+    /// session.
     is_active_worker.store(false);
+    releaseLeadershipAtShutdown();
     leader_node.reset();
     coordination_zookeeper.reset();
+}
+
+
+void PostgreSQLReplicationHandler::releaseLeadershipAtShutdown()
+{
+    if (!leader_node || !coordination_zookeeper)
+        return;
+
+    const String leader_path = coordination_keeper_path + "/leader";
+
+    try
+    {
+        fiu_do_on(FailPoints::materialized_postgresql_fail_leader_release_at_shutdown,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED,
+                            "Injected failure of the replication leader-node removal at shutdown");
+        });
+
+        /// Remove the node through the leadership session, so the removal is fenced on the very session the
+        /// node lives under.
+        coordination_zookeeper->remove(leader_path);
+        leader_node->setAlreadyRemoved();
+        return;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log,
+            "Could not confirm the removal of the replication leader node at shutdown, re-checking");
+    }
+
+    /// The failed removal is ambiguous: Keeper may have applied it and only the response was lost. The
+    /// failed-startup path can leave that ambiguity to the next election (`removeLeakedOwnLeaderNode`), but
+    /// after `shutdown` there is no next election on this replica, and the node lives under the server's
+    /// shared Keeper session, which does not end with this handler - a surviving node would keep every peer
+    /// on standby for as long as that session lives, with nobody left to remove it. So resolve the ambiguity
+    /// now, with owner- and version-checked operations. The holder destructor's unconditional best-effort
+    /// `tryRemove` is suppressed first: by the time these re-checks finish, a peer may already have created
+    /// its own /leader, and a blind removal could delete the peer's node.
+    leader_node->setAlreadyRemoved();
+
+    static constexpr size_t max_attempts = 3;
+    for (size_t attempt = 0; attempt < max_attempts; ++attempt)
+    {
+        try
+        {
+            /// A fresh handle: after a session expiry this returns the server's new shared session, under
+            /// which `removeLeakedOwnLeaderNode` correctly refuses to touch the old session's node (Keeper
+            /// removes it itself when that session ends).
+            auto zookeeper = getContext()->getZooKeeper();
+            if (removeLeakedOwnLeaderNode(zookeeper, leader_path))
+                LOG_INFO(log, "Confirmed the release of the replication leader node at shutdown");
+            else
+                LOG_INFO(log, "The replication leader node is no longer owned by this replica's live Keeper "
+                              "session, nothing to release");
+            return;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to re-check the replication leader node at shutdown");
+        }
+    }
+
+    /// Every re-check failed, so Keeper is unreachable from this server - then the shared session cannot be
+    /// kept alive either, and Keeper removes the ephemeral node when the session expires. Peers take over
+    /// after that; nothing is permanently wedged, so just report it.
+    LOG_WARNING(log,
+        "Could not confirm the release of the replication leader node {} at shutdown. If it survived, it is "
+        "removed by Keeper when this server's Keeper session ends, and a peer takes over then", leader_path);
 }
 
 
