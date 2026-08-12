@@ -742,6 +742,11 @@ def main():
         is_shared_catalog=is_shared_catalog,
         is_per_test_coverage=is_per_test_coverage,
     )
+    # `run_tests` runs `clickhouse-test` without changing directory, so clients
+    # it spawns inherit the repository root and dump their cores there.
+    # Declaring it lets `prepare_logs` retain the core of a client that died on a
+    # fatal signal; without it such a crash leaves no core and no stack anywhere.
+    CH.client_core_path = Utils.cwd()
 
     job_info = ""
 
@@ -830,7 +835,7 @@ def main():
 
         # Reasons recorded by the setup closure that must reach the persisted
         # Result.info (CIDB test_context_raw) even when setup ultimately
-        # succeeds - e.g. a non-fatal minio log-table/restart failure that would
+        # succeeds - e.g. a non-fatal seaweedfs log-table/restart failure that would
         # otherwise be invisible in CIDB (only visible as a report-page warning).
         setup_notes = []
 
@@ -839,10 +844,10 @@ def main():
             # Result.info (hence CIDB test_context_raw) only when it returns a
             # failing value. Print a concise "SETUP FAILURE: <sub-step>" marker
             # at each failure point so the opaque "Start ClickHouse Server"
-            # umbrella can be split into measurable sub-causes (minio /
+            # umbrella can be split into measurable sub-causes (seaweedfs /
             # wait_ready / kafka / stateful) instead of one bucket.
-            if not (CH.start_minio(test_type="stateless") and CH.start_azurite()):
-                print("SETUP FAILURE: minio/azurite did not start")
+            if not (CH.start_seaweedfs(test_type="stateless") and CH.start_azurite()):
+                print("SETUP FAILURE: seaweedfs/azurite did not start")
                 return False
             if not CH.start():
                 print("SETUP FAILURE: clickhouse-server process did not start")
@@ -902,7 +907,7 @@ def main():
                 command=start,
             )
         )
-        # Surface non-fatal setup notes (e.g. minio) into the persisted Result
+        # Surface non-fatal setup notes (e.g. seaweedfs) into the persisted Result
         # so they are queryable in CIDB test_context_raw even on the success path.
         for note in setup_notes:
             results[-1].set_info(note)
@@ -1008,9 +1013,9 @@ def main():
                     # `cp` over a running ELF fails with `Text file busy`,
                     # and `strict=True` ensures a failed switch is not ignored.
                     # Use `stop_server` rather than `terminate` so the auxiliary
-                    # services (Kafka/Redpanda, MinIO and its webhooks) started
+                    # services (Kafka/Redpanda, SeaweedFS) started
                     # in the outer setup keep running for the next build type;
-                    # `terminate` would tear them down, making Kafka/MinIO tests
+                    # `terminate` would tear them down, making Kafka/SeaweedFS tests
                     # spuriously "reproduce" a bug under later build types.
                     # `stop_server` does not guarantee that every descendant
                     # process (transient `clickhouse-client` invocations, stray
@@ -1079,7 +1084,7 @@ def main():
                     # the environment built once in the START stage is gone: for
                     # stateful suites, reload the stateful data and the
                     # `system.zookeeper` config. Auxiliary services
-                    # (Kafka/Redpanda, MinIO) keep running across `stop_server`,
+                    # (Kafka/Redpanda, SeaweedFS) keep running across `stop_server`,
                     # so only the server-side state has to be rebuilt. Without
                     # this a stateful changed test fails only because
                     # `test.hits`/`datasets`/the auxiliary ZooKeeper row
@@ -1309,6 +1314,13 @@ def main():
         test_result.extend_sub_results(results[-1].results)
         results[-1].results = []
 
+    # `invert_bugfix_validation_status` below rewrites a reproduced failure to
+    # `OK` (and a no-repro to `SKIPPED`), both of which `Result.is_ok` accepts.
+    # The collect-logs gate must see the run's real outcome, or a bugfix
+    # validation job that reproduced a crash would attach neither its cores nor
+    # its full logs.
+    test_run_failed = bool(test_result) and not test_result.is_ok()
+
     # invert result status for bugfix validation
     bugfix_validation_no_repro = False
     if is_labeled_bugfix_validation and test_result:
@@ -1325,7 +1337,7 @@ def main():
         print("Collect logs")
 
         def collect_logs():
-            CH.prepare_logs(all=test_result and not test_result.is_ok(), info=info)
+            CH.prepare_logs(all=test_run_failed, info=info)
 
         results.append(
             Result.from_commands_run(
@@ -1340,7 +1352,7 @@ def main():
     force_ok_exit = False
     if test_result:
         failures_cnt = len([r for r in test_result.results if not r.is_ok()])
-        if failures_cnt > 0 and failures_cnt < 4:
+        if failures_cnt > 0 and failures_cnt < 2:
             print(
                 f"NOTE: Failed {failures_cnt} tests - do not block pipeline, exit with 0"
             )
@@ -1374,6 +1386,13 @@ def main():
 
     if test_result:
         test_result.sort()
+
+    # On a test timeout or a failed hung check the full server stacktrace
+    # dumps land in the working directory (stdout keeps a trimmed preview).
+    for stacktrace_log in ("sql_stacktraces.log", "c_stacktraces.log"):
+        stacktrace_log_path = Path(stacktrace_log)
+        if stacktrace_log_path.exists():
+            debug_files.append(stacktrace_log_path)
 
     R = Result.create_from(
         results=results,
@@ -1414,7 +1433,7 @@ def main():
 
             # Auto-detect available LLVM profdata tool
             llvm_profdata = None
-            for ver in ["21", "20", "18", "19", "17", "16", ""]:
+            for ver in ["22", "21", "20", "18", "19", "17", "16", ""]:
                 cmd = f"llvm-profdata{'-' + ver if ver else ''}"
                 if Shell.check(f"command -v {cmd}", verbose=False):
                     llvm_profdata = cmd

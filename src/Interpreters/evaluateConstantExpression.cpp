@@ -146,7 +146,7 @@ static std::optional<EvaluateConstantExpressionColumnResult> evaluateConstantExp
 
         ColumnsDescription fake_column_descriptions(source_columns);
         auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
-        QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
+        auto fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
         QueryAnalyzer analyzer(false);
         analyzer.resolveConstantExpression(expression, fake_table_expression, execution_context);

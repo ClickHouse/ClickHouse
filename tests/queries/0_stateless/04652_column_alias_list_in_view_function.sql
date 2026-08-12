@@ -57,12 +57,12 @@ SELECT 1 FROM view(SELECT t.p FROM (SELECT 1, 2) t(p, q) WHERE (t.p, t.q) IN (SE
 -- shrinks those without shrinking the alias list, so re-emitting the list for a resolved subquery
 -- would ship a list longer than the projection. These rows send such a subquery to a shard, where
 -- the regenerated query is parsed again and the count is rechecked.
-DROP TABLE IF EXISTS local_alias_list SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS local_alias_list;
 CREATE TABLE local_alias_list (a UInt8) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO local_alias_list VALUES (1);
 SELECT t.p FROM remote('127.0.0.1', currentDatabase(), local_alias_list) d, (SELECT 1, 2) t(p, q) LIMIT 1;
 SELECT count() FROM remote('127.0.0.1', currentDatabase(), local_alias_list) d WHERE d.a IN (SELECT t.p FROM (SELECT 1, 2) t(p, q));
-DROP TABLE local_alias_list SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE local_alias_list;
 
 -- Controls: these already worked and must not regress.
 SELECT x FROM (SELECT 1) x(x);
