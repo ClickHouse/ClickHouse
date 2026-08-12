@@ -132,6 +132,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistic
     size_t compressed_bytes = 0;
     if (shouldSampleBlock(statistics, num_rows))
     {
+        /// Only output columns get here, and they model what a replica sends to the initiator rather than
+        /// anything stored in a part, so there is no column `CODEC` to resolve as in `recordInputColumns`.
+        /// The transfer codec is `network_compression_method`, whose default the default codec matches.
         for (const auto & col : cols)
         {
             auto [sample, compressed] = estimateCompressedColumnSize(col, CompressionCodecFactory::instance().getDefaultCodec());
@@ -281,9 +284,6 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
                     // Paranoid check in case some, e.g., prewhere filter columns are present among the input columns
                     if (part_columns.contains(column.name))
                     {
-                        /// The sample has to go through the codec the column is really stored with:
-                        /// compressing it with the default one instead overestimates everything stored
-                        /// with a stronger codec, and the error carries into `effective_max_reading_threads`.
                         const auto codec_it = column_codecs.find(column.name);
                         const auto [sample, compressed] = estimateCompressedColumnSize(
                             column, codec_it == column_codecs.end() ? default_codec : codec_it->second);
