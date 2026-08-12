@@ -20,7 +20,7 @@ H="hpw_${DB}"
 P="/hpw_${DB}"
 
 cleanup() {
-    for suffix in backup restore setting tmp ok sel exec; do
+    for suffix in backup restore setting tmp ok sel exec body_pw body_exec body_input body_plain; do
         $CLICKHOUSE_CLIENT -q "DROP HANDLER IF EXISTS \`${H}_${suffix}\`"
     done
 }
@@ -83,3 +83,27 @@ $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_exec\` URL '${P}/exec' AS EXECUTE A
 echo "=== the same EXECUTE AS handler is accepted with a mutating method ==="
 $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_exec\` URL '${P}/exec' METHODS (POST) AS EXECUTE AS user04842 SELECT 1"
 $CLICKHOUSE_CLIENT -q "SELECT methods FROM system.handlers WHERE name = '${H}_exec'"
+
+# Neither wrapper forwards the HTTP request tail to the statements it runs: both re-format them and call
+# `executeQuery(String, ...)`, which passes no input buffer. A handler wrapping a body-reading INSERT would
+# therefore accept every upload and insert nothing, so it is rejected at creation.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE IF NOT EXISTS ${DB}.body04842 (x UInt64) ENGINE = Memory"
+
+echo "=== a PARALLEL WITH handler wrapping an INSERT fed from input() is rejected ==="
+$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_body_pw\` URL '${P}/body_pw' METHODS (POST) AS SELECT 1 PARALLEL WITH INSERT INTO ${DB}.body04842 SELECT x FROM input('x UInt64')" 2>&1 | grep -o "BAD_ARGUMENTS" | head -1
+
+echo "=== an EXECUTE AS handler wrapping an INSERT fed from input() is rejected ==="
+$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_body_input\` URL '${P}/body_input' METHODS (POST) AS EXECUTE AS user04842 INSERT INTO ${DB}.body04842 SELECT x FROM input('x UInt64')" 2>&1 | grep -o "BAD_ARGUMENTS" | head -1
+
+echo "=== an EXECUTE AS handler wrapping a plain INSERT is rejected ==="
+$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_body_exec\` URL '${P}/body_exec' METHODS (POST) AS EXECUTE AS user04842 INSERT INTO ${DB}.body04842 FORMAT TSV" 2>&1 | grep -o "BAD_ARGUMENTS" | head -1
+
+echo "=== ALTER HANDLER cannot swap a query to a wrapped body-reading INSERT either ==="
+$CLICKHOUSE_CLIENT -q "ALTER HANDLER \`${H}_exec\` AS EXECUTE AS user04842 INSERT INTO ${DB}.body04842 FORMAT TSV" 2>&1 | grep -o "BAD_ARGUMENTS" | head -1
+
+echo "=== the unwrapped INSERT handler is accepted and does receive the uploaded rows ==="
+$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_body_plain\` URL '${P}/body_plain' METHODS (POST) AS INSERT INTO ${DB}.body04842 FORMAT TSV"
+printf '11\n22\n' | ${CLICKHOUSE_CURL} -sS -X POST "${BASE}${P}/body_plain" --data-binary @-
+$CLICKHOUSE_CLIENT -q "SELECT sum(x) FROM ${DB}.body04842"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${DB}.body04842"

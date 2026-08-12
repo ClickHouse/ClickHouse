@@ -204,6 +204,20 @@ bool queryConsumesRequestBody(const IAST & query)
     return input_function != nullptr;
 }
 
+/// Whether the query wraps - inside `EXECUTE AS` or `PARALLEL WITH` - a statement that takes the HTTP request
+/// body as its data. Such a handler can never work: both wrappers re-format their statements and run them
+/// through `executeQuery(String, ...)` (see `InterpreterExecuteAsQuery::execute` and
+/// `InterpreterParallelWithQuery::executeSubquery`), and that overload always passes `no_input_buffer`, so the
+/// request tail is gone by the time the wrapped statement runs. A wrapped plain `INSERT` would silently insert
+/// nothing, and a wrapped `INSERT ... SELECT ... FROM input(...)` could never be fed at all. There is nothing
+/// to enforce at invocation time either - the data is simply dropped - so reject the handler at creation.
+bool queryWrapsBodyConsumingStatement(const IAST & query)
+{
+    const auto statements = getExecutedStatements(query);
+    return std::any_of(statements.begin(), statements.end(),
+        [&](const IAST * statement) { return statement != &query && queryConsumesRequestBody(*statement); });
+}
+
 /// Whether `readonly = 2` (the mode the HTTP execution path sets for safe methods such as `GET`) still lets a
 /// query of this kind produce side effects. Two groups:
 /// - `BACKUP` writes an archive to disk or object storage and `RESTORE` writes data into tables, yet
@@ -482,6 +496,19 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
     /// Collect them from the already-parsed AST rather than re-parsing the formatted string: re-parsing would
     /// apply the default parser depth/backtrack limits and could reject a query the user's parser settings accepted.
     handler->receive_params = analyzeReceiveQueryParams(create.query);
+
+    /// A statement that takes the request body as its data must be the handler's own query: neither `EXECUTE AS`
+    /// nor `PARALLEL WITH` forwards the request tail to the statements it runs, so a wrapped one would silently
+    /// receive no data at all. Reject it here instead of creating a handler that discards every upload.
+    if (queryWrapsBodyConsumingStatement(*create.query))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Handler `{}` wraps a query that takes its data from the HTTP request body (an INSERT, or an "
+            "INSERT ... SELECT reading from `input`) inside EXECUTE AS or PARALLEL WITH. Those clauses run "
+            "their statements without the request body, so the uploaded data would be silently discarded. "
+            "Make the body-reading INSERT the handler's own query.",
+            create.handler_name);
+    }
 
     /// An `INSERT` handler takes the request body as its data, and a query using `_request_body` reads the body
     /// explicitly. Only these handlers need `Content-Length` on a non-chunked request (see `SQLDefinedHandler`).

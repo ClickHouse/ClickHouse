@@ -27,3 +27,13 @@ BAD_ARGUMENTS
 BAD_ARGUMENTS
 === the same EXECUTE AS handler is accepted with a mutating method ===
 ['POST']
+=== a PARALLEL WITH handler wrapping an INSERT fed from input() is rejected ===
+BAD_ARGUMENTS
+=== an EXECUTE AS handler wrapping an INSERT fed from input() is rejected ===
+BAD_ARGUMENTS
+=== an EXECUTE AS handler wrapping a plain INSERT is rejected ===
+BAD_ARGUMENTS
+=== ALTER HANDLER cannot swap a query to a wrapped body-reading INSERT either ===
+BAD_ARGUMENTS
+=== the unwrapped INSERT handler is accepted and does receive the uploaded rows ===
+33
