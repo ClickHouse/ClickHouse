@@ -36,13 +36,13 @@ ColumnsDescription StorageSystemObjectStorageQueueMetadata<type>::getColumnsDesc
         {"zookeeper_path", std::make_shared<DataTypeString>(),
             "Path in zookeeper to metadata. For a queue on an auxiliary zookeeper this is the factory key `<zookeeper_name>:<path>`, not the raw keeper path."},
         {"processed_nodes_count", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-            "Number of nodes in the `processed` folder in keeper. Only set for `unordered` mode: in `ordered` mode there are no per-file processed nodes (see `processed_path` instead), so the value is NULL."},
-        {"processing_nodes_count", std::make_shared<DataTypeUInt64>(), "Number of nodes in the `processing` folder in keeper"},
-        {"failed_nodes_count", std::make_shared<DataTypeUInt64>(), "Number of nodes in the `failed` folder in keeper"},
+            "Number of nodes in the `processed` directory in keeper. Only set for `unordered` mode: in `ordered` mode there are no per-file processed nodes (see `processed_path` instead), so the value is NULL."},
+        {"processing_nodes_count", std::make_shared<DataTypeUInt64>(), "Number of nodes in the `processing` directory in keeper"},
+        {"failed_nodes_count", std::make_shared<DataTypeUInt64>(), "Number of nodes in the `failed` directory in keeper"},
         {"processed_nodes", map_string_string,
-            "Contents (node name -> node data) of the `processed` folder in keeper. Only filled for `unordered` mode. Fetched only when this column is selected."},
-        {"processing_nodes", map_string_string, "Contents (node name -> node data) of the `processing` folder in keeper. Fetched only when this column is selected."},
-        {"failed_nodes", map_string_string, "Contents (node name -> node data) of the `failed` folder in keeper. Fetched only when this column is selected."},
+            "Contents (node name -> node data) of the `processed` directory in keeper. Only filled for `unordered` mode. Fetched only when this column is selected."},
+        {"processing_nodes", map_string_string, "Contents (node name -> node data) of the `processing` directory in keeper. Fetched only when this column is selected."},
+        {"failed_nodes", map_string_string, "Contents (node name -> node data) of the `failed` directory in keeper. Fetched only when this column is selected."},
         {"processed_path", map_string_string,
             "Last processed path per processed pointer in keeper (relative pointer path -> last processed file path). Only filled for `ordered` mode, where it covers the single, per-bucket and per-partition pointers. Fetched only when this column is selected."},
     };
@@ -63,7 +63,7 @@ Block StorageSystemObjectStorageQueueMetadata<type>::getFilterSampleBlock() cons
 namespace
 {
 
-/// A keeper folder rendered as (node name -> node data) pairs.
+/// A keeper directory rendered as (node name -> node data) pairs.
 using NodeContents = std::vector<std::pair<String, String>>;
 
 void insertMap(IColumn & column, const NodeContents & contents)
@@ -121,17 +121,17 @@ std::vector<std::optional<std::string>> readNodeDataBatched(
     return data;
 }
 
-/// Read a `processed`/`processing`/`failed` folder of per-file nodes. When only
+/// Read a `processed`/`processing`/`failed` directory of per-file nodes. When only
 /// the count is needed, reading the stat is enough; the children are listed and
 /// fetched only when the contents are requested.
 ///
-/// These folders are mandatory: they are created up front by
+/// These directories are mandatory: they are created up front by
 /// `ObjectStorageQueueUnorderedFileMetadata::getMetadataPaths` and
 /// `ObjectStorageQueueOrderedFileMetadata::getMetadataPaths` (which omits only
 /// the ordered-mode `processed` pointers, read by `readProcessedPointers`). A
 /// missing one means the queue metadata layout in Keeper is broken and the
 /// queue will start failing its own updates, so it is reported as an error
-/// instead of an empty folder - otherwise this table would make a broken queue
+/// instead of an empty directory - otherwise this table would make a broken queue
 /// look healthy.
 void readFolder(
     const ObjectStorageQueueMetadata & metadata,
@@ -181,13 +181,13 @@ void readFolder(
     }
 }
 
-/// In ordered mode the `processed` folder is not a set of per-file nodes but a
+/// In ordered mode the `processed` directory is not a set of per-file nodes but a
 /// compact "last processed" pointer. It can be a single node, one per bucket
 /// (buckets > 1), or one per partition (HIVE/REGEX) - and any combination of
 /// the two. Collect them all as (relative pointer path -> last processed file
 /// path).
 ///
-/// Unlike the folders read by `readFolder`, these roots are deliberately not
+/// Unlike the directories read by `readFolder`, these roots are deliberately not
 /// created up front (see the comment in
 /// `ObjectStorageQueueOrderedFileMetadata::getMetadataPaths`) - they appear
 /// only once something is processed, so `ZNONODE` here is expected and means
