@@ -626,3 +626,29 @@ TEST(ColumnObject, PrepareForSquashingScalesDynamicPathsByFactor)
     ASSERT_TRUE(target_object.getDynamicPathsPtrs().contains("a"));
     ASSERT_GE(target_object.getDynamicPathsPtrs().at("a")->capacity(), 100u * factor);
 }
+
+TEST(ColumnObject, CompressDecompressPreservesSharedDataPathMatcherAcrossRepeatedCalls)
+{
+    /// Regression: ColumnObject::compress()'s decompress lambda used to std::move its captured
+    /// matcher/prefix into the first reconstructed column. ColumnCompressed::decompress() just
+    /// re-invokes the same stored lambda on every call with no caching, so a second decompression
+    /// of the same compressed column would see the lambda's captures already moved-from.
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=10, SHARED REGEXP '^force')");
+
+    auto source = type->createColumn();
+    auto & source_object = assert_cast<ColumnObject &>(*source);
+    source_object.insert(Object{{"forced", Field{UInt64(1)}}, {"kept", Field{UInt64(2)}}});
+    ASSERT_TRUE(source_object.getSharedDataPathMatcher());
+
+    auto compressed = source_object.compress(/*force_compression=*/ true);
+
+    auto decompressed_first = compressed->decompress();
+    const auto & first_object = assert_cast<const ColumnObject &>(*decompressed_first);
+    ASSERT_TRUE(first_object.getSharedDataPathMatcher());
+    ASSERT_EQ(first_object.getSharedDataPathPrefix(), source_object.getSharedDataPathPrefix());
+
+    auto decompressed_second = compressed->decompress();
+    const auto & second_object = assert_cast<const ColumnObject &>(*decompressed_second);
+    ASSERT_TRUE(second_object.getSharedDataPathMatcher());
+    ASSERT_EQ(second_object.getSharedDataPathPrefix(), source_object.getSharedDataPathPrefix());
+}
