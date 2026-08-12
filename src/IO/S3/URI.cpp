@@ -11,6 +11,7 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <aws/s3/S3EndpointProvider.h>
 
 namespace DB
 {
