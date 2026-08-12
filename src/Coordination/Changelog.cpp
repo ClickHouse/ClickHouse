@@ -284,6 +284,19 @@ public:
             flushImpl(*last_index_written + 1);
         }
 
+        /// `flushImpl` always leaves a freshly opened writer behind, and a writer may also still
+        /// be live when nothing was written since the previous `setFile`. Either way it targets a
+        /// different object than the one requested here, so discard it explicitly: overwriting
+        /// `write_buffer` below would destroy a live `WriteBufferFromS3` that was neither
+        /// finalized nor canceled, which trips the `chassert` in `WriteBuffer`'s destructor.
+        /// `cancel` rather than `finalize`, because that intermediate object holds no records and
+        /// must not be published to S3.
+        if (write_buffer)
+        {
+            write_buffer->cancel();
+            write_buffer.reset();
+        }
+
         current_file_description = std::make_shared<ChangelogFileDescription>();
         current_file_description->prefix = file_description->prefix;
         current_file_description->from_log_index = file_description->from_log_index;
