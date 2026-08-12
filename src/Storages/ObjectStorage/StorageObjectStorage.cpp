@@ -470,15 +470,26 @@ void StorageObjectStorage::read(
             pinned.setDataLakeTableState(*state);
 
             /// Reload columns and sorting key from the same state so they cannot diverge.
+            /// On this branch virtual columns live outside `StorageInMemoryMetadata`, so recompute
+            /// them from the rebuilt columns and pass them to the snapshot explicitly.
+            VirtualsDescriptionPtr rebuilt_virtuals;
             if (configuration->shouldReloadSchemaForConsistency(local_context))
             {
                 if (auto rebuilt = configuration->buildStorageMetadataFromState(*state, local_context))
-                    pinned = rebuilt->withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
-                        rebuilt->columns, local_context, format_settings, configuration->partition_strategy_type));
+                {
+                    pinned = *rebuilt;
+                    rebuilt_virtuals = std::make_shared<const VirtualColumnsDescription>(
+                        VirtualColumnUtils::getVirtualsForFileLikeStorage(
+                            pinned.columns, local_context, format_settings, configuration->partition_strategy_type));
+                }
             }
 
-            storage_snapshot = std::make_shared<StorageSnapshot>(
-                *this, std::make_shared<StorageInMemoryMetadata>(std::move(pinned)));
+            if (rebuilt_virtuals)
+                storage_snapshot = std::make_shared<StorageSnapshot>(
+                    *this, std::make_shared<StorageInMemoryMetadata>(std::move(pinned)), std::move(rebuilt_virtuals));
+            else
+                storage_snapshot = std::make_shared<StorageSnapshot>(
+                    *this, std::make_shared<StorageInMemoryMetadata>(std::move(pinned)));
         }
     }
 
