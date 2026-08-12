@@ -56,15 +56,22 @@ struct PortsProbeResult
 /// a plain port that merely answered faster, without stalling plain-only servers, which is the most
 /// common setup).
 ///
-/// Only raw TCP reachability is checked, concurrently for all addresses and ports, bounded by `timeout` in
-/// total. The connection to the chosen endpoint is returned to the caller, which completes the handshake
-/// on it; the connections to the endpoints that lost the race are closed.
+/// Only raw TCP reachability is checked, bounded by `timeout` in total. The connection to the chosen
+/// endpoint is returned to the caller, which completes the handshake on it; the connections to the
+/// endpoints that lost the race are closed.
+///
+/// The two ports are always probed concurrently, but the addresses of a port are attempted one at a time,
+/// the next one only after `attempt_delay` without an answer (or immediately, when the previous attempt
+/// has already failed). Otherwise a host that resolves to several reachable backends would leave an
+/// accepted connection that sends nothing on every backend but the one that wins. This is the
+/// "Connection Attempt Delay" of RFC 8305 (Happy Eyeballs), for the same reason.
 PortsProbeResult probePlainAndSecurePorts(
     const String & host,
     const String & bind_host,
     UInt16 plain_port,
     UInt16 secure_port,
     Poco::Timespan timeout,
-    Poco::Timespan secure_preference_window);
+    Poco::Timespan secure_preference_window,
+    Poco::Timespan attempt_delay);
 
 }

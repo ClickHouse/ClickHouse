@@ -2,8 +2,11 @@
 
 #include <Client/PortsProbe.h>
 
+#include <Poco/Exception.h>
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/SocketAddress.h>
+
+#include <optional>
 
 using namespace DB;
 
@@ -14,6 +17,7 @@ namespace
 /// on the success paths; they only bound the failure paths.
 const Poco::Timespan probe_timeout(2, 0);
 const Poco::Timespan preference_window(0, 100000);
+const Poco::Timespan attempt_delay(0, 250000);
 
 Poco::Net::ServerSocket listenOnLoopback()
 {
@@ -31,7 +35,7 @@ UInt16 closedPort()
 
 PortsProbeResult probe(UInt16 plain_port, UInt16 secure_port, const String & host = "127.0.0.1")
 {
-    return probePlainAndSecurePorts(host, "", plain_port, secure_port, probe_timeout, preference_window);
+    return probePlainAndSecurePorts(host, "", plain_port, secure_port, probe_timeout, preference_window, attempt_delay);
 }
 
 }
@@ -105,6 +109,45 @@ TEST(PortsProbe, HandsOverTheEstablishedConnection)
     char received[sizeof(message)] = {};
     ASSERT_EQ(accepted.receiveBytes(received, sizeof(received)), static_cast<int>(sizeof(message)));
     EXPECT_STREQ(received, message);
+}
+
+/// The addresses of a port are attempted one at a time, so a host that resolves to several reachable
+/// backends is connected to on one of them only: every other accepted connection would be a session that
+/// sends nothing, which the server logs and counts against `max_connections`.
+TEST(PortsProbe, AttemptsOneAddressAtATime)
+{
+    /// `localhost` resolves to both `127.0.0.1` and `::1` on the machines this runs on, so listening on
+    /// the same port in both families gives a host with two reachable addresses. The port has to be free
+    /// in both, which an ephemeral port of one family does not guarantee, hence the retries.
+    std::optional<Poco::Net::ServerSocket> v4;
+    std::optional<Poco::Net::ServerSocket> v6;
+    for (size_t attempt = 0; attempt < 16 && !v6; ++attempt)
+    {
+        v4.emplace(Poco::Net::SocketAddress("127.0.0.1", 0));
+        try
+        {
+            v6.emplace(Poco::Net::SocketAddress("::1", v4->address().port()));
+        }
+        catch (const Poco::Exception &)
+        {
+            v4.reset();
+        }
+    }
+    if (!v6)
+        GTEST_SKIP() << "Cannot listen on the same port in both address families";
+
+    const UInt16 port = v4->address().port();
+    auto result = probePlainAndSecurePorts("localhost", "", port, closedPort(), probe_timeout, preference_window, attempt_delay);
+    ASSERT_TRUE(result.plain.has_value());
+
+    /// Exactly one of the two listeners has a connection queued: `poll` on a server socket reports
+    /// readability precisely when there is one to accept. Which of them it is depends on the order the
+    /// resolver returns, so it is read from the result rather than assumed.
+    const bool answered_over_v4 = result.plain->address.family() == Poco::Net::AddressFamily::IPv4;
+    auto & chosen = answered_over_v4 ? *v4 : *v6;
+    auto & other = answered_over_v4 ? *v6 : *v4;
+    EXPECT_TRUE(chosen.poll(Poco::Timespan(0, 0), Poco::Net::Socket::SELECT_READ));
+    EXPECT_FALSE(other.poll(Poco::Timespan(0, 0), Poco::Net::Socket::SELECT_READ));
 }
 
 /// When nothing answers, the failure of every probed address is reported.

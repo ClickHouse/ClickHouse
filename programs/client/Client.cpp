@@ -642,6 +642,11 @@ void Client::connect()
                 /// not stalled for the whole connection timeout of the unreachable secure port.
                 static const Poco::Timespan secure_preference_window(0, 100000);
 
+                /// The addresses of a port are attempted one at a time, this much apart, so that a host
+                /// that resolves to several reachable backends is not connected to on all of them at once
+                /// (see `probePlainAndSecurePorts`). This is the default of RFC 8305 (Happy Eyeballs).
+                static const Poco::Timespan address_attempt_delay(0, 250000);
+
                 PortsProbeResult probe;
                 try
                 {
@@ -651,7 +656,8 @@ void Client::connect()
                         plain_port,
                         secure_port,
                         connection_parameters.timeouts.connection_timeout,
-                        secure_preference_window);
+                        secure_preference_window,
+                        address_attempt_delay);
                 }
                 catch (...)
                 {

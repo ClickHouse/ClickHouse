@@ -8,7 +8,12 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/StreamSocket.h>
 
+#include <Common/Exception.h>
+
 #include <algorithm>
+#include <array>
+#include <deque>
+#include <limits>
 #include <optional>
 #include <vector>
 
@@ -29,6 +34,17 @@ struct Probe
     String failure;
 };
 
+/// The addresses of one port, tried one at a time (see `attempt_delay` below).
+struct Port
+{
+    UInt16 port = 0;
+    bool to_secure_port = false;
+    std::vector<Poco::Net::SocketAddress> addresses;
+    size_t next_address = 0;
+    /// When the address that is currently being attempted was started.
+    std::optional<UInt64> attempt_started_at_us;
+};
+
 PortsProbeResult::Endpoint makeEndpoint(const Probe & probe)
 {
     /// Poco sockets are reference-counted handles, so the connection outlives the probe it came from.
@@ -43,49 +59,61 @@ PortsProbeResult probePlainAndSecurePorts(
     UInt16 plain_port,
     UInt16 secure_port,
     Poco::Timespan timeout,
-    Poco::Timespan secure_preference_window)
+    Poco::Timespan secure_preference_window,
+    Poco::Timespan attempt_delay)
 {
-    std::vector<Probe> probes;
+    /// The probes of a port are not started all at once: the addresses of a host are tried one at a
+    /// time, and the next one only after this much without an answer. Otherwise a host that resolves to
+    /// several reachable backends (a load balancer, most typically) would leave an accepted session that
+    /// sends nothing on every backend but the one that wins, on every single connect.
+    ///
+    /// This is the "Connection Attempt Delay" of RFC 8305 (Happy Eyeballs), for the same reason and with
+    /// the same default. Note that it does not apply between the two ports: those are always probed
+    /// concurrently, which is the whole point of the probing - a firewalled plain port would otherwise
+    /// stall the client for the entire connection timeout before TLS is even attempted.
+    std::array<Port, 2> ports{
+        Port{plain_port, /*to_secure_port=*/ false, DNSResolver::instance().resolveAddressList(host, plain_port), 0, {}},
+        Port{secure_port, /*to_secure_port=*/ true, DNSResolver::instance().resolveAddressList(host, secure_port), 0, {}}};
 
-    auto add_probes = [&](UInt16 port, bool to_secure_port)
-    {
-        for (const auto & address : DNSResolver::instance().resolveAddressList(host, port))
-        {
-            auto & probe = probes.emplace_back();
-            probe.address = address;
-            probe.to_secure_port = to_secure_port;
-            try
-            {
-                if (!bind_host.empty())
-                    probe.socket.bind(Poco::Net::SocketAddress(bind_host, 0), /*reuseAddress=*/ true);
-
-                probe.socket.connectNB(address);
-                probe.pending = true;
-            }
-            catch (const Poco::Exception & e)
-            {
-                probe.pending = false;
-                probe.failure = e.displayText();
-            }
-        }
-    };
-
-    add_probes(plain_port, /*to_secure_port=*/ false);
-    add_probes(secure_port, /*to_secure_port=*/ true);
+    /// Pointers into this container are taken below, so it must not reallocate.
+    std::deque<Probe> probes;
 
     Stopwatch watch;
     const UInt64 timeout_us = static_cast<UInt64>(timeout.totalMicroseconds());
     const UInt64 window_us = static_cast<UInt64>(secure_preference_window.totalMicroseconds());
+    const UInt64 attempt_delay_us = static_cast<UInt64>(attempt_delay.totalMicroseconds());
 
     /// The moment the first probe of the plain port connected: starts the secure preference window.
     std::optional<UInt64> plain_connected_at_us;
+
+    auto start_next_address = [&](Port & port)
+    {
+        auto & probe = probes.emplace_back();
+        probe.address = port.addresses[port.next_address];
+        probe.to_secure_port = port.to_secure_port;
+        ++port.next_address;
+        port.attempt_started_at_us = watch.elapsedMicroseconds();
+        try
+        {
+            if (!bind_host.empty())
+                probe.socket.bind(Poco::Net::SocketAddress(bind_host, 0), /*reuseAddress=*/ true);
+
+            probe.socket.connectNB(probe.address);
+            probe.pending = true;
+        }
+        catch (const Poco::Exception & e)
+        {
+            probe.pending = false;
+            probe.failure = e.displayText();
+        }
+    };
 
     while (true)
     {
         const Probe * plain_connected = nullptr;
         const Probe * secure_connected = nullptr;
+        bool plain_pending = false;
         bool secure_pending = false;
-        bool any_pending = false;
 
         for (const auto & probe : probes)
         {
@@ -96,16 +124,12 @@ PortsProbeResult probePlainAndSecurePorts(
                     connected = &probe;
             }
             if (probe.pending)
-            {
-                any_pending = true;
-                if (probe.to_secure_port)
-                    secure_pending = true;
-            }
+                (probe.to_secure_port ? secure_pending : plain_pending) = true;
         }
 
         /// TLS is preferred, so the secure port wins as soon as it answers. The plain port is reported
         /// alongside it when it has answered too: the secure connection can still turn out to be unusable,
-        /// and then the caller falls back to a connection that is already established.
+        /// and then the caller falls back to a port it already knows answers.
         if (secure_connected)
         {
             PortsProbeResult result;
@@ -117,21 +141,21 @@ PortsProbeResult probePlainAndSecurePorts(
 
         const UInt64 elapsed_us = watch.elapsedMicroseconds();
 
-        if (plain_connected && (!secure_pending || elapsed_us >= *plain_connected_at_us + window_us))
+        /// Whether the port can still produce an answer: an attempt is in flight, or an address of it has
+        /// not been attempted yet.
+        auto can_still_answer = [&](const Port & port, bool port_pending)
+        { return port_pending || port.next_address < port.addresses.size(); };
+
+        const bool secure_can_still_answer = can_still_answer(ports[1], secure_pending);
+
+        if (plain_connected && (!secure_can_still_answer || elapsed_us >= *plain_connected_at_us + window_us))
         {
             PortsProbeResult result;
             result.plain = makeEndpoint(*plain_connected);
             return result;
         }
 
-        if (!any_pending)
-            break;
-
-        UInt64 deadline_us = timeout_us;
-        if (plain_connected)
-            deadline_us = std::min(deadline_us, *plain_connected_at_us + window_us);
-
-        if (elapsed_us >= deadline_us)
+        if (elapsed_us >= timeout_us)
         {
             if (plain_connected)
             {
@@ -151,6 +175,49 @@ PortsProbeResult probePlainAndSecurePorts(
             }
             break;
         }
+
+        /// Start the next address of a port that has not answered yet, either right away when its previous
+        /// attempt has already failed, or once the attempt delay has elapsed without an answer.
+        bool started_any = false;
+        UInt64 next_attempt_at_us = std::numeric_limits<UInt64>::max();
+        for (size_t i = 0; i < ports.size(); ++i)
+        {
+            auto & port = ports[i];
+            const bool port_connected = i == 0 ? plain_connected != nullptr : secure_connected != nullptr;
+            const bool port_pending = i == 0 ? plain_pending : secure_pending;
+
+            if (port_connected || port.next_address >= port.addresses.size())
+                continue;
+
+            /// A port with no attempt in flight goes on to its next address at once: the previous one has
+            /// already failed (it was refused, for example), so there is nothing left to wait for.
+            const UInt64 ready_at_us
+                = port.attempt_started_at_us && port_pending ? *port.attempt_started_at_us + attempt_delay_us : 0;
+
+            if (elapsed_us >= ready_at_us)
+            {
+                start_next_address(port);
+                started_any = true;
+            }
+            else
+                next_attempt_at_us = std::min(next_attempt_at_us, ready_at_us);
+        }
+
+        /// Re-evaluate with the attempts that have just been started.
+        if (started_any)
+            continue;
+
+        /// Nothing left to start, and nothing left in flight (see above: a port with nothing in flight and
+        /// an address left would have been started right here).
+        if (!plain_pending && !secure_pending)
+            break;
+
+        UInt64 deadline_us = std::min(timeout_us, next_attempt_at_us);
+        if (plain_connected)
+            deadline_us = std::min(deadline_us, *plain_connected_at_us + window_us);
+
+        /// Every deadline above is strictly in the future: an elapsed one is handled before this point.
+        chassert(deadline_us > elapsed_us);
 
         Poco::Net::Socket::SocketList read_list;
         Poco::Net::Socket::SocketList write_list;
@@ -199,7 +266,7 @@ PortsProbeResult probePlainAndSecurePorts(
         }
     }
 
-    /// Neither port answered: report the failure of every probed address.
+    /// Neither port answered: report the failure of every address that was attempted.
     PortsProbeResult result;
     for (const auto & probe : probes)
     {

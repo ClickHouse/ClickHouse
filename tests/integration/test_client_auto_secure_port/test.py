@@ -734,6 +734,49 @@ def test_the_probe_leaves_no_extra_connection_on_the_plain_port():
     assert int(node_plain_only.count_in_log(marker)) == before
 
 
+def test_the_probe_leaves_no_extra_connection_on_the_other_addresses():
+    # The addresses of a port are attempted one at a time, so a host that resolves to several reachable
+    # backends - a load balancer, most typically - is connected to on one of them only. Connecting to all
+    # of them at once would leave a session that sends nothing on every backend but the winner, on every
+    # single automatically detected connect.
+    #
+    # `twohealthy` resolves to both plain-only servers, and neither may end up with such a session.
+    marker = "Client has not sent any data"
+    before = {
+        server.name: int(server.count_in_log(marker))
+        for server in (node_plain_only, node_extra)
+    }
+    node_both_ports.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"printf '%s twohealthy\\n%s twohealthy\\n' {node_plain_only.ip_address} {node_extra.ip_address} >> /etc/hosts",
+        ],
+        user="root",
+    )
+    try:
+        assert (
+            node_both_ports.exec_in_container(
+                ["clickhouse", "client", "--host", "twohealthy", "--query", "SELECT 1"]
+            )
+            == "1\n"
+        )
+        for server in (node_plain_only, node_extra):
+            assert int(server.count_in_log(marker)) == before[server.name], (
+                f"{server.name} was left with a connection that sends nothing"
+            )
+    finally:
+        # `/etc/hosts` is bind-mounted into the container, so it can only be rewritten in place.
+        node_both_ports.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "grep -v twohealthy /etc/hosts > /tmp/hosts && cat /tmp/hosts > /etc/hosts && rm /tmp/hosts",
+            ],
+            user="root",
+        )
+
+
 def test_explicit_port_is_not_upgraded():
     # With an explicit port or an explicit `no-secure` there is no automatic choice.
     firewall_plain_port("REJECT")
