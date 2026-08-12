@@ -44,39 +44,10 @@ public:
 
     String getName() const override { return "BlockNestedLoopProbe"; }
 
-    /// How many of the pairs that satisfy the condition are part of the result, which is what
-    /// strictness controls.
-    enum class PairSelection : uint8_t
-    {
-        /// Every one of them: `ALL`, and any strictness on an explicit cartesian join.
-        AllPairs,
-        /// One per probe row - the first build row it matches - for a left-driven `ANY`/`SEMI`.
-        FirstPerProbeRow,
-        /// One per build row - the first probe row that matches it - for a right-driven `ANY`/`SEMI`.
-        FirstPerBuildRow,
-        /// One per probe row and one per build row at once: `ANY INNER`, which disables the
-        /// cartesian product on both sides. `INNER` is its own reverse, so the operator has to
-        /// answer the same way whichever of its inputs the planner decided to build.
-        OnePerRowOfBothSides,
-        /// None: an `ANTI` result is made of the rows that matched nothing.
-        NoPairs,
-    };
-
     Status prepare() override;
     void work() override;
 
 private:
-    /// How far the walk over the current probe chunk has got.
-    enum class Stage : uint8_t
-    {
-        /// Matching the chunk against the stored build blocks.
-        Matching,
-        /// Emitting the probe rows that no build row matched.
-        UnmatchedProbeRows,
-        /// The chunk is fully processed and a new one may be pulled.
-        Done,
-    };
-
     /// A maximal group of accumulated pairs that share a stored build block. An output chunk can
     /// span several blocks, and the build side of each group is gathered from its own block, which
     /// the run keeps alive - the walk may have moved on, and a compressed or spilled block would
@@ -90,11 +61,57 @@ private:
         size_t retained_bytes = 0;
     };
 
+    /// Everything the walk over one probe chunk holds. Grouped so that starting a chunk and
+    /// abandoning one both reset it whole, and no field can be left over from the chunk before.
+    struct Walk
+    {
+        /// The probe chunk being walked.
+        Columns probe_columns;
+        size_t probe_num_rows = 0;
+        bool has_probe_chunk = false;
+
+        /// The walk goes over tiles of a bounded number of pairs: a window of the probe rows still
+        /// in the walk against a window of the rows of one stored block.
+        /// The probe rows still in the walk, in increasing order; every one of them under `ALL`.
+        PaddedPODArray<UInt64> active_probe_rows;
+        /// Where the probe window starts in `active_probe_rows`. Back to zero once the sweep over
+        /// them against the current build rows is complete, which is the only point at which those
+        /// advance.
+        size_t probe_window_cursor = 0;
+        size_t build_block_cursor = 0;
+        size_t build_row_cursor = 0;
+        /// The block at `build_block_cursor`, held for as long as the walk stays inside it.
+        BuildBlockPtr current_build_block;
+
+        /// The pairs that satisfied the condition and are not emitted yet: a row index within the
+        /// probe chunk, and a row index within the stored block named by the matching entry of
+        /// `build_runs`.
+        PaddedPODArray<UInt64> matched_probe_rows;
+        PaddedPODArray<UInt64> matched_build_rows;
+        /// Where the pairs still to be emitted start. One tile accumulates far more pairs than one
+        /// output chunk may hold, and dropping the emitted prefix on every chunk would move the rest
+        /// of them each time; the prefix is dropped in one go instead, once it is the larger part.
+        size_t matched_rows_offset = 0;
+        std::deque<BuildRun> build_runs;
+        /// What the blocks held by `build_runs` cost on top of the store, i.e. the sum over the runs
+        /// whose block the reader had to decompress or read back from disk.
+        size_t retained_build_bytes = 0;
+
+        /// Rough size of one output row, used only to decide when `max_block_bytes` is reached.
+        size_t probe_row_bytes = 0;
+        size_t build_row_bytes = 0;
+
+        /// Set for every probe row that matched at least one build row. Empty for the kinds whose
+        /// result does not depend on it.
+        IColumnFilter probe_row_matched;
+        size_t unmatched_probe_cursor = 0;
+    };
+
     void startProbeChunk(Chunk chunk);
     /// Evaluates the condition on the next tile of candidate pairs, accumulates the surviving ones
     /// and advances the build cursor. Returns the number of pairs evaluated.
     size_t matchNextTile();
-    /// Keeps the pairs of the current tile that `pair_selection` selects, and records the match on
+    /// Keeps the pairs of the current tile that the strictness selects, and records the match on
     /// the probe row and on the build row where the kind needs it.
     void appendMatchedPairs(const IColumn & matched_probe, const IColumn & matched_build, size_t num_matched);
     /// Extends the last run of accumulated pairs, or opens one for the current build block.
@@ -102,7 +119,7 @@ private:
     /// Removes the probe rows that have matched from the walk over the rest of the build side.
     void dropMatchedProbeRows();
     /// How many accumulated pairs are still waiting to be emitted.
-    size_t numPendingPairs() const { return matched_probe_rows.size() - matched_rows_offset; }
+    size_t numPendingPairs() const { return walk.matched_probe_rows.size() - walk.matched_rows_offset; }
     /// Whether the accumulated pairs already fill an output chunk.
     bool hasFullOutputChunk() const;
     /// How many rows one output chunk may hold under both limits, for rows of `row_bytes` each.
@@ -131,14 +148,25 @@ private:
     const size_t max_block_size;
     const size_t max_block_bytes;
 
-    /// How many of the satisfied pairs the strictness lets through.
-    const PairSelection pair_selection;
+    /// Which of the pairs that satisfy the condition are part of the result, which is what
+    /// strictness controls. The two limits are independent: a left-driven `ANY`/`SEMI` takes one
+    /// pair per probe row, a right-driven one takes one per build row, and `ANY INNER` takes both
+    /// at once - `INNER` is its own reverse, so the operator has to answer the same way whichever
+    /// of its inputs the planner decided to build.
+    /// Whether a probe row contributes at most one pair - the first build row it matches.
+    const bool one_pair_per_probe_row;
+    /// Whether a build row is taken by the probe row that reaches it first, and by no other.
+    const bool claim_build_rows;
+    /// Whether no pair at all is part of the result: an `ANTI` result is made of the rows that
+    /// matched nothing, on whichever side the kind keeps them.
+    const bool emits_no_pairs;
+    /// Neither side is limited and every pair is emitted: `ALL`, and any strictness on an explicit
+    /// cartesian join. The pairs of a tile then go to the accumulator wholesale.
+    const bool takes_every_pair;
     /// Whether a probe row that matched nothing is still part of the result, padded.
     const bool keep_unmatched_probe_rows;
     /// Whether every matched build row must be flagged for the stage that runs after the probe.
     const bool flag_matched_build_rows;
-    /// Whether a build row is taken by the probe row that reaches it first, and by no other.
-    const bool claim_build_rows;
     /// Whether a probe row leaves the walk as soon as it matches.
     const bool early_exit_per_probe_row;
     /// Whether the walk records which probe rows have matched.
@@ -149,44 +177,7 @@ private:
     /// processor's own time, so it happens in `work`.
     std::optional<Chunk> pending_probe_chunk;
 
-    /// The probe chunk being walked.
-    Columns probe_columns;
-    size_t probe_num_rows = 0;
-    bool has_probe_chunk = false;
-    Stage stage = Stage::Done;
-
-    /// The walk over the build side, over tiles of a bounded number of pairs: a window of the probe
-    /// rows still in the walk against a window of the rows of one stored block.
-    /// The probe rows still in the walk, in increasing order; every one of them under `ALL`.
-    PaddedPODArray<UInt64> active_probe_rows;
-    /// Where the probe window starts in `active_probe_rows`. Back to zero once the sweep over them
-    /// against the current build rows is complete, which is the only point at which those advance.
-    size_t probe_window_cursor = 0;
-    size_t build_block_cursor = 0;
-    size_t build_row_cursor = 0;
-    /// The block at `build_block_cursor`, held for as long as the walk stays inside it.
-    BuildBlockPtr current_build_block;
-
-    /// The pairs that satisfied the condition and are not emitted yet: a row index within the probe
-    /// chunk, and a row index within the stored block named by the matching entry of `build_runs`.
-    PaddedPODArray<UInt64> matched_probe_rows;
-    PaddedPODArray<UInt64> matched_build_rows;
-    /// Where the pairs still to be emitted start. One tile accumulates far more pairs than one
-    /// output chunk may hold, and dropping the emitted prefix on every chunk would move the rest of
-    /// them each time; the prefix is dropped in one go instead, once it is the larger part.
-    size_t matched_rows_offset = 0;
-    std::deque<BuildRun> build_runs;
-    /// What the blocks held by `build_runs` cost on top of the store, i.e. the sum over the runs
-    /// whose block the reader had to decompress or read back from disk.
-    size_t retained_build_bytes = 0;
-    /// Rough size of one output row, used only to decide when `max_block_bytes` is reached.
-    size_t probe_row_bytes = 0;
-    size_t build_row_bytes = 0;
-
-    /// Set for every probe row that matched at least one build row. Empty for the kinds whose
-    /// result does not depend on it.
-    IColumnFilter probe_row_matched;
-    size_t unmatched_probe_cursor = 0;
+    Walk walk;
 
     std::optional<Chunk> output_chunk;
 };

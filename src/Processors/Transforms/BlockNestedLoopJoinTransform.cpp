@@ -30,44 +30,48 @@ namespace ErrorCodes
 namespace
 {
 
-using PairSelection = BlockNestedLoopProbeTransform::PairSelection;
-
 /// Which pairs that satisfy the condition are part of the result: `ALL` keeps every one of them,
 /// `ANY` and `SEMI` keep one per row of the side they are driven by, and an `ANTI` result is made
-/// of the rows that matched nothing.
+/// of the rows that matched nothing. The two limits below are what the strictness decides, and they
+/// are independent - `ANY INNER` applies both at once.
 ///
 /// `join_any_take_last_row` is not honoured here, as the setting itself documents: it applies to
 /// the `Join` table engine and the hash-based algorithms. With no join key there is no group of
 /// rows to take the last of, and the store's block order is the order the build streams happened
 /// to fill it in, so "the last matching row" would name nothing in particular while costing the
 /// early exit that makes `ANY` worth choosing.
-PairSelection pairSelectionFor(JoinKind kind, JoinStrictness strictness)
+void checkStrictnessIsSupported(JoinKind kind, JoinStrictness strictness)
+{
+    if (strictness == JoinStrictness::Asof || strictness == JoinStrictness::Unspecified)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Block nested loop join does not support {} {} JOIN",
+            toString(strictness), toString(kind));
+}
+
+/// Whether a probe row contributes at most one pair - the first build row it matches. That is a
+/// left-driven `ANY`/`SEMI`, `ANY INNER`, and the old `ANY`
+/// (`any_join_distinct_right_table_keys`), which joins one build row to every probe row whatever
+/// the kind.
+bool takesOnePairPerProbeRow(JoinKind kind, JoinStrictness strictness)
 {
     /// An explicit cartesian join has no strictness of its own.
     if (isCrossOrComma(kind))
-        return PairSelection::AllPairs;
+        return false;
+    if (strictness == JoinStrictness::RightAny)
+        return true;
+    if (strictness != JoinStrictness::Any && strictness != JoinStrictness::Semi)
+        return false;
+    return isInner(kind) || !isRight(kind);
+}
 
-    switch (strictness)
-    {
-        case JoinStrictness::All:
-            return PairSelection::AllPairs;
-        case JoinStrictness::Any:
-            if (isInner(kind))
-                return PairSelection::OnePerRowOfBothSides;
-            [[fallthrough]];
-        case JoinStrictness::Semi:
-            return isRight(kind) ? PairSelection::FirstPerBuildRow : PairSelection::FirstPerProbeRow;
-        /// The old `ANY` (`any_join_distinct_right_table_keys`) joins one build row to every probe
-        /// row whatever the kind; `RIGHT` and `FULL` add the unmatched build rows on top of that.
-        case JoinStrictness::RightAny:
-            return PairSelection::FirstPerProbeRow;
-        case JoinStrictness::Anti:
-            return PairSelection::NoPairs;
-        case JoinStrictness::Asof:
-        case JoinStrictness::Unspecified:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Block nested loop join does not support {} {} JOIN",
-                toString(strictness), toString(kind));
-    }
+/// Whether a build row is taken by the probe row that reaches it first, and by no other: a
+/// right-driven `ANY`/`SEMI`, and `ANY INNER`.
+bool takesOnePairPerBuildRow(JoinKind kind, JoinStrictness strictness)
+{
+    if (isCrossOrComma(kind) || strictness == JoinStrictness::RightAny)
+        return false;
+    if (strictness != JoinStrictness::Any && strictness != JoinStrictness::Semi)
+        return false;
+    return isInner(kind) || isRight(kind);
 }
 
 /// Whether a probe row that matched no build row is still part of the result, padded with the
@@ -146,21 +150,22 @@ BlockNestedLoopProbeTransform::BlockNestedLoopProbeTransform(
     , predicate(std::move(predicate_))
     , max_block_size(max_block_size_)
     , max_block_bytes(max_block_bytes_)
-    , pair_selection(pairSelectionFor(data->getKind(), data->getStrictness()))
+    , one_pair_per_probe_row(takesOnePairPerProbeRow(data->getKind(), data->getStrictness()))
+    , claim_build_rows(takesOnePairPerBuildRow(data->getKind(), data->getStrictness()))
+    , emits_no_pairs(!isCrossOrComma(data->getKind()) && data->getStrictness() == JoinStrictness::Anti)
+    , takes_every_pair(!one_pair_per_probe_row && !claim_build_rows && !emits_no_pairs)
     , keep_unmatched_probe_rows(keepsUnmatchedProbeRows(data->getKind(), data->getStrictness()))
     , flag_matched_build_rows(data->hasBuildSideMatchFlags())
-    , claim_build_rows(
-        pair_selection == PairSelection::FirstPerBuildRow || pair_selection == PairSelection::OnePerRowOfBothSides)
-    /// A probe row leaves the walk as soon as it has its pair - unless the result still needs its
-    /// other pairs, or unless the build rows it would match further on must be kept out of the
-    /// scan for unmatched build rows.
+    /// A probe row leaves the walk as soon as it has its pair - or, for `ANTI`, as soon as it has
+    /// any match at all - unless the result still needs its other pairs, or unless the build rows
+    /// it would match further on must be kept out of the scan for unmatched build rows.
     , early_exit_per_probe_row(
-        pair_selection != PairSelection::AllPairs && pair_selection != PairSelection::FirstPerBuildRow
+        (one_pair_per_probe_row || emits_no_pairs)
         && !keepsUnmatchedBuildRows(data->getKind(), data->getStrictness()))
-    , track_probe_row_match(
-        keep_unmatched_probe_rows || early_exit_per_probe_row
-        || pair_selection == PairSelection::FirstPerProbeRow || pair_selection == PairSelection::OnePerRowOfBothSides)
+    , track_probe_row_match(keep_unmatched_probe_rows || early_exit_per_probe_row || one_pair_per_probe_row)
 {
+    checkStrictnessIsSupported(data->getKind(), data->getStrictness());
+
     if (claim_build_rows && !flag_matched_build_rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Block nested loop join keeps no build-side match flags to give each build row to one probe row for {} {} JOIN",
@@ -201,7 +206,7 @@ IProcessor::Status BlockNestedLoopProbeTransform::prepare()
         return Status::PortFull;
     }
 
-    if (has_probe_chunk || pending_probe_chunk)
+    if (walk.has_probe_chunk || pending_probe_chunk)
         return Status::Ready;
 
     if (input.isFinished())
@@ -221,44 +226,29 @@ IProcessor::Status BlockNestedLoopProbeTransform::prepare()
 
 void BlockNestedLoopProbeTransform::startProbeChunk(Chunk chunk)
 {
-    probe_num_rows = chunk.getNumRows();
-    ProfileEvents::increment(ProfileEvents::JoinProbeTableRowCount, probe_num_rows);
-    probe_columns = chunk.detachColumns();
+    walk = {};
+    walk.has_probe_chunk = true;
+    walk.probe_num_rows = chunk.getNumRows();
+    ProfileEvents::increment(ProfileEvents::JoinProbeTableRowCount, walk.probe_num_rows);
+    walk.probe_columns = chunk.detachColumns();
     /// The tile indexes into these columns and the output gathers from them; neither is possible
     /// on a Const or Sparse representation.
-    for (auto & column : probe_columns)
+    for (auto & column : walk.probe_columns)
         column = recursiveRemoveSparse(column->convertToFullColumnIfConst());
 
-    has_probe_chunk = true;
-    probe_window_cursor = 0;
-    build_block_cursor = 0;
-    build_row_cursor = 0;
-    current_build_block.reset();
-    unmatched_probe_cursor = 0;
-    matched_probe_rows.clear();
-    matched_build_rows.clear();
-    matched_rows_offset = 0;
-    build_runs.clear();
-    retained_build_bytes = 0;
-    probe_row_matched.clear();
-    active_probe_rows.clear();
-
     /// A probe chunk with no rows has no pair to evaluate, and unmatched build rows - the only
-    /// rows an empty probe side can still produce - are emitted by a stage of their own.
-    if (probe_num_rows == 0)
-    {
-        stage = Stage::Done;
+    /// rows an empty probe side can still produce - are emitted by a stage of their own. It leaves
+    /// the walk with no active probe row, which is what ends it.
+    if (walk.probe_num_rows == 0)
         return;
-    }
 
-    stage = Stage::Matching;
-    probe_row_bytes = estimateRowBytes(probe_columns, probe_num_rows);
+    walk.probe_row_bytes = estimateRowBytes(walk.probe_columns, walk.probe_num_rows);
 
     if (track_probe_row_match)
-        probe_row_matched.resize_fill(probe_num_rows, 0);
+        walk.probe_row_matched.resize_fill(walk.probe_num_rows, 0);
 
-    active_probe_rows.resize_exact(probe_num_rows);
-    std::iota(active_probe_rows.begin(), active_probe_rows.end(), UInt64(0));
+    walk.active_probe_rows.resize_exact(walk.probe_num_rows);
+    std::iota(walk.active_probe_rows.begin(), walk.active_probe_rows.end(), UInt64(0));
 }
 
 void BlockNestedLoopProbeTransform::work()
@@ -272,52 +262,40 @@ void BlockNestedLoopProbeTransform::work()
 
     size_t evaluated_pairs = 0;
 
+    /// How far the walk has got is the cursors themselves: it matches while a probe row is still in
+    /// it and a stored block is still ahead, drains what it accumulated, and then - for the kinds
+    /// that keep them - emits the probe rows nothing matched.
     while (!output_chunk)
     {
-        switch (stage)
+        if (!walk.active_probe_rows.empty() && walk.build_block_cursor < data->getNumBlocks() && !hasFullOutputChunk())
         {
-            case Stage::Matching:
-            {
-                if (build_block_cursor < data->getNumBlocks() && !hasFullOutputChunk())
-                {
-                    evaluated_pairs += matchNextTile();
-                    if (evaluated_pairs >= WORK_BUDGET_PAIRS)
-                        return;
-                    continue;
-                }
-
-                if (numPendingPairs() != 0)
-                {
-                    output_chunk = takeMatchedRows();
-                    continue;
-                }
-
-                stage = keep_unmatched_probe_rows ? Stage::UnmatchedProbeRows : Stage::Done;
-                continue;
-            }
-            case Stage::UnmatchedProbeRows:
-            {
-                if (unmatched_probe_cursor < probe_num_rows)
-                {
-                    /// A window in which every probe row matched yields nothing; the cursor still
-                    /// advances, so the walk ends.
-                    auto chunk = takeUnmatchedProbeRows();
-                    if (chunk.getNumRows() != 0)
-                        output_chunk = std::move(chunk);
-                    continue;
-                }
-
-                stage = Stage::Done;
-                continue;
-            }
-            case Stage::Done:
-            {
-                has_probe_chunk = false;
-                probe_columns.clear();
-                current_build_block.reset();
+            evaluated_pairs += matchNextTile();
+            if (evaluated_pairs >= WORK_BUDGET_PAIRS)
                 return;
-            }
+            continue;
         }
+
+        if (numPendingPairs() != 0)
+        {
+            output_chunk = takeMatchedRows();
+            continue;
+        }
+
+        if (keep_unmatched_probe_rows && walk.unmatched_probe_cursor < walk.probe_num_rows)
+        {
+            /// A window in which every probe row matched yields nothing; the cursor still advances,
+            /// so the walk ends.
+            auto chunk = takeUnmatchedProbeRows();
+            if (chunk.getNumRows() != 0)
+                output_chunk = std::move(chunk);
+            continue;
+        }
+
+        /// The chunk is fully processed and a new one may be pulled.
+        walk.has_probe_chunk = false;
+        walk.probe_columns.clear();
+        walk.current_build_block.reset();
+        return;
     }
 }
 
@@ -328,15 +306,15 @@ size_t BlockNestedLoopProbeTransform::matchNextTile()
 {
     /// Every path that empties the walk also puts the build cursor past the last block, so a tile is
     /// never asked for once there is no probe row left to build one from.
-    chassert(!active_probe_rows.empty());
+    chassert(!walk.active_probe_rows.empty());
 
-    if (!current_build_block)
+    if (!walk.current_build_block)
     {
-        current_build_block = build_reader.read(build_block_cursor);
-        build_row_bytes = estimateRowBytes(current_build_block->columns, current_build_block->num_rows);
+        walk.current_build_block = build_reader.read(walk.build_block_cursor);
+        walk.build_row_bytes = estimateRowBytes(walk.current_build_block->columns, walk.current_build_block->num_rows);
     }
 
-    const auto & block = *current_build_block;
+    const auto & block = *walk.current_build_block;
     const size_t block_rows = block.num_rows;
     /// The tile is sized in pairs, independently of the output limit: it bounds the columns the
     /// condition is evaluated on, while the output chunk is cut to `max_block_size` when the
@@ -345,10 +323,10 @@ size_t BlockNestedLoopProbeTransform::matchNextTile()
     /// The build sub-range is sized from the widest window of the sweep rather than from the one at
     /// hand: a narrower last window must not reach further into the block than the windows before
     /// it, or the build rows in between would be left out of the walk.
-    const size_t probe_window_rows = std::min<size_t>(active_probe_rows.size(), TILE_PAIRS);
-    const size_t tile_probe_rows = std::min(active_probe_rows.size() - probe_window_cursor, probe_window_rows);
+    const size_t probe_window_rows = std::min<size_t>(walk.active_probe_rows.size(), TILE_PAIRS);
+    const size_t tile_probe_rows = std::min(walk.active_probe_rows.size() - walk.probe_window_cursor, probe_window_rows);
     const size_t build_rows_per_tile = std::max<size_t>(1, TILE_PAIRS / probe_window_rows);
-    const size_t tile_build_rows = std::min(block_rows - build_row_cursor, build_rows_per_tile);
+    const size_t tile_build_rows = std::min(block_rows - walk.build_row_cursor, build_rows_per_tile);
     const size_t tile_rows = tile_probe_rows * tile_build_rows;
 
     auto probe_tile_indexes = ColumnUInt64::create();
@@ -363,13 +341,13 @@ size_t BlockNestedLoopProbeTransform::matchNextTile()
         /// in the walk against the `j`-th build row of the tile. A build row's index into the
         /// block's columns is its position in the block, so the first row's indexes are the
         /// sub-range itself and every later row repeats them.
-        std::iota(build_values.begin(), build_values.begin() + tile_build_rows, UInt64(build_row_cursor));
+        std::iota(build_values.begin(), build_values.begin() + tile_build_rows, UInt64(walk.build_row_cursor));
         for (size_t i = 0; i < tile_probe_rows; ++i)
         {
             const size_t offset = i * tile_build_rows;
             if (i != 0)
                 std::copy_n(build_values.begin(), tile_build_rows, build_values.begin() + offset);
-            std::fill_n(probe_values.begin() + offset, tile_build_rows, active_probe_rows[probe_window_cursor + i]);
+            std::fill_n(probe_values.begin() + offset, tile_build_rows, walk.active_probe_rows[walk.probe_window_cursor + i]);
         }
     }
 
@@ -380,7 +358,7 @@ size_t BlockNestedLoopProbeTransform::matchNextTile()
     condition_inputs.reserve(predicate.inputs.size());
     for (const auto & source : predicate.inputs)
     {
-        const auto & column = source.side == 0 ? probe_columns[source.position] : block.columns[source.position];
+        const auto & column = source.side == 0 ? walk.probe_columns[source.position] : block.columns[source.position];
         condition_inputs.push_back(tileColumn(column, source.side == 0 ? probe_tile : build_tile));
     }
 
@@ -403,29 +381,26 @@ size_t BlockNestedLoopProbeTransform::matchNextTile()
     /// The build rows are only left behind once every probe row still in the walk has been matched
     /// against them. That keeps the order a pair is seen in - and with it which pair a strictness
     /// that takes one per row settles on - the same as it would be for a single-window sweep.
-    probe_window_cursor += tile_probe_rows;
-    if (probe_window_cursor < active_probe_rows.size())
+    walk.probe_window_cursor += tile_probe_rows;
+    if (walk.probe_window_cursor < walk.active_probe_rows.size())
         return tile_rows;
-    probe_window_cursor = 0;
+    walk.probe_window_cursor = 0;
 
-    build_row_cursor += tile_build_rows;
-    if (build_row_cursor >= block_rows)
+    walk.build_row_cursor += tile_build_rows;
+    if (walk.build_row_cursor >= block_rows)
     {
-        build_row_cursor = 0;
-        ++build_block_cursor;
-        current_build_block.reset();
+        walk.build_row_cursor = 0;
+        ++walk.build_block_cursor;
+        walk.current_build_block.reset();
     }
 
     if (early_exit_per_probe_row)
     {
         dropMatchedProbeRows();
-        /// Every probe row of the chunk has its match: no build row further on can change the result.
-        if (active_probe_rows.empty())
-        {
-            build_block_cursor = data->getNumBlocks();
-            build_row_cursor = 0;
-            current_build_block.reset();
-        }
+        /// Every probe row of the chunk has its match: no build row further on can change the
+        /// result, so the walk ends here and gives up the block it was in.
+        if (walk.active_probe_rows.empty())
+            walk.current_build_block.reset();
     }
 
     return tile_rows;
@@ -438,17 +413,17 @@ void BlockNestedLoopProbeTransform::appendMatchedPairs(
     const auto & build_values = assert_cast<const ColumnUInt64 &>(matched_build).getData();
     /// A row's index into its block's columns is also its position in the block, so the global row
     /// number the flags are indexed by is just the block's row offset plus it.
-    const size_t block_row_offset = flag_matched_build_rows ? data->getRowOffsets()[build_block_cursor] : 0;
+    const size_t block_row_offset = flag_matched_build_rows ? data->getRowOffsets()[walk.build_block_cursor] : 0;
 
-    if (pair_selection == PairSelection::AllPairs)
+    if (takes_every_pair)
     {
-        matched_probe_rows.insert(probe_values.begin(), probe_values.end());
-        matched_build_rows.insert(build_values.begin(), build_values.end());
+        walk.matched_probe_rows.insert(probe_values.begin(), probe_values.end());
+        walk.matched_build_rows.insert(build_values.begin(), build_values.end());
         addBuildRun(num_matched);
 
         if (track_probe_row_match)
             for (auto probe_row : probe_values)
-                probe_row_matched[probe_row] = 1;
+                walk.probe_row_matched[probe_row] = 1;
 
         if (flag_matched_build_rows)
             for (auto build_row : build_values)
@@ -465,29 +440,18 @@ void BlockNestedLoopProbeTransform::appendMatchedPairs(
         const UInt64 probe_row = probe_values[i];
         const UInt64 build_row = build_values[i];
 
-        bool selected = false;
-        switch (pair_selection)
-        {
-            case PairSelection::FirstPerProbeRow:
-                selected = !probe_row_matched[probe_row];
-                break;
-            case PairSelection::FirstPerBuildRow:
-                selected = data->claimBuildRow(block_row_offset + build_row);
-                break;
-            case PairSelection::OnePerRowOfBothSides:
-                /// The build row is taken only when it settles the probe row, so a probe row whose
-                /// match is already spoken for keeps looking.
-                selected = !probe_row_matched[probe_row] && data->claimBuildRow(block_row_offset + build_row);
-                break;
-            case PairSelection::NoPairs:
-            case PairSelection::AllPairs:
-                break;
-        }
+        /// Both limits have to hold, and the build row is claimed only where it would settle the
+        /// probe row - so a probe row whose match is already spoken for keeps looking instead of
+        /// taking a build row away from a row that could still use it.
+        const bool selected = !emits_no_pairs
+            && (!one_pair_per_probe_row || !walk.probe_row_matched[probe_row])
+            && (!claim_build_rows || data->claimBuildRow(block_row_offset + build_row));
 
-        /// A probe row of an `ANY INNER` counts as matched only once it has its pair; under every
-        /// other selection a match is final, and the build rows it passed over stay behind.
-        if (track_probe_row_match && (selected || pair_selection != PairSelection::OnePerRowOfBothSides))
-            probe_row_matched[probe_row] = 1;
+        /// A probe row of an `ANY INNER` - the one kind limited on both sides - counts as matched
+        /// only once it has its pair; otherwise a match is final, and the build rows it passed over
+        /// stay behind.
+        if (track_probe_row_match && (selected || !(one_pair_per_probe_row && claim_build_rows)))
+            walk.probe_row_matched[probe_row] = 1;
         /// A claim flags the build row itself; the other selections flag the rows they matched but
         /// did not take, so that the stage after the probe does not report them as unmatched.
         if (flag_matched_build_rows && !claim_build_rows)
@@ -495,8 +459,8 @@ void BlockNestedLoopProbeTransform::appendMatchedPairs(
 
         if (selected)
         {
-            matched_probe_rows.push_back(probe_row);
-            matched_build_rows.push_back(build_row);
+            walk.matched_probe_rows.push_back(probe_row);
+            walk.matched_build_rows.push_back(build_row);
             ++num_selected;
         }
     }
@@ -507,40 +471,40 @@ void BlockNestedLoopProbeTransform::appendMatchedPairs(
 
 void BlockNestedLoopProbeTransform::addBuildRun(size_t length)
 {
-    if (!build_runs.empty() && build_runs.back().block_index == build_block_cursor)
+    if (!walk.build_runs.empty() && walk.build_runs.back().block_index == walk.build_block_cursor)
     {
-        build_runs.back().length += length;
+        walk.build_runs.back().length += length;
         return;
     }
 
     /// A block the store hands out as it is costs the run nothing; one it had to decompress or read
     /// back from disk lives only as long as the run holds it.
     const size_t retained_bytes
-        = data->isBlockSharedInMemory(build_block_cursor) ? 0 : current_build_block->allocatedBytes();
-    retained_build_bytes += retained_bytes;
-    build_runs.push_back({build_block_cursor, length, current_build_block, retained_bytes});
+        = data->isBlockSharedInMemory(walk.build_block_cursor) ? 0 : walk.current_build_block->allocatedBytes();
+    walk.retained_build_bytes += retained_bytes;
+    walk.build_runs.push_back({walk.build_block_cursor, length, walk.current_build_block, retained_bytes});
 }
 
 void BlockNestedLoopProbeTransform::dropMatchedProbeRows()
 {
     size_t kept = 0;
-    for (auto probe_row : active_probe_rows)
-        if (!probe_row_matched[probe_row])
-            active_probe_rows[kept++] = probe_row;
-    active_probe_rows.resize(kept);
+    for (auto probe_row : walk.active_probe_rows)
+        if (!walk.probe_row_matched[probe_row])
+            walk.active_probe_rows[kept++] = probe_row;
+    walk.active_probe_rows.resize(kept);
 }
 
 bool BlockNestedLoopProbeTransform::hasFullOutputChunk() const
 {
     if (max_block_size != 0 && numPendingPairs() >= max_block_size)
         return true;
-    if (max_block_bytes != 0 && numPendingPairs() * (probe_row_bytes + build_row_bytes) >= max_block_bytes)
+    if (max_block_bytes != 0 && numPendingPairs() * (walk.probe_row_bytes + walk.build_row_bytes) >= max_block_bytes)
         return true;
     /// The pending pairs keep alive every build block they came from. A condition selective enough to
     /// match a few rows in each of them would otherwise pin the whole build side, decompressed and
     /// read back from disk, which is what compressing and spilling it exist to avoid. Cutting the
     /// chunk here releases the blocks its pairs were gathered from.
-    return retained_build_bytes >= MAX_RETAINED_BUILD_BYTES;
+    return walk.retained_build_bytes >= MAX_RETAINED_BUILD_BYTES;
 }
 
 size_t BlockNestedLoopProbeTransform::maxOutputChunkRows(size_t row_bytes) const
@@ -553,11 +517,11 @@ size_t BlockNestedLoopProbeTransform::maxOutputChunkRows(size_t row_bytes) const
 Chunk BlockNestedLoopProbeTransform::takeMatchedRows()
 {
     const size_t total_rows = numPendingPairs();
-    const size_t num_rows = std::min(total_rows, maxOutputChunkRows(probe_row_bytes + build_row_bytes));
+    const size_t num_rows = std::min(total_rows, maxOutputChunkRows(walk.probe_row_bytes + walk.build_row_bytes));
     chassert(num_rows != 0);
 
-    const auto * pending_probe_begin = matched_probe_rows.begin() + matched_rows_offset;
-    const auto * pending_build_begin = matched_build_rows.begin() + matched_rows_offset;
+    const auto * pending_probe_begin = walk.matched_probe_rows.begin() + walk.matched_rows_offset;
+    const auto * pending_build_begin = walk.matched_build_rows.begin() + walk.matched_rows_offset;
 
     Columns result;
     result.reserve(output_header->columns());
@@ -565,7 +529,7 @@ Chunk BlockNestedLoopProbeTransform::takeMatchedRows()
     {
         auto indexes = ColumnUInt64::create();
         indexes->getData().insert(pending_probe_begin, pending_probe_begin + num_rows);
-        for (const auto & column : probe_columns)
+        for (const auto & column : walk.probe_columns)
             result.push_back(column->index(*indexes, 0));
     }
 
@@ -577,7 +541,7 @@ Chunk BlockNestedLoopProbeTransform::takeMatchedRows()
     std::vector<ColumnPtr> emitted_run_indexes;
     for (size_t rest = num_rows, offset = 0; rest != 0;)
     {
-        const auto & run = build_runs.at(emitted_runs.size());
+        const auto & run = walk.build_runs.at(emitted_runs.size());
         const size_t length = std::min(rest, run.length);
 
         auto indexes = ColumnUInt64::create();
@@ -616,17 +580,17 @@ Chunk BlockNestedLoopProbeTransform::takeMatchedRows()
             result.push_back(std::move(target));
     }
 
-    matched_rows_offset += num_rows;
+    walk.matched_rows_offset += num_rows;
     dropEmittedPairs();
     for (const auto & run : emitted_runs)
     {
-        if (build_runs.front().length == run.length)
+        if (walk.build_runs.front().length == run.length)
         {
-            retained_build_bytes -= build_runs.front().retained_bytes;
-            build_runs.pop_front();
+            walk.retained_build_bytes -= walk.build_runs.front().retained_bytes;
+            walk.build_runs.pop_front();
         }
         else
-            build_runs.front().length -= run.length;
+            walk.build_runs.front().length -= run.length;
     }
 
     ProfileEvents::increment(ProfileEvents::JoinResultRowCount, num_rows);
@@ -641,21 +605,21 @@ void BlockNestedLoopProbeTransform::dropEmittedPairs()
     /// Moving the pairs still pending costs what they are, so the prefix is only dropped once it is
     /// at least as large as they are: over the drain of one tile that amounts to moving each pair a
     /// constant number of times, rather than once per output chunk cut from the tile.
-    if (matched_rows_offset < numPendingPairs())
+    if (walk.matched_rows_offset < numPendingPairs())
         return;
 
-    if (matched_rows_offset == matched_probe_rows.size())
+    if (walk.matched_rows_offset == walk.matched_probe_rows.size())
     {
-        matched_probe_rows.clear();
-        matched_build_rows.clear();
+        walk.matched_probe_rows.clear();
+        walk.matched_build_rows.clear();
     }
     else
     {
-        matched_probe_rows.erase(matched_probe_rows.begin(), matched_probe_rows.begin() + matched_rows_offset);
-        matched_build_rows.erase(matched_build_rows.begin(), matched_build_rows.begin() + matched_rows_offset);
+        walk.matched_probe_rows.erase(walk.matched_probe_rows.begin(), walk.matched_probe_rows.begin() + walk.matched_rows_offset);
+        walk.matched_build_rows.erase(walk.matched_build_rows.begin(), walk.matched_build_rows.begin() + walk.matched_rows_offset);
     }
 
-    matched_rows_offset = 0;
+    walk.matched_rows_offset = 0;
 }
 
 Chunk BlockNestedLoopProbeTransform::takeUnmatchedProbeRows()
@@ -664,12 +628,12 @@ Chunk BlockNestedLoopProbeTransform::takeUnmatchedProbeRows()
     auto & unmatched = indexes->getData();
     /// The byte limit counts the probe side alone: what the padded build columns cost is a matter of
     /// their defaults, which for most types is nothing worth measuring.
-    const size_t limit = maxOutputChunkRows(probe_row_bytes);
-    while (unmatched_probe_cursor < probe_num_rows && unmatched.size() < limit)
+    const size_t limit = maxOutputChunkRows(walk.probe_row_bytes);
+    while (walk.unmatched_probe_cursor < walk.probe_num_rows && unmatched.size() < limit)
     {
-        if (!probe_row_matched[unmatched_probe_cursor])
-            unmatched.push_back(unmatched_probe_cursor);
-        ++unmatched_probe_cursor;
+        if (!walk.probe_row_matched[walk.unmatched_probe_cursor])
+            unmatched.push_back(walk.unmatched_probe_cursor);
+        ++walk.unmatched_probe_cursor;
     }
 
     if (unmatched.empty())
@@ -677,7 +641,7 @@ Chunk BlockNestedLoopProbeTransform::takeUnmatchedProbeRows()
 
     Columns result;
     result.reserve(output_header->columns());
-    for (const auto & column : probe_columns)
+    for (const auto & column : walk.probe_columns)
         result.push_back(column->index(*indexes, 0));
 
     /// The default of the column type, which is NULL where `addToNullableIfNeeded` made the padded
@@ -703,19 +667,9 @@ void BlockNestedLoopProbeTransform::releaseProbeState()
     /// emitted, and above all the stored blocks they pinned, must not stay charged to the query
     /// until then.
     build_reader.release();
-    build_runs.clear();
-    retained_build_bytes = 0;
-    current_build_block.reset();
-    probe_columns.clear();
-    matched_probe_rows = {};
-    matched_build_rows = {};
-    matched_rows_offset = 0;
-    active_probe_rows = {};
-    probe_row_matched = {};
+    walk = {};
     pending_probe_chunk.reset();
     output_chunk.reset();
-    has_probe_chunk = false;
-    stage = Stage::Done;
 }
 
 /// How many of the output columns come from the probe side, which is what this stage pads.

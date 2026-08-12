@@ -5,7 +5,10 @@
 -- block used to accumulate one such block per stored block, so the whole build side came back into
 -- memory and both compressing and spilling it were undone. The output chunk is now cut before that
 -- happens, which is what these memory caps assert: the build side is ~30 MB decompressed, an order of
--- magnitude more than they allow.
+-- magnitude more than they allow. The caps are also what asserts that the spill and the compression
+-- happened at all - a build side that stayed whole in memory does not fit under them, so the query
+-- fails rather than passing vacuously. What the spill accounts for in `ExternalJoin*` is checked in
+-- `04821_block_nested_loop_join_spill`, and is not repeated here.
 
 SET enable_analyzer = 1;
 SET cross_to_inner_join_rewrite = 0;
