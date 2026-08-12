@@ -6,6 +6,9 @@
 
 SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
+-- The equality/inequality baselines must go through primary-key analysis; without this they would be
+-- served straight from the persisted num_defaults counter and produce no Condition line to compare.
+SET optimize_trivial_count_with_sparsity_filter = 0;
 
 DROP TABLE IF EXISTS t_like_pk;
 

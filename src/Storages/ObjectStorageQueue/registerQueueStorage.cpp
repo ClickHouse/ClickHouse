@@ -498,11 +498,13 @@ For 'Ordered' mode. Available since `24.6`. If there are several replicas of S3Q
 
 ### `use_persistent_processing_nodes` {#use_persistent_processing_nodes}
 
-By default S3Queue table has always used ephemeral processing nodes, which could lead to duplicates in data in case zookeeper session expires before S3Queue commits processed files in zookeeper, but after it has started processing. This setting forces the server to eliminate possibility of duplicates in case of expired keeper session.
+Persistent processing nodes eliminate the possibility of duplicates when a keeper session expires after processing has started but before S3Queue commits the processed file. Earlier versions used ephemeral processing nodes, which could produce duplicates in that case.
+
+This setting is deprecated and its value is ignored: persistent processing nodes are always used. A table created with `use_persistent_processing_nodes = 0` still uses them, and settings introspection, including `SHOW CREATE TABLE`, reports `1` regardless of the value supplied.
 
 ### `persistent_processing_node_ttl_seconds` {#persistent_processing_node_ttl_seconds}
 
-In case of non-graceful server termination, it is possible that if `use_persistent_processing_nodes` is enabled, we can have not removed processing nodes. This setting defines a period of time when these processing nodes can safely be cleaned up. The same TTL is also used for the bucket lock in `Ordered` mode, which can be held for a longer time than a single processing node, so the value should account for that as well.
+In case of non-graceful server termination, it is possible that we can have not removed processing nodes. This setting defines a period of time when these processing nodes can safely be cleaned up. The same TTL is also used for the bucket lock in `Ordered` mode, which can be held for a longer time than a single processing node, so the value should account for that as well.
 
 Default value: `21600` (6 hours).
 
@@ -604,7 +606,7 @@ Constructions with `{}` are similar to the [remote](/reference/functions/table-f
 
 - an exception happens during parsing in the middle of file processing and retries are enabled via `s3queue_loading_retries`;
 
-- `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and keeper session expires before one server managed to commit processed file, which could lead to another server taking processing of the file, which could be partially or fully processed by the first server; However, this is not true since version 25.8 if `use_persistent_processing_nodes = 1`.
+- `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and keeper session expires before one server managed to commit processed file, which could lead to another server taking processing of the file, which could be partially or fully processed by the first server; However, this is prevented by persistent processing nodes, which have been available since version 25.8 and are now always used (see [`use_persistent_processing_nodes`](#use_persistent_processing_nodes)).
 
 - abnormal server termination.
 
