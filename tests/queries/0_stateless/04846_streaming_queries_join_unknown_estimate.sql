@@ -33,8 +33,7 @@ FROM
     SELECT count()
     FROM fact_04846 AS f STREAM
     INNER JOIN dim_04846 AS d ON f.id = d.id
-)
-WHERE explain LIKE '%⋈%';
+);
 
 DROP TABLE fact_04846;
 DROP TABLE dim_04846;
