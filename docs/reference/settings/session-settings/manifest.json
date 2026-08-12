@@ -1,5 +1,5 @@
 {
-  "settings": 1279,
+  "settings": 1282,
   "anchorRoutes": {
     "add_http_cors_header": "/reference/settings/session-settings/other",
     "additional_result_filter": "/reference/settings/session-settings/additional",
@@ -447,6 +447,7 @@
     "filesystem_cache_reserve_space_wait_lock_timeout_milliseconds": "/reference/settings/session-settings/filesystem-cache",
     "filesystem_cache_segments_batch_size": "/reference/settings/session-settings/filesystem-cache",
     "filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit": "/reference/settings/session-settings/filesystem-cache",
+    "filesystem_cache_verbose_logging": "/reference/settings/session-settings/filesystem-cache",
     "filesystem_cache_wait_for_concurrent_download_timeout_milliseconds": "/reference/settings/session-settings/filesystem-cache",
     "filesystem_prefetch_max_memory_usage": "/reference/settings/session-settings/filesystem-prefetch",
     "filesystem_prefetch_step_bytes": "/reference/settings/session-settings/filesystem-prefetch",
@@ -647,6 +648,7 @@
     "materialize_statistics_on_insert": "/reference/settings/session-settings/materialize",
     "materialize_ttl_after_modify": "/reference/settings/session-settings/materialize",
     "materialized_views_ignore_errors": "/reference/settings/session-settings/materialized-views",
+    "materialized_views_populate_atomically": "/reference/settings/session-settings/materialized-views",
     "materialized_views_squash_parallel_inserts": "/reference/settings/session-settings/materialized-views",
     "max_analyze_depth": "/reference/settings/session-settings/max",
     "max_ast_depth": "/reference/settings/session-settings/max-ast",
@@ -1028,6 +1030,7 @@
     "query_plan_optimize_join_order_randomize": "/reference/settings/session-settings/query-plan",
     "query_plan_optimize_lazy_final": "/reference/settings/session-settings/query-plan",
     "query_plan_optimize_lazy_materialization": "/reference/settings/session-settings/query-plan",
+    "query_plan_optimize_lazy_materialization_for_object_storage": "/reference/settings/session-settings/query-plan",
     "query_plan_optimize_prewhere": "/reference/settings/session-settings/query-plan",
     "query_plan_push_down_limit": "/reference/settings/session-settings/query-plan",
     "query_plan_push_limit_by_into_sort": "/reference/settings/session-settings/query-plan",
