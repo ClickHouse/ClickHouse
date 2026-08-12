@@ -43,7 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
         {
-            {"async_insert_parse_threads", 0, 0, "New setting to parse the data of one batch of asynchronous inserts with several threads of the format parsing thread pool when the batch is flushed. Disabled by default (0 = the flushing thread parses the data, as before)."},
+            {"async_insert_parse_threads", 0, 0, "New setting to parse the data of one batch of asynchronous inserts with several threads when the batch is flushed. Disabled by default (0 = the flushing thread parses the data, as before)."},
             {"output_format_image_time_multiplier_seconds", 1, 1, "New setting controlling the numerator of the time unit of the `t` column, which makes image output formats such as `PNG` produce an animation."},
             {"output_format_image_time_divisor_seconds", 60, 60, "New setting controlling the denominator of the time unit of the `t` column, which makes image output formats such as `PNG` produce an animation."},
             {"output_format_image_streaming_animation", false, false, "New setting controlling whether image output formats such as `PNG` write each frame of an animation as soon as the next value of `t` is seen, instead of buffering all the frames in memory."},
