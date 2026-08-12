@@ -15,13 +15,18 @@
 # regex is anchored to that unique name so no other table can leak into the merge.
 # `index_granularity = 16` matters: at the default granularity the initiator's replica claims every
 # mark range and the followers are cancelled before announcing, so the collision never fires. The
-# row count keeps the same ~3900 marks as the originally verified 500000-row/granularity-128
-# fixture while staying fast enough for a debug build running many copies concurrently.
+# ~1024 marks produced by 16384 rows are the verified floor for reddening on a pre-fix binary in
+# both `parallel_replicas_local_plan` modes (at ~512 marks the local-plan mode stops reproducing),
+# with slack kept small because the flaky check runs many copies of this test concurrently on a
+# debug build, where the `parallel_replicas_local_plan = 0` coordination round-trips degrade
+# sharply under load (heavier fixtures exceeded the 180s per-test limit).
 #
 # `allow_experimental_parallel_reading_from_replicas = 2` makes an unsupported-shape fallback to a
-# plain local read an error instead of a silent success, and the `system.text_log` coordinator
-# count proves the outer read really engaged parallel replicas, so the test cannot silently stop
-# exercising the announcement path.
+# plain local read an error instead of a silent success, and
+# `ParallelReplicasHandleRequestMicroseconds > 0` on the initiator's `system.query_log` entry
+# proves a follower survived past the announcement into the coordinator's request path (where the
+# bug lives), like in `04545_parallel_replicas_projection_short_circuit_unknown_stream.sql` - so
+# the test cannot silently stop exercising the announcement path.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -35,11 +40,12 @@ DROP TABLE IF EXISTS default.${table} SYNC;
 CREATE TABLE default.${table} (dt DateTime, idx Int32, i Nullable(UInt64))
 ENGINE = MergeTree PARTITION BY (idx % 3) ORDER BY idx SETTINGS index_granularity = 16;
 
-INSERT INTO default.${table} SELECT toDateTime(number), number, number FROM numbers(62500);
+INSERT INTO default.${table} SELECT toDateTime(number), number, number FROM numbers(16384);
 "
 
 for local_plan in 0 1; do
-    query_id="04836_${CLICKHOUSE_DATABASE}_local_plan_${local_plan}"
+    # $$ keeps the id unique across repeated runs sharing one database (query_log survives them).
+    query_id="04836_${CLICKHOUSE_DATABASE}_$$_local_plan_${local_plan}"
     $CLICKHOUSE_CLIENT --query_id "$query_id" --query "
     USE default;
 
@@ -57,14 +63,18 @@ for local_plan in 0 1; do
     "
 
     # The count above would also be 1 if parallel replicas silently fell back to a plain local
-    # read, and then the announcement path would not be exercised at all. Prove the outer read
-    # created a parallel replicas coordinator.
-    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
+    # read, and a coordinator can be created even when the initiator claims every mark range and
+    # the followers are cancelled before they announce. Prove a follower made it past the
+    # announcement into the coordinator's request path. The multi-statement query above logs a
+    # QueryFinish row per statement under the same query_id, hence the query_kind filter.
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
     $CLICKHOUSE_CLIENT --query "
-    SELECT count() > 0
-    FROM system.text_log
+    SELECT ProfileEvents['ParallelReplicasHandleRequestMicroseconds'] > 0
+    FROM system.query_log
     WHERE query_id = '$query_id'
-      AND message LIKE '%Creating parallel replicas coordinator%'"
+      AND type = 'QueryFinish'
+      AND query_kind = 'Select'
+      AND event_time >= now() - INTERVAL 600 SECOND"
 done
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE default.${table} SYNC"
