@@ -205,6 +205,78 @@ TEST(TreeHashCompleteness, TemporaryFlagIsSignificant)
               hashOf("CREATE TEMPORARY TABLE t (a UInt64) ENGINE = Memory"));
 }
 
+TEST(TreeHashCompleteness, CloneHashesEqual)
+{
+    /// `ParserQueryWithOutput` appends the output-option children after the query-specific ones,
+    /// and most parsers add the database/table children first; every `clone` must rebuild
+    /// `children` in the same order, or the copy hashes differently than the original.
+    const std::string queries[] = {
+        "SHOW CREATE TABLE db.t INTO OUTFILE 'x'",
+        "CHECK TABLE db.t PARTITION 1 FORMAT JSONEachRow",
+        "CHECK DATABASE db FORMAT JSONEachRow",
+        "WATCH db.t LIMIT 5 FORMAT JSONEachRow",
+        "OPTIMIZE TABLE db.t PARTITION 1 FINAL DEDUPLICATE BY a, b",
+        "ALTER TABLE db.t ADD COLUMN x UInt64 FORMAT JSONEachRow",
+        "DROP TABLE db.t",
+        "DROP TABLE t1, t2",
+        "UNDROP TABLE db.t",
+        "EXISTS TABLE db.t INTO OUTFILE 'x'",
+        "DESCRIBE TABLE db.t FORMAT JSONEachRow",
+        "CREATE TABLE db.t (a UInt64) ENGINE = MergeTree ORDER BY a",
+        "KILL QUERY WHERE query_id = 'x' FORMAT JSONEachRow",
+        "SELECT 1 INTO OUTFILE 'x' FORMAT JSONEachRow",
+    };
+
+    for (const auto & query : queries)
+    {
+        ASTPtr ast = parse(query);
+        EXPECT_EQ(ast->clone()->getTreeHash(/*ignore_aliases=*/ false), ast->getTreeHash(/*ignore_aliases=*/ false)) << query;
+    }
+}
+
+TEST(TreeHashCompleteness, FormatRoundTripHashesEqual)
+{
+    /// The debug build verifies for every incoming query that formatting the AST and parsing it
+    /// back yields the same tree hash, so every member this file makes significant must survive a
+    /// format+parse round trip.
+    const std::string queries[] = {
+        /// Per-column PRIMARY KEY: the parser moves it into the storage definition and must clear
+        /// `primary_key_specifier`, which formatting does not reproduce per column in CREATE.
+        "CREATE TABLE t (a UInt8 PRIMARY KEY, b String PRIMARY KEY) ENGINE = MergeTree",
+        /// In ALTER there is no storage definition to move the specifier into, so formatting must
+        /// print it.
+        "ALTER TABLE t ADD COLUMN x UInt64 PRIMARY KEY",
+        "SELECT 1 UNION DISTINCT SELECT 2 UNION ALL SELECT 3",
+        "SELECT 1 INTERSECT SELECT 2 EXCEPT SELECT 3",
+        "FROM numbers(10) SELECT number ORDER BY number DESC WITH FILL FROM 10 TO 5 STEP -1 LIMIT 3 OFFSET 2",
+        "SELECT count() OVER (PARTITION BY number ORDER BY number ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM numbers(3)",
+        "SELECT count() OVER (ORDER BY number RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM numbers(3)",
+        "SELECT count() OVER w FROM numbers(3) WINDOW w AS (ORDER BY number)",
+        "WITH x (r) AS MATERIALIZED (SELECT 1 AS q) SELECT r FROM x",
+        "SET max_threads = DEFAULT, max_block_size = 1",
+        "CREATE TABLE t (a UInt64, b String TTL now() + INTERVAL 1 DAY) ENGINE = MergeTree ORDER BY a "
+            "TTL now() + INTERVAL 1 MONTH GROUP BY a SET b = max(b), now() + INTERVAL 2 MONTH RECOMPRESS CODEC(ZSTD(3)), "
+            "now() + INTERVAL 3 MONTH TO DISK 'd'",
+        "CREATE TABLE t (a UInt64, INDEX i a TYPE minmax GRANULARITY 4, CONSTRAINT c CHECK a > 0, CONSTRAINT d ASSUME a < 10, "
+            "PROJECTION p (SELECT a ORDER BY a)) ENGINE = MergeTree ORDER BY a",
+        "SELECT 1 INTO OUTFILE 'x' APPEND AND STDOUT",
+    };
+
+    for (const auto & query : queries)
+    {
+        ASTPtr ast = parse(query);
+        const String formatted = ast->formatWithSecretsOneLine();
+        ASTPtr ast2 = parse(formatted);
+        EXPECT_EQ(ast2->getTreeHash(/*ignore_aliases=*/ false), ast->getTreeHash(/*ignore_aliases=*/ false))
+            << query << "\nformatted: " << formatted;
+        /// Formatting must also be a fixed point of the round trip.
+        EXPECT_EQ(ast2->formatWithSecretsOneLine(), formatted) << query;
+    }
+
+    /// The specifier must not be silently dropped from a formatted ALTER.
+    EXPECT_TRUE(parse("ALTER TABLE t ADD COLUMN x UInt64 PRIMARY KEY")->formatWithSecretsOneLine().contains("PRIMARY KEY"));
+}
+
 TEST(TreeHashCompleteness, ExplicitUuidIsSignificant)
 {
     /// `uuid` is a plain member of `ASTQueryWithTableAndOutput`, and the `database` / `table`

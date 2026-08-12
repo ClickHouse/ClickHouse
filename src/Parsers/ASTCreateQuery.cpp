@@ -384,6 +384,10 @@ ASTPtr ASTCreateQuery::clone() const
     auto res = make_intrusive<ASTCreateQuery>(*this);
     res->children.clear();
 
+    /// The parser adds the database/table children before everything else; reproduce that order
+    /// so the clone has the same tree hash.
+    cloneTableOptions(*res);
+
     if (columns_list)
         res->set(res->columns_list, columns_list->clone());
     if (aliases_list)
@@ -418,7 +422,6 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->comment, comment->clone());
 
     cloneOutputOptions(*res);
-    cloneTableOptions(*res);
 
     return res;
 }

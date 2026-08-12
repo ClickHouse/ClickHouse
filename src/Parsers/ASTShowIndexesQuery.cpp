@@ -10,6 +10,10 @@ ASTPtr ASTShowIndexesQuery::clone() const
 {
     auto res = make_intrusive<ASTShowIndexesQuery>(*this);
     res->children.clear();
+    /// `where_expression` is not a child: the parser puts it into the member only. Do not leave it
+    /// shared with the source.
+    if (where_expression)
+        res->where_expression = where_expression->clone();
     cloneOutputOptions(*res);
     return res;
 }

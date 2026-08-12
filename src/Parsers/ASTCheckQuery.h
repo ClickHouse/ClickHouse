@@ -20,8 +20,14 @@ struct ASTCheckTableQuery : public ASTQueryWithTableAndOutput
     {
         auto res = make_intrusive<ASTCheckTableQuery>(*this);
         res->children.clear();
-        cloneOutputOptions(*res);
+        /// `partition` is not a child: the parser puts it into the member only. Do not leave it
+        /// shared with the source.
+        if (partition)
+            res->partition = partition->clone();
+        /// The parser adds the database/table children first and `ParserQueryWithOutput` appends
+        /// the output options last; reproduce that order so the clone has the same tree hash.
         cloneTableOptions(*res);
+        cloneOutputOptions(*res);
         return res;
     }
 

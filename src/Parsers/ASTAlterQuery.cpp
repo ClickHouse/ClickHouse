@@ -1260,8 +1260,11 @@ ASTPtr ASTAlterQuery::clone() const
     if (command_list)
         res->set(res->command_list, command_list->clone());
 
-    cloneOutputOptions(*res);
+    /// `ParserAlterQuery` adds the command list child first, then the database/table, and
+    /// `ParserQueryWithOutput` appends the output options last; reproduce that order so the clone
+    /// has the same tree hash.
     cloneTableOptions(*res);
+    cloneOutputOptions(*res);
 
     return res;
 }

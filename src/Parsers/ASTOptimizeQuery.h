@@ -42,16 +42,14 @@ public:
         auto res = make_intrusive<ASTOptimizeQuery>(*this);
         res->children.clear();
 
+        /// `ParserOptimizeQuery` adds the children in this order: the partition, the parts list,
+        /// then the database/table, and `ParserQueryWithOutput` appends the output options last.
+        /// `deduplicate_by_columns` is not a child: the parser puts it into the member only.
+        /// Reproduce that shape so the clone has the same tree hash.
         if (partition)
         {
             res->partition = partition->clone();
             res->children.push_back(res->partition);
-        }
-
-        if (deduplicate_by_columns)
-        {
-            res->deduplicate_by_columns = deduplicate_by_columns->clone();
-            res->children.push_back(res->deduplicate_by_columns);
         }
 
         if (parts_list)
@@ -60,8 +58,11 @@ public:
             res->children.push_back(res->parts_list);
         }
 
-        cloneOutputOptions(*res);
+        if (deduplicate_by_columns)
+            res->deduplicate_by_columns = deduplicate_by_columns->clone();
+
         cloneTableOptions(*res);
+        cloneOutputOptions(*res);
 
         return res;
     }

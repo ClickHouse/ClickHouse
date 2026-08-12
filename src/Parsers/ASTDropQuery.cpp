@@ -32,8 +32,18 @@ String ASTDropQuery::getID(char delim) const
 ASTPtr ASTDropQuery::clone() const
 {
     auto res = make_intrusive<ASTDropQuery>(*this);
-    cloneOutputOptions(*res);
+    /// The copy constructor shares `children` (and `database_and_tables`) with the source; rebuild
+    /// them as deep copies in the parser's order - the target first, the output options last - so
+    /// the clone is independent of the source and has the same tree hash.
+    res->children.clear();
+    res->database_and_tables = nullptr;
+    if (database_and_tables)
+    {
+        res->database_and_tables = database_and_tables->clone();
+        res->children.push_back(res->database_and_tables);
+    }
     cloneTableOptions(*res);
+    cloneOutputOptions(*res);
     return res;
 }
 

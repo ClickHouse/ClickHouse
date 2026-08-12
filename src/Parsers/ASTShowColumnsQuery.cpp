@@ -19,6 +19,12 @@ ASTPtr ASTShowColumnsQuery::clone() const
 {
     auto res = make_intrusive<ASTShowColumnsQuery>(*this);
     res->children.clear();
+    /// `where_expression` and `limit_length` are not children: the parser puts them into the
+    /// members only. Do not leave them shared with the source.
+    if (where_expression)
+        res->where_expression = where_expression->clone();
+    if (limit_length)
+        res->limit_length = limit_length->clone();
     cloneOutputOptions(*res);
     return res;
 }

@@ -32,8 +32,14 @@ public:
     {
         boost::intrusive_ptr<ASTWatchQuery> res = make_intrusive<ASTWatchQuery>(*this);
         res->children.clear();
-        cloneOutputOptions(*res);
+        /// `limit_length` is not a child: the parser puts it into the member only. Do not leave it
+        /// shared with the source.
+        if (limit_length)
+            res->limit_length = limit_length->clone();
+        /// The parser adds the database/table children first and `ParserQueryWithOutput` appends
+        /// the output options last; reproduce that order so the clone has the same tree hash.
         cloneTableOptions(*res);
+        cloneOutputOptions(*res);
         return res;
     }
 

@@ -15,8 +15,12 @@ String ASTUndropQuery::getID(char delim) const
 ASTPtr ASTUndropQuery::clone() const
 {
     auto res = make_intrusive<ASTUndropQuery>(*this);
-    cloneOutputOptions(*res);
+    /// The copy constructor shares `children` with the source; rebuild them as deep copies in the
+    /// parser's order - the table first, the output options last - so the clone is independent of
+    /// the source and has the same tree hash.
+    res->children.clear();
     cloneTableOptions(*res);
+    cloneOutputOptions(*res);
     return res;
 }
 
