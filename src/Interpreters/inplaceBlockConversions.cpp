@@ -22,6 +22,7 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnQBit.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeArray.h>
@@ -346,6 +347,12 @@ static bool columnMatchesTypeStructure(const IColumn & column, const IDataType &
     /// A lazily replicated column describes data of its nested column.
     if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(&column))
         return columnMatchesTypeStructure(*column_replicated->getNestedColumn(), type);
+
+    /// A column may be stored sparse at any nesting level (e.g. an element of a `Tuple`):
+    /// the serialization is built from the column's own serialization info, so
+    /// `SerializationSparse::enumerateStreams` pairs the same type with the values column.
+    if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(&column))
+        return columnMatchesTypeStructure(column_sparse->getValuesColumn(), type);
 
     if (const auto * type_array = typeid_cast<const DataTypeArray *>(&type))
     {
