@@ -56,6 +56,9 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
     , project_inputs(project_inputs_)
     , settings(settings_)
 {
+    /// Planner-only filters are substituted with constant-true columns before compiling.
+    actions_dag.substitutePlannerOnlyFilters();
+
     /// It's important to determine lazy executed nodes before compiling expressions.
     std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(actions_dag, settings.short_circuit_function_evaluation);
 

@@ -131,6 +131,7 @@ namespace Setting
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
     extern const SettingsBool parallel_replicas_filter_pushdown;
     extern const SettingsBool parallel_replicas_plan_based;
+    extern const SettingsBool query_plan_convert_outer_join_to_inner_join_by_join_predicates;
 }
 
 namespace ServerSetting
@@ -335,6 +336,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     min_bytes_per_task_for_reading = from[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
 
     parallel_replicas_filter_pushdown = from[Setting::parallel_replicas_filter_pushdown];
+
+    query_plan_convert_outer_join_to_inner_join_by_join_predicates = from[Setting::query_plan_convert_outer_join_to_inner_join_by_join_predicates];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)

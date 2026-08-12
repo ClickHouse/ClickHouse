@@ -1,0 +1,32 @@
+-- The enclosing INNER JOIN rejects the NULL-extended rows of the LEFT JOIN under join_use_nulls = 1 and converts.
+20	890
+20	890
+Type: INNER
+Type: INNER
+-- A natively Nullable join key is rejected even with join_use_nulls = 0 and converts.
+10	420
+10	420
+Type: INNER
+Type: INNER
+-- A non-Nullable key with join_use_nulls = 0 does not convert.
+20	890
+Type: INNER
+Type: LEFT
+-- IS NOT DISTINCT FROM matches NULLs and does not convert.
+20	890
+Type: INNER
+Type: LEFT
+-- A FULL enclosing join preserves non-matching rows and does not convert.
+100	4950
+Type: FULL
+Type: LEFT
+-- Inequality conditions reject NULLs and convert.
+40	1730
+40	1730
+Type: INNER
+-- The join providing the IS NOT NULL filter can be a not direct parent of the outer join and converts.
+20	890
+20	890
+Type: INNER
+Type: INNER
+Type: INNER

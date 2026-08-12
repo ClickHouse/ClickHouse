@@ -72,6 +72,7 @@ struct QueryPlanOptimizationSettings
     bool try_use_top_k_optimization;
     bool top_k_through_join;
     bool remove_unused_columns;
+    bool query_plan_convert_outer_join_to_inner_join_by_join_predicates;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap

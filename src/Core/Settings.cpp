@@ -8441,6 +8441,9 @@ Enable converting the hash table to a flat array for joins when the key is a sin
     DECLARE(UInt64, query_plan_min_columns_for_join_lazy_indexing, 3, R"(
 Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN. 0 means the optimization is disabled.
 )", 0) \
+    DECLARE(Bool, query_plan_convert_outer_join_to_inner_join_by_join_predicates, true, R"(
+Allow to convert `OUTER JOIN` to `INNER JOIN` if another `JOIN` after `OUTER JOIN` always filters default values
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \

@@ -783,6 +783,29 @@ bool ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_re
     return false;
 }
 
+void ActionsDAG::substitutePlannerOnlyFilters()
+{
+    bool substituted = false;
+    for (auto & node : nodes)
+    {
+        if (node.type != ActionType::FUNCTION || !node.function_base || node.function_base->getName() != "__plannerOnlyFilter")
+            continue;
+
+        auto column = node.result_type->createColumn();
+        column->insert(Field(1u));
+        node.column = ColumnConst::create(std::move(column), 0);
+        node.type = ActionType::COLUMN;
+        node.children.clear();
+        node.function_base = nullptr;
+        node.function = nullptr;
+        node.is_function_compiled = false;
+        substituted = true;
+    }
+
+    if (substituted)
+        removeUnusedActions();
+}
+
 bool ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_constant_folding, bool evaluate_constants)
 {
     std::unordered_set<const Node *> used_inputs;
