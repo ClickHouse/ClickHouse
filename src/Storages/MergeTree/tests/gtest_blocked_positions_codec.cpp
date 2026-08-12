@@ -135,7 +135,7 @@ TEST(BlockedPositionsCodec, CandidateBlockDecodeMatchesFullDecode)
     ASSERT_EQ(dir.num_docs, docs.size());
 
     /// Every 3rd posting rank as a candidate.
-    std::mt19937 rng(4); // NOLINT(cert-msc32-c, cert-msc51-cpp)
+    std::mt19937 rng(4); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     std::vector<uint32_t> ranks;
     for (uint32_t r = 0; r < docs.size(); r += 1 + rng() % 5)
         ranks.push_back(r);
@@ -202,7 +202,7 @@ TEST(BlockedPositionsCodec, RejectsCorruptedExceptionRank)
     /// Flip bytes across the stream; decode must throw or produce a consistent result, never crash.
     const auto docs = randomDocs(300, 4, 7);
     const std::string blob = encodeToString(docs);
-    std::mt19937 rng(8); // NOLINT(cert-msc32-c, cert-msc51-cpp)
+    std::mt19937 rng(8); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
     for (int i = 0; i < 200; ++i)
     {
         std::string corrupted = blob;
