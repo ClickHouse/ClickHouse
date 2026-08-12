@@ -1,14 +1,14 @@
 SET allow_experimental_time_decay_aggregate_functions = 1;
 
--- Empty aggregates use their regular default values. The anchor is zero because
--- no timestamp was observed.
+-- Empty aggregates use their regular default values. A NaN anchor distinguishes
+-- the empty identity from a genuine observation at time zero.
 SELECT
     tupleElement(decaying_sum, 'value'),
-    tupleElement(decaying_sum, 'time'),
+    isNaN(tupleElement(decaying_sum, 'time')),
     exponentialTimeDecayingDecayLength(decaying_sum),
     isNaN(decaying_avg),
     tupleElement(decaying_count, 'value'),
-    tupleElement(decaying_count, 'time'),
+    isNaN(tupleElement(decaying_count, 'time')),
     exponentialTimeDecayingDecayLength(decaying_count)
 FROM
 (

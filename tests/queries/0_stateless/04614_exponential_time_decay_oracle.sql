@@ -7,8 +7,10 @@ DROP TABLE IF EXISTS time_decay_default_simple_aggregate;
 SET allow_experimental_time_decay_aggregate_functions = 1;
 
 -- The implicit default must preserve the decay-length marker encoded in the type.
-SELECT defaultValueOfTypeName('ExponentialTimeDecayingFloat64(10)')
-    = CAST((0., 0., 10.), 'ExponentialTimeDecayingFloat64(10)');
+SELECT
+    tupleElement(defaultValueOfTypeName('ExponentialTimeDecayingFloat64(10)'), 'value') = 0
+    AND isNaN(tupleElement(defaultValueOfTypeName('ExponentialTimeDecayingFloat64(10)'), 'time'))
+    AND tupleElement(defaultValueOfTypeName('ExponentialTimeDecayingFloat64(10)'), 'decay_length') = 10;
 
 CREATE TABLE time_decay_default_insert
 (
@@ -17,14 +19,14 @@ CREATE TABLE time_decay_default_insert
 )
 ENGINE = Memory;
 INSERT INTO time_decay_default_insert (id) VALUES (1);
-SELECT value = CAST((0., 0., 10.), 'ExponentialTimeDecayingFloat64(10)')
+SELECT tupleElement(value, 'value') = 0 AND isNaN(tupleElement(value, 'time'))
 FROM time_decay_default_insert;
 
 CREATE TABLE time_decay_default_alter (id UInt8) ENGINE = Memory;
 INSERT INTO time_decay_default_alter VALUES (1);
 ALTER TABLE time_decay_default_alter
     ADD COLUMN value ExponentialTimeDecayingFloat64(10);
-SELECT value = CAST((0., 0., 10.), 'ExponentialTimeDecayingFloat64(10)')
+SELECT tupleElement(value, 'value') = 0 AND isNaN(tupleElement(value, 'time'))
 FROM time_decay_default_alter;
 
 CREATE TABLE time_decay_default_simple_aggregate
@@ -38,7 +40,7 @@ ENGINE = AggregatingMergeTree
 ORDER BY id;
 INSERT INTO time_decay_default_simple_aggregate (id) VALUES (1);
 SELECT
-    value = CAST((0., 0., 10.), 'ExponentialTimeDecayingFloat64(10)'),
+    tupleElement(value, 'value') = 0 AND isNaN(tupleElement(value, 'time')),
     exponentialTimeDecayingDecayLength(value) = 10
 FROM time_decay_default_simple_aggregate;
 
@@ -453,3 +455,31 @@ SET enable_analyzer = 0;
 CREATE VIEW time_decay_parameterized_view_gate AS
 SELECT tupleElement({value:ExponentialTimeDecayingFloat64(10)}, 1); -- { serverError ILLEGAL_COLUMN }
 SET allow_experimental_time_decay_aggregate_functions = 1;
+
+-- The implicit empty value is an identity even for genuine negative timestamps.
+DROP TABLE IF EXISTS time_decay_default_identity;
+CREATE TABLE time_decay_default_identity
+(
+    id UInt8,
+    value ExponentialTimeDecayingFloat64(10)
+)
+ENGINE = Memory;
+INSERT INTO time_decay_default_identity VALUES
+    (1, CAST((5., -10., 10.), 'ExponentialTimeDecayingFloat64(10)'));
+INSERT INTO time_decay_default_identity (id) VALUES (2);
+
+WITH
+    defaultValueOfTypeName('ExponentialTimeDecayingFloat64(10)') AS empty_value,
+    CAST((5., -10., 10.), 'ExponentialTimeDecayingFloat64(10)') AS observed_value,
+    exponentialTimeDecayingAdd(empty_value, observed_value) AS combined
+SELECT
+    tupleElement(combined, 'value') = 5,
+    tupleElement(combined, 'time') = -10;
+
+WITH exponentialTimeDecayedSum(value) AS combined
+SELECT
+    tupleElement(combined, 'value') = 5,
+    tupleElement(combined, 'time') = -10
+FROM time_decay_default_identity;
+
+DROP TABLE time_decay_default_identity;

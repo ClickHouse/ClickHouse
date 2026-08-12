@@ -187,6 +187,8 @@ public:
                     stored_decay_length,
                     decay_length,
                     getName());
+            if (value == 0 && std::isnan(time))
+                return;
         }
         else
         {
@@ -236,7 +238,7 @@ public:
                 : state.weight;
             Tuple decaying_value{
                 Field(result),
-                Field(state.initialized ? state.max_time : 0.0),
+                Field(state.initialized ? state.max_time : std::numeric_limits<Float64>::quiet_NaN()),
                 Field(decay_length)};
             to.insert(Field(decaying_value));
         }

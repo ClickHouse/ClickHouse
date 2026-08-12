@@ -86,15 +86,13 @@ DecayingColumnView getDecayingColumnView(const ColumnPtr & column, const DataTyp
     };
 }
 
+bool isEmptyRow(const DecayingColumnView & input, size_t row)
+{
+    return input.value.getData()[row] == 0 && std::isnan(input.time.getData()[row]);
+}
+
 void assertValidRow(const DecayingColumnView & input, size_t row, const String & function_name)
 {
-    const Float64 value = input.value.getData()[row];
-    const Float64 time = input.time.getData()[row];
-    if (!std::isfinite(value))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of function {} must be finite", function_name);
-    if (!std::isfinite(time))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time of function {} must be finite", function_name);
-
     const Float64 stored_decay_length = input.stored_decay_length.getData()[row];
     if (!std::isfinite(stored_decay_length) || stored_decay_length != input.decay_length)
         throw Exception(
@@ -103,10 +101,23 @@ void assertValidRow(const DecayingColumnView & input, size_t row, const String &
             stored_decay_length,
             input.decay_length,
             function_name);
+
+    if (isEmptyRow(input, row))
+        return;
+
+    const Float64 value = input.value.getData()[row];
+    const Float64 time = input.time.getData()[row];
+    if (!std::isfinite(value))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of function {} must be finite", function_name);
+    if (!std::isfinite(time))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time of function {} must be finite", function_name);
 }
 
 Float64 valueAt(const DecayingColumnView & input, size_t row, Float64 target_time)
 {
+    if (isEmptyRow(input, row))
+        return 0;
+
     const Float64 value = input.value.getData()[row];
     const Float64 time = input.time.getData()[row];
 
@@ -180,6 +191,23 @@ public:
         {
             assertValidRow(left, row, getName());
             assertValidRow(right, row, getName());
+
+            if (isEmptyRow(left, row))
+            {
+                result.append(
+                    right.value.getData()[row],
+                    right.time.getData()[row],
+                    left.decay_length);
+                continue;
+            }
+            if (isEmptyRow(right, row))
+            {
+                result.append(
+                    left.value.getData()[row],
+                    left.time.getData()[row],
+                    left.decay_length);
+                continue;
+            }
 
             const Float64 latest_time = std::max(left.time.getData()[row], right.time.getData()[row]);
             result.append(

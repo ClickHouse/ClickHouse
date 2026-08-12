@@ -10,6 +10,7 @@
 
 #include <cmath>
 #include <fmt/format.h>
+#include <limits>
 #include <utility>
 
 namespace DB
@@ -76,7 +77,7 @@ String DataTypeCustomExponentialTimeDecayingFloat64::getName() const
 
 std::optional<Field> DataTypeCustomExponentialTimeDecayingFloat64::getDefault() const
 {
-    return Tuple{Float64(0), Float64(0), decay_length};
+    return Tuple{Float64(0), std::numeric_limits<Float64>::quiet_NaN(), decay_length};
 }
 
 DataTypePtr createDataTypeExponentialTimeDecayingFloat64(Float64 decay_length)
@@ -134,7 +135,8 @@ Represents one or more finite exponentially time-decaying values at a shared anc
 
 The decay length is part of the type: `ExponentialTimeDecayingFloat64(decay_length)`.
 The stored fields are `value Float64`, `time Float64`, and a redundant `decay_length Float64`
-marker. DateTime and DateTime64 inputs are represented as seconds. The marker is validated against
+marker. The implicit empty value uses zero value and a `NaN` time sentinel so it remains an identity
+when merged with values whose observed timestamps are negative. DateTime and DateTime64 inputs are represented as seconds. The marker is validated against
 the type parameter when a value is combined or evaluated, so incompatible decay lengths are not
 silently mixed even in paths where ClickHouse treats custom tuple storage as layout-compatible.
 
