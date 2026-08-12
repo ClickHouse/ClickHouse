@@ -423,15 +423,15 @@ TEST(ConvertFieldToTypeStrictness, Float64ToFloat32)
     EXPECT_TRUE(convertFieldToType(too_big, *to_type, from_type.get(), {}, /*strict=*/ true).isNull());
 }
 
-/// `Date`, `Date32`, `DateTime` and `Time` are stored in narrower integers than the `Field` carriers
-/// (`UInt64`/`Int64`) that reach `convertFieldToType`. Out-of-range day/second numbers must be rejected
-/// (`Null`) instead of being silently truncated when the value is later materialized into a column.
+/// `Date` and `DateTime` are stored in narrower integers than the `Field` carriers (`UInt64`/`Int64`) that
+/// reach `convertFieldToType`. Out-of-range day/second numbers must be rejected (`Null`) instead of being
+/// silently truncated when the value is later materialized into a column. (`Date32` is covered by the
+/// `NumericToDate32` suite above, which checks the even narrower representable calendar.)
 TEST(ConvertFieldToTypeStrictness, OutOfRangeDateAndTimeIntegers)
 {
     const auto & type_factory = DataTypeFactory::instance();
 
     const auto date_type = type_factory.get("Date");
-    const auto date32_type = type_factory.get("Date32");
     const auto datetime_type = type_factory.get("DateTime");
 
     /// `Date` is `UInt16`.
@@ -439,15 +439,10 @@ TEST(ConvertFieldToTypeStrictness, OutOfRangeDateAndTimeIntegers)
     EXPECT_TRUE(convertFieldToType(Field(UInt64(100000)), *date_type).isNull());
     EXPECT_TRUE(convertFieldToType(Field(Int64(-1)), *date_type).isNull());
 
-    /// `Date32` is `Int32`; both the `UInt64` and the `Int64` carrier have to be range-checked.
-    EXPECT_EQ(convertFieldToType(Field(UInt64(1)), *date32_type), Field(Int64(1)));
-    EXPECT_EQ(convertFieldToType(Field(Int64(-1)), *date32_type), Field(Int64(-1)));
-    EXPECT_TRUE(convertFieldToType(Field(UInt64(3000000000)), *date32_type).isNull());
-    EXPECT_TRUE(convertFieldToType(Field(Int64(3000000000)), *date32_type).isNull());
-    EXPECT_TRUE(convertFieldToType(Field(Int64(-3000000000)), *date32_type).isNull());
-
-    /// `DateTime` is `UInt32`.
+    /// `DateTime` is `UInt32`; both the `UInt64` and the `Int64` carrier have to be range-checked.
     EXPECT_EQ(convertFieldToType(Field(UInt64(1)), *datetime_type), Field(UInt64(1)));
+    EXPECT_EQ(convertFieldToType(Field(Int64(1)), *datetime_type), Field(UInt64(1)));
     EXPECT_TRUE(convertFieldToType(Field(UInt64(5000000000)), *datetime_type).isNull());
+    EXPECT_TRUE(convertFieldToType(Field(Int64(5000000000)), *datetime_type).isNull());
     EXPECT_TRUE(convertFieldToType(Field(Int64(-1)), *datetime_type).isNull());
 }
