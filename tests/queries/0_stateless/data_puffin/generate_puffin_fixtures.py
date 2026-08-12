@@ -332,6 +332,21 @@ def generate_missing_required_fields() -> None:
         ),
     )
 
+    # Puffin v1 DV blobs must keep snapshot-id / sequence-number at -1.
+    for name, field, value in (
+        ("dv_snapshot_id_not_minus_one.puffin", "snapshot-id", 0),
+        ("dv_sequence_number_not_minus_one.puffin", "sequence-number", 0),
+    ):
+        case_payload = json.loads(footer_json.decode("utf-8"))
+        case_payload["blobs"][0][field] = value
+        write_fixture(
+            name,
+            build_puffin_file(
+                BLOB_PLACEHOLDER,
+                json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
+            ),
+        )
+
 
 def generate_invalid_property_value_types() -> None:
     """Property maps must have string values; non-strings must fail with BAD_ARGUMENTS."""

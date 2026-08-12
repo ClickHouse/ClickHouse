@@ -275,6 +275,13 @@ String requireBlobMetadataString(const Poco::JSON::Object::Ptr & blob_obj, const
 
 void requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_index)
 {
+    /// Puffin v1: snapshot-id and sequence-number are unknown when the file is written and must be -1.
+    if (blob.snapshot_id != -1 || blob.sequence_number != -1)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Puffin blob {}: deletion-vector-v1 snapshot-id and sequence-number must be -1",
+            blob_index);
+
     static constexpr const char * required_properties[] = {"referenced-data-file", "cardinality"};
     for (const char * key : required_properties)
     {
@@ -1086,7 +1093,7 @@ Fixed output columns:
 - `referenced_data_file` (`String`) - location of the data file the deletion vector applies to (`referenced-data-file` blob property)
 - `deleted_rows` (`Array(UInt64)`) - 64-bit row positions deleted according to the deletion vector roaring bitmap
 
-Deletion vectors whose declared `cardinality` exceeds an absolute materialization ceiling are rejected when `deleted_rows` is requested. Footer `deletion-vector-v1` properties (including that `cardinality` parses as an unsigned integer) are always validated. Selecting only `referenced_data_file` skips on-disk payload I/O and therefore also skips envelope, CRC, roaring deserialize, and the materialization ceiling — intentionally, so a path-only projection does not read up to the blob-size cap.
+Deletion vectors whose declared `cardinality` exceeds an absolute materialization ceiling are rejected when `deleted_rows` is requested. Footer `deletion-vector-v1` properties (including that `cardinality` parses as an unsigned integer, and that `snapshot-id` / `sequence-number` are `-1`) are always validated. Selecting only `referenced_data_file` skips on-disk payload I/O and therefore also skips envelope, CRC, roaring deserialize, and the materialization ceiling — intentionally, so a path-only projection does not read up to the blob-size cap.
 
 On-disk `deletion-vector-v1` blob length is bounded by an absolute ceiling (aligned with Iceberg's 2 GiB content-size check). When `deleted_rows` is requested, the reader peeks the envelope header (combined length and magic) before allocating the full payload; CRC is verified after the bounded read.
 

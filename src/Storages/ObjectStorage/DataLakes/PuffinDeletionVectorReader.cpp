@@ -401,6 +401,14 @@ const PuffinBlob & bindDeletionVectorBlob(
             matched_index);
     }
 
+    if (matched->snapshot_id != -1 || matched->sequence_number != -1)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Puffin blob {}: deletion-vector-v1 snapshot-id and sequence-number must be -1",
+            matched_index);
+    }
+
     const auto ref_it = matched->properties.find("referenced-data-file");
     if (ref_it == matched->properties.end() || ref_it->second.empty())
     {

@@ -28,6 +28,10 @@ Cannot parse Puffin footer JSON
 Cannot parse Puffin footer JSON
 --- dv_with_compression_codec.puffin ---
 must omit 'compression-codec'
+--- dv_snapshot_id_not_minus_one.puffin ---
+snapshot-id and sequence-number must be -1
+--- dv_sequence_number_not_minus_one.puffin ---
+snapshot-id and sequence-number must be -1
 --- invalid_cardinality_non_numeric.puffin ---
 property 'cardinality' must be an unsigned integer
 --- invalid_cardinality_negative.puffin ---
