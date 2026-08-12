@@ -628,6 +628,95 @@ def test_an_untrusted_certificate_falls_back_to_the_plain_port():
     )
 
 
+def test_an_unresponsive_secure_port_falls_back_to_the_plain_port():
+    # The secure port accepts the connection and then never answers, while the plain port is healthy.
+    # TLS is preferred, so the secure port is chosen and its handshake waits out the handshake timeout
+    # - and then the client has to fall back to the plain port, which answered the probe, instead of
+    # reporting the timeout. The fallback opens a connection of its own rather than reusing the one the
+    # probe left on the plain port: by now that one has been idle for the whole handshake timeout, and
+    # the server drops a connection that has not finished its handshake within
+    # `handshake_timeout_milliseconds`.
+    node_plain_only.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "printf '<clickhouse><handshake_timeout_ms>3000</handshake_timeout_ms></clickhouse>'"
+            " > /tmp/short_handshake.xml",
+        ],
+    )
+    swallow_established_packets(9440, add=True)
+    try:
+        query_id = str(uuid.uuid4())
+        output = node_plain_only.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"clickhouse client --host {node_both_ports.name} --accept-invalid-certificate"
+                f" --config-file /tmp/short_handshake.xml --query_id {query_id}"
+                " --query 'SELECT 1' 2>&1 || true",
+            ]
+        )
+        assert output.strip().endswith("1"), output
+        node_both_ports.query("SYSTEM FLUSH LOGS query_log")
+        assert (
+            int(
+                node_both_ports.query(
+                    f"SELECT is_secure FROM system.query_log WHERE query_id = '{query_id}'"
+                    " AND type = 'QueryFinish' LIMIT 1"
+                )
+            )
+            == 0
+        )
+    finally:
+        swallow_established_packets(9440, add=False)
+
+
+def test_the_fallback_keeps_the_address_the_probe_reached():
+    # The fallback from an unusable secure port must not start over from the first address the host
+    # resolves to: the probe already found which address answers, and walking the resolved addresses
+    # again costs a whole connection timeout for every unresponsive one in front of it - exactly the
+    # delay the probing exists to avoid.
+    #
+    # `multiaddress` resolves to a black hole first and to the dual-port server second, the connect
+    # timeout is raised to 60 seconds, and the certificate is not accepted, so the client must choose
+    # TLS, have it rejected, and then reach the plain port of the address it already probed.
+    client, blackhole = probe_client_and_blackhole()
+    blackhole_address(client, blackhole, add=True)
+    client.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"printf '%s multiaddress\\n%s multiaddress\\n' {blackhole} {node_both_ports.ip_address} >> /etc/hosts",
+        ],
+        user="root",
+    )
+    try:
+        assert_the_black_hole_is_resolved_first(client, "multiaddress", blackhole)
+        start = time.time()
+        output = client.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "clickhouse client --host multiaddress --connect_timeout 60"
+                " --query \"SELECT 'fell-back'\" < /dev/null 2>&1 || true",
+            ]
+        )
+        elapsed = time.time() - start
+        assert "fell-back" in output, output
+        assert elapsed < 30, f"Connecting took {elapsed} seconds: {output}"
+    finally:
+        # `/etc/hosts` is bind-mounted into the container, so it can only be rewritten in place.
+        client.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "grep -v multiaddress /etc/hosts > /tmp/hosts && cat /tmp/hosts > /etc/hosts && rm /tmp/hosts",
+            ],
+            user="root",
+        )
+        blackhole_address(client, blackhole, add=False)
+
+
 def test_the_probe_leaves_no_extra_connection_on_the_plain_port():
     # The connection the probe established to the chosen port is handed over to the client instead of
     # being discarded and opened again. Otherwise every automatically detected connection would leave a

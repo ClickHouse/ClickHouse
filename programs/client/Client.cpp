@@ -595,14 +595,23 @@ void Client::connect()
                 UInt16 port;
                 Protocol::Secure security;
 
-                /// The address that is known to answer on this port, if any: the host can resolve to
-                /// several addresses, and the connection has to start with this one, or it pays a whole
+                /// The address to start from on this port, if any: the host can resolve to several
+                /// addresses, and the connection has to start with the right one, or it pays a whole
                 /// connection timeout for every unresponsive address in front of the working one.
                 std::optional<Poco::Net::SocketAddress> address;
 
-                /// The connection the probe has already established to `address`, if any. It is taken over
-                /// by the `Connection` instead of opening a second one, so that the automatic choice does
-                /// not leave a short-lived session on the server for every client connection.
+                /// Whether the probe established a connection to `address` on this port, as opposed to
+                /// `address` being the best guess for where this port of the same backend is.
+                bool answered = false;
+
+                /// The connection the probe has established, if it is this candidate that the probe chose.
+                /// It is taken over by the `Connection` instead of opening a second one, so that the
+                /// automatic choice does not leave a short-lived session on the server for every client
+                /// connection. Only the chosen candidate carries it: by the time a fallback candidate is
+                /// tried, the first one has spent an unbounded amount of time failing (a TLS handshake can
+                /// wait out `handshake_timeout_ms`), and the server drops a connection that has not
+                /// finished its handshake within `handshake_timeout_milliseconds`, so a connection the
+                /// probe left idle in the meantime is not safe to reuse.
                 std::optional<Poco::Net::StreamSocket> socket;
             };
 
@@ -656,7 +665,8 @@ void Client::connect()
 
                 if (probe.secure)
                 {
-                    candidates.push_back({secure_port, Protocol::Secure::Enable, probe.secure->address, probe.secure->socket});
+                    candidates.push_back(
+                        {secure_port, Protocol::Secure::Enable, probe.secure->address, true, probe.secure->socket});
 
                     /// TLS was not requested, it was chosen automatically, so a secure port that turns out
                     /// to be unusable must not make the client fail: the plain port is what it would have
@@ -664,14 +674,26 @@ void Client::connect()
                     /// nothing away from the user. The common case is a server whose secure port has a
                     /// self-signed or otherwise untrusted certificate, which every client that does not
                     /// pass `--accept-invalid-certificate` rejects.
+                    ///
+                    /// The fallback starts from the address the probe reached, and, when the plain port did
+                    /// not answer the probe (it may still have been pending when the secure port won), from
+                    /// the plain port of the address whose secure port did: the same backend is the best
+                    /// guess, and it keeps the fallback from walking the resolved addresses again and
+                    /// paying a whole connection timeout for every unresponsive one in front of it.
                     if (probe.plain)
-                        candidates.push_back({plain_port, Protocol::Secure::Disable, probe.plain->address, probe.plain->socket});
+                        candidates.push_back({plain_port, Protocol::Secure::Disable, probe.plain->address, true, {}});
                     else
-                        candidates.push_back({plain_port, Protocol::Secure::Disable, {}, {}});
+                        candidates.push_back(
+                            {plain_port,
+                             Protocol::Secure::Disable,
+                             Poco::Net::SocketAddress(probe.secure->address.host(), plain_port),
+                             false,
+                             {}});
                 }
                 else if (probe.plain)
                 {
-                    candidates.push_back({plain_port, Protocol::Secure::Disable, probe.plain->address, probe.plain->socket});
+                    candidates.push_back(
+                        {plain_port, Protocol::Secure::Disable, probe.plain->address, true, probe.plain->socket});
 
                     /// The plain port answered the probe, but the connection to it can still fail at the
                     /// native protocol level, e.g. when a proxy in front of the server accepts TCP there
@@ -682,6 +704,7 @@ void Client::connect()
                         {secure_port,
                          Protocol::Secure::Enable,
                          Poco::Net::SocketAddress(probe.plain->address.host(), secure_port),
+                         false,
                          {}});
                 }
                 else
@@ -703,6 +726,7 @@ void Client::connect()
                     {connection_parameters.port,
                      connection_parameters.security,
                      hosts_and_ports[attempted_address_index].address,
+                     hosts_and_ports[attempted_address_index].address.has_value(),
                      {}});
             }
 
@@ -779,20 +803,20 @@ void Client::connect()
                     /// the wrong protocol, and the other port of the same server is not going to answer
                     /// either. Retrying it would double the time the client waits before it reports the
                     /// failure, which is exactly the delay this feature is supposed to avoid. The exception
-                    /// is a fallback to a port whose connection the probe has already established: it costs
-                    /// no connection attempt at all, so nothing is doubled, and it makes an automatically
-                    /// chosen secure port that accepts connections and then never answers fall back to the
-                    /// plain port that does, instead of failing outright.
+                    /// is a fallback to a port that answered the probe: connecting to it cannot hang, so
+                    /// nothing is doubled, and it makes an automatically chosen secure port that accepts
+                    /// connections and then never answers fall back to the plain port that does answer,
+                    /// instead of failing outright.
                     const bool is_connection_error = e.code() == ErrorCodes::NETWORK_ERROR
                         || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
                         || e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_SERVER
                         || e.code() == ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER;
                     const bool is_transport_error = is_connection_error || e.code() == ErrorCodes::SOCKET_TIMEOUT;
 
-                    const bool next_is_already_connected
-                        = candidate_index + 1 < candidates.size() && candidates[candidate_index + 1].socket.has_value();
+                    const bool next_answered_the_probe
+                        = candidate_index + 1 < candidates.size() && candidates[candidate_index + 1].answered;
 
-                    if (candidate_index + 1 < candidates.size() && (is_connection_error || (is_transport_error && next_is_already_connected)))
+                    if (candidate_index + 1 < candidates.size() && (is_connection_error || (is_transport_error && next_answered_the_probe)))
                     {
                         first_error = std::current_exception();
                         first_error_index = candidate_index;
