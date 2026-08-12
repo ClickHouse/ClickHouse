@@ -62,11 +62,32 @@ done
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.merges WHERE database = currentDatabase() AND table = 't_cancel_minmax_set_build'"
 $CLICKHOUSE_CLIENT -q "SELECT count(), sum(b) FROM t_cancel_minmax_set_build"
 
+# A cancelled mutation records ABORTED for the part it was mutating. The rows above survive a build
+# that only catches the unbuilt-set error rather than aborting on it, so this is the assertion that
+# pins the reporting itself. The part log entry is queued asynchronously, hence the wait.
+aborted_in_part_log="
+    SELECT countIf(errorCodeToName(error) = 'ABORTED') > 0
+    FROM system.part_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND database = currentDatabase() AND table = 't_cancel_minmax_set_build'
+      AND event_type = 'MutatePart' AND error != 0"
+i=0
+while [ "$($CLICKHOUSE_CLIENT -m -q "SYSTEM FLUSH LOGS part_log; $aborted_in_part_log")" != "1" ]; do
+    sleep 0.3
+    i=$((i + 1))
+    if [ "$i" -gt 200 ]; then
+        echo "Cancelled mutation did not record ABORTED in system.part_log" >&2
+        exit 1
+    fi
+done
+
 # A mutation that is not cancelled must still complete, and the cancelled one must not have left the
 # table unmutatable.
 $CLICKHOUSE_CLIENT -q "
     ALTER TABLE t_cancel_minmax_set_build UPDATE b = 7 WHERE 1 IN (SELECT number FROM numbers(3))
     SETTINGS mutations_sync = 2"
 $CLICKHOUSE_CLIENT -q "SELECT DISTINCT b FROM t_cancel_minmax_set_build"
+
+$CLICKHOUSE_CLIENT -q "$aborted_in_part_log"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_cancel_minmax_set_build"
