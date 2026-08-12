@@ -77,17 +77,4 @@ private:
     return task->getFuture().get();
 }
 
-namespace MutationHelpers
-{
-
-/// Rewrites part_columns to current logical names by each column's stamped id (carried in
-/// part_id_columns), evicting columns dropped by an earlier metadata-only ALTER. Exposed for unit
-/// testing; the full contract is on the definition in MutateTask.cpp.
-void remapPartColumnsToCurrentNames(
-    ColumnsDescription & part_columns,
-    const NamesAndTypesList & part_id_columns,
-    const ColumnIdMapping & mapping);
-
-}
-
 }

@@ -79,3 +79,13 @@ compact_a40_b400	6
 compact_total	6
 dropped_a_has_bytes	1
 live_a_size_zero	1
+freed: two q in the part	Compact	q	p	String
+freed: two q in the part	Compact	q	q	Int64
+freed: two q in the part	Wide	q	p	String
+freed: two q in the part	Wide	q	q	Int64
+freed: wide after mutation	1	kept	101
+freed: compact after mutation	1	kept	101
+freed: wide q mutated	1	kept!
+freed: compact q mutated	1	kept!
+freed: one q left	Compact	q	p	String
+freed: one q left	Wide	q	p	String

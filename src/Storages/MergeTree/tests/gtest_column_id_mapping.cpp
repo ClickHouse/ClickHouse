@@ -3,11 +3,9 @@
 #include <base/defines.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/MergeTree/MutateTask.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Common/Exception.h>
 
@@ -271,36 +269,6 @@ TEST(ColumnIdMapping, StampForReadPreservesExistingId)
     NamesAndTypesList idless = makeColumns({"a"});
     mapping.stampColumnIds(idless);
     EXPECT_EQ(idless.front().getColumnId().value(), "1");
-}
-
-/// DROP q; RENAME p TO q (two metadata-only ALTERs, no part reload) leaves a packed part carrying
-/// both the dropped q and the renamed p. Remapping p to its current name q must evict the dropped q
-/// first: a naive rename collides on ColumnsDescription's ordered-unique name index and silently
-/// drops the renamed column, leaving the stale dropped column (wrong type) in its place.
-TEST(ColumnIdMapping, RemapEvictsDroppedNameCollision)
-{
-    NamesAndTypesList loaded;
-    loaded.emplace_back("a", std::make_shared<DataTypeUInt32>());
-    loaded.emplace_back("p", std::make_shared<DataTypeString>());
-    loaded.emplace_back("q", std::make_shared<DataTypeInt64>());
-    loaded.emplace_back("n", std::make_shared<DataTypeInt32>());
-
-    auto load_mapping = ColumnIdMapping::createIdentity(loaded);
-    NamesAndTypesList part_id_columns = loaded;
-    load_mapping.stampColumnIds(part_id_columns);
-
-    auto mapping = load_mapping;
-    mapping.removeColumn("q");
-    mapping.beginRename("p", "q");
-    mapping.finishRename("p");
-
-    ColumnsDescription part_columns(loaded);
-    MutationHelpers::remapPartColumnsToCurrentNames(part_columns, part_id_columns, mapping);
-
-    ASSERT_TRUE(part_columns.has("q"));
-    EXPECT_EQ(part_columns.get("q").type->getName(), "String");
-    EXPECT_FALSE(part_columns.has("p"));
-    EXPECT_EQ(part_columns.size(), 3u);
 }
 
 /// Change-detector tied to the `addPersistent(...)` set in MergeTreeData::createVirtuals.

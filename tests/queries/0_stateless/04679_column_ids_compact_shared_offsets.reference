@@ -1,0 +1,6 @@
+dropped: part type	Compact
+dropped: re-added a	1	[]	0
+dropped: wide control	1	[]	0
+sibling: shares the group length	1	[10,20,30]	['','','']	3
+moved: id prefix still groups them	1	[10,20,30]	['','','']	3
+moved: the column the part holds, and its id	m.x	1.2

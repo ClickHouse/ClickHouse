@@ -523,8 +523,21 @@ IMergeTreeReader::findColumnForOffsets(const NameAndTypePair & required_column) 
         return offsets_streams;
     };
 
-    auto required_name_in_storage = Nested::extractTableName(required_column.getNameInStorage());
-    auto required_offsets_streams = get_offsets_streams(getSerializationInPart(required_column), required_name_in_storage);
+    /// Which columns share an offsets stream is an ID-space question, because that is how the stream
+    /// is named: `getFileNameForStreamByColumnId` derives it from the id's Nested prefix, or from the
+    /// whole id when it has none. Asking in logical-name space instead answers a different question
+    /// and gets two shapes wrong. A metadata-only DROP leaves the dropped column in the part under
+    /// its own id, so a column re-added under that name matched it and read arrays of the DROPPED
+    /// column's length, filled with defaults, where an empty array is correct. And a sibling added
+    /// after a cross-parent rename did NOT match the group it shares a stream with, since the part
+    /// still carries the pre-rename logical prefix. An unstamped column's id falls back to its own
+    /// name, so a legacy part keeps matching by name.
+    auto required_id_prefix = Nested::extractTableName(required_column.getColumnId().value());
+
+    /// The stream names below only pair the two sides up -- the file actually read is derived from
+    /// the matched part column's own pair -- so they are built in one namespace, the shared id
+    /// prefix. The logical prefixes cannot serve: a cross-parent rename makes them differ.
+    auto required_offsets_streams = get_offsets_streams(getSerializationInPart(required_column), required_id_prefix);
 
     size_t max_matched_streams = 0;
     std::optional<ColumnForOffsets> result;
@@ -536,16 +549,15 @@ IMergeTreeReader::findColumnForOffsets(const NameAndTypePair & required_column) 
     /// parent first would break the returned column's storage key: the part's whole-column maps
     /// (position, serialization) are keyed by `getColumnId()`, and for such a fold that key
     /// degrades to the Nested prefix ("n" instead of "n.a") while the part has no slot under it.
-    /// Nothing here needs the folded form: only the column's Nested prefix (from its name, which
-    /// the fold preserves) and its own serialization take part in the match.
+    /// Nothing here needs the folded form: only the column's id prefix and its own serialization
+    /// take part in the match.
     for (const auto & part_column : data_part_info_for_read->getColumns())
     {
-        auto name_in_storage = Nested::extractTableName(part_column.name);
-        if (name_in_storage != required_name_in_storage)
+        if (Nested::extractTableName(part_column.getColumnId().value()) != required_id_prefix)
             continue;
 
         auto serialization = data_part_info_for_read->getSerialization(part_column);
-        auto offsets_streams = get_offsets_streams(serialization, name_in_storage);
+        auto offsets_streams = get_offsets_streams(serialization, required_id_prefix);
         NameToIndexMap offsets_streams_map(offsets_streams.begin(), offsets_streams.end());
 
         size_t i = 0;

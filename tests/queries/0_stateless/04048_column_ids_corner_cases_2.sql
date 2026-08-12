@@ -483,3 +483,44 @@ ATTACH TABLE t_orphan_size;
 SELECT 'live_a_size_zero', data_compressed_bytes = 0 AS is_zero
 FROM system.columns WHERE database = currentDatabase() AND table = 't_orphan_size' AND name = 'a';
 DROP TABLE t_orphan_size;
+
+-- ===== a mutation over a part holding both a dropped name and a rename onto it =====
+-- DROP q; RENAME p TO q, two metadata-only ALTERs, leave the part carrying both the dropped q
+-- (Int64) and the renamed p (String) -- see the two `q` rows below. splitAndModifyMutationCommands
+-- brings the part's load-time names into the current schema by id, and must evict the dropped q
+-- before renaming p onto it: the part's column list is name-unique, so a rename onto a live name
+-- silently drops the renamed column and leaves the dropped one -- q would read back Int64.
+-- Both part types, because the split branches on isWidePart.
+DROP TABLE IF EXISTS t_mutate_over_freed_wide;
+DROP TABLE IF EXISTS t_mutate_over_freed_compact;
+CREATE TABLE t_mutate_over_freed_wide (k UInt64, p String, q Int64, n Int32) ENGINE = MergeTree ORDER BY k
+SETTINGS serialization_info_version = 'with_column_ids',
+         min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+CREATE TABLE t_mutate_over_freed_compact (k UInt64, p String, q Int64, n Int32) ENGINE = MergeTree ORDER BY k
+SETTINGS serialization_info_version = 'with_column_ids',
+         min_bytes_for_wide_part = 10000000, min_rows_for_wide_part = 10000000;
+INSERT INTO t_mutate_over_freed_wide VALUES (1, 'kept', -7, 100);
+INSERT INTO t_mutate_over_freed_compact VALUES (1, 'kept', -7, 100);
+ALTER TABLE t_mutate_over_freed_wide DROP COLUMN q, RENAME COLUMN p TO q; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE t_mutate_over_freed_wide DROP COLUMN q;
+ALTER TABLE t_mutate_over_freed_wide RENAME COLUMN p TO q;
+ALTER TABLE t_mutate_over_freed_compact DROP COLUMN q;
+ALTER TABLE t_mutate_over_freed_compact RENAME COLUMN p TO q;
+SELECT 'freed: two q in the part', part_type, column, column_id, type FROM system.parts_columns
+WHERE database = currentDatabase() AND table LIKE 't_mutate_over_freed_%' AND active AND column = 'q'
+ORDER BY part_type, column_id;
+ALTER TABLE t_mutate_over_freed_wide UPDATE n = n + 1 WHERE 1;
+ALTER TABLE t_mutate_over_freed_compact UPDATE n = n + 1 WHERE 1;
+SELECT 'freed: wide after mutation', k, q, n FROM t_mutate_over_freed_wide ORDER BY k;
+SELECT 'freed: compact after mutation', k, q, n FROM t_mutate_over_freed_compact ORDER BY k;
+-- A mutation OF the renamed column itself, whose command names it by its current name.
+ALTER TABLE t_mutate_over_freed_wide UPDATE q = concat(q, '!') WHERE 1;
+ALTER TABLE t_mutate_over_freed_compact UPDATE q = concat(q, '!') WHERE 1;
+SELECT 'freed: wide q mutated', k, q FROM t_mutate_over_freed_wide ORDER BY k;
+SELECT 'freed: compact q mutated', k, q FROM t_mutate_over_freed_compact ORDER BY k;
+-- The rewrite drops the evicted column; only the renamed one, under its own id, is left.
+SELECT 'freed: one q left', part_type, column, column_id, type FROM system.parts_columns
+WHERE database = currentDatabase() AND table LIKE 't_mutate_over_freed_%' AND active AND column = 'q'
+ORDER BY part_type, column_id;
+DROP TABLE t_mutate_over_freed_wide;
+DROP TABLE t_mutate_over_freed_compact;
