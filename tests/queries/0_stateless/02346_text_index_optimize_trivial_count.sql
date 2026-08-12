@@ -70,6 +70,45 @@ SELECT count(explain) FROM (EXPLAIN SELECT id FROM tab WHERE hasToken(text, 'alp
 
 DROP TABLE tab;
 
+SELECT 'Multi-block postings (small block size exercises read_postings, block skipping, intersection)';
+
+CREATE TABLE tab_blocks (
+	id UInt64,
+	text String,
+	-- Compression + a small block size split 'common'/'other' into many posting blocks (the read_postings
+	-- loop and rank()-based skipping only run for multi-block, unfolded tokens); 'rare' stays single-block
+	-- and folds into the baseline. Index arguments override the randomized table settings.
+	INDEX idx text TYPE text(tokenizer = splitByNonAlpha, posting_list_codec = 'bitpacking', posting_list_block_size = 128)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab_blocks SELECT number,
+	arrayStringConcat(arrayFilter(x -> x != '', [
+		if(number % 2 = 0, 'common', ''),
+		if(number % 2 = 1, 'other', ''),
+		if(number < 1000 AND number % 100 = 0, 'rare', '')]), ' ')
+FROM numbers(5000);
+
+SELECT '-- fires with a multi-block token';
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT count() FROM tab_blocks WHERE hasAllTokens(text, ['rare', 'common'])) WHERE explain LIKE '%ReadFromTextIndexCount%';
+
+SELECT '-- results match the reader (each pair: optimization on, then off)';
+SELECT count() FROM tab_blocks WHERE hasAllTokens(text, ['rare', 'common']);
+SELECT count() FROM tab_blocks WHERE hasAllTokens(text, ['rare', 'common']) SETTINGS query_plan_optimize_count_from_text_index = 0;
+SELECT count() FROM tab_blocks WHERE hasAllTokens(text, ['common', 'other']);
+SELECT count() FROM tab_blocks WHERE hasAllTokens(text, ['common', 'other']) SETTINGS query_plan_optimize_count_from_text_index = 0;
+SELECT count() FROM tab_blocks WHERE hasAllTokens(text, ['rare', 'common', 'other']);
+SELECT count() FROM tab_blocks WHERE hasAllTokens(text, ['rare', 'common', 'other']) SETTINGS query_plan_optimize_count_from_text_index = 0;
+SELECT count() FROM tab_blocks WHERE hasAnyTokens(text, ['common', 'other']);
+SELECT count() FROM tab_blocks WHERE hasAnyTokens(text, ['common', 'other']) SETTINGS query_plan_optimize_count_from_text_index = 0;
+SELECT count() FROM tab_blocks WHERE hasAnyTokens(text, ['rare', 'common']);
+SELECT count() FROM tab_blocks WHERE hasAnyTokens(text, ['rare', 'common']) SETTINGS query_plan_optimize_count_from_text_index = 0;
+SELECT count() FROM tab_blocks WHERE hasToken(text, 'common');
+SELECT count() FROM tab_blocks WHERE hasToken(text, 'common') SETTINGS query_plan_optimize_count_from_text_index = 0;
+
+DROP TABLE tab_blocks;
+
 SELECT 'Array and Map carriers reach the optimization through the shared direct-read query';
 
 CREATE TABLE tab_array (

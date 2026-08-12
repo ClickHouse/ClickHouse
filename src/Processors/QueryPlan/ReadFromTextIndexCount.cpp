@@ -15,7 +15,6 @@
 #include <Storages/MergeTree/TextIndexUtils.h>
 
 #include <algorithm>
-#include <functional>
 
 namespace DB
 {
@@ -29,13 +28,69 @@ namespace ErrorCodes
 namespace
 {
 
+/// Reads a token's posting blocks from the postings stream, unioning the blocks that overlap a row range.
+template <typename CheckCancelledCallback>
+class PostingBlockReader
+{
+public:
+    PostingBlockReader(
+        MergeTreeReaderStream & postings_stream_,
+        MergeTreeIndexDeserializationState & state_,
+        PostingsSerialization & serialization_,
+        const String & index_id_,
+        const CheckCancelledCallback & check_cancelled_)
+        : postings_stream(postings_stream_)
+        , state(state_)
+        , serialization(serialization_)
+        , index_id(index_id_)
+        , check_cancelled(check_cancelled_)
+    {
+    }
+
+    PostingList read(const TokenPostingsInfo & token_info, const RowsRange & range, const PostingList * candidates) const
+    {
+        if (token_info.embedded_postings)
+            return *token_info.embedded_postings;
+
+        PostingList postings;
+        for (size_t block_idx : token_info.getBlocksToRead(range))
+        {
+            check_cancelled();
+
+            if (candidates)
+            {
+                const auto & block_range = token_info.ranges[block_idx];
+                UInt64 up_to_end = candidates->rank(static_cast<UInt32>(block_range.end));
+                UInt64 before_begin = block_range.begin == 0 ? 0 : candidates->rank(static_cast<UInt32>(block_range.begin - 1));
+                if (up_to_end == before_begin)
+                    continue;
+            }
+
+            auto block = MergeTreeIndexGranuleText::readPostingsBlock(
+                postings_stream, state, token_info, block_idx, serialization, index_id);
+
+            if (block)
+                postings |= *block;
+        }
+        return postings;
+    }
+
+private:
+    MergeTreeReaderStream & postings_stream;
+    MergeTreeIndexDeserializationState & state;
+    PostingsSerialization & serialization;
+    const String & index_id;
+    const CheckCancelledCallback & check_cancelled;
+};
+
 /// Counts matching rows in one part from the text-index posting metadata, without reading rows.
 /// `check_cancelled` is polled between posting blocks and tokens so a large part stays interruptible.
+template <typename CheckCancelledCallback>
 UInt64 computeCountForPart(
     const RangesInDataPart & part_with_ranges,
     const ReadFromTextIndexCount::ResolvedQuery & resolved,
     const MergeTreeReaderSettings & reader_settings,
-    const std::function<void()> & check_cancelled)
+    const CheckCancelledCallback & check_cancelled)
 {
     const auto & data_part = part_with_ranges.data_part;
     const auto & index = resolved.index;
@@ -112,34 +167,8 @@ UInt64 computeCountForPart(
         PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType()),
         granule->getSerializationVersion());
 
-    /// Reads and unions the token's posting blocks that overlap `range`.
-    /// With `candidates`, additionally skips blocks whose row range contains no candidate rows.
-    auto read_postings = [&](const TokenPostingsInfo & token_info, const RowsRange & range, const PostingList * candidates)
-    {
-        if (token_info.embedded_postings)
-            return *token_info.embedded_postings;
-
-        PostingList postings;
-        for (size_t block_idx : token_info.getBlocksToRead(range))
-        {
-            check_cancelled();
-
-            if (candidates)
-            {
-                const auto & block_range = token_info.ranges[block_idx];
-                UInt64 up_to_end = candidates->rank(static_cast<UInt32>(block_range.end));
-                UInt64 before_begin = block_range.begin == 0 ? 0 : candidates->rank(static_cast<UInt32>(block_range.begin - 1));
-                if (up_to_end == before_begin)
-                    continue;
-            }
-
-            auto block = MergeTreeIndexGranuleText::readPostingsBlock(
-                *postings_stream, state, token_info, block_idx, postings_serialization, granule->getIndexIdForCaches());
-            if (block)
-                postings |= *block;
-        }
-        return postings;
-    };
+    const PostingBlockReader<CheckCancelledCallback> posting_reader(
+        *postings_stream, state, postings_serialization, granule->getIndexIdForCaches(), check_cancelled);
 
     /// `analyzePostings` already folded the small (single-block) postings into `query_builder.postings` by search mode.
     std::vector<const TokenPostingsInfo *> tokens_to_read;
@@ -148,13 +177,16 @@ UInt64 computeCountForPart(
         if (!analyzer.hasReadPostings(token))
             tokens_to_read.push_back(token_info.get());
 
+    if (tokens_to_read.empty())
+        return query_builder.postings ? query_builder.postings->cardinality() : 0;
+
     if (resolved.query->getSearchMode() != TextSearchMode::All)
     {
         std::optional<PostingList> merged_postings = query_builder.postings;
         for (const auto * token_info : tokens_to_read)
         {
             check_cancelled();
-            auto token_postings = read_postings(*token_info, full_range, nullptr);
+            auto token_postings = posting_reader.read(*token_info, full_range, nullptr);
             if (!merged_postings)
                 merged_postings = std::move(token_postings);
             else
@@ -173,7 +205,7 @@ UInt64 computeCountForPart(
     size_t next = 0;
     if (!candidates)
     {
-        candidates = read_postings(*tokens_to_read.front(), full_range, nullptr);
+        candidates = posting_reader.read(*tokens_to_read.front(), full_range, nullptr);
         next = 1;
     }
 
@@ -181,7 +213,7 @@ UInt64 computeCountForPart(
     {
         check_cancelled();
         const RowsRange candidate_range(candidates->minimum(), candidates->maximum());
-        *candidates &= read_postings(*tokens_to_read[next], candidate_range, &*candidates);
+        *candidates &= posting_reader.read(*tokens_to_read[next], candidate_range, &*candidates);
         ++next;
     }
 

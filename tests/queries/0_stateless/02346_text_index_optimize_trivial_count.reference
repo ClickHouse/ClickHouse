@@ -35,6 +35,22 @@ Inject trivial count optimization from the text index into the query plan
 741
 -- does not fire: not a bare count()
 0
+Multi-block postings (small block size exercises read_postings, block skipping, intersection)
+-- fires with a multi-block token
+└──ReadFromTextIndexCount (Trivial count from text index (idx, tokens = [\'common\', \'rare\']))
+-- results match the reader (each pair: optimization on, then off)
+10
+10
+0
+0
+0
+0
+5000
+5000
+2500
+2500
+2500
+2500
 Array and Map carriers reach the optimization through the shared direct-read query
 -- fires: has (single token)
 └──ReadFromTextIndexCount (Trivial count from text index (idx, token = \'foo\'))
