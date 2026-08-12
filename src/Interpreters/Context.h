@@ -281,6 +281,8 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
+struct BuiltSetsByHash;
+using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
 
 class ReverseLookupCache;
 using ReverseLookupCachePtr = std::shared_ptr<ReverseLookupCache>;
@@ -606,6 +608,7 @@ protected:
     /// Prepared sets that can be shared between different queries. One use case is when is to share prepared sets between
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
+    BuiltSetsByHashPtr built_sets_for_shipping;
 
     struct StorageCache
     {
@@ -1942,6 +1945,12 @@ public:
 
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
+
+    /// Sets an earlier plan build already filled. Set on the context used to build the
+    /// parallel-replicas plan so that shipping an `IN` set to the replicas can write the rows straight
+    /// into the temporary table instead of running the subquery again.
+    void setBuiltSetsForShipping(const BuiltSetsByHashPtr & built_sets_);
+    BuiltSetsByHashPtr getBuiltSetsForShipping() const;
 
     ReverseLookupCache & getReverseLookupCache() const;
 

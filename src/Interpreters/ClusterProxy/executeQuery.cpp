@@ -1048,7 +1048,9 @@ void executeQueryWithParallelReplicas(
         planner_context,
         modified_query_tree,
         /*allow_global_join_for_right_table*/ true,
-        context->getSettingsRef()[Setting::parallel_replicas_ship_prepared_sets]);
+        context->getSettingsRef()[Setting::parallel_replicas_ship_prepared_sets],
+        context->getBuiltSetsForShipping() ? context->getBuiltSetsForShipping()
+            : (context->hasQueryContext() ? context->getQueryContext()->getBuiltSetsForShipping() : nullptr));
 
     auto [header, new_planner_context]
         = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());

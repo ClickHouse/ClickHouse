@@ -1,3 +1,7 @@
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <Common/logger_useful.h>
+#include <Interpreters/Set.h>
 #include <Storages/buildQueryTreeForShard.h>
 
 #include <Analyzer/ArrayJoinNode.h>
@@ -440,9 +444,71 @@ void addDistinctRecursively(const QueryTreeNodePtr & node)
 /** Execute subquery node and put result in mutable context temporary table.
   * Returns table node that is initialized with temporary table storage.
   */
+/// If the initiator already built the set for this subquery, its rows are right there - writing them
+/// into the temporary table is far cheaper than running the subquery a second time. Only usable when the
+/// set kept its explicit elements and their types match the subquery header exactly (`Set` strips
+/// `LowCardinality` from `set_elements_types`, so a mismatch is normal and simply means falling back).
+static bool tryFillExternalTableFromBuiltSet(
+    const StoragePtr & external_storage,
+    const Block & sample_block,
+    const BuiltSetsByHashPtr & built_sets,
+    const FutureSet::Hash & set_key,
+    ContextMutablePtr & mutable_context)
+{
+    auto log = getLogger("buildQueryTreeForShard");
+    if (!built_sets)
+    {
+        LOG_DEBUG(log, "Set reuse: no built sets were handed to this build");
+        return false;
+    }
+
+    auto it = built_sets->sets.find(set_key);
+    if (it == built_sets->sets.end() || !it->second || !it->second->set)
+    {
+        LOG_DEBUG(log, "Set reuse: no set for key {} among {} built sets", set_key.low64, built_sets->sets.size());
+        return false;
+    }
+
+    const auto & set = *it->second->set;
+    if (!set.isCreated() || !set.hasExplicitSetElements())
+    {
+        LOG_DEBUG(log, "Set reuse: set {} is created={} has_elements={}", set_key.low64, set.isCreated(), set.hasExplicitSetElements());
+        return false;
+    }
+
+    const auto elements = set.getSetElements();
+    const auto & element_types = set.getElementsTypes();
+    if (elements.size() != sample_block.columns() || element_types.size() != sample_block.columns())
+        return false;
+    for (size_t i = 0; i < elements.size(); ++i)
+    {
+        if (!element_types[i]->equals(*sample_block.getByPosition(i).type))
+            return false;
+    }
+
+    auto block = sample_block.cloneEmpty();
+    for (size_t i = 0; i < elements.size(); ++i)
+        block.getByPosition(i).column = elements[i];
+
+    const auto rows = elements.empty() ? 0 : elements.front()->size();
+    const auto metadata_snapshot = external_storage->getInMemoryMetadataPtr(mutable_context, false);
+    auto header = std::make_shared<const Block>(block.cloneEmpty());
+    QueryPipeline pipeline(external_storage->write({}, metadata_snapshot, mutable_context, /*async_insert=*/false));
+    pipeline.complete(Pipe(std::make_shared<SourceFromSingleChunk>(header, Chunk(block.getColumns(), rows))));
+    CompletedPipelineExecutor executor(pipeline);
+    executor.execute();
+    LOG_DEBUG(
+        getLogger("buildQueryTreeForShard"),
+        "Filled the shipped temporary table with {} rows from a set this query already built",
+        rows);
+    return true;
+}
+
 TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     ContextMutablePtr & mutable_context,
-    size_t subquery_depth)
+    size_t subquery_depth,
+    const BuiltSetsByHashPtr & built_sets = nullptr,
+    std::optional<FutureSet::Hash> set_key = {})
 {
     const auto subquery_hash = subquery_node->getTreeHash();
     const auto temporary_table_name = fmt::format("_data_{}", toString(subquery_hash));
@@ -492,6 +558,13 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     StoragePtr external_storage = external_storage_holder.getTable();
     auto temporary_table_expression_node = std::make_shared<TableNode>(external_storage, mutable_context);
     temporary_table_expression_node->setTemporaryTableName(temporary_table_name);
+
+    if (set_key
+        && tryFillExternalTableFromBuiltSet(external_storage, sample_block_with_unique_names, built_sets, *set_key, mutable_context))
+    {
+        mutable_context->addExternalTable(temporary_table_name, std::move(external_storage_holder));
+        return temporary_table_expression_node;
+    }
 
     QueryPlanOptimizationSettings optimization_settings(mutable_context);
     BuildQueryPipelineSettings build_pipeline_settings(mutable_context);
@@ -784,7 +857,7 @@ void collectInSubqueriesToShip(
         collectInSubqueriesToShip(child, subquery_depth + (is_subquery ? 1 : 0), result);
 }
 
-QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table, bool ship_in_subqueries)
+QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table, bool ship_in_subqueries, const BuiltSetsByHashPtr & built_sets)
 {
     CollectColumnSourceToColumnsVisitor collect_column_source_to_columns_visitor;
     collect_column_source_to_columns_visitor.visit(query_tree_to_modify);
@@ -878,10 +951,13 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                 if (enable_add_distinct_to_in_subqueries)
                     addDistinctRecursively(subquery_to_execute);
 
+                /// Same key `CollectSets` registers the set under, so an already-built set can be found.
                 temporary_table_expression_node = executeSubqueryNode(
                     subquery_to_execute,
                     planner_context->getMutableQueryContext(),
-                    global_in_or_join_node.subquery_depth);
+                    global_in_or_join_node.subquery_depth,
+                    built_sets,
+                    in_function_subquery_node->getTreeHash({.ignore_cte = true}));
                 replacement_table_expression = temporary_table_expression_node;
             }
             else

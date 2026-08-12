@@ -198,6 +198,12 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     /// thrown away. The probe is therefore built unshipped; the caller asks for the shipped variant only
     /// after deciding replicas are worth it.
     ctx->setSetting("parallel_replicas_ship_prepared_sets", ship_in_subqueries);
+    /// So that shipping can fill the temporary table from a set this query already built. Also put it on
+    /// the query context: the plan is built through several derived contexts, and the one that reaches
+    /// `executeQueryWithParallelReplicas` is not this copy.
+    ctx->setBuiltSetsForShipping(built_sets);
+    if (ctx->hasQueryContext())
+        ctx->getQueryContext()->setBuiltSetsForShipping(built_sets);
     InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, std::forward<Args>(interpreter_args)...);
     auto plan = std::move(interpreter).extractQueryPlan();
     auto optimization_settings = QueryPlanOptimizationSettings(ctx);
