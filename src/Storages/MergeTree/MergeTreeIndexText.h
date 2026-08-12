@@ -247,9 +247,6 @@ struct TokenPostingsInfo
     /// so use inlined vector to avoid heap allocations.
     absl::InlinedVector<UInt64, 1> offsets;
     absl::InlinedVector<RowsRange, 1> ranges;
-    /// Postings embedded into the dictionary block, ascending row ids; empty if not embedded.
-    /// Stored inline (not as a roaring bitmap): merges and dictionary scans materialize
-    /// every token's info, and most embedded tokens are low-cardinality.
     absl::InlinedVector<UInt32, MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS> embedded_postings;
 
     /// Position data offset in the .pos file

@@ -84,7 +84,7 @@ class SegmentedPostingListCodec
 
     /// A segment header together with its payload, which points either into the read
     /// buffer or into the scratch buffer passed to `readSegment`.
-    struct Segment
+    struct SegmentData
     {
         Header header;
         std::span<const std::byte> payload;
@@ -218,7 +218,7 @@ private:
     void decodeBlock(std::span<const std::byte> & in, std::span<uint32_t> out);
 
     /// Reads a segment header and returns it together with the segment payload.
-    Segment readSegment(ReadBuffer & in, PaddedPODArray<char> & buffer);
+    SegmentData readSegment(ReadBuffer & in, PaddedPODArray<char> & buffer);
 
     /// All segments. Filled on encode only: decode reads the payload from the buffer passed to it.
     std::string compressed_data;

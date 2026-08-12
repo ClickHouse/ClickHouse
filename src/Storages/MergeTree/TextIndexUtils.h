@@ -111,14 +111,16 @@ private:
     bool isNewToken(const TokenSortCursor & cursor) const;
     /// Reads the next dictionary block for the given source index.
     void readDictionaryBlock(size_t source_num);
-    /// Reads the posting lists of the token at the given row of the source's dictionary block
-    /// and merges them (adjusted according to merged part offsets) into the output postings.
-    void mergePostingLists(size_t source_num, size_t row);
+    /// Adjusts the part offset of the given row id according to merged part offsets.
+    UInt32 adjustPartOffset(size_t part_index, UInt32 row_id) const;
     /// Adjusts row numbers in the postings according to merged part offsets. No-op if offsets are not set.
     void adjustPartOffsets(size_t source_num, PaddedPODArray<UInt32> & row_ids) const;
-    /// Appends the embedded postings of one source (adjusted according to merged part offsets)
-    /// to the plain array of the current token, without materializing a roaring bitmap.
-    void appendEmbeddedPostings(size_t source_num, std::span<const UInt32> values);
+    /// Reads the large postings of one source and appends them to output_postings.
+    void appendRawPostings(size_t source_num, std::span<const UInt32> row_ids);
+    /// Appends the embedded postings of one source to the output_embedded_postings.
+    void appendPostings(size_t source_num, const TokenPostingsInfo & token_info);
+    /// Reads the positions of one source and appends them to output_positions.
+    void appendPositions(size_t source_num, const TokenPostingsInfo & token_info);
 
     void flushPostingList();
     void flushDictionaryBlock();
@@ -144,8 +146,6 @@ private:
 
     SortCursorImpls cursors;
     std::vector<DictionaryBlock> inputs;
-    /// Batch queue: consecutive rows of the top cursor that sort before the next-best
-    /// cursor are consumed as one run, with a single heap fixup per run.
     SortingQueueBatch<TokenSortCursor> queue;
 
     /// Tokens accumulated for the current dictionary block.
@@ -153,14 +153,13 @@ private:
     /// Tokens infos accumulated for the current dictionary block.
     std::vector<TokenPostingsInfo> output_infos;
     /// Postings accumulated for the current token from sources with non-embedded postings.
-    PostingList output_postings;
+    PostingList output_postings_bitmap;
+    /// Postings accumulated for the current token from sources with embedded postings.
+    PaddedPODArray<UInt32> output_postings_array;
     /// Reusable buffer for row ids of one posting list block read from a source.
     PaddedPODArray<UInt32> row_ids_buffer;
-    /// Postings accumulated for the current token from sources with embedded postings.
-    /// Values are adjusted to the merged part, but not sorted across sources.
-    PODArray<UInt32> output_embedded_postings;
     /// Positions accumulated for the current token (phrase query support).
-    PODArray<RoaringishEntry> output_positions;
+    PaddedPODArray<RoaringishEntry> output_positions;
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;

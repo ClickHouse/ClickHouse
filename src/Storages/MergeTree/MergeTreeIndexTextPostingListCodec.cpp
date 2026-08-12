@@ -94,9 +94,9 @@ void SegmentedPostingListCodec::insert(std::span<uint32_t> row_ids)
         flushCurrentSegment();
 }
 
-SegmentedPostingListCodec::Segment SegmentedPostingListCodec::readSegment(ReadBuffer & in, PaddedPODArray<char> & buffer)
+SegmentedPostingListCodec::SegmentData SegmentedPostingListCodec::readSegment(ReadBuffer & in, PaddedPODArray<char> & buffer)
 {
-    Segment segment;
+    SegmentData segment;
     segment.header.read(in);
 
     /// The segment header is self-describing: create the block codec it was written with.
