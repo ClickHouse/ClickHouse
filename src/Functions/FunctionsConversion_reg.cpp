@@ -1114,7 +1114,7 @@ Converts the argument to the Date data type. This is a MySQL compatibility alias
     /// toDate32 documentation
     FunctionDocumentation::Description description_toDate32 = R"(
 Converts the argument to the [Date32](/reference/data-types/date32) data type.
-If the value is outside the range, `toDate32` returns the border values supported by [Date32](/reference/data-types/date32).
+If the value is outside the `[0000-01-01, 9999-12-31]` range, `toDate32` returns the border values supported by [Date32](/reference/data-types/date32).
 If the argument is of type [`Date`](/reference/data-types/date), it's bounds are taken into account.
     )";
     FunctionDocumentation::Syntax syntax_toDate32 = "toDate32(expr)";
@@ -1137,7 +1137,7 @@ toTypeName(value): Date32
         )"
     },
     {
-        "Outside range",
+        "Before 1900",
         R"(
 SELECT toDate32('1899-01-01') AS value, toTypeName(value)
 FORMAT Vertical
@@ -1145,7 +1145,7 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-value:           1900-01-01
+value:           1899-01-01
 toTypeName(value): Date32
         )"
     }
@@ -2345,8 +2345,9 @@ SELECT toDateOrZero('2025-12-30'), toDateOrZero('')
 
     /// toDate32OrZero documentation
     FunctionDocumentation::Description description_toDate32OrZero = R"(
-Converts an input value to a value of type [Date32](/reference/data-types/date32) but returns the lower boundary of [Date32](/reference/data-types/date32) if an invalid argument is received.
-The same as [toDate32](#toDate32) but returns lower boundary of [Date32](/reference/data-types/date32) if an invalid argument is received.
+Converts an input value to a value of type [Date32](/reference/data-types/date32) but returns the default value `1900-01-01` if an invalid argument is received.
+The same as [toDate32](#toDate32) but returns `1900-01-01` if an invalid argument is received.
+Note that `1900-01-01` is a historical default value for invalid input, not the lower boundary of [Date32](/reference/data-types/date32), which is `0000-01-01`.
 
 See also:
 - [`toDate32`](#toDate32)
@@ -2357,7 +2358,7 @@ See also:
     FunctionDocumentation::Arguments arguments_toDate32OrZero = {
         {"x", "A string representation of a date.", {"String"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value_toDate32OrZero = {"Returns a Date32 value if successful, otherwise the lower boundary of Date32 (`1900-01-01`).", {"Date32"}};
+    FunctionDocumentation::ReturnedValue returned_value_toDate32OrZero = {"Returns a Date32 value if successful, otherwise the historical default value for invalid input (`1900-01-01`).", {"Date32"}};
     FunctionDocumentation::Examples examples_toDate32OrZero = {
     {
         "Usage example",
