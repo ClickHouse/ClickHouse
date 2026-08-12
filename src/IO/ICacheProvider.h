@@ -154,7 +154,7 @@ public:
     virtual String name() const = 0;
 
     /// One step of the residency walk. The executor consumes these in order.
-    struct Resolution
+    struct CacheResolution
     {
         enum class Kind : uint8_t
         {
@@ -180,7 +180,7 @@ public:
     /// rounding, or the object-end clamp). Holds no per-call state, so many threads can resolve one
     /// shared provider at once (parallel `readBigAt`). `range` is file-space; `object_offset` is
     /// `range.offset`'s object-local position (so the object's file base is `range.offset - object_offset`).
-    virtual VectorWithMemoryTracking<Resolution> resolve(
+    virtual VectorWithMemoryTracking<CacheResolution> resolve(
         const StoredObject & object, size_t object_offset, ByteRange range) = 0;
 };
 

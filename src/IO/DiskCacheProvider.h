@@ -20,13 +20,13 @@ namespace DB
 /// the next open is an `OpenedFileCache` hit. Internally synchronized.
 using ReaderAnchorCache = CacheBase<String, ReadBufferFromFileBase>;
 
-/// A `CacheReader` over one hit range, backed by ONE `FileSegment` it pins (a copy of the
-/// `FileSegmentPtr` `resolve` hands out). It completes that segment at destruction.
+/// A `CacheReader` over one hit range, backed by a single-segment `FileSegmentsHolder`. The holder
+/// completes the segment on destruction (a read-only hit is a no-op).
 class DiskCacheReader : public CacheReader
 {
 public:
     DiskCacheReader(
-        FileSegmentPtr segment_,
+        FileSegmentsHolderSharedPtr segment_holder_,
         ByteRange range_in_file,
         size_t object_file_offset_,
         ThrottlerPtr local_throttler_,
@@ -37,19 +37,23 @@ public:
     ChainedBuffers read(ByteRange subrange) override;
 
 private:
-    FileSegmentPtr segment;
+    /// Our holder always carries exactly one segment (see the constructor); assert it on each access.
+    FileSegment & segment() const { chassert(segment_holder && segment_holder->size() == 1); return segment_holder->front(); }
+
+    FileSegmentsHolderSharedPtr segment_holder;
     ByteRange hit_range;
+    /// The blob's start offset in the logical file (multi-blob files); cache coordinates are blob-local.
     size_t object_file_offset;
     ThrottlerPtr local_throttler;
     ReaderAnchorCache * anchors = nullptr;
-    /// File-level sub-ranges this reader served; the destructor bumps their cache priority.
-    VectorWithMemoryTracking<ByteRange> hits_to_touch;
+    /// Whether this reader served any bytes; the destructor then bumps the segment's cache priority.
+    bool served = false;
     LoggerPtr log = getLogger("DiskCacheReader");
 };
 
-/// A `CacheWriter` over one cache-aligned miss segment. It pins ONE `FileSegment` (a copy of the
-/// `FileSegmentPtr` `resolve` hands out), appends across windows, and completes it at destruction;
-/// completing a partial segment shrinks it to its downloaded size.
+/// A `CacheWriter` over one cache-aligned miss segment, held via a single-segment `FileSegmentsHolder`
+/// (shared with the segment's hit reader for a partial). Appends across windows; the holder completes
+/// the segment on destruction, shrinking a partial to its downloaded size.
 class DiskCacheWriter : public CacheWriter
 {
 public:
@@ -57,7 +61,7 @@ public:
         FileCachePtr cache_,
         size_t object_file_offset_,
         const FilesystemCacheSettings & cache_settings_,
-        FileSegmentPtr segment_,
+        FileSegmentsHolderSharedPtr segment_holder_,
         ByteRange aligned_range_in_file);
 
     ByteRange range() const override { return aligned_range; }
@@ -70,15 +74,18 @@ public:
     ChainedBuffers read(ByteRange subrange) override;
     FillClaim claim(ByteRange window) override;
     ChainedBuffers waitAndRead(ByteRange subrange) override;
-    ~DiskCacheWriter() override;
 
 private:
     bool tryWriteToSegment(FileSegment & file_segment, char * data, size_t size, size_t offset);
 
+    /// Our holder always carries exactly one segment (see the constructor); assert it on each access.
+    FileSegment & segment() const { chassert(segment_holder && segment_holder->size() == 1); return segment_holder->front(); }
+
     FileCachePtr cache;
+    /// The blob's start offset in the logical file (multi-blob files); cache coordinates are blob-local.
     size_t object_file_offset;
     FilesystemCacheSettings cache_settings;
-    FileSegmentPtr segment;
+    FileSegmentsHolderSharedPtr segment_holder;
     IntervalSet committed_ranges;
     /// Guards `committed_ranges` only. The FileCache downloader gives per-segment write exclusion. A
     /// background prefetch and the foreground read may append disjoint parts of the segment at the
@@ -115,7 +122,7 @@ public:
 
     /// Resolve `range` into hits (readers) and misses (writers when the tier populates). See the
     /// definition for the get / getOrSet split.
-    VectorWithMemoryTracking<Resolution> resolve(
+    VectorWithMemoryTracking<CacheResolution> resolve(
         const StoredObject & object, size_t object_offset, ByteRange range) override;
 
 private:

@@ -377,11 +377,10 @@ struct FileSegmentsHolder final : private boost::noncopyable
 
     void reset();
 
-    /// Relinquish the held segments WITHOUT completing them (calls no `FileSegment::complete`,
-    /// unlike `reset`): the caller has copied out the `FileSegmentPtr`s and owns completing each
-    /// itself. Only balances the hold metric. Used by the ReaderExecutor cache, which hands one
-    /// segment to each reader/writer and lets that buffer complete it on destruction.
-    void release();
+    /// Move the first segment into its own new holder and return it, leaving the rest in this one.
+    /// The hold gauge is unchanged (ownership transfers); the returned holder completes its segment
+    /// on destruction. Used by the ReaderExecutor cache to hand one segment to each reader/writer.
+    std::shared_ptr<FileSegmentsHolder> popHolder();
 
 private:
     FileSegments file_segments{};
@@ -390,6 +389,7 @@ private:
 };
 
 using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;
+using FileSegmentsHolderSharedPtr = std::shared_ptr<FileSegmentsHolder>;
 
 String toString(const FileSegments & file_segments, bool with_state = false);
 

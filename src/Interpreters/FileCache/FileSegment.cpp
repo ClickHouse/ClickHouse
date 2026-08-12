@@ -1554,12 +1554,16 @@ void FileSegmentsHolder::reset()
     file_segments.clear();
 }
 
-void FileSegmentsHolder::release()
+FileSegmentsHolderSharedPtr FileSegmentsHolder::popHolder()
 {
-    /// Unlike `reset`, complete NO segment: the caller (DiskCacheReader/DiskCacheWriter) has
-    /// copied out the `FileSegmentPtr`s and completes each itself. Only balance the hold metric.
-    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheHoldFileSegments, file_segments.size());
-    file_segments.clear();
+    chassert(!file_segments.empty());
+    /// Move the first segment into its own holder WITHOUT touching the hold gauge: this holder
+    /// already counts it, so the splice just transfers ownership. The new holder completes the
+    /// segment (and decrements the gauge) on destruction.
+    auto result = std::make_shared<FileSegmentsHolder>();
+    result->file_segments.splice(result->file_segments.begin(), file_segments, file_segments.begin());
+    chassert(result->file_segments.size() == 1);
+    return result;
 }
 
 FileSegmentsHolder::~FileSegmentsHolder()

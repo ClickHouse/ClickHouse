@@ -116,9 +116,9 @@ public:
 
     /// Tile the asked range into file-level blocks: a fully-resident block is a Hit (fresh reader),
     /// else a Miss carrying a Writer (null on a bypass tier, which never populates). Past EOF -> empty.
-    VectorWithMemoryTracking<Resolution> resolve(const StoredObject &, size_t, ByteRange range) override
+    VectorWithMemoryTracking<CacheResolution> resolve(const StoredObject &, size_t, ByteRange range) override
     {
-        VectorWithMemoryTracking<Resolution> out;
+        VectorWithMemoryTracking<CacheResolution> out;
         const size_t file_size = state->declared_size;
         if (range.offset >= file_size)
             return out;
@@ -126,16 +126,16 @@ public:
         for (size_t pos = range.offset / block_size * block_size; pos < ask_end; )
         {
             const ByteRange block{pos, std::min(block_size, file_size - pos)};
-            Resolution r;
+            CacheResolution r;
             r.range = block;
             if (state->resident.subtract(block).empty())
             {
-                r.kind = Resolution::Kind::Hit;
+                r.kind = CacheResolution::Kind::Hit;
                 r.reader = std::make_unique<Reader>(block, state);
             }
             else
             {
-                r.kind = Resolution::Kind::Miss;
+                r.kind = CacheResolution::Kind::Miss;
                 if (!bypass)   /// a passive `*_if_exists_otherwise_bypass` tier serves hits, never populates
                     r.writer = std::make_unique<Writer>(block, state);
             }
