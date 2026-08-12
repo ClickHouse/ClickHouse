@@ -1,0 +1,49 @@
+-- Escaped: a partially parsed value is rejected
+-- Escaped: a tail after the null marker is rejected
+-- CSV: a partially parsed value is rejected
+-- JSON: a partially parsed value is rejected
+-- CSV and JSON accept trailing whitespace, like the formats they mirror
+1
+1
+1
+1
+1
+-- whitespace is not an amnesty for what follows it
+-- the other rules reject trailing whitespace, like the formats they mirror
+-- Raw reads a capture containing a tab as a whole, at the default rule and explicitly
+616263096A756E6B
+616263096A756E6B
+616263096A756E6B
+616263096A756E6B
+616263096A756E6B
+-- Raw: a tab that cannot belong to the value is rejected
+-- Raw: captures without a tab are unchanged
+616263206A756E6B
+48656C6C6F2C20776F726C6421
+616263
+1
+-- Raw null tokens
+1	\N
+0	4E554C4C
+1	XYZ
+0	5C4E
+1	\N
+0	4E554C4C
+1	XYZ
+0	5C4E
+-- Raw: a null token followed by a tab is a value, not a null
+0	5C4E0978
+0	5C4E0978
+-- well-formed fields are still accepted
+1
+str1
+[1,2,3]
+2020-01-01
+1
+610962
+str1
+1
+str1
+1
+[1,2,3]
+1
