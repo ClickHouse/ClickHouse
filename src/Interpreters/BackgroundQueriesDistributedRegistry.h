@@ -50,7 +50,8 @@ public:
         Finished = 2,
         Failed = 3,
         Unknown = 4,
-        InternalRegistryError = 5,
+        Aborted = 5,
+        InternalRegistryError = 6,
     };
 
     struct Entry
@@ -123,6 +124,8 @@ public:
     void onFinish();
     void onException(int code, const String & message);
 
+    ~BackgroundQueryHandle();
+
 private:
     friend class BackgroundQueriesDistributedRegistry;
 
@@ -137,6 +140,7 @@ private:
     std::weak_ptr<BackgroundQueriesDistributedRegistry> registry;
     String entry_path;
     BackgroundQueriesDistributedRegistry::Entry entry;
+    bool query_finalized = false;
 };
 
 }

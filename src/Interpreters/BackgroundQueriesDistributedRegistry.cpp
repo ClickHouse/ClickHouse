@@ -104,6 +104,30 @@ BackgroundQueriesDistributedRegistry::Entry::parse(const String & data)
     return entry;
 }
 
+BackgroundQueryHandle::~BackgroundQueryHandle()
+{
+    /// Tasks queued in the background queries thread pool get discarded
+    /// when the pool gets finished on server shutdown.
+    /// We need to make sure we update the status of queries in the registry
+    /// (handles are owned by lambdas and so they are destroyed together).
+
+    if (query_finalized)
+        return;
+
+    try
+    {
+        auto registry_ptr = registry.lock();
+        if (!registry_ptr)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The background queries registry was destroyed before a background query was finalized");
+
+        registry_ptr->finalizeQuery(*this, Status::Aborted, 0, "");
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
 void BackgroundQueryHandle::onFinish()
 {
     auto registry_ptr = registry.lock();
@@ -111,6 +135,8 @@ void BackgroundQueryHandle::onFinish()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The background queries registry was destroyed before a background query finished");
 
     registry_ptr->finalizeQuery(*this, Status::Finished, 0, "");
+
+    query_finalized = true;
 }
 
 void BackgroundQueryHandle::onException(int code, const String & message)
@@ -120,6 +146,8 @@ void BackgroundQueryHandle::onException(int code, const String & message)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The background queries registry was destroyed before a background query finished");
 
     registry_ptr->finalizeQuery(*this, Status::Failed, code, message);
+
+    query_finalized = true;
 }
 
 BackgroundQueriesDistributedRegistry::BackgroundQueriesDistributedRegistry(ContextPtr global_context_)
@@ -335,6 +363,8 @@ void BackgroundQueriesDistributedRegistry::truncate()
 
 void BackgroundQueriesDistributedRegistry::shutdown()
 {
+    /// At this point, the pool is destroyed together with all the queued or in-flight handles.
+
     if (entry_asynchronous_update_queue.finish())
         return;
 
