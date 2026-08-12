@@ -1582,7 +1582,34 @@ void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
     auto zk_client = getZooKeeper();
     auto zk_retries = getKeeperRetriesControl(log);
 
-    /// List current failed nodes in Keeper
+    /// Snapshot cache FIRST to establish consistent baseline before any Keeper checks.
+    /// Any file failing between this snapshot and subsequent Keeper checks will appear
+    /// in Keeper, preventing wrongful eviction based on stale Keeper snapshot.
+    std::unordered_map<std::string, uint64_t> failed_generations;
+    std::vector<std::tuple<std::string, std::string, std::string, uint64_t>> cache_entries;
+    {
+        auto all_entries = local_file_statuses.dump();
+        for (const auto & entry : all_entries)
+        {
+            if (entry.mapped->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+            {
+                failed_generations[entry.mapped->path] = entry.mapped->generation.load();
+
+                /// Also build cache_entries for non-empty branch
+                SipHash path_hash;
+                path_hash.update(entry.mapped->path);
+                auto node_name = toString(path_hash.get64());
+                auto failed_node_path = fs::path(failed_path) / node_name;
+                cache_entries.emplace_back(
+                    entry.mapped->path,
+                    failed_node_path.string(),
+                    failed_node_path.string() + ".retriable",
+                    entry.mapped->generation.load());
+            }
+        }
+    }
+
+    /// Now check Keeper AFTER cache snapshot
     Strings keeper_failed_nodes;
     Coordination::Error code = {};
     zk_retries.retryLoop([&]
@@ -1592,17 +1619,7 @@ void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
 
     if (code == Coordination::Error::ZNONODE || (code == Coordination::Error::ZOK && keeper_failed_nodes.empty()))
     {
-        /// No /failed path or empty /failed means all failed files were deleted
-        /// Capture generations at snapshot time to avoid removing entries added after the check
-        std::unordered_map<std::string, uint64_t> failed_generations;
-        {
-            auto all_entries = local_file_statuses.dump();
-            for (const auto & entry : all_entries)
-            {
-                if (entry.mapped->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
-                    failed_generations[entry.mapped->path] = entry.mapped->generation.load();
-            }
-        }
+        /// No /failed path or empty /failed means all failed files were deleted.
 
         /// Remove only entries whose generation still matches the snapshot
         size_t removed = 0;
@@ -1634,28 +1651,6 @@ void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
     {
         LOG_WARNING(log, "Failed to list /failed nodes for cache reconciliation: {}", magic_enum::enum_name(code));
         return;
-    }
-
-    /// Collect all Failed cache entries and build paths to both terminal and retriable nodes
-    std::vector<std::tuple<std::string, std::string, std::string, uint64_t>> cache_entries;  // (file_path, terminal_node_path, retriable_node_path, generation)
-    {
-        auto all_entries = local_file_statuses.dump();
-        for (const auto & entry : all_entries)
-        {
-            if (entry.mapped->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
-            {
-                /// Compute node name as hash of file path (same logic as getNodeName)
-                SipHash path_hash;
-                path_hash.update(entry.mapped->path);
-                auto node_name = toString(path_hash.get64());
-                auto failed_node_path = fs::path(failed_path) / node_name;
-                cache_entries.emplace_back(
-                    entry.mapped->path,
-                    failed_node_path.string(),
-                    failed_node_path.string() + ".retriable",
-                    entry.mapped->generation.load());
-            }
-        }
     }
 
     if (cache_entries.empty())
