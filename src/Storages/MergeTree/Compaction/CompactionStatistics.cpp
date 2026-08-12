@@ -2031,6 +2031,30 @@ UInt64 estimateNeededMemoryForMerge(
                 const bool temp_projection_is_compact = temp_projection_format.part_type == MergeTreeDataPartType::Compact;
                 const size_t projection_streams = temp_projection_is_compact ? 1 : projection_wide_stream_counts.total;
 
+                /// The read-back stage does NOT keep the temporary parts' format: MergeProjectionPartsTask
+                /// batches up to max_parts_to_merge_in_one_level of them into a nested
+                /// FutureMergedMutatedPart, whose assign re-runs choosePartFormat on the batch's summed
+                /// uncompressed bytes and rows - and repeats per level until a single projection part
+                /// remains. A rebuild that flushed many Compact chunks (the chunk-sized decision above)
+                /// therefore still merges them into a Wide projection part once the total volume clears the
+                /// wide-part thresholds, and that read-back writer allocates per-substream buffers the
+                /// temp-part format says nothing about. Decide the final part's format from the whole
+                /// rebuilt volume - the very sum the last assign sees. The source-derived volume proxy can
+                /// misclassify in either direction like the temp-part decision above, and in the same safe
+                /// ways: toward Wide only bounded by the data-proportional term below, toward Compact only
+                /// weakening the throttling of concurrent merges.
+                const auto read_back_projection_format = future_part.parts.front()->storage.choosePartFormat(
+                    projection_uncompressed_bytes, projection_rows, future_part.part_info.level, &projection);
+                const bool read_back_projection_is_compact
+                    = read_back_projection_format.part_type == MergeTreeDataPartType::Compact;
+                const size_t read_back_streams = read_back_projection_is_compact ? 1 : projection_wide_stream_counts.total;
+
+                /// The temp-part writers (one at a time, during the horizontal stage) and the read-back
+                /// merges (one nested merge at a time, in MergeProjectionsStage after every temporary part
+                /// is flushed) never write concurrently, so the writer-side terms take the max over the two
+                /// formats, not their sum.
+                const size_t projection_writer_streams = std::max(projection_streams, read_back_streams);
+
                 /// The rebuild writes the projected rows twice (the temporary parts, then the read-back merge
                 /// into the final projection part), so its data-dependent buffers are bounded by twice the
                 /// projected volume with the same 3x in-flight allowance as the base output, plus the
@@ -2058,19 +2082,37 @@ UInt64 estimateNeededMemoryForMerge(
                 const UInt64 projection_read_buffer_size
                     = output_on_remote_disk ? cached_remote_read_buffer_size : local_read_buffer_size;
                 const UInt64 projection_worst_case = saturatingStreamsTimesBuffer(
-                    projection_streams, worst_case_write_buffer_size(projection_local_write_buffer_size));
-                /// A Wide temp part is written by the same wide writer as the base output, so its
-                /// eager per-stream buffers follow the same per-stream adaptive split (the count-based rule
-                /// sees the temp-part writer's own columns list - the projection's columns); a Compact
-                /// temp part's single shared stream is non-adaptive.
-                const UInt64 projection_eager_write_buffers = temp_projection_is_compact
-                    ? eager_stream_buffers(projection_max_compress_block_size)
-                    : eager_write_buffers(
-                          projection_wide_stream_counts, projection.sample_block.columns(), projection_max_compress_block_size);
+                    projection_writer_streams, worst_case_write_buffer_size(projection_local_write_buffer_size));
+                /// A Wide part - a temp part or the read-back result - is written by the same wide writer
+                /// as the base output, so its eager per-stream buffers follow the same per-stream adaptive
+                /// split (the count-based rule sees the writer's own columns list - the projection's
+                /// columns); a Compact part's single shared stream is non-adaptive. The two writers never
+                /// run concurrently (see projection_writer_streams above), so take the max of their eager
+                /// footprints.
+                const auto projection_format_eager_buffers = [&](bool is_compact)
+                {
+                    return is_compact
+                        ? eager_stream_buffers(projection_max_compress_block_size)
+                        : eager_write_buffers(
+                              projection_wide_stream_counts, projection.sample_block.columns(), projection_max_compress_block_size);
+                };
+                const UInt64 projection_eager_write_buffers = std::max(
+                    projection_format_eager_buffers(temp_projection_is_compact),
+                    projection_format_eager_buffers(read_back_projection_is_compact));
                 const UInt64 projection_data_bound = projection_eager_write_buffers
                     + 3 * 2 * projection_uncompressed_bytes;
+                /// The read-back readers: past the first level the nested merge reads parts that are
+                /// themselves read-back results, so price the reader sets at the widest format a read-back
+                /// input can have (the final format when it is wider than the temporary parts') - capped by
+                /// the rebuilt volume: MergeTreeReaderStream sizes every stream's buffer by the bytes that
+                /// stream will actually read (adjustBufferSize, on by default with no override on the merge
+                /// path), so the readers of one nested merge can never hold more than the on-disk data of
+                /// the parts they merge, which is at most the whole rebuilt volume.
+                const UInt64 read_back_reader_worst_case = saturatingStreamsTimesBuffer(
+                    MergeProjectionPartsTask::max_parts_to_merge_in_one_level * projection_writer_streams,
+                    projection_read_buffer_size);
                 projection_memory += std::min(projection_worst_case, projection_data_bound)
-                    + MergeProjectionPartsTask::max_parts_to_merge_in_one_level * projection_streams * projection_read_buffer_size;
+                    + std::min(read_back_reader_worst_case, projection_uncompressed_bytes);
             }
         }
     }
