@@ -6,7 +6,7 @@
     "reference/settings/merge-tree-settings/add-minmax",
     "reference/settings/merge-tree-settings/allow",
     "reference/settings/merge-tree-settings/allow-experimental",
-    "reference/settings/merge-tree-settings/always",
+    "reference/settings/merge-tree-settings/always-fetch",
     "reference/settings/merge-tree-settings/async",
     "reference/settings/merge-tree-settings/cache-populated-by-fetch",
     "reference/settings/merge-tree-settings/check",

@@ -19,6 +19,9 @@ target_link_libraries (gcd_decompress_fuzzer PRIVATE dbms)
 clickhouse_add_executable (byte_stream_split_decompress_fuzzer byte_stream_split_decompress_fuzzer.cpp)
 target_link_libraries (byte_stream_split_decompress_fuzzer PRIVATE dbms)
 
+clickhouse_add_executable (alp_decompress_fuzzer alp_decompress_fuzzer.cpp)
+target_link_libraries (alp_decompress_fuzzer PRIVATE dbms)
+
 # The fuzzer calls getCompressionCodecSZ3, which is only compiled when SZ3 is enabled (USE_SZ3), so only
 # build this target when the SZ3 contrib is available - otherwise the build would fail to link with SZ3 off.
 if (TARGET ch_contrib::sz3)
