@@ -26,6 +26,17 @@ ORDER BY l.id;
 
 DROP TABLE t_merge_filter;
 
+-- Every integer width is affected, not only the low byte of the value.
+DROP TABLE IF EXISTS t_merge_filter_wide;
+
+CREATE TABLE t_merge_filter_wide (id Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_merge_filter_wide VALUES (1)(256)(65536)(4294967296);
+
+SELECT count() FROM t_merge_filter_wide AS l LEFT JOIN t_merge_filter_wide AS r ON l.id = r.id
+WHERE r.id AND l.id = r.id;
+
+DROP TABLE t_merge_filter_wide;
+
 -- A `NULL` condition is false, and the conversion keeps the value nullable.
 DROP TABLE IF EXISTS t_merge_filter_null;
 
