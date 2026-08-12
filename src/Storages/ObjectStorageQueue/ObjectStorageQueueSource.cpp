@@ -1733,7 +1733,10 @@ void ObjectStorageQueueSource::finalizeExclusiveCommitAfterDelete(
                 case FileState::Processed:
                 {
                     processed = true;
-                    file_metadata->finalizeProcessed();
+                    if (failed_paths_set.contains(file_metadata->getPath()))
+                        file_metadata->finalizeFailed(exception_message);
+                    else
+                        file_metadata->finalizeProcessed();
                     break;
                 }
                 case FileState::Cancelled: [[fallthrough]];
@@ -1796,43 +1799,47 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
 
     StoredObjects processed_objects;
 
-    if (!successful_objects.empty() && after_processing != ObjectStorageQueueAction::KEEP)
+    if (!successful_objects.empty())
     {
-        auto postProcessor = ObjectStorageQueuePostProcessor(
-            getContext(),
-            configuration->getType(),
-            object_storage,
-            getName(),
-            files_metadata->getTableMetadata(),
-            after_processing_settings);
-        postProcessor.process(successful_objects, processed_objects);
+        if (after_processing != ObjectStorageQueueAction::KEEP)
+        {
+            auto postProcessor = ObjectStorageQueuePostProcessor(
+                getContext(),
+                configuration->getType(),
+                object_storage,
+                getName(),
+                files_metadata->getTableMetadata(),
+                after_processing_settings);
+            postProcessor.process(successful_objects, processed_objects);
+
+            if (table_mode == ObjectStorageQueueMode::EXCLUSIVE)
+            {
+                std::vector<String> failed_to_delete_paths =
+                    StorageObjectStorageQueue::getFailedPaths(successful_objects, processed_objects);
+
+                if (!failed_to_delete_paths.empty())
+                {
+                    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemoveObjectFailures, failed_to_delete_paths.size());
+                    const auto commit_id = StorageObjectStorageQueue::generateCommitID();
+                    const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+                    finalizeExclusiveCommitAfterDelete(
+                        failed_to_delete_paths,
+                        commit_id,
+                        commit_time,
+                        transaction_start_time,
+                        "Some objects still exist after delete");
+
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Some objects still exist after delete: {}",
+                        failed_to_delete_paths);
+                }
+            }
+        }
 
         if (table_mode == ObjectStorageQueueMode::EXCLUSIVE)
-        {
-            std::vector<String> failed_to_delete_paths =
-                StorageObjectStorageQueue::getFailedPaths(successful_objects, processed_objects);
-
-            if (!failed_to_delete_paths.empty())
-            {
-                ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemoveObjectFailures, failed_to_delete_paths.size());
-                const auto commit_id = StorageObjectStorageQueue::generateCommitID();
-                const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-                finalizeExclusiveCommitAfterDelete(
-                    failed_to_delete_paths,
-                    commit_id,
-                    commit_time,
-                    transaction_start_time,
-                    "Some objects still exist after delete");
-
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Some objects still exist after delete: {}",
-                    failed_to_delete_paths);
-            }
-            else
-                for (const auto & object : successful_objects)
-                    files_metadata->releaseExclusiveProcessing(object.remote_path);
-        }
+            for (const auto & object : successful_objects)
+                files_metadata->releaseExclusiveProcessing(object.remote_path);
     }
 
     if (table_mode != ObjectStorageQueueMode::EXCLUSIVE)
