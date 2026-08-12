@@ -797,7 +797,7 @@ ClickHouse table column.
 You can select data from a Vortex file:
 
 ```sql
-SELECT * FROM file('data.vortex', Vortex);
+SELECT * FROM file('data.vortex');
 ```
 
 And write data to a Vortex file:
