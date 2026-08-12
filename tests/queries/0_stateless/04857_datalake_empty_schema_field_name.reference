@@ -6,12 +6,15 @@ alive
 nested-rejected
 nested-rejected-again
 alive
-delta_kernel_rs_1: AMBIGUOUS_COLUMN_NAME
+delta_kernel_rs_1: Column name in DeltaLake table schema cannot be empty (field at position 1)
 5
-delta_kernel_rs_0: AMBIGUOUS_COLUMN_NAME
+delta_kernel_rs_0: Column name in DeltaLake table schema cannot be empty (field at position 1)
 5
 alive
-paimon: AMBIGUOUS_COLUMN_NAME
+paimon: Column name in Paimon table schema cannot be empty (field at position 1)
+10
+alive
+paimon_engine: Column name in Paimon table schema cannot be empty (field at position 1)
 10
 alive
 OK

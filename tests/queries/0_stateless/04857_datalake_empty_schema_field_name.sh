@@ -155,10 +155,14 @@ stage_delta_lake "${LAKE_DIR}/dl_ok" "s"
 # Both Delta readers must reject it. The kernel-rs reader and the C++ reader parse the
 # schema separately, so a guard placed in either parser alone would leave the other one
 # aborting; allow_experimental_delta_kernel_rs selects between them.
+# Each arm below matches the schema check's own message, not AMBIGUOUS_COLUMN_NAME: Block::insert
+# throws that same code for an empty name, so a code-only match does not identify the rejecting
+# check.
 for kernel in 1 0; do
     ${CLICKHOUSE_CLIENT} --allow_experimental_delta_kernel_rs="${kernel}" \
         --query "SELECT * FROM deltaLakeLocal('${LAKE_DIR}/dl') FORMAT Null" 2>&1 \
-        | expect_contains "delta_kernel_rs_${kernel}" AMBIGUOUS_COLUMN_NAME
+        | expect_contains "delta_kernel_rs_${kernel}" \
+            "Column name in DeltaLake table schema cannot be empty (field at position 1)"
     # A well-named lake still reads, so the check does not reject every Delta table.
     ${CLICKHOUSE_CLIENT} --allow_experimental_delta_kernel_rs="${kernel}" \
         --query "SELECT count() FROM deltaLakeLocal('${LAKE_DIR}/dl_ok')"
@@ -180,9 +184,29 @@ with open(path, "w") as fh:
     json.dump(schema, fh)
 PY
 
+PAIMON_MARKER="Column name in Paimon table schema cannot be empty (field at position 1)"
+
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM paimonLocal('${LAKE_DIR}/pm') FORMAT Null" 2>&1 \
-    | expect_contains paimon AMBIGUOUS_COLUMN_NAME
+    | expect_contains paimon "${PAIMON_MARKER}"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM paimonLocal('${LAKE_DIR}/pm_ok')"
+
+${CLICKHOUSE_CLIENT} --query "SELECT 'alive'"
+
+# An engine table with explicit columns needs no structure resolution, so it reaches the lake
+# schema only through the consistency reload, which the table functions above never take.
+PM_TABLE="t_pm_${CLICKHOUSE_DATABASE}_${RANDOM}"
+PM_OK_TABLE="t_pm_ok_${CLICKHOUSE_DATABASE}_${RANDOM}"
+PAIMON_ENGINE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_paimon_storage_engine=1"
+
+${PAIMON_ENGINE_CLIENT} --query "CREATE TABLE ${PM_TABLE} (f_boolean Nullable(Bool), f_int Nullable(Int32)) ENGINE = PaimonLocal('${LAKE_DIR}/pm')"
+${PAIMON_ENGINE_CLIENT} --query "SELECT * FROM ${PM_TABLE} FORMAT Null" 2>&1 \
+    | expect_contains paimon_engine "${PAIMON_MARKER}"
+
+${PAIMON_ENGINE_CLIENT} --query "CREATE TABLE ${PM_OK_TABLE} (f_boolean Nullable(Bool), f_int Nullable(Int32)) ENGINE = PaimonLocal('${LAKE_DIR}/pm_ok')"
+${PAIMON_ENGINE_CLIENT} --query "SELECT count() FROM ${PM_OK_TABLE}"
+
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${PM_TABLE}"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${PM_OK_TABLE}"
 
 ${CLICKHOUSE_CLIENT} --query "SELECT 'alive'"
 
