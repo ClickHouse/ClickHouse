@@ -2385,6 +2385,14 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
         /// Load columns substreams, so we can check if specific column exists in the data part via getFirstFileNameForColumn correctly.
         loadColumnsSubstreams(/*validate_against_loaded_columns=*/false);
 
+        /// The file is only ever written non-empty, so present-but-empty means its content was
+        /// discarded as corrupted. Presence would then be inferred from the default serialization,
+        /// dropping every column stored in another layout.
+        if (getColumnsSubstreams().empty() && getDataPartStorage().existsFile(COLUMNS_SUBSTREAMS_FILE_NAME))
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Cannot rebuild columns.txt of part {}: {} was discarded as corrupted",
+                name, COLUMNS_SUBSTREAMS_FILE_NAME);
+
         for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
         {
             if (getFirstFileNameForColumn(column).has_value())

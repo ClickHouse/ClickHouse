@@ -238,6 +238,40 @@ echo "-- t_empty_columns_nested: n.a digest after recovered reload"
 ${CLICKHOUSE_CLIENT} --query "SELECT sum(arraySum(n.a)) FROM t_empty_columns_nested"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_empty_columns_nested"
 
+# ---- Case I: columns_substreams.txt present but discarded as corrupted ----
+# Recovery must refuse instead of inferring presence from the default serialization: a bucketed Map is
+# stored as m.buckets_info, m.0.keys, ... so the default streams (m.size0, m.keys) are absent, the
+# column would be judged missing, and writeColumns would persist that omission -- leaving an intact
+# column reading back as all-default values. Refusing detaches the part, which is recoverable.
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_empty_columns_discarded"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE t_empty_columns_discarded (a UInt64, m Map(String, UInt64))
+    ENGINE = MergeTree ORDER BY a
+    SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+             min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0,
+             enable_block_number_column = 0, enable_block_offset_column = 0,
+             map_serialization_version = 'with_buckets',
+             map_serialization_version_for_zero_level_parts = 'with_buckets',
+             max_buckets_in_map = 11, map_buckets_strategy = 'constant';
+"
+${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES t_empty_columns_discarded"
+${CLICKHOUSE_CLIENT} --max_insert_threads 1 --min_insert_block_size_rows 100000 --min_insert_block_size_bytes 0 --max_block_size 100000 --query "INSERT INTO t_empty_columns_discarded SELECT number, map('k', number * 3) FROM numbers(1000)"
+data_path=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't_empty_columns_discarded' AND active LIMIT 1")
+echo "-- t_empty_columns_discarded: m digest before"
+${CLICKHOUSE_CLIENT} --query "SELECT sum(m['k']) FROM t_empty_columns_discarded"
+${CLICKHOUSE_CLIENT} --query "DETACH TABLE t_empty_columns_discarded"
+# Give the first substream a prefix that does not match its column: the rename-bug corruption that
+# loadColumnsSubstreams discards for Wide parts. Rewriting whichever substream comes first keeps this
+# independent of the stream names the randomized serialization versions produce.
+sed -i '0,/^\t/s/^\t.*/\tnot_a_valid_prefix/' "${data_path}columns_substreams.txt"
+: > "${data_path}columns.txt"
+${CLICKHOUSE_CLIENT} --query "ATTACH TABLE t_empty_columns_discarded" 2>/dev/null
+echo "-- t_empty_columns_discarded: active parts after refused recovery"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_empty_columns_discarded' AND active"
+echo "-- t_empty_columns_discarded: part kept for recovery"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 't_empty_columns_discarded'"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_empty_columns_discarded"
+
 # ---- Case H: recovery when columns_substreams.txt is also absent (legacy stream-enumeration path) ----
 # columns_substreams.txt is the primary presence oracle, but a part predating it must still recover by
 # enumerating each column's own streams. Remove both files so the fallback is exercised, on a Tuple

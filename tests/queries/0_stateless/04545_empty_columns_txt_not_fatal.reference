@@ -48,6 +48,12 @@
 1000000
 -- t_empty_columns_nested: n.a digest after recovered reload
 1000000
+-- t_empty_columns_discarded: m digest before
+1498500
+-- t_empty_columns_discarded: active parts after refused recovery
+0
+-- t_empty_columns_discarded: part kept for recovery
+1
 -- t_empty_columns_fallback: t.x digest before
 999000
 -- t_empty_columns_fallback: t.x digest after empty columns.txt + absent columns_substreams.txt reload
