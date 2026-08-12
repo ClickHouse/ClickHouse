@@ -25,8 +25,10 @@ SELECT count() FROM t_114026 PREWHERE s IN (SELECT s FROM t_114026 WHERE k IN (S
 SELECT count() FROM t_114026 PREWHERE arrayExists(x -> x IN (SELECT number FROM numbers(10)), [k]) SETTINGS rewrite_in_to_join = 1, allow_experimental_correlated_subqueries = 1;
 
 -- An explicit correlated EXISTS in PREWHERE is genuinely unsupported; it must be reported
--- honestly instead of as `Unknown function exists`
-SELECT count() FROM t_114026 PREWHERE EXISTS (SELECT 1 FROM numbers(10) WHERE number = k) SETTINGS allow_experimental_correlated_subqueries = 1; -- { serverError ILLEGAL_PREWHERE }
+-- honestly instead of as `Unknown function exists`. This assertion is about the new analyzer:
+-- the old analyzer rewrites EXISTS into `1 IN (subquery LIMIT 1)` and reports UNKNOWN_IDENTIFIER,
+-- so pin enable_analyzer = 1 to keep the expected error deterministic.
+SELECT count() FROM t_114026 PREWHERE EXISTS (SELECT 1 FROM numbers(10) WHERE number = k) SETTINGS allow_experimental_correlated_subqueries = 1, enable_analyzer = 1; -- { serverError ILLEGAL_PREWHERE }
 
 DROP TABLE t_114026;
 
