@@ -130,7 +130,7 @@ private:
     };
 #pragma clang diagnostic pop
 
-    bool updatePeak(Int64 will_be, bool log_memory_usage);
+    bool updatePeak(Int64 will_be, bool log_memory_usage) noexcept;
     void logMemoryUsage(Int64 current) const;
     Int64 decrementLocalUsage(Int64 size) noexcept;
     void commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit) noexcept;

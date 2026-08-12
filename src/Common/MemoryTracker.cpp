@@ -517,8 +517,6 @@ void MemoryTracker::commitAllocation(Int64 size, Int64 will_be, bool memory_limi
     if (unlikely(current_profiler_limit && will_be > current_profiler_limit))
     {
         auto memory_blocked_context = MemoryTrackerBlockerInThread::getLevel();
-        /// Prevent recursion. TraceSender::send may invoke memory tracking.
-        MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
         DB::TraceSender::send(DB::TraceType::Memory, StackTrace(), {
             .size = size,
             .memory_context = level,
@@ -531,25 +529,7 @@ void MemoryTracker::commitAllocation(Int64 size, Int64 will_be, bool memory_limi
 
     bool peak_updated = false;
     if (!memory_limit_exceeded_ignored)
-    {
-        try
-        {
-            if (enforce_memory_limit)
-            {
-                /// Prevent recursion. Logging and jemalloc profile flushing may allocate.
-                MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-                peak_updated = updatePeak(will_be, /*log_memory_usage=*/ true);
-            }
-            else
-            {
-                peak_updated = updatePeak(will_be, /*log_memory_usage=*/ false);
-            }
-        }
-        catch (...) // NOLINT(bugprone-empty-catch)
-        {
-            /// Ok to ignore: allocation accounting is already committed, and this is optional logging.
-        }
-    }
+        peak_updated = updatePeak(will_be, enforce_memory_limit);
 
     if (memory_limit_exceeded_ignored || !enforce_memory_limit)
         incrementAllocationWithoutCheck(size);
@@ -561,8 +541,6 @@ void MemoryTracker::commitAllocation(Int64 size, Int64 will_be, bool memory_limi
     if (peak_updated && allocation_traced)
     {
         auto memory_blocked_context = MemoryTrackerBlockerInThread::getLevel();
-        /// Prevent recursion. TraceSender::send may invoke memory tracking.
-        MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
         DB::TraceSender::send(DB::TraceType::MemoryPeak, StackTrace(), {
             .size = will_be,
             .memory_context = level,
@@ -591,12 +569,18 @@ void MemoryTracker::adjustOnBackgroundTaskEnd(const MemoryTracker * child)
 }
 
 
-bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
+bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage) noexcept
 {
     auto peak_old = peak.load(std::memory_order_relaxed);
-    if (will_be > peak_old)        /// Races doesn't matter. Could rewrite with CAS, but not worth.
+    if (will_be <= peak_old)
+        return false;
+
+    peak.store(will_be, std::memory_order_relaxed);
+
+    try
     {
-        peak.store(will_be, std::memory_order_relaxed);
+        /// Prevent recursion. Logging and jemalloc profile flushing may allocate.
+        MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
 
         if (log_memory_usage && (level == VariableContext::Process || level == VariableContext::Global)
             && will_be / log_peak_memory_usage_every > peak_old / log_peak_memory_usage_every)
@@ -611,7 +595,6 @@ bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
 #endif
             )
         {
-            MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
             bool prof_active = false;
             if (DB::Jemalloc::tryGetValue("prof.active", prof_active) && prof_active)
             {
@@ -645,10 +628,13 @@ bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
             }
         }
 #endif
-
-        return true;
     }
-    return false;
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        DB::tryLogCurrentException("MemoryTracker", "Failed to log peak memory usage");
+    }
+
+    return true;
 }
 
 AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
