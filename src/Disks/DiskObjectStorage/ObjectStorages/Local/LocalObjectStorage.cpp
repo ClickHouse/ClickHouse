@@ -413,9 +413,16 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
     while (!pending_dirs.empty())
     {
-        if (entry.is_directory())
+        const fs::path dir = std::move(pending_dirs.back());
+        pending_dirs.pop_back();
+
+        std::error_code ec;
+        fs::directory_iterator it(dir, ec);
+        if (ec)
         {
-            listObjects(entry.path(), children, 0);
+            /// The directory itself vanished (or a path component was replaced)
+            /// before we could open it: omit only this subtree, keep the rest.
+            throw_unless_vanished(ec, dir);
             continue;
         }
 
@@ -446,14 +453,7 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
             }
             else
             {
-                /// `entry_path` is produced by descending the already-validated
-                /// `resolved_path` and the walk never follows symlinks, so it is
-                /// guaranteed to be under the key prefix. Stat it directly instead
-                /// of routing through `tryGetObjectMetadata`, whose per-entry
-                /// re-resolution (`fs::relative` / `fs::weakly_canonical`) uses
-                /// throwing filesystem primitives that abort the whole listing
-                /// when a churned entry vanishes mid-resolution.
-                if (auto metadata = tryStatResolvedPath(entry_path))
+                if (auto metadata = tryGetObjectMetadata(entry_path, /*with_tags=*/ false))
                     children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry_path, std::move(*metadata)));
             }
 
