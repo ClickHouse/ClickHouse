@@ -53,6 +53,14 @@ if (ENABLE_XRAY)
         "${COMPILER_RT_DIR}/libclang_rt_xray.a"
     )
 endif()
+if (WITH_COVERAGE)
+    # Tell clang not to inject its own (host-system) profile runtime — we
+    # provide ours.
+    list (APPEND SANITIZER_RUNTIMES
+        "-noprofilelib"
+        "${COMPILER_RT_DIR}/libclang_rt_profile.a"
+    )
+endif()
 string (REPLACE ";" " " SANITIZER_RUNTIMES "${SANITIZER_RUNTIMES}")
 
 message(STATUS "Builtins library: ${BUILTINS_LIBRARY}")

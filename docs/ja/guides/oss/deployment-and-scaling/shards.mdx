@@ -15,7 +15,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </Note>
 
 <div id="what-are-table-shards-in-clickhouse">
-  ## ClickHouse のテーブル分片とは何ですか？
+  ## ClickHouse のテーブルの分片とは何ですか？
 </div>
 
 従来の [shared-nothing](https://en.wikipedia.org/wiki/Shared-nothing_architecture) アーキテクチャの ClickHouse クラスターでは、① データ量が大きすぎて単一のサーバーに収まらない場合、または ② 単一のサーバーではデータ処理が遅すぎる場合に、シャーディングが使用されます。次の図は、[uk&#95;price&#95;paid&#95;simple](/ja/concepts/core-concepts/parts) テーブルが単一マシンの容量を超えるケース①を示しています。
@@ -24,13 +24,13 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <br />
 
-このような場合、データはテーブル分片として複数の ClickHouse サーバーに分割できます。
+このような場合、データはテーブルの分片として複数の ClickHouse サーバーに分割できます。
 
 <Image img="/images/managing-data/core-concepts/shards_02.webp" size="lg" alt="SHARDS" />
 
 <br />
 
-各分片はデータの一部を保持し、個別にクエリできる通常の ClickHouse テーブルとして機能します。ただし、クエリで処理されるのはその一部だけであり、データの分布によってはそれで十分な場合もあります。通常は、[分散テーブル](/ja/reference/engines/table-engines/special/distributed) (多くの場合、各サーバー上に作成) がデータセット全体を統一的に参照するためのビューを提供します。分散テーブル自体はデータを保存せず、**SELECT** クエリをすべての分片に転送して結果をまとめ、データが均等に分散されるよう **INSERTS** を振り分けます。
+各分片はデータの一部を保持し、個別にクエリできる通常の ClickHouse テーブルとして機能します。ただし、クエリで処理されるのはその一部だけであり、データの分布によってはそれで十分なユースケースもあります。通常は、[分散テーブル](/ja/reference/engines/table-engines/special/distributed) (多くの場合、各サーバー上に作成) がデータセット全体を統一的に参照するためのビューを提供します。分散テーブル自体はデータを保存せず、**SELECT** クエリをすべての分片に転送して結果をまとめ、データが均等に分散されるよう **INSERTS** を振り分けます。
 
 <div id="distributed-table-creation">
   ## 分散テーブルの作成

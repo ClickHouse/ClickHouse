@@ -1,0 +1,284 @@
+{
+  "icon": "/images/icons/icon-concepts.svg",
+  "item": "概念",
+  "pages": [
+    "zh/concepts/index",
+    {
+      "expanded": true,
+      "group": "基础知识",
+      "pages": [
+        "zh/concepts/core-concepts/glossary",
+        "zh/concepts/core-concepts/parts",
+        "zh/concepts/core-concepts/partitions",
+        "zh/concepts/core-concepts/merges",
+        "zh/concepts/core-concepts/primary-indexes",
+        "zh/concepts/core-concepts/query-parallelism",
+        "zh/concepts/core-concepts/academic-overview"
+      ],
+      "root": "zh/concepts/core-concepts/index"
+    },
+    {
+      "expanded": true,
+      "group": "ClickHouse 概念",
+      "pages": [
+        {
+          "group": "materialized views",
+          "pages": [
+            "zh/concepts/features/materialized-views/incremental-materialized-view",
+            "zh/concepts/features/materialized-views/refreshable-materialized-view",
+            "zh/concepts/features/materialized-views/cascading-materialized-views"
+          ],
+          "root": "zh/concepts/features/materialized-views/index"
+        },
+        {
+          "group": "字典",
+          "pages": [
+            "zh/concepts/features/dictionaries/best-practices"
+          ],
+          "root": "zh/concepts/features/dictionaries/index"
+        },
+        {
+          "group": "投影",
+          "pages": [
+            "zh/concepts/features/projections/projections",
+            "zh/concepts/features/projections/materialized-views-versus-projections"
+          ]
+        },
+        {
+          "group": "性能",
+          "pages": [
+            "zh/concepts/features/performance/prewhere",
+            "zh/concepts/features/performance/allocation-profiling",
+            "zh/concepts/features/performance/allocation-profiling-old",
+            {
+              "group": "缓存",
+              "pages": [
+                "zh/concepts/features/performance/caches/caches",
+                "zh/concepts/features/performance/caches/query-cache",
+                "zh/concepts/features/performance/caches/query-condition-cache",
+                "zh/concepts/features/performance/caches/userspace-page-cache"
+              ]
+            },
+            {
+              "group": "跳过索引",
+              "pages": [
+                "zh/concepts/features/performance/skip-indexes/skipping-indexes",
+                "zh/concepts/features/performance/skip-indexes/skipping-indexes-examples"
+              ]
+            },
+            "zh/concepts/features/performance/lazy-materialization",
+            {
+              "group": "故障排查",
+              "pages": [
+                "zh/concepts/features/performance/troubleshoot/debugging-memory-issues",
+                "zh/concepts/features/performance/troubleshoot/oom-canary",
+                "zh/concepts/features/performance/troubleshoot/performance-test",
+                "zh/concepts/features/performance/troubleshoot/sampling-query-profiler"
+              ]
+            }
+          ],
+          "root": "zh/concepts/features/performance/index"
+        },
+        {
+          "group": "操作",
+          "pages": [
+            {
+              "group": "插入",
+              "pages": [
+                "zh/concepts/features/operations/insert/inserting-data",
+                "zh/concepts/features/operations/insert/asyncinserts",
+                "zh/concepts/features/operations/insert/bulkinserts",
+                "zh/concepts/features/operations/insert/deduplication",
+                "zh/concepts/features/operations/insert/deduplicating-inserts-on-retries",
+                "zh/concepts/features/operations/insert/transactions"
+              ]
+            },
+            {
+              "group": "查询",
+              "pages": [
+                "zh/concepts/features/operations/select/joining-tables"
+              ]
+            },
+            {
+              "group": "更新",
+              "pages": [
+                "zh/concepts/features/operations/update/overview",
+                "zh/concepts/features/operations/update/on-fly-mutations",
+                "zh/concepts/features/operations/update/replacing-merge-tree"
+              ],
+              "root": "zh/concepts/features/operations/update/index"
+            },
+            {
+              "group": "删除",
+              "pages": [
+                "zh/concepts/features/operations/delete/overview",
+                "zh/concepts/features/operations/delete/delete-mutations",
+                "zh/concepts/features/operations/delete/drop-partition",
+                "zh/concepts/features/operations/delete/lightweight-delete",
+                "zh/concepts/features/operations/delete/truncate",
+                "zh/concepts/features/operations/delete/ttl"
+              ],
+              "root": "zh/concepts/features/operations/delete/index"
+            }
+          ]
+        },
+        {
+          "group": "配置",
+          "pages": [
+            {
+              "group": "设置",
+              "pages": [
+                "zh/concepts/features/configuration/settings/overview",
+                "zh/concepts/features/configuration/settings/settings-query-level",
+                "zh/concepts/features/configuration/settings/settings-users",
+                "zh/concepts/features/configuration/settings/settings-profiles",
+                "zh/concepts/features/configuration/settings/constraints-on-settings",
+                "zh/concepts/features/configuration/settings/query-complexity",
+                "zh/concepts/features/configuration/settings/permissions-for-queries",
+                "zh/concepts/features/configuration/settings/memory-overcommit",
+                "zh/concepts/features/configuration/settings/server-overload",
+                "zh/concepts/features/configuration/settings/tcp-connection-limits",
+                "zh/concepts/features/configuration/settings/alternative-query-languages"
+              ]
+            },
+            {
+              "group": "服务器配置",
+              "pages": [
+                "zh/concepts/features/configuration/server-config/configuration-files",
+                "zh/concepts/features/configuration/server-config/storing-data",
+                "zh/concepts/features/configuration/server-config/named-collections",
+                "zh/concepts/features/configuration/server-config/workload-scheduling",
+                "zh/concepts/features/configuration/server-config/quotas",
+                "zh/concepts/features/configuration/server-config/composable-protocols",
+                "zh/concepts/features/configuration/server-config/startup-scripts"
+              ]
+            }
+          ]
+        },
+        {
+          "group": "安全与身份验证",
+          "pages": [
+            "zh/concepts/features/security/access-rights",
+            "zh/concepts/features/security/network-ports",
+            {
+              "group": "TLS",
+              "pages": [
+                "zh/concepts/features/security/tls/configuring-tls",
+                "zh/concepts/features/security/tls/configuring-tls-acme-client"
+              ],
+              "root": "zh/concepts/features/security/tls/index"
+            },
+            {
+              "group": "外部身份验证器",
+              "pages": [
+                {
+                  "group": "SSL",
+                  "pages": [
+                    "zh/concepts/features/security/external-authenticators/ssl-x509",
+                    "zh/concepts/features/security/ssl-user-auth"
+                  ]
+                },
+                {
+                  "group": "LDAP",
+                  "pages": [
+                    "zh/concepts/features/security/external-authenticators/ldap",
+                    "zh/concepts/features/security/configuring-ldap"
+                  ]
+                },
+                "zh/concepts/features/security/external-authenticators/http",
+                "zh/concepts/features/security/external-authenticators/kerberos",
+                "zh/concepts/features/security/external-authenticators/jwt"
+              ],
+              "root": "zh/concepts/features/security/external-authenticators/index"
+            }
+          ],
+          "root": "zh/concepts/features/security/index"
+        },
+        {
+          "group": "Backup 和恢复",
+          "pages": [
+            "zh/concepts/features/backup-restore/overview",
+            "zh/concepts/features/backup-restore/local-disk",
+            "zh/concepts/features/backup-restore/s3-endpoint",
+            "zh/concepts/features/backup-restore/azure-blob-storage",
+            "zh/concepts/features/backup-restore/snapshot",
+            "zh/concepts/features/backup-restore/alternative-methods"
+          ]
+        },
+        {
+          "group": "接口",
+          "pages": [
+            "zh/concepts/features/interfaces/cli",
+            "zh/concepts/features/interfaces/client",
+            {
+              "group": "驱动程序和接口",
+              "pages": [
+                "zh/concepts/features/interfaces/http",
+                "zh/concepts/features/interfaces/tcp",
+                "zh/concepts/features/interfaces/jdbc",
+                "zh/concepts/features/interfaces/mysql",
+                "zh/concepts/features/interfaces/odbc",
+                "zh/concepts/features/interfaces/postgresql",
+                "zh/concepts/features/interfaces/prometheus",
+                "zh/concepts/features/interfaces/ssh",
+                "zh/concepts/features/interfaces/grpc",
+                "zh/concepts/features/interfaces/arrowflight"
+              ],
+              "root": "zh/concepts/features/interfaces/overview"
+            },
+            "zh/concepts/features/interfaces/cpp",
+            "zh/concepts/features/interfaces/schema-inference",
+            "zh/concepts/features/interfaces/documentation-search",
+            "zh/concepts/features/interfaces/web-sql",
+            "zh/concepts/features/interfaces/web-ui-color-coding",
+            "zh/concepts/features/interfaces/web-ui-pinned-columns",
+            "zh/concepts/features/interfaces/web-terminal",
+            {
+              "group": "第三方客户端",
+              "pages": [],
+              "root": "zh/concepts/features/interfaces/third-party/index"
+            }
+          ],
+          "root": "zh/concepts/features/interfaces/native-clients-interfaces-index"
+        },
+        {
+          "group": "工具和实用程序",
+          "pages": [
+            "zh/concepts/features/tools-and-utilities/backupview",
+            "zh/concepts/features/tools-and-utilities/clickhouse-benchmark",
+            "zh/concepts/features/tools-and-utilities/clickhouse-compressor",
+            "zh/concepts/features/tools-and-utilities/clickhouse-disks",
+            "zh/concepts/features/tools-and-utilities/clickhouse-format",
+            "zh/concepts/features/tools-and-utilities/clickhouse-keeper-client",
+            "zh/concepts/features/tools-and-utilities/clickhouse-keeper-http-api",
+            "zh/concepts/features/tools-and-utilities/clickhouse-local",
+            "zh/concepts/features/tools-and-utilities/clickhouse-obfuscator",
+            "zh/concepts/features/tools-and-utilities/odbc-bridge",
+            "zh/concepts/features/tools-and-utilities/static-files-disk-uploader"
+          ],
+          "root": "zh/concepts/features/tools-and-utilities/index"
+        }
+      ],
+      "root": "zh/concepts/features/index"
+    },
+    {
+      "expanded": true,
+      "group": "最佳实践",
+      "pages": [
+        "zh/concepts/best-practices/choosing-a-primary-key",
+        "zh/concepts/best-practices/select-data-type",
+        "zh/concepts/best-practices/use-materialized-views",
+        "zh/concepts/best-practices/minimize-optimize-joins",
+        "zh/concepts/best-practices/partitioning-keys",
+        "zh/concepts/best-practices/selecting-an-insert-strategy",
+        "zh/concepts/best-practices/using-data-skipping-indices",
+        "zh/concepts/best-practices/avoid-mutations",
+        "zh/concepts/best-practices/avoid-optimize-final",
+        "zh/concepts/best-practices/avoidnullablecolumns",
+        "zh/concepts/best-practices/json-type"
+      ],
+      "root": "zh/concepts/best-practices/index"
+    }
+  ],
+  "root": "zh/concepts/index"
+}

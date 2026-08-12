@@ -105,7 +105,9 @@ $CLICKHOUSE_CLIENT --config $CONFIG --connection test_hostname_invalid --host $T
 $CLICKHOUSE_CLIENT --config $CONFIG -q 'select currentDatabase()'
 $CLICKHOUSE_CLIENT --config $CONFIG --host $TEST_HOST -q 'select currentDatabase()'
 echo 'port'
-$CLICKHOUSE_CLIENT --config $CONFIG --connection test_port -q 'select tcpPort()' |& grep -F -o 'Connection refused (localhost:0).'
+# The errno text differs per OS (e.g. "Connection refused" on Linux, "Cannot assign requested address"
+# on macOS); match only the (host:port) suffix ClickHouse always appends.
+$CLICKHOUSE_CLIENT --config $CONFIG --connection test_port -q 'select tcpPort()' |& grep -F -o '(localhost:0)'
 $CLICKHOUSE_CLIENT --config $CONFIG --connection test_port --port $TEST_PORT -q 'select tcpPort()'
 echo 'secure'
 

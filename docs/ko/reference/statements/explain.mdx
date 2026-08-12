@@ -24,7 +24,7 @@ picture-in-picture"
 구문:
 
 ```sql
-EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE] [setting = value, ...]
+EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABLE OVERRIDE | WHATIF] [setting = value, ...]
     [
       SELECT ... |
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
@@ -39,22 +39,23 @@ EXPLAIN SELECT sum(number) FROM numbers(10) UNION ALL SELECT sum(number) FROM nu
 ```
 
 ```sql
+Output: sum(number)
+
 Union
-  Expression (Projection)
-    Expression (Before ORDER BY and SELECT)
-      Aggregating
-        Expression (Before GROUP BY)
-          SettingQuotaAndLimits (Set limits and quota after reading from storage)
-            ReadFromStorage (SystemNumbers)
-  Expression (Projection)
-    MergingSorted (Merge sorted streams for ORDER BY)
-      MergeSorting (Merge sorted blocks for ORDER BY)
-        PartialSorting (Sort each block for ORDER BY)
-          Expression (Before ORDER BY and SELECT)
-            Aggregating
-              Expression (Before GROUP BY)
-                SettingQuotaAndLimits (Set limits and quota after reading from storage)
-                  ReadFromStorage (SystemNumbers)
+├──Aggregating
+│  │  Keys:
+│  │  Aggregates: sum(number)
+│  │  Skip merging: 0
+│  └──ReadFromSystemNumbers
+│        Output: number
+└──Sorting (Sorting for ORDER BY)
+   │  Sort description: sum(number) ASC
+   └──Aggregating
+      │  Keys:
+      │  Aggregates: sum(number)
+      │  Skip merging: 0
+      └──ReadFromSystemNumbers
+            Output: number
 ```
 
 <div id="explain-types">
@@ -66,6 +67,9 @@ Union
 * `QUERY TREE` — 쿼리 트리 수준 최적화가 적용된 후의 쿼리 트리입니다.
 * `PLAN` — 쿼리 실행 계획입니다.
 * `PIPELINE` — 쿼리 실행 파이프라인입니다.
+* `ANALYZE` — 쿼리를 실행하고 측정된 런타임 메트릭을 실행 계획에 덧붙입니다.
+* `ESTIMATE` — 쿼리 처리 중 테이블에서 읽을 것으로 예상되는 행 수, 마크 수 및 파트 수입니다.
+* `TABLE OVERRIDE` — 테이블 함수 스키마에 적용된 테이블 재정의의 유효성이 검증된 결과입니다.
 
 <div id="explain-ast">
   ### EXPLAIN AST
@@ -193,39 +197,49 @@ QUERY id: 0
 * `description` — 단계 설명을 출력합니다. 기본값: 1.
 * `indexes` — 사용된 인덱스와, 적용된 각 인덱스별로 필터링된 파트 수 및 필터링된 그래뉼 수를 표시합니다. 기본값: 0. [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블에서 지원됩니다. ClickHouse &gt;= v25.9부터는 이 문을 `SETTINGS use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0`와 함께 사용할 때만 출력이 적절하게 표시됩니다.
 * `projections` — 분석된 모든 프로젝션과, 프로젝션 프라이머리 키 조건에 기반한 파트 수준 필터링에 미치는 영향을 표시합니다. 각 프로젝션에 대해 이 섹션에는 프로젝션의 프라이머리 키를 사용해 평가된 파트 수, 행 수, 마크 수, 범위 수 등의 통계가 포함됩니다. 또한 프로젝션 자체를 읽지 않고도 이 필터링으로 인해 건너뛴 데이터 파트 수를 보여줍니다. 프로젝션이 실제 읽기에 사용되었는지, 아니면 필터링용으로만 분석되었는지는 `description` 필드로 확인할 수 있습니다. 기본값: 0. [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블에서 지원됩니다.
-* `actions` — 단계 작업에 대한 자세한 정보를 출력합니다. 기본값: 0.
+* `actions` — 단계 작업에 대한 자세한 정보를 출력합니다. 기본값: 1.
 * `sorting` — 정렬된 출력을 생성하는 각 계획 단계의 정렬 설명을 출력합니다. 기본값: 0.
 * `keep_logical_steps` — 조인을 물리적 조인 구현으로 변환하지 않고 논리적 계획 단계를 유지합니다. 기본값: 0.
 * `json` — 쿼리 계획 단계를 [JSON](/ko/reference/formats/JSON/JSON) 포맷의 한 행으로 출력합니다. 기본값: 0. 불필요한 이스케이프를 피하려면 [TabSeparatedRaw (TSVRaw)](/ko/reference/formats/TabSeparated/TabSeparatedRaw) 포맷을 사용하는 것이 좋습니다.
 * `input_headers` — 단계의 입력 헤더를 출력합니다. 기본값: 0. 주로 입력-출력 헤더 불일치와 관련된 문제를 디버깅하는 개발자에게만 유용합니다.
 * `column_structure` — 헤더에서 컬럼의 이름과 유형뿐 아니라 구조도 함께 출력합니다. 기본값: 0. 주로 입력-출력 헤더 불일치와 관련된 문제를 디버깅하는 개발자에게만 유용합니다.
-* `distributed` — 분산 테이블 또는 병렬 레플리카의 원격 노드에서 실행되는 쿼리 계획을 표시합니다. 기본값: 0.
-* `compact` — 활성화하면 계획에서 표현식 단계와 자세한 작업 정보(입력, 함수, Aliases, 출력 위치)를 숨깁니다. `actions = 1`일 때만 효과가 있습니다. 기본값: 0.
-* `pretty` — 들여쓰기 대신 선 그리기 문자(├──, └──, │)를 사용해 계층 구조를 시각화한 계획 트리를 출력합니다. 또한 조인 단계 속성을 인라인으로 포맷합니다. 기본값: 0.
+* `distributed` — 분산 테이블 또는 병렬 레플리카의 원격 노드에서 실행되는 쿼리 계획을 표시합니다. `json`과 함께는 지원되지 않습니다. 기본값: 0.
+* `compact` — 활성화하면 계획에서 표현식 단계와 자세한 작업 정보(입력, 함수, aliases, 출력 위치)를 숨깁니다. `actions = 1`일 때만 효과가 있습니다. 기본값: 1.
+* `pretty` — 들여쓰기 대신 선 그리기 문자(├──, └──, │)를 사용해 계층 구조를 시각화한 계획 트리를 출력합니다. 또한 조인 단계 속성을 인라인으로 포맷합니다. 기본값: 1.
 
-`json=1`이면 단계 이름에 고유한 단계 식별자를 나타내는 추가 접미사가 포함됩니다.
+<Note>
+  기본적으로 `explain_query_plan_default = 'pretty'`이므로 `actions`, `compact`, `pretty`는 `1`로 초기화되며 계획은 compact, pretty, action 주석이 포함된 형태로 렌더링됩니다. `EXPLAIN` 문에서 이러한 옵션 중 하나를 명시적으로 지정하면(예: `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) 항상 기본값을 재정의합니다.
+
+  ClickHouse 26.7 이전에는 `actions`, `compact`, `pretty`의 기본값이 `0`이었습니다. `explain_query_plan_default = 'legacy'`로 설정하거나(전역 또는 쿼리별 `SETTINGS`에서), `compatibility`를 `26.7`보다 이전 버전으로 설정하면 여전히 해당 출력을 얻을 수 있습니다.
+
+  `json` 및 `distributed` 옵션은 `explain_query_plan_default = 'pretty'`인 경우에도 `pretty` 기본값(`actions`, `compact`, `pretty`)을 활성화하지 않습니다. 해당 출력에 action 세부 정보를 포함하려면 `actions = 1`을 수동으로 설정하십시오.
+</Note>
 
 예시:
 
 ```sql
-EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
+EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4  LIMIT 1;
 ```
 
 ```sql
-Union
-  Expression (Projection)
-  Expression (Before ORDER BY and SELECT)
-    Aggregating
-      Expression (Before GROUP BY)
-        SettingQuotaAndLimits (Set limits and quota after reading from storage)
-          ReadFromStorage (SystemNumbers)
+Output: sum(number)
+
+Limit (preliminary LIMIT)
+│  Limit 1
+│  Offset 0
+└──Aggregating
+   │  Keys: number MOD 4
+   │  Aggregates: sum(number)
+   │  Skip merging: 0
+   └──ReadFromSystemNumbers
+         Output: number
 ```
 
 <Note>
   단계별 비용 및 쿼리 비용 추정은 지원되지 않습니다.
 </Note>
 
-`json = 1`인 경우 쿼리 계획은 JSON 포맷으로 표시됩니다. 각 노드는 항상 `Node Type`과 `Plans` 키를 갖는 딕셔너리입니다. `Node Type`은 단계 이름을 나타내는 문자열입니다. `Plans`는 하위 단계 설명을 담은 배열입니다. 그 밖의 선택적 키는 노드 유형과 설정에 따라 추가될 수 있습니다.
+`json = 1`이면 쿼리 계획이 JSON 포맷으로 표시됩니다. 모든 노드는 항상 `Node Type`, `Node Id`, `Plans` 키를 가지는 딕셔너리입니다. `Node Type`은 단계 이름을 나타내는 문자열이고, `Node Id`는 고유한 단계 식별자입니다(숫자 접미사가 붙은 단계 이름으로, 예: `Union_10`). `Plans`는 하위 단계 설명을 담은 배열입니다. 그 밖의 선택적 키는 노드 유형과 설정에 따라 추가될 수 있습니다.
 
 예시:
 
@@ -266,7 +280,7 @@ EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw;
 ]
 ```
 
-`description` = 1이면 해당 단계에 `Description` 키가 추가됩니다:
+`description` = 1이면 `Description` 키가 해당 단계에 추가됩니다:
 
 ```json
 {
@@ -370,12 +384,12 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 ]
 ```
 
-`projections` = 1이면 `Projections` 키가 추가됩니다. 여기에는 분석된 프로젝션의 배열이 포함됩니다. 각 프로젝션은 다음 키를 포함하는 JSON으로 표시됩니다.
+`projections` = 1로 설정하면 `Projections` 키가 추가됩니다. 이 키에는 분석된 프로젝션의 배열이 포함됩니다. 각 프로젝션은 다음 키를 포함하는 JSON으로 설명됩니다:
 
 * `Name` — 프로젝션 이름입니다.
-* `Condition` — 사용된 프로젝션 프라이머리 키(primary key) 조건입니다.
-* `Description` — 프로젝션이 사용되는 방식에 대한 설명입니다(예: 파트 수준 필터링).
-* `Selected Parts` — 프로젝션으로 선택된 파트 수입니다.
+* `Condition` — 사용된 프로젝션 프라이머리 키 조건입니다.
+* `Description` — 프로젝션이 어떻게 사용되는지에 대한 설명입니다(예: 파트 수준 필터링).
+* `Selected Parts` — 프로젝션이 선택한 파트 수입니다.
 * `Selected Marks` — 선택된 마크 수입니다.
 * `Selected Ranges` — 선택된 범위 수입니다.
 * `Selected Rows` — 선택된 행 수입니다.
@@ -470,24 +484,39 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 ]
 ```
 
-`compact = 1`을 설정하면 각 `Expression` 단계가 제거됩니다. 또한 `actions = 1`이 설정된 경우, `Actions` 및 `Positions` 항목이 숨겨지고 단계 설명만 표시됩니다:
+`compact = 0`과 `actions = 1`을 설정하면 `Expression` 단계와 함께 표현식에 대한 상세 정보를 확인할 수 있습니다:
 
 ```sql
-EXPLAIN actions = 1, compact = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
+EXPLAIN actions = 1, compact = 0 SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
 ```
 
 ```text
-Aggregating
-Keys: modulo(__table1.number, 4_UInt8)
-Aggregates:
-    sum(__table1.number)
-      Function: sum(UInt64) → UInt64
-      Arguments: __table1.number
-Skip merging: 0
-  ReadFromSystemNumbers
+Output: sum(number)
+
+Expression ((Project names + Projection))
+│  Actions: INPUT : 0 -> sum(__table1.number) UInt64 : 0
+│           INPUT :: 1 -> modulo(__table1.number, 4_UInt8) UInt8 : 1
+│           ALIAS sum(__table1.number) :: 0 -> sum(number) UInt64 : 2
+│  Positions: 2
+└──Aggregating
+   │  Keys: number MOD 4
+   │  Aggregates: sum(number)
+   │  Skip merging: 0
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      │  Actions: INPUT : 0 -> number UInt64 : 0
+      │           COLUMN Const(UInt8) -> 4_UInt8 UInt8 : 1
+      │           ALIAS number :: 0 -> __table1.number UInt64 : 2
+      │           FUNCTION modulo(__table1.number : 2, 4_UInt8 :: 1) -> modulo(__table1.number, 4_UInt8) UInt8 : 0
+      │  Positions: 0 2
+      └──ReadFromSystemNumbers
+            Output: number
 ```
 
 `distributed` = 1로 설정하면 로컬 쿼리 플랜뿐만 아니라 원격 노드에서 실행될 쿼리 플랜도 출력에 포함됩니다. 분산 쿼리를 분석하고 디버깅할 때 유용합니다.
+
+<Note>
+  `distributed`는 `pretty` 출력이 원격 세그먼트의 계획을 계획 트리에 통합하지 않기 때문에 레거시(`pretty`가 아닌) 형식으로만 표시됩니다. 이러한 이유로 `distributed`를 활성화하면 `explain_query_plan_default`와 관계없이 `pretty` 기본값(`actions`, `compact`, `pretty`)이 자동으로 비활성화됩니다. 그래도 `actions=1`은 수동으로 설정할 수 있습니다. 또한 `distributed` 옵션은 `json`과 함께 사용할 수 없습니다.
+</Note>
 
 분산 테이블(Distributed Table)을 사용한 예시:
 
@@ -531,17 +560,17 @@ Expression ((Project names + Projection))
 
 두 예시 모두에서 쿼리 플랜은 로컬 및 원격 단계를 포함한 전체 실행 흐름을 표시합니다.
 
-`pretty` = 1로 설정하면 들여쓰기 대신 선 그리기 문자를 사용하여 플랜 트리가 표시되며, 주요 단계에 대한 추가 정보도 함께 표시됩니다.
+`pretty` = 1로 설정하면 들여쓰기 대신 선 그리기 문자를 사용하여 플랜 트리가 표시되며, 주요 단계에 대한 추가 정보도 함께 표시됩니다:
 
-* **쿼리 출력 컬럼**은 계획 맨 위에 표시됩니다.
-* 필터, 집계 키, 정렬 설명, 윈도우 함수의 **표현식**은 사람이 읽기 쉬운 SQL 유사 표기법으로 표시됩니다(예: `greater(plus(a, 1), 5)` 대신 `a + 1 > 5`). 가독성을 위해 내부 컬럼 식별자 프리픽스(예: `__table1.`)는 제거됩니다.
-* **소스 단계**(예: `ReadFromMergeTree`)는 출력 컬럼을 표시합니다.
-* **필터 단계**는 SQL 표기법으로 필터 조건을 표시합니다. 런타임 조인 필터가 있으면 별도로 표시됩니다.
-* **집계 단계**는 키와 집계 함수를 해당 인수와 함께 표시합니다(예: `sum(c)`, `count()`).
-* 튜플 리터럴의 **IN 집합**은 값이 표시되며(큰 집합은 잘려서 표시됨), 서브쿼리 기반 집합에는 `subquery1`, `subquery2` 등의 레이블이 붙고, `Set` 엔진 테이블의 집합은 테이블 이름을 표시합니다.
-* **조인 단계**는 수학 표기법으로 조인 릴레이션, 예상 결과 행 수,
+* **쿼리 출력 컬럼**은 플랜 상단에 표시됩니다.
+* 필터, 집계 키, 정렬 설명, 윈도우 함수의 **표현식**은 사람이 읽기 쉬운 SQL 유사 표기법으로 표시됩니다(예: `greater(plus(a, 1), 5)` 대신 `a + 1 > 5`). 명확성을 위해 내부 컬럼 식별자 프리픽스(예: `__table1.`)는 제거됩니다.
+* **소스 단계**(`ReadFromMergeTree` 등)는 출력 컬럼을 표시합니다.
+* **필터 단계**는 필터 조건을 SQL 표기법으로 표시합니다. 런타임 조인 필터가 있는 경우 별도로 표시됩니다.
+* **집계 단계**는 키와 해당 인수가 포함된 집계 함수를 표시합니다(예: `sum(c)`, `count()`).
+* 튜플 리터럴의 **IN Set**은 값을 표시하며(큰 Set의 경우 잘림), 서브쿼리 기반 Set에는 `subquery1`, `subquery2` 등의 레이블이 지정되고, `Set` 엔진 테이블의 Set은 테이블 이름을 표시합니다.
+* **조인 단계**는 수학적 표기법을 사용한 조인 릴레이션, 예상 결과 행 수,
   그리고 어떤 출력 컬럼이 왼쪽과 오른쪽에서 오는지를 표시합니다. 다음 기호는
-  서로 다른 조인 유형을 나타내는 데 사용됩니다:
+  서로 다른 JOIN 유형을 나타내는 데 사용됩니다:
 
 | 기호                     | 조인 유형     |
 | ---------------------- | --------- |
@@ -561,17 +590,6 @@ Expression ((Project names + Projection))
 
 `pretty` 옵션은 `compact = 1`과 함께 사용하면 효과적이며, 이 경우 `Expression` 단계와 자세한 작업 정보가 숨겨져 계획을 더 읽기 쉽게 만듭니다.
 
-```sql
-EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
-```
-
-```text
-Expression ((Project names + Projection))
-└──Aggregating
-   └──Expression ((Before GROUP BY + Change column names to column identifiers))
-      └──ReadFromSystemNumbers
-```
-
 조인을 사용하는 더 자세한 예시:
 
 ```sql
@@ -585,24 +603,28 @@ SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id FORMAT Raw;
 ```
 
 ```text
-Output: id, value, t2.id, t2.value
+Output: id, value, id, value
 
 Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
 │  Result rows: 100
+│  Join conditions: id = id
 │  Output:
 │    Left:  id, value
 │    Right: id, value
-│  Join conditions: id = id
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
 │     Output: id, value
-└──ReadFromMergeTree (default.t2)
-      Read type: Default
-      Parts: 1 | Granules: 1
-      Output: id, value
+│     Runtime filters: RF1(id, id from default.t2)
+└──BuildRuntimeFilter (Build runtime join filter on id)
+   │  Filter id: RF1
+   │  Source table: default.t2
+   └──ReadFromMergeTree (default.t2)
+         Read type: Default
+         Parts: 1 | Granules: 1
+         Output: id, value
 ```
 
 <div id="explain-pipeline">
@@ -647,6 +669,125 @@ ExpressionTransform
             NumbersRange × 2 0 → 1
 ```
 
+<div id="explain-analyze">
+  ### EXPLAIN ANALYZE
+</div>
+
+`EXPLAIN ANALYZE`는 실제로 쿼리를 실행하고 결과 행은 버린 다음, 각 단계에 실행 시 실제로 발생한 내용을 표시하여 `EXPLAIN PLAN`과 동일한 계획 트리를 출력합니다.
+
+설정:
+
+`EXPLAIN ANALYZE`는 `EXPLAIN PLAN`과 동일한 표시 옵션을 지원합니다([EXPLAIN PLAN](#explain-plan) 섹션에 설명되어 있음).
+
+* `header` — [EXPLAIN PLAN](#explain-plan) 섹션을 참조하십시오.
+* `description` — [EXPLAIN PLAN](#explain-plan) 섹션을 참조하십시오.
+* `projections` — [EXPLAIN PLAN](#explain-plan) 섹션을 참조하십시오.
+* `sorting` — [EXPLAIN PLAN](#explain-plan) 섹션을 참조하십시오.
+* `input_headers` — [EXPLAIN PLAN](#explain-plan) 섹션을 참조하십시오.
+* `column_structure` — [EXPLAIN PLAN](#explain-plan) 섹션을 참조하십시오.
+* `actions` — [EXPLAIN PLAN](#explain-plan) 섹션을 참조하십시오. 기본값: 1.
+* `indexes` — [EXPLAIN PLAN](#explain-plan) 섹션을 참조하십시오. 기본값: 1.
+* `compact` — [EXPLAIN PLAN](#explain-plan) 섹션을 참조하십시오. 기본값: 1.
+* `pretty` — [EXPLAIN PLAN](#explain-plan) 섹션을 참조하십시오. 기본값: 1.
+* `processors` — `EXPLAIN ANALYZE`에서는 각 스테이지마다 프로세서별 경과 시간 분포(`min`, `median`, `max`, `sum`)를 보여주는 추가 줄을 출력합니다. 병렬 프로세서 간 부하 편차를 파악하는 데 유용합니다. 기본값: 0.
+
+<Note>
+  `EXPLAIN ANALYZE`는 감싼 쿼리를 실제로 실행하므로, 여러 측면에서
+  실행하지 않는 `EXPLAIN` 형식과는 달리 해당 쿼리와 동일하게 동작합니다:
+
+  * **쿼터와 제한.** 직접 쿼리를 실행할 때와 동일한 [쿼터](/ko/concepts/features/configuration/server-config/quotas)가 적용되며,
+    동일한 [제한](/ko/concepts/features/configuration/settings/query-complexity)
+    (예: `query_selects`, `read_rows`)의 적용을 받습니다. 계획 수립 중 쿼터가 면제되는 소스
+    (예: `system.one`)에는 과금되지 않습니다.
+  * **실패한 트랜잭션.** 이미 실패한(`ROLLED_BACK`) [트랜잭션](/ko/concepts/features/operations/insert/transactions)
+    내부에서는 일반 `SELECT`와 마찬가지로 `INVALID_TRANSACTION`과 함께 거부되므로,
+    먼저 `ROLLBACK`을 실행하십시오.
+  * **스트리밍 읽기.** 스트리밍(`FROM ... STREAM`) 읽기에서는
+    해당 읽기가 끝나지 않기 때문에 `NOT_IMPLEMENTED`와 함께 거부됩니다.
+  * **분산 쿼리.** [분산](/ko/reference/engines/table-engines/special/distributed) 모드에서 실행되는
+    쿼리에는 지원되지 않습니다.
+</Note>
+
+예시:
+
+```sql
+EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP BY k;
+```
+
+```text
+Query summary:
+  Time:        10.72 ms (planning 6.45 ms · execution 4.26 ms)
+  Read:        1.00 million rows, 8.00 MB (234.49 million rows/s., 1.88 GB/s.)
+  Peak memory: 28.98 KiB
+
+Output: number MOD 10, count()
+
+Expression ((Project names + Projection))
+│  I/O: rows 10 → 10 · 90 B → 90 B
+│    time 21.82 us (0.5%) · parallelism 0.98/1
+└──Aggregating
+   │  Keys: number MOD 10
+   │  Aggregates: count()
+   │  Skip merging: 0
+   │  I/O: rows 1.00 million → 10 (0.00%) · 1.00 MB → 90 B
+   │    Stage (partial aggregation): time 868.45 us (20.4%) · parallelism 3.80/15
+   │    Stage (final aggregation): time 445.27 us (10.4%) · parallelism 1.11/16
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      │  I/O: rows 1.00 million → 1.00 million · 8.00 MB → 1.00 MB
+      │    time 677.07 us (15.9%) · parallelism 4.31/15
+      └──ReadFromSystemNumbers
+            Output: number
+            I/O: rows 0 → 1.00 million · 0 B → 8.00 MB
+              time 993.94 us (23.3%) · parallelism 7.52/15
+```
+
+출력을 살펴보겠습니다. 먼저 헤더부터 보겠습니다.
+
+```txt
+   Query summary:
+     Time:        <total> (planning <planning> · execution <execution>)
+     Read:        <rows> rows, <bytes> (<rows/s>, <bytes/s>)
+     Peak memory: <peak>
+```
+
+* `Time` — 총 시간이며, 계획 단계(즉, 계획 생성 + 계획 최적화 + 파이프라인 구성)와 실행 단계(파이프라인 실행)로 나뉩니다.
+* `Read` — 테이블에서 읽은 행 수와 비압축 바이트 수이며, 처리량이 함께 표시됩니다. 이는 일반 쿼리 footer에 &quot;Processed&quot;로 표시되는 것과 동일한 수치입니다.
+* `Peak memory` — 쿼리가 사용한 최대 메모리입니다.
+
+이제 쿼리 계획에 새로 나타나는 줄을 살펴보겠습니다.
+
+```txt
+I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
+  [Stage (<stage>): ]time <t> (<share>%) · parallelism <avg>/<max>
+```
+
+행 수와 바이트 수는 전체 간격에 대해 한 번만 표시됩니다(`I/O` 줄). 시간과 병렬성은 간격의 각 스테이지별로 다음 들여쓴 줄에 표시됩니다.
+
+* `rows <in> → <out>` — 간격에 들어온 행 수와 간격을 빠져나간 행 수입니다. (`<selectivity>`%)는 간격이 데이터를 얼마나 필터링했는지(`out/in`) 또는 확장했는지를 보여주며, 입력 행 수와 출력 행 수가 같거나 입력 행 수가 `0`일 때는 표시되지 않습니다.
+* `<bytes_in> → <bytes_out>` — 간격을 통과하는 비압축 인메모리 바이트 수입니다(둘 다 0이면 생략됨).
+* `time <t> (<share>%)` — 해당 스테이지가 활성 상태였던 실제 경과 시간(wall-clock time)과 쿼리 실행 시간에서 차지하는 비율입니다(즉, build 시간 제외). 스테이지와 간격은 동시에 실행될 수 있으므로 비율의 합이 100%를 초과할 수 있습니다.
+* `parallelism <avg>/<max>` — 이 스테이지 내에서 동시에 작업한 CPU 스레드의 평균 수와, 사용할 수 있었던 최대 수입니다. 값이 최대치에 가까우면 해당 스테이지가 잘 병렬화되었음을 의미하고, 1에 가까우면 대부분 직렬로 실행되었음을 의미합니다.
+* `Stage (<stage>)` — 스테이지의 이름입니다. 스테이지가 하나뿐인 간격은 `Stage (...)` 레이블 없이 시간 줄을 직접 출력합니다. 여러 스테이지가 있는 간격은 스테이지마다 레이블이 붙은 줄을 하나씩 출력합니다. 예를 들어 `Aggregating`은 `Stage (partial aggregation)`과 `Stage (final aggregation)`을 표시하고, 해시 조인은 `Stage (build)`와 `Stage (probe)`를 표시합니다.
+
+<Note>
+  ClickHouse는 계획 단계 내 작업의 실행뿐 아니라 계획 단계 자체의 실행도 병렬화합니다. `parallelism` 메트릭은 이 간격의 작업만 반영합니다. 다른 간격도 동시에 실행될 수 있으므로, 이 수치만으로는 해당 간격의 병렬성이 전체 쿼리와 비교해 어느 정도인지는 알 수 없습니다.
+</Note>
+
+<Note>
+  `parallelism`의 최대값은 다음 두 값 중 최솟값으로 계산됩니다.
+
+  1. 계획 단계 내 전체 작업 수
+  2. `max_threads`에 설정된 최대 쿼리 처리 스레드 수
+</Note>
+
+`processors = 1`인 경우 각 스테이지 아래에 추가 줄이 출력되며, 해당 스테이지의 프로세서 전반에 걸친 경과 시간 분포를 보여줍니다.
+
+```txt
+Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
+```
+
+`<n>`은 해당 단계에 있는 프로세서의 수입니다. `median`과 `max` 사이의 큰 차이는 병렬 프로세서 간의 부하 편차를 나타냅니다.
+
 <div id="explain-estimate">
   ### EXPLAIN ESTIMATE
 </div>
@@ -672,6 +813,128 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 │ default  │ ttt   │     1 │  128 │     8 │
 └──────────┴───────┴───────┴──────┴───────┘
 ```
+
+<div id="explain-whatif">
+  ### EXPLAIN WHATIF
+</div>
+
+가상의 스킵 인덱스를 디스크에 구체화하지 *않고도* `SELECT` 쿼리에서 얼마나 효과가 있을지 추정합니다. [`CREATE HYPOTHETICAL INDEX`](/ko/reference/statements/hypothetical-index#create-hypothetical-index)로 하나 이상의 후보를 정의한 다음 `EXPLAIN WHATIF SELECT ...`를 실행하면 각 후보별로 적용 가능 여부, 예상 읽기 마크 수, 예상 바이트 수, 스킵 비율을 확인할 수 있습니다.
+
+**구문**
+
+```sql
+EXPLAIN WHATIF [empirical = 0] SELECT ...
+```
+
+**설정**
+
+* `empirical` — `1`(기본값)은 메모리에서 baseline으로 걸러진 그래뉼에 인덱스를 적용해 스킵 비율(상한값)을 측정합니다. `0`은 해당 경로를 건너뜁니다. 어느 쪽이든 `empirical`이 결과를 생성하지 못하면(비활성화되었거나 인덱스를 메모리에서 평가할 수 없는 경우) 추정기는 컬럼 [통계](/ko/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)로 대체하고, 이마저도 사용할 수 없으면 마지막으로 적용 가능성만 요약한 결과로 대체합니다.
+
+**출력**
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       db.t
+  parts:       1
+  marks:       100
+  est_bytes:   1.50 MiB             (only when the query reads rows)
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    15.00 KiB           (only when baseline bytes are known)
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical | statistical | applicability_only
+  empirical_status: ok | unsupported | disabled
+  sampled_parts:    50 / 100        (only when source = empirical)
+  sampled_marks:    50 / 100        (only when source = empirical)
+  elapsed_us:       631             (only when source = empirical)
+```
+
+* `source` — 추정치가 산출된 방식입니다.
+  * `empirical`: 기준선 프루닝이 적용된 그래뉼을 기준으로 메모리에서 인덱스를 구축한 뒤, 해당 인덱스가 건너뛸 그래뉼 수를 계산했습니다. 이는 상한값입니다. 자세한 내용은 [`CREATE HYPOTHETICAL INDEX`](/ko/reference/statements/hypothetical-index#limitations)의 제한 사항을 참조하십시오.
+  * `statistical`: 컬럼 통계를 바탕으로 도출됩니다. empirical이 비활성화된 경우(`empirical = 0`) 또는 empirical이 결과를 산출하지 못했고 관련 컬럼에 컬럼 통계가 정의되어 있을 때 사용됩니다.
+  * `applicability_only`: 인덱스는 프레디케이트에 적용할 수 있지만 empirical 추정과 statistical 추정 모두 결과를 산출하지 못한 경우입니다(예: `empirical = 0`이고 컬럼 통계가 정의되지 않은 경우). 보수적인 상한값으로 `skip_ratio: 0.0%`를 보고합니다.
+* `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. 테이블에서 PK, 파티션, 기존 인덱스 프루닝을 거친 뒤 남은 비율, 즉 hypothetical index의 입력이 되는 범위를 보여줍니다.
+* `est_bytes` — 읽기 바이트 수의 추정치입니다. 테이블의 평균 행 크기를 바탕으로 계산하므로 근사치이며, 스토리지와 Compression에 따라 달라집니다. 기준선 행은 쿼리가 행을 읽을 때만 표시되며, 각 후보 행은 기준선 바이트 추정치를 알 수 있을 때만 표시됩니다.
+
+이 설정은 `WHATIF`와 `SELECT` 사이에 인라인으로 작성하며, `SETTINGS` keyword는 없습니다(다른 `EXPLAIN` 변형이 옵션을 받는 방식과 동일합니다).
+
+테이블에 hypothetical index가 정의되어 있지 않으면 `EXPLAIN WHATIF`는 `status: not_applicable`와 함께 생성하라는 힌트를 보고합니다.
+
+**결합 행(여러 후보)**
+
+두 개 이상의 후보를 empirical 방식으로 평가하면 `EXPLAIN WHATIF`는 후보별 행 뒤에 `(combined: idx_a, idx_b, ...)`라는 이름의 추가 블록 1개를 덧붙입니다. 이 블록은 해당 인덱스들을 *모두* 동시에 적용했을 때의 전체 효과를 보고합니다. 실제 읽기에서는 그래뉼이 *모든* 스킵 인덱스를 통과한 경우에만 유지되므로, 결합 추정치는 후보별 생존 그래뉼의 교집합이 됩니다. 따라서 `skip_ratio`는 가장 성능이 좋은 단일 후보보다 최소한 같거나 더 높습니다. 상호 보완적인 인덱스는 함께 더 많이 프루닝하고, 중복되는 인덱스는 결과를 바꾸지 않습니다.
+
+`source: empirical`인 후보만 반영됩니다. 결합된 행은 각 후보의 그래뉼별 생존 Set의 교집합으로 만들어지기 때문입니다. `statistical` 또는 `applicability_only`로 추정된 후보에는 그래뉼별 데이터가 없으므로 제외됩니다. 따라서 결합된 블록은 최소 2개의 후보가 경험적 추정치를 생성한 경우에만 나타나며, 그렇지 않으면(예: `empirical = 0`인 경우) 생략됩니다. 추정 필드는 후보별 경험적 블록과 동일하지만, `elapsed_us`는 `0`입니다 — 결합된 추정치는 새로운 스캔이 아니라 후보별 스캔에서 파생되기 때문입니다. 합성된 `(combined: ...)` 이름은 보고서 레이블일 뿐이며 `force_data_skipping_indices`와 함께 사용할 수 없습니다.
+
+**경험적 예시**
+
+```sql
+CREATE TABLE t (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 100;
+
+INSERT INTO t SELECT number, number FROM numbers(10000);
+
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+
+EXPLAIN WHATIF SELECT * FROM t WHERE b = 42;
+```
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       default.t
+  parts:       1
+  marks:       100
+  est_bytes:   85.52 KiB
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    875.00 B
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical
+  empirical_status: ok
+  sampled_parts:    1 / 1
+  sampled_marks:    100 / 100
+```
+
+가상의 `minmax`는 100개의 마크를 1개로 걸러낼 수 있습니다 — `skip_ratio: 99.0%`. (`est_bytes`는 평균 행 크기를 기준으로 한 추정치이므로 정확한 값은 달라질 수 있습니다.)
+
+**통계 예시**
+
+컬럼 [통계](/ko/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)는 기본적으로 비활성화되어 있습니다. `statistical` 경로를 테스트하려면 먼저 관련 컬럼에 이를 정의하고 구체화 mutation이 완료될 때까지 기다리십시오:
+
+```sql
+ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
+```
+
+그런 다음 추정기가 컬럼 통계를 대신 사용하도록 경험적 경로를 비활성화합니다:
+
+```sql
+EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
+```
+
+```text
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    1.66 KiB
+  skip_ratio:   99.9%
+
+Estimation:
+  source:           statistical
+  empirical_status: disabled
+```
+
+이 값은 `b < 10`의 컬럼 통계 선택도(selectivity)에서 나오며(10000개 행 중 약 10개 행), `skip_ratio`의 상한값으로 보고됩니다. `sampled_parts` / `sampled_marks`는 없으며, 데이터를 읽지 않았습니다.
+
+두 경로 모두 사용할 수 없으면(예: `empirical = 0`이고 컬럼 통계가 정의되지 않은 경우), 추정기는 `source: applicability_only`와 보수적인 `skip_ratio: 0.0%`를 보고합니다.
 
 <div id="explain-table-override">
   ### EXPLAIN TABLE OVERRIDE

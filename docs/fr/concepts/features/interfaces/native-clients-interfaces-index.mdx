@@ -1,18 +1,44 @@
 ---
-description: 'Clients et interfaces natifs pour ClickHouse'
-keywords: ['clients', 'interfaces', 'CLI', 'SQL Console', 'pilotes']
+description: 'Clients natifs et interfaces pour ClickHouse'
+keywords: ['clients', 'interfaces', 'CLI', 'console SQL', 'pilotes']
 slug: /interfaces/natives-clients-and-interfaces
-title: 'Clients et interfaces natifs'
+title: 'Clients natifs et interfaces'
 doc_type: 'landing-page'
+mode: wide
 ---
 
-ClickHouse propose plusieurs clients et interfaces natifs qui vous permettent de vous connecter à ClickHouse.
+ClickHouse propose plusieurs clients natifs et interfaces qui vous permettent de vous connecter à ClickHouse.
 
-Pour en savoir plus, consultez les pages ci-dessous :
+<CardGroup cols={2}>
+  <Card title="clickhousectl" icon="terminal" href="/fr/concepts/features/interfaces/cli">
+    La CLI pour ClickHouse : en local et dans le cloud.
+  </Card>
 
-| Section                                                         | Résumé                                                                                                                 |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| [clickhousectl](/fr/concepts/features/interfaces/cli)              | La CLI de ClickHouse : en local et dans le cloud.                                                                      |
-| [Client ClickHouse](/fr/concepts/features/interfaces/client)       | Client natif en ligne de commande prenant en charge les options de ligne de commande et les fichiers de configuration. |
-| [Pilotes et interfaces](/fr/concepts/features/interfaces/overview) | Plusieurs interfaces réseau, bibliothèques et interfaces visuelles.                                                    |
-| [SQL Console](/fr/integrations/connectors/sql-clients/sql-console) | Un moyen simple et rapide d’interagir avec vos données dans ClickHouse Cloud.                                          |
+  <Card title="Client ClickHouse" icon="keyboard" href="/fr/concepts/features/interfaces/client">
+    Client en ligne de commande natif prenant en charge les options de ligne de commande et les fichiers de configuration.
+  </Card>
+
+  <Card title="Pilotes et interfaces" icon="plug" href="/fr/concepts/features/interfaces/overview">
+    Interfaces réseau, pilotes et outils pour se connecter à ClickHouse.
+  </Card>
+
+  <Card title="Bibliothèque cliente C++" icon="code" href="/fr/concepts/features/interfaces/cpp">
+    La bibliothèque cliente C++ de ClickHouse.
+  </Card>
+
+  <Card title="Inférence de schéma" icon="wand-magic-sparkles" href="/fr/concepts/features/interfaces/schema-inference">
+    Inférence automatique du schéma à partir des données d&#39;entrée.
+  </Card>
+
+  <Card title="Terminal Web" icon="globe" href="/fr/concepts/features/interfaces/web-terminal">
+    Une session `clickhouse-client` dans le navigateur via WebSocket.
+  </Card>
+
+  <Card title="UI SQL Web (Play)" icon="browser" href="/fr/concepts/features/interfaces/web-sql">
+    L&#39;interface SQL intégrée dans le navigateur, proposée par ClickHouse à l&#39;adresse `/play`.
+  </Card>
+
+  <Card title="Interfaces tierces" icon="puzzle-piece" href="/fr/concepts/features/interfaces/third-party/index">
+    Outils, bibliothèques et intégrations tierces.
+  </Card>
+</CardGroup>

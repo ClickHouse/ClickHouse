@@ -116,6 +116,135 @@ SELECT greatCircleAngle(0, 0, 45, 0) AS arc
 └─────┘
 ```
 
+<div id="geotoutm">
+  ## geoToUTM
+</div>
+
+将 WGS84 地理坐标 `(longitude, latitude)` 转换为 [Universal Transverse Mercator (UTM)](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) 坐标。
+
+UTM 是一组由 60 个横轴墨卡托投影构成的坐标系统，每个投影覆盖一个宽 6° 的经度带，用于将地理坐标映射到以米为单位的平面网格。除非显式指定 `zone`，否则会根据经度自动选择分区，并应用针对挪威和斯瓦尔巴的标准例外规则。UTM 仅定义于纬度范围 `[-80°, 84°]`；极地区域使用单独的 UPS 系统。
+
+```sql
+geoToUTM(longitude, latitude[, zone])
+```
+
+**参数**
+
+* `longitude` — 以度为单位的经度。范围：`[-180°, 180°]`。[`Float32`](/zh/reference/data-types/float)/[`Float64`](/zh/reference/data-types/float)。
+* `latitude` — 以度为单位的纬度。范围：`[-80°, 84°]`。[`Float32`](/zh/reference/data-types/float)/[`Float64`](/zh/reference/data-types/float)。
+* `zone` — 可选。将投影强制指定到此 UTM 分区，而不是自动选择。范围：`[1, 60]`。[`(U)Int*`](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+一个命名元组 `(easting, northing, zone, band)`：`easting` 和 `northing` 以米为单位 ([`Float64`](/zh/reference/data-types/float)) ，UTM `zone` 编号 ([`UInt8`](/zh/reference/data-types/int-uint)) ，以及 MGRS 纬度 `band` 字母 ([`FixedString(1)`](/zh/reference/data-types/fixedstring)) 。`band` 为 `'N'` 或其后字母时，表示北半球。
+
+当纬度超出 `[-80°, 84°]` 或经度超出 `[-180°, 180°]` 时，会抛出异常。
+
+**示例**
+
+```sql
+SELECT geoToUTM(2.294497, 48.858222) AS utm; -- Eiffel Tower
+```
+
+```text
+(448251.5978370684,5411935.125629659,31,'U')
+```
+
+<div id="utmtogeo">
+  ## UTMToGeo
+</div>
+
+将 [UTM](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) 坐标还原为 WGS84 地理坐标 `(longitude, latitude)`。这是 [`geoToUTM`](#geotoutm) 的逆运算。
+
+```sql
+UTMToGeo(easting, northing, zone, is_north)
+```
+
+**参数**
+
+* `easting` — 以米为单位的东向坐标 (包含 500000 m 的假东向偏移) 。[`(U)Int*`](/zh/reference/data-types/int-uint)/[`Float*`](/zh/reference/data-types/float)。
+* `northing` — 以米为单位的北向坐标 (包含南半球 10000000 m 的假北向偏移) 。[`(U)Int*`](/zh/reference/data-types/int-uint)/[`Float*`](/zh/reference/data-types/float)。
+* `zone` — UTM 分区编号。范围：`[1, 60]`。[`(U)Int*`](/zh/reference/data-types/int-uint)。
+* `is_north` — 半球：`1` 表示北半球，`0` 表示南半球。[`(U)Int*`](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+以度为单位的命名元组 `(longitude, latitude)`。[`Tuple(Float64, Float64)`](/zh/reference/data-types/tuple)。
+
+**示例**
+
+```sql
+SELECT UTMToGeo(448251.6, 5411935.13, 31, 1) AS coord;
+```
+
+```text
+(2.2944970289079203,48.85822204127082)
+```
+
+<div id="geotomgrs">
+  ## geoToMGRS
+</div>
+
+将 WGS84 地理坐标 `(longitude, latitude)` 编码为 [Military Grid Reference System (MGRS)](https://en.wikipedia.org/wiki/Military_Grid_Reference_System) 字符串。
+
+该字符串的格式为 `<zone><band><100km square><easting><northing>`，例如 `31UDQ4825111935`。`precision` 参数控制 easting 和 northing 各自使用的位数：`5` (默认) 表示 1 m，`4` 表示 10 m，`3` 表示 100 m，`2` 表示 1 km，`1` 表示 10 km，`0` 则仅表示 100 km 网格方块。MGRS 仅对纬度范围在 `[-80°, 84°]` 内的坐标有定义。
+
+```sql
+geoToMGRS(longitude, latitude[, precision])
+```
+
+**参数**
+
+* `longitude` — 以度为单位的经度。范围：`[-180°, 180°]`。[`Float32`](/zh/reference/data-types/float)/[`Float64`](/zh/reference/data-types/float)。
+* `latitude` — 以度为单位的纬度。范围：`[-80°, 84°]`。[`Float32`](/zh/reference/data-types/float)/[`Float64`](/zh/reference/data-types/float)。
+* `precision` — 可选。东向坐标和北向坐标各自保留的位数。默认值：`5`。范围：`[0, 5]`。[`(U)Int*`](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+MGRS 坐标字符串。[`String`](/zh/reference/data-types/string)。
+
+**示例**
+
+```sql
+SELECT geoToMGRS(2.294497, 48.858222) AS mgrs, geoToMGRS(2.294497, 48.858222, 3) AS mgrs_100m;
+```
+
+```text
+┌─mgrs────────────┬─mgrs_100m───┐
+│ 31UDQ4825111935 │ 31UDQ482119 │
+└─────────────────┴─────────────┘
+```
+
+<div id="mgrstogeo">
+  ## MGRSToGeo
+</div>
+
+将 [MGRS](https://en.wikipedia.org/wiki/Military_Grid_Reference_System) 字符串解码为 WGS84 地理坐标 `(longitude, latitude)`。这是 [`geoToMGRS`](#geotomgrs) 的逆运算。
+
+返回的 Point 是所指网格方格的中心点，因此结果的精度与字符串中编码的精度一致。输入中的空白字符会被忽略，字母不区分大小写。
+
+```sql
+MGRSToGeo(mgrs)
+```
+
+**参数**
+
+* `mgrs` — 要解码的 MGRS 参考字符串。[`String`](/zh/reference/data-types/string)/[`FixedString`](/zh/reference/data-types/fixedstring)。
+
+**返回值**
+
+以度为单位的命名元组 `(longitude, latitude)`。[`Tuple(Float64, Float64)`](/zh/reference/data-types/tuple)。
+
+**示例**
+
+```sql
+SELECT MGRSToGeo('31UDQ4825111935') AS coord;
+```
+
+```text
+(2.294495618908297,48.85822536113692)
+```
+
 <div id="pointinellipses">
   ## pointInEllipses
 </div>
@@ -163,10 +292,13 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 
 **输入值**
 
-* `(x, y)` — 平面上某一点的坐标。数据类型 — [Tuple](/zh/reference/data-types/tuple) — 由两个数字组成的元组。
-* `[(a, b), (c, d) ...]` — 多边形顶点。数据类型 — [Array](/zh/reference/data-types/array)。每个顶点用一对坐标 `(a, b)` 表示。顶点应按顺时针或逆时针顺序指定。顶点最少为 3 个。该多边形必须是常量。
+* `(x, y)` — 平面上某一点的坐标。数据类型 — [Tuple](/zh/reference/data-types/tuple) — 由两个数字组成的元组，或 [Point](/zh/reference/data-types/geo#point)。
+* `[(a, b), (c, d) ...]` — 多边形顶点。数据类型 — [Array](/zh/reference/data-types/array) 或 [Ring](/zh/reference/data-types/geo#ring)。每个顶点用一对坐标 `(a, b)` 表示。顶点应按顺时针或逆时针顺序指定。顶点最少为 3 个。
 * 该函数支持带孔的多边形 (镂空区域) 。数据类型 — [Polygon](/zh/reference/data-types/geo#polygon)。可以将整个 `Polygon` 作为第二个参数传入，也可以先传入外环，再将每个孔分别作为额外参数传入。
 * 该函数也支持 `MultiPolygon`。数据类型 — [MultiPolygon](/zh/reference/data-types/geo#multipolygon)。可以将整个 `MultiPolygon` 作为第二个参数传入，也可以将其中的每个组成多边形分别作为独立参数传入。
+* 多边形参数也可以是包含多边形形态值 (`Ring`、`Polygon` 或 `MultiPolygon`) 的 [Geometry](/zh/reference/data-types/geo#geometry) 列。
+
+这些多边形形态类型 ([Ring](/zh/reference/data-types/geo#ring)、[Polygon](/zh/reference/data-types/geo#polygon)、[MultiPolygon](/zh/reference/data-types/geo#multipolygon) 和 [Geometry](/zh/reference/data-types/geo#geometry)) 既可以作为常量传入，也可以作为普通 (非常量) 表列传入。当多边形通过多个独立参数提供时 (先传外环再传孔，或传入一个 MultiPolygon 中的多个多边形) ，所有这些参数都必须是常量。
 
 **返回值**
 
@@ -183,6 +315,20 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 ┌─res─┐
 │   1 │
 └─────┘
+```
+
+多边形也可以使用具名几何数据类型来指定，包括作为表列：
+
+```sql
+CREATE TABLE poly (id UInt32, shape Polygon) ENGINE = Memory;
+INSERT INTO poly VALUES (1, [[(0, 0), (10, 0), (10, 10), (0, 10)], [(4, 4), (6, 4), (6, 6), (4, 6)]]);
+SELECT id, pointInPolygon((2., 2.), shape) AS res FROM poly;
+```
+
+```text
+┌─id─┬─res─┐
+│  1 │   1 │
+└────┴─────┘
 ```
 
 > **注意**

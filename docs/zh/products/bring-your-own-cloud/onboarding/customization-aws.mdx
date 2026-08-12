@@ -16,9 +16,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 如果您希望使用现有 VPC 部署 ClickHouse BYOC，而不是由 ClickHouse Cloud 预配新的 VPC，请按照以下步骤操作。这样做可以让您更好地掌控网络配置，并将 ClickHouse BYOC 集成到现有的网络基础设施中。
 
 <Steps>
-  <Step>
-    ### 配置现有 VPC
-
+  <Step title="配置现有 VPC" id="configure-existing-vpc">
     1. 为 VPC 添加标签 `clickhouse-byoc="true"`。
     2. 在 3 个不同的可用区中，至少分配 3 个私有子网供 ClickHouse Cloud 使用。
     3. 确保每个子网的最小 CIDR 范围为 `/23` (例如 `10.0.0.0/23`) 以便为 ClickHouse 部署提供足够的 IP 地址。
@@ -29,17 +27,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     <Image img="/images/cloud/reference/byoc-subnet-2.webp" size="lg" alt="BYOC VPC 子网标签" />
   </Step>
 
-  <Step>
-    ### 配置 S3 Gateway Endpoint
-
+  <Step title="配置 S3 Gateway Endpoint" id="configure-s3-endpoint">
     如果您的 VPC 尚未配置 S3 Gateway Endpoint，则需要创建一个，以便在 VPC 与 Amazon S3 之间启用安全的私有通信。此端点可让您的 ClickHouse 服务在不经过公共互联网的情况下访问 S3。示例配置请参见下方截图。
 
     <Image img="/images/cloud/reference/byoc-s3-endpoint.webp" size="lg" alt="BYOC S3 端点" />
   </Step>
 
-  <Step>
-    ### 确保网络连通性
-
+  <Step title="确保网络连通性" id="ensure-network-connectivity">
     **出站互联网访问**
     您的 VPC 至少必须允许出站互联网访问，以便 ClickHouse BYOC 组件能够与 Tailscale 控制平面通信。Tailscale 用于为私有管理操作提供安全的零信任网络。通过 Tailscale 完成初始注册和设置需要公共互联网连通性，可通过直接访问或经由 NAT gateway 实现。此连通性对于保障 BYOC 部署的隐私性和安全性都是必需的。
 
@@ -47,15 +41,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     确保您的 VPC 具备正常工作的 DNS 解析能力，且不会阻止、干扰或覆盖标准 DNS 名称。ClickHouse BYOC 依赖 DNS 来解析 Tailscale 控制服务器和 ClickHouse 服务端点。如果 DNS 不可用或配置不正确，BYOC 服务可能无法正常连接或运行。
   </Step>
 
-  <Step>
-    ### 配置 AWS 账号
-
+  <Step title="配置 AWS 账户" id="configure-aws-account">
     初始 BYOC 设置会创建一个高权限 IAM 角色 (`ClickHouseManagementRole`)，使来自 ClickHouse Cloud 的 BYOC 控制器能够管理您的基础设施。这可以通过 [CloudFormation 模板](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml) 或 [Terraform 模块](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz) 完成。
 
     部署 `BYO-VPC` 设置时，请将 `IncludeVPCWritePermissions` 参数设置为 `false`，以确保 ClickHouse Cloud 不会获得修改您客户管理的 VPC 的权限。
 
     <Note>
-      运行 ClickHouse 所需的存储桶、Kubernetes 集群和计算资源不包含在此初始设置中。它们将在后续步骤中预配。虽然 VPC 由您自行控制，但 ClickHouse Cloud 仍需要 IAM 权限来创建和管理 Kubernetes 集群、服务账号的 IAM 角色、S3 bucket 以及 AWS 账号中的其他必要资源。
+      运行 ClickHouse 所需的存储桶、Kubernetes 集群和计算资源不包含在此初始设置中。它们将在后续步骤中预配。虽然 VPC 由您自行控制，但 ClickHouse Cloud 仍需要 IAM 权限来创建和管理 Kubernetes 集群、服务账号的 IAM 角色、S3 bucket 以及您 AWS 账户中的其他必要资源。
     </Note>
 
     #### Terraform 模块替代方案
@@ -71,13 +63,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ### 设置 BYOC 基础设施
-
+  <Step title="设置 BYOC 基础设施" id="set-up-byoc-infrastructure">
     在 ClickHouse Cloud 控制台中，设置新基础设施时请配置以下内容：
 
     1. 在 **VPC configuration** 下，选择 **Use existing VPC**。
-    2. 输入您的 **VPC ID** (例如 `vpc-0bb751a5b888ad123`)。
+    2. 输入您的 **VPC ID** (例如 `vpc-0bb751a5b888ad123`) 。
     3. 输入您之前配置的 3 个子网对应的 **Private subnet IDs**。
     4. 如果您的配置需要面向公网的负载均衡器，可选填 **Public subnet IDs**。
     5. 点击 **Set up Infrastructure** 开始预配。
@@ -94,16 +84,54 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   ## 客户管理的 IAM 角色
 </div>
 
-对于具有高级安全要求或严格合规政策的组织，您可以提供自己的 IAM 角色，而不是由 ClickHouse Cloud 为您创建。这种方式可让您完全掌控 IAM 权限，并执行组织内部的安全策略。
+对于有高级安全要求或严格合规策略的组织，您可以提供自己的 IAM 角色，而不是由 ClickHouse Cloud 代为创建。这样一来，您就能完全掌控 IAM 权限，并可强制实施组织的安全策略。
 
 <Info>
-  客户管理的 IAM 角色目前处于私有预览阶段。如果您需要此能力，请联系 ClickHouse 支持团队，讨论您的具体需求和时间安排。
-
-  该功能可用后，您将能够：
-
-  * 提供预先配置好的 IAM 角色供 ClickHouse Cloud 使用
-  * 移除用于跨账户访问的 `ClickHouseManagementRole` 在 IAM 相关权限中所需的写权限
-  * 完全掌控角色权限和信任关系
+  客户管理的 IAM 角色目前处于私有预览阶段。在执行以下步骤之前，请先联系 ClickHouse 支持团队，为您的组织启用此能力。
 </Info>
+
+使用客户管理的 IAM 角色时，您可以：
+
+* 预先创建原本会由 ClickHouse Cloud 创建的各基础设施 IAM 角色
+* 从用于跨账户访问的 `ClickHouseManagementRole` 中移除 IAM 写入权限
+* 完全掌控角色权限和信任关系
+
+<Steps>
+  <Step title="配置不含 IAM 写入权限的管理角色" id="byo-iam-management-role">
+    执行[初始 BYOC 设置](/zh/cloud/reference/byoc/onboarding/standard)时，请在管理角色上禁用 IAM 写入权限。若使用 CloudFormation 模板，请将 `IncludeIAMWritePermissions` 参数设置为 `false`。若使用 Terraform 模块：
+
+    ```hcl
+    module "clickhouse_onboarding" {
+      source                        = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws?ref=<version>"
+      external_id                   = "<external-id-provided-by-clickhouse>"
+      include_iam_write_permissions = false
+    }
+    ```
+
+    将 `<version>` 替换为该模块[发行版页面](https://github.com/ClickHouse/terraform-byoc-onboarding/releases)中的最新标签——请始终使用最新发行版。
+  </Step>
+
+  <Step title="创建各基础设施 IAM 角色" id="byo-iam-per-infra-roles">
+    在预配每个 BYOC 基础设施之前，使用 [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) 的 per-infra 模块创建所需的 IAM 角色 (EKS pod identity 角色、ClickHouse S3 访问角色，以及数据平面管理角色) ：
+
+    ```hcl
+    module "clickhouse_per_infra_iam" {
+      source = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws-per-infra-iam?ref=<version>"
+
+      spoken_name = "<spoken-name-provided-by-clickhouse>"
+      region      = "<aws-region-of-the-infrastructure>"
+      external_id = "<external-id-provided-by-clickhouse>"
+    }
+    ```
+
+    将 `<version>` 替换为该模块[发行版页面](https://github.com/ClickHouse/terraform-byoc-onboarding/releases)中的最新标签——请始终使用最新发行版。
+  </Step>
+
+  <Step title="使各基础设施角色保持最新" id="byo-iam-keep-up-to-date">
+    <Warning>
+      ClickHouse 会定期添加新平台能力所需的角色和权限。当 ClickHouse 通知您更新时，请使用最新发行版重新应用 per-infra 模块——如果运行过期版本，可能会导致您的 BYOC 基础设施预配和升级失败。
+    </Warning>
+  </Step>
+</Steps>
 
 有关 ClickHouse Cloud 默认创建的 IAM 角色的信息，请参阅 [BYOC Privilege Reference](/zh/products/bring-your-own-cloud/reference/privilege)。

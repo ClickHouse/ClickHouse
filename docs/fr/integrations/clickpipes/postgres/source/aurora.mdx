@@ -97,7 +97,20 @@ Connectez-vous à votre instance writer Aurora PostgreSQL en tant qu’utilisate
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-La publication `clickpipes` contiendra l’ensemble des événements de modification générés à partir des tables spécifiées et sera ensuite utilisée pour ingérer le flux de réplication.
+La publication `clickpipes` définit l’ensemble des tables dont les événements de modification seront transmis à ClickPipes. Nous déconseillons d’utiliser `FOR ALL TABLES` sauf si vous avez l’intention de répliquer chaque table, car l’inclusion de tables inutiles augmente le trafic WAL de Postgres vers ClickPipes et réduit l’efficacité globale de la réplication.
+
+<div id="iam-authentication">
+  ### Utilisation de l’authentification IAM (facultatif)
+</div>
+
+Au lieu d’un mot de passe, vous pouvez authentifier l’utilisateur ClickPipes au moyen du contrôle d’accès AWS IAM basé sur les rôles. Cela nécessite que le paramètre `rds.iam_auth_for_replication` soit défini sur `1`. Créez l’utilisateur comme suit, puis accordez-lui les mêmes privilèges de schéma et de réplication que ceux indiqués ci-dessus :
+
+```sql
+CREATE USER clickpipes_iam_user;
+GRANT rds_iam TO clickpipes_iam_user;
+```
+
+Consultez [AWS IAM DB authentication (RDS/Aurora)](/fr/integrations/clickpipes/postgres/auth) pour connaître la procédure complète de configuration du rôle IAM et de la stratégie requis pour permettre à ClickPipes de s’authentifier de cette manière.
 
 <div id="configure-network-access">
   ## Configurer l’accès au réseau

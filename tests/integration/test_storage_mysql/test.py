@@ -1,3 +1,4 @@
+import os
 import threading
 import time
 from contextlib import contextmanager
@@ -9,6 +10,8 @@ import pytest
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import mysql_pass
+
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
 
@@ -973,6 +976,234 @@ def test_mysql_point(started_cluster):
     conn.close()
 
 
+def test_mysql_geometry(started_cluster):
+    table_name = "test_mysql_geometry"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            CREATE TABLE `clickhouse`.`{table_name}` (
+            `id` int NOT NULL,
+            `ls` linestring NOT NULL,
+            `pg` polygon NOT NULL,
+            `mls` multilinestring NOT NULL,
+            `mpg` multipolygon NOT NULL,
+            `mp` multipoint NOT NULL,
+            `geo` geometry NOT NULL,
+            `geo_mp` geometry NOT NULL,
+            `geo_gc` geometry NOT NULL,
+            PRIMARY KEY (`id`)) ENGINE=InnoDB;
+        """
+        )
+        cursor.execute(
+            f"""
+            INSERT INTO `clickhouse`.`{table_name}` SET
+                id = 1,
+                ls = ST_GeomFromText('LINESTRING(0 0, 1 1, 2 2)'),
+                pg = ST_GeomFromText('POLYGON((0 0, 4 0, 4 4, 0 4, 0 0))'),
+                mls = ST_GeomFromText('MULTILINESTRING((0 0, 1 1), (2 2, 3 3))'),
+                mpg = ST_GeomFromText('MULTIPOLYGON(((0 0, 2 0, 2 2, 0 2, 0 0)))'),
+                mp = ST_GeomFromText('MULTIPOINT(7 7, 8 8)'),
+                geo = ST_GeomFromText('LINESTRING(5 5, 6 6)'),
+                geo_mp = ST_GeomFromText('MULTIPOINT(0 0, 1 1)'),
+                geo_gc = ST_GeomFromText('GEOMETRYCOLLECTION(POINT(1 1))')
+        """
+        )
+        assert 1 == cursor.execute(f"SELECT count(*) FROM `clickhouse`.`{table_name}`")
+
+    conn.commit()
+
+    table_function = (
+        f"mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    )
+
+    # The concrete spatial column types are mapped to the corresponding ClickHouse geometric types,
+    # because their subtype is fixed by the column type. The generic `geometry` column type can hold
+    # a value of any subtype, so it maps to the umbrella `Geometry` type (a `Variant` over the
+    # concrete geometric types). A value whose subtype has no ClickHouse counterpart
+    # (`GEOMETRYCOLLECTION`) then throws at read time (checked below); this incompatibility is
+    # accepted in exchange for a proper geometric type.
+    assert (
+        node1.query(
+            "SELECT toTypeName(ls), toTypeName(pg), toTypeName(mls), toTypeName(mpg), toTypeName(mp), "
+            "toTypeName(geo), toTypeName(geo_mp), toTypeName(geo_gc) "
+            f"FROM {table_function} LIMIT 1"
+        ).strip()
+        == "LineString\tPolygon\tMultiLineString\tMultiPolygon\tMultiPoint\tGeometry\tGeometry\tGeometry"
+    )
+
+    assert (
+        node1.query(f"SELECT ls FROM {table_function}").strip()
+        == "[(0,0),(1,1),(2,2)]"
+    )
+    assert (
+        node1.query(f"SELECT pg FROM {table_function}").strip()
+        == "[[(0,0),(4,0),(4,4),(0,4),(0,0)]]"
+    )
+    assert (
+        node1.query(f"SELECT mls FROM {table_function}").strip()
+        == "[[(0,0),(1,1)],[(2,2),(3,3)]]"
+    )
+    assert (
+        node1.query(f"SELECT mpg FROM {table_function}").strip()
+        == "[[[(0,0),(2,0),(2,2),(0,2),(0,0)]]]"
+    )
+    assert node1.query(f"SELECT mp FROM {table_function}").strip() == "[(7,7),(8,8)]"
+    # A generic `geometry` column holding a representable subtype reads back as the geometric value:
+    # `geo` stores a LINESTRING, so it is read through the `Geometry` Variant's `LineString`
+    # alternative, and `geo_mp` stores a MULTIPOINT, read through the `MultiPoint` alternative.
+    assert (
+        node1.query(f"SELECT geo FROM {table_function}").strip()
+        == "[(5,5),(6,6)]"
+    )
+    assert (
+        node1.query(f"SELECT geo_mp FROM {table_function}").strip()
+        == "[(0,0),(1,1)]"
+    )
+    # Regression test for the accepted incompatibility: a generic `geometry` column holding a subtype
+    # with no ClickHouse counterpart (`GEOMETRYCOLLECTION` here) throws at read time, because
+    # `GEOMETRYCOLLECTION` is not representable by the `Geometry` Variant.
+    assert "Incorrect geometry type" in node1.query_and_get_error(
+        f"SELECT geo_gc FROM {table_function}"
+    )
+
+    # Regression test: the WKB parsing of spatial values read from MySQL honors the
+    # `max_wkb_geometry_elements` setting (which bounds point/ring/polygon counts before the parser
+    # reserves memory). `ls` is a LINESTRING of 3 points, so reading it with the limit set to 1 must
+    # be rejected instead of parsing an oversized element count. Before the fix the MySQL read path
+    # called `parseWKBFormat` with the default `0`, so only the hard-coded 100M cap applied.
+    assert "TOO_LARGE_ARRAY_SIZE" in node1.query_and_get_error(
+        f"SELECT ls FROM {table_function} SETTINGS max_wkb_geometry_elements = 1"
+    )
+    # A limit large enough for this value reads it back normally.
+    assert (
+        node1.query(
+            f"SELECT ls FROM {table_function} SETTINGS max_wkb_geometry_elements = 1000000"
+        ).strip()
+        == "[(0,0),(1,1),(2,2)]"
+    )
+
+    # When the `geometry` mapping is disabled, the concrete spatial types (except `Point`) also fall
+    # back to String.
+    assert (
+        node1.query(
+            f"SELECT toTypeName(ls) FROM {table_function} LIMIT 1",
+            settings={"mysql_datatypes_support_level": "decimal,datetime64,date2Date32"},
+        ).strip()
+        == "String"
+    )
+
+    # Regression test: disabling `geometry` through the table function's own `SETTINGS` must be
+    # honored during schema inference (the per-call opt-out), falling a concrete spatial type back to
+    # `String`. Before the fix the table function inferred the structure with the default engine
+    # settings, so both the per-call `SETTINGS` and a query-level value were silently ignored.
+    table_function_no_geo = (
+        f"mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}', "
+        "SETTINGS mysql_datatypes_support_level = 'decimal,datetime64,date2Date32')"
+    )
+    assert (
+        node1.query(f"SELECT toTypeName(ls) FROM {table_function_no_geo} LIMIT 1").strip()
+        == "String"
+    )
+
+    # The per-call `SETTINGS` override the query-context value: here `geometry` is enabled through the
+    # function-local `SETTINGS` even though the query context disables it.
+    table_function_geo = (
+        f"mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}', "
+        "SETTINGS mysql_datatypes_support_level = 'decimal,datetime64,date2Date32,geometry')"
+    )
+    assert (
+        node1.query(
+            f"SELECT toTypeName(ls) FROM {table_function_geo} LIMIT 1",
+            settings={"mysql_datatypes_support_level": "decimal,datetime64,date2Date32"},
+        ).strip()
+        == "LineString"
+    )
+
+    # A user can still read a generic `geometry` column as a geometric value by declaring the column
+    # as `Geometry` explicitly through the MySQL table engine (when its values are representable).
+    node1.query("DROP TABLE IF EXISTS test_geometry")
+    node1.query(
+        "CREATE TABLE test_geometry (id Int32, ls LineString, pg Polygon, mls MultiLineString, mpg MultiPolygon, geo Geometry) "
+        f"Engine=MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    )
+    assert node1.query("SELECT ls FROM test_geometry").strip() == "[(0,0),(1,1),(2,2)]"
+    assert node1.query("SELECT geo FROM test_geometry").strip() == "[(5,5),(6,6)]"
+    node1.query("DROP TABLE IF EXISTS test_geometry")
+
+    # The MySQL table engine infers the columns from MySQL when they are omitted. By default the
+    # `geometry` mapping is on, so a concrete spatial column is inferred as its geometric type.
+    node1.query("DROP TABLE IF EXISTS test_geometry_inferred")
+    node1.query(
+        f"CREATE TABLE test_geometry_inferred Engine=MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    )
+    assert (
+        node1.query("SELECT toTypeName(ls) FROM test_geometry_inferred LIMIT 1").strip()
+        == "LineString"
+    )
+    node1.query("DROP TABLE IF EXISTS test_geometry_inferred")
+
+    # Regression test: disabling `geometry` through the table engine's own SETTINGS must be honored
+    # during schema inference, falling the concrete spatial types back to `String` (raw WKB). This is
+    # the per-engine opt-out; before the fix it was ignored because schema inference read the global
+    # query-context setting instead of the engine setting.
+    node1.query("DROP TABLE IF EXISTS test_geometry_no_geo")
+    node1.query(
+        f"CREATE TABLE test_geometry_no_geo Engine=MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}') "
+        "SETTINGS mysql_datatypes_support_level = 'decimal,datetime64,date2Date32'"
+    )
+    assert (
+        node1.query("SELECT toTypeName(ls) FROM test_geometry_no_geo LIMIT 1").strip()
+        == "String"
+    )
+    node1.query("DROP TABLE IF EXISTS test_geometry_no_geo")
+
+    # Regression test (query-backed inference): a MySQL source defined over a *query* rather than a
+    # table name infers its columns from the query result-set metadata, which reports every spatial
+    # value as the generic `MYSQL_TYPE_GEOMETRY` without exposing the concrete subtype. It must not be
+    # guessed as `Point` - that made reading a non-`Point` value such as this `LINESTRING` throw
+    # `Only Point data type is supported` at read time - so it falls back to the raw WKB `String`.
+    # Before the fix the query-backed path also dropped the effective `mysql_datatypes_support_level`
+    # entirely (it read the global query context), so the per-call/per-engine opt-out was ignored.
+    table_function_query = f"mysql('mysql80:3306', 'clickhouse', query('SELECT ls FROM {table_name}'), 'root', '{mysql_pass}')"
+    # The concrete subtype is unknowable from query result metadata, so it is inferred as `String` (raw
+    # WKB), never a geometric type such as `Point`/`LineString` (nullability follows the query metadata).
+    ls_query_type = node1.query(
+        f"SELECT toTypeName(ls) FROM {table_function_query} LIMIT 1"
+    ).strip()
+    assert "String" in ls_query_type and "Point" not in ls_query_type
+    # The value reads back as raw WKB `String` without an exception (before the fix this threw).
+    assert len(node1.query(f"SELECT ls FROM {table_function_query}").strip()) > 0
+
+    # Regression test (named-collection precedence): a named collection carrying an explicit
+    # `mysql_datatypes_support_level` opt-out keeps precedence over a conflicting session
+    # `SET mysql_datatypes_support_level`. The `mysql_no_geo_types` collection disables `geometry`, so a
+    # `LINESTRING` column is inferred as `String` even though the session enables `geometry`, and the
+    # session value is not frozen into `SHOW CREATE`. Before the fix the query-context bridge overwrote
+    # the named-collection value with the session value (and persisted it into the table definition).
+    node1.query("DROP TABLE IF EXISTS test_geometry_nc")
+    node1.query(
+        "CREATE TABLE test_geometry_nc Engine=MySQL(mysql_no_geo_types)",
+        settings={
+            "mysql_datatypes_support_level": "decimal,datetime64,date2Date32,geometry"
+        },
+    )
+    assert (
+        node1.query("SELECT toTypeName(ls) FROM test_geometry_nc LIMIT 1").strip()
+        == "String"
+    )
+    assert "mysql_datatypes_support_level" not in node1.query(
+        "SHOW CREATE TABLE test_geometry_nc"
+    )
+    node1.query("DROP TABLE IF EXISTS test_geometry_nc")
+
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
 def test_joins(started_cluster):
     conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
     drop_mysql_table(conn, "test_joins_mysql_users")
@@ -1080,6 +1311,262 @@ def test_mysql_ssl_auth(started_cluster):
             FLUSH PRIVILEGES;
             """
         )
+
+
+def read_certificate(name):
+    with open(os.path.join(SCRIPT_DIR, "certs", name), "r") as file:
+        return file.read()
+
+
+def quote_certificate(name):
+    """The contents of a PEM file as a ClickHouse string literal."""
+    contents = read_certificate(name)
+    return "'" + contents.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n") + "'"
+
+
+def test_mysql_ssl_auth_with_credential_contents(started_cluster):
+    """The TLS credentials are passed as the contents of the PEM files rather than as paths.
+
+    The MySQL user requires a verified client certificate, so the connection can only be established
+    if the CA certificate, the client certificate and the client key all reach the client library.
+    """
+    conn = get_mysql_conn(started_cluster, started_cluster.mysql8_ip)
+    table_name = "test_table"
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    with conn.cursor() as cursor:
+        cursor.execute(f"CREATE USER 'ssl_pem_user'@'{node1.ip_address}' REQUIRE X509")
+        cursor.execute(
+            f"GRANT ALL PRIVILEGES ON *.* TO 'ssl_pem_user'@'{node1.ip_address}' WITH GRANT OPTION"
+        )
+
+    credentials = f"""
+        ssl_ca_pem = {quote_certificate("ca.pem")},
+        ssl_cert_pem = {quote_certificate("client-cert.pem")},
+        ssl_key_pem = {quote_certificate("client-key.pem")}
+    """
+
+    try:
+        assert (
+            node1.query(
+                f"""
+                SELECT count() FROM mysql(
+                    'mysql80:3306', 'clickhouse', '{table_name}', 'ssl_pem_user', '', {credentials})
+                """
+            )
+            == "0\n"
+        )
+
+        # Without the client certificate the same user is refused, which is what makes the check above
+        # evidence that the credentials were used rather than ignored.
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query(
+                f"""
+                SELECT count() FROM mysql(
+                    'mysql80:3306', 'clickhouse', '{table_name}', 'ssl_pem_user', '',
+                    ssl_ca_pem = {quote_certificate("ca.pem")})
+                """
+            )
+        assert "ssl_pem_user" in str(exception.value)
+
+        # The private key does not reach query_log. The pattern is split in two so that this query
+        # does not match itself once it is logged in turn.
+        node1.query("SYSTEM FLUSH LOGS query_log")
+        secret = read_certificate("client-key.pem").splitlines()[1]
+        pattern = f"'%{secret[:16]}' || '{secret[16:]}%'"
+        assert (
+            node1.query(
+                f"SELECT count() FROM system.query_log WHERE query LIKE {pattern}"
+            )
+            == "0\n"
+        )
+    finally:
+        with conn.cursor() as cursor:
+            cursor.execute(f"DROP USER 'ssl_pem_user'@'{node1.ip_address}'")
+            cursor.execute("FLUSH PRIVILEGES")
+
+
+def test_mysql_ssl_paths_are_rejected_from_sql(started_cluster):
+    """A path to a certificate or a key is only accepted from the server configuration file.
+
+    The server opens the file with its own privileges, so a path coming from SQL would let any user
+    who can define a MySQL source probe the local filesystem and authenticate with credentials they
+    cannot read themselves. `mysql_with_ssl` in the configuration file keeps working (it is used by
+    `test_mysql_ssl_auth`), but neither a collection created with SQL nor a query may name a file.
+    """
+    ca_path = "/etc/clickhouse-server/config.d/ca.pem"
+
+    node1.query("DROP NAMED COLLECTION IF EXISTS mysql_ssl_from_sql")
+    node1.query(
+        f"""
+        CREATE NAMED COLLECTION mysql_ssl_from_sql AS
+            user = 'root', password = '{mysql_pass}', host = 'mysql80', port = 3306,
+            database = 'clickhouse', table = 'test_table', ssl_ca = '{ca_path}'
+        """
+    )
+    try:
+        # In a collection created with SQL.
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query("SELECT count() FROM mysql(mysql_ssl_from_sql)")
+        assert "can only be specified in a named collection" in str(exception.value)
+
+        # As a query override, including of a collection defined in the configuration file.
+        for key in ["ssl_ca", "ssl_cert", "ssl_key"]:
+            with pytest.raises(QueryRuntimeException) as exception:
+                node1.query(
+                    f"SELECT count() FROM mysql(mysql_with_ssl, {key} = '{ca_path}')"
+                )
+            assert "cannot be overridden in a query" in str(exception.value)
+
+        # A dictionary created with a DDL query may not name a file either. The source of a
+        # dictionary is instantiated when it is loaded, so the load is what surfaces the rejection.
+        node1.query("DROP DICTIONARY IF EXISTS mysql_ssl_dictionary")
+        node1.query(
+            f"""
+            CREATE DICTIONARY mysql_ssl_dictionary (id UInt32, name String)
+            PRIMARY KEY id
+            SOURCE(MYSQL(
+                host 'mysql80' port 3306 user 'root' password '{mysql_pass}'
+                db 'clickhouse' table 'test_table' ssl_ca '{ca_path}'))
+            LAYOUT(FLAT()) LIFETIME(0)
+            """
+        )
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query("SYSTEM RELOAD DICTIONARY mysql_ssl_dictionary")
+        assert "cannot be specified in a dictionary created with a DDL query" in str(
+            exception.value
+        )
+    finally:
+        node1.query("DROP DICTIONARY IF EXISTS mysql_ssl_dictionary")
+        node1.query("DROP NAMED COLLECTION IF EXISTS mysql_ssl_from_sql")
+
+
+def test_mysql_ssl_contents_override_configured_paths(started_cluster):
+    """The contents form is the only way to override a TLS credential from SQL, so it replaces the
+    path inherited from a collection defined in the configuration file rather than conflicting with it.
+
+    `mysql_with_ssl` carries all three paths, and the query supplies all three as contents.
+    """
+    conn = get_mysql_conn(started_cluster, started_cluster.mysql8_ip)
+    table_name = "test_table"
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    with conn.cursor() as cursor:
+        cursor.execute(f"CREATE USER 'ssl_user'@'{node1.ip_address}' REQUIRE X509")
+        cursor.execute(
+            f"GRANT ALL PRIVILEGES ON *.* TO 'ssl_user'@'{node1.ip_address}' WITH GRANT OPTION"
+        )
+
+    credentials = f"""
+        ssl_ca_pem = {quote_certificate("ca.pem")},
+        ssl_cert_pem = {quote_certificate("client-cert.pem")},
+        ssl_key_pem = {quote_certificate("client-key.pem")}
+    """
+
+    try:
+        assert (
+            node1.query(f"SELECT count() FROM mysql(mysql_with_ssl, {credentials})")
+            == "0\n"
+        )
+
+        # The contents replace the configured path instead of being ignored: an unusable certificate
+        # fails even though the path in the collection points at a valid one.
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query(
+                "SELECT count() FROM mysql(mysql_with_ssl, ssl_cert_pem = 'not a certificate')"
+            )
+        assert "cannot be specified at the same time" not in str(exception.value)
+
+        # A credential the operator locked with `overridable="false"` cannot be replaced through the
+        # contents form either.
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query(f"SELECT count() FROM mysql(mysql_with_locked_ssl, {credentials})")
+        assert "Override not allowed for 'ssl_ca'" in str(exception.value)
+
+        # The contents form is the only way to supply a TLS credential from SQL, so it stays usable
+        # when overrides are forbidden by default: it is not a new key, it replaces the path the
+        # collection defines, and the operator forbids that with `overridable="false"` instead.
+        hardened = {"allow_named_collection_override_by_default": 0}
+        assert (
+            node1.query(
+                f"SELECT count() FROM mysql(mysql_with_ssl, {credentials})",
+                settings=hardened,
+            )
+            == "0\n"
+        )
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query(
+                f"SELECT count() FROM mysql(mysql_with_locked_ssl, {credentials})",
+                settings=hardened,
+            )
+        assert "Override not allowed for 'ssl_ca'" in str(exception.value)
+
+        # An unrelated key is still a new key, and is still refused under that policy.
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query(
+                "SELECT count() FROM mysql(mysql_with_ssl, table = 'test_table')",
+                settings=hardened,
+            )
+        assert "Override not allowed for 'table'" in str(exception.value)
+
+        # The same override on the dictionary DDL path: the overrides of `SOURCE(MYSQL(NAME ...))`
+        # arrive as generated configuration keys rather than as an AST, and must be recognized as
+        # query-supplied all the same. The source is instantiated when the dictionary is loaded.
+        node1.query(
+            f"""
+            CREATE DICTIONARY dict_ssl_override (id UInt64, name String DEFAULT '')
+            PRIMARY KEY id
+            SOURCE(MYSQL(
+                NAME mysql_with_ssl
+                SSL_CA_PEM {quote_certificate("ca.pem")}
+                SSL_CERT_PEM {quote_certificate("client-cert.pem")}
+                SSL_KEY_PEM {quote_certificate("client-key.pem")}))
+            LAYOUT(FLAT()) LIFETIME(0)
+            """
+        )
+        node1.query("SYSTEM RELOAD DICTIONARY dict_ssl_override")
+        assert node1.query("SELECT count() FROM dict_ssl_override") == "0\n"
+    finally:
+        node1.query("DROP DICTIONARY IF EXISTS dict_ssl_override")
+        with conn.cursor() as cursor:
+            cursor.execute(f"DROP USER 'ssl_user'@'{node1.ip_address}'")
+            cursor.execute("FLUSH PRIVILEGES")
+
+
+def test_mysql_ssl_empty_override_is_rejected(started_cluster):
+    """Overriding a configured TLS credential with the empty string is rejected like any other
+    query-supplied path.
+
+    `''` used to take the empty-value fast path before the query-override check, so
+    `mysql(mysql_with_ssl, ssl_ca = '')` silently dropped the CA the operator configured -
+    disabling the verification of the server certificate from SQL. The same applies to empty
+    contents: `ssl_ca_pem = ''` does not replace the configured path with another credential,
+    it drops it.
+    """
+    for key in ["ssl_ca", "ssl_cert", "ssl_key"]:
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query(f"SELECT count() FROM mysql(mysql_with_ssl, {key} = '')")
+        assert "cannot be overridden in a query" in str(exception.value)
+
+    for key in ["ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem"]:
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query(f"SELECT count() FROM mysql(mysql_with_ssl, {key} = '')")
+        assert "cannot be overridden with an empty" in str(exception.value)
+
+    # The table and database engines share `getSSLParams` with the table function; the engine form
+    # is rejected when the storage is created. (The database engine cannot be exercised with
+    # `mysql_with_ssl` because it refuses the collection's `table` key before reading the TLS keys.)
+    node1.query("DROP TABLE IF EXISTS mysql_ssl_empty_override")
+    with pytest.raises(QueryRuntimeException) as exception:
+        node1.query(
+            """
+            CREATE TABLE mysql_ssl_empty_override (id UInt32)
+            ENGINE = MySQL(mysql_with_ssl, ssl_ca = '')
+            """
+        )
+    assert "cannot be overridden in a query" in str(exception.value)
 
 
 def test_mysql_reading_clone(started_cluster):
@@ -1237,6 +1724,35 @@ def test_query_passing_engine(started_cluster):
     node1.query("DROP TABLE mysql_engine_query")
     drop_mysql_table(conn, table_name)
     drop_mysql_table(conn, second_table)
+    conn.close()
+
+
+def test_query_passing_type_mismatch(started_cluster):
+    # A declared structure whose types disagree with the passed query must surface as a query error, never
+    # abort the server.
+    table_name = "query_passing_mismatch"
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"CREATE TABLE clickhouse.{table_name} (a INT NOT NULL, b VARCHAR(50) NOT NULL, PRIMARY KEY (a)) ENGINE=InnoDB;"
+        )
+        cursor.execute(
+            f"INSERT INTO clickhouse.{table_name} VALUES (1, 'name_1'), (2, 'name_2')"
+        )
+        conn.commit()
+
+    # Column b holds text but is declared Int32. MySQL's typed accessor reports a query error instead of
+    # crashing.
+    node1.query("DROP TABLE IF EXISTS mysql_type_mismatch")
+    node1.query(
+        f"CREATE TABLE mysql_type_mismatch (a Int32, b Int32) "
+        f"ENGINE = MySQL('mysql80:3306', 'clickhouse', query('SELECT a, b FROM {table_name}'), 'root', '{mysql_pass}')"
+    )
+    assert node1.query_and_get_error("SELECT * FROM mysql_type_mismatch") != ""
+    node1.query("DROP TABLE mysql_type_mismatch")
+
+    drop_mysql_table(conn, table_name)
     conn.close()
 
 

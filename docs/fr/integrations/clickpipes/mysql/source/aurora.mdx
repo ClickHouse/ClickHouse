@@ -18,35 +18,33 @@ Ce guide pas à pas explique comment configurer Amazon Aurora MySQL pour répliq
   ## Activer la rétention du journal binaire
 </div>
 
-Le journal binaire est un ensemble de fichiers de log contenant des informations sur les modifications de données effectuées sur une instance de serveur MySQL, et ces fichiers sont nécessaires à la réplication. Pour configurer la rétention du journal binaire dans Aurora MySQL, vous devez [activer la journalisation binaire](#enable-binlog-logging) et [augmenter l’intervalle de rétention du binlog](#binlog-retention-interval).
+Le journal binaire est un ensemble de fichiers de log contenant des informations sur les modifications de données apportées à une instance de serveur MySQL, et les fichiers de journal binaire sont requis pour la réplication. Pour configurer la rétention du journal binaire dans Aurora MySQL, vous devez [activer la journalisation binaire](#enable-binlog-logging) et [augmenter l’intervalle de rétention du binlog](#binlog-retention-interval).
 
-<div id="enable-binlog-logging">
-  ### 1. Activer la journalisation binaire via les sauvegardes automatiques
-</div>
+<Steps>
+  <Step title="Activer la journalisation binaire via la sauvegarde automatisée" id="enable-binlog-logging">
+    La fonctionnalité de sauvegardes automatisées détermine si la journalisation binaire est activée ou désactivée pour MySQL. Les sauvegardes automatisées peuvent être configurées pour votre instance dans la RDS Console en accédant à **Modify** &gt; **Additional configuration** &gt; **Backup** et en cochant la case **Enable automated backups** (si elle n’est pas déjà cochée).
 
-La fonctionnalité de sauvegardes automatiques détermine si la journalisation binaire est activée ou non pour MySQL. Vous pouvez configurer les sauvegardes automatiques pour votre instance dans la RDS Console en accédant à **Modify** &gt; **Additional configuration** &gt; **Backup**, puis en cochant la case **Enable automated backups** (si ce n’est pas déjà fait).
+    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Activation des sauvegardes automatisées dans Aurora" size="lg" border />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Activation des sauvegardes automatiques dans Aurora" size="lg" border />
+    Nous recommandons de définir la **Backup retention period** sur une valeur suffisamment longue, en fonction du cas d’usage de la réplication.
+  </Step>
 
-Nous vous recommandons de définir **Backup retention period** sur une durée suffisamment longue, selon votre cas d’usage de la réplication.
+  <Step title="Augmenter l’intervalle de rétention du binlog" id="binlog-retention-interval">
+    <Warning>
+      Si ClickPipes tente de reprendre la réplication et que les fichiers de binlog requis ont été purgés en raison de la valeur de rétention du binlog configurée, le ClickPipe passera en état d’erreur et une resynchronisation sera nécessaire.
+    </Warning>
 
-<div id="binlog-retention-interval">
-  ### 2. Augmentez l’intervalle de rétention du binlog
-</div>
+    Par défaut, Aurora MySQL purge le journal binaire dès que possible (c.-à-d. avec une *purge différée*). Nous recommandons d’augmenter l’intervalle de rétention du binlog à au moins **72 heures** afin de garantir la disponibilité des fichiers de binlog pour la réplication en cas de défaillance. Pour définir un intervalle de rétention du journal binaire ([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours)), utilisez la procédure [`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration) :
 
-<Warning>
-  Si ClickPipes tente de reprendre la réplication et que les fichiers de binlog requis ont été purgés en raison de la valeur de rétention du binlog configurée, le ClickPipe passera en état d’erreur et une resynchronisation sera nécessaire.
-</Warning>
+    [//]: # "REMARQUE La plupart des fournisseurs de CDC recommandent la durée de rétention maximale pour Aurora RDS (7 jours/168 heures). Comme cela a un impact sur l’utilisation du disque, nous recommandons, par précaution, un minimum de 3 jours/72 heures."
 
-Par défaut, Aurora MySQL purge le journal binaire dès que possible (c.-à-d. avec une *purge différée*). Nous recommandons d’augmenter l’intervalle de rétention du binlog à au moins **72 heures** afin de garantir la disponibilité des fichiers de binlog pour la réplication en cas de défaillance. Pour définir un intervalle de rétention du journal binaire ([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours)), utilisez la procédure [`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration) :
+    ```text
+    mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
+    ```
 
-[//]: # "REMARQUE La plupart des fournisseurs de CDC recommandent la durée de rétention maximale pour Aurora RDS (7 jours/168 heures). Comme cela a un impact sur l’utilisation du disque, nous recommandons, par précaution, un minimum de 3 jours/72 heures."
-
-```text
-mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
-```
-
-Si cette configuration n&#39;est pas définie ou si l&#39;intervalle est trop court, cela peut entraîner des trous dans les logs binaires et compromettre la capacité de ClickPipes à reprendre la réplication.
+    Si cette configuration n&#39;est pas définie ou si l&#39;intervalle est trop court, cela peut entraîner des trous dans les logs binaires et compromettre la capacité de ClickPipes à reprendre la réplication.
+  </Step>
+</Steps>
 
 <div id="binlog-settings">
   ## Configurer les paramètres du binlog
@@ -134,6 +132,18 @@ Connectez-vous à votre instance Aurora MySQL en tant qu&#39;utilisateur admin, 
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
+<div id="iam-authentication">
+  ### Utilisation de l’authentification IAM (facultatif)
+</div>
+
+Au lieu d’un mot de passe, vous pouvez authentifier l’utilisateur ClickPipes à l’aide du contrôle d’accès basé sur les rôles d’AWS IAM. Créez l’utilisateur comme suit, puis accordez-lui les mêmes privilèges de schéma et de réplication que ceux indiqués ci-dessus :
+
+```sql
+CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
+```
+
+Voir [AWS IAM DB authentication (RDS/Aurora)](/fr/integrations/clickpipes/postgres/auth) pour suivre les étapes complètes de configuration du rôle IAM et de la politique requis afin que ClickPipes puisse s’authentifier de cette manière.
+
 <div id="configure-network-access">
   ## Configurer l’accès au réseau
 </div>
@@ -155,7 +165,7 @@ Pour limiter le trafic vers votre instance Aurora MySQL, ajoutez les [adresses I
 Pour vous connecter à votre instance Aurora MySQL via un réseau privé, vous pouvez utiliser AWS PrivateLink. Suivez le [guide de configuration d’AWS PrivateLink pour ClickPipes](/fr/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) pour mettre en place la connexion.
 
 <div id="whats-next">
-  ## Et maintenant ?
+  ## Et ensuite ?
 </div>
 
-Maintenant que votre instance Amazon Aurora MySQL est configurée pour la réplication via le binlog et qu’elle se connecte de façon sécurisée à ClickHouse Cloud, vous pouvez [créer votre premier MySQL ClickPipe](/fr/integrations/clickpipes/mysql/index#create-your-clickpipe). Pour les questions fréquentes sur MySQL CDC, consultez la [page FAQ MySQL](/fr/integrations/clickpipes/mysql/faq).
+Maintenant que votre instance Amazon Aurora MySQL est configurée pour la réplication via binlog et qu’elle établit une connexion sécurisée à ClickHouse Cloud, vous pouvez [créer votre premier MySQL ClickPipe](/fr/integrations/clickpipes/mysql/index#create-your-clickpipe). Pour les questions fréquentes sur MySQL CDC, consultez la [page FAQ MySQL](/fr/integrations/clickpipes/mysql/faq).

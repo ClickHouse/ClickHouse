@@ -1,9 +1,9 @@
 ---
-sidebarTitle: '맵(Map) 타입 사용하기'
-title: 'ClickHouse에서 맵(Map) 타입 사용하기'
-useCases: ['Observability']
+sidebarTitle: '맵 타입 사용하기'
+title: 'ClickHouse에서 맵 타입 사용하기'
+useCases: ['관측성']
 products: ['OSS']
-description: 'OTel 리소스 속성을 예시로, ClickHouse에서 동적 키-값 데이터를 저장, 쿼리, 집계하는 데 맵(Map) 타입을 사용하는 방법을 알아봅니다.'
+description: 'OTel 리소스 속성을 예시로, ClickHouse에서 동적 키-값 데이터를 저장, 쿼리, 집계하는 데 맵 타입을 사용하는 방법을 알아봅니다.'
 ---
 
 import BackToQuickstarts from '/get-started/quickstarts/_back-to-quickstarts.mdx'
@@ -35,9 +35,7 @@ OpenTelemetry에서는 모든 트레이스 스팬이 **리소스 속성** 집합
 이 빠른 시작에서는 `clickhouse-local`을 사용해 CSV 파일의 실제 OTel 트레이스 데이터를 `Map(LowCardinality(String), String)` 컬럼이 있는 테이블에 적재하고, 맵 데이터를 쿼리, 필터링, 집계, 최적화하는 방법을 알아봅니다.
 
 <Steps titleSize="h3">
-  <Step>
-    ### 샘플 데이터 다운로드
-
+  <Step title="샘플 데이터 다운로드" id="download-the-sample-data">
     이 데이터셋에는 데모 마이크로서비스 애플리케이션에서 내보낸 6,120개의 OTel trace 스팬이 포함되어 있습니다. 각 행에는 JSON 맵 형태의 동적 key-value 쌍이 포함된 `ResourceAttributes` 및 `SpanAttributes` 컬럼이 있습니다.
     파일은 예를 들어 `~/data/data-otel-traces.csv`처럼 쉽게 참조할 수 있는 디렉터리에 저장하십시오.
 
@@ -66,9 +64,7 @@ OpenTelemetry에서는 모든 트레이스 스팬이 **리소스 속성** 집합
     ```
   </Step>
 
-  <Step>
-    ### 테이블을 생성하고 데이터를 로드합니다
-
+  <Step title="테이블을 생성하고 데이터를 로드합니다" id="create-the-table-and-load-the-data">
     `clickhouse-local`을 실행한 다음, CSV 스키마에 맞춰 다음 테이블을 생성합니다.
     키 컬럼은 `ResourceAttributes Map(LowCardinality(String), String)`이며, OTel 속성 키는 비교적 적은 수의 반복되는 집합에서 나오므로 키 타입에 `LowCardinality`를 사용합니다.
 
@@ -107,9 +103,7 @@ OpenTelemetry에서는 모든 트레이스 스팬이 **리소스 속성** 집합
     6,120개 행이 표시되어야 합니다.
   </Step>
 
-  <Step>
-    ### 데이터 쿼리
-
+  <Step title="데이터 쿼리" id="query-the-data">
     **특정 키에 액세스하기** — 대괄호 구문을 사용해 맵에서 값을 꺼낼 수 있습니다. 해당 행에 키가 없으면 값 유형의 기본값이 반환됩니다(`String`은 빈 문자열):
 
     ```sql
@@ -197,9 +191,7 @@ OpenTelemetry에서는 모든 트레이스 스팬이 **리소스 속성** 집합
     ```
   </Step>
 
-  <Step>
-    ### -Map 조합자로 맵 전체에 걸쳐 집계하기
-
+  <Step title="-Map 조합자로 맵 전체에 걸쳐 집계하기" id="aggregate-across-maps-with-the--map-combinator">
     ClickHouse의 `-Map` 집계 조합자를 사용하면 `Map` 컬럼에 어떤 집계 함수든 적용해 각 키별로 독립적으로 집계할 수 있습니다. 결과 역시 `Map`이며, 각 키마다 하나의 항목과 해당 집계값이 포함됩니다. 이는 카운터나 게이지가 맵 값으로 저장되는 OTel 메트릭에서 특히 유용합니다.
 
     이를 보여주기 위해, 각 행이 HTTP 상태 코드별 개수를 `Map(String, UInt64)`로 기록하는 작은 메트릭 테이블을 생성합니다:
@@ -257,9 +249,7 @@ OpenTelemetry에서는 모든 트레이스 스팬이 **리소스 속성** 집합
     **OTel에서 이것이 중요한 이유:** OTel Collector가 분 단위 상태 코드별 집계를 ClickHouse에 기록할 때 `sumMap`을 사용하면 이를 단일 쿼리로 시간별 또는 일별 합계로 집계할 수 있습니다 — `ARRAY JOIN`도, 언피벗도, 전체 키 집합을 미리 파악하는 작업도 필요하지 않습니다. 어떤 키든 하나의 행에라도 나타나면 결과에 자동으로 포함됩니다.
   </Step>
 
-  <Step>
-    ### 자주 쿼리하는 키에 맞춰 최적화
-
+  <Step title="자주 쿨리하는 키에 맞춰 최적화" id="optimise-for-frequently-queried-keys">
     같은 맵 키로 계속 필터링하는 경우 — `host.name`가 대표적인 예입니다 — 이를 구체화된 컬럼(Materialized Column)으로 추출할 수 있습니다. 이렇게 하면 쿼리할 때마다 맵 전체를 선형 스캔하지 않아도 됩니다:
 
     ```sql
@@ -268,7 +258,7 @@ OpenTelemetry에서는 모든 트레이스 스팬이 **리소스 속성** 집합
         MATERIALIZED ResourceAttributes['host.name'];
     ```
 
-    기존 데이터의 경우 컬럼을 백필하세요:
+    기존 데이터에도 컬럼을 백필하세요:
 
     ```sql
     ALTER TABLE otel_traces MATERIALIZE COLUMN HostName;
@@ -278,7 +268,9 @@ OpenTelemetry에서는 모든 트레이스 스팬이 **리소스 속성** 집합
   </Step>
 </Steps>
 
-## 핵심 요약
+<div id="key-takeaways">
+  ## 핵심 요약
+</div>
 
 * **`Map(LowCardinality(String), String)`**은 OTel 속성에 가장 자연스럽게 쓰이는 타입입니다. 다양한 키 집합을 유연하게 처리할 수 있고, `LowCardinality`는 키 저장 효율도 높여 줍니다.
 * **대괄호 구문** (`map['key']`)은 값을 조회하는 가장 일반적인 방법이지만, 선형 스캔을 수행한다는 점을 기억해야 합니다. 키가 수십 개인 맵에는 괜찮지만, 수백 개라면 적합하지 않을 수 있습니다.
@@ -286,7 +278,9 @@ OpenTelemetry에서는 모든 트레이스 스팬이 **리소스 속성** 집합
 * **`mapContains`, `mapKeys`, `mapValues`, `mapFilter`** 및 `ARRAY JOIN`은 SQL을 벗어나지 않고도 맵 데이터를 탐색하고 변환할 수 있는 강력한 도구를 제공합니다.
 * **`-Map` 집계 조합자** (`sumMap`, `avgMap`, `maxMap` 등)는 행 전반에서 각 키를 독립적으로 집계합니다. 키 집합을 미리 알 필요 없이 OTel 메트릭 카운터를 롤업하는 데 적합합니다. 다른 조합자와도 함께 조합할 수 있습니다(예: `sumMapIf`).
 
-## 다음 단계
+<div id="next-steps">
+  ## 다음 단계
+</div>
 
 다음 빠른 시작도 확인해 보세요:
 
@@ -296,7 +290,7 @@ OpenTelemetry에서는 모든 트레이스 스팬이 **리소스 속성** 집합
 
 또는 참고 문서를 더 자세히 살펴보세요:
 
-* [맵(Map) 타입 참고](/ko/reference/data-types/map)
+* [맵 타입 참고](/ko/reference/data-types/map)
 * [ClickHouse OTel exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter)
 * [집계 함수 조합자](/ko/reference/functions/aggregate-functions/combinators)
 

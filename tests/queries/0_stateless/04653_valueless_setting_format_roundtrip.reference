@@ -1,0 +1,10 @@
+-- A valueless setting is formatted without a value
+SET max_threads
+SET optimize_on_insert
+SELECT 1 SETTINGS max_threads
+-- Formatting it is idempotent
+SET max_threads
+-- An explicit value is still formatted with it
+SET max_threads = 4
+SET optimize_on_insert = true
+SELECT 1 SETTINGS optimize_on_insert = true

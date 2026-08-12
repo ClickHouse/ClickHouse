@@ -74,7 +74,7 @@ tb   751E76E8199196D454941C45D1B3A323F1433BD6
 
 <Note>
   [`FixedString`](/ko/reference/data-types/fixedstring) 데이터 타입을 사용할 때 값이 행을 완전히 채우지 않으면 null 문자로 패딩됩니다.
-  `bech32Encode` 함수는 hrp 인수에 대해서는 이를 자동으로 처리하지만, data 인수는 값이 패딩되지 않아야 합니다.
+  `bech32Encode` 함수는 hrp 인수에 대해서는 이를 자동으로 처리하지만, data 인수의 값은 패딩되지 않아야 합니다.
   따라서 모든 값의 길이가 같고 `FixedString` 컬럼도 해당 길이로 설정되어 있다고 확신할 수 있는 경우가 아니라면, 데이터 값에 [`FixedString`](/ko/reference/data-types/fixedstring) 데이터 타입을 사용하지 않는 것이 좋습니다.
 </Note>
 
@@ -99,7 +99,7 @@ human-readable part, 항상 &#39;1&#39;인 구분 문자, 그리고 data part로
 **기본 Bech32m**
 
 ```sql title=Query
--- witness version을 지정하지 않으면 기본값은 1이며, 업데이트된 Bech32m 알고리즘이 사용됩니다.
+-- When no witness version is supplied, the default is 1, the updated Bech32m algorithm.
 SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))
 ```
 
@@ -110,7 +110,7 @@ bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq
 **Bech32 알고리즘**
 
 ```sql title=Query
--- witness version이 0이면 다른 주소 문자열이 반환됩니다.
+-- A witness version of 0 will result in a different address string.
 SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0)
 ```
 
@@ -121,8 +121,8 @@ bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z
 **사용자 지정 HRP**
 
 ```sql title=Query
--- 'bc' (메인넷)와 'tb' (테스트넷)는 SegWit 주소 형식에서 허용되는 유일한 hrp 값이지만,
--- Bech32는 위의 요구 사항을 충족하는 모든 hrp를 허용합니다.
+-- While 'bc' (Mainnet) and 'tb' (Testnet) are the only allowed hrp values for the
+-- SegWit address format, Bech32 allows any hrp that satisfies the above requirements.
 SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 10)
 ```
 
@@ -133,8 +133,8 @@ abcdefg1w508d6qejxtdg4y5r3zarvary0c5xw7k9rp8r4
 **Cosmos SDK 주소 (BIP173, witness version 없음)**
 
 ```sql title=Query
--- 'bech32' 변형을 사용하면 witness version 바이트 없이 원시 데이터를 인코딩하며,
--- Cosmos SDK, Injective, Osmosis 및 기타 non-SegWit 체인과 호환됩니다.
+-- Using 'bech32' variant encodes raw data without a witness version byte,
+-- compatible with Cosmos SDK, Injective, Osmosis, and other non-SegWit chains.
 SELECT bech32Encode('inj', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 'bech32')
 ```
 
@@ -1085,7 +1085,7 @@ SELECT reinterpretAsUInt64(reverse(unbin('1110'))) AS num
 16진수 숫자의 개수는 짝수일 필요가 없습니다.
 홀수인 경우 마지막 숫자는 `00-0F` 바이트의 하위 4비트로 해석됩니다.
 인수 문자열에 16진수 숫자가 아닌 문자가 포함되어 있으면 구현에 따라 정의된 결과가 반환됩니다(예외는 발생하지 않습니다).
-숫자 인수에는 unhex()가 hex(N)의 역연산을 수행하지 않습니다.
+숫자 인수의 경우 unhex()는 hex(N)의 역연산을 수행하지 않습니다.
 
 **구문**
 

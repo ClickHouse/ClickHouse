@@ -16,6 +16,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/TraceSender.h>
+#include <Common/UntrackedMemoryRegistry.h>
 #include <Common/VariableContext.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -299,7 +300,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
         }
 
         /// Since the MemoryTrackerBlockerInThread should respect the level, we should go to the next parent.
-        if (auto * loaded_next = parent.load(std::memory_order_relaxed))
+        if (auto * loaded_next = parent.load(std::memory_order_acquire))
         {
             MemoryTracker * tracker = level == VariableContext::Process ? this : query_tracker;
             return loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability);
@@ -440,7 +441,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
 
             /// If that wasn't enough, try to stop some query.
             OvercommitTracker * overcommit_tracker_ptr = nullptr;
-            if (overcommit_result == OvercommitResult::NONE && ((overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed))) && query_tracker != nullptr)
+            if (overcommit_result == OvercommitResult::NONE && (overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed)) && query_tracker != nullptr)
                 overcommit_result = overcommit_tracker_ptr->needToStopQuery(query_tracker, size);
 
             if (overcommit_result != OvercommitResult::MEMORY_FREED)
@@ -457,11 +458,12 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
                 if (level == VariableContext::Global)
                     ProfileEvents::increment(ProfileEvents::GlobalMemoryLimitExceeded);
                 const auto * description = description_ptr.load(std::memory_order_relaxed);
+                const Int64 untracked = DB::UntrackedMemoryRegistry::instance().sum();
                 throw DB::Exception(
                     DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
                     "{}{} exceeded: "
                     "would use {} (attempt to allocate chunk of {}){}{}, maximum: {}."
-                    "{}{}",
+                    "{} Untracked memory across all threads: {}.",
                     description ? description : "",
                     description ? " memory limit" : "Memory limit",
                     formatReadableSizeWithBinarySuffix(will_be),
@@ -469,8 +471,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
                     (level == VariableContext::Global) ? fmt::format(", current RSS: {}", formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed))) : "",
                     (level == VariableContext::Global && page_cache_ptr) ? ", userspace page cache " + formatReadableSizeWithBinarySuffix(page_cache_ptr->sizeInBytes()) : "",
                     formatReadableSizeWithBinarySuffix(current_hard_limit),
-                    overcommit_result_ignore ? "" : " OvercommitTracker decision: ",
-                    overcommit_result_ignore ? "" : toDescription(overcommit_result));
+                    overcommit_result_ignore ? "" : fmt::format(" OvercommitTracker decision: {}.", toDescription(overcommit_result)),
+                    formatReadableSizeWithBinarySuffix(untracked));
             }
 
             // If OvercommitTracker::needToStopQuery returned false, it guarantees that enough memory is freed.
@@ -521,7 +523,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
         });
     }
 
-    if (auto * loaded_next = parent.load(std::memory_order_relaxed))
+    if (auto * loaded_next = parent.load(std::memory_order_acquire))
     {
         MemoryTracker * tracker = level == VariableContext::Process ? this : query_tracker;
         return loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability);
@@ -631,7 +633,7 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
         }
 
         /// Since the MemoryTrackerBlockerInThread should respect the level, we should go to the next parent.
-        if (auto * loaded_next = parent.load(std::memory_order_relaxed))
+        if (auto * loaded_next = parent.load(std::memory_order_acquire))
             return loaded_next->free(size, _sample_probability);
 
         return AllocationTrace(_sample_probability);
@@ -660,7 +662,7 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
           */
         if (unlikely(new_amount < 0))
         {
-            amount.fetch_sub(new_amount);
+            amount.fetch_sub(new_amount, std::memory_order_relaxed);
             accounted_size += new_amount;
         }
     }
@@ -672,7 +674,7 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
     if (metric_loaded != CurrentMetrics::end())
         CurrentMetrics::sub(metric_loaded, accounted_size);
 
-    if (auto * loaded_next = parent.load(std::memory_order_relaxed))
+    if (auto * loaded_next = parent.load(std::memory_order_acquire))
         return loaded_next->free(size, _sample_probability);
 
     return AllocationTrace(_sample_probability);
@@ -788,7 +790,7 @@ void MemoryTracker::setParent(MemoryTracker * elem)
     if (level == VariableContext::Thread && DB::current_thread)
         DB::current_thread->flushUntrackedMemory();
 
-    parent.store(elem, std::memory_order_relaxed);
+    parent.store(elem, std::memory_order_release);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     bool found_total_memory_tracker = false;
@@ -799,7 +801,7 @@ void MemoryTracker::setParent(MemoryTracker * elem)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Double total in the MemoryTracker chains. It is a bug.");
         if (next == &total_memory_tracker)
             found_total_memory_tracker = true;
-    } while ((next = next->parent.load(std::memory_order_relaxed)));
+    } while ((next = next->parent.load(std::memory_order_acquire)));
     if (!found_total_memory_tracker)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot found total MemoryTracker. Bug in nesting.");
 #endif

@@ -134,6 +134,108 @@ WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
 
 테이블용 집계 함수를 배열용 집계 함수로 변환합니다. 이 함수는 각 배열의 같은 위치에 있는 항목들을 집계해 결과 배열을 반환합니다. 예를 들어, 배열 `[1, 2]`, `[3, 4, 5]`and`[6, 7]`에 대해 `sumForEach`를 사용하면 같은 위치의 배열 항목들을 더한 결과인 `[10, 13, 5]`를 반환합니다.
 
+<div id="-tuple">
+  ## -Tuple
+</div>
+
+`-Tuple` 접미사는 모든 집계 함수에 추가할 수 있습니다. 이렇게 결합된 함수는 기반 집계 함수의 각 인수에 대해 `Tuple` 유형의 인수를 하나씩 받으며, 모든 튜플은 동일한 개수의 원소를 가져야 합니다. 집계는 각 원소 위치에 독립적으로 적용되어, 모든 `Tuple`에서 해당 위치의 원소를 받아 결과 `Tuple`을 반환합니다.
+
+첫 번째 입력 `Tuple`에 명시적인 원소 이름이 있으면 그 이름은 결과에도 유지됩니다.
+
+`NULL` 값을 자체적으로 처리하는 집계 함수(`anyRespectNulls`, `anyLastRespectNulls`, `RESPECT NULLS` 수정자)는 인수로 `Nullable(Tuple(...))` 유형을 지원하지 않습니다. 대신 `Nullable` 원소를 사용하십시오.
+
+**구문**
+
+```sql
+<aggFunction>Tuple(tuple1[, tuple2, ...])
+```
+
+**인수**
+
+* `tuple1[, tuple2, ...]` — `Tuple` 유형의 컬럼이며, 기반 집계 함수의 각 인수에 대해 하나씩 지정됩니다. 모든 컬럼은 동일한 개수의 원소를 가져야 합니다. 각 원소는 해당 인수 위치에서 기반 집계 함수가 지원하는 유형이어야 합니다.
+
+**반환 값**
+
+* 각 원소에 집계 함수를 독립적으로 적용한 결과를 담은 `Tuple`.
+
+유형: `Tuple(aggFunction(element1), aggFunction(element2), ...)`.
+
+**예시**
+
+쿼리:
+
+```sql
+SELECT sumTuple(t) FROM
+(
+    SELECT tuple(toInt64(1), toFloat64(2.5)) AS t
+    UNION ALL
+    SELECT tuple(toInt64(3), toFloat64(4.5))
+    UNION ALL
+    SELECT tuple(toInt64(5), toFloat64(6.5))
+);
+```
+
+결과:
+
+```text
+┌─sumTuple(t)─┐
+│ (9,13.5)    │
+└─────────────┘
+```
+
+`GROUP BY`와 함께 사용하기:
+
+```sql
+SELECT
+    k,
+    avgTuple(t)
+FROM
+(
+    SELECT
+        number % 2 AS k,
+        tuple(toInt64(number), toFloat64(number) * 1.5) AS t
+    FROM numbers(6)
+)
+GROUP BY k
+ORDER BY k;
+```
+
+```text
+┌─k─┬─avgTuple(t)─┐
+│ 0 │ (2,3)       │
+│ 1 │ (3,4.5)     │
+└───┴─────────────┘
+```
+
+다중 인수 집계 함수와 함께 사용하는 경우, 각 `Tuple` 인수는 내부 함수의 인수 하나에 해당하며 원소는 위치에 따라 짝지어집니다:
+
+```text
+corrTuple((a1, a2), (b1, b2)) = (corr(a1, b1), corr(a2, b2))
+```
+
+```sql
+SELECT corrTuple((a1, a2), (b1, b2))
+FROM
+(
+    SELECT
+        toFloat64(number) AS a1,
+        toFloat64(number * 2) AS a2,
+        toFloat64(100 - number) AS b1,
+        toFloat64(number * 3) AS b2
+    FROM numbers(10)
+);
+```
+
+```text
+┌─corrTuple((a1, a2), (b1, b2))─┐
+│ (-1,1)                        │
+└───────────────────────────────┘
+```
+
+`a1`과 `b1`은 음의 상관관계를 보이고, `a2`와 `b2`는 비례 관계이므로 결과는 `(-1, 1)`입니다.
+
+`-Tuple`은 `-If`와 같은 다른 조합자와 함께 사용할 수 있습니다. 예시: `sumTupleIf(tuple_column, cond)`.
+
 <div id="-distinct">
   ## -Distinct
 </div>

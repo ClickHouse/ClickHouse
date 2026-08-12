@@ -22,9 +22,9 @@ As 113 consultas estão organizadas em 33 famílias (`1`–`33`). As consultas d
   ## Criando as tabelas
 </div>
 
-O dataset JOB é um snapshot do IMDb com 21 tabelas. As definições das tabelas estão disponíveis em [`init_cloud.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/init_cloud.sql) no repositório do ClickHouse.
+O conjunto de dados JOB é um snapshot do IMDb com 21 tabelas. As definições das tabelas estão disponíveis em [`init_cloud.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/init_cloud.sql) no repositório do ClickHouse.
 
-Cada tabela usa o motor [`MergeTree`](/engines/table-engines/mergetree-family/mergetree), ordenado pela coluna da chave primária `id`, seguindo o schema original do PostgreSQL, em que toda tabela declara `id integer NOT NULL PRIMARY KEY`. Colunas anuláveis do PostgreSQL são mapeadas para tipos `Nullable(...)`.
+Cada tabela usa o motor [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree), ordenado pela coluna da chave primária `id`, seguindo o schema original do PostgreSQL, em que toda tabela declara `id integer NOT NULL PRIMARY KEY`. Colunas anuláveis do PostgreSQL são mapeadas para tipos `Nullable(...)`.
 
 Crie as tabelas:
 

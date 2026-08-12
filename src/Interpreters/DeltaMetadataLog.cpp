@@ -89,12 +89,14 @@ void insertDeltaRowToLogTable(
     auto delta_lake_metadata_log = Context::getGlobalContextInstance()->getDeltaMetadataLog();
     if (!delta_lake_metadata_log)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Delta metadata log table is not configured");
-    delta_lake_metadata_log->add(
-        DB::DeltaMetadataLogElement{
+    delta_lake_metadata_log->add([&](DB::DeltaMetadataLogElement & element)
+    {
+        element = DB::DeltaMetadataLogElement{
             .current_time = spec.tv_sec,
             .query_id = local_context->getCurrentQueryId(),
             .table_path = table_path,
             .file_path = file_path,
-            .metadata_content = row});
+            .metadata_content = row};
+    });
 }
 }

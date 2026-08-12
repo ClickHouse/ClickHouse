@@ -27,9 +27,7 @@ doc_type: 'guide'
 다음 단계는 Python REPL 또는 스크립트에서 실행할 수 있습니다.
 
 <Steps>
-  <Step>
-    ## 라이브러리 설치
-
+  <Step title="라이브러리 설치" id="install-libraries">
     다음 명령을 실행해 mcp-agent 라이브러리를 설치합니다:
 
     ```python
@@ -39,9 +37,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 자격 증명 설정
-
+  <Step title="자격 증명 설정" id="setup-credentials">
     다음으로, OpenAI API Key를 입력해야 합니다:
 
     ```python
@@ -66,9 +62,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## MCP Server 및 mcp-agent 에이전트 초기화
-
+  <Step title="MCP Server 및 mcp-agent 에이전트 초기화" id="initialize-mcp-and-agent">
     이제 ClickHouse MCP 서버가 ClickHouse SQL 플레이그라운드를 가리키도록 구성하고, 에이전트를 초기화한 다음 질문을 입력합니다:
 
     ```python
@@ -254,63 +248,66 @@ doc_type: 'guide'
     £362,283 and a median price of £281,000. The data appears to include only months Jan–Aug 2025 (so 2025 is incomplete). There are extreme
     outliers (min £100, max £127,700,000) that skew the mean.
 
-    계산한 내용 (방법)
-    ClickHouse의 uk.price-paid 테이블에서 집계를 실행했습니다:
-    - uk.uk_price_paid_simple_partitioned에서 2025년 전체 요약 (건수, 평균, 중앙값, 최솟값, 최댓값)
-    - 2025년 월별 분석 (거래 건수, 평균, 중앙값)
-    - 2025년 평균 가격 기준 상위 도시 (거래 건수 >= 50인 도시)
-    - 연도 비교: 2024년 vs 2025년 (건수, 평균, 중앙값)
-    - uk.uk_price_paid를 사용한 2025년 부동산 유형별 분석 (건수, 평균, 중앙값)
+    What I computed (how)
+    I ran aggregations on the uk.price-paid tables in ClickHouse:
+    - overall 2025 summary (count, mean, median, min, max) from uk.uk_price_paid_simple_partitioned
+    - monthly breakdown for 2025 (transactions, mean, median)
+    - top towns in 2025 by average price (towns with >= 50 transactions)
+    - year comparison: 2024 vs 2025 (count, mean, median)
+    - breakdown by property type for 2025 (counts, avg, median) using uk.uk_price_paid
 
-    주요 수치 (데이터셋 기준)
-    - 2025년 전체 (기록된 거래): 거래 건수 = 376,633; 평균 가격 = £362,282.66; 중앙값 = £281,000; 최솟값 = £100; 최댓값 =
+    Key numbers (from the dataset)
+    - Overall 2025 (recorded transactions): transactions = 376,633; mean price = £362,282.66; median price = £281,000; min = £100; max =
     £127,700,000.
-    - 월별 (2025년): (월, 거래 건수, 평균 가격, 중앙값)
-      - 1월: 53,927건, 평균 £386,053, 중앙값 £285,000
-      - 2월: 58,740건, 평균 £371,803, 중앙값 £285,000
-      - 3월: 95,274건, 평균 £377,200, 중앙값 £315,000
-      - 4월: 24,987건, 평균 £331,692, 중앙값 £235,000
-      - 5월: 39,013건, 평균 £342,380, 중앙값 £255,000
-      - 6월: 41,446건, 평균 £334,667, 중앙값 £268,500
-      - 7월: 44,431건, 평균 £348,293, 중앙값 £277,500
-      - 8월: 18,815건, 평균 £364,653, 중앙값 £292,999
-      (데이터셋에는 1~8월 데이터만 포함되어 있습니다.)
-    - 평균 가격 기준 상위 도시 (2025년, 거래 건수 ≥50인 도시)
-      - TRING: 126건, 평균 £1,973,274
-      - BUCKHURST HILL: 98건, 평균 £1,441,331
-      - ASCOT: 175건, 평균 £1,300,748
-      - RADLETT: 69건, 평균 £1,160,217
-      - COBHAM: 115건, 평균 £1,035,192
-      - EAST MOLESEY, BEACONSFIELD, ESHER, CHALFONT ST GILES, THAMES DITTON도 상위 10위에 포함됩니다 (모두 평균 가격이 높은 통근자/부유층 도시).
-    - 연도 비교 (기록 기준 2024년 vs 2025년)
-      - 2024년: 859,960건, 평균 £390,879, 중앙값 £280,000
-      - 2025년: 376,633건, 평균 £362,283, 중앙값 £281,000
-      (2025년 건수가 훨씬 적은 이유는 데이터셋이 연도의 일부만 포함하기 때문입니다.)
-    - 부동산 유형별 (2025년)
-      - 단독주택(detached): 85,362건, 평균 £495,714, 중앙값 £415,000
-      - 반단독주택(semi-detached): 107,580건, 평균 £319,922, 중앙값 £270,000
-      - 아파트(flat): 62,975건, 평균 £298,529, 중앙값 £227,000
-      - 연립주택(terraced): 112,832건, 평균 £286,616, 중앙값 £227,000
-      - 기타(other): 7,884건, 평균 £1,087,765 (중앙값 £315,000) — 소규모 그룹 및 이상값 효과 주의
+    - By month (2025): (month, transactions, mean price, median price)
+      - Jan: 53,927, mean £386,053, median £285,000
+      - Feb: 58,740, mean £371,803, median £285,000
+      - Mar: 95,274, mean £377,200, median £315,000
+      - Apr: 24,987, mean £331,692, median £235,000
+      - May: 39,013, mean £342,380, median £255,000
+      - Jun: 41,446, mean £334,667, median £268,500
+      - Jul: 44,431, mean £348,293, median £277,500
+      - Aug: 18,815, mean £364,653, median £292,999
+      (Only months 1–8 are present in the dataset.)
+    - Top towns by average price (2025, towns with ≥50 transactions)
+      - TRING: 126 txns, avg £1,973,274
+      - BUCKHURST HILL: 98 txns, avg £1,441,331
+      - ASCOT: 175 txns, avg £1,300,748
+      - RADLETT: 69 txns, avg £1,160,217
+      - COBHAM: 115 txns, avg £1,035,192
+      - EAST MOLESEY, BEACONSFIELD, ESHER, CHALFONT ST GILES, THAMES DITTON are also in the top 10 (all high-average commuter/affluent towns).
+    - Year comparison (2024 vs 2025 as recorded)
+      - 2024: 859,960 transactions, mean £390,879, median £280,000
+      - 2025: 376,633 transactions, mean £362,283, median £281,000
+      (2025 counts are much lower because the dataset only includes part of the year.)
+    - By property type (2025)
+      - detached: 85,362 txns, avg £495,714, median £415,000
+      - semi-detached: 107,580 txns, avg £319,922, median £270,000
+      - flat: 62,975 txns, avg £298,529, median £227,000
+      - terraced: 112,832 txns, avg £286,616, median £227,000
+      - other: 7,884 txns, avg £1,087,765 (median £315,000) — note small-group and outlier effect
 
-    중요한 주의사항 및 데이터 품질 참고사항
-    - 데이터셋은 2025년에 대해 부분적으로만 존재합니다 (1~8월만 포함). "2025년" 합계는 연간 전체 수치가 아닙니다.
-    - 큰 이상값이 존재합니다 (예: 최댓값 £127.7M, 최솟값 £100). 이는 데이터 입력 오류 또는 비표준 기록을 포함할 가능성이 있으며 평균을 왜곡합니다. 여기서는 중앙값이 더 견고한 지표입니다.
-    - "기타" 부동산 유형의 평균은 건수가 적고 이질적이며 이상값으로 인해 불안정합니다.
-    - is_new, duration 또는 기타 메타데이터로 필터링하지 않았습니다. 해당 필터를 적용하면 결과가 달라질 수 있습니다 (예: 신축 건물 또는 임차권 제외).
-    - 테이블은 Price Paid 방식의 거래 기록(기록된 매매)입니다 — 호가나 감정가를 직접 나타내지 않습니다.
+    Important caveats and data quality notes
+    - The dataset appears partial for 2025 (only months Jan–Aug present). Any “2025” totals are not full-year figures.
+    - Large outliers exist (e.g., max £127.7M, and min £100). These likely include data-entry errors or non-standard records and inflate the
+    mean. Median is often a more robust measure here.
+    - “other” property-type averages are unstable due to low/heterogeneous counts and outliers.
+    - I did not filter by is_new, duration, or other metadata; those filters can change results (for example excluding new-builds or
+    leaseholds).
+    - The tables are Price Paid-style transaction records (recorded sales) — they do not directly represent asking prices or valuations.
 
-    다음 단계 제안 (실행 가능)
-    - 명백한 이상값 제거 (예: £10k 미만 또는 £10M 초과 가격) 후 평균/중앙값 재계산.
-    - 지역 / 카운티 / 우편번호 구역별 요약 및 지도 생성.
-    - 2025년 추세를 보여주기 위한 전월 대비 또는 3개월 이동 중앙값 계산.
-    - 월별 전년 대비(YoY) 성장률 산출 (예: 2025년 3월 vs 2024년 3월).
-    - 단순 외삽 또는 시계열 모델링을 사용한 2025년 전체 예측 (단, 누락된 월/이상값 처리 방법 결정 후 진행하는 것이 좋습니다).
+    Suggested next steps (I can run these)
+    - Clean out obvious outliers (e.g., prices < £10k or > £10M) and recompute averages/medians.
+    - Produce regional / county / postcode-area summaries and maps.
+    - Compute month-on-month or rolling 3-month median to show trend through 2025.
+    - Produce year-on-year (YoY) growth rates by month (e.g., Mar 2025 vs Mar 2024).
+    - Forecast for full 2025 using simple extrapolation or time-series modelling (but better after deciding how to handle missing
+    months/outliers).
 
-    원하신다면:
-    - 극단적인 이상값 제거 후 동일한 집계를 재실행하여 정제된 결과를 보여드릴 수 있습니다.
-    - YoY 월별 성장률 및 차트 생성 (차트로 활용 가능한 CSV 또는 JSON 집계 반환 가능).
-    다음으로 무엇을 원하시나요?
+    If you want, I can:
+    - Re-run the same aggregations after removing extreme outliers and show cleaned results.
+    - Produce YoY monthly growth and charts (I can return CSV or JSON aggregates you can chart).
+    Which would you like me to do next?
     [INFO] 2025-10-10T11:27:51 mcp_agent.mcp.mcp_aggregator.database-anayst - Last aggregator closing, shutting down all persistent
     connections...
     [INFO] 2025-10-10T11:27:51 mcp_agent.mcp.mcp_connection_manager - Disconnecting all persistent server connections...
