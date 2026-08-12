@@ -1,0 +1,7 @@
+derived again after DEFAULT clears an explicit off
+false
+true
+stays off after DEFAULT when no workers are configured
+false
+DEFAULT in the same statement as the workers num still derives
+true
