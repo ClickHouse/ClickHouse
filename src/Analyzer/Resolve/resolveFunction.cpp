@@ -1716,13 +1716,19 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// `NULL` values must not match - a property of the resolved function (`nullIn`
                     /// compares `NULL`s, `in` does not), not of the `transform_null_in` setting. A
                     /// tuple LHS keeps the direct comparison, matching the scalar rewrite of the
-                    /// old analyzer.
+                    /// old analyzer. A pair of numbers without a lossless supertype, such as `Int64`
+                    /// and `Float64`, keeps the direct comparison too: the comparison functions
+                    /// compare numbers accurately, while a `CAST` of the RHS to the LHS type would
+                    /// truncate the value (`CAST(-0.6 AS Int64)` is `0`) and break the `Set` contract
+                    /// of the constant path.
                     QueryTreeNodePtr right_argument = fn_args[1];
                     const auto & left_type = in_first_argument->getResultType();
                     if (!left_type->onlyNull() && !isTuple(removeNullable(left_type)))
                     {
                         const auto & right_type = non_const_set_candidate->getResultType();
-                        if (!tryGetLeastSupertype(DataTypes{left_type, right_type}))
+                        const bool is_number_comparison = isNumber(removeNullable(removeLowCardinality(left_type)))
+                            && isNumber(removeNullable(removeLowCardinality(right_type)));
+                        if (!is_number_comparison && !tryGetLeastSupertype(DataTypes{left_type, right_type}))
                         {
                             DataTypePtr cast_elements_to = left_type;
                             if (isNullableOrLowCardinalityNullable(right_type) || !compare_nulls)

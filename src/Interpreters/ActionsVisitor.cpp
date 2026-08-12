@@ -1168,7 +1168,20 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 ASTPtr replacement;
                 const bool right_argument_is_scalar = !right_argument_is_array
                     && !right_argument_tuple_function_is_set && !isTupleType(right_argument_type);
-                if (left_argument_is_tuple && right_argument_is_scalar)
+                /// A scalar RHS whose type and the LHS type are numbers without a lossless
+                /// supertype (e.g. `Int64` and `Float64`) keeps the direct comparison of
+                /// makeScalarNonConstantInReplacement: the comparison functions compare numbers
+                /// accurately, while the `has(array(...))` rewrite would need a common type and the
+                /// cast-to-LHS-type fallback would truncate the value (`CAST(-0.6 AS Int64)` is
+                /// `0`) and break the `Set` contract of the constant path. This mirrors the scalar
+                /// fast path of the analyzer.
+                const bool number_comparison_without_supertype = right_argument_is_scalar
+                    && left_argument_type && right_argument_type
+                    && isNumber(removeNullable(removeLowCardinality(left_argument_type)))
+                    && isNumber(removeNullable(removeLowCardinality(right_argument_type)))
+                    && !tryGetLeastSupertype(DataTypes{left_argument_type, right_argument_type});
+
+                if (right_argument_is_scalar && (left_argument_is_tuple || number_comparison_without_supertype))
                 {
                     replacement = makeScalarNonConstantInReplacement(
                         node,
