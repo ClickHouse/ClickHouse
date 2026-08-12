@@ -265,12 +265,6 @@ class ReleaseInfo:
         """
         return tweak == 1 and patch != 1
 
-    @staticmethod
-    def _branch_already_bumped(release_branch: str, release_version) -> bool:
-        """Whether the branch tip already carries a version newer than `release_version` (pure read, no writes)."""
-        with checkout(f"origin/{release_branch}"):
-            return release_version.is_older(CHVersion.get_current_version())
-
     def prepare(
         self, commit_ref: str, release_type: str, dry_run: bool = False
     ) -> "ReleaseInfo":
@@ -324,8 +318,13 @@ class ReleaseInfo:
                 verbose=True,
             )
 
-            # This ref is behind / superseded if the branch tip already carries a newer bump.
-            self.is_late_recovery = self._branch_already_bumped(release_branch, version)
+            # The branch's current version, read from the version file at its tip
+            # (not from release tags). If this commit's version is older than the
+            # branch tip, the branch has already moved to a newer release, so this
+            # ref is behind / superseded.
+            with checkout(f"origin/{release_branch}"):
+                branch_version = CHVersion.get_current_version()
+            self.is_late_recovery = version.is_older(branch_version)
 
             if is_latest_release_branch(release_branch, repo=GITHUB_REPOSITORY):
                 print("This is going to be the latest release!")
