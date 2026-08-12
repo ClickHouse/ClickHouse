@@ -79,7 +79,7 @@ public:
         IDataLakeMetadata::FileProgressCallback callback_,
         Iceberg::TableStateSnapshotPtr table_snapshot_,
         Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-        Iceberg::PersistentTableComponents persistent_components,
+        Iceberg::PersistentTableComponents persistent_components_,
         std::shared_ptr<SecondaryStorages> secondary_storages_);
 
     ObjectInfoPtr next(size_t) override;
@@ -104,6 +104,7 @@ private:
     std::exception_ptr exception;
     std::mutex exception_mutex;
     std::shared_ptr<SecondaryStorages> secondary_storages;  // Sometimes data or manifests can be located on another storage
+    Int32 table_schema_id;
 };
 }
 

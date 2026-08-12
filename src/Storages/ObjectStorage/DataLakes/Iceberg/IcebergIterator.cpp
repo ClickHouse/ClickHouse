@@ -279,6 +279,7 @@ IcebergIterator::IcebergIterator(
     , blocking_queue(100)
     , callback(std::move(callback_))
     , secondary_storages(secondary_storages_)
+    , table_schema_id(table_snapshot_->schema_id)
 {
     auto delete_file = deletes_iterator.next();
     while (delete_file.has_value())
@@ -447,6 +448,13 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 any_needs_protocol(object_info->info.position_deletes_objects)
                 || any_needs_protocol(object_info->info.equality_deletes_objects);
         }
+
+        object_info->relative_path_with_metadata.setFileMetaInfo(std::make_shared<DataFileMetaInfo>(
+                                    *persistent_components.schema_processor,
+                                    table_schema_id, /// current schema id to use current column names
+                                    manifest_file_entry->resolved_schema_id, /// file's schema id to interpret value_bounds bytes
+                                    manifest_file_entry->parsed_entry->columns_infos,
+                                    manifest_file_entry->parsed_entry->value_bounds));
 
         ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);
 
