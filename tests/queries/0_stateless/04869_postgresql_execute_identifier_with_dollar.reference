@@ -1,0 +1,7 @@
+PREPARE
+47
+SELECT 0
+PREPARE
+11|10|9
+SELECT 0
+Wrong number of parameters for prepared statement 'only_inside_identifier': the statement uses 0 parameter(s), but 1 were supplied

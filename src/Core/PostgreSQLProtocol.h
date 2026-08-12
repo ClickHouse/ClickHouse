@@ -1874,7 +1874,8 @@ private:
     /// the argument count must match the statement exactly - the statement must not reference a parameter
     /// beyond the supplied ones, and every supplied argument must be referenced by number (PostgreSQL
     /// reports both as `wrong number of parameters`). The scan is SQL-aware: a `$n` inside a string
-    /// literal, a quoted identifier, a dollar-quoted string or a comment is ordinary text, not a
+    /// literal, a quoted identifier, a bare identifier (`$` is a valid identifier character, so
+    /// `foo$1bar` is a single identifier), a dollar-quoted string or a comment is ordinary text, not a
     /// placeholder. Substituted argument text is never rescanned, so an argument containing `$1` cannot
     /// trigger another round of substitution.
     static String substitutePlaceholders(const String & body, const String & function_name, const VectorWithMemoryTracking<String> & arguments)
@@ -1896,6 +1897,10 @@ private:
         const auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
         const auto is_tag_start = [](char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'; };
         const auto is_tag_char = [&](char c) { return is_tag_start(c) || is_digit(c); };
+        /// PostgreSQL identifiers may start with a letter, an underscore or a non-ASCII character,
+        /// and continue with those plus digits and `$`.
+        const auto is_word_start = [&](char c) { return is_tag_start(c) || static_cast<unsigned char>(c) >= 0x80; };
+        const auto is_word_char = [&](char c) { return is_tag_char(c) || static_cast<unsigned char>(c) >= 0x80; };
 
         while (i < size)
         {
@@ -1952,6 +1957,20 @@ private:
                     else
                         ++j;
                 }
+                copy_through(j);
+            }
+            else if (is_word_start(c))
+            {
+                /// A bare identifier (or a keyword). Both PostgreSQL and the ClickHouse lexer allow `$`
+                /// inside an unquoted identifier, so in `foo$1bar` the whole text is the identifier
+                /// `foo$1bar`, not a reference to a parameter. A dollar-quoted string never starts
+                /// inside a word either: `foo$tag$` is one identifier too. The word is copied through
+                /// as an opaque token. A word cannot start with a digit (`1$2` is the constant `1`
+                /// followed by the placeholder `$2`), so numeric constants are not consumed here and
+                /// a placeholder right after one is still substituted.
+                size_t j = i + 1;
+                while (j < size && (is_word_char(body[j]) || body[j] == '$'))
+                    ++j;
                 copy_through(j);
             }
             else if (c == '$' && i + 1 < size && is_digit(body[i + 1]))
