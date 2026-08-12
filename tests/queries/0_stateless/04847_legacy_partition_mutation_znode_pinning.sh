@@ -2,7 +2,7 @@
 # Tags: zookeeper, no-replicated-database, no-shared-merge-tree, no-shared-catalog
 #
 # `no-replicated-database` / `no-shared-merge-tree` / `no-shared-catalog`: the fixture edits the
-# raw mutation znode of a `ReplicatedMergeTree` table at a fixed ZooKeeper path, and STOP MERGES
+# raw mutation znode of a `ReplicatedMergeTree` table at a known ZooKeeper path, and STOP MERGES
 # must hold on the only replica that could execute the mutation.
 #
 # Regression test: a replicated mutation znode written by an older server version still scopes
@@ -17,13 +17,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-ZK_PATH="/clickhouse/tables/$CLICKHOUSE_DATABASE/t_legacy_mutation_znode"
+ZK_PATH="/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_legacy_mutation_znode"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_legacy_mutation_znode SYNC"
 
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_legacy_mutation_znode (p Enum8('a' = 1, 'b' = 2), n Int64)
-    ENGINE = ReplicatedMergeTree('$ZK_PATH', '1')
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_legacy_mutation_znode', '1')
     PARTITION BY p ORDER BY tuple()"
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_legacy_mutation_znode VALUES ('a', 1), ('b', 2)"
