@@ -175,6 +175,24 @@ public:
     /// sampled values) to know when a numeric value is a genuine structure mismatch for a `Bool` column.
     virtual bool readsNumericValueIntoBoolColumn() const { return true; }
 
+    /// True when the parser may accept the literal `true` / `false` word for a numeric (non-`Bool`)
+    /// destination column. The flat-text row formats hand the raw field to the numeric deserializer
+    /// of the destination type (`readText` / `readFloatText*`), which parses no word forms — so
+    /// `TSV`, `CSV`, `TSKV` and `Form` return false, and so do `MySQLDump` (whose
+    /// `deserializeTextQuoted` equally rejects the bare word) and `CustomSeparated` / `Regexp` /
+    /// `Template` under every non-`JSON` escaping rule. The typed-token JSON parsers accept the word
+    /// under `input_format_json_read_bools_as_numbers` — and always for the `UInt8` / `Int8` columns
+    /// (`SerializationNumber<T>::deserializeTextJSON`) — so a caller identifies them via
+    /// `readsTypedJSONValueTokens` and consults the setting itself; a `Template` with heterogeneous
+    /// escaping rules may contain a `JSON` placeholder, so it conservatively keeps true. The formats
+    /// that convert a decoded value to the destination type return true too: `Values` retries a
+    /// rejected field as an expression and converts the boolean literal like `CAST` does, and the
+    /// casting / binary formats either accept the value into the integer-backed column or reject the
+    /// column shape eagerly, outside of a parse error. A caller comparing an inferred schema against
+    /// an expected one uses this to know when an inferred `Bool` is a genuine structure mismatch for
+    /// a numeric destination column.
+    virtual bool readsBoolWordIntoNumericColumn() const { return true; }
+
     /// True when the format stores numeric values with their on-wire numeric kind and the parser does
     /// not convert them across the integer / floating-point family boundary. The text / JSON parsers
     /// re-parse a numeric token with the deserializer of the destination type, so any numeric token

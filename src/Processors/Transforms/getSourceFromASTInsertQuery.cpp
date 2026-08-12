@@ -102,6 +102,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_honors_column_name_matching_mode = false;
     bool format_reads_numeric_into_ipv4 = false;
     bool format_reads_numeric_into_bool = true;
+    bool format_reads_bool_word_into_numeric = true;
     bool format_stores_typed_numeric_values = false;
     bool format_always_skips_unknown_fields = false;
     try
@@ -136,6 +137,7 @@ String getInsertDataSchemaMismatchDescription(
         format_honors_column_name_matching_mode = schema_reader->honorsColumnNameMatchingMode();
         format_reads_numeric_into_ipv4 = schema_reader->readsNumericValueIntoIPv4Column();
         format_reads_numeric_into_bool = schema_reader->readsNumericValueIntoBoolColumn();
+        format_reads_bool_word_into_numeric = schema_reader->readsBoolWordIntoNumericColumn();
         format_stores_typed_numeric_values = schema_reader->storesTypedNumericValues();
         format_always_skips_unknown_fields = schema_reader->alwaysSkipsUnknownFields();
     }
@@ -519,6 +521,42 @@ String getInsertDataSchemaMismatchDescription(
                     return *holds_only_bool_literals;
             }
             return true;
+        }
+
+        /// A `Bool` value into a non-`Bool` destination. `WhichDataType` sees the `UInt8`-backed
+        /// `Bool` as a generic unsigned integer, so without a dedicated rule an inferred `Bool` would
+        /// fall through to the numeric rules (and the supertype rule below sees a plain `UInt8`) —
+        /// but the parsers accept a `true` / `false` token in far fewer destinations than a numeric
+        /// token. The typed-token JSON parsers read it into a numeric column only under
+        /// `input_format_json_read_bools_as_numbers`, except for the `UInt8` / `Int8` columns, which
+        /// accept it always (`SerializationNumber<T>::deserializeTextJSON`); every other scalar
+        /// destination rejects it — the `DateTime*` / `Date*` / `Decimal` / `Enum` / ... JSON
+        /// deserializers have no bool-token path (a `String` destination follows
+        /// `input_format_json_read_bools_as_strings` and is decided by the dedicated branch above,
+        /// and a `JSON` destination accepts an arbitrary token). The formats that re-parse the raw
+        /// field with the destination's text deserializer reject the bare word for every numeric
+        /// column — the numeric readers parse no word forms and have no `UInt8` special case
+        /// (`readsBoolWordIntoNumericColumn`, false for `TSV` / `CSV` / `TSKV` / `Form` /
+        /// `MySQLDump` and the configurable-escaping formats under a non-`JSON` rule). Their
+        /// non-numeric destinations stay inconclusive — e.g. an `Enum` whose value names include the
+        /// word (`Enum8('true' = 1, ...)`) reads it fine — as does everything about the formats that
+        /// convert values to the destination type (`Values` retries the literal as an expression and
+        /// converts it like `CAST` does), so only a nested destination is flagged for them, as for
+        /// any numeric token.
+        if (isBool(inferred_unwrapped) && !isBool(expected_unwrapped))
+        {
+            if (format_reads_typed_json_value_tokens)
+            {
+                if (which_expected.isUInt8() || which_expected.isInt8())
+                    return true;
+                if (which_expected.isInt() || which_expected.isUInt() || which_expected.isFloat())
+                    return format_settings.json.read_bools_as_numbers;
+                return which_expected.isObject();
+            }
+            if (!format_reads_bool_word_into_numeric
+                && (which_expected.isInt() || which_expected.isUInt() || which_expected.isFloat()))
+                return false;
+            return !expected_is_nested;
         }
 
         if (tryGetLeastSupertype(DataTypes{inferred_type, expected_type}) != nullptr)

@@ -45,6 +45,7 @@ private:
     /// so a `Bool` column is read by `SerializationBool`, which accepts only the configured
     /// representations and the fixed literal forms — exactly as in the other flat-text formats.
     bool readsNumericValueIntoBoolColumn() const override { return false; }
+    bool readsBoolWordIntoNumericColumn() const override { return false; }
 };
 
 }

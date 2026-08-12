@@ -133,6 +133,10 @@ private:
     /// invents one.
     bool readsTypedJSONValueTokens() const override { return homogeneous_escaping_rule == FormatSettings::EscapingRule::JSON; }
     bool readsQuotedTextValues() const override { return homogeneous_escaping_rule == FormatSettings::EscapingRule::Quoted; }
+    bool readsBoolWordIntoNumericColumn() const override
+    {
+        return !homogeneous_escaping_rule || *homogeneous_escaping_rule == FormatSettings::EscapingRule::JSON;
+    }
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 

@@ -53,6 +53,7 @@ private:
     /// column accepts only `true` / `false`, `1` / `0` and a quoted representation, never another number.
     bool readsQuotedTextValues() const override { return true; }
     bool readsNumericValueIntoBoolColumn() const override { return false; }
+    bool readsBoolWordIntoNumericColumn() const override { return false; }
 
     String table_name;
     bool column_names_read_from_data = false;

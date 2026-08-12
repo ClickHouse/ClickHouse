@@ -124,6 +124,7 @@ private:
     /// `XML` never reads a value at all (it fails before any parse error), so it keeps them too.
     bool readsTypedJSONValueTokens() const override { return format_settings.custom.escaping_rule == FormatSettings::EscapingRule::JSON; }
     bool readsQuotedTextValues() const override { return format_settings.custom.escaping_rule == FormatSettings::EscapingRule::Quoted; }
+    bool readsBoolWordIntoNumericColumn() const override { return format_settings.custom.escaping_rule == FormatSettings::EscapingRule::JSON; }
 
     std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
 
