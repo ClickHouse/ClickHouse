@@ -58,7 +58,6 @@ namespace Setting
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
-    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool enable_positional_arguments;
 }
 
@@ -131,9 +130,7 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
     Settings view_settings = view_context->getSettingsCopy();
 
-    /// With plan-based parallel replicas we always build local, so there is no need to disable parallel replicas
-    if (context->canUseParallelReplicasOnInitiator() && view_settings[Setting::parallel_replicas_allow_view_over_mergetree]
-        && !view_settings[Setting::parallel_replicas_plan_based])
+    if (context->canUseParallelReplicasOnInitiator() && view_settings[Setting::parallel_replicas_allow_view_over_mergetree])
     {
         if (auto storage = view->getUnderlyingMergeTreeStorageForParallelReplicas(context))
             view_settings[Setting::allow_experimental_parallel_reading_from_replicas] = Field{0};
@@ -257,7 +254,7 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                         || hasWindowFunctionNodes(query_node.getProjectionNode()))
                         return nullptr;
 
-                    node = query_node.getJoinTreeNode().get();
+                    node = query_node.getJoinTree().get();
                     break;
                 }
                 case QueryTreeNodeType::UNION:

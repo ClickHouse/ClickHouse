@@ -12,7 +12,7 @@ This document provides detailed API reference for the ClickHouse Operator custom
 
 ## AdditionalPort {#additionalport}
 
-AdditionalPort declares one extra TCP port to expose on the ClickHouse Pod and the public headless Service.
+AdditionalPort declares one extra TCP port to expose on the ClickHouse Pod and the operator-managed headless Service.
 
 | Field | Type | Description | Required | Default |
 |-------|------|-------------|----------|---------|
@@ -89,7 +89,7 @@ ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 | `upgradeChannel` | string | UpgradeChannel specifies the release channel for major version upgrade checks.<br />When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8). | false |  |
 | `versionProbeTemplate` | [VersionProbeTemplate](#versionprobetemplate) | VersionProbeTemplate overrides for the version detection Job. | false |  |
 | `externalSecret` | [ExternalSecret](#externalsecret) | ExternalSecret is an optional reference to an externally-managed Secret containing cluster secrets.<br />The secret must reside in the same namespace as the cluster. | false |  |
-| `additionalPorts` | [AdditionalPort](#additionalport) array | AdditionalPorts declares extra TCP ports to expose on the ClickHouse Pod and the public headless Service.<br />The operator only adds the ports to the Kubernetes resources, it does not configure the ClickHouse server to listen on them. | false |  |
+| `additionalPorts` | [AdditionalPort](#additionalport) array | AdditionalPorts declares extra TCP ports to expose on the ClickHouse Pod and the operator-managed headless Service.<br />The operator only adds the ports to the Kubernetes resources, it does not configure the ClickHouse server to listen on them. | false |  |
 
 Appears in:
 - [ClickHouseCluster](#clickhousecluster)

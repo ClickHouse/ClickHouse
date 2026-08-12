@@ -62,10 +62,8 @@ ClientApplicationBase::~ClientApplicationBase()
 {
     try
     {
-#if defined(OS_HAS_SIGNAL_HANDLERS)
         writeSignalIDtoSignalPipe(SignalListener::StopThread);
         signal_listener_thread.join();
-#endif
         HandledSignals::instance().reset();
     }
     catch (...)
@@ -169,7 +167,7 @@ void ClientApplicationBase::init(int argc, char ** argv)
     /// Set application name for help messages based on how the binary was invoked
     std::string_view argv0_view(argv0 ? argv0 : "");
     std::string name_with_dash = "clickhouse-" + getName();
-    if (argv0_view.contains(name_with_dash))
+    if (argv0_view.find(name_with_dash) != std::string_view::npos)
         app_name = name_with_dash;
     else
         app_name = "clickhouse " + getName();
@@ -228,6 +226,7 @@ void ClientApplicationBase::init(int argc, char ** argv)
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
     query_kind = parseQueryKind(options["query_kind"].as<std::string>());
     profile_events.print = options.contains("print-profile-events");
+    profile_events.delay_ms = options["profile-events-delay-ms"].as<UInt64>();
 
     processOptions(options_description, options, external_tables_arguments, hosts_and_ports_arguments);
 
@@ -272,12 +271,8 @@ void ClientApplicationBase::init(int argc, char ** argv)
     }
 
     fatal_log = createLogger("ClientBase", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
-#if defined(OS_HAS_SIGNAL_HANDLERS)
-    /// Without signals nothing ever writes to the signal pipe, so there is nothing to listen
-    /// for - and the blocking read of that pipe is all the listener thread does.
     signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
     signal_listener_thread.start(*signal_listener);
-#endif
 }
 
 

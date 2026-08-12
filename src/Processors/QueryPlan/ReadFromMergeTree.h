@@ -369,7 +369,6 @@ public:
     /// Returns true if the optimization is applicable (and applies it then).
     bool requestOutputEachPartitionThroughSeparatePortForAggregation();
     bool requestOutputEachPartitionThroughSeparatePortForLimitBy();
-    void requestOutputEachPartitionThroughSeparatePortForDistinct();
 
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
 
@@ -391,20 +390,12 @@ public:
 
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
     void disableQueryConditionCache() { allow_query_condition_cache = false; }
+    void disableMergeTreePartsSnapshotRemoval() { enable_remove_parts_from_snapshot_optimization = false; }
 
     /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.
     /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be clear.
     void clearParallelReadingExtension();
     std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
-
-    /// Announce an empty read set to the parallel-replicas coordinator (what initializePipeline() sends
-    /// when there are no ranges). Callable from the projection optimizer when it replaces this step and
-    /// initializePipeline() will not run. No-op unless this is the initiator local plan; returns whether
-    /// an announcement was sent.
-    bool announceEmptyReadRangesToCoordinatorIfInitiator();
-
-    bool isParallelReplicasLocalPlanForInitiator() const;
-    bool isParallelReplicasLocalPlanForFollower() const;
 
     /// Mark a (non-executed) read as a parallel-replicas read purely so that serialization records it.
     /// No callbacks are attached: the read is only serialized on the initiator and shipped to replicas,
@@ -475,9 +466,6 @@ public:
     void setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_) { lazy_materializing_rows = std::move(lazy_materializing_rows_); }
 
     void deferFiltersAfterFinalIfNeeded();
-
-    /// Whether PREWHERE (present or moved from WHERE later) is applied after FINAL instead of during reading
-    bool isPrewhereDeferredAfterFinal() const;
 
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
     const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
@@ -626,8 +614,6 @@ private:
         std::optional<ActionsDAG> & out_projection,
         const InputOrderInfoPtr & input_order_info);
 
-    bool isRowPolicyDeferredAfterFinal() const;
-
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
         const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -651,13 +637,11 @@ private:
 
     void logPredicateStatistics(const AnalysisResult & result) const;
 
-    /// Cost heuristic for per-partition (independent) processing, shared by GROUP BY and DISTINCT.
-    enum class ProcessorKind : uint8_t { Aggregation, Distinct };
-    bool isPartitionIndependentProcessingProfitable(ProcessorKind kind) const;
-
     int getSortDirection() const;
     void updateSortDescription();
 
+    bool isParallelReplicasLocalPlanForInitiator() const;
+    bool isParallelReplicasLocalPlanForFollower() const;
     bool supportsSkipIndexesOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
@@ -668,6 +652,7 @@ private:
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
+    bool enable_remove_parts_from_snapshot_optimization = true;
     bool allow_query_condition_cache = true;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;

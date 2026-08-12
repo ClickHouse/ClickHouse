@@ -15,7 +15,9 @@ keywords: ['예시 데이터셋', 'Hacker News', '샘플 데이터', '텍스트 
 </div>
 
 <Steps>
-  <Step title="CSV 다운로드" id="download">
+  <Step>
+    ### CSV 다운로드
+
     데이터셋의 CSV 버전은 공개 [S3 버킷](https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz)에서 다운로드하거나, 다음 명령을 실행해 다운로드할 수 있습니다:
 
     ```bash
@@ -25,7 +27,9 @@ keywords: ['예시 데이터셋', 'Hacker News', '샘플 데이터', '텍스트 
     4.6GB, 2,800만 행 규모의 이 압축 파일은 다운로드에 5~10분 정도 소요됩니다.
   </Step>
 
-  <Step title="데이터 샘플링" id="sampling">
+  <Step>
+    ### 데이터 샘플링
+
     [`clickhouse-local`](/ko/concepts/features/tools-and-utilities/clickhouse-local)을 사용하면
     ClickHouse 서버를 배포하거나 구성하지 않고도 로컬 파일을 빠르게 처리할 수 있습니다.
 
@@ -91,7 +95,9 @@ keywords: ['예시 데이터셋', 'Hacker News', '샘플 데이터', '텍스트 
     `Vertical` 포맷을 사용하면 각 컬럼의 데이터를 더 쉽게 확인할 수 있습니다.
   </Step>
 
-  <Step title="스키마 추론으로 데이터 로드하기" id="loading-the-data">
+  <Step>
+    ### 스키마 추론으로 데이터 로드하기
+
     데이터를 로드하는 가장 간단하면서도 강력한 도구는 `clickhouse-client`입니다. 기능이 풍부한 네이티브 command-line client입니다.
     데이터를 로드할 때도 스키마 추론을 활용할 수 있으며, 컬럼의 타입은 ClickHouse가 결정합니다.
 
@@ -142,7 +148,9 @@ keywords: ['예시 데이터셋', 'Hacker News', '샘플 데이터', '텍스트 
     명령 한 번으로 ClickHouse에 2,800만 개의 행을 성공적으로 삽입했습니다!
   </Step>
 
-  <Step title="데이터 탐색하기" id="explore">
+  <Step>
+    ### 데이터 탐색하기
+
     다음 쿼리를 실행하여 Hacker News 스토리와 특정 컬럼의 샘플을 확인합니다:
 
     ```sql title="Query"
@@ -195,7 +203,9 @@ keywords: ['예시 데이터셋', 'Hacker News', '샘플 데이터', '텍스트 
     스키마 추론은 초기 데이터 탐색에 매우 유용한 도구이지만, 「best effort」 방식이므로 데이터에 최적화된 스키마를 정의하는 것을 장기적으로 대체할 수는 없습니다.
   </Step>
 
-  <Step title="스키마 정의" id="define-a-schema">
+  <Step>
+    ### 스키마 정의
+
     가장 명확하면서도 바로 적용할 수 있는 최적화 방법은 각 필드의 타입을 정의하는 것입니다.
     시간 필드를 `DateTime` 타입으로 선언하는 것과 함께, 기존 데이터셋을 삭제한 뒤 아래 각 필드에도 적절한 타입을 지정합니다.
     ClickHouse에서는 데이터의 프라이머리 키 ID를 `ORDER BY` 절로 정의합니다.
@@ -238,13 +248,14 @@ keywords: ['예시 데이터셋', 'Hacker News', '샘플 데이터', '텍스트 
     ```
   </Step>
 
-  <Step title="샘플 쿼리 실행" id="run-sample-queries">
+  <Step>
+    ### 샘플 쿼리 실행
+
     아래에 몇 가지 샘플 쿼리를 제공합니다. 직접 쿼리를 작성할 때 참고하시기 바랍니다.
 
     #### Hacker News에서 &quot;ClickHouse&quot;는 얼마나 자주 언급되는 주제입니까?
 
-    score 필드는 스토리의 인기도를 나타내는 메트릭을 제공하며, `id` 필드와 `||`
-    연결 연산자를 활용하면 원본 게시물의 링크를 생성할 수 있습니다.
+    score 필드는 스토리의 인기도를 나타내는 메트릭을 제공하며, `id` 필드와 `||` 연결 연산자를 활용하면 원본 게시물의 링크를 생성할 수 있습니다.
 
     ```sql title="Query"
     SELECT
@@ -450,7 +461,9 @@ Parquet는 타입이 매우 제한적이며, ClickHouse는 이를 그대로 따�
 Parquet 파일에 대해 타입 추론을 수행하면 CSV 파일의 스키마와는 항상 약간 다른 스키마가 생성됩니다.
 
 <Steps>
-  <Step title="데이터를 삽입합니다" id="insert-the-data">
+  <Step>
+    ### 데이터를 삽입합니다
+
     다시 `url` 함수를 사용해 원격 데이터를 읽고, 다음 쿼리를 실행하여 동일한 데이터를 Parquet 포맷으로 읽습니다:
 
     ```sql
@@ -542,7 +555,9 @@ Parquet 파일에 대해 타입 추론을 수행하면 CSV 파일의 스키마�
     ```
   </Step>
 
-  <Step title="쿼리 속도를 높이기 위한 스키핑 인덱스 추가" id="add-skipping-index">
+  <Step>
+    ### 쿼리 속도를 높이기 위한 스키핑 인덱스 추가
+
     &quot;ClickHouse&quot;를 언급한 댓글이 몇 개인지 확인하려면 다음 쿼리를 실행하세요:
 
     ```sql title="Query"
@@ -587,7 +602,7 @@ Parquet 파일에 대해 타입 추론을 수행하면 CSV 파일의 스키마�
     └─────────┘
     ```
 
-    [`EXPLAIN`](/ko/reference/statements/explain) 절을 사용하면 이 인덱스를 추가했을 때 쿨리 성능이 약 3.4배 향상된 이유를 이해할 수 있습니다.
+    [`EXPLAIN`](/ko/reference/statements/explain) 절을 사용하면 이 인덱스를 추가했을 때 쿼리 성능이 약 3.4배 향상된 이유를 이해할 수 있습니다.
 
     ```response text="Query"
     EXPLAIN indexes = 1

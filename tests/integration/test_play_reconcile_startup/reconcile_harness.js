@@ -374,7 +374,7 @@ function makeHistory(initialState, location) {
 
 /// ----- Context assembly -------------------------------------------------------------------
 
-function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasmInstantiateDelayMs, disableWasm }) {
+function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs }) {
     const document = makeDocument();
     const location = makeLocation(href);
     const history = makeHistory(historyState, location);
@@ -431,19 +431,7 @@ function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasm
         scrollTo() {}, scroll() {},
         innerHeight: 800, innerWidth: 1280, devicePixelRatio: 1,
         addEventListener() {}, removeEventListener() {},
-        /// `wasmInstantiateDelayMs` keeps the WASM lexer "still loading" past startup settlement
-        /// (`wasmAvailable()` only checks the shape, so the wrapper still counts as available):
-        /// the window where a history write can race the first `WebAssembly.instantiate`.
-        /// `disableWasm` removes `WebAssembly` outright (`wasmAvailable()` is false), so the
-        /// lexer NEVER becomes available — the window where even the debounced persist and a
-        /// later reload cannot rebuild the parameter snapshot.
-        WebAssembly: disableWasm
-            ? undefined
-            : wasmInstantiateDelayMs
-                ? { instantiate: (...args) => new Promise((resolve, reject) =>
-                      setTimeout(() => WebAssembly.instantiate(...args).then(resolve, reject),
-                                 wasmInstantiateDelayMs)) }
-                : WebAssembly,
+        WebAssembly,
     };
     sandbox.window = sandbox;
     sandbox.self = sandbox;
@@ -486,20 +474,7 @@ async function runScenario(js, config) {
         sandbox);
     const persisted = [...stores.get('tabs').data.values()];
     const persistedMeta = stores.get('meta').data.get('state') || null;
-    return { live: JSON.parse(live), persisted, persistedMeta, sandbox, stores, stats };
-}
-
-/// Wait for the next debounced `persist` (400 ms) after a post-startup interaction, then read back
-/// what it wrote. Used by the scenarios that assert what a reload would find in `IndexedDB`.
-async function waitForNextPersist(r) {
-    const target = r.stats.persistCount + 1;
-    const deadline = Date.now() + 5000;
-    while (r.stats.persistCount < target) {
-        if (Date.now() > deadline) throw new Error('timed out waiting for the debounced persist');
-        await sleep(25);
-    }
-    await sleep(25);
-    return [...r.stores.get('tabs').data.values()];
+    return { live: JSON.parse(live), persisted, persistedMeta, sandbox };
 }
 
 /// ----- Assertions ----------------------------------------------------------------------------
@@ -947,51 +922,37 @@ async function main() {
                 && adopted_url.searchParams.get('tab') === live_tab.title,
             r.sandbox.location.href);
 
-        /// A trusted keystroke AFTER reconciliation completes. It must NOT touch the browser
-        /// history or the URL — that is the per-keystroke work this page deliberately does not do
-        /// (see `onQueryInput`) — but it must reach the tab and the persisted workspace.
+        /// Snapshot what the DB holds BEFORE the second edit — the reload models "before the debounced
+        /// save flushes", so the DB must still carry the recreated `SELECT 111` tab, not `SELECT 999`.
+        const db_before_edit = JSON.parse(JSON.stringify(r.persisted));
+        /// A trusted keystroke AFTER reconciliation completes: with the entry re-owned this now folds
+        /// into it (`refreshCurrentHistoryEntry` no longer bails), updating the entry/URL to the edit.
         vm.runInContext(
             "query_area.value = 'SELECT 999';" +
             "query_area.dispatchEvent({ type: 'input', isTrusted: true });",
             r.sandbox);
         const edited_url = new URL(r.sandbox.location.href);
-        check('adopt-stale-reload-keystroke-not-in-history', 'a keystroke leaves the entry and the URL untouched',
-            Buffer.from(edited_url.hash.slice(1), 'base64').toString('utf8') === 'SELECT 111'
-                && r.sandbox.history.state && r.sandbox.history.state.query === 'SELECT 111'
+        check('adopt-stale-reload-entry-reowned', 'a later trusted edit re-owns the entry instead of bailing',
+            Buffer.from(edited_url.hash.slice(1), 'base64').toString('utf8') === 'SELECT 999'
+                && r.sandbox.history.state && r.sandbox.history.state.query === 'SELECT 999'
                 && r.sandbox.history.state.tabId === live_tab.id,
             { hash: r.sandbox.location.href, state: r.sandbox.history.state });
-        check('adopt-stale-reload-keystroke-not-in-history', 'the keystroke does reach the live tab',
-            vm.runInContext("getActiveTab().query", r.sandbox) === 'SELECT 999',
-            vm.runInContext("getActiveTab().query", r.sandbox));
 
-        /// ...and the debounced save carries it to `IndexedDB` as a draft: `query` moves on while
-        /// `lastSavedQuery` stays at what the entry holds. That pair is exactly what marks a stale
-        /// reload for `reconcileStartup`.
-        const db_after_edit = await waitForNextPersist(r);
-        check('adopt-stale-reload-keystroke-not-in-history', 'the draft is persisted as query-ahead-of-lastSavedQuery',
-            db_after_edit.length === 1 && db_after_edit[0].query === 'SELECT 999'
-                && db_after_edit[0].lastSavedQuery === 'SELECT 111',
-            db_after_edit.map(p => ({ query: p.query, lastSavedQuery: p.lastSavedQuery })));
-
-        /// Reload with the entry/URL still holding `SELECT 111` and the DB holding the newer draft:
-        /// the stale-reload branch must restore the DRAFT as editor text, and must not auto-run it.
+        /// Reload before the edit is persisted: the DB still holds `SELECT 111`, but the entry now
+        /// holds `SELECT 999`. Startup must keep the newer edit from the entry, not the stale DB/hash.
         const r2 = await runScenario(js, {
             href: r.sandbox.location.href,
             historyState: r.sandbox.history.state,
-            seedTabs: db_after_edit,
+            seedTabs: db_before_edit,
             seedMeta: r.persistedMeta,
         });
-        check('adopt-stale-reload-draft-restored', 'the reload restores the unrun draft, not the stale hash',
+        check('adopt-stale-reload-entry-reowned', 'the reload keeps the newest edit, not the stale hash',
             r2.live.tabs.some(t => t.query === 'SELECT 999') && !r2.live.tabs.some(t => t.query === 'SELECT 111'),
             r2.live);
-        check('adopt-stale-reload-draft-restored', 'the reload persists the draft, no stale or blank tab',
+        check('adopt-stale-reload-entry-reowned', 'the reload persists the newest edit, no stale or blank tab',
             r2.persisted.some(p => p.query === 'SELECT 999') && !r2.persisted.some(p => p.query === 'SELECT 111')
                 && !r2.persisted.some(p => (p.query || '').trim() === ''),
             r2.persisted.map(p => ({ id: p.id, title: p.title, query: p.query })));
-        check('adopt-stale-reload-draft-restored', 'the restored draft is not auto-runnable',
-            new URL(r2.sandbox.location.href).searchParams.get('run') === null
-                && !r2.live.tabs.some(t => t.ran),
-            r2.sandbox.location.href);
     }
 
     /// Guard (no-saved-tabs adopt, authoritative `param_*` preserved): the adopt branch deliberately
@@ -1051,363 +1012,6 @@ async function main() {
                 && r2.sandbox.history.state && r2.sandbox.history.state.params && r2.sandbox.history.state.params.x === '42'
                 && r2.persisted.length === 1 && r2.persisted[0].params && r2.persisted[0].params.x === '42',
             { url: r2.sandbox.location.href, state: r2.sandbox.history.state, persisted: r2.persisted.map(p => p.params) });
-    }
-
-    /// Contract (parameters follow the editor on every keystroke): the query parameters, unlike the
-    /// browser history, ARE kept in sync per keypress. An edit that removes a placeholder must drop
-    /// its binding from the tab's snapshot right away, so the next history write — a run or a
-    /// structural tab change — cannot pair the newer text with a removed placeholder's value.
-    {
-        const param_query = 'SELECT {x:Int32}';
-        const r = await runScenario(js, {
-            href: base,
-            historyState: null,
-            seedTabs: [
-                { id: 't7', title: 'Report', query: param_query, params: { x: '42' }, result: null,
-                  lastSavedQuery: param_query },
-            ],
-            seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7'], tabSeq: 7, tabTitleSeq: 1 },
-        });
-        /// Sanity: the embedded lexer really did detect the placeholder, so the drop below is
-        /// meaningful rather than vacuous.
-        check('params-follow-keystrokes', 'the placeholder and its value are live before the edit',
-            vm.runInContext("JSON.stringify(getActiveTab().params)", r.sandbox) === '{"x":"42"}'
-                && vm.runInContext('currentQueryParams.length', r.sandbox) === 1,
-            vm.runInContext("JSON.stringify({p: getActiveTab().params, n: currentQueryParams.length})", r.sandbox));
-        await vm.runInContext(
-            "query_area.value = 'SELECT 1';" +
-            "onQueryInput({ type: 'input', isTrusted: true });",
-            r.sandbox);
-        await sleep(50);
-        check('params-follow-keystrokes', 'the removed placeholder binding is dropped from the tab',
-            vm.runInContext("JSON.stringify(getActiveTab().params)", r.sandbox) === '{}',
-            vm.runInContext("JSON.stringify(getActiveTab().params)", r.sandbox));
-        check('params-follow-keystrokes', 'the keystroke still wrote no history entry',
-            r.sandbox.history.state && r.sandbox.history.state.query === param_query,
-            r.sandbox.history.state);
-        /// The structural write that follows must therefore carry the new text with NO stale binding.
-        vm.runInContext('addTab()', r.sandbox);
-        await sleep(50);
-        const after_add = new URL(r.sandbox.location.href);
-        check('params-follow-keystrokes', 'the structural write leaves no stale `param_x` in the URL',
-            after_add.searchParams.get('param_x') === null, r.sandbox.location.href);
-    }
-
-    /// Contract (a history write racing the parameter rebuild stays coherent): a structural change
-    /// can snapshot the tab BEFORE a keystroke's asynchronous parameter rebuild lands — most
-    /// visibly while the first `WebAssembly.instantiate` of the lexer is still in flight. The
-    /// capture must not pair the new draft with the previous text's `param_*` inputs: it
-    /// re-derives the placeholder set synchronously from the captured text, dropping bindings the
-    /// edit removed while keeping the ones that survive. Both closes below run in the same
-    /// synchronous turn as the edit, so the rebuild's microtasks have deliberately NOT run yet.
-    {
-        const param_query = 'SELECT {x:Int32}';
-        const seed = () => ({
-            href: base,
-            historyState: null,
-            seedTabs: [
-                { id: 't7', title: 'Report', query: param_query, params: { x: '42' }, result: null,
-                  lastSavedQuery: param_query },
-                { id: 't8', title: 'Other', query: 'SELECT 8', params: {}, result: null, lastSavedQuery: 'SELECT 8' },
-            ],
-            seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7', 't8'], tabSeq: 8, tabTitleSeq: 2 },
-        });
-
-        /// The edit REMOVES the placeholder: the entry folded at close time must not carry it.
-        {
-            const r = await runScenario(js, seed());
-            const closed_entry = JSON.parse(vm.runInContext(
-                "query_area.value = 'SELECT 1';" +
-                "onQueryInput({ type: 'input', isTrusted: true });" +
-                "closeTab(activeTabId);" +
-                "JSON.stringify(history.state)",
-                r.sandbox));
-            check('capture-races-param-rebuild', 'the entry folded at close pairs the draft with no removed binding',
-                closed_entry && closed_entry.query === 'SELECT 1'
-                    && !(closed_entry.params && 'x' in closed_entry.params),
-                closed_entry);
-        }
-
-        /// The edit KEEPS the placeholder: the pruning must not drop its surviving value.
-        {
-            const r = await runScenario(js, seed());
-            const closed_entry = JSON.parse(vm.runInContext(
-                "query_area.value = 'SELECT {x:Int32} + 1';" +
-                "onQueryInput({ type: 'input', isTrusted: true });" +
-                "closeTab(activeTabId);" +
-                "JSON.stringify(history.state)",
-                r.sandbox));
-            check('capture-races-param-rebuild', 'a surviving placeholder keeps its value through the racing capture',
-                closed_entry && closed_entry.query === 'SELECT {x:Int32} + 1'
-                    && closed_entry.params && closed_entry.params.x === '42',
-                closed_entry);
-        }
-    }
-
-    /// Contract (a history write while the lexer is STILL LOADING prunes textually): the
-    /// synchronous re-derivation above is only possible once `WebAssembly.instantiate` has
-    /// resolved. Delay it past startup settlement, so the whole scenario runs inside the "first
-    /// instantiate still in flight" window: the startup restore has not committed (`params_ok`
-    /// pending), no `param_*` input was ever rebuilt, and `captureActiveTab` can neither trust
-    /// the DOM nor re-derive. The entry a `closeTab` folds in that window must still not pair
-    /// the new draft with a binding for a placeholder the draft no longer has — but it also
-    /// must not clear a binding whose placeholder survived the edit: `writeHistoryEntry` prunes
-    /// the tab's snapshot textually against the recorded text (`pruneParamsToText`) when the
-    /// snapshot is not provably coherent with it (`paramsSyncedQuery`), so the removed-placeholder
-    /// edit publishes no `x` while the surviving-placeholder edit keeps `x=42`.
-    {
-        const param_query = 'SELECT {x:Int32}';
-        const seed = () => ({
-            href: base,
-            historyState: null,
-            wasmInstantiateDelayMs: 5000,
-            seedTabs: [
-                { id: 't7', title: 'Report', query: param_query, params: { x: '42' }, result: null,
-                  lastSavedQuery: param_query },
-                { id: 't8', title: 'Other', query: 'SELECT 8', params: {}, result: null, lastSavedQuery: 'SELECT 8' },
-            ],
-            seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7', 't8'], tabSeq: 8, tabTitleSeq: 2 },
-        });
-
-        /// The edit REMOVES the placeholder: the entry folded inside the loading window must not
-        /// carry its binding.
-        {
-            const r = await runScenario(js, seed());
-            /// Sanity: the startup persist has happened (the restore's editor sync schedules it),
-            /// but the delayed instantiate keeps the lexer genuinely unavailable — the racing
-            /// close below is meaningful only inside that window.
-            check('capture-races-lexer-load', 'the lexer module is still loading when the scenario acts',
-                vm.runInContext('typeof lexer_module', r.sandbox) === 'undefined',
-                vm.runInContext('typeof lexer_module', r.sandbox));
-            const closed_entry = JSON.parse(vm.runInContext(
-                "query_area.value = 'SELECT 1';" +
-                "onQueryInput({ type: 'input', isTrusted: true });" +
-                "closeTab(activeTabId);" +
-                "JSON.stringify(history.state)",
-                r.sandbox));
-            check('capture-races-lexer-load', 'the entry folded during the lexer load carries the draft',
-                closed_entry && closed_entry.query === 'SELECT 1',
-                closed_entry);
-            check('capture-races-lexer-load', 'the entry folded during the lexer load carries no stale binding',
-                closed_entry && !(closed_entry.params && 'x' in closed_entry.params),
-                closed_entry);
-        }
-
-        /// The edit KEEPS the placeholder: the fail-closed publish must degrade to a textual
-        /// prune, not to an empty map — Back or a copied URL would otherwise recreate the draft
-        /// without a value that was still valid for a placeholder that survived.
-        {
-            const r = await runScenario(js, seed());
-            check('capture-races-lexer-load', 'the lexer module is still loading when the surviving-placeholder edit acts',
-                vm.runInContext('typeof lexer_module', r.sandbox) === 'undefined',
-                vm.runInContext('typeof lexer_module', r.sandbox));
-            const closed_entry = JSON.parse(vm.runInContext(
-                "query_area.value = 'SELECT {x:Int32} + 1';" +
-                "onQueryInput({ type: 'input', isTrusted: true });" +
-                "closeTab(activeTabId);" +
-                "JSON.stringify(history.state)",
-                r.sandbox));
-            check('capture-races-lexer-load', 'a surviving placeholder keeps its value through the lexer-load window',
-                closed_entry && closed_entry.query === 'SELECT {x:Int32} + 1'
-                    && closed_entry.params && closed_entry.params.x === '42',
-                closed_entry);
-        }
-    }
-
-    /// Contract (a draft persisted while the lexer NEVER loads does not launder its stale snapshot
-    /// through a reload): with `WebAssembly` unavailable, an edit only advances `tab.query` before
-    /// the debounced persist, so `IndexedDB` records the new text with the old parameter snapshot.
-    /// The record carries the snapshot's provenance (`paramsSyncedQuery`), and the reload's
-    /// `restoreEditor` — which cannot rebuild the inputs either — must NOT stamp that never-rebuilt
-    /// pair as coherent for the new text: the startup history write publishes it pruned textually
-    /// instead, exactly like the same-session lexer-load window above. Without the provenance, the
-    /// reload came back with `history.state.params = {x: '42'}` and `?param_x=42` under a
-    /// `SELECT 1` that no longer has the placeholder.
-    {
-        const param_query = 'SELECT {x:Int32}';
-        const seed = () => ({
-            href: base,
-            historyState: null,
-            disableWasm: true,
-            seedTabs: [
-                { id: 't7', title: 'Report', query: param_query, params: { x: '42' }, result: null,
-                  lastSavedQuery: param_query },
-            ],
-            seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7'], tabSeq: 7, tabTitleSeq: 1 },
-        });
-
-        const editThenReload = async (draft) => {
-            const r = await runScenario(js, seed());
-            /// Sanity: the lexer is genuinely unavailable, and the startup sync still published
-            /// the seeded pair — it IS coherent, so the textual prune must be a no-op for it.
-            check('persisted-draft-stale-params', 'the lexer is unavailable and the coherent seeded pair is still published',
-                vm.runInContext('wasmAvailable()', r.sandbox) === false
-                    && new URL(r.sandbox.location.href).searchParams.get('param_x') === '42',
-                r.sandbox.location.href);
-            /// Edit the parameterized tab; the rebuild cannot run, only the debounced save does.
-            vm.runInContext(
-                'query_area.value = ' + JSON.stringify(draft) + ';' +
-                "onQueryInput({ type: 'input', isTrusted: true });",
-                r.sandbox);
-            const persisted = await waitForNextPersist(r);
-            check('persisted-draft-stale-params', 'the debounced save persisted the draft',
-                persisted.length === 1 && persisted[0].query === draft,
-                persisted.map(p => p.query));
-            /// Reload exactly as the browser would: same URL and `history.state` the session left
-            /// behind, workspace seeded from what it persisted, lexer still unavailable.
-            return runScenario(js, {
-                href: r.sandbox.location.href,
-                historyState: JSON.parse(JSON.stringify(r.sandbox.history.state)),
-                seedTabs: persisted,
-                seedMeta: r.persistedMeta,
-                disableWasm: true,
-            });
-        };
-
-        /// The edit REMOVES the placeholder: the reloaded history entry / URL must not carry its
-        /// binding, while the draft itself is restored (unrun).
-        {
-            const r2 = await editThenReload('SELECT 1');
-            const reloaded_url = new URL(r2.sandbox.location.href);
-            check('persisted-draft-stale-params', 'the reload restores the unrun draft',
-                r2.live.tabs.length === 1 && r2.live.tabs[0].query === 'SELECT 1' && !r2.live.tabs[0].ran,
-                r2.live);
-            check('persisted-draft-stale-params', 'the reloaded entry does not carry the removed placeholder binding',
-                r2.sandbox.history.state && !(r2.sandbox.history.state.params && 'x' in r2.sandbox.history.state.params),
-                r2.sandbox.history.state);
-            check('persisted-draft-stale-params', 'the reloaded URL carries no stale `param_x`',
-                reloaded_url.searchParams.get('param_x') === null,
-                r2.sandbox.location.href);
-        }
-
-        /// The edit KEEPS the placeholder: the textual prune must preserve its still-valid value
-        /// across the reload rather than degrade to an empty map.
-        {
-            const r2 = await editThenReload('SELECT {x:Int32} + 1');
-            const reloaded_url = new URL(r2.sandbox.location.href);
-            check('persisted-draft-stale-params', 'the reload restores the surviving-placeholder draft',
-                r2.live.tabs.length === 1 && r2.live.tabs[0].query === 'SELECT {x:Int32} + 1',
-                r2.live);
-            check('persisted-draft-stale-params', 'a surviving placeholder keeps its value through the reload',
-                reloaded_url.searchParams.get('param_x') === '42'
-                    && r2.sandbox.history.state && r2.sandbox.history.state.params
-                    && r2.sandbox.history.state.params.x === '42',
-                { url: r2.sandbox.location.href, state: r2.sandbox.history.state });
-        }
-    }
-
-    /// Contract (a run completing after the editor moved on records what it RAN): the entry a
-    /// finished run writes must be a coherent query/params pair. When the draft has diverged from
-    /// the launched text, the entry records the launch snapshot — the live draft's own parameter
-    /// rebuild is asynchronous and need not have landed, so pairing the newer text with whatever
-    /// `tab.params` currently holds would publish a binding for a placeholder the draft no longer
-    /// has. The draft itself stays in the editor and is persisted as a draft.
-    {
-        const launched = 'SELECT {x:Int32}';
-        const r = await runScenario(js, {
-            href: base,
-            historyState: null,
-            seedTabs: [
-                { id: 't7', title: 'Report', query: launched, params: { x: '42' }, result: null,
-                  lastSavedQuery: launched },
-            ],
-            seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7'], tabSeq: 7, tabTitleSeq: 1 },
-        });
-        /// Launch a run of the parameterized text, then move the editor on before it completes.
-        vm.runInContext("getActiveTab().launchQuery = " + JSON.stringify(launched) + ";", r.sandbox);
-        vm.runInContext(
-            "query_area.value = 'SELECT 1';" +
-            "onQueryInput({ type: 'input', isTrusted: true });",
-            r.sandbox);
-        /// The run completes now — deliberately WITHOUT awaiting the edit's parameter rebuild, which
-        /// is the window the entry has to survive.
-        vm.runInContext(
-            "(() => { const t = getActiveTab();" +
-            " saveHistory({ query: " + JSON.stringify(launched) + ", params: { x: '42' }," +
-            " database: selected_database, url: url_elem.value, user: user_elem.value," +
-            " ok: true, data: null, fullEditor: true }, undefined, t); })()",
-            r.sandbox);
-        await sleep(50);
-        const run_url = new URL(r.sandbox.location.href);
-        const entry_query = Buffer.from(run_url.hash.slice(1), 'base64').toString('utf8');
-        check('run-entry-coherent', 'the entry records the launched text, not the newer draft',
-            entry_query === launched && r.sandbox.history.state.query === launched,
-            { hash: entry_query, state_query: r.sandbox.history.state.query });
-        check('run-entry-coherent', 'the entry pairs that text with the parameters it ran with',
-            run_url.searchParams.get('param_x') === '42'
-                && r.sandbox.history.state.params && r.sandbox.history.state.params.x === '42',
-            { url: r.sandbox.location.href, state_params: r.sandbox.history.state.params });
-        check('run-entry-coherent', 'the draft is untouched in the editor and marked unrun',
-            vm.runInContext("getActiveTab().query", r.sandbox) === 'SELECT 1'
-                && vm.runInContext("getActiveTab().lastSavedQuery", r.sandbox) === launched,
-            vm.runInContext("JSON.stringify({q: getActiveTab().query, l: getActiveTab().lastSavedQuery})", r.sandbox));
-    }
-
-    /// Contract (Back/Forward keeps a newer unrun draft): with history no longer written per
-    /// keystroke, an ordinary same-session round trip must not restore an older entry's query over
-    /// a draft the user has typed since. Run `SELECT 1`, type `SELECT 2`, then navigate.
-    {
-        const r = await runScenario(js, {
-            href: base,
-            historyState: null,
-            seedTabs: [
-                { id: 't7', title: 'Report', query: 'SELECT 1', params: {}, result: null,
-                  lastSavedQuery: 'SELECT 1' },
-            ],
-            seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7'], tabSeq: 7, tabTitleSeq: 1 },
-        });
-        vm.runInContext(
-            "query_area.value = 'SELECT 2';" +
-            "onQueryInput({ type: 'input', isTrusted: true });",
-            r.sandbox);
-        await sleep(50);
-        /// Navigate back onto the tab's own older entry (still holding `SELECT 1`).
-        const older_entry = JSON.parse(JSON.stringify(r.sandbox.history.state));
-        vm.runInContext("window.onpopstate({ type: 'popstate', isTrusted: true, state: " +
-            JSON.stringify(older_entry) + " })", r.sandbox);
-        await sleep(100);
-        check('popstate-keeps-draft', 'the older entry does not clobber the newer unrun draft',
-            vm.runInContext("getActiveTab().query", r.sandbox) === 'SELECT 2',
-            vm.runInContext("getActiveTab().query", r.sandbox));
-    }
-
-    /// Contract (closing the active tab folds its draft into its own entry): a later Back that
-    /// recreates the closed tab from `history.state` must restore the draft, not the stale text the
-    /// last run left in the entry.
-    {
-        const r = await runScenario(js, {
-            href: base,
-            historyState: null,
-            seedTabs: [
-                { id: 't7', title: 'Report', query: 'SELECT 1', params: {}, result: null, lastSavedQuery: 'SELECT 1' },
-                { id: 't8', title: 'Other', query: 'SELECT 8', params: {}, result: null, lastSavedQuery: 'SELECT 8' },
-            ],
-            seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7', 't8'], tabSeq: 8, tabTitleSeq: 2 },
-        });
-        vm.runInContext(
-            "query_area.value = 'SELECT 2';" +
-            "onQueryInput({ type: 'input', isTrusted: true });",
-            r.sandbox);
-        await sleep(50);
-        const closed_id = vm.runInContext("activeTabId", r.sandbox);
-        vm.runInContext("closeTab(activeTabId)", r.sandbox);
-        /// Snapshot the entry the fold produced before the activation of the neighbouring tab
-        /// replaces `history.state` with its own.
-        const closed_entry = JSON.parse(JSON.stringify(r.sandbox.history.state));
-        await sleep(100);
-        /// `closeTab` folds the draft into the ACTIVE tab's entry before removing it, so the entry
-        /// that was current at the moment of the close records `SELECT 2`, not the stale `SELECT 1`.
-        check('close-folds-draft', "the closed tab's own entry carried the draft at close time",
-            closed_entry && closed_entry.tabId === closed_id && closed_entry.query === 'SELECT 2',
-            closed_entry);
-        /// Back onto the closed tab's entry recreates it; it must come back with the draft.
-        vm.runInContext("window.onpopstate({ type: 'popstate', isTrusted: true, state: " +
-            JSON.stringify(closed_entry) +
-            " })", r.sandbox);
-        await sleep(100);
-        check('close-folds-draft', 'Back recreates the closed tab with the draft',
-            vm.runInContext("tabs.some(t => t.query === 'SELECT 2')", r.sandbox),
-            vm.runInContext("JSON.stringify(tabs.map(t => t.query))", r.sandbox));
     }
 
     if (failures) {

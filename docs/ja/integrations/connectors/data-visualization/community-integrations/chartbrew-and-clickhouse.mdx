@@ -11,7 +11,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
-import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 import { Image } from "/snippets/ja/components/Image.jsx";
 
 <CommunityMaintainedBadge />
@@ -32,85 +32,93 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   使用するデータセットがない場合は、サンプルのいずれかを追加できます。このガイドでは、[UK Price Paid](/ja/get-started/sample-datasets/uk-price-paid) データセットを使用します。
 </Tip>
 
-<Steps>
-  <Step title="接続情報を収集する" id="1-gather-your-connection-details">
-    <ConnectionDetails />
-  </Step>
+<div id="1-gather-your-connection-details">
+  ## 1. 接続情報を確認する
+</div>
 
-  <Step title="Chartbrew を ClickHouse に接続する" id="2-connect-chartbrew-to-clickhouse">
-    1. [Chartbrew](https://chartbrew.com/login) にログインし、**Connections** タブを開きます。
+<ConnectionDetails />
 
-    2. **Create connection** をクリックし、利用可能なデータベースオプションから **ClickHouse** を選択します。
+<div id="2-connect-chartbrew-to-clickhouse">
+  ## 2. Chartbrew を ClickHouse に接続する
+</div>
 
-       <Image img="/images/integrations/data-visualization/chartbrew_02.webp" size="lg" alt="Chartbrew で ClickHouse 接続を選択" />
+1. [Chartbrew](https://chartbrew.com/login) にログインし、**Connections** タブを開きます。
 
-    3. ClickHouse データベースの接続情報を入力します。
+2. **Create connection** をクリックし、利用可能なデータベースオプションから **ClickHouse** を選択します。
 
-       * **Display Name**: Chartbrew で接続を識別するための名前。
-       * **Host**: ClickHouse server のホスト名または IP アドレス。
-       * **Port**: HTTPS 接続では通常 `8443`。
-       * **Database Name**: 接続先のデータベース。
-       * **Username**: ClickHouse のユーザー名。
-       * **Password**: ClickHouse のパスワード。
+   <Image img="/images/integrations/data-visualization/chartbrew_02.webp" size="lg" alt="Chartbrew で ClickHouse 接続を選択" />
 
-       <Image img="/images/integrations/data-visualization/chartbrew_03.webp" size="lg" alt="Chartbrew の ClickHouse 接続設定" />
+3. ClickHouse データベースの接続情報を入力します。
 
-    4. **Test connection** をクリックして、Chartbrew から ClickHouse に接続できることを確認します。
+   * **Display Name**: Chartbrew で接続を識別するための名前。
+   * **Host**: ClickHouse server のホスト名または IP アドレス。
+   * **Port**: HTTPS 接続では通常 `8443`。
+   * **Database Name**: 接続先のデータベース。
+   * **Username**: ClickHouse のユーザー名。
+   * **Password**: ClickHouse のパスワード。
 
-    5. テストが成功したら、**Save connection** をクリックします。Chartbrew は ClickHouse から自動的にスキーマを取得します。
+   <Image img="/images/integrations/data-visualization/chartbrew_03.webp" size="lg" alt="Chartbrew の ClickHouse 接続設定" />
 
-       <Image img="/images/integrations/data-visualization/chartbrew_04.webp" size="lg" alt="Chartbrew の ClickHouse JSON スキーマ" />
-  </Step>
+4. **Test connection** をクリックして、Chartbrew から ClickHouse に接続できることを確認します。
 
-  <Step title="データセットを作成して SQL クエリを実行する" id="3-create-a-dataset-and-run-a-sql-query">
-    1. **Create dataset** ボタンをクリックするか、**Datasets** タブに移動してデータセットを作成します。
-    2. 先ほど作成した ClickHouse 接続を選択します。
+5. テストが成功したら、**Save connection** をクリックします。Chartbrew は ClickHouse から自動的にスキーマを取得します。
 
-    <Image img="/images/integrations/data-visualization/chartbrew_05.webp" size="lg" alt="データセット用の ClickHouse 接続を選択" />
+   <Image img="/images/integrations/data-visualization/chartbrew_04.webp" size="lg" alt="Chartbrew の ClickHouse JSON スキーマ" />
 
-    可視化したいデータを取得する SQL クエリを記述します。たとえば、次のクエリは `uk_price_paid` データセットから年ごとの平均支払価格を計算します。
+<div id="3-create-a-dataset-and-run-a-sql-query">
+  ## 3. データセットを作成して SQL クエリを実行する
+</div>
 
-    ```sql
-    SELECT toYear(date) AS year, avg(price) AS avg_price
-    FROM uk_price_paid
-    GROUP BY year
-    ORDER BY year;
-    ```
+1. **Create dataset** ボタンをクリックするか、**Datasets** タブに移動してデータセットを作成します。
+2. 先ほど作成した ClickHouse 接続を選択します。
 
-    <Image img="/images/integrations/data-visualization/chartbrew_07.webp" size="lg" alt="Chartbrew の ClickHouse SQL クエリ" />
+<Image img="/images/integrations/data-visualization/chartbrew_05.webp" size="lg" alt="データセット用の ClickHouse 接続を選択" />
 
-    **Run query** をクリックしてデータを取得します。
+可視化したいデータを取得する SQL クエリを記述します。たとえば、次のクエリは `uk_price_paid` データセットの年ごとの平均支払額を計算します。
 
-    クエリの書き方がわからない場合は、**Chartbrew&#39;s AI assistant** を使用して、データベースのスキーマに基づく SQL クエリを生成できます。
+```sql
+  SELECT toYear(date) AS year, avg(price) AS avg_price
+  FROM uk_price_paid
+  GROUP BY year
+  ORDER BY year;
+```
 
-    <Image img="/images/integrations/data-visualization/chartbrew_06.webp" size="lg" alt="Chartbrew の ClickHouse AI SQL アシスタント" />
+<Image img="/images/integrations/data-visualization/chartbrew_07.webp" size="lg" alt="Chartbrew の ClickHouse SQL クエリ" />
 
-    データを取得したら、**Configure dataset** をクリックして可視化パラメータを設定します。
-  </Step>
+データを取得するには、**Run query** をクリックします。
 
-  <Step title="可視化を作成する" id="4-create-a-visualization">
-    1. 可視化のためのメトリクス (数値) と dimension (カテゴリ値) を定義します。
-    2. データセットをプレビューして、クエリ結果が正しい構造になっていることを確認します。
-    3. chart の種類 (例: line chart、bar chart、pie chart) を選択し、ダッシュボード に追加します。
-    4. **Complete dataset** をクリックして設定を完了します。
+クエリの書き方がわからない場合は、**Chartbrew の AI アシスタント**を使って、データベースのスキーマに基づく SQL クエリを生成できます。
 
-    <Image img="/images/integrations/data-visualization/chartbrew_08.webp" size="lg" alt="ClickHouse データを使用した Chartbrew ダッシュボード" />
+<Image img="/images/integrations/data-visualization/chartbrew_06.webp" size="lg" alt="Chartbrew の ClickHouse AI SQL アシスタント" />
 
-    データのさまざまな側面を可視化するために、必要な数だけデータセットを作成できます。これらのデータセットを使って、異なるメトリクスを追跡するための複数の ダッシュボード を作成できます。
+データを取得したら、**Configure dataset** をクリックして可視化パラメータを設定します。
 
-    <Image img="/images/integrations/data-visualization/chartbrew_01.webp" size="lg" alt="ClickHouse データを使用した Chartbrew ダッシュボード" />
-  </Step>
+<div id="4-create-a-visualization">
+  ## 4. 可視化を作成する
+</div>
 
-  <Step title="データ更新を自動化する" id="5-automate-data-updates">
-    ダッシュボード を最新の状態に保つために、自動データ更新をスケジュールできます。
+1. 可視化に使用するメトリクス (数値) とディメンション (カテゴリ値) を定義します。
+2. クエリ結果が正しく構造化されていることを確認するため、データセットをプレビューします。
+3. チャートの種類 (例: 折れ線グラフ、棒グラフ、円グラフ) を選択し、ダッシュボードに追加します。
+4. セットアップを完了するには、**Complete dataset** をクリックします。
 
-    1. データセットの更新ボタンの横にあるカレンダーアイコンをクリックします。
-    2. 更新間隔 (例: 毎時間、毎日) を設定します。
-    3. 設定を保存して自動更新を有効にします。
+<Image img="/images/integrations/data-visualization/chartbrew_08.webp" size="lg" alt="ClickHouse データを含む Chartbrew ダッシュボード" />
 
-    <Image img="/images/integrations/data-visualization/chartbrew_09.webp" size="lg" alt="Chartbrew データセットの更新設定" />
-  </Step>
-</Steps>
+データのさまざまな側面を可視化するために、必要な数だけデータセットを作成できます。これらのデータセットを使って、異なるメトリクスを追跡するための複数のダッシュボードを作成できます。
+
+<Image img="/images/integrations/data-visualization/chartbrew_01.webp" size="lg" alt="ClickHouse データを含む Chartbrew ダッシュボード" />
+
+<div id="5-automate-data-updates">
+  ## 5. データ更新を自動化する
+</div>
+
+ダッシュボードを常に最新の状態に保つために、データの自動更新をスケジュールできます。
+
+1. データセットの更新ボタンの横にあるカレンダーアイコンをクリックします。
+2. 更新間隔 (例: 1時間ごと、毎日) を設定します。
+3. 設定を保存して、自動更新を有効にします。
+
+<Image img="/images/integrations/data-visualization/chartbrew_09.webp" size="lg" alt="Chartbrewのデータセット更新設定" />
 
 <div id="learn-more">
   ## さらに詳しく

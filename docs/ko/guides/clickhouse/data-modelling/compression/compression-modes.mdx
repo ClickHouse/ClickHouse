@@ -38,19 +38,19 @@ LZ4와 ZSTD는 모두 같은 작성자가 만들었지만, 설계상 절충점�
   ## 블록
 </div>
 
-| 필드                  | 유형      | 설명                                                                         |
-| ------------------- | ------- | -------------------------------------------------------------------------- |
+| 필드                  | 유형      | 설명                                                                      |
+| ------------------- | ------- | ----------------------------------------------------------------------- |
 | checksum            | uint128 | (헤더 + 압축 데이터)의 [해시](/ko/resources/develop-contribute/native-protocol/hash) |
-| raw&#95;size        | uint32  | 헤더를 제외한 원본 크기                                                              |
-| data&#95;size       | uint32  | 비압축 데이터 크기                                                                 |
-| mode                | byte    | 압축 모드                                                                      |
-| compressed&#95;data | binary  | 압축된 데이터 블록                                                                 |
+| raw&#95;size        | uint32  | 헤더를 제외한 원본 크기                                                           |
+| data&#95;size       | uint32  | 비압축 데이터 크기                                                              |
+| mode                | byte    | 압축 모드                                                                   |
+| compressed&#95;data | binary  | 압축된 데이터 블록                                                              |
 
 <Image img="/images/data-compression/ch_compression_block.webp" size="md" alt="ClickHouse 압축 블록 구조를 보여주는 다이어그램" />
 
 헤더는 (raw&#95;size + data&#95;size + mode)로 구성되며, raw size는 len(header + compressed&#95;data)입니다.
 
-체크섬은 [ClickHouse CityHash](/ko/resources/develop-contribute/native-protocol/hash)를 사용한 `hash(header + compressed_data)`입니다.
+체크섬은 [ClickHouse CityHash](/ko/resources/develop-contribute/native-protocol/hash)를 사용해 계산한 `hash(header + compressed_data)`입니다.
 
 <div id="none-mode">
   ## None 모드

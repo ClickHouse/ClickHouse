@@ -4,7 +4,6 @@ from ci.defs.defs import (
     BASE_BRANCH,
     BINARIES_WITH_LONG_RETENTION,
     DOCKERS,
-    GH_AUTH_TRUSTED_LAMBDA_NAME,
     SECRETS,
     ArtifactConfigs,
 )
@@ -27,7 +26,7 @@ workflow = Workflow.Config(
         *JobConfigs.tidy_build_arm_jobs,
         *JobConfigs.build_jobs,
         *JobConfigs.build_llvm_coverage_job,
-        *JobConfigs.release_build_jobs_with_examples,
+        *JobConfigs.release_build_jobs,
         *JobConfigs.sccache_warmup_build_jobs,
         *[
             job.set_run_after(
@@ -67,10 +66,8 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
-        ArtifactConfigs.clickhouse_wasm,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
-        ArtifactConfigs.clickhouse_examples,
         *ArtifactConfigs.llvm_profdata_file,
         ArtifactConfigs.llvm_coverage_info_file,
     ],
@@ -91,9 +88,6 @@ workflow = Workflow.Config(
     ],
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[],
-    # merge_sync_pr.py needs a token with a broader permission scope - mint it
-    # from the dedicated lambda.
-    gh_auth_lambda_name=GH_AUTH_TRUSTED_LAMBDA_NAME,
 )
 
 WORKFLOWS = [

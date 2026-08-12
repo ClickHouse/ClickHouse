@@ -1,6 +1,6 @@
 ---
 description: 'Documentation for SELECT Query'
-sidebarTitle: 'Overview'
+sidebarTitle: 'SELECT'
 slug: /sql-reference/statements/select/
 title: 'SELECT Query'
 doc_type: 'reference'
@@ -59,15 +59,6 @@ Specifics of each optional clause are covered in separate sections, which are li
 - [EXCEPT clause](/reference/statements/select/except)
 - [INTO OUTFILE clause](/reference/statements/select/into-outfile)
 - [FORMAT clause](/reference/statements/select/format)
-
-A query can also be written as a linear chain of transformations with [pipe operators](/reference/statements/select/pipe-operators):
-
-```sql
-FROM table
-|> WHERE x > 1
-|> AGGREGATE count() AS c GROUP BY y
-|> ORDER BY c DESC
-```
 
 ## SELECT Clause {#select-clause}
 
@@ -194,7 +185,7 @@ Extreme values are calculated for rows before `LIMIT`, but after `LIMIT BY`. How
 
 You can use synonyms (`AS` aliases) in any part of a query.
 
-The `GROUP BY`, `ORDER BY`, and `LIMIT BY` clauses can support positional arguments. To enable this, switch on the [enable_positional_arguments](/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments) setting. Then, for example, `ORDER BY 1,2` will be sorting rows in the table on the first and then the second column.
+The `GROUP BY`, `ORDER BY`, and `LIMIT BY` clauses can support positional arguments. To enable this, switch on the [enable_positional_arguments](/reference/settings/session-settings#enable_positional_arguments) setting. Then, for example, `ORDER BY 1,2` will be sorting rows in the table on the first and then the second column.
 
 ## Implementation Details {#implementation-details}
 

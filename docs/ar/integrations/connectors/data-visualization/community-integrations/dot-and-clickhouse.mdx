@@ -12,7 +12,7 @@ integration:
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -38,7 +38,7 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 2. انقر على **Add new connection** ثم اختر **ClickHouse**.
 3. أدخل تفاصيل الاتصال:
    * **Host**: اسم مضيف خادم ClickHouse أو endpoint الخاص بـ ClickHouse Cloud
-   * **Port**: `8443` (HTTPS لـ ClickHouse Cloud) أو `8123` (HTTP لمستضافة ذاتيًا)
+   * **Port**: `8443` (HTTPS لـ ClickHouse Cloud) أو `8123` (HTTP للاستضافة الذاتية)
    * **Username / Password**: مستخدم لديه صلاحية قراءة
    * **Database**: يمكن اختياريًا تعيين schema افتراضي
 4. انقر على **Connect**.

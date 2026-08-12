@@ -89,7 +89,6 @@ namespace FailPoints
     extern const char object_storage_queue_fail_commit_after_success[];
     extern const char object_storage_queue_fail_after_insert[];
     extern const char object_storage_queue_fail_startup[];
-    extern const char object_storage_queue_pause_after_commit[];
 }
 
 namespace ServerSetting
@@ -105,10 +104,6 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt32 enable_logging_to_queue_log;
     extern const ObjectStorageQueueSettingsString keeper_path;
     extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
-    extern const ObjectStorageQueueSettingsObjectStorageQueueBucketingMode bucketing_mode;
-    extern const ObjectStorageQueueSettingsObjectStorageQueuePartitioningMode partitioning_mode;
-    extern const ObjectStorageQueueSettingsString partition_regex;
-    extern const ObjectStorageQueueSettingsString partition_component;
     extern const ObjectStorageQueueSettingsUInt64 max_processed_bytes_before_commit;
     extern const ObjectStorageQueueSettingsUInt64 max_processed_files_before_commit;
     extern const ObjectStorageQueueSettingsUInt64 max_processed_rows_before_commit;
@@ -448,7 +443,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
     for (size_t i = 0; i < task_count; ++i)
     {
-        auto task = getContext()->getSchedulePool()->createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
+        auto task = getContext()->getSchedulePool().createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
         streaming_tasks.emplace_back(std::move(task));
     }
     streaming_task_refresh_epochs.resize(task_count, 0);
@@ -1114,14 +1109,6 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         max_files_override = 0;
         total_rows += rows;
 
-        /// Park after the durable boundary and before the blocked check below, so a test can
-        /// observe a frozen row count with the backlog still pending and have a SYSTEM PAUSE
-        /// issued while parked be seen by that very check. No-op unless explicitly enabled.
-        /// Only a cycle that produced rows parks: the failpoint is process-global and one-shot,
-        /// so an idle table polling concurrently must not consume the pause.
-        if (rows > 0)
-            FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_after_commit);
-
         if (stream_control.isBlocked())
             break;
     }
@@ -1393,13 +1380,6 @@ static bool requiresDetachedMV(const std::string & name)
     return name == "buckets";
 }
 
-bool StorageObjectStorageQueue::isSettingChangeableInPlace(
-    const std::string & name,
-    ObjectStorageQueueMode mode)
-{
-    return isSettingChangeable(name, mode) && !requiresDetachedMV(name);
-}
-
 static AlterCommands normalizeAlterCommands(const AlterCommands & alter_commands)
 {
     /// Remove s3queue_ prefix from setting to avoid duplicated settings,
@@ -1526,11 +1506,11 @@ void StorageObjectStorageQueue::alter(
             auto get_names = [](const SettingsChanges & settings)
             {
                 std::set<std::string> names;
-                for (const auto & change : settings)
+                for (const auto & [name, _] : settings)
                 {
-                    auto inserted = names.insert(change.name).second;
+                    auto inserted = names.insert(name).second;
                     if (!inserted)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is duplicated", change.name);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is duplicated", name);
                 }
                 return names;
             };
@@ -1773,10 +1753,6 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::parallel_inserts] = table_metadata.parallel_inserts;
     settings[ObjectStorageQueueSetting::enable_logging_to_queue_log] = enable_logging_to_queue_log;
     settings[ObjectStorageQueueSetting::last_processed_path] = table_metadata.last_processed_path;
-    settings[ObjectStorageQueueSetting::bucketing_mode] = table_metadata.bucketing_mode;
-    settings[ObjectStorageQueueSetting::partitioning_mode] = table_metadata.partitioning_mode;
-    settings[ObjectStorageQueueSetting::partition_regex] = table_metadata.partition_regex;
-    settings[ObjectStorageQueueSetting::partition_component] = table_metadata.partition_component;
     settings[ObjectStorageQueueSetting::tracked_file_ttl_sec] = table_metadata.tracked_files_ttl_sec;
     settings[ObjectStorageQueueSetting::tracked_files_limit] = table_metadata.tracked_files_limit;
     settings[ObjectStorageQueueSetting::buckets] = table_metadata.buckets;
@@ -1887,7 +1863,7 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
         result_zk_path = fs::path(zk_path_prefix) / toString(database_uuid) / toString(table_id.uuid);
     }
 
-    if (context_ && result_zk_path.contains('{'))
+    if (context_ && result_zk_path.find('{') != String::npos)
     {
         Macros::MacroExpansionInfo info;
         info.table_id = table_id;

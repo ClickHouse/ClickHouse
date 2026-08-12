@@ -244,13 +244,6 @@ public:
         insertResultIntoImpl<true>(place, to, arena);
     }
 
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
-    {
-        auto arguments = nested_function->getArgumentsThatCanBeOnlyNull();
-        arguments.insert(last_col);
-        return arguments;
-    }
-
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 };
 

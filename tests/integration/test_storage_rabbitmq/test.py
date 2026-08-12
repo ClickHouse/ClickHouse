@@ -772,9 +772,11 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster, db, unique):
     deadline = time.monotonic() + 180
     expected = messages_num * threads_num * NUM_MV
     while time.monotonic() < deadline:
-        # Every instance.query() spawns a clickhouse-client, so poll all NUM_MV targets at once.
-        # The anchor keeps the combo_N_mv views out: reading a view counts its combo_N target again.
-        result = int(instance.query(f"SELECT count() FROM merge({db!r}, '^combo_[0-9]+$')"))
+        result = 0
+        for mv_id in range(NUM_MV):
+            result += int(
+                instance.query(f"SELECT count() FROM {db}.combo_{mv_id}")
+            )
         if int(result) == expected:
             break
         logging.debug(f"Result: {result} / {expected}")
@@ -2130,27 +2132,14 @@ def test_rabbitmq_drop_table_properly(rabbitmq_cluster, db, unique):
     assert exists
 
     instance.query(f"DROP TABLE {db}.rabbitmq_drop")
+    time.sleep(30)
 
-    # Only a 404 means the queue is gone. A successful passive declare leaves the channel
-    # usable, and the 404 path breaks out at once, so the channel is never used after the
-    # broker closes it.
-    queue_removal_timeout_sec = 30
-    deadline = time.monotonic() + queue_removal_timeout_sec
-    while True:
-        try:
-            channel.queue_declare(queue=f"{unique}_rabbit_queue_drop", passive=True)
-        except pika.exceptions.ChannelClosedByBroker as e:
-            assert e.reply_code == 404, f"unexpected channel close: {e}"
-            break
-        # The last declare lands at the deadline, so the accepted window is exactly
-        # queue_removal_timeout_sec.
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            pytest.fail(
-                f"Queue {unique}_rabbit_queue_drop still exists "
-                f"{queue_removal_timeout_sec} seconds after DROP TABLE."
-            )
-        time.sleep(min(0.5, remaining))
+    try:
+        exists = channel.queue_declare(queue=f"{unique}_rabbit_queue_drop", passive=True)
+    except Exception:
+        exists = False
+
+    assert not exists
 
 
 def test_rabbitmq_queue_settings(rabbitmq_cluster, db, unique):

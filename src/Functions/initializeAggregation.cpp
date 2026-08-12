@@ -202,8 +202,8 @@ REGISTER_FUNCTION(InitializeAggregation)
 {
     FunctionDocumentation::Description description = R"(
 Calculates the result of an aggregate function based on a single value.
-This function can be used to initialize aggregate functions with combinator [-State](/reference/functions/aggregate-functions/combinators#-state).
-You can create states of aggregate functions and insert them to columns of type [`AggregateFunction`](/reference/data-types/aggregatefunction) or use initialized aggregates as default values.
+This function can be used to initialize aggregate functions with combinator [-State](../../sql-reference/aggregate-functions/combinators.md#-state).
+You can create states of aggregate functions and insert them to columns of type [`AggregateFunction`](../../sql-reference/data-types/aggregatefunction.md) or use initialized aggregates as default values.
     )";
     FunctionDocumentation::Syntax syntax = "initializeAggregation(aggregate_function, arg1[, arg2, ...])";
     FunctionDocumentation::Arguments arguments = {

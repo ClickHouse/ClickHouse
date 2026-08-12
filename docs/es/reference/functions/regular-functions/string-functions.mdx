@@ -324,7 +324,7 @@ SELECT base58Decode('JxF12TrwUP45BMd');
 
 Introducido en: v22.7.0
 
-Codifica una cadena en [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58-01).
+Codifica una cadena en [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html).
 
 **Sintaxis**
 
@@ -361,7 +361,6 @@ SELECT base58Encode('ClickHouse');
 Introducido en: v18.16.0
 
 Decodifica una cadena a partir de su representación en [Base64](https://en.wikipedia.org/wiki/Base64), de acuerdo con RFC 4648.
-Desde la versión 26.7, se ignoran en la entrada los caracteres de espacio en blanco: espacio, tabulación (`\t`), salto de línea (`\n`), retorno de carro (`\r`) y avance de página (`\f`) (las versiones anteriores rechazaban las entradas que los contenían). La tabulación vertical (`\v`) y cualquier otro carácter fuera del alfabeto Base64 se rechazan.
 Lanza una excepción en caso de error.
 
 **Sintaxis**
@@ -439,8 +438,6 @@ SELECT base64Encode('clickhouse')
 Introducido en: v24.6.0
 
 Decodifica una cadena desde su representación en [Base64](https://en.wikipedia.org/wiki/Base64) usando un alfabeto seguro para URL, de acuerdo con la RFC 4648.
-El alfabeto estándar (`+` y `/`) también se acepta al decodificar.
-Desde la versión 26.7, se ignoran en la entrada los caracteres de espacio en blanco: espacio, tabulación (`\t`), salto de línea (`\n`), retorno de carro (`\r`) y salto de página (`\f`) (las versiones anteriores rechazaban las entradas que los contenían). La tabulación vertical (`\v`) y cualquier otro carácter que no pertenezca al alfabeto Base64 se rechazan.
 Lanza una excepción en caso de error.
 
 **Sintaxis**
@@ -642,8 +639,8 @@ SELECT caseFoldUTF8('Straße')
 
 ```response title=Response
 ┌─caseFoldUTF8('Straße')─┐
-│ strasse                │
-└────────────────────────┘
+│ strasse                 │
+└─────────────────────────┘
 ```
 
 <div id="compareSubstrings">
@@ -1168,13 +1165,13 @@ Devuelve la distancia de edición entre las dos cadenas UTF-8. [`UInt64`](/es/re
 **Ejemplo de uso**
 
 ```sql title=Query
-SELECT editDistanceUTF8('我是谁', '我是我') AS distance
+SELECT editDistanceUTF8('我是谁', '我是我')
 ```
 
 ```response title=Response
-┌─distance─┐
-│        1 │
-└──────────┘
+┌─editDistanceUTF8('我是谁', '我是我')──┐
+│                                   1 │
+└─────────────────────────────────────┘
 ```
 
 <div id="encodeXMLComponent">
@@ -1664,6 +1661,9 @@ isValidASCII(str)
 SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii
 ```
 
+```response title=Response
+```
+
 <div id="isValidUTF8">
   ## isValidUTF8
 </div>
@@ -2100,7 +2100,7 @@ SELECT s FROM t ORDER BY naturalSortKey(s)
 ```response title=Response
 ┌─s───┐
 │ a1  │
-│ a02 │
+| a02 │
 └─────┘
 ```
 
@@ -2212,13 +2212,13 @@ Devuelve la forma NFKC normalizada de la cadena UTF-8. [`String`](/es/reference/
 
 ```sql title=Query
 SELECT
-    '① ② ③' AS original,                           -- Circled number characters
-    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized  -- Converts to 1 2 3
+    '① ② ③' AS original,                            -- Caracteres de números en círculo
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- Se convierte en 1 2 3
 ```
 
 ```response title=Response
 ┌─original─┬─nfkc_normalized─┐
-│ ① ② ③    │ 1 2 3           │
+│ ① ② ③  │ 1 2 3           │
 └──────────┴─────────────────┘
 ```
 
@@ -2289,8 +2289,8 @@ Devuelve la forma normalizada NFKD de la cadena codificada en UTF-8. [`String`](
 
 ```sql title=Query
 SELECT
-    'H₂O²' AS original,                           -- H + subscript 2 + O + superscript 2
-    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized  -- Converts to H 2 O 2
+    'H₂O²' AS original,                            -- H + subíndice 2 + O + superíndice 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- Convierte a H 2 O 2
 ```
 
 ```response title=Response
@@ -2510,8 +2510,8 @@ SELECT removeDiacriticsUTF8('café résumé naïve')
 
 ```response title=Response
 ┌─removeDiacriticsUTF8('café résumé naïve')─┐
-│ cafe resume naive                         │
-└───────────────────────────────────────────┘
+│ cafe resume naive                          │
+└────────────────────────────────────────────┘
 ```
 
 <div id="repeat">
@@ -3293,13 +3293,13 @@ Devuelve el índice de similitud de Jaccard entre las dos cadenas UTF-8. [`Float
 **Ejemplo de uso**
 
 ```sql title=Query
-SELECT stringJaccardIndexUTF8('我爱你', '我也爱你') AS jaccard_index
+SELECT stringJaccardIndexUTF8('我爱你', '我也爱你')
 ```
 
 ```response title=Response
-┌─jaccard_index─┐
-│          0.75 │
-└───────────────┘
+┌─stringJaccardIndexUTF8('我爱你', '我也爱你')─┐
+│                                       0.75 │
+└─────────────────────────────────────────────┘
 ```
 
 <div id="substring">
@@ -3315,8 +3315,6 @@ El recuento de bytes comienza en 1 con la siguiente lógica:
 * Si `offset` es negativo, la subcadena comienza `offset` caracteres desde el final de la cadena, en lugar de hacerlo desde el principio.
 
 Un argumento opcional, `length`, especifica el número máximo de bytes que puede tener la subcadena devuelta.
-
-Vea también la función [`digits`](/es/reference/functions/regular-functions/other-functions#digits), que realiza la operación análoga sobre los dígitos de un número.
 
 **Sintaxis**
 

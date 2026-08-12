@@ -16,11 +16,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 namespace
 {
 
@@ -85,41 +80,6 @@ bool tryDeserializeNumberCSV(T & x, ReadBuffer & istr, const FormatSettings & se
     return true;
 }
 
-}
-
-template <typename T>
-void SerializationNumber<T>::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
-{
-    /// Hive has no numeric type covering the 128-bit and 256-bit integer domains: its widest integer
-    /// is `BIGINT` (64-bit), and even `DECIMAL` with its maximum precision of 38 cannot hold the whole
-    /// `Int128` range, so no Hive schema could read such values back.
-    if constexpr (is_big_int_v<T>)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type {} is not supported by the HiveText output format", TypeName<T>);
-    }
-    else
-    {
-        const auto x = assert_cast<const ColumnVector<T> &>(column).getData()[row_num];
-
-        if constexpr (is_floating_point<T>)
-        {
-            /// Apache Hive's `LazySimpleSerDe` reads `FLOAT`/`DOUBLE` with Java's parser, which spells the
-            /// non-finite values as `NaN`, `Infinity`, and `-Infinity`. ClickHouse's default `nan`/`inf`/`-inf`
-            /// tokens are read back by Hive as null, so we emit the Java spellings to round-trip these values.
-            if (isNaN(x))
-            {
-                writeString(std::string_view("NaN"), ostr);
-                return;
-            }
-            if (!isFinite(x))
-            {
-                writeString(signBit(x) ? std::string_view("-Infinity") : std::string_view("Infinity"), ostr);
-                return;
-            }
-        }
-
-        writeText(x, ostr);
-    }
 }
 
 template <typename T>

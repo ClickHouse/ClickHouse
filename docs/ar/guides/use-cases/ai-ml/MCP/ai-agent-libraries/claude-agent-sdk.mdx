@@ -28,7 +28,9 @@ doc_type: 'guide'
 يمكنك تنفيذ الخطوات التالية إما من مفسّر بايثون التفاعلي (REPL) أو عبر برنامج نصي.
 
 <Steps>
-  <Step title="تثبيت المكتبات" id="install-libraries">
+  <Step>
+    ## تثبيت المكتبات
+
     ثبّت مكتبة Claude Agent SDK بتشغيل الأوامر التالية:
 
     ```python
@@ -38,7 +40,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="إعداد بيانات الاعتماد" id="setup-credentials">
+  <Step>
+    ## إعداد بيانات الاعتماد
+
     بعد ذلك، ستحتاج إلى إدخال مفتاح API الخاص بـ Anthropic:
 
     ```python
@@ -63,8 +67,10 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="تهيئة MCP server ووكيل Claude Agent SDK" id="initialize-mcp-and-agent">
-    الآن اضبط ClickHouse MCP server بحيث يشير إلى ClickHouse SQL playground
+  <Step>
+    ## تهيئة خادم MCP ووكيل Claude Agent SDK
+
+    الآن اضبط ClickHouse MCP server بحيث يشير إلى ClickHouse SQL playground،
     ثم هيِّئ الوكيل واطرح عليه سؤالًا:
 
     ```python

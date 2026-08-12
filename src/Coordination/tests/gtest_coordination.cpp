@@ -7,8 +7,6 @@
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/SummingStateMachine.h>
 #include <Coordination/KeeperContext.h>
-#include <Coordination/KeeperCommon.h>
-#include <Coordination/KeeperServer.h>
 #include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperStorage.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
@@ -30,7 +28,6 @@
 
 #include <Poco/Util/XMLConfiguration.h>
 
-#include <limits>
 #include <sstream>
 
 TEST(CoordinationSettingsValidation, RejectZeroBatchSizes)
@@ -64,110 +61,6 @@ TEST(CoordinationSettingsValidation, RejectZeroBatchSizes)
              "<max_requests_batch_size>1</max_requests_batch_size>"
              "<max_requests_append_size>1</max_requests_append_size>"
              "</coordination_settings></keeper_server></clickhouse>"));
-}
-
-TEST(CoordinationSettingsParse, NuraftSnapshotSyncCtxTimeout)
-{
-    auto load = [](const std::string & xml)
-    {
-        std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(stream);
-        DB::CoordinationSettings settings;
-        settings.loadFromConfig("keeper_server.coordination_settings", *config);
-        return settings[DB::CoordinationSetting::nuraft_snapshot_sync_ctx_timeout_ms].totalMilliseconds();
-    };
-
-    /// The default must stay 0, which is what `raft_server::get_snapshot_sync_ctx_timeout` treats as
-    /// "derive from raft_limits_response_limit * heart_beat_interval_ms". Anything else would change
-    /// the snapshot-install budget of every existing installation on upgrade.
-    EXPECT_EQ(load("<clickhouse><keeper_server><coordination_settings>"
-                   "</coordination_settings></keeper_server></clickhouse>"),
-              0);
-
-    /// A bare number in the config is milliseconds, which is the unit
-    /// `raft_params::snapshot_sync_ctx_timeout_` expects. Had the setting been declared with a
-    /// coarser unit, the same config would mean a budget 1000 times larger.
-    EXPECT_EQ(load("<clickhouse><keeper_server><coordination_settings>"
-                   "<nuraft_snapshot_sync_ctx_timeout_ms>60000</nuraft_snapshot_sync_ctx_timeout_ms>"
-                   "</coordination_settings></keeper_server></clickhouse>"),
-              60000);
-
-    /// The setting itself is unbounded, so an operator can configure more milliseconds than the
-    /// int32 `raft_params::snapshot_sync_ctx_timeout_` can hold. Such a value survives parsing and
-    /// must be narrowed by `buildRaftParams` rather than wrapping - covered by the tests below.
-    EXPECT_GT(load("<clickhouse><keeper_server><coordination_settings>"
-                   "<nuraft_snapshot_sync_ctx_timeout_ms>3000000000</nuraft_snapshot_sync_ctx_timeout_ms>"
-                   "</coordination_settings></keeper_server></clickhouse>"),
-              std::numeric_limits<int32_t>::max());
-}
-
-/// The composition that actually reaches NuRaft: config text -> setting -> `raft_params` field.
-/// Parsing and narrowing are pinned separately below, but only this test would notice the timeout
-/// being handed over in the wrong unit or bypassing the narrowing.
-TEST(CoordinationSettingsParse, BuildRaftParams)
-{
-    auto build = [](const std::string & xml)
-    {
-        std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(stream);
-        DB::CoordinationSettings settings;
-        settings.loadFromConfig("keeper_server.coordination_settings", *config);
-        return DB::buildRaftParams(settings, getLogger("CoordinationSettingsParse"));
-    };
-
-    /// 0 is what makes `raft_server::get_snapshot_sync_ctx_timeout` fall back to
-    /// `raft_limits_response_limit * heart_beat_interval_`, i.e. today's behaviour.
-    EXPECT_EQ(build("<clickhouse><keeper_server><coordination_settings>"
-                    "</coordination_settings></keeper_server></clickhouse>")
-                  .snapshot_sync_ctx_timeout_,
-              0);
-
-    /// Milliseconds all the way through: 60000 in the config must be 60000 in `raft_params`, not
-    /// 60 and not 60000000.
-    EXPECT_EQ(build("<clickhouse><keeper_server><coordination_settings>"
-                    "<nuraft_snapshot_sync_ctx_timeout_ms>60000</nuraft_snapshot_sync_ctx_timeout_ms>"
-                    "</coordination_settings></keeper_server></clickhouse>")
-                  .snapshot_sync_ctx_timeout_,
-              60000);
-
-    /// The field is an int32, so an operator value beyond its range must be narrowed here rather
-    /// than wrapping to a negative timeout.
-    EXPECT_EQ(build("<clickhouse><keeper_server><coordination_settings>"
-                    "<nuraft_snapshot_sync_ctx_timeout_ms>3000000000</nuraft_snapshot_sync_ctx_timeout_ms>"
-                    "</coordination_settings></keeper_server></clickhouse>")
-                  .snapshot_sync_ctx_timeout_,
-              std::numeric_limits<int32_t>::max());
-
-    /// Neighbouring millisecond settings go through the same conversion, so pin one of them too.
-    EXPECT_EQ(build("<clickhouse><keeper_server><coordination_settings>"
-                    "<heart_beat_interval_ms>250</heart_beat_interval_ms>"
-                    "</coordination_settings></keeper_server></clickhouse>")
-                  .heart_beat_interval_,
-              250);
-}
-
-/// Every `nuraft::raft_params` field Keeper configures from an unbounded setting is narrowed by this
-/// function, so a value that does not fit must be reported and capped instead of wrapping to a
-/// negative timeout or gap.
-TEST(CoordinationSettingsParse, ValueOrMaxInt32)
-{
-    auto log = getLogger("CoordinationSettingsParse");
-
-    EXPECT_EQ(DB::getValueOrMaxInt32AndLogWarning(0, "test", log), 0);
-    EXPECT_EQ(DB::getValueOrMaxInt32AndLogWarning(60000, "test", log), 60000);
-    EXPECT_EQ(
-        DB::getValueOrMaxInt32AndLogWarning(std::numeric_limits<int32_t>::max(), "test", log),
-        std::numeric_limits<int32_t>::max());
-
-    /// Above the range it caps rather than wrapping negative.
-    EXPECT_EQ(
-        DB::getValueOrMaxInt32AndLogWarning(
-            static_cast<uint64_t>(std::numeric_limits<int32_t>::max()) + 1, "test", log),
-        std::numeric_limits<int32_t>::max());
-    EXPECT_EQ(DB::getValueOrMaxInt32AndLogWarning(3000000000, "test", log), std::numeric_limits<int32_t>::max());
-    EXPECT_EQ(
-        DB::getValueOrMaxInt32AndLogWarning(std::numeric_limits<uint64_t>::max(), "test", log),
-        std::numeric_limits<int32_t>::max());
 }
 
 TEST_P(CoordinationTest, RaftServerConfigParse)
@@ -501,7 +394,6 @@ static void testLogAndStateMachine(
         DB::LogFileSettings{
             .force_sync = true, .compress_logs = param.enable_compression, .rotate_interval = (*settings)[DB::CoordinationSetting::rotate_log_storage_interval]},
         DB::FlushSettings(),
-        DB::ReadAheadSettings{},
         keeper_context);
     changelog.init(state_machine->last_commit_index(), (*settings)[DB::CoordinationSetting::reserved_log_items]);
 
@@ -550,7 +442,6 @@ static void testLogAndStateMachine(
         DB::LogFileSettings{
             .force_sync = true, .compress_logs = param.enable_compression, .rotate_interval = (*settings)[DB::CoordinationSetting::rotate_log_storage_interval]},
         DB::FlushSettings(),
-        DB::ReadAheadSettings{},
         keeper_context);
     restore_changelog.init(restore_machine->last_commit_index(), (*settings)[DB::CoordinationSetting::reserved_log_items]);
 
@@ -1108,112 +999,6 @@ TEST_P(CoordinationTest, TestDurableState)
     }
 }
 
-namespace
-{
-
-/// Test disk: throws when the given file is (re)opened for writing, and rejects moveFile
-/// (as plain/s3_plain metadata does).
-class ThrowingStateDisk : public DB::DiskLocal
-{
-public:
-    ThrowingStateDisk(const std::string & disk_name, const std::string & disk_path, std::string fail_path_)
-        : DB::DiskLocal(disk_name, disk_path), fail_path(std::move(fail_path_))
-    {
-    }
-
-    void arm() { armed = true; }
-    void disarm() { armed = false; }
-
-    std::unique_ptr<DB::WriteBufferFromFileBase>
-    writeFile(const String & path, size_t buf_size, DB::WriteMode mode, const DB::WriteSettings & settings) override
-    {
-        auto inner = DB::DiskLocal::writeFile(path, buf_size, mode, settings);
-        if (armed && path == fail_path)
-            throw std::runtime_error("Injected state write failure");
-        return inner;
-    }
-
-    void moveFile(const String &, const String &) override
-    {
-        /// Matches plain (s3_plain) metadata, which throws NOT_IMPLEMENTED for moveFile.
-        throw std::runtime_error("moveFile is not implemented for this disk");
-    }
-
-private:
-    std::string fail_path;
-    bool armed = false;
-};
-
-}
-
-/// Regression test for https://github.com/ClickHouse/ClickHouse/issues/111454.
-TEST_P(CoordinationTest, TestDurableStateCrashDuringSave)
-{
-    ChangelogDirTest logs("./logs");
-    this->setLogDirectory("./logs");
-
-    auto disk = std::make_shared<ThrowingStateDisk>("StateFile", ".", "state");
-    this->keeper_context->setStateFileDisk(disk);
-
-    std::optional<DB::KeeperStateManager> state_manager;
-    const auto reload_state_manager = [&]
-    {
-        state_manager.emplace(1, "localhost", 9181, this->keeper_context);
-        state_manager->loadLogStore(1, 0);
-    };
-
-    reload_state_manager();
-    ASSERT_EQ(state_manager->read_state(), nullptr);
-
-    /// Persist an initial state (term 1) successfully.
-    auto state = nuraft::cs_new<nuraft::srv_state>();
-    state->set_term(1);
-    state->set_voted_for(2);
-    state->allow_election_timer(true);
-    state_manager->save_state(*state);
-
-    {
-        auto read_state = state_manager->read_state();
-        ASSERT_NE(read_state, nullptr);
-        ASSERT_EQ(read_state->get_term(), 1);
-        ASSERT_EQ(read_state->get_voted_for(), 2);
-    }
-
-    /// Now attempt to persist term 2 but crash (throw) while the live "state" file is being
-    /// rewritten. The live file is left truncated/torn, exactly the vulnerable window.
-    auto new_state = nuraft::cs_new<nuraft::srv_state>();
-    new_state->set_term(2);
-    new_state->set_voted_for(3);
-    new_state->allow_election_timer(true);
-
-    disk->arm();
-    ASSERT_THROW(state_manager->save_state(*new_state), std::exception);
-    disk->disarm();
-
-    /// After the "crash" the previously committed state must still be recoverable: read_state
-    /// must not return nullptr (which would reset the node to term 0 and lose the vote).
-    reload_state_manager();
-    auto recovered = state_manager->read_state();
-    ASSERT_NE(recovered, nullptr);
-    /// The recovered state is the last durably persisted one (term 1); the interrupted term-2
-    /// write never became durable. The invariant that matters is that state is not lost.
-    ASSERT_EQ(recovered->get_term(), 1);
-    ASSERT_EQ(recovered->get_voted_for(), 2);
-
-    /// A subsequent successful save must work normally after recovery.
-    state_manager->save_state(*new_state);
-    reload_state_manager();
-    auto final_state = state_manager->read_state();
-    ASSERT_NE(final_state, nullptr);
-    ASSERT_EQ(final_state->get_term(), 2);
-    ASSERT_EQ(final_state->get_voted_for(), 3);
-
-    if (std::filesystem::exists("./state"))
-        std::filesystem::remove("./state");
-    if (std::filesystem::exists("./state-OLD"))
-        std::filesystem::remove("./state-OLD");
-}
-
 TEST_P(CoordinationTest, TestFeatureFlags)
 {
     using namespace Coordination;
@@ -1236,25 +1021,6 @@ TEST_P(CoordinationTest, TestFeatureFlags)
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT));
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::TRY_REMOVE));
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA));
-}
-
-TEST(CoordinationRequestSize, WriteRejectsRequestOverInt32)
-{
-    // The guard fires on the computed size before serialization, so a fake sizeImpl needs no real data.
-    struct HugeRequest final : Coordination::ZooKeeperRequest
-    {
-        String getPath() const override { return {}; }
-        Coordination::OpNum getOpNum() const override { return Coordination::OpNum::Create; }
-        void writeImpl(DB::WriteBuffer &) const override {}
-        size_t sizeImpl() const override { return std::numeric_limits<int32_t>::max(); }
-        void readImpl(DB::ReadBuffer &) override {}
-        Coordination::ZooKeeperResponsePtr makeResponse() const override { return nullptr; }
-        bool isReadRequest() const override { return false; }
-    };
-
-    HugeRequest request;
-    DB::WriteBufferFromNuraftBuffer wbuf;
-    EXPECT_THROW(request.write(wbuf, false, false), Coordination::Exception);
 }
 
 #endif

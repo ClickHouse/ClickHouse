@@ -57,7 +57,6 @@ public:
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsPrewhere() const override;
     std::optional<NameSet> supportedPrewhereColumns() const override;
-    bool supportedPrewhereColumnsIncludeSubcolumns() const override;
 
     bool canMoveConditionsToPrewhere() const override;
 
@@ -151,7 +150,7 @@ private:
         const IStorage * ignore_self);
 
     ColumnSizeByName getColumnSizes() const override;
-    ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
+    ColumnSizeByName getColumnSizes(const Names & columns) const override;
 
     std::optional<ColumnSizeByName> tryGetColumnSizes() const override;
 

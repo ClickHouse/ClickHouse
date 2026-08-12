@@ -145,7 +145,7 @@ MySQL에 연결하기 위해 이름이 지정된 데이터 소스를 생성합�
   ## ClickHouse JDBC Bridge를 외부에 설치하기
 </div>
 
-분산 ClickHouse 클러스터(ClickHouse 호스트가 2개 이상인 클러스터)에서는 ClickHouse JDBC Bridge를 별도의 전용 호스트에 외부로 설치하여 실행하는 것이 적절합니다.
+분산 ClickHouse 클러스터(ClickHouse 호스트가 2개 이상인 클러스터)에서는 ClickHouse JDBC Bridge를 별도의 전용 호스트에 외부 설치하여 실행하는 것이 적절합니다.
 
 <Image img="/images/integrations/data-ingestion/dbms/jdbc-03.webp" size="lg" alt="ClickHouse JDBC Bridge 외부 배포 다이어그램" background="white" />
 
@@ -155,7 +155,7 @@ ClickHouse JDBC Bridge를 외부에 설치하려면 다음 단계를 수행하�
 
 1. 이 가이드의 1절에 설명된 단계에 따라 전용 호스트에 ClickHouse JDBC Bridge를 설치, 구성, 실행합니다.
 
-2. 각 ClickHouse 호스트에서 다음 구성 블록을 <a href="/ko/concepts/features/configuration/server-config/configuration-files" target="_blank">ClickHouse 서버 구성</a>에 추가합니다(선택한 구성 포맷에 따라 XML 또는 YAML 버전을 사용하십시오):
+2. 각 ClickHouse 호스트에서 다음 구성 블록을 <a href="/ko/concepts/features/configuration/server-config/configuration-files#configuration_files" target="_blank">ClickHouse 서버 구성</a>에 추가합니다(선택한 구성 포맷에 따라 XML 또는 YAML 버전을 사용하십시오).
 
 <Tabs>
   <Tab title="XML">

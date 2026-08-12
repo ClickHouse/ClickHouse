@@ -2,7 +2,6 @@ import dataclasses
 import os
 from typing import Dict, List
 
-from .settings import Settings
 from .utils import Shell, Utils
 
 
@@ -46,13 +45,7 @@ class Docker:
         print(
             f"Docker inspect results for {config.name}:{tag}: exit code [{code}], out [{out}], err [{err}]"
         )
-        # A successful inspect is the only evidence that the image is already there.
-        # A missing tag in an existing repository reports "no such manifest", but the
-        # first ever build of a new image reports "denied: requested access to the
-        # resource is denied" instead, because the repository itself does not exist
-        # yet - and treating that as "image exists" leaves the manifest merge with
-        # nothing to merge.
-        if code != 0:
+        if "no such manifest" in err:
             tags_substr = f" -t {config.name}:{tag}"
 
             from_tag = ""
@@ -75,17 +68,7 @@ class Docker:
                 for name, value in config.build_args.items()
             )
 
-            if disable_push:
-                push_out = ""
-            else:
-                push_out = (
-                    " --output type=image,push=true"
-                    f",compression={Settings.DOCKER_LAYER_COMPRESSION}"
-                    f",compression-level={Settings.DOCKER_LAYER_COMPRESSION_LEVEL}"
-                    ",force-compression=true"
-                )
-
-            command = f"docker buildx build {tags_substr} {from_tag}{build_args} --platform {','.join(platforms)} --provenance=mode=max --sbom=true {config.path}{push_out}"
+            command = f"docker buildx build {tags_substr} {from_tag}{build_args} --platform {','.join(platforms)} --provenance=mode=max --sbom=true {config.path} {'' if disable_push else ' --push'}"
 
             return Result.from_commands_run(
                 name=name,

@@ -24,92 +24,50 @@ const ReleaseSchedule = ({ releases = [] }) => {
     </span>
   );
 
-  const ChannelSchedule = ({ startDate, endDate, note, status }) => (
-    <span style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span>
-        <strong>Début du déploiement:</strong>{" "}
-        <DateCell date={startDate} note={note} status={status} />
-      </span>
-      <span>
-        <strong>Fin du déploiement:</strong>{" "}
-        <DateCell date={endDate} status={status} />
-      </span>
-    </span>
-  );
-
   return (
     <table>
       <thead>
         <tr>
-          <th>Version</th>
-          <th>
+          <th rowSpan={2}>Version</th>
+          <th colSpan={2}>
             <a href="/docs/manage/updates#fast-release-channel-early-upgrades">Canal rapide</a>
           </th>
-          <th>
+          <th colSpan={2}>
             <a href="/docs/manage/updates#regular-release-channel">Canal standard</a>
           </th>
-          <th>
+          <th colSpan={2}>
             <a href="/docs/manage/updates#slow-release-channel-deferred-upgrades">Canal lent</a>
           </th>
         </tr>
+        <tr>
+          <th>Début du déploiement</th>
+          <th>Fin du déploiement</th>
+          <th>Début du déploiement</th>
+          <th>Fin du déploiement</th>
+          <th>Début du déploiement</th>
+          <th>Fin du déploiement</th>
+        </tr>
       </thead>
       <tbody>
-        {releases.map((release, idx) => {
-          const isCompleted = [
-            release.fast_start_date,
-            release.fast_end_date,
-            release.regular_start_date,
-            release.regular_end_date,
-            release.slow_start_date,
-            release.slow_end_date,
-          ].every((date) => date === "Terminé");
-
-          return (
-            <tr key={idx}>
-              <td>
-                {release.changelog_link ? (
-                  <a href={release.changelog_link} target="_blank" rel="noopener noreferrer">
-                    {release.version}
-                  </a>
-                ) : (
-                  release.version
-                )}
-              </td>
-              {isCompleted ? (
-                <td colSpan={3} style={{ textAlign: "center" }}>
-                  <DateCell date="Terminé" status="green" />
-                </td>
+        {releases.map((release, idx) => (
+          <tr key={idx}>
+            <td>
+              {release.changelog_link ? (
+                <a href={release.changelog_link} target="_blank" rel="noopener noreferrer">
+                  {release.version}
+                </a>
               ) : (
-                <>
-                  <td>
-                    <ChannelSchedule
-                      startDate={release.fast_start_date}
-                      endDate={release.fast_end_date}
-                      note={release.fast_delay_note}
-                      status={release.fast_progress}
-                    />
-                  </td>
-                  <td>
-                    <ChannelSchedule
-                      startDate={release.regular_start_date}
-                      endDate={release.regular_end_date}
-                      note={release.regular_delay_note}
-                      status={release.regular_progress}
-                    />
-                  </td>
-                  <td>
-                    <ChannelSchedule
-                      startDate={release.slow_start_date}
-                      endDate={release.slow_end_date}
-                      note={release.slow_delay_note}
-                      status={release.slow_progress}
-                    />
-                  </td>
-                </>
+                release.version
               )}
-            </tr>
-          );
-        })}
+            </td>
+            <td><DateCell date={release.fast_start_date} note={release.fast_delay_note} status={release.fast_progress} /></td>
+            <td><DateCell date={release.fast_end_date} status={release.fast_progress} /></td>
+            <td><DateCell date={release.regular_start_date} note={release.regular_delay_note} status={release.regular_progress} /></td>
+            <td><DateCell date={release.regular_end_date} status={release.regular_progress} /></td>
+            <td><DateCell date={release.slow_start_date} note={release.slow_delay_note} status={release.slow_progress} /></td>
+            <td><DateCell date={release.slow_end_date} status={release.slow_progress} /></td>
+          </tr>
+        ))}
       </tbody>
     </table>
   );

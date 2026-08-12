@@ -18,7 +18,7 @@ doc_type: 'guide'
 및 [API 참조](/ko/products/kubernetes-operator/reference/api-reference).
 
 <div id="primary-data-volume">
-  ## 주 데이터 볼륨
+  ## 프라이머리 데이터 볼륨
 </div>
 
 `spec.dataVolumeClaimSpec`는 표준 Kubernetes `PersistentVolumeClaimSpec`입니다.
@@ -41,8 +41,7 @@ spec:
 
 * `accessModes`를 생략하면 연산자가 기본값으로 `ReadWriteOnce`를 사용합니다.
 * cluster가 삭제되더라도 레플리카별 PVC는 유지되므로, 사용자 지정 리소스를
-  삭제한 후 다시 생성해도 데이터는 보존됩니다. [암호화된 정책](#at-rest-encryption)의
-  데이터는 추가로 암호화 키도 보존해야 합니다 — 해당 섹션의 참고를 확인하세요.
+  삭제한 후 다시 생성해도 데이터는 보존됩니다.
 * 동일한 필드는 `KeeperCluster`에도 있으며 동일하게 동작합니다.
 
 <div id="ephemeral-storage">
@@ -151,53 +150,12 @@ spec:
 [ClickHouse 저장소 문서](https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)를
 참조하십시오.
 
-<div id="at-rest-encryption">
-  ## 저장 데이터 암호화
-</div>
-
-`spec.settings.encryption`을 설정하면 테이블 데이터에 대한 저장 데이터 암호화가 활성화됩니다. 이
-연산자는 16바이트 AES 키를 생성합니다. 이 키는 관리형 클러스터 시크릿에 저장되거나
-`externalSecret`을 통해 제공되며, 또한 모든 데이터 디스크를 ClickHouse의 `encrypted`
-디스크 유형으로 감싸는 전용 스토리지 정책도 생성합니다.
-
-```yaml
-spec:
-  settings:
-    encryption: {}   # enables the feature; the policy defaults to "encrypted"
-```
-
-암호화는 테이블별로 개별적으로 활성화할 수 있으며, 기본 스토리지 정책은 평문으로 유지됩니다. 테이블을 생성할 때는
-암호화된 정책을 선택하세요:
-
-```sql
-CREATE TABLE secret_data (id UInt64) ENGINE = MergeTree ORDER BY id
-SETTINGS storage_policy = 'encrypted';
-```
-
-다른 정책 이름을 사용하려면 `encryption.policyName`을 설정하십시오.
-
-<Note>
-  이렇게 하면 암호화된 정책을 통해 기록되는 MergeTree 데이터 파트가
-  AES-128-CTR로 암호화됩니다. 데이터 루트의 ClickHouse 서버 메타데이터와 로그는
-  여기에 포함되지 않으므로, 해당 항목에는 LUKS 또는 CSI 드라이버와 같은 디스크 수준 암호화를 사용하십시오.
-  실행 중인 클러스터에서 암호화를 활성화하면 키를 주입하기 위해 일회성 롤링 재시작이
-  트리거됩니다. 재시작이 완료될 때까지 레플리카에서 일시적으로 구성 다시 로드 오류가
-  보고될 수 있습니다.
-
-  키는 연산자가 관리하는 클러스터 시크릿에 저장되며, 이 시크릿은
-  사용자 지정 리소스가 소유하고 함께 삭제됩니다. 암호화된 파트는 키 없이는 읽을 수 없습니다.
-  CR을 삭제한 후에도 암호화된 데이터를 유지해야 하는 경우(PVC는 유지됨), `externalSecret`을 통해 키를 제공하거나
-  삭제 전에 `disk-encryption-key` 항목을 백업하십시오.
-  연산자가 관리하는 시크릿은 삭제하지 마십시오. 삭제하면 연산자가 새 키를 생성하여
-  기존 암호화 파트를 읽을 수 없게 됩니다.
-</Note>
-
 <div id="immutability">
   ## 생성 후에는 변경할 수 없는 사항
 </div>
 
-클러스터가 생성되고 나면 스토리지 레이아웃은 대부분 고정됩니다. 데이터를 고아 상태로 만들거나
-PersistentVolumeClaims를 다시 바인딩하게 만드는 업데이트는 admission 단계에서 거부됩니다.
+클러스터가 생성되고 나면 스토리지 레이아웃은 대부분 고정됩니다. admission webhook은
+PersistentVolumeClaims가 고아 상태가 되거나 다시 바인딩되게 만드는 업데이트를 거부합니다.
 
 * `dataVolumeClaimSpec`의 존재 여부는 변경할 수 없습니다. 즉, 이것 없이 생성된 클러스터에는 데이터
   볼륨을 **추가**할 수 없고, 이것과 함께 생성된 클러스터에서는 이를 **제거**할 수도 없습니다.
@@ -205,28 +163,23 @@ PersistentVolumeClaims를 다시 바인딩하게 만드는 업데이트는 admis
   **제거** 또는 **이름 변경**할 수 없습니다.
 * 기존 항목의 `resources.requests.storage`를 확장하는 것은 허용됩니다(단,
   StorageClass가 지원해야 합니다. [스토리지 확장](#expanding-storage)을 참고하십시오).
-* 암호화는 한 번 활성화되면 **비활성화**할 수 없으며, `encryption.policyName`도 **이름 변경**할 수
-  없습니다. 이미 암호화된 정책을 사용하는 테이블에 더 이상 접근할 수 없게 되기 때문입니다.
 
 <div id="validation-reference">
   ## 검증 참고
 </div>
 
-| 조건                                                                     | 결과                                           |
-| ---------------------------------------------------------------------- | -------------------------------------------- |
-| `dataVolumeClaimSpec`가 없고 `/var/lib/clickhouse`에 사용자 지정 볼륨도 없음         | 경고 — 재시작 시 데이터가 손실될 수 있습니다                   |
-| `/var/lib/clickhouse`에 사용자 지정 볼륨이 마운트되어 있는데 `dataVolumeClaimSpec`도 설정됨 | 거부됨                                          |
-| `additionalVolumeClaimTemplates`는 설정되었지만 `dataVolumeClaimSpec`가 없음     | 거부됨                                          |
-| 이름이 `default`인 추가 디스크                                                  | 거부됨 — ClickHouse 기본 디스크에 예약된 이름입니다           |
-| 이름이 `-encrypted`로 끝나는 추가 디스크                                           | 거부됨 — 생성된 암호화 디스크 이름과 충돌합니다                  |
-| 이름이 `clickhouse-storage-volume`인 추가 디스크                                | 거부됨 — 주 데이터 볼륨 이름과 충돌합니다                 |
-| 중복된 추가 디스크 이름                                                          | 거부됨                                          |
-| 이름이 `^[a-z]([-a-z0-9]*[a-z0-9])?$` 패턴과 일치하지 않거나 63자를 초과함               | CRD 스키마에 의해 거부됨                              |
-| 생성 후 `dataVolumeClaimSpec`를 추가하거나 제거함                                  | 거부됨                                          |
-| 생성 후 `additionalVolumeClaimTemplates`를 추가, 제거하거나 이름을 변경함               | 거부됨                                          |
-| `podTemplate.volumes`에서 예약된 볼륨 이름 사용                                   | 거부됨                                          |
-| `encryption.policyName`이 `default`로 설정됨                                | CRD 스키마에 의해 거부됨 — 암호화 정책은 기본 정책을 대체해서는 안 됩니다 |
-| 생성 후 `encryption`을 비활성화하거나 해당 정책의 이름을 변경함                              | CRD 스키마에 의해 거부됨                              |
+| 조건                                                                     | 결과                                 |
+| ---------------------------------------------------------------------- | ---------------------------------- |
+| `dataVolumeClaimSpec`가 없고 `/var/lib/clickhouse`에 사용자 지정 볼륨도 없음         | 경고 — 재시작 시 데이터가 손실될 수 있습니다         |
+| `/var/lib/clickhouse`에 사용자 지정 볼륨이 마운트되어 있는데 `dataVolumeClaimSpec`도 설정됨 | 거부됨                                |
+| `additionalVolumeClaimTemplates`는 설정되었지만 `dataVolumeClaimSpec`가 없음     | 거부됨                                |
+| 이름이 `default`인 추가 디스크                                                  | 거부됨 — ClickHouse 기본 디스크에 예약된 이름입니다 |
+| 이름이 `clickhouse-storage-volume`인 추가 디스크                                | 거부됨 — 프라이머리 데이터 볼륨 이름과 충돌합니다       |
+| 중복된 추가 디스크 이름                                                          | 거부됨                                |
+| 이름이 `^[a-z]([-a-z0-9]*[a-z0-9])?$` 패턴과 일치하지 않거나 63자를 초과함               | CRD 스키마에 의해 거부됨                    |
+| 생성 후 `dataVolumeClaimSpec`를 추가하거나 제거함                                  | 거부됨                                |
+| 생성 후 `additionalVolumeClaimTemplates`를 추가, 제거하거나 이름을 변경함               | 거부됨                                |
+| `podTemplate.volumes`에서 예약된 볼륨 이름 사용                                   | 거부됨                                |
 
 <div id="related-guides">
   ## 관련 가이드

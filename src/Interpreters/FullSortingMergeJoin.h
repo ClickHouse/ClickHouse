@@ -22,11 +22,10 @@ class FullSortingMergeJoin : public IJoin
 {
 public:
     explicit FullSortingMergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader & right_sample_block_,
-                                  int null_direction_ = 1, bool is_parallel_ = false)
+                                  int null_direction_ = 1)
         : table_join(table_join_)
         , right_sample_block(right_sample_block_)
         , null_direction(null_direction_)
-        , is_parallel(is_parallel_)
     {
         LOG_TRACE(getLogger("FullSortingMergeJoin"), "Will use full sorting merge join");
     }
@@ -44,17 +43,10 @@ public:
         SharedHeader,
         SharedHeader right_sample_block_) const override
     {
-        return std::make_shared<FullSortingMergeJoin>(table_join_, right_sample_block_, null_direction, is_parallel);
+        return std::make_shared<FullSortingMergeJoin>(table_join_, right_sample_block_, null_direction);
     }
 
     int getNullDirection() const { return null_direction; }
-
-    /// True when `parallel_full_sorting_merge` was the algorithm selected from the `join_algorithm` priority
-    /// list, rather than plain `full_sorting_merge`. Both build this same object, so this cannot be recovered
-    /// from list membership alone (`full_sorting_merge,parallel_full_sorting_merge` selects the former and
-    /// never reaches the latter). `optimizeParallelFullSortingMergeJoin` shards the join only when this is
-    /// set, so listing the parallel variant as a fallback does not silently change behavior.
-    bool isParallel() const { return is_parallel; }
 
     bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override
     {
@@ -171,7 +163,6 @@ private:
     SharedHeader right_sample_block;
     Block totals;
     int null_direction;
-    bool is_parallel;
 };
 
 }

@@ -35,9 +35,9 @@ def test_orphan_data_file_is_skipped():
 def test_test_source_files_keep_base_name():
     assert (
         Targeting._derive_test_name(
-            "tests/queries/0_stateless/03999_stateless_settings_history.sh"
+            "tests/queries/0_stateless/02995_new_settings_history.sh"
         )
-        == "03999_stateless_settings_history"
+        == "02995_new_settings_history"
     )
     assert (
         Targeting._derive_test_name(
@@ -57,9 +57,9 @@ def test_reference_file_maps_to_sibling_test():
     # `.reference` for a sibling `.sh`.
     assert (
         Targeting._derive_test_name(
-            "tests/queries/0_stateless/03999_stateless_settings_history.reference"
+            "tests/queries/0_stateless/02995_new_settings_history.reference"
         )
-        == "03999_stateless_settings_history"
+        == "02995_new_settings_history"
     )
     # `.reference.j2` for a sibling `.sql.j2`.
     assert (
@@ -124,14 +124,13 @@ def test_literal_filename_match_beats_cross_extension_stem():
 
 
 def test_orphan_data_file_maps_to_owning_test_by_prefix():
-    # PR #104097 reproducer: `_derive_test_name` returns None for a `.tsv`, so it
-    # used to be skipped. The frozen baseline consumed by the settings history test
-    # carries that test's `03999` prefix and is referenced by its literal filename,
-    # so the flaky check reruns exactly that test.
+    # PR #104097 reproducer: `_derive_test_name` returns None for this `.tsv`,
+    # so it used to be skipped. It carries the `02995` prefix of the test that
+    # consumes it, so the flaky check now reruns that test instead of skipping.
     owning = Targeting._tests_owning_data_file(
-        "tests/queries/0_stateless/03999_settings_history_baseline.tsv"
+        "tests/queries/0_stateless/02995_settings_26_4_1.tsv"
     )
-    assert owning == ["03999_stateless_settings_history"]
+    assert "02995_new_settings_history" in owning
 
 
 def test_data_file_with_no_matching_test_is_skipped():

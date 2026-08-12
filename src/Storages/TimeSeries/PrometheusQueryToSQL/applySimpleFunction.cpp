@@ -28,7 +28,7 @@ namespace
 }
 
 SQLQueryPiece applySimpleFunction(
-    const PrometheusQueryTree::Node * node,
+    const PQT::Node * node,
     ConverterContext & context,
     const std::function<ASTPtr(ASTs)> & apply_function_to_ast,
     std::vector<SQLQueryPiece> && arguments)

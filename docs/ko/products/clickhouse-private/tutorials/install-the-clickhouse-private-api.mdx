@@ -25,7 +25,9 @@ description: "이 튜토리얼에서는 백업 및 수직 스케일링과 같은
 ***
 
 <Steps>
-  <Step title="단계 1: 컨테이너 이미지 복사" id="step-1-copy-container-images">
+  <Step>
+    ## 단계 1: 컨테이너 이미지 복사
+
     `skopeo`를 사용하여 Private API 이미지와 Helm 차트를 ECR로 복사합니다.
 
     ```ini
@@ -51,7 +53,9 @@ description: "이 튜토리얼에서는 백업 및 수직 스케일링과 같은
     ***
   </Step>
 
-  <Step title="단계 2: Helm으로 설치" id="step-2-install-via-helm">
+  <Step>
+    ## 단계 2: Helm으로 설치
+
     Private API는 전용 네임스페이스에 설치됩니다.
 
     ```text
@@ -76,8 +80,10 @@ description: "이 튜토리얼에서는 백업 및 수직 스케일링과 같은
     ***
   </Step>
 
-  <Step title="단계 3: 인증 구성" id="step-3-configure-authentication">
-    기본적으로 기본 인증은 비활성화되어 있습니다. 운영 환경에서는 Helm values를 설정하여 활성화하십시오.
+  <Step>
+    ## 단계 3: 인증 구성
+
+    기본적으로 기본 인증은 비활성화되어 있습니다. 운영 환경에서는 Helm 값을 설정하여 활성화하십시오.
 
     * `api.basicAuth.enabled=true`
     * `api.basicAuth.username` -- 사용할 사용자 이름
@@ -88,7 +94,9 @@ description: "이 튜토리얼에서는 백업 및 수직 스케일링과 같은
     ***
   </Step>
 
-  <Step title="단계 4: 설치 확인" id="step-4-verify-installation">
+  <Step>
+    ## 단계 4: 설치 확인
+
     ### 파드 확인
 
     ```bash

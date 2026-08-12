@@ -7,7 +7,7 @@ description: 'Terraform モジュールとクロステナント認証を使用�
 doc_type: 'リファレンス'
 ---
 
-import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import PrivatePreviewBadge from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 <PrivatePreviewBadge />
 
@@ -35,13 +35,17 @@ Azure での BYOC では、お客様自身の Azure サブスクリプション�
 </div>
 
 <Steps>
-  <Step title="1. Terraform モジュールを適用する" id="apply-terraform-module">
+  <Step>
+    ### 1. Terraform モジュールを適用する
+
     BYOC Azure のオンボーディングを開始するには、ClickHouse が提供する [Azure 向け Terraform モジュール](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) を**ターゲット テナントおよびターゲット サブスクリプション**に適用します。
 
     必要な変数と適用手順については、モジュールのドキュメントを参照してください。適用後、このモジュールにより Azure 環境に必要な ID と権限が設定されます。
   </Step>
 
-  <Step title="2. ID を ClickHouse に提供する" id="provide-ids">
+  <Step>
+    ### 2. ID を ClickHouse に提供する
+
     以下の情報を ClickHouse チームに共有してください。
 
     * **ターゲット サブスクリプション ID** — BYOC リソースを作成する Azure サブスクリプション
