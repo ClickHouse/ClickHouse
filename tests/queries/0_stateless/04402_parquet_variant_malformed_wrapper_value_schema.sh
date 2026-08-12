@@ -107,10 +107,14 @@ out=$("${CLICKHOUSE_LOCAL}" --query "
         enable_json_type = 1,
         input_format_parquet_use_native_reader_v3 = 1" 2>&1) && status=0 || status=$?
 
-if [[ $status -ne 0 ]] && grep -q 'primitive payload must be `BYTE_ARRAY`' <<< "$out"; then
-    echo "malformed nested wrapper: rejected"
+# Without the `ClickHouse.variant_wrapper_paths` footer key, a nested group named
+# `typed_value` whose `value` child is a typed primitive (not `BYTE_ARRAY`) cannot be
+# a synthetic residual/typed wrapper — it is read as ordinary object payload, so the
+# column resolves to `JSON` instead of being rejected.
+if [[ $status -eq 0 ]] && grep -q $'^v\tJSON' <<< "$out"; then
+    echo "wrapper-named nested group with typed value child: read as object payload"
 else
-    echo "malformed nested wrapper: unexpected result"
+    echo "wrapper-named nested group with typed value child: unexpected result"
     echo "$out"
     exit 1
 fi
