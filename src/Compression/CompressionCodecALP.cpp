@@ -1524,4 +1524,10 @@ void registerCodecALP(CompressionCodecFactory & factory)
     };
     factory.registerCompressionCodecWithType("ALP", method_code, codec_builder);
 }
+
+CompressionCodecPtr getCompressionCodecALP(UInt8 float_width)
+{
+    return std::make_shared<CompressionCodecALP>(float_width, CompressionCodecALP::Variant::DEFAULT);
+}
+
 }

@@ -62,6 +62,13 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/SelectQueryOptions.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/TableExpressionData.h>
+#include <Planner/CollectTableExpressionData.h>
+#include <Storages/StorageDummy.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -70,6 +77,7 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTHelpers.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
@@ -3331,7 +3339,29 @@ catch (...)
         throw;
 }
 
-MergeTreeData::~MergeTreeData() = default;
+MergeTreeData::~MergeTreeData()
+{
+    /// The background tasks capture `this` and use members (`outdated_unloaded_data_parts`,
+    /// `unexpected_data_parts`, `refresh_parts_mutex`, `stats_mutex`, `cached_estimator`) that
+    /// are declared after their task holders, so they are destroyed before the holders' own
+    /// destructors deactivate the tasks. `shutdown` deactivates the tasks too, but a task
+    /// activated after the shutdown (a table startup or an ALTER of
+    /// `refresh_statistics_interval` racing with a drop) can still be running here, so join it
+    /// before any member is destroyed.
+    try
+    {
+        /// Sets the cancellation flags before deactivating, so a running load exits early.
+        stopOutdatedAndUnexpectedDataPartsLoadingTask();
+        if (refresh_parts_task)
+            refresh_parts_task->deactivate();
+        if (refresh_stats_task)
+            refresh_stats_task->deactivate();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to deactivate a background task");
+    }
+}
 
 void MergeTreeData::loadUnexpectedDataParts()
 try
@@ -3881,7 +3911,7 @@ void MergeTreeData::reclaimStaleTemporaryPartDirectory(const DiskPtr & disk, con
 {
     /// Only temporary names may be auto-reclaimed. Elsewhere (e.g. "detached/<dir>" during ATTACH) the
     /// directory contents are the payload, and reclaiming would destroy user data.
-    if (!startsWith(part_dir_name, "tmp") || part_dir_name.find('/') != String::npos)
+    if (!startsWith(part_dir_name, "tmp") || part_dir_name.contains('/'))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reclaim {}: not a temporary part directory name", part_dir_name);
 
     /// The claim is what makes the removal safe: with the name owned, an existing directory can only be
@@ -4867,6 +4897,32 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
     }
 }
 
+/// Source columns an expression reads, resolved against `columns` via the query analyzer over a fake
+/// table. keep_alias_columns=false expands ALIAS chains to their base columns.
+Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & columns, const ContextPtr & context)
+{
+    if (!ast)
+        return {};
+
+    auto analysis_context = Context::createCopy(context);
+    auto expression = buildQueryTree(ast, analysis_context);
+
+    auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, columns);
+    auto table_node = std::make_shared<TableNode>(storage, analysis_context);
+
+    QueryAnalyzer analyzer(/*only_analyze=*/ true);
+    analyzer.resolve(expression, table_node, analysis_context);
+
+    auto global_planner_context
+        = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+    auto planner_context = std::make_shared<PlannerContext>(analysis_context, global_planner_context, SelectQueryOptions{});
+    collectSetsAndSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
+
+    if (const auto * table_expression_data = planner_context->getTableExpressionDataOrNull(table_node))
+        return table_expression_data->getSelectedColumnsNames();
+    return {};
+}
+
 }
 
 void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
@@ -5565,6 +5621,188 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 {
                     columns_to_check_conversion.push_back(new_metadata.getColumns().getPhysical(command.column_name));
                 }
+            }
+        }
+        else if (command.type == AlterCommand::MODIFY_COLUMN && command.data_type
+            && old_metadata.getColumns().hasPhysical(command.column_name)
+            && new_metadata.getColumns().hasPhysical(command.column_name)
+            && isLazyMetadataConversion(old_types.at(command.column_name), command.data_type.get(), local_context))
+        {
+            /// A lazy metadata-only conversion (JSON type-hint change) has no mutation to rebuild
+            /// `primary.idx`, partition-key files or `skp_idx_*`, which are read positionally without
+            /// per-part CAST. Reject it when it changes the on-disk type of a subcolumn used by a
+            /// key/index/projection.
+            const auto & old_columns_desc = old_metadata.getColumns();
+            const auto & new_columns_desc = new_metadata.getColumns();
+
+            auto names_use_changed_subcolumn = [&](const Names & required_columns) -> bool
+            {
+                for (const auto & required : required_columns)
+                {
+                    /// Only (sub)columns of the altered column.
+                    auto old_column = old_columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required);
+                    if (!old_column || old_column->getNameInStorage() != command.column_name)
+                        continue;
+
+                    /// Removed or retyped after the ALTER: its on-disk bytes no longer match.
+                    auto new_column = new_columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required);
+                    if (!new_column || new_column->type->getName() != old_column->type->getName())
+                        return true;
+                }
+                return false;
+            };
+
+            auto expression_uses_changed_subcolumn = [&](const ExpressionActionsPtr & expr) -> bool
+            {
+                return expr && names_use_changed_subcolumn(expr->getRequiredColumns());
+            };
+
+            /// For structures with no prebuilt ExpressionActions (MATERIALIZED columns, projection group/WHERE keys).
+            auto ast_uses_changed_subcolumn = [&](const ASTPtr & ast) -> bool
+            {
+                return names_use_changed_subcolumn(expressionSourceColumns(ast, old_columns_desc, local_context));
+            };
+
+            /// Primary/sorting key: forbidden (a full mutation cannot alter a key subcolumn either).
+            if (old_metadata.hasSortingKey()
+                && expression_uses_changed_subcolumn(old_metadata.getSortingKey().expression))
+            {
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "ALTER of column {} changes the on-disk type of a subcolumn used in the primary/sorting key; "
+                    "this is forbidden because the primary index cannot be rebuilt by a metadata-only ALTER",
+                    backQuoteIfNeed(command.column_name));
+            }
+
+            /// Partition key.
+            if (old_metadata.hasPartitionKey()
+                && expression_uses_changed_subcolumn(old_metadata.getPartitionKey().expression))
+            {
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "ALTER of column {} changes the on-disk type of a subcolumn used in the partition key; "
+                    "this is forbidden because the partition key representation cannot be rebuilt by a metadata-only ALTER",
+                    backQuoteIfNeed(command.column_name));
+            }
+
+            /// Stored MATERIALIZED columns: a lazy ALTER skips the mutation that would recompute them,
+            /// leaving stale bytes. (DEFAULT is set once at insert; ALIAS is recomputed on read.)
+            for (const auto & column : old_columns_desc)
+            {
+                if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression)
+                    continue;
+                if (!ast_uses_changed_subcolumn(column.default_desc.expression))
+                    continue;
+
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "ALTER of column {} changes the on-disk type of a subcolumn used by the MATERIALIZED column '{}'; "
+                    "a metadata-only ALTER cannot recompute it. Disable setting "
+                    "'allow_experimental_json_lazy_type_hints' to run this change as a full mutation that "
+                    "recomputes the column, or drop the column first",
+                    backQuoteIfNeed(command.column_name),
+                    column.name);
+            }
+
+            /// Skip index (explicit or implicit): a full mutation can rebuild it, so suggest disabling the setting.
+            const auto & new_indices = new_metadata.getSecondaryIndices();
+            for (const auto & old_index : old_metadata.getSecondaryIndices())
+            {
+                if (!expression_uses_changed_subcolumn(old_index.expression))
+                    continue;
+
+                /// Dropped in the same ALTER: nothing to corrupt.
+                auto new_index_it = std::find_if(
+                    new_indices.begin(), new_indices.end(),
+                    [&](const IndexDescription & index) { return index.name == old_index.name; });
+                if (new_index_it == new_indices.end())
+                    continue;
+
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "ALTER of column {} changes the on-disk type of a subcolumn stored by the skip index '{}'; "
+                    "a metadata-only ALTER cannot rebuild the index. Disable setting "
+                    "'allow_experimental_json_lazy_type_hints' to run this change as a full mutation, "
+                    "or drop the index first",
+                    backQuoteIfNeed(command.column_name),
+                    old_index.name);
+            }
+
+            /// A subcolumn can feed a projection's sort key (positionally persisted) or a filtered
+            /// projection's WHERE (which fixes the stored row set); both go stale on a lazy change.
+            const auto & new_projections = new_metadata.getProjections();
+            for (const auto & projection : old_metadata.getProjections())
+            {
+                bool uses_changed = expression_uses_changed_subcolumn(projection.metadata->getSortingKey().expression);
+
+                /// An aggregate projection's sort key is stored under the group expression's output name,
+                /// so `GROUP BY f(j.a)` is invisible above; analyze the GROUP BY to catch it (defensive,
+                /// unreachable until subcolumn group keys can be ingested).
+                if (!uses_changed && projection.type == ProjectionDescription::Type::Aggregate && projection.query_ast)
+                    if (const auto * select = projection.query_ast->as<ASTSelectQuery>())
+                        uses_changed = ast_uses_changed_subcolumn(select->groupBy());
+
+                /// A filtered projection's WHERE fixes the stored row set; a change that flips it leaves stale rows.
+                if (!uses_changed)
+                    uses_changed = ast_uses_changed_subcolumn(projection.where_clause_ast);
+
+                if (!uses_changed)
+                    continue;
+
+                /// Dropped in the same ALTER: nothing to corrupt.
+                if (!new_projections.has(projection.name))
+                    continue;
+
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "ALTER of column {} changes the on-disk type of a subcolumn used by projection '{}' "
+                    "(its sort key or WHERE filter); a metadata-only ALTER cannot rebuild the projection. "
+                    "Drop the projection first to run this change",
+                    backQuoteIfNeed(command.column_name),
+                    projection.name);
+            }
+
+            /// TTL expressions persist `ttl_infos`, rebuilt only by a mutation. Reject when the changed
+            /// subcolumn feeds any TTL expression or its WHERE (GROUP BY keys are a sorting-key prefix,
+            /// already covered above).
+            auto ttl_offending_expr = [&](const TTLDescription & ttl) -> ASTPtr
+            {
+                if (names_use_changed_subcolumn(expressionSourceColumns(ttl.expression_ast, old_columns_desc, local_context)))
+                    return ttl.expression_ast;
+                if (names_use_changed_subcolumn(expressionSourceColumns(ttl.where_expression_ast, old_columns_desc, local_context)))
+                    return ttl.where_expression_ast;
+                return nullptr;
+            };
+
+            TTLDescriptions all_ttls = old_metadata.getRowsWhereTTLs();
+            for (const auto & ttl : old_metadata.getGroupByTTLs())
+                all_ttls.push_back(ttl);
+            for (const auto & ttl : old_metadata.getMoveTTLs())
+                all_ttls.push_back(ttl);
+            for (const auto & ttl : old_metadata.getRecompressionTTLs())
+                all_ttls.push_back(ttl);
+            if (old_metadata.hasRowsTTL())
+                all_ttls.push_back(old_metadata.getRowsTTL());
+            for (const auto & [column_name, ttl] : old_metadata.getColumnTTLs())
+                all_ttls.push_back(ttl);
+
+            for (const auto & ttl : all_ttls)
+            {
+                if (auto offending_expr = ttl_offending_expr(ttl))
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "ALTER of column {} changes the on-disk type of a subcolumn used by the TTL expression ({}); "
+                        "a metadata-only ALTER cannot recompute the TTL. Drop the TTL to run this change",
+                        backQuoteIfNeed(command.column_name), offending_expr->formatForErrorMessage());
+
+                /// GROUP BY ... SET assignments are stored as prebuilt ExpressionActions, not as an AST above.
+                for (const auto & set_part : ttl.set_parts)
+                    if (expression_uses_changed_subcolumn(set_part.expression))
+                        throw Exception(
+                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "ALTER of column {} changes the on-disk type of a subcolumn used by the TTL GROUP BY SET "
+                            "assignment to column '{}'; a metadata-only ALTER cannot recompute the TTL. Drop the TTL to run this change",
+                            backQuoteIfNeed(command.column_name), set_part.column_name);
             }
         }
     }
@@ -7027,7 +7265,7 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 }
 
 
-void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw) const
+void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay) const
 {
     const auto settings = getSettings();
     const auto & query_settings = query_context->getSettingsRef();
@@ -7119,7 +7357,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
     }
 
     /// no need for delay
-    if (!active_parts_over_threshold && !outdated_parts_over_threshold && !dead_blobs_over_threshold)
+    if (!allow_delay || (!active_parts_over_threshold && !outdated_parts_over_threshold && !dead_blobs_over_threshold))
         return;
 
     UInt64 delay_milliseconds = 0;
@@ -7555,7 +7793,7 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(co
     primary_index_size.add(part->getIndexSizeFromFile());
 }
 
-IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns) const
+IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const
 {
     auto result = getColumnSizes();
 
@@ -7572,12 +7810,36 @@ IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns) 
     if (subcolumn_names.empty())
         return result;
 
-    /// For each requested column that is a subcolumn and not already in the result,
-    /// aggregate its size across all active parts using getSubcolumnSize.
-    /// This gives the correct on-disk size for subcolumns based on required substreams.
-    auto parts_lock = readLockParts();
-    auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
-    for (const auto & part : committed_parts_range)
+    /// When exact subcolumn sizes are disabled, approximate each subcolumn with its whole top-level
+    /// column size (already in result), resolved from metadata without locking parts.
+    if (!calculate_subcolumn_sizes)
+    {
+        auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        const auto & storage_columns = metadata_snapshot->getColumns();
+        for (const auto & col_name : subcolumn_names)
+        {
+            auto column = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, col_name);
+            if (column && column->isSubcolumn())
+            {
+                if (auto it = result.find(column->getNameInStorage()); it != result.end())
+                    result[col_name] = it->second;
+            }
+        }
+
+        return result;
+    }
+
+    /// Exact subcolumn sizes are derived per active part from the required substreams.
+    /// Snapshot the parts under the lock and release it before the per-part size calculation,
+    /// which reads part-local state and would otherwise block part commits and merges.
+    DataPartsVector parts;
+    {
+        auto parts_lock = readLockParts();
+        auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
+        parts.assign(committed_parts_range.begin(), committed_parts_range.end());
+    }
+
+    for (const auto & part : parts)
     {
         for (const auto & col_name : subcolumn_names)
         {
@@ -12182,6 +12444,18 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
 
 StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
+    /// A pinned snapshot is captured in advance for atomic `CREATE MATERIALIZED VIEW ... POPULATE`,
+    /// so the population reads exactly the data that existed when the view was subscribed to new inserts.
+    /// The pin is stored on the query context, so consult it as well: the population's read runs under
+    /// contexts derived from the query context rather than the exact context the pin was set on.
+    if (auto pinned = query_context->getPinnedStorageSnapshot(getStorageID().uuid))
+        return pinned;
+    if (query_context->hasQueryContext())
+    {
+        if (auto pinned = query_context->getQueryContext()->getPinnedStorageSnapshot(getStorageID().uuid))
+            return pinned;
+    }
+
     /// Inject artificial delay when taking storage snapshot.
     /// Useful for simulating concurrent mutations during snapshot acquisition.
     /// E.g. tests/queries/0_stateless/03443_shared_storage_snapshots.sh
