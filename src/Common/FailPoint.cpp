@@ -74,6 +74,13 @@ static struct InitFiu
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(s3_send_request_throw_expired_token) \
     REGULAR(s3_read_inject_etag_mismatch) \
+    REGULAR(azure_inject_forbidden_response) \
+    ONCE(azure_inject_forbidden_response_once) \
+    REGULAR(azure_inject_auth_failure_on_request) \
+    ONCE(azure_inject_auth_failure_on_request_once) \
+    REGULAR(azure_inject_poco_timeout) \
+    ONCE(azure_inject_poco_timeout_once) \
+    REGULAR(azure_inject_bad_request) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
     ONCE(object_storage_queue_fail_commit_after_success) \
@@ -172,6 +179,7 @@ static struct InitFiu
     REGULAR(claim_inject_stale_part_dir) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(async_insert_flush_pause_in_executor) \
+    PAUSEABLE(system_replicas_schedule_requests_pause) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
     REGULAR(replicated_merge_tree_all_replicas_stale) \
     REGULAR(zero_copy_lock_zk_fail_before_op) \
