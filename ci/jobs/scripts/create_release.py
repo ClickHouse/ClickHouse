@@ -550,8 +550,15 @@ class ReleaseInfo:
                     return
                 if dry_run:
                     Shell.check(f"{GIT_PREFIX} show HEAD", verbose=True)
+                    # Undo the preview commit but restore only the generated files,
+                    # so a local dry run cannot discard unrelated worktree edits.
                     Shell.check(
-                        f"{GIT_PREFIX} reset --hard HEAD~1", strict=True, verbose=True
+                        f"{GIT_PREFIX} reset --soft HEAD~1", strict=True, verbose=True
+                    )
+                    Shell.check(
+                        f"{GIT_PREFIX} checkout HEAD -- '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}'",
+                        strict=True,
+                        verbose=True,
                     )
                     return
                 Git.push(
