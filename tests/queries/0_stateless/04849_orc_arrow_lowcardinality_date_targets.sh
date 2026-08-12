@@ -18,7 +18,7 @@ SUSPICIOUS="--allow_suspicious_low_cardinality_types=1"
 for format in Parquet Arrow ArrowStream ORC Avro
 do
     echo "$format"
-    FILE=${CLICKHOUSE_TMP}/04844_date.$format
+    FILE=${CLICKHOUSE_TMP}/04849_date.$format
 
     ${CLICKHOUSE_LOCAL} -q "insert into function file('$FILE', $format, 'date Date32') settings engine_file_truncate_on_insert = 1 values ('9999-12-31'), ('0000-01-01')"
 

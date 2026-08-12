@@ -23,7 +23,7 @@ ${CLICKHOUSE_LOCAL} -q "select cast(toDate32('9999-12-31') as DateTime64(3, 'UTC
 for format in Parquet Arrow ArrowStream ORC Avro
 do
     echo "$format"
-    FILE=${CLICKHOUSE_TMP}/04838_date.$format
+    FILE=${CLICKHOUSE_TMP}/04848_date.$format
 
     ${CLICKHOUSE_LOCAL} -q "insert into function file('$FILE', $format, 'date Date32') settings engine_file_truncate_on_insert = 1 values ('9999-12-31'), ('0000-01-01')"
 
