@@ -1191,6 +1191,7 @@ TEST(PromQLParser, TrailingCommasInGroupingLabelLists)
 {
     for (const auto query : {
              "sum by (job,) (up)",
+             "sum by (job, instance,) (up)",
              "sum without (instance,) (up)",
              "up + on(job,) up",
              "up + ignoring(instance,) up",
@@ -1199,6 +1200,14 @@ TEST(PromQLParser, TrailingCommasInGroupingLabelLists)
          })
     {
         EXPECT_NO_THROW(PrometheusQueryTree{query}) << query;
+    }
+
+    for (const auto query : {
+             "sum by (,) (up)",
+             "sum by (job,,) (up)",
+         })
+    {
+        EXPECT_ANY_THROW(PrometheusQueryTree{query}) << query;
     }
 }
 
