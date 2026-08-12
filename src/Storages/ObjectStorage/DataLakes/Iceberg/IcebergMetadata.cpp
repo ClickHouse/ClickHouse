@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <sstream>
+#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/UUID.h>
@@ -1095,7 +1096,9 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
         auto manifest_rows = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
         if (!manifest_rows.has_value())
             return {};
-        result += *manifest_rows;
+        /// Per-manifest sums are capped at Int64::max; still guard the cross-manifest total.
+        if (common::addOverflow(result, static_cast<UInt64>(*manifest_rows), result))
+            return {};
     }
 
     if (actual_data_snapshot->total_rows.has_value() && *actual_data_snapshot->total_rows != result)
