@@ -2142,12 +2142,15 @@ def test_rabbitmq_drop_table_properly(rabbitmq_cluster, db, unique):
         except pika.exceptions.ChannelClosedByBroker as e:
             assert e.reply_code == 404, f"unexpected channel close: {e}"
             break
-        if time.monotonic() >= deadline:
+        # The last declare lands at the deadline, so the accepted window is exactly
+        # queue_removal_timeout_sec.
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
             pytest.fail(
                 f"Queue {unique}_rabbit_queue_drop still exists "
                 f"{queue_removal_timeout_sec} seconds after DROP TABLE."
             )
-        time.sleep(0.5)
+        time.sleep(min(0.5, remaining))
 
 
 def test_rabbitmq_queue_settings(rabbitmq_cluster, db, unique):
