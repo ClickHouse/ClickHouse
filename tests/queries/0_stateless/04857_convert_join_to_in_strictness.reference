@@ -59,3 +59,18 @@ b
 a
 b
 0
+-- a key expression consuming a left column the projection still needs is not converted
+1	['a','b','c']
+2	['d','e']
+1	['a','b','c']
+2	['d','e']
+0
+-- the same holds for a scalar key expression, not only for arrayJoin
+1	['a','b','c']
+2	['d','e']
+1	['a','b','c']
+2	['d','e']
+0
+-- while a projection of only unconsumed columns still converts
+1
+1

@@ -244,6 +244,25 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     auto left_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.first; }));
     auto right_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.second; }));
+
+    /// The left stream after the key expression carries the keys plus only the columns the key
+    /// expressions do not consume, so a projection reading a consumed column has no input.
+    {
+        auto post_left_header = left_pre_join_actions.updateHeader(
+            *parent_node->children.at(0)->step->getOutputHeader());
+        std::unordered_map<std::string_view, size_t> forwarded;
+        for (const auto & column : post_left_header)
+            ++forwarded[column.name];
+
+        for (const auto * input : JoinExpressionActions::getSubDAG(join_output_actions).getInputs())
+        {
+            auto it = forwarded.find(input->result_name);
+            if (it == forwarded.end() || it->second == 0)
+                return 0;
+            --it->second;
+        }
+    }
+
     auto * lhs_in_node = parent_node->children.at(0);
     makeExpressionNodeOnTopOf(*lhs_in_node, std::move(left_pre_join_actions), nodes, makeDescription("Calculate join left keys"));
     auto * rhs_in_node = parent_node->children.at(1);

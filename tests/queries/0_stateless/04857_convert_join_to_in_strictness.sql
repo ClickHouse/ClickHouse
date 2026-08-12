@@ -170,5 +170,50 @@ DROP TABLE t_arr_left;
 DROP TABLE t_arr_right;
 DROP TABLE t_dyn_left;
 DROP TABLE t_dyn_right;
+
+SELECT '-- a key expression consuming a left column the projection still needs is not converted';
+DROP TABLE IF EXISTS t_aj_left;
+DROP TABLE IF EXISTS t_aj_right;
+CREATE TABLE t_aj_left (id UInt64, tags Array(String)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t_aj_right (tag String) ENGINE = MergeTree ORDER BY tag;
+INSERT INTO t_aj_left VALUES (1, ['a', 'b', 'c']), (2, ['d', 'e']), (9, ['nomatch']);
+INSERT INTO t_aj_right VALUES ('a'), ('d'), ('1'), ('2');
+
+SELECT id, tags FROM t_aj_left SEMI LEFT JOIN t_aj_right ON arrayJoin(t_aj_left.tags) = t_aj_right.tag
+ORDER BY id SETTINGS query_plan_convert_join_to_in = 0;
+
+SELECT id, tags FROM t_aj_left SEMI LEFT JOIN t_aj_right ON arrayJoin(t_aj_left.tags) = t_aj_right.tag
+ORDER BY id SETTINGS query_plan_convert_join_to_in = 1;
+
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT id, tags FROM t_aj_left SEMI LEFT JOIN t_aj_right ON arrayJoin(t_aj_left.tags) = t_aj_right.tag
+    SETTINGS query_plan_convert_join_to_in = 1
+) WHERE explain ILIKE '%CreatingSets%';
+
+SELECT '-- the same holds for a scalar key expression, not only for arrayJoin';
+SELECT id, tags FROM t_aj_left SEMI LEFT JOIN t_aj_right ON toString(t_aj_left.id) = t_aj_right.tag
+ORDER BY id SETTINGS query_plan_convert_join_to_in = 0;
+
+SELECT id, tags FROM t_aj_left SEMI LEFT JOIN t_aj_right ON toString(t_aj_left.id) = t_aj_right.tag
+ORDER BY id SETTINGS query_plan_convert_join_to_in = 1;
+
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT id, tags FROM t_aj_left SEMI LEFT JOIN t_aj_right ON toString(t_aj_left.id) = t_aj_right.tag
+    SETTINGS query_plan_convert_join_to_in = 1
+) WHERE explain ILIKE '%CreatingSets%';
+
+SELECT '-- while a projection of only unconsumed columns still converts';
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT id FROM t_aj_left SEMI LEFT JOIN t_aj_right ON arrayJoin(t_aj_left.tags) = t_aj_right.tag
+    SETTINGS query_plan_convert_join_to_in = 1
+) WHERE explain ILIKE '%CreatingSets%';
+
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT tags FROM t_aj_left SEMI LEFT JOIN t_aj_right ON toString(t_aj_left.id) = t_aj_right.tag
+    SETTINGS query_plan_convert_join_to_in = 1
+) WHERE explain ILIKE '%CreatingSets%';
+
+DROP TABLE t_aj_left;
+DROP TABLE t_aj_right;
 DROP TABLE t_left;
 DROP TABLE t_right;
