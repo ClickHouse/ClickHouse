@@ -12,7 +12,7 @@ With prewhere optimization, at first only the columns necessary for executing pr
 
 ## Controlling Prewhere Manually {#controlling-prewhere-manually}
 
-The clause controls which data is read from the table, not only which rows the query returns. When manually controlling `PREWHERE` for filtration conditions that are used by a minority of the columns in the query, but that provide strong data filtration. This reduces the volume of data to read.
+The clause filters the single table expression it is applied to, and normally does so while that table is read. When manually controlling `PREWHERE` for filtration conditions that are used by a minority of the columns in the query, but that provide strong data filtration. This reduces the volume of data to read.
 
 A query may simultaneously specify `PREWHERE` and `WHERE`. In this case, `PREWHERE` precedes `WHERE`.
 
