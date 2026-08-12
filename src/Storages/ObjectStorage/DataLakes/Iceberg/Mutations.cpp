@@ -20,6 +20,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
@@ -41,6 +42,7 @@ namespace DB::ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
+extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -62,6 +64,64 @@ namespace DB::Iceberg
 static constexpr const char * block_datafile_path = "_iceberg_metadata_file_path";
 static constexpr const char * block_row_number = "_row_number";
 static constexpr auto MAX_TRANSACTION_RETRIES = 100;
+
+/// ClickHouse mutations write parquet position-delete files. Iceberg readers must ignore those
+/// deletes for any data file that already has a deletion vector, so a successful mutation would
+/// silently leave rows visible. Fail closed until ClickHouse can write deletion vectors.
+static void throwIfCurrentSnapshotHasDeletionVectors(
+    ObjectStoragePtr object_storage,
+    const PersistentTableComponents & persistent_table_components,
+    ContextPtr context,
+    const Poco::JSON::Object::Ptr & metadata,
+    Int32 schema_id,
+    LoggerPtr log)
+{
+    if (!metadata->has(f_current_snapshot_id) || !metadata->has(f_snapshots))
+        return;
+
+    const Int64 snapshot_id = metadata->getValue<Int64>(f_current_snapshot_id);
+    if (snapshot_id < 0)
+        return;
+
+    Poco::JSON::Object::Ptr current_snapshot;
+    const auto snapshots = metadata->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
+    for (size_t i = 0; i < snapshots->size(); ++i)
+    {
+        const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+        if (snapshot->getValue<Int64>(f_metadata_snapshot_id) == snapshot_id)
+        {
+            current_snapshot = snapshot;
+            break;
+        }
+    }
+
+    if (!current_snapshot || !current_snapshot->has(f_manifest_list))
+        return;
+
+    const auto manifest_list_path
+        = IcebergPathFromMetadata::deserialize(current_snapshot->getValue<String>(f_manifest_list));
+    const auto manifest_list
+        = getManifestList(object_storage, persistent_table_components, context, manifest_list_path, log);
+
+    for (const auto & manifest_entry : manifest_list)
+    {
+        /// DVs live only in DELETE manifests (v2+).
+        if (manifest_entry.content_type != ManifestFileContentType::DELETE)
+            continue;
+
+        const auto handle = getManifestFileEntriesHandle(
+            object_storage, persistent_table_components, context, log, manifest_entry, schema_id);
+
+        if (handle.getPositionDeleteKindPresence().has_deletion_vectors)
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Iceberg DELETE and UPDATE mutations are not supported for tables that contain deletion vectors. "
+                "ClickHouse writes parquet position-delete files, which Iceberg readers must ignore for data files "
+                "that already have a deletion vector");
+        }
+    }
+}
 
 struct DeleteFileWriteResult
 {
@@ -614,6 +674,13 @@ void mutate(
         }
 
         auto current_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
+        throwIfCurrentSnapshotHasDeletionVectors(
+            object_storage,
+            persistent_table_components,
+            context,
+            metadata,
+            static_cast<Int32>(current_schema_id),
+            log);
         Poco::JSON::Object::Ptr current_schema;
         auto schemas = metadata->getArray(Iceberg::f_schemas);
         for (size_t i = 0; i < schemas->size(); ++i)

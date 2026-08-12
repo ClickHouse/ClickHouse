@@ -422,3 +422,60 @@ def test_deletion_vectors_puffin_files_cache(started_cluster_iceberg_with_spark,
             f"SELECT ProfileEvents['PuffinFilesCacheMisses'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
         )
     )
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_deletion_vectors_reject_mutations(started_cluster_iceberg_with_spark, storage_type):
+    """DELETE/UPDATE must fail closed on tables that already contain deletion vectors.
+
+    ClickHouse mutations write parquet position-delete files, which Iceberg readers ignore for
+    data files that have a matching DV — so a successful mutation would silently leave rows.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    table_name = "test_deletion_vectors_reject_mutations_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(
+        f"""
+        CREATE TABLE {table_name} (id bigint) USING iceberg
+        TBLPROPERTIES (
+            'format-version' = '3',
+            'write.delete.mode' = 'merge-on-read',
+            'write.update.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {table_name} SELECT id FROM range(0, 20)")
+    spark.sql(f"DELETE FROM {table_name} WHERE id IN (1, 2, 3)")
+
+    upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
+
+    instance.query(
+        get_creation_expression(
+            storage_type,
+            table_name,
+            started_cluster_iceberg_with_spark,
+            table_function=False,
+        )
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {table_name}")) == 17
+
+    delete_error = instance.query_and_get_error(
+        f"ALTER TABLE {table_name} DELETE WHERE id = 4",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    assert "deletion vectors" in delete_error.lower()
+
+    update_error = instance.query_and_get_error(
+        f"ALTER TABLE {table_name} UPDATE id = 0 WHERE id = 4",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    assert "deletion vectors" in update_error.lower()
+
+    # Rows must be unchanged after rejected mutations.
+    assert int(instance.query(f"SELECT count() FROM {table_name}")) == 17
+    assert get_array(instance.query(f"SELECT id FROM {table_name}")) == [
+        x for x in range(20) if x not in (1, 2, 3)
+    ]
