@@ -1350,12 +1350,12 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"allow_experimental_adaptive_codec_selection", false, false, "New setting."},
             {"text_index_max_processed_tokens_before_flush", 100000000, 100000000, "New setting"},
             {"text_index_max_memory_usage_before_flush", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"},
+            {"object_shared_data_serialization_version", "advanced", "advanced_chunked", "Enable advanced_chunked shared data serialization version by default to reduce peak memory during merges of JSON columns with many unique paths"},
+            {"object_shared_data_target_chunk_rows", 8192, 8192, "New setting"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
-            {"object_shared_data_serialization_version", "advanced", "advanced_chunked", "Enable advanced_chunked shared data serialization version by default to reduce peak memory during merges of JSON columns with many unique paths"},
-            {"object_shared_data_target_chunk_rows", 8192, 8192, "New setting"},
             {"allow_experimental_text_index_phrase_search", false, false, "New setting"},
             {"merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once", false, true, "Enable by default"},
             {"compute_exact_num_defaults_for_sparse_columns", false, false, "New setting gating exact per-column num_defaults computation for sparsity-based pruning and trivial-count rewrite"},
