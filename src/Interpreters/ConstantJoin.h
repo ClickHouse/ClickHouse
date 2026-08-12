@@ -29,6 +29,7 @@ public:
 
     std::string getName() const override { return "ConstantJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
+    bool anyTakeLastRow() const override { return any_take_last_row; }
 
     bool isCloneSupported() const override
     {

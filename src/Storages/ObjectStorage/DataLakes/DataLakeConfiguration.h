@@ -474,6 +474,19 @@ public:
         return SUPPORTS_PREWHERE;
     }
 
+    bool supportsLazyMaterialization(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
+    {
+        assertInitialized();
+        return current_metadata->supportsLazyMaterialization(storage_metadata_snapshot, context);
+    }
+
+    /// Data lakes never overwrite an existing data file in place: a new snapshot references new
+    /// files. This makes the lazy-materialization reread race-free regardless of the backend.
+    bool dataFilesAreImmutable() const override
+    {
+        return true;
+    }
+
 private:
     const DataLakeStorageSettingsPtr settings;
     ObjectStoragePtr ready_object_storage;

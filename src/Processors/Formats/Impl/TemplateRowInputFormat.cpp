@@ -915,7 +915,7 @@ void registerTemplateSchemaReader(FormatFactory & factory)
             for (auto escaping_rule : row_format.escaping_rules)
             {
                 if (!visited_escaping_rules.contains(escaping_rule))
-                    result += ", " + getAdditionalFormatInfoByEscapingRule(settings, settings.regexp.escaping_rule);
+                    result += ", " + getAdditionalFormatInfoByEscapingRule(settings, escaping_rule);
                 visited_escaping_rules.insert(escaping_rule);
             }
             return result;
