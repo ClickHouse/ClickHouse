@@ -3133,6 +3133,34 @@ bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const Stor
         || getStreamNameOrHashResolved(file_name, ".idx2").has_value();
 }
 
+bool IMergeTreeDataPart::hasMaterializedSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const
+{
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::hasMaterializedSecondaryIndex");
+
+    const auto file_name = getIndexFileName(index_name, metadata->escape_index_filenames);
+
+    /// `checksums.txt` is the authoritative record of what the part owns, so it also rules out the
+    /// orphan files a `DROP INDEX` + re-`ADD INDEX` used to leave behind.
+    if (getStreamNameOrHash(file_name, ".idx", checksums) || getStreamNameOrHash(file_name, ".idx2", checksums))
+        return true;
+
+    /// A packed index has no per-file entry of its own: its data is a member of the part's
+    /// `skp_idx.packed`, and only the archive is listed in `checksums.txt`.
+    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&getDataPartStorage());
+    if (!disk_storage)
+        return false;
+
+    const auto hashed_file_name = sipHash128String(file_name);
+    for (const auto & extension : {".idx", ".idx2"})
+    {
+        if (disk_storage->isFileInPackedSkipIndicesArchive(file_name + extension)
+            || disk_storage->isFileInPackedSkipIndicesArchive(hashed_file_name + extension))
+            return true;
+    }
+
+    return false;
+}
+
 bool IMergeTreeDataPart::isSkipIndexInPackedArchive(const IMergeTreeIndex & skip_index) const
 {
     const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&getDataPartStorage());

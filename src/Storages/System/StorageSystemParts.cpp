@@ -81,7 +81,7 @@ Name of the data part. The part naming structure can be used to determine many a
         {"secondary_indices_compressed_bytes",          std::make_shared<DataTypeUInt64>(),    "Total size of compressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included."},
         {"secondary_indices_uncompressed_bytes",        std::make_shared<DataTypeUInt64>(),    "Total size of uncompressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included."},
         {"secondary_indices_marks_bytes",               std::make_shared<DataTypeUInt64>(),    "The size of the file with marks for secondary indices."},
-        {"secondary_indices_materialized",              std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The names of the secondary (data skipping) indices that are materialized in this data part. A secondary index declared on the table is only listed here for parts in which it has actually been written; an index added with `ALTER TABLE ... ADD INDEX` but not yet materialized into existing parts (see `ALTER TABLE ... MATERIALIZE INDEX`) is absent for those parts. The check follows the table's current `escape_index_filenames` setting, matching what the read path can actually use: after that setting is changed, an index written into an older part under the previous filename policy is reported as absent until it is rewritten with `ALTER TABLE ... MATERIALIZE INDEX`."},
+        {"secondary_indices_materialized",              std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The names of the secondary (data skipping) indices that are materialized in this data part. A secondary index declared on the table is only listed here for parts in which it has actually been written; an index added with `ALTER TABLE ... ADD INDEX` but not yet materialized into existing parts (see `ALTER TABLE ... MATERIALIZE INDEX`) is absent for those parts. The check follows the table's current `escape_index_filenames` setting, matching what the read path can actually use: after that setting is changed, an index written into an older part under the previous filename policy is reported as absent until it is rewritten with `ALTER TABLE ... MATERIALIZE INDEX`. Only index data that the part owns is counted, so an index file left in the part directory but missing from `checksums.txt` is reported as absent as well."},
         {"modification_time",                           std::make_shared<DataTypeDateTime>(),  "The time the directory with the data part was modified. This usually corresponds to the time of data part creation."},
         {"remove_time",                                 std::make_shared<DataTypeDateTime>(),  "The time when the data part became inactive."},
         {"refcount",                                    std::make_shared<DataTypeUInt32>(),    "The number of places where the data part is used. A value greater than 2 indicates that the data part is used in queries or merges."},
@@ -221,12 +221,15 @@ void StorageSystemParts::processNextStorage(
         {
             /// The lookup deliberately uses the table's current `escape_index_filenames` policy:
             /// an index file written under the other policy is invisible to the read path as well,
-            /// so reporting such an index as materialized would be a false positive.
+            /// so reporting such an index as materialized would be a false positive. For the same
+            /// reason it uses `hasMaterializedSecondaryIndex` rather than `hasSecondaryIndex`:
+            /// only index data the part owns (per `checksums.txt`, or inside `skp_idx.packed`)
+            /// counts, never an orphan file left in the part directory.
             Array materialized_indices;
             auto metadata_snapshot = part->storage.getInMemoryMetadataPtr(context, false);
             for (const auto & index_description : metadata_snapshot->secondary_indices)
             {
-                if (part->hasSecondaryIndex(index_description.name, metadata_snapshot))
+                if (part->hasMaterializedSecondaryIndex(index_description.name, metadata_snapshot))
                     materialized_indices.push_back(index_description.name);
             }
             columns[res_index++]->insert(materialized_indices);
