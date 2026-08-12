@@ -35,6 +35,7 @@ SELECT
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND log_comment = '04539_window_view'
+  AND query LIKE 'INSERT INTO window_view_metrics_src%'
   AND type = 'QueryFinish'
   AND event_date >= yesterday()
 ORDER BY event_time_microseconds DESC
