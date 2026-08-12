@@ -220,19 +220,30 @@ NameSet injectRequiredColumns(
         /// The column must exist both physically in the part (to be readable) and in the current metadata
         /// (to be resolvable by the StorageSnapshot). This handles cases where the table schema has changed
         /// since the part was created: columns may have been added (not in the part) or dropped (not in metadata).
+        /// A column renamed by a mutation that has not been applied yet is still stored under its old
+        /// name, which the metadata no longer knows, so match it by the new name.
+        auto name_in_metadata = [&](const String & name_in_part)
+        {
+            return alter_conversions && alter_conversions->columnHasNewName(name_in_part)
+                ? alter_conversions->getColumnNewName(name_in_part)
+                : name_in_part;
+        };
+
         const auto & part_columns = data_part_info_for_reader.getColumns();
         NamesAndTypesList available_columns;
         for (const auto & column : part_columns)
         {
-            if (storage_snapshot->tryGetColumn(options, column.name))
+            if (storage_snapshot->tryGetColumn(options, name_in_metadata(column.name)))
                 available_columns.push_back(column);
         }
 
         if (available_columns.empty())
             available_columns = part_columns;
 
+        /// Sizes are keyed by the name in the part, but the caller resolves the injected name against
+        /// the metadata and the reader maps it back to the part on its own.
         const auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(available_columns);
-        columns.push_back(minimum_size_column_name);
+        columns.push_back(name_in_metadata(minimum_size_column_name));
         /// correctly report added column
         injected_columns.insert(columns.back());
     }
