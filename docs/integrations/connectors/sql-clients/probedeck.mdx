@@ -36,7 +36,7 @@ network or through an SSH bastion; it doesn't require a relay server.
 
 Some monitoring sections depend on optional log tables or newer system tables. For example,
 `system.server_settings`, which ProbeDeck uses for the configured memory limit, requires ClickHouse
-22.10 or later. ProbeDeck marks an affected section as limited when its source is unavailable.
+23.3 or later. ProbeDeck marks an affected section as limited when its source is unavailable.
 
 ## How it works {#how-it-works}
 
@@ -65,6 +65,10 @@ In the ClickHouse Cloud console, open your service, select **Connect**, and choo
 5. Tap **Test Connection**. ProbeDeck shows the server version and round-trip time after a
    successful check.
 6. Tap **Save**.
+
+ProbeDeck authenticates SQL requests to the service endpoint with these database credentials.
+ClickHouse Cloud uses organization-level keys from the **API Keys** page for the Cloud API and
+Query API endpoints. ProbeDeck's SQL connection flow does not use those keys.
 
 <Image img="/images/integrations/sql-clients/probedeck-add-connection.png" size="lg" border alt="ProbeDeck connection form configured for HTTPS on port 8443 with a ClickHouse username" />
 
@@ -181,8 +185,9 @@ The result should contain ten towns with their transaction counts and average pr
 ## Troubleshooting {#troubleshooting}
 
 <Accordion title="Authentication failed">
-Copy the database username and password again. For ClickHouse Cloud, use the database credentials
-from the service's **Connect** dialog, not a Cloud management API key.
+Copy the database username and password again. For the ClickHouse Cloud service endpoint, use the
+database credentials from the service's **Connect** dialog. Do not substitute an organization-level
+key from the ClickHouse Cloud **API Keys** page.
 </Accordion>
 
 <Accordion title="The connection was refused or timed out">
