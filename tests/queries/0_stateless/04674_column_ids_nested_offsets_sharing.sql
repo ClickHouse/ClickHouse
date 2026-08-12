@@ -40,5 +40,14 @@ SELECT 'merge matches plain',
 -- Spot-check the array boundaries the offsets stream defines, either side of the part split.
 SELECT k, n.x, n.y FROM t_nested_ids WHERE k IN (0, 99999, 100000, 199999) ORDER BY k;
 
+-- The other markless whole-part reader: a mutation rewrites the part, reading every column through
+-- the same shared offsets stream, granule by granule -- so a sibling left on a stale stream position
+-- shows up here and not in the merge above.
+ALTER TABLE t_nested_ids DELETE WHERE k = 99999 SETTINGS mutations_sync = 2;
+ALTER TABLE t_nested_plain DELETE WHERE k = 99999 SETTINGS mutations_sync = 2;
+SELECT 'mutation matches plain',
+       (SELECT sum(cityHash64(k, n.x, n.y)) FROM t_nested_ids) = (SELECT sum(cityHash64(k, n.x, n.y)) FROM t_nested_plain);
+SELECT k, n.x, n.y FROM t_nested_ids WHERE k IN (0, 199999) ORDER BY k;
+
 DROP TABLE t_nested_ids;
 DROP TABLE t_nested_plain;

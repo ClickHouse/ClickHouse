@@ -78,6 +78,8 @@ MergeTreeReaderWide::MergeTreeReaderWide(
             if (!isColumnDroppedByPendingMutation(i) && !isSystemColumnInvalidated(i))
                 addStreams(columns_to_read[i], serializations[i]);
         }
+
+        collectNestedOffsetsSiblings();
     }
     catch (...)
     {
@@ -183,29 +185,6 @@ size_t MergeTreeReaderWide::readRows(
         prefetchForAllColumns(Priority{}, num_columns, from_mark, current_task_last_mark, continue_reading, /*deserialize_prefixes=*/ true);
         deserializePrefixForAllColumns(num_columns, from_mark, current_task_last_mark);
 
-        /// Pre-build a map from offset-stream-name → list of column indices
-        /// for physically-named flattened Nested siblings. This avoids O(n²)
-        /// repeated `getStreamNameForColumn` calls in the cache-sharing loop.
-        ISerialization::SubstreamPath offsets_path{{ISerialization::Substream::ArraySizes}};
-        std::unordered_map<String, std::vector<size_t>> offset_stream_siblings;
-        std::vector<std::optional<String>> column_offset_stream(num_columns);
-        for (size_t pos = 0; pos < num_columns; ++pos)
-        {
-            if (isColumnDroppedByPendingMutation(pos))
-                continue;
-            const auto & col = columns_to_read[pos];
-            if (col.column_id.empty())
-                continue;
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
-                col, offsets_path, ".bin",
-                data_part_info_for_read->getChecksums(), storage_settings);
-            if (stream_name)
-            {
-                offset_stream_siblings[*stream_name].push_back(pos);
-                column_offset_stream[pos] = std::move(*stream_name);
-            }
-        }
-
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
             if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
@@ -240,32 +219,7 @@ size_t MergeTreeReaderWide::readRows(
                     cache,
                     deserialize_states_cache);
 
-                /// Flattened Nested siblings ("n.x", "n.y") share one on-disk offsets stream. Without
-                /// ids they resolve as subcolumns of a common parent "n", share `caches["n"]`, and the
-                /// second sibling gets the first one's offsets from the cache. Ids make them separate
-                /// top-level columns, so each gets its own cache and the second would re-read a stream
-                /// the first already advanced -- which does NOT self-correct: the siblings then report
-                /// different row counts and a plain SELECT trips `ReadResult::checkInternalConsistency`.
-                /// Hand the offsets we just read to the siblings still to come. Only the offsets: a
-                /// shared cache would alias the value substreams, whose cache keys are equal too.
-                if (column_offset_stream[pos])
-                {
-                    if (auto cached = ISerialization::getColumnWithNumReadRowsFromSubstreamsCache(&cache, offsets_path))
-                    {
-                        auto & [cached_column, num_read_rows] = *cached;
-                        auto siblings_it = offset_stream_siblings.find(*column_offset_stream[pos]);
-                        if (siblings_it != offset_stream_siblings.end())
-                        {
-                            for (size_t j : siblings_it->second)
-                            {
-                                if (j <= pos)
-                                    continue;
-                                ISerialization::addColumnWithNumReadRowsToSubstreamsCache(
-                                    &caches[substreamsCacheKey(columns_to_read[j])], offsets_path, cached_column, num_read_rows);
-                            }
-                        }
-                    }
-                }
+                shareNestedOffsetsWithSiblings(pos, cache);
 
                 /// For elements of Nested, column_size_before_reading may be greater than column size
                 ///  if offsets are not empty and were already read, but elements are empty.
@@ -371,6 +325,64 @@ void MergeTreeReaderWide::addStreams(
         partially_read_columns.insert(name_and_type.name);
 }
 
+/// The offsets substream every Array column reads through; a flattened Nested group shares one on
+/// disk, named after the group rather than the column.
+static const ISerialization::SubstreamPath & offsetsSubstreamPath()
+{
+    static const ISerialization::SubstreamPath path{{ISerialization::Substream::ArraySizes}};
+    return path;
+}
+
+/// Which columns share an offsets stream with which. Flattened Nested siblings ("n.x", "n.y") do,
+/// and under column IDs they stay separate top-level columns -- `Nested::convertToSubcolumns` skips
+/// id-carrying columns -- so each gets its own substreams cache instead of the group's single one.
+/// Answered once here: `columns_to_read` and the part's stream names are fixed for this reader.
+void MergeTreeReaderWide::collectNestedOffsetsSiblings()
+{
+    std::unordered_map<String, std::vector<size_t>> by_offsets_stream;
+    for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+    {
+        if (isColumnDroppedByPendingMutation(pos) || columns_to_read[pos].column_id.empty())
+            continue;
+
+        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+            columns_to_read[pos], offsetsSubstreamPath(), ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+
+        if (stream_name)
+            by_offsets_stream[*stream_name].push_back(pos);
+    }
+
+    nested_offsets_siblings.resize(columns_to_read.size());
+    for (const auto & [_, group] : by_offsets_stream)
+    {
+        /// Only the siblings a column is read BEFORE: the read fills their caches, never its own.
+        for (size_t i = 0; i + 1 < group.size(); ++i)
+            nested_offsets_siblings[group[i]].assign(group.begin() + i + 1, group.end());
+    }
+}
+
+/// Hands the offsets just read for column @pos to the siblings still to come, so they do not re-read
+/// a stream this read has already advanced. Without it the second sibling reads from wherever the
+/// first left the stream -- silently wrong, and it surfaces far away as siblings disagreeing on the
+/// row count in `ReadResult::checkInternalConsistency`. Only the offsets: the siblings' value
+/// substreams have equal cache keys, so sharing the whole cache would alias them.
+void MergeTreeReaderWide::shareNestedOffsetsWithSiblings(size_t pos, ISerialization::SubstreamsCache & cache)
+{
+    if (nested_offsets_siblings[pos].empty())
+        return;
+
+    auto cached = ISerialization::getColumnWithNumReadRowsFromSubstreamsCache(&cache, offsetsSubstreamPath());
+    if (!cached)
+        return;
+
+    const auto & [offsets_column, num_read_rows] = *cached;
+    for (size_t sibling : nested_offsets_siblings[pos])
+    {
+        ISerialization::addColumnWithNumReadRowsToSubstreamsCache(
+            &caches[substreamsCacheKey(columns_to_read[sibling])], offsetsSubstreamPath(), offsets_column, num_read_rows);
+    }
+}
+
 MergeTreeReaderWide::FileStreams::iterator MergeTreeReaderWide::addStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name)
 {
     auto context = data_part_info_for_read->getContext();
@@ -466,17 +478,6 @@ ReadBuffer * MergeTreeReaderWide::getStream(
         stream.seekToStart();
     else if (seek_to_mark)
         stream.seekToMark(from_mark);
-    else if (read_without_marks
-        && !name_and_type.column_id.empty()
-        && !substream_path.empty()
-        && substream_path.back().type == ISerialization::Substream::ArraySizes
-        && Nested::extractTableName(name_and_type.getNameInStorage()) != name_and_type.getNameInStorage())
-    {
-        /// The markless whole-part read (merges, mutations) reaches this on every offsets substream
-        /// of a flattened Nested sibling: the cache sharing in `readRows` covers reads that go
-        /// through it, and there is no mark here to seek back to, so rewind to the stream's start.
-        stream.seekToStart();
-    }
 
     return stream.getDataBuffer();
 }
