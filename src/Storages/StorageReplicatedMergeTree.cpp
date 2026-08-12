@@ -268,7 +268,6 @@ namespace FailPoints
     extern const char replicated_table_remove_zk_before_get_children[];
     extern const char replicated_table_remove_zk_before_final_multi[];
     extern const char check_table_inject_retryable_zk_error[];
-    extern const char rmt_startup_fail_after_being_leader[];
 }
 
 namespace ErrorCodes
@@ -5927,20 +5926,12 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread, const ZooK
 
         startBeingLeader(zookeeper_retries_info);
 
-        fiu_do_on(FailPoints::rmt_startup_fail_after_being_leader,
-        {
-            throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Injected failure by the rmt_startup_fail_after_being_leader failpoint");
-        });
-
         if (from_attach_thread)
         {
             LOG_TRACE(log, "Trying to startup table from right now");
             /// Try activating replica in the current thread.
             restarting_thread.run();
-            /// The task may still be deactivated here by an earlier startup attempt whose cleanup
-            /// called shutdown(false), in which case the inline run() above could not re-arm itself.
-            /// Arm it so the task is owned by the pool in every case.
-            restarting_thread.ensureArmed();
+            restarting_thread.start(false);
         }
         else
         {

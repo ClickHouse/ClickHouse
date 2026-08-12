@@ -58,6 +58,9 @@ if (OS_WASM)
     # bottom of the top-level `CMakeLists.txt` would be handed `emcc` as its host compiler.
     # Arrow, Parquet and ORC hard-depend on it, so they go with it.
     set (ENABLE_PROTOBUF OFF CACHE INTERNAL "")
+    # Its `kj` library uses `fallocate` and friends unconditionally in its POSIX branch,
+    # which the Emscripten libc does not provide.
+    set (ENABLE_CAPNP OFF CACHE INTERNAL "")
     set (ENABLE_PARQUET OFF CACHE INTERNAL "")
     set (ENABLE_ARROW_FLIGHT OFF CACHE INTERNAL "")
     set (ENABLE_HDFS OFF CACHE INTERNAL "")
@@ -68,6 +71,10 @@ if (OS_WASM)
     set (ENABLE_AMQPCPP OFF CACHE INTERNAL "")
     set (ENABLE_NATS OFF CACHE INTERNAL "")
     set (ENABLE_CASSANDRA OFF CACHE INTERNAL "")
+    # Raw sockets like the rest, and its `mlib` has an explicit #error for platforms
+    # it does not recognize (`mlib/time_point.h`: "We do not know how to get the
+    # current time on this platform").
+    set (USE_MONGODB OFF CACHE INTERNAL "")
     set (ENABLE_AZURE_BLOB_STORAGE OFF CACHE INTERNAL "")
     set (ENABLE_AWS_S3 OFF CACHE INTERNAL "")
     set (ENABLE_S3 OFF CACHE INTERNAL "")
@@ -102,6 +109,30 @@ if (OS_WASM)
     # Emscripten's libc++ is not the patched one from `contrib/libcxx-cmake`, so an exception
     # carries no stack trace. See `base/defines.h`.
     add_definitions (-D STD_EXCEPTION_HAS_STACK_TRACE=0)
+
+    # Executable links. The Emscripten defaults are sized for small programs: a 64 KiB shadow
+    # stack and a fixed 16 MiB linear memory, while `clickhouse` needs ~50 MiB for static data
+    # alone. An 8 MiB stack matches `DBMS_DEFAULT_THREAD_STACK_SIZE`; memory starts at 256 MiB
+    # and may grow (the maximum has to be explicit when growth is combined with shared memory).
+    add_link_options (-sSTACK_SIZE=8388608)
+    add_link_options (-sINITIAL_MEMORY=268435456)
+    add_link_options (-sALLOW_MEMORY_GROWTH=1)
+    add_link_options (-sMAXIMUM_MEMORY=17179869184)
+    # No DWARF in the linked module: binaryen's `wasm-opt` asserts in its debug-info
+    # bookkeeping (`AddrExprMap::add`) on a module with this much DWARF, and gigabytes
+    # of debug info are of no use to a WebAssembly engine anyway. `-g0` comes after the
+    # `-g` from RelWithDebInfo on the link line, and the last one wins; `emcc` then has
+    # `wasm-ld` strip the debug sections of the inputs.
+    add_link_options (-g0)
+    # This code blocks its calling thread freely (thread pools, condition variables). In a
+    # browser the main thread must keep running the event loop, or the Web Workers that back
+    # new pthreads can never be spawned and the first blocking `pthread_create` deadlocks the
+    # page. Run `main` on a pthread of its own and leave the browser thread to the event loop.
+    add_link_options (-sPROXY_TO_PTHREAD=1)
+    # These are command-line programs: when `main` returns, tear the runtime down - including
+    # the Workers backing the remaining background threads, which would otherwise keep the
+    # process (or the page) alive indefinitely.
+    add_link_options (-sEXIT_RUNTIME=1)
 endif ()
 
 # Since we always use toolchain files to generate hermetic builds, cmake will
