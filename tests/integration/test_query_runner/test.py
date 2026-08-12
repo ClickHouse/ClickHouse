@@ -307,3 +307,18 @@ def test_capacity_bound():
     node_query_runner.query("SYSTEM WAIT QUERY RUNNER tiny_runner")
     assert int(node_query_runner.query("SELECT count() FROM refused_dst")) == threads + max_queue_size
     node_query_runner.query("DROP TABLE tiny_runner")
+
+
+def test_failing_query_leaves_table_usable():
+    node_query_runner.query("CREATE OR REPLACE TABLE usable_dst (x UInt64) ENGINE = MergeTree ORDER BY tuple()")
+    node_query_runner.query(
+        "CREATE OR REPLACE TABLE usable_runner (query String) ENGINE = QueryRunner "
+        "SETTINGS mode = 'synchronous', threads = 2"
+    )
+    node_query_runner.query("INSERT INTO usable_runner VALUES ('SELECT throwIf(1)')")
+    node_query_runner.query("INSERT INTO usable_runner VALUES ('INSERT INTO default.usable_dst VALUES (7)')")
+    node_query_runner.query("SYSTEM WAIT QUERY RUNNER usable_runner")
+    # A query that throws must not stop the table from running the next one. The count is exact here
+    # and a bound in the functional test, because nothing else on this server can refuse a query.
+    assert node_query_runner.query("SELECT count() FROM usable_dst") == "1\n"
+    node_query_runner.query("DROP TABLE usable_runner")
