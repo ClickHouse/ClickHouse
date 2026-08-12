@@ -249,7 +249,11 @@ static bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & a
 ///
 /// We do allow `dlopen()` in case of OpenSSL FIPS build,
 /// because it requires a FIPS provider (i.e. fips.so), which is loaded dynamically.
-#if !(defined(USE_MUSL) || USE_OPENSSL_FIPS)
+///
+/// Not on WebAssembly: Emscripten's libc unconditionally defines `dlerror` (its own code
+/// pulls it in), so the override would be a duplicate symbol at the link - and a sandbox
+/// cannot load libraries in the first place.
+#if !(defined(USE_MUSL) || USE_OPENSSL_FIPS || defined(OS_WASM))
 extern "C"
 {
     void * dlopen(const char *, int);
