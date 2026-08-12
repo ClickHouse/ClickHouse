@@ -41,8 +41,7 @@ image and generated-translation trees under ``docs/`` are never copied.
 The internal and locale link modes also materialize the generated settings
 explorers' JSX destinations as Markdown links. This makes lychee validate the
 pages those runtime links open, while an explicit check verifies that the JSX
-uses absolute production URLs. Absolute URLs prevent Mintlify from prepending
-the production `/docs` mount a second time.
+keeps the production `/docs` mount which is absent from the on-disk docs root.
 """
 
 import argparse
@@ -399,12 +398,10 @@ def report_snippet_links(docs_root, rel_files):
 
 
 # Generated settings explorers keep their destinations in JSX data and render
-# them through ``href={`https://clickhouse.com/docs${item.value.href}`}``.
-# lychee does not parse JSX data or evaluate template literals, so materialize
-# those rendered links into a Markdown input in the throwaway tree. The
-# production origin and mount are checked before stripping them for offline
-# resolution against the docs root.
-SETTINGS_EXPLORER_URL_PREFIX = "https://clickhouse.com/docs"
+# them through ``href={`/docs${item.value.href}`}``. lychee does not parse JSX
+# data or evaluate template literals, so materialize those rendered links into a
+# Markdown input in the throwaway tree. The production mount is checked before
+# stripping `/docs` for offline resolution against the docs root.
 SETTINGS_EXPLORER_ENTRY_HREF = re.compile(
     r'''(?:["']href["']|\bhref)\s*:\s*(?P<quote>["'])(?P<href>/[^"'`\s]+)(?P=quote)'''
 )
@@ -492,26 +489,23 @@ def write_settings_explorer_links(
         malformed = next(
             (
                 href for href in rendered_links
-                if not href.startswith(SETTINGS_EXPLORER_URL_PREFIX + "/")
-                or href.startswith(SETTINGS_EXPLORER_URL_PREFIX + "//")
+                if not href.startswith("/docs/") or href.startswith("/docs//")
             ),
             None,
         )
         if malformed:
             print(
                 f"[ERROR] {rel} (at {line}) | rendered settings links must "
-                f"start with `{SETTINGS_EXPLORER_URL_PREFIX}/`; got {malformed}",
+                f"start with `/docs/`; got {malformed}",
                 flush=True,
             )
             errors += 1
 
         for href in rendered_links:
-            # The throwaway tree is rooted at the contents of ClickHouse's
-            # production `/docs` mount, so remove the exact absolute prefix.
+            # `/docs` is ClickHouse's production mount; the throwaway tree is
+            # rooted at its contents, so remove only that leading mount segment.
             offline_href = (
-                href[len(SETTINGS_EXPLORER_URL_PREFIX):]
-                if href.startswith(SETTINGS_EXPLORER_URL_PREFIX + "/")
-                else href
+                href[len("/docs"):] if href.startswith("/docs/") else href
             )
             if not include_fragments:
                 offline_href = offline_href.split("#", 1)[0]

@@ -29,7 +29,7 @@ def test_settings_explorer_links_are_materialized_for_lychee(tmp_path):
     output.mkdir()
     write_settings_explorer(
         docs_root,
-        'href={`https://clickhouse.com/docs${item.value.href}`}',
+        'href={`/docs${item.value.href}`}',
     )
 
     output_name, errors = lychee_check.write_settings_explorer_links(
@@ -41,33 +41,29 @@ def test_settings_explorer_links_are_materialized_for_lychee(tmp_path):
         "](/reference/settings/session-settings/example#example_setting)"
         in materialized
     )
-    assert "https://clickhouse.com/docs/reference/settings" not in materialized
+    assert "/docs/reference/settings" not in materialized
 
 
-def test_settings_explorer_links_require_an_absolute_production_url(
+def test_settings_explorer_links_require_the_production_docs_mount(
         tmp_path, capsys):
     docs_root = tmp_path / "docs"
     output = tmp_path / "output"
     output.mkdir()
-    write_settings_explorer(
-        docs_root,
-        'href={`/docs${item.value.href}`}',
-    )
+    write_settings_explorer(docs_root, "href={item.value.href}")
 
     _output_name, errors = lychee_check.write_settings_explorer_links(
         docs_root, output)
 
     assert errors == 1
     report = capsys.readouterr().out
-    assert (
-        "rendered settings links must start with "
-        "`https://clickhouse.com/docs/`"
-    ) in report
-    assert "/docs/reference/settings/session-settings/example#example_setting" in report
+    assert "rendered settings links must start with `/docs/`" in report
+    assert "/reference/settings/session-settings/example#example_setting" in report
 
 
-def test_locale_link_parsers_ignore_absolute_templates():
-    rendered_href = 'href={`https://clickhouse.com/docs${item.value.href}`}'
+def test_locale_static_link_parser_leaves_templates_to_template_parser():
+    rendered_href = 'href={`/docs${item.value.href}`}'
 
     assert locale_components_check.HREF.search(rendered_href) is None
-    assert locale_components_check.TEMPLATE.search(rendered_href) is None
+    template = locale_components_check.TEMPLATE.search(rendered_href)
+    assert template is not None
+    assert template.group(1) == "/docs"
