@@ -1158,7 +1158,7 @@ public:
         return column_sizes;
     }
 
-    ColumnSizeByName getColumnSizes(const Names & columns) const override;
+    ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
 
     IndexSizeByName getSecondaryIndexSizes() const override
     {
