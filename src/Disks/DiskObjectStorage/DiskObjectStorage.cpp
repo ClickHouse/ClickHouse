@@ -82,12 +82,20 @@ ObjectStoragePtr DiskObjectStorage::getObjectStorage()
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 {
-    return std::make_shared<DiskObjectStorageTransaction>(cluster, metadata_storage, object_storages, blob_killer, copy_object_pool, wait_blob_removal, getReadResourceName(), getWriteResourceName());
+    /// When wrapping another disk, push the inner disk's resource name
+    /// so S3 I/O is throttled by the inner RESOURCE instead of the outer one.
+    return std::make_shared<DiskObjectStorageTransaction>(cluster, metadata_storage, object_storages, blob_killer, copy_object_pool, wait_blob_removal,
+        wrapped_disk ? wrapped_disk->getReadResourceName() : getReadResourceName(),
+        wrapped_disk ? wrapped_disk->getWriteResourceName() : getWriteResourceName());
 }
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk)
 {
-    return std::make_shared<MultipleDisksObjectStorageTransaction>(cluster, metadata_storage, object_storages, to_disk.cluster, to_disk.metadata_storage, to_disk.object_storages, to_disk.copy_object_pool, getReadResourceName(), to_disk.getWriteResourceName());
+    /// When writing to a different disk, push each side's inner resource
+    /// name so S3 I/O is throttled by the correct inner RESOURCE.
+    return std::make_shared<MultipleDisksObjectStorageTransaction>(cluster, metadata_storage, object_storages, to_disk.cluster, to_disk.metadata_storage, to_disk.object_storages, to_disk.copy_object_pool,
+        wrapped_disk ? wrapped_disk->getReadResourceName() : getReadResourceName(),
+        to_disk.wrapped_disk ? to_disk.wrapped_disk->getWriteResourceName() : to_disk.getWriteResourceName());
 }
 
 DiskObjectStorage::DiskObjectStorage(
@@ -791,7 +799,11 @@ void DiskObjectStorage::prepareRead(
 {
     const auto storage_objects = metadata_storage->getStorageObjects(path);
 
-    auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
+    /// When wrapping another disk, push the inner disk's resource name
+    /// so S3 I/O is throttled by the inner RESOURCE instead of the outer one.
+    auto read_settings = updateIOSchedulingSettings(settings,
+        wrapped_disk ? wrapped_disk->getReadResourceName() : getReadResourceName(),
+        wrapped_disk ? wrapped_disk->getWriteResourceName() : getWriteResourceName());
     auto global_context = Context::getGlobalContextInstance();
     auto storage = object_storages->takePointingTo(cluster->getLocalLocation());
 

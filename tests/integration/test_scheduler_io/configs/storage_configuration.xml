@@ -42,6 +42,24 @@
                 <s3_max_get_rps>10</s3_max_get_rps>
                 <use_fake_transaction>false</use_fake_transaction>
             </s3_no_fake_tx_2>
+            <s3_inner>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/s3_data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <!-- Keep part size small so that a moderate write (~5 MB) produces
+                     multiple UploadPart calls, each of which enters IOSchedulingScope
+                     and creates a separate scheduler request.  This lets the test
+                     verify that the inner RESOURCE throttler is hit multiple times
+                     and that bytes-per-request stays within the workload budget. -->
+                <s3_max_single_part_upload_size>2097152</s3_max_single_part_upload_size>
+            </s3_inner>
+            <cached_s3>
+                <type>cache</type>
+                <disk>s3_inner</disk>
+                <path>/cached_s3/</path>
+                <max_size>1000000000</max_size>
+            </cached_s3>
         </disks>
         <policies>
             <s3>
@@ -75,6 +93,13 @@
                     </dst>
                 </volumes>
             </s3_no_fake_tx_move>
+            <cached_s3>
+                <volumes>
+                    <main>
+                        <disk>cached_s3</disk>
+                    </main>
+                </volumes>
+            </cached_s3>
         </policies>
     </storage_configuration>
 </clickhouse>

@@ -81,6 +81,7 @@ def clear_workloads_and_resources(set_default_configs):
         drop resource if exists io_write;
         drop resource if exists io_read;
         drop resource if exists io;
+        drop resource if exists io_s3;
     """
     )
     yield
@@ -1226,3 +1227,170 @@ def test_config_based_workloads_and_resources():
 
     # Make sure it's possible to clean the config without "Logical error: 'Removing workload 'all' with children"
     node.query("DROP WORKLOAD development")
+
+
+def test_nested_disk_inner_resource_throttling():
+    """Scheme B: verify that when a cache disk (cached_s3) wraps an S3 disk (s3_inner),
+    the inner disk's RESOURCE throttler is applied to S3 I/O and that budget
+    accounting in system.scheduler correctly tracks bytes consumed through the
+    inner resource.  Only the inner disk's RESOURCE is created — the outer cache
+    disk has no RESOURCE binding."""
+    node.query(
+        """
+        create resource io_s3 (write disk s3_inner, read disk s3_inner);
+        create workload all settings max_bytes_per_second = 1000000 for io_s3;
+    """
+    )
+    node.query(
+        """
+        drop table if exists nested_data;
+        create table nested_data (key UInt64 CODEC(NONE), value String CODEC(NONE))
+        engine=MergeTree() order by key
+        settings min_bytes_for_wide_part=1e9, storage_policy='cached_s3';
+    """
+    )
+
+    # 50 rows × randomString(100000) ≈ 5 MB.  s3_max_single_part_upload_size on
+    # s3_inner is ~2 MB, so each write uses multi-part upload and produces
+    # multiple scheduler requests, keeping average bytes-per-request near the
+    # workload budget.
+    total_bytes = 5000000
+    max_bytes_per_request = 3000000   # 2 MB part + budget slack & protocol overhead
+    min_bytes_per_request = 1000      # sanity lower bound
+
+    # ── Write path ──────────────────────────────────────────────────────
+    writes_before = int(
+        node.query(
+            "select dequeued_requests from system.scheduler where resource='io_s3' and path ilike '%/all/%' and type='fifo'"
+        ).strip()
+    )
+    write_bytes_before = int(
+        node.query(
+            "select dequeued_cost from system.scheduler where resource='io_s3' and path ilike '%/all/%' and type='fifo'"
+        ).strip()
+    )
+    write_budget_before = int(
+        node.query(
+            "select budget from system.scheduler where resource='io_s3' and path ilike '%/all/%' and type='fifo'"
+        ).strip()
+    )
+
+    node.query(
+        "insert into nested_data select number, randomString(100000) from numbers(50) SETTINGS workload='all'"
+    )
+
+    writes_after = int(
+        node.query(
+            "select dequeued_requests from system.scheduler where resource='io_s3' and path ilike '%/all/%' and type='fifo'"
+        ).strip()
+    )
+    write_bytes_after = int(
+        node.query(
+            "select dequeued_cost from system.scheduler where resource='io_s3' and path ilike '%/all/%' and type='fifo'"
+        ).strip()
+    )
+    write_budget_after = int(
+        node.query(
+            "select budget from system.scheduler where resource='io_s3' and path ilike '%/all/%' and type='fifo'"
+        ).strip()
+    )
+
+    write_requests = writes_after - writes_before
+    write_bytes = (write_bytes_after - write_bytes_before) - (
+        write_budget_after - write_budget_before
+    )
+
+    # S3 write I/O must be metered through the inner resource (io_s3).
+    assert write_requests > 0, "Expected S3 write requests through inner resource"
+    assert write_bytes > 1.0 * total_bytes, (
+        f"Expected inner-resource write bytes >= {total_bytes}, "
+        f"got {write_bytes}"
+    )
+    assert write_bytes < 1.2 * total_bytes, (
+        f"Expected inner-resource write bytes < {1.2 * total_bytes}, "
+        f"got {write_bytes}"
+    )
+    assert write_bytes / write_requests < max_bytes_per_request, (
+        f"Expected inner-resource write avg bytes/req < {max_bytes_per_request}, "
+        f"got {write_bytes / write_requests}"
+    )
+    assert write_bytes / write_requests > min_bytes_per_request, (
+        f"Expected inner-resource write avg bytes/req > {min_bytes_per_request}, "
+        f"got {write_bytes / write_requests}"
+    )
+
+    check_profile_event_for_query("all", "SchedulerIOWriteRequests", write_requests)
+    check_profile_event_for_query("all", "SchedulerIOWriteBytes", write_bytes)
+
+    node.query("optimize table nested_data final")
+
+    # ── Read path ───────────────────────────────────────────────────────
+    # Drop the filesystem cache so reads must go to S3.
+    node.query("system drop filesystem cache")
+
+    reads_before = int(
+        node.query(
+            "select dequeued_requests from system.scheduler where resource='io_s3' and path ilike '%/all/%' and type='fifo'"
+        ).strip()
+    )
+    read_bytes_before = int(
+        node.query(
+            "select dequeued_cost from system.scheduler where resource='io_s3' and path ilike '%/all/%' and type='fifo'"
+        ).strip()
+    )
+    read_budget_before = int(
+        node.query(
+            "select budget from system.scheduler where resource='io_s3' and path ilike '%/all/%' and type='fifo'"
+        ).strip()
+    )
+
+    node.query(
+        "select count() from nested_data where not ignore(*) SETTINGS workload='all'"
+    )
+
+    reads_after = int(
+        node.query(
+            "select dequeued_requests from system.scheduler where resource='io_s3' and path ilike '%/all/%' and type='fifo'"
+        ).strip()
+    )
+    read_bytes_after = int(
+        node.query(
+            "select dequeued_cost from system.scheduler where resource='io_s3' and path ilike '%/all/%' and type='fifo'"
+        ).strip()
+    )
+    read_budget_after = int(
+        node.query(
+            "select budget from system.scheduler where resource='io_s3' and path ilike '%/all/%' and type='fifo'"
+        ).strip()
+    )
+
+    read_requests = reads_after - reads_before
+    read_bytes = (read_bytes_after - read_bytes_before) - (
+        read_budget_after - read_budget_before
+    )
+
+    # S3 read I/O must be metered through the inner resource (io_s3).
+    assert read_requests > 0, "Expected S3 read requests through inner resource"
+    assert read_bytes > 1.0 * total_bytes, (
+        f"Expected inner-resource read bytes >= {total_bytes}, "
+        f"got {read_bytes}"
+    )
+    assert read_bytes < 1.2 * total_bytes, (
+        f"Expected inner-resource read bytes < {1.2 * total_bytes}, "
+        f"got {read_bytes}"
+    )
+    assert read_bytes / read_requests < max_bytes_per_request, (
+        f"Expected inner-resource read avg bytes/req < {max_bytes_per_request}, "
+        f"got {read_bytes / read_requests}"
+    )
+    assert read_bytes / read_requests > min_bytes_per_request, (
+        f"Expected inner-resource read avg bytes/req > {min_bytes_per_request}, "
+        f"got {read_bytes / read_requests}"
+    )
+
+    check_profile_event_for_query("all", "SchedulerIOReadRequests", read_requests)
+    check_profile_event_for_query("all", "SchedulerIOReadBytes", read_bytes)
+
+    node.query("drop table if exists nested_data")
+    node.query("drop workload if exists all")
+    node.query("drop resource if exists io_s3")
