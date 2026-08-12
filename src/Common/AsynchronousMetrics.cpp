@@ -1696,7 +1696,10 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             uint64_t limit = 0;
             tryReadText(limit, *cgroupmem_limit_in_bytes);
 
-            auto stats = cgroupmem_reader->readMemoryUsageAndInactiveFile();
+            /// The best-effort combined read keeps the pre-existing metrics below published even
+            /// if the inactive-file fields of `memory.stat` cannot be parsed; in that case only
+            /// `CGroupMemoryInactiveFile` is skipped for this update cycle.
+            auto stats = cgroupmem_reader->readMemoryUsageAndOptionalInactiveFile();
 
             new_values["CGroupMemoryTotal"] = { limit, "The total amount of memory in cgroup, in bytes. If stated zero, the limit is the same as OSMemoryTotal." };
             new_values["CGroupMemoryUsed"] = { stats.usage, "The amount of memory used in cgroup, in bytes. "
@@ -1718,12 +1721,13 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 "When userspace page cache is disabled, this value equals CGroupMemoryUsed."
             };
 
-            new_values["CGroupMemoryInactiveFile"] = { stats.inactive_file,
-                "The amount of memory used for inactive, file-backed page cache in cgroup, in bytes. "
-                "This is reclaimable memory: the kernel can drop it under memory pressure. "
-                "Kubernetes and cAdvisor compute the working set size (WSS) by subtracting this value from the raw cgroup memory usage "
-                "(memory.current on cgroup v2, memory.usage_in_bytes on cgroup v1). "
-                "Note that CGroupMemoryUsed is not that raw usage, because it already excludes the file-backed page cache." };
+            if (stats.inactive_file)
+                new_values["CGroupMemoryInactiveFile"] = { *stats.inactive_file,
+                    "The amount of memory used for inactive, file-backed page cache in cgroup, in bytes. "
+                    "This is reclaimable memory: the kernel can drop it under memory pressure. "
+                    "Kubernetes and cAdvisor compute the working set size (WSS) by subtracting this value from the raw cgroup memory usage "
+                    "(memory.current on cgroup v2, memory.usage_in_bytes on cgroup v1). "
+                    "Note that CGroupMemoryUsed is not that raw usage, because it already excludes the file-backed page cache." };
         }
         catch (...)
         {

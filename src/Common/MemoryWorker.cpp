@@ -284,6 +284,25 @@ std::shared_ptr<ICgroupsReader> ICgroupsReader::createCgroupsReader(ICgroupsRead
     return std::make_shared<CgroupsV1Reader>(cgroup_path);
 }
 
+CgroupsMemoryUsageAndOptionalInactive ICgroupsReader::readMemoryUsageAndOptionalInactiveFile()
+{
+    CgroupsMemoryUsageAndOptionalInactive result;
+    try
+    {
+        auto stats = readMemoryUsageAndInactiveFile();
+        result.usage = stats.usage;
+        result.inactive_file = stats.inactive_file;
+    }
+    catch (...)
+    {
+        /// A malformed inactive-file line must not take down the pre-existing usage-based
+        /// metrics; `readMemoryUsage` parses only the fields the usage value is made of.
+        tryLogCurrentException("CgroupsReader");
+        result.usage = readMemoryUsage();
+    }
+    return result;
+}
+
 namespace MemoryWorkerHelpers
 {
 

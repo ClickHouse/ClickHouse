@@ -177,6 +177,13 @@ TEST_P(CgroupsMemoryUsageObserverFixture, ReadMemoryUsageAndInactiveFileTest)
     /// `calculateUsage` helper, so a single source of truth is guaranteed and the two values can never diverge.
     ASSERT_EQ(result.usage, reader->readMemoryUsage());
 
+    /// On an intact `memory.stat`, the best-effort combined read used by `AsynchronousMetrics`
+    /// returns exactly the strict result, with `inactive_file` present.
+    auto optional_result = reader->readMemoryUsageAndOptionalInactiveFile();
+    ASSERT_EQ(optional_result.usage, result.usage);
+    ASSERT_TRUE(optional_result.inactive_file.has_value());
+    ASSERT_EQ(*optional_result.inactive_file, result.inactive_file);
+
     if (version == ICgroupsReader::CgroupsVersion::V1)
     {
         ASSERT_EQ(result.usage, 2232029184); /* rss */
@@ -269,6 +276,13 @@ TEST(CgroupsBrokenInactiveFile, UsageIsUnaffected)
         ASSERT_ANY_THROW(reader->readMemoryUsageAndInactiveFile());
         /// The usage path keeps working even after the other one has failed.
         ASSERT_EQ(reader->readMemoryUsage(), test_case.expected_usage);
+
+        /// The best-effort combined read used by `AsynchronousMetrics` must not throw here:
+        /// it still reports the usage (so the pre-existing cgroup metrics keep updating) and
+        /// only leaves `inactive_file` empty (so only `CGroupMemoryInactiveFile` is skipped).
+        auto optional_result = reader->readMemoryUsageAndOptionalInactiveFile();
+        ASSERT_EQ(optional_result.usage, test_case.expected_usage);
+        ASSERT_FALSE(optional_result.inactive_file.has_value());
 
         fs::remove_all(test_case.dir);
     }
