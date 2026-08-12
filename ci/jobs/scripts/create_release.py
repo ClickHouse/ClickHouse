@@ -282,10 +282,8 @@ class ReleaseInfo:
         release_tag = None
         latest_release = False
         codename = ""
-        # Whether the branch has already moved to a newer release than this one
-        # (set for patch releases from the branch-tip version file). A new
-        # release cuts a fresh minor, so it is always the latest.
-        newer_release_exists = False
+        # A new release cuts a fresh minor, so it is never a late recovery; recomputed for patch below.
+        self.is_late_recovery = False
 
         if release_type == "new":
             if commit_ref != "master":
@@ -326,7 +324,7 @@ class ReleaseInfo:
             # ref is behind / superseded.
             with checkout(f"origin/{release_branch}"):
                 branch_version = CHVersion.get_current_version()
-            newer_release_exists = version.is_older(branch_version)
+            self.is_late_recovery = version.is_older(branch_version)
 
             if is_latest_release_branch(release_branch, repo=GITHUB_REPOSITORY):
                 print("This is going to be the latest release!")
@@ -350,12 +348,6 @@ class ReleaseInfo:
         self.release_progress = ReleaseProgress.STARTED
         self.latest = latest_release
 
-        # Has the branch already advanced to a newer release than this one (a
-        # late / superseded recovery)? Controls the floating minor/major Docker
-        # tags — they move only when this is not a late recovery (recovering the
-        # current release re-applies them; recovering a superseded one does not).
-        self.is_late_recovery = newer_release_exists
-
         # The operation is decided from the ref and the branch's version:
         #   * ref is an existing release tag -> recovery: re-publish exactly that
         #     release (allowed even for a superseded one);
@@ -377,7 +369,7 @@ class ReleaseInfo:
         #
         # release_job.py defers the patch branch version bump to the very last
         # step (after publishing), so a rerun after any failure runs while the
-        # branch tip still equals the released commit: newer_release_exists is
+        # branch tip still equals the released commit: is_late_recovery is
         # False and this reaches the rerun-recovery branch. The branch only moves
         # ahead once the whole release has succeeded, when no rerun is pending.
         # That keeps reruns recoverable without consulting release tags here.
@@ -388,7 +380,7 @@ class ReleaseInfo:
                 f"describes [{release_tag}]; refusing to re-publish a different "
                 f"release"
             )
-        elif newer_release_exists:
+        elif self.is_late_recovery:
             raise RuntimeError(
                 f"Refusing out-of-order release [{release_tag}] from [{commit_ref}]: "
                 f"branch [{release_branch}] is already on a newer release. Pass a "
