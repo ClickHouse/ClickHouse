@@ -18,24 +18,29 @@ void addPlansForMaterializingCTEs(
     if (!delayed)
         return;
 
-    auto plans = DelayedMaterializingCTEsStep::makePlansForCTEs(std::move(*delayed));
-    auto ctes = delayed->detachCTEs();
+    auto claimed_ctes = DelayedMaterializingCTEsStep::makePlansForCTEs(std::move(*delayed));
 
     SharedHeaders input_headers;
-    input_headers.reserve(1 + plans.size());
+    input_headers.reserve(1 + claimed_ctes.size());
     input_headers.push_back(node.children.front()->step->getOutputHeader());
 
-    for (auto & plan : plans)
+    /// The claimed plans hung below this node reference their CTEs only weakly, so the step
+    /// replacing the delayed one has to take over the strong handles - for exactly the CTEs
+    /// it claimed. A CTE claimed by someone else (a recursive `buildSetInplace` that
+    /// materialized it inplace) has its plan attached elsewhere and is owned there.
+    std::vector<MaterializedCTEPtr> ctes;
+    ctes.reserve(claimed_ctes.size());
+
+    for (auto & [cte, plan] : claimed_ctes)
     {
         input_headers.push_back(plan->getCurrentHeader());
         node.children.push_back(plan->getRootNode());
         auto [add_nodes, add_resources] = QueryPlan::detachNodesAndResources(std::move(*plan));
         nodes.splice(nodes.end(), std::move(add_nodes));
         root_plan.addResources(std::move(add_resources));
+        ctes.push_back(std::move(cte));
     }
 
-    /// The claimed plans below this node reference their CTEs only weakly, so this step must
-    /// take over the strong handles from the step it replaces.
     auto materializing_ctes = std::make_unique<MaterializingCTEsStep>(std::move(input_headers), std::move(ctes));
     materializing_ctes->setStepDescription("Materialize CTEs before main query execution");
     node.step = std::move(materializing_ctes);

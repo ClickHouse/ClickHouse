@@ -14,7 +14,7 @@ class MaterializingCTEStep : public ITransformingStep
 public:
     explicit MaterializingCTEStep(
         SharedHeader input_header_,
-        const MaterializedCTEPtr & materialized_cte_
+        MaterializedCTEWeakPtr materialized_cte_
     );
 
     String getName() const override { return "MaterializingCTE"; }
@@ -51,7 +51,8 @@ private:
 
     /// This step replaces `DelayedMaterializingCTEsStep` once the CTE plans have been claimed
     /// and hung below it, so it takes over that step's role as the owner keeping the CTEs alive
-    /// until the pipeline is built.
+    /// until the pipeline is built. Holds exactly the CTEs whose plans hang below this node -
+    /// a CTE claimed by someone else is owned by whoever attached its plan.
     std::vector<MaterializedCTEPtr> ctes;
 };
 
@@ -76,11 +77,22 @@ public:
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders, const BuildQueryPipelineSettings &) override;
 
+    /// A CTE claimed by `makePlansForCTEs`: the pre-built plan to hang below the
+    /// `MaterializingCTEsStep` that replaces this step, paired with the strong handle
+    /// that keeps the CTE alive for as long as that plan exists. The pairing is what
+    /// lets the replacing step own exactly the CTEs it materializes - the plan itself
+    /// refers back to the CTE only weakly, see `MaterializingCTEStep::materialized_cte`.
+    struct ClaimedCTE
+    {
+        MaterializedCTEPtr cte;
+        std::unique_ptr<QueryPlan> plan;
+    };
+
     /// Returns the subset of pre-built CTE plans that still need to be executed,
     /// atomically marking each as materialized. CTEs already marked are skipped.
     /// The plans must have already been optimized via `optimizePlans` in the
     /// first traversal of `resolveMaterializingCTEs`.
-    static std::vector<std::unique_ptr<QueryPlan>> makePlansForCTEs(DelayedMaterializingCTEsStep && step);
+    static std::vector<ClaimedCTE> makePlansForCTEs(DelayedMaterializingCTEsStep && step);
 
     /// Optimize each owned CTE's pre-built plan. Called by
     /// `resolveMaterializingCTEs`'s first traversal; the matching second
@@ -90,10 +102,6 @@ public:
     /// for CTEs whose plan has already been claimed (which happens when a
     /// recursive `buildSetInplace` claims the same CTE first).
     void optimizePlans(const QueryPlanOptimizationSettings & optimization_settings);
-
-    /// Hands the CTE handles over to the `MaterializingCTEsStep` that replaces this step, so
-    /// ownership is never interrupted.
-    std::vector<MaterializedCTEPtr> detachCTEs() { return std::move(ctes); }
 
 private:
     void updateOutputHeader() override { output_header = getInputHeaders().front(); }
