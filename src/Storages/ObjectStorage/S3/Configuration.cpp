@@ -46,6 +46,7 @@ namespace Setting
     extern const SettingsBool schema_inference_use_cache_for_s3;
     extern const SettingsBool compatibility_s3_presigned_url_query_in_path;
     extern const SettingsS3UriStyle s3_uri_style;
+    extern const SettingsString s3_base;
 }
 
 namespace S3AuthSetting
@@ -204,16 +205,25 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     const auto & settings = context->getSettingsRef();
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
 
+    /// Resolve relative URLs against the `s3_base` setting. When the setting rewrote the URL,
+    /// record the resolved value so that `StorageObjectStorageConfiguration::initialize`
+    /// materializes it back into the persisted engine args (`url='...'` override), keeping the
+    /// persisted DDL independent of `s3_base` at attach time.
+    const String raw_collection_url = collection.get<String>("url");
+    const String collection_url = StorageURL::resolveURLBase(raw_collection_url, settings[Setting::s3_base].value, "s3_base");
+    if (collection_url != raw_collection_url)
+        url_overridden_by_base_setting = collection_url;
+
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
         url = S3::URI(
-            std::filesystem::path(collection.get<String>("url")) / filename,
+            std::filesystem::path(collection_url) / filename,
             settings[Setting::allow_archive_path_syntax],
             /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
             /*uri_style*/ settings[Setting::s3_uri_style]);
     else
         url = S3::URI(
-            collection.get<String>("url"),
+            collection_url,
             settings[Setting::allow_archive_path_syntax],
             /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
             /*uri_style*/ settings[Setting::s3_uri_style]);
@@ -698,8 +708,20 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     }
 
     /// This argument is always the first
+    String url_str = checkAndGetLiteralArgument<String>(args[0], "url");
+
+    /// Resolve relative URLs against the `s3_base` setting, and materialize the resolved URL
+    /// back into the arguments so that the persisted DDL (`SHOW CREATE TABLE`, DETACH/ATTACH,
+    /// server restart) does not depend on the value of `s3_base` at attach time.
+    if (String resolved_url = StorageURL::resolveURLBase(url_str, context->getSettingsRef()[Setting::s3_base].value, "s3_base");
+        resolved_url != url_str)
+    {
+        StorageURL::overrideURLInEngineArgs(args, resolved_url, context, /*skip_userinfo=*/ true);
+        url_str = std::move(resolved_url);
+    }
+
     url = S3::URI(
-        checkAndGetLiteralArgument<String>(args[0], "url"),
+        url_str,
         context->getSettingsRef()[Setting::allow_archive_path_syntax],
         /*keep_presigned_query_parameters*/ !context->getSettingsRef()[Setting::compatibility_s3_presigned_url_query_in_path],
         /*uri_style*/ context->getSettingsRef()[Setting::s3_uri_style]);

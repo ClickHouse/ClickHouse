@@ -2050,6 +2050,81 @@ def test_alter_database_settings_onelake_persistence(started_cluster):
     node.query(f"DROP DATABASE {db_name}")
 
 
+def test_alter_database_settings_onelake_refresh_token(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    db_name = f"onelake_refresh_token_{uuid.uuid4().hex}"
+    old_token = f"refresh_token_{uuid.uuid4().hex}"
+    new_token = f"refresh_token_{uuid.uuid4().hex}"
+
+    error = node.query_and_get_error(
+        f"""
+        CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
+        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_refresh_token = '{old_token}'
+        """,
+        settings={"allow_database_iceberg": 1},
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    error = node.query_and_get_error(
+        f"""
+        CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
+        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_client_id = 'client-1', onelake_refresh_token = '{old_token}', oauth_server_use_request_body = 0
+        """,
+        settings={"allow_database_iceberg": 1},
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "oauth_server_use_request_body" in error
+
+    # In refresh-token mode the catalog access token is reused for Azure storage,
+    # so a non-storage auth_scope is rejected at CREATE time.
+    error = node.query_and_get_error(
+        f"""
+        CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
+        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_client_id = 'client-1', onelake_refresh_token = '{old_token}', auth_scope = 'api://my-catalog/.default'
+        """,
+        settings={"allow_database_iceberg": 1},
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "auth_scope" in error
+
+    node.query(
+        f"""
+        ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
+        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_client_id = 'client-1', onelake_refresh_token = '{old_token}'
+        """
+    )
+
+    node.query(
+        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_refresh_token = '{new_token}'"
+    )
+
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_bearer_token = 'token'"
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    show_result = node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert new_token not in show_result
+    assert "[HIDDEN]" in show_result
+
+    node.restart_clickhouse()
+
+    engine_full_with_secrets = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'",
+        settings={"format_display_secrets_in_show_and_select": 1},
+    )
+    assert new_token in engine_full_with_secrets
+    assert old_token not in engine_full_with_secrets
+
+    engine_full = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'"
+    )
+    assert new_token not in engine_full
+
+    node.query(f"DROP DATABASE {db_name}")
+
+
 def test_catalog_listing_error_surfaces_in_system_tables(started_cluster):
     """
     Regression test: an error from the catalog while listing tables (e.g. expired
