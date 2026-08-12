@@ -1527,7 +1527,8 @@ void registerCodecALP(CompressionCodecFactory & factory)
 
 CompressionCodecPtr getCompressionCodecALP(UInt8 float_width)
 {
-    return std::make_shared<CompressionCodecALP>(float_width, CompressionCodecALP::Variant::DEFAULT);
+    /// The caller supplies the float width explicitly, so the codec needs no column type to resolve it.
+    return std::make_shared<CompressionCodecALP>(float_width, CompressionCodecALP::Variant::DEFAULT, /*has_column_type_=*/true);
 }
 
 }
