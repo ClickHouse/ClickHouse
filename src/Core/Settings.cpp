@@ -6861,8 +6861,8 @@ The exponential growth rate at which the adaptive asynchronous insert timeout de
     DECLARE(UInt64, async_insert_parse_threads, 0, R"(
 Maximum number of threads used to parse the data of one batch of asynchronous inserts when the batch is flushed.
 
-The entries of a batch are split into that many contiguous ranges, each parsed by its own thread on
-the format parsing thread pool (bounded server-wide by [`max_format_parsing_thread_pool_size`](/operations/server-configuration-parameters/settings#max_format_parsing_thread_pool_size)),
+The entries of a batch are split into that many contiguous ranges, each parsed by its own thread of a
+thread pool bounded server-wide by [`max_async_insert_parsing_thread_pool_size`](/operations/server-configuration-parameters/settings#max_async_insert_parsing_thread_pool_size),
 and the results are concatenated back into a single block. Only parsing is parallelized: the flush
 still inserts one block, so the number of parts written is not affected.
 
