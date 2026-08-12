@@ -1,0 +1,47 @@
+-- IN rewritten to LEFT SEMI JOIN
+Type: LEFT
+Strictness: SEMI
+-- NOT IN rewritten to LEFT ANTI JOIN
+Type: LEFT
+Strictness: ANTI
+-- tuple IN rewritten with two key equalities
+Type: LEFT
+Strictness: SEMI
+-- IN over a primary key column is not rewritten (index analysis is better)
+-- NOT IN over a primary key column is rewritten (negative predicates do not prune)
+Type: LEFT
+Strictness: ANTI
+-- transform_null_in = 1 is not rewritten
+-- IN under OR is not rewritten
+-- IN in the SELECT list is not rewritten
+-- constant left argument is not rewritten
+-- Set-engine table on the right is not rewritten
+-- explicit set size limits disable the rewrite
+-- full_sorting_merge cannot run SEMI/ANTI joins, no rewrite
+-- results: IN and NOT IN with duplicates on the right
+2
+2
+2
+2
+-- results: empty subquery
+0
+4
+-- results: NULLs on both sides (NULL is not in, NULL is not not-in the set)
+-- IN with a Nullable left key is rewritten (both paths drop NULL-keyed rows)
+Type: LEFT
+Strictness: SEMI
+-- NOT IN with a Nullable left key is not rewritten (notIn drops NULL-keyed rows, ANTI JOIN keeps them)
+one
+one
+three
+three
+-- results: type widening keeps out-of-range values not-in
+0
+1
+0
+1
+-- results: LowCardinality keys
+1
+2
+-- results: name collision between inner and outer columns
+0

@@ -6044,6 +6044,9 @@ Rewrite `tupleElement(dictGet('dict', ('a', 'b', 'c'), key), 2)` into `dictGet('
     DECLARE(Bool, optimize_rewrite_like_perfect_affix, true, R"(
 Rewrite LIKE expressions with perfect prefix or suffix (e.g. `col LIKE 'ClickHouse%'`) to startsWith or endsWith functions (e.g. `startsWith(col, 'ClickHouse')`).
 )", 0) \
+    DECLARE(Bool, optimize_rewrite_in_subquery_to_join, false, R"(
+Rewrite `x [NOT] IN (uncorrelated subquery)` in top-level WHERE conjuncts to LEFT SEMI/ANTI JOIN. Unlike the IN set, which always materializes the whole subquery result in memory, the join lets the planner choose the smaller side for the hash table (`query_plan_join_swap_table`) and filter the probe side with runtime filters (`enable_join_runtime_filters`). The rewrite is skipped when it could lose primary-key/partition/skip-index analysis or change behavior (`transform_null_in = 1`, `GLOBAL IN`, correlated subqueries, remote tables, explicit `max_rows_in_set`/`max_bytes_in_set` limits).
+)", 0) \
 DECLARE(Bool, execute_exists_as_scalar_subquery, true, R"(
 Execute non-correlated EXISTS subqueries as scalar subqueries. As for scalar subqueries, the cache is used, and the constant folding applies to the result.
 
