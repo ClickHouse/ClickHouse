@@ -579,9 +579,22 @@ void readDeletionVectorEnvelopePrefix(
 }
 
 String readDeletionVectorBlobBytes(
-    const PuffinBlob & blob, ReadBuffer & buf, const std::vector<UInt8> & data, bool seekable_read)
+    const PuffinBlob & blob,
+    ReadBuffer & buf,
+    const std::vector<UInt8> & data,
+    bool seekable_read,
+    UInt64 expected_cardinality)
 {
     ScopedPuffinFileReadProfileEvent profile_event;
+
+    /// Fail closed before envelope peek / full allocate — same order as Iceberg
+    /// `readDeletionVectorFromPuffin`. `deserializeDeletionVectorV1` still re-checks.
+    if (expected_cardinality > PUFFIN_DV_MAX_MATERIALIZED_POSITIONS)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Deletion vector cardinality {} exceeds materialization limit {}",
+            expected_cardinality,
+            PUFFIN_DV_MAX_MATERIALIZED_POSITIONS);
 
     if (blob.length < 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector blob length is negative");
@@ -969,7 +982,8 @@ Chunk PuffinInputFormat::read()
         MutableColumnPtr col_rows;
         if (need_deleted_rows)
         {
-            const String blob_data = readDeletionVectorBlobBytes(blob, *in, footer.data, seekable_read);
+            const String blob_data
+                = readDeletionVectorBlobBytes(blob, *in, footer.data, seekable_read, expected_cardinality);
             auto col_rows_data = ColumnUInt64::create();
             deserializeDeletionVectorV1(blob_data, expected_cardinality, *col_rows_data);
 
@@ -1093,9 +1107,9 @@ Fixed output columns:
 - `referenced_data_file` (`String`) - location of the data file the deletion vector applies to (`referenced-data-file` blob property)
 - `deleted_rows` (`Array(UInt64)`) - 64-bit row positions deleted according to the deletion vector roaring bitmap
 
-Deletion vectors whose declared `cardinality` exceeds an absolute materialization ceiling are rejected when `deleted_rows` is requested. Footer `deletion-vector-v1` properties (including that `cardinality` parses as an unsigned integer, and that `snapshot-id` / `sequence-number` are `-1`) are always validated. Selecting only `referenced_data_file` skips on-disk payload I/O and therefore also skips envelope, CRC, roaring deserialize, and the materialization ceiling — intentionally, so a path-only projection does not read up to the blob-size cap.
+Deletion vectors whose declared `cardinality` exceeds an absolute materialization ceiling are rejected when `deleted_rows` is requested, **before** envelope peek or full blob allocation (same fail-closed order as the Iceberg deletion-vector reader). Footer `deletion-vector-v1` properties (including that `cardinality` parses as an unsigned integer, and that `snapshot-id` / `sequence-number` are `-1`) are always validated. Selecting only `referenced_data_file` skips on-disk payload I/O and therefore also skips envelope, CRC, roaring deserialize, and the materialization ceiling — intentionally, so a path-only projection does not read up to the blob-size cap.
 
-On-disk `deletion-vector-v1` blob length is bounded by an absolute ceiling (aligned with Iceberg's 2 GiB content-size check). When `deleted_rows` is requested, the reader peeks the envelope header (combined length and magic) before allocating the full payload; CRC is verified after the bounded read.
+On-disk `deletion-vector-v1` blob length is bounded by an absolute ceiling (aligned with Iceberg's 2 GiB content-size check). When `deleted_rows` is requested and cardinality is within the materialization ceiling, the reader peeks the envelope header (combined length and magic) before allocating the full payload; CRC is verified after the bounded read.
 
 LZ4-compressed and uncompressed puffin footers are supported. Footer payload size (and declared LZ4 content size) is bounded by a compression ratio where applicable and an absolute ceiling; oversized footers are rejected before allocation.
 
