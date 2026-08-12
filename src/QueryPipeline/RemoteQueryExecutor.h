@@ -12,7 +12,6 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <sys/types.h>
-#include <atomic>
 
 
 namespace DB
