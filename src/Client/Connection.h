@@ -93,10 +93,10 @@ public:
     /// one. The socket has to be connected and non-blocking; the handshake (including the TLS handshake
     /// for a secure connection) is still performed by this class. It is used only for the first connect,
     /// so a later reconnect opens a connection of its own.
-    void setAdoptedSocket(const Poco::Net::SocketAddress & address, const Poco::Net::StreamSocket & socket)
+    void setAdoptedSocket(const Poco::Net::SocketAddress & address, const Poco::Net::StreamSocket & connected_socket)
     {
         adopted_address = address;
-        adopted_socket = socket;
+        adopted_socket = connected_socket;
     }
 
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
