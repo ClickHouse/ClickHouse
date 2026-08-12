@@ -1,0 +1,206 @@
+---
+slug: /integrations/probedeck
+sidebarTitle: 'ProbeDeck'
+description: 'Connect ProbeDeck on iOS or iPadOS to ClickHouse Cloud or a self-hosted ClickHouse server.'
+title: 'Connect ProbeDeck to ClickHouse'
+doc_type: 'guide'
+keywords: ['probedeck', 'sql client', 'ios', 'ipados', 'mobile', 'monitoring', 'on-call']
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+---
+
+import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
+
+import { Image } from "/snippets/components/Image.jsx";
+import { CommunityMaintainedBadge } from "/snippets/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge/>
+
+ProbeDeck is an iOS and iPadOS client for checking the health of a ClickHouse server, inspecting
+the `system` tables, and running SQL. It connects to the ClickHouse HTTP interface over the device
+network or through an SSH bastion; it doesn't require a relay server.
+
+## Before you begin {#before-you-begin}
+
+- Install [ProbeDeck from the App Store](https://apps.apple.com/app/id6791261174).
+- Use iOS or iPadOS 17.0 or later.
+- Allow the device to reach the ClickHouse HTTP or HTTPS endpoint over its network, a VPN, or an
+  SSH bastion.
+- Create a ClickHouse user with access to the databases you want to query.
+- Grant the user `SELECT` access to the relevant `system` tables for monitoring.
+
+| ProbeDeck | ClickHouse Cloud | Self-hosted ClickHouse | Notes |
+|-----------|------------------|------------------------|-------|
+| 1.1.7 or later | Current service | No pinned minimum server version | Uses the HTTP(S) interface. Test the connection and verify each monitoring section against your server version and grants. |
+
+Some monitoring sections depend on optional log tables or newer system tables. For example,
+`system.server_settings`, which ProbeDeck uses for the configured memory limit, requires ClickHouse
+22.10 or later. ProbeDeck marks an affected section as limited when its source is unavailable.
+
+## How it works {#how-it-works}
+
+1. ProbeDeck sends SQL requests to the ClickHouse HTTP(S) endpoint.
+2. It reads monitoring data from `system` tables with the configured ClickHouse user.
+3. The app shows query results and monitoring views on the device. An SSH bastion can carry the
+   same HTTP(S) connection when the endpoint has no direct route from the device.
+
+## Connect to ClickHouse Cloud {#connect-to-clickhouse-cloud}
+
+<Steps>
+<Step title="Gather the service connection details" id="gather-cloud-details">
+
+In the ClickHouse Cloud console, open your service, select **Connect**, and choose **HTTPS**.
+
+<ConnectionDetails />
+
+</Step>
+<Step title="Add the connection in ProbeDeck" id="add-cloud-connection">
+
+1. On the **Connections** screen, tap **+**.
+2. Enter a connection name and the host without `https://`.
+3. Set **Port** to `8443` and turn on **TLS**.
+4. Enter the database username and password from the **Connect** dialog. The database name is
+   optional.
+5. Tap **Test Connection**. ProbeDeck shows the server version and round-trip time after a
+   successful check.
+6. Tap **Save**.
+
+<Image img="/images/integrations/sql-clients/probedeck-add-connection.png" size="lg" border alt="ProbeDeck connection form configured for HTTPS on port 8443 with a ClickHouse username" />
+
+</Step>
+</Steps>
+
+## Connect to self-hosted ClickHouse {#connect-to-self-hosted-clickhouse}
+
+<Steps>
+<Step title="Choose the HTTP endpoint" id="choose-self-hosted-endpoint">
+
+Use port `8123` for the default unencrypted HTTP interface. For HTTPS, turn on **TLS** and use the
+port configured on your server; `8443` is a common choice.
+
+<Note>
+Ports `9000` and `9440` belong to the native ClickHouse protocol. ProbeDeck uses the HTTP(S)
+interface, so enter the server's HTTP port.
+</Note>
+
+</Step>
+<Step title="Add and test the connection" id="add-self-hosted-connection">
+
+1. On the **Connections** screen, tap **+**.
+2. Enter the server host without a URL scheme.
+3. Set the HTTP(S) port and TLS option.
+4. Enter the ClickHouse username, password, and optional database.
+5. Tap **Test Connection**, then **Save**.
+
+For a server on the local network, iOS may ask for Local Network permission. Connect the device to
+its VPN first when the endpoint is reachable only from a corporate network.
+
+</Step>
+</Steps>
+
+## Connect through an SSH bastion {#connect-through-an-ssh-bastion}
+
+Turn on **SSH Tunnel** in the connection form and enter:
+
+1. The bastion host and SSH port (`22` by default).
+2. The SSH username.
+3. Either an SSH password or a private key.
+
+ProbeDeck opens an SSH `direct-tcpip` channel from the bastion to the ClickHouse host and HTTP(S)
+port in the **Server** section. On the first connection, compare the bastion's SHA-256 host-key
+fingerprint with a value from the server administrator before accepting it.
+
+## Configure authentication and TLS {#configure-authentication-and-tls}
+
+ProbeDeck sends the database username and password in the `X-ClickHouse-User` and
+`X-ClickHouse-Key` request headers. It doesn't put credentials in the URL.
+
+For mutual TLS, turn on **TLS Client Certificate** and import a PKCS#12 (`.p12`) file that contains
+the client certificate and private key, then enter its passphrase.
+
+When a self-hosted endpoint presents a self-signed certificate or a certificate from a private
+CA, ProbeDeck shows its SHA-256 fingerprint, issuer, subject, and validity period. Compare the
+fingerprint with the value from the server administrator before accepting it. ProbeDeck pins the
+decision to that connection; a certificate change stops the connection until you review it.
+
+ProbeDeck stores connection secrets and imported key material in the iOS Keychain on the device.
+
+## Monitor ClickHouse {#monitor-clickhouse}
+
+Open the saved connection and select **Monitor**. The dashboard summarizes these sources:
+
+| Area | ClickHouse source |
+|------|-------------------|
+| Running queries, elapsed time, memory, and rows read | `system.processes` |
+| Replication state and queue | `system.replicas`, `system.replication_queue` |
+| Disks, parts, and merges | `system.disks`, `system.parts`, `system.merges` |
+| Mutations | `system.mutations` |
+| Memory and server metrics | `system.metrics`, `system.asynchronous_metrics`, `system.server_settings` |
+| Historical query and disk rates | `system.metric_log`, `system.asynchronous_metric_log` |
+
+<Image img="/images/integrations/sql-clients/probedeck-dashboard.png" size="lg" border alt="ProbeDeck monitoring dashboard showing running queries, replication, disks, parts, mutations, merges, query rate, and memory" />
+
+Tap **Running queries** to sort active queries by elapsed time and inspect memory and rows read.
+
+<Image img="/images/integrations/sql-clients/probedeck-running-queries.png" size="lg" border alt="ProbeDeck running queries list sorted by elapsed time" />
+
+## Query the UK property price dataset {#query-the-uk-property-price-dataset}
+
+This example uses the [UK property price dataset](/get-started/sample-datasets/uk-price-paid).
+Load the dataset into `uk_price_paid`, then:
+
+1. Open the connection and select **Data**.
+2. Open the SQL editor.
+3. Run this bounded, read-only query:
+
+```sql
+SELECT
+    town,
+    count() AS sales,
+    round(avg(price)) AS average_price
+FROM uk_price_paid
+GROUP BY town
+ORDER BY sales DESC
+LIMIT 10
+```
+
+The result should contain ten towns with their transaction counts and average prices.
+
+## Known limits {#known-limits}
+
+- ProbeDeck runs on iOS and iPadOS 17.0 or later.
+- It supports the ClickHouse HTTP(S) interface, not the native protocol.
+- ProbeDeck loads SQL results in pages of 200 rows and caps each request at 10,000 rows. Use a
+  selective `WHERE` clause and `LIMIT` for large tables.
+- Monitoring visibility depends on the ClickHouse user's grants and on optional log tables.
+- The device needs a route to the endpoint over its network, a VPN, or the built-in SSH tunnel.
+- Monitoring and read-only SQL do not require an in-app purchase. `KILL QUERY`, `KILL MUTATION`,
+  write and DDL statements, and other operational actions require ProbeDeck Pro.
+
+## Troubleshooting {#troubleshooting}
+
+<Accordion title="Authentication failed">
+Copy the database username and password again. For ClickHouse Cloud, use the database credentials
+from the service's **Connect** dialog, not a Cloud management API key.
+</Accordion>
+
+<Accordion title="The connection was refused or timed out">
+Confirm that the device can reach the host and HTTP(S) port. Check the Cloud IP access list, VPN,
+firewall, and port mapping. Don't use the native protocol ports `9000` or `9440`.
+</Accordion>
+
+<Accordion title="Monitoring shows limited permissions">
+The ClickHouse user can't read one or more required `system` tables. Ask the server administrator
+for the minimum `SELECT` grants required for the monitoring areas you intend to use, then reconnect.
+</Accordion>
+
+<Accordion title="The TLS fingerprint changed">
+Ask the server administrator to confirm the certificate rotation before accepting the new
+fingerprint. An unexpected change can indicate a different endpoint or TLS interception path.
+</Accordion>
+
+## Next steps {#next-steps}
+
+- See the [ProbeDeck website](https://probedeck.app) for product-specific details.
+- See the [ClickHouse HTTP interface documentation](/interfaces/http) for server configuration.
