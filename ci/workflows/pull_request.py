@@ -89,8 +89,10 @@ workflow = Workflow.Config(
         # The merge queue's non-sanitizer flaky check also runs here, so a test
         # that is only too slow (or only flaky) without a sanitizer is reported
         # in the PR rather than first bouncing it from the merge queue. It is
-        # the same job config as in `ci/workflows/merge_queue.py` on purpose -
-        # see the comment at `stateless_tests_flaky_mq_jobs`.
+        # the same job config as in `ci/workflows/merge_queue.py` on purpose,
+        # and it still gets its own cache key here, so the merge queue keeps
+        # rechecking the merge group state - see the comment at
+        # `stateless_tests_flaky_mq_jobs`.
         *JobConfigs.stateless_tests_flaky_mq_jobs,
         *JobConfigs.integration_test_asan_flaky_pr_jobs,
         # Per-arch Bugfix Validation Checks (functional + integration tests on
