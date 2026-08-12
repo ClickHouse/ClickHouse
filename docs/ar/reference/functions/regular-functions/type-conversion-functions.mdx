@@ -2911,7 +2911,7 @@ SELECT toDate(20297)
 أُضيف في: v21.9.0
 
 يحوّل الوسيطة إلى نوع البيانات [Date32](/ar/reference/data-types/date32).
-إذا كانت القيمة خارج النطاق، فإن `toDate32` يعيد القيم الحدّية التي يدعمها [Date32](/ar/reference/data-types/date32).
+إذا كانت القيمة خارج النطاق `[0000-01-01, 9999-12-31]`، فإن `toDate32` يعيد القيم الحدّية التي يدعمها [Date32](/ar/reference/data-types/date32).
 إذا كانت الوسيطة من النوع [`Date`](/ar/reference/data-types/date)، فتُؤخذ حدودها في الاعتبار.
 
 **البنية**
@@ -2920,7 +2920,7 @@ SELECT toDate(20297)
 toDate32(expr)
 ```
 
-**المعاملات**
+**وسيط**
 
 * `expr` — القيمة المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`UInt32`](/ar/reference/data-types/int-uint) أو [`Date`](/ar/reference/data-types/date)
 
@@ -2944,7 +2944,7 @@ value:           2025-01-01
 toTypeName(value): Date32
 ```
 
-**خارج النطاق**
+**قبل عام 1900**
 
 ```sql title=Query
 SELECT toDate32('1899-01-01') AS value, toTypeName(value)
@@ -2954,7 +2954,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-value:           1900-01-01
+value:           1899-01-01
 toTypeName(value): Date32
 ```
 
@@ -2962,9 +2962,9 @@ toTypeName(value): Date32
   ## toDate32OrDefault
 </div>
 
-استُحدث في: v21.11.0
+أُضيف في: v21.11.0
 
-يحوِّل الوسيط إلى نوع البيانات [Date32](/ar/reference/data-types/date32). إذا تعذّر تحويل الوسيط، بما في ذلك القيمة الرقمية الواقعة خارج نطاق [Date32](/ar/reference/data-types/date32)، فإن الدالة تُرجع قيمة افتراضية تكون إما الوسيط الثاني (إذا تم تحديده)، أو الحد الأدنى لـ [Date32](/ar/reference/data-types/date32) بخلاف ذلك. وإذا كان الوسيط من النوع [Date](/ar/reference/data-types/date)، فتُؤخذ حدوده في الاعتبار.
+يحوِّل الوسيط إلى نوع البيانات [Date32](/ar/reference/data-types/date32). إذا تعذّر تحويل الوسيط، بما في ذلك القيمة الرقمية الواقعة خارج نطاق [Date32](/ar/reference/data-types/date32)، فإن الدالة تُرجع قيمة افتراضية تكون إما الوسيط الثاني (إذا تم تحديده)، أو `1900-01-01` بخلاف ذلك، وهي القيمة الافتراضية التاريخية لـ [Date32](/ar/reference/data-types/date32) (وليست حدها الأدنى، وهو `0000-01-01`). وإذا كان الوسيط من النوع [Date](/ar/reference/data-types/date)، فتُؤخذ حدوده في الاعتبار.
 
 لاحظ أنه، بخلاف [toDate32](#toDate32)، لا تقيِّد هذه الدالة الوسيط الرقمي الواقع خارج النطاق ضمن حدود [Date32](/ar/reference/data-types/date32)؛ بل يُعامل هذا الوسيط على أنه غير قابل للتحويل.
 
@@ -3058,8 +3058,9 @@ SELECT toDate32OrNull('2025-01-01'), toDate32OrNull('invalid')
 
 أُضيف في: v21.9.0
 
-يحوّل قيمة مُدخلة إلى قيمة من النوع [Date32](/ar/reference/data-types/date32)، لكنه يعيد الحد الأدنى لـ [Date32](/ar/reference/data-types/date32) إذا كانت الوسيطة غير صالحة.
-وهو مماثل لـ [toDate32](#toDate32)، لكنه يعيد الحد الأدنى لـ [Date32](/ar/reference/data-types/date32) إذا كانت الوسيطة غير صالحة.
+يحوّل قيمة الإدخال إلى قيمة من النوع [Date32](/ar/reference/data-types/date32)، لكنه يعيد القيمة الافتراضية `1900-01-01` إذا كانت الوسيطة غير صالحة.
+وهو مماثل لـ [toDate32](#toDate32)، لكنه يعيد `1900-01-01` إذا كانت الوسيطة غير صالحة.
+لاحظ أن `1900-01-01` قيمة افتراضية تاريخية للإدخال غير الصالح، وليست الحد الأدنى لـ [Date32](/ar/reference/data-types/date32)، وهو `0000-01-01`.
 
 انظر أيضًا:
 
@@ -3073,13 +3074,13 @@ SELECT toDate32OrNull('2025-01-01'), toDate32OrNull('invalid')
 toDate32OrZero(x)
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * `x` — تمثيل نصي لتاريخ. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
-تُعيد قيمة `Date32` عند النجاح، وإلا تُعيد الحد الأدنى لقيم `Date32` (`1900-01-01`). [`Date32`](/ar/reference/data-types/date32)
+تُعيد قيمة `Date32` عند النجاح، وإلا تُعيد القيمة الافتراضية التاريخية للإدخال غير الصالح (`1900-01-01`). [`Date32`](/ar/reference/data-types/date32)
 
 **أمثلة**
 

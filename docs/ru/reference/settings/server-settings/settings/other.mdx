@@ -571,16 +571,20 @@ Refreshable materialized views всегда получают значения п
   ## include_from
 </div>
 
-<SettingsInfoBlock type="String" default_value="/etc/metrika.xml" changeable_without_restart="No" />
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
 
-Путь к файлу, содержащему подстановки. Поддерживаются форматы XML и YAML.
+Путь к файлу подстановок. Поддерживаются форматы XML и YAML.
 
-Дополнительные сведения см. в разделе [Файлы конфигурации](/ru/concepts/features/configuration/server-config/configuration-files).
+По умолчанию значение пустое, то есть файл подстановок не используется. До версии 26.8 файл `/etc/metrika.xml` использовался неявно, если он существовал; если вы используете его, укажите путь явно.
+
+Обратите внимание: конфигурационные файлы, загружаемые отдельно от основной конфигурации сервера, — конфигурация пользователей (например, `users.xml`, если он не включён в основной файл) и XML-конфигурации словарей — считывают элемент `include_from` из собственного содержимого, а не из конфигурации сервера. Каждый такой файл, использующий подстановки, должен содержать собственный элемент `include_from`.
+
+Дополнительные сведения см. в разделе [Конфигурационные файлы](/ru/concepts/features/configuration/server-config/configuration-files).
 
 **Пример**
 
 ```xml
-<include_from>/etc/metrica.xml</include_from>
+<include_from>/etc/clickhouse-server/substitutions.xml</include_from>
 ```
 
 <div id="insert_deduplication_version">

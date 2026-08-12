@@ -572,16 +572,20 @@ false の場合、作成時に [`default_normal_view_sql_security`](/ja/referenc
   ## include_from
 </div>
 
-<SettingsInfoBlock type="String" default_value="/etc/metrika.xml" changeable_without_restart="No" />
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
 
-置換が記述されたファイルへのパスです。XML と YAML の両方のフォーマットをサポートしています。
+置換を含むファイルのパス。XML と YAML の両方のフォーマットがサポートされています。
 
-詳細については、[設定ファイル](/ja/concepts/features/configuration/server-config/configuration-files) セクションを参照してください。
+デフォルトでは空です。つまり、置換ファイルは使用されません。バージョン 26.8 より前は、ファイル `/etc/metrika.xml` が存在する場合、暗黙的に使用されていました。これに依存している場合は、パスを明示的に指定してください。
+
+メインのサーバー設定とは別に読み込まれる設定ファイル、つまりユーザー設定 (メインファイルに含まれていない場合の `users.xml` など) および XML Dictionary 設定では、`include_from` 要素はサーバー設定ではなく各ファイル自身の内容から読み取られます。置換を使用するこのような各ファイルには、それぞれ独自の `include_from` 要素が必要です。
+
+詳細については、[設定ファイル](/ja/concepts/features/configuration/server-config/configuration-files)のセクションを参照してください。
 
 **例**
 
 ```xml
-<include_from>/etc/metrica.xml</include_from>
+<include_from>/etc/clickhouse-server/substitutions.xml</include_from>
 ```
 
 <div id="insert_deduplication_version">

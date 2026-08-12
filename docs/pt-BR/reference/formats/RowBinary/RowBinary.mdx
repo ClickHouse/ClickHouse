@@ -227,7 +227,7 @@ SELECT CAST('2024-01-15', 'Date') AS d
 
 Armazenado como `Int32` (quatro bytes), representando o número de dias ***antes ou depois*** de `1970-01-01`.
 
-Intervalo de valores suportado: `[1900-01-01, 2299-12-31]`.
+Intervalo de valores suportado: `[0000-01-01, 9999-12-31]`.
 
 Exemplos de valores subjacentes para `Date32`:
 
@@ -236,17 +236,17 @@ SELECT CAST('2024-01-15', 'Date32') AS d
 ```
 
 ```text
-0x19, 0x4D, 0x00, 0x00, // 19737 como Int32 (little-endian) = 19737 dias desde 1970-01-01
+0x19, 0x4D, 0x00, 0x00, // 19737 as Int32 (little-endian) = 19737 days since 1970-01-01
 ```
 
-Uma data anterior à época Unix:
+Uma data anterior à epoch Unix:
 
 ```sql
 SELECT CAST('1900-01-01', 'Date32') AS d
 ```
 
 ```text
-0x21, 0x9C, 0xFF, 0xFF, // -25567 como Int32 (little-endian) = 25567 dias antes de 1970-01-01
+0x21, 0x9C, 0xFF, 0xFF, // -25567 as Int32 (little-endian) = 25567 days before 1970-01-01
 ```
 
 <div id="datetime">

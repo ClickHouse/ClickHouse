@@ -570,16 +570,20 @@ HSTS 的过期时间，单位为秒。
   ## include_from
 </div>
 
-<SettingsInfoBlock type="String" default_value="/etc/metrika.xml" changeable_without_restart="No" />
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
 
 包含替换内容的文件路径。支持 XML 和 YAML 格式。
 
-更多信息，请参见[配置文件](/zh/concepts/features/configuration/server-config/configuration-files)一节。
+默认为空，即不使用替换文件。在 26.8 版本之前，只要 `/etc/metrika.xml` 文件存在，系统就会隐式使用该文件；如果您依赖此文件，请显式指定其路径。
+
+请注意，独立于主服务器配置加载的配置文件——用户配置 (例如未包含在主文件中的 `users.xml`) 和 XML 字典配置——会从自身内容中读取 `include_from` 元素，而非从服务器配置中读取。每个依赖替换的此类文件都需要各自的 `include_from` 元素。
+
+有关详细信息，请参阅[配置文件](/zh/concepts/features/configuration/server-config/configuration-files)章节。
 
 **示例**
 
 ```xml
-<include_from>/etc/metrica.xml</include_from>
+<include_from>/etc/clickhouse-server/substitutions.xml</include_from>
 ```
 
 <div id="insert_deduplication_version">

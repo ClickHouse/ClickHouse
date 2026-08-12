@@ -570,16 +570,20 @@ Views materializadas atualizáveis sempre recebem os valores padrão, independen
   ## include_from
 </div>
 
-<SettingsInfoBlock type="String" default_value="/etc/metrika.xml" changeable_without_restart="No" />
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
 
-O caminho para o arquivo com substituições. Os formatos XML e YAML são suportados.
+O caminho para o arquivo com substituições. Os formatos XML e YAML são compatíveis.
+
+Por padrão, está vazio, o que significa que nenhum arquivo de substituições é usado. Antes da versão 26.8, o arquivo `/etc/metrika.xml` era usado implicitamente sempre que existia; se você depende dele, especifique o caminho explicitamente.
+
+Observe que os arquivos de configuração carregados separadamente da configuração principal do servidor — a configuração de usuários (por exemplo, `users.xml`, quando não está incluído no arquivo principal) e as configurações de Dicionário em XML — leem o elemento `include_from` de seu próprio conteúdo, não da configuração do servidor. Cada arquivo desse tipo que depende de substituições precisa ter seu próprio elemento `include_from`.
 
 Para mais informações, consulte a seção [Arquivos de configuração](/pt-BR/concepts/features/configuration/server-config/configuration-files).
 
 **Exemplo**
 
 ```xml
-<include_from>/etc/metrica.xml</include_from>
+<include_from>/etc/clickhouse-server/substitutions.xml</include_from>
 ```
 
 <div id="insert_deduplication_version">

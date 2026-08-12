@@ -2911,7 +2911,7 @@ SELECT toDate(20297)
 導入バージョン: v21.9.0
 
 引数を [Date32](/ja/reference/data-types/date32) データ型に変換します。
-値が範囲外の場合、`toDate32` は [Date32](/ja/reference/data-types/date32) でサポートされる境界値を返します。
+値が `[0000-01-01, 9999-12-31]` の範囲外の場合、`toDate32` は [Date32](/ja/reference/data-types/date32) でサポートされる境界値を返します。
 引数の型が [`Date`](/ja/reference/data-types/date) の場合は、その範囲が考慮されます。
 
 **構文**
@@ -2944,7 +2944,7 @@ value:           2025-01-01
 toTypeName(value): Date32
 ```
 
-**範囲外**
+**1900年以前**
 
 ```sql title=Query
 SELECT toDate32('1899-01-01') AS value, toTypeName(value)
@@ -2954,7 +2954,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-value:           1900-01-01
+value:           1899-01-01
 toTypeName(value): Date32
 ```
 
@@ -2964,7 +2964,7 @@ toTypeName(value): Date32
 
 導入バージョン: v21.11.0
 
-引数を [Date32](/ja/reference/data-types/date32) 型に変換します。引数を変換できない場合 ([Date32](/ja/reference/data-types/date32) の範囲外の数値を含む) 、関数はデフォルト値を返します。これは第 2 引数が指定されている場合はその値、指定されていない場合は [Date32](/ja/reference/data-types/date32) の下限値です。引数が [Date](/ja/reference/data-types/date) 型の場合は、その型の範囲が考慮されます。
+引数を [Date32](/ja/reference/data-types/date32) 型に変換します。引数を変換できない場合 ([Date32](/ja/reference/data-types/date32) の範囲外の数値を含む) 、関数はデフォルト値を返します。これは第 2 引数が指定されている場合はその値、指定されていない場合は [Date32](/ja/reference/data-types/date32) の従来のデフォルト値である `1900-01-01` です ([Date32](/ja/reference/data-types/date32) の下限値ではなく、下限値は `0000-01-01` です)。引数が [Date](/ja/reference/data-types/date) 型の場合は、その型の範囲が考慮されます。
 
 [toDate32](#toDate32) とは異なり、この関数は範囲外の数値引数を [Date32](/ja/reference/data-types/date32) の境界値に飽和させません。このような引数は変換不能として扱われます。
 
@@ -3058,8 +3058,9 @@ SELECT toDate32OrNull('2025-01-01'), toDate32OrNull('invalid')
 
 導入バージョン: v21.9.0
 
-入力値を [Date32](/ja/reference/data-types/date32) 型の値に変換します。無効な引数を受け取った場合は、[Date32](/ja/reference/data-types/date32) の下限値を返します。
-[toDate32](#toDate32) と同様ですが、無効な引数を受け取った場合は [Date32](/ja/reference/data-types/date32) の下限値を返します。
+入力値を [Date32](/ja/reference/data-types/date32) 型の値に変換します。無効な引数を受け取った場合は、デフォルト値 `1900-01-01` を返します。
+[toDate32](#toDate32) と同様ですが、無効な引数を受け取った場合は `1900-01-01` を返します。
+`1900-01-01` は無効な入力に対する歴史的なデフォルト値であり、`0000-01-01` である [Date32](/ja/reference/data-types/date32) の下限値ではないことに注意してください。
 
 関連項目:
 
@@ -3079,7 +3080,7 @@ toDate32OrZero(x)
 
 **戻り値**
 
-成功した場合は Date32 値を返し、失敗した場合は Date32 の下限値 (`1900-01-01`) を返します。[`Date32`](/ja/reference/data-types/date32)
+成功した場合は Date32 値を返し、失敗した場合は無効な入力に対する従来のデフォルト値 (`1900-01-01`) を返します。[`Date32`](/ja/reference/data-types/date32)
 
 **例**
 

@@ -2911,7 +2911,7 @@ SELECT toDate(20297)
 引入版本：v21.9.0
 
 将参数转换为 [Date32](/zh/reference/data-types/date32) 数据类型。
-如果值超出范围，`toDate32` 会返回 [Date32](/zh/reference/data-types/date32) 支持的边界值。
+如果值超出 `[0000-01-01, 9999-12-31]` 范围，`toDate32` 会返回 [Date32](/zh/reference/data-types/date32) 支持的边界值。
 如果参数类型为 [`Date`](/zh/reference/data-types/date)，则会考虑其取值边界。
 
 **语法**
@@ -2944,7 +2944,7 @@ value:           2025-01-01
 toTypeName(value): Date32
 ```
 
-**超出取值范围**
+**1900 年以前**
 
 ```sql title=Query
 SELECT toDate32('1899-01-01') AS value, toTypeName(value)
@@ -2954,7 +2954,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-value:           1900-01-01
+value:           1899-01-01
 toTypeName(value): Date32
 ```
 
@@ -2964,7 +2964,7 @@ toTypeName(value): Date32
 
 引入版本：v21.11.0
 
-将参数转换为 [Date32](/zh/reference/data-types/date32) 数据类型。如果参数无法转换 (包括超出 [Date32](/zh/reference/data-types/date32) 范围的数值) ，该函数将返回默认值：如果指定了第二个参数，则返回该参数；否则返回 [Date32](/zh/reference/data-types/date32) 的下界值。如果参数的类型为 [Date](/zh/reference/data-types/date)，则会考虑其边界。
+将参数转换为 [Date32](/zh/reference/data-types/date32) 数据类型。如果参数无法转换 (包括超出 [Date32](/zh/reference/data-types/date32) 范围的数值) ，该函数将返回默认值：如果指定了第二个参数，则返回该参数；否则返回 [Date32](/zh/reference/data-types/date32) 的历史默认值 `1900-01-01` (而非其下界值 `0000-01-01`) 。如果参数的类型为 [Date](/zh/reference/data-types/date)，则会考虑其边界。
 
 请注意，与 [toDate32](#toDate32) 不同，该函数不会将超出范围的数值参数限制在 [Date32](/zh/reference/data-types/date32) 的边界值内；此类参数会被视为无法转换。
 
@@ -3058,8 +3058,9 @@ SELECT toDate32OrNull('2025-01-01'), toDate32OrNull('invalid')
 
 引入版本：v21.9.0
 
-将输入值转换为 [Date32](/zh/reference/data-types/date32) 类型的值；如果收到无效参数，则返回 [Date32](/zh/reference/data-types/date32) 的下界值。
-与 [toDate32](#toDate32) 相同，但如果收到无效参数，则返回 [Date32](/zh/reference/data-types/date32) 的下界值。
+将输入值转换为 [Date32](/zh/reference/data-types/date32) 类型的值；如果收到无效参数，则返回默认值 `1900-01-01`。
+与 [toDate32](#toDate32) 相同，但如果收到无效参数，则返回 `1900-01-01`。
+请注意，`1900-01-01` 是无效输入的历史默认值，并非 [Date32](/zh/reference/data-types/date32) 的下界值；其下界值为 `0000-01-01`。
 
 另请参见：
 
@@ -3079,7 +3080,7 @@ toDate32OrZero(x)
 
 **返回值**
 
-成功时返回 Date32 值，否则返回 Date32 的下界值 (`1900-01-01`) 。[`Date32`](/zh/reference/data-types/date32)
+成功时返回 Date32 值，否则返回无效输入的历史默认值 (`1900-01-01`) 。[`Date32`](/zh/reference/data-types/date32)
 
 **示例**
 

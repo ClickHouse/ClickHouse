@@ -83,13 +83,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
   ## CRUD
 </div>
 
-Postgres サービスのライフサイクルを見ていきましょう。
-
-<Warning>
-  **2026年7月31日以降の認証情報のマスキング**
-
-  **2026年7月31日**以降、APIはレスポンスで `password` および `connectionString` のプロパティを返さなくなります。これらが含まれるのは、[create](#create) レスポンスと、リクエストにパスワードが含まれていなかった場合の [password reset] レスポンスのみです。[create](#create) レスポンスから認証情報を取得しておくことを推奨します。Terraform でサービスを管理している場合は、2026年7月31日までにプロバイダを **v3.21.0 以降**にアップグレードしてください ([Terraform reference](/ja/products/managed-postgres/terraform) を参照) 。
-</Warning>
+Postgres サービス のライフサイクルを見ていきましょう。
 
 <div id="create">
   ### 作成
@@ -114,7 +108,8 @@ create_data='{
 }'
 ```
 
-次に、このデータを使用して新しいインスタンスを作成します。なお、そのためにはContent-Typeヘッダーの内容が必要です。返される認証情報にアクセスできるよう、レスポンスを保存してください：
+次に、このデータを使用して新しいインスタンスを作成します。なお、そのためにはContent-Typeヘッダーの内容が必要です。レスポンスを保存してください。serviceの
+認証情報が含まれるのはこのレスポンスだけです (リクエストでpasswordを指定しない場合、[password reset] のレスポンスでも返されます) ：
 
 ```bash
 pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
@@ -163,7 +158,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-出力は作成時に返されるJSONと似ています (ただし、2026年7月31日以降は `password` と `connectionString` プロパティは含まれません) が、`state` を確認して
+出力は作成時に返されるJSONと似ていますが、認証情報は含まれません。`state` を確認して
 ください。これが `running` に変わったら、サーバーの準備完了です。
 
 ```bash
@@ -223,9 +218,7 @@ curl -sX PATCH --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' 
       "value": "production"
     }
   ],
-  "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com:5432/postgres?channel_binding=require",
   "username": "postgres",
-  "password": "vV6cfEr2p_-TzkCDrZOx",
   "hostname": "my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com",
   "isPrimary": true,
   "state": "running"

@@ -174,8 +174,12 @@ YAML 설정 파일에서는 `clickhouse:`가 선택 사항이며, 없으면 파�
 
 파일 내용을 사용해 구성의 일부를 대체할 수도 있습니다. 이는 두 가지 방식으로 수행할 수 있습니다.
 
-* *값 치환*: 요소에 `incl` 속성이 있으면 해당 값이 참조된 파일의 내용으로 대체됩니다. 기본적으로 치환 값을 담은 파일의 경로는 `/etc/metrika.xml`입니다. 이 값은 서버 구성의 [`include_from`](/ko/reference/settings/server-settings/settings/other#include_from) 요소에서 변경할 수 있습니다. 치환 값은 이 파일의 `/clickhouse/substitution_name` 요소에 지정합니다. `incl`에 지정된 치환이 존재하지 않으면 로그에 기록됩니다. 누락된 치환에 대해 ClickHouse가 로그를 남기지 않도록 하려면 `optional="true"` 속성을 지정하십시오(예: [macros](/ko/reference/settings/server-settings/settings/other#macros) 설정).
+* *값 치환*: 요소에 `incl` 속성이 있으면 해당 값이 참조된 파일의 내용으로 대체됩니다. 치환 값을 담은 파일의 경로는 서버 구성의 [`include_from`](/ko/reference/settings/server-settings/settings/other#include_from) 요소에서 설정합니다. 기본 경로는 없으므로, 지정한 경우에만 치환 값을 읽습니다. 치환 값은 이 파일의 `/clickhouse/substitution_name` 요소에 지정합니다. `incl`에 지정된 치환이 존재하지 않으면 로그에 기록됩니다. 누락된 치환에 대해 ClickHouse가 로그를 남기지 않도록 하려면 `optional="true"` 속성을 지정하십시오(예: [macros](/ko/reference/settings/server-settings/settings/other#macros) 설정).
 * *요소 치환*: 전체 요소를 치환 값으로 바꾸려면 요소 이름으로 `include`를 사용하십시오. 요소 이름 `include`는 `from_zk = "/path/to/node"` 속성과 함께 사용할 수 있습니다. 이 경우 요소 값은 `/path/to/node`에 있는 ZooKeeper 노드의 내용으로 대체됩니다. 전체 XML 하위 트리를 ZooKeeper 노드에 저장한 경우에도 동일하게 작동하며, 해당 트리가 원본 요소에 완전히 삽입됩니다.
+
+<Note>
+  버전 26.8부터 변경됨: 이전 버전에서는 `include_from`을 지정하지 않았더라도 파일 `/etc/metrika.xml`이 존재하면 암묵적으로 사용되었습니다. 해당 파일에 의존하는 경우 `include_from`에 해당 경로를 명시적으로 지정하십시오. `include_from`은 각 구성 파일에서 개별적으로 읽힙니다. 즉, 기본 서버 구성과 별도로 로드되는 파일인 사용자&#39; 구성(예: 기본 파일에 포함되지 않은 경우의 `users.xml`) 및 XML 딕셔너리 구성에는 각각 자체 `include_from` 요소가 필요하며, 기본 서버 구성에만 지정해도 적용되지 않습니다.
+</Note>
 
 이에 대한 예시는 아래와 같습니다.
 

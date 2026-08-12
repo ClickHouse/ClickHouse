@@ -75,13 +75,7 @@ Postgres 服务器。输出应类似于：
   ## CRUD
 </div>
 
-下面来了解 Postgres 服务的生命周期。
-
-<Warning>
-  **自 2026 年 7 月 31 日起对凭据进行脱敏处理**
-
-  自 **2026 年 7 月 31 日**起，API 的响应将不再返回 `password` 和 `connectionString` 属性。只有在 [create](#create) 响应中，以及请求未包含密码时的 [password reset] 响应中，才会返回这些属性。我们建议从 [create](#create) 响应中保存凭据。如果你使用 Terraform 管理服务，请在 2026 年 7 月 31 日之前将提供商升级到 **v3.21.0 或更高版本** (参见 [Terraform Reference](/zh/products/managed-postgres/terraform)) 。
-</Warning>
+下面来了解 Postgres 服务 的生命周期。
 
 <div id="create">
   ### 创建
@@ -110,8 +104,8 @@ create_data='{
 }'
 ```
 
-现在使用这些数据创建一个新实例；请注意，这需要设置 Content-Type 请求头。保存响应，
-以便获取其返回的凭证：
+现在使用这些数据创建一个新实例；请注意，这需要设置 Content-Type 请求头。保存响应：它是唯一包含服务
+凭据的响应 (当请求未提供密码时，[password reset] 响应也会返回这些凭据) ：
 
 ```bash
 pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
@@ -160,7 +154,8 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-输出将与创建操作返回的 JSON 类似 (但在 2026 年 7 月 31 日之后将不再包含 `password` 和 `connectionString` 属性) ，但请留意
+输出将与创建操作返回的 JSON 类似，但不包含
+凭据，不过请留意
 `state`；当它变为 `running` 时，服务器即表示已就绪：
 
 ```bash
@@ -220,9 +215,7 @@ curl -sX PATCH --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' 
       "value": "production"
     }
   ],
-  "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com:5432/postgres?channel_binding=require",
   "username": "postgres",
-  "password": "vV6cfEr2p_-TzkCDrZOx",
   "hostname": "my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com",
   "isPrimary": true,
   "state": "running"

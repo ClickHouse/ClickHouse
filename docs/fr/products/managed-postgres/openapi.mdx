@@ -83,13 +83,7 @@ ceci :
   ## CRUD
 </div>
 
-Examinons le cycle de vie d’un service Postgres.
-
-<Warning>
-  **Masquage des identifiants à partir du 31 juillet 2026**
-
-  À compter du **31 juillet 2026**, l’API ne renvoie plus les propriétés `password` et `connectionString` dans ses réponses. Elles n’apparaissent plus que dans la réponse [create](#create) et dans la réponse [réinitialisation du mot de passe] lorsque la requête ne contenait aucun mot de passe. Nous vous recommandons d’enregistrer les identifiants à partir de la réponse [create](#create). Si vous gérez des services avec Terraform, mettez à niveau le provider vers la version **v3.21.0 ou ultérieure** avant le 31 juillet 2026 (voir la [référence Terraform](/fr/products/managed-postgres/terraform)).
-</Warning>
+Voyons le cycle de vie d’un service Postgres.
 
 <div id="create">
   ### Créer
@@ -118,7 +112,9 @@ create_data='{
 }'
 ```
 
-Utilisez maintenant ces données pour créer une nouvelle instance ; notez que cela nécessite l’en-tête Content-Type. Enregistrez la réponse pour avoir accès aux informations d’authentification qu’elle renvoie :
+Utilisez maintenant ces données pour créer une nouvelle instance ; notez que cela nécessite l’en-tête Content-Type. Enregistrez la réponse : c’est la seule qui inclut l’identifiant d’authentification du service
+(la réponse de [réinitialisation du mot de passe] le renvoie également lorsque la requête
+ne fournit pas de mot de passe) :
 
 ```bash
 pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
@@ -167,7 +163,8 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-Le résultat sera similaire au JSON renvoyé lors de la création (mais sans les propriétés `password` et `connectionString` après le 31 juillet 2026), mais surveillez
+La sortie sera similaire au JSON renvoyé lors de la création, sans les
+identifiants, mais surveillez
 le `state` ; lorsqu&#39;il passe à `running`, le serveur est prêt :
 
 ```bash
@@ -228,9 +225,7 @@ Les données renvoyées doivent inclure les nouveaux tags :
       "value": "production"
     }
   ],
-  "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com:5432/postgres?channel_binding=require",
   "username": "postgres",
-  "password": "vV6cfEr2p_-TzkCDrZOx",
   "hostname": "my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com",
   "isPrimary": true,
   "state": "running"

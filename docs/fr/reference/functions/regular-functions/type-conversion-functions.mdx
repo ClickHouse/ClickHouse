@@ -2911,7 +2911,7 @@ SELECT toDate(20297)
 Introduit dans : v21.9.0
 
 Convertit l’argument en type de données [Date32](/fr/reference/data-types/date32).
-Si la valeur est hors de la plage, `toDate32` renvoie les valeurs limites prises en charge par [Date32](/fr/reference/data-types/date32).
+Si la valeur est hors de la plage `[0000-01-01, 9999-12-31]`, `toDate32` renvoie les valeurs limites prises en charge par [Date32](/fr/reference/data-types/date32).
 Si l’argument est de type [`Date`](/fr/reference/data-types/date), ses limites sont prises en compte.
 
 **Syntaxe**
@@ -2944,7 +2944,7 @@ value:           2025-01-01
 toTypeName(value): Date32
 ```
 
-**Hors limites**
+**Avant 1900**
 
 ```sql title=Query
 SELECT toDate32('1899-01-01') AS value, toTypeName(value)
@@ -2954,7 +2954,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-value:           1900-01-01
+value:           1899-01-01
 toTypeName(value): Date32
 ```
 
@@ -2964,7 +2964,7 @@ toTypeName(value): Date32
 
 Introduite dans : v21.11.0
 
-Convertit l’argument en type de données [Date32](/fr/reference/data-types/date32). Si l’argument ne peut pas être converti, notamment s’il s’agit d’une valeur numérique hors de la plage de [Date32](/fr/reference/data-types/date32), la fonction renvoie une valeur par défaut, qui correspond soit au deuxième argument (s’il est spécifié), soit à la borne inférieure de [Date32](/fr/reference/data-types/date32). Si l’argument est de type [Date](/fr/reference/data-types/date), ses bornes sont prises en compte.
+Convertit l’argument en type de données [Date32](/fr/reference/data-types/date32). Si l’argument ne peut pas être converti, notamment s’il s’agit d’une valeur numérique hors de la plage de [Date32](/fr/reference/data-types/date32), la fonction renvoie une valeur par défaut, qui correspond soit au deuxième argument (s’il est spécifié), soit à `1900-01-01`, la valeur par défaut historique de [Date32](/fr/reference/data-types/date32) (et non sa borne inférieure, qui est `0000-01-01`). Si l’argument est de type [Date](/fr/reference/data-types/date), ses bornes sont prises en compte.
 
 Notez que, contrairement à [toDate32](#toDate32), cette fonction ne sature pas un argument numérique hors plage aux bornes de [Date32](/fr/reference/data-types/date32) ; un tel argument est traité comme non convertible.
 
@@ -3058,8 +3058,9 @@ SELECT toDate32OrNull('2025-01-01'), toDate32OrNull('invalid')
 
 Introduit dans : v21.9.0
 
-Convertit une valeur d’entrée en une valeur de type [Date32](/fr/reference/data-types/date32), mais renvoie la borne inférieure de [Date32](/fr/reference/data-types/date32) si l’argument n’est pas valide.
-Identique à [toDate32](#toDate32), mais renvoie la borne inférieure de [Date32](/fr/reference/data-types/date32) si l’argument n’est pas valide.
+Convertit une valeur d’entrée en une valeur de type [Date32](/fr/reference/data-types/date32), mais renvoie la valeur par défaut `1900-01-01` si l’argument est invalide.
+Identique à [toDate32](#toDate32), mais renvoie `1900-01-01` si l’argument est invalide.
+Notez que `1900-01-01` est une valeur par défaut historique pour les entrées non valides, et non la borne inférieure de [Date32](/fr/reference/data-types/date32), qui est `0000-01-01`.
 
 Voir aussi :
 
@@ -3075,11 +3076,11 @@ toDate32OrZero(x)
 
 **Arguments**
 
-* `x` — Une représentation textuelle d&#39;une date. [`String`](/fr/reference/data-types/string)
+* `x` — Une représentation sous forme de chaîne d’une date. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
-Renvoie une valeur `Date32` en cas de réussite ; sinon, la borne inférieure de `Date32` (`1900-01-01`). [`Date32`](/fr/reference/data-types/date32)
+Renvoie une valeur `Date32` en cas de réussite ; sinon, la valeur par défaut historique pour une entrée non valide (`1900-01-01`). [`Date32`](/fr/reference/data-types/date32)
 
 **Exemples**
 

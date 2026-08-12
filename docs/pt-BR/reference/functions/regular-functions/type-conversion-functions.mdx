@@ -2911,7 +2911,7 @@ SELECT toDate(20297)
 Introduzido em: v21.9.0
 
 Converte o argumento para o tipo de dado [Date32](/pt-BR/reference/data-types/date32).
-Se o valor estiver fora do intervalo, `toDate32` retorna os valores de limite suportados por [Date32](/pt-BR/reference/data-types/date32).
+Se o valor estiver fora do intervalo `[0000-01-01, 9999-12-31]`, `toDate32` retorna os valores de limite suportados por [Date32](/pt-BR/reference/data-types/date32).
 Se o argumento for do tipo [`Date`](/pt-BR/reference/data-types/date), seus limites serão considerados.
 
 **Sintaxe**
@@ -2938,13 +2938,13 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 value:           2025-01-01
 toTypeName(value): Date32
 ```
 
-**Fora do intervalo**
+**Antes de 1900**
 
 ```sql title=Query
 SELECT toDate32('1899-01-01') AS value, toTypeName(value)
@@ -2952,9 +2952,9 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
-value:           1900-01-01
+value:           1899-01-01
 toTypeName(value): Date32
 ```
 
@@ -2964,7 +2964,7 @@ toTypeName(value): Date32
 
 Introduzido em: v21.11.0
 
-Converte o argumento para o tipo de dado [Date32](/pt-BR/reference/data-types/date32). Se o argumento não puder ser convertido, incluindo um valor numérico fora do intervalo de [Date32](/pt-BR/reference/data-types/date32), a função retornará um valor padrão, que será o segundo argumento (se especificado) ou, caso contrário, o limite inferior de [Date32](/pt-BR/reference/data-types/date32). Se o argumento for do tipo [Date](/pt-BR/reference/data-types/date), os limites desse tipo serão levados em consideração.
+Converte o argumento para o tipo de dado [Date32](/pt-BR/reference/data-types/date32). Se o argumento não puder ser convertido, incluindo um valor numérico fora do intervalo de [Date32](/pt-BR/reference/data-types/date32), a função retornará um valor padrão, que será o segundo argumento (se especificado) ou, caso contrário, `1900-01-01`, o valor padrão histórico de [Date32](/pt-BR/reference/data-types/date32) (e não seu limite inferior, que é `0000-01-01`). Se o argumento for do tipo [Date](/pt-BR/reference/data-types/date), os limites desse tipo serão levados em consideração.
 
 Observe que, diferentemente de [toDate32](#toDate32), esta função não satura um argumento numérico fora do intervalo para os limites de [Date32](/pt-BR/reference/data-types/date32); esse argumento é tratado como não conversível.
 
@@ -3058,8 +3058,9 @@ SELECT toDate32OrNull('2025-01-01'), toDate32OrNull('invalid')
 
 Introduzido em: v21.9.0
 
-Converte um valor de entrada em um valor do tipo [Date32](/pt-BR/reference/data-types/date32), mas retorna o limite inferior de [Date32](/pt-BR/reference/data-types/date32) se receber um argumento inválido.
-É igual a [toDate32](#toDate32), mas retorna o limite inferior de [Date32](/pt-BR/reference/data-types/date32) se receber um argumento inválido.
+Converte um valor de entrada em um valor do tipo [Date32](/pt-BR/reference/data-types/date32), mas retorna o valor padrão `1900-01-01` se receber um argumento inválido.
+É igual a [toDate32](#toDate32), mas retorna `1900-01-01` se receber um argumento inválido.
+Observe que `1900-01-01` é um valor padrão histórico para entradas inválidas, não o limite inferior de [Date32](/pt-BR/reference/data-types/date32), que é `0000-01-01`.
 
 Veja também:
 
@@ -3079,7 +3080,7 @@ toDate32OrZero(x)
 
 **Valor retornado**
 
-Retorna um valor `Date32` em caso de sucesso; caso contrário, o limite inferior de `Date32` (`1900-01-01`). [`Date32`](/pt-BR/reference/data-types/date32)
+Retorna um valor `Date32` em caso de sucesso; caso contrário, o valor padrão histórico para entrada inválida (`1900-01-01`). [`Date32`](/pt-BR/reference/data-types/date32)
 
 **Exemplos**
 

@@ -84,13 +84,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
   ## CRUD
 </div>
 
-Postgres 서비스의 수명 주기를 살펴보겠습니다.
-
-<Warning>
-  **2026년 7월 31일부터 자격 증명 가리기 적용**
-
-  **2026년 7월 31일**부터 API 응답에는 더 이상 `password` 및 `connectionString` 속성이 포함되지 않습니다. 이 속성은 요청에 비밀번호가 포함되지 않은 경우에만 [create](#create) 응답과 [password reset] 응답에 표시됩니다. 자격 증명은 [create](#create) 응답에서 확보하는 것이 좋습니다. Terraform으로 서비스를 관리하는 경우 2026년 7월 31일 이전에 provider를 **v3.21.0 이상**으로 업그레이드하십시오([Terraform 참고](/ko/products/managed-postgres/terraform) 참조).
-</Warning>
+Postgres 서비스의 생명주기를 살펴보겠습니다.
 
 <div id="create">
   ### 생성
@@ -119,7 +113,8 @@ create_data='{
 ```
 
 이제 이 데이터를 사용해 새 인스턴스를 생성하세요. 이때는 Content-Type
-헤더가 필요합니다. 반환되는 자격 증명을 확인할 수 있도록 응답을 저장하세요:
+헤더가 필요합니다. 서비스 자격 증명을 포함하는 유일한 응답이므로 응답을 저장하세요
+(요청에 비밀번호를 제공하지 않는 경우 [비밀번호 reset] 응답도 이를 반환합니다):
 
 ```bash
 pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
@@ -167,8 +162,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-출력은 생성 시 반환된 JSON과 비슷하지만(단, 2026년 7월 31일 이후에는 `password` 및 `connectionString` 속성이 제외됨), `state`를 잘 확인하십시오. 값이 `running`으로 바뀌면
-서버가 준비된 것입니다:
+출력은 자격 증명을 제외하면 생성 시 반환된 JSON과 비슷하지만, `state`를 잘 확인하십시오. 값이 `running`으로 바뀌면 서버가 준비된 것입니다:
 
 ```bash
 curl -s --user "$KEY_ID:$KEY_SECRET" \
@@ -228,16 +222,14 @@ curl -sX PATCH --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' 
       "value": "production"
     }
   ],
-  "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com:5432/postgres?channel_binding=require",
   "username": "postgres",
-  "password": "vV6cfEr2p_-TzkCDrZOx",
   "hostname": "my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com",
   "isPrimary": true,
   "state": "running"
 }
 ```
 
-OpenAPI는 [patch API]에서 지원하지 않는 속성을 업데이트할 수 있는 추가 endpoint를 제공합니다.
+OpenAPI는 [patch API]에서 지원하지 않는 속성을 업데이트할 수 있는 추가 엔드포인트를 제공합니다.
 예를 들어 [Postgres 구성]을 업데이트하려면 [config API]를 사용하십시오:
 
 ```bash
@@ -268,7 +260,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
 
   추가 업데이트 API는 다음과 같습니다:
 
-  * 슈퍼유저 password 재설정
+  * 슈퍼유저 비밀번호 재설정
   * Postgres 서비스 이름 변경(호스트 이름 변경)
   * 다음 주요 Postgres 버전으로 업그레이드
 

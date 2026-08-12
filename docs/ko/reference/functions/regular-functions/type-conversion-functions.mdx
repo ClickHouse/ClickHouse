@@ -2910,9 +2910,9 @@ SELECT toDate(20297)
 
 도입 버전: v21.9.0
 
-인수를 [Date32](/ko/reference/data-types/date32) 데이터 타입으로 변환합니다.
-값이 범위를 벗어나면 `toDate32`는 [Date32](/ko/reference/data-types/date32)에서 지원하는 경곗값을 반환합니다.
-인수의 타입이 [`Date`](/ko/reference/data-types/date)인 경우 해당 타입의 경계값을 기준으로 처리됩니다.
+인수를 [Date32](/ko/reference/data-types/date32) 데이터 유형으로 변환합니다.
+값이 `[0000-01-01, 9999-12-31]` 범위를 벗어나면 `toDate32`는 [Date32](/ko/reference/data-types/date32)에서 지원하는 경곗값을 반환합니다.
+인수의 유형이 [`Date`](/ko/reference/data-types/date)인 경우 해당 유형의 경계값을 기준으로 처리됩니다.
 
 **구문**
 
@@ -2944,7 +2944,7 @@ value:           2025-01-01
 toTypeName(value): Date32
 ```
 
-**범위를 벗어남**
+**1900년 이전**
 
 ```sql title=Query
 SELECT toDate32('1899-01-01') AS value, toTypeName(value)
@@ -2954,7 +2954,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-value:           1900-01-01
+value:           1899-01-01
 toTypeName(value): Date32
 ```
 
@@ -2964,7 +2964,7 @@ toTypeName(value): Date32
 
 도입 버전: v21.11.0
 
-인수를 [Date32](/ko/reference/data-types/date32) 데이터 타입으로 변환합니다. [Date32](/ko/reference/data-types/date32)의 범위를 벗어난 숫자 값을 포함하여 인수를 변환할 수 없으면, 함수는 두 번째 인수(지정된 경우)를 기본값으로 반환하고, 그렇지 않으면 [Date32](/ko/reference/data-types/date32)의 하한 경계값을 반환합니다. 인수가 [Date](/ko/reference/data-types/date) 타입이면 해당 타입의 경계값이 적용됩니다.
+인수를 [Date32](/ko/reference/data-types/date32) 데이터 유형으로 변환합니다. [Date32](/ko/reference/data-types/date32)의 범위를 벗어난 숫자 값을 포함하여 인수를 변환할 수 없으면, 함수는 두 번째 인수(지정된 경우)를 기본값으로 반환하고, 그렇지 않으면 [Date32](/ko/reference/data-types/date32)의 과거 기본값인 `1900-01-01`을 반환합니다(하한 경계값인 `0000-01-01`이 아닙니다). 인수가 [Date](/ko/reference/data-types/date) 유형이면 해당 유형의 경계값이 적용됩니다.
 
 [toDate32](#toDate32)와 달리 이 함수는 범위를 벗어난 숫자 인수를 [Date32](/ko/reference/data-types/date32)의 경계값으로 포화하지 않습니다. 이러한 인수는 변환할 수 없는 것으로 처리됩니다.
 
@@ -2981,7 +2981,7 @@ toDate32OrDefault(expr[, default])
 
 **반환 값**
 
-성공하면 `Date32` 타입의 값을 반환하고, 실패하면 전달된 기본값을 반환하며, 기본값이 없으면 1900-01-01을 반환합니다. [`Date32`](/ko/reference/data-types/date32)
+성공하면 `Date32` 유형의 값을 반환하고, 실패하면 전달된 기본값을 반환하며, 기본값이 없으면 1900-01-01을 반환합니다. [`Date32`](/ko/reference/data-types/date32)
 
 **예시**
 
@@ -3058,8 +3058,9 @@ SELECT toDate32OrNull('2025-01-01'), toDate32OrNull('invalid')
 
 도입 버전: v21.9.0
 
-입력 값을 [Date32](/ko/reference/data-types/date32) 타입의 값으로 변환하며, 유효하지 않은 인수가 전달되면 [Date32](/ko/reference/data-types/date32)의 하한값을 반환합니다.
-[toDate32](#toDate32)와 동일하지만, 유효하지 않은 인수가 전달되면 [Date32](/ko/reference/data-types/date32)의 하한값을 반환합니다.
+입력 값을 [Date32](/ko/reference/data-types/date32) 유형의 값으로 변환하며, 유효하지 않은 인수가 전달되면 기본값 `1900-01-01`을 반환합니다.
+[toDate32](#toDate32)와 동일하지만, 유효하지 않은 인수가 전달되면 `1900-01-01`을 반환합니다.
+`1900-01-01`은 유효하지 않은 입력에 대한 기존 기본값이며, `0000-01-01`인 [Date32](/ko/reference/data-types/date32)의 하한값이 아닙니다.
 
 관련 항목:
 
@@ -3079,7 +3080,7 @@ toDate32OrZero(x)
 
 **반환 값**
 
-성공하면 Date32 값을 반환하고, 그렇지 않으면 Date32의 하한 값(`1900-01-01`)을 반환합니다. [`Date32`](/ko/reference/data-types/date32)
+성공하면 Date32 값을 반환하고, 그렇지 않으면 유효하지 않은 입력에 대한 기존 기본값(`1900-01-01`)을 반환합니다. [`Date32`](/ko/reference/data-types/date32)
 
 **예시**
 

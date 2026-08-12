@@ -83,13 +83,7 @@ como esto:
   ## CRUD
 </div>
 
-Veamos el ciclo de vida de un servicio Postgres.
-
-<Warning>
-  **Ocultación de credenciales a partir del 31 de julio de 2026**
-
-  A partir del **31 de julio de 2026**, la API dejará de devolver las propiedades `password` y `connectionString` en sus respuestas. Solo aparecerán en la respuesta de [create](#create) y en la respuesta de [restablecimiento de contraseña] cuando la solicitud no incluya una contraseña. Recomendamos capturar las credenciales de la respuesta de [create](#create). Si administras servicios con Terraform, actualiza el proveedor a la versión **v3.21.0 o posterior** antes del 31 de julio de 2026 (consulta la [referencia de Terraform](/es/products/managed-postgres/terraform)).
-</Warning>
+Veamos el ciclo de vida de un servicio de Postgres.
 
 <div id="create">
   ### Crear
@@ -118,7 +112,7 @@ create_data='{
 }'
 ```
 
-Ahora usa estos datos para crear una nueva instancia; ten en cuenta que requiere el encabezado Content-Type. Guarda la respuesta para tener acceso a las credenciales que devuelve:
+Ahora usa estos datos para crear una nueva instancia; ten en cuenta que requiere el encabezado Content-Type. Guarda la respuesta: es la única que incluye las credenciales del servicio (la respuesta de [restablecimiento de contraseña] también las devuelve cuando la solicitud no incluye una contraseña):
 
 ```bash
 pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
@@ -167,7 +161,8 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-La salida será similar al JSON devuelto al crearlo (pero sin las propiedades `password` y `connectionString` después del 31 de julio de 2026), pero presta atención
+La salida será similar al JSON devuelto al crearlo, sin las
+credenciales, pero presta atención
 al `state`; cuando cambie a `running`, el servidor estará listo:
 
 ```bash
@@ -228,9 +223,7 @@ La respuesta debería incluir las nuevas etiquetas:
       "value": "production"
     }
   ],
-  "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com:5432/postgres?channel_binding=require",
   "username": "postgres",
-  "password": "vV6cfEr2p_-TzkCDrZOx",
   "hostname": "my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com",
   "isPrimary": true,
   "state": "running"

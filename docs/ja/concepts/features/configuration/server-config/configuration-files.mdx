@@ -174,8 +174,12 @@ YAML 設定ファイルでは、`clickhouse:` は省略可能で、省略され�
 
 設定の一部をファイルの内容で置き換えることもできます。これには次の 2 つの方法があります。
 
-* *値の置換*: 要素に `incl` 属性がある場合、その値は参照先ファイルの内容で置き換えられます。デフォルトでは、置換用ファイルのパスは `/etc/metrika.xml` です。これは、サーバー設定の [`include_from`](/ja/reference/settings/server-settings/settings/other#include_from) 要素で変更できます。このファイルでは、置換値を `/clickhouse/substitution_name` 要素に指定します。`incl` で指定した置換が存在しない場合は、その旨がログに記録されます。ClickHouse が不足している置換をログに記録しないようにするには、`optional="true"` 属性を指定します (たとえば、[macros](/ja/reference/settings/server-settings/settings/other#macros) の設定) 。
+* *値の置換*: 要素に `incl` 属性がある場合、その値は参照先ファイルの内容で置き換えられます。置換用ファイルのパスは、サーバー設定の [`include_from`](/ja/reference/settings/server-settings/settings/other#include_from) 要素で設定します。デフォルトのパスはないため、指定されている場合にのみ置換が読み取られます。このファイルでは、置換値を `/clickhouse/substitution_name` 要素に指定します。`incl` で指定した置換が存在しない場合は、その旨がログに記録されます。ClickHouse が不足している置換をログに記録しないようにするには、`optional="true"` 属性を指定します (たとえば、[macros](/ja/reference/settings/server-settings/settings/other#macros) の設定) 。
 * *要素の置換*: 置換で要素全体を置き換えたい場合は、要素名として `include` を使用します。要素名 `include` は、`from_zk = "/path/to/node"` 属性と組み合わせて使用できます。この場合、要素の値は `/path/to/node` にある ZooKeeper ノードの内容で置き換えられます。これは、XML サブツリー全体を ZooKeeper ノードとして保存した場合にも機能し、その内容全体がソース要素に挿入されます。
+
+<Note>
+  バージョン 26.8 で変更: それ以前のバージョンでは、`include_from` が指定されていない場合でも、ファイル `/etc/metrika.xml` が存在すれば暗黙的に使用されていました。このファイルに依存している場合は、そのパスを `include_from` に明示的に指定してください。`include_from` は各設定ファイルから個別に読み取られることに注意してください。メインサーバー設定とは別に読み込まれるファイル、つまりユーザー&#39;設定 (たとえば、メインファイルに含まれていない場合の `users.xml`) と XML Dictionary 設定には、それぞれ独自の `include_from` 要素が必要です。メインサーバー設定でのみ指定しても、それらには適用されません。
+</Note>
 
 その例を以下に示します。
 
