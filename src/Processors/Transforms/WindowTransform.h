@@ -104,11 +104,16 @@ public:
 
     // Returns the exclusive end of the peer group containing `start` -- the first row of the next
     // peer group, or `partition_end` if the group is the last one in the partition.
-    RowNumber findPeerGroupEnd(const RowNumber & start, bool & need_more_data) const;
+    //
+    // `scan_frontier` makes the scan resumable when the group's end cannot be determined yet: it is the
+    // last row already proven to be a peer of `start`, so a retry after more input arrives continues
+    // from there instead of rescanning the group from its first row (which would make a peer group
+    // spanning many blocks quadratic).
+    RowNumber findPeerGroupEnd(const RowNumber & start, RowNumber & scan_frontier, bool & need_more_data) const;
 
     // Advances `pointer` forward, peer group by peer group, until it reaches the first row of the
     // `target_group`-th peer group (1-based) or the partition end.
-    bool advanceGroupBoundary(RowNumber & pointer, UInt64 & group_counter, Int64 target_group) const;
+    bool advanceGroupBoundary(RowNumber & pointer, UInt64 & group_counter, RowNumber & scan_frontier, Int64 target_group) const;
 
     void updateAggregationState();
     void writeOutCurrentRow();
@@ -288,6 +293,13 @@ public:
     // with the frame boundaries when a new partition starts.
     UInt64 frame_start_group_number = 1;
     UInt64 frame_end_group_number = 1;
+
+    // Resume positions for the peer-group scans of the corresponding boundaries (see
+    // `findPeerGroupEnd`). Unlike the RANGE offset frames, which resume by advancing the boundary
+    // itself, the scan progress must be kept separately: a GROUPS boundary always points at the first
+    // row of a peer group.
+    RowNumber frame_start_group_scan_frontier;
+    RowNumber frame_end_group_scan_frontier;
 
     // The frame is [frame_start, frame_end) if frame_ended && frame_started,
     // and unknown otherwise. Note that when we move to the next row, both the

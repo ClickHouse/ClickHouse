@@ -1014,16 +1014,22 @@ void WindowTransform::advanceFrameEndRangeOffset()
     frame_ended = partition_ended;
 }
 
-RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, bool & need_more_data) const
+RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, RowNumber & scan_frontier, bool & need_more_data) const
 {
     need_more_data = false;
 
     if (start == partition_end)
         return partition_end;
 
+    // Resume from the frontier of a previous, unfinished scan of the same peer group: every row in
+    // [start, scan_frontier] is already known to be a peer of `start`. A frontier before `start` is
+    // stale (the boundary has moved to another group or partition since the last scan).
+    if (scan_frontier < start)
+        scan_frontier = start;
+
     // Walk forward block by block while the peer group keeps extending.
     const UInt64 blocks_end_block = first_block_number + blocks.size();
-    for (RowNumber cur = start; cur.block < blocks_end_block; cur = RowNumber{cur.block + 1, 0})
+    for (RowNumber cur = scan_frontier; cur.block < blocks_end_block; cur = RowNumber{cur.block + 1, 0})
     {
         const size_t block_rows = blockRowsNumber(cur);
         const bool partition_ends_in_block = partition_end.block == cur.block;
@@ -1055,8 +1061,12 @@ RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, bool & need
         // We cannot extend the scan into the next block when it has not arrived yet, or when the next
         // row is the partition boundary (a peer group never crosses partitions). In both cases the
         // group's end depends on whether the partition has ended, which is decided after the loop.
+        // Remember the proven scan progress so a retry does not rescan the group from its first row.
         if (next_block_start.block >= blocks_end_block || next_block_start == partition_end)
+        {
+            scan_frontier = RowNumber{cur.block, block_rows - 1};
             break;
+        }
 
         if (!arePeers({cur.block, block_rows - 1}, next_block_start))
             return next_block_start;                // the peer group ends exactly at the block boundary
@@ -1076,7 +1086,7 @@ RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, bool & need
     return start;
 }
 
-bool WindowTransform::advanceGroupBoundary(RowNumber & pointer, UInt64 & group_counter, Int64 target_group) const
+bool WindowTransform::advanceGroupBoundary(RowNumber & pointer, UInt64 & group_counter, RowNumber & scan_frontier, Int64 target_group) const
 {
     chassert(target_group >= 1);
     chassert(group_counter <= static_cast<UInt64>(std::numeric_limits<Int64>::max()));
@@ -1084,7 +1094,7 @@ bool WindowTransform::advanceGroupBoundary(RowNumber & pointer, UInt64 & group_c
     while (static_cast<Int64>(group_counter) < target_group)
     {
         bool need_more_data = false;
-        const RowNumber group_end = findPeerGroupEnd(pointer, need_more_data);
+        const RowNumber group_end = findPeerGroupEnd(pointer, scan_frontier, need_more_data);
 
         if (need_more_data)
         {
@@ -1124,7 +1134,7 @@ void WindowTransform::advanceFrameStartGroupsOffset()
         return;
     }
 
-    frame_started = advanceGroupBoundary(frame_start, frame_start_group_number, target_group);
+    frame_started = advanceGroupBoundary(frame_start, frame_start_group_number, frame_start_group_scan_frontier, target_group);
 }
 
 void WindowTransform::advanceFrameEndGroupsOffset()
@@ -1147,7 +1157,7 @@ void WindowTransform::advanceFrameEndGroupsOffset()
         return;
     }
 
-    frame_ended = advanceGroupBoundary(frame_end, frame_end_group_number, target_group);
+    frame_ended = advanceGroupBoundary(frame_end, frame_end_group_number, frame_end_group_scan_frontier, target_group);
 }
 
 void WindowTransform::advanceFrameEnd()

@@ -223,6 +223,19 @@ SELECT count() OVER (ORDER BY number GROUPS BETWEEN 1 FOLLOWING AND CURRENT ROW)
 SELECT count() OVER (ORDER BY number GROUPS BETWEEN 1 FOLLOWING AND 1 PRECEDING) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
 SELECT count() OVER (ORDER BY number GROUPS BETWEEN CURRENT ROW AND 1 PRECEDING) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
 
+SELECT '-- peer groups spanning many tiny blocks (the group scan resumes instead of rescanning)';
+SELECT ts, x, sum(x) OVER (ORDER BY ts GROUPS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS s
+FROM t_groups ORDER BY ts, x
+SETTINGS max_block_size = 1;
+
+-- A peer group whose end stays unresolved for many arriving blocks: each retry must continue from the
+-- proven scan frontier, otherwise the total work is quadratic in the group size and this query hangs.
+SELECT '-- giant peer groups arriving in tiny blocks complete in linear time';
+SELECT min(c), max(c) FROM (
+    SELECT count() OVER (ORDER BY k GROUPS BETWEEN CURRENT ROW AND 1 FOLLOWING) AS c
+    FROM (SELECT intDiv(number, 15000) AS k FROM numbers(30000))
+) SETTINGS max_block_size = 1;
+
 DROP TABLE IF EXISTS t_groups;
 DROP TABLE IF EXISTS t_multi;
 DROP TABLE IF EXISTS t_part;

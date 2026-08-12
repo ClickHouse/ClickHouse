@@ -215,3 +215,12 @@ B	2	22	[20,21,22]
 3	10
 4	10
 -- invalid GROUPS frames (start after end) are rejected
+-- peer groups spanning many tiny blocks (the group scan resumes instead of rescanning)
+10	1	6
+10	2	6
+20	3	21
+30	4	18
+30	5	18
+30	6	18
+-- giant peer groups arriving in tiny blocks complete in linear time
+15000	30000
