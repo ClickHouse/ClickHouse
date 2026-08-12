@@ -163,6 +163,8 @@ SETTINGS check_query_single_value_result = 0
 └──────────┴──────────┴─────────────┴───────────┴─────────┘
 ```
 
+Para verificar a saúde de um banco de dados inteiro, em vez da integridade de tabelas individuais, use a consulta [`CHECK DATABASE`](/pt-BR/reference/statements/check-database). Ela se destina principalmente a bancos de dados com o motor [`DataLakeCatalog`](/pt-BR/reference/engines/database-engines/datalake), em que verifica se o catálogo externo está acessível.
+
 <div id="if-the-data-is-corrupted">
   ## Se os dados estiverem corrompidos
 </div>

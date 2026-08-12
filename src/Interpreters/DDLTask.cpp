@@ -1,6 +1,7 @@
 #include <Access/AccessControl.h>
 #include <Access/Role.h>
 #include <Access/User.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
@@ -23,6 +24,7 @@
 #include <Poco/Net/NetException.h>
 #include <Common/DNSResolver.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/config_version.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
@@ -293,6 +295,16 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(""); // generate random query_id
     query_context->setDDLOrOnClusterInternal(true);
+
+    /// This host (re-)initiates the DDL query, so any distributed sub-query spawned during its
+    /// execution (e.g. the `SELECT` of a `CREATE TABLE ... AS SELECT` reading a `Distributed` table)
+    /// treats this host as the initiator. Fill the client version with this server's version;
+    /// otherwise it stays 0.0.0 and remote shards apply legacy version compatibility downgrades -
+    /// in particular disabling the analyzer for supposedly pre-23.3 initiators (see `TCPHandler`).
+    /// That makes the initiator and the shards use different query interpreters, so column names
+    /// diverge (identifier `__table1.x` vs result name `x`) and distributed execution fails with
+    /// `NOT_FOUND_COLUMN_IN_BLOCK`.
+    query_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
 
     const bool preserve_user = from_context->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles];
     if (preserve_user && !entry.initiator_user.empty())

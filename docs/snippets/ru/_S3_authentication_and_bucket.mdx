@@ -2,31 +2,47 @@
 title: Аутентификация и бакет S3
 ---
 
-<Accordion title="Создайте S3 бакеты и пользователя IAM">
-  В этой статье описаны основы настройки пользователя AWS IAM, создания S3 бакета и настройки ClickHouse для использования бакета в качестве S3-диска.
-  Рекомендуется согласовать с командой безопасности необходимые разрешения, рассматривая приведённые здесь настройки как отправную точку.
+<Accordion title="Создайте S3 бакеты и IAM-пользователя">
+  В этой статье описываются основы настройки пользователя AWS IAM, создания S3 бакета и настройки ClickHouse для использования бакета в качестве S3-диска.
+  Рекомендуется согласовать с командой безопасности необходимые разрешения, рассматривая приведённые настройки как отправную точку.
 
   ### Создание пользователя AWS IAM
 
   В следующих шагах вы создадите пользователя сервисного аккаунта (не пользователя для авторизации).
 
-  1. Войдите в консоль управления IAM в AWS.
+  1. Войдите в консоль управления AWS IAM.
 
-  2. В меню `Users` выберите пункт `Create user`
+  2. В меню `Users` выберите `Create user`
 
-  <Image size="md" img="/images/_snippets/s3/s3-1.webp" alt="Консоль управления AWS IAM — добавление нового пользователя" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-1.webp" alt="AWS IAM Management Console — добавление нового пользователя" />
+    </Frame>
+  </div>
 
-  3. Введите имя пользователя, установите тип учетных данных `Access key - Programmatic access` и выберите `Next: Permissions`
+  3. Введите имя пользователя, выберите тип учетных данных `Access key - Programmatic access` и нажмите `Next: Permissions`
 
-  <Image size="md" img="/images/_snippets/s3/s3-2.webp" alt="Настройка имени пользователя и типа доступа для IAM-пользователя" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-2.webp" alt="Настройка имени пользователя и типа доступа для учетной записи IAM" />
+    </Frame>
+  </div>
 
-  4. Не добавляйте пользователя ни в одну группу; выберите `Next: Tags`
+  4. Не добавляйте пользователя ни в одну группу; нажмите `Next: Tags`
 
-  <Image size="md" img="/images/_snippets/s3/s3-3.webp" alt="Назначение группы для пользователя IAM пропускается" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-3.webp" alt="Пропуск назначения группы для пользователя IAM" />
+    </Frame>
+  </div>
 
-  5. Если добавлять теги не нужно, выберите `Next: Review`
+  5. Если вам не нужно добавлять теги, выберите `Next: Review`
 
-  <Image size="md" img="/images/_snippets/s3/s3-4.webp" alt="Пропускается присвоение тега пользователю IAM" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-4.webp" alt="Пропуск назначения тега для пользователя IAM" />
+    </Frame>
+  </div>
 
   6. Выберите `Create User`
 
@@ -34,29 +50,49 @@ title: Аутентификация и бакет S3
     Предупреждение о том, что у пользователя нет разрешений, можно проигнорировать; в следующем разделе пользователю будут выданы разрешения на бакет
   </Note>
 
-  <Image size="md" img="/images/_snippets/s3/s3-5.webp" alt="Предупреждение при создании пользователя IAM без разрешений" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-5.webp" alt="Создание пользователя IAM без предупреждения об отсутствии разрешений" />
+    </Frame>
+  </div>
 
-  7. Пользователь уже создан; нажмите `show` и скопируйте ключ доступа и секретный ключ.
+  7. Пользователь создан; нажмите `show` и скопируйте ключ доступа и секретный ключ.
 
   <Note>
-    Сохраните ключи в другом месте; секретный ключ доступа можно увидеть только сейчас.
+    Сохраните ключи в другом месте; секретный ключ доступа можно будет увидеть только сейчас.
   </Note>
 
-  <Image size="md" img="/images/_snippets/s3/s3-6.webp" alt="Просмотр и копирование ключей доступа IAM-пользователя" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-6.webp" alt="Просмотр и копирование ключей доступа IAM-пользователя" />
+    </Frame>
+  </div>
 
-  8. Нажмите «Закрыть», затем найдите пользователя на странице пользователей.
+  8. Нажмите Close, затем найдите пользователя на странице пользователей.
 
-  <Image size="md" img="/images/_snippets/s3/s3-7.webp" alt="Поиск только что созданного пользователя IAM в списке пользователей" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-7.webp" alt="Поиск недавно созданного пользователя IAM в списке пользователей" />
+    </Frame>
+  </div>
 
   9. Скопируйте ARN (Amazon Resource Name) и сохраните его — он понадобится при настройке политики доступа к бакету.
 
-  <Image size="md" img="/images/_snippets/s3/s3-8.webp" alt="Копирование ARN IAM-пользователя" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-8.webp" alt="Копирование ARN IAM-пользователя" />
+    </Frame>
+  </div>
 
-  ### Создание S3 бакета
+  ### Создайте S3 бакет
 
   1. В разделе S3 бакета выберите `Create bucket`
 
-  <Image size="md" img="/images/_snippets/s3/s3-9.webp" alt="Начало процесса создания S3 бакета" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-9.webp" alt="Начало создания S3 бакета" />
+    </Frame>
+  </div>
 
   2. Введите имя бакета, остальные параметры оставьте по умолчанию
 
@@ -64,41 +100,73 @@ title: Аутентификация и бакет S3
     Имя бакета должно быть уникальным во всём AWS, а не только в пределах организации, иначе возникнет ошибка.
   </Note>
 
-  3. Оставьте `Block all Public Access` включённым; публичный доступ не требуется.
+  3. Оставьте `Block all Public Access` включенным; публичный доступ не нужен.
 
-  <Image size="md" img="/images/_snippets/s3/s3-a.webp" alt="Настройка параметров S3 бакета при отключённом публичном доступе" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-a.webp" alt="Настройка параметров S3 бакета при заблокированном публичном доступе" />
+    </Frame>
+  </div>
 
-  4. Выберите `Create Bucket` внизу страницы
+  4. Выберите `Create Bucket` в нижней части страницы
 
-  <Image size="md" img="/images/_snippets/s3/s3-b.webp" alt="Завершение создания S3 бакета" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-b.webp" alt="Завершение создания S3 бакета" />
+    </Frame>
+  </div>
 
-  5. Выберите ссылку, скопируйте ARN и сохраните его — он понадобится при настройке политики доступа к бакету.
+  5. Выберите ссылку, скопируйте ARN и сохраните его, чтобы использовать при настройке политики доступа к бакету.
 
-  6. После создания бакета найдите новый S3 бакет в списке S3 бакетов и перейдите по ссылке
+  6. После создания бакета найдите новый S3 бакет в списке S3 бакетов и выберите ссылку
 
-  <Image size="md" img="/images/_snippets/s3/s3-c.webp" alt="Поиск только что созданного S3 бакета в списке бакетов" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-c.webp" alt="Только что созданный S3 бакет в списке бакетов" />
+    </Frame>
+  </div>
 
-  7. Выберите `Создать папку`
+  7. Выберите `Create folder`
 
-  <Image size="md" img="/images/_snippets/s3/s3-d.webp" alt="Создание новой папки в S3 бакете" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-d.webp" alt="Создание новой папки в S3-бакете" />
+    </Frame>
+  </div>
 
-  8. Введите имя папки, которая будет использоваться как целевая папка для диска S3 в ClickHouse, и выберите `Create folder`
+  8. Введите имя папки, которая будет использоваться как целевая для S3-диска ClickHouse, и выберите `Create folder`
 
-  <Image size="md" img="/images/_snippets/s3/s3-e.webp" alt="Настройка имени папки для использования S3-диска в ClickHouse" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-e.webp" alt="Настройка имени папки для использования S3-диска ClickHouse" />
+    </Frame>
+  </div>
 
-  9. Папка теперь должна отображаться в списке бакетов
+  9. Теперь папка должна отображаться в списке бакетов
 
-  <Image size="md" img="/images/_snippets/s3/s3-f.webp" alt="Просмотр новой папки в S3 бакете" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-f.webp" alt="Просмотр только что созданной папки в S3 бакете" />
+    </Frame>
+  </div>
 
-  10. Установите флажок для новой папки и нажмите `Copy URL`. Сохраните скопированный URL, чтобы использовать его в конфигурации хранилища ClickHouse в следующем разделе.
+  10. Установите флажок рядом с новой папкой и нажмите `Copy URL`. Сохраните скопированный URL, чтобы использовать его в конфигурации хранилища ClickHouse в следующем разделе.
 
-  <Image size="md" img="/images/_snippets/s3/s3-g.webp" alt="Копирование URL-адреса папки S3 для конфигурации ClickHouse" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-g.webp" alt="Копирование URL папки S3 для настройки ClickHouse" />
+    </Frame>
+  </div>
 
-  11. Выберите вкладку `Permissions` и нажмите на кнопку `Edit` в разделе `Bucket Policy`
+  11. Выберите вкладку `Permissions` и нажмите кнопку `Edit` в разделе `Bucket Policy`
 
-  <Image size="md" img="/images/_snippets/s3/s3-h.webp" alt="Доступ к конфигурации политики S3-бакета" border force />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-h.webp" alt="Доступ к настройкам политики S3 бакета" />
+    </Frame>
+  </div>
 
-  12. Добавьте политику бакета, пример ниже:
+  12. Добавьте политику для бакета, пример ниже:
 
   ```json
   {
@@ -122,21 +190,21 @@ title: Аутентификация и бакет S3
   ```
 
   ```response
-  |Параметр | Описание | Пример значения |
+  |Parameter | Description | Example Value |
   |----------|-------------|----------------|
-  |Version | Версия интерпретатора политики, оставьте без изменений | 2012-10-17 |
-  |Sid | Идентификатор политики, задаётся пользователем | abc123 |
-  |Effect | Определяет, будут ли запросы пользователя разрешены или запрещены | Allow |
-  |Principal | Учётные записи или пользователь, которым будет предоставлен доступ | arn:aws:iam::921234567898:user/mars-s3-user |
-  |Action | Какие операции разрешены для бакета| s3:*|
-  |Resource | Для каких ресурсов в бакете будут разрешены операции | "arn:aws:s3:::mars-doc-test", "arn:aws:s3:::mars-doc-test/*" |
+  |Version | Version of the policy interpreter, leave as-is | 2012-10-17 |
+  |Sid | User-defined policy id | abc123 |
+  |Effect | Whether user requests will be allowed or denied | Allow |
+  |Principal | The accounts or user that will be allowed | arn:aws:iam::921234567898:user/mars-s3-user |
+  |Action | What operations are allowed on the bucket| s3:*|
+  |Resource | Which resources in the bucket will operations be allowed in | "arn:aws:s3:::mars-doc-test", "arn:aws:s3:::mars-doc-test/*" |
   ```
 
   <Note>
-    Вам следует вместе с вашей командой по безопасности определить, какие разрешения использовать; приведённые ниже можно рассматривать как отправную точку.
+    Вместе с вашей командой по безопасности определите, какие разрешения следует использовать; приведённые ниже можно рассматривать как отправную точку.
     Дополнительную информацию о политиках и настройках см. в документации AWS:
     https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-policy-language-overview.html
   </Note>
 
-  13. Сохраните конфигурацию политики.
+  13. Сохраните настройки политики.
 </Accordion>

@@ -68,7 +68,7 @@ Collector는 세 가지 주요 처리 단계에 대해 [수신기](https://opent
 
 collector는 로그 수집을 위한 두 가지 주요 수신기를 제공합니다:
 
-**OTLP 사용** - 이 경우 로그는 OTLP 프로토콜을 통해 OpenTelemetry SDKs에서 collector로 직접 전송(push)됩니다. [OpenTelemetry demo](https://opentelemetry.io/docs/demo/)는 이 방식을 사용하며, 각 언어의 OTLP exporter는 로컬 collector endpoint를 가정합니다. 이 경우 collector는 OTLP 수신기가 구성되어 있어야 합니다. 구성 예시는 위의 [demo 설정](https://github.com/ClickHouse/opentelemetry-demo/blob/main/src/otelcollector/otelcol-config.yml#L5-L12)을 참조하십시오. 이 방식의 장점은 로그 데이터에 트레이스 ID가 자동으로 포함되므로, 나중에 특정 로그에 해당하는 trace를 식별하거나 그 반대로도 가능하다는 점입니다.
+**OTLP 사용** - 이 경우 로그는 OTLP 프로토콜을 통해 OpenTelemetry SDKs에서 collector로 직접 전송(push)됩니다. [OpenTelemetry 데모](https://opentelemetry.io/docs/demo/)는 이 방식을 사용하며, 각 언어의 OTLP exporter는 로컬 collector endpoint를 가정합니다. 이 경우 collector는 OTLP 수신기가 구성되어 있어야 합니다. 구성 예시는 위의 [demo 설정](https://github.com/ClickHouse/opentelemetry-demo/blob/main/src/otelcollector/otelcol-config.yml#L5-L12)을 참조하십시오. 이 방식의 장점은 로그 데이터에 트레이스 ID가 자동으로 포함되므로, 나중에 특정 로그에 해당하는 트레이스를 식별하거나 그 반대로도 가능하다는 점입니다.
 
 <Image img="/images/use-cases/observability/observability-4.webp" alt="otlp를 통한 로그 수집" size="md" />
 
@@ -646,22 +646,22 @@ collector 관점에서는 (1)과 (2)를 구분하기 어려울 수 있습니다.
   ### 비동기 삽입 사용
 </div>
 
-일반적으로 collector의 처리량이 낮지만 데이터가 최소한의 종단 간 지연 시간으로 ClickHouse에 도달해야 하는 경우에는 더 작은 배치를 전송할 수밖에 없습니다. 이 경우 batch processor의 `timeout`이 만료되면 작은 배치가 전송됩니다. 이는 문제를 일으킬 수 있으며, 이런 상황에서는 비동기 삽입(asynchronous inserts)이 필요합니다. 이러한 상황은 일반적으로 **에이전트 역할의 collector가 ClickHouse로 직접 전송하도록 구성된 경우**에 발생합니다. 게이트웨이는 집계기 역할을 하므로 이 문제를 완화할 수 있습니다. 자세한 내용은 [게이트웨이를 사용한 스케일링](#scaling-with-gateways)을 참조하십시오.
+일반적으로 collector의 처리량이 낮지만 데이터가 최소한의 엔드투엔드 지연 시간으로 ClickHouse에 도달해야 하는 경우에는 더 작은 배치를 전송할 수밖에 없습니다. 이 경우 batch processor의 `timeout`이 만료되면 작은 배치가 전송됩니다. 이는 문제를 일으킬 수 있으며, 이런 상황에서는 비동기 삽입(asynchronous inserts)이 필요합니다. 이러한 상황은 일반적으로 **에이전트 역할의 collector가 ClickHouse로 직접 전송하도록 구성된 경우**에 발생합니다. 게이트웨이는 집계기 역할을 하므로 이 문제를 완화할 수 있습니다. 자세한 내용은 [게이트웨이를 사용한 스케일링](#scaling-with-gateways)을 참조하십시오.
 
 큰 배치를 보장할 수 없다면 [Asynchronous Inserts](/ko/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts)를 사용해 ClickHouse에 배칭을 맡길 수 있습니다. 비동기 삽입을 사용하면 데이터는 먼저 버퍼에 삽입된 뒤, 나중에 또는 비동기적으로 데이터베이스 저장소에 기록됩니다.
 
 <Image img="/images/use-cases/observability/observability-6.webp" alt="Async inserts" size="md" />
 
-[비동기 삽입이 활성화된 상태](/ko/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)에서는 ClickHouse가 ① 삽입 쿼리를 수신하면 해당 쿼리의 데이터가 먼저 ② 즉시 메모리 내 버퍼에 기록됩니다. 이후 ③ 다음 버퍼 플러시가 발생하면 버퍼의 데이터가 [정렬된 뒤](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) 파트(part)로 데이터베이스 저장소에 기록됩니다. 데이터는 데이터베이스 저장소로 플러시되기 전까지는 쿼리로 검색할 수 없으며, 버퍼 플러시는 [구성할 수 있습니다](/ko/concepts/features/operations/insert/asyncinserts).
+[비동기 삽입이 활성화된 상태](/ko/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)에서는 ClickHouse가 ① 삽입 쿼리를 수신하면 해당 쿼리의 데이터가 먼저 ② 즉시 인메모리 버퍼에 기록됩니다. 이후 ③ 다음 버퍼 플러시가 발생하면 버퍼의 데이터가 [정렬된 뒤](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) 파트(part)로 데이터베이스 저장소에 기록됩니다. 데이터는 데이터베이스 저장소로 플러시되기 전까지는 쿼리로 검색할 수 없으며, 버퍼 플러시는 [구성할 수 있습니다](/ko/concepts/features/operations/insert/asyncinserts).
 
 collector에서 비동기 삽입을 활성화하려면 connection string에 `async_insert=1`을 추가하십시오. 전달 보장을 위해 `wait_for_async_insert=1`(기본값)을 사용하는 것을 권장합니다. 자세한 내용은 [여기](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)를 참조하십시오.
 
-비동기 삽입으로 전송된 데이터는 ClickHouse 버퍼가 플러시되면 삽입됩니다. 이는 [`async_insert_max_data_size`](/ko/reference/settings/session-settings#async_insert_max_data_size)를 초과했거나 첫 번째 INSERT 쿼리 이후 [`async_insert_busy_timeout_ms`](/ko/reference/settings/session-settings#async_insert_max_data_size)밀리초가 경과한 경우에 발생합니다. `async_insert_stale_timeout_ms`가 0이 아닌 값으로 설정되어 있으면 마지막 쿼리 이후 `async_insert_stale_timeout_ms milliseconds`가 지나면 데이터가 삽입됩니다. 이러한 설정을 조정해 파이프라인의 종단 간 지연 시간을 제어할 수 있습니다. 버퍼 플러시를 조정하는 데 사용할 수 있는 추가 설정은 [여기](/ko/reference/settings/session-settings#async_insert)에 문서화되어 있습니다. 일반적으로는 기본값이 적절합니다.
+비동기 삽입으로 전송된 데이터는 ClickHouse 버퍼가 플러시되면 삽입됩니다. 이는 [`async_insert_max_data_size`](/ko/reference/settings/session-settings#async_insert_max_data_size)를 초과했거나 첫 번째 INSERT 쿼리 이후 [`async_insert_busy_timeout_ms`](/ko/reference/settings/session-settings#async_insert_max_data_size)밀리초가 경과한 경우에 발생합니다. `async_insert_stale_timeout_ms`가 0이 아닌 값으로 설정되어 있으면 마지막 쿼리 이후 `async_insert_stale_timeout_ms milliseconds`가 지나면 데이터가 삽입됩니다. 이러한 설정을 조정해 파이프라인의 엔드투엔드 지연 시간을 제어할 수 있습니다. 버퍼 플러시를 조정하는 데 사용할 수 있는 추가 설정은 [여기](/ko/reference/settings/session-settings#async_insert)에 문서화되어 있습니다. 일반적으로는 기본값이 적절합니다.
 
 <Info>
   **적응형 비동기 삽입을 고려하십시오**
 
-  사용 중인 에이전트 수가 적고 처리량은 낮지만 종단 간 지연 시간 요구 사항이 엄격한 경우에는 [적응형 비동기 삽입](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts)이 유용할 수 있습니다. 일반적으로 이는 ClickHouse에서 볼 수 있는 고처리량 관측성 사용 사례에는 적용되지 않습니다.
+  사용 중인 에이전트 수가 적고 처리량은 낮지만 엔드투엔드 지연 시간 요구 사항이 엄격한 경우에는 [적응형 비동기 삽입](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts)이 유용할 수 있습니다. 일반적으로 이는 ClickHouse에서 볼 수 있는 고처리량 관측성 사용 사례에는 적용되지 않습니다.
 </Info>
 
 마지막으로, ClickHouse의 동기 삽입과 관련된 기존 중복 제거 동작은 비동기 삽입을 사용할 때 기본적으로 활성화되지 않습니다. 필요한 경우 [`async_insert_deduplicate`](/ko/reference/settings/session-settings#async_insert_deduplicate) 설정을 참조하십시오.
@@ -721,11 +721,11 @@ exporters:
   otlp:
     endpoint: localhost:4317
     tls:
-      insecure: true # 보안 연결을 사용하는 경우 false로 설정하세요
+      insecure: true # Set to false if you are using a secure connection
 service:
   telemetry:
     metrics:
-      address: 0.0.0.0:9888 # 동일한 호스트에서 2개의 collector가 실행되므로 수정됨
+      address: 0.0.0.0:9888 # Modified as 2 collectors running on same host
   pipelines:
     logs:
       receivers: [filelog]
@@ -786,7 +786,7 @@ service:
 
 위 아키텍처에서는 메시지 큐로 Kafka를 사용하지 않는다는 점을 알 수 있습니다.
 
-메시지 버퍼로 Kafka 큐를 사용하는 것은 로깅 아키텍처에서 널리 쓰이는 설계 패턴이며, ELK 스택을 통해 대중화되었습니다. 이는 몇 가지 장점을 제공합니다. 가장 큰 장점은 더 강력한 메시지 전달 보장을 제공하고 백프레셔를 처리하는 데 도움이 된다는 점입니다. 메시지는 수집 에이전트에서 Kafka로 전송되어 디스크에 기록됩니다. 이론적으로 클러스터로 구성된 Kafka 인스턴스는 고처리량 메시지 버퍼를 제공할 수 있습니다. 메시지를 파싱하고 처리하는 것보다 데이터를 디스크에 순차적으로 기록하는 데 계산 오버헤드가 더 적게 들기 때문입니다. 예를 들어 Elastic에서는 토큰화와 인덱싱에 상당한 오버헤드가 발생합니다. 또한 데이터를 에이전트에서 분리하면 원본 측 로그 로테이션으로 인해 메시지가 손실될 위험도 줄어듭니다. 마지막으로 일부 사용 사례에서는 유용할 수 있는 메시지 재생 및 리전 간 복제 기능도 제공합니다.
+메시지 버퍼로 Kafka 큐를 사용하는 것은 로깅 아키텍처에서 널리 쓰이는 설계 패턴이며, ELK 스택을 통해 대중화되었습니다. 이는 몇 가지 장점을 제공합니다. 가장 큰 장점은 더 강력한 메시지 전달 보장을 제공하고 백프레셔를 처리하는 데 도움이 된다는 점입니다. 메시지는 수집 에이전트에서 Kafka로 전송되어 디스크에 기록됩니다. 이론적으로 클러스터로 구성된 Kafka 인스턴스는 고처리량 메시지 버퍼를 제공할 수 있습니다. 메시지를 파싱하고 처리하는 것보다 데이터를 디스크에 순차적으로 기록하는 데 계산 오버헤드가 더 적게 들기 때문입니다. 예를 들어 Elastic에서는 토큰화와 인덱싱에 상당한 오버헤드가 발생합니다. 또한 데이터를 에이전트에서 분리하면 원본 측 로그 교체로 인해 메시지가 손실될 위험도 줄어듭니다. 마지막으로 일부 사용 사례에서는 유용할 수 있는 메시지 재생 및 리전 간 복제 기능도 제공합니다.
 
 하지만 ClickHouse는 데이터를 매우 빠르게 삽입할 수 있습니다. 보통 수준의 하드웨어에서도 초당 수백만 개의 행을 처리할 수 있습니다. ClickHouse에서 발생하는 백프레셔는 **드뭅니다**. Kafka 큐를 활용하면 아키텍처 복잡성과 비용만 늘어나는 경우가 많습니다. 로그에 은행 거래나 기타 미션 크리티컬 데이터와 같은 수준의 전달 보장이 필요하지 않다는 원칙을 받아들일 수 있다면, Kafka의 복잡성은 피하는 것이 좋습니다.
 

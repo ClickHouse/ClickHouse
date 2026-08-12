@@ -12,12 +12,20 @@ hide_advert: true
 import GatherCredentials from '/snippets/ko/clickstack/_gather_credentials.mdx';
 import CreateIngestionUser from '/snippets/ko/clickstack/_create_ingestion_user.mdx';
 import ConfirmInUI from '/snippets/ko/clickstack/_confirm_in_ui.mdx';
+import { AgentPrompt } from '/snippets/ko/components/AgentPrompt/AgentPrompt.jsx';
 
 이 가이드는 기존 Managed ClickStack 서비스에 OpenTelemetry collector를 배포하거나 기존 collector를 조정한 후, 데이터가 실제로 흐르는지 확인하는 방법을 안내합니다.
 
+설정 도우미를 사용하기 전에 공식 ClickHouse agent skills를 설치하십시오:
+
+```bash
+npx skills add clickhouse/agent-skills
+```
+
 <AgentPrompt
-  prompt="curl을 사용해 다음 파일을 다운로드하고, 읽은 뒤, 안내에 따르십시오: https://clickhouse.com/docs/skills/clickstack-otel-collector/SKILL.md"
+  prompt="clickstack-otel-collector 스킬을 사용해 Managed ClickStack 서비스에 OpenTelemetry collector를 연결하십시오."
   description="에이전트가 ClickStack OpenTelemetry collector 설정을 대신 수행합니다. Claude Code, Cursor, Codex 및 기타 코딩 에이전트에서 사용할 수 있습니다."
+  repositoryUrl="https://github.com/ClickHouse/agent-skills"
   outline={[
 "clickhousectl이 없으면 설치하고 인증합니다(ClickHouse Cloud API Key를 요청합니다 — 채팅에 붙여 넣거나 직접 로그인 명령을 실행하십시오).",
 "대상 ClickHouse Cloud 서비스 ID 또는 이름을 확인한 다음 HTTPS 엔드포인트를 가져옵니다.",
@@ -41,21 +49,15 @@ collector는 **gateway**로 실행됩니다. 즉, 애플리케이션, SDK, agent
 <Tabs>
   <Tab title="collector가 없습니다">
     <Steps>
-      <Step>
-        ## 자격 증명 준비하기
-
+      <Step title="자격 증명 준비하기" id="gather-credentials">
         <GatherCredentials />
       </Step>
 
-      <Step>
-        ## 수집용 사용자 생성
-
+      <Step title="수집용 사용자 생성" id="create-ingestion-user">
         <CreateIngestionUser />
       </Step>
 
-      <Step>
-        ## collector 배포
-
+      <Step title="collector 배포" id="deploy-the-collector">
         Managed ClickStack용으로 미리 구성된 **OpenTelemetry collector의 ClickStack 배포판**을 배포합니다. 아래 예시에서는 단순화를 위해 collector를 로컬에서 실행하고, 같은 머신에서 테스트용 텔레메트리를 생성합니다.
 
         <Note>
@@ -94,9 +96,7 @@ collector는 **gateway**로 실행됩니다. 즉, 애플리케이션, SDK, agent
         </Info>
       </Step>
 
-      <Step>
-        ## 엔드포인트 확인
-
+      <Step title="엔드포인트 확인" id="verify-the-endpoint">
         전체 파이프라인이 정상적으로 동작하는지 확인하기 위해 collector에 합성 트래픽을 생성합니다. 여기서는 [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen)을 사용합니다. 이는 OpenTelemetry Collector Contrib 생성기로, OTLP 로그, 트레이스, 메트릭을 전송하며 서비스, 심각도, 스팬 상태, 메트릭 타입에 따라 데이터를 구성할 수 있는 flag를 제공합니다.
 
         Docker image로 실행하세요(별도 설치 불필요). 아래 명령어를 간결하게 유지하기 위해 간단한 wrapper를 정의하십시오. `--add-host`를 사용하면 컨테이너가 host에서 수신 대기 중인 collector에 접근할 수 있습니다.
@@ -145,10 +145,10 @@ collector는 **gateway**로 실행됩니다. 즉, 애플리케이션, SDK, agent
           --telemetry-attributes 'http.status_code="500"'
         ```
 
-        로그만으로도 엔드포인트가 정상 작동하는지 확인할 수 있습니다. 더 풍부한 데모 데이터세트, 멀티 서비스 Service Map, 다양한 메트릭 유형의 차트를 확인하려면 아래 명령어도 펼쳐서 실행하십시오. 이 명령어들은 `tg` 헬퍼를 재사용하므로 동일한 셸에서 실행하십시오.
+        로그만으로도 엔드포인트가 정상 작동하는지 확인할 수 있습니다. 더 풍부한 데모 데이터세트, 멀티 서비스 Service Map, 다양한 메트릭 타입의 차트를 확인하려면 아래 명령어도 펼쳐서 실행하십시오. 이 명령어들은 `tg` 헬퍼를 재사용하므로 동일한 셸에서 실행하십시오.
 
         <Accordion title="더 상세한 텔레메트리 생성(선택 사항)">
-          여러 정상 서비스와 실패하는 종속성 1개에서 여러 스팬으로 구성된 trace를 전송하십시오. 그러면 Service Map이 대부분 정상이고 오류가 발생하는 서비스 1개가 포함된 현실적인 형태로 표시되며, 오류 뷰에도 계속 데이터가 채워집니다:
+          여러 개의 정상 서비스와 하나의 장애가 발생한 종속성에서 여러 스팬으로 이루어진 트레이스를 전송하세요. 그러면 Service Map에 대부분은 정상이고 하나의 서비스만 오류가 있는 현실적인 형태가 반영되며, 오류 뷰도 계속 채워집니다:
 
           ```shell
           # Healthy services: the bulk of the traffic, all spans Ok
@@ -183,12 +183,10 @@ collector는 **gateway**로 실행됩니다. 즉, 애플리케이션, SDK, agent
           ```
         </Accordion>
 
-        전체 플래그 목록 및 다양한 변형 옵션은 [telemetrygen을 활용한 합성 데이터](/ko/clickstack/example-datasets/telemetrygen)를 참조하십시오.
+        전체 플래그 목록과 다양한 변형 옵션은 [telemetrygen을 사용한 합성 데이터](/ko/clickstack/example-datasets/telemetrygen)를 참조하십시오.
       </Step>
 
-      <Step>
-        ## ClickStack UI에서 확인하기
-
+      <Step title="ClickStack UI에서 확인하기" id="confirm-in-ui">
         <ConfirmInUI />
       </Step>
     </Steps>
@@ -196,21 +194,15 @@ collector는 **gateway**로 실행됩니다. 즉, 애플리케이션, SDK, agent
 
   <Tab title="collector를 가지고 있습니다">
     <Steps>
-      <Step>
-        ## 자격 증명을 준비하세요
-
+      <Step title="자격 증명 준비하기" id="gather-credentials-existing">
         <GatherCredentials />
       </Step>
 
-      <Step>
-        ## 수집용 사용자 생성
-
+      <Step title="수집용 사용자 생성" id="create-ingestion-user-existing">
         <CreateIngestionUser />
       </Step>
 
-      <Step>
-        ## collector 구성을 조정하세요
-
+      <Step title="collector 구성을 조정하세요" id="adapt-collector">
         기존 collector 구성을 확장하여 [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter)를 통해 Managed ClickStack에 쓰도록 합니다.
 
         <Info>
@@ -314,9 +306,7 @@ collector는 **gateway**로 실행됩니다. 즉, 애플리케이션, SDK, agent
         Managed ClickStack에 맞춰 OpenTelemetry collector를 구성하는 방법에 대한 자세한 내용은 [OpenTelemetry로 수집하기](/ko/clickstack/ingesting-data/opentelemetry)를 참조하십시오.
       </Step>
 
-      <Step>
-        ## 엔드포인트 확인
-
+      <Step title="엔드포인트 확인" id="verify-the-endpoint-existing">
         전체 파이프라인이 정상적으로 동작하는지 확인하기 위해 collector에 합성 트래픽을 생성합니다. 여기서는 [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen)을 사용합니다. 이는 OpenTelemetry Collector Contrib 생성기로, OTLP 로그, 트레이스, 메트릭을 전송하며 서비스, 심각도, 스팬 상태, 메트릭 타입에 따라 데이터를 구성할 수 있는 flag를 제공합니다.
 
         Docker image에서 실행하세요(별도 설치 불필요). `<your-collector-host>`를 collector가 수신 대기 중인 host로 교체하고, `authorization` header(또는 대체 인증 방법)를 collector가 요구하는 값으로 설정하세요:
@@ -339,7 +329,7 @@ collector는 **gateway**로 실행됩니다. 즉, 애플리케이션, SDK, agent
         <Info>
           **예상되는 내용**
 
-          각 `tg` 실행은 약 20초 동안 지속되며(`--duration 20s`로 설정), 그동안 계속 verbose 로그를 스트리밍합니다. 이는 정상입니다. 각 실행은 20초가 지나면 자동으로 종료됩니다. 아래 로그만으로도 파이프라인을 확인하기에 충분하며, 선택적으로 더 자세한 세트를 실행하면 몇 차례 더 수행되므로 몇 분 정도 걸립니다.
+          각 `tg` 실행은 약 20초 동안 계속되며(`--duration 20s`로 설정), 그동안 Verbose 로그가 계속 출력됩니다. 이는 정상입니다. 각 실행은 20초가 지나면 자동으로 종료됩니다. 아래 로그만으로도 파이프라인을 확인하기에 충분하며, 선택 사항인 더 풍부한 세트는 실행을 몇 차례 더 추가로 수행하므로 몇 분 정도 더 걸립니다.
         </Info>
 
         각 명령에서 달라지는 부분(service, severity, status, attributes)만 지정할 수 있도록 작은 `tg` 헬퍼를 정의합니다:
@@ -351,7 +341,7 @@ collector는 **gateway**로 실행됩니다. 즉, 애플리케이션, SDK, agent
           --rate 5 --duration 20s "$@"; }
         ```
 
-        여러 서비스에 걸쳐 현실적인 심각도 조합으로 로그를 전송합니다. 균일한 오류 스트림 대신, 대부분 정보성 메시지로 구성하되 경고와 오류도 포함합니다:
+        여러 서비스에 걸쳐 심각도를 현실적으로 혼합하여 로그를 전송합니다. 단일한 균등 오류 스트림이 아닌, 대부분 정보성 메시지에 경고와 오류가 섞인 형태입니다:
 
         ```shell
         tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
@@ -367,8 +357,8 @@ collector는 **gateway**로 실행됩니다. 즉, 애플리케이션, SDK, agent
 
         로그만으로도 엔드포인트가 정상 작동하는지 확인할 수 있습니다. 더 풍부한 데모 데이터세트, 멀티 서비스 Service Map, 다양한 메트릭 타입의 차트를 확인하려면 아래 명령어도 펼쳐서 실행하십시오. 이 명령어들은 `tg` 헬퍼를 재사용하므로 동일한 셸에서 실행하십시오.
 
-        <Accordion title="더 자세한 진단 데이터 생성(선택 사항)">
-          여러 개의 정상 서비스와 하나의 장애가 발생한 종속성에서 여러 스팬으로 이루어진 트레이스를 전송하세요. 그러면 Service Map에 대부분은 정상이고 하나의 서비스만 오류가 있는 현실적인 형태가 반영되며, 오류 뷰도 계속 채워집니다:
+        <Accordion title="더 상세한 텔레메트리 생성(선택 사항)">
+          여러 정상 서비스와 실패하는 종속성 1개에서 여러 스팬으로 구성된 trace를 전송하십시오. 그러면 Service Map이 대부분 정상이고 오류가 발생하는 서비스 1개가 포함된 현실적인 형태로 표시되며, 오류 뷰에도 계속 데이터가 채워집니다:
 
           ```shell
           # Healthy services: the bulk of the traffic, all spans Ok
@@ -384,7 +374,7 @@ collector는 **gateway**로 실행됩니다. 즉, 애플리케이션, SDK, agent
             --telemetry-attributes 'http.route="/charge"'
           ```
 
-          세 가지 일반적인 유형의 메트릭을 전송하여 차트에 Counter, Gauge, Distribution이 모두 표시되도록 합니다:
+          차트에 카운터, 게이지, 분포가 모두 표시되도록 일반적인 3가지 유형의 메트릭을 전송합니다:
 
           ```shell
           tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
@@ -392,7 +382,7 @@ collector는 **gateway**로 실행됩니다. 즉, 애플리케이션, SDK, agent
           tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
           ```
 
-          구성을 더욱 다양하게 하려면 서비스를 두어 개 더 추가하고 지수 히스토그램도 추가합니다:
+          좀 더 다양하게 구성하려면 서비스 두어 개를 더 추가하고 지수 히스토그램도 추가하세요:
 
           ```shell
           tg traces  --service catalog   --child-spans 2 --span-duration 60ms  --status-code Ok \
@@ -403,12 +393,10 @@ collector는 **gateway**로 실행됩니다. 즉, 애플리케이션, SDK, agent
           ```
         </Accordion>
 
-        전체 플래그 목록과 다양한 변형 옵션은 [telemetrygen을 사용한 합성 데이터](/ko/clickstack/example-datasets/telemetrygen)를 참조하십시오.
+        전체 플래그 목록 및 다양한 변형 옵션은 [telemetrygen을 활용한 합성 데이터](/ko/clickstack/example-datasets/telemetrygen)를 참조하십시오.
       </Step>
 
-      <Step>
-        ## ClickStack UI에서 확인하기
-
+      <Step title="ClickStack UI에서 확인하기" id="confirm-in-ui-existing">
         <ConfirmInUI />
       </Step>
     </Steps>

@@ -18,7 +18,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## تمكين النسخ المتماثل المنطقي
 </div>
 
-**لست بحاجة** إلى اتباع الخطوات أدناه إذا كانت قيمة `wal_level` مضبوطة على `logical`. غالبًا ما يكون هذا الإعداد مُهيّأً مسبقًا إذا كنت تنتقل من أداة أخرى للنسخ المتماثل للبيانات.
+**لست بحاجة** إلى اتباع الخطوات أدناه إذا كانت قيمة `wal_level` مضبوطة على `logical`. غالبًا ما يكون هذا الإعداد مُهيّأً مسبقًا إذا كنت تُرحّل من أداة أخرى لنسخ البيانات المتماثل.
 
 1. انقر على قسم **Server parameters**
 
@@ -76,7 +76,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-سيحتوي الـ publication ‏`clickpipes` على مجموعة أحداث التغيير الناتجة عن الجداول المحددة، وسيُستخدم لاحقًا لاستيعاب تدفق النسخ المتماثل.
+يحدّد الـ publication ‏`clickpipes` مجموعة الجداول التي ستُبث أحداث التغيير الخاصة بها إلى ClickPipes. نوصي بعدم استخدام `FOR ALL TABLES` إلا إذا كنت تنوي نسخ كل table متماثلًا، لأن تضمين جداول غير ضرورية يزيد حركة WAL من Postgres إلى ClickPipes ويقلّل الكفاءة الإجمالية للنسخ المتماثل.
 
 <div id="add-clickpipes-ips-to-firewall">
   ## أضِف ClickPipes IPs إلى جدار الحماية

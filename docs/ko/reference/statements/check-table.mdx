@@ -163,6 +163,8 @@ SETTINGS check_query_single_value_result = 0
 └──────────┴──────────┴─────────────┴───────────┴─────────┘
 ```
 
+개별 테이블의 무결성이 아니라 전체 데이터베이스의 상태를 확인하려면 [`CHECK DATABASE`](/ko/reference/statements/check-database) 쿼리를 사용합니다. 이 쿼리는 주로 [`DataLakeCatalog`](/ko/reference/engines/database-engines/datalake) 엔진을 사용하는 데이터베이스를 위한 것으로, 외부 카탈로그에 접근할 수 있는지 확인합니다.
+
 <div id="if-the-data-is-corrupted">
   ## 데이터가 손상된 경우
 </div>

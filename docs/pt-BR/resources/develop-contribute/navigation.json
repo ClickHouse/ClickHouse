@@ -1,0 +1,65 @@
+{
+  "groups": [
+    {
+      "group": "Introdução",
+      "pages": [
+        "pt-BR/resources/develop-contribute/introduction/developer-instruction",
+        "pt-BR/resources/develop-contribute/introduction/architecture"
+      ]
+    },
+    {
+      "group": "Compilação",
+      "pages": [
+        "pt-BR/resources/develop-contribute/build/build",
+        "pt-BR/resources/develop-contribute/build/build-osx",
+        "pt-BR/resources/develop-contribute/build/build-cross-osx",
+        "pt-BR/resources/develop-contribute/build/build-cross-arm",
+        "pt-BR/resources/develop-contribute/build/build-cross-riscv",
+        "pt-BR/resources/develop-contribute/build/build-cross-s390x",
+        "pt-BR/resources/develop-contribute/build/build-cross-loongarch",
+        "pt-BR/resources/develop-contribute/build/build-e2k"
+      ]
+    },
+    {
+      "group": "Protocolo nativo",
+      "pages": [
+        "pt-BR/resources/develop-contribute/native-protocol/basics",
+        "pt-BR/resources/develop-contribute/native-protocol/client",
+        "pt-BR/resources/develop-contribute/native-protocol/server",
+        "pt-BR/resources/develop-contribute/native-protocol/columns",
+        "pt-BR/resources/develop-contribute/native-protocol/hash"
+      ]
+    },
+    {
+      "group": "Contribuindo",
+      "pages": [
+        "pt-BR/resources/develop-contribute/contribute/tests",
+        "pt-BR/resources/develop-contribute/contribute/continuous-integration",
+        "pt-BR/resources/develop-contribute/contribute/contrib",
+        "pt-BR/resources/develop-contribute/contribute/style",
+        "pt-BR/resources/develop-contribute/contribute/building-and-benchmarking-deflate-qpl",
+        "pt-BR/resources/develop-contribute/contribute/integrating-rust-libraries",
+        "pt-BR/resources/develop-contribute/contribute/profile-guided-optimization",
+        "pt-BR/resources/develop-contribute/contribute/backports"
+      ]
+    },
+    {
+      "group": "Desenvolvimento de integrações",
+      "pages": [
+        "pt-BR/resources/develop-contribute/integrations/building-integrations",
+        "pt-BR/resources/develop-contribute/integrations/testing-your-integration",
+        "pt-BR/resources/develop-contribute/integrations/documenting-your-integration"
+      ],
+      "root": "pt-BR/resources/develop-contribute/integrations/index"
+    },
+    {
+      "group": "Roadmap",
+      "pages": [
+        "pt-BR/resources/develop-contribute/roadmap"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-contribute.svg",
+  "item": "Desenvolvimento e contribuição",
+  "root": "pt-BR/resources/develop-contribute/index"
+}

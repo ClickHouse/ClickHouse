@@ -15,9 +15,7 @@ title: Instalação no Windows
 </Note>
 
 <Steps>
-  <Step>
-    ## Instale o WSL
-
+  <Step title="Instale o WSL" id="install-wsl">
     Abra o Windows PowerShell como administrador e execute o comando a seguir:
 
     ```bash
@@ -32,9 +30,7 @@ title: Instalação no Windows
     ```
   </Step>
 
-  <Step>
-    ## Instale o ClickHouse via script usando curl
-
+  <Step title="Instale o ClickHouse via script usando curl" id="install-clickhouse-via-script-using-curl">
     Execute o comando a seguir para instalar o ClickHouse via script usando curl:
 
     ```bash
@@ -49,9 +45,7 @@ title: Instalação no Windows
     ```
   </Step>
 
-  <Step>
-    ## Inicie o clickhouse-local
-
+  <Step title="Inicie o clickhouse-local" id="start-clickhouse-local">
     O `clickhouse-local` permite processar arquivos locais e remotos usando a poderosa
     sintaxe SQL do ClickHouse, sem necessidade de configuração. Os dados da tabela são armazenados
     em um local temporário, o que significa que, após reiniciar o `clickhouse-local`,
@@ -64,9 +58,7 @@ title: Instalação no Windows
     ```
   </Step>
 
-  <Step>
-    ## Inicie o clickhouse-server
-
+  <Step title="Inicie o clickhouse-server" id="start-clickhouse-server">
     Se quiser persistir os dados, execute o `clickhouse-server`. Você pode
     iniciar o servidor ClickHouse usando o comando a seguir:
 
@@ -75,9 +67,7 @@ title: Instalação no Windows
     ```
   </Step>
 
-  <Step>
-    ## Inicie o clickhouse-client
-
+  <Step title="Inicie o clickhouse-client" id="start-clickhouse-client">
     Com o servidor em execução, abra uma nova janela do terminal e execute o comando a seguir
     para iniciar o `clickhouse-client`:
 
@@ -101,7 +91,7 @@ title: Instalação no Windows
     `-C config.xml` como um argumento adicional de linha de comando para `./clickhouse server`
     e fornecer configurações adicionais em um arquivo de configuração. Todas as configurações
     disponíveis estão documentadas [aqui](/pt-BR/reference/settings/server-settings/settings) e no
-    [arquivo de configuração de exemplo](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml).
+    [modelo de arquivo de configuração de exemplo](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml).
 
     Agora você já pode começar a enviar comandos SQL para o ClickHouse!
   </Step>

@@ -21,10 +21,14 @@ doc_type: 'guide'
 データの取り込み中にはさまざまな障害が発生する可能性があり、その結果、部分的な insert や重複データが生じることがあります。Object Storage 用 ClickPipes は insert の失敗に対して耐性があり、一時的なステージングテーブルを使用して exactly-once セマンティクスを実現します。データはまずステージングテーブルに挿入され、問題が発生した場合はステージングテーブルを TRUNCATE して、クリーンな状態から insert を再試行します。insert が正常に完了した場合にのみ、パーティションがターゲットテーブルに移動されます。
 
 <Steps>
-  <Step>
-    ## Google Cloud Pub/Sub topic を作成する
+  <Step title="Google Cloud Pub/Sub topic を作成する" id="create-pubsub-topic">
+    **1.** Google Cloud Console で **Pub/Sub &gt; Topics &gt; Create topic** に移動します。デフォルト サブスクリプション 付きで新しい topic を作成し、**Topic Name** を控えておきます。
 
-    **1.** Google Cloud Console で **Pub/Sub &gt; Topics &gt; Create topic** に移動します。デフォルト subscription 付きで新しい topic を作成し、**Topic Name** を控えておきます。
+    <Warning>
+      **ClickPipe ごとに 1 つの サブスクリプション**
+
+      各 ClickPipe には、その ClickPipe 専用の Pub/Sub サブスクリプション が必要です。1 つの サブスクリプション 内では、Pub/Sub は各メッセージを 1 つの subscriber にしか配信しません。2 つ以上の ClickPipes (または他の任意のアプリケーション) が同じ サブスクリプション を消費すると、各通知を受信できるのはそのうちの 1 つだけであり、受信しなかったパイプではファイルが通知されないままスキップされます。これは、ClickPipes が異なるパスパターンを使用している場合でも同様です。一致しないファイルの通知を受信したパイプはそれを破棄し、他のどのパイプもその通知を見ることはありません。同じ bucket から複数の ClickPipes でインジェストするには、各 ClickPipe ごとに topic 上に別個の サブスクリプション を作成してください。
+    </Warning>
 
     **2.** 上で作成した Pub/Sub topic に [`OBJECT_FINALIZE` events](https://docs.cloud.google.com/storage/docs/pubsub-notifications) を送信する GCS bucket notification を設定します。
 
@@ -42,9 +46,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## サービス アカウント を設定する
-
+  <Step title="サービス アカウント を設定する" id="configure-service-account">
     **1.** [サービス アカウント](http://docs.cloud.google.com/iam/docs/keys-create-delete) を設定し、ClickPipes が指定した bucket 内のオブジェクトを一覧表示および取得できるようにするとともに、Pub/Sub サブスクリプション からの通知を受信して監視できるよう、[必要な permissions](/ja/integrations/clickpipes/object-storage/google-cloud-storage/overview#permissions) を付与します。
 
     **1.1.** この手順は Google Cloud Console、`gcloud` クライアント、または Google Cloud 用の任意のプログラムによるインターフェイスで実行できます。たとえば、`gcloud` を使う場合は次のとおりです。
@@ -55,24 +57,22 @@ doc_type: 'guide'
       --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
       --role="roles/storage.objectViewer"
 
-    # 2. Pub/Sub subscription への読み取りアクセスを付与する
+    # 2. Pub/Sub サブスクリプション への読み取りアクセスを付与する
     gcloud pubsub subscriptions add-iam-policy-binding "${YOUR_SUBSCRIPTION_NAME}" \
       --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
       --role="roles/pubsub.subscriber"
 
-    # 3. Pub/Sub subscription のメタデータを取得する権限を付与する
+    # 3. Pub/Sub サブスクリプション のメタデータを取得する権限を付与する
     gcloud pubsub subscriptions add-iam-policy-binding "${YOUR_SUBSCRIPTION_NAME}" \
       --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
       --role="roles/pubsub.viewer"
     ```
   </Step>
 
-  <Step>
-    ## 順不同モードで ClickPipe を作成する
-
+  <Step title="順不同モードで ClickPipe を作成する" id="create-clickpipe">
     **1.** ClickHouse Cloud console で **Data Sources &gt; Create ClickPipe** に移動し、**Google Cloud Storage** を選択します。GCS bucket に接続するための情報を入力します。**Authentication method** では **サービス アカウント** を選択し、`.json` の サービス アカウント key を指定します。
 
-    **2.** **Continuous ingestion** をオンにし、インジェストモードとして **Any order** を選択したうえで、bucket に接続されている subscription の **Pub/Sub サブスクリプション** 名を指定します。subscription 名は次の形式に従う必要があります。
+    **2.** **継続的インジェスト** をオンにし、インジェストモードとして **Any order** を選択したうえで、bucket に接続されている サブスクリプション の **Pub/Sub サブスクリプション** 名を指定します。この サブスクリプション はこの ClickPipe 専用に使用する必要があります。詳しくは [Google Cloud Pub/Sub topic を作成する](#create-pubsub-topic) を参照してください。サブスクリプション 名は次の形式に従う必要があります。
 
     ```text
     projects/${YOUR_PROJECT_ID}/subscriptions/${YOUR_SUBSCRIPTION_NAME}

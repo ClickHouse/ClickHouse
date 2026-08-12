@@ -35,7 +35,7 @@ title: مطابقة أنواع البيانات
 **  يقبل [نوع Variant](/ar/reference/data-types/variant) القيمة `null` ضمنيًا كقيمة للحقل، لذا سيُحوَّل Avro `union(T1, T2, null)`، على سبيل المثال، إلى `Variant(T1, T2)`.
 ونتيجةً لذلك، عند توليد Avro من ClickHouse، يجب علينا دائمًا تضمين النوع `null` ضمن مجموعة أنواع Avro `union` لأننا لا نعرف أثناء استنتاج المخطط ما إذا كانت أي قيمة تساوي بالفعل `null`.
 
-*** [الأنواع المنطقية في Avro](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+*** [الأنواع المنطقية في Avro](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
 
 أنواع البيانات المنطقية غير المدعومة في Avro:
 

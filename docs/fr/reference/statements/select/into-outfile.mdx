@@ -18,7 +18,7 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 
 `file_name` et `type` sont des chaînes de caractères littérales. Les types de compression pris en charge sont : `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
 
-`level` est un littéral numérique. Les entiers positifs des plages suivantes sont pris en charge : `1-12` pour le type `lz4`, `1-22` pour le type `zstd` et `1-9` pour les autres types de compression.
+`level` est un littéral numérique. Les entiers positifs des plages suivantes sont pris en charge : `1-12` pour les types `gzip`, `deflate` et `lz4`, `1-22` pour le type `zstd` et `1-9` pour les autres types de compression. Pour `gzip` et `deflate`, les niveaux supérieurs à `9` nécessitent la build par défaut avec `libdeflate` ; une build sans `libdeflate` prend en charge les niveaux `1-9`.
 
 <div id="implementation-details">
   ## Détails d’implémentation

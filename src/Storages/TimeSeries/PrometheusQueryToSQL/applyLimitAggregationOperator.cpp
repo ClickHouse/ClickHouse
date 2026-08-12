@@ -25,7 +25,7 @@ namespace
 {
     /// Checks if the types of the specified arguments are valid for a limit aggregation operator.
     void checkArgumentTypes(
-        const PQT::AggregationOperator * operator_node,
+        const PrometheusQueryTree::AggregationOperator * operator_node,
         const std::vector<SQLQueryPiece> & arguments,
         const ConverterContext & context)
     {
@@ -232,7 +232,7 @@ bool isLimitAggregationOperator(std::string_view operator_name)
 
 
 SQLQueryPiece applyLimitAggregationOperator(
-    const PQT::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     const auto & operator_name = operator_node->operator_name;
 

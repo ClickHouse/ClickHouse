@@ -14,27 +14,23 @@ integration:
 
 虽然通过点击按钮重新同步单个表的功能仍在开发中，但本指南将介绍目前如何在 Postgres ClickPipe 中实现这一操作。
 
-<div id="removing-table">
-  ### 1. 从管道中移除表
-</div>
+<Steps>
+  <Step title="从管道中移除该表" id="removing-table">
+    你可以按照[表移除指南](/zh/integrations/clickpipes/postgres/remove-table)完成此步骤。
+  </Step>
 
-可参考[移除表指南](/zh/integrations/clickpipes/postgres/remove-table)进行操作。
+  <Step title="在 ClickHouse 中截断或删除该表" id="truncate-drop-table">
+    此步骤是为了避免在下一步再次添加该表时出现数据重复。你可以前往 ClickHouse Cloud 的 **SQL 控制台** 选项卡并运行查询来完成此操作。
+    请注意，如果该表已存在于 ClickHouse 中且不为空，我们的校验机制会阻止你添加该表。
 
-<div id="truncate-drop-table">
-  ### 2. 在 ClickHouse 中 TRUNCATE 或删除该表
-</div>
+    或者，如果你需要保留旧表，也可以直接重命名它。当表非常大且删除操作可能需要一些时间时，这种做法也很有帮助。
 
-此步骤是为了避免在下一步重新添加该表时出现数据重复。你可以前往 ClickHouse Cloud 的 **SQL 控制台** 选项卡，运行查询来完成此操作。
-请注意，如果该表已存在于 ClickHouse 中且不为空，系统会进行校验并阻止再次添加该表。
+    ```sql
+    RENAME TABLE table_A TO table_A_bak;
+    ```
+  </Step>
 
-或者，如果你需要保留旧表，也可以直接将其重命名。当表非常大、删除操作可能需要一些时间时，这种做法也很有帮助。
-
-```sql
-RENAME TABLE table_A TO table_A_bak;
-```
-
-<div id="add-table-again">
-  ### 3. 再次将该表添加到 ClickPipe
-</div>
-
-可参考[添加表指南](/zh/integrations/clickpipes/postgres/add-table)进行操作。
+  <Step title="再次将该表添加到 ClickPipe" id="add-table-again">
+    你可以按照[表添加指南](/zh/integrations/clickpipes/postgres/add-table)完成此步骤。
+  </Step>
+</Steps>

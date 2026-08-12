@@ -743,8 +743,8 @@ TEST_F(ConnectionPoolTest, ProxyConnectSkipsTargetResolution)
         /// address, so the proxy address text is not a reliable marker - match on the error kind,
         /// and accept the address too for the synchronous-failure path.
         const std::string text = e.displayText();
-        reached_proxy_connect = text.find("Connection refused") != std::string::npos
-            || text.find("127.0.0.1:1") != std::string::npos;
+        reached_proxy_connect = text.contains("Connection refused")
+            || text.contains("127.0.0.1:1");
         ASSERT_EQ(std::string::npos, text.find("proxy-only-target.invalid"))
             << "Target host was resolved locally: " << text;
     }

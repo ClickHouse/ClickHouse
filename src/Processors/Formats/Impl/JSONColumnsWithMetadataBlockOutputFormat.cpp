@@ -124,7 +124,7 @@ void registerOutputFormatJSONColumnsWithMetadata(FormatFactory & factory)
 
 ## Description {#description}
 
-Differs from the [`JSONColumns`](./JSONColumns.md) format in that it also contains some metadata and statistics (similar to the [`JSON`](./JSON.md) format).
+Differs from the [`JSONColumns`](/reference/formats/JSON/JSONColumns) format in that it also contains some metadata and statistics (similar to the [`JSON`](/reference/formats/JSON/JSON) format).
 
 :::note
 The `JSONColumnsWithMetadata` format buffers all data in memory and then outputs it as a single block, so, it can lead to high memory consumption.
@@ -173,7 +173,7 @@ Example:
 }
 ```
 
-For the `JSONColumnsWithMetadata` input format, if setting [`input_format_json_validate_types_from_metadata`](/operations/settings/settings-formats.md/#input_format_json_validate_types_from_metadata) is set to `1`,
+For the `JSONColumnsWithMetadata` input format, if setting [`input_format_json_validate_types_from_metadata`](/reference/settings/formats/input-format#input_format_json_validate_types_from_metadata) is set to `1`,
 the types from metadata in input data will be compared with the types of the corresponding columns from the table.
 
 ## Format settings {#format-settings}

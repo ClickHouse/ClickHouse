@@ -12,4 +12,5 @@
 -- combinations of a floating point number and a wide integer
 1
 0
--- isDistinctFrom does not support Decimal vs wide integer
+-- isDistinctFrom of Decimal vs wide integer compares by value, like !=
+0	0	0	0	1	1

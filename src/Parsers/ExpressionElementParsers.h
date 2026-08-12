@@ -4,6 +4,9 @@
 #include <Core/MultiEnum.h>
 #include <Parsers/IParserBase.h>
 
+#include <optional>
+#include <string_view>
+
 
 namespace DB
 {
@@ -557,6 +560,13 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast);
+/** Parses a data type and returns its text - see `astText` - or nothing if there is no data type at
+  * `pos`. The parsed AST is thrown away: every place that parses a type inside an expression needs
+  * only the text, because that is how `CAST` and `defaultValueOfTypeName` carry a type.
+  */
+std::optional<String> parseDataTypeAsText(IParser::Pos & pos, Expected & expected);
+
+/// `CAST(expr, 'type')`, the canonical form of every way of writing a cast.
+ASTPtr createFunctionCast(const ASTPtr & expr_ast, String type_text);
 
 }
