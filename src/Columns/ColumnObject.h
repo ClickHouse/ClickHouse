@@ -243,6 +243,10 @@ public:
     bool hasStatistics() const override { return true; }
     void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
 
+    /// Drops the pre-patch `statistics` cache inherited via cloneEmpty() when applying an IColumn::Patch,
+    /// so placement repromotion sees paths the patch spliced directly into shared data (see .cpp).
+    ColumnPtr updateFrom(const IColumn::Patch & patch) const override;
+
     const ColumnPtr & getSharedDataPtr() const { return shared_data; }
     ColumnPtr & getSharedDataPtr() { return shared_data; }
     IColumn & getSharedDataColumn() { return *shared_data; }

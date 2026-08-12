@@ -951,6 +951,19 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
     }
 }
 
+ColumnPtr ColumnObject::updateFrom(const IColumn::Patch & patch) const
+{
+    auto result = IColumnHelper<ColumnObject>::updateFrom(patch);
+    if (result.get() == this)
+        return result;
+
+    /// Paths new to `this` can only land in shared data during the splice (no budget to admit them
+    /// as dynamic paths, see tryToAddNewDynamicPath), which leaves the cache below stale.
+    auto mutable_result = IColumn::mutate(std::move(result));
+    assert_cast<ColumnObject &>(*mutable_result).setStatistics(nullptr);
+    return mutable_result;
+}
+
 void ColumnObject::serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, std::string_view path, const ColumnDynamic & column, size_t n)
 {
     /// Don't store Null values in shared data. We consider Null value equivalent to the absence
