@@ -9,71 +9,61 @@ doc_type: 'reference'
 
 import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-<a id="aws-regions" />
-<a id="google-cloud-regions" />
-<a id="azure-regions" />
-
 ## Supported regions {#supported-regions}
 
-Select a cloud provider to see its supported regions. A checkmark indicates that a region is available as a Private Region or supports HIPAA or PCI compliance. A dash indicates that the option isn't currently available.
+The following tables list supported regions by cloud provider. A checkmark indicates that an option is available, while a dash indicates that it isn't currently available. Regions marked as Private but not Public are available only as Private Regions.
 
-<Tabs>
-<Tab title="AWS">
+### AWS regions {#aws-regions}
 
-| Region | Location | Private | HIPAA | PCI |
-| --- | --- | :---: | :---: | :---: |
-| `af-south-1` | South Africa | ✓ | ✓ | ✓ |
-| `ap-east-1` | Hong Kong | ✓ | — | — |
-| `ap-east-2` | Taipei | ✓ | — | — |
-| `ap-northeast-1` | Tokyo | — | — | — |
-| `ap-northeast-2` | South Korea, Seoul | — | — | — |
-| `ap-south-1` | Mumbai | — | — | — |
-| `ap-southeast-1` | Singapore | — | — | — |
-| `ap-southeast-2` | Sydney | — | — | — |
-| `ap-southeast-3` | Jakarta | ✓ | — | — |
-| `ca-central-1` | Canada | — | ✓ | ✓ |
-| `eu-central-1` | Frankfurt | — | ✓ | ✓ |
-| `eu-north-1` | Stockholm | ✓ | ✓ | ✓ |
-| `eu-west-1` | Ireland | — | ✓ | ✓ |
-| `eu-west-2` | London | — | ✓ | ✓ |
-| `il-central-1` | Israel, Tel Aviv | — | — | — |
-| `mx-central-1` | Mexico | ✓ | — | ✓ |
-| `sa-east-1` | South America | ✓ | ✓ | ✓ |
-| `us-east-1` | N. Virginia | — | ✓ | ✓ |
-| `us-east-2` | Ohio | — | ✓ | ✓ |
-| `us-west-2` | Oregon | — | ✓ | ✓ |
+| Region | Location | Public | Private | HIPAA | PCI |
+| --- | --- | :---: | :---: | :---: | :---: |
+| `af-south-1` | South Africa | — | ✓ | ✓ | ✓ |
+| `ap-east-1` | Hong Kong | — | ✓ | — | — |
+| `ap-east-2` | Taipei | — | ✓ | — | — |
+| `ap-northeast-1` | Tokyo | ✓ | — | — | — |
+| `ap-northeast-2` | South Korea, Seoul | ✓ | — | — | — |
+| `ap-south-1` | Mumbai | ✓ | — | — | — |
+| `ap-southeast-1` | Singapore | ✓ | — | — | — |
+| `ap-southeast-2` | Sydney | ✓ | — | — | — |
+| `ap-southeast-3` | Jakarta | — | ✓ | — | — |
+| `ca-central-1` | Canada | ✓ | — | ✓ | ✓ |
+| `eu-central-1` | Frankfurt | ✓ | — | ✓ | ✓ |
+| `eu-north-1` | Stockholm | — | ✓ | ✓ | ✓ |
+| `eu-west-1` | Ireland | ✓ | — | ✓ | ✓ |
+| `eu-west-2` | London | ✓ | — | ✓ | ✓ |
+| `il-central-1` | Israel, Tel Aviv | ✓ | — | — | — |
+| `mx-central-1` | Mexico | — | ✓ | — | ✓ |
+| `sa-east-1` | South America | — | ✓ | ✓ | ✓ |
+| `us-east-1` | N. Virginia | ✓ | — | ✓ | ✓ |
+| `us-east-2` | Ohio | ✓ | — | ✓ | ✓ |
+| `us-west-2` | Oregon | ✓ | — | ✓ | ✓ |
 
-</Tab>
-<Tab title="Google Cloud">
+### Google Cloud regions {#google-cloud-regions}
 
-| Region | Location | Private | HIPAA | PCI |
-| --- | --- | :---: | :---: | :---: |
-| `asia-northeast1` | Tokyo | — | — | — |
-| `asia-southeast1` | Singapore | — | — | — |
-| `australia-southeast1` | Sydney | ✓ | — | — |
-| `europe-west2` | London | — | — | — |
-| `europe-west3` | Frankfurt | ✓ | — | — |
-| `europe-west4` | Netherlands | — | ✓ | ✓ |
-| `europe-west6` | Zurich | ✓ | — | — |
-| `northamerica-northeast1` | Montréal | ✓ | — | — |
-| `us-central1` | Iowa | — | ✓ | ✓ |
-| `us-east1` | South Carolina | — | ✓ | ✓ |
-| `us-west1` | Oregon | ✓ | — | — |
+| Region | Location | Public | Private | HIPAA | PCI |
+| --- | --- | :---: | :---: | :---: | :---: |
+| `asia-northeast1` | Tokyo | ✓ | — | — | — |
+| `asia-southeast1` | Singapore | ✓ | — | — | — |
+| `australia-southeast1` | Sydney | — | ✓ | — | — |
+| `europe-west2` | London | ✓ | — | — | — |
+| `europe-west3` | Frankfurt | — | ✓ | — | — |
+| `europe-west4` | Netherlands | ✓ | — | ✓ | ✓ |
+| `europe-west6` | Zurich | — | ✓ | — | — |
+| `northamerica-northeast1` | Montréal | — | ✓ | — | — |
+| `us-central1` | Iowa | ✓ | — | ✓ | ✓ |
+| `us-east1` | South Carolina | ✓ | — | ✓ | ✓ |
+| `us-west1` | Oregon | — | ✓ | — | — |
 
-</Tab>
-<Tab title="Azure">
+### Azure regions {#azure-regions}
 
-| Region | Location | Private | HIPAA | PCI |
-| --- | --- | :---: | :---: | :---: |
-| `Australia East` | New South Wales | ✓ | — | — |
-| `East US 2` | Virginia | — | — | — |
-| `Germany West Central` | Frankfurt | — | — | — |
-| `Japan East` | Tokyo, Saitama | ✓ | — | — |
-| `UAE North` | Dubai | ✓ | — | — |
-| `West US 3` | Arizona | — | — | — |
-
-</Tab>
-</Tabs>
+| Region | Location | Public | Private | HIPAA | PCI |
+| --- | --- | :---: | :---: | :---: | :---: |
+| `Australia East` | New South Wales | — | ✓ | — | — |
+| `East US 2` | Virginia | ✓ | — | — | — |
+| `Germany West Central` | Frankfurt | ✓ | — | — | — |
+| `Japan East` | Tokyo, Saitama | — | ✓ | — | — |
+| `UAE North` | Dubai | — | ✓ | — | — |
+| `West US 3` | Arizona | ✓ | — | — | — |
 
 <Note>
 Need to deploy to a region not currently listed? [Submit a request](https://clickhouse.com/pricing?modal=open).
