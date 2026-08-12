@@ -3790,7 +3790,7 @@ class ClickHouseCluster:
                                 ff_config.write(f"{indentation}feature_flags:\n")
                                 indentation *= 2
 
-                                for feature_flag in [
+                                randomized_feature_flags = [
                                     "filtered_list",
                                     "multi_read",
                                     "check_not_exists",
@@ -3800,7 +3800,12 @@ class ClickHouseCluster:
                                     "check_stat",
                                     "try_remove",
                                     "list_with_stat_and_data",
-                                    "create_ttl",
+                                ]
+
+                                for feature_flag in randomized_feature_flags + [
+                                    flag
+                                    for flag in self.keeper_required_feature_flags
+                                    if flag not in randomized_feature_flags
                                 ]:
                                     ff_config.write(
                                         f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
