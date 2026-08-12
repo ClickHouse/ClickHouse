@@ -683,6 +683,16 @@ std::optional<String> optimizeUseNormalProjections(
     /// `splitAndFillPrewhereInfo` below consumes `query.dag`, and propagated to the projection
     /// reading step so the read-in-order PK-selectivity guard can tell a filtered read whose
     /// primary key pruned nothing from a plain full scan.
+    ///
+    /// On the base-table path the equivalent bit is computed in `ReadFromMergeTree::applyFilters`
+    /// only after filters deferred after FINAL (`apply_prewhere_after_final` /
+    /// `apply_row_policy_after_final`) are stripped from index analysis. No such stripping is
+    /// needed here: filter deferral exists only for FINAL reads (every writer of
+    /// `deferred_row_level_filter` / `deferred_prewhere_info` is gated on `isQueryWithFinal`),
+    /// and `canUseProjectionForReadingStep` has already rejected FINAL reads for this rewrite,
+    /// so on this path the raw `query.filter_node` coincides with the deferred-stripped bit.
+    /// The assertion keeps that reasoning honest if projections ever learn to serve FINAL.
+    chassert(!reading->isQueryWithFinal());
     const bool projection_index_analysis_had_filter = query.filter_node != nullptr;
 
     /// Enables PREWHERE on projections to improve read efficiency and leverage query condition cache.
