@@ -1216,7 +1216,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         data.getContext()->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr),
         try_adaptive_codec,
-        /*reconsider_json_shared_data_placement=*/ (*data_settings)[MergeTreeSetting::allow_json_shared_data_paths_repromotion]);
+        /// A fresh insert's projection block has no historical placement to reconsider; only
+        /// merge/mutation-driven rewrites (merge_is_needed) should read this table setting.
+        /*reconsider_json_shared_data_placement=*/ merge_is_needed && (*data_settings)[MergeTreeSetting::allow_json_shared_data_paths_repromotion]);
 
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
