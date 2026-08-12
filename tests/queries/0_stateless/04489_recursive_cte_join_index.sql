@@ -905,6 +905,35 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_rep
 
 DROP TABLE edges_dist;
 
+-- The pruning escape hatch above must judge the sharding key the way the read path does.
+-- A `Remote` database proxy over more than one shard gets an implicit `rand()` sharding key
+-- that exists only to spread `INSERT` rows across the shards; the read path never prunes on
+-- it (`StorageDistributed::getOptimizedCluster` requires `hasShardingKeyForReads`, which is
+-- `false` for the proxy). Judging the generic `hasShardingKey` here would wrongly assume —
+-- under `allow_nondeterministic_optimize_skip_unused_shards` — that this mixed cluster (a
+-- two-replica shard and a single-node shard) might be pruned down to its single-node shard,
+-- and silently accept the forcing mode. The real read always keeps the multi-node shard, so
+-- the step must still be rejected. The sampling mode is used because it is the one that
+-- works with the proxy's ad-hoc (unnamed) cluster.
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Remote('127.0.0.1|127.0.0.3,127.0.0.4', currentDatabase());
+
+WITH RECURSIVE remote_db_pruned_pr_throw AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM remote_db_pruned_pr_throw AS t
+        INNER JOIN {CLICKHOUSE_DATABASE_1:Identifier}.edges AS e ON e.from_id = t.n
+    WHERE n < 10
+)
+SELECT sum(DISTINCT n) FROM remote_db_pruned_pr_throw
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_mode = 'sampling_key',
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0,
+    optimize_skip_unused_shards = 1, allow_nondeterministic_optimize_skip_unused_shards = 1; -- { serverError SUPPORT_IS_DISABLED }
+
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
 -- The forced-mode rejection is a positive capability check: among remote storages, only
 -- reads served by `ClusterProxy` (`Distributed` tables and the `remote` / `cluster` /
 -- `clusterAllReplicas` table functions) consult the parallel-replica settings at all. A

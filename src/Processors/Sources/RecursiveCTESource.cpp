@@ -272,10 +272,11 @@ ParallelReplicasEngagement mayEngageParallelReplicasForRemoteStorage(const IStor
     /// might be pruned that way must not count as eligible — otherwise the forcing mode would
     /// reject a query the plain read path would have run without parallel replicas anyway.
     /// Pruning is attempted only when the settings and the table allow it (the sharding key
-    /// must exist and be usable), and never on the custom-key path, which works with the full
-    /// cluster — mirror those conditions here.
+    /// must exist and be usable for reads — the implicit `rand()` key of a `Remote` database
+    /// proxy never prunes, see `hasShardingKeyForReads`), and never on the custom-key path,
+    /// which works with the full cluster — mirror those conditions here.
     const auto & settings = context->getSettingsRef();
-    if (has_single_node_shard && settings[Setting::optimize_skip_unused_shards] && distributed->hasShardingKey()
+    if (has_single_node_shard && settings[Setting::optimize_skip_unused_shards] && distributed->hasShardingKeyForReads()
         && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || distributed->isShardingKeyDeterministic())
         && !context->canUseParallelReplicasCustomKeyForCluster(*cluster))
         return {};
@@ -952,7 +953,7 @@ bool generatedInSetIsSafeToInject(
     {
         set_columns = getSetElementsForConstantValue(
             real_column_type,
-            rhs_node->getValue(),
+            rhs_node->getColumn(),
             rhs_node->getResultType(),
             GetSetElementParams{
                 .transform_null_in = settings[Setting::transform_null_in],
