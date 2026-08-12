@@ -1,0 +1,13 @@
+--- long default_database: CREATE TABLE is rejected up front ---
+ARGUMENT_OUT_OF_BOUND
+--- long default_database: CREATE VIEW is rejected the same way ---
+ARGUMENT_OUT_OF_BOUND
+--- long default_database: RENAME TABLE to a rejected name is refused ---
+ARGUMENT_OUT_OF_BOUND
+--- short default_database: a name at exactly the limit still works ---
+boundary ok
+--- short default_database: the escaped length is what counts ---
+escaped ok
+ARGUMENT_OUT_OF_BOUND
+--- short default_database: an existing table still loads in a later run ---
+42
