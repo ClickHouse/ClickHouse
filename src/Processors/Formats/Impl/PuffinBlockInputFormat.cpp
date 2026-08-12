@@ -573,6 +573,8 @@ void readDeletionVectorEnvelopePrefix(
 String readDeletionVectorBlobBytes(
     const PuffinBlob & blob, ReadBuffer & buf, const std::vector<UInt8> & data, bool seekable_read)
 {
+    ScopedPuffinFileReadProfileEvent profile_event;
+
     if (blob.length < 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector blob length is negative");
 
