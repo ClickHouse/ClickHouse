@@ -627,7 +627,8 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
         .current_metric = CurrentMetrics::TemporaryFilesForAggregation,
         .bytes_compressed = ProfileEvents::ExternalAggregationCompressedBytes,
         .bytes_uncompressed = ProfileEvents::ExternalAggregationUncompressedBytes,
-        .num_files = ProfileEvents::ExternalAggregationWritePart}) : nullptr)
+        .num_files = ProfileEvents::ExternalAggregationWritePart,
+        .spilled_to_disk_operator = "aggregation"}) : nullptr)
     , min_bytes_for_prefetch(getMinBytesForPrefetch())
     , thread_pool(std::make_unique<ThreadPool>(
           CurrentMetrics::AggregatorThreads,

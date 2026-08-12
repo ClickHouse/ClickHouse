@@ -61,7 +61,7 @@
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
-#include <Interpreters/QueryJoinsCounters.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/QueryLog.h>
 #include <IO/AsyncReadCounters.h>
 #include <Interpreters/QueryMetricLog.h>
@@ -452,13 +452,13 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         add_counter("total_prefetch_tasks", async_read_counters->total_prefetch_tasks.load(std::memory_order_relaxed));
     }
 
-    if (auto query_joins_counters = context_ptr->getQueryJoinsCounters())
+    if (auto query_execution_counters = context_ptr->getQueryExecutionCounters())
     {
-        element.used_number_of_joins = query_joins_counters->getNumberOfJoins();
-        element.used_join_algorithms = query_joins_counters->getJoinAlgorithms();
-        element.used_join_kinds = query_joins_counters->getJoinKinds();
-        element.used_join_strictness = query_joins_counters->getJoinStrictness();
-        element.join_spilled_to_disk = query_joins_counters->getJoinSpilledToDisk();
+        element.used_number_of_joins = query_execution_counters->getNumberOfJoins();
+        element.used_join_algorithms = query_execution_counters->getJoinAlgorithms();
+        element.used_join_kinds = query_execution_counters->getJoinKinds();
+        element.used_join_strictness = query_execution_counters->getJoinStrictness();
+        element.spilled_to_disk = query_execution_counters->getSpilledToDisk();
     }
 
     addPrivilegesInfoToQueryLogElement(element, context_ptr);

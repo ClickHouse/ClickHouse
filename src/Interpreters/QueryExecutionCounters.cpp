@@ -1,4 +1,4 @@
-#include <Interpreters/QueryJoinsCounters.h>
+#include <Interpreters/QueryExecutionCounters.h>
 
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
@@ -6,7 +6,7 @@
 namespace DB
 {
 
-void QueryJoinsCounters::addJoin(JoinKind kind, JoinStrictness strictness, std::string_view algorithm)
+void QueryExecutionCounters::addJoin(JoinKind kind, JoinStrictness strictness, std::string_view algorithm)
 {
     number_of_joins.fetch_add(1, std::memory_order_relaxed);
 
@@ -25,12 +25,12 @@ void QueryJoinsCounters::addJoin(JoinKind kind, JoinStrictness strictness, std::
     used_join_algorithms.emplace(algorithm);
 }
 
-UInt64 QueryJoinsCounters::getNumberOfJoins() const
+UInt64 QueryExecutionCounters::getNumberOfJoins() const
 {
     return number_of_joins.load(std::memory_order_relaxed);
 }
 
-std::vector<String> QueryJoinsCounters::getJoinKinds() const
+std::vector<String> QueryExecutionCounters::getJoinKinds() const
 {
     std::lock_guard lock(mutex);
 
@@ -41,7 +41,7 @@ std::vector<String> QueryJoinsCounters::getJoinKinds() const
     return kinds;
 }
 
-std::vector<String> QueryJoinsCounters::getJoinStrictness() const
+std::vector<String> QueryExecutionCounters::getJoinStrictness() const
 {
     std::lock_guard lock(mutex);
 
@@ -52,22 +52,22 @@ std::vector<String> QueryJoinsCounters::getJoinStrictness() const
     return strictness;
 }
 
-std::set<String> QueryJoinsCounters::getJoinAlgorithms() const
+std::set<String> QueryExecutionCounters::getJoinAlgorithms() const
 {
     std::lock_guard lock(mutex);
     return used_join_algorithms;
 }
 
-std::shared_ptr<QueryJoinsCounters> QueryJoinsCounters::getForCurrentQuery()
+std::shared_ptr<QueryExecutionCounters> QueryExecutionCounters::getForCurrentQuery()
 {
     auto query_context = CurrentThread::tryGetQueryContext();
     if (!query_context)
         return nullptr;
 
-    return query_context->getQueryJoinsCounters();
+    return query_context->getQueryExecutionCounters();
 }
 
-void QueryJoinsCounters::addUsedJoinAlgorithm(JoinAlgorithm algorithm)
+void QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm algorithm)
 {
     if (auto counters = getForCurrentQuery())
     {
@@ -76,14 +76,21 @@ void QueryJoinsCounters::addUsedJoinAlgorithm(JoinAlgorithm algorithm)
     }
 }
 
-void QueryJoinsCounters::markJoinAsSpilled()
+void QueryExecutionCounters::markSpilledToDisk(std::string_view operator_name)
 {
+    if (operator_name.empty())
+        return;
+
     if (auto counters = getForCurrentQuery())
-        counters->spilled_to_disk.store(true, std::memory_order_relaxed);
+    {
+        std::lock_guard lock(counters->mutex);
+        counters->spilled_to_disk.emplace(operator_name);
+    }
 }
 
-bool QueryJoinsCounters::getJoinSpilledToDisk() const
+std::set<String> QueryExecutionCounters::getSpilledToDisk() const
 {
+    std::lock_guard lock(mutex);
     return spilled_to_disk;
 }
 

@@ -3,7 +3,7 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/JoinUtils.h>
-#include <Interpreters/QueryJoinsCounters.h>
+#include <Interpreters/QueryExecutionCounters.h>
 
 namespace DB
 {
@@ -54,7 +54,7 @@ bool JoinSwitcher::switchJoin()
     join = std::make_shared<MergeJoin>(table_join, std::make_shared<const Block>(right_sample_block));
 
     /// The query pipeline was built with a hash join, so report the algorithm that takes over.
-    QueryJoinsCounters::addUsedJoinAlgorithm(JoinAlgorithm::PARTIAL_MERGE);
+    QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::PARTIAL_MERGE);
 
     bool success = true;
     for (const Block & saved_block : right_blocks)

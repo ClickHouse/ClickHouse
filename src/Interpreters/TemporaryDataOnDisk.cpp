@@ -4,6 +4,7 @@
 #include <mutex>
 
 #include <IO/EmptyReadBuffer.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Compression/CompressedWriteBuffer.h>
@@ -85,6 +86,10 @@ TemporaryFileHolder::TemporaryFileHolder(const TemporaryDataMetrics & metrics)
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
     if (metrics.num_files)
         ProfileEvents::increment(metrics.num_files.value());
+
+    /// Every operator that spills goes through here, so this is the only place that has to report
+    /// it for `system.query_log.spilled_to_disk`.
+    QueryExecutionCounters::markSpilledToDisk(metrics.spilled_to_disk_operator);
 }
 
 

@@ -94,7 +94,7 @@ struct QueryLogElement
     /// Both `used_join_kinds` and `used_join_strictness` are positionally aligned.
     std::vector<String> used_join_kinds;
     std::vector<String> used_join_strictness;
-    bool join_spilled_to_disk{};
+    std::set<String> spilled_to_disk;
 
     Int32 exception_code{}; // because ErrorCodes are int
     String exception;

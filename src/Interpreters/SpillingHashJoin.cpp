@@ -3,7 +3,7 @@
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/QueryJoinsCounters.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TableJoin.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -192,8 +192,8 @@ void SpillingHashJoin::switchToGraceHashJoin()
                 return;
 
             ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
-    /// The query pipeline was built with a hash join, so report the algorithm that takes over.
-    QueryJoinsCounters::addUsedJoinAlgorithm(JoinAlgorithm::GRACE_HASH);
+            /// The query pipeline was built with a hash join, so report the algorithm that takes over.
+            QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::GRACE_HASH);
 
             print_threshold_reached_log(concurrent_join, "ConcurrentHashJoin");
 
@@ -224,7 +224,7 @@ void SpillingHashJoin::switchToGraceHashJoin()
     /// Single-thread path: extract from HashJoin, feed to GraceHashJoin.
     ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
     /// The query pipeline was built with a hash join, so report the algorithm that takes over.
-    QueryJoinsCounters::addUsedJoinAlgorithm(JoinAlgorithm::GRACE_HASH);
+    QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::GRACE_HASH);
     BlocksList right_blocks = hash_join->releaseJoinedBlocks(/*restructure=*/false);
 
     chosen_join = std::make_shared<GraceHashJoin>(

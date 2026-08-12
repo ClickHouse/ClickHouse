@@ -1287,7 +1287,8 @@ TemporaryDataOnDiskScopePtr TableJoin::getTempDataOnDisk()
         .current_metric = CurrentMetrics::TemporaryFilesForJoin,
         .bytes_compressed = ProfileEvents::ExternalJoinCompressedBytes,
         .bytes_uncompressed = ProfileEvents::ExternalJoinUncompressedBytes,
-        .num_files = ProfileEvents::ExternalJoinWritePart}, temporary_files_buffer_size, temporary_files_codec);
+        .num_files = ProfileEvents::ExternalJoinWritePart,
+        .spilled_to_disk_operator = "join"}, temporary_files_buffer_size, temporary_files_codec);
 }
 
 bool allowParallelHashJoin(

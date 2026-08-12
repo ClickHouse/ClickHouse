@@ -15,8 +15,9 @@
 namespace DB
 {
 
-/// Metrics about the JOINs executed by a query, dumped into `system.query_log`.
-struct QueryJoinsCounters
+/// Metrics about the execution of a query, dumped into `system.query_log`: the joins it ran and
+/// the operators that spilled to disk.
+struct QueryExecutionCounters
 {
     void addJoin(JoinKind kind, JoinStrictness strictness, std::string_view algorithm);
 
@@ -27,14 +28,19 @@ struct QueryJoinsCounters
 
     static void addUsedJoinAlgorithm(JoinAlgorithm algorithm);
 
-    static void markJoinAsSpilled();
+    /// Records that `operator_name` of the query the calling thread belongs to wrote temporary data
+    /// to disk, which is reported in `spilled_to_disk`. The values are `join`, `aggregation` and
+    /// `sort` so far; an operator that starts spilling later only has to name itself in the
+    /// `TemporaryDataMetrics` of the scope it already creates.
+    /// Best effort: nothing is recorded when the calling thread is not attached to a query.
+    static void markSpilledToDisk(std::string_view operator_name);
 
-    bool getJoinSpilledToDisk() const;
+    std::set<String> getSpilledToDisk() const;
 
 private:
 
     /// Counters of the query the calling thread belongs to, or nullptr when it is not attached to one.
-    static std::shared_ptr<QueryJoinsCounters> getForCurrentQuery();
+    static std::shared_ptr<QueryExecutionCounters> getForCurrentQuery();
 
     mutable std::mutex mutex;
 
@@ -50,10 +56,10 @@ private:
     /// it in a sorted container to not depend on order of execution
     std::set<std::pair<String, String>> used_joins TSA_GUARDED_BY(mutex);
 
-    /// True if any join spilled to disk
-    std::atomic<bool> spilled_to_disk{false};
+    /// Operators that wrote temporary data to disk, sorted and deduplicated by the container.
+    std::set<String> spilled_to_disk TSA_GUARDED_BY(mutex);
 };
 
-using QueryJoinsCountersPtr = std::shared_ptr<QueryJoinsCounters>;
+using QueryExecutionCountersPtr = std::shared_ptr<QueryExecutionCounters>;
 
 }

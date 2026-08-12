@@ -430,7 +430,8 @@ void SortingStep::mergeSorting(
             .current_metric = CurrentMetrics::TemporaryFilesForSort,
             .bytes_compressed = ProfileEvents::ExternalSortCompressedBytes,
             .bytes_uncompressed = ProfileEvents::ExternalSortUncompressedBytes,
-            .num_files = ProfileEvents::ExternalSortWritePart},
+            .num_files = ProfileEvents::ExternalSortWritePart,
+            .spilled_to_disk_operator = "sort"},
             sort_settings.temporary_files_buffer_size, sort_settings.temporary_files_codec);
 
     if (sort_settings.max_bytes_in_block_before_external_sort && tmp_data_on_disk == nullptr)

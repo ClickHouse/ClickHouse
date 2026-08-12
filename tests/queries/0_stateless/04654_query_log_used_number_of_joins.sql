@@ -84,9 +84,19 @@ SELECT count() FROM (SELECT number AS a FROM numbers(10000)) s1 JOIN (SELECT num
 FORMAT Null
 SETTINGS log_comment = '04654_join_count_switch', join_algorithm = 'hash', max_bytes_before_external_join = 65536;
 
+-- `spilled_to_disk` is not about joins only: GROUP BY and ORDER BY report themselves through the
+-- same temporary data scopes.
+SELECT a, count() FROM (SELECT number AS a FROM numbers(100000)) GROUP BY a
+FORMAT Null
+SETTINGS log_comment = '04654_join_count_group_by_spill', max_bytes_before_external_group_by = 1000000, max_bytes_ratio_before_external_group_by = 0, group_by_two_level_threshold = 1000;
+
+SELECT a FROM (SELECT number AS a FROM numbers(100000)) ORDER BY a
+FORMAT Null
+SETTINGS log_comment = '04654_join_count_order_by_spill', max_bytes_before_external_sort = 100000, max_bytes_ratio_before_external_sort = 0;
+
 SYSTEM FLUSH LOGS query_log;
 
-SELECT log_comment, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, join_spilled_to_disk
+SELECT log_comment, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND type = 'QueryFinish'

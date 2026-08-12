@@ -3,7 +3,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
-#include <Interpreters/QueryJoinsCounters.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Common/CurrentThread.h>
@@ -79,7 +79,7 @@ void countExecutedJoin(const JoinPtr & join)
     if (!query_context)
         return;
 
-    auto counters = query_context->getQueryJoinsCounters();
+    auto counters = query_context->getQueryExecutionCounters();
     if (!counters)
         return;
 
