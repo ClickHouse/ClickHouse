@@ -4,8 +4,6 @@
 #include <Parsers/NullsAction.h>
 #include <Common/FunctionDocumentation.h>
 #include <Common/IFactoryWithAliases.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Core/Names.h>
 
 #include <functional>
 #include <memory>
@@ -23,7 +21,7 @@ class Context;
 class IDataType;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
+using DataTypes = std::vector<DataTypePtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 class ASTFunction;
 
@@ -110,7 +108,7 @@ private:
         AggregateFunctionStateVariant state_variant) const;
 
     using AggregateFunctions = std::unordered_map<String, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    using ActionMap = NameToNameMap;
+    using ActionMap = std::unordered_map<String, String>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     AggregateFunctions aggregate_functions;
     /// Mapping from functions with `RESPECT NULLS` modifier to actual aggregate function names

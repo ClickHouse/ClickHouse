@@ -5,7 +5,6 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 
 #include <Common/Stopwatch.h>
-#include <Examples/clickhouse_examples.h>
 
 
 namespace test

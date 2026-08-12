@@ -7,7 +7,6 @@
 #include <Processors/Sources/MySQLSource.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
-#include <Storages/TableNameOrQuery.h>
 #include <mysqlxx/PoolWithFailover.h>
 
 namespace Poco
@@ -32,7 +31,7 @@ public:
         const StorageID & table_id_,
         mysqlxx::PoolWithFailover && pool_,
         const std::string & remote_database_name_,
-        const TableNameOrQuery & remote_table_or_query_,
+        const std::string & remote_table_name_,
         bool replace_query_,
         const std::string & on_duplicate_clause_,
         const ColumnsDescription & columns_,
@@ -68,7 +67,7 @@ public:
         String username = "default";
         String password;
         String database;
-        TableNameOrQuery table_or_query;
+        String table;
 
         String ssl_ca;
         String ssl_cert;
@@ -85,19 +84,19 @@ public:
 
     static Configuration processNamedCollectionResult(
         const NamedCollection & named_collection, MySQLSettings & storage_settings,
-        ContextPtr context_, bool require_table_or_query = true);
+        ContextPtr context_, bool require_table = true);
 
     static ColumnsDescription getTableStructureFromData(
         mysqlxx::PoolWithFailover & pool_,
         const String & database,
-        const TableNameOrQuery & table_or_query,
+        const String & table,
         const ContextPtr & context_);
 
 private:
     friend class StorageMySQLSink;
 
     std::string remote_database_name;
-    TableNameOrQuery remote_table_or_query;
+    std::string remote_table_name;
     bool replace_query;
     std::string on_duplicate_clause;
 

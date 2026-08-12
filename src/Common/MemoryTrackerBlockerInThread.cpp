@@ -3,7 +3,7 @@
 #include <utility>
 
 // MemoryTrackerBlockerInThread
-thread_local constinit VariableContext MemoryTrackerBlockerInThread::level = VariableContext::Max;
+thread_local VariableContext MemoryTrackerBlockerInThread::level = VariableContext::Max;
 
 MemoryTrackerBlockerInThread::MemoryTrackerBlockerInThread(VariableContext level_)
     : previous_level(level)

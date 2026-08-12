@@ -42,7 +42,7 @@ constexpr std::string_view query_metric_log_final_row_failpoint_query_id_prefix
 
 static auto logger = getLogger("QueryMetricLog");
 
-static String timePointToString(QueryMetricLog::TimePoint time)
+String timePointToString(QueryMetricLog::TimePoint time)
 {
     /// fmtlib supports subsecond formatting in 10.0.0. We're in 9.1.0, so we need to add the milliseconds ourselves.
     auto seconds = std::chrono::time_point_cast<std::chrono::seconds>(time);

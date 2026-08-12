@@ -1,7 +1,6 @@
 #include <cstddef>
 #include <vector>
 #include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
@@ -12,8 +11,8 @@
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Databases/enableAllExperimentalSettings.h>
@@ -152,7 +151,9 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
     }
 }
 
-void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const
+void IMergeTreeReader::fillMissingColumns(
+    Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows,
+    const NameSet & previous_step_columns) const
 {
     try
     {
@@ -187,7 +188,8 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
                 : available_columns,
                 partially_read_columns,
                 storage_snapshot,
-                share_nested);
+                share_nested,
+                previous_step_columns);
 
             should_evaluate_missing_defaults
                 = std::any_of(res_columns.begin(), res_columns.end(), [](const auto & column) { return column == nullptr; });
@@ -292,12 +294,17 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             }
 
             auto name_in_storage = it->getNameInStorage();
-            res_columns[pos] = additional_columns.getByName(name_in_storage).column;
 
             if (it->isSubcolumn())
             {
-                const auto & type_in_storage = it->getTypeInStorage();
-                res_columns[pos] = type_in_storage->getSubcolumn(it->getSubcolumnName(), res_columns[pos]);
+                /// The parent may still be in its pre-`ALTER MODIFY` type here (an earlier on-fly step
+                /// is not converted by performRequiredConversions); tryGetSubcolumnFromBlock casts it
+                /// to the storage type before extracting.
+                res_columns[pos] = tryGetSubcolumnFromBlock(additional_columns, it->getTypeInStorage(), *it);
+            }
+            else
+            {
+                res_columns[pos] = additional_columns.getByName(name_in_storage).column;
             }
         }
     }
@@ -603,6 +610,12 @@ MergeTreeReaderPtr createMergeTreeReader(
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown part type");
 }
+
+MergeTreeReaderPtr createMergeTreeReaderTextIndex(
+    const IMergeTreeReader * main_reader,
+    const MergeTreeIndexWithCondition & index,
+    const NamesAndTypesList & columns_to_read,
+    MergeTreeIndexGranulePtr index_granule);
 
 MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,

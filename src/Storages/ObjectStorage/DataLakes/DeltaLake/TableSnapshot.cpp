@@ -18,7 +18,6 @@
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
 
@@ -39,6 +38,7 @@
 
 namespace DB::ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int DELTA_KERNEL_ERROR;
 }
@@ -61,6 +61,30 @@ namespace ProfileEvents
 namespace DB::FailPoints
 {
     extern const char delta_kernel_force_stale_token_error[];
+}
+
+namespace DB
+{
+
+Field parseFieldFromString(const String & value, DB::DataTypePtr data_type)
+{
+    try
+    {
+        ReadBufferFromString buffer(value);
+        auto col = data_type->createColumn();
+        auto serialization = data_type->getDefaultSerialization();
+        serialization->deserializeWholeText(*col, buffer, FormatSettings{});
+        return (*col)[0];
+    }
+    catch (...)
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot parse {} for data type {}: {}",
+            value, data_type->getName(), getCurrentExceptionMessage(false));
+    }
+}
+
 }
 
 namespace DeltaLake

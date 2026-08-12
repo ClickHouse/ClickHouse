@@ -52,7 +52,7 @@ namespace ErrorCodes
 
 /// A function that takes a string, and returns an array of substrings created by some generator.
 template <typename Generator>
-class FunctionTokens final : public IFunction
+class FunctionTokens : public IFunction
 {
 private:
     using Pos = const char *;
@@ -87,7 +87,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        Generator generator{};
+        Generator generator;
         generator.init(arguments, max_substrings_includes_remaining_string);
 
         const auto & array_argument = arguments[generator.strings_argument_position];

@@ -37,6 +37,7 @@ struct Packet
     String columns_description;
     Progress progress;
     ProfileInfo profile_info;
+    std::vector<UUID> part_uuids;
 
     /// The part of parallel replicas protocol
     std::optional<InitialAllRangesAnnouncement> announcement;
@@ -119,8 +120,6 @@ public:
     virtual void sendExternalTablesData(ExternalTablesData & data) = 0;
 
     virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
-
-    virtual void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) = 0;
 
     /// Check, if has data to read.
     virtual bool poll(size_t timeout_microseconds) = 0;

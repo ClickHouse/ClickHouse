@@ -363,7 +363,7 @@ INSTANTIATE_TEST_SUITE_P(AllTimeZones,
     ::testing::ValuesIn(allTimezones())
 );
 
-[[maybe_unused]] static std::ostream & operator<<(std::ostream & ostr, const DateLUTImpl::Values & v)
+std::ostream & operator<<(std::ostream & ostr, const DateLUTImpl::Values & v)
 {
     return ostr << "DateLUTImpl::Values{"
             << "\n\t date              : " << v.date
@@ -384,7 +384,7 @@ struct TimeRangeParam
     const int step_in_seconds;
 };
 
-static std::ostream & operator<<(std::ostream & ostr, const TimeRangeParam & param)
+std::ostream & operator<<(std::ostream & ostr, const TimeRangeParam & param)
 {
     return ostr << param.begin << " : " << param.end << " step: " << param.step_in_seconds << "s";
 }

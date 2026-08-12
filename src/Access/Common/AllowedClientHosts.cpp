@@ -539,7 +539,7 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
             for (const auto & host : resolved_hosts.value())
             {
                 Poco::RegularExpression re(name_regexp_);
-                Poco::RegularExpression::Match match{};
+                Poco::RegularExpression::Match match;
                 if (re.match(host, match) != 0)
                 {
                     return true;

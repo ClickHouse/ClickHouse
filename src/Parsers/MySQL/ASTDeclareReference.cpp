@@ -11,7 +11,7 @@ namespace DB
 namespace MySQLParser
 {
 
-static bool parseReferenceOption(IParser::Pos & pos, ASTDeclareReference::ReferenceOption & option, Expected & expected)
+bool parseReferenceOption(IParser::Pos & pos, ASTDeclareReference::ReferenceOption & option, Expected & expected)
 {
     if (ParserKeyword(Keyword::RESTRICT).ignore(pos, expected))
         option = ASTDeclareReference::RESTRICT;

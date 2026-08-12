@@ -23,25 +23,17 @@ class MockControl:
         self._container = container
         self._port = port
 
-    def _apply(self, url):
-        # Retry while the flooded mock is briefly unreachable. Each attempt is short
-        # and the total wait is capped, so a wedged mock that accepts the connection
-        # but never replies fails within the window instead of stalling for minutes.
-        response = ""
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            response = self._cluster.exec_in_container(
-                self._cluster.get_container_id(self._container),
-                ["curl", "-s", "--connect-timeout", "1", "--max-time", "1", url],
-                nothrow=True,
-            )
-            if response == "OK":
-                return
-            time.sleep(0.5)
-        assert response == "OK", response
-
     def reset(self):
-        self._apply(f"http://localhost:{self._port}/mock_settings/reset")
+        response = self._cluster.exec_in_container(
+            self._cluster.get_container_id(self._container),
+            [
+                "curl",
+                "-s",
+                f"http://localhost:{self._port}/mock_settings/reset",
+            ],
+            nothrow=True,
+        )
+        assert response == "OK", response
 
     def setup_action(self, when, count=None, after=None, action=None, action_args=None):
         url = f"http://localhost:{self._port}/mock_settings/{when}?nothing=1"
@@ -59,7 +51,16 @@ class MockControl:
             for x in action_args:
                 url += f"&action_args={x}"
 
-        self._apply(url)
+        response = self._cluster.exec_in_container(
+            self._cluster.get_container_id(self._container),
+            [
+                "curl",
+                "-s",
+                url,
+            ],
+            nothrow=True,
+        )
+        assert response == "OK", response
 
     def setup_at_object_upload(self, **kwargs):
         self.setup_action("at_object_upload", **kwargs)
@@ -74,14 +75,28 @@ class MockControl:
         self.setup_action("at_create_multi_part_upload", **kwargs)
 
     def setup_fake_puts(self, part_length):
-        self._apply(
-            f"http://localhost:{self._port}/mock_settings/fake_puts?when_length_bigger={part_length}"
+        response = self._cluster.exec_in_container(
+            self._cluster.get_container_id(self._container),
+            [
+                "curl",
+                "-s",
+                f"http://localhost:{self._port}/mock_settings/fake_puts?when_length_bigger={part_length}",
+            ],
+            nothrow=True,
         )
+        assert response == "OK", response
 
     def setup_fake_multpartuploads(self):
-        self._apply(
-            f"http://localhost:{self._port}/mock_settings/setup_fake_multpartuploads?"
+        response = self._cluster.exec_in_container(
+            self._cluster.get_container_id(self._container),
+            [
+                "curl",
+                "-s",
+                f"http://localhost:{self._port}/mock_settings/setup_fake_multpartuploads?",
+            ],
+            nothrow=True,
         )
+        assert response == "OK", response
 
     def setup_slow_answers(
         self, minimal_length=0, timeout=None, probability=None, count=None
@@ -101,7 +116,12 @@ class MockControl:
         if count is not None:
             url += f"&count={count}"
 
-        self._apply(url)
+        response = self._cluster.exec_in_container(
+            self._cluster.get_container_id(self._container),
+            ["curl", "-s", url],
+            nothrow=True,
+        )
+        assert response == "OK", response
 
 
 class Throttler:

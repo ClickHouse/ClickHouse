@@ -8,8 +8,6 @@
 
 #include <Core/PostgreSQL/ConnectionHolder.h>
 #include <mutex>
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Storages/StoragePostgreSQL.h>
 
@@ -23,8 +21,8 @@ namespace postgres
 class PoolWithFailover
 {
 public:
-    using ReplicasConfigurationByPriority = DB::MapWithMemoryTracking<size_t, DB::VectorWithMemoryTracking<DB::StoragePostgreSQL::Configuration>>;
-    using RemoteDescription = DB::VectorWithMemoryTracking<std::pair<String, uint16_t>>;
+    using ReplicasConfigurationByPriority = std::map<size_t, std::vector<DB::StoragePostgreSQL::Configuration>>;
+    using RemoteDescription = std::vector<std::pair<String, uint16_t>>;
 
     PoolWithFailover(
         const ReplicasConfigurationByPriority & configurations_by_priority,
@@ -62,8 +60,8 @@ private:
 
     /// Highest priority is 0, the bigger the number in map, the less the priority
     using PoolHolderPtr = std::shared_ptr<PoolHolder>;
-    using Replicas = DB::VectorWithMemoryTracking<PoolHolderPtr>;
-    using ReplicasWithPriority = DB::MapWithMemoryTracking<size_t, Replicas>;
+    using Replicas = std::vector<PoolHolderPtr>;
+    using ReplicasWithPriority = std::map<size_t, Replicas>;
 
     static auto connectionReestablisher(std::weak_ptr<PoolHolder> pool, size_t pool_wait_timeout);
 

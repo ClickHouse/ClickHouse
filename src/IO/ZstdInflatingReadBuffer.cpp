@@ -72,7 +72,7 @@ bool ZstdInflatingReadBuffer::nextImpl()
         }
 
         /// Check that something has changed after decompress (input or output position)
-        chassert(in->eof() || output.pos > 0 || in->position() < in->buffer().begin() + input.pos);
+        assert(in->eof() || output.pos > 0 || in->position() < in->buffer().begin() + input.pos);
 
         /// move position to the end of read data
         in->position() = in->buffer().begin() + input.pos;

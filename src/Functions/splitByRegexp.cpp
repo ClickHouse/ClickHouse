@@ -32,13 +32,12 @@ private:
     Regexps::RegexpPtr re;
     OptimizedRegularExpression::MatchVec matches;
 
-    Pos begin{};
-    Pos pos{};
-    Pos end{};
+    Pos pos;
+    Pos end;
 
     std::optional<size_t> max_splits;
-    size_t splits{};
-    bool max_substrings_includes_remaining_string{};
+    size_t splits;
+    bool max_substrings_includes_remaining_string;
 
 public:
     static constexpr auto name = "splitByRegexp";
@@ -73,7 +72,6 @@ public:
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
     {
-        begin = pos_;
         pos = pos_;
         end = end_;
         splits = 0;
@@ -132,16 +130,14 @@ public:
                         return false;
             }
 
-            /// Match over the whole string starting at `pos`, so that the characters before `pos` are seen as context
-            /// for zero-width assertions such as `\b` and `^`. The returned offsets are relative to `begin`.
-            if (!re->match(begin, end - begin, pos - begin, matches) || !matches[0].length)
+            if (!re->match(pos, end - pos, matches) || !matches[0].length)
             {
                 token_end = end;
                 pos = end + 1;
             }
             else
             {
-                token_end = begin + matches[0].offset;
+                token_end = pos + matches[0].offset;
                 pos = token_end + matches[0].length;
                 ++splits;
             }
@@ -154,7 +150,7 @@ public:
 using FunctionSplitByRegexp = FunctionTokens<SplitByRegexpImpl>;
 
 /// Fallback splitByRegexp to splitByChar when its 1st argument is a trivial char for better performance
-class SplitByRegexpOverloadResolver final : public IFunctionOverloadResolver
+class SplitByRegexpOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "splitByRegexp";
@@ -201,8 +197,8 @@ private:
             OptimizedRegularExpression re = Regexps::createRegexp<false, false, false>(pattern);
 
             std::string required_substring;
-            bool is_trivial = false;
-            bool required_substring_is_prefix = false;
+            bool is_trivial;
+            bool required_substring_is_prefix;
             re.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
             return is_trivial && required_substring == pattern;
         }

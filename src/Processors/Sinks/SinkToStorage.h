@@ -21,8 +21,6 @@ public:
     void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
     void addInterpreterContext(std::shared_ptr<const Context> context) { interpreter_context.emplace_back(std::move(context)); }
 
-    virtual void setHasDependentMaterializedViews(bool /*has_dependent_views*/) {}
-
 protected:
     virtual void consume(Chunk & chunk) = 0;
 
@@ -39,7 +37,7 @@ private:
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 
 
-class NullSinkToStorage final : public SinkToStorage
+class NullSinkToStorage : public SinkToStorage
 {
 public:
     using SinkToStorage::SinkToStorage;

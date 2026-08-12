@@ -150,7 +150,7 @@ bool ToDecimal::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     String res;
     int scale = 0;
-    int precision = 0;
+    int precision;
 
     if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
     {

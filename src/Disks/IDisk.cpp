@@ -1,9 +1,7 @@
 #include <Disks/IDisk.h>
 #include <Core/ServerUUID.h>
-#include <Core/UUID.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/ReadPipeline.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
@@ -78,16 +76,6 @@ void IDisk::copyFile( /// NOLINT
     out->finalize();
 }
 
-std::unique_ptr<ReadBufferFromFileBase> IDisk::readFile(
-    const String & path,
-    const ReadSettings & settings,
-    std::optional<size_t> read_hint) const
-{
-    ReadPipeline pipeline;
-    prepareRead(path, settings, read_hint, pipeline);
-    return pipeline.build();
-}
-
 std::unique_ptr<ReadBufferFromFileBase> IDisk::readFileIfExists( /// NOLINT
     const String & path,
     const ReadSettings & settings,
@@ -141,7 +129,7 @@ UInt128 IDisk::getEncryptedFileIV(const String &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
 }
 
-static void asyncCopy(
+void asyncCopy(
     IDisk & from_disk,
     String from_path,
     IDisk & to_disk,

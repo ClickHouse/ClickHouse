@@ -149,14 +149,18 @@ def test_paimon_rest_catalog(started_cluster):
     node.query("SHOW TABLES;", database="paimon_rest_db_dlf")
 
     node.query("DROP DATABASE IF EXISTS paimon_rest_db_dlf SYNC;")
+    node.query(
+        f"CREATE DATABASE paimon_rest_db_dlf ENGINE = DataLakeCatalog('http://{dlf_ip}:{DLF_PORT}')"
+        f" SETTINGS catalog_type='paimon_rest', warehouse='restWarehouse',"
+        f" dlf_access_key_id='accessKeyIdxx', dlf_access_key_secret='accessKeySecret',"
+        f" region='cn-hangzhou';",
+        settings={"allow_experimental_database_paimon_rest_catalog": 1},
+    )
+    # In 26.5 `CREATE DATABASE` does not validate credentials eagerly, so the
+    # 401 from the catalog surfaces on first access. `SHOW TABLES` no longer
+    # swallows catalog errors as an empty listing.
     with pytest.raises(QueryRuntimeException) as exc_info:
-        node.query(
-            f"CREATE DATABASE paimon_rest_db_dlf ENGINE = DataLakeCatalog('http://{dlf_ip}:{DLF_PORT}')"
-            f" SETTINGS catalog_type='paimon_rest', warehouse='restWarehouse',"
-            f" dlf_access_key_id='accessKeyIdxx', dlf_access_key_secret='accessKeySecret',"
-            f" region='cn-hangzhou';",
-            settings={"allow_experimental_database_paimon_rest_catalog": 1},
-        )
+        node.query("SHOW TABLES;", database="paimon_rest_db_dlf")
     message = str(exc_info.value)
     assert "Code: 86" in message, message
     assert "401" in message, message

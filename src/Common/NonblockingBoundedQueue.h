@@ -79,7 +79,20 @@ public:
     }
 
     /// `value` is moved-out iff the return value is true.
-    bool tryPush(T & value)
+    ///
+    /// TSAN very rarely reports a data race between the `slot.value` write in `tryPush` and the
+    /// `slot.value` read in `tryPop`, even though the acquire/release operations on `slot.pos`
+    /// make such a race impossible (the code is isomorphic to Vyukov's original implementation).
+    /// Those reports are suppressed at runtime, per instantiation, by
+    /// `__tsan_default_suppressions` in programs/main.cpp. A `NO_SANITIZE_THREAD` attribute here
+    /// does not work: the reported access happens in the element type's move assignment, which is
+    /// a separate function that stays instrumented.
+    ///
+    /// The suppression lists only `tryPush`. `tryPop` writes the payload too (it moves out of
+    /// `slot.value`), but the `dequeue_pos` CAS gives one consumer sole ownership of a slot before
+    /// the move-out, so two pops never touch one payload concurrently, whatever the consumer count.
+    /// A `tryPop` entry would be dead, and would also hide heap-use-after-free through that frame.
+    bool tryPush(T && value)
     {
         chassert(mask);
         size_t pos = enqueue_pos.load(std::memory_order_relaxed);

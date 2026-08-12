@@ -92,20 +92,14 @@ ParallelReadingExtension::ParallelReadingExtension(
         std::move(callback_), ProfileEvents::ParallelReplicasReadRequestMicroseconds, "ParallelReplicasReadRequest"};
 }
 
-std::optional<InitialAllRangesAnnouncementResponse> ParallelReadingExtension::sendInitialRequest(
+void ParallelReadingExtension::sendInitialRequest(
     CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request) const
 {
-    return all_callback(InitialAllRangesAnnouncement{
+    all_callback(InitialAllRangesAnnouncement{
         mode, std::move(description), number_of_current_replica, mark_segment_size, min_marks_per_request, stream_id});
 }
 
 std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadRequest(
-    CoordinationMode mode, size_t min_marks_per_request) const
-{
-    return callback(ParallelReadRequest{mode, number_of_current_replica, min_marks_per_request, {}, stream_id});
-}
-
-std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadInOrderRequest(
     CoordinationMode mode, size_t min_marks_per_request, const RangesInDataPartsDescription & description) const
 {
     return callback(ParallelReadRequest{mode, number_of_current_replica, min_marks_per_request, description, stream_id});
@@ -257,9 +251,7 @@ ChunkAndProgress
 MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMergeTreeSelectAlgorithm & task_algorithm) const
 {
     if (!current_task.getReadersChain().isInitialized())
-        current_task.initializeReadersChain(
-            prewhere_actions, merge_tree_index_build_context, lazy_materializing_rows,
-            read_steps_performance_counters, reader_settings.collect_predicate_statistics);
+        current_task.initializeReadersChain(prewhere_actions, merge_tree_index_build_context, lazy_materializing_rows, read_steps_performance_counters);
 
     auto res = task_algorithm.readFromTask(current_task);
 
@@ -297,15 +289,6 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
                     data_part->index_granularity->hasFinalMark(),
                     res.read_mark_ranges));
             }
-
-            /// Some rows survived PREWHERE, but individual granules within this batch may
-            /// still have been fully filtered out. Record those granules immediately so that
-            /// future queries can skip them without waiting for an entire batch to be zero.
-            if (prewhere_info && !res.unmatched_mark_ranges.empty()
-                && !current_task.readersChainCanSkipMarksBeforePrewhere()
-                && !current_task.appliesMutationsBeforePrewhere()
-                && !row_level_filter)
-                current_task.addPrewhereUnmatchedMarks(res.unmatched_mark_ranges);
         }
 
         return ChunkAndProgress{

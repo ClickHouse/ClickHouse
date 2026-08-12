@@ -351,7 +351,7 @@ def main():
             for workflow in workflows:
                 print(
                     f"Workflow [{workflow.name}] has jobs:\n"
-                    "  \"" + '"\n  "'.join([job.name for job in workflow.jobs]) + '"'
+                    "  \"" + f'"\n  "'.join([job.name for job in workflow.jobs]) + '"'
                     )
             Utils.exit_with_error("Job name is required to run a job.")
 

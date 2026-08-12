@@ -16,7 +16,7 @@
 using namespace DB;
 static pcg64 rng(randomSeed());
 
-static std::pair<MutableColumnPtr, MutableColumnPtr> createColumns(size_t n, size_t k)
+std::pair<MutableColumnPtr, MutableColumnPtr> createColumns(size_t n, size_t k)
 {
     auto values = ColumnVector<UInt64>::create();
     auto offsets = ColumnVector<UInt64>::create();
@@ -45,7 +45,7 @@ static std::pair<MutableColumnPtr, MutableColumnPtr> createColumns(size_t n, siz
     return std::make_pair(std::move(sparse), std::move(full));
 }
 
-static bool checkEquals(const IColumn & lhs, const IColumn & rhs)
+bool checkEquals(const IColumn & lhs, const IColumn & rhs)
 {
     if (lhs.size() != rhs.size())
         return false;

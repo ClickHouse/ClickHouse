@@ -85,7 +85,7 @@ public:
     {
         Configuration::removeConfigValue(*config, key);
         [[maybe_unused]] auto removed = keys.erase(key);
-        chassert(removed);
+        assert(removed);
     }
 
     Keys getKeys(ssize_t depth, const std::string & prefix) const

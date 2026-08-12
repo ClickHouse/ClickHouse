@@ -2,7 +2,6 @@
 
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <base/demangle.h>
 #include <DataTypes/IDataType.h>
 #include <Columns/IColumn.h>
@@ -139,7 +138,7 @@ struct FunctionArgumentDescriptor
     int isValid(const DataTypePtr & data_type, const ColumnPtr & column) const;
 };
 
-using FunctionArgumentDescriptors = VectorWithMemoryTracking<FunctionArgumentDescriptor>;
+using FunctionArgumentDescriptors = std::vector<FunctionArgumentDescriptor>;
 
 /// Validates that the user-provided arguments match the expected arguments.
 ///
@@ -188,7 +187,7 @@ void validateNumberOfFunctionArguments(const IFunction & func, const ColumnsWith
                                        size_t expected_max_args);
 
 /// Checks if a list of array columns have equal offsets. Return a pair of nested columns and offsets if true, otherwise throw.
-std::pair<VectorWithMemoryTracking<const IColumn *>, const ColumnArray::Offset *>
+std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>
 checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments);
 
 /// Return ColumnNullable of src, with null map as OR-ed null maps of args columns.

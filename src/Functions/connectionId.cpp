@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -9,7 +8,7 @@ namespace DB
 {
 
 /// Get the connection Id. It's used for MySQL handler only.
-class FunctionConnectionId final : public IFunction, WithContext
+class FunctionConnectionId : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "connectionId";

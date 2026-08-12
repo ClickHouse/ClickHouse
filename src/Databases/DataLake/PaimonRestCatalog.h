@@ -59,7 +59,6 @@ struct PaimonToken
     const String bearer_token;
     const String dlf_access_key_id;
     const String dlf_access_key_secret;
-    mutable String dlf_generated_authorization;
 
     explicit PaimonToken(const String & bearer_token_)
         : token_provider("bearer")

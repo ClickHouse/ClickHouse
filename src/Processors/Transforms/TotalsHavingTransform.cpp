@@ -88,8 +88,6 @@ TotalsHavingTransform::TotalsHavingTransform(
     /// via a different code path in defaultImplementationForNulls at 0 rows.
     if (expression)
     {
-        /// Use updateHeader (dry-run evaluation) instead of expression->execute(),
-        /// because sets from subqueries may not be ready yet at this point.
         auto totals_header = expression->getActionsDAG().updateHeader(finalized_header);
         filter_column_pos = totals_header.getPositionByName(filter_column_name);
         if (remove_filter)
@@ -253,7 +251,7 @@ void TotalsHavingTransform::addToTotals(const Chunk & chunk, const IColumn::Filt
         if (const auto * column = typeid_cast<const ColumnAggregateFunction *>(current.get()))
         {
             auto & totals_column = typeid_cast<ColumnAggregateFunction &>(*current_totals[col]);
-            chassert(totals_column.size() == 1);
+            assert(totals_column.size() == 1);
 
             /// Accumulate all aggregate states from a column of a source chunk into
             /// the corresponding totals column.

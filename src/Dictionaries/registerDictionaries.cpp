@@ -37,7 +37,6 @@ void registerDictionaryPolygon(DictionaryFactory & factory);
 void registerDictionaryDirect(DictionaryFactory & factory);
 
 
-void registerDictionaries();
 void registerDictionaries()
 {
     {

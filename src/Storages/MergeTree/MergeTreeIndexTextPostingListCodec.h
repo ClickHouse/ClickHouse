@@ -89,19 +89,6 @@ class PostingListCodecBitpackingImpl
         uint32_t row_id_end = 0;
     };
 
-    /// Per-block metadata collected during encoding for V2 Index Section.
-    struct PackedBlockMeta
-    {
-        uint32_t last_row_id;       /// Last row_id in this packed block
-        uint64_t relative_offset;   /// Offset within segment payload (from segment data start)
-    };
-
-    /// Per-segment list of packed block metadata.
-    struct SegmentBlockMetas
-    {
-        std::vector<PackedBlockMeta> metas;
-    };
-
 public:
     PostingListCodecBitpackingImpl() = default;
     explicit PostingListCodecBitpackingImpl(size_t postings_list_block_size);
@@ -149,7 +136,6 @@ private:
         total_row_ids = 0;
         compressed_data.clear();
         segment_descriptors.clear();
-        segment_block_metas.clear();
 
         resetCurrentSegment();
     }
@@ -206,8 +192,6 @@ private:
     std::vector<uint32_t> current_segment;
     /// Each segment has an in-memory descriptor
     std::vector<SegmentDescriptor> segment_descriptors;
-    /// Per-segment packed block metadata for V2 Index Section
-    std::vector<SegmentBlockMetas> segment_block_metas;
     /// Total number of postings added across all segments.
     size_t total_row_ids = 0;
     /// Number of values added in the current segment.

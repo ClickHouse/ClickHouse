@@ -93,9 +93,6 @@ public:
 
     /// Returns the name of resource used for query slot scheduling
     virtual String getQueryResourceName() = 0;
-
-    /// Returns the name of resource used for memory reservation
-    virtual String getMemoryReservationResourceName() = 0;
 };
 
 }
