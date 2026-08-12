@@ -13,7 +13,6 @@
 #include <Core/NamesAndTypes.h>
 #include <IO/ReadHelpers.h>
 #include <algorithm>
-#include <ranges>
 
 namespace DB
 {
@@ -281,24 +280,33 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
     else if (serialization_version.value == SerializationVersion::MAP_WITH_BUCKETS)
     {
         size_t end = limit && offset + limit < column.size() ? offset + limit : column.size();
-        auto shared_data_buckets = splitSharedDataPathsToBuckets(column, offset, end, buckets);
+        /// Build one bucket at a time (and free it before building the next) to reduce peak memory,
+        /// instead of materializing all bucket columns simultaneously.
+        SharedDataBucketsSplitter buckets_splitter(column, offset, end, buckets);
         for (size_t bucket = 0; bucket != buckets; ++bucket)
         {
+            auto bucket_column = buckets_splitter.extractBucket(bucket);
             settings.path.push_back(Substream::Bucket);
             settings.path.back().bucket = bucket;
-            serialization_map->serializeBinaryBulkWithMultipleStreams(*shared_data_buckets[bucket], 0, 0, settings, shared_data_state->bucket_map_states[bucket]);
+            serialization_map->serializeBinaryBulkWithMultipleStreams(*bucket_column, 0, 0, settings, shared_data_state->bucket_map_states[bucket]);
             settings.path.pop_back();
         }
     }
     else if (serialization_version.value == SerializationVersion::ADVANCED)
     {
         size_t end = limit && offset + limit < column.size() ? offset + limit : column.size();
-        /// First we need to flatten all paths stored in the shared data and separate them into buckets.
-        auto flattened_paths_buckets = flattenAndBucketSharedDataPaths(column, offset, end, dynamic_type, buckets);
-        /// Second, write paths in each bucket separately.
+        /// Flatten and bucket the shared data paths one bucket at a time (building/serializing/freeing
+        /// each bucket's flattened columns before the next) to reduce peak memory, instead of
+        /// materializing all buckets' flattened columns simultaneously.
+        SharedDataBucketsSplitter buckets_splitter(column, offset, end, buckets);
+        /// Accumulate the flattened path names across all buckets in serialization order (bucket 0's
+        /// sorted paths, then bucket 1's, ...) to build the paths indexes for the shared data copy below.
+        std::vector<std::string_view> all_flattened_paths;
         for (size_t bucket = 0; bucket != buckets; ++bucket)
         {
-            const auto & flattened_paths = flattened_paths_buckets[bucket];
+            auto flattened_paths = buckets_splitter.flattenBucket(bucket, dynamic_type);
+            for (const auto & [path, _] : flattened_paths)
+                all_flattened_paths.push_back(path);
             settings.path.push_back(Substream::Bucket);
             settings.path.back().bucket = bucket;
 
@@ -530,12 +538,9 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
         /// Instead of writing all paths again we create a column that contains indexes
         /// of paths in the total list of paths that we serialized for buckets.
         std::unordered_map<std::string_view, size_t> path_to_index;
-        size_t index = 0;
-        for (const auto & [path, _] : flattened_paths_buckets | std::views::join)
-        {
-            path_to_index[path] = index;
-            ++index;
-        }
+        path_to_index.reserve(all_flattened_paths.size());
+        for (size_t i = 0; i != all_flattened_paths.size(); ++i)
+            path_to_index[all_flattened_paths[i]] = i;
 
         auto [indexes_column, indexes_type] = createPathsIndexes(path_to_index, shared_data_tuple_column.getColumn(0), nested_offset, nested_end);
         indexes_type->getDefaultSerialization()->serializeBinaryBulk(*indexes_column, *copy_indexes_stream, 0, nested_limit);

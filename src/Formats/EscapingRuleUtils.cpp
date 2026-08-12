@@ -411,14 +411,15 @@ DataTypes getDefaultDataTypeForEscapingRules(const std::vector<FormatSettings::E
 String getAdditionalFormatInfoForAllRowBasedFormats(const FormatSettings & settings)
 {
     return fmt::format(
-        "schema_inference_hints={}, max_rows_to_read_for_schema_inference={}, max_bytes_to_read_for_schema_inference={}, schema_inference_make_columns_nullable={}, schema_inference_allow_nullable_tuple_type={}, date_time_input_format={}, input_format_try_infer_variants={}",
+        "schema_inference_hints={}, max_rows_to_read_for_schema_inference={}, max_bytes_to_read_for_schema_inference={}, schema_inference_make_columns_nullable={}, schema_inference_allow_nullable_tuple_type={}, date_time_input_format={}, input_format_try_infer_variants={}, max_parser_depth={}",
         settings.schema_inference_hints,
         settings.max_rows_to_read_for_schema_inference,
         settings.max_bytes_to_read_for_schema_inference,
         settings.schema_inference_make_columns_nullable,
         settings.schema_inference_allow_nullable_tuple_type,
         settings.date_time_input_format,
-        settings.try_infer_variant);
+        settings.try_infer_variant,
+        settings.max_parser_depth);
 }
 
 String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, FormatSettings::EscapingRule escaping_rule)
@@ -438,16 +439,19 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
         case FormatSettings::EscapingRule::Escaped:
         case FormatSettings::EscapingRule::Raw:
             result += fmt::format(
-                ", use_best_effort_in_schema_inference={}, bool_true_representation={}, bool_false_representation={}, null_representation={}",
+                ", use_best_effort_in_schema_inference={}, bool_true_representation={}, bool_false_representation={}, null_representation={},"
+                " input_format_try_infer_exponent_floats={}",
                 settings.tsv.use_best_effort_in_schema_inference,
                 settings.bool_true_representation,
                 settings.bool_false_representation,
-                settings.tsv.null_representation);
+                settings.tsv.null_representation,
+                settings.try_infer_exponent_floats);
             break;
         case FormatSettings::EscapingRule::CSV:
             result += fmt::format(
                 ", use_best_effort_in_schema_inference={}, bool_true_representation={}, bool_false_representation={},"
-                " null_representation={}, delimiter={}, tuple_delimiter={}, try_infer_numbers_from_strings={}, try_infer_strings_from_quoted_tuples={}",
+                " null_representation={}, delimiter={}, tuple_delimiter={}, try_infer_numbers_from_strings={}, try_infer_strings_from_quoted_tuples={},"
+                " input_format_try_infer_exponent_floats={}",
                 settings.csv.use_best_effort_in_schema_inference,
                 settings.bool_true_representation,
                 settings.bool_false_representation,
@@ -455,14 +459,23 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
                 settings.csv.delimiter,
                 settings.csv.tuple_delimiter,
                 settings.csv.try_infer_numbers_from_strings,
-                settings.csv.try_infer_strings_from_quoted_tuples);
+                settings.csv.try_infer_strings_from_quoted_tuples,
+                settings.try_infer_exponent_floats);
+            break;
+        case FormatSettings::EscapingRule::Quoted:
+            result += fmt::format(
+                ", input_format_try_infer_exponent_floats={}",
+                settings.try_infer_exponent_floats);
             break;
         case FormatSettings::EscapingRule::JSON:
+            /// input_format_try_infer_exponent_floats is deliberately absent here: tryReadFloat
+            /// short-circuits it for JSON, so it cannot change the inferred type.
             result += fmt::format(
                 ", try_infer_numbers_from_strings={}, read_bools_as_numbers={}, read_bools_as_strings={}, read_objects_as_strings={}, "
                 "read_numbers_as_strings={}, "
                 "read_arrays_as_strings={}, try_infer_objects_as_tuples={}, infer_incomplete_types_as_strings={}, "
-                "use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects={}",
+                "use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects={}, "
+                "infer_array_of_dynamic_from_array_of_different_values={}",
                 settings.json.try_infer_numbers_from_strings,
                 settings.json.read_bools_as_numbers,
                 settings.json.read_bools_as_strings,
@@ -471,7 +484,8 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
                 settings.json.read_arrays_as_strings,
                 settings.json.try_infer_objects_as_tuples,
                 settings.json.infer_incomplete_types_as_strings,
-                settings.json.use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects);
+                settings.json.use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects,
+                settings.json.infer_array_of_dynamic_from_array_of_different_values);
             break;
         default:
             break;

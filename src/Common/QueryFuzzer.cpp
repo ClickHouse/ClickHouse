@@ -428,7 +428,7 @@ Field QueryFuzzer::getRandomField(int type)
         }
         case 3: {
             /// Date/Date32 boundary values as strings — stress date parsing and arithmetic.
-            /// Date range is [1970-01-01, 2149-06-06], Date32 range is [1900-01-01, 2299-12-31].
+            /// Date range is [1970-01-01, 2149-06-06], Date32 range is [0000-01-01, 9999-12-31].
             static constexpr const char * date_values[]
                 = {"0000-01-01",
                    "1899-12-31",

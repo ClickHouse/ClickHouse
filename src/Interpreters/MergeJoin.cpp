@@ -164,7 +164,8 @@ Int64 nullableCompareTrackAt(const IColumn & left_column, const IColumn & right_
         }
     }
 
-    // No need to check if column values have NULLs inside the track. It's the first key column.
+    // No need to check if column values have NULLs inside the track: it's the first key column,
+    // NULLs are sorted first and the leading NULL runs were skipped above.
     return left_notnull->compareTrackAt(lhs_pos, rhs_pos, *right_notnull, MergeJoin::nulls_direction);
 }
 

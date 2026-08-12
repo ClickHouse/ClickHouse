@@ -80,3 +80,15 @@ def test_play_reconcile_startup(started_cluster, nodejs_container):
     err = (stderr or b"").decode()
     assert code == 0, "harness failed:\n{}\n{}".format(out, err)
     assert "All scenarios passed" in out
+    # The `run=1`-marker scenarios are the regression tests for scoping the URL
+    # marker to the tab that produced it; pin them by name so a harness edit
+    # that silently drops a scenario cannot pass as "all scenarios passed".
+    for scenario in (
+        "run-marker-per-tab",
+        "legacy-popstate-clears-policy",
+        "run-marker-kept-for-own-run",
+        "run-marker-plain-load",
+    ):
+        assert "PASS [{}]".format(scenario) in out, "scenario {} did not run:\n{}".format(
+            scenario, out
+        )

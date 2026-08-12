@@ -717,7 +717,7 @@ Like [toDate](#toDate) but if unsuccessful, returns a default value which is eit
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDateOrDefault", std::make_shared<DataTypeDate>()); },
         toDateOrDefault_documentation);
     FunctionDocumentation::Description toDate32OrDefault_description = R"(
-Converts the argument to the [Date32](/reference/data-types/date32) data type. If the argument cannot be converted, which includes a numeric value outside of the range of [Date32](/reference/data-types/date32), the function returns a default value which is either the second argument (if specified), or otherwise the lower boundary of [Date32](/reference/data-types/date32). If the argument has [Date](/reference/data-types/date) type, its borders are taken into account.
+Converts the argument to the [Date32](/reference/data-types/date32) data type. If the argument cannot be converted, which includes a numeric value outside of the range of [Date32](/reference/data-types/date32), the function returns a default value which is either the second argument (if specified), or otherwise `1900-01-01`, the historical default value of [Date32](/reference/data-types/date32) (not its lower boundary, which is `0000-01-01`). If the argument has [Date](/reference/data-types/date) type, its borders are taken into account.
 
 Note that, unlike [toDate32](#toDate32), this function does not saturate an out-of-range numeric argument to the boundaries of [Date32](/reference/data-types/date32); such an argument is treated as unconvertible.
     )";

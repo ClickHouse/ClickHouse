@@ -60,6 +60,8 @@ public:
 
     const WindowDescription & getWindowDescription() const;
 
+    const std::vector<WindowFunctionDescription> & getWindowFunctions() const { return window_functions; }
+
     QueryPlanStepPtr clone() const override;
 
 private:
