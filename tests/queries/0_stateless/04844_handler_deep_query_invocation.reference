@@ -1,4 +1,6 @@
-=== created with raised parser limits ===
+=== created ===
 created
-=== invoked over HTTP under ordinary session limits ===
+=== the session parser limit is in effect ===
+TOO_DEEP_RECURSION
+=== invoked over HTTP in that session ===
 1	5
