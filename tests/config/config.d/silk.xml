@@ -1,5 +1,5 @@
 <clickhouse>
-    <allow_experimental_silk_runtime>true</allow_experimental_silk_runtime>
+    <enable_silk_runtime>true</enable_silk_runtime>
     <silk>
         <!-- Fiber stack size in bytes. The default (320 KiB) leaves enough room for OpenSSL handshakes. -->
         <fiber_stack_size>327680</fiber_stack_size>

@@ -211,7 +211,6 @@ namespace MergeTreeSetting
 
 namespace ServerSetting
 {
-    extern const ServerSettingsBool allow_experimental_silk_runtime;
     extern const ServerSettingsUInt32 allow_feature_tier;
     extern const ServerSettingsUInt32 asynchronous_heavy_metrics_update_period_s;
     extern const ServerSettingsUInt32 asynchronous_metrics_update_period_s;
@@ -261,6 +260,7 @@ namespace ServerSetting
     extern const ServerSettingsInt32 dns_cache_update_period;
     extern const ServerSettingsUInt32 dns_max_consecutive_failures;
     extern const ServerSettingsBool enable_azure_sdk_logging;
+    extern const ServerSettingsBool enable_silk_runtime;
     extern const ServerSettingsUInt64 global_profiler_cpu_time_period_ns;
     extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
     extern const ServerSettingsUInt64 http_connections_soft_limit;
@@ -1533,7 +1533,7 @@ try
         has_trace_collector ? server_settings[ServerSetting::global_profiler_cpu_time_period_ns].value : 0);
 
 #if USE_SILK
-    if (server_settings[ServerSetting::allow_experimental_silk_runtime])
+    if (server_settings[ServerSetting::enable_silk_runtime])
     {
         Silk::initializeFiberScheduler(config().getUInt("silk.fiber_stack_size", Silk::DEFAULT_FIBER_STACK_SIZE));
     }
@@ -1578,7 +1578,7 @@ try
 
     auto stop_silk_fiber_scheduler = [&]{
 #if USE_SILK
-        if (server_settings[ServerSetting::allow_experimental_silk_runtime])
+        if (server_settings[ServerSetting::enable_silk_runtime])
         {
             LOG_INFO(log, "Stopping silk fiber scheduler");
             Silk::destroyFiberScheduler();
