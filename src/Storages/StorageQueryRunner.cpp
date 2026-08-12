@@ -23,7 +23,6 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/QueryRunnerSettings.h>
 #include <Storages/StorageFactory.h>
-#include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
@@ -307,28 +306,18 @@ public:
         : WithContext(global_context_)
         , cluster_name(cluster_name_)
         , shard_selector(shard_selector_)
-        , queue(max_queue_size_)
-        , num_threads(num_threads_)
         , max_queue_size(max_queue_size_)
         , log(log_)
-        , pool(CurrentMetrics::QueryRunnerThreads, CurrentMetrics::QueryRunnerThreadsActive, CurrentMetrics::QueryRunnerThreadsScheduled, num_threads_)
+        , pool(
+              CurrentMetrics::QueryRunnerThreads,
+              CurrentMetrics::QueryRunnerThreadsActive,
+              CurrentMetrics::QueryRunnerThreadsScheduled,
+              num_threads_,
+              0,
+              num_threads_ + max_queue_size_)
     {
         client_info.client_name = String(client_name);
         client_info.setInitialQuery();
-    }
-
-    void start()
-    {
-        try
-        {
-            for (size_t i = 0; i < num_threads; ++i)
-                pool.scheduleOrThrowOnError([this] { workerLoop(); });
-        }
-        catch (...)
-        {
-            shutdown();
-            throw;
-        }
     }
 
     void submit(QueryRunnerJob job)
@@ -338,7 +327,7 @@ public:
         const UInt64 seq = job.seq;
         try
         {
-            if (queue.tryPush(std::move(job)))
+            if (pool.trySchedule([this, scheduled_job = std::move(job)] { runJob(scheduled_job); }))
                 return;
         }
         catch (...)
@@ -347,7 +336,7 @@ public:
             throw;
         }
 
-        if (queue.isFinished())
+        if (shutdown_called)
             LOG_WARNING(log, "The table is shutting down, discarding the query");
         else
             LOG_ERROR(LogFrequencyLimiter(log, 5), "The queue is full (max_queue_size = {}), discarding the query", max_queue_size);
@@ -364,12 +353,6 @@ public:
         if (shutdown_called.exchange(true))
             return;
 
-        queue.finish();
-
-        QueryRunnerJob job;
-        while (queue.tryPop(job))
-            finishJob(job.batch, job.seq);
-
         cluster_executors.cancelAll();
         pool.wait();
     }
@@ -382,24 +365,20 @@ private:
         pending.retire(seq);
     }
 
-    void workerLoop()
+    void runJob(const QueryRunnerJob & job)
     {
         setThreadName(ThreadName::QUERY_RUNNER);
 
-        QueryRunnerJob job;
-        while (queue.pop(job))
+        try
         {
-            try
-            {
-                executeJob(job);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Failed to execute a query");
-            }
-
-            finishJob(job.batch, job.seq);
+            executeJob(job);
         }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to execute a query");
+        }
+
+        finishJob(job.batch, job.seq);
     }
 
     void executeJob(const QueryRunnerJob & job)
@@ -639,8 +618,6 @@ private:
     const String cluster_name;
     const ShardSelector shard_selector;
     ClientInfo client_info;
-    ConcurrentBoundedQueue<QueryRunnerJob> queue;
-    const size_t num_threads;
     const size_t max_queue_size;
     LoggerPtr log;
     ThreadPool pool;
@@ -778,11 +755,6 @@ StorageQueryRunner::StorageQueryRunner(
 }
 
 StorageQueryRunner::~StorageQueryRunner() = default;
-
-void StorageQueryRunner::startup()
-{
-    dispatcher->start();
-}
 
 void StorageQueryRunner::shutdown(bool /*is_drop*/)
 {
