@@ -252,6 +252,7 @@ namespace Setting
     extern const SettingsFloat merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability;
     extern const SettingsBool merge_tree_use_const_size_tasks_for_remote_reading;
     extern const SettingsUInt64 min_count_to_compile_sort_description;
+    extern const SettingsBool optimize_read_in_reverse_order_final;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsUInt64 parallel_replicas_count;
@@ -1388,6 +1389,53 @@ static ActionsDAG createProjection(const Block & header)
     return ActionsDAG(header.getNamesAndTypesList());
 }
 
+/// Split ranges into smaller ones to avoid reading much data with the first blocks.
+/// In the direct reading order only the first few ranges are split (the reading may stop early because of LIMIT).
+/// In the reverse reading order all ranges are split, because a whole range has to be kept in memory to reverse it.
+static MarkRanges splitRangesToAvoidLargeReads(const MarkRanges & ranges, int direction, size_t rows_granularity, size_t max_block_size)
+{
+    MarkRanges new_ranges;
+    const size_t max_marks_in_range = (max_block_size + rows_granularity - 1) / rows_granularity;
+    size_t marks_in_range = 1;
+
+    if (direction == 1)
+    {
+        /// Split first few ranges to avoid reading much data.
+        bool split = false;
+        for (auto range : ranges)
+        {
+            while (!split && range.begin + marks_in_range < range.end)
+            {
+                new_ranges.emplace_back(range.begin, range.begin + marks_in_range);
+                range.begin += marks_in_range;
+                marks_in_range *= 2;
+
+                if (marks_in_range > max_marks_in_range)
+                    split = true;
+            }
+            new_ranges.emplace_back(range.begin, range.end);
+        }
+    }
+    else
+    {
+        /// Split all ranges to avoid reading much data, because we have to
+        ///  store whole range in memory to reverse it.
+        for (auto it = ranges.rbegin(); it != ranges.rend(); ++it)
+        {
+            auto range = *it;
+            while (range.begin + marks_in_range < range.end)
+            {
+                new_ranges.emplace_front(range.end - marks_in_range, range.end);
+                range.end -= marks_in_range;
+                marks_in_range = std::min(marks_in_range * 2, max_marks_in_range);
+            }
+            new_ranges.emplace_front(range.begin, range.end);
+        }
+    }
+
+    return new_ranges;
+}
+
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     RangesInDataParts && parts_with_ranges,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -1420,53 +1468,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
         have_input_columns_removed_after_prewhere = restorePrewhereInputs(query_info.row_level_filter.get(), query_info.prewhere_info.get(), sorting_columns);
     }
-
-    /// Let's split ranges to avoid reading much data.
-    auto split_ranges
-        = [rows_granularity = (*data_settings)[MergeTreeSetting::index_granularity], my_max_block_size = block_size.max_block_size_rows]
-        (const auto & ranges, int direction)
-    {
-        MarkRanges new_ranges;
-        const size_t max_marks_in_range = (my_max_block_size + rows_granularity - 1) / rows_granularity;
-        size_t marks_in_range = 1;
-
-        if (direction == 1)
-        {
-            /// Split first few ranges to avoid reading much data.
-            bool split = false;
-            for (auto range : ranges)
-            {
-                while (!split && range.begin + marks_in_range < range.end)
-                {
-                    new_ranges.emplace_back(range.begin, range.begin + marks_in_range);
-                    range.begin += marks_in_range;
-                    marks_in_range *= 2;
-
-                    if (marks_in_range > max_marks_in_range)
-                        split = true;
-                }
-                new_ranges.emplace_back(range.begin, range.end);
-            }
-        }
-        else
-        {
-            /// Split all ranges to avoid reading much data, because we have to
-            ///  store whole range in memory to reverse it.
-            for (auto it = ranges.rbegin(); it != ranges.rend(); ++it)
-            {
-                auto range = *it;
-                while (range.begin + marks_in_range < range.end)
-                {
-                    new_ranges.emplace_front(range.end - marks_in_range, range.end);
-                    range.end -= marks_in_range;
-                    marks_in_range = std::min(marks_in_range * 2, max_marks_in_range);
-                }
-                new_ranges.emplace_front(range.begin, range.end);
-            }
-        }
-
-        return new_ranges;
-    };
 
     if (num_streams > 1)
     {
@@ -1597,7 +1598,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     parts_with_ranges.emplace_back(part);
                 }
 
-                ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_order_info->direction);
+                ranges_to_get_from_part = splitRangesToAvoidLargeReads(
+                    ranges_to_get_from_part,
+                    input_order_info->direction,
+                    (*data_settings)[MergeTreeSetting::index_granularity],
+                    block_size.max_block_size_rows);
                 new_parts.emplace_back(
                     part.data_part,
                     part.parent_part,
@@ -1870,6 +1875,19 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     chassert(num_streams == requested_num_streams);
     num_streams = std::min<size_t>(num_streams, settings[Setting::max_final_threads]);
 
+    /// The read-in-order optimization may request reading in the reverse order (see `requestReadingInOrder`).
+    const bool read_in_reverse = reader_settings.read_in_order && query_info.input_order_info && query_info.input_order_info->direction < 0;
+    const auto read_type = read_in_reverse ? ReadType::InReverseOrder : ReadType::InOrder;
+
+    /// A whole range has to be kept in memory to read it in the reverse order, so split ranges into smaller ones.
+    auto split_ranges_for_reverse_read = [this](RangesInDataParts parts)
+    {
+        for (auto & part : parts)
+            part.ranges = splitRangesToAvoidLargeReads(
+                part.ranges, -1, (*data_settings)[MergeTreeSetting::index_granularity], block_size.max_block_size_rows);
+        return parts;
+    };
+
     /// If do_not_merge_across_partitions_select_final is true than we won't merge parts from different partitions.
     /// We have all parts in parts vector, where parts with same partition are nearby.
     /// So we will store iterators pointed to the beginning of each partition range (and parts.end()),
@@ -2002,13 +2020,17 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             if (storage_snapshot->metadata->hasPrimaryKey())
             {
                 // Let's split parts into non intersecting parts ranges and layers to ensure data parallelism of FINAL.
-                auto in_order_reading_step_getter = [this, &index_build_context, &column_names, &info](auto parts)
+                auto in_order_reading_step_getter
+                    = [this, &index_build_context, &column_names, &info, read_type, read_in_reverse, &split_ranges_for_reverse_read](auto parts)
                 {
+                    if (read_in_reverse)
+                        parts = split_ranges_for_reverse_read(std::move(parts));
+
                     return this->read(
                         std::move(parts),
                         index_build_context,
                         column_names,
-                        ReadType::InOrder,
+                        read_type,
                         1 /* num_streams */,
                         0 /* min_marks_for_concurrent_read */,
                         info.use_uncompressed_cache);
@@ -2089,11 +2111,14 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             }
             else
             {
+                if (read_in_reverse)
+                    new_parts = split_ranges_for_reverse_read(std::move(new_parts));
+
                 pipes.emplace_back(read(
                     std::move(new_parts),
                     index_build_context,
                     column_names,
-                    ReadType::InOrder,
+                    read_type,
                     max_layers,
                     0,
                     info.use_uncompressed_cache));
@@ -2119,12 +2144,14 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         size_t sort_columns_size = sort_columns.size();
         sort_description.reserve(sort_columns_size);
 
+        /// When reading in the reverse order, the direction of each sorting key column is flipped.
+        const int direction_multiplier = read_in_reverse ? -1 : 1;
         for (size_t i = 0; i < sort_columns_size; ++i)
         {
             if (!reverse_flags.empty() && reverse_flags[i])
-                sort_description.emplace_back(sort_columns[i], -1);
+                sort_description.emplace_back(sort_columns[i], -1 * direction_multiplier);
             else
-                sort_description.emplace_back(sort_columns[i], 1);
+                sort_description.emplace_back(sort_columns[i], 1 * direction_multiplier);
         }
 
         for (auto & pipe : pipes)
@@ -2134,7 +2161,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 data.merging_params,
                 storage_snapshot->metadata,
                 block_size.max_block_size_rows,
-                enable_vertical_final);
+                enable_vertical_final,
+                read_in_reverse);
 
         merging_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
     }
@@ -3271,9 +3299,11 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     if (!direction)
         direction = getSortDirection();
 
-    /// Disable read-in-order optimization for reverse order with final.
-    /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order).
-    if (direction != 1 && query_info.isFinal())
+    /// Reading in reverse order flips which row of a group with equal keys FINAL selects. Only the
+    /// Replacing algorithm compensates for that (see `ReplacingSortedAlgorithm`).
+    if (direction != 1 && query_info.isFinal()
+        && (data.merging_params.mode != MergeTreeData::MergingParams::Replacing
+            || !context->getSettingsRef()[Setting::optimize_read_in_reverse_order_final]))
         return false;
 
     /// Only a later request that WIDENS an already-established prefix (distinct/aggregation-in-order
