@@ -432,9 +432,11 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
         /// If the row policy reads the vector column (rare situation), skip the optimization as well. The policy
         /// filter runs inside the reader on the read columns, and `replaceVectorColumnWithDistanceColumn` would
         /// remove the physical vector column from the read list, leaving the policy without its input.
-        /// With FINAL, `deferFiltersAfterFinalIfNeeded` may have already moved the policy out of
-        /// `query_info.row_level_filter` into the deferred filter, which is applied after the merge
-        /// on the read columns all the same, so both places must be checked.
+        /// With FINAL, `deferFiltersAfterFinalIfNeeded` additionally carries the policy in the deferred filter,
+        /// which is applied after the merge on the read columns all the same. It copies the filter and clears
+        /// `query_info.row_level_filter` only when the pipeline is built, i.e. past every query plan
+        /// optimization, so today either carrier alone would do - both are checked so that the guard does not
+        /// depend on that ordering.
         if (optimize_plan)
         {
             for (const auto & row_level_filter :
