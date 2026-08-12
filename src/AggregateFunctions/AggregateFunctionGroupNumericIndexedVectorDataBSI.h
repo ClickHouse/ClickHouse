@@ -1731,7 +1731,9 @@ public:
 
         const UInt32 total_bit_num = getTotalBitNum();
 
-        UInt32 ele = static_cast<UInt32>(index);
+        /// `rb_contains` compares in the unsigned domain of the bitmap element type, so map the
+        /// index through `make_unsigned` instead of sign-extending it to the storage width.
+        const UInt64 lookup = static_cast<std::make_unsigned_t<IndexType>>(index);
 
         /** This converts a floating-point value into a fixed-point representation, then store it in data_array using bit-sliced index.
           * - When value is an UInt/Int, fraction_bit_num is usually set to 0. So when integer_bit_num is set to the number of
@@ -1778,7 +1780,7 @@ public:
         UInt8 cin = 0;
         for (size_t j = 0; j < total_bit_num; ++j)
         {
-            UInt8 augend = getDataArrayAt(j)->rb_contains(ele) ? 1 : 0;
+            UInt8 augend = getDataArrayAt(j)->rb_contains(lookup) ? 1 : 0;
             UInt8 addend = (scaled_value & (1LL << j)) != 0 ? 1 : 0;
 
             UInt8 x_xor_y = augend ^ addend;
@@ -1788,7 +1790,7 @@ public:
 
             if ((sum & 1) == 1)
             {
-                getDataArrayAt(j)->add(static_cast<IndexType>(ele));
+                getDataArrayAt(j)->add(index);
             }
 
             cin = cin & x_xor_y;
@@ -1799,7 +1801,8 @@ public:
     /// return origin_vector(this)[index]
     ValueType getValue(IndexType index) const
     {
-        if (zero_indexes->rb_contains(index))
+        const UInt64 lookup = static_cast<std::make_unsigned_t<IndexType>>(index);
+        if (zero_indexes->rb_contains(lookup))
             return 0;
 
         const UInt32 total_bit_num = getTotalBitNum();
@@ -1809,7 +1812,7 @@ public:
         UInt64 scaled_value = 0;
         for (size_t i = 0; i < total_bit_num; ++i)
         {
-            if (getDataArrayAt(i)->rb_contains(index))
+            if (getDataArrayAt(i)->rb_contains(lookup))
             {
                 scaled_value |= (1ULL << i);
             }
