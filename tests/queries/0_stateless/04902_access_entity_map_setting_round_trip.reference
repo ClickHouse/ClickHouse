@@ -1,0 +1,14 @@
+arm01 profile map round trip OK
+arm02 profile empty map round trip OK
+arm03 additional_table_filters round trip OK
+arm04 user map round trip OK
+arm05 role map round trip OK
+arm06 min max round trip OK
+arm07 multi key map round trip OK
+arm08 hostile value round trip OK
+arm09 scalar control round trip OK
+arm10 string valued builtin control round trip OK
+arm11 custom setting control round trip OK
+arm12 alter add settings round trip OK
+arm13 system table value	{'Content-Type':'application/json'}
+arm14 emitted a string literal not a collection literal
