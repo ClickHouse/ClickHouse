@@ -1,17 +1,21 @@
 # Vendored dependencies
 
-## `pierre-diffs-1.2.12.mjs.gz`
+## `pierre-diffs-1.3.5.mjs.gz`
 
 Self-contained ESM bundle of [`@pierre/diffs`](https://www.npmjs.com/package/@pierre/diffs)
-`1.2.12` (with all its dependencies inlined, including the base64-embedded
+`1.3.5` (with all its dependencies inlined, including the base64-embedded
 oniguruma wasm used by shiki). Vendored so the review UI never loads code from a
 CDN at runtime — a compromised CDN could otherwise exfiltrate the diff under
 review, which includes uncommitted local changes.
 
-- Source: `https://esm.sh/@pierre/diffs@1.2.12/es2022/diffs.bundle.mjs`
-  (the `?bundle` build of `https://esm.sh/@pierre/diffs@1.2.12`)
+- Source: `https://esm.sh/@pierre/diffs@1.3.5/es2022/diffs.bundle.mjs`
+  (the `?bundle` build of `https://esm.sh/@pierre/diffs@1.3.5`)
 - sha256 of the uncompressed `.mjs`:
-  `73d1514f14b64925ee47f8afbe885fabd104868c4e3f18e59c3d9a8acf24122a`
+  `6862e024d634d38b0608ba6cb869b215f6eeb31248c2d72274d6e483b571fb71`
+- Upgraded from `1.2.12` for `renderHeaderFilenameSuffix`, the header slot that
+  puts a control immediately after the displayed filename. Audited on the way in:
+  its external imports are the same two polyfills `1.2.12` used, so the table
+  below is unchanged.
 - Served by `server.mjs` at `/vendor/pierre-diffs.mjs`.
 
 ## `node_*.mjs`
