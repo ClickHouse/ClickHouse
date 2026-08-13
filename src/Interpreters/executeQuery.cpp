@@ -277,95 +277,6 @@ static bool hasTranspiledInlineData(const ASTInsertQuery & insert, const Context
     return insert.data >= transpiled.data() && insert.data <= transpiled.data() + transpiled.size();
 }
 
-/// When a polyglot query fails before an AST exists (e.g. the transpiler rejects it), there is
-/// no way to tell the INSERT header apart from the inline data: the boundary is only known after
-/// transpiling and parsing, and the foreign-dialect text cannot be parsed here. Fail close so that
-/// inline row values are never written to `system.query_log` and friends: if the statement may
-/// be a data-carrying INSERT (even one wrapped in `WITH` or `EXPLAIN`), keep only the prefix that
-/// cannot contain a literal value — cut at the first character that may start one (an opening
-/// parenthesis, a quote, or a number).
-static String redactPolyglotQueryForLogging(const char * begin, const char * end)
-{
-    const char * pos = begin;
-
-    /// Skip leading whitespace and comments to find the first keyword.
-    while (pos < end)
-    {
-        if (isWhitespaceASCII(*pos))
-        {
-            ++pos;
-        }
-        else if (pos + 1 < end && pos[0] == '-' && pos[1] == '-')
-        {
-            while (pos < end && *pos != '\n')
-                ++pos;
-        }
-        else if (pos + 1 < end && pos[0] == '/' && pos[1] == '*')
-        {
-            pos += 2;
-            while (pos + 1 < end && !(pos[0] == '*' && pos[1] == '/'))
-                ++pos;
-            pos = std::min(pos + 2, end);
-        }
-        else
-            break;
-    }
-
-    /// Only INSERT-like statements carry inline data, but the INSERT keyword does not have to come
-    /// first: it may be wrapped, e.g. `WITH ... INSERT ... VALUES` or `EXPLAIN INSERT ... VALUES`.
-    /// Telling a wrapper apart from a statement that merely mentions the word would require parsing
-    /// the foreign dialect, so fail close: log verbatim only when the word INSERT/REPLACE occurs
-    /// nowhere in the text (then no inline data can be present), and redact otherwise — even if the
-    /// occurrence is inside a literal of a harmless query.
-    const auto contains_keyword = [&](std::string_view keyword)
-    {
-        for (const char * candidate = pos; candidate + keyword.size() <= end; ++candidate)
-        {
-            if (strncasecmp(candidate, keyword.data(), keyword.size()) != 0)
-                continue;
-            if (candidate > begin && isWordCharASCII(candidate[-1]))
-                continue;
-            if (candidate + keyword.size() < end && isWordCharASCII(candidate[keyword.size()]))
-                continue;
-            return true;
-        }
-        return false;
-    };
-
-    if (!contains_keyword("INSERT") && !contains_keyword("REPLACE"))
-        return String(begin, end);
-
-    const char * cut = pos;
-    while (cut < end)
-    {
-        char c = *cut;
-        if (c == '(' || c == '\'' || c == '"' || c == '`')
-            break;
-        /// A digit starts a literal unless it continues an identifier such as `t2`.
-        if (isNumericASCII(c) && (cut == pos || !isWordCharASCII(cut[-1])))
-            break;
-        /// A raw FORMAT payload can start with anything (`abc`, `{"x":1}`, ...), so literal starters
-        /// alone are not enough: keep the `FORMAT <name>` header and drop everything after the
-        /// format name. This may also drop a `SETTINGS` clause following the format name — acceptable
-        /// over-redaction on this fail-close path.
-        static constexpr std::string_view format_keyword = "FORMAT";
-        if ((cut == pos || !isWordCharASCII(cut[-1])) && cut + format_keyword.size() <= end
-            && strncasecmp(cut, format_keyword.data(), format_keyword.size()) == 0
-            && (cut + format_keyword.size() == end || !isWordCharASCII(cut[format_keyword.size()])))
-        {
-            cut += format_keyword.size();
-            while (cut < end && isWhitespaceASCII(*cut))
-                ++cut;
-            while (cut < end && isWordCharASCII(*cut))
-                ++cut;
-            break;
-        }
-        ++cut;
-    }
-
-    return String(begin, cut);
-}
-
 static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
 {
     if (settings[Setting::max_ast_depth])
@@ -1671,12 +1582,7 @@ static BlockIO executeQueryImpl(
         if (query.empty())
         {
             const char * log_end = begin + std::min(static_cast<size_t>(end - begin), max_query_size);
-            /// A polyglot query that failed this early may be an INSERT whose inline data cannot be
-            /// separated from the header (no AST exists) — do not leak it into the logs (see above).
-            if (!internal && settings[Setting::dialect] == Dialect::polyglot)
-                query = redactPolyglotQueryForLogging(begin, log_end);
-            else
-                query.assign(begin, log_end);
+            query.assign(begin, log_end);
         }
 
         query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length, true);
