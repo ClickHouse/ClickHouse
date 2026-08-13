@@ -330,8 +330,7 @@ def main():
     # out-of-order ref. The creation steps below run only when it does; a
     # recovery (skip-repo/skip-docker) or an out-of-order full run skips them
     # without erroring and just re-exports repos / rebuilds docker.
-    # Fail closed if prepare did not run (ok is False): assume recovery so no
-    # creation step (tag / bump / PR) fires.
+    # If a prior step failed (ok is False) the prepared flags are unread; default to recovery so no creation step fires.
     is_recovery = True
     is_late_recovery = True
     if ok:
