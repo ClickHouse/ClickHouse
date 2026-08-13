@@ -34,6 +34,7 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Common/TerminalSize.h>
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
@@ -1331,9 +1332,8 @@ bool ClientBase::initLogsOutputStream(bool wait_for_sink)
             if (server_logs_file.empty())
             {
                 /// Use stderr by default
-                auto stderr_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stderr_fd);
-                logs_out_terminal_buf = stderr_buf.get();
-                out_logs_buf = std::move(stderr_buf);
+                out_logs_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stderr_fd);
+                logs_out_terminal_buf = assert_cast<WriteBufferFromFileDescriptor *>(out_logs_buf.get());
                 wb = out_logs_buf.get();
                 color_logs = stderr_is_a_tty;
             }
@@ -1383,10 +1383,9 @@ bool ClientBase::initLogsOutputStream(bool wait_for_sink)
                     }
                 });
 
-                auto file_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(
+                out_logs_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(
                     logs_fd, server_logs_file, DBMS_DEFAULT_BUFFER_SIZE);
-                logs_out_terminal_buf = file_buf.get();
-                out_logs_buf = std::move(file_buf);
+                logs_out_terminal_buf = assert_cast<WriteBufferFromFileDescriptor *>(out_logs_buf.get());
                 wb = out_logs_buf.get();
             }
         }
