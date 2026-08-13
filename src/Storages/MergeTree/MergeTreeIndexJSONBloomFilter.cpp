@@ -573,9 +573,8 @@ bool isStructuralJSONSubcolumn(const DataTypeObject & object_type, const String 
             continue;
 
         DataTypePtr parent_type = typed_path->second;
-        const auto parent_subcolumn = path.substr(prefix_end + 1, delimiter - prefix_end - 1);
-        if (!parent_subcolumn.empty())
-            parent_type = parent_type->tryGetSubcolumnType(parent_subcolumn);
+        if (prefix_end != delimiter)
+            parent_type = parent_type->tryGetSubcolumnType(path.substr(prefix_end + 1, delimiter - prefix_end - 1));
 
         while (parent_type)
         {
