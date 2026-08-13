@@ -3734,14 +3734,12 @@ try
 
         CannotAllocateThreadFaultInjector::setFaultProbability(server_settings[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
 
-        try
-        {
-            global_context->startClusterDiscovery();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Caught exception while starting cluster discovery");
-        }
+        /// Fail close: transient ZooKeeper errors are already tolerated inside
+        /// `ClusterDiscovery::start`, so an exception here means cluster discovery cannot work at
+        /// all (e.g. its working thread cannot be started because the global thread pool is
+        /// exhausted). There is no later retry, so silently continuing would leave the server up
+        /// with dynamic clusters frozen forever.
+        global_context->startClusterDiscovery();
 
 #if defined(OS_LINUX)
         /// Tell the service manager that service startup is finished.
