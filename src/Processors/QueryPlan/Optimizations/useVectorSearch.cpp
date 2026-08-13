@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <unordered_set>
 
 #include <Columns/ColumnConst.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -253,6 +254,49 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     return no_layers_updated;
 }
 
+/// Finds the INPUT node of `dag` which reads the vector search column, or nullptr if the column is not an input.
+static const ActionsDAG::Node * findSearchColumnInput(const ActionsDAG & dag, const String & search_column)
+{
+    for (const auto * input : dag.getInputs())
+    {
+        if (input->result_name == search_column
+            || (input->result_name.contains('.') && input->result_name.ends_with("." + search_column)))
+            return input;
+    }
+    return nullptr;
+}
+
+/// Checks whether any output of `dag` other than `excluded_output` transitively consumes `input`.
+/// Such an output survives the no-rescoring rewrite, so `input` cannot be removed from the read header.
+static bool anyOutputConsumesInput(const ActionsDAG & dag, const ActionsDAG::Node * input, const ActionsDAG::Node * excluded_output)
+{
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::vector<const ActionsDAG::Node *> to_visit;
+
+    for (const auto * output : dag.getOutputs())
+    {
+        if (output != excluded_output)
+            to_visit.push_back(output);
+    }
+
+    while (!to_visit.empty())
+    {
+        const auto * current = to_visit.back();
+        to_visit.pop_back();
+
+        if (current == input)
+            return true;
+
+        if (!visited.insert(current).second)
+            continue;
+
+        for (const auto * child : current->children)
+            to_visit.push_back(child);
+    }
+
+    return false;
+}
+
 bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, Stack & stack, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
 {
     /// QueryPlan::Node * node = parent_node;
@@ -397,16 +441,39 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
     if (optimize_plan)
     {
         auto search_column = vector_search_parameters.value().column;
-        for (const auto & output : expression.getOutputs())
+
+        /// If any output other than the ORDER BY distance expression still consumes the vector column -
+        /// the column itself (rare situation), an alias of it, or an expression over it (e.g. `length(vec)`) -
+        /// the column cannot be removed from the read header, so skip the optimization.
+        if (const auto * search_column_input = findSearchColumnInput(expression, search_column))
         {
-            /// If the SELECT clause contains the vector column (rare situation), skip the optimization.
-            /// Multiple forms of analyzer nodes to handle.
-            if (output->result_name == search_column ||
-                (output->type == ActionsDAG::ActionType::ALIAS && output->children.at(0)->result_name == search_column) ||
-                (output->result_name.contains('.') && output->result_name.ends_with("." + search_column)))
-            {
+            const ActionsDAG::Node * sort_column_output = expression.tryFindInOutputs(sort_column);
+            if (anyOutputConsumesInput(expression, search_column_input, sort_column_output))
                 optimize_plan = false;
-                break;
+        }
+
+        /// Same check for the filter/PREWHERE step: the rewrite below removes only the vector column
+        /// output from its DAG, so e.g. a filter condition `length(vec) = 2` would keep the vector
+        /// column INPUT alive while the column disappears from the read header.
+        if (optimize_plan && filter_or_prewhere_node)
+        {
+            const ActionsDAG & filter_expression = prewhere_expression_step ? prewhere_expression_step->getExpression() : filter_step->getExpression();
+            if (const auto * search_column_input = findSearchColumnInput(filter_expression, search_column))
+            {
+                /// The vector column output which the rewrite below deletes from the filter step.
+                const ActionsDAG::Node * vector_column_output = nullptr;
+                for (const auto * output_node : filter_expression.getOutputs())
+                {
+                    if (output_node->result_name == search_column ||
+                        (output_node->type == ActionsDAG::ActionType::ALIAS && output_node->children.at(0)->result_name == search_column))
+                    {
+                        vector_column_output = output_node;
+                        break;
+                    }
+                }
+
+                if (anyOutputConsumesInput(filter_expression, search_column_input, vector_column_output))
+                    optimize_plan = false;
             }
         }
 
