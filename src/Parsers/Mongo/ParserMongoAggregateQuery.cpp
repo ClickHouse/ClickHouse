@@ -743,9 +743,10 @@ bool ParserMongoAggregateQuery::parseImpl(ASTPtr & node)
     auto settings = make_intrusive<ASTSetQuery>();
     settings->is_standalone = false;
     settings->changes.emplace_back("prefer_column_name_to_alias", Field(UInt64(1)));
-    /// A `$sort` on a `JSON` or a `Dynamic` column is a sort on a suspicious type, and a collection
-    /// created by `createCollection` is a single `JSON` column.
+    /// A `$sort` or a `$group` on a path of a document is a sort or a group on a `Dynamic` value,
+    /// which the collections this endpoint creates are made of.
     settings->changes.emplace_back("allow_suspicious_types_in_order_by", Field(UInt64(1)));
+    settings->changes.emplace_back("allow_suspicious_types_in_group_by", Field(UInt64(1)));
     select->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings));
 
     node = std::move(select);

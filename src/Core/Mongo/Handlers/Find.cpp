@@ -1,4 +1,5 @@
 #include <Core/Mongo/Document.h>
+#include <Core/Mongo/DocumentCollectionShape.h>
 #include <Core/Mongo/Handler.h>
 #include <Core/Mongo/Handlers/Find.h>
 #include <Core/Mongo/Handlers/HandlerRegistry.h>
@@ -108,6 +109,10 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
         10000,
         collection.database);
 
+    /// A collection of documents addresses its fields as the paths of the document column, and a
+    /// read of every field of them answers with the documents as they are stored.
+    adaptQueryToCollectionShape(ast, collection, executor, /* reads_whole_documents = */ true);
+
     String sql_query;
     {
         WriteBufferFromString sql_buffer(sql_query);
@@ -115,7 +120,7 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
     }
 
     sql_query += " FORMAT JSON";
-    sql_query += " SETTINGS allow_suspicious_types_in_order_by = 1";
+    sql_query += " SETTINGS allow_suspicious_types_in_order_by = 1, allow_suspicious_types_in_group_by = 1";
 
     /// Mongo reads a collection that does not exist as empty rather than raising an error.
     /// The query is translated first, so that a malformed query is still an error.

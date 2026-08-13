@@ -1,9 +1,11 @@
 #include <Core/Mongo/Document.h>
+#include <Core/Mongo/DocumentCollectionShape.h>
 #include <Core/Mongo/Handlers/HandlerRegistry.h>
 #include <Core/Mongo/Handlers/Insert.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
+#include <Parsers/Mongo/DocumentCollection.h>
 #include <Parsers/Mongo/MongoConstants.h>
 #include <Parsers/Mongo/Utils.h>
 #include <IO/WriteBufferFromString.h>
@@ -14,6 +16,7 @@
 #include <Common/DateLUT.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/thread_local_rng.h>
 
 #include <rapidjson/document.h>
 #include <rapidjson/stringbuffer.h>
@@ -26,6 +29,7 @@
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::MongoProtocol
@@ -179,91 +183,80 @@ void flattenDocument(
     }
 }
 
-/// Infers the column definitions from an already flattened document. A field that came from an
-/// Extended JSON wrapper keeps the type of the wrapper rather than the type of its serialization.
-std::vector<InsertHandler::DocumentField> inferSchema(const rapidjson::Value & flattened, const std::map<String, String> & wrapper_types)
+/** A Mongo object id, as a Mongo server assigns one to a document that arrives without it: 12 bytes
+  * written as 24 hexadecimal digits, of which the first four bytes are the seconds of the epoch, so
+  * that the ids of the documents of a collection grow with time and the primary key of the table
+  * follows the order they were inserted in. Every driver generates one for each document it sends,
+  * so this is only reached by a raw `insert` command.
+  */
+String generateObjectId()
 {
-    std::vector<InsertHandler::DocumentField> fields;
-    for (auto it = flattened.MemberBegin(); it != flattened.MemberEnd(); ++it)
-    {
-        if (auto wrapper_it = wrapper_types.find(it->name.GetString()); wrapper_it != wrapper_types.end())
-        {
-            fields.push_back(InsertHandler::DocumentField{.full_name = it->name.GetString(), .type = wrapper_it->second});
-            continue;
-        }
+    static std::atomic<UInt32> counter{0};
 
-        if (auto simple_type = getSimpleTypeField(it->value))
-        {
-            fields.push_back(InsertHandler::DocumentField{.full_name = it->name.GetString(), .type = std::move(*simple_type)});
-            continue;
-        }
+    const auto seconds = static_cast<UInt32>(time(nullptr));
+    const auto random = static_cast<UInt64>(thread_local_rng());
+    const auto sequence = counter.fetch_add(1, std::memory_order_relaxed);
 
-        /// A field whose first value is `null` tells nothing about the values to come, so the
-        /// column is `Dynamic`: it accepts whatever they turn out to be, and holds the `null`
-        /// itself, which a typed column would silently turn into its default.
-        if (it->value.IsNull())
-        {
-            fields.push_back(InsertHandler::DocumentField{.full_name = it->name.GetString(), .type = "Dynamic"});
-            continue;
-        }
-
-        /// The element type is inferred from all the elements, not only the first one:
-        /// a homogeneous array of scalars keeps the scalar type, an array of nested
-        /// documents becomes `Array(JSON)`, and everything else - an empty array or a
-        /// heterogeneous one - becomes `Array(Dynamic)`, which accepts any element
-        /// (`JSON` rejects scalar elements, so it cannot serve as the mixed fallback).
-        const auto & array = it->value.GetArray();
-        String element_type = "Dynamic";
-        if (!array.Empty())
-        {
-            if (auto element_simple_type = getSimpleTypeField(array[0]))
-            {
-                bool homogeneous = true;
-                for (rapidjson::SizeType i = 1; i < array.Size(); ++i)
-                {
-                    auto other_type = getSimpleTypeField(array[i]);
-                    if (!other_type || *other_type != *element_simple_type)
-                    {
-                        homogeneous = false;
-                        break;
-                    }
-                }
-                if (homogeneous)
-                    element_type = std::move(*element_simple_type);
-            }
-            else
-            {
-                bool all_objects = true;
-                for (rapidjson::SizeType i = 0; i < array.Size(); ++i)
-                {
-                    if (!array[i].IsObject())
-                    {
-                        all_objects = false;
-                        break;
-                    }
-                }
-                if (all_objects)
-                    element_type = "JSON";
-            }
-        }
-        fields.push_back(
-            InsertHandler::DocumentField{.full_name = it->name.GetString(), .type = fmt::format("Array({})", element_type)});
-    }
-    return fields;
+    /// The seconds, then five bytes that only have to be unique, then a three byte counter.
+    return fmt::format("{:08x}{:010x}{:06x}", seconds, random & 0xFFFFFFFFFFULL, sequence & 0xFFFFFFULL);
 }
 
-/** Tells whether the collection is the placeholder table that `createCollection` leaves behind: a
-  * single `JSON` column named `json`, because an explicitly created collection has no document to
-  * infer a schema from. The first `insert` gives it the schema of the inserted document.
-  */
-bool isPlaceholderCollection(const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor)
+/// The object id of a document, as the text of the `_id` column: the hexadecimal digits of an
+/// `ObjectId`, or the value itself when a document names its own id, which Mongo allows.
+String extractObjectId(const rapidjson::Value & document)
 {
-    auto answer = executor->execute(fmt::format(
-        "SELECT count() = 1 AND countIf(name = 'json' AND type = 'JSON') = 1 FROM system.columns "
-        "WHERE database = {} AND table = {} FORMAT TSV",
-        quoteString(collection.database),
-        quoteString(collection.collection)));
-    return answer.starts_with('1');
+    auto it = document.FindMember("_id");
+    if (it == document.MemberEnd())
+        return generateObjectId();
+
+    if (it->value.IsString())
+        return {it->value.GetString(), it->value.GetStringLength()};
+
+    if (isMongoExtendedJSONWrapper(it->value))
+    {
+        const auto & member = *it->value.MemberBegin();
+        if (std::string_view(member.name.GetString()) == "$oid" && member.value.IsString())
+            return {member.value.GetString(), member.value.GetStringLength()};
+    }
+
+    if (it->value.IsBool())
+        return it->value.GetBool() ? "true" : "false";
+
+    if (it->value.IsNumber())
+    {
+        rapidjson::StringBuffer buffer;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+        it->value.Accept(writer);
+        return {buffer.GetString(), buffer.GetSize()};
+    }
+
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED, "An '_id' that is a document or an array is not supported, only a scalar and an 'ObjectId' are");
+}
+
+/// The document to store, which is the one that arrived without its object id - that is a column of
+/// its own - and with the Extended JSON wrappers of the values converted the way a column holds them.
+rapidjson::Value documentToStore(const rapidjson::Value & document, rapidjson::Document::AllocatorType & allocator)
+{
+    if (!document.IsObject())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "An inserted document must be a document");
+
+    rapidjson::Value stored(rapidjson::kObjectType);
+    for (auto it = document.MemberBegin(); it != document.MemberEnd(); ++it)
+    {
+        std::string_view name(it->name.GetString(), it->name.GetStringLength());
+        if (name == "_id")
+            continue;
+        if (name.starts_with("$"))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "A field name of an inserted document must not start with '$', got '{}'", name);
+
+        rapidjson::Value key;
+        key.CopyFrom(it->name, allocator);
+        rapidjson::Value value = convertMongoExtendedJSONWrappersDeep(it->value, String(name), allocator);
+        stored.AddMember(key, value, allocator);
+    }
+    return stored;
 }
 
 }
@@ -273,77 +266,20 @@ void InsertHandler::createDatabase(const CollectionRef & collection, std::shared
     executor->execute(fmt::format("CREATE DATABASE IF NOT EXISTS {}", backQuoteIfNeed(collection.database)));
 }
 
-void InsertHandler::createTable(
-    const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor, const std::vector<DocumentField> & fields)
+void InsertHandler::createCollection(const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor)
 {
-    if (fields.empty())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Can not create the collection '{}.{}': the first inserted document has no fields that map onto columns",
-            collection.database,
-            collection.collection);
-
-    if (isPlaceholderCollection(collection, executor))
-    {
-        /// The placeholder is given the schema of the first inserted document, so that a
-        /// collection created explicitly ends up with the same columns as one created by the
-        /// insert itself. The columns are altered rather than the table recreated: an `ALTER`
-        /// of an empty table only rewrites the metadata, while a `DROP` would throw away a
-        /// table that the user may have created for something else.
-        auto count = executor->execute(fmt::format("SELECT count() FROM {} FORMAT TSV", collection.getQualifiedName()));
-        if (!count.starts_with('0'))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The collection '{}.{}' keeps whole documents in a single 'json' column and is not empty, so a document cannot be "
-                "inserted into it as a row of columns",
-                collection.database,
-                collection.collection);
-
-        WriteBufferFromOwnString alter_query;
-        alter_query << "ALTER TABLE " << collection.getQualifiedName() << " ";
-        bool json_column_is_a_field = false;
-        for (size_t i = 0; i < fields.size(); ++i)
-        {
-            if (i != 0)
-                alter_query << ", ";
-            /// A document whose own field is named `json` keeps the column and only changes its type.
-            if (fields[i].full_name == "json")
-            {
-                json_column_is_a_field = true;
-                alter_query << "MODIFY COLUMN `json` " << fields[i].type;
-            }
-            else
-                alter_query << "ADD COLUMN " << backQuoteIfNeed(fields[i].full_name) << " " << fields[i].type;
-        }
-        if (!json_column_is_a_field)
-            alter_query << ", DROP COLUMN `json`";
-
-        executor->execute(alter_query.str());
-        return;
-    }
-
-    WriteBufferFromOwnString query;
-    query << "CREATE TABLE IF NOT EXISTS " << collection.getQualifiedName() << " (";
-    for (size_t i = 0; i < fields.size(); ++i)
-    {
-        if (i != 0)
-            query << ", ";
-        query << backQuoteIfNeed(fields[i].full_name) << " " << fields[i].type;
-    }
-    /// A `Dynamic` or `JSON` column cannot be a sorting key, so the key is the first column of
-    /// any other type, and a document with none of those gets no sorting key at all.
-    const DocumentField * key_field = nullptr;
-    for (const auto & field : fields)
-    {
-        if (!field.type.contains("Dynamic") && !field.type.contains("JSON"))
-        {
-            key_field = &field;
-            break;
-        }
-    }
-    query << ") ENGINE = MergeTree ORDER BY " << (key_field ? backQuoteIfNeed(key_field->full_name) : "tuple()");
-
-    executor->execute(query.str());
+    /** A Mongo collection has no schema, so a document goes into one `JSON` column: a later document
+      * may hold a field that no document before it had, and whether a document holds a field at all
+      * is a question about the document rather than about the table. The object id is a column of
+      * its own and the primary key of the table, so that a read by `_id` - which is how a driver
+      * addresses a document it inserted - reads by the key.
+      */
+    executor->execute(fmt::format(
+        "CREATE TABLE IF NOT EXISTS {} ({} String, {} JSON) ENGINE = MergeTree ORDER BY {}",
+        collection.getQualifiedName(),
+        backQuoteIfNeed(String(Mongo::OBJECT_ID_COLUMN)),
+        backQuoteIfNeed(String(Mongo::DOCUMENT_COLUMN)),
+        backQuoteIfNeed(String(Mongo::OBJECT_ID_COLUMN))));
 }
 
 std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
@@ -359,34 +295,51 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
     if (to_insert.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'insert' command does not contain any document");
 
+    createDatabase(collection, executor);
+
+    /** A collection this endpoint creates keeps whole documents; a table that was created in
+      * ClickHouse keeps its own columns, and a document is written into them as a row, so that an
+      * application can be pointed at a table that already holds the data.
+      */
+    if (!objectExists(executor, "TABLE", collection.getQualifiedName()))
+        createCollection(collection, executor);
+    const auto shape = getCollectionShape(collection, executor);
+
     /// Values never go into the query text: the rows are passed as `JSONEachRow` data, which
-    /// rapidjson escapes, so no value can change the meaning of the query. Unknown fields are
-    /// rejected instead of being silently dropped, and fields that a document does not have
-    /// get the default value of their column.
+    /// rapidjson escapes, so no value can change the meaning of the query.
     rapidjson::Document allocator_owner;
     auto & allocator = allocator_owner.GetAllocator();
 
     WriteBufferFromOwnString data;
-    std::vector<DocumentField> schema;
 
     for (const auto * doc : to_insert)
     {
-        rapidjson::Value flattened(rapidjson::kObjectType);
-        std::map<String, String> wrapper_types;
-        flattenDocument(doc->getRapidJSONRepresentation(), "", flattened, allocator, wrapper_types);
+        const auto & document = doc->getRapidJSONRepresentation();
 
-        /// The schema comes from the first document only, as in Mongo a collection has no
-        /// schema of its own.
-        if (schema.empty())
+        rapidjson::Value row(rapidjson::kObjectType);
+        if (shape.stores_documents)
         {
-            schema = inferSchema(flattened, wrapper_types);
-            createDatabase(collection, executor);
-            createTable(collection, executor, schema);
+            /// The document as it arrived, next to the object id that addresses it.
+            auto object_id = extractObjectId(document);
+            rapidjson::Value id;
+            id.SetString(object_id.c_str(), static_cast<rapidjson::SizeType>(object_id.size()), allocator);
+            row.AddMember(rapidjson::Value(rapidjson::StringRef(Mongo::OBJECT_ID_COLUMN.data(), Mongo::OBJECT_ID_COLUMN.size())), id, allocator);
+            row.AddMember(
+                rapidjson::Value(rapidjson::StringRef(Mongo::DOCUMENT_COLUMN.data(), Mongo::DOCUMENT_COLUMN.size())),
+                documentToStore(document, allocator),
+                allocator);
+        }
+        else
+        {
+            /// The columns of the table the document names. Unknown fields are rejected instead of
+            /// being silently dropped, and a column a document has no field for keeps its default.
+            std::map<String, String> wrapper_types;
+            flattenDocument(document, "", row, allocator, wrapper_types);
         }
 
         rapidjson::StringBuffer buffer;
         rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-        flattened.Accept(writer);
+        row.Accept(writer);
         data << buffer.GetString() << "\n";
     }
 

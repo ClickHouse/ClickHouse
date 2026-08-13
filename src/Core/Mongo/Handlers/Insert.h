@@ -9,14 +9,6 @@ namespace DB::MongoProtocol
 class InsertHandler : public IHandler
 {
 public:
-    /// A single ClickHouse column inferred from a Mongo document. Nested documents are
-    /// flattened, so `full_name` may be a dot separated path such as `address.city`.
-    struct DocumentField
-    {
-        String full_name;
-        String type;
-    };
-
     InsertHandler() = default;
 
     std::vector<String> getIdentifiers() const override { return {"insert"}; }
@@ -25,7 +17,13 @@ public:
 
 private:
     void createDatabase(const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor);
-    void createTable(const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor, const std::vector<DocumentField> & fields);
+
+    /** Creates a collection of documents: one `JSON` column holding the document of each row and an
+      * `_id` column holding its object id, which is the primary key. A Mongo collection has no
+      * schema, so there is nothing to infer from the first document - and nothing that a later one
+      * can contradict.
+      */
+    void createCollection(const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor);
 };
 
 }

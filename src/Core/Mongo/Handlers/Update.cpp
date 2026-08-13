@@ -1,3 +1,4 @@
+#include <Core/Mongo/DocumentCollectionShape.h>
 #include <Core/Mongo/Handler.h>
 #include <Core/Mongo/Handlers/HandlerRegistry.h>
 #include <Core/Mongo/Handlers/Update.h>
@@ -17,6 +18,7 @@
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::MongoProtocol
@@ -46,6 +48,19 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'update' command does not contain any update statement");
 
     auto collection = getCollectionRef(sections[0].documents[0], "update");
+
+    /** An update of a collection of documents changes the paths of the document column rather than
+      * the columns of a row, so it is a rewrite of the document rather than an assignment per field.
+      * Until that is translated, such an update is refused: writing the fields as columns would
+      * write columns the collection does not have.
+      */
+    if (getCollectionShape(collection, executor).stores_documents)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "An 'update' of the collection '{}.{}', which keeps whole documents, is not supported yet: it changes the paths of a "
+            "document rather than the columns of a row",
+            collection.database,
+            collection.collection);
 
     /// The 'update' command carries one or more update specs, each with its own 'q', 'u',
     /// 'multi', and 'upsert'. Execute every spec; 'multi: false' (updateOne) cannot be

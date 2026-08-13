@@ -1,4 +1,5 @@
 #include <Core/Mongo/Document.h>
+#include <Core/Mongo/DocumentCollectionShape.h>
 #include <Core/Mongo/Handler.h>
 #include <Core/Mongo/Handlers/Delete.h>
 #include <Core/Mongo/Handlers/HandlerRegistry.h>
@@ -70,6 +71,9 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
             10000,
             10000,
             collection.database);
+
+        /// A collection of documents addresses its fields as the paths of the document column.
+        adaptQueryToCollectionShape(ast, collection, executor);
 
         String sql_query;
         {

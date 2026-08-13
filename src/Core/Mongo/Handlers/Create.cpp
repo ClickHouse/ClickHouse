@@ -1,5 +1,6 @@
 #include <Core/Mongo/Handler.h>
 #include <Core/Mongo/Handlers/Create.h>
+#include <Parsers/Mongo/DocumentCollection.h>
 #include <Core/Mongo/Handlers/HandlerRegistry.h>
 
 #include <fmt/format.h>
@@ -32,13 +33,19 @@ std::vector<Document> CreateHandler::handle(const std::vector<OpMessageSection> 
 
     executor->execute(fmt::format("CREATE DATABASE IF NOT EXISTS {}", backQuoteIfNeed(collection.database)));
 
-    /// A collection created explicitly has no documents to infer a schema from, so it starts as
-    /// a single `JSON` column. The first `insert` replaces that placeholder with a column per
-    /// field of the inserted document, which is what a collection created implicitly by an
-    /// `insert` gets right away. No `IF NOT EXISTS`: a collection created concurrently between
-    /// the probe above and this statement must surface as an error, not as a false success.
+    /** A collection keeps whole documents in one `JSON` column, with the object id of each of them
+      * in an `_id` column, which is the primary key: a Mongo collection has no schema, so there is
+      * nothing to infer from the documents that arrive later either. It is the same shape a
+      * collection created by the first `insert` gets. No `IF NOT EXISTS`: a collection created
+      * concurrently between the probe above and this statement must surface as an error, not as a
+      * false success.
+      */
     executor->execute(fmt::format(
-        "CREATE TABLE {} (json JSON) ENGINE = MergeTree ORDER BY tuple()", collection.getQualifiedName()));
+        "CREATE TABLE {} ({} String, {} JSON) ENGINE = MergeTree ORDER BY {}",
+        collection.getQualifiedName(),
+        backQuoteIfNeed(String(Mongo::OBJECT_ID_COLUMN)),
+        backQuoteIfNeed(String(Mongo::DOCUMENT_COLUMN)),
+        backQuoteIfNeed(String(Mongo::OBJECT_ID_COLUMN))));
 
     bson_t * bson_doc = bson_new();
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);

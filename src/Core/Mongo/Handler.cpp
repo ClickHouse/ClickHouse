@@ -1,3 +1,4 @@
+#include <Core/Mongo/DocumentReply.h>
 #include <Core/Mongo/Handler.h>
 
 #include <cmath>
@@ -588,6 +589,10 @@ executeSelectIntoCursor(const String & sql_query, const CollectionRef & collecti
 
         auto columns = extractResultColumns(result_json);
 
+        /// A result that holds the documents of a collection as they are stored is turned into a
+        /// reply out of the document of each row rather than out of the columns of the result.
+        const bool holds_documents = resultHoldsDocuments(columns);
+
         FieldTree tree;
         for (size_t i = 0; i < columns.size(); ++i)
         {
@@ -607,7 +612,10 @@ executeSelectIntoCursor(const String & sql_query, const CollectionRef & collecti
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "A row of the result is not a document");
 
             bson_t * row_document = bson_new();
-            appendFieldTree(row_document, tree, json_data, columns);
+            if (holds_documents)
+                appendDocumentOfRow(row_document, json_data);
+            else
+                appendFieldTree(row_document, tree, json_data, columns);
             selected.emplace_back(row_document);
 
             reply_size += 2 + std::to_string(selected.size() - 1).size() + selected.back().getBson()->len;

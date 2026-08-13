@@ -1,4 +1,5 @@
 #include <Core/Mongo/Document.h>
+#include <Core/Mongo/DocumentCollectionShape.h>
 #include <Core/Mongo/Handler.h>
 #include <Core/Mongo/Handlers/Aggregate.h>
 #include <Core/Mongo/Handlers/HandlerRegistry.h>
@@ -84,6 +85,10 @@ std::vector<Document> AggregateHandler::handle(const std::vector<OpMessageSectio
         10000,
         10000,
         collection.database);
+
+    /// A collection of documents addresses its fields as the paths of the document column, and a
+    /// pipeline that ends without building documents of its own answers with the stored ones.
+    adaptQueryToCollectionShape(ast, collection, executor, /* reads_whole_documents = */ true);
 
     String sql_query;
     {
