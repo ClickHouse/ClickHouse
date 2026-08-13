@@ -36,6 +36,7 @@
 #include <Columns/ColumnString.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <fmt/format.h>
+#include <Common/re2.h>
 
 
 namespace DB
@@ -57,6 +58,37 @@ namespace TimeSeriesSetting
 namespace
 {
 
+/// Whether a matcher matches a series that does not have the label at all, under the Prometheus
+/// semantics "a missing label is equal to the empty label value". A regexp matcher is evaluated
+/// against the empty string with the same fully-anchored RE2 semantics as the generated `match`
+/// condition; an invalid regexp is rejected here (fail closed), like in the Prometheus parser.
+bool matcherCanMatchEmptyLabelValue(const PrometheusQueryTree::Matcher & matcher, const String & match_param)
+{
+    switch (matcher.matcher_type)
+    {
+        case PrometheusQueryTree::MatcherType::EQ:
+            return matcher.label_value.empty();
+        case PrometheusQueryTree::MatcherType::NE:
+            return !matcher.label_value.empty();
+        case PrometheusQueryTree::MatcherType::RE:
+        case PrometheusQueryTree::MatcherType::NRE:
+        {
+            re2::RE2 regexp(matcher.label_value, re2::RE2::Quiet);
+            if (!regexp.ok())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid value {} of the 'match[]' parameter: cannot parse the regexp of the {}{}~{} matcher: {}",
+                    quoteString(match_param),
+                    matcher.label_name,
+                    (matcher.matcher_type == PrometheusQueryTree::MatcherType::NRE) ? "!" : "=",
+                    quoteString(matcher.label_value),
+                    regexp.error());
+            bool empty_matches_regexp = re2::RE2::FullMatch("", regexp);
+            return (matcher.matcher_type == PrometheusQueryTree::MatcherType::RE) ? empty_matches_regexp : !empty_matches_regexp;
+        }
+    }
+}
+
 /// The `match[]` parameter of the metadata endpoints is a Prometheus series selector: a bare metric name
 /// (`go_info`) or a full instant selector with label matchers (`go_info{group="PROD"}`, `{job=~"prom.*"}`).
 /// Grafana emits the selector forms when it narrows label names / label values by filters. Each value is
@@ -68,11 +100,11 @@ namespace
 /// filter to apply (no `match[]` values at all).
 ///
 /// An explicitly empty `match[]` value (e.g. `?match[]=`), a value that is not an instant selector (e.g.
-/// a range selector `up[5m]` or a PromQL expression), and the empty selector `{}` are rejected (fail
-/// closed), as in Prometheus, instead of being silently dropped or treated as an unfiltered result. One
-/// deliberate relaxation: Prometheus additionally rejects a selector whose matchers all match the empty
-/// string (e.g. `{job=~".*"}`) to avoid scanning everything; here such a selector is accepted and simply
-/// selects the series it matches, consistent with a missing tag being stored as an empty value.
+/// a range selector `up[5m]` or a PromQL expression), the empty selector `{}`, and a selector whose
+/// matchers all match the empty label value (e.g. `{job=~".*"}` - see `matcherCanMatchEmptyLabelValue`)
+/// are rejected (fail closed), as in Prometheus, instead of being silently dropped or treated as an
+/// unfiltered result. The last rule is what keeps the "`match[]` is required" guard on `/api/v1/series`
+/// meaningful: without it `match[]={job=~".*"}` would degenerate into a full scan of the `tags` table.
 String makeMatchCondition(const Strings & match_params, const std::unordered_map<String, String> & column_name_by_tag_name)
 {
     ASTs selector_conditions;
@@ -103,6 +135,21 @@ String makeMatchCondition(const Strings & match_params, const std::unordered_map
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Invalid value {} of the 'match[]' parameter: the selector must contain at least one matcher",
+                quoteString(match_param));
+
+        /// Prometheus rejects a selector whose matchers all match the empty label value (i.e. all match
+        /// a series that has none of the mentioned labels), because such a selector does not narrow the
+        /// series set at all: `{job=~".*"}` would degenerate into a full scan of the `tags` table.
+        /// Every matcher is checked (no short-circuit), so an invalid regexp anywhere in the selector
+        /// is rejected here with `bad_data` instead of failing later inside the generated SQL.
+        bool has_non_empty_matcher = false;
+        for (const auto & matcher : matchers)
+            has_non_empty_matcher |= !matcherCanMatchEmptyLabelValue(matcher, match_param);
+        if (!has_non_empty_matcher)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid value {} of the 'match[]' parameter: the selector must contain at least one matcher "
+                "that does not match the empty label value",
                 quoteString(match_param));
 
         ASTs matcher_asts;

@@ -1133,7 +1133,7 @@ Each endpoint needs a handler of type `query_api`. Because the label-values endp
 ```
 
 :::note
-Each `match[]` value must be an instant series selector: a bare metric name or a selector with label matchers such as `cpu_usage{host="server1"}`. A range selector (e.g. `cpu_usage[5m]`) or any other PromQL expression is rejected, and so are the empty selector `{}` and an explicitly empty `match[]` value (e.g. `?match[]=`), as in Prometheus, instead of being silently ignored. One deliberate relaxation: a selector whose matchers all match the empty string (e.g. `{host=~".*"}`), which Prometheus rejects, is accepted and simply selects the series it matches.
+Each `match[]` value must be an instant series selector: a bare metric name or a selector with label matchers such as `cpu_usage{host="server1"}`. A range selector (e.g. `cpu_usage[5m]`) or any other PromQL expression is rejected, and so are the empty selector `{}`, an explicitly empty `match[]` value (e.g. `?match[]=`), and a selector whose matchers all match the empty label value (e.g. `{host=~".*"}`), as in Prometheus, instead of being silently ignored: at least one matcher must not match the empty string, so that the selector actually narrows the set of series.
 :::
 
 # Functions {#functions}

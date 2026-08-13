@@ -75,8 +75,10 @@ def test_alternation_regexp_is_fully_anchored():
 
 
 def test_negative_alternation_regexp_is_fully_anchored():
-    """`host!~"server1|server2"` must exclude exactly `server1` and `server2`."""
-    data = get_json_from_api('/api/v1/series?match[]={host!~"server1|server2"}')
+    """`host!~"server1|server2"` must exclude exactly `server1` and `server2`. The metric name
+    matcher is required: a negative regexp matches the empty label value, and a selector whose
+    matchers all match the empty label value is rejected, as in Prometheus."""
+    data = get_json_from_api('/api/v1/series?match[]=cpu_usage{host!~"server1|server2"}')
     hosts = sorted(series["host"] for series in data)
     assert hosts == ["server10", "xserver2"], f"Unexpected series: {data}"
 
