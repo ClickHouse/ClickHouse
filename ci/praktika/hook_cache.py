@@ -177,11 +177,22 @@ class CacheRunnerHooks:
         for job_name, record in fetched_records:
             assert Utils.normalize_string(job_name) not in workflow_config.cache_success
             # Only pull_request workflows may reuse a record produced on any
-            # branch. Every other event (push, schedule, dispatch, merge_queue)
-            # may reuse only a record produced on the same branch, so e.g. a
-            # merge_queue run never reuses a pull_request's green result and its
-            # drift guard keeps exercising the merged-with-master state.
-            if not workflow.is_event_pull_request() and record.branch != env.BRANCH:
+            # branch. Every other event (push, schedule, dispatch) may reuse
+            # only a record produced on the same branch. merge_queue may reuse
+            # its own branch and, additionally, the main branch: the merge group
+            # is the pull request merged with the current main, so a record
+            # whose digest was produced on main describes identical inputs and
+            # is safe to reuse - while a pull_request's record (a different
+            # branch) is still never reused, so the drift guard holds.
+            reuse_allowed = (
+                workflow.is_event_pull_request()
+                or record.branch == env.BRANCH
+                or (
+                    workflow.is_event_merge_queue()
+                    and record.branch == Settings.MAIN_BRANCH
+                )
+            )
+            if not reuse_allowed:
                 print(
                     f"NOTE: Result for [{job_name}] cached from branch [{record.branch}] - skip for workflow with event=[{workflow.event}]"
                 )
