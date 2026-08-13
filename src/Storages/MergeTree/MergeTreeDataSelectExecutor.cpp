@@ -840,10 +840,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     RangesInDataParts res_parts;
     size_t total_parts_before = parts.size();
+    /// Load statistics only for the filter columns, known right after construction.
+    const Names candidate_columns = statistics_pruner.getCandidateColumns();
 
     for (const auto & part : parts)
     {
-        auto estimates = part.data_part->getEstimates();
+        auto estimates = part.data_part->getEstimates(candidate_columns);
         try
         {
             if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
