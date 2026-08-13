@@ -12,7 +12,7 @@ With prewhere optimization, at first only the columns necessary for executing pr
 
 ## Controlling Prewhere Manually {#controlling-prewhere-manually}
 
-The clause has the same meaning as the `WHERE` clause. The difference is in which data is read from the table. When manually controlling `PREWHERE` for filtration conditions that are used by a minority of the columns in the query, but that provide strong data filtration. This reduces the volume of data to read.
+The clause is normally evaluated while ClickHouse reads data from a table. Use `PREWHERE` when the filtering conditions reference a small number of columns but strongly reduce the number of rows. This reduces the volume of data read for the remaining columns.
 
 A query may simultaneously specify `PREWHERE` and `WHERE`. In this case, `PREWHERE` precedes `WHERE`.
 
@@ -23,6 +23,49 @@ If query has [FINAL](/reference/statements/select/from#final-modifier) modifier,
 <Note>
 The `PREWHERE` section is executed before `FINAL`, so the results of `FROM ... FINAL` queries may be skewed when using `PREWHERE` with fields not in the `ORDER BY` section of a table.
 </Note>
+
+## PREWHERE with JOIN {#prewhere-with-join}
+
+In queries that use [JOIN](/reference/statements/select/join), all columns in the `PREWHERE` condition must come from the same table. ClickHouse applies the condition while reading that table, before joining it with the other tables.
+
+In this example, `PREWHERE` filters `table_2` before the two tables are joined:
+
+```sql
+CREATE TABLE table_1
+(
+    `id` UInt32,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+CREATE TABLE table_2
+(
+    `id` UInt32,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO table_1 VALUES (1, 'a'), (2, 'b'), (3, 'c');
+INSERT INTO table_2 VALUES (1, 'x'), (2, 'y'), (3, 'z');
+
+SELECT
+    table_1.id,
+    table_1.value,
+    table_2.value
+FROM table_1
+JOIN table_2 ON table_1.id = table_2.id
+PREWHERE table_2.id >= 2
+ORDER BY table_1.id;
+```
+
+```text
+   ┌─id─┬─value─┬─table_2.value─┐
+1. │  2 │ b     │ y             │
+2. │  3 │ c     │ z             │
+   └────┴───────┴───────────────┘
+```
 
 ## Limitations {#limitations}
 
