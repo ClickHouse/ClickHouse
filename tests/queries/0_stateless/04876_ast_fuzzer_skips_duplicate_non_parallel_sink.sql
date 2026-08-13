@@ -30,6 +30,7 @@ SET ignore_drop_queries_probability = 0;
 -- A materialized view does not disappear with its source table, and a run that fails is retried
 -- against the same database, so every object the file creates is dropped up front rather than
 -- relying only on the unconditional drops at the end of each section.
+--
 DROP TABLE IF EXISTS fuzz_mv;
 DROP TABLE IF EXISTS fuzz_mv_mt;
 DROP TABLE IF EXISTS fuzz_src;
@@ -116,10 +117,22 @@ DROP TABLE fuzz_src;
 -- The hazard reached through a lazily loaded table. DETACH/ATTACH DATABASE replaces every plain
 -- table with a proxy that renames the storage it wraps to the proxy's own id, so a walk that
 -- re-entered by id would read the hop as a cycle and report the whole graph as safe.
-DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+-- Dropped SYNC rather than plain: an Atomic database dropped asynchronously can still hold its
+-- metadata directory when the CREATE below runs.
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS lazy_load_tables = 1;
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.src (k Int) ENGINE = Null;
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tgt (k Int) ENGINE = TinyLog;
+-- The DETACH/ATTACH pair is what replaces every table with a proxy, and it is load-bearing:
+-- `lazy_load_tables = 1` alone leaves `tgt` reported as `TinyLog` (measured), so the proxy hop this
+-- section exists to exercise is never reached without it.
+-- The two statements are adjacent so nothing that can fail sits inside the detached interval. That
+-- matters because a database left detached is invisible to `DROP DATABASE IF EXISTS` -- which then
+-- succeeds without removing anything while the metadata directory survives, so the next run's CREATE
+-- fails with `Code: 521 Cannot rename ...` (measured, with and without SYNC), and no SQL-level
+-- recovery is available: a detached database appears in neither system.databases nor
+-- system.detached_tables, and `ATTACH DATABASE IF NOT EXISTS` on a never-created name throws
+-- `Code: 336`. Keeping the interval empty is therefore the whole guarantee.
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 SELECT 'lazy_proxy_engine', engine FROM system.tables
@@ -166,7 +179,13 @@ CREATE TABLE und_src (k Int) ENGINE = Null;
 CREATE TABLE und_mt (k Int) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE und_gone (k Int) ENGINE = TinyLog;
 CREATE MATERIALIZED VIEW und_mv_gone TO und_gone AS SELECT k FROM und_mt;
-DETACH TABLE und_gone;
+-- Dropped rather than detached. Either makes the dependent view's target unresolvable, so the walk
+-- reports undecided identically (measured: 30 undecided of 30 runs both ways), but a detached table
+-- is invisible to DROP and its metadata file survives, so a run that failed anywhere inside the
+-- detached interval left `und_gone` undroppable and the next run in the same database hit
+-- `already exists (detached)`. The interval here spans a 30-run fuzz loop, which is the widest
+-- window in the file; DROP leaves nothing to recover.
+DROP TABLE und_gone;
 
 INSERT INTO fuzz_events
 SELECT 'before_undecided',
@@ -221,10 +240,8 @@ SELECT 'undecided_counted',
 SELECT 'undecided_executed_nonzero',
       (SELECT executed FROM fuzz_events WHERE label = 'undecided_own_clones') > 0;
 
-ATTACH TABLE und_gone;
 DROP TABLE und_mv;
 DROP TABLE und_mv_gone;
-DROP TABLE und_gone;
 DROP TABLE und_mt;
 DROP TABLE und_src;
 

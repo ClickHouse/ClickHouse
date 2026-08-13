@@ -107,7 +107,9 @@
 #include <exception>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <random>
+#include <unordered_set>
 
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -2170,6 +2172,59 @@ std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalA
 }
 
 
+/// Holds one (source, target) pair for the span in which a fuzzed `CREATE MATERIALIZED VIEW` on that
+/// pair is being decided and executed. A second holder of the same pair is refused.
+/// The duplicate-sink question is answered from the catalog, where a view appears only once its
+/// `CREATE` has executed, so two holders would each be told the target is reached once and each would
+/// build one of the two sinks. Scoped to the pair, because two views from one source onto different
+/// targets never share a sink.
+class FuzzedViewPairLock
+{
+public:
+    FuzzedViewPairLock(const StorageID & source, const StorageID & target)
+        : key(fmt::format(
+              "{}:{}:{}:{}:{}:{}:{}:{}",
+              source.database_name.size(), source.database_name,
+              source.table_name.size(), source.table_name,
+              target.database_name.size(), target.database_name,
+              target.table_name.size(), target.table_name))
+    {
+        std::lock_guard lock(mutex());
+        held = held_keys().insert(key).second;
+    }
+
+    ~FuzzedViewPairLock()
+    {
+        if (!held)
+            return;
+        std::lock_guard lock(mutex());
+        held_keys().erase(key);
+    }
+
+    FuzzedViewPairLock(const FuzzedViewPairLock &) = delete;
+    FuzzedViewPairLock & operator=(const FuzzedViewPairLock &) = delete;
+
+    bool acquired() const { return held; }
+
+private:
+    /// Length-prefixed, because a database or table name may itself contain any separator.
+    String key;
+    bool held = false;
+
+    static std::mutex & mutex()
+    {
+        static std::mutex m;
+        return m;
+    }
+
+    static std::unordered_set<String> & held_keys()
+    {
+        static std::unordered_set<String> keys;
+        return keys;
+    }
+};
+
+
 static bool isReadOnlyQuery(const ASTPtr & ast)
 {
     auto kind = ast->getQueryKind();
@@ -2276,6 +2331,9 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 
         /// A storage taking one `write()` per `INSERT` cannot serve two sinks of the same `INSERT`: the
         /// second waits out `lock_acquire_timeout`. Such a view is withdrawn instead of executed.
+        /// Outlives the block below: the answer holds only while no other thread is creating a view on
+        /// the same pair, so the reservation has to span this iteration's execution too.
+        std::optional<FuzzedViewPairLock> view_pair_lock;
         if (const auto * create = fuzzed_ast->as<ASTCreateQuery>(); create && create->is_materialized_view_with_external_target())
         {
             using Verdict = InsertDependenciesBuilder::DuplicateNonParallelSinkVerdict;
@@ -2290,8 +2348,13 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
                     fuzzed_ast,
                     context->getCurrentDatabase());
                 if (deps.mv_from_dependency && deps.mv_to_dependency)
-                    verdict = InsertDependenciesBuilder::insertWouldDuplicateNonParallelSink(
-                        *deps.mv_from_dependency, *deps.mv_to_dependency, context);
+                {
+                    view_pair_lock.emplace(*deps.mv_from_dependency, *deps.mv_to_dependency);
+                    verdict = view_pair_lock->acquired()
+                        ? InsertDependenciesBuilder::insertWouldDuplicateNonParallelSink(
+                              *deps.mv_from_dependency, *deps.mv_to_dependency, context)
+                        : Verdict::Hazardous;
+                }
             }
             catch (...) // Ok: an undecided check must not suppress fuzzing
             {

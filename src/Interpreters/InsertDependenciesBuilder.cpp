@@ -1057,7 +1057,13 @@ InsertDependenciesBuilder::DuplicateNonParallelSinkVerdict InsertDependenciesBui
         if (!node.resolved)
         {
             for (const auto & view_id : catalog.getDependentViews(node.id))
+            {
                 collect({view_id, node.id}, sinks);
+                /// Everything past this point either counts a further sink or resolves a storage, and
+                /// resolving one may throw; neither can change an answer that is already proven.
+                if (proven)
+                    return;
+            }
         }
 
         /// A `Buffer` and a `Distributed` forward the rows into an `INSERT` of their own, whose sinks this
@@ -1098,14 +1104,24 @@ InsertDependenciesBuilder::DuplicateNonParallelSinkVerdict InsertDependenciesBui
             proven = true;
     };
 
+    /// Resolving a storage runs the code that materializes it, which may throw. A throw says nothing
+    /// about the branches already walked, so it degrades the answer to unknown rather than discarding
+    /// a duplicate the walk had already proven.
     SinkCounts reachable_now;
-    collect({source, {}}, reachable_now);
-
-    baseline = &reachable_now;
-    count_per_path = true;
-    path_edges.clear();
     SinkCounts reachable_from_new_view;
-    collect({new_view_target, {}}, reachable_from_new_view);
+    try
+    {
+        collect({source, {}}, reachable_now);
+
+        baseline = &reachable_now;
+        count_per_path = true;
+        path_edges.clear();
+        collect({new_view_target, {}}, reachable_from_new_view);
+    }
+    catch (...)
+    {
+        undecided = true;
+    }
 
     if (proven)
         return DuplicateNonParallelSinkVerdict::Hazardous;
