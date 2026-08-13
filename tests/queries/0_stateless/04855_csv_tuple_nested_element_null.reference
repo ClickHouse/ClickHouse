@@ -7,3 +7,6 @@ both widths in one input
 ((0,0),3)	8
 Nullable nested tuple element
 (NULL,3)
+flat tuple element, columns on both sides
+1	(0,0)	2
+null_as_default = 0 rejects both
