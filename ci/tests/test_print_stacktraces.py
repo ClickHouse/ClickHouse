@@ -538,3 +538,69 @@ def test_is_asan_build_falls_back_to_binary_when_flags_missing():
     delattr(args, "build_flags")
 
     assert ct["is_asan_build"](args) is False
+
+
+def _probe_kinds(cmd):
+    """Which binary read a `clickhouse local` command performs, by its query."""
+    if "BUILD_TYPE" in cmd:
+        return "flavor"
+    if "sanitize=address" in cmd and "BUILD_TYPE" not in cmd:
+        return "asan"
+    return "other"
+
+
+def test_asan_guard_runs_before_the_flavor_probe():
+    # Both binary reads cost up to 60s, and each exists for the same
+    # startup-failure path where no server is up. Under ASan the flavor value is
+    # never used, so deriving it before the guard doubles the worst-case delay of
+    # an already-failing run for no dump. Drive the real helpers from what their
+    # query returns, so stubbing neither can hide the ordering.
+    ct = _load_clickhouse_test(require_server=False)
+    globals_ = ct["print_c_stacktraces"].__globals__
+    saved = (
+        globals_["shell_get_output"],
+        globals_["get_all_server_pids"],
+        globals_["get_stacktraces_from_lldb"],
+    )
+
+    def run(is_asan):
+        seen, budgets = [], []
+
+        def fake_shell(cmd, timeout=None, keep_output_on_error=False):
+            kind = _probe_kinds(cmd)
+            seen.append((kind, timeout))
+            if kind == "asan":
+                return "1" if is_asan else "0"
+            return "1" if kind == "flavor" else ""
+
+        globals_["shell_get_output"] = fake_shell
+        globals_["get_all_server_pids"] = lambda _args: [4242]
+        globals_["get_stacktraces_from_lldb"] = (
+            lambda pid, timeout=None: budgets.append(timeout) or "x" * 2000
+        )
+        args = _make_args()
+        delattr(args, "build_flags")
+        captured = io.StringIO()
+        with redirect_stdout(captured):
+            ct["print_c_stacktraces"](args)
+        return seen, budgets, captured.getvalue()
+
+    try:
+        seen, budgets, out = run(is_asan=True)
+        assert "Cannot collect C stacktraces under ASan" in out, out
+        assert [kind for kind, _ in seen] == ["asan"], seen
+        assert budgets == [], budgets
+
+        # Control: without ASan the flavor probe must still run and its debug
+        # verdict must still reach lldb, so the reorder cannot have dropped it.
+        seen, budgets, out = run(is_asan=False)
+        assert [kind for kind, _ in seen] == ["asan", "flavor"], seen
+        assert all(timeout == 60 for _, timeout in seen), seen
+        assert len(budgets) == 1, budgets
+        assert abs(budgets[0] - ct["LLDB_SLOW_BUILD_TIMEOUT"]) < 1, budgets
+    finally:
+        (
+            globals_["shell_get_output"],
+            globals_["get_all_server_pids"],
+            globals_["get_stacktraces_from_lldb"],
+        ) = saved

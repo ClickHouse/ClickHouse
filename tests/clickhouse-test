@@ -1350,7 +1350,8 @@ def print_c_stacktraces(
     run (SERVER_DIED, hung-check, check_server_started) or terminating
     the one wedged test (timeout_handler).
 
-    `per_pid_timeout` None means derive it from the build flavor.
+    `per_pid_timeout` None means derive it from the build flavor, which on a
+    server that never started costs a `clickhouse local` read of the binary.
     `total_timeout` bounds the whole pid loop, which can span up to 20
     processes; it is an independent limit, not a multiple of the per-PID one.
     A caller inside a fired one-shot `signal.alarm` must pass both, because
@@ -1359,9 +1360,6 @@ def print_c_stacktraces(
     Skipped under ASan, where attaching a debugger disables
     LeakSanitizer detections.
     """
-    if per_pid_timeout is None:
-        per_pid_timeout = lldb_timeout_for_build(args)
-
     if is_asan_build(args):
         print(
             colored(
@@ -1389,6 +1387,11 @@ def print_c_stacktraces(
             )
         )
         return
+
+    # Costs a `clickhouse local` read of the binary when the flags are missing,
+    # and neither return above consumes it.
+    if per_pid_timeout is None:
+        per_pid_timeout = lldb_timeout_for_build(args)
 
     deadline = monotonic() + total_timeout
     for index, pid in enumerate(all_pids):
