@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Parsers/ASTFromJSON.h>
+#include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTToJSON.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -190,6 +191,36 @@ TEST(TreeHashCompleteness, OutputOptionFlagsAreSignificant)
     EXPECT_NE(hashOf("CHECK TABLE t INTO OUTFILE 'x'"), hashOf("CHECK TABLE t INTO OUTFILE 'x' AND STDOUT"));
 
     EXPECT_EQ(hashOfJSONRoundTrip("SELECT 1 INTO OUTFILE 'x' APPEND"), hashOf("SELECT 1 INTO OUTFILE 'x' APPEND"));
+
+    /// `readOutputOptionsJSON` must rebuild the output-option children in the canonical order of
+    /// `output_option_members` - `COMPRESSION` and `LEVEL` come before `FORMAT` and `SETTINGS` -
+    /// or the restored AST hashes differently than the parsed one.
+    for (const std::string query : {
+             "SELECT 1 INTO OUTFILE 'x' COMPRESSION 'gz'",
+             "SELECT 1 INTO OUTFILE 'x' COMPRESSION 'gz' LEVEL 5",
+             "SELECT 1 INTO OUTFILE 'x' COMPRESSION 'gz' LEVEL 5 FORMAT JSONEachRow",
+             "SELECT 1 INTO OUTFILE 'x' TRUNCATE COMPRESSION 'gz' FORMAT JSONEachRow SETTINGS max_threads = 1",
+         })
+        EXPECT_EQ(hashOfJSONRoundTrip(query), hashOf(query)) << query;
+}
+
+TEST(TreeHashCompleteness, ResetOutputASTClearsTheFlags)
+{
+    /// `resetOutputASTIfExist` is used to normalize an AST before hashing (e.g. the query result
+    /// cache strips the output options so they do not affect the cache key); now that the
+    /// `APPEND` / `TRUNCATE` / `AND STDOUT` flags are part of the hash, it must clear them too.
+    const auto stripped_hash = [](const std::string & query)
+    {
+        ASTPtr ast = parse(query);
+        EXPECT_TRUE(ASTQueryWithOutput::resetOutputASTIfExist(*ast)) << query;
+        return ast->getTreeHash(/*ignore_aliases=*/ false);
+    };
+
+    const auto plain = hashOf("SELECT 1");
+    EXPECT_EQ(stripped_hash("SELECT 1 INTO OUTFILE 'x'"), plain);
+    EXPECT_EQ(stripped_hash("SELECT 1 INTO OUTFILE 'x' APPEND"), plain);
+    EXPECT_EQ(stripped_hash("SELECT 1 INTO OUTFILE 'x' TRUNCATE"), plain);
+    EXPECT_EQ(stripped_hash("SELECT 1 INTO OUTFILE 'x' AND STDOUT COMPRESSION 'gz' LEVEL 5"), plain);
 }
 
 TEST(TreeHashCompleteness, TemporaryFlagIsSignificant)
@@ -243,6 +274,12 @@ TEST(TreeHashCompleteness, FormatRoundTripHashesEqual)
         /// Per-column PRIMARY KEY: the parser moves it into the storage definition and must clear
         /// `primary_key_specifier`, which formatting does not reproduce per column in CREATE.
         "CREATE TABLE t (a UInt8 PRIMARY KEY, b String PRIMARY KEY) ENGINE = MergeTree",
+        /// Without an explicit ENGINE the parser synthesizes the storage definition for the moved
+        /// PRIMARY KEY; it must land in `children` before the comment, where a fresh parse of the
+        /// formatted query (which spells the storage-level PRIMARY KEY) puts it. Found by the AST
+        /// fuzzer.
+        "CREATE TEMPORARY TABLE t (a UInt64 NOT NULL PRIMARY KEY) COMMENT 'c'",
+        "CREATE TABLE t (a UInt64, PRIMARY KEY a) COMMENT 'c'",
         /// In ALTER there is no storage definition to move the specifier into, so formatting must
         /// print it.
         "ALTER TABLE t ADD COLUMN x UInt64 PRIMARY KEY",
