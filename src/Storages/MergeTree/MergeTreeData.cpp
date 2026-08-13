@@ -5524,7 +5524,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                                     reset_setting);
             }
         }
-        else if (command.isRequireMutationStage(*storage_metadata_snapshot, local_context))
+        else if (const auto mutation_stage = command.getMutationStageDecision(*storage_metadata_snapshot, local_context);
+                 mutation_stage.requires_mutation)
         {
             /// This alter will override data on disk. Let's check that it doesn't
             /// modify immutable column.
@@ -5593,9 +5594,14 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         else if (command.type == AlterCommand::MODIFY_COLUMN && command.data_type
             && old_metadata.getColumns().hasPhysical(command.column_name)
             && new_metadata.getColumns().hasPhysical(command.column_name)
-            && isLazyMetadataConversion(old_types.at(command.column_name), command.data_type.get(), local_context))
+            && !mutation_stage.lazy_settings.empty())
         {
-            /// A lazy metadata-only conversion (JSON type-hint change) has no mutation to rebuild
+            const auto lazy_settings_description = fmt::format(
+                "{} '{}'",
+                mutation_stage.lazy_settings.size() == 1 ? "setting" : "settings",
+                fmt::join(mutation_stage.lazy_settings, "', '"));
+
+            /// A lazy metadata-only conversion has no mutation to rebuild
             /// `primary.idx`, partition-key files or `skp_idx_*`, which are read positionally without
             /// per-part CAST. Reject it when it changes the on-disk type of a subcolumn used by a
             /// key/index/projection.
@@ -5664,11 +5670,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 throw Exception(
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                     "ALTER of column {} changes the on-disk type of a subcolumn used by the MATERIALIZED column '{}'; "
-                    "a metadata-only ALTER cannot recompute it. Disable setting "
-                    "'allow_experimental_json_lazy_type_hints' to run this change as a full mutation that "
+                    "a metadata-only ALTER cannot recompute it. Disable {} to run this change as a full mutation that "
                     "recomputes the column, or drop the column first",
                     backQuoteIfNeed(command.column_name),
-                    column.name);
+                    column.name,
+                    lazy_settings_description);
             }
 
             /// Skip index (explicit or implicit): a full mutation can rebuild it, so suggest disabling the setting.
@@ -5688,11 +5694,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 throw Exception(
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                     "ALTER of column {} changes the on-disk type of a subcolumn stored by the skip index '{}'; "
-                    "a metadata-only ALTER cannot rebuild the index. Disable setting "
-                    "'allow_experimental_json_lazy_type_hints' to run this change as a full mutation, "
+                    "a metadata-only ALTER cannot rebuild the index. Disable {} to run this change as a full mutation, "
                     "or drop the index first",
                     backQuoteIfNeed(command.column_name),
-                    old_index.name);
+                    old_index.name,
+                    lazy_settings_description);
             }
 
             /// A subcolumn can feed a projection's sort key (positionally persisted) or a filtered
