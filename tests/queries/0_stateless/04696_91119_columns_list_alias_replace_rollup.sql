@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: resolving `COLUMNS(alias)` to the aliased column requires the analyzer.
+
 -- An unqualified `COLUMNS(identifier)` matcher produces the name of the column that the
 -- identifier resolves to, not the identifier itself: `COLUMNS(alias)` over `c AS alias` produces
 -- `c`. The deferred `group_by_use_nulls` REPLACE rewrite must therefore resolve the explicit
