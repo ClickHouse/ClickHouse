@@ -8,5 +8,7 @@ degenerate ring, dense	8	8
 degenerate ring, lightweight	8	8
 valid ring, dense	1681	1681
 valid ring, lightweight	1681	1681
+valid ring forces key, dense	1681
+valid ring forces key, lightweight	1681
 valid ring prunes, dense	1
 valid ring prunes, lightweight	1

@@ -54,6 +54,20 @@ SELECT 'bowtie 3-arg, lightweight',
         SETTINGS use_lightweight_primary_key_index_analysis = 1),
     (SELECT count() FROM pip_nopk WHERE pointInPolygon((x, y), [(0., 0.), (4., 4.), (4., 0.), (0., 4.)], [(1., 1.), (2., 1.), (2., 2.), (1., 2.)]));
 
+-- The atom must be DECLINED, not merely widened to a bound that happens to keep every matching
+-- row: with no key-range atom left, `force_primary_key` has no primary key use to force.
+SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (4., 4.), (4., 0.), (0., 4.)])
+    SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 0; -- { serverError INDEX_NOT_USED }
+
+SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (4., 4.), (4., 0.), (0., 4.)])
+    SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 1; -- { serverError INDEX_NOT_USED }
+
+SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (4., 4.), (4., 0.), (0., 4.)], [(1., 1.), (2., 1.), (2., 2.), (1., 2.)])
+    SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 0; -- { serverError INDEX_NOT_USED }
+
+SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (4., 4.), (4., 0.), (0., 4.)], [(1., 1.), (2., 1.), (2., 2.), (1., 2.)])
+    SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 1; -- { serverError INDEX_NOT_USED }
+
 -- No row is lost, and none is gained either: pruning must be an exact filter here.
 SELECT 'lost rows', count() FROM
 (
@@ -80,6 +94,12 @@ SELECT 'degenerate ring, lightweight',
         SETTINGS use_lightweight_primary_key_index_analysis = 1),
     (SELECT count() FROM pip_nopk WHERE pointInPolygon((x, y), [(0., 0.), (1., 1.)]));
 
+SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (1., 1.)])
+    SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 0; -- { serverError INDEX_NOT_USED }
+
+SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0., 0.), (1., 1.)])
+    SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 1; -- { serverError INDEX_NOT_USED }
+
 -- A valid polygon must keep both its result and its pruning: the check must not reject shapes
 -- that were being pruned correctly.
 SELECT 'valid ring, dense',
@@ -92,23 +112,37 @@ SELECT 'valid ring, lightweight',
         SETTINGS use_lightweight_primary_key_index_analysis = 1),
     (SELECT count() FROM pip_nopk WHERE pointInPolygon((x, y), [(1., 1.), (1., 5.), (5., 5.), (5., 1.)]));
 
+-- A valid ring still builds an atom, so forcing the primary key must not raise.
+SELECT 'valid ring forces key, dense', count() FROM pip_pk
+    WHERE pointInPolygon((x, y), [(1., 1.), (1., 5.), (5., 5.), (5., 1.)])
+    SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 0;
+
+SELECT 'valid ring forces key, lightweight', count() FROM pip_pk
+    WHERE pointInPolygon((x, y), [(1., 1.), (1., 5.), (5., 5.), (5., 1.)])
+    SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 1;
+
+-- Pruning must stay effective, not merely non-zero: this ring selects a quarter of the granules,
+-- so a fourfold margin separates it from a regression that scans everything. The seek thresholds
+-- are pinned because they merge accepted ranges across gaps and so inflate the count.
 SELECT 'valid ring prunes, dense',
-    toUInt64(extract(explain, 'Granules: ([0-9]+)')) < toUInt64(extract(explain, 'Granules: [0-9]+/([0-9]+)'))
+    toUInt64(extract(explain, 'Granules: ([0-9]+)')) * 4 < toUInt64(extract(explain, 'Granules: [0-9]+/([0-9]+)'))
 FROM
 (
     EXPLAIN indexes = 1
     SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(1., 1.), (1., 5.), (5., 5.), (5., 1.)])
-    SETTINGS use_lightweight_primary_key_index_analysis = 0
+    SETTINGS use_lightweight_primary_key_index_analysis = 0,
+        merge_tree_min_rows_for_seek = 0, merge_tree_min_bytes_for_seek = 0
 )
 WHERE explain LIKE '%Granules%';
 
 SELECT 'valid ring prunes, lightweight',
-    toUInt64(extract(explain, 'Granules: ([0-9]+)')) < toUInt64(extract(explain, 'Granules: [0-9]+/([0-9]+)'))
+    toUInt64(extract(explain, 'Granules: ([0-9]+)')) * 4 < toUInt64(extract(explain, 'Granules: [0-9]+/([0-9]+)'))
 FROM
 (
     EXPLAIN indexes = 1
     SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(1., 1.), (1., 5.), (5., 5.), (5., 1.)])
-    SETTINGS use_lightweight_primary_key_index_analysis = 1
+    SETTINGS use_lightweight_primary_key_index_analysis = 1,
+        merge_tree_min_rows_for_seek = 0, merge_tree_min_bytes_for_seek = 0
 )
 WHERE explain LIKE '%Granules%';
 
