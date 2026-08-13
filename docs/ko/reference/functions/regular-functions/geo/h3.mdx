@@ -1,0 +1,1519 @@
+---
+description: 'H3 관련 문서'
+sidebarTitle: 'H3 인덱스'
+slug: /sql-reference/functions/geo/h3
+title: 'H3 인덱스를 다루는 함수'
+doc_type: 'reference'
+---
+
+<div id="h3-index">
+  ## H3 인덱스
+</div>
+
+[H3](https://h3geo.org/)는 지구 표면을 균일한 육각형 셀의 격자로 나누는 지리 공간 인덱싱 시스템입니다. 이 시스템은 계층 구조를 가지며, 즉 최상위 수준의 각 육각형(&quot;parent&quot;)은 크기가 더 작은 균일한 7개의 육각형(&quot;children&quot;)으로 분할될 수 있고, 이러한 방식이 계속 반복됩니다.
+
+이 계층 구조의 수준을 `resolution`이라고 하며, 값은 `0`부터 `15`까지입니다. 이때 `0`은 가장 크고 가장 거친 셀을 갖는 `base` 수준입니다.
+
+위도와 경도의 쌍은 격자 셀을 식별하는 64비트 H3 인덱스로 변환할 수 있습니다.
+
+H3 인덱스는 주로 위치를 버킷으로 그룹화하거나 그 밖의 지리 공간 작업을 수행하는 데 사용됩니다.
+
+H3 시스템에 대한 전체 설명은 [Uber Engineering 사이트](https://www.uber.com/blog/h3/)에서 확인할 수 있습니다.
+
+<div id="h3isvalid">
+  ## h3IsValid
+</div>
+
+숫자가 유효한 [H3](#h3-index) 인덱스인지 확인합니다.
+
+**구문**
+
+```sql
+h3IsValid(h3index)
+```
+
+**매개변수**
+
+* `h3index` — 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 1 — 해당 숫자는 유효한 H3 인덱스입니다. [UInt8](/ko/reference/data-types/int-uint).
+* 0 — 해당 숫자는 유효한 H3 인덱스가 아닙니다. [UInt8](/ko/reference/data-types/int-uint).
+
+**예시**
+
+```sql title="Query"
+SELECT h3IsValid(630814730351855103) AS h3IsValid;
+```
+
+```text title="Response"
+┌─h3IsValid─┐
+│         1 │
+└───────────┘
+```
+
+<div id="h3getresolution">
+  ## h3GetResolution
+</div>
+
+지정된 [H3](#h3-index) 인덱스의 해상도를 반환합니다.
+
+**구문**
+
+```sql
+h3GetResolution(h3index)
+```
+
+**매개변수**
+
+* `h3index` — 육각형 인덱스 번호. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 인덱스 해상도. 범위: `[0, 15]`. [UInt8](/ko/reference/data-types/int-uint).
+* 인덱스가 유효하지 않으면 함수는 임의의 값을 반환합니다. 인덱스를 검증하려면 [h3IsValid](#h3isvalid)를 사용하십시오. [UInt8](/ko/reference/data-types/int-uint).
+
+**예시**
+
+```sql title="Query"
+SELECT h3GetResolution(639821929606596015) AS resolution;
+```
+
+```text title="Response"
+┌─resolution─┐
+│         14 │
+└────────────┘
+```
+
+<div id="h3edgeangle">
+  ## h3EdgeAngle
+</div>
+
+[H3](#h3-index) 육각형 변의 평균 길이를 그라드 단위로 계산합니다.
+
+**구문**
+
+```sql
+h3EdgeAngle(resolution)
+```
+
+**매개변수**
+
+* `resolution` — 인덱스 해상도. [UInt8](/ko/reference/data-types/int-uint). 범위: `[0, 15]`.
+
+**반환 값**
+
+* 그라드 단위의 [H3](#h3-index) 육각형 변 평균 길이입니다. [Float64](/ko/reference/data-types/float).
+
+**예시**
+
+```sql title="Query"
+SELECT h3EdgeAngle(10) AS edgeAngle;
+```
+
+```text title="Response"
+┌───────h3EdgeAngle(10)─┐
+│ 0.0005927224846720883 │
+└───────────────────────┘
+```
+
+<div id="h3edgelengthm">
+  ## h3EdgeLengthM
+</div>
+
+[H3](#h3-index) 육각형의 변 길이 평균을 미터 단위로 계산합니다.
+
+**구문**
+
+```sql
+h3EdgeLengthM(resolution)
+```
+
+**매개변수**
+
+* `resolution` — 인덱스 해상도입니다. [UInt8](/ko/reference/data-types/int-uint). 범위: `[0, 15]`.
+
+**반환 값**
+
+* 미터 단위 [H3](#h3-index) 육각형의 평균 변 길이입니다. [Float64](/ko/reference/data-types/float).
+
+**예시**
+
+```sql title="Query"
+SELECT h3EdgeLengthM(15) AS edgeLengthM;
+```
+
+```text title="Response"
+┌─edgeLengthM─┐
+│ 0.509713273 │
+└─────────────┘
+```
+
+<div id="h3edgelengthkm">
+  ## h3EdgeLengthKm
+</div>
+
+[H3](#h3-index) 육각형의 변 길이 평균을 킬로미터 단위로 계산합니다.
+
+**구문**
+
+```sql
+h3EdgeLengthKm(resolution)
+```
+
+**매개변수**
+
+* `resolution` — 인덱스 해상도. [UInt8](/ko/reference/data-types/int-uint). 범위: `[0, 15]`.
+
+**반환 값**
+
+* [H3](#h3-index) 육각형 변의 평균 길이(킬로미터 단위). [Float64](/ko/reference/data-types/float).
+
+**예시**
+
+```sql title="Query"
+SELECT h3EdgeLengthKm(15) AS edgeLengthKm;
+```
+
+```text title="Response"
+┌─edgeLengthKm─┐
+│  0.000509713 │
+└──────────────┘
+```
+
+<div id="geotoh3">
+  ## geoToH3
+</div>
+
+지정된 해상도의 [H3](#h3-index) 점 인덱스 `(lat, lon)`를 반환합니다.
+
+**구문**
+
+```sql
+geoToH3(lat, lon, resolution)
+```
+
+**인수**
+
+* `lat` — 위도. [Float64](/ko/reference/data-types/float).
+* `lon` — 경도. [Float64](/ko/reference/data-types/float).
+* `resolution` — 인덱스 해상도. 범위: `[0, 15]`. [UInt8](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 육각형 인덱스 번호. [UInt64](/ko/reference/data-types/int-uint).
+* 오류 발생 시 0. [UInt64](/ko/reference/data-types/int-uint).
+
+참고: ClickHouse v25.4 이하에서는 `geoToH3()`가 값을 `(lon, lat)` 순서로 받습니다. ClickHouse v25.5부터는 입력 값의 순서가 `(lat, lon)`입니다. 이전 동작은 `geotoh3_argument_order = 'lon_lat'` 설정으로 복원할 수 있습니다.
+
+**예시**
+
+```sql title="Query"
+SELECT geoToH3(55.71290588, 37.79506683, 15) AS h3Index;
+```
+
+```text title="Response"
+┌────────────h3Index─┐
+│ 644325524701193974 │
+└────────────────────┘
+```
+
+<div id="h3togeo">
+  ## h3ToGeo
+</div>
+
+주어진 [H3](#h3-index) 인덱스에 해당하는 중심점의 위도와 경도를 반환합니다.
+
+**구문**
+
+```sql
+h3ToGeo(h3Index)
+```
+
+**인수**
+
+* `h3Index` — H3 인덱스. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 두 개의 값으로 이루어진 튜플입니다: `tuple(lat,lon)`. `lat` — 위도. [Float64](/ko/reference/data-types/float). `lon` — 경도. [Float64](/ko/reference/data-types/float).
+
+참고: ClickHouse v24.12 이하에서는 `h3ToGeo()`가 `(lon, lat)` 순서로 값을 반환합니다. ClickHouse v25.1부터는 반환 값이 `(lat, lon)` 순서입니다. 이전 동작은 설정 `h3togeo_lon_lat_result_order = true`를 사용해 복원할 수 있습니다.
+
+**예시**
+
+```sql title="Query"
+SELECT h3ToGeo(644325524701193974) AS coordinates;
+```
+
+```text title="Response"
+┌─coordinates───────────────────────────┐
+│ (55.71290243145668,37.79506616830252) │
+└───────────────────────────────────────┘
+```
+
+<div id="h3togeoboundary">
+  ## h3ToGeoBoundary
+</div>
+
+주어진 H3 인덱스의 경계에 해당하는 `(lat, lon)` 쌍의 배열을 반환합니다.
+
+**구문**
+
+```sql
+h3ToGeoBoundary(h3Index)
+```
+
+**인수**
+
+* `h3Index` — H3 인덱스. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* &#39;(lat, lon)&#39; 쌍으로 이루어진 배열. [Array](/ko/reference/data-types/array)([Float64](/ko/reference/data-types/float), [Float64](/ko/reference/data-types/float)).
+
+**예시**
+
+```sql title="Query"
+SELECT h3ToGeoBoundary(644325524701193974) AS coordinates;
+```
+
+```text title="Response"
+┌─h3ToGeoBoundary(599686042433355775)────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [(37.2713558667319,-121.91508032705622),(37.353926450852256,-121.8622232890249),(37.42834118609435,-121.92354999630156),(37.42012867767779,-122.03773496427027),(37.33755608435299,-122.090428929044),(37.26319797461824,-122.02910130919001)] │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3kring">
+  ## h3kRing
+</div>
+
+주어진 육각형에서 반경 `k` 이내에 있는 모든 [H3](#h3-index) 육각형을 무작위 순서로 나열합니다.
+
+**구문**
+
+```sql
+h3kRing(h3index, k)
+```
+
+**인수**
+
+* `h3index` — 육각형 인덱스 번호. [UInt64](/ko/reference/data-types/int-uint).
+* `k` — 반경. [integer](/ko/reference/data-types/int-uint)
+
+**반환 값**
+
+* H3 인덱스 배열. [Array](/ko/reference/data-types/array)([UInt64](/ko/reference/data-types/int-uint)).
+
+**예시**
+
+```sql title="Query"
+SELECT arrayJoin(h3kRing(644325529233966508, 1)) AS h3index;
+```
+
+```text title="Response"
+┌────────────h3index─┐
+│ 644325529233966508 │
+│ 644325529233966497 │
+│ 644325529233966510 │
+│ 644325529233966504 │
+│ 644325529233966509 │
+│ 644325529233966355 │
+│ 644325529233966354 │
+└────────────────────┘
+```
+
+<div id="h3polygontocells">
+  ## h3PolygonToCells
+</div>
+
+제공된 Geometry(링 또는 (multi-)polygon)에 포함된 지정된 해상도의 육각형을 반환합니다.
+
+**구문**
+
+```sql
+h3PolygonToCells(geometry, resolution)
+```
+
+**인수**
+
+* `geometry`는 다음 [Geo 데이터 타입](/ko/reference/data-types/geo) 또는 그 기반이 되는 기본 타입 중 하나일 수 있습니다:
+  * [Ring](/ko/reference/data-types/geo#ring)
+  * [Polygon](/ko/reference/data-types/geo#polygon)
+  * [MultiPolygon](/ko/reference/data-types/geo#multipolygon)
+* `resolution` — 인덱스 해상도입니다. 범위: `[0, 15]`. [UInt8](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 포함된 H3 인덱스의 [배열](/ko/reference/data-types/array)([UInt64](/ko/reference/data-types/int-uint)).
+
+**예시**
+
+```sql title="Query"
+SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.3544736999993603,37.7198061999978478),(-122.4798767000009008,37.8151571999998453)], 7) AS h3index;
+```
+
+```text title="Response"
+┌────────────h3index─┐
+│ 608692970769612799 │
+│ 608692971927240703 │
+│ 608692970585063423 │
+│ 608692970819944447 │
+│ 608692970719281151 │
+│ 608692970752835583 │
+│ 608692972027903999 │
+└────────────────────┘
+```
+
+<div id="h3polygontocellswithcontainment">
+  ## h3PolygonToCellsWithContainment
+</div>
+
+H3 Experimental 포함 모드를 사용하여 제공된 geometry가 차지하는 영역을 지정된 해상도의 육각형으로 덮어 반환합니다. geometry는 링 또는 (multi-)polygon일 수 있습니다.
+
+이 함수는 `flags`를 다음 H3 포함 모드에 매핑합니다:
+
+* `0` — `CONTAINMENT_CENTER`
+* `1` — `CONTAINMENT_FULL`
+* `2` — `CONTAINMENT_OVERLAPPING`
+* `3` — `CONTAINMENT_OVERLAPPING_BBOX`
+
+**구문**
+
+```sql
+h3PolygonToCellsWithContainment(geometry, resolution, flags)
+```
+
+**인수**
+
+* `geometry`는 다음 [Geo 데이터 타입](/ko/reference/data-types/geo) 또는 그 기반이 되는 기본 타입 중 하나일 수 있습니다:
+  * [Ring](/ko/reference/data-types/geo#ring)
+  * [Polygon](/ko/reference/data-types/geo#polygon)
+  * [MultiPolygon](/ko/reference/data-types/geo#multipolygon)
+* `resolution` — 인덱스 해상도입니다. 범위: `[0, 15]`. [UInt8](/ko/reference/data-types/int-uint).
+* `flags` — 포함 모드입니다. 범위: `[0, 3]`. `0`, `1`, `2`, `3`과 같은 정수 리터럴 또는 [UInt32](/ko/reference/data-types/int-uint) 값(예: `toUInt32(2)`)을 사용하십시오. 값은 H3 API에 `UInt32`로 전달됩니다. 다른 네이티브 정수 타입에는 정확한 형변환이 적용됩니다.
+
+**반환 값**
+
+* 선택한 포함 모드에 따른 H3 인덱스 배열입니다. [Array](/ko/reference/data-types/array)([UInt64](/ko/reference/data-types/int-uint)).
+
+**예시**
+
+```sql title="Query"
+SELECT
+    h3PolygonToCellsWithContainment([(-122.4089866999972145, 37.813318999983238), (-122.3544736999993603, 37.7198061999978478), (-122.4798767000009008, 37.8151571999998453)], 7, 0) AS center_cells,
+    h3PolygonToCellsWithContainment([(-122.4089866999972145, 37.813318999983238), (-122.3544736999993603, 37.7198061999978478), (-122.4798767000009008, 37.8151571999998453)], 7, 2) AS overlap_cells;
+```
+
+```text title="Response"
+   ┌─center_cells───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─overlap_cells──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+1. │ [608692970585063423,608692970719281151,608692970752835583,608692970769612799,608692970819944447,608692971927240703,608692972027903999] │ [608692970249519103,608692970266296319,608692970585063423,608692970601840639,608692970635395071,608692970685726719,608692970719281151,608692970736058367,608692970752835583,608692970769612799,608692970786390015,608692970819944447,608692971927240703,608692971994349567,608692972027903999] │
+   └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3getbasecell">
+  ## h3GetBaseCell
+</div>
+
+[H3](#h3-index) 인덱스의 기본 셀 번호를 반환합니다.
+
+**구문**
+
+```sql
+h3GetBaseCell(index)
+```
+
+**매개변수**
+
+* `index` — 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 육각형의 기본 셀 번호입니다. [UInt8](/ko/reference/data-types/int-uint).
+
+**예시**
+
+```sql title="Query"
+SELECT h3GetBaseCell(612916788725809151) AS basecell;
+```
+
+```text title="Response"
+┌─basecell─┐
+│       12 │
+└──────────┘
+```
+
+<div id="h3hexaream2">
+  ## h3HexAreaM2
+</div>
+
+주어진 해상도에서 육각형의 평균 면적을 제곱미터(m²) 단위로 반환합니다.
+
+**구문**
+
+```sql
+h3HexAreaM2(resolution)
+```
+
+**매개변수**
+
+* `resolution` — 인덱스 해상도. 범위: `[0, 15]`. [UInt8](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 제곱미터 단위의 면적. [Float64](/ko/reference/data-types/float).
+
+**예시**
+
+```sql title="Query"
+SELECT h3HexAreaM2(13) AS area;
+```
+
+```text title="Response"
+┌─area─┐
+│ 43.9 │
+└──────┘
+```
+
+<div id="h3hexareakm2">
+  ## h3HexAreaKm2
+</div>
+
+주어진 해상도에서 평균 육각형 면적을 제곱킬로미터 단위로 반환합니다.
+
+**구문**
+
+```sql
+h3HexAreaKm2(resolution)
+```
+
+**매개변수**
+
+* `resolution` — 인덱스 해상도입니다. 범위: `[0, 15]`. [UInt8](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 제곱킬로미터 단위의 면적입니다. [Float64](/ko/reference/data-types/float).
+
+**예시**
+
+```sql title="Query"
+SELECT h3HexAreaKm2(13) AS area;
+```
+
+```text title="Response"
+┌──────area─┐
+│ 0.0000439 │
+└───────────┘
+```
+
+<div id="h3indexesareneighbors">
+  ## h3IndexesAreNeighbors
+</div>
+
+주어진 [H3](#h3-index) 인덱스가 서로 인접해 있는지 반환합니다.
+
+**구문**
+
+```sql
+h3IndexesAreNeighbors(index1, index2)
+```
+
+**인수**
+
+* `index1` — 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+* `index2` — 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* `1` — 인덱스가 서로 이웃합니다. [UInt8](/ko/reference/data-types/int-uint).
+* `0` — 인덱스가 서로 이웃하지 않습니다. [UInt8](/ko/reference/data-types/int-uint).
+
+**예시**
+
+```sql title="Query"
+SELECT h3IndexesAreNeighbors(617420388351344639, 617420388352655359) AS n;
+```
+
+```text title="Response"
+┌─n─┐
+│ 1 │
+└───┘
+```
+
+<div id="h3tochildren">
+  ## h3ToChildren
+</div>
+
+주어진 [H3](#h3-index) 인덱스의 자식 인덱스 배열을 반환합니다.
+
+**구문**
+
+```sql
+h3ToChildren(index, resolution)
+```
+
+**인수**
+
+* `index` — 육각형 인덱스 번호. [UInt64](/ko/reference/data-types/int-uint).
+* `resolution` — 인덱스 해상도. 범위: `[0, 15]`. [UInt8](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 하위 H3 인덱스의 배열. [Array](/ko/reference/data-types/array)([UInt64](/ko/reference/data-types/int-uint)).
+
+**예시**
+
+```sql title="Query"
+SELECT h3ToChildren(599405990164561919, 6) AS children;
+```
+
+```text title="Response"
+┌─children───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [603909588852408319,603909588986626047,603909589120843775,603909589255061503,603909589389279231,603909589523496959,603909589657714687] │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3toparent">
+  ## h3ToParent
+</div>
+
+지정된 [H3](#h3-index) 인덱스를 포함하는 상위(더 낮은 해상도의) 인덱스를 반환합니다.
+
+**구문**
+
+```sql
+h3ToParent(index, resolution)
+```
+
+**인수**
+
+* `index` — 육각형 인덱스 번호. [UInt64](/ko/reference/data-types/int-uint).
+* `resolution` — 인덱스의 해상도. 범위: `[0, 15]`. [UInt8](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 상위 H3 인덱스. [UInt64](/ko/reference/data-types/int-uint).
+
+**예시**
+
+```sql title="Query"
+SELECT h3ToParent(599405990164561919, 3) AS parent;
+```
+
+```text title="Response"
+┌─────────────parent─┐
+│ 590398848891879423 │
+└────────────────────┘
+```
+
+<div id="h3tostring">
+  ## h3ToString
+</div>
+
+인덱스의 `H3Index` 표현을 문자열 형식으로 변환합니다.
+
+```sql
+h3ToString(index)
+```
+
+**매개변수**
+
+* `index` — 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* H3 인덱스의 문자열 형식입니다. [String](/ko/reference/data-types/string).
+
+**예시**
+
+```sql title="Query"
+SELECT h3ToString(617420388352917503) AS h3_string;
+```
+
+```text title="Response"
+┌─h3_string───────┐
+│ 89184926cdbffff │
+└─────────────────┘
+```
+
+<div id="stringtoh3">
+  ## stringToH3
+</div>
+
+문자열 형식을 `H3Index`(UInt64) 형식으로 변환합니다.
+
+**구문**
+
+```sql
+stringToH3(index_str)
+```
+
+**매개변수**
+
+* `index_str` — H3 인덱스의 문자열 형식입니다. [String](/ko/reference/data-types/string).
+
+**반환 값**
+
+* 육각형 인덱스 번호입니다. 오류가 발생하면 0을 반환합니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**예시**
+
+```sql title="Query"
+SELECT stringToH3('89184926cc3ffff') AS index;
+```
+
+```text title="Response"
+┌──────────────index─┐
+│ 617420388351344639 │
+└────────────────────┘
+```
+
+<div id="h3getresolution">
+  ## h3GetResolution
+</div>
+
+[H3](#h3-index) 인덱스의 해상도를 반환합니다.
+
+**구문**
+
+```sql
+h3GetResolution(index)
+```
+
+**매개변수**
+
+* `index` — 육각형 인덱스 번호. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 인덱스의 해상도. 범위: `[0, 15]`. [UInt8](/ko/reference/data-types/int-uint).
+
+**예시**
+
+```sql title="Query"
+SELECT h3GetResolution(617420388352917503) AS res;
+```
+
+```text title="Response"
+┌─res─┐
+│   9 │
+└─────┘
+```
+
+<div id="h3isresclassiii">
+  ## h3IsResClassIII
+</div>
+
+[H3](#h3-index) 인덱스가 Class III 방향 해상도인지 여부를 반환합니다.
+
+**구문**
+
+```sql
+h3IsResClassIII(index)
+```
+
+**매개변수**
+
+* `index` — 육각형 인덱스 번호. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* `1` — 인덱스의 해상도가 Class III 방향입니다. [UInt8](/ko/reference/data-types/int-uint).
+* `0` — 인덱스의 해상도가 Class III 방향이 아닙니다. [UInt8](/ko/reference/data-types/int-uint).
+
+**예시**
+
+```sql title="Query"
+SELECT h3IsResClassIII(617420388352917503) AS res;
+```
+
+```text title="Response"
+┌─res─┐
+│   1 │
+└─────┘
+```
+
+<div id="h3ispentagon">
+  ## h3IsPentagon
+</div>
+
+이 [H3](#h3-index) 인덱스가 오각형 셀을 나타내는지 반환합니다.
+
+**구문**
+
+```sql
+h3IsPentagon(index)
+```
+
+**매개변수**
+
+* `index` — 육각형 인덱스 번호. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* `1` — 인덱스가 오각형 셀을 나타냅니다. [UInt8](/ko/reference/data-types/int-uint).
+* `0` — 인덱스가 오각형 셀을 나타내지 않습니다. [UInt8](/ko/reference/data-types/int-uint).
+
+**예시**
+
+```sql title="Query"
+SELECT h3IsPentagon(644721767722457330) AS pentagon;
+```
+
+```text title="Response"
+┌─pentagon─┐
+│        0 │
+└──────────┘
+```
+
+<div id="h3getfaces">
+  ## h3GetFaces
+</div>
+
+지정된 [H3](#h3-index) 인덱스가 교차하는 정이십면체의 면을 반환합니다.
+
+**구문**
+
+```sql
+h3GetFaces(index)
+```
+
+**매개변수**
+
+* `index` — 육각형 인덱스 번호. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 지정된 H3 인덱스가 교차하는 정이십면체 면을 포함하는 배열. [배열](/ko/reference/data-types/array)([UInt64](/ko/reference/data-types/int-uint)).
+
+**예시**
+
+```sql title="Query"
+SELECT h3GetFaces(599686042433355775) AS faces;
+```
+
+```text title="Response"
+┌─faces─┐
+│ [7]   │
+└───────┘
+```
+
+<div id="h3cellaream2">
+  ## h3CellAreaM2
+</div>
+
+주어진 H3 인덱스에 해당하는 특정 셀의 정확한 면적을 제곱미터 단위로 반환합니다.
+
+**구문**
+
+```sql
+h3CellAreaM2(index)
+```
+
+**매개변수**
+
+* `index` — 육각형 인덱스 번호. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 제곱미터 단위의 셀의 면적. [Float64](/ko/reference/data-types/float).
+
+**예시**
+
+```sql title="Query"
+SELECT h3CellAreaM2(579205133326352383) AS area;
+```
+
+```text title="Response"
+┌───────────────area─┐
+│ 4106166334463.9233 │
+└────────────────────┘
+```
+
+<div id="h3cellarearads2">
+  ## h3CellAreaRads2
+</div>
+
+주어진 H3 인덱스에 해당하는 특정 셀의 정확한 면적을 제곱 라디안 단위로 반환합니다.
+
+**구문**
+
+```sql
+h3CellAreaRads2(index)
+```
+
+**매개변수**
+
+* `index` — 육각형 인덱스 번호. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 제곱 라디안 단위의 셀 면적입니다. [Float64](/ko/reference/data-types/float).
+
+**예시**
+
+```sql title="Query"
+SELECT h3CellAreaRads2(579205133326352383) AS area;
+```
+
+```text title="Response"
+┌────────────────area─┐
+│ 0.10116268528089567 │
+└─────────────────────┘
+```
+
+<div id="h3tocenterchild">
+  ## h3ToCenterChild
+</div>
+
+주어진 [H3](#h3-index)에서 지정된 해상도의 중심 자식(더 세분화된) [H3](#h3-index) 인덱스를 반환합니다.
+
+**구문**
+
+```sql
+h3ToCenterChild(index, resolution)
+```
+
+**매개변수**
+
+* `index` — 육각형 인덱스 번호. [UInt64](/ko/reference/data-types/int-uint).
+* `resolution` — 인덱스 해상도. 범위: `[0, 15]`. [UInt8](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 지정된 해상도에서 주어진 [H3](#h3-index)에 포함되는 중앙 자식의 [H3](#h3-index) 인덱스입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**예시**
+
+```sql title="Query"
+SELECT h3ToCenterChild(577023702256844799,1) AS centerToChild;
+```
+
+```text title="Response"
+┌──────centerToChild─┐
+│ 581496515558637567 │
+└────────────────────┘
+```
+
+<div id="h3exactedgelengthm">
+  ## h3ExactEdgeLengthM
+</div>
+
+입력된 h3 인덱스가 나타내는 에지의 정확한 길이를 미터 단위로 반환합니다.
+
+**구문**
+
+```sql
+h3ExactEdgeLengthM(index)
+```
+
+**매개변수**
+
+* `index` — 육각형 인덱스 번호. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 미터 단위의 정확한 변의 길이. [Float64](/ko/reference/data-types/float).
+
+**예시**
+
+```sql title="Query"
+SELECT h3ExactEdgeLengthM(1310277011704381439) AS exactEdgeLengthM;;
+```
+
+```text title="Response"
+┌───exactEdgeLengthM─┐
+│ 195449.63163407316 │
+└────────────────────┘
+```
+
+<div id="h3exactedgelengthkm">
+  ## h3ExactEdgeLengthKm
+</div>
+
+입력된 h3 인덱스가 나타내는 에지의 정확한 길이를 킬로미터 단위로 반환합니다.
+
+**구문**
+
+```sql
+h3ExactEdgeLengthKm(index)
+```
+
+**매개변수**
+
+* `index` — 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 킬로미터 단위의 정확한 변 길이입니다. [Float64](/ko/reference/data-types/float).
+
+**예시**
+
+```sql title="Query"
+SELECT h3ExactEdgeLengthKm(1310277011704381439) AS exactEdgeLengthKm;;
+```
+
+```text title="Response"
+┌──exactEdgeLengthKm─┐
+│ 195.44963163407317 │
+└────────────────────┘
+```
+
+<div id="h3exactedgelengthrads">
+  ## h3ExactEdgeLengthRads
+</div>
+
+입력 H3 인덱스로 표현된 에지의 정확한 길이를 라디안 단위로 반환합니다.
+
+**구문**
+
+```sql
+h3ExactEdgeLengthRads(index)
+```
+
+**매개변수**
+
+* `index` — 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 라디안 단위의 정확한 변 길이입니다. [Float64](/ko/reference/data-types/float).
+
+**예시**
+
+```sql title="Query"
+SELECT h3ExactEdgeLengthRads(1310277011704381439) AS exactEdgeLengthRads;;
+```
+
+```text title="Response"
+┌──exactEdgeLengthRads─┐
+│ 0.030677980118976447 │
+└──────────────────────┘
+```
+
+<div id="h3numhexagons">
+  ## h3NumHexagons
+</div>
+
+지정된 해상도에서 고유한 H3 인덱스 개수를 반환합니다.
+
+**구문**
+
+```sql
+h3NumHexagons(resolution)
+```
+
+**매개변수**
+
+* `resolution` — 인덱스 해상도. 범위: `[0, 15]`. [UInt8](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* H3 인덱스 개수. [Int64](/ko/reference/data-types/int-uint).
+
+**예시**
+
+```sql title="Query"
+SELECT h3NumHexagons(3) AS numHexagons;
+```
+
+```text title="Response"
+┌─numHexagons─┐
+│       41162 │
+└─────────────┘
+```
+
+<div id="h3pointdistm">
+  ## h3PointDistM
+</div>
+
+GeoCoord 점(위도/경도) 쌍 간의 &quot;대권&quot; 또는 &quot;haversine&quot; 거리를 미터 단위로 반환합니다.
+
+**구문**
+
+```sql
+h3PointDistM(lat1, lon1, lat2, lon2)
+```
+
+**인수**
+
+* `lat1`, `lon1` — point1의 위도와 경도(도 단위)입니다. [Float64](/ko/reference/data-types/float).
+* `lat2`, `lon2` — point2의 위도와 경도(도 단위)입니다. [Float64](/ko/reference/data-types/float).
+
+**반환 값**
+
+* 미터 단위의 haversine 또는 great circle 거리입니다.[Float64](/ko/reference/data-types/float).
+
+**예시**
+
+```sql title="Query"
+SELECT h3PointDistM(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistM;
+```
+
+```text title="Response"
+┌──────h3PointDistM─┐
+│ 2223901.039504589 │
+└───────────────────┘
+```
+
+<div id="h3pointdistkm">
+  ## h3PointDistKm
+</div>
+
+GeoCoord 점(위도/경도) 쌍 사이의 &quot;대권&quot; 또는 &quot;haversine&quot; 거리를 킬로미터 단위로 반환합니다.
+
+**구문**
+
+```sql
+h3PointDistKm(lat1, lon1, lat2, lon2)
+```
+
+**인수**
+
+* `lat1`, `lon1` — 지점 1의 위도와 경도(도 단위)입니다. [Float64](/ko/reference/data-types/float).
+* `lat2`, `lon2` — 지점 2의 위도와 경도(도 단위)입니다. [Float64](/ko/reference/data-types/float).
+
+**반환 값**
+
+* 킬로미터 단위의 haversine 또는 대권 거리입니다. [Float64](/ko/reference/data-types/float).
+
+**예시**
+
+```sql title="Query"
+SELECT h3PointDistKm(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistKm;
+```
+
+```text title="Response"
+┌─────h3PointDistKm─┐
+│ 2223.901039504589 │
+└───────────────────┘
+```
+
+<div id="h3pointdistrads">
+  ## h3PointDistRads
+</div>
+
+GeoCoord 점(위도/경도) 쌍 사이의 &quot;great circle&quot; 또는 &quot;haversine&quot; 거리를 라디안으로 반환합니다.
+
+**구문**
+
+```sql
+h3PointDistRads(lat1, lon1, lat2, lon2)
+```
+
+**인수**
+
+* `lat1`, `lon1` — 점 1의 위도와 경도(도 단위)입니다. [Float64](/ko/reference/data-types/float).
+* `lat2`, `lon2` — 점 2의 위도와 경도(도 단위)입니다. [Float64](/ko/reference/data-types/float).
+
+**반환 값**
+
+* 라디안 단위의 haversine 또는 great circle 거리입니다. [Float64](/ko/reference/data-types/float).
+
+**예시**
+
+```sql title="Query"
+SELECT h3PointDistRads(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistRads;
+```
+
+```text title="Response"
+┌────h3PointDistRads─┐
+│ 0.3490658503988659 │
+└────────────────────┘
+```
+
+<div id="h3getres0indexes">
+  ## h3GetRes0Indexes
+</div>
+
+해상도 0의 모든 H3 인덱스로 이루어진 배열을 반환합니다.
+
+**구문**
+
+```sql
+h3GetRes0Indexes()
+```
+
+**반환 값**
+
+* 해상도 0의 모든 H3 인덱스로 구성된 [배열](/ko/reference/data-types/array)([UInt64](/ko/reference/data-types/int-uint)).
+
+**예시**
+
+```sql title="Query"
+SELECT h3GetRes0Indexes AS indexes ;
+```
+
+```text title="Response"
+┌─indexes─────────────────────────────────────┐
+│ [576495936675512319,576531121047601151,....]│
+└─────────────────────────────────────────────┘
+```
+
+<div id="h3getpentagonindexes">
+  ## h3GetPentagonIndexes
+</div>
+
+지정된 해상도의 모든 오각형 H3 인덱스를 반환합니다.
+
+**구문**
+
+```sql
+h3GetPentagonIndexes(resolution)
+```
+
+**매개변수**
+
+* `resolution` — 인덱스 해상도. 범위: `[0, 15]`. [UInt8](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 모든 오각형 H3 인덱스의 [배열](/ko/reference/data-types/array)([UInt64](/ko/reference/data-types/int-uint)).
+
+**예시**
+
+```sql title="Query"
+SELECT h3GetPentagonIndexes(3) AS indexes;
+```
+
+```text title="Response"
+┌─indexes────────────────────────────────────────────────────────┐
+│ [590112357393367039,590464201114255359,590816044835143679,...] │
+└────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3line">
+  ## h3Line
+</div>
+
+주어진 두 인덱스 사이를 잇는 인덱스 선을 반환합니다.
+
+**구문**
+
+```sql
+h3Line(start,end)
+```
+
+**매개변수**
+
+* `start` — 시작 지점을 나타내는 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+* `end` — 끝 지점을 나타내는 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+지정된 두 인덱스를 잇는 인덱스 선을 나타내는 H3 인덱스의 배열입니다. [배열](/ko/reference/data-types/array)([UInt64](/ko/reference/data-types/int-uint)).
+
+**예시**
+
+```sql title="Query"
+ SELECT h3Line(590080540275638271,590103561300344831) AS indexes;
+```
+
+```text title="Response"
+┌─indexes────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [590080540275638271,590080471556161535,590080883873021951,590106516237844479,590104385934065663,590103630019821567,590103561300344831] │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3distance">
+  ## h3Distance
+</div>
+
+주어진 두 인덱스 사이의 거리를 그리드 셀 단위로 반환합니다.
+
+**구문**
+
+```sql
+h3Distance(start,end)
+```
+
+**매개변수**
+
+* `start` — 시작 지점을 나타내는 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+* `end` — 종료 지점을 나타내는 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 격자 셀 수입니다. [Int64](/ko/reference/data-types/int-uint).
+
+거리를 계산하지 못하면 음수를 반환합니다.
+
+**예시**
+
+```sql title="Query"
+ SELECT h3Distance(590080540275638271,590103561300344831) AS distance;
+```
+
+```text title="Response"
+┌─distance─┐
+│        7 │
+└──────────┘
+```
+
+<div id="h3hexring">
+  ## h3HexRing
+</div>
+
+지정된 origin h3Index를 중심으로 길이 k인 육각형 링의 인덱스를 반환합니다.
+
+오각형 왜곡이 없으면 0을 반환합니다.
+
+**구문**
+
+```sql
+h3HexRing(index, k)
+```
+
+**매개변수**
+
+* `index` — 시작점을 나타내는 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+* `k` — 거리입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* H3 인덱스 배열입니다. [배열](/ko/reference/data-types/array)([UInt64](/ko/reference/data-types/int-uint)).
+
+**예시**
+
+```sql title="Query"
+ SELECT h3HexRing(590080540275638271, toUInt16(1)) AS hexRing;
+```
+
+```text title="Response"
+┌─hexRing─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [590080815153545215,590080471556161535,590080677714591743,590077585338138623,590077447899185151,590079509483487231] │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3getunidirectionaledge">
+  ## h3GetUnidirectionalEdge
+</div>
+
+지정된 시작점과 대상을 기반으로 에지 H3 인덱스를 반환하며, 오류가 발생하면 0을 반환합니다.
+
+**구문**
+
+```sql
+h3GetUnidirectionalEdge(originIndex, destinationIndex)
+```
+
+**매개변수**
+
+* `originIndex` — 시작 육각형의 인덱스 번호. [UInt64](/ko/reference/data-types/int-uint).
+* `destinationIndex` — 대상 육각형의 인덱스 번호. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 에지의 육각형 인덱스 번호. [UInt64](/ko/reference/data-types/int-uint).
+
+**예시**
+
+```sql title="Query"
+ SELECT h3GetUnidirectionalEdge(599686042433355775, 599686043507097599) AS edge;
+```
+
+```text title="Response"
+┌────────────────edge─┐
+│ 1248204388774707199 │
+└─────────────────────┘
+```
+
+<div id="h3unidirectionaledgeisvalid">
+  ## h3UnidirectionalEdgeIsValid
+</div>
+
+주어진 H3Index가 유효한 에지 인덱스인지 판별합니다. 에지이면 1을 반환하고, 아니면 0을 반환합니다.
+
+**구문**
+
+```sql
+h3UnidirectionalEdgeisValid(index)
+```
+
+**매개변수**
+
+* `index` — 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 1 — H3 인덱스가 유효한 에지입니다. [UInt8](/ko/reference/data-types/int-uint).
+* 0 — H3 인덱스가 유효한 에지가 아닙니다. [UInt8](/ko/reference/data-types/int-uint).
+
+**예시**
+
+```sql title="Query"
+ SELECT h3UnidirectionalEdgeIsValid(1248204388774707199) AS validOrNot;
+```
+
+```text title="Response"
+┌─validOrNot─┐
+│          1 │
+└────────────┘
+```
+
+<div id="h3getoriginindexfromunidirectionaledge">
+  ## h3GetOriginIndexFromUnidirectionalEdge
+</div>
+
+에지 H3Index에서 시작 육각형 인덱스를 반환합니다.
+
+**구문**
+
+```sql
+h3GetOriginIndexFromUnidirectionalEdge(edge)
+```
+
+**매개변수**
+
+* `edge` — 에지를 나타내는 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 원점 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**예시**
+
+```sql title="Query"
+ SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707197) AS origin;
+```
+
+```text title="Response"
+┌─────────────origin─┐
+│ 599686042433355773 │
+└────────────────────┘
+```
+
+<div id="h3getdestinationindexfromunidirectionaledge">
+  ## h3GetDestinationIndexFromUnidirectionalEdge
+</div>
+
+에지 H3Index로부터 대상 육각형 인덱스를 반환합니다.
+
+**구문**
+
+```sql
+h3GetDestinationIndexFromUnidirectionalEdge(edge)
+```
+
+**매개변수**
+
+* `edge` — 에지를 나타내는 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 대상 육각형의 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**예시**
+
+```sql title="Query"
+ SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707197) AS destination;
+```
+
+```text title="Response"
+┌────────destination─┐
+│ 599686043507097597 │
+└────────────────────┘
+```
+
+<div id="h3getindexesfromunidirectionaledge">
+  ## h3GetIndexesFromUnidirectionalEdge
+</div>
+
+주어진 에지 H3Index로부터 출발지 및 대상 육각형 인덱스를 반환합니다.
+
+**구문**
+
+```sql
+h3GetIndexesFromUnidirectionalEdge(edge)
+```
+
+**매개변수**
+
+* `edge` — 에지를 나타내는 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+두 개의 값으로 구성된 튜플 `tuple(origin,destination)`입니다.
+
+* `origin` — 시작 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+* `destination` — 대상 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+입력값이 유효하지 않으면 `(0,0)`을 반환합니다.
+
+**예시**
+
+```sql title="Query"
+ SELECT h3GetIndexesFromUnidirectionalEdge(1248204388774707199) AS indexes;
+```
+
+```text title="Response"
+┌─indexes─────────────────────────────────┐
+│ (599686042433355775,599686043507097599) │
+└─────────────────────────────────────────┘
+```
+
+<div id="h3getunidirectionaledgesfromhexagon">
+  ## h3GetUnidirectionalEdgesFromHexagon
+</div>
+
+지정된 H3Index의 모든 에지를 반환합니다.
+
+**구문**
+
+```sql
+h3GetUnidirectionalEdgesFromHexagon(index)
+```
+
+**매개변수**
+
+* `index` — 에지를 나타내는 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+각 에지를 나타내는 H3 인덱스의 배열입니다. [배열](/ko/reference/data-types/array)([UInt64](/ko/reference/data-types/int-uint)).
+
+**예시**
+
+```sql title="Query"
+ SELECT h3GetUnidirectionalEdgesFromHexagon(1248204388774707199) AS edges;
+```
+
+```text title="Response"
+┌─edges─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [1248204388774707199,1320261982812635135,1392319576850563071,1464377170888491007,1536434764926418943,1608492358964346879] │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3getunidirectionaledgeboundary">
+  ## h3GetUnidirectionalEdgeBoundary
+</div>
+
+에지를 구성하는 좌표를 반환합니다.
+
+**구문**
+
+```sql
+h3GetUnidirectionalEdgeBoundary(index)
+```
+
+**매개변수**
+
+* `index` — 에지를 나타내는 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* &#39;(lon, lat)&#39; 쌍으로 이루어진 배열입니다. [배열](/ko/reference/data-types/array)([Float64](/ko/reference/data-types/float), [Float64](/ko/reference/data-types/float)).
+
+**예시**
+
+```sql title="Query"
+ SELECT h3GetUnidirectionalEdgeBoundary(1248204388774707199) AS boundary;
+```
+
+```text title="Response"
+┌─boundary────────────────────────────────────────────────────────────────────────┐
+│ [(37.42012867767779,-122.03773496427027),(37.33755608435299,-122.090428929044)] │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```

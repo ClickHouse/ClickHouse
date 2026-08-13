@@ -1,0 +1,999 @@
+---
+slug: /changelogs/25.8
+title: 'changelog v25.8 pour Cloud'
+description: 'changelog de la Fast release v25.8'
+keywords: ['changelog', 'cloud']
+sidebarTitle: '25.8'
+doc_type: 'changelog'
+---
+
+<div id="backward-incompatible-changes">
+  ## Modifications incompatibles avec les versions précédentes
+</div>
+
+<div id="json-and-data-format-changes">
+  ### Modifications apportées à JSON et aux formats de données
+</div>
+
+* Désactivation par défaut de la mise entre guillemets des entiers 64 bits dans les formats JSON. [#74079](https://github.com/ClickHouse/ClickHouse/pull/74079) ([Pavel Kruglov](https://github.com/Avogar)).
+* Inférence de `Array(Dynamic)` au lieu d&#39;un `Tuple` non nommé pour les tableaux de valeurs de types différents en JSON. Pour retrouver le comportement précédent, désactivez le paramètre [`input_format_json_infer_array_of_dynamic_from_array_of_different_types`](/fr/reference/settings/formats#input_format_json_infer_array_of_dynamic_from_array_of_different_types). [#80859](https://github.com/ClickHouse/ClickHouse/pull/80859) ([Pavel Kruglov](https://github.com/Avogar)).
+* Écriture par défaut des valeurs de type `Enum` sous forme de `BYTE_ARRAY` avec le type logique `ENUM` dans le format de sortie Parquet. [#84169](https://github.com/ClickHouse/ClickHouse/pull/84169) ([Pavel Kruglov](https://github.com/Avogar)).
+
+<div id="storage-and-partitioning">
+  ### Stockage et partitionnement
+</div>
+
+* Ajout de la prise en charge des écritures au format de partitionnement Hive et refonte de l’implémentation des lectures (les colonnes de partition Hive ne sont plus virtuelles). [#76802](https://github.com/ClickHouse/ClickHouse/pull/76802) ([Arthur Passos](https://github.com/arthurpassos)).
+* Activation par défaut du paramètre MergeTree [`write_marks_for_substreams_in_compact_parts`](/fr/reference/settings/merge-tree-settings#write_marks_for_substreams_in_compact_parts). Cela améliore considérablement les performances de lecture des sous-colonnes à partir des nouvelles parts Compact. Les serveurs dont la version est inférieure à 25.5 ne pourront pas lire ces nouvelles parts Compact. [#84171](https://github.com/ClickHouse/ClickHouse/pull/84171) ([Pavel Kruglov](https://github.com/Avogar)).
+* Interdiction de `RENAME COLUMN` ou `DROP COLUMN` sur des colonnes explicitement listées pour la sommation dans SummingMergeTree. Résout [#81836](https://github.com/ClickHouse/ClickHouse/issues/81836). [#82821](https://github.com/ClickHouse/ClickHouse/pull/82821) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+
+<div id="function-enhancements">
+  ### Améliorations des fonctions
+</div>
+
+* Ajout d&#39;un nouvel argument `unexpected_quoting_character_strategy` à la fonction [`extractKeyValuePairs`](/fr/reference/functions/regular-functions/tuple-map-functions#extractKeyValuePairs), qui contrôle le comportement lorsqu&#39;un `quoting_character` est rencontré de manière inattendue. Pour plus de détails, consultez la documentation de [`extractKeyValuePairs`](/fr/reference/functions/regular-functions/tuple-map-functions#extractKeyValuePairs). [#80657](https://github.com/ClickHouse/ClickHouse/pull/80657) ([Arthur Passos](https://github.com/arthurpassos)).
+* Auparavant, la fonction [`countMatches`](/fr/reference/functions/regular-functions/string-search-functions#countMatches) arrêtait le comptage à la première correspondance vide, même si le pattern l&#39;autorise. Pour corriger ce problème, `countMatches` poursuit désormais son exécution en avançant d&#39;un seul caractère lorsqu&#39;une correspondance vide se produit. Les utilisateurs qui souhaitent conserver l&#39;ancien comportement peuvent activer le paramètre `count_matches_stop_at_empty_match`. [#81676](https://github.com/ClickHouse/ClickHouse/pull/81676) ([Elmi Ahmadov](https://github.com/ahmadov)).
+
+<div id="data-type-improvements">
+  ### Améliorations des types de données
+</div>
+
+* Amélioration de la précision de la conversion de `Decimal` en `Float32`. Implémentation de la conversion de `Decimal` en `BFloat16`. Résout [#82660](https://github.com/ClickHouse/ClickHouse/issues/82660). [#82823](https://github.com/ClickHouse/ClickHouse/pull/82823) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+
+<div id="performance-and-resource-management">
+  ### Performances et gestion des ressources
+</div>
+
+* Auparavant, les requêtes `BACKUP`, les merges et les mutations n&#39;utilisaient pas les limiteurs à l&#39;échelle du serveur pour le trafic local (`max_local_read_bandwidth_for_server` et `max_local_write_bandwidth_for_server`) et distant (`max_remote_read_network_bandwidth_for_server` et `max_remote_write_network_bandwidth_for_server`) ; elles étaient uniquement limitées par des paramètres serveur dédiés (`max_backup_bandwidth_for_server`, `max_mutations_bandwidth_for_server` et `max_merges_bandwidth_for_server`). Désormais, elles utilisent simultanément les deux types de limiteurs. [#81753](https://github.com/ClickHouse/ClickHouse/pull/81753) ([Sergei Trifonov](https://github.com/serxa)).
+* Ajout d&#39;un nouveau paramètre [`cluster_function_process_archive_on_multiple_nodes`](/fr/reference/settings/session-settings#cluster_function_process_archive_on_multiple_nodes) qui améliore les performances du traitement des archives dans les fonctions de cluster lorsqu&#39;il est défini sur true (par défaut). Il doit être défini sur `false` pour des raisons de compatibilité et afin d&#39;éviter des erreurs lors de la mise à niveau vers la version 25.7+ si vous utilisez des fonctions de cluster avec des archives sur des versions antérieures. [#82355](https://github.com/ClickHouse/ClickHouse/pull/82355) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* La valeur par défaut précédente de [`concurrent_threads_scheduler`](/fr/reference/settings/server-settings/settings#concurrent_threads_scheduler) était `round_robin`, qui s&#39;est révélé inéquitable en présence d&#39;un grand nombre de requêtes mono-thread (par ex. des `INSERT`). Cette modification fait de `fair_round_robin`, une alternative plus sûre, l&#39;ordonnanceur par défaut. [#84747](https://github.com/ClickHouse/ClickHouse/pull/84747) ([Sergei Trifonov](https://github.com/serxa)).
+* La matérialisation paresseuse est activée uniquement avec l&#39;analyseur afin d&#39;éviter d&#39;avoir à la maintenir sans l&#39;analyseur, ce qui peut poser certains problèmes (par exemple lors de l&#39;utilisation de `indexHint()` dans des conditions). [#83791](https://github.com/ClickHouse/ClickHouse/pull/83791) ([Igor Nikonov](https://github.com/devcrafter)).
+
+<div id="schema-and-sql-syntax">
+  ### Schéma et syntaxe SQL
+</div>
+
+* Interdire la création d&#39;une table sans colonnes pouvant recevoir des insertions. [#81835](https://github.com/ClickHouse/ClickHouse/pull/81835) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
+* Exiger des backticks autour des identifiants contenant des points dans les expressions par défaut afin d&#39;éviter qu&#39;ils soient analysés comme des identifiants composés. [#83162](https://github.com/ClickHouse/ClickHouse/pull/83162) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
+* Prendre en charge la syntaxe Heredoc de style PostgreSQL : `$tag$ string contents... $tag$`, également appelée littéraux de chaîne délimités par des dollars. Dans les versions précédentes, les tags étaient soumis à moins de restrictions : ils pouvaient contenir des caractères arbitraires, y compris des signes de ponctuation et des espaces. Cela introduit une ambiguïté d&#39;analyse avec les identifiants qui peuvent eux aussi commencer par le caractère dollar. Or, PostgreSQL n&#39;autorise que des caractères de mot dans les tags. Pour résoudre ce problème, nous limitons désormais les tags heredoc à ces seuls caractères. Résout [#84731](https://github.com/ClickHouse/ClickHouse/issues/84731). [#84846](https://github.com/ClickHouse/ClickHouse/pull/84846) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+
+<div id="security-and-permissions">
+  ### Sécurité et permissions
+</div>
+
+* `SYSTEM RESTART REPLICAS` redémarre uniquement les répliques dans les bases de données où vous disposez du droit d’exécuter `SHOW TABLES`. Auparavant, la requête provoquait l’activation des tables de la base de données Lazy, même sans accès à cette base, alors que ces tables étaient supprimées simultanément. [#83321](https://github.com/ClickHouse/ClickHouse/pull/83321) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Les fonctions `azureBlobStorage`, `deltaLakeAzure` et `icebergAzure` ont été mises à jour afin de vérifier correctement les autorisations `AZURE`. Toutes les fonctions avec variante cluster (fonctions `-Cluster`) vérifient désormais les autorisations par rapport à leurs équivalents correspondants sans cluster. Pour éviter les erreurs d’autorisation, assurez-vous que les utilisateurs qui appellent les fonctions `-Cluster` disposent des privilèges appropriés (par exemple, `GRANT S3 ON *.* TO user`). De plus, les fonctions `icebergLocal` et `deltaLakeLocal` appliquent désormais les vérifications d’autorisation `FILE`. [#84938](https://github.com/ClickHouse/ClickHouse/pull/84938) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov
+
+<div id="new-feature">
+  ## Nouvelles fonctionnalités
+</div>
+
+<div id="data-types">
+  ### Types de données
+</div>
+
+* Ajout de nouveaux types de données : [`Time`](/fr/reference/data-types/time) `([H]HH:MM:SS)` et [`Time64`](/fr/reference/data-types/time64) `([H]HH:MM:SS[.fractional])`, ainsi que de quelques fonctions de conversion de base et de fonctions permettant d’interagir avec d’autres types de données. Ajout de paramètres assurant la compatibilité avec l’ancienne fonction `ToTime`. [#81217](https://github.com/ClickHouse/ClickHouse/pull/81217) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+
+<div id="functions">
+  ### Fonctions
+</div>
+
+* Ajoute [`NumericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions), une nouvelle structure de données vectorielle reposant sur une compression bitmap roaring bit-sliced, ainsi que plus de 20 fonctions pour la construire, l’analyser et effectuer des opérations arithmétiques point à point. Peut réduire le stockage et accélérer les jointures, les filtres et les agrégations sur des données clairsemées. Implémente [#70582](https://github.com/ClickHouse/ClickHouse/issues/70582) et l’article [&quot;Large-Scale Metric Computation in Online Controlled Experiment Platform&quot;](https://arxiv.org/abs/2405.08411) de T. Xiong et Y. Wang, présenté à VLDB 2024. [#74193](https://github.com/ClickHouse/ClickHouse/pull/74193) ([FriendLey](https://github.com/FriendLey)).
+* Ajoute des fonctions financières : [`financialInternalRateOfReturnExtended`](/fr/reference/functions/regular-functions/financial-functions#financialInternalRateOfReturnExtended) (`XIRR`), [`financialInternalRateOfReturn`](/fr/reference/functions/regular-functions/financial-functions#financialInternalRateOfReturn) (`IRR`), [`financialNetPresentValueExtended`](/fr/reference/functions/regular-functions/financial-functions#financialNetPresentValueExtended) (`XNPV`), [`financialNetPresentValue`](/fr/reference/functions/regular-functions/financial-functions#financialNetPresentValue) (`NPV`). [#81599](https://github.com/ClickHouse/ClickHouse/pull/81599) ([Joanna Hulboj](https://github.com/jh0x)).
+* Ajoute les fonctions géospatiales [`polygonIntersectsCartesian`](/fr/reference/functions/regular-functions/geo/polygon#polygonsintersectcartesian) et [`polygonIntersectsSpherical`](/fr/reference/functions/regular-functions/geo/polygon#polygonsintersectspherical) pour vérifier si deux polygones se croisent. [#81882](https://github.com/ClickHouse/ClickHouse/pull/81882) ([Paul Lamb](https://github.com/plamb)).
+* Prend en charge les window functions [`lag`](/fr/reference/functions/window-functions/lag) et [`lead`](/fr/reference/functions/window-functions/lead). Ferme [#9887](https://github.com/ClickHouse/ClickHouse/issues/9887). [#82108](https://github.com/ClickHouse/ClickHouse/pull/82108) ([Dmitry Novik](https://github.com/novikd)).
+* Ajoute les fonctions [`colorSRGBToOkLCH`](/fr/reference/functions/regular-functions/other-functions#colorSRGBToOKLCH) et [`colorOkLCHToSRGB`](/fr/reference/functions/regular-functions/other-functions#colorOKLCHToSRGB) pour convertir des couleurs entre les espaces colorimétriques sRGB et OkLCH. [#83679](https://github.com/ClickHouse/ClickHouse/pull/83679) ([Fgrtue](https://github.com/Fgrtue)).
+* Vous pouvez désormais effectuer des recherches de clés JSON insensibles à la casse à l’aide de [`JSONExtractCaseInsensitive`](/fr/reference/functions/regular-functions/json-functions#JSONExtractCaseInsensitive) (ainsi que d’autres variantes de `JSONExtract`). [#83770](https://github.com/ClickHouse/ClickHouse/pull/83770) ([Alistair Evans](https://github.com/alistairjevans)).
+* Ajoute une nouvelle fonction [`nowInBlock64`](/fr/reference/functions/regular-functions/date-time-functions#nowInBlock64). [#84178](https://github.com/ClickHouse/ClickHouse/pull/84178) ([Halersson Paris](https://github.com/halersson)).
+* Ajoute la fonction [`dateTimeToUUIDv7`](/fr/reference/functions/regular-functions/uuid-functions#dateTimeToUUIDv7) pour convertir une valeur DateTime en UUIDv7. Exemple d’utilisation : `SELECT dateTimeToUUIDv7(toDateTime('2025-08-15 18:57:56'))` renvoie `0198af18-8320-7a7d-abd3-358db23b9d5c`. [#84319](https://github.com/ClickHouse/ClickHouse/pull/84319) ([samradovich](https://github.com/samradovich)).
+* Ajoute les aggregate functions [`timeSeriesDerivToGrid`](/fr/reference/functions/aggregate-functions/timeSeriesDerivToGrid) et [`timeSeriesPredictLinearToGrid`](/fr/reference/functions/aggregate-functions/timeSeriesPredictLinearToGrid) pour rééchantillonner des données sur une grille temporelle définie par le timestamp de début, le timestamp de fin et le step spécifiés ; calcule respectivement `deriv` et `predict_linear`, avec une sémantique de type PromQL-like. [#84328](https://github.com/ClickHouse/ClickHouse/pull/84328) ([Stephen Chi](https://github.com/stephchi0)).
+* Ajout des fonctions [`timeSeriesRange`](/fr/reference/functions/regular-functions/time-series-functions#timeSeriesRange) et [`timeSeriesFromGrid`](/fr/reference/functions/regular-functions/time-series-functions#timeSeriesFromGrid). [#85435](https://github.com/ClickHouse/ClickHouse/pull/85435) ([Vitaly Baranov](https://github.com/vitlibar)).
+
+<div id="system-tables">
+  ### Tables système
+</div>
+
+* Ajout d’une table [`system.dead_letter_queue`](/fr/reference/system-tables/dead_letter_queue) pour conserver les messages entrants erronés provenant d’engines comme Kafka. [#68873](https://github.com/ClickHouse/ClickHouse/pull/68873) ([Ilya Golshtein](https://github.com/ilejn)).
+* Ajout de la table système [`system.zookeeper_connection_log`](/fr/reference/system-tables/zookeeper_connection_log) pour stocker des informations historiques sur les connexions ZooKeeper. [#79494](https://github.com/ClickHouse/ClickHouse/pull/79494) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
+* Ajout d’une nouvelle table système [`system.codecs`](/fr/reference/system-tables/codecs) pour examiner les codecs disponibles. (issue [#81525](https://github.com/ClickHouse/ClickHouse/issues/81525)). [#81600](https://github.com/ClickHouse/ClickHouse/pull/81600) ([Jimmy Aguilar Mena](https://github.com/Ergus)).
+* Ajout de la table `system.completions`. Résout [#81889](https://github.com/ClickHouse/ClickHouse/issues/81889). [#83833](https://github.com/ClickHouse/ClickHouse/pull/83833) ([|2ustam](https://github.com/RuS2m)).
+
+<div id="iceberg-and-deltalake">
+  ### Iceberg et DeltaLake
+</div>
+
+* Prise en charge des types complexes dans la schema evolution d’Iceberg. [#73714](https://github.com/ClickHouse/ClickHouse/pull/73714) ([scanhex12](https://github.com/scanhex12)).
+* Prise en charge des écritures Iceberg pour les requêtes `insert`. [#82692](https://github.com/ClickHouse/ClickHouse/pull/82692) ([scanhex12](https://github.com/scanhex12)).
+* Prise en charge des suppressions positionnelles pour le moteur de table Iceberg. [#83094](https://github.com/ClickHouse/ClickHouse/pull/83094) ([Daniil Ivanik](https://github.com/divanik)).
+* Lecture des fichiers de données Iceberg à partir des identifiants de champ. Clôture [#83065](https://github.com/ClickHouse/ClickHouse/issues/83065). [#83653](https://github.com/ClickHouse/ClickHouse/pull/83653) ([scanhex12](https://github.com/scanhex12)).
+* Écritures Iceberg pour CREATE. Clôture [#83927](https://github.com/ClickHouse/ClickHouse/issues/83927). [#83983](https://github.com/ClickHouse/ClickHouse/pull/83983) ([scanhex12](https://github.com/scanhex12)).
+* Écritures pour les catalogs Glue. [#84136](https://github.com/ClickHouse/ClickHouse/pull/84136) ([scanhex12](https://github.com/scanhex12)).
+* Écritures pour les catalogs REST Iceberg. [#84684](https://github.com/ClickHouse/ClickHouse/pull/84684) ([scanhex12](https://github.com/scanhex12)).
+* Fusion de tous les position delete files Iceberg dans les fichiers de données. Cela réduira le nombre et la taille des fichiers Parquet dans le stockage Iceberg. Syntaxe : `OPTIMIZE TABLE table_name`. [#85250](https://github.com/ClickHouse/ClickHouse/pull/85250) ([scanhex12](https://github.com/scanhex12)).
+* Prise en charge de `DROP TABLE` pour Iceberg (suppression des catalogs REST/Glue + suppression des métadonnées de la table). [#85395](https://github.com/ClickHouse/ClickHouse/pull/85395) ([scanhex12](https://github.com/scanhex12)).
+* Prise en charge des mutations `ALTER DELETE` pour Iceberg au format merge-on-read. [#85549](https://github.com/ClickHouse/ClickHouse/pull/85549) ([scanhex12](https://github.com/scanhex12)).
+* Prise en charge des écritures dans DeltaLake. Clôture [#79603](https://github.com/ClickHouse/ClickHouse/issues/79603). [#85564](https://github.com/ClickHouse/ClickHouse/pull/85564) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Écriture de davantage de statistiques Iceberg (tailles des colonnes, bornes inférieures et supérieures) dans les métadonnées (entrées de manifeste) pour l’élagage min-max. [#85746](https://github.com/ClickHouse/ClickHouse/pull/85746) ([scanhex12](https://github.com/scanhex12)).
+* Prise en charge de l’ajout, de la suppression et de la modification de colonnes dans Iceberg pour les types simples. [#85769](https://github.com/ClickHouse/ClickHouse/pull/85769) ([scanhex12](https://github.com/scanhex12)).
+
+<div id="mergetree-and-storage">
+  ### MergeTree et stockage
+</div>
+
+* Toutes les tables prennent désormais en charge la colonne virtuelle `_table`, et plus seulement les tables de type Merge. [#63665](https://github.com/ClickHouse/ClickHouse/pull/63665) ([Xiaozhe Yu](https://github.com/wudidapaopao)).
+* Ajout de SZ3 comme codec de compression avec perte, mais à erreur bornée, pour les colonnes de type `Float32` et `Float64`. [#67161](https://github.com/ClickHouse/ClickHouse/pull/67161) ([scanhex12](https://github.com/scanhex12)).
+* Ajout de la prise en charge des mises à jour légères pour les tables de la famille `MergeTree`. Les mises à jour légères peuvent désormais être utilisées avec une nouvelle syntaxe : `UPDATE <table> SET col1 = val1, col2 = val2, ... WHERE <condition>`. Ajout également de l&#39;implémentation des suppressions légères via les mises à jour légères, activable en définissant `lightweight_delete_mode = 'lightweight_update'`. [#82004](https://github.com/ClickHouse/ClickHouse/pull/82004) ([Anton Popov](https://github.com/CurtizJ)).
+* Prise en charge de la colonne virtuelle `_part_granule_offset` dans les tables de la famille MergeTree. Cette colonne indique l&#39;index, à partir de zéro, du granule/repère auquel chaque ligne appartient au sein de sa data part. Cela corrige [#79572](https://github.com/ClickHouse/ClickHouse/issues/79572). [#82341](https://github.com/ClickHouse/ClickHouse/pull/82341) ([Amos Bird](https://github.com/amosbird)).
+
+<div id="protocol-and-client-support">
+  ### Prise en charge des protocoles et des clients
+</div>
+
+* Ajout de la prise en charge du protocole [ArrowFlight RPC](https://arrow.apache.org/docs/format/Flight.html) avec l’ajout du moteur de table [`arrowflight`](/fr/reference/engines/table-engines/integrations/arrowflight). [#74184](https://github.com/ClickHouse/ClickHouse/pull/74184) ([zakr600](https://github.com/zakr600)).
+* Ajout de la prise en charge de la commande `COPY` du protocole PostgreSQL. [#74344](https://github.com/ClickHouse/ClickHouse/pull/74344) ([scanhex12](https://github.com/scanhex12)).
+* Prise en charge du client C# pour le protocole MySQL. Cela clôt [#83992](https://github.com/ClickHouse/ClickHouse/issues/83992). [#84397](https://github.com/ClickHouse/ClickHouse/pull/84397) ([scanhex12](https://github.com/scanhex12)).
+* Connexion sécurisée imposée pour `mysql_port` et `postgresql_port`. [#82962](https://github.com/ClickHouse/ClickHouse/pull/82962) ([Shaohua Wang](https://github.com/tiandiwonder)).
+
+<div id="sql-and-query-features">
+  ### Fonctionnalités SQL et des requêtes
+</div>
+
+* Prise en charge de `DESCRIBE SELECT` en plus de `DESCRIBE (SELECT ...)`. [#82947](https://github.com/ClickHouse/ClickHouse/pull/82947) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* Prise en charge de la syntaxe `USE DATABASE {name}`. [#81307](https://github.com/ClickHouse/ClickHouse/pull/81307) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* La lecture depuis les projections est implémentée pour les répliques parallèles. Un nouveau paramètre [`parallel_replicas_support_projection`](/fr/reference/settings/session-settings#parallel_replicas_support_projection) a été ajouté pour déterminer si la prise en charge des projections est activée. Pour simplifier l’implémentation, cette prise en charge n’est activée que lorsque `parallel_replicas_local_plan` est actif. [#82807](https://github.com/ClickHouse/ClickHouse/pull/82807) ([zoomxi](https://github.com/zoomxi)).
+
+<div id="formats">
+  ### Formats
+</div>
+
+* Ajout du paramètre [`format_schema_source`](/fr/reference/settings/formats#format_schema_source), qui définit la source de `format_schema`. [#80874](https://github.com/ClickHouse/ClickHouse/pull/80874) ([Tuan Pham Anh](https://github.com/tuanpach)).
+* Ajout du nouveau format de sortie `Hash`. Il calcule une valeur de hachage unique pour toutes les colonnes et lignes du résultat. Cela est utile pour calculer une « empreinte » du résultat, par exemple dans les cas d’usage où le transfert de données constitue un goulot d’étranglement. Exemple : `SELECT arrayJoin(['abc', 'def']), 42 FORMAT Hash` renvoie `e5f9e676db098fdb9530d2059d8c23ef`. [#84607](https://github.com/ClickHouse/ClickHouse/pull/84607) ([Robert Schulze](https://github.com/rschu1ze)).
+
+<div id="server-configuration-and-workload-management">
+  ### Configuration du serveur et gestion des workloads
+</div>
+
+* Le paramètre serveur [`cpu_slot_preemption`](/fr/reference/settings/server-settings/settings#cpu_slot_preemption) active la planification préemptive du CPU pour les workloads et garantit une répartition max-min équitable du temps CPU entre les workloads. De nouveaux paramètres de workload de limitation du CPU ont été ajoutés : `max_cpus`, `max_cpu_share` et `max_burst_cpu_seconds`. [#80879](https://github.com/ClickHouse/ClickHouse/pull/80879) ([Sergei Trifonov](https://github.com/serxa)).
+* Le paramètre de workload [`max_waiting_queries`](/fr/reference/settings/server-settings/settings#max_waiting_queries) est désormais pris en charge. Il peut être utilisé pour limiter la taille de la file d’attente des requêtes. Si la limite est atteinte, toutes les requêtes suivantes sont interrompues avec l’erreur `SERVER_OVERLOADED`. [#81250](https://github.com/ClickHouse/ClickHouse/pull/81250) ([Oleg Doronin](https://github.com/dorooleg)).
+* La connexion TCP est fermée après un nombre configuré de requêtes ou un seuil de durée. Résout [#68000](https://github.com/ClickHouse/ClickHouse/issues/68000). [#81472](https://github.com/ClickHouse/ClickHouse/pull/81472) ([Kenny Sun](https://github.com/hwabis)).
+
+<div id="cloud-storage">
+  ### Cloud storage
+</div>
+
+* Ajout de `extra_credentials` à `AzureBlobStorage` pour l’authentification avec `client_id` et `tenant_id`. [#84235](https://github.com/ClickHouse/ClickHouse/pull/84235) ([Pablo Marcos](https://github.com/pamarcos)).
+
+<div id="keeper">
+  ### Keeper
+</div>
+
+* Possibilité de définir des watches arbitraires dans les requêtes Keeper Multi. [#84964](https://github.com/ClickHouse/ClickHouse/pull/84964) ([Mikhail Artemenko](https://github.com/Michicosun)).
+* Prise en charge des métriques partiellement agrégées. [#85328](https://github.com/ClickHouse/ClickHouse/pull/85328) ([Mikhail Artemenko](https://github.com/Michicosun)).
+
+<div id="experimental-features">
+  ## Fonctionnalités expérimentales
+</div>
+
+<div id="table-engines-and-table-functions">
+  ### Moteurs de table et fonctions de table
+</div>
+
+* Ajout du moteur de table YTsaurus et de la fonction de table YTsaurus. [#77606](https://github.com/ClickHouse/ClickHouse/pull/77606) ([MikhailBurdukov](https://github.com/MikhailBurdukov)).
+
+<div id="text-index-improvements">
+  ### Améliorations des index de texte
+</div>
+
+* Ajout des fonctions `searchAny` et `searchAll`, des outils généraux permettant d&#39;interroger les index de texte. [#80641](https://github.com/ClickHouse/ClickHouse/pull/80641) ([Elmi Ahmadov](https://github.com/ahmadov)).
+* L&#39;index de texte prend désormais en charge le tokenizer `string`. [#81752](https://github.com/ClickHouse/ClickHouse/pull/81752) ([Elmi Ahmadov](https://github.com/ahmadov)).
+* La valeur par défaut de la granularité d&#39;index des index `text` a été portée à 64. Cela améliore les performances attendues de la requête de test moyenne dans les benchmarks internes. [#82162](https://github.com/ClickHouse/ClickHouse/pull/82162) ([Jimmy Aguilar Mena](https://github.com/Ergus)).
+* Le bitmap de 256 bits stocke les labels sortants d&#39;un état dans l&#39;ordre, mais les états sortants sont enregistrés sur disque dans l&#39;ordre où ils apparaissent dans la table de hachage. Par conséquent, un label pouvait pointer vers un état suivant erroné lors de la lecture sur disque. [#82783](https://github.com/ClickHouse/ClickHouse/pull/82783) ([Elmi Ahmadov](https://github.com/ahmadov)).
+* Actuellement, l&#39;arbre FST est enregistré sur disque sans compression. Cela peut entraîner des performances plus faibles ou une consommation de bande passante d&#39;E/S plus élevée, aussi bien en écriture qu&#39;en lecture sur disque. [#83093](https://github.com/ClickHouse/ClickHouse/pull/83093) ([Elmi Ahmadov](https://github.com/ahmadov)).
+
+<div id="feature-maturity-updates">
+  ### Mises à jour de la maturité des fonctionnalités
+</div>
+
+* catalog est passé en bêta. [#85848](https://github.com/ClickHouse/ClickHouse/pull/85848) ([Melvyn Peignon](https://github.com/melvynator)).
+* Les mises à jour légères sont passées du stade expérimental au stade bêta. [#85952](https://github.com/ClickHouse/ClickHouse/pull/85952) ([Anton Popov](https://github.com/CurtizJ)).
+
+<div id="performance-improvements">
+  ## Améliorations des performances
+</div>
+
+<div id="query-execution-and-aggregation">
+  ### Exécution des requêtes et agrégation
+</div>
+
+* Optimisation triviale pour le combinateur de fonction d&#39;agrégation `-If`. [#78454](https://github.com/ClickHouse/ClickHouse/pull/78454) ([李扬](https://github.com/taiyang-li)).
+* Ajout d&#39;une nouvelle logique (contrôlée par le paramètre [`enable_producing_buckets_out_of_order_in_aggregation`](/fr/reference/settings/session-settings#enable_producing_buckets_out_of_order_in_aggregation), activé par défaut) permettant d&#39;envoyer certains buckets dans le désordre pendant une agrégation économe en mémoire. Lorsque certains buckets d&#39;agrégation mettent nettement plus de temps à fusionner que d&#39;autres, cela améliore les performances en permettant à l&#39;initiateur de fusionner entre-temps des buckets ayant des ID plus élevés. L&#39;inconvénient est une utilisation mémoire potentiellement plus élevée (qui ne devrait pas être significative). [#80179](https://github.com/ClickHouse/ClickHouse/pull/80179) ([Nikita Taranov](https://github.com/nickitat)).
+* Rend le pipeline après l&#39;étape `TOTALS` multithreadé. [#80331](https://github.com/ClickHouse/ClickHouse/pull/80331) ([UnamedRus](https://github.com/UnamedRus)).
+* Lorsque la requête d&#39;agrégation ne contient qu&#39;une seule fonction `COUNT()` sur une colonne `NOT NULL`, la logique d&#39;agrégation est entièrement intégrée lors de la recherche dans la table de hachage. Cela évite d&#39;allouer et de maintenir un quelconque état d&#39;agrégation, ce qui réduit considérablement l&#39;utilisation mémoire et la surcharge CPU. Cela répond partiellement à [#81982](https://github.com/ClickHouse/ClickHouse/issues/81982). [#82104](https://github.com/ClickHouse/ClickHouse/pull/82104) ([Amos Bird](https://github.com/amosbird)).
+* Calcul de la clé sérialisée en mode colonnaire lors d&#39;un groupement sur plusieurs colonnes de type chaîne ou numérique. [#83884](https://github.com/ClickHouse/ClickHouse/pull/83884) ([李扬](https://github.com/taiyang-li)).
+* Implémente `addManyDefaults` pour les combinateurs `-If`. [#83870](https://github.com/ClickHouse/ClickHouse/pull/83870) ([Raúl Marín](https://github.com/Algunenano)).
+
+<div id="join-optimizations">
+  ### Optimisations de JOIN
+</div>
+
+* Ajout du nouveau paramètre [`min_joined_block_size_rows`](/fr/reference/settings/session-settings#min_joined_block_size_rows) (analogue à `min_joined_block_size_bytes` ; valeur par défaut : 65409) pour contrôler la taille minimale des blocs (en rows) des blocs d&#39;entrée et de sortie de JOIN (si l&#39;algorithme de join le prend en charge). Les petits blocs seront squashed. [#81886](https://github.com/ClickHouse/ClickHouse/pull/81886) ([Nikita Taranov](https://github.com/nickitat)).
+* Les performances de `HashJoin` ont été optimisées en supprimant la boucle supplémentaire sur les tables de hachage dans le cas courant d&#39;une seule key column ; les vérifications de `null_map` et `join_mask` sont également supprimées lorsqu&#39;elles valent toujours `true`/`false`. [#82308](https://github.com/ClickHouse/ClickHouse/pull/82308) ([Nikita Taranov](https://github.com/nickitat)).
+* Les optimisations de `null_map` et `JoinMask` issues de [#82308](https://github.com/ClickHouse/ClickHouse/issues/82308) ont été appliquées au cas d&#39;un JOIN comportant plusieurs disjonctions. La data structure `KnownRowsHolder` a également été optimisée. [#83041](https://github.com/ClickHouse/ClickHouse/pull/83041) ([Nikita Taranov](https://github.com/nickitat)).
+* Un simple `std::vector<std::atomic_bool>` est utilisé pour les flags de join afin d&#39;éviter de calculer un hash à chaque accès à ces flags. [#83043](https://github.com/ClickHouse/ClickHouse/pull/83043) ([Nikita Taranov](https://github.com/nickitat)).
+* Traitement de `max_joined_block_rows` hors de la boucle principale du hash JOIN. Performances légèrement améliorées pour ALL JOIN. [#83216](https://github.com/ClickHouse/ClickHouse/pull/83216) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* La mémoire des colonnes de résultat n&#39;est plus préallouée à l&#39;avance lorsque `HashJoin` utilise le mode de sortie `lazy`. Cela est sous-optimal, en particulier lorsque le nombre de correspondances est faible. De plus, le nombre exact de correspondances est connu une fois la jointure terminée, ce qui permet une préallocation plus précise. [#83304](https://github.com/ClickHouse/ClickHouse/pull/83304) ([Nikita Taranov](https://github.com/nickitat)).
+* Tous les JOIN `LEFT/INNER` seront automatiquement convertis en `RightAny` si le côté droit est fonctionnellement déterminé par les key columns de jointure (toutes les rows ont des valeurs de join key uniques). [#84010](https://github.com/ClickHouse/ClickHouse/pull/84010) ([Nikita Taranov](https://github.com/nickitat)).
+* Amélioration des performances lors de l&#39;application des patch parts en mode `Join`. [#85040](https://github.com/ClickHouse/ClickHouse/pull/85040) ([Anton Popov](https://github.com/CurtizJ)).
+
+<div id="distributed-query-improvements">
+  ### Améliorations des requêtes distribuées
+</div>
+
+* Ajout d&#39;une option permettant de déporter la (dé)compression et la (dé)sérialisation des blocs vers les threads du pipeline, au lieu d&#39;un seul thread associé à une connexion réseau. Contrôlée par le paramètre `enable_parallel_blocks_marshalling`. Cela devrait accélérer les requêtes distribuées qui transfèrent des volumes importants de données entre l&#39;initiateur et les nœuds distants. [#78694](https://github.com/ClickHouse/ClickHouse/pull/78694) ([Nikita Taranov](https://github.com/nickitat)).
+* Le `INSERT SELECT` distribué parallèle est activé par défaut dans le mode où `INSERT SELECT` s&#39;exécute indépendamment sur chaque shard ; voir le paramètre `parallel_distributed_insert_select`. [#80425](https://github.com/ClickHouse/ClickHouse/pull/80425) ([Igor Nikonov](https://github.com/devcrafter)).
+* Compression des logs et des profile events dans le protocole natif. Sur les clusters de plus de 100 répliques, les profile events non compressés représentent de 1 à 10 Mo/s, et la barre de progression manque de réactivité sur les connexions Internet lentes. Cela corrige [#82533](https://github.com/ClickHouse/ClickHouse/issues/82533). [#82535](https://github.com/ClickHouse/ClickHouse/pull/82535) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Le `INSERT SELECT` distribué parallèle est activé par défaut dans le mode où `INSERT SELECT` s&#39;exécute indépendamment sur chaque shard ; voir le paramètre `parallel_distributed_insert_select`. [#83040](https://github.com/ClickHouse/ClickHouse/pull/83040) ([Igor Nikonov](https://github.com/devcrafter)).
+* Correction du calcul de la taille minimale des tâches pour les répliques parallèles. [#84752](https://github.com/ClickHouse/ClickHouse/pull/84752) ([Nikita Taranov](https://github.com/nickitat)).
+
+<div id="index-improvements">
+  ### Améliorations des index
+</div>
+
+* Les requêtes de recherche vectorielle utilisant un index de similarité vectorielle s’exécutent avec une latence plus faible grâce à la réduction des lectures sur le stockage et de l’utilisation du CPU. [#79103](https://github.com/ClickHouse/ClickHouse/pull/79103) ([Shankar Iyer](https://github.com/shankar-iyer)).
+* Prend en compte `merge_tree_min_{rows,bytes}_for_seek` dans `filterPartsByQueryConditionCache` afin de l’aligner sur les autres méthodes de filtrage par index. [#80312](https://github.com/ClickHouse/ClickHouse/pull/80312) ([李扬](https://github.com/taiyang-li)).
+* Traite d’abord les index min-max à granularité plus élevée. Clôt [#75381](https://github.com/ClickHouse/ClickHouse/issues/75381). [#83798](https://github.com/ClickHouse/ClickHouse/pull/83798) ([Maruth Goyal](https://github.com/maruthgoyal)).
+* L’index bloom filter est désormais utilisé pour des conditions telles que `has([c1, c2, ...], column)`, où `column` n’est pas de type `Array`. Cela améliore les performances de ces requêtes et les rend aussi efficaces que l’opérateur `IN`. [#83945](https://github.com/ClickHouse/ClickHouse/pull/83945) ([Doron David](https://github.com/dorki)).
+* Traite les index par ordre croissant de taille de fichier. L’ordre global donne la priorité aux index min-max et vectoriels (en raison respectivement de leur simplicité et de leur sélectivité), puis aux petits index. Au sein des index min-max/vectoriels, les plus petits sont également privilégiés. [#84094](https://github.com/ClickHouse/ClickHouse/pull/84094) ([Maruth Goyal](https://github.com/maruthgoyal)).
+* Auparavant, les données de l’index de texte intégral étaient réparties en plusieurs segments (la taille par défaut de chaque segment était de 256 MiB). Cela pouvait réduire la consommation de mémoire lors de la construction de l’index de texte intégral, mais augmentait l’espace requis sur le disque ainsi que le temps de réponse des requêtes. [#84590](https://github.com/ClickHouse/ClickHouse/pull/84590) ([Elmi Ahmadov](https://github.com/ahmadov)).
+
+<div id="subquery-optimizations">
+  ### Optimisations des sous-requêtes
+</div>
+
+* Optimise le plan généré pour les sous-requêtes corrélées en supprimant les opérations `JOIN` redondantes à l&#39;aide de classes d&#39;équivalence. S&#39;il existe des expressions équivalentes pour toutes les colonnes corrélées, `CROSS JOIN` n&#39;est pas généré si le paramètre `query_plan_correlated_subqueries_use_substitution` est activé. [#82435](https://github.com/ClickHouse/ClickHouse/pull/82435) ([Dmitry Novik](https://github.com/novikd)).
+* Lit uniquement les colonnes nécessaires dans une sous-requête corrélée lorsqu&#39;elle apparaît comme argument de la fonction `EXISTS`. [#82443](https://github.com/ClickHouse/ClickHouse/pull/82443) ([Dmitry Novik](https://github.com/novikd)).
+
+<div id="azure-blob-storage-improvements">
+  ### Améliorations d’Azure Blob Storage
+</div>
+
+* Le moteur de table [`azureBlobStorage`](/fr/reference/engines/table-engines/integrations/azureBlobStorage) met désormais en cache et réutilise, lorsque c’est possible, les jetons d’authentication d’identité managée afin d’éviter toute limitation de débit. [#79860](https://github.com/ClickHouse/ClickHouse/pull/79860) ([Nick Blakely](https://github.com/niblak)).
+* Remplacement du client HTTP curl par le client HTTP poco pour Azure Blob Storage. Plusieurs paramètres ont été ajoutés pour ces clients, alignés sur ceux de S3. Des délais d’expiration de connexion très courts ont été introduits pour Azure comme pour S3. La visibilité sur les profile events et les métriques Azure a été améliorée. Le nouveau client est activé par défaut et offre de bien meilleures latences pour les requêtes à froid sur Azure Blob Storage. L’ancien client `Curl` peut être rétabli en définissant `azure_sdk_use_native_client=false`. [#83294](https://github.com/ClickHouse/ClickHouse/pull/83294) ([alesapin](https://github.com/alesapin)).
+
+<div id="storage-engine-improvements">
+  ### Améliorations du moteur de stockage
+</div>
+
+* Corrige le filtrage par clé pour les stockages Redis et KeeperMap. [#81833](https://github.com/ClickHouse/ClickHouse/pull/81833) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
+* `ATTACH PARTITION` n&#39;entraîne plus la suppression de tous les caches. [#82377](https://github.com/ClickHouse/ClickHouse/pull/82377) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Évite de conserver le verrou pendant la création des données de snapshot du stockage afin de réduire la contention sur le verrou en cas de forte charge concurrente. [#83510](https://github.com/ClickHouse/ClickHouse/pull/83510) ([Duc Canh Le](https://github.com/canhld94)).
+* La suppression des parts temporaires peut prendre du temps (en particulier avec S3), et nous la faisons actuellement en conservant un verrou global dans `MergeTreeBackgroundExecutor`. Lorsque nous devons redémarrer toutes les tables en raison d&#39;une perte de connexion et attendre la fin des tâches en arrière-plan, les tables peuvent même rester bloquées en mode readonly pendant une heure. Mais il semble que nous n&#39;ayons pas besoin de ce verrou pour appeler `cancel`. [#84311](https://github.com/ClickHouse/ClickHouse/pull/84311) ([Alexander Tokmakov](https://github.com/tavplubix)).
+
+<div id="format-improvements">
+  ### Améliorations du format
+</div>
+
+* Nouvelle implémentation du lecteur Parquet. Elle est globalement plus rapide et prend en charge le pushdown des filtres au niveau des pages ainsi que `PREWHERE`. Elle est actuellement Experimental. Utilisez le paramètre `input_format_parquet_use_native_reader_v3` pour l’activer. [#82789](https://github.com/ClickHouse/ClickHouse/pull/82789) ([Michael Kolupaev](https://github.com/al13n321)).
+* Les performances du format d’entrée ProtobufSingle ont été améliorées grâce à la réutilisation du sérialiseur lorsqu’aucune erreur d’analyse ne se produit. [#83613](https://github.com/ClickHouse/ClickHouse/pull/83613) ([Eduard Karacharov](https://github.com/korowa)).
+
+<div id="data-type-and-serialization-optimizations">
+  ### Optimisations des types de données et de la sérialisation
+</div>
+
+* Améliore significativement les performances de lecture des sous-colonnes `JSON` issues de données partagées dans MergeTree en implémentant de nouvelles sérialisations pour les données partagées `JSON` dans MergeTree. [#83777](https://github.com/ClickHouse/ClickHouse/pull/83777) ([Pavel Kruglov](https://github.com/Avogar)).
+* Optimise la désérialisation des chaînes de caractères en simplifiant le code. Résout [#38564](https://github.com/ClickHouse/ClickHouse/issues/38564). [#84561](https://github.com/ClickHouse/ClickHouse/pull/84561) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+
+<div id="pipeline-and-execution-improvements">
+  ### Améliorations du pipeline et de l’exécution
+</div>
+
+* Réduire au minimum les copies en mémoire des en-têtes de port lors de la construction du pipeline. PR initiale par [heymind](https://github.com/heymind) : [#70105](https://github.com/ClickHouse/ClickHouse/pull/70105). [#83381](https://github.com/ClickHouse/ClickHouse/pull/83381) ([Raúl Marín](https://github.com/Algunenano)).
+* Améliorer les performances de construction du pipeline. [#83631](https://github.com/ClickHouse/ClickHouse/pull/83631) ([Raúl Marín](https://github.com/Algunenano)).
+* Optimiser MergeTreeReadersChain::getSampleBlock. [#83875](https://github.com/ClickHouse/ClickHouse/pull/83875) ([Raúl Marín](https://github.com/Algunenano)).
+* Optimiser la matérialisation des constantes dans les cas où elle est effectuée uniquement pour renvoyer une seule ligne. [#85071](https://github.com/ClickHouse/ClickHouse/pull/85071) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+
+<div id="memory-and-resource-optimizations">
+  ### Optimisations de la mémoire et des ressources
+</div>
+
+* Ajuster certaines configurations de jemalloc pour améliorer les performances. [#81807](https://github.com/ClickHouse/ClickHouse/pull/81807) ([Antonio Andelic](https://github.com/antonio2368)).
+* Ajouter un alignement dans le compteur de ProfileEvents pour réduire le faux partage. [#82697](https://github.com/ClickHouse/ClickHouse/pull/82697) ([Jiebin Sun](https://github.com/jiebinn)).
+* Réduire les appels inutiles à `memcpy` dans CompressedReadBufferBase::readCompressedData. [#83986](https://github.com/ClickHouse/ClickHouse/pull/83986) ([Raúl Marín](https://github.com/Algunenano)).
+
+<div id="query-planning-and-analysis">
+  ### Planification et analyse des requêtes
+</div>
+
+* Accélération de QueryTreeHash. [#82617](https://github.com/ClickHouse/ClickHouse/pull/82617) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+
+<div id="logging-improvements">
+  ### Améliorations de la journalisation
+</div>
+
+* Ajout de la journalisation asynchrone. [#82516](https://github.com/ClickHouse/ClickHouse/pull/82516) ([Raúl Marín](https://github.com/Algunenano)).
+
+<div id="function-optimizations">
+  ### Optimisations des fonctions
+</div>
+
+* Optimisation de `largestTriangleThreeBuckets` par suppression des données temporaires. [#84479](https://github.com/ClickHouse/ClickHouse/pull/84479) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Implémentation de nombreuses fonctions de manipulation de chaînes optimisée et simplifiée. Correction de la documentation erronée de plusieurs fonctions. Remarque : la sortie de `byteSize` pour les colonnes String et les types complexes contenant des colonnes String est passée de 9 octets par chaîne vide à 8 octets par chaîne vide, ce qui correspond au comportement attendu. [#85063](https://github.com/ClickHouse/ClickHouse/pull/85063) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+
+<div id="keeper-improvements">
+  ### Améliorations de Keeper
+</div>
+
+* Ajout du chargement initial avec RocksDB pour Keeper. [#83390](https://github.com/ClickHouse/ClickHouse/pull/83390) ([Antonio Andelic](https://github.com/antonio2368)).
+
+<div id="data-lake-improvements">
+  ### Améliorations du data lake
+</div>
+
+* Amélioration du traitement parallèle des fichiers avec le backend delta-kernel-rs. [#85642](https://github.com/ClickHouse/ClickHouse/pull/85642) ([Azat Khuzhin](https://github.com/azat)).
+
+<div id="improvements">
+  ## Améliorations
+</div>
+
+<div id="access-control-and-security">
+  ### Contrôle d’accès et sécurité
+</div>
+
+* Introduction de deux nouveaux types d’accès : `READ` et `WRITE` pour les sources, et dépréciation de tous les anciens types d’accès liés aux sources. Auparavant : `GRANT S3 ON *.* TO user` ; désormais : `GRANT READ, WRITE ON S3 TO user`. Cela permet également de dissocier les autorisations `READ` et `WRITE` pour les sources, par exemple : `GRANT READ ON * TO user`, `GRANT WRITE ON S3 TO user`. Cette fonctionnalité est contrôlée par le paramètre `access_control_improvements.enable_read_write_grants` et est désactivée par défaut. [#73659](https://github.com/ClickHouse/ClickHouse/pull/73659) ([pufit](https://github.com/pufit)).
+* Prise en charge des paramètres dans les requêtes `CREATE USER` pour les noms d’utilisateur. [#81387](https://github.com/ClickHouse/ClickHouse/pull/81387) ([Diskein](https://github.com/Diskein)).
+* Exclusion des données sensibles des core dumps. Ajout de deux allocateurs : `AwsNodumpMemoryManager`, compatible avec la bibliothèque AWS, et `JemallocNodumpSTLAllocator`, compatible avec la STL. Tous deux sont des wrappers de l’allocateur Jemalloc. Ils utilisent les extent hooks de Jemalloc et `madvise` pour marquer les pages mémoire comme « don&#39;t dump ». Utilisés pour les informations d’authentification S3, les informations d’authentification utilisateur et certaines données de requête. [#82441](https://github.com/ClickHouse/ClickHouse/pull/82441) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+* Les views créées par des utilisateurs éphémères stockeront désormais une copie de l’utilisateur réel et ne seront plus invalidées après la suppression de l’utilisateur éphémère. [#84763](https://github.com/ClickHouse/ClickHouse/pull/84763) ([pufit](https://github.com/pufit)).
+* Correspondance des `forward_headers` de l’authentification externe de manière insensible à la casse. [#84737](https://github.com/ClickHouse/ClickHouse/pull/84737) ([ingodwerust](https://github.com/ingodwerust)).
+* Ajout d’une colonne `parameter` à `system.grants` pour déterminer le type de source pour `GRANT READ/WRITE` et le moteur de table pour `GRANT TABLE ENGINE`. [#85643](https://github.com/ClickHouse/ClickHouse/pull/85643) ([MikhailBurdukov](https://github.com/MikhailBurdukov)).
+
+<div id="backup-and-restore">
+  ### Sauvegarde et restauration
+</div>
+
+* Prise en charge des sauvegardes pour les bases de données PostgreSQL, MySQL et DataLake. La sauvegarde d&#39;une telle base de données n&#39;enregistre que sa définition, pas les données qu&#39;elle contient. [#79982](https://github.com/ClickHouse/ClickHouse/pull/79982) ([Nikolay Degterinsky](https://github.com/evillique)).
+* Définir tous les messages de journal liés à l&#39;écriture des fichiers de sauvegarde au niveau TRACE. [#82907](https://github.com/ClickHouse/ClickHouse/pull/82907) ([Hans Krutzer](https://github.com/hkrutzer)).
+* Ajout de [`backup_restore_s3_retry_initial_backoff_ms`](/fr/reference/settings/session-settings#backup_restore_s3_retry_initial_backoff_ms), [`backup_restore_s3_retry_max_backoff_ms`](/fr/reference/settings/session-settings#backup_restore_s3_retry_max_backoff_ms), [`backup_restore_s3_retry_jitter_factor`](/fr/reference/settings/session-settings#backup_restore_s3_retry_jitter_factor) pour configurer la stratégie de backoff des tentatives sur S3 utilisée pendant les opérations de sauvegarde et de restauration. [#84421](https://github.com/ClickHouse/ClickHouse/pull/84421) ([Julia Kartseva](https://github.com/jkartseva)).
+* Ajout du nouveau paramètre [`backup_slow_all_threads_after_retryable_s3_error`](/fr/reference/settings/session-settings#backup_slow_all_threads_after_retryable_s3_error) afin de réduire la pression sur S3 lors de rafales de tentatives dues à des erreurs comme `SlowDown`, en ralentissant tous les threads dès qu&#39;une erreur pouvant faire l&#39;objet d&#39;une nouvelle tentative est détectée. [#84854](https://github.com/ClickHouse/ClickHouse/pull/84854) ([Julia Kartseva](https://github.com/jkartseva)).
+
+<div id="data-integrity-and-validation">
+  ### Intégrité et validation des données
+</div>
+
+* Vérifiez que la partie possède un fichier `checksum.txt` cohérent juste avant de la valider. [#76625](https://github.com/ClickHouse/ClickHouse/pull/76625) ([Sema Checherinda](https://github.com/CheSema)).
+* Empêcher le démarrage d&#39;une mutation ALTER `RENAME COLUMN` si elle doit renommer une colonne actuellement affectée par une mutation de données incomplète. [#81823](https://github.com/ClickHouse/ClickHouse/pull/81823) ([Mikhail Artemenko](https://github.com/Michicosun)).
+* Désormais, le snapshot des mutations sera construit à partir du snapshot des parties visibles. Les compteurs de mutations utilisés dans le snapshot seront également recalculés à partir des mutations incluses. [#82945](https://github.com/ClickHouse/ClickHouse/pull/82945) ([Mikhail Artemenko](https://github.com/Michicosun)).
+* Ajout de la possibilité d&#39;analyser le préfixe et le suffixe d&#39;une partie, ainsi que de vérifier la couverture des colonnes non constantes. [#83377](https://github.com/ClickHouse/ClickHouse/pull/83377) ([Mikhail Artemenko](https://github.com/Michicosun)).
+
+<div id="iceberg-table-engine">
+  ### Moteur de table Iceberg
+</div>
+
+* Prise en charge des suppressions positionnelles pour le moteur de table Iceberg. [#80237](https://github.com/ClickHouse/ClickHouse/pull/80237) ([YanghongZhong](https://github.com/yahoNanJing)).
+* ClickHouse prend désormais en charge les fichiers `metadata.json` compressés pour Iceberg. Corrige [#70874](https://github.com/ClickHouse/ClickHouse/issues/70874). [#81451](https://github.com/ClickHouse/ClickHouse/pull/81451) ([alesapin](https://github.com/alesapin)).
+* Correction de la lecture d&#39;Iceberg par identifiants de champ pour les types complexes. [#84821](https://github.com/ClickHouse/ClickHouse/pull/84821) ([scanhex12](https://github.com/scanhex12)).
+* Prise en charge de l&#39;écriture par Iceberg pour permettre la lecture depuis pyiceberg. [#84466](https://github.com/ClickHouse/ClickHouse/pull/84466) ([scanhex12](https://github.com/scanhex12)).
+* Ajout de la version de snapshot aux moteurs de table de data lake. [#84659](https://github.com/ClickHouse/ClickHouse/pull/84659) ([Pete Hampton](https://github.com/pjhampton)).
+* Prise en charge de l&#39;écriture d&#39;un fichier version-hint avec Iceberg. Cela clôt [#85097](https://github.com/ClickHouse/ClickHouse/issues/85097). [#85130](https://github.com/ClickHouse/ClickHouse/pull/85130) ([scanhex12](https://github.com/scanhex12)).
+* Prise en charge du fichier `.metadata.json` compressé via le paramètre [`iceberg_metadata_compression_method`](/fr/reference/settings/session-settings#iceberg_metadata_compression_method). Il prend en charge toutes les méthodes de compression de ClickHouse. Cela clôt [#84895](https://github.com/ClickHouse/ClickHouse/issues/84895). [#85196](https://github.com/ClickHouse/ClickHouse/pull/85196) ([scanhex12](https://github.com/scanhex12)).
+* Optimisation de l&#39;utilisation mémoire pour les fichiers de suppression positionnelle Iceberg. Au lieu de charger en mémoire toutes les données des fichiers de suppression, seul le groupe de lignes courant des fichiers de suppression Parquet est conservé en RAM. Cela réduit considérablement la consommation mémoire lors de l&#39;utilisation de grands fichiers de suppression positionnelle. [#85329](https://github.com/ClickHouse/ClickHouse/pull/85329) ([scanhex12](https://github.com/scanhex12)).
+* Autorise l&#39;itération asynchrone des objets d&#39;une table Iceberg sans stocker explicitement les objets de chaque fichier de données. [#85369](https://github.com/ClickHouse/ClickHouse/pull/85369) ([Daniil Ivanik](https://github.com/divanik)).
+* Prise en charge des suppressions par égalité pour Iceberg. [#85843](https://github.com/ClickHouse/ClickHouse/pull/85843) ([Han Fei](https://github.com/hanfei1991)).
+
+<div id="deltalake-table-engine">
+  ### Moteur de table DeltaLake
+</div>
+
+* Amélioration du moteur de table `DeltaLake` : delta-kernel-rs dispose d&#39;une API `ExpressionVisitor`, implémentée dans cette PR et appliquée à la transformation des expressions des colonnes de partition (elle remplacera un ancien mécanisme désormais obsolète dans delta-kernel-rs, auparavant utilisé dans notre code). À l&#39;avenir, cet `ExpressionVisitor` permettra également d&#39;implémenter le pruning basé sur les statistiques ainsi que certaines fonctionnalités propriétaires de delta-lake. En outre, cette modification vise à prendre en charge le pruning des partitions dans le moteur de table `DeltaLakeCluster` (le résultat d&#39;une expression analysée — ActionsDAG — sera sérialisé et envoyé depuis l&#39;initiateur avec le chemin des données, car ce type d&#39;information, nécessaire au pruning, n&#39;est disponible qu&#39;en tant que méta-informations lors de la liste des fichiers de données, opération effectuée uniquement par l&#39;initiateur, mais qui doit être appliquée aux données sur chaque serveur de lecture). [#81136](https://github.com/ClickHouse/ClickHouse/pull/81136) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Correction du pruning des partitions avec les fonctions de cluster de data lake. [#82131](https://github.com/ClickHouse/ClickHouse/pull/82131) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Correction de la lecture des données partitionnées dans la fonction de table DeltaLakeCluster. Dans cette PR, la protocol version des fonctions de cluster est augmentée, ce qui permet d&#39;envoyer des informations supplémentaires de l&#39;initiateur vers les répliques. Ces informations supplémentaires contiennent l&#39;expression de transformation delta-kernel, nécessaire pour analyser les colonnes de partition (et, à l&#39;avenir, d&#39;autres éléments comme les generated columns, etc.). [#82132](https://github.com/ClickHouse/ClickHouse/pull/82132) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Désormais, la base de données Datalake renvoie une exception plus explicite. Corrige [#81211](https://github.com/ClickHouse/ClickHouse/issues/81211). [#82304](https://github.com/ClickHouse/ClickHouse/pull/82304) ([alesapin](https://github.com/alesapin)).
+* Implémentation du filtrage interne de `delta-kernel-rs` (statistiques et pruning des partitions) dans le stockage `DeltaLake`. [#84006](https://github.com/ClickHouse/ClickHouse/pull/84006) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Ajout d&#39;un paramètre [`delta_lake_enable_expression_visitor_logging`](/fr/reference/settings/session-settings#delta_lake_enable_expression_visitor_logging) pour désactiver les logs du visiteur d&#39;expressions, car ils peuvent être trop verbeux, même avec un niveau de log de test, lors du débogage. [#84315](https://github.com/ClickHouse/ClickHouse/pull/84315) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Ajout du paramètre [`delta_lake_snapshot_version`](/fr/reference/settings/session-settings#delta_lake_snapshot_version) pour permettre la lecture d&#39;une version de snapshot spécifique dans le moteur de table `DeltaLake`. [#85295](https://github.com/ClickHouse/ClickHouse/pull/85295) ([Kseniia Sumarokova](https://github.com/kssenii)).
+
+<div id="data-lake-integration">
+  ### Intégration au data lake
+</div>
+
+* Accélère le listage des tables dans les catalogues de données grâce à des requêtes asynchrones. [#81084](https://github.com/ClickHouse/ClickHouse/pull/81084) ([alesapin](https://github.com/alesapin)).
+* Prend en charge `TimestampTZ` dans le catalogue Glue. Cela résout [#81654](https://github.com/ClickHouse/ClickHouse/issues/81654). [#83132](https://github.com/ClickHouse/ClickHouse/pull/83132) ([scanhex12](https://github.com/scanhex12)).
+* Scinde FormatParserGroup en deux structs indépendantes : la première est responsable des ressources partagées de calcul et d’IO, la seconde des ressources de filtre partagées (filter ActionDag, KeyCondition). Cela permet une utilisation partagée plus souple de ces structures par différents threads. [#83997](https://github.com/ClickHouse/ClickHouse/pull/83997) ([Daniil Ivanik](https://github.com/divanik)).
+* Ajoute `partition_columns_in_data_file`, qui manquait à la configuration Azure. [#85373](https://github.com/ClickHouse/ClickHouse/pull/85373) ([Arthur Passos](https://github.com/arthurpassos)).
+* Ajoute le flag show&#95;data&#95;lake&#95;catalogs&#95;in&#95;system&#95;tables pour gérer l’ajout des tables de data lake dans system.tables ; résout [#85384](https://github.com/ClickHouse/ClickHouse/issues/85384). [#85411](https://github.com/ClickHouse/ClickHouse/pull/85411) ([Smita Kulkarni](https://github.com/SmitaRKulkarni)).
+
+<div id="s3-and-object-storage">
+  ### S3 et le stockage objet
+</div>
+
+* Implémentation des méthodes `moveFile` et `replaceFile` dans `s3_plain_rewritable` afin de permettre son utilisation comme disk de database. [#79424](https://github.com/ClickHouse/ClickHouse/pull/79424) ([Tuan Pham Anh](https://github.com/tuanpach)).
+* Les requêtes de lecture et d&#39;écriture S3 sont soumises à une limitation de débit au niveau du socket HTTP (plutôt qu&#39;au niveau des requêtes S3 complètes) afin d&#39;éviter les problèmes liés au throttling de `max_remote_read_network_bandwidth_for_server` et `max_remote_write_network_bandwidth_for_server`. [#81837](https://github.com/ClickHouse/ClickHouse/pull/81837) ([Sergei Trifonov](https://github.com/serxa)).
+* Cette PR introduit un jitter dans le mécanisme de retry S3 lorsque la configuration `s3_slow_all_threads_after_network_error` est enabled. [#81849](https://github.com/ClickHouse/ClickHouse/pull/81849) ([zoomxi](https://github.com/zoomxi)).
+* Implémentation de l&#39;authentication AWS S3 avec un IAM role fourni explicitement. Implémentation d&#39;OAuth pour GCS. Ces fonctionnalités, auparavant disponibles uniquement dans ClickHouse Cloud, sont désormais open-source. Synchronisation de certaines interfaces, comme la sérialisation des paramètres de connexion pour les object storages. [#84011](https://github.com/ClickHouse/ClickHouse/pull/84011) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Possibilité d&#39;utiliser n&#39;importe quelle storage policy (c.-à-d. un object storage tel que S3) pour l&#39;aggregation/le tri externes. [#84734](https://github.com/ClickHouse/ClickHouse/pull/84734) ([Azat Khuzhin](https://github.com/azat)).
+* Regroupement de tous les objects supprimés pour exécuter une seule opération de suppression sur l&#39;object storage. [#85316](https://github.com/ClickHouse/ClickHouse/pull/85316) ([Mikhail Artemenko](https://github.com/Michicosun)).
+
+<div id="s3queue-table-engine">
+  ### Moteur de table S3Queue
+</div>
+
+* Les macros comme `{uuid}` peuvent désormais être utilisées dans le paramètre `keeper_path` du moteur de table S3Queue. [#82463](https://github.com/ClickHouse/ClickHouse/pull/82463) ([Nikolay Degterinsky](https://github.com/evillique)).
+* Ajout d&#39;un nouveau paramètre du serveur `s3queue_disable_streaming`, qui désactive le streaming pour les tables utilisant le moteur de table S3Queue. Ce paramètre peut être modifié sans redémarrage du serveur. [#82515](https://github.com/ClickHouse/ClickHouse/pull/82515) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Ajout des colonnes `commit_time` et `commit_id` à `system.s3queue_log`. [#83016](https://github.com/ClickHouse/ClickHouse/pull/83016) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Ajout de logs pour le processus d&#39;arrêt de S3Queue. [#83163](https://github.com/ClickHouse/ClickHouse/pull/83163) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Arrêt du streaming de S3(Azure/etc)Queue avant l&#39;arrêt de toute table lors de l&#39;arrêt du serveur. [#83530](https://github.com/ClickHouse/ClickHouse/pull/83530) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Prise en charge de la modification des paramètres d&#39;insert des vues matérialisées au niveau de la table `S3Queue`. Ajout de nouveaux paramètres au niveau de `S3Queue` : `min_insert_block_size_rows_for_materialized_views` et `min_insert_block_size_bytes_for_materialized_views`. Par défaut, les paramètres au niveau du profil sont utilisés, et ceux définis au niveau de `S3Queue` les remplacent. [#83971](https://github.com/ClickHouse/ClickHouse/pull/83971) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Correction du mode ordered de S3Queue : arrêt anticipé si l&#39;arrêt a été demandé. [#84463](https://github.com/ClickHouse/ClickHouse/pull/84463) ([Kseniia Sumarokova](https://github.com/kssenii)).
+
+<div id="kafka-integration">
+  ### Intégration Kafka
+</div>
+
+* Compter manuellement les messages consommés afin d’éviter de dépendre du dernier offset validé dans StorageKafka2. [#81662](https://github.com/ClickHouse/ClickHouse/pull/81662) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
+* Intégrer `StorageKafka2` dans [`system.kafka_consumers`](/fr/reference/system-tables/kafka_consumers). [#82652](https://github.com/ClickHouse/ClickHouse/pull/82652) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
+
+<div id="clickhouse-keeper-improvements">
+  ### Améliorations de ClickHouse Keeper
+</div>
+
+* Amélioration de Keeper : déplacement des fichiers de changelog entre disques dans un thread d’arrière-plan. Auparavant, déplacer le changelog vers un autre disque bloquait globalement Keeper jusqu’à la fin du déplacement. Cela entraînait une dégradation des performances lorsque le déplacement était une opération longue (par exemple vers un disque S3). [#82485](https://github.com/ClickHouse/ClickHouse/pull/82485) ([Antonio Andelic](https://github.com/antonio2368)).
+* Amélioration de Keeper : ajout d’une nouvelle configuration `keeper_server.cleanup_old_and_ignore_new_acl`. Si elle est activée, les ACL de tous les nœuds seront supprimées, tandis que les ACL des nouvelles requêtes seront ignorées. Si l’objectif est de supprimer complètement les ACL des nœuds, il est important de laisser cette configuration activée jusqu’à la création d’un nouveau snapshot. [#82496](https://github.com/ClickHouse/ClickHouse/pull/82496) ([Antonio Andelic](https://github.com/antonio2368)).
+* Amélioration de Keeper : prise en charge d’autorisations spécifiques pour l’ACL world:anyone. [#82755](https://github.com/ClickHouse/ClickHouse/pull/82755) ([Antonio Andelic](https://github.com/antonio2368)).
+* Ajout de la prise en charge de la définition d’ACL Keeper supplémentaires pour des chemins dans la configuration. Si vous souhaitez ajouter une ACL supplémentaire pour un chemin spécifique, définissez-la dans la configuration sous `zookeeper.path_acls`. [#82898](https://github.com/ClickHouse/ClickHouse/pull/82898) ([Antonio Andelic](https://github.com/antonio2368)).
+* Ajoute un ProfileEvent lorsque Keeper rejette une écriture en raison de la limite mémoire souple. [#82963](https://github.com/ClickHouse/ClickHouse/pull/82963) ([Xander Garbett](https://github.com/Garbett1)).
+* Active par défaut dans Keeper les feature flags `create_if_not_exists`, `check_not_exists`, `remove_recursive`, qui permettent de nouveaux types de requêtes. [#83488](https://github.com/ClickHouse/ClickHouse/pull/83488) ([Antonio Andelic](https://github.com/antonio2368)).
+* Ajout de la prise en charge de l’application d’ACL supplémentaires sur des nœuds Keeper spécifiques à l’aide de la configuration `apply_to_children`. [#84137](https://github.com/ClickHouse/ClickHouse/pull/84137) ([Antonio Andelic](https://github.com/antonio2368)).
+* Ajout de la commande `get_acl` à KeeperClient. [#84641](https://github.com/ClickHouse/ClickHouse/pull/84641) ([Antonio Andelic](https://github.com/antonio2368)).
+* Ajout de 4LW dans Keeper, `lgrq`, pour activer ou désactiver la journalisation des requêtes reçues. [#84719](https://github.com/ClickHouse/ClickHouse/pull/84719) ([Antonio Andelic](https://github.com/antonio2368)).
+* Réduit la contention sur le verrou de stockage dans Keeper. [#84732](https://github.com/ClickHouse/ClickHouse/pull/84732) ([Antonio Andelic](https://github.com/antonio2368)).
+* L’outil `encrypt_decrypt` prend désormais en charge les connexions ZooKeeper chiffrées. [#84764](https://github.com/ClickHouse/ClickHouse/pull/84764) ([Roman Vasin](https://github.com/rvasin)).
+* Limite la taille du cache des entrées de log de Keeper par nombre d’entrées à l’aide de `keeper_server.coordination_settings.latest_logs_cache_entry_count_threshold` et `keeper_server.coordination_settings.commit_logs_cache_entry_count_threshold`. [#84877](https://github.com/ClickHouse/ClickHouse/pull/84877) ([Antonio Andelic](https://github.com/antonio2368)).
+
+<div id="json-and-dynamic-types">
+  ### Types JSON et Dynamic
+</div>
+
+* Ajout du fichier `columns_substreams.txt` à la Wide part pour suivre tous les sous-flux stockés dans la part. Cela permet de suivre les flux dynamiques dans les types JSON et Dynamic, et donc d’éviter de lire un échantillon de ces colonnes pour obtenir la liste des flux dynamiques (par exemple pour calculer la taille des colonnes). Tous les flux dynamiques apparaissent désormais également dans `system.parts_columns`. [#81091](https://github.com/ClickHouse/ClickHouse/pull/81091) ([Pavel Kruglov](https://github.com/Avogar)).
+* `ALTER UPDATE` est désormais autorisé dans les colonnes JSON et Dynamic. [#82419](https://github.com/ClickHouse/ClickHouse/pull/82419) ([Pavel Kruglov](https://github.com/Avogar)).
+* Vous pouvez désormais utiliser les types `Time` et `Time64` dans le type JSON. [#83784](https://github.com/ClickHouse/ClickHouse/pull/83784) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* Ajout du paramètre `json_type_escape_dots_in_keys` pour échapper les points dans les clés JSON lors de l’analyse du type JSON. Ce paramètre est désactivé par défaut. [#84207](https://github.com/ClickHouse/ClickHouse/pull/84207) ([Pavel Kruglov](https://github.com/Avogar)).
+
+<div id="parquet-and-orc-formats">
+  ### Formats Parquet et ORC
+</div>
+
+* Introduction de paramètres permettant de définir la taille du bloc de compression ORC, et mise à jour de sa valeur par défaut de 64KB à 256KB pour rester cohérent avec Spark ou Hive. [#80602](https://github.com/ClickHouse/ClickHouse/pull/80602) ([李扬](https://github.com/taiyang-li)).
+* Prise en charge de l&#39;écriture des enum Parquet sous forme de tableau d&#39;octets, comme l&#39;exige la [spécification](https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#enum). J&#39;ajouterai plus d&#39;informations plus tard. [#81090](https://github.com/ClickHouse/ClickHouse/pull/81090) ([Arthur Passos](https://github.com/arthurpassos)).
+* Prise en charge de l&#39;écriture de GeoParquet comme format de sortie. [#81784](https://github.com/ClickHouse/ClickHouse/pull/81784) ([scanhex12](https://github.com/scanhex12)).
+
+<div id="distributed-queries-and-parallel-replicas">
+  ### Requêtes distribuées et répliques parallèles
+</div>
+
+* Un nouveau paramètre, enable&#95;add&#95;distinct&#95;to&#95;in&#95;subqueries, a été introduit. Lorsqu’il est activé, ClickHouse ajoute automatiquement DISTINCT aux sous-requêtes des clauses IN pour les requêtes distribuées. Cela peut réduire considérablement la taille des tables temporaires transférées entre les shards et améliorer l’efficacité du réseau. Remarque : c’est un compromis : si les transferts réseau diminuent, un travail supplémentaire de fusion (déduplication) est nécessaire sur chaque nœud. Activez ce paramètre lorsque le transfert réseau constitue un goulot d’étranglement et que le coût de fusion reste acceptable. [#81908](https://github.com/ClickHouse/ClickHouse/pull/81908) ([fhw12345](https://github.com/fhw12345)).
+* Prise en charge des fonctions de table `remote-()` avec les répliques parallèles lorsqu’un cluster est fourni dans l’argument `address_expression`. Corrige également [#73295](https://github.com/ClickHouse/ClickHouse/issues/73295). [#82904](https://github.com/ClickHouse/ClickHouse/pull/82904) ([Igor Nikonov](https://github.com/devcrafter)).
+* Les jointures avec répliques parallèles utilisent désormais l’étape logique de jointure. En cas de problème avec des requêtes de jointure utilisant des répliques parallèles, essayez `SET query_plan_use_new_logical_join_step=0` et signalez une issue. [#83801](https://github.com/ClickHouse/ClickHouse/pull/83801) ([Vladimir Cherkasov](https://github.com/vdimir)).
+
+<div id="settings-and-configuration">
+  ### Paramètres et configuration
+</div>
+
+* Le paramètre `allow_experimental_join_condition` est désormais obsolète. [#80566](https://github.com/ClickHouse/ClickHouse/pull/80566) ([Vladimir Cherkasov](https://github.com/vdimir)).
+* Les throttlers réseau globaux et par utilisateur ne sont jamais réinitialisés, ce qui garantit que les limites `max_network_bandwidth_for_all_users` et `max_network_bandwidth_for_all_users` ne sont jamais dépassées. [#81729](https://github.com/ClickHouse/ClickHouse/pull/81729) ([Sergei Trifonov](https://github.com/serxa)).
+* Ajoute le paramètre `optimize_rewrite_regexp_functions` (activé par défaut), qui permet à l’optimiseur de réécrire certains appels à `replaceRegexpAll`, `replaceRegexpOne` et `extract` sous des formes plus simples et plus efficaces lorsque des motifs d’expression régulière spécifiques sont détectés. (issue [#81981](https://github.com/ClickHouse/ClickHouse/issues/81981)). [#81992](https://github.com/ClickHouse/ClickHouse/pull/81992) ([Amos Bird](https://github.com/amosbird)).
+* Ajuste la file d’attente des serveurs TCP (64 par défaut) en fonction de listen&#95;backlog (4096 par défaut). [#82045](https://github.com/ClickHouse/ClickHouse/pull/82045) ([Azat Khuzhin](https://github.com/azat)).
+* Ajoute la possibilité de recharger `max_local_read_bandwidth_for_server` et `max_local_write_bandwidth_for_server` à la volée, sans redémarrer le serveur. [#82083](https://github.com/ClickHouse/ClickHouse/pull/82083) ([Kai Zhu](https://github.com/nauu)).
+* Introduit le paramètre `enable_vector_similarity_index`, qui doit être activé pour utiliser l’index de similarité vectorielle. Le paramètre existant `allow_experimental_vector_similarity_index` est désormais obsolète. Il fonctionne toujours si nécessaire. [#83459](https://github.com/ClickHouse/ClickHouse/pull/83459) ([Robert Schulze](https://github.com/rschu1ze)).
+* Ajoute [`max_joined_block_size_bytes`](/fr/reference/settings/session-settings#max_joined_block_size_bytes), en complément de `max_joined_block_size_rows`, pour limiter l’utilisation mémoire des JOIN avec des colonnes volumineuses. [#83869](https://github.com/ClickHouse/ClickHouse/pull/83869) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Corrige la compatibilité de cluster&#95;function&#95;process&#95;archive&#95;on&#95;multiple&#95;nodes. [#83968](https://github.com/ClickHouse/ClickHouse/pull/83968) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Active par défaut la prise en charge des sous-requêtes corrélées. [#85107](https://github.com/ClickHouse/ClickHouse/pull/85107) ([Dmitry Novik](https://github.com/novikd)).
+* Ajoute les paramètres `database_replicated` qui définissent les valeurs par défaut de DatabaseReplicatedSettings. Si le paramètre n’est pas présent dans la requête CREATE de la base de données Replicated, la valeur de ce paramètre est utilisée. [#85127](https://github.com/ClickHouse/ClickHouse/pull/85127) ([Tuan Pham Anh](https://github.com/tuanpach)).
+* Autorise les arguments clé-valeur dans le moteur/fonction de table `s3` ou `s3Cluster`, par exemple `s3('url', CSV, structure = 'a Int32', compression_method = 'gzip')`. [#85134](https://github.com/ClickHouse/ClickHouse/pull/85134) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Exécute `EXISTS` non corrélé comme une sous-requête scalaire. Cela permet d’utiliser un cache de sous-requêtes scalaires et d’évaluer le résultat comme une constante, ce qui est utile pour les index. Pour des raisons de compatibilité, le nouveau paramètre `execute_exists_as_scalar_subquery=1` a été ajouté. [#85481](https://github.com/ClickHouse/ClickHouse/pull/85481) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Prend en charge la résolution d’un plus grand nombre de cas pour les identifiants composés. En particulier, cela améliore la compatibilité de `ARRAY JOIN` avec l’ancien analyseur. Introduit un nouveau paramètre `analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested` pour conserver l’ancien comportement. [#85492](https://github.com/ClickHouse/ClickHouse/pull/85492) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+
+<div id="system-tables-and-observability">
+  ### Tables système et observabilité
+</div>
+
+* Ajout de métriques de pression aux métriques asynchrones de ClickHouse. [#80779](https://github.com/ClickHouse/ClickHouse/pull/80779) ([Xander Garbett](https://github.com/Garbett1)).
+* Ajout des métriques `MarkCacheEvictedBytes`, `MarkCacheEvictedMarks`, `MarkCacheEvictedFiles` pour suivre les évictions du mark cache. (issue [#60989](https://github.com/ClickHouse/ClickHouse/issues/60989)). [#80799](https://github.com/ClickHouse/ClickHouse/pull/80799) ([Shivji Kumar Jha](https://github.com/shiv4289)).
+* La table `system.formats` contient désormais des informations détaillées sur les formats, comme le type de contenu HTTP, les capacités d&#39;inférence de schéma, etc. [#81505](https://github.com/ClickHouse/ClickHouse/pull/81505) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Ajout de la prise en charge de la suppression de tous les avertissements de la table `system.warnings` à l&#39;aide de `TRUNCATE TABLE system.warnings`. [#82087](https://github.com/ClickHouse/ClickHouse/pull/82087) ([Vladimir Cherkasov](https://github.com/vdimir)).
+* Liste des licences des crates Rust dans `system.licenses`. [#82440](https://github.com/ClickHouse/ClickHouse/pull/82440) ([Raúl Marín](https://github.com/Algunenano)).
+* Estimation des CNF/DNF complexes, par exemple `(a < 1 and a > 0) or b = 3`, à l&#39;aide des statistiques. [#82663](https://github.com/ClickHouse/ClickHouse/pull/82663) ([Han Fei](https://github.com/hanfei1991)).
+* Dans certains cas, il est nécessaire d&#39;avoir plusieurs dimensions pour les métriques. Par exemple, compter les merges ou les mutations en échec par code d&#39;erreur plutôt que d&#39;avoir un seul compteur. [#83030](https://github.com/ClickHouse/ClickHouse/pull/83030) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+* Ajout de métriques de ressource du processus (telles que `UserTimeMicroseconds`, `SystemTimeMicroseconds`, `RealTimeMicroseconds`) aux profile events de `part_log` pour les entrées `MergeParts`. [#83460](https://github.com/ClickHouse/ClickHouse/pull/83460) ([Vladimir Cherkasov](https://github.com/vdimir)).
+* Les métriques au niveau du cgroup et les métriques système sont désormais toutes rapportées ensemble. Les métriques au niveau du cgroup portent les noms `CGroup<Metric>` et les métriques au niveau de l&#39;OS (collectées depuis procfs) portent les noms `OS<Metric>`. [#84317](https://github.com/ClickHouse/ClickHouse/pull/84317) ([Nikita Taranov](https://github.com/nickitat)).
+* Ajout de métriques dimensionnelles pour surveiller la taille des queues bornées concurrentes, étiquetées par type de queue et ID d&#39;instance, pour une meilleure observabilité. [#84675](https://github.com/ClickHouse/ClickHouse/pull/84675) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+* La table [`system.columns`](/fr/reference/system-tables/columns) fournit désormais `column` comme alias de la colonne `name` existante. [#84695](https://github.com/ClickHouse/ClickHouse/pull/84695) ([Yunchi Pang](https://github.com/yunchipang)).
+* Ajout d&#39;une colonne de format string à `system.errors`. Cette colonne est nécessaire pour regrouper un même type d&#39;erreur dans les règles d&#39;alerte. [#84776](https://github.com/ClickHouse/ClickHouse/pull/84776) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+* Les limites d&#39;Async Log sont désormais ajustables, avec ajout de l&#39;introspection. [#85105](https://github.com/ClickHouse/ClickHouse/pull/85105) ([Raúl Marín](https://github.com/Algunenano)).
+* Ignorer `UNKNOWN_DATABASE` lors de la récupération des tailles des colonnes de table pour `system.columns`. [#85632](https://github.com/ClickHouse/ClickHouse/pull/85632) ([Azat Khuzhin](https://github.com/azat)).
+
+<div id="database-engines">
+  ### Moteurs de base de données
+</div>
+
+<div id="system-and-internal-improvements">
+  ### Améliorations système et internes
+</div>
+
+* Corrige l’attachement de bases de données avec des disques distants en lecture seule en ajoutant manuellement les UUID de table à DatabaseCatalog. [#82670](https://github.com/ClickHouse/ClickHouse/pull/82670) ([Tuan Pham Anh](https://github.com/tuanpach)).
+* Améliore la gestion des tâches DDL lorsque `distributed_ddl_output_mode='*_only_active'` en n’attendant pas les nouvelles répliques ou les répliques restaurées dont le retard de réplication dépasse `max_replication_lag_to_enqueue`. Cela permet d’éviter les erreurs `DDL task is not finished on some hosts` lorsqu’une nouvelle réplique devient active après l’initialisation ou la récupération, mais a accumulé un journal de réplication important. Implémente également la requête `SYSTEM SYNC DATABASE REPLICA STRICT`, qui attend que le journal de réplication repasse sous `max_replication_lag_to_enqueue`. [#83302](https://github.com/ClickHouse/ClickHouse/pull/83302) ([Alexander Tokmakov](https://github.com/tavplubix)).
+* Modifie l’ordre d’arrêt de SystemLogs afin qu’il intervienne après les tables ordinaires (et avant les tables système, au lieu d’avant les tables ordinaires). [#83134](https://github.com/ClickHouse/ClickHouse/pull/83134) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Ajoute le paramètre serveur `logs_to_keep` pour les paramètres des bases de données Replicated, ce qui permet de configurer la valeur par défaut du paramètre `logs_to_keep` pour les bases de données Replicated. Des valeurs plus faibles réduisent le nombre de nœuds ZooKeeper (particulièrement utile lorsqu’il y a de nombreuses bases de données), tandis que des valeurs plus élevées permettent aux répliques absentes de rattraper leur retard après de plus longues périodes d’indisponibilité. [#84183](https://github.com/ClickHouse/ClickHouse/pull/84183) ([Alexey Khatskevich](https://github.com/Khatskevich)).
+* Modifie la valeur par défaut du paramètre de base de données Replicated `max_retries_before_automatic_recovery` à 10, ce qui permet une récupération plus rapide dans certains cas. [#84369](https://github.com/ClickHouse/ClickHouse/pull/84369) ([Alexander Tokmakov](https://github.com/tavplubix)).
+* Optimise les opérations DDL des vues matérialisées actualisables sans append dans les bases de données Replicated en évitant la création et le renommage des anciennes tables temporaires. [#84858](https://github.com/ClickHouse/ClickHouse/pull/84858) ([Tuan Pham Anh](https://github.com/tuanpach)).
+
+<div id="replication-and-synchronization">
+  ### Réplication et synchronisation
+</div>
+
+<div id="system-and-internal-improvements">
+  ### Améliorations système et internes
+</div>
+
+* Améliore `SYSTEM RESTART REPLICA` pour réessayer de créer la table en cas de problèmes de connexion à ZooKeeper, afin d’éviter que des tables soient oubliées. [#82616](https://github.com/ClickHouse/ClickHouse/pull/82616) ([Nikolay Degterinsky](https://github.com/evillique)).
+* Ajoute une validation d’UUID dans `ReplicatedMergeTree::executeMetadataAlter` afin d’éviter des définitions de table incorrectes lorsqu’un échange de tables se produit entre l’obtention du StorageID et l’appel à `IDatabase::alterTable`. [#82666](https://github.com/ClickHouse/ClickHouse/pull/82666) ([Nikolay Degterinsky](https://github.com/evillique)).
+* Supprime la logique expérimentale `send_metadata` liée à la zero-copy replication expérimentale. Ce code n’a jamais été utilisé, n’était pas pris en charge et était probablement défectueux, sans aucun test pour en vérifier le fonctionnement. [#82508](https://github.com/ClickHouse/ClickHouse/pull/82508) ([alesapin](https://github.com/alesapin)).
+* Ajoute la prise en charge de l’expansion des macros dans `remote_fs_zero_copy_zookeeper_path`. [#85437](https://github.com/ClickHouse/ClickHouse/pull/85437) ([Mikhail Koviazin](https://github.com/mkmkme)).
+
+<div id="functions-and-expressions">
+  ### Fonctions et expressions
+</div>
+
+* La fonction `addressToSymbol` et la table `system.symbols` utiliseront des offsets de fichier au lieu d’adresses de mémoire virtuelle. [#81896](https://github.com/ClickHouse/ClickHouse/pull/81896) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Préserver autant que possible les noms des éléments lors de la dérivation des supertypes pour les tuples nommés. [#81345](https://github.com/ClickHouse/ClickHouse/pull/81345) ([lgbo](https://github.com/lgbo-ustc)).
+* Autorisation de combiner différentes collations pour une même colonne dans différentes fenêtres. [#82877](https://github.com/ClickHouse/ClickHouse/pull/82877) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
+* Ajout d’une fonction pour écrire des types au format WKB. [#82935](https://github.com/ClickHouse/ClickHouse/pull/82935) ([scanhex12](https://github.com/scanhex12)).
+* Ajout de la possibilité d’analyser `Time` et `Time64` aux formats MM:SS, M:SS, SS ou S. [#83299](https://github.com/ClickHouse/ClickHouse/pull/83299) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* La fonction `reinterpret()` prend désormais en charge la conversion vers `Array(T)` où `T` est un type de données de taille fixe (issue [#82621](https://github.com/ClickHouse/ClickHouse/issues/82621)). [#83399](https://github.com/ClickHouse/ClickHouse/pull/83399) ([Shankar Iyer](https://github.com/shankar-iyer)).
+* Correction des fonctions `structureToProtobufSchema` et `structureToCapnProtoSchema` pour ajouter correctement un octet nul de fin au lieu d’utiliser un saut de ligne, ce qui évite les sauts de ligne manquants dans la sortie et d’éventuels débordements de tampon dans les fonctions qui dépendent de l’octet nul (comme `logTrace`, `demangle`, `extractURLParameter`, `toStringCutToZero` et `encrypt`/`decrypt`). Clôture de l’issue [#85062](https://github.com/ClickHouse/ClickHouse/issues/85062). [#85063](https://github.com/ClickHouse/ClickHouse/pull/85063) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Correction du dictionary layout `regexp_tree` pour prendre en charge le traitement de chaînes contenant des octets nuls. [#85063](https://github.com/ClickHouse/ClickHouse/pull/85063) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Correction de la fonction `formatRowNoNewline`, qui tronquait à tort le dernier caractère de la sortie lorsqu’elle était appelée avec le format `Values` ou tout autre format sans saut de ligne en fin de ligne. [#85063](https://github.com/ClickHouse/ClickHouse/pull/85063) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Correction d’un problème de sûreté des exceptions dans la fonction `stem`, qui pouvait entraîner des fuites de mémoire dans de rares cas. [#85063](https://github.com/ClickHouse/ClickHouse/pull/85063) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Correction de la fonction `initcap` pour les arguments `FixedString` afin de reconnaître correctement le début des mots en début de chaîne lorsque la chaîne précédente d’un block se terminait par un caractère de mot. [#85063](https://github.com/ClickHouse/ClickHouse/pull/85063) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Correction d’une vulnérabilité de sécurité dans le format Apache `ORC` qui pouvait entraîner l’exposition de mémoire non initialisée. [#85063](https://github.com/ClickHouse/ClickHouse/pull/85063) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Le comportement de `replaceRegexpAll` et de son alias `REGEXP_REPLACE` a été modifié pour autoriser les correspondances vides à la fin des chaînes, même lorsque la correspondance précédente traitait la chaîne entière (par exemple `^a*|a*$` ou `^|.*`), afin de s’aligner sur la sémantique de JavaScript, Perl, Python, PHP et Ruby, tout en différant de PostgreSQL. [#85063](https://github.com/ClickHouse/ClickHouse/pull/85063) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Optimiser et simplifier l’implémentation de nombreuses fonctions de manipulation de chaînes. Correction de la documentation erronée de plusieurs fonctions. Remarque : la valeur renvoyée par `byteSize` pour les colonnes String et les types complexes contenant des colonnes String est passée de 9 octets par chaîne vide à 8 octets par chaîne vide, ce qui correspond au comportement attendu. [#85063](https://github.com/ClickHouse/ClickHouse/pull/85063) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Autoriser un pas nul dans les fonctions `timeSeries*ToGrid()`. Cela fait partie du `#3` de https://github.com/ClickHouse/ClickHouse/pull/75036. [#85390](https://github.com/ClickHouse/ClickHouse/pull/85390) ([Vitaly Baranov](https://github.com/vitlibar)).
+* Prise en charge des tableaux imbriqués pour la fonction `nested`. [#85719](https://github.com/ClickHouse/ClickHouse/pull/85719) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+
+<div id="mergetree-improvements">
+  ### Améliorations de MergeTree
+</div>
+
+* Désactive de manière plus granulaire les skipping indexes qui dépendent de colonnes mises à jour à la volée ou par des patch parts. Désormais, les skipping indexes ne sont désactivés que dans les parts affectées par des on-the-fly mutations ou des patch parts ; auparavant, ils l’étaient pour toutes les parts. [#84241](https://github.com/ClickHouse/ClickHouse/pull/84241) ([Anton Popov](https://github.com/CurtizJ)).
+* Ajoute le MergeTree setting `search_orphaned_parts_drives` afin de limiter le périmètre de recherche des parts, par exemple aux disques avec des metadata locales. [#84710](https://github.com/ClickHouse/ClickHouse/pull/84710) ([Ilya Golshtein](https://github.com/ilejn)).
+* Ajoute la prise en charge manquante de `read_in_order_use_virtual_row` pour `WHERE`. Cela permet d’éviter de lire davantage de parts pour les queries avec des filters qui n’ont pas été entièrement poussés vers `PREWHERE`. [#84835](https://github.com/ClickHouse/ClickHouse/pull/84835) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Corrige l’utilisation de la serialization « compact » des discriminators Variant dans MergeTree. Auparavant, elle n’était pas utilisée dans certains cas où elle aurait pu l’être. [#84141](https://github.com/ClickHouse/ClickHouse/pull/84141) ([Pavel Kruglov](https://github.com/Avogar)).
+* Ajoute une limite (table setting [`max_uncompressed_bytes_in_patches`](/fr/reference/settings/merge-tree-settings#max_uncompressed_bytes_in_patches)) pour le nombre total d’octets uncompressed dans les patch parts. Cela évite des ralentissements importants des queries `SELECT` après des lightweight updates et empêche une utilisation abusive possible des lightweight updates. [#85641](https://github.com/ClickHouse/ClickHouse/pull/85641) ([Anton Popov](https://github.com/CurtizJ)).
+
+<div id="cache-and-memory-management">
+  ### Gestion du cache et de la mémoire
+</div>
+
+* Correction d’une erreur logique dans le filesystem cache : &quot;Having zero bytes but range is not finished&quot;. [#81868](https://github.com/ClickHouse/ClickHouse/pull/81868) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Ajout du hachage par rendez-vous pour améliorer la localité du cache. [#82511](https://github.com/ClickHouse/ClickHouse/pull/82511) ([Anton Ivashkin](https://github.com/ianton-ru)).
+* Refonte de la fonctionnalité de redimensionnement dynamique du filesystem cache. Ajout de logs supplémentaires pour l’introspection. [#82556](https://github.com/ClickHouse/ClickHouse/pull/82556) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Réduction du surcoût du suivi de la mémoire des query pour les user-defined functions exécutables. [#83929](https://github.com/ClickHouse/ClickHouse/pull/83929) ([Eduard Karacharov](https://github.com/korowa)).
+* Toutes les allocations effectuées par des bibliothèques externes sont désormais visibles par le memory tracker de ClickHouse et correctement prises en compte. Cela peut entraîner une hausse de l’utilisation mémoire signalée pour certaines query ou des échecs avec `MEMORY_LIMIT_EXCEEDED`. [#84082](https://github.com/ClickHouse/ClickHouse/pull/84082) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+* Allocation de la quantité minimale de mémoire nécessaire pour encrypted&#95;buffer dans les collections nommées chiffrées. [#84432](https://github.com/ClickHouse/ClickHouse/pull/84432) ([Pablo Marcos](https://github.com/pamarcos)).
+
+<div id="vector-similarity-index">
+  ### Index de similarité vectorielle
+</div>
+
+* Empêche désormais les utilisateurs d&#39;utiliser `nan` et `inf` avec `NumericIndexedVector`. Corrige [#82239](https://github.com/ClickHouse/ClickHouse/issues/82239) et quelques cas supplémentaires. [#82681](https://github.com/ClickHouse/ClickHouse/pull/82681) ([Raufs Dunamalijevs](https://github.com/rienath)).
+* L&#39;index de similarité vectorielle prend désormais en charge la quantification binaire. La quantification binaire réduit considérablement la consommation de mémoire et accélère la création d&#39;un index vectoriel (grâce à un calcul plus rapide des distances). De plus, le paramètre existant `vector_search_postfilter_multiplier `est désormais obsolète et a été remplacé par un paramètre plus général : `vector_search_index_fetch_multiplier`. [#85024](https://github.com/ClickHouse/ClickHouse/pull/85024) ([Shankar Iyer](https://github.com/shankar-iyer)).
+* La recherche vectorielle approximative avec des index de similarité vectorielle est désormais GA. [#85888](https://github.com/ClickHouse/ClickHouse/pull/85888) ([Robert Schulze](https://github.com/rschu1ze)).
+
+<div id="error-handling-and-messages">
+  ### Gestion des erreurs et messages
+</div>
+
+* L&#39;en-tête Connection est envoyé à la fin des en-têtes, lorsque l&#39;on sait si la connexion doit être maintenue. [#81951](https://github.com/ClickHouse/ClickHouse/pull/81951) ([Sema Checherinda](https://github.com/CheSema)).
+* Dans les versions précédentes, la multiplication de l&#39;état d&#39;une fonction d&#39;agrégation par IPv4 produisait une erreur logique au lieu d&#39;un code d&#39;erreur approprié. Corrige [#82817](https://github.com/ClickHouse/ClickHouse/issues/82817). [#82818](https://github.com/ClickHouse/ClickHouse/pull/82818) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Meilleure gestion des erreurs dans `AsynchronousMetrics`. Si le répertoire `/sys/block` existe mais n&#39;est pas accessible, le serveur démarrera sans surveiller les périphériques de bloc. Corrige [#79229](https://github.com/ClickHouse/ClickHouse/issues/79229). [#83115](https://github.com/ClickHouse/ClickHouse/pull/83115) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Il y avait une vérification incorrecte des dépendances pour l&#39;`INSERT` avec des vues matérialisées contenant des SELECT mal formés, et l&#39;utilisateur pouvait recevoir une `std::exception` obscure au lieu d&#39;une erreur explicite accompagnée d&#39;une explication claire. C&#39;est désormais corrigé. Corrige : [#82889](https://github.com/ClickHouse/ClickHouse/issues/82889). [#83190](https://github.com/ClickHouse/ClickHouse/pull/83190) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+* Ne plus afficher de très longues descriptions des actions d&#39;expression dans les messages d&#39;exception. Corrige [#83164](https://github.com/ClickHouse/ClickHouse/issues/83164). [#83350](https://github.com/ClickHouse/ClickHouse/pull/83350) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Lorsque le stockage est en cours d&#39;arrêt, `getStatus` lève une exception `ErrorCodes::ABORTED`. Auparavant, cela faisait échouer la requête SELECT. Désormais, nous interceptons les exceptions `ErrorCodes::ABORTED` et les ignorons intentionnellement. [#83435](https://github.com/ClickHouse/ClickHouse/pull/83435) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+* Les messages d&#39;exception pour certaines situations liées au chargement et à l&#39;ajout de projections sont désormais plus faciles à lire. [#83728](https://github.com/ClickHouse/ClickHouse/pull/83728) ([Robert Schulze](https://github.com/rschu1ze)).
+* Vérifier si la connexion est annulée avant de vérifier l&#39;EOF afin d&#39;éviter de lire depuis une connexion fermée. Corrige [#83893](https://github.com/ClickHouse/ClickHouse/issues/83893). [#84227](https://github.com/ClickHouse/ClickHouse/pull/84227) ([Raufs Dunamalijevs](https://github.com/rienath)).
+* Amélioration de la gestion de l&#39;arrêt du serveur pour les connexions client grâce à une simplification des vérifications internes. [#84312](https://github.com/ClickHouse/ClickHouse/pull/84312) ([Raufs Dunamalijevs](https://github.com/rienath)).
+* Les erreurs de bas niveau lors de l&#39;exécution des UDF échouent désormais avec le code d&#39;erreur `UDF_EXECUTION_FAILED`, alors qu&#39;auparavant différents codes d&#39;erreur pouvaient être renvoyés. [#84547](https://github.com/ClickHouse/ClickHouse/pull/84547) ([Xu Jia](https://github.com/XuJia0210)).
+
+<div id="sql-formatting-improvements">
+  ### Améliorations de la mise en forme SQL
+</div>
+
+* Correction de la mise en forme incohérente de `CREATE DICTIONARY`. Résout [#82105](https://github.com/ClickHouse/ClickHouse/issues/82105). [#82829](https://github.com/ClickHouse/ClickHouse/pull/82829) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Correction de la mise en forme incohérente de `TTL` lorsqu&#39;il contient une fonction `materialize`. Résout [#82828](https://github.com/ClickHouse/ClickHouse/issues/82828). [#82831](https://github.com/ClickHouse/ClickHouse/pull/82831) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Correction de la mise en forme incohérente de `EXPLAIN AST` dans une sous-requête lorsqu&#39;elle contient des options de sortie telles que INTO OUTFILE. Résout [#82826](https://github.com/ClickHouse/ClickHouse/issues/82826). [#82840](https://github.com/ClickHouse/ClickHouse/pull/82840) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Correction de la mise en forme incohérente des expressions entre parenthèses avec des alias dans un contexte où aucun alias n&#39;est autorisé. Résout [#82836](https://github.com/ClickHouse/ClickHouse/issues/82836). Résout [#82837](https://github.com/ClickHouse/ClickHouse/issues/82837). [#82867](https://github.com/ClickHouse/ClickHouse/pull/82867) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Correction de la mise en forme de CREATE USER avec des paramètres de requête (c.-à-d. `CREATE USER {username:Identifier} IDENTIFIED WITH no_password`). [#84376](https://github.com/ClickHouse/ClickHouse/pull/84376) ([Azat Khuzhin](https://github.com/azat)).
+* Correction de l&#39;analyse syntaxique d&#39;une virgule finale dans les colonnes de la requête CREATE DICTIONARY après une colonne avec paramètres, par exemple Decimal(8). Résout [#85586](https://github.com/ClickHouse/ClickHouse/issues/85586). [#85653](https://github.com/ClickHouse/ClickHouse/pull/85653) ([Nikolay Degterinsky](https://github.com/evillique)).
+
+<div id="external-integrations">
+  ### Intégrations externes
+</div>
+
+* Uniformisation des noms de paramètres dans ODBC et JDBC lors de l&#39;utilisation de collections nommées. [#83410](https://github.com/ClickHouse/ClickHouse/pull/83410) ([Andrey Zvonov](https://github.com/zvonand)).
+* MongoDB : analyse implicite des chaînes en types numériques. Auparavant, si une valeur de type chaîne était reçue depuis une source MongoDB pour une colonne numérique dans une table ClickHouse, une exception était levée. Désormais, le moteur tente d&#39;analyser automatiquement la valeur numérique à partir de la chaîne. Corrige [#81167](https://github.com/ClickHouse/ClickHouse/issues/81167). [#84069](https://github.com/ClickHouse/ClickHouse/pull/84069) ([Kirill Nikiforov](https://github.com/allmazz)).
+* Autorisation de `simdjson` sur les architectures non prises en charge (auparavant, cela entraînait des erreurs `CANNOT_ALLOCATE_MEMORY`). [#84966](https://github.com/ClickHouse/ClickHouse/pull/84966) ([Azat Khuzhin](https://github.com/azat)).
+
+<div id="miscellaneous-improvements">
+  ### Améliorations diverses
+</div>
+
+* Ajout du moteur de table Ytsaurus et de la fonction de table. [#77606](https://github.com/ClickHouse/ClickHouse/pull/77606) ([MikhailBurdukov](https://github.com/MikhailBurdukov)).
+* Amélioration de HashJoin::needUsedFlagsForPerRightTableRow : renvoie false pour un cross join. [#82379](https://github.com/ClickHouse/ClickHouse/pull/82379) ([lgbo](https://github.com/lgbo-ustc)).
+* Autorise l&#39;écriture/la lecture de colonnes Map comme tableaux de tuples. [#82408](https://github.com/ClickHouse/ClickHouse/pull/82408) ([MikhailBurdukov](https://github.com/MikhailBurdukov)).
+* Cette PR a été revertée. [#82884](https://github.com/ClickHouse/ClickHouse/pull/82884) ([Mithun p](https://github.com/mithunputhusseri)).
+* Logs asynchrones : limite le nombre maximal d&#39;entrées conservées dans la file d&#39;attente. [#83214](https://github.com/ClickHouse/ClickHouse/pull/83214) ([Raúl Marín](https://github.com/Algunenano)).
+* Active Date/Date32 en tant qu&#39;entiers dans les formats d&#39;entrée JSON. [#83597](https://github.com/ClickHouse/ClickHouse/pull/83597) ([MikhailBurdukov](https://github.com/MikhailBurdukov)).
+* Meilleure prise en charge des index Bloom filter (regular, ngram et token) afin qu&#39;ils soient utilisés lorsque le premier argument est un tableau constant (l&#39;ensemble) et le second la colonne indexée (le sous-ensemble), pour une exécution des requêtes plus efficace. [#84700](https://github.com/ClickHouse/ClickHouse/pull/84700) ([Doron David](https://github.com/dorki)).
+* Autorise la conversion de type des valeurs de set lors du pushdown des filtres `IN` / `GLOBAL IN` sur les clés primaires du stockage KeyValue (par ex. EmbeddedRocksDB, KeeperMap). [#84515](https://github.com/ClickHouse/ClickHouse/pull/84515) ([Eduard Karacharov](https://github.com/korowa)).
+* Élimine les scans complets lorsque l&#39;analyse d&#39;index aboutit à des plages vides pour la lecture avec des répliques parallèles. [#84971](https://github.com/ClickHouse/ClickHouse/pull/84971) ([Eduard Karacharov](https://github.com/korowa)).
+* Corrige une série de problèmes pouvant survenir lors de l&#39;exécution de tests d&#39;intégration en local. [#82135](https://github.com/ClickHouse/ClickHouse/pull/82135) ([Oleg Doronin](https://github.com/dorooleg)).
+* Active trace&#95;log.symbolize par défaut pour les anciens déploiements. [#85456](https://github.com/ClickHouse/ClickHouse/pull/85456) ([Azat Khuzhin](https://github.com/azat)).
+
+<div id="bug-fixes">
+  #### Corrections de bugs (dysfonctionnements visibles par l’utilisateur dans une version stable officielle)
+</div>
+
+<div id="performance-optimizations">
+  ### Optimisations des performances
+</div>
+
+* Corrige une dégradation des performances dans SummingMergeTree introduite en 25.5 dans https://github.com/ClickHouse/ClickHouse/pull/79051. [#82130](https://github.com/ClickHouse/ClickHouse/pull/82130) ([Pavel Kruglov](https://github.com/Avogar)).
+* Corrige une dégradation des performances avec l’analyseur activé, lorsque les requêtes secondaires lisaient systématiquement toutes les colonnes des VIEWs. Corrige [#81718](https://github.com/ClickHouse/ClickHouse/issues/81718). [#83036](https://github.com/ClickHouse/ClickHouse/pull/83036) ([Dmitry Novik](https://github.com/novikd)).
+* Ne vérifie pas les dépendances cycliques lors de la création d’une table sans dépendances. Cela corrige une dégradation des performances dans les cas d’utilisation impliquant la création de milliers de tables, introduite dans https://github.com/ClickHouse/ClickHouse/pull/65405. [#83077](https://github.com/ClickHouse/ClickHouse/pull/83077) ([Pavel Kruglov](https://github.com/Avogar)).
+* Exécute les agrégats de fenêtre `DISTINCT` en temps linéaire et corrige un bug dans `sumDistinct`. Clôt [#79792](https://github.com/ClickHouse/ClickHouse/issues/79792). Clôt [#52253](https://github.com/ClickHouse/ClickHouse/issues/52253). [#79859](https://github.com/ClickHouse/ClickHouse/pull/79859) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+
+<div id="query-execution-fixes">
+  ### Correctifs liés à l’exécution des requêtes
+</div>
+
+* Pour les requêtes combinant `ORDER BY ... LIMIT BY ... LIMIT N`, lorsque ORDER BY est exécuté sous forme de PartialSorting, le compteur `rows_before_limit_at_least` reflète désormais le nombre de lignes consommées par la clause LIMIT, et non plus le nombre de lignes consommées par la transformation de tri. [#78999](https://github.com/ClickHouse/ClickHouse/pull/78999) ([Eduard Karacharov](https://github.com/korowa)).
+* Correction d’une logical error avec l’opérateur `<=>` et le moteur Join : la query renvoie désormais le code d’error approprié. [#80165](https://github.com/ClickHouse/ClickHouse/pull/80165) ([Vladimir Cherkasov](https://github.com/vdimir)).
+* Correction d’un crash dans la fonction `loop` lorsqu’elle est utilisée avec la famille de fonctions `remote`. Garantit que la clause LIMIT est respectée dans `loop(remote(...))`. [#80299](https://github.com/ClickHouse/ClickHouse/pull/80299) ([Julia Kartseva](https://github.com/jkartseva)).
+* Correction du comportement incorrect des fonctions `to_utc_timestamp` et `from_utc_timestamp` lors du traitement des dates antérieures à l’epoch Unix (1970-01-01) et postérieures à la date maximale (2106-02-07 06:28:15). Désormais, ces fonctions ramènent correctement les valeurs, respectivement au début de l’epoch et à la date maximale. [#80498](https://github.com/ClickHouse/ClickHouse/pull/80498) ([Surya Kant Ranjan](https://github.com/iit2009046)).
+* Correction de l’exécution de `IN` avec `transform_null_in=1` lorsqu’il y a une valeur NULL dans l’argument de gauche et un résultat de subquery non Nullable. [#81584](https://github.com/ClickHouse/ClickHouse/pull/81584) ([Pavel Kruglov](https://github.com/Avogar)).
+* Correction du problème où les colonnes requises ne sont pas lues lors du traitement d’une subquery corrélée scalaire. Corrige [#81716](https://github.com/ClickHouse/ClickHouse/issues/81716). [#81805](https://github.com/ClickHouse/ClickHouse/pull/81805) ([Dmitry Novik](https://github.com/novikd)).
+* Correction de l’analyse du filtre lorsqu’une seule colonne d’alias constante est utilisée dans la query. Corrige [#79448](https://github.com/ClickHouse/ClickHouse/issues/79448). [#82037](https://github.com/ClickHouse/ClickHouse/pull/82037) ([Dmitry Novik](https://github.com/novikd)).
+* Correction de l’error `Not found column` pour les requêtes avec `arrayJoin` dans la condition `WHERE` et `IndexSet`. [#82113](https://github.com/ClickHouse/ClickHouse/pull/82113) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Correction de l’exception `TOO_DEEP_SUBQUERIES` lorsque la définition d’une CTE référence une autre expression de table portant le même nom. [#83413](https://github.com/ClickHouse/ClickHouse/pull/83413) ([Dmitry Novik](https://github.com/novikd)).
+* Correction d’un résultat incorrect pour les queries avec la clause `WHERE ... IN (<subquery>)` lorsque le query condition cache est activé (paramètre `use_query_condition_cache`). [#83445](https://github.com/ClickHouse/ClickHouse/pull/83445) ([LB7666](https://github.com/acking-you)).
+* `INSERT SELECT` avec `UNION ALL` pouvait entraîner un déréférencement de pointeur null dans un cas limite. Cela clôt [#83618](https://github.com/ClickHouse/ClickHouse/issues/83618). [#83643](https://github.com/ClickHouse/ClickHouse/pull/83643) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Correction de `LOGICAL_ERROR` lors de l’analyse de l’expression de ROW POLICY pour les colonnes corrélées. [#82618](https://github.com/ClickHouse/ClickHouse/pull/82618) ([Dmitry Novik](https://github.com/novikd)).
+* Correction de résultats erronés lorsque le query condition cache est utilisé conjointement avec des CTE récursives (issue [#81506](https://github.com/ClickHouse/ClickHouse/issues/81506)). [#84026](https://github.com/ClickHouse/ClickHouse/pull/84026) ([zhongyuankai](https://github.com/zhongyuankai)).
+* Correction de l’analyse récursive infinie des définitions `WINDOW` invalides. Corrige [#83131](https://github.com/ClickHouse/ClickHouse/issues/83131). [#84242](https://github.com/ClickHouse/ClickHouse/pull/84242) ([Dmitry Novik](https://github.com/novikd)).
+* Correction du problème `Not-ready Set` pour `IN (subquery)` dans le paramètre `additional_table_filters expression`. [#85210](https://github.com/ClickHouse/ClickHouse/pull/85210) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Correction d&#39;une erreur logique liée à des sous-requêtes dupliquées lorsque `optimize_syntax_fuse_functions` est activé, clôture de [#75511](https://github.com/ClickHouse/ClickHouse/issues/75511). [#83300](https://github.com/ClickHouse/ClickHouse/pull/83300) ([Vladimir Cherkasov](https://github.com/vdimir)).
+
+<div id="iceberg-and-datalake-fixes">
+  ### Correctifs pour Iceberg et DataLake
+</div>
+
+* Correction de la résolution des métadonnées lors des requêtes sur des tables Iceberg via le REST catalog. ... [#80562](https://github.com/ClickHouse/ClickHouse/pull/80562) ([Saurabh Kumar Ojha](https://github.com/saurabhojha)).
+* Correction de data races dans Iceberg. [#82088](https://github.com/ClickHouse/ClickHouse/pull/82088) ([Azat Khuzhin](https://github.com/azat)).
+* Correction de « Context has expired » pour Iceberg. [#82146](https://github.com/ClickHouse/ClickHouse/pull/82146) ([Azat Khuzhin](https://github.com/azat)).
+* ClickHouse peut désormais lire des tables Iceberg depuis le Glue catalog après une évolution de schéma. Corrige [#81272](https://github.com/ClickHouse/ClickHouse/issues/81272). [#82301](https://github.com/ClickHouse/ClickHouse/pull/82301) ([alesapin](https://github.com/alesapin)).
+* Correction de data races dans Iceberg. [#82841](https://github.com/ClickHouse/ClickHouse/pull/82841) ([Azat Khuzhin](https://github.com/azat)).
+* Désactive le pruning de fichiers basé sur les bornes pour les éléments d’Array Iceberg et les valeurs de Map Iceberg, y compris tous leurs sous-champs imbriqués. [#83520](https://github.com/ClickHouse/ClickHouse/pull/83520) ([Daniil Ivanik](https://github.com/divanik)).
+* Correction des écritures Iceberg pour les types complexes. [#85330](https://github.com/ClickHouse/ClickHouse/pull/85330) ([scanhex12](https://github.com/scanhex12)).
+* L’écriture des bornes inférieures et supérieures n’est pas prise en charge pour les types complexes. [#85332](https://github.com/ClickHouse/ClickHouse/pull/85332) ([scanhex12](https://github.com/scanhex12)).
+* Correction de la nullabilité des fields dans Iceberg. [#85977](https://github.com/ClickHouse/ClickHouse/pull/85977) ([scanhex12](https://github.com/scanhex12)).
+* Ne crée plus de fichier de suppression Iceberg vide. [#86061](https://github.com/ClickHouse/ClickHouse/pull/86061) ([scanhex12](https://github.com/scanhex12)).
+* Met à jour le timestamp des métadonnées lors des écritures Iceberg. [#85711](https://github.com/ClickHouse/ClickHouse/pull/85711) ([scanhex12](https://github.com/scanhex12)).
+* Spark ne peut pas lire les position delete files. [#85762](https://github.com/ClickHouse/ClickHouse/pull/85762) ([scanhex12](https://github.com/scanhex12)).
+* Ne récupère plus le schéma à partir des manifest files, mais stocke séparément les schémas pertinents pour chaque snapshot. Déduit le schéma pertinent de chaque fichier de données à partir du snapshot correspondant. Le comportement précédent ne respectait pas la spécification Iceberg pour les entrées de manifest files avec le statut existing. [#84588](https://github.com/ClickHouse/ClickHouse/pull/84588) ([Daniil Ivanik](https://github.com/divanik)).
+* Désormais, Iceberg n’essaie plus de mettre en cache la snapshot version pertinente entre les requêtes SELECT et tente toujours de résoudre le snapshot correctement. La précédente tentative de mise en cache du snapshot Iceberg entraînait des problèmes lors de l’utilisation d’une Iceberg table avec le time travel. [#85038](https://github.com/ClickHouse/ClickHouse/pull/85038) ([Daniil Ivanik](https://github.com/divanik)).
+* Correction de la résolution des métadonnées lors des requêtes sur des tables Iceberg via le REST catalog. ... [#85531](https://github.com/ClickHouse/ClickHouse/pull/85531) ([Saurabh Kumar Ojha](https://github.com/saurabhojha)).
+* Correction du masquage des secrets dans les table functions icebergS3Cluster et icebergAzureCluster. [#85658](https://github.com/ClickHouse/ClickHouse/pull/85658) ([MikhailBurdukov](https://github.com/MikhailBurdukov)).
+
+<div id="deltalake-fixes">
+  ### Correctifs DeltaLake
+</div>
+
+* Correction de l’élagage de colonnes avec delta-kernel dans le stockage `DeltaLake`. Résout [#84543](https://github.com/ClickHouse/ClickHouse/issues/84543). [#84745](https://github.com/ClickHouse/ClickHouse/pull/84745) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Actualisation des informations d’authentification dans delta-kernel du stockage DeltaLake. [#84751](https://github.com/ClickHouse/ClickHouse/pull/84751) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Correction d’un segfault dans l’implémentation de delta-kernel. [#85160](https://github.com/ClickHouse/ClickHouse/pull/85160) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Correction d’une condition de concurrence dans l’implémentation delta-kernel du moteur `DeltaLake`. [#85221](https://github.com/ClickHouse/ClickHouse/pull/85221) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Correction de la lecture des données partitionnées avec delta-kernel désactivé dans le moteur `DeltaLake`. Cette fonctionnalité était défaillante en 25.7 (https://github.com/ClickHouse/ClickHouse/pull/81136). [#85223](https://github.com/ClickHouse/ClickHouse/pull/85223) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Remplacement, pour compatibilité, de la valeur antérieure à 25.5 de `allow_experimental_delta_kernel_rs` par `false`. [#84587](https://github.com/ClickHouse/ClickHouse/pull/84587) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Correction de la lecture du nombre depuis le cache pour delta lake. [#85704](https://github.com/ClickHouse/ClickHouse/pull/85704) ([Kseniia Sumarokova](https://github.com/kssenii)).
+
+<div id="ttl-and-mergetree-fixes">
+  ### Correctifs TTL et MergeTree
+</div>
+
+* Recalcule l’index min-max lorsque le TTL réduit le nombre de lignes, afin de garantir la fiabilité des algorithmes qui s’appuient dessus, tels que `minmax_count_projection`. Cela résout [#77091](https://github.com/ClickHouse/ClickHouse/issues/77091). [#77166](https://github.com/ClickHouse/ClickHouse/pull/77166) ([Amos Bird](https://github.com/amosbird)).
+* Corrige le recalcul incorrect du TTL dans TTL GROUP BY lors de la mise à jour du TTL. [#81222](https://github.com/ClickHouse/ClickHouse/pull/81222) ([Evgeniy Ulasik](https://github.com/H0uston)).
+* Corrige l’erreur « Context has expired » lors des merges lorsqu’un dict est utilisé dans une expression TTL. [#81690](https://github.com/ClickHouse/ClickHouse/pull/81690) ([Azat Khuzhin](https://github.com/azat)).
+* Corrige LOGICAL&#95;ERROR et le plantage qui s’ensuit lors de l’utilisation de la même colonne dans le TTL pour GROUP BY et SET. [#82054](https://github.com/ClickHouse/ClickHouse/pull/82054) ([Pablo Marcos](https://github.com/pamarcos)).
+* MergeTree ne fait désormais plus rien en lien avec le TTL si tous les TTL sont supprimés de la table. [#84441](https://github.com/ClickHouse/ClickHouse/pull/84441) ([alesapin](https://github.com/alesapin)).
+* Corrige le fait que `ALTER MODIFY ORDER BY` ne validait pas les colonnes TTL dans les clés de tri. Les colonnes TTL sont désormais correctement rejetées lorsqu’elles sont utilisées dans des clauses `ORDER BY` au cours d’opérations `ALTER`, ce qui évite une corruption potentielle de la table. [#84536](https://github.com/ClickHouse/ClickHouse/pull/84536) ([xiaohuanlin](https://github.com/xiaohuanlin)).
+
+<div id="projection-fixes">
+  ### Correctifs des projections
+</div>
+
+* Correction d&#39;une erreur logique lors de la matérialisation d&#39;une projection lorsque le type de colonne a été changé en Nullable. [#80741](https://github.com/ClickHouse/ClickHouse/pull/80741) ([Pavel Kruglov](https://github.com/Avogar)).
+* Correction de l&#39;utilisation incorrecte des métadonnées du parent dans la fonction de table `mergeTreeProjection` lorsque `enable_shared_storage_snapshot_in_query = 1`. Cela concerne [#82634](https://github.com/ClickHouse/ClickHouse/issues/82634). [#82638](https://github.com/ClickHouse/ClickHouse/pull/82638) ([Amos Bird](https://github.com/amosbird)).
+* Correction d&#39;un crash rare de ClickHouse lorsqu&#39;une table comporte une projection, que `lightweight_mutation_projection_mode = 'rebuild'` et que l&#39;utilisateur exécute une suppression légère qui supprime TOUTES les lignes de n&#39;importe quel block de la table. [#84158](https://github.com/ClickHouse/ClickHouse/pull/84158) ([alesapin](https://github.com/alesapin)).
+* Correction de la sauvegarde des parts avec des projections corrompues. [#85362](https://github.com/ClickHouse/ClickHouse/pull/85362) ([Antonio Andelic](https://github.com/antonio2368)).
+* Interdiction d&#39;utiliser la colonne `_part_offset` dans les projections dans les versions tant qu&#39;elle n&#39;est pas stabilisée. [#85372](https://github.com/ClickHouse/ClickHouse/pull/85372) ([Sema Checherinda](https://github.com/CheSema)).
+
+<div id="parallel-replicas-fixes">
+  ### Correctifs pour les répliques parallèles
+</div>
+
+* Pour certaines requêtes exécutées avec des répliques parallèles, les optimisations de lecture dans l&#39;ordre pouvaient être appliquées sur un initiateur, mais pas sur les nœuds distants. Cela entraînait l&#39;utilisation de modes de lecture différents par le coordinateur des répliques parallèles (sur l&#39;initiateur) et par les nœuds distants, ce qui constitue une erreur logique. [#80652](https://github.com/ClickHouse/ClickHouse/pull/80652) ([Igor Nikonov](https://github.com/devcrafter)).
+* Désactivation des répliques parallèles lorsqu&#39;une sous-requête contient `FINAL` [#81401](https://github.com/ClickHouse/ClickHouse/issues/81401). [#83455](https://github.com/ClickHouse/ClickHouse/pull/83455) ([zoomxi](https://github.com/zoomxi)).
+* Correction de `LOGICAL_ERROR` pour les requêtes avec des répliques parallèles et plusieurs INNER JOIN suivis d&#39;un RIGHT JOIN. N&#39;utilisez pas de répliques parallèles pour ce type de requêtes. [#84299](https://github.com/ClickHouse/ClickHouse/pull/84299) ([Vladimir Cherkasov](https://github.com/vdimir)).
+* Les requêtes avec des répliques parallèles qui utilisent l&#39;optimisation de lecture inversée dans l&#39;ordre peuvent produire des résultats incorrects. [#85406](https://github.com/ClickHouse/ClickHouse/pull/85406) ([Igor Nikonov](https://github.com/devcrafter)).
+
+<div id="authentication-and-security">
+  ### Authentification et sécurité
+</div>
+
+* Correction du masquage des valeurs des named collections dans les logs/query&#95;log. Clôt [#82405](https://github.com/ClickHouse/ClickHouse/issues/82405). [#82510](https://github.com/ClickHouse/ClickHouse/pull/82510) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Définition d&#39;un sel pour les données d&#39;authentification lors de l&#39;analyse de l&#39;AST avec le type SCRAM&#95;SHA256&#95;PASSWORD. [#82888](https://github.com/ClickHouse/ClickHouse/pull/82888) ([Tuan Pham Anh](https://github.com/tuanpach)).
+* Masquage des informations d&#39;authentification du schema registry Avro afin qu&#39;elles ne soient visibles ni par l&#39;utilisateur ni dans les logs. [#83713](https://github.com/ClickHouse/ClickHouse/pull/83713) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
+* Correction d&#39;un comportement incorrect lors de l&#39;exécution de `REVOKE S3 ON system.*`, qui révoquait les autorisations S3 pour `*.*`. Cela corrige [#83417](https://github.com/ClickHouse/ClickHouse/issues/83417). [#83420](https://github.com/ClickHouse/ClickHouse/pull/83420) ([pufit](https://github.com/pufit)).
+* Correction d&#39;un crash du serveur lorsqu&#39;un utilisateur créé avec `no_password` tente de se connecter après que le paramètre serveur `allow_no_password` a été défini sur 0. [#84426](https://github.com/ClickHouse/ClickHouse/pull/84426) ([Shankar Iyer](https://github.com/shankar-iyer)).
+* Amélioration du message d&#39;erreur lors d&#39;une tentative de création d&#39;un utilisateur identifié par JWT. [#85072](https://github.com/ClickHouse/ClickHouse/pull/85072) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+* Masquage des identifiants pour `deltaLakeAzure`, `deltaLakeCluster`, `icebergS3Cluster` et `icebergAzureCluster`. [#85889](https://github.com/ClickHouse/ClickHouse/pull/85889) ([Julian Maicher](https://github.com/jmaicher)).
+* Correction d&#39;un bug introduit dans [#79963](https://github.com/ClickHouse/ClickHouse/pull/79963). Lors d&#39;un insert dans une vue matérialisée avec un definer, la vérification des autorisations doit utiliser les grants du definer. Corrige [#79951](https://github.com/ClickHouse/ClickHouse/issues/79951). [#83502](https://github.com/ClickHouse/ClickHouse/pull/83502) ([pufit](https://github.com/pufit)).
+
+<div id="backup-and-restore-fixes">
+  ### Correctifs de sauvegarde et de restauration
+</div>
+
+* Corrige la sauvegarde d&#39;une table `Memory` vide, qui entraînait l&#39;échec de la restauration de la sauvegarde avec l&#39;erreur `BACKUP_ENTRY_NOT_FOUND`. [#82791](https://github.com/ClickHouse/ClickHouse/pull/82791) ([Julia Kartseva](https://github.com/jkartseva)).
+* Corrige un message d&#39;erreur trompeur lors de la restauration d&#39;une sauvegarde sur un disque en lecture seule. [#83051](https://github.com/ClickHouse/ClickHouse/pull/83051) ([Julia Kartseva](https://github.com/jkartseva)).
+* Corrige le lancement de sauvegardes internes superflues après des problèmes de connexion. [#84755](https://github.com/ClickHouse/ClickHouse/pull/84755) ([Vitaly Baranov](https://github.com/vitlibar)).
+
+<div id="window-and-aggregate-functions">
+  ### Fonctions de fenêtre et d’agrégation
+</div>
+
+* Correction d’un plantage possible dans `Aggregator` en cas d’exception lors de la fusion. [#81450](https://github.com/ClickHouse/ClickHouse/pull/81450) ([Nikita Taranov](https://github.com/nickitat)).
+* Correction d’un plantage possible dans `Aggregator` en cas d’exception lors de la fusion. [#82022](https://github.com/ClickHouse/ClickHouse/pull/82022) ([Nikita Taranov](https://github.com/nickitat)).
+* Correction d’une erreur de copier-coller dans arraySimilarity, qui interdit désormais l’utilisation de poids UInt32 et Int32. Mise à jour des tests et de la documentation. [#82103](https://github.com/ClickHouse/ClickHouse/pull/82103) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
+* Correction d’un dépassement de capacité dans les fonctions `numericIndexedVectorPointwiseAdd`, `numericIndexedVectorPointwiseSubtract`, `numericIndexedVectorPointwiseMultiply`, `numericIndexedVectorPointwiseDivide`, qui se produisait lors de leur application à de grands nombres. [#82165](https://github.com/ClickHouse/ClickHouse/pull/82165) ([Raufs Dunamalijevs](https://github.com/rienath)).
+
+<div id="parquet-and-file-format-fixes">
+  ### Correctifs pour Parquet et le format de fichier
+</div>
+
+* Correction du bloom filter Parquet qui appliquait à tort une condition comme `WHERE function(key) IN (...)` comme s’il s’agissait de `WHERE key IN (...)`. [#81255](https://github.com/ClickHouse/ClickHouse/pull/81255) ([Michael Kolupaev](https://github.com/al13n321)).
+* Correction du writer Parquet qui générait des statistiques incorrectes (min/max) pour les types Decimal. [#83754](https://github.com/ClickHouse/ClickHouse/pull/83754) ([Michael Kolupaev](https://github.com/al13n321)).
+* Correction de la désérialisation de `groupArraySample`/`groupArrayLast` en cas d’éléments vides (la désérialisation pouvait ignorer une partie des données binaires si l’entrée était vide, ce qui peut entraîner une corruption lors de la lecture des données et UNKNOWN&#95;PACKET&#95;FROM&#95;SERVER dans le protocole TCP). Cela n’affecte pas les types numériques ni les types de date et heure. [#82763](https://github.com/ClickHouse/ClickHouse/pull/82763) ([Pedro Ferreira](https://github.com/PedroTadim)).
+* Correction de l’écriture des chemins JSON avec des valeurs NULL au format RowBinary. [#83923](https://github.com/ClickHouse/ClickHouse/pull/83923) ([Pavel Kruglov](https://github.com/Avogar)).
+
+<div id="join-fixes">
+  ### Correctifs liés aux JOIN
+</div>
+
+* Correction de la modification du filter pour les queries avec une expression JOIN sur une table utilisant le moteur `Merge`. Corrige [#82092](https://github.com/ClickHouse/ClickHouse/issues/82092). [#82950](https://github.com/ClickHouse/ClickHouse/pull/82950) ([Dmitry Novik](https://github.com/novikd)).
+* Correction du crash lorsqu&#39;un stockage key-value est joint avec une clé convertie en un autre type. [#82497](https://github.com/ClickHouse/ClickHouse/pull/82497) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
+* Correction d&#39;une erreur logique lors de la résolution du matcher dans une query comportant plusieurs JOIN, ferme [#81969](https://github.com/ClickHouse/ClickHouse/issues/81969). [#82421](https://github.com/ClickHouse/ClickHouse/pull/82421) ([Vladimir Cherkasov](https://github.com/vdimir)).
+* Correction de la fusion du filter dans la condition JOIN lorsque les opérandes d&#39;égalité sont de types différents ou font référence à des constantes. Corrige [#83432](https://github.com/ClickHouse/ClickHouse/issues/83432). [#84145](https://github.com/ClickHouse/ClickHouse/pull/84145) ([Dmitry Novik](https://github.com/novikd)).
+* Correction de l&#39;erreur logique `Expected single dictionary argument for function` lors de l&#39;exécution d&#39;un JOIN sur une condition d&#39;inégalité lorsque l&#39;une des colonnes est `LowCardinality` et l&#39;autre une constante. Ferme [#81779](https://github.com/ClickHouse/ClickHouse/issues/81779). [#84019](https://github.com/ClickHouse/ClickHouse/pull/84019) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+
+<div id="replicated-database-fixes">
+  ### Correctifs de la base de données Replicated
+</div>
+
+* Correction de `markReplicasActive` dans DDLWorker et DatabaseReplicatedDDLWorker. [#81395](https://github.com/ClickHouse/ClickHouse/pull/81395) ([Tuan Pham Anh](https://github.com/tuanpach)).
+* Correction de `DatabaseReplicated::getClusterImpl`. Si le premier élément (ou les premiers éléments) de `hosts` a `id == DROPPED_MARK` et qu&#39;il n&#39;existe aucun autre élément pour le même shard, le premier élément de `shards` sera un vecteur vide, ce qui provoque `std::out_of_range`. [#82093](https://github.com/ClickHouse/ClickHouse/pull/82093) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+* Suivi du nombre de jobs asynchrones de chargement de tables. Si des jobs sont en cours d&#39;exécution, ne met pas à jour `tail_ptr` dans `TransactionLog::removeOldEntries`. [#82824](https://github.com/ClickHouse/ClickHouse/pull/82824) ([Tuan Pham Anh](https://github.com/tuanpach)).
+* Correction du problème suivant : si une table MergeTree est créée avec `add_minmax_index_for_numeric_columns=1` ou `add_minmax_index_for_string_columns=1`, l&#39;index est ensuite matérialisé lors d&#39;une opération ALTER, ce qui empêche la base de données Replicated de s&#39;initialiser correctement sur une nouvelle réplique. [#83751](https://github.com/ClickHouse/ClickHouse/pull/83751) ([Nikolay Degterinsky](https://github.com/evillique)).
+* Correction de la création de RMV sur une nouvelle réplique de la base de données Replicated si DEFINER est supprimé. [#85327](https://github.com/ClickHouse/ClickHouse/pull/85327) ([Nikolay Degterinsky](https://github.com/evillique)).
+* Correction de la récupération des bases de données répliquées lorsque le déplacement du fichier de métadonnées prend beaucoup de temps. [#85177](https://github.com/ClickHouse/ClickHouse/pull/85177) ([Tuan Pham Anh](https://github.com/tuanpach)).
+* Récupération forcée de la base de données Replicated après restauration des métadonnées de la base de données dans Keeper. [#85960](https://github.com/ClickHouse/ClickHouse/pull/85960) ([Tuan Pham Anh](https://github.com/tuanpach)).
+* Correction d&#39;un bug dans la récupération de la base de données `Replicated` : si un nom de table contient le symbole `%`, la table pouvait être recréée avec un nom différent pendant la récupération. [#85987](https://github.com/ClickHouse/ClickHouse/pull/85987) ([Alexander Tokmakov](https://github.com/tavplubix)).
+* Désormais, le worker DDL supprime les hôtes obsolètes de l&#39;ensemble de répliques. Cela réduit la quantité de métadonnées stockées dans ZooKeeper. [#88154](https://github.com/ClickHouse/ClickHouse/pull/88154) ([alesapin](https://github.com/alesapin)).
+
+<div id="lightweight-updates-fixes">
+  ### Correctifs pour les lightweight updates
+</div>
+
+* Correction des lightweight updates pour les tables utilisant les moteurs `ReplacingMergeTree` et `CollapsingMergeTree`. [#84851](https://github.com/ClickHouse/ClickHouse/pull/84851) ([Anton Popov](https://github.com/CurtizJ)).
+* Correction d’une erreur logique dans les lightweight updates qui mettent à jour toutes les colonnes de la table. [#84380](https://github.com/ClickHouse/ClickHouse/pull/84380) ([Anton Popov](https://github.com/CurtizJ)).
+* Correction des lightweight updates pour les tables utilisant le moteur `ReplicatedMergeTree` et créées sur des serveurs exécutant une version antérieure à 25.7. [#84933](https://github.com/ClickHouse/ClickHouse/pull/84933) ([Anton Popov](https://github.com/CurtizJ)).
+* Correction des lightweight updates pour les tables utilisant un moteur `MergeTree` non répliqué après l’exécution d’une requête `ALTER TABLE ... REPLACE PARTITION`. [#84941](https://github.com/ClickHouse/ClickHouse/pull/84941) ([Anton Popov](https://github.com/CurtizJ)).
+* Correction du nettoyage des patch parts dans `ReplicatedMergeTree`. Auparavant, le résultat d’une lightweight update pouvait temporairement ne pas être visible sur la réplique tant que la part fusionnée ou mutée qui matérialise les patch parts n’avait pas été téléchargée depuis une autre réplique. [#85121](https://github.com/ClickHouse/ClickHouse/pull/85121) ([Anton Popov](https://github.com/CurtizJ)).
+
+<div id="s3-and-object-storage-fixes">
+  ### Corrections liées à S3 et au stockage d’objets
+</div>
+
+* Correction de la validation des arguments de la fonction de table S3 lors du masquage des secrets, évitant un possible `LOGICAL_ERROR`, clôture de [#80620](https://github.com/ClickHouse/ClickHouse/issues/80620). [#82056](https://github.com/ClickHouse/ClickHouse/pull/82056) ([Vladimir Cherkasov](https://github.com/vdimir)).
+* Correction d’un possible interblocage pour les requêtes distantes lorsque le serveur subit une pression mémoire. [#82160](https://github.com/ClickHouse/ClickHouse/pull/82160) ([Kirill](https://github.com/kirillgarbar)).
+* Ajout d’une expiration au jeton AWS ECS afin qu’il puisse être rechargé. [#82422](https://github.com/ClickHouse/ClickHouse/pull/82422) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+* Correction de la désactivation de l’alignement sur les limites pour le buffer mis en cache dans les moteurs de table externes. Cela a été cassé dans https://github.com/ClickHouse/ClickHouse/pull/81868. [#82493](https://github.com/ClickHouse/ClickHouse/pull/82493) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Correction de `no_sign_request` pour le client S3. Il peut être utilisé pour éviter explicitement de signer les requêtes S3. Il peut également être défini pour des endpoints spécifiques à l’aide de paramètres basés sur les endpoints. [#83379](https://github.com/ClickHouse/ClickHouse/pull/83379) ([Antonio Andelic](https://github.com/antonio2368)).
+* Ignore les nœuds indisponibles pendant un INSERT SELECT depuis s3Cluster() vers un MergeTree replicated. [#83676](https://github.com/ClickHouse/ClickHouse/pull/83676) ([Igor Nikonov](https://github.com/devcrafter)).
+* Correction de la condition de retour anticipé pour le ralentissement du débit des requêtes S3 : pour activer ce comportement lorsque tous les threads sont en pause à cause d’une erreur renouvelable, il suffit que s3&#95;slow&#95;all&#95;threads&#95;after&#95;network&#95;error ou backup&#95;slow&#95;all&#95;threads&#95;after&#95;retryable&#95;s3&#95;error soit à true, au lieu d’exiger les deux. [#85505](https://github.com/ClickHouse/ClickHouse/pull/85505) ([Julia Kartseva](https://github.com/jkartseva)).
+* Correction d’une erreur logique lors de la lecture via des fonctions de stockage d’objets à travers une table Distributed ou une fonction de table distante. Corrige : [#84658](https://github.com/ClickHouse/ClickHouse/issues/84658), corrige [#85173](https://github.com/ClickHouse/ClickHouse/issues/85173), corrige [#52022](https://github.com/ClickHouse/ClickHouse/issues/52022). [#85359](https://github.com/ClickHouse/ClickHouse/pull/85359) ([alesapin](https://github.com/alesapin)).
+* Correction de l’erreur logique S3Queue « Table is already registered ». Clôture de [#84433](https://github.com/ClickHouse/ClickHouse/issues/84433). Cassé après https://github.com/ClickHouse/ClickHouse/pull/83530. [#84677](https://github.com/ClickHouse/ClickHouse/pull/84677) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Correction de valeurs de paramètres trop grandes, qui cassaient les tables S3Queue et le redémarrage des répliques. [#86074](https://github.com/ClickHouse/ClickHouse/pull/86074) ([Nikolay Degterinsky](https://github.com/evillique)).
+
+<div id="dynamicandvarianttypefixes">
+  ### Corrections pour les types Dynamic et Variant
+</div>
+
+* Correction du rollback d&#39;une colonne Dynamic en cas d&#39;échec de l&#39;analyse. [#82169](https://github.com/ClickHouse/ClickHouse/pull/82169) ([Pavel Kruglov](https://github.com/Avogar)).
+* Correction d&#39;un possible plantage du type Variant dans UNION. [#83295](https://github.com/ClickHouse/ClickHouse/pull/83295) ([Pavel Kruglov](https://github.com/Avogar)).
+* Correction de la lecture d&#39;une colonne Variant avec matérialisation différée. [#84400](https://github.com/ClickHouse/ClickHouse/pull/84400) ([Pavel Kruglov](https://github.com/Avogar)).
+* Ne pas valider les types expérimentaux ou suspects lors de l&#39;exécution des expressions default/materialize pendant la lecture d&#39;une table existante. [#81618](https://github.com/ClickHouse/ClickHouse/pull/81618) ([Pavel Kruglov](https://github.com/Avogar)).
+
+<div id="keeper-fixes">
+  ### Correctifs de Keeper
+</div>
+
+* Correctif de Keeper : mise à jour correcte du nombre total de watches lors de la suppression de nœuds éphémères à la fermeture d&#39;une session. [#83583](https://github.com/ClickHouse/ClickHouse/pull/83583) ([Antonio Andelic](https://github.com/antonio2368)).
+* Correction des écritures dans le désordre dans le changelog de Keeper. Auparavant, des écritures pouvaient être en cours dans le changelog, mais un rollback pouvait entraîner une modification concurrente du fichier de destination. Cela pouvait provoquer des logs incohérents, voire une perte de données. [#84434](https://github.com/ClickHouse/ClickHouse/pull/84434) ([Antonio Andelic](https://github.com/antonio2368)).
+* Correction de fuites dans Keeper avec le stockage rocksdb (les itérateurs n&#39;étaient pas détruits). [#84523](https://github.com/ClickHouse/ClickHouse/pull/84523) ([Azat Khuzhin](https://github.com/azat)).
+* Correction d&#39;un problème où le paramètre Keeper `rotate_log_storage_interval = 0` faisait planter ClickHouse. (issue [#83975](https://github.com/ClickHouse/ClickHouse/issues/83975)). [#84637](https://github.com/ClickHouse/ClickHouse/pull/84637) ([George Larionov](https://github.com/george-larionov)).
+* Correction du nombre total de watches renvoyé par Keeper. [#84890](https://github.com/ClickHouse/ClickHouse/pull/84890) ([Antonio Andelic](https://github.com/antonio2368)).
+* Verrouillage du &#39;mutex&#39; lors de la récupération de zookeeper depuis &#39;view&#39; dans RefreshTask. [#84699](https://github.com/ClickHouse/ClickHouse/pull/84699) ([Tuan Pham Anh](https://github.com/tuanpach)).
+
+<div id="indexing-fixes">
+  ### Correctifs d’indexation
+</div>
+
+* Correction d’un skipping excessif de granules lors du filtrage sur des index token/ngram avec une regexp contenant une alternance et une première alternative non littérale. [#79373](https://github.com/ClickHouse/ClickHouse/pull/79373) ([Eduard Karacharov](https://github.com/korowa)).
+* L’implémentation du paramètre `use_skip_indexes_if_final_exact_mode` (introduit dans la version 25.6) pouvait ne pas sélectionner une plage candidate pertinente selon les paramètres du moteur `MergeTree` / la distribution des données. Ce problème est désormais résolu. [#82667](https://github.com/ClickHouse/ClickHouse/pull/82667) ([Shankar Iyer](https://github.com/shankar-iyer)).
+* L’optimisation du paramètre `use_skip_indexes_if_final_exact_mode` (introduit dans la version 25.6) pouvait ne pas sélectionner une plage candidate pertinente selon les paramètres du moteur `MergeTree` / la distribution des données. Ce problème est désormais résolu. [#82879](https://github.com/ClickHouse/ClickHouse/pull/82879) ([Shankar Iyer](https://github.com/shankar-iyer)).
+* Auparavant, les index `set` ne prenaient pas en compte les colonnes `Nullable` lors de la vérification du passage des granules par le filtre (ticket [#75485](https://github.com/ClickHouse/ClickHouse/issues/75485)). [#84305](https://github.com/ClickHouse/ClickHouse/pull/84305) ([Elmi Ahmadov](https://github.com/ahmadov)).
+* La comparaison avec la valeur nan n’utilisait pas les plages correctes lors de l’évaluation de l’index `MinMax`. [#84386](https://github.com/ClickHouse/ClickHouse/pull/84386) ([Elmi Ahmadov](https://github.com/ahmadov)).
+* Les tokenizers `ngram` et `no_op` ne provoquent plus de plantage de l’index textuel (expérimental) en présence de tokens d’entrée vides. [#84849](https://github.com/ClickHouse/ClickHouse/pull/84849) ([Robert Schulze](https://github.com/rschu1ze)).
+
+<div id="materialized-view-fixes">
+  ### Correctifs des vues matérialisées
+</div>
+
+* Correction d’un bug dans les dépendances de table qui faisait que les vues matérialisées ne prenaient pas en compte les requêtes INSERT. [#82222](https://github.com/ClickHouse/ClickHouse/pull/82222) ([Nikolay Degterinsky](https://github.com/evillique)).
+* Après https://github.com/ClickHouse/ClickHouse/pull/79963, l’utilisation de sous-colonnes dans les vues matérialisées ne fonctionnait plus et l’utilisateur pouvait recevoir l’erreur `Not found column X in block`. Ce comportement a été corrigé. Correctif de : [#82784](https://github.com/ClickHouse/ClickHouse/issues/82784). [#83221](https://github.com/ClickHouse/ClickHouse/pull/83221) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+* Correction de l’erreur illegal&#95;type&#95;of&#95;argument dans les mv lorsque les types sont différents. [#85135](https://github.com/ClickHouse/ClickHouse/pull/85135) ([Sema Checherinda](https://github.com/CheSema)).
+
+<div id="azure-and-cloud-storage-fixes">
+  ### Correctifs pour Azure et le stockage dans le cloud
+</div>
+
+* Dans AzureBlobStorage, pour la copie native, les méthodes d&#39;authentification sont comparées ; si une exception se produit pendant cette opération, le code a été mis à jour pour revenir à une lecture suivie d&#39;une copie (c&#39;est-à-dire une copie non native). [#82693](https://github.com/ClickHouse/ClickHouse/pull/82693) ([Smita Kulkarni](https://github.com/SmitaRKulkarni)).
+* Corrige une double libération dans `AzureIteratorAsync`. [#85064](https://github.com/ClickHouse/ClickHouse/pull/85064) ([Nikita Taranov](https://github.com/nickitat)).
+
+<div id="crash-and-stability-fixes">
+  ### Correctifs de plantage et de stabilité
+</div>
+
+* Corrige un plantage possible dans la journalisation lors de la fermeture d&#39;une session, car `user_id` peut parfois être vide. [#82513](https://github.com/ClickHouse/ClickHouse/pull/82513) ([Bharat Nallan](https://github.com/bharatnc)).
+* Corrige un plantage du client dû à une connexion laissée à l&#39;état déconnecté après un `INSERT` invalide. [#83253](https://github.com/ClickHouse/ClickHouse/pull/83253) ([Azat Khuzhin](https://github.com/azat)).
+* Corrige un plantage lors du calcul de la taille d&#39;un bloc contenant des colonnes vides. [#83271](https://github.com/ClickHouse/ClickHouse/pull/83271) ([Raúl Marín](https://github.com/Algunenano)).
+* Corrige un plantage pouvant survenir pour une query avec le paramètre `max_threads=1` lorsqu&#39;elle est exécutée sous charge avec l&#39;ordonnancement CPU activé. [#83387](https://github.com/ClickHouse/ClickHouse/pull/83387) ([Fan Ziqi](https://github.com/f2quantum)).
+* Fait de `zoutofmemory` une erreur matérielle, faute de quoi une erreur logique sera levée. Voir https://github.com/clickhouse/clickhouse-core-incidents/issues/877. [#84420](https://github.com/ClickHouse/ClickHouse/pull/84420) ([Han Fei](https://github.com/hanfei1991)).
+* Corrige un abort possible (dû à l&#39;attente de terminaison des threads depuis la tâche) et, espérons-le, des blocages (dans les tests unitaires) lors de l&#39;arrêt de `BackgroundSchedulePool`. [#83769](https://github.com/ClickHouse/ClickHouse/pull/83769) ([Azat Khuzhin](https://github.com/azat)).
+* Corrige un interblocage causé par le thread de vérification d&#39;annulation en arrière-plan. [#84203](https://github.com/ClickHouse/ClickHouse/pull/84203) ([Antonio Andelic](https://github.com/antonio2368)).
+* Corrige un interblocage à l&#39;arrêt dû à un verrouillage récursif du contexte pendant le nettoyage du `library bridge`. [#83824](https://github.com/ClickHouse/ClickHouse/pull/83824) ([Azat Khuzhin](https://github.com/azat)).
+* Corrige un plantage du client dû à une connexion laissée à l&#39;état déconnecté après un `INSERT` invalide. [#83842](https://github.com/ClickHouse/ClickHouse/pull/83842) ([Azat Khuzhin](https://github.com/azat)).
+* Corrige un possible comportement indéfini (UB) pouvant entraîner des plantages en cas de `MEMORY_LIMIT_EXCEEDED` pendant la désérialisation de String. [#85440](https://github.com/ClickHouse/ClickHouse/pull/85440) ([Azat Khuzhin](https://github.com/azat)).
+* Corrige un plantage rare dans les insertions asynchrones qui modifient les paramètres `log_comment` ou `insert_deduplication_token`. [#85540](https://github.com/ClickHouse/ClickHouse/pull/85540) ([Anton Popov](https://github.com/CurtizJ)).
+
+<div id="glue-and-catalog-fixes">
+  ### Correctifs pour Glue et les catalogues
+</div>
+
+* Correction d&#39;un bug dans l&#39;intégration à Glue catalog. Désormais, ClickHouse peut lire des tables avec des types de données imbriqués dont certaines sous-colonnes contiennent des valeurs décimales, par exemple : `map<string, decimal(9, 2)>`. Corrige [#81301](https://github.com/ClickHouse/ClickHouse/issues/81301). [#82114](https://github.com/ClickHouse/ClickHouse/pull/82114) ([alesapin](https://github.com/alesapin)).
+* ClickHouse lit désormais les tables de Glue Catalog lorsque le type de table est indiqué en minuscules. [#84316](https://github.com/ClickHouse/ClickHouse/pull/84316) ([alesapin](https://github.com/alesapin)).
+* Unity catalog ignore désormais les schémas comportant des types de données inhabituels dans le cas des tables non-Delta. Corrige [#85699](https://github.com/ClickHouse/ClickHouse/issues/85699). [#85950](https://github.com/ClickHouse/ClickHouse/pull/85950) ([alesapin](https://github.com/alesapin)).
+
+<div id="function-fixes">
+  ### Correctifs de fonctions
+</div>
+
+* Les fonctions `trim{Left,Right,Both}` prennent désormais en charge les chaînes d&#39;entrée de type &quot;FixedString(N)&quot;. Par exemple, `SELECT trimBoth(toFixedString('abc', 3), 'ac')` fonctionne désormais. [#82691](https://github.com/ClickHouse/ClickHouse/pull/82691) ([Robert Schulze](https://github.com/rschu1ze)).
+* La fonction `trim`, lorsqu&#39;elle est appelée avec des entrées toutes constantes, produit désormais une chaîne de sortie constante. (Bug [#78796](https://github.com/ClickHouse/ClickHouse/issues/78796)). [#82900](https://github.com/ClickHouse/ClickHouse/pull/82900) ([Robert Schulze](https://github.com/rschu1ze)).
+* Corrige une sortie incorrecte de la fonction `formatDateTime` lorsque le formateur `%f` est utilisé avec des formateurs de taille variable (par ex. `%M`). [#83020](https://github.com/ClickHouse/ClickHouse/pull/83020) ([Robert Schulze](https://github.com/rschu1ze)).
+* Corrige un bug lié aux arguments `NULL` dans la fonction `CASE`. [#82436](https://github.com/ClickHouse/ClickHouse/pull/82436) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* N&#39;utilise pas de parties non pertinentes d&#39;un dictionnaire partagé dans la fonction `lowCardinalityKeys`. [#83118](https://github.com/ClickHouse/ClickHouse/pull/83118) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Corrige `colorSRGBToOKLCH`/`colorOKLCHToSRGB` pour les mélanges d&#39;arguments constants et non constants. [#83906](https://github.com/ClickHouse/ClickHouse/pull/83906) ([Azat Khuzhin](https://github.com/azat)).
+* Corrige la construction incorrecte de tuples vides dans la fonction `array()`. Cela corrige [#84202](https://github.com/ClickHouse/ClickHouse/issues/84202). [#84297](https://github.com/ClickHouse/ClickHouse/pull/84297) ([Amos Bird](https://github.com/amosbird)).
+* Corrige un bug qui entraînait un encodage et un décodage Bech32 incorrects. Le bug n&#39;avait pas été détecté initialement, car une implémentation en ligne de l&#39;algorithme utilisée pour les tests présentait le même problème. [#84257](https://github.com/ClickHouse/ClickHouse/pull/84257) ([George Larionov](https://github.com/george-larionov)).
+
+<div id="distributed-query-fixes">
+  ### Correctifs des requêtes distribuées
+</div>
+
+* Le `INSERT SELECT` distribué parallèle avec `LIMIT` était autorisé, ce qui était incorrect et entraînait une duplication des données dans la table cible. [#84477](https://github.com/ClickHouse/ClickHouse/pull/84477) ([Igor Nikonov](https://github.com/devcrafter)).
+* Ne pas tenter de remplacer les fonctions de table par leur alternative cluster en présence d&#39;un `JOIN` ou d&#39;une sous-requête. [#84335](https://github.com/ClickHouse/ClickHouse/pull/84335) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+* Ajout d&#39;une vérification lorsqu&#39;une sous-requête corrélée est utilisée dans un contexte distribué afin d&#39;éviter un plantage. Corrige [#82205](https://github.com/ClickHouse/ClickHouse/issues/82205). [#85030](https://github.com/ClickHouse/ClickHouse/pull/85030) ([Dmitry Novik](https://github.com/novikd)).
+* L&#39;utilisation de `distributed_depth` comme indicateur de fonction `*Cluster` était incorrecte et pouvait entraîner une duplication des données ; `client_info.collaborate_with_initiator` est désormais utilisé à la place. [#85734](https://github.com/ClickHouse/ClickHouse/pull/85734) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+* Prise en charge des constantes globales de l&#39;instruction `WITH` pour le `INSERT SELECT` distribué parallèle avec une table de destination `Distributed`. Auparavant, la query pouvait générer une erreur `Unknown expression identifier`. [#85811](https://github.com/ClickHouse/ClickHouse/pull/85811) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Correction d&#39;une erreur logique lors d&#39;une tentative de `CREATE ... AS (SELECT * FROM s3Cluster(...))` avec `DatabaseReplicated`. [#85904](https://github.com/ClickHouse/ClickHouse/pull/85904) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+* Ajout de vérifications sur `sharding_key` lors d&#39;un `ALTER` de la table `Distributed`. Auparavant, un `ALTER` incorrect pouvait casser la définition de la table et empêcher le redémarrage du server. [#86015](https://github.com/ClickHouse/ClickHouse/pull/86015) ([Nikolay Degterinsky](https://github.com/evillique)).
+
+<div id="metrics-and-monitoring-fixes">
+  ### Corrections des métriques et du monitoring
+</div>
+
+* Correction de la validation des paramètres des métriques asynchrones `asynchronous_metrics_update_period_s` et `asynchronous_heavy_metrics_update_period_s`. [#82310](https://github.com/ClickHouse/ClickHouse/pull/82310) ([Bharat Nallan](https://github.com/bharatnc)).
+* Correction des métriques `IndexUncompressedCacheBytes`/`IndexUncompressedCacheCells`/`IndexMarkCacheBytes`/`IndexMarkCacheFiles` (elles étaient auparavant incluses dans une métrique sans le préfixe `Cache`). [#83730](https://github.com/ClickHouse/ClickHouse/pull/83730) ([Azat Khuzhin](https://github.com/azat)).
+* Correction de `LOGICAL_ERROR` dans QueryMetricLog : le mutex ne peut pas être `NULL`. [#82979](https://github.com/ClickHouse/ClickHouse/pull/82979) ([Pablo Marcos](https://github.com/pamarcos)).
+* Correction des métriques KafkaAssignedPartitions et KafkaConsumersWithAssignment, qui étaient incorrectes. [#85494](https://github.com/ClickHouse/ClickHouse/pull/85494) ([Ilya Golshtein](https://github.com/ilejn)).
+* Correction de la sous-estimation de la statistique des octets traités lorsque `PREWHERE` (explicite ou automatique) est utilisé. [#85495](https://github.com/ClickHouse/ClickHouse/pull/85495) ([Michael Kolupaev](https://github.com/al13n321)).
+* Correction de la dérive du suivi de la mémoire dans le background schedule pool et l’executor. [#84946](https://github.com/ClickHouse/ClickHouse/pull/84946) ([Azat Khuzhin](https://github.com/azat)).
+
+<div id="data-type-and-conversion-fixes">
+  ### Correctifs liés aux types de données et aux conversions
+</div>
+
+* Correction des cas où l&#39;analyse de Time pouvait entraîner des problèmes avec msan. Corrige : [#82477](https://github.com/ClickHouse/ClickHouse/issues/82477). [#82514](https://github.com/ClickHouse/ClickHouse/pull/82514) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* Correction du tri des valeurs NaN dans le type `LowCardinality(Float32|Float64|BFloat16)`. [#83786](https://github.com/ClickHouse/ClickHouse/pull/83786) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
+* Correction d&#39;un dépassement de capacité pour les grandes valeurs (&gt;2106-02-07) lors de la conversion de `Date` en `DateTime64`. [#83982](https://github.com/ClickHouse/ClickHouse/pull/83982) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* Correction d&#39;un problème lors de la lecture implicite de valeurs Time négatives dans la table, et clarification de la documentation. [#83091](https://github.com/ClickHouse/ClickHouse/pull/83091) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* Le codec `DoubleDelta` ne peut désormais être appliqué qu&#39;à des colonnes de type numérique. En particulier, les colonnes `FixedString` ne peuvent plus être compressées avec `DoubleDelta`. (corrige [#80220](https://github.com/ClickHouse/ClickHouse/issues/80220)). [#84383](https://github.com/ClickHouse/ClickHouse/pull/84383) ([Jimmy Aguilar Mena](https://github.com/Ergus)).
+* Correction d&#39;une perte de précision dans `JSONExtract` lors de la conversion de nombres JSON en types Decimal. Désormais, les valeurs numériques JSON conservent leur représentation décimale exacte, ce qui évite les erreurs d&#39;arrondi liées aux nombres à virgule flottante. [#85665](https://github.com/ClickHouse/ClickHouse/pull/85665) ([ssive7b](https://github.com/ssive7b)).
+
+<div id="memory-and-resource-management">
+  ### Gestion de la mémoire et des ressources
+</div>
+
+* Correction d&#39;une mauvaise gestion de la mémoire liée à `max_untracked_memory`. [#83607](https://github.com/ClickHouse/ClickHouse/pull/83607) ([Azat Khuzhin](https://github.com/azat)).
+* Ne plus partager `async_read_counters` entre les requêtes. [#83423](https://github.com/ClickHouse/ClickHouse/pull/83423) ([Azat Khuzhin](https://github.com/azat)).
+* Correction d&#39;éventuelles erreurs de File Cache non initialisé lorsqu&#39;il est utilisé comme stockage temporaire de données. [#83539](https://github.com/ClickHouse/ClickHouse/pull/83539) ([Bharat Nallan](https://github.com/bharatnc)).
+* Toujours appliquer `filesystem_prefetches_limit` (pas uniquement dans `MergeTreePrefetchedReadPool`). [#83999](https://github.com/ClickHouse/ClickHouse/pull/83999) ([Azat Khuzhin](https://github.com/azat)).
+
+<div id="configuration-and-settings-fixes">
+  ### Correctifs de configuration et de paramètres
+</div>
+
+* Lors du passage de paramètres via l’URI, seule la dernière valeur est prise en compte. [#82137](https://github.com/ClickHouse/ClickHouse/pull/82137) ([Sema Checherinda](https://github.com/CheSema)).
+* Correction des accès concurrents dans le client (en n’utilisant pas de contexte global) et des surcharges de `session_timezone` (auparavant, si `session_timezone` était défini, par exemple, dans `users.xml`/les options du client sur une valeur non vide, et dans le contexte de la requête sur une valeur vide, alors la valeur de `users.xml` était utilisée, ce qui était incorrect ; désormais, le contexte de la requête aura toujours priorité sur le contexte global). [#82444](https://github.com/ClickHouse/ClickHouse/pull/82444) ([Azat Khuzhin](https://github.com/azat)).
+* Interdire de définir `threadpool_writer_pool_size` à zéro afin de garantir que les opérations du serveur ne restent pas bloquées. [#82532](https://github.com/ClickHouse/ClickHouse/pull/82532) ([Bharat Nallan](https://github.com/bharatnc)).
+* Correction d’un léger dépassement de capacité d’entier dans la configuration du paramètre `role_cache_expiration_time_seconds` (issue [#83374](https://github.com/ClickHouse/ClickHouse/issues/83374)). [#83461](https://github.com/ClickHouse/ClickHouse/pull/83461) ([wushap](https://github.com/wushap)).
+* Interdire la valeur zéro pour `max_insert_block_size`, car cela pouvait provoquer une erreur logique. [#83688](https://github.com/ClickHouse/ClickHouse/pull/83688) ([Bharat Nallan](https://github.com/bharatnc)).
+* Correction d’une boucle infinie dans `estimateCompressionRatio()` avec `block_size_bytes=0`. [#83704](https://github.com/ClickHouse/ClickHouse/pull/83704) ([Azat Khuzhin](https://github.com/azat)).
+* Des paramètres comme `date_time_input_format` étaient tout simplement ignorés lors de l’utilisation de HTTP avec multipart. [#85570](https://github.com/ClickHouse/ClickHouse/pull/85570) ([Sema Checherinda](https://github.com/CheSema)).
+
+<div id="mongodb-fixes">
+  ### Correctifs MongoDB
+</div>
+
+* Auparavant, les définitions du moteur de table `MongoDB` pouvaient inclure un composant de chemin dans l’argument `host:port`, qui était ignoré sans avertissement. L’intégration MongoDB refuse de charger de telles tables. Avec ce correctif, *nous autorisons le chargement de telles tables et ignorons le composant de chemin* si le moteur `MongoDB` comporte cinq arguments, en utilisant le nom de la base de données fourni dans les arguments. *Remarque :* ce correctif ne s’applique pas aux tables nouvellement créées ni aux requêtes utilisant la fonction de table `mongo`, ni aux sources de dictionnaire et aux collections nommées. [#81942](https://github.com/ClickHouse/ClickHouse/pull/81942) ([Vladimir Cherkasov](https://github.com/vdimir)).
+
+<div id="miscellaneous-fixes">
+  ### Correctifs divers
+</div>
+
+* Dans les versions précédentes, le serveur renvoyait un contenu excessif pour les requêtes vers `/js`. Cela corrige [#61890](https://github.com/ClickHouse/ClickHouse/issues/61890). [#81895](https://github.com/ClickHouse/ClickHouse/pull/81895) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Correction de `InterpreterInsertQuery::extendQueryLogElemImpl` pour ajouter des accents graves aux noms de base de données et de table lorsque nécessaire (par exemple, lorsque les noms contiennent des caractères spéciaux comme `-`). [#81528](https://github.com/ClickHouse/ClickHouse/pull/81528) ([Ilia Shvyrialkin](https://github.com/Harzu)).
+* Correction d’une possible condition de concurrence entre le thread de suggestion et le thread principal du client. [#82233](https://github.com/ClickHouse/ClickHouse/pull/82233) ([Azat Khuzhin](https://github.com/azat)).
+* Correction de la sûreté vis-à-vis des exceptions dans la réécriture de union/intersect/except&#95;default&#95;mode. Cela corrige [#82664](https://github.com/ClickHouse/ClickHouse/issues/82664). [#82820](https://github.com/ClickHouse/ClickHouse/pull/82820) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Lors de l’utilisation d’une implémentation de Database sans mise en cache, les métadonnées de la table correspondante sont supprimées une fois les colonnes renvoyées et la référence est invalidée. [#82939](https://github.com/ClickHouse/ClickHouse/pull/82939) ([buyval01](https://github.com/buyval01)).
+* L’appel Onprogress dans JSONEachRowWithProgress est synchronisé avec la finalisation. [#83879](https://github.com/ClickHouse/ClickHouse/pull/83879) ([Sema Checherinda](https://github.com/CheSema)).
+* Correction d’un bogue rare où la requête `MATERIALIZE COLUMN` pouvait entraîner des fichiers inattendus dans `checksums.txt` et, à terme, des data parts détachées. [#84007](https://github.com/ClickHouse/ClickHouse/pull/84007) ([alesapin](https://github.com/alesapin)).
+* Gestion correcte des exceptions lors du rafraîchissement périodique des parts. [#84083](https://github.com/ClickHouse/ClickHouse/pull/84083) ([Azat Khuzhin](https://github.com/azat)).
+* Correction de la génération des noms de colonnes pour les littéraux booléens afin d’utiliser &quot;true&quot;/&quot;false&quot; au lieu de &quot;1&quot;/&quot;0&quot;, ce qui évite les conflits de noms de colonnes entre littéraux booléens et entiers dans les requêtes. [#84945](https://github.com/ClickHouse/ClickHouse/pull/84945) ([xiaohuanlin](https://github.com/xiaohuanlin)).
+* Correction de problèmes potentiels de tri imprécis dans la table Merge. [#85025](https://github.com/ClickHouse/ClickHouse/pull/85025) ([Xiaozhe Yu](https://github.com/wudidapaopao)).
+* Implémentation des API manquantes pour DiskEncrypted. [#85028](https://github.com/ClickHouse/ClickHouse/pull/85028) ([Azat Khuzhin](https://github.com/azat)).
+* Introduction d’un paramètre de rétrocompatibilité pour permettre au nouvel analyseur de référencer un alias externe dans la clause `WITH` en cas de conflit de noms. Cela corrige [#82700](https://github.com/ClickHouse/ClickHouse/issues/82700). [#83797](https://github.com/ClickHouse/ClickHouse/pull/83797) ([Dmitry Novik](https://github.com/novikd)).
+* Autorisation de référencer n’importe quelle table dans l’argument `view(...)` de la fonction de table `remote` lorsque l’analyseur est activé. Cela corrige [#78717](https://github.com/ClickHouse/ClickHouse/issues/78717). Cela corrige [#79377](https://github.com/ClickHouse/ClickHouse/issues/79377). [#83844](https://github.com/ClickHouse/ClickHouse/pull/83844) ([Dmitry Novik](https://github.com/novikd)).
+* Correction de l’écriture avec append (dans MergeTree utilisé pour les transactions expérimentales) avec les types de métadonnées `plain_rewritable`/`plain`, auparavant simplement ignorés. [#83695](https://github.com/ClickHouse/ClickHouse/pull/83695) ([Tuan Pham Anh](https://github.com/tuanpach)).
+* Correction de l’utilisation du logger dans `IAccessStorage`. [#84365](https://github.com/ClickHouse/ClickHouse/pull/84365) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+* Correction du pruning des fichiers via une colonne virtuelle dans les data lakes. [#84520](https://github.com/ClickHouse/ClickHouse/pull/84520) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Correction d’un problème où l’interrogation d’une source distante lente pouvait provoquer un dépassement des limites d’un vecteur. [#84820](https://github.com/ClickHouse/ClickHouse/pull/84820) ([George Larionov](https://github.com/george-larionov)).
+* Stocke correctement tous les paramètres dans les métadonnées de table pour le moteur object queue. [#84860](https://github.com/ClickHouse/ClickHouse/pull/84860) ([Antonio Andelic](https://github.com/antonio2368)).
+* Correction de l’erreur `CORRUPTED_DATA` lorsque des colonnes lazy sont utilisées avec un tri externe. [#84738](https://github.com/ClickHouse/ClickHouse/pull/84738) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
+* Suppression des appels inutiles à `getStatus()` pendant les requêtes `SYSTEM DROP REPLICA`. Corrige le cas où une table est supprimée en arrière-plan et où l’exception `Shutdown for storage is called` est levée. [#85220](https://github.com/ClickHouse/ClickHouse/pull/85220) ([Nikolay Degterinsky](https://github.com/evillique)).
+* Ajout des vérifications manquantes sur la longueur des noms de table dans les requêtes `CREATE OR REPLACE` et `RENAME`. [#85326](https://github.com/ClickHouse/ClickHouse/pull/85326) ([Michael Kolupaev](https://github.com/al13n321)).
+* Correction d’un crash et d’une corruption de données lors de `ALTER UPDATE` pour JSON. [#85383](https://github.com/ClickHouse/ClickHouse/pull/85383) ([Pavel Kruglov](https://github.com/Avogar)).
+* Correction d’un segfault dans le moteur MergeTree coalescent pour les grandes chaînes. Cela clôt [#84582](https://github.com/ClickHouse/ClickHouse/issues/84582). [#85709](https://github.com/ClickHouse/ClickHouse/pull/85709) ([scanhex12](https://github.com/scanhex12)).
+* Correction de send&#95;logs&#95;source&#95;regexp (après la refactorisation du logging asynchrone dans [#85105](https://github.com/ClickHouse/ClickHouse/issues/85105)). [#85797](https://github.com/ClickHouse/ClickHouse/pull/85797) ([Azat Khuzhin](https://github.com/azat)).
+* Correction d’une possible incohérence pour les Dictionaries avec update&#95;field en cas d’erreurs `MEMORY_LIMIT_EXCEEDED`. [#85807](https://github.com/ClickHouse/ClickHouse/pull/85807) ([Azat Khuzhin](https://github.com/azat)).
+* Correction des requêtes HTTP effectuées par la table function `url()` afin d’inclure correctement les numéros de port dans l’en-tête Host lors de l’accès à des ports non standard. Cela résout les échecs d’authentication lors de l’utilisation d’URL présignées avec des services S3-compatible comme MinIO exécutés sur des ports personnalisés, ce qui est courant dans les environnements de Development. (Corrige [#85898](https://github.com/ClickHouse/ClickHouse/issues/85898)). [#85921](https://github.com/ClickHouse/ClickHouse/pull/85921) ([Tom Quist](https://github.com/tomquist)).

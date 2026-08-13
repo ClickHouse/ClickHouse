@@ -1,0 +1,201 @@
+---
+slug: /use-cases/observability/clickstack/sdks/browser
+description: 'SDK Browser pour ClickStack - la stack d’observabilité ClickHouse'
+title: 'JS Browser'
+doc_type: 'guide'
+keywords: ['ClickStack', 'browser-sdk', 'javascript', 'session-replay', 'frontend']
+---
+
+Le SDK Browser de ClickStack vous permet d’instrumenter votre application frontend afin
+d’envoyer des événements à ClickStack. Vous pouvez ainsi afficher les
+requêtes réseau et les exceptions aux côtés des événements du backend sur une même chronologie.
+
+De plus, il capture et corrèle automatiquement les données de relecture de session, afin que
+vous puissiez revoir visuellement, étape par étape, ce qu’un utilisateur voyait lorsqu’il utilisait votre
+application, pour faciliter le débogage.
+
+Ce guide intègre les éléments suivants :
+
+* **Logs de console**
+* **Relectures de session**
+* **Requêtes XHR/Fetch/WebSocket**
+* **Exceptions**
+
+<div id="getting-started">
+  ## Prise en main
+</div>
+
+<br />
+
+<Tabs>
+  <Tab title="Import de paquet">
+    **Installer via l’import de paquet (recommandé)**
+
+    Utilisez la commande suivante pour installer le [paquet navigateur](https://www.npmjs.com/package/@hyperdx/browser).
+
+    ```shell
+    npm install @hyperdx/browser
+    ```
+
+    **Initialiser ClickStack**
+
+    ```javascript
+    import HyperDX from '@hyperdx/browser';
+
+    HyperDX.init({
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', //à omettre pour Managed ClickStack
+        service: 'my-frontend-app',
+        tracePropagationTargets: [/api.myapp.domain/i], // Définir pour relier les traces des requêtes frontend au backend
+        consoleCapture: true, // Capturer les logs de console (false par défaut)
+        advancedNetworkCapture: true, // Capturer l’intégralité des en-têtes et corps des requêtes/réponses HTTP (false par défaut)
+    });
+    ```
+  </Tab>
+
+  <Tab title="Balise script">
+    **Installer via une balise script (alternative)**
+
+    Vous pouvez également inclure le script au moyen d’une balise script, au lieu de
+    l’installer via NPM. Cela expose la variable globale `HyperDX` et permet de
+    l’utiliser de la même manière que le paquet NPM.
+
+    Cette option est recommandée si votre site n’est pas actuellement compilé à l’aide d’un bundler.
+
+    ```html
+    <script src="//www.unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
+    <script>
+      window.HyperDX.init({
+        url: 'http://localhost:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', //à omettre pour Managed ClickStack
+        service: 'my-frontend-app',
+        tracePropagationTargets: [/api.myapp.domain/i], // Définir pour relier les traces des requêtes frontend au backend
+      });
+    </script>
+    ```
+  </Tab>
+</Tabs>
+
+<div id="options">
+  ### Options
+</div>
+
+* `apiKey` - Votre clé API d’ingestion ClickStack.
+* `service` - Le nom du service tel qu’il apparaîtra dans l’UI HyperDX.
+* `tracePropagationTargets` - Une liste de motifs Regex à faire correspondre aux requêtes HTTP
+  pour lier les traces du frontend et du backend ; cela ajoutera un en-tête
+  `traceparent` supplémentaire à toutes les requêtes correspondant à l’un des motifs. Cette valeur doit
+  être définie sur le domaine de votre API backend (par ex. `api.yoursite.com`).
+* `consoleCapture` - (Facultatif) Capturer tous les logs de console (par défaut `false`).
+* `advancedNetworkCapture` - (Facultatif) Capturer l’intégralité des en-têtes
+  et des corps des requêtes/réponses (par défaut `false`).
+* `url` - (Facultatif) L’URL de l’OpenTelemetry Collector, nécessaire uniquement pour les
+  instances auto-hébergées.
+* `maskAllInputs` - (Facultatif) Indique s’il faut masquer tous les champs de saisie dans la
+  relecture de session (par défaut `false`).
+* `maskAllText` - (Facultatif) Indique s’il faut masquer tout le texte dans la relecture de session (par défaut
+  `false`).
+* `disableIntercom` - (Facultatif) Indique s’il faut désactiver l’intégration Intercom (par défaut `false`)
+* `disableReplay` - (Facultatif) Indique s’il faut désactiver la relecture de session (par défaut `false`)
+
+<div id="additional-configuration">
+  ## Configuration supplémentaire
+</div>
+
+<div id="attach-user-information-or-metadata">
+  ### Associer des informations utilisateur ou des métadonnées
+</div>
+
+L’association d’informations utilisateur vous permettra de rechercher/filtrer les sessions et les événements
+dans la UI HyperDX. Cette méthode peut être appelée à n’importe quel moment pendant la session client. La
+session client en cours et tous les événements envoyés après cet appel seront associés
+aux informations utilisateur.
+
+`userEmail`, `userName` et `teamName` renseigneront l’interface des sessions avec les
+valeurs correspondantes, mais peuvent être omis. Toute autre valeur supplémentaire peut être
+spécifiée et utilisée pour rechercher des événements.
+
+```javascript
+HyperDX.setGlobalAttributes({
+  userId: user.id,
+  userEmail: user.email,
+  userName: user.name,
+  teamName: user.team.name,
+  // Other custom properties...
+});
+```
+
+<div id="auto-capture-react-error-boundary-errors">
+  ### Capturer automatiquement les erreurs des error boundaries React
+</div>
+
+Si vous utilisez React, vous pouvez capturer automatiquement les erreurs qui se produisent dans
+les error boundaries React en passant votre composant error boundary
+à la fonction `attachToReactErrorBoundary`.
+
+```javascript
+// Import your ErrorBoundary (we're using react-error-boundary as an example)
+import { ErrorBoundary } from 'react-error-boundary';
+
+// This will hook into the ErrorBoundary component and capture any errors that occur
+// within any instance of it.
+HyperDX.attachToReactErrorBoundary(ErrorBoundary);
+```
+
+<div id="send-custom-actions">
+  ### Envoyer des actions personnalisées
+</div>
+
+Pour suivre explicitement un événement précis de l’application (p. ex. inscription, envoi de formulaire,
+etc.), vous pouvez appeler la fonction `addAction` avec un nom d’événement et, éventuellement, des
+métadonnées associées à l’événement.
+
+Exemple :
+
+```javascript
+HyperDX.addAction('Form-Completed', {
+  formId: 'signup-form',
+  formName: 'Signup Form',
+  formType: 'signup',
+});
+```
+
+<div id="enable-network-capture-dynamically">
+  ### Activer la capture réseau de manière dynamique
+</div>
+
+Pour activer ou désactiver la capture réseau de manière dynamique, il suffit d’appeler la fonction `enableAdvancedNetworkCapture` ou `disableAdvancedNetworkCapture` selon les besoins.
+
+```javascript
+HyperDX.enableAdvancedNetworkCapture();
+```
+
+<div id="enable-resource-timing-for-cors-requests">
+  ### Activer la mesure du temps des ressources pour les requêtes CORS
+</div>
+
+Si votre application frontend effectue des requêtes API vers un autre domaine, vous pouvez
+éventuellement activer l’envoi de l’`Timing-Allow-Origin`[en-tête](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Timing-Allow-Origin) avec la requête. Cela permettra à ClickStack de capturer des
+informations détaillées sur le temps de chargement des ressources pour la requête, comme la résolution DNS, le téléchargement de la réponse,
+etc., via [`PerformanceResourceTiming`](https://developer.mozilla.org/en-US/docs/Web/API/PerformanceResourceTiming).
+
+Si vous utilisez les paquets `express` et `cors`, vous pouvez utiliser l’extrait
+suivant pour activer cet en-tête :
+
+```javascript
+var cors = require('cors');
+var onHeaders = require('on-headers');
+
+// ... all your stuff
+
+app.use(function (req, res, next) {
+  onHeaders(res, function () {
+    var allowOrigin = res.getHeader('Access-Control-Allow-Origin');
+    if (allowOrigin) {
+      res.setHeader('Timing-Allow-Origin', allowOrigin);
+    }
+  });
+  next();
+});
+app.use(cors());
+```

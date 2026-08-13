@@ -1,0 +1,309 @@
+---
+slug: /data-compression/compression-in-clickhouse
+title: 'ClickHouse의 압축'
+description: 'ClickHouse 압축 알고리즘 선택'
+keywords: ['압축', '코덱', '인코딩']
+doc_type: 'reference'
+---
+
+ClickHouse 쿼리 성능의 핵심 요소 중 하나는 압축입니다.
+
+디스크에 저장되는 데이터가 적을수록 I/O가 줄어들고 쿼리와 삽입이 더 빨라집니다. CPU 측면에서 압축 알고리즘에 따른 오버헤드는 대부분의 경우 I/O 감소 효과로 충분히 상쇄됩니다. 따라서 ClickHouse 쿼리 성능을 높이려면 먼저 데이터 압축 개선에 집중해야 합니다.
+
+> ClickHouse가 데이터를 매우 효율적으로 압축하는 이유는 [이 글](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)을 읽어보시기를 권장합니다. 간단히 말해, ClickHouse는 컬럼 지향 데이터베이스로서 값을 컬럼 순서로 저장합니다. 이 값들이 정렬되면 동일한 값이 서로 인접하게 배치되고, 압축 알고리즘은 데이터의 연속적인 패턴을 활용합니다. 여기에 더해 ClickHouse는 코덱과 세밀한 데이터 타입을 제공하므로 압축을 한층 쉽게 최적화할 수 있습니다.
+
+ClickHouse의 압축에는 3가지 주요 요인이 영향을 줍니다.
+
+* 순서 지정 키
+* 데이터 타입
+* 사용하는 코덱
+
+이 모든 항목은 스키마를 통해 구성됩니다.
+
+<div id="choose-the-right-data-type-to-optimize-compression">
+  ## 압축을 최적화하기 위한 적절한 데이터 타입 선택
+</div>
+
+Stack Overflow 데이터셋을 예시로 사용하겠습니다. `posts` 테이블에 대해 다음 스키마의 압축 통계를 비교해 보겠습니다.
+
+* `posts` - 타입 최적화가 적용되지 않았고 순서 지정 키도 없는 스키마입니다.
+* `posts_v3` - 각 컬럼에 적절한 타입과 비트 크기를 적용하고, 순서 지정 키 `(PostTypeId, toDate(CreationDate), CommentCount)`를 사용하는 타입 최적화 스키마입니다.
+
+다음 쿼리를 사용하면 각 컬럼의 현재 압축된 크기와 압축되지 않은 크기를 측정할 수 있습니다. 먼저 순서 지정 키가 없는 초기 최적화 스키마 `posts`의 크기를 살펴보겠습니다.
+
+```sql
+SELECT name,
+   formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+   formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+   round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE table = 'posts'
+GROUP BY name
+```
+
+```response
+┌─name──────────────────┬─compressed_size─┬─uncompressed_size─┬───ratio────┐
+│ Body                  │ 46.14 GiB       │ 127.31 GiB        │ 2.76       │
+│ Title                 │ 1.20 GiB        │ 2.63 GiB          │ 2.19       │
+│ Score                 │ 84.77 MiB       │ 736.45 MiB        │ 8.69       │
+│ Tags                  │ 475.56 MiB      │ 1.40 GiB          │ 3.02       │
+│ ParentId              │ 210.91 MiB      │ 696.20 MiB        │ 3.3        │
+│ Id                    │ 111.17 MiB      │ 736.45 MiB        │ 6.62       │
+│ AcceptedAnswerId      │ 81.55 MiB       │ 736.45 MiB        │ 9.03       │
+│ ClosedDate            │ 13.99 MiB       │ 517.82 MiB        │ 37.02      │
+│ LastActivityDate      │ 489.84 MiB      │ 964.64 MiB        │ 1.97       │
+│ CommentCount          │ 37.62 MiB       │ 565.30 MiB        │ 15.03      │
+│ OwnerUserId           │ 368.98 MiB      │ 736.45 MiB        │ 2          │
+│ AnswerCount           │ 21.82 MiB       │ 622.35 MiB        │ 28.53      │
+│ FavoriteCount         │ 280.95 KiB      │ 508.40 MiB        │ 1853.02    │
+│ ViewCount             │ 95.77 MiB       │ 736.45 MiB        │ 7.69       │
+│ LastEditorUserId      │ 179.47 MiB      │ 736.45 MiB        │ 4.1        │
+│ ContentLicense        │ 5.45 MiB        │ 847.92 MiB        │ 155.5      │
+│ OwnerDisplayName      │ 14.30 MiB       │ 142.58 MiB        │ 9.97       │
+│ PostTypeId            │ 20.93 MiB       │ 565.30 MiB        │ 27         │
+│ CreationDate          │ 314.17 MiB      │ 964.64 MiB        │ 3.07       │
+│ LastEditDate          │ 346.32 MiB      │ 964.64 MiB        │ 2.79       │
+│ LastEditorDisplayName │ 5.46 MiB        │ 124.25 MiB        │ 22.75      │
+│ CommunityOwnedDate    │ 2.21 MiB        │ 509.60 MiB        │ 230.94     │
+└───────────────────────┴─────────────────┴───────────────────┴────────────┘
+```
+
+<Accordion title="compact 파트와 wide 파트에 대한 참고 사항">
+  `compressed_size` 또는 `uncompressed_size` 값이 `0`으로 표시된다면, 이는
+  파트 유형이 `wide`가 아니라 `compact`이기 때문일 수 있습니다([`system.parts`](/ko/reference/system-tables/parts)의 [`part_type`] 설명 참조).
+  파트 포맷은 설정 [`min_bytes_for_wide_part`](/ko/reference/settings/merge-tree-settings#min_bytes_for_wide_part)
+  및 [`min_rows_for_wide_part`](/ko/reference/settings/merge-tree-settings#min_rows_for_wide_part)로 제어됩니다. 즉, 삽입된
+  데이터로 생성된 파트가 앞서 언급한 설정값을 초과하지 않으면, 해당 파트는 wide가 아니라 compact로 생성되며
+  `compressed_size` 또는 `uncompressed_size` 값이 표시되지 않습니다.
+
+  이를 보여주기 위해 다음 예를 살펴보겠습니다:
+
+  ```sql title="쿼리"
+  -- compact 파트를 사용하는 테이블 생성
+  CREATE TABLE compact (
+    number UInt32
+  )
+  ENGINE = MergeTree()
+  ORDER BY number 
+  AS SELECT * FROM numbers(100000); -- 기본값 min_bytes_for_wide_part = 10485760을 초과할 만큼 크지 않음
+
+  -- 파트 유형 확인
+  SELECT table, name, part_type from system.parts where table = 'compact';
+
+  -- compact 테이블의 압축된 크기 및 압축되지 않은 크기 가져오기
+  SELECT name,
+     formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+     formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+     round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+  FROM system.columns
+  WHERE table = 'compact'
+  GROUP BY name;
+
+  -- wide 파트를 사용하는 테이블 생성 
+  CREATE TABLE wide (
+    number UInt32
+  )
+  ENGINE = MergeTree()
+  ORDER BY number
+  SETTINGS min_bytes_for_wide_part=0
+  AS SELECT * FROM numbers(100000);
+
+  -- 파트 유형 확인
+  SELECT table, name, part_type from system.parts where table = 'wide';
+
+  -- wide 테이블의 압축된 크기 및 압축되지 않은 크기 가져오기
+  SELECT name,
+     formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+     formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+     round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+  FROM system.columns
+  WHERE table = 'wide'
+  GROUP BY name;
+  ```
+
+  ```response title="응답"
+     ┌─table───┬─name──────┬─part_type─┐
+  1. │ compact │ all_1_1_0 │ Compact   │
+     └─────────┴───────────┴───────────┘
+     ┌─name───┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+  1. │ number │ 0.00 B          │ 0.00 B            │   nan │
+     └────────┴─────────────────┴───────────────────┴───────┘
+     ┌─table─┬─name──────┬─part_type─┐
+  1. │ wide  │ all_1_1_0 │ Wide      │
+     └───────┴───────────┴───────────┘
+     ┌─name───┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+  1. │ number │ 392.31 KiB      │ 390.63 KiB        │     1 │
+     └────────┴─────────────────┴───────────────────┴───────┘
+  ```
+</Accordion>
+
+여기서는 압축된 크기와 압축되지 않은 크기를 모두 보여줍니다. 둘 다 중요합니다. 압축된 크기는 디스크에서 읽어야 하는 데이터 양에 해당하므로, 쿼리 성능과 저장 비용을 위해 가능한 한 줄이는 것이 좋습니다. 이 데이터는 읽기 전에 압축 해제되어야 합니다. 이때 압축되지 않은 크기는 사용된 데이터 타입에 따라 달라집니다. 이 크기를 줄이면 쿼리의 메모리 오버헤드와 쿼리에서 처리해야 하는 데이터 양이 감소하여 캐시 활용도가 높아지고, 궁극적으로 쿼리 시간도 단축됩니다.
+
+> 위 쿼리는 system 데이터베이스의 `columns` 테이블을 사용합니다. 이 데이터베이스는 ClickHouse가 관리하며, 쿼리 성능 메트릭부터 백그라운드 클러스터 로그까지 유용한 정보가 풍부하게 담겨 있습니다. 더 자세히 알고 싶다면 [&quot;System Tables and a Window into the Internals of ClickHouse&quot;](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables)와 관련 글[[1]](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)[[2]](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)을 참고하시기 바랍니다.
+
+테이블의 전체 크기를 요약하려면 위 쿼리를 다음과 같이 단순화할 수 있습니다:
+
+```sql
+SELECT formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE table = 'posts'
+```
+
+```response
+┌─compressed_size─┬─uncompressed_size─┬─ratio─┐
+│ 50.16 GiB       │ 143.47 GiB        │  2.86 │
+└─────────────────┴───────────────────┴───────┘
+```
+
+최적화된 유형과 순서 지정 키가 적용된 테이블인 `posts_v3`에 대해 같은 쿼리를 실행해 보면, 압축되지 않은 크기와 압축된 크기가 크게 감소한 것을 확인할 수 있습니다.
+
+```sql
+SELECT
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE `table` = 'posts_v3'
+```
+
+```response
+┌─compressed_size─┬─uncompressed_size─┬─ratio─┐
+│ 25.15 GiB       │ 68.87 GiB         │  2.74 │
+└─────────────────┴───────────────────┴───────┘
+```
+
+전체 컬럼 분석을 보면, 압축 전에 데이터를 정렬하고 적절한 타입을 사용하면 `Body`, `Title`, `Tags`, `CreationDate` 컬럼에서 상당한 절감 효과를 얻을 수 있음을 알 수 있습니다.
+
+```sql
+SELECT
+    name,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE `table` = 'posts_v3'
+GROUP BY name
+```
+
+```response
+┌─name──────────────────┬─compressed_size─┬─uncompressed_size─┬───ratio─┐
+│ Body                  │ 23.10 GiB       │ 63.63 GiB         │    2.75 │
+│ Title                 │ 614.65 MiB      │ 1.28 GiB          │    2.14 │
+│ Score                 │ 40.28 MiB       │ 227.38 MiB        │    5.65 │
+│ Tags                  │ 234.05 MiB      │ 688.49 MiB        │    2.94 │
+│ ParentId              │ 107.78 MiB      │ 321.33 MiB        │    2.98 │
+│ Id                    │ 159.70 MiB      │ 227.38 MiB        │    1.42 │
+│ AcceptedAnswerId      │ 40.34 MiB       │ 227.38 MiB        │    5.64 │
+│ ClosedDate            │ 5.93 MiB        │ 9.49 MiB          │     1.6 │
+│ LastActivityDate      │ 246.55 MiB      │ 454.76 MiB        │    1.84 │
+│ CommentCount          │ 635.78 KiB      │ 56.84 MiB         │   91.55 │
+│ OwnerUserId           │ 183.86 MiB      │ 227.38 MiB        │    1.24 │
+│ AnswerCount           │ 9.67 MiB        │ 113.69 MiB        │   11.76 │
+│ FavoriteCount         │ 19.77 KiB       │ 147.32 KiB        │    7.45 │
+│ ViewCount             │ 45.04 MiB       │ 227.38 MiB        │    5.05 │
+│ LastEditorUserId      │ 86.25 MiB       │ 227.38 MiB        │    2.64 │
+│ ContentLicense        │ 2.17 MiB        │ 57.10 MiB         │   26.37 │
+│ OwnerDisplayName      │ 5.95 MiB        │ 16.19 MiB         │    2.72 │
+│ PostTypeId            │ 39.49 KiB       │ 56.84 MiB         │ 1474.01 │
+│ CreationDate          │ 181.23 MiB      │ 454.76 MiB        │    2.51 │
+│ LastEditDate          │ 134.07 MiB      │ 454.76 MiB        │    3.39 │
+│ LastEditorDisplayName │ 2.15 MiB        │ 6.25 MiB          │    2.91 │
+│ CommunityOwnedDate    │ 824.60 KiB      │ 1.34 MiB          │    1.66 │
+└───────────────────────┴─────────────────┴───────────────────┴─────────┘
+```
+
+<div id="choosing-the-right-column-compression-codec">
+  ## 적절한 컬럼 압축 코덱 선택하기
+</div>
+
+컬럼 압축 코덱을 사용하면 각 컬럼을 인코딩하고 압축할 때 사용하는 알고리즘(및 해당 설정)을 변경할 수 있습니다.
+
+인코딩과 압축은 같은 목표, 즉 데이터 크기 축소를 위해 사용되지만 작동 방식은 조금 다릅니다. 인코딩은 데이터 타입의 특성을 활용해 함수에 따라 값에 매핑을 적용하고 이를 변환합니다. 반면 압축은 바이트 수준에서 데이터를 압축하는 범용 알고리즘을 사용합니다.
+
+일반적으로는 압축 전에 먼저 인코딩이 적용됩니다. 또한 인코딩과 압축 알고리즘마다 효과적인 값 분포가 다르므로, 데이터의 특성을 이해해야 합니다.
+
+ClickHouse는 다양한 코덱과 압축 알고리즘을 지원합니다. 다음은 중요도 순으로 정리한 몇 가지 권장 사항입니다:
+
+| 권장 사항                           | 이유                                                                                                                                                                                                                                            |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`ZSTD`를 우선 사용**               | `ZSTD` 압축은 가장 높은 압축률을 제공합니다. 대부분의 일반적인 타입에서는 `ZSTD(1)`를 기본값으로 사용하는 것이 좋습니다. 숫자 값을 조정해 더 높은 압축률을 시도할 수 있습니다. 다만 압축 비용 증가(삽입 속도 저하)를 감안하면, 3보다 큰 값에서 충분한 이점을 얻는 경우는 드뭅니다.                                                                       |
+| **날짜 및 정수 시퀀스에는 `Delta` 사용**    | `Delta` 기반 코덱은 단조 시퀀스이거나 연속된 값 사이의 델타가 작을 때 잘 작동합니다. 더 구체적으로는, 차분값이 작은 수가 될 때 Delta 코덱이 효과적입니다. 그렇지 않다면 `DoubleDelta`도 시도해볼 만합니다(`Delta`의 1차 차분값이 이미 매우 작다면 일반적으로 추가 이점은 크지 않습니다). 증가 폭이 일정한 단조 시퀀스는 예를 들어 DateTime 필드처럼 훨씬 더 잘 압축됩니다.        |
+| **`Delta`는 `ZSTD`를 개선합니다**      | `ZSTD`는 델타 데이터에 효과적인 코덱이며, 반대로 델타 인코딩은 `ZSTD` 압축 효과를 높일 수 있습니다. `ZSTD`를 함께 사용할 때는 다른 코덱이 추가 개선을 제공하는 경우가 드뭅니다.                                                                                                                                |
+| **가능하면 `ZSTD`보다 `LZ4` 우선 사용**   | `LZ4`와 `ZSTD`의 압축 수준이 비슷하다면, 압축 해제가 더 빠르고 CPU 사용량도 더 적은 `LZ4`를 우선 선택하십시오. 다만 대부분의 경우 `ZSTD`가 `LZ4`보다 훨씬 더 뛰어난 압축 성능을 보입니다. 일부 코덱은 코덱 없이 `ZSTD`를 사용하는 경우와 비슷한 압축률을 유지하면서, `LZ4`와 조합했을 때 더 빠르게 동작할 수도 있습니다. 그러나 이는 데이터 특성에 따라 달라지므로 테스트가 필요합니다. |
+| **희소 데이터나 범위가 작은 경우 `T64` 사용**  | `T64`는 희소 데이터이거나 block 내 범위가 작을 때 효과적일 수 있습니다. 무작위 숫자에는 `T64`를 사용하지 마십시오.                                                                                                                                                                     |
+| **패턴을 모를 때는 `Gorilla`와 `T64`?** | 데이터 패턴이 불분명하다면 `Gorilla`와 `T64`를 시도해볼 만합니다.                                                                                                                                                                                                   |
+| **게이지 데이터에는 `Gorilla` 사용**      | `Gorilla`는 부동소수점 데이터, 특히 게이지 측정값처럼 무작위 스파이크를 나타내는 데이터에 효과적일 수 있습니다.                                                                                                                                                                           |
+
+추가 옵션은 [여기](/ko/reference/statements/create/table#column_compression_codec)에서 확인하십시오.
+
+아래에서는 `Id`, `ViewCount`, `AnswerCount`에 `Delta` 코덱을 지정합니다. 이 값들이 순서 지정 키와 선형적인 상관관계가 있어 Delta 인코딩의 이점을 얻을 것이라고 가정합니다.
+
+```sql
+CREATE TABLE posts_v4
+(
+        `Id` Int32 CODEC(Delta, ZSTD),
+        `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime64(3, 'UTC'),
+        `Score` Int32,
+        `ViewCount` UInt32 CODEC(Delta, ZSTD),
+        `Body` String,
+        `OwnerUserId` Int32,
+        `OwnerDisplayName` String,
+        `LastEditorUserId` Int32,
+        `LastEditorDisplayName` String,
+        `LastEditDate` DateTime64(3, 'UTC'),
+        `LastActivityDate` DateTime64(3, 'UTC'),
+        `Title` String,
+        `Tags` String,
+        `AnswerCount` UInt16 CODEC(Delta, ZSTD),
+        `CommentCount` UInt8,
+        `FavoriteCount` UInt8,
+        `ContentLicense` LowCardinality(String),
+        `ParentId` String,
+        `CommunityOwnedDate` DateTime64(3, 'UTC'),
+        `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+```
+
+이러한 컬럼의 압축 개선 효과는 아래와 같습니다.
+
+```sql
+SELECT
+    `table`,
+    name,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE (name IN ('Id', 'ViewCount', 'AnswerCount')) AND (`table` IN ('posts_v3', 'posts_v4'))
+GROUP BY
+    `table`,
+    name
+ORDER BY
+    name ASC,
+    `table` ASC
+```
+
+```response
+┌─table────┬─name────────┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+│ posts_v3 │ AnswerCount │ 9.67 MiB        │ 113.69 MiB        │ 11.76 │
+│ posts_v4 │ AnswerCount │ 10.39 MiB       │ 111.31 MiB        │ 10.71 │
+│ posts_v3 │ Id          │ 159.70 MiB      │ 227.38 MiB        │  1.42 │
+│ posts_v4 │ Id          │ 64.91 MiB       │ 222.63 MiB        │  3.43 │
+│ posts_v3 │ ViewCount   │ 45.04 MiB       │ 227.38 MiB        │  5.05 │
+│ posts_v4 │ ViewCount   │ 52.72 MiB       │ 222.63 MiB        │  4.22 │
+└──────────┴─────────────┴─────────────────┴───────────────────┴───────┘
+
+6 rows in set. Elapsed: 0.008 sec
+```
+
+<div id="compression-in-clickhouse-cloud">
+  ### ClickHouse Cloud의 압축
+</div>
+
+ClickHouse Cloud에서는 기본적으로 `ZSTD` 압축 알고리즘(기본값: 1)을 사용합니다. 이 알고리즘의 압축 속도는 압축 수준에 따라 달라질 수 있으며(수준이 높을수록 느려짐), 압축 해제는 일관되게 빠르다는 장점이 있습니다(변동 폭은 약 20%). 또한 병렬화가 가능하다는 이점도 있습니다. 과거 테스트 결과를 보면, 이 알고리즘은 대체로 충분히 효과적이며 코덱과 함께 사용하는 `LZ4`보다 더 나은 성능을 보이기도 합니다. 대부분의 데이터 타입과 데이터 분포에서 효과적이므로 범용 기본값으로 적절하며, 따라서 별도의 최적화가 없어도 초기 압축 설정만으로도 이미 뛰어난 성능을 제공합니다.

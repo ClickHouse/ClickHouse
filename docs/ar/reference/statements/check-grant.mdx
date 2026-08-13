@@ -1,0 +1,57 @@
+---
+description: 'توثيق CHECK GRANT'
+sidebarTitle: 'CHECK GRANT'
+slug: /sql-reference/statements/check-grant
+title: 'عبارة CHECK GRANT'
+doc_type: 'reference'
+---
+
+يُستخدم استعلام `CHECK GRANT` للتحقق مما إذا كان المستخدم/الدور الحالي قد مُنح امتيازًا محددًا.
+
+<div id="syntax">
+  ## البنية
+</div>
+
+البنية الأساسية للاستعلام كما يلي:
+
+```sql
+CHECK GRANT privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*}
+```
+
+* `privilege` — نوع الامتياز.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+إذا كان قد سبق منح المستخدم هذا الامتياز، فستكون قيمة `check_grant` في الاستجابة هي `1`. وإلا، فستكون قيمة `check_grant` في الاستجابة هي `0`.
+
+إذا كان `table_1.col1` موجودًا وكان المستخدم الحالي قد مُنح امتياز `SELECT`/`SELECT(con)` أو دورًا (يتضمن هذا الامتياز)، فستكون الاستجابة `1`.
+
+```sql
+CHECK GRANT SELECT(col1) ON table_1;
+```
+
+```text
+┌─result─┐
+│      1 │
+└────────┘
+```
+
+إذا لم يكن `table_2.col2` موجودًا، أو إذا لم يُمنح المستخدم الحالي امتياز `SELECT`/`SELECT(con)` أو دورًا (يتضمن هذا الامتياز)، فستكون الاستجابة `0`.
+
+```sql
+CHECK GRANT SELECT(col2) ON table_2;
+```
+
+```text
+┌─result─┐
+│      0 │
+└────────┘
+```
+
+<div id="wildcard">
+  ## أحرف البدل
+</div>
+
+عند تحديد الامتيازات، يمكنك استخدام النجمة (`*`) بدلًا من اسم جدول أو اسم قاعدة بيانات. يُرجى مراجعة [امتيازات أحرف البدل](/ar/reference/statements/grant#wildcard-grants) للاطلاع على قواعد أحرف البدل.

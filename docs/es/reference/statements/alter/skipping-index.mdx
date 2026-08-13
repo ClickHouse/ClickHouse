@@ -1,0 +1,41 @@
+---
+description: 'Documentación para gestionar índices de omisión de datos'
+sidebarTitle: 'INDEX'
+slug: /sql-reference/statements/alter/skipping-index
+title: 'Gestión de índices de omisión de datos'
+toc_hidden_folder: true
+doc_type: 'reference'
+---
+
+Las siguientes operaciones están disponibles:
+
+<div id="add-index">
+  ## ADD INDEX
+</div>
+
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX [IF NOT EXISTS] name expression TYPE type [GRANULARITY value] [FIRST|AFTER name]` - Agrega la definición del índice a los metadatos de la tabla.
+
+<div id="drop-index">
+  ## DROP INDEX
+</div>
+
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX [IF EXISTS] name` - Elimina la definición del índice de los metadatos de las tablas y borra los archivos de índice del disco. Se implementa como una [mutación](/es/reference/statements/alter/index#mutations).
+
+<div id="materialize-index">
+  ## MATERIALIZE INDEX
+</div>
+
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX [IF EXISTS] name [IN PARTITION partition_name]` - Reconstruye el índice secundario `name` para la partición `partition_name` especificada. Se implementa como una [mutación](/es/reference/statements/alter/index#mutations). Si se omite la parte `IN PARTITION`, reconstruye el índice para todos los datos de la tabla.
+
+<div id="clear-index">
+  ## CLEAR INDEX
+</div>
+
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] CLEAR INDEX [IF EXISTS] name [IN PARTITION partition_name]` - Elimina del disco los archivos de índices secundarios sin eliminar su definición. Se implementa como una [mutación](/es/reference/statements/alter/index#mutations).
+
+Los comandos `ADD`, `DROP` y `CLEAR` son operaciones ligeras, en el sentido de que solo modifican metadatos o eliminan archivos.
+Además, se replican y sincronizan los metadatos de los índices mediante ClickHouse Keeper o ZooKeeper.
+
+<Note>
+  La manipulación de índices solo se admite en tablas con motor [`*MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree) (incluidas las variantes [replicated](/es/reference/engines/table-engines/mergetree-family/replication)).
+</Note>

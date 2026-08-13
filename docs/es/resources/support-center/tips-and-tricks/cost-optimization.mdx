@@ -1,0 +1,108 @@
+---
+slug: /community-wisdom/cost-optimization
+sidebarTitle: 'Optimización de costos'
+doc_type: 'guide'
+keywords: [
+  'optimización de costos',
+  'costos de almacenamiento', 
+  'gestión de particiones',
+  'retención de datos',
+  'análisis de almacenamiento',
+  'optimización de bases de datos',
+  'reducción de costos en ClickHouse',
+  'áreas críticas de almacenamiento',
+  'rendimiento de TTL',
+  'uso de disco',
+  'estrategias de compresión',
+  'análisis de retención'
+]
+title: 'Lecciones: optimización de costos'
+description: 'Estrategias de optimización de costos compartidas en encuentros de la comunidad de ClickHouse, con ejemplos reales de producción y técnicas verificadas.'
+---
+
+*Esta guía forma parte de una colección de hallazgos obtenidos en encuentros de la comunidad. Los hallazgos de esta página reúnen conocimientos de la comunidad sobre cómo optimizar costos al usar ClickHouse que han funcionado bien en experiencias y configuraciones específicas. Para conocer más soluciones y aprendizajes del mundo real, puede [explorar por problema específico](/es/resources/support-center/tips-and-tricks/community-wisdom).*
+
+*Descubra cómo [ClickHouse Cloud puede ayudar a gestionar los costos operativos](/es/products/cloud/getting-started/intro)*.
+
+<div id="compression-strategy">
+  ## Estrategia de compresión: LZ4 vs ZSTD en producción
+</div>
+
+Cuando Microsoft Clarity necesitó manejar cientos de terabytes de datos, descubrió que la elección de la compresión tiene un impacto enorme en los costos. A esa escala, cada ahorro de almacenamiento cuenta, y se enfrentaban a una disyuntiva clásica: rendimiento frente a costos de almacenamiento. Microsoft Clarity maneja volúmenes masivos: dos petabytes de datos sin comprimir al mes en todas las cuentas, procesando alrededor de 60.000 consultas por hora en ocho nodos y sirviendo miles de millones de vistas de página desde millones de sitios web. A esta escala, la estrategia de compresión se convierte en un factor crítico de costo.
+
+Al principio utilizaban la compresión predeterminada [LZ4](/es/reference/statements/create/table#lz4) de ClickHouse, pero descubrieron que podían lograr ahorros de costos significativos con [ZSTD](/es/reference/statements/create/table#zstd). Aunque LZ4 es más rápida, ZSTD ofrece una mejor compresión a cambio de un rendimiento ligeramente inferior. Después de probar ambos enfoques, tomaron la decisión estratégica de priorizar el ahorro de almacenamiento. Los resultados fueron significativos: un 50 % de ahorro de almacenamiento en tablas grandes, con un impacto manejable en el rendimiento de la ingestión y las consultas.
+
+**Resultados clave:**
+
+* 50 % de ahorro de almacenamiento en tablas grandes mediante compresión ZSTD
+* 2 petabytes de capacidad mensual de procesamiento de datos
+* Impacto manejable en el rendimiento de la ingestión y las consultas
+* Reducción significativa de costos a escala de cientos de TB
+
+<div id="column-retention">
+  ## Estrategia de retención basada en columnas
+</div>
+
+Una de las técnicas más eficaces para optimizar costos consiste en analizar qué columnas se utilizan realmente. Microsoft Clarity implementa sofisticadas estrategias de retención basadas en columnas mediante las capacidades de telemetría integradas de ClickHouse. ClickHouse proporciona métricas detalladas sobre el uso del almacenamiento por columna, así como patrones de consulta completos: a qué columnas se accede, con qué frecuencia, la duración de las consultas y las estadísticas generales de uso.
+
+Este enfoque basado en datos permite tomar decisiones estratégicas sobre las políticas de retención y la gestión del ciclo de vida de las columnas. Al analizar estos datos de telemetría, Microsoft puede identificar puntos críticos de almacenamiento: columnas que consumen mucho espacio, pero reciben muy pocas consultas. Para estas columnas de poco uso, pueden implementar políticas de retención agresivas, reduciendo el tiempo de almacenamiento de 30 meses a solo un mes, o eliminar las columnas por completo si no se consultan en absoluto. Esta estrategia de retención selectiva reduce los costos de almacenamiento sin afectar la experiencia del usuario.
+
+**La estrategia:**
+
+* Analizar los patrones de uso de las columnas mediante la telemetría de ClickHouse
+* Identificar columnas con alto consumo de almacenamiento y pocas consultas
+* Implementar políticas de retención selectivas
+* Supervisar los patrones de consulta para tomar decisiones basadas en datos
+
+**Documentación relacionada**
+
+* [Gestión de datos - TTL a nivel de columna](/es/guides/use-cases/observability/build-your-own/managing-data)
+
+<div id="partition-management">
+  ## Gestión de datos basada en particiones
+</div>
+
+Microsoft Clarity descubrió que la estrategia de particionado influye tanto en el rendimiento como en la simplicidad operativa. Su enfoque: particionar por fecha y ordenar por hora. Esta estrategia aporta múltiples ventajas, más allá de la simple eficiencia de la limpieza: facilita enormemente la limpieza de datos, simplifica los cálculos de facturación de su servicio orientado al cliente y ayuda a cumplir los requisitos del RGPD para la eliminación fila por fila.
+
+**Beneficios clave:**
+
+* Limpieza de datos trivial (eliminar una partición en lugar de borrar fila por fila)
+* Cálculos de facturación simplificados
+* Mejor rendimiento de las consultas mediante la exclusión de particiones
+* Gestión operativa más sencilla
+
+**Documentación relacionada**
+
+* [Gestión de datos - Particiones](/es/guides/use-cases/observability/build-your-own/managing-data#partitions)
+
+<div id="string-integer-conversion">
+  ## Estrategia de conversión de cadenas a enteros
+</div>
+
+Las plataformas de analítica suelen enfrentarse a un problema de almacenamiento con datos categóricos que se repiten en millones de filas. El equipo de ingeniería de Microsoft se encontró con este problema en sus datos de analítica de búsqueda y desarrolló una solución eficaz que logró reducir en un 60% el almacenamiento de los conjuntos de datos afectados.
+
+En el sistema de analítica web de Microsoft, los resultados de búsqueda activan distintos tipos de respuestas: tarjetas del tiempo, información deportiva, artículos de noticias y respuestas factuales. Cada resultado de consulta se etiquetaba con cadenas descriptivas como &quot;weather&#95;answer&quot;, &quot;sports&#95;answer&quot; o &quot;factual&#95;answer&quot;. Al procesarse miles de millones de consultas de búsqueda, estos valores de texto se almacenaban repetidamente en ClickHouse, consumiendo enormes cantidades de espacio y requiriendo costosas comparaciones de cadenas durante las consultas.
+
+Microsoft implementó un sistema de mapeo de cadenas a enteros mediante una base de datos MySQL independiente. En lugar de almacenar las cadenas reales en ClickHouse, almacenan solo identificadores enteros. Cuando ejecutas consultas a través de la UI y solicitas datos de `weather_answer`, el optimizador de consultas consulta primero la tabla de mapeo de MySQL para obtener el identificador entero correspondiente y luego reescribe la consulta para usar ese entero antes de enviarla a ClickHouse.
+
+Esta arquitectura preserva la experiencia de usuario: las personas siguen viendo etiquetas descriptivas como `weather_answer` en sus dashboards, mientras que el almacenamiento y las consultas del backend operan con enteros mucho más eficientes. El sistema de mapeo gestiona toda la traducción de forma transparente, sin requerir cambios en la interfaz de usuario ni en los flujos de trabajo de los usuarios.
+
+**Beneficios clave:**
+
+* Reducción del 60% del almacenamiento en los conjuntos de datos afectados
+* Mejor rendimiento de las consultas al comparar enteros
+* Menor uso de memoria para joins y agregaciones
+* Menores costes de transferencia de red para grandes conjuntos de resultados
+
+<Note>
+  Este es un ejemplo usado específicamente para el caso de datos de Microsoft Clarity. Si tienes todos tus datos en ClickHouse o no tienes restricciones para mover datos a ClickHouse, prueba a usar [diccionarios](/es/concepts/features/dictionaries/index) en su lugar.
+</Note>
+
+<div id="video-sources">
+  ## Videos
+</div>
+
+* **[Microsoft Clarity y ClickHouse](https://www.youtube.com/watch?v=rUVZlquVGw0)** - Equipo de Microsoft Clarity
+* **[La trayectoria de ClickHouse en Contentsquare](https://www.youtube.com/watch?v=zvuCBAl2T0Q)** - Doron Hoffman &amp; Guram Sigua (ContentSquare)
+
+*Estas ideas de la comunidad sobre la optimización de costos reflejan estrategias de empresas que procesan desde cientos de terabytes hasta petabytes de datos y muestran enfoques reales para reducir los costos operativos de ClickHouse.*

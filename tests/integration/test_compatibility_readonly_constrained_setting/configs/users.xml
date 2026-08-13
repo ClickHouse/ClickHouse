@@ -1,0 +1,47 @@
+<clickhouse>
+    <!--
+        Reproduces the recommended lockdown of `s3_allow_server_credentials_in_user_queries`: pin it to 0
+        with an explicit value and a `readonly` (CONST) constraint, so untrusted users cannot enable it.
+
+        A native-protocol client that sets an older `compatibility` resolves it on its own side. It must not
+        transmit the reverted value of the pinned setting as an explicit change; the server keeps the pinned
+        value instead of failing every query with SETTING_CONSTRAINT_VIOLATION.
+
+        The `tenant` profile additionally pins an old `compatibility` version (as a cloud tenant profile does),
+        which is the case where the client's `compatibility` matches the server's and only the pinned setting
+        would otherwise be transmitted.
+    -->
+    <profiles>
+        <default>
+            <s3_allow_server_credentials_in_user_queries>0</s3_allow_server_credentials_in_user_queries>
+            <constraints>
+                <s3_allow_server_credentials_in_user_queries>
+                    <readonly/>
+                </s3_allow_server_credentials_in_user_queries>
+            </constraints>
+        </default>
+
+        <tenant>
+            <compatibility>25.8</compatibility>
+            <s3_allow_server_credentials_in_user_queries>0</s3_allow_server_credentials_in_user_queries>
+            <constraints>
+                <s3_allow_server_credentials_in_user_queries>
+                    <readonly/>
+                </s3_allow_server_credentials_in_user_queries>
+            </constraints>
+        </tenant>
+    </profiles>
+
+    <users>
+        <default>
+            <password></password>
+            <profile>default</profile>
+            <access_management>1</access_management>
+        </default>
+
+        <tenant>
+            <password></password>
+            <profile>tenant</profile>
+        </tenant>
+    </users>
+</clickhouse>

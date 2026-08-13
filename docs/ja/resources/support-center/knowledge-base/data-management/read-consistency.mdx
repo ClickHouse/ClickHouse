@@ -1,0 +1,54 @@
+---
+date: 2024-02-14
+title: "ClickHouseでデータ読み取り整合性を保つには？"
+description: "同じノードに接続する場合でも、ランダムなノードに接続する場合でも、ClickHouseの読み取り整合性を確保する方法を学びます。"
+tags: ['パフォーマンスと最適化']
+keywords: ['読み取り整合性']
+---
+
+<div id="question">
+  ## Question
+</div>
+
+ClickHouse Cloud にデータを書き込んでいますが、読み取る際には、常に最新かつ完全な情報を確実に取得できる必要があります。
+
+<div id="answer">
+  ## 回答
+</div>
+
+<div id="talking-to-the-same-node">
+  ### 同じノードに接続する
+</div>
+
+ネイティブプロトコル、または書き込み/読み取りにセッションを使用している場合は、同じレプリカに接続する必要があります。この場合、書き込み先のノードから直接読み取ることになるため、読み取り結果の整合性は常に保たれます。
+
+<div id="talking-to-a-random-node">
+  ### 任意のノードへの接続
+</div>
+
+常に同じノードに接続していると保証できない場合 (たとえば、HTTPS リクエストがロードバランサーによって別のノードに振り分けられる場合) は、次のいずれかを行えます。
+
+A)
+
+1. データを書き込む
+2. 新しいレプリカに接続する
+3. `SYSTEM SYNC REPLICA db.table_name LIGHTWEIGHT` を実行する
+4. 最新のデータを読み取る
+
+詳しくは、`SYSTEM` コマンドの[リファレンス](/ja/reference/statements/system#sync-replica)を参照してください
+
+または
+
+B) 逐次整合性を使用して、いつでも読み取る
+
+```sql
+SELECT 
+...
+SETTINGS select_sequential_consistency = 1
+```
+
+ClickHouse Cloud と、そのデフォルトの [SharedMergeTree](/ja/products/cloud/features/infrastructure/shared-merge-tree) テーブルエンジンを使用する場合、`insert_quorum_parallel` は不要である点に注意してください。SharedMergeTree への insert はすべて、設計上クォーラム insert になります。
+
+[`SYSTEM SYNC REPLICAS`](/ja/reference/statements/system#sync-replica) または [`select_sequential_consistency`](/ja/reference/settings/session-settings#select_sequential_consistency) を使用すると、ClickHouse Keeper への負荷が増加し、サービスの負荷状況によってはパフォーマンスが低下する可能性があります。
+
+推奨される方法は、同じセッションまたはネイティブプロトコル (sticky connection) を使って書き込みと読み取りを行うことです。

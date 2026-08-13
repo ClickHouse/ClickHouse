@@ -1,0 +1,68 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/executable-pool
+title: '실행형 풀 딕셔너리 소스'
+sidebarTitle: '실행형 풀'
+description: 'ClickHouse에서 실행형 풀을 딕셔너리 소스로 구성합니다.'
+doc_type: 'reference'
+---
+
+실행형 풀은 프로세스 풀에서 데이터를 로드할 수 있게 해줍니다.
+이 소스는 소스의 모든 데이터를 로드해야 하는 딕셔너리 레이아웃에서는 작동하지 않습니다.
+
+실행형 풀은 딕셔너리가 다음 레이아웃 중 하나로 [저장될 때](/ko/reference/statements/create/dictionary/layouts/overview#storing-dictionaries-in-memory) 사용할 수 있습니다.
+
+* `cache`
+* `complex_key_cache`
+* `ssd_cache`
+* `complex_key_ssd_cache`
+* `direct`
+* `complex_key_direct`
+
+실행형 풀은 지정된 명령으로 프로세스 풀을 생성하고, 각 프로세스가 종료될 때까지 계속 실행 상태로 유지합니다. 프로그램은 STDIN에서 읽을 수 있는 동안 데이터를 읽고, 결과를 STDOUT으로 출력해야 합니다. 또한 STDIN의 다음 데이터 블록을 기다릴 수 있어야 합니다. ClickHouse는 데이터 블록 하나를 처리한 뒤에도 STDIN을 닫지 않으며, 필요할 때 다른 데이터 청크를 파이프로 전달합니다. 실행형 스크립트는 이러한 데이터 처리 방식에 대비되어 있어야 합니다. 즉, STDIN을 폴링하고 STDOUT으로 데이터를 조기에 플러시할 수 있어야 합니다.
+
+설정 예시:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(EXECUTABLE_POOL(
+        command 'while read key; do printf "$key\tData for key $key\n"; done'
+        format 'TabSeparated'
+        pool_size 10
+        max_command_execution_time 10
+        implicit_key false
+    ))
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <source>
+        <executable_pool>
+            <command><command>while read key; do printf "$key\tData for key $key\n"; done</command</command>
+            <format>TabSeparated</format>
+            <pool_size>10</pool_size>
+            <max_command_execution_time>10<max_command_execution_time>
+            <implicit_key>false</implicit_key>
+        </executable_pool>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+설정 필드:
+
+| Setting                       | Description                                                                                                                                                                                                                                                                                                        |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `command`                     | 실행 파일의 절대 경로 또는 파일 이름입니다(프로그램 디렉터리가 `PATH`에 포함된 경우).                                                                                                                                                                                                                                                               |
+| `format`                      | 파일 포맷입니다. [Formats](/ko/reference/formats/index)에 설명된 모든 포맷을 지원합니다.                                                                                                                                                                                                                                                   |
+| `pool_size`                   | 풀 크기입니다. `pool_size`에 0을 지정하면 풀 크기에 제한이 없습니다. 기본값은 `16`입니다.                                                                                                                                                                                                                                                        |
+| `command_termination_timeout` | 실행형 스크립트에는 메인 읽기-쓰기 루프가 포함되어야 합니다. 딕셔너리가 제거되면 파이프가 닫히고, ClickHouse가 자식 프로세스에 SIGTERM 신호를 보내기 전까지 실행 파일은 `command_termination_timeout`초 동안 종료할 수 있습니다. 초 단위로 지정합니다. 기본값은 `10`입니다. 선택 사항입니다.                                                                                                                         |
+| `max_command_execution_time`  | 데이터 블록을 처리할 때 실행형 스크립트 명령의 최대 실행 시간입니다. 초 단위로 지정합니다. 기본값은 `10`입니다. 선택 사항입니다.                                                                                                                                                                                                                                       |
+| `command_read_timeout`        | 명령의 stdout에서 데이터를 읽을 때의 제한 시간입니다(밀리초). 기본값은 `10000`입니다. 선택 사항입니다.                                                                                                                                                                                                                                                  |
+| `command_write_timeout`       | 명령의 stdin에 데이터를 쓸 때의 제한 시간입니다(밀리초). 기본값은 `10000`입니다. 선택 사항입니다.                                                                                                                                                                                                                                                     |
+| `implicit_key`                | 실행형 소스 파일은 값만 반환할 수 있으며, 요청된 키와의 대응 관계는 결과의 행 순서에 따라 암묵적으로 결정됩니다. 기본값은 `false`입니다. 선택 사항입니다.                                                                                                                                                                                                                       |
+| `execute_direct`              | `execute_direct` = `1`이면 `command`는 [user&#95;scripts&#95;path](/ko/reference/settings/server-settings/settings#user_scripts_path)로 지정된 user&#95;scripts 폴더에서 검색됩니다. 추가 스크립트 인수는 공백으로 구분하여 지정할 수 있습니다. 예: `script_name arg1 arg2`. `execute_direct` = `0`이면 `command`는 `bin/sh -c`의 인수로 전달됩니다. 기본값은 `1`입니다. 선택 사항입니다. |
+| `send_chunk_header`           | 데이터 청크를 프로세스에 보내기 전에 행 수를 먼저 보낼지 제어합니다. 기본값은 `false`입니다. 선택 사항입니다.                                                                                                                                                                                                                                                 |
+
+이 딕셔너리 소스는 XML 구성으로만 설정할 수 있습니다. 실행형 소스를 사용하는 DDL 기반 딕셔너리 생성은 비활성화되어 있습니다. 그렇지 않으면 DB 사용자가 ClickHouse 노드에서 임의의 실행 파일을 실행할 수 있기 때문입니다.

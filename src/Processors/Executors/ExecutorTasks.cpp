@@ -1,6 +1,7 @@
 #include <Processors/Executors/ExecutorTasks.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Processors/StepWallClockRegistry.h>
 
 namespace DB
 {
@@ -173,8 +174,8 @@ size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThr
 #if defined(OS_LINUX) || defined(OS_DARWIN)
         while (!async_queue.empty() && !finished)
         {
-            auto [fd, events] = async_queue.front()->processor()->scheduleForEvent();
-            async_task_queue.addTask(context.thread_number, async_queue.front(), fd, events);
+            auto [fd, events, timeout_ms] = async_queue.front()->processor()->scheduleForEvent();
+            async_task_queue.addTask(context.thread_number, async_queue.front(), fd, events, timeout_ms);
             async_queue.pop();
         }
 #endif
@@ -206,7 +207,7 @@ size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThr
     return 0; // No new tasks -- no need for new threads
 }
 
-void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback)
+void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, const StepWallClockRegistry * step_to_wall_clock_registry, ReadProgressCallback * callback)
 {
     num_threads = num_threads_;
     use_threads = use_threads_;
@@ -227,7 +228,7 @@ void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, const SlotAll
 
         executor_contexts.reserve(num_threads);
         for (size_t i = 0; i < num_threads; ++i)
-            executor_contexts.emplace_back(std::make_unique<ExecutionThreadContext>(i, profile_processors, trace_processors, callback));
+            executor_contexts.emplace_back(std::make_unique<ExecutionThreadContext>(i, profile_processors, trace_processors, step_to_wall_clock_registry, callback));
     }
 }
 
@@ -240,8 +241,8 @@ size_t ExecutorTasks::fill(Queue & queue, [[maybe_unused]] Queue & async_queue)
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     while (!async_queue.empty())
     {
-        auto [fd, events] = async_queue.front()->processor()->scheduleForEvent();
-        async_task_queue.addTask(next_thread, async_queue.front(), fd, events);
+        auto [fd, events, timeout_ms] = async_queue.front()->processor()->scheduleForEvent();
+        async_task_queue.addTask(next_thread, async_queue.front(), fd, events, timeout_ms);
         async_queue.pop();
 
         ++next_thread;

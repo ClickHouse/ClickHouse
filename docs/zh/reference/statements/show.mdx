@@ -1,0 +1,872 @@
+---
+description: 'SHOW 文档'
+sidebarTitle: 'SHOW'
+slug: /sql-reference/statements/show
+title: 'SHOW 语句'
+doc_type: 'reference'
+---
+
+<Note>
+  `SHOW CREATE (TABLE|DATABASE|USER)` 默认会隐藏敏感信息，除非启用以下设置：
+
+  * [`display_secrets_in_show_and_select`](/zh/reference/settings/server-settings/settings#display_secrets_in_show_and_select) (服务器设置)
+  * [`format_display_secrets_in_show_and_select` ](/zh/reference/settings/formats#format_display_secrets_in_show_and_select) (格式设置)
+
+  此外，用户还必须具有 [`displaySecretsInShowAndSelect`](/zh/reference/statements/grant#displaysecretsinshowandselect) 权限。
+</Note>
+
+<div id="show-create-table--dictionary--view--database">
+  ## SHOW CREATE TABLE | DICTIONARY | VIEW | DATABASE
+</div>
+
+这些语句会返回一个 String 类型的单列，
+其中包含用于创建指定对象的 `CREATE` 查询。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW [CREATE] TABLE | TEMPORARY TABLE | DICTIONARY | VIEW | DATABASE [db.]table|view [INTO OUTFILE filename] [FORMAT format]
+```
+
+<Note>
+  如果你使用此语句获取系统表的 `CREATE` 查询，
+  得到的将是一个*伪*查询，它只声明表结构，
+  但不能用于创建表。
+</Note>
+
+<div id="show-databases">
+  ## SHOW DATABASES
+</div>
+
+该语句会显示所有数据库的列表。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW DATABASES [[NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
+```
+
+它与以下查询完全一致：
+
+```sql
+SELECT name FROM system.databases [WHERE name [NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
+```
+
+<div id="examples">
+  ### 示例
+</div>
+
+在此示例中，我们使用 `SHOW` 获取名称中包含 &#39;de&#39; 字符序列的数据库名称：
+
+```sql title="Query"
+SHOW DATABASES LIKE '%de%'
+```
+
+```text title="Response"
+┌─name────┐
+│ default │
+└─────────┘
+```
+
+我们也可以在不区分大小写的情况下这样做：
+
+```sql title="Query"
+SHOW DATABASES ILIKE '%DE%'
+```
+
+```text title="Response"
+┌─name────┐
+│ default │
+└─────────┘
+```
+
+或者，获取名称中不包含 &#39;de&#39; 的数据库名：
+
+```sql title="Query"
+SHOW DATABASES NOT LIKE '%de%'
+```
+
+```text title="Response"
+┌─name───────────────────────────┐
+│ _temporary_and_external_tables │
+│ system                         │
+│ test                           │
+│ tutorial                       │
+└────────────────────────────────┘
+```
+
+最后，我们可以只获取前两个数据库的名称：
+
+```sql title="Query"
+SHOW DATABASES LIMIT 2
+```
+
+```text title="Response"
+┌─name───────────────────────────┐
+│ _temporary_and_external_tables │
+│ default                        │
+└────────────────────────────────┘
+```
+
+<div id="see-also">
+  ### 另请参见
+</div>
+
+* [`CREATE DATABASE`](/zh/reference/statements/create/database)
+
+<div id="show-tables">
+  ## SHOW TABLES
+</div>
+
+`SHOW TABLES` 语句用于显示表的列表。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW [FULL] [TEMPORARY] TABLES [{FROM | IN} <db>] [[NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+```
+
+如果未指定 `FROM` 子句，查询将返回当前数据库中的表列表。
+
+该语句与以下查询相同：
+
+```sql
+SELECT name FROM system.tables [WHERE name [NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+```
+
+<div id="examples">
+  ### 示例
+</div>
+
+在此示例中，我们使用 `SHOW TABLES` 语句查找名称中包含 &#39;user&#39; 的所有表：
+
+```sql title="Query"
+SHOW TABLES FROM system LIKE '%user%'
+```
+
+```text title="Response"
+┌─name─────────────┐
+│ user_directories │
+│ users            │
+└──────────────────┘
+```
+
+我们也可以用不区分大小写的方式来实现：
+
+```sql title="Query"
+SHOW TABLES FROM system ILIKE '%USER%'
+```
+
+```text title="Response"
+┌─name─────────────┐
+│ user_directories │
+│ users            │
+└──────────────────┘
+```
+
+或者，查找名称中不包含字母 &#39;s&#39; 的表：
+
+```sql title="Query"
+SHOW TABLES FROM system NOT LIKE '%s%'
+```
+
+```text title="Response"
+┌─name─────────┐
+│ metric_log   │
+│ metric_log_0 │
+│ metric_log_1 │
+└──────────────┘
+```
+
+最后，我们只获取前两个表的名称：
+
+```sql title="Query"
+SHOW TABLES FROM system LIMIT 2
+```
+
+```text title="Response"
+┌─name───────────────────────────┐
+│ aggregate_function_combinators │
+│ asynchronous_metric_log        │
+└────────────────────────────────┘
+```
+
+<div id="see-also-1">
+  ### 另请参阅
+</div>
+
+* [`创建表`](/zh/reference/statements/create/table)
+* [`SHOW CREATE TABLE`](#show-create-table--dictionary--view--database)
+
+<div id="show_columns">
+  ## SHOW COLUMNS
+</div>
+
+`SHOW COLUMNS` 语句显示列列表。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW [EXTENDED] [FULL] COLUMNS {FROM | IN} <table> [{FROM | IN} <db>] [{[NOT] {LIKE | ILIKE} '<pattern>' | WHERE <expr>}] [LIMIT <N>] [INTO
+OUTFILE <filename>] [FORMAT <format>]
+```
+
+数据库名和表名可以用缩写形式 `<db>.<table>` 指定，
+也就是说，`FROM tab FROM db` 与 `FROM db.tab` 等价。
+如果未指定数据库，则查询会返回当前数据库中的列列表。
+
+另有两个可选关键字：`EXTENDED` 和 `FULL`。`EXTENDED` 关键字当前不起作用，
+其存在是为了兼容 MySQL。`FULL` 关键字会使输出包含 排序规则、comment 和 privilege 列。
+
+`SHOW COLUMNS` 语句会生成一个具有以下结构的结果表：
+
+| Column      | Description                                                        | Type               |
+| ----------- | ------------------------------------------------------------------ | ------------------ |
+| `field`     | 列名                                                                 | `String`           |
+| `type`      | 列的数据类型。如果查询是通过 MySQL wire 协议发出的，则显示 MySQL 中对应的类型名称。                | `String`           |
+| `null`      | 如果列的数据类型为 Nullable，则为 `YES`；否则为 `NO`                               | `String`           |
+| `key`       | 如果该列属于主键，则为 `PRI`；如果该列属于排序键，则为 `SOR`；否则为空                          | `String`           |
+| `default`   | 如果该列的类型为 `ALIAS`、`DEFAULT` 或 `MATERIALIZED`，则为该列的默认表达式；否则为 `NULL`。 | `Nullable(String)` |
+| `extra`     | 附加信息，当前未使用                                                         | `String`           |
+| `collation` |  (仅当指定了 `FULL` 关键字时) 列的排序规则；由于 ClickHouse 不支持列级排序规则，因此始终为 `NULL`   | `Nullable(String)` |
+| `comment`   |  (仅当指定了 `FULL` 关键字时) 列注释                                           | `String`           |
+| `privilege` |  (仅当指定了 `FULL` 关键字时) 你对该列拥有的权限，当前不可用                               | `String`           |
+
+<div id="examples">
+  ### 示例
+</div>
+
+在本示例中，我们将使用 `SHOW COLUMNS` 语句来获取表 &#39;orders&#39; 中所有以 &#39;delivery&#95;&#39; 开头的列的信息：
+
+```sql title="Query"
+SHOW COLUMNS FROM 'orders' LIKE 'delivery_%'
+```
+
+```text title="Response"
+┌─field───────────┬─type─────┬─null─┬─key─────┬─default─┬─extra─┐
+│ delivery_date   │ DateTime │    0 │ PRI SOR │ ᴺᵁᴸᴸ    │       │
+│ delivery_status │ Bool     │    0 │         │ ᴺᵁᴸᴸ    │       │
+└─────────────────┴──────────┴──────┴─────────┴─────────┴───────┘
+```
+
+<div id="see-also-1">
+  ### 另请参阅
+</div>
+
+* [`system.columns`](/zh/reference/system-tables/columns)
+
+<div id="show-dictionaries">
+  ## SHOW DICTIONARIES
+</div>
+
+`SHOW DICTIONARIES` 语句用于显示[字典](/zh/reference/statements/create/dictionary)列表。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW DICTIONARIES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+```
+
+如果未指定 `FROM` 子句，该查询将返回当前数据库中的字典列表。
+
+也可以通过以下方式获得与 `SHOW DICTIONARIES` 查询相同的结果：
+
+```sql
+SELECT name FROM system.dictionaries WHERE database = <db> [AND name LIKE <pattern>] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+```
+
+<div id="examples">
+  ### 示例
+</div>
+
+以下查询从 `system` 数据库的表列表中选取名称包含 `reg` 的前两行。
+
+```sql title="Query"
+SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
+```
+
+```text title="Response"
+┌─name─────────┐
+│ regions      │
+│ region_names │
+└──────────────┘
+```
+
+<div id="show-index">
+  ## SHOW INDEX
+</div>
+
+显示表的主键和数据跳过索引列表。
+
+此语句主要是为兼容 MySQL 而存在。系统表 [`system.tables`](/zh/reference/system-tables/tables) (用于
+主键) 和 [`system.data_skipping_indices`](/zh/reference/system-tables/data_skipping_indices) (用于数据跳过索引)
+提供了等效的信息，但采用了更符合 ClickHouse 原生风格的方式。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW [EXTENDED] {INDEX | INDEXES | INDICES | KEYS } {FROM | IN} <table> [{FROM | IN} <db>] [WHERE <expr>] [INTO OUTFILE <filename>] [FORMAT <format>]
+```
+
+数据库名和表名可以使用缩写形式 `<db>.<table>` 指定，即 `FROM tab FROM db` 与 `FROM db.tab` 等价。如果未指定数据库，则查询默认使用当前数据库。
+
+可选关键字 `EXTENDED` 当前没有任何作用，仅用于兼容 MySQL。
+
+该语句会生成一个具有以下结构的结果表：
+
+| Column          | Description                                                      | Type               |
+| --------------- | ---------------------------------------------------------------- | ------------------ |
+| `table`         | 表名。                                                              | `String`           |
+| `non_unique`    | 始终为 `1`，因为 ClickHouse 不支持唯一性约束。                                  | `UInt8`            |
+| `key_name`      | 索引名称；如果该索引是主键索引，则为 `PRIMARY`。                                    | `String`           |
+| `seq_in_index`  | 对于主键索引，表示列的位置，从 `1` 开始；对于数据跳过索引，始终为 `1`。                         | `UInt8`            |
+| `column_name`   | 对于主键索引，表示列名；对于数据跳过索引，为 `''` (空字符串) ，参见字段 &quot;expression&quot;。 | `String`           |
+| `collation`     | 列在索引中的排序方式：升序为 `A`，降序为 `D`，未排序为 `NULL`。                          | `Nullable(String)` |
+| `cardinality`   | 索引基数 (索引中唯一值数量) 的估算值。目前始终为 `0`。                                  | `UInt64`           |
+| `sub_part`      | 始终为 `NULL`，因为 ClickHouse 不支持 MySQL 那样的索引前缀。                      | `Nullable(String)` |
+| `packed`        | 始终为 `NULL`，因为 ClickHouse 不支持打包索引 (如 MySQL) 。                     | `Nullable(String)` |
+| `null`          | 当前未使用                                                            |                    |
+| `index_type`    | 索引类型，例如 `PRIMARY`、`MINMAX`、`BLOOM_FILTER` 等。                     | `String`           |
+| `comment`       | 索引的附加信息，目前始终为 `''` (空字符串) 。                                      | `String`           |
+| `index_comment` | `''` (空字符串) ，因为 ClickHouse 中的索引不能有 `COMMENT` 字段 (如 MySQL) 。      | `String`           |
+| `visible`       | 索引对优化器是否可见，始终为 `YES`。                                            | `String`           |
+| `expression`    | 对于数据跳过索引，表示索引表达式；对于主键索引，为 `''` (空字符串) 。                          | `String`           |
+
+<div id="examples">
+  ### 示例
+</div>
+
+在本示例中，我们使用 `SHOW INDEX` 语句获取表 &#39;tbl&#39; 中所有索引的信息
+
+```sql title="Query"
+SHOW INDEX FROM 'tbl'
+```
+
+```text title="Response"
+┌─table─┬─non_unique─┬─key_name─┬─seq_in_index─┬─column_name─┬─collation─┬─cardinality─┬─sub_part─┬─packed─┬─null─┬─index_type───┬─comment─┬─index_comment─┬─visible─┬─expression─┐
+│ tbl   │          1 │ blf_idx  │ 1            │ 1           │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ BLOOM_FILTER │         │               │ YES     │ d, b       │
+│ tbl   │          1 │ mm1_idx  │ 1            │ 1           │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ MINMAX       │         │               │ YES     │ a, c, d    │
+│ tbl   │          1 │ mm2_idx  │ 1            │ 1           │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ MINMAX       │         │               │ YES     │ c, d, e    │
+│ tbl   │          1 │ PRIMARY  │ 1            │ c           │ A         │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ PRIMARY      │         │               │ YES     │            │
+│ tbl   │          1 │ PRIMARY  │ 2            │ a           │ A         │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ PRIMARY      │         │               │ YES     │            │
+│ tbl   │          1 │ set_idx  │ 1            │ 1           │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ SET          │         │               │ YES     │ e          │
+└───────┴────────────┴──────────┴──────────────┴─────────────┴───────────┴─────────────┴──────────┴────────┴──────┴──────────────┴─────────┴───────────────┴─────────┴────────────┘
+```
+
+<div id="see-also-1">
+  ### 另请参阅
+</div>
+
+* [`system.tables`](/zh/reference/system-tables/tables)
+* [`system.data_skipping_indices`](/zh/reference/system-tables/data_skipping_indices)
+
+<div id="show-processlist">
+  ## SHOW PROCESSLIST
+</div>
+
+输出 [`system.processes`](/zh/reference/system-tables/processes) 表的内容，其中包含当前正在处理的查询列表，但不包括 `SHOW PROCESSLIST` 查询。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
+```
+
+`SELECT * FROM system.processes` 查询会返回当前所有查询的信息。
+
+<Tip>
+  在终端中执行：
+
+  ```bash
+  $ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
+  ```
+</Tip>
+
+<div id="show-grants">
+  ## SHOW GRANTS
+</div>
+
+`SHOW GRANTS` 语句用于显示用户的权限。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW GRANTS [FOR user1 [, user2 ...]] [WITH IMPLICIT] [FINAL]
+```
+
+如果未指定用户，则该查询会返回当前用户的权限。
+
+`WITH IMPLICIT` 修饰符可显示隐式授权 (例如 `GRANT SELECT ON system.one`)
+
+`FINAL` 修饰符会合并该用户及其获授角色的所有授权 (包括继承的授权)
+
+<div id="show-create-user">
+  ## SHOW CREATE USER
+</div>
+
+`SHOW CREATE USER` 语句用于显示[创建用户](/zh/reference/statements/create/user)时所使用的参数。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW CREATE USER [name1 [, name2 ...] | CURRENT_USER]
+```
+
+<div id="show-create-role">
+  ## SHOW CREATE ROLE
+</div>
+
+`SHOW CREATE ROLE` 语句用于显示[创建角色](/zh/reference/statements/create/role)时所使用的参数。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW CREATE ROLE name1 [, name2 ...]
+```
+
+<div id="show-create-row-policy">
+  ## SHOW CREATE ROW POLICY
+</div>
+
+`SHOW CREATE ROW POLICY` 语句会显示[创建 ROW POLICY](/zh/reference/statements/create/row-policy)时所使用的参数。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW CREATE [ROW] POLICY name ON [database1.]table1 [, [database2.]table2 ...]
+```
+
+<div id="show-create-quota">
+  ## SHOW CREATE QUOTA
+</div>
+
+`SHOW CREATE QUOTA` 语句会显示在[创建 QUOTA](/zh/reference/statements/create/quota)时使用的参数。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW CREATE QUOTA [name1 [, name2 ...] | CURRENT]
+```
+
+<div id="show-create-settings-profile">
+  ## SHOW CREATE SETTINGS PROFILE
+</div>
+
+`SHOW CREATE SETTINGS PROFILE` 语句用于显示[创建 settings profile](/zh/reference/statements/create/settings-profile)时所使用的参数。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW CREATE [SETTINGS] PROFILE name1 [, name2 ...]
+```
+
+<div id="show-users">
+  ## SHOW USERS
+</div>
+
+`SHOW USERS` 语句会返回[用户账户](/zh/concepts/features/security/access-rights#user-account-management)名称列表。
+要查看用户账户的参数，请参见系统表 [`system.users`](/zh/reference/system-tables/users)。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW USERS
+```
+
+<div id="show-roles">
+  ## SHOW ROLES
+</div>
+
+`SHOW ROLES` 语句返回[角色](/zh/concepts/features/security/access-rights#role-management)列表。
+如需查看其他信息，
+请参见系统表 [`system.roles`](/zh/reference/system-tables/roles) 和 [`system.role_grants`](/zh/reference/system-tables/role_grants)。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW [CURRENT|ENABLED] ROLES
+```
+
+<div id="show-profiles">
+  ## SHOW PROFILES
+</div>
+
+`SHOW PROFILES` 语句返回 [profile](/zh/concepts/features/security/access-rights#settings-profiles-management) 列表。
+要查看用户账户参数，请参见系统表 [`settings_profiles`](/zh/reference/system-tables/settings_profiles)。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW [SETTINGS] PROFILES
+```
+
+<div id="show-policies">
+  ## SHOW POLICIES
+</div>
+
+`SHOW POLICIES` 语句返回指定表的[行策略](/zh/concepts/features/security/access-rights#row-policy-management)列表。
+要查看用户账户参数，请参见系统表 [`system.row_policies`](/zh/reference/system-tables/row_policies)。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW [ROW] POLICIES [ON [db.]table]
+```
+
+<div id="show-quotas">
+  ## SHOW QUOTAS
+</div>
+
+`SHOW QUOTAS` 语句返回[QUOTA](/zh/concepts/features/security/access-rights#quotas-management)列表。
+要查看QUOTA参数，请参见系统表 [`system.quotas`](/zh/reference/system-tables/quotas)。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW QUOTAS
+```
+
+<div id="show-quota">
+  ## SHOW QUOTA
+</div>
+
+`SHOW QUOTA` 语句返回所有用户或当前用户的 [QUOTA](/zh/concepts/features/configuration/server-config/quotas) 使用情况。
+如需查看其他参数，请参见系统表 [`system.quotas_usage`](/zh/reference/system-tables/quotas_usage) 和 [`system.quota_usage`](/zh/reference/system-tables/quota_usage)。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW [CURRENT] QUOTA
+```
+
+<div id="show-access">
+  ## SHOW ACCESS
+</div>
+
+`SHOW ACCESS` 语句会显示所有[用户](/zh/concepts/features/security/access-rights#user-account-management)、[角色](/zh/concepts/features/security/access-rights#role-management)、[profile](/zh/concepts/features/security/access-rights#settings-profiles-management)等，以及它们拥有的所有[授权](/zh/reference/statements/grant#privileges)。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW ACCESS
+```
+
+<div id="show-clusters">
+  ## SHOW CLUSTER(S)
+</div>
+
+`SHOW CLUSTER(S)` 语句会返回集群列表。
+所有可用集群都列在 [`system.clusters`](/zh/reference/system-tables/clusters) 表中。
+
+<Note>
+  `SHOW CLUSTER name` 查询会显示指定集群在 `system.clusters` 表中的 `cluster`、`shard_num`、`replica_num`、`host_name`、`host_address` 和 `port`。
+</Note>
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW CLUSTER '<name>'
+SHOW CLUSTERS [[NOT] LIKE|ILIKE '<pattern>'] [LIMIT <N>]
+```
+
+<div id="examples">
+  ### 示例
+</div>
+
+```sql title="Query"
+SHOW CLUSTERS;
+```
+
+```text title="Response"
+┌─cluster──────────────────────────────────────┐
+│ test_cluster_two_shards                      │
+│ test_cluster_two_shards_internal_replication │
+│ test_cluster_two_shards_localhost            │
+│ test_shard_localhost                         │
+│ test_shard_localhost_secure                  │
+│ test_unavailable_shard                       │
+└──────────────────────────────────────────────┘
+```
+
+```sql title="Query"
+SHOW CLUSTERS LIKE 'test%' LIMIT 1;
+```
+
+```text title="Response"
+┌─cluster─────────────────┐
+│ test_cluster_two_shards │
+└─────────────────────────┘
+```
+
+```sql title="Query"
+SHOW CLUSTER 'test_shard_localhost' FORMAT Vertical;
+```
+
+```text title="Response"
+Row 1:
+──────
+cluster:                 test_shard_localhost
+shard_num:               1
+replica_num:             1
+host_name:               localhost
+host_address:            127.0.0.1
+port:                    9000
+```
+
+<div id="show-settings">
+  ## SHOW SETTINGS
+</div>
+
+`SHOW SETTINGS` 语句返回系统设置及其值的列表。
+它从 [`system.settings`](/zh/reference/system-tables/settings) 表中读取数据。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW [CHANGED] SETTINGS LIKE|ILIKE <name>
+```
+
+<div id="clauses">
+  ### 子句
+</div>
+
+`LIKE|ILIKE` 允许为设置名称指定匹配模式。该模式可包含 `%` 或 `_` 等通配符。`LIKE` 子句区分大小写，`ILIKE` 子句不区分大小写。
+
+使用 `CHANGED` 子句时，查询仅返回与默认值相比已更改的设置。
+
+<div id="examples">
+  ### 示例
+</div>
+
+使用 `LIKE` 子句的查询：
+
+```sql title="Query"
+SHOW SETTINGS LIKE 'send_timeout';
+```
+
+```text title="Response"
+┌─name─────────┬─type────┬─value─┐
+│ send_timeout │ Seconds │ 300   │
+└──────────────┴─────────┴───────┘
+```
+
+使用 `ILIKE` 子句查询：
+
+```sql title="Query"
+SHOW SETTINGS ILIKE '%CONNECT_timeout%'
+```
+
+```text title="Response"
+┌─name────────────────────────────────────┬─type─────────┬─value─┐
+│ connect_timeout                         │ Seconds      │ 10    │
+│ connect_timeout_with_failover_ms        │ Milliseconds │ 50    │
+│ connect_timeout_with_failover_secure_ms │ Milliseconds │ 100   │
+└─────────────────────────────────────────┴──────────────┴───────┘
+```
+
+使用 `CHANGED` 子句查询：
+
+```sql title="Query"
+SHOW CHANGED SETTINGS ILIKE '%MEMORY%'
+```
+
+```text title="Response"
+┌─name─────────────┬─type───┬─value───────┐
+│ max_memory_usage │ UInt64 │ 10000000000 │
+└──────────────────┴────────┴─────────────┘
+```
+
+<div id="show-setting">
+  ## SHOW SETTING
+</div>
+
+`SHOW SETTING` 语句会输出指定设置名称对应的设置值。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW SETTING <name>
+```
+
+<div id="see-also">
+  ### 另请参见
+</div>
+
+* [`system.settings`](/zh/reference/system-tables/settings) 表
+
+<div id="show-filesystem-caches">
+  ## SHOW FILESYSTEM CACHES
+</div>
+
+<div id="examples">
+  ### 示例
+</div>
+
+```sql title="Query"
+SHOW FILESYSTEM CACHES
+```
+
+```text title="Response"
+┌─Caches────┐
+│ s3_cache  │
+└───────────┘
+```
+
+<div id="see-also">
+  ### 另请参见
+</div>
+
+* [`system.settings`](/zh/reference/system-tables/settings) 表
+
+<div id="show-engines">
+  ## SHOW ENGINES
+</div>
+
+`SHOW ENGINES` 语句会输出 [`system.table_engines`](/zh/reference/system-tables/table_engines) 表的内容，
+其中包含 server 支持的表引擎说明以及其功能支持信息。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW ENGINES [INTO OUTFILE filename] [FORMAT format]
+```
+
+<div id="see-also-1">
+  ### 另请参阅
+</div>
+
+* [system.table&#95;engines](/zh/reference/system-tables/table_engines) 表
+
+<div id="show-functions">
+  ## SHOW FUNCTIONS
+</div>
+
+`SHOW FUNCTIONS` 语句会返回 [`system.functions`](/zh/reference/system-tables/functions) 表的内容。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW FUNCTIONS [LIKE | ILIKE '<pattern>']
+```
+
+如果指定了 `LIKE` 或 `ILIKE` 子句，查询将返回名称与给定 `<pattern>` 匹配的系统函数列表。
+
+<div id="see-also-1">
+  ### 另请参阅
+</div>
+
+* [`system.functions`](/zh/reference/system-tables/functions) 表
+
+<div id="show-merges">
+  ## SHOW MERGES
+</div>
+
+`SHOW MERGES` 语句返回合并列表。
+所有合并都列在 [`system.merges`](/zh/reference/system-tables/merges) 表中：
+
+| Column              | Description                 |
+| ------------------- | --------------------------- |
+| `table`             | 表名。                         |
+| `database`          | 该表所在的数据库名称。                 |
+| `estimate_complete` | 预计完成时间 (以秒为单位) 。            |
+| `elapsed`           | 自合并开始以来经过的时间 (以秒为单位) 。      |
+| `progress`          | 已完成工作的百分比 (0–100%) 。        |
+| `is_mutation`       | 如果该进程是 part mutation，则值为 1。 |
+| `size_compressed`   | 已合并 parts 的压缩数据总大小。         |
+| `memory_usage`      | 合并进程的内存占用。                  |
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW MERGES [[NOT] LIKE|ILIKE '<table_name_pattern>'] [LIMIT <N>]
+```
+
+<div id="examples">
+  ### 示例
+</div>
+
+```sql title="Query"
+SHOW MERGES;
+```
+
+```text title="Response"
+┌─table──────┬─database─┬─estimate_complete─┬─elapsed─┬─progress─┬─is_mutation─┬─size_compressed─┬─memory_usage─┐
+│ your_table │ default  │              0.14 │    0.36 │    73.01 │           0 │        5.40 MiB │    10.25 MiB │
+└────────────┴──────────┴───────────────────┴─────────┴──────────┴─────────────┴─────────────────┴──────────────┘
+```
+
+```sql title="Query"
+SHOW MERGES LIKE 'your_t%' LIMIT 1;
+```
+
+```text title="Response"
+┌─table──────┬─database─┬─estimate_complete─┬─elapsed─┬─progress─┬─is_mutation─┬─size_compressed─┬─memory_usage─┐
+│ your_table │ default  │              0.14 │    0.36 │    73.01 │           0 │        5.40 MiB │    10.25 MiB │
+└────────────┴──────────┴───────────────────┴─────────┴──────────┴─────────────┴─────────────────┴──────────────┘
+```
+
+<div id="show-create-masking-policy">
+  ## SHOW CREATE MASKING POLICY
+</div>
+
+`SHOW CREATE MASKING POLICY` 语句用于显示在[创建数据脱敏策略](/zh/reference/statements/create/masking-policy)时所使用的参数。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql title="Syntax"
+SHOW CREATE MASKING POLICY name ON [database.]table
+```

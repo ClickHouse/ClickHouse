@@ -271,7 +271,7 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     /// from result.settings_changes to drive implicit-minmax skip-index creation.
     auto merge_tree_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
     if (projection_definition->with_settings)
-        merge_tree_settings->applyChanges(projection_definition->with_settings->changes);
+        merge_tree_settings->applyChanges(projection_definition->with_settings->changes, query_context, isLoadingFromExistingMetadata(mode));
     result.settings_changes = merge_tree_settings->changes();
 
     /// Track whether the effective settings include index_granularity or index_granularity_bytes overrides
@@ -380,6 +380,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     /// works correctly even in DatabaseReplicated mode (where query_kind == SECONDARY_QUERY).
     auto mut_context = Context::createCopy(query_context);
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
+    /// Projection required-columns must always expand ALIAS columns, regardless of session settings.
+    mut_context->setSetting("optimize_respect_aliases", true);
     mut_context->setQueryKindInitial();
 
     bool is_aggregate = false;
@@ -393,7 +395,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
         auto query_tree = buildQueryTree(result.query_ast, mut_context);
         auto & query_node = query_tree->as<QueryNode &>();
-        query_node.getJoinTree() = std::make_shared<TableNode>(analyzer_storage, mut_context);
+        query_node.getJoinTreeNode() = std::make_shared<TableNode>(analyzer_storage, mut_context);
 
         QueryTreePassManager query_tree_pass_manager(mut_context);
         addQueryTreePasses(query_tree_pass_manager, /*only_analyze=*/true);

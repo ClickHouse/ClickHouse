@@ -1,0 +1,92 @@
+---
+title: Comment créer un dictionnaire ClickHouse avec des clés et des valeurs de type String
+description: Découvrez comment créer un dictionnaire ClickHouse à l’aide de clés et de valeurs de type String à partir d’une table MergeTree comme source, avec des exemples de configuration et d’utilisation.
+date: 2023-07-10
+tags: ['Modélisation des données']
+keywords: ['Dictionnaire', 'Clés String', 'Valeurs String']
+---
+
+<div id="question">
+  ## Question
+</div>
+
+Comment créer un dictionnaire ClickHouse avec des clés et des valeurs de type String à partir d’une table MergeTree
+
+<div id="answer">
+  ## Réponse
+</div>
+
+* Créez la table source du dictionnaire
+
+```
+CREATE TABLE db1.table1_dict_source
+(
+  id UInt32,
+  email String,
+  name String
+)
+ENGINE = MergeTree()
+ORDER BY id;
+```
+
+* Insérer des lignes
+
+```
+INSERT INTO db1.table1_dict_source
+(id, email, name)
+VALUES
+(1, 'me@domain.com', 'me'),
+(2, 'you@domain.com', 'you');
+```
+
+* Créer  un dictionnaire dont la clé et la valeur sont toutes deux de type String
+
+```
+CREATE DICTIONARY db1.table1_dict
+(
+    email String,
+    name String
+)
+PRIMARY KEY email
+SOURCE(
+CLICKHOUSE(
+TABLE 'table1_dict_source'
+USER 'default'
+PASSWORD 'ClickHouse123!'))
+LAYOUT(COMPLEX_KEY_HASHED())
+LIFETIME(MIN 0 MAX 1000);
+```
+
+* Tester le dictionnaire
+
+```
+clickhouse-cloud :) SELECT * from db1.table1_dict;
+
+SELECT *
+FROM db1.table1_dict
+
+Query id: 098396ce-11dd-4c71-a0e1-40723dd67ddc
+
+┌─email──────────┬─name─┐
+│ me@domain.com  │ me   │
+│ you@domain.com │ you  │
+└────────────────┴──────┘
+
+2 rows in set. Elapsed: 0.001 sec. 
+```
+
+Vous pouvez également utiliser la fonction dictGet pour y récupérer des valeurs, par exemple :
+
+```
+SELECT dictGet('db1.table1_dict', 'name', 'me@domain.com');
+```
+
+Réponse :
+
+```
+┌─dictGet('db1.table1_dict', 'name', 'me@domain.com')─┐
+│ me                                                  │
+└─────────────────────────────────────────────────────┘
+```
+
+Plus de détails : [https://clickhouse.com/docs/sql-reference/functions/ext-dict-functions](https://clickhouse.com/docs/sql-reference/functions/ext-dict-functions)

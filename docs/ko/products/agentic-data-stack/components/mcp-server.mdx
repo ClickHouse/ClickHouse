@@ -1,0 +1,24 @@
+---
+sidebarTitle: 'ClickHouse MCP 서버'
+title: 'ClickHouse MCP 서버'
+description: 'ClickHouse MCP 서버가 에이전트형 데이터 스택의 개방형 표준 액세스 계층을 제공하는 방식'
+doc_type: 'guide'
+keywords: ['에이전트형 데이터 스택', 'MCP', 'Model Context Protocol', 'ClickHouse MCP 서버']
+---
+
+ClickHouse MCP 서버는 [Agentic Data Stack](/ko/products/agentic-data-stack/overview)의 **개방형 표준 액세스 계층**입니다. Model Context Protocol을 통해 채팅 프런트엔드에 ClickHouse를 노출하여, 에이전트가 데이터를 탐색하고 이에 대해 읽기 전용 쿼리를 실행할 수 있도록 합니다.
+
+이 스택에서 이 오픈소스 서버는 ClickHouse와 함께 실행되며 LibreChat에 미리 구성되어 있습니다. 이 서버는 에이전트에 다음 세 가지 도구를 제공합니다.
+
+* **데이터베이스 목록** — 연결된 ClickHouse 인스턴스의 데이터베이스 목록을 확인합니다.
+* **테이블 목록** — 데이터베이스 내의 테이블과 해당 스키마를 확인합니다.
+* **SELECT 쿼리 실행** — 읽기 전용 쿼리를 실행하고 결과를 반환합니다.
+
+스택의 일부로 실행하려면 [Docker 설정 가이드](/ko/products/agentic-data-stack/docker-setup)를 참조하십시오. 다른 클라이언트 및 에이전트 프레임워크와 함께 ClickHouse MCP 서버를 사용하거나, 소스와 구성을 확인하려면 다음을 참조하십시오.
+
+* [MCP 통합 카탈로그](/ko/guides/use-cases/ai-ml/MCP): 클라이언트 및 에이전트 라이브러리 가이드
+* [MCP 리포지토리](https://github.com/ClickHouse/mcp-clickhouse): 소스 및 구성
+
+<Info>
+  **관리형 MCP 서버가 필요하신가요?** ClickHouse Cloud는 완전 관리형 [원격 MCP 서버](/ko/products/cloud/features/ai-ml/remote-mcp)를 제공합니다. 설치가 필요 없고 OAuth 인증을 지원하며, 위의 읽기 전용 도구에 더해 관리 작업(서비스, 청구, ClickPipes, 백업)을 추가한 더욱 풍부한 도구 세트도 제공합니다. 자세한 내용은 [오픈소스 서버와의 비교](/ko/products/cloud/features/ai-ml/remote-mcp#remote-vs-oss)를 참조하십시오.
+</Info>

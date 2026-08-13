@@ -1,0 +1,22 @@
+---
+description: 'Documentación sobre la aplicación de la máscara de filas eliminadas'
+sidebarTitle: 'APPLY DELETED MASK'
+slug: /sql-reference/statements/alter/apply-deleted-mask
+title: 'Aplicar la máscara de filas eliminadas'
+doc_type: 'referencia'
+---
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] APPLY DELETED MASK [IN PARTITION partition_id]
+```
+
+El comando aplica la máscara creada por la [eliminación ligera](/es/reference/statements/delete) y elimina forzosamente del disco las filas marcadas como eliminadas. Este comando es una mutación pesada y equivale semánticamente a la consulta `ALTER TABLE [db].name DELETE WHERE _row_exists = 0`.
+
+<Note>
+  Solo funciona con tablas de la familia [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree) (incluidas las tablas [replicadas](/es/reference/engines/table-engines/mergetree-family/replication)).
+</Note>
+
+**Vea también**
+
+* [Eliminaciones ligeras](/es/reference/statements/delete)
+* [Eliminaciones pesadas](/es/reference/statements/alter/delete)

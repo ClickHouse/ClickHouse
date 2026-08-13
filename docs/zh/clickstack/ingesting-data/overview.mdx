@@ -1,0 +1,43 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/overview
+title: '将数据摄取到 ClickStack'
+sidebarTitle: '概述'
+description: '将数据摄取到 ClickStack 的概述'
+doc_type: 'guide'
+keywords: ['clickstack', '可观测性', '日志', '监控', '平台']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+所有数据都会通过 **OpenTelemetry (OTel) collector** 摄取到开源 ClickStack 或托管 ClickStack 中。它是日志、指标、链路追踪和会话数据的主要入口。
+
+这两种架构的关键区别在于组件托管的位置。在这两种情况下，您都需要运行一个 OpenTelemetry Collector 来接收来自应用程序的遥测数据。对于开源 ClickStack，您还需要自行托管和管理 ClickHouse 以及 ClickStack UI (HyperDX) 。对于托管 ClickStack，ClickHouse 和 HyperDX UI 则托管并由 ClickHouse Cloud 管理，同时还为您处理集成的身份验证和运维管理。
+
+<Tabs>
+  <Tab title="托管 ClickStack">
+    <Image img="/images/use-cases/observability/clickstack-managed-architecture-with-flow.webp" alt="托管架构与流程" size="md" />
+  </Tab>
+
+  <Tab title="开源 ClickStack">
+    <Image img="/images/use-cases/observability/clickstack-oss-architecture-with-flow.webp" alt="简化架构与流程" size="md" />
+  </Tab>
+</Tabs>
+
+在这两种部署模型中，collector 都会暴露两个 OTLP 端点：
+
+* **HTTP** - 端口 `4318`
+* **gRPC** - 端口 `4317`
+
+您既可以直接通过[语言 SDKs](/zh/clickstack/ingesting-data/sdks/index)将数据发送到这些端点，也可以通过兼容 OTel 的数据采集 agent 发送，例如收集基础设施指标和日志的其他 OTel collectors。
+
+更具体地说：
+
+* [**语言 SDKs**](/zh/clickstack/ingesting-data/sdks/index) 负责从应用程序内部收集遥测数据，尤其是 **链路追踪** 和 **日志**，并通过 OTLP 端点将这些数据导出到 OpenTelemetry collector，由后者负责将数据摄取到 ClickHouse。有关 ClickStack 可用语言 SDKs 的更多详细信息，请参阅 [SDKs](/zh/clickstack/ingesting-data/sdks/index)。
+
+* **数据采集 agent** 是部署在边缘的 agent——部署在服务器、Kubernetes 节点上，或与应用程序一同部署。它们负责收集基础设施遥测数据 (例如日志、指标) ，或直接接收由 SDKs 完成埋点的应用程序发出的事件。在这种情况下，agent 与应用程序运行在同一台主机上，通常以 sidecar 或 DaemonSet 守护进程集 的形式运行。这些 agent 会将数据转发到中央 ClickStack OTel collector，后者充当 [gateway](/zh/clickstack/ingesting-data/collector#collector-roles)，通常在每个 cluster、数据中心或区域部署一个。[gateway](/zh/clickstack/ingesting-data/collector#collector-roles) 接收来自 agent 或应用程序的 OTLP 事件，并负责将数据摄取到 ClickHouse。更多详细信息，请参阅 [OTel collector](/zh/clickstack/ingesting-data/collector)。这些 agent 可以是 OTel collector 的其他实例，也可以是 [Fluentd](https://www.fluentd.org/) 或 [Vector](https://vector.dev/) 等其他技术。
+
+<Info>
+  **OpenTelemetry 兼容性**
+
+  虽然 ClickStack 提供了自己的语言 SDKs 和定制版 OpenTelemetry，并增强了遥测能力和功能，但您也可以无缝使用现有的 OpenTelemetry SDKs 和 agents。
+</Info>

@@ -1,0 +1,155 @@
+---
+description: 'INTERSECT 절 문서'
+sidebarTitle: 'INTERSECT'
+slug: /sql-reference/statements/select/intersect
+title: 'INTERSECT 절'
+doc_type: 'reference'
+---
+
+`INTERSECT` 절은 첫 번째 쿼리와 두 번째 쿼리의 결과에 모두 포함되는 행만 반환합니다. 두 쿼리는 컬럼 수, 순서, 유형이 일치해야 합니다. `INTERSECT`의 결과에는 중복된 행이 포함될 수 있습니다.
+
+괄호를 지정하지 않으면 여러 `INTERSECT` SQL 문은 왼쪽에서 오른쪽으로 실행됩니다. `INTERSECT` 연산자는 `UNION` 및 `EXCEPT` 절보다 우선순위가 높습니다.
+
+```sql
+SELECT column1 [, column2 ]
+FROM table1
+[WHERE condition]
+
+INTERSECT
+
+SELECT column1 [, column2 ]
+FROM table2
+[WHERE condition]
+
+```
+
+조건에는 요구 사항에 따라 어떤 표현식이든 사용할 수 있습니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+다음은 1부터 10까지의 숫자와 3부터 8까지의 숫자가 교차하는 값을 구하는 간단한 예시입니다:
+
+```sql title="Query"
+SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,8);
+```
+
+```response title="Response"
+┌─number─┐
+│      3 │
+│      4 │
+│      5 │
+│      6 │
+│      7 │
+│      8 │
+└────────┘
+```
+
+`INTERSECT`는 공통 컬럼(또는 여러 컬럼)을 가진 두 테이블이 있을 때 유용합니다. 결과에 동일한 컬럼이 포함되어 있다면 두 쿼리 결과에 `INTERSECT`를 적용할 수 있습니다. 예를 들어, 거래 가격과 거래량이 포함된 과거 암호화폐 데이터가 수백만 행 있다고 가정해 보겠습니다:
+
+```sql title="Query"
+CREATE TABLE crypto_prices
+(
+    trade_date Date,
+    crypto_name String,
+    volume Float32,
+    price Float32,
+    market_cap Float32,
+    change_1_day Float32
+)
+ENGINE = MergeTree
+PRIMARY KEY (crypto_name, trade_date);
+
+INSERT INTO crypto_prices
+   SELECT *
+   FROM s3(
+    'https://learn-clickhouse.s3.us-east-2.amazonaws.com/crypto_prices.csv',
+    'CSVWithNames'
+);
+
+SELECT * FROM crypto_prices
+WHERE crypto_name = 'Bitcoin'
+ORDER BY trade_date DESC
+LIMIT 10;
+```
+
+```response title="Response"
+┌─trade_date─┬─crypto_name─┬──────volume─┬────price─┬───market_cap─┬──change_1_day─┐
+│ 2020-11-02 │ Bitcoin     │ 30771456000 │ 13550.49 │ 251119860000 │  -0.013585099 │
+│ 2020-11-01 │ Bitcoin     │ 24453857000 │ 13737.11 │ 254569760000 │ -0.0031840964 │
+│ 2020-10-31 │ Bitcoin     │ 30306464000 │ 13780.99 │ 255372070000 │   0.017308505 │
+│ 2020-10-30 │ Bitcoin     │ 30581486000 │ 13546.52 │ 251018150000 │   0.008084608 │
+│ 2020-10-29 │ Bitcoin     │ 56499500000 │ 13437.88 │ 248995320000 │   0.012552661 │
+│ 2020-10-28 │ Bitcoin     │ 35867320000 │ 13271.29 │ 245899820000 │   -0.02804481 │
+│ 2020-10-27 │ Bitcoin     │ 33749879000 │ 13654.22 │ 252985950000 │    0.04427984 │
+│ 2020-10-26 │ Bitcoin     │ 29461459000 │ 13075.25 │ 242251000000 │  0.0033826586 │
+│ 2020-10-25 │ Bitcoin     │ 24406921000 │ 13031.17 │ 241425220000 │ -0.0058658565 │
+│ 2020-10-24 │ Bitcoin     │ 24542319000 │ 13108.06 │ 242839880000 │   0.013650347 │
+└────────────┴─────────────┴─────────────┴──────────┴──────────────┴───────────────┘
+```
+
+이제 보유한 암호화폐 목록과 각 코인 수량이 들어 있는 `holdings` 테이블이 있다고 가정하겠습니다:
+
+```sql title="Query"
+CREATE TABLE holdings
+(
+    crypto_name String,
+    quantity UInt64
+)
+ENGINE = MergeTree
+PRIMARY KEY (crypto_name);
+
+INSERT INTO holdings VALUES
+   ('Bitcoin', 1000),
+   ('Bitcoin', 200),
+   ('Ethereum', 250),
+   ('Ethereum', 5000),
+   ('DOGEFI', 10);
+   ('Bitcoin Diamond', 5000);
+```
+
+`INTERSECT`를 사용하면 **&quot;$100를 초과하는 가격에 거래된 적이 있는 코인 중 우리가 보유한 코인은 무엇인가?&quot;**와 같은 질문에 답할 수 있습니다:
+
+```sql title="Query"
+SELECT crypto_name FROM holdings
+INTERSECT
+SELECT crypto_name FROM crypto_prices
+WHERE price > 100
+```
+
+```response title="Response"
+┌─crypto_name─┐
+│ Bitcoin     │
+│ Bitcoin     │
+│ Ethereum    │
+│ Ethereum    │
+└─────────────┘
+```
+
+이는 Bitcoin과 Ethereum은 어느 시점에 $100을 넘겨 거래된 적이 있지만, DOGEFI와 Bitcoin Diamond는 $100을 넘겨 거래된 적이 한 번도 없다는 뜻입니다(적어도 이 예시에 사용된 데이터 기준으로는 그렇습니다).
+
+<div id="intersect-distinct">
+  ## INTERSECT DISTINCT
+</div>
+
+이전 쿼리에서는 거래 가격이 $100를 초과한 Bitcoin 및 Ethereum 보유 내역이 여러 개 있었습니다. 이미 알고 있는 내용을 반복할 뿐이므로 중복된 행은 제거하는 편이 좋습니다. 결과에서 중복 행을 제거하려면 `INTERSECT`에 `DISTINCT`를 추가할 수 있습니다:
+
+```sql title="Query"
+SELECT crypto_name FROM holdings
+INTERSECT DISTINCT
+SELECT crypto_name FROM crypto_prices
+WHERE price > 100;
+```
+
+```response title="Response"
+┌─crypto_name─┐
+│ Bitcoin     │
+│ Ethereum    │
+└─────────────┘
+```
+
+**관련 항목**
+
+* [UNION](/ko/reference/statements/select/union)
+* [EXCEPT](/ko/reference/statements/select/except)

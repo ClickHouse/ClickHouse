@@ -376,7 +376,8 @@ void registerStorageDictionary(StorageFactory & factory)
             auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, dictionary_id.database_name);
             auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
-            bool lazy_load = local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load];
+            bool lazy_load = external_dictionaries_loader.isObjectLazy(*abstract_dictionary_configuration, "dictionary")
+                .value_or(local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load].value);
             if (args.mode <= LoadingStrictnessLevel::CREATE && !lazy_load)
             {
                 /// load() is called here to force loading the dictionary, wait until the loading is finished,
@@ -409,7 +410,7 @@ void registerStorageDictionary(StorageFactory & factory)
     {},
     Documentation{
         .description = R"DOCS_MD(
-The `Dictionary` engine displays the [dictionary](../../../sql-reference/statements/create/dictionary/overview.md) data as a ClickHouse table.
+The `Dictionary` engine displays the [dictionary](/reference/statements/create/dictionary) data as a ClickHouse table.
 
 ## Example {#example}
 

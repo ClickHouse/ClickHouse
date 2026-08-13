@@ -1,0 +1,77 @@
+---
+sidebarTitle: 'استعلامات شائعة لإدارة الوصول'
+title: 'استعلامات شائعة لإدارة الوصول'
+slug: /cloud/security/common-access-management-queries
+description: 'تشرح هذه المقالة أساسيات تعريف مستخدمي SQL والأدوار، وكيفية تطبيق هذه الامتيازات والأذونات على قواعد البيانات والجداول والصفوف والأعمدة.'
+keywords: ['ClickHouse Cloud', 'إدارة الوصول']
+doc_type: 'guide'
+---
+
+import CommonUserRolesContent from '/snippets/ar/_users-and-roles-common.mdx';
+
+<Tip>
+  **ذاتي الإدارة**
+
+  إذا كنت تعمل مع ClickHouse ذاتي الإدارة، فيُرجى الاطلاع على [مستخدمي SQL والأدوار](/ar/concepts/features/security/access-rights).
+</Tip>
+
+تستعرض هذه المقالة أساسيات تعريف مستخدمي SQL والأدوار، وتطبيق هذه الامتيازات والأذونات على قواعد البيانات والجداول والصفوف والأعمدة.
+
+<div id="admin-user">
+  ## المستخدم المسؤول
+</div>
+
+تتضمن خدمات ClickHouse Cloud مستخدمًا مسؤولًا باسم `default` يُنشأ عند إنشاء الخدمة. وتُحدَّد كلمة المرور عند إنشاء الخدمة، ويمكن لمستخدمي ClickHouse Cloud الذين لديهم دور **Admin** إعادة تعيينها.
+
+عند إضافة مستخدمين إضافيين لـ SQL إلى خدمة ClickHouse Cloud الخاصة بك، فسيحتاجون إلى اسم مستخدم وكلمة مرور لـ SQL. وإذا أردت منحهم امتيازات بمستوى إداري، فعيّن للمستخدمين الجدد الدور `default_role`. على سبيل المثال، لإضافة المستخدم `clickhouse_admin`:
+
+```sql
+CREATE USER IF NOT EXISTS clickhouse_admin
+IDENTIFIED WITH sha256_password BY 'P!@ssword42!';
+```
+
+```sql
+GRANT default_role TO clickhouse_admin;
+```
+
+<Note>
+  عند استخدام SQL Console، لن تُنفَّذ عبارات SQL الخاصة بك باسم المستخدم `default`. وبدلًا من ذلك، ستُنفَّذ هذه العبارات باسم مستخدم يُسمّى `sql-console:${cloud_login_email}`، حيث يشير `cloud_login_email` إلى البريد الإلكتروني للمستخدم الذي يُشغّل الاستعلام حاليًا.
+
+  يكون لدى مستخدمي SQL Console الذين يُنشَؤون تلقائيًا الدور `default`.
+</Note>
+
+<div id="passwordless-authentication">
+  ## المصادقة بدون كلمة مرور
+</div>
+
+يتوفر دوران في SQL Console: `sql_console_admin` بأذونات مطابقة لـ `default_role`، و`sql_console_read_only` بأذونات للقراءة فقط.
+
+يُسنَد الدور `sql_console_admin` إلى مستخدمي Admin افتراضيًا، لذا لا يتغير شيء بالنسبة إليهم. ومع ذلك، يتيح الدور `sql_console_read_only` منح المستخدمين غير المشرفين حق وصول للقراءة فقط أو حق وصول كامل إلى أي مثيل. ويجب على مستخدم Admin تهيئة هذا الوصول. ويمكن تعديل الأدوار باستخدام الأمرين `GRANT` و`REVOKE` لتلائم متطلبات كل مثيل بشكل أفضل، كما ستُحفَظ أي تعديلات تُجرى على هذه الأدوار.
+
+<div id="granular-access-control">
+  ### التحكم الدقيق في الوصول
+</div>
+
+يمكن أيضًا تهيئة وظيفة التحكم في الوصول هذه يدويًا بدقة على مستوى كل مستخدم. قبل إسناد أدوار `sql_console_*` الجديدة إلى المستخدمين، يجب إنشاء أدوار قاعدة البيانات الخاصة بمستخدمي SQL Console التي تطابق مساحة الاسم `sql-console-role:<email>`. على سبيل المثال:
+
+```sql
+CREATE ROLE OR REPLACE sql-console-role:<email>;
+GRANT <some grants> TO sql-console-role:<email>;
+```
+
+عند اكتشاف دور مطابق، سيُسنَد إلى المستخدم بدلًا من الأدوار الافتراضية الجاهزة. يتيح ذلك إعدادات أكثر تعقيدًا للتحكم في الوصول، مثل إنشاء أدوار مثل `sql_console_sa_role` و`sql_console_pm_role`، ومنحها لمستخدمين محددين. على سبيل المثال:
+
+```sql
+CREATE ROLE OR REPLACE sql_console_sa_role;
+GRANT <whatever level of access> TO sql_console_sa_role;
+CREATE ROLE OR REPLACE sql_console_pm_role;
+GRANT <whatever level of access> TO sql_console_pm_role;
+CREATE ROLE OR REPLACE `sql-console-role:christoph@clickhouse.com`;
+CREATE ROLE OR REPLACE `sql-console-role:jake@clickhouse.com`;
+CREATE ROLE OR REPLACE `sql-console-role:zach@clickhouse.com`;
+GRANT sql_console_sa_role to `sql-console-role:christoph@clickhouse.com`;
+GRANT sql_console_sa_role to `sql-console-role:jake@clickhouse.com`;
+GRANT sql_console_pm_role to `sql-console-role:zach@clickhouse.com`;
+```
+
+<CommonUserRolesContent />

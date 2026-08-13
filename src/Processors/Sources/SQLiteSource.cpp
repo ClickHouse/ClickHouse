@@ -2,6 +2,7 @@
 
 #if USE_SQLITE
 #include <base/range.h>
+#include <base/sleep.h>
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
 
@@ -27,6 +28,10 @@ namespace ErrorCodes
 {
     extern const int SQLITE_ENGINE_ERROR;
 }
+
+/// How long to sleep between sqlite3_step retries when the database is locked (SQLITE_BUSY).
+/// Bounds how quickly the read reacts to cancellation while waiting for the lock.
+static constexpr UInt64 sqlite_busy_retry_ms = 10;
 
 SQLiteSource::SQLiteSource(
     SQLitePtr sqlite_db_,
@@ -77,6 +82,14 @@ Chunk SQLiteSource::generate()
 
         if (status == SQLITE_BUSY)
         {
+            /// The database is locked by another connection. Without this, the loop retries with no
+            /// delay and busy-spins a full CPU core. Bail out on cancellation and back off before retrying.
+            if (isCancelled())
+            {
+                compiled_statement.reset();
+                break;
+            }
+            sleepForMilliseconds(sqlite_busy_retry_ms);
             continue;
         }
         if (status == SQLITE_DONE)

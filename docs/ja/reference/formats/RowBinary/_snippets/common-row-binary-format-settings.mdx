@@ -1,0 +1,15 @@
+---
+title: RowBinary フォーマットの共通設定
+---
+
+{/* 注: このスニペットは、インポート先のすべてのファイルで再利用されます */}
+
+以下の設定は、すべての `RowBinary` 系フォーマットで共通です。
+
+| Setting                                                                                                                               | Description                                                                                                                                                                                                   | Default |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| [`format_binary_max_string_size`](/ja/reference/settings/formats#format_binary_max_string_size)                                          | RowBinary フォーマットにおける String の最大許容サイズです。                                                                                                                                                                       | `1GiB`  |
+| [`output_format_binary_encode_types_in_binary_format`](/ja/reference/settings/formats#input_format_binary_decode_types_in_binary_format) | [`RowBinaryWithNamesAndTypes`](/ja/reference/formats/RowBinary/RowBinaryWithNamesAndTypes) 出力フォーマットで、ヘッダー内の型を、型名の文字列ではなく [`binary encoding`](/ja/reference/data-types/data-types-binary-encoding) を使用して書き込めるようにします。 | `false` |
+| [`input_format_binary_decode_types_in_binary_format`](/ja/reference/settings/formats#input_format_binary_decode_types_in_binary_format)  | [`RowBinaryWithNamesAndTypes`](/ja/reference/formats/RowBinary/RowBinaryWithNamesAndTypes) 入力フォーマットで、ヘッダー内の型を、型名の文字列ではなく [`binary encoding`](/ja/reference/data-types/data-types-binary-encoding) を使用して読み取れるようにします。 | `false` |
+| [`output_format_binary_write_json_as_string`](/ja/reference/settings/formats#output_format_binary_write_json_as_string)                  | [`RowBinary`](/ja/reference/formats/RowBinary/RowBinary) 出力フォーマットで、[`JSON`](/ja/reference/data-types/newjson) データ型の値を `JSON` [String](/ja/reference/data-types/string) 値として書き込めるようにします。                                | `false` |
+| [`input_format_binary_read_json_as_string`](/ja/reference/settings/formats#input_format_binary_read_json_as_string)                      | [`RowBinary`](/ja/reference/formats/RowBinary/RowBinary) 入力フォーマットで、[`JSON`](/ja/reference/data-types/newjson) データ型の値を `JSON` [String](/ja/reference/data-types/string) 値として読み取れるようにします。                                | `false` |

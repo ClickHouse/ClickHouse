@@ -1,0 +1,182 @@
+---
+sidebarTitle: 'ベストプラクティス'
+description: 'Kafka ClickPipes の使用時に従うべきベストプラクティスについて詳しく説明します。'
+slug: /integrations/clickpipes/kafka/best-practices
+title: 'ベストプラクティス'
+doc_type: 'guide'
+keywords: ['Kafka のベストプラクティス', 'ClickPipes', '圧縮', '認証', 'スケーリング']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<div id="compression">
+  ## メッセージ圧縮
+</div>
+
+Kafka トピックでは圧縮の使用を強く推奨します。圧縮を使用すると、パフォーマンスへの影響をほとんど伴わずに、データ転送コストを大幅に削減できます。
+Kafka におけるメッセージ圧縮について詳しくは、まずはこちらの[ガイド](https://www.confluent.io/blog/apache-kafka-message-compression/)をご覧になることをお勧めします。
+
+<div id="limitations">
+  ## 制限事項
+</div>
+
+* [`DEFAULT`](/ja/reference/statements/create/table#default) はサポートされていません。
+* 個々のメッセージのサイズは、最小の (XS) レプリカサイズで実行する場合、デフォルトで 16MB (非圧縮) まで、より大きいレプリカでは 32MB (非圧縮) までに制限されます。この上限を超えるメッセージは、エラーとなり拒否されます。より大きなメッセージが必要な場合は、サポートにお問い合わせください。
+
+<div id="delivery-semantics">
+  ## 配信セマンティクス
+</div>
+
+Kafka 向け ClickPipes は、`at-least-once` の配信セマンティクス (最も一般的に使用される方式の 1 つ) を提供します。配信セマンティクスについてのご意見は、ぜひ [お問い合わせフォーム](https://clickhouse.com/company/contact?loc=clickpipes) からお寄せください。exactly-once セマンティクスが必要な場合は、公式の [`clickhouse-kafka-connect`](https://clickhouse.com/blog/real-time-event-streaming-with-kafka-connect-confluent-cloud-clickhouse) シンクの使用を推奨します。
+
+<div id="authentication">
+  ## 認証
+</div>
+
+Apache Kafka プロトコルのデータソースでは、ClickPipes は TLS 暗号化を使用する [SASL/PLAIN](https://docs.confluent.io/platform/current/kafka/authentication_sasl/authentication_sasl_plain.html) 認証に加え、`SASL/SCRAM-SHA-256` および `SASL/SCRAM-SHA-512` もサポートしています。ストリーミングソース (Redpanda、MSK など) によっては、互換性に応じて、これらの認証メカニズムのすべて、または一部のみが利用可能です。必要な認証方式が異なる場合は、[ぜひフィードバックをお寄せください](https://clickhouse.com/company/contact?loc=clickpipes)。
+
+<div id="warpstream-settings">
+  ## Warpstream フェッチサイズ
+</div>
+
+ClickPipes では、一度に 1 つの ClickPipes ノードで処理されるデータ量を制限するために、Kafka の設定 `max.fetch_bytes` を使用します。一部の状況では、
+Warpstream がこの設定に従わないことがあり、その結果、予期しないパイプ障害が発生する可能性があります。ClickPipes の障害を防ぐため、WarpStream エージェントを設定する際は、Warpstream 固有の設定 `kafkaMaxFetchPartitionBytesUncompressedOverride`
+を 8MB (またはそれ以下) に設定することを強く推奨します。
+
+<div id="iam">
+  ### IAM
+</div>
+
+ClickPipes は、AWS MSK の以下の認証方式をサポートしています。
+
+* [SASL/SCRAM-SHA-512](https://docs.aws.amazon.com/msk/latest/developerguide/msk-password.html) 認証
+* [IAM 認証情報またはロールベースのアクセス](https://docs.aws.amazon.com/msk/latest/developerguide/how-to-use-iam-access-control.html) 認証
+
+IAM 認証を使用して MSK ブローカーに接続する場合、IAM ロールには必要な権限が付与されている必要があります。
+以下は、MSK の Apache Kafka API に必要な IAM ポリシーの例です。
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:Connect"
+            ],
+            "Resource": [
+                "arn:aws:kafka:us-west-2:12345678912:cluster/clickpipes-testing-brokers/b194d5ae-5013-4b5b-ad27-3ca9f56299c9-10"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:DescribeTopic",
+                "kafka-cluster:ReadData"
+            ],
+            "Resource": [
+                "arn:aws:kafka:us-west-2:12345678912:topic/clickpipes-testing-brokers/*"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:AlterGroup",
+                "kafka-cluster:DescribeGroup"
+            ],
+            "Resource": [
+                "arn:aws:kafka:us-east-1:12345678912:group/clickpipes-testing-brokers/*"
+            ]
+        }
+    ]
+}
+```
+
+<div id="configuring-a-trusted-relationship">
+  #### 信頼関係の設定
+</div>
+
+IAM ロール ARN を使用して MSK に認証する場合は、ロールを引き受けられるように、ClickHouse Cloud インスタンスとの信頼関係を追加する必要があります。
+
+<Note>
+  ロールベースのアクセスは、AWS にデプロイされた ClickHouse Cloud インスタンスでのみ機能します。
+</Note>
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        ...
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::12345678912:role/CH-S3-your-clickhouse-cloud-role"
+            },
+            "Action": "sts:AssumeRole"
+        }
+    ]
+}
+```
+
+<div id="custom-certificates">
+  ### カスタム証明書
+</div>
+
+Kafka 向け ClickPipes では、公開されていないサーバー証明書を使用する Kafka ブローカー向けに、カスタム証明書をアップロードできます。
+相互 TLS (mTLS) ベースの認証では、クライアント証明書と秘密鍵のアップロードにも対応しています。
+
+<div id="performance">
+  ## パフォーマンス
+</div>
+
+<div id="batching">
+  ### バッチ処理
+</div>
+
+ClickPipes はデータをバッチ単位で ClickHouse に挿入します。これは、データベース内に過剰なパーツが作成されるのを防ぐためです。パーツが増えすぎると、クラスターのパフォーマンス低下につながる可能性があります。
+
+バッチは、次のいずれかの条件を満たすと挿入されます。
+
+* バッチサイズが上限に達した場合 (100,000行、またはポッドメモリ 1GB あたり 28MB)
+* バッチの保持時間が上限に達した場合 (5秒)
+
+<div id="latency">
+  ### レイテンシー
+</div>
+
+レイテンシー (Kafka メッセージが生成されてから、そのメッセージを ClickHouse で利用できるようになるまでの時間) は、さまざまな要因 (例: ブローカーのレイテンシー、ネットワークレイテンシー、メッセージのサイズ/フォーマット) に左右されます。上のセクションで説明した[バッチ処理](#batching)も、レイテンシーに影響します。想定されるレイテンシーを把握するため、通常の負荷条件でご自身のユースケースを必ずテストすることをお勧めします。
+
+ClickPipes は、レイテンシーについて一切保証していません。低レイテンシーに関する特別な要件がある場合は、[お問い合わせください](https://clickhouse.com/company/contact?loc=clickpipes)。
+
+<div id="scaling">
+  ### スケーリング
+</div>
+
+Kafka 向け ClickPipes は、水平および垂直の両方向にスケールできるよう設計されています。デフォルトでは、1 つのコンシューマーを含むコンシューマグループが作成されます。これは ClickPipe の作成時、またはそれ以外の任意のタイミングで **Settings** -&gt; **Advanced Settings** -&gt; **Scaling** から設定できます。
+
+ClickPipes は、可用性ゾーンに分散したアーキテクチャにより高可用性を実現しています。
+そのためには、少なくとも 2 つのコンシューマーまでスケールする必要があります。
+
+実行中のコンシューマー数にかかわらず、耐障害性は設計上確保されています。
+コンシューマーまたはその基盤となるインフラストラクチャに障害が発生した場合でも、
+ClickPipe は自動的にコンシューマーを再起動し、メッセージ処理を継続します。
+
+<div id="benchmarks">
+  ### ベンチマーク
+</div>
+
+以下は、Kafka 向け ClickPipes のおおよそのベースライン性能を把握するための参考用ベンチマークです。パフォーマンスは、メッセージサイズ、データ型、データフォーマットなど、さまざまな要因の影響を受ける点にご注意ください。実際の結果は環境によって異なる可能性があり、ここで示す内容は実際の性能を保証するものではありません。
+
+ベンチマークの詳細:
+
+* ClickHouse 側の insert 処理がスループットのボトルネックにならないよう、十分なリソースを備えた本番用の ClickHouse Cloud サービスを使用しました。
+* ClickHouse Cloud サービス、Kafka クラスター (Confluent Cloud) 、ClickPipe は、いずれも同じリージョン (`us-east-2`) で稼働していました。
+* ClickPipe は、L サイズの単一レプリカ (4 GiB の RAM と 1 vCPU) で構成しました。
+* サンプルデータには、`UUID`、`String`、`Int` のデータ型が混在するネストされたデータが含まれていました。`Float`、`Decimal`、`DateTime` などの他のデータ型では、パフォーマンスが低下する可能性があります。
+* 圧縮データと非圧縮データで、顕著な性能差は見られませんでした。
+
+| レプリカサイズ   | メッセージサイズ | データフォーマット | スループット |
+| --------- | -------- | --------- | ------ |
+| Large (L) | 1.6kb    | JSON      | 63mb/s |
+| Large (L) | 1.6kb    | Avro      | 99mb/s |

@@ -1133,6 +1133,24 @@ static void reorderColumns(ActionsDAG & dag, const Block & header, const std::st
     dag.getOutputs() = std::move(new_outputs);
 }
 
+std::optional<bool> deriveReverseOrder(const KeyDescription & primary_key, const KeyDescription & sorting_key)
+{
+    if (sorting_key.reverse_flags.empty())
+        return false;
+
+    size_t num_primary_keys = primary_key.expression_list_ast->children.size();
+    chassert(sorting_key.reverse_flags.size() >= num_primary_keys);
+    bool in_reverse_order = sorting_key.reverse_flags[0];
+    for (size_t i = 1; i < num_primary_keys; ++i)
+    {
+        /// Splitting by primary-key ranges is impossible when some key columns are ascending and
+        /// others descending.
+        if (in_reverse_order != sorting_key.reverse_flags[i])
+            return {};
+    }
+    return in_reverse_order;
+}
+
 SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     const KeyDescription & primary_key,
     const KeyDescription & sorting_key,
@@ -1172,23 +1190,13 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
         return result;
     }
 
-    bool in_reverse_order = false;
-    size_t num_primary_keys = primary_key.expression_list_ast->children.size();
-    if (!sorting_key.reverse_flags.empty())
+    auto in_reverse_order_opt = deriveReverseOrder(primary_key, sorting_key);
+    if (!in_reverse_order_opt)
     {
-        chassert(sorting_key.reverse_flags.size() >= num_primary_keys);
-        in_reverse_order = sorting_key.reverse_flags[0];
-        for (size_t i = 1; i < num_primary_keys; ++i)
-        {
-            /// It's not possible to split parts when some keys are in ascending
-            /// order while others are in descending order.
-            if (in_reverse_order != sorting_key.reverse_flags[i])
-            {
-                result.merging_pipes.emplace_back(create_merging_pipe(intersecting_parts_ranges));
-                return result;
-            }
-        }
+        result.merging_pipes.emplace_back(create_merging_pipe(intersecting_parts_ranges));
+        return result;
     }
+    bool in_reverse_order = *in_reverse_order_opt;
 
     if (split_parts_ranges_into_intersecting_and_non_intersecting_final)
     {
@@ -1210,6 +1218,26 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     return result;
 }
 
+/// Applies a FilterSortedStreamByRange built from a per-layer border predicate AST. No-op when the AST
+/// is null (the open first/last interval). `pipe`'s streams must be sorted by the primary key.
+static void applyRangeFilterFromAST(Pipe & pipe, ASTPtr & filter_function, const String & description, const KeyDescription & primary_key, ContextPtr context)
+{
+    if (!filter_function)
+        return;
+
+    auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());
+    auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
+    reorderColumns(actions, pipe.getHeader(), filter_function->getColumnName());
+    ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
+    pipe.addSimpleTransform(
+        [&](const SharedHeader & header)
+        {
+            auto step = std::make_shared<FilterSortedStreamByRange>(header, expression_actions, filter_function->getColumnName(), true);
+            step->setDescription(description);
+            return step;
+        });
+}
+
 Pipes readByLayers(
     SplitPartsByRanges split_ranges,
     const KeyDescription & primary_key,
@@ -1224,14 +1252,6 @@ Pipes readByLayers(
     {
         merging_pipes[i] = step_getter(layers[i]);
 
-        auto & filter_function = filters[i];
-        if (!filter_function)
-            continue;
-
-        auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());
-        auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
-        reorderColumns(actions, merging_pipes[i].getHeader(), filter_function->getColumnName());
-        ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
         auto description = in_reverse_order ? fmt::format(
                                                   "filter values in [{}, {})",
                                                   i < borders.size() ? ::toString(borders[i]) : "-inf",
@@ -1240,16 +1260,22 @@ Pipes readByLayers(
                                                   "filter values in ({}, {}]",
                                                   i ? ::toString(borders[i - 1]) : "-inf",
                                                   i < borders.size() ? ::toString(borders[i]) : "+inf");
-        merging_pipes[i].addSimpleTransform(
-            [&](const SharedHeader & header)
-            {
-                auto step = std::make_shared<FilterSortedStreamByRange>(header, expression_actions, filter_function->getColumnName(), true);
-                step->setDescription(description);
-                return step;
-            });
+        applyRangeFilterFromAST(merging_pipes[i], filters[i], description, primary_key, context);
     }
 
     return merging_pipes;
+}
+
+void addLayerRangeFilterToPipe(
+    Pipe & pipe,
+    const KeyDescription & primary_key,
+    const std::vector<std::vector<Field>> & borders,
+    size_t layer_index,
+    bool in_reverse_order,
+    ContextPtr context)
+{
+    auto filters = buildFilters(primary_key, borders, in_reverse_order);
+    applyRangeFilterFromAST(pipe, filters.at(layer_index), "filter distributed FINAL layer", primary_key, context);
 }
 
 RangesInDataParts findPKRangesForFinalAfterSkipIndex(

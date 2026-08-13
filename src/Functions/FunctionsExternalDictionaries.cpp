@@ -743,12 +743,12 @@ SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1);
 SELECT dictGetFloat32OrDefault('all_types_dict', 'Float32_value', 999, -1.0);
 )",
 R"(
-┌─dictGetFloat⋯_value', 1)─┐
-│                   123.45 │
-└──────────────────────────┘
-┌─dictGetFloat⋯e', 999, -1)─┐
-│                       -1  │
-└───────────────────────────┘
+┌─dictGetFloat32('all_types_dict', 'Float32_value', 1)─┐
+│                                               123.45 │
+└──────────────────────────────────────────────────────┘
+┌─dictGetFloat32OrDefault('all_types_dict', 'Float32_value', 999, -1.)─┐
+│                                                                   -1 │
+└──────────────────────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -990,12 +990,12 @@ SELECT dictGetUUID('all_types_dict', 'UUID_value', 1);
 SELECT dictGetUUIDOrDefault('all_types_dict', 'UUID_value', 999, '00000000-0000-0000-0000-000000000000'::UUID);
 )",
 R"(
-┌─dictGetUUID('all_t⋯ 'UUID_value', 1)─┐
-│ 550e8400-e29b-41d4-a716-446655440000 │
-└──────────────────────────────────────┘
-┌─dictGetUUIDOrDefa⋯000000000000'::UUID)─┐
-│ 00000000-0000-0000-0000-000000000000   │
-└────────────────────────────────────────┘
+┌─dictGetUUID('all_types_dict', 'UUID_value', 1)─┐
+│ 550e8400-e29b-41d4-a716-446655440000           │
+└────────────────────────────────────────────────┘
+┌─dictGetUUIDOrDefault('all_types_dict', 'UUID_value', 999, CAST('00000000-0000-0000-0000-000000000000', 'UUID'))─┐
+│ 00000000-0000-0000-0000-000000000000                                                                            │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -1052,12 +1052,12 @@ SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1);
 SELECT dictGetIPv4OrDefault('all_types_dict', 'IPv4_value', 999, toIPv4('0.0.0.0'));
 )",
 R"(
-┌─dictGetIPv4('all_⋯ 'IPv4_value', 1)─┐
-│ 192.168.0.1                         │
-└─────────────────────────────────────┘
-┌─dictGetIPv4OrDefa⋯0.0.0.0'))─┐
-│ 0.0.0.0                      │
-└──────────────────────────────┘
+┌─dictGetIPv4('all_types_dict', 'IPv4_value', 1)─┐
+│ 192.168.0.1                                    │
+└────────────────────────────────────────────────┘
+┌─dictGetIPv4OrDefault('all_types_dict', 'IPv4_value', 999, toIPv4('0.0.0.0'))─┐
+│ 0.0.0.0                                                                      │
+└──────────────────────────────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {23, 1};  /// Version introduced
@@ -1114,12 +1114,12 @@ SELECT dictGetIPv6('all_types_dict', 'IPv6_value', 1);
 SELECT dictGetIPv6OrDefault('all_types_dict', 'IPv6_value', 999, '::1'::IPv6);
 )",
 R"(
-┌─dictGetIPv6('all_⋯ 'IPv6_value', 1)─┐
-│ 2001:db8:85a3::8a2e:370:7334        │
-└─────────────────────────────────────┘
-┌─dictGetIPv6OrDefa⋯:1'::IPv6)─┐
-│ ::1                          │
-└──────────────────────────────┘
+┌─dictGetIPv6('all_types_dict', 'IPv6_value', 1)─┐
+│ 2001:db8:85a3::8a2e:370:7334                   │
+└────────────────────────────────────────────────┘
+┌─dictGetIPv6OrDefault('all_types_dict', 'IPv6_value', 999, CAST('::1', 'IPv6'))─┐
+│ ::1                                                                            │
+└────────────────────────────────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {23, 1};  /// Version introduced
@@ -1176,12 +1176,12 @@ SELECT dictGetString('all_types_dict', 'String_value', 1);
 SELECT dictGetStringOrDefault('all_types_dict', 'String_value', 999, 'default');
 )",
 R"(
-┌─dictGetString(⋯_value', 1)─┐
-│ test string                │
-└────────────────────────────┘
-┌─dictGetStringO⋯ 999, 'default')─┐
-│ default                         │
-└─────────────────────────────────┘
+┌─dictGetString('all_types_dict', 'String_value', 1)─┐
+│ test string                                        │
+└────────────────────────────────────────────────────┘
+┌─dictGetStringOrDefault('all_types_dict', 'String_value', 999, 'default')─┐
+│ default                                                                  │
+└──────────────────────────────────────────────────────────────────────────┘
 )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};  /// Version introduced
@@ -1273,6 +1273,42 @@ R"(
         FunctionDocumentation documentation{description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 
         factory.registerFunction<FunctionDictGetHierarchy>(documentation);
+    }
+
+    /// dictGetRoot
+    {
+        FunctionDocumentation::Description description =
+R"(
+Returns the topmost ancestor (the root) of a key in a [hierarchical dictionary](/docs/sql-reference/statements/create/dictionary/layouts/hierarchical#hierarchical-dictionaries).
+
+This is a convenient equivalent of taking the last element of the array returned by [dictGetHierarchy](#dictGetHierarchy), i.e. `dictGetHierarchy(dict_name, key)[-1]`.
+
+If the key is itself a top-level node of the hierarchy, the key is returned. If the key is absent from the dictionary, `0` is returned.
+)";
+        FunctionDocumentation::Syntax syntax = "dictGetRoot(dict_name, key)";
+        FunctionDocumentation::Arguments arguments = {
+            {"dict_name", "Name of the dictionary.", {"String"}},
+            {"key", "Key value.", {"UInt64"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the topmost ancestor (the root) for the key.", {"UInt64"}};
+        FunctionDocumentation::Examples examples = {
+            {"Get the root for a key",
+R"(
+CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
+INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+SELECT dictGetRoot('hierarchical_dictionary', 5)
+)",
+R"(
+┌─dictGetRoot(⋯ionary', 5)─┐
+│                        1 │
+└──────────────────────────┘
+)"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
+        FunctionDocumentation documentation{description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
+
+        factory.registerFunction<FunctionDictGetRoot>(documentation);
     }
 
     /// dictIsIn

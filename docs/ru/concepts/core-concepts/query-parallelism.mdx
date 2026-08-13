@@ -1,0 +1,294 @@
+---
+slug: /optimize/query-parallelism
+sidebarTitle: 'Параллелизм запросов'
+description: 'ClickHouse распараллеливает выполнение запросов с помощью линий обработки и настройки max_threads.'
+title: 'Как ClickHouse выполняет запрос в параллельном режиме'
+doc_type: 'guide'
+keywords: ['параллельная обработка', 'оптимизация запросов', 'производительность', 'многопоточность', 'лучшие практики']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+ClickHouse [разработан для скорости](/ru/get-started/about/why-clickhouse-is-so-fast). Он выполняет запросы с высокой степенью параллелизма, используя все доступные ядра процессора, распределяя данные по линиям обработки и нередко доводя оборудование почти до предела возможностей.
+
+В этом руководстве пошагово объясняется, как в ClickHouse работает параллелизм запросов и как его можно настраивать и отслеживать, чтобы повысить производительность при высоких нагрузках.
+
+Чтобы проиллюстрировать ключевые концепции, мы используем агрегационный запрос к набору данных [uk&#95;price&#95;paid&#95;simple](/ru/concepts/core-concepts/parts).
+
+<div id="step-by-step-how-clickHouse-parallelizes-an-aggregation-query">
+  ## Пошагово: как ClickHouse распараллеливает агрегационный запрос
+</div>
+
+Когда ClickHouse ① выполняет агрегационный запрос с фильтром по первичному ключу таблицы, он ② загружает первичный индекс в память, чтобы ③ определить, какие гранулы нужно обработать, а какие можно безопасно пропустить:
+
+<Image img="/images/guides/best-practices/query-parallelism_01.webp" size="md" alt="Анализ индекса" />
+
+<div id="distributing-work-across-processing-lanes">
+  ### Распределение работы между линиями обработки
+</div>
+
+Затем выбранные данные [динамически](#load-balancing-across-processing-lanes) распределяются между `n` параллельными [линиями обработки](/ru/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization), которые передают и обрабатывают данные [блок](/ru/resources/develop-contribute/introduction/architecture#block) за блоком, формируя итоговый результат:
+
+<Image img="/images/guides/best-practices/query-parallelism_02.webp" size="md" alt="4 параллельные линии обработки" />
+
+<br />
+
+<br />
+
+Количество `n` параллельных линий обработки задаётся настройкой [`max_threads`](/ru/reference/settings/session-settings#max_threads), которая по умолчанию соответствует числу ядер (потоков) одного CPU, доступных ClickHouse на сервере. В примере выше мы предполагаем `4` ядра.
+
+На машине с `8` ядрами пропускная способность выполнения запроса примерно удвоилась бы (но использование памяти также соответственно увеличилось бы), поскольку больше линий обработки обрабатывают данные параллельно:
+
+<Image img="/images/guides/best-practices/query-parallelism_03.webp" size="md" alt="8 параллельных линий обработки" />
+
+<br />
+
+<br />
+
+Эффективное распределение данных по линиям обработки — ключевой фактор для максимального использования CPU и сокращения общего времени выполнения запроса.
+
+<div id="processing-queries-on-sharded-tables">
+  ### Обработка запросов к таблицам, разбитым на сегменты
+</div>
+
+Когда данные таблицы распределены по нескольким серверам в виде [сегментов](/ru/guides/oss/deployment-and-scaling/shards), каждый сервер параллельно обрабатывает свой сегмент. На каждом сервере локальные данные обрабатываются с использованием параллельных линий обработки, как описано выше:
+
+<Image img="/images/guides/best-practices/query-parallelism_04.webp" size="md" alt="Распределённые линии" />
+
+<br />
+
+<br />
+
+Сервер, который первым получает запрос, собирает все промежуточные результаты с сегментов и объединяет их в итоговый глобальный результат.
+
+Распределение нагрузки запросов по сегментам позволяет горизонтально масштабировать параллелизм, особенно в средах с высокой пропускной способностью.
+
+<Info>
+  **ClickHouse Cloud использует параллельные реплики вместо сегментов**
+
+  В ClickHouse Cloud такой же уровень параллелизма достигается с помощью [параллельных реплик](/ru/products/cloud/features/infrastructure/parallel-replicas), которые работают аналогично сегментам в кластерах с архитектурой shared-nothing. Каждая реплика ClickHouse Cloud — не имеющий состояния вычислительный узел — параллельно обрабатывает часть данных и вносит свой вклад в итоговый результат, подобно независимому сегменту.
+</Info>
+
+<div id="monitoring-query-parallelism">
+  ## Мониторинг параллелизма запросов
+</div>
+
+Используйте эти инструменты, чтобы проверить, что ваш запрос полностью задействует доступные ресурсы процессора, и диагностировать случаи, когда этого не происходит.
+
+Мы выполняем это на тестовом сервере с 59 ядрами процессора, что позволяет ClickHouse в полной мере продемонстрировать свой параллелизм запросов.
+
+Чтобы увидеть, как выполняется пример запроса, мы можем указать серверу ClickHouse возвращать все записи журнала уровня trace во время агрегационного запроса. Для этой демонстрации мы убрали условие фильтрации из запроса — в противном случае было бы обработано только 3 гранулы, а этого недостаточно, чтобы ClickHouse мог задействовать больше нескольких параллельных линий обработки:
+
+```sql
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+SETTINGS send_logs_level='trace';
+```
+
+```txt
+① <Debug> ...: 3609 marks to read from 3 ranges
+② <Trace> ...: Spreading mark ranges among streams
+② <Debug> ...: Reading approx. 29564928 rows with 59 streams
+```
+
+Мы видим, что
+
+* ① ClickHouse должен прочитать 3 609 гранул (обозначенных как marks в трассировочных логах) в 3 диапазонах данных.
+* ② При наличии 59 ядер CPU он распределяет эту работу между 59 параллельными потоками обработки — по одному на каждую линию.
+
+В качестве альтернативы можно использовать оператор [EXPLAIN](/ru/reference/statements/explain#explain-pipeline), чтобы изучить [физический план операторов](/ru/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization), также известный как &quot;конвейер запроса&quot;, для запроса с агрегацией:
+
+```sql
+EXPLAIN PIPELINE
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple;
+```
+
+```txt
+    ┌─explain───────────────────────────────────────────────────────────────────────────┐
+ 1. │ (Expression)                                                                      │
+ 2. │ ExpressionTransform × 59                                                          │
+ 3. │   (Aggregating)                                                                   │
+ 4. │   Resize 59 → 59                                                                  │
+ 5. │     AggregatingTransform × 59                                                     │
+ 6. │       StrictResize 59 → 59                                                        │
+ 7. │         (Expression)                                                              │
+ 8. │         ExpressionTransform × 59                                                  │
+ 9. │           (ReadFromMergeTree)                                                     │
+10. │           MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 59 0 → 1 │
+    └───────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Примечание: Читайте план операторов выше снизу вверх. Каждая строка соответствует этапу физического плана выполнения: внизу — чтение данных из хранилища, вверху — финальные этапы обработки. Операторы с пометкой `× 59` выполняются параллельно в непересекающихся областях данных по 59 параллельным линиям обработки. Это соответствует значению `max_threads` и показывает, как каждый этап запроса распараллеливается по ядрам CPU.
+
+Встроенный [веб-интерфейс](/ru/concepts/features/interfaces/http) ClickHouse (доступный по конечной точке `/play`) может отображать приведённый выше физический план в виде графической визуализации. В этом примере мы устанавливаем `max_threads` в `4`, чтобы визуализация оставалась компактной и показывала только 4 параллельные линии обработки:
+
+<Image img="/images/guides/best-practices/query-parallelism_05.webp" alt="Конвейер запроса" />
+
+Примечание: Читайте визуализацию слева направо. Каждая строка соответствует параллельной линии обработки, которая передаёт данные блок за блоком, применяя такие преобразования, как фильтрация, агрегация и финальные этапы обработки. В этом примере показаны четыре параллельные линии, соответствующие настройке `max_threads = 4`.
+
+<div id="load-balancing-across-processing-lanes">
+  ### Балансировка нагрузки между линиями обработки
+</div>
+
+Обратите внимание, что операторы `Resize` в приведённом выше физическом плане [переразбивают и перераспределяют](/ru/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization) потоки блоков данных между линиями обработки, чтобы равномерно распределять нагрузку между ними. Такое перераспределение особенно важно, когда диапазоны данных различаются по числу строк, соответствующих предикатам запроса; иначе одни линии могут оказаться перегруженными, а другие — бездействовать. Благодаря такому перераспределению более быстрые линии фактически помогают более медленным, что оптимизирует общее время выполнения запроса.
+
+<div id="why-max-threads-isnt-always-respected">
+  ## Почему max_threads не всегда применяется
+</div>
+
+Как упоминалось выше, число `n` параллельных линий обработки задаётся настройкой `max_threads`, которая по умолчанию соответствует количеству ядер CPU, доступных ClickHouse на сервере:
+
+```sql
+SELECT getSetting('max_threads');
+```
+
+```txt
+   ┌─getSetting('max_threads')─┐
+1. │                        59 │
+   └───────────────────────────┘
+```
+
+Однако значение `max_threads` может не учитываться в зависимости от объёма данных, выбранных для обработки:
+
+```sql
+EXPLAIN PIPELINE
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```txt
+...   
+(ReadFromMergeTree)
+MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 30
+```
+
+Как видно из приведённого выше фрагмента плана операторов, хотя `max_threads` задано значение `59`, ClickHouse использует для чтения данных только **30** параллельных потоков.
+
+Теперь выполним запрос:
+
+```sql
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```txt
+   ┌─max(price)─┐
+1. │  594300000 │ -- 594,30 миллиона
+   └────────────┘
+   
+1 row in set. Elapsed: 0.013 sec. Processed 2.31 million rows, 13.66 MB (173.12 million rows/s., 1.02 GB/s.)
+Peak memory usage: 27.24 MiB.   
+```
+
+Как видно из вывода выше, запрос обработал 2,31 миллиона строк и прочитал 13,66 МБ данных. Это связано с тем, что на этапе анализа индекса ClickHouse выбрал для обработки **282 гранулы**, каждая из которых содержала 8 192 строки, — всего примерно 2,31 миллиона строк:
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```txt
+    ┌─explain───────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))             │
+ 2. │   Aggregating                                         │
+ 3. │     Expression (Before GROUP BY)                      │
+ 4. │       Expression                                      │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple)   │
+ 6. │         Indexes:                                      │
+ 7. │           PrimaryKey                                  │
+ 8. │             Keys:                                     │
+ 9. │               town                                    │
+10. │             Condition: (town in ['LONDON', 'LONDON']) │
+11. │             Parts: 3/3                                │
+12. │             Granules: 282/3609                        │
+    └───────────────────────────────────────────────────────┘  
+```
+
+Независимо от заданного значения `max_threads`, ClickHouse выделяет дополнительные параллельные линии обработки только тогда, когда для этого достаточно данных. «max» в `max_threads` означает верхний предел, а не гарантированное число используемых потоков.
+
+То, что считается «достаточным объёмом данных», в первую очередь определяется двумя настройками: они задают минимальное число строк (по умолчанию 163,840) и минимальное число байтов (по умолчанию 2,097,152), которые должна обрабатывать каждая линия обработки:
+
+Для кластеров shared-nothing:
+
+* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read](/ru/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read)
+* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read](/ru/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read)
+
+Для кластеров с общим хранилищем (например, ClickHouse Cloud):
+
+* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/ru/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem)
+* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/ru/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem)
+
+Кроме того, существует жёсткая нижняя граница размера задачи чтения, которая задаётся следующими настройками:
+
+* [Merge&#95;tree&#95;min&#95;read&#95;task&#95;size](/ru/reference/settings/session-settings#merge_tree_min_read_task_size) + [merge&#95;tree&#95;min&#95;bytes&#95;per&#95;task&#95;for&#95;remote&#95;reading](/ru/reference/settings/session-settings#merge_tree_min_bytes_per_task_for_remote_reading)
+
+<Warning>
+  **Не изменяйте эти настройки**
+
+  Мы не рекомендуем изменять эти настройки в production-среде. Здесь они приведены исключительно для того, чтобы показать, почему `max_threads` не всегда определяет фактический уровень параллелизма.
+</Warning>
+
+Для демонстрации давайте рассмотрим физический план, переопределив эти настройки так, чтобы принудительно включить максимальный параллелизм:
+
+```sql
+EXPLAIN PIPELINE
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+WHERE town = 'LONDON'
+SETTINGS
+  max_threads = 59,
+  merge_tree_min_read_task_size = 0,
+  merge_tree_min_rows_for_concurrent_read_for_remote_filesystem = 0, 
+  merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem = 0;
+```
+
+```txt
+...   
+(ReadFromMergeTree)
+MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 59
+```
+
+Теперь ClickHouse использует 59 параллельных потоков для сканирования данных, строго соблюдая настроенное значение `max_threads`.
+
+Это показывает, что для запросов к небольшим наборам данных ClickHouse намеренно ограничивает параллелизм. Используйте переопределения настроек только для тестирования, а не в продакшене, так как это может привести к неэффективному выполнению запросов или конкуренции за ресурсы.
+
+<div id="key-takeaways">
+  ## Ключевые выводы
+</div>
+
+* ClickHouse распараллеливает запросы, используя линии обработки, число которых связано с `max_threads`.
+* Фактическое число линий зависит от объема данных, выбранных для обработки.
+* Используйте `EXPLAIN PIPELINE` и трассировочные логи, чтобы анализировать, как используются линии обработки.
+
+<div id="where-to-find-more-information">
+  ## Где найти дополнительную информацию
+</div>
+
+Если вы хотите глубже понять, как ClickHouse выполняет запросы параллельно и обеспечивает высокую производительность в большом масштабе, изучите следующие материалы:
+
+* [Слой обработки запросов — статья VLDB 2024 (веб-версия)](/ru/concepts/core-concepts/academic-overview#4-query-processing-layer) - Подробный разбор внутренней модели выполнения ClickHouse, включая планирование, конвейерную обработку и архитектуру операторов.
+
+* [Объяснение промежуточных состояний агрегации](https://clickhouse.com/blog/clickhouse_vs_elasticsearch_mechanics_of_count_aggregations#-multi-core-parallelization) - Технический разбор того, как промежуточные состояния агрегации обеспечивают эффективное параллельное выполнение по линиям обработки.
+
+* Видеоруководство с подробным разбором всех этапов обработки запросов в ClickHouse:
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/hP6G2Nlz_cA?si=Imd_i427J_kZOXHe" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>

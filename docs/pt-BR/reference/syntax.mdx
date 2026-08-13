@@ -1,0 +1,547 @@
+---
+description: 'Documentação sobre sintaxe'
+sidebarTitle: 'Sintaxe'
+slug: /sql-reference/syntax
+title: 'Sintaxe'
+doc_type: 'reference'
+---
+
+Nesta seção, vamos examinar a sintaxe SQL do ClickHouse.
+O ClickHouse usa uma sintaxe baseada em SQL, mas oferece diversas extensões e otimizações.
+
+<div id="query-parsing">
+  ## Análise sintática de consultas
+</div>
+
+Há dois tipos de parsers no ClickHouse:
+
+* *Um parser SQL completo* (um parser por descida recursiva).
+* *Um parser de formato de dados* (um parser de fluxo rápido).
+
+O parser SQL completo é usado em todos os casos, exceto na consulta `INSERT`, que usa ambos os parsers.
+
+Vamos examinar a consulta abaixo:
+
+```sql
+INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
+```
+
+Como já mencionado, a consulta `INSERT` usa ambos os parsers.
+O fragmento `INSERT INTO t VALUES` é analisado pelo parser completo,
+e os dados `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` são analisados pelo parser de formato de dados, ou parser rápido de fluxo.
+
+<Accordion title="Ativando o parser completo">
+  Você também pode ativar o parser completo para os dados
+  usando a configuração [`input_format_values_interpret_expressions`](/pt-BR/reference/settings/formats#input_format_values_interpret_expressions).
+
+  Quando a configuração mencionada acima é definida como `1`,
+  o ClickHouse primeiro tenta analisar os valores com o parser rápido de fluxo.
+  Se isso falhar, o ClickHouse tenta usar o parser completo para os dados, tratando-os como uma [expressão](#expressions) SQL.
+</Accordion>
+
+Os dados podem estar em qualquer formato.
+Quando uma consulta é recebida, o servidor mantém no máximo [max&#95;query&#95;size](/pt-BR/reference/settings/session-settings#max_query_size) bytes da solicitação em RAM
+(por padrão, 1 MB), e o restante é analisado em fluxo.
+Isso ajuda a evitar problemas com consultas `INSERT` grandes, que é a forma recomendada de inserir seus dados no ClickHouse.
+
+Ao usar o formato [`Values`](/pt-BR/reference/formats/Values) em uma consulta `INSERT`,
+pode parecer que os dados são analisados da mesma forma que as expressões em uma consulta `SELECT`, mas não é esse o caso.
+O formato `Values` é muito mais limitado.
+
+O restante desta seção aborda o parser completo.
+
+<Note>
+  Para mais informações sobre parsers de formato, consulte a seção [Formatos](/pt-BR/reference/formats/index).
+</Note>
+
+<div id="spaces">
+  ## Espaços
+</div>
+
+* Pode haver qualquer quantidade de caracteres de espaço entre construções sintáticas (inclusive no início e no fim de uma consulta).
+* Os caracteres de espaço incluem espaço, tabulação, quebra de linha, CR e avanço de página.
+
+<div id="comments">
+  ## Comentários
+</div>
+
+O ClickHouse oferece suporte a comentários no estilo SQL e no estilo C:
+
+* Comentários no estilo SQL começam com `--`, `#!` ou `# ` e vão até o fim da linha. O espaço após `--` e `#!` pode ser omitido.
+* Comentários no estilo C:
+  * `//` (ou mais de 2 caracteres `/`) seguido de texto até o fim da linha. Não é necessário espaço após `/`.
+  * Podem ir de `/*` a `*/` para comentários de várias linhas. Também não é necessário espaço.
+  * Comentários no estilo C podem ser aninhados.
+
+Por exemplo:
+
+```sql
+/*
+ * Calcula o número de dias entre duas datas.
+ * /* Retorna NULL se algum dos argumentos for NULL */
+ */
+SELECT
+    dateDiff('day', toDate('2024-01-01'), toDate('2024-12-31')) AS days_in_year, -- 365
+    dateDiff('day', toDate('2020-01-01'), today()) AS days_since  #! desde 2020
+    ///////////////////////////////////////////////////////////////////
+    # TODO: adicionar variantes de hora/minuto
+```
+
+<div id="keywords">
+  ## Palavras-chave
+</div>
+
+As palavras-chave no ClickHouse podem ser *sensíveis a maiúsculas e minúsculas* ou *não sensíveis a maiúsculas e minúsculas*, dependendo do contexto.
+
+As palavras-chave **não diferenciam maiúsculas de minúsculas** quando correspondem a:
+
+* ao padrão SQL. Por exemplo, `SELECT`, `select` e `SeLeCt` são todos válidos.
+* à implementação de alguns SGBDs populares (MySQL ou Postgres). Por exemplo, `DateTime` é o mesmo que `datetime`.
+
+<Note>
+  Você pode verificar se um nome de tipo de dado diferencia maiúsculas de minúsculas na tabela [system.data&#95;type&#95;families](/pt-BR/reference/system-tables/data_type_families).
+</Note>
+
+Ao contrário do SQL padrão, todas as outras palavras-chave (incluindo nomes de funções) são **sensíveis a maiúsculas e minúsculas**.
+
+Além disso, as palavras-chave não são reservadas.
+Elas só são tratadas como tal no contexto correspondente.
+Se você usar [identificadores](#identifiers) com o mesmo nome das palavras-chave, coloque-os entre aspas duplas ou backticks.
+
+Por exemplo, a consulta a seguir é válida se a tabela `table_name` tiver uma coluna com o nome `"FROM"`:
+
+```sql
+SELECT "FROM" FROM table_name
+```
+
+<div id="identifiers">
+  ## Identificadores
+</div>
+
+Os identificadores são:
+
+* Nomes de cluster, database, tabela, partição e coluna.
+* [Funções](#functions).
+* [Tipos de dados](/pt-BR/reference/data-types/index).
+* [Aliases de expressão](#expression-aliases).
+
+Os identificadores podem ser colocados entre aspas ou não, embora a segunda opção seja preferível.
+
+Identificadores sem aspas devem corresponder à regex `^[a-zA-Z_][0-9a-zA-Z_]*$` e não podem ser iguais a [palavras-chave](#keywords).
+Veja a tabela abaixo com exemplos de identificadores válidos e inválidos:
+
+| Identificadores válidos                        | Identificadores inválidos              |
+| ---------------------------------------------- | -------------------------------------- |
+| `xyz`, `_internal`, `Id_with_underscores_123_` | `1x`, `tom@gmail.com`, `äußerst_schön` |
+
+Se você quiser usar identificadores iguais a palavras-chave ou usar outros símbolos em identificadores, coloque-os entre aspas duplas ou backticks, por exemplo, `"id"`, `` `id` ``.
+
+<Note>
+  As mesmas regras de escape aplicáveis a identificadores entre aspas também se aplicam a literais de string. Veja [String](#string) para mais detalhes.
+</Note>
+
+<Tip>
+  **Evite usar pontos em nomes de coluna**
+
+  Nomes de coluna que contêm pontos, colunas que compartilham um mesmo prefixo com ponto e colunas do tipo `Array` podem ser interpretados como parte de uma estrutura `Nested` achatada quando `flatten_nested = 1` (o padrão). Isso pode causar validação inesperada do comprimento de arrays durante inserts e restrições de renomeação.
+
+  Evite usar pontos em nomes de coluna sempre que possível.
+  Use underscores (`_`) ou outro separador em vez de pontos em nomes de coluna, a menos que você precise intencionalmente da semântica de `Nested`.
+</Tip>
+
+<div id="literals">
+  ## Literais
+</div>
+
+No ClickHouse, um literal é um valor representado diretamente em uma consulta.
+Em outras palavras, é um valor fixo que não se altera durante a execução da consulta.
+
+Os literais podem ser:
+
+* [String](#string)
+* [Numéricos](#numeric)
+* [Compostos](#compound)
+* [`NULL`](#null)
+* [Heredocs](#heredoc) (literais de string personalizados)
+
+A seguir, examinamos cada um deles em mais detalhes nas seções abaixo.
+
+<div id="string">
+  ### String
+</div>
+
+Literais de string devem estar entre aspas simples. Aspas duplas não são aceitas.
+
+O escape funciona de uma destas formas:
+
+* usando uma aspa simples antes, em que o caractere de aspas simples `'` (e somente esse caractere) pode ser escapado como `''`, ou
+* usando uma barra invertida antes, com as seguintes sequências de escape compatíveis listadas na tabela abaixo.
+
+<Note>
+  A barra invertida perde seu significado especial, ou seja, é interpretada literalmente caso preceda caracteres diferentes dos listados abaixo.
+</Note>
+
+| Escape compatível                          | Descrição                                                                                         |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `\xHH`                                     | Especificação de caractere de 8 bits seguida por qualquer quantidade de dígitos hexadecimais (H). |
+| `\N`                                       | reservado, não faz nada (por exemplo, `SELECT 'a\Nb'` retorna `ab`)                               |
+| `\a`                                       | alerta                                                                                            |
+| `\b`                                       | retrocesso                                                                                        |
+| `\e`                                       | caractere de escape                                                                               |
+| `\f`                                       | avanço de página                                                                                  |
+| `\n`                                       | quebra de linha                                                                                   |
+| `\r`                                       | retorno de carro                                                                                  |
+| `\t`                                       | tabulação horizontal                                                                              |
+| `\v`                                       | tabulação vertical                                                                                |
+| `\0`                                       | caractere nulo                                                                                    |
+| `\\`                                       | barra invertida                                                                                   |
+| `\'` (ou `''`)                             | aspas simples                                                                                     |
+| `\"`                                       | aspas duplas                                                                                      |
+| `` ` ``                                    | acento grave                                                                                      |
+| `\/`                                       | barra normal                                                                                      |
+| `\=`                                       | sinal de igual                                                                                    |
+| Caracteres de controle ASCII (c &lt;= 31). |                                                                                                   |
+
+<Note>
+  Em literais de string, você precisa escapar pelo menos `'` e `\` usando os códigos de escape `\'` (ou `''`) e `\\`.
+</Note>
+
+<div id="numeric">
+  ### Numérico
+</div>
+
+Os literais numéricos são analisados da seguinte forma:
+
+* Se o literal for precedido por um sinal de menos `-`, o token será ignorado e o resultado será negado após a análise.
+* O literal numérico é analisado primeiro como um inteiro sem sinal de 64 bits, usando a função [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul).
+  * Se o valor tiver o prefixo `0b` ou `0x`/`0X`, o número será analisado como binário ou hexadecimal, respectivamente.
+  * Se o valor for negativo e sua magnitude absoluta for maior que 2<sup>63</sup>, um erro será retornado.
+* Se isso não funcionar, o valor será então analisado como um número de ponto flutuante usando a função [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof).
+* Caso contrário, um erro será retornado.
+
+Os valores literais são convertidos para o menor tipo no qual o valor cabe.
+Por exemplo:
+
+* `1` é analisado como `UInt8`
+* `256` é analisado como `UInt16`.
+
+<Info>
+  **Importante**
+
+  Valores inteiros maiores que 64 bits (`UInt128`, `Int128`, `UInt256`, `Int256`) precisam ser convertidos para um tipo maior para serem analisados corretamente:
+
+  ```sql
+  -170141183460469231731687303715884105728::Int128
+  340282366920938463463374607431768211455::UInt128
+  -57896044618658097711785492504343953926634992332820282019728792003956564819968::Int256
+  115792089237316195423570985008687907853269984665640564039457584007913129639935::UInt256
+  ```
+
+  Isso contorna o algoritmo acima e analisa o inteiro com uma rotina que oferece suporte a precisão arbitrária.
+
+  Caso contrário, o literal será analisado como um número de ponto flutuante e, portanto, estará sujeito à perda de precisão por truncamento.
+</Info>
+
+Para mais informações, consulte [Tipos de dados](/pt-BR/reference/data-types/index).
+
+Os sublinhados `_` dentro de literais numéricos são ignorados e podem ser usados para melhorar a legibilidade.
+
+Há suporte aos seguintes literais numéricos:
+
+| Literal numérico                                   | Exemplos                                        |
+| -------------------------------------------------- | ----------------------------------------------- |
+| **Inteiros**                                       | `1`, `10_000_000`, `18446744073709551615`, `01` |
+| **Decimais**                                       | `0.1`                                           |
+| **Notação exponencial**                            | `1e100`, `-1e-100`                              |
+| **Números de ponto flutuante**                     | `123.456`, `inf`, `nan`                         |
+| **Hexadecimal**                                    | `0xc0fe`                                        |
+| **String hexadecimal compatível com SQL Standard** | `x'c0fe'`                                       |
+| **Binário**                                        | `0b1101`                                        |
+| **String binária compatível com SQL Standard**     | `b'1101'`                                       |
+
+<Note>
+  Literais octais não são suportados para evitar erros acidentais de interpretação.
+</Note>
+
+<div id="compound">
+  ### Compostos
+</div>
+
+Arrays são construídos com `[]`: `[1, 2, 3]`. Tuplas são construídas com `()`: `(1, 'Hello, world!', 2)`.
+Tecnicamente, eles não são literais, mas expressões com o operador de criação de array e o operador de criação de tupla, respectivamente.
+Um array deve consistir em pelo menos um item, e uma tupla deve ter pelo menos dois itens.
+
+<Note>
+  Há um caso separado em que tuplas aparecem na cláusula `IN` de uma consulta `SELECT`.
+  Os resultados da consulta podem incluir tuplas, mas tuplas não podem ser salvas em um banco de dados (exceto em tabelas que usam o motor [Memory](/pt-BR/reference/engines/table-engines/special/memory)).
+</Note>
+
+<div id="null">
+  ### NULL
+</div>
+
+`NULL` é usado para indicar que um valor está ausente.
+Para armazenar `NULL` em um campo de uma tabela, ele deve ser do tipo [Nullable](/pt-BR/reference/data-types/nullable).
+
+<Note>
+  Observe o seguinte sobre `NULL`:
+
+  * Dependendo do formato de dados (de entrada ou de saída), `NULL` pode ter uma representação diferente. Para mais informações, consulte [formatos de dados](/pt-BR/reference/formats/index).
+  * O tratamento de `NULL` tem nuances. Por exemplo, se pelo menos um dos argumentos de uma operação de comparação for `NULL`, o resultado dessa operação também será `NULL`. O mesmo vale para multiplicação, adição e outras operações. Recomendamos ler a documentação de cada operação.
+  * Em consultas, você pode verificar `NULL` usando os operadores [`IS NULL`](/pt-BR/reference/functions/regular-functions/functions-for-nulls#isNull) e [`IS NOT NULL`](/pt-BR/reference/functions/regular-functions/functions-for-nulls#isNotNull), além das funções relacionadas `isNull` e `isNotNull`.
+</Note>
+
+<div id="heredoc">
+  ### Heredoc
+</div>
+
+Um [heredoc](https://en.wikipedia.org/wiki/Here_document) é uma forma de definir uma string (geralmente em várias linhas), mantendo a formatação original.
+Um heredoc é definido como um literal de string personalizado, colocado entre dois símbolos `$`.
+
+Por exemplo:
+
+```sql
+SELECT $heredoc$SHOW CREATE VIEW my_view$heredoc$;
+
+┌─'SHOW CREATE VIEW my_view'─┐
+│ SHOW CREATE VIEW my_view   │
+└────────────────────────────┘
+```
+
+<Note>
+  * Um valor entre dois heredocs é processado &quot;como está&quot;.
+</Note>
+
+<Tip>
+  * Você pode usar um heredoc para incorporar trechos de código SQL, HTML, XML etc.
+</Tip>
+
+<div id="defining-and-using-query-parameters">
+  ## Definição e uso de parâmetros de consulta
+</div>
+
+Os parâmetros de consulta permitem escrever consultas genéricas que contêm placeholders abstratos em vez de identificadores concretos.
+Quando uma consulta com parâmetros é executada,
+todos os placeholders são resolvidos e substituídos pelos valores reais dos parâmetros de consulta.
+
+Os parâmetros de consulta podem ser definidos de várias formas:
+
+* `SET param_<name>=<value>` — usando um comando `SET` em uma consulta.
+* `--param_<name>='<value>'` — como argumento para o `clickhouse-client` na linha de comando.
+* `param_<name>=<value>` — como parâmetro de consulta na URL da interface HTTP.
+
+Um parâmetro de consulta pode ser referenciado em uma consulta usando `{<name>: <datatype>}`, em que `<name>` é o nome do parâmetro de consulta e `<datatype>` é o tipo de dado para o qual ele será convertido.
+
+<Accordion title="Exemplo com o comando SET">
+  Por exemplo, o SQL a seguir define parâmetros chamados `a`, `b`, `c` e `d` — cada um com um tipo de dado diferente:
+
+  ```sql
+  SET param_a = 13;
+  SET param_b = 'str';
+  SET param_c = '2022-08-04 18:30:53';
+  SET param_d = {'10': [11, 12], '13': [14, 15]};
+
+  SELECT
+     {a: UInt32},
+     {b: String},
+     {c: DateTime},
+     {d: Map(String, Array(UInt8))};
+
+  13    str    2022-08-04 18:30:53    {'10':[11,12],'13':[14,15]}
+  ```
+</Accordion>
+
+<Accordion title="Exemplo com clickhouse-client">
+  Se você estiver usando o `clickhouse-client`, os parâmetros serão especificados como `--param_name=value`. Por exemplo, o parâmetro a seguir tem o nome `message` e é recuperado como `String`:
+
+  ```bash
+  clickhouse-client --param_message='hello' --query="SELECT {message: String}"
+
+  hello
+  ```
+
+  Se o parâmetro de consulta representar o nome de um banco de dados, tabela, função ou outro identificador, use `Identifier` como tipo. Por exemplo, a consulta a seguir retorna linhas de uma tabela chamada `uk_price_paid`:
+
+  ```sql
+  SET param_mytablename = "uk_price_paid";
+  SELECT * FROM {mytablename:Identifier};
+  ```
+</Accordion>
+
+<Accordion title="Exemplo com a interface HTTP">
+  Os parâmetros de consulta podem ser passados como parâmetros de consulta na URL com o prefixo `param_`. Por exemplo:
+
+  ```bash
+  curl -s "http://localhost:8123/?param_message=hello" --data-binary "SELECT {message: String}"
+
+  hello
+  ```
+</Accordion>
+
+<Accordion title="Exemplo com a interface web">
+  A interface web integrada (`play.html`) detecta automaticamente placeholders de parâmetro no formato `{name:Type}` na consulta e exibe campos de entrada identificados para cada parâmetro. Os valores dos parâmetros são incluídos na solicitação HTTP e também persistidos na URL da página para permitir favoritos e compartilhamento.
+</Accordion>
+
+<Note>
+  Os parâmetros de consulta não são substituições genéricas de texto que podem ser usadas em locais arbitrários de consultas SQL arbitrárias.
+  Eles foram projetados principalmente para funcionar em Instruções `SELECT`, no lugar de identificadores ou literais.
+</Note>
+
+<div id="functions">
+  ## Funções
+</div>
+
+Chamadas de função são escritas como um identificador seguido de uma lista de argumentos (possivelmente vazia) entre `()`.
+Ao contrário do SQL padrão, os parênteses são obrigatórios, mesmo para uma lista de argumentos vazia.
+Por exemplo:
+
+```sql
+now()
+```
+
+Há também:
+
+* [Funções regulares](/pt-BR/reference/functions/regular-functions/overview).
+* [Funções de agregação](/pt-BR/reference/functions/aggregate-functions/index).
+
+Algumas funções de agregação podem conter duas listas de argumentos entre parênteses. Por exemplo:
+
+```sql
+quantile (0.9)(x) 
+```
+
+Essas funções de agregação são chamadas de funções &quot;paramétricas&quot;,
+e os argumentos da primeira lista são chamados de &quot;parâmetros&quot;.
+
+<Note>
+  A sintaxe das funções de agregação sem parâmetros é a mesma das funções regulares.
+</Note>
+
+<div id="operators">
+  ## Operadores
+</div>
+
+Os operadores são convertidos nas funções correspondentes durante a análise sintática da consulta, levando em conta sua prioridade e associatividade.
+
+Por exemplo, a expressão
+
+```text
+1 + 2 * 3 + 4
+```
+
+é convertido em
+
+```text
+plus(plus(1, multiply(2, 3)), 4)`
+```
+
+<div id="data-types-and-database-table-engines">
+  ## Tipos de dados e motores de tabela do banco de dados
+</div>
+
+Os tipos de dados e os motores de tabela na consulta `CREATE` são escritos da mesma forma que identificadores ou funções.
+Em outras palavras, eles podem ou não conter uma lista de argumentos entre parênteses.
+
+Para mais informações, consulte as seções:
+
+* [Tipos de dados](/pt-BR/reference/data-types/index)
+* [Motores de tabela](/pt-BR/reference/engines/table-engines/index)
+* [CREATE](/pt-BR/reference/statements/create/index).
+
+<div id="expressions">
+  ## Expressões
+</div>
+
+Uma expressão pode ser qualquer um dos itens a seguir:
+
+* uma função
+* um identificador
+* um literal
+* a aplicação de um operador
+* uma expressão entre parênteses
+* uma subconsulta
+* um asterisco
+
+Ela também pode conter um [alias](#expression-aliases).
+
+Uma lista de expressões consiste em uma ou mais expressões separadas por vírgulas.
+Funções e operadores, por sua vez, podem ter expressões como argumentos.
+
+Uma expressão constante é uma expressão cujo resultado é conhecido durante a análise da consulta, isto é, antes da execução.
+Por exemplo, expressões com literais são expressões constantes.
+
+<div id="expression-aliases">
+  ## Aliases de expressão
+</div>
+
+Um alias é um nome atribuído pelo usuário a uma [expressão](#expressions) em uma consulta.
+
+```sql
+expr AS alias
+```
+
+As partes da sintaxe acima são explicadas abaixo.
+
+| Parte da sintaxe | Descrição                                                                                                                                                           | Exemplo                                                                 | Observações                                                                                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AS`             | A palavra-chave usada para definir aliases. Você pode definir o alias de um nome de tabela ou de uma coluna em uma cláusula `SELECT` sem usar a palavra-chave `AS`. | `SELECT table_name_alias.column_name FROM table_name table_name_alias`. | Na função [CAST](/pt-BR/reference/functions/regular-functions/type-conversion-functions#CAST), a palavra-chave `AS` tem outro significado. Consulte a descrição da função. |
+| `expr`           | Qualquer expressão suportada pelo ClickHouse.                                                                                                                       | `SELECT column_name * 2 AS double FROM some_table`                      |                                                                                                                                                                      |
+| `alias`          | Nome de `expr`. Os aliases devem seguir a sintaxe de [identificadores](#identifiers).                                                                               | `SELECT "table t".column_name FROM table_name AS "table t"`.            |                                                                                                                                                                      |
+
+<div id="notes-on-usage">
+  ### Notas de uso
+</div>
+
+* Aliases são globais em uma consulta ou subconsulta, e você pode definir um alias em qualquer parte da consulta para qualquer expressão. Por exemplo:
+
+```sql
+SELECT (1 AS n) + 2, n`.
+```
+
+* Aliases não ficam visíveis em subconsultas nem entre subconsultas. Por exemplo, ao executar a consulta a seguir, ClickHouse gera a exceção `Unknown identifier: num`:
+
+```sql
+`SELECT (SELECT sum(b.a) + num FROM b) - a.a AS num FROM a`
+```
+
+* Se um alias for definido para as colunas de resultado na cláusula `SELECT` de uma subconsulta, essas colunas ficam visíveis na consulta externa. Por exemplo:
+
+```sql
+SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
+```
+
+* Tenha cuidado com aliases que sejam iguais a nomes de colunas ou tabelas. Vamos considerar o exemplo a seguir:
+
+```sql
+CREATE TABLE t
+(
+    a Int,
+    b Int
+)
+ENGINE = TinyLog();
+
+SELECT
+    argMax(a, b),
+    sum(b) AS b
+FROM t;
+
+Received exception from server (version 18.14.17):
+Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: Aggregate function sum(b) is found inside another aggregate function in query.
+```
+
+No exemplo anterior, declaramos a tabela `t` com a coluna `b`.
+Em seguida, ao selecionar os dados, definimos o alias `sum(b) AS b`.
+Como os aliases têm escopo global,
+ClickHouse substituiu o literal `b` na expressão `argMax(a, b)` pela expressão `sum(b)`.
+Essa substituição causou a exceção.
+
+<Note>
+  Você pode alterar esse comportamento padrão definindo [prefer&#95;column&#95;name&#95;to&#95;alias](/pt-BR/reference/settings/session-settings#prefer_column_name_to_alias) como `1`.
+</Note>
+
+<div id="asterisk">
+  ## Asterisco
+</div>
+
+Em uma consulta `SELECT`, um asterisco pode substituir a expressão.
+Para mais informações, consulte a seção [SELECT](/pt-BR/reference/statements/select/index#asterisk).

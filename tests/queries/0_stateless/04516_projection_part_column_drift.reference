@@ -1,0 +1,18 @@
+part columns before drift	p	a
+part columns before drift	p	b
+read after drift	1	501
+mixed read	1	501
+mixed read	2	601
+read after merge	1	501
+read after merge	2	601
+1	501
+2	601
+part columns after merge	p	a
+part columns after merge	p	d
+added column via projection	1	42
+agg read after drift	1	501
+agg read after merge	1	501
+agg read after merge	2	601
+1	501
+2	601
+virtual via projection	1	100	1

@@ -1,6 +1,7 @@
 -- Tags: no-random-merge-tree-settings
 -- add_minmax_index_for_numeric_columns=0: Different plan
 SET explain_query_plan_default = 'legacy';
+SET materialize_statistics_on_insert = 0; -- pin (randomized in CI): statistics built on INSERT change the plan
 
 set enable_analyzer=1;
 set serialize_query_plan = 0;

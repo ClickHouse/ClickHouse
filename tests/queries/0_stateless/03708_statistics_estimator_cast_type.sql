@@ -26,7 +26,7 @@ CREATE TABLE ipv4test(
 )
 ENGINE = MergeTree
 ORDER BY ip_column 
-SETTINGS auto_statistics_types='minmax';
+SETTINGS auto_statistics_types='basic';
 
 INSERT INTO ipv4test (`ip_column`) VALUES ('192.168.1.1');
 

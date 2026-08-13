@@ -1,0 +1,338 @@
+---
+sidebarTitle: 'Solución de problemas y buenas prácticas'
+slug: /integrations/fivetran/troubleshooting
+description: 'Errores comunes, consejos de depuración y buenas prácticas para el destino de ClickHouse de Fivetran.'
+title: 'Solución de problemas y buenas prácticas'
+doc_type: 'guide'
+keywords: ['fivetran', 'destino de ClickHouse', 'solución de problemas', 'buenas prácticas', 'depuración']
+---
+
+<div id="common-errors">
+  ## Errores comunes
+</div>
+
+<div id="grants-test-failed">
+  ### La prueba de privilegios falló o las operaciones fallan por problemas de permisos
+</div>
+
+**Mensaje de error:**
+
+```sh
+Test grants failed, cause: user is missing the required grants on *.*: ALTER, CREATE DATABASE, CREATE TABLE, INSERT, SELECT
+```
+
+**Causa:** El usuario de Fivetran no tiene los privilegios necesarios. El conector requiere los privilegios `ALTER`, `CREATE DATABASE`, `CREATE TABLE`, `INSERT` y `SELECT` sobre `*.*` (todas las bases de datos y tablas).
+
+<Note>
+  La comprobación de privilegios consulta `system.grants` y solo tiene en cuenta los privilegios otorgados directamente al usuario. No detecta los privilegios asignados mediante un rol de ClickHouse. Consulta la sección [privilegios basados en roles](/es/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#role-based-grants) para obtener más información.
+</Note>
+
+**Solución:**
+
+Otorga directamente al usuario de Fivetran los privilegios necesarios:
+
+```sql
+GRANT CURRENT GRANTS ON *.* TO fivetran_user;
+```
+
+<div id="mutations-not-completed">
+  ### Error al esperar a que finalicen todas las mutaciones
+</div>
+
+**Mensaje de error:**
+
+```sh
+error while waiting for all mutations to be completed: ... initial cause: ...
+```
+
+**Causa:** Se envió una mutación `ALTER TABLE ... UPDATE` o `ALTER TABLE ... DELETE`, pero el conector agotó el tiempo de espera mientras esperaba a que se completara en todas las réplicas. La parte de la &quot;causa inicial&quot; del error suele contener el error original de ClickHouse (normalmente el código 341, &quot;Unfinished&quot;).
+
+Esto puede ocurrir cuando:
+
+* El clúster de ClickHouse Cloud está sometido a una carga elevada.
+* Uno o más nodos dejaron de estar disponibles durante la ejecución de la mutación.
+
+**Soluciones:**
+
+1. **Comprobar el progreso de la mutación**: Ejecute la siguiente consulta para comprobar si hay mutaciones pendientes:
+   ```sql
+   SELECT database, table, mutation_id, command, create_time, is_done
+   FROM system.mutations
+   WHERE NOT is_done
+   ORDER BY create_time DESC;
+   ```
+2. **Comprobar el estado del clúster**: Asegúrese de que todos los nodos estén en buen estado.
+3. **Esperar y reintentar**: Las mutaciones terminan completándose una vez que el clúster vuelve a estar en buen estado. Fivetran reintentará la sincronización automáticamente.
+
+<div id="column-mismatch-error">
+  ### Error de incompatibilidad de columnas
+</div>
+
+**Mensaje de error:**
+
+Pueden producirse distintos errores si la incompatibilidad entre columnas se debe a un cambio de esquema en el origen. Por ejemplo:
+
+```sh
+columns count in ClickHouse table (8) does not match the input file (6). Expected columns: id, name, ..., got: id, name, ...
+```
+
+O:
+
+```sh
+column user_email was not found in the table definition. Table columns: ...; input file columns: ...
+```
+
+**Causa:** Las columnas de la tabla de destino de ClickHouse no coinciden con las columnas de los datos que se están sincronizando. Esto puede ocurrir cuando:
+
+* Se añadieron o eliminaron columnas manualmente en la tabla de ClickHouse.
+* Un cambio de esquema en el origen no se propagó correctamente.
+
+**Soluciones:**
+
+1. **Recuerde no modificar manualmente las tablas gestionadas por Fivetran.** Consulte [buenas prácticas](/es/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#dont-modify-tables).
+2. **Restaure la columna**: Si sabe qué tipo debería tener la columna, restáurela al tipo esperado tomando como referencia la [correspondencia de transformación de tipos](/es/integrations/connectors/data-ingestion/etl-tools/fivetran/reference#type-mapping).
+3. **Vuelva a sincronizar la tabla**: En el panel de Fivetran, active una resincronización histórica para la tabla afectada.
+4. **Eliminar y volver a crear**: Como último recurso, elimine la tabla de destino y deje que Fivetran la vuelva a crear durante la siguiente sincronización.
+
+<div id="ast-too-big">
+  ### El AST es demasiado grande (código 168)
+</div>
+
+**Mensaje de error:**
+
+```sh
+code: 168, message: AST is too big. Maximum: 50000
+```
+
+o
+
+```sh
+code: 62, message: Max query size exceeded
+```
+
+**Causa:** Los lotes grandes de UPDATE o DELETE generan sentencias SQL con árboles de sintaxis abstracta muy complejos. Esto es habitual con tablas anchas o cuando el modo de historial está habilitado.
+
+**Solución:**
+
+Reduzca `mutation_batch_size` y `hard_delete_batch_size` en el archivo de [configuración avanzada](/es/integrations/connectors/data-ingestion/etl-tools/fivetran/reference#advanced-configuration). Ambos tienen como valor predeterminado `1500` y aceptan valores entre `200` y `1500`.
+
+***
+
+<div id="memory-limit-exceeded">
+  ### Límite de memoria superado / OOM (código 241)
+</div>
+
+**Mensaje de error:**
+
+```sh
+code: 241, message: (total) memory limit exceeded: would use 14.01 GiB
+```
+
+**Causa:** La operación INSERT requiere más memoria de la disponible. Suele ocurrir durante sincronizaciones iniciales de gran volumen, con tablas con muchas columnas o con operaciones por lotes concurrentes.
+
+**Soluciones:**
+
+1. **Reducir `write_batch_size`**: Intenta bajarlo a 50,000 para tablas grandes.
+2. **Reducir la carga de la base de datos**: Comprueba la carga del servicio de ClickHouse Cloud para ver si está sobrecargado.
+3. **Ampliar el servicio de ClickHouse Cloud** para disponer de más memoria.
+
+***
+
+<div id="unexpected-eof">
+  ### EOF inesperado / Error de conexión
+</div>
+
+**Mensaje de error:**
+
+```sh
+ClickHouse connection error: unexpected EOF
+```
+
+O `FAILURE_WITH_TASK` sin stack trace en los logs de Fivetran.
+
+**Causa:**
+
+* La lista de acceso IP no está configurada para permitir el tráfico de Fivetran.
+* Problemas transitorios de red entre Fivetran y ClickHouse Cloud.
+* Datos de origen corruptos o no válidos que provocan que el conector de destino falle.
+
+**Soluciones:**
+
+1. **Comprobar la lista de acceso IP**: En ClickHouse Cloud, ve a **Settings &gt; Security** y añade las [direcciones IP de Fivetran](https://fivetran.com/docs/using-fivetran/ips) o permite el acceso desde cualquier origen.
+2. **Reintentar**: Las versiones recientes del conector reintentan automáticamente los errores EOF. Los errores esporádicos (1–2 al día) probablemente sean transitorios.
+3. **Si el problema persiste**: Abre un ticket de soporte con ClickHouse e indica la ventana de tiempo del error. Pide también al soporte de Fivetran que investigue la calidad de los datos de origen.
+
+***
+
+<div id="uint64-type-error">
+  ### No se puede mapear el tipo UInt64
+</div>
+
+**Mensaje de error:**
+
+```sh
+cause: can't map type UInt64 to Fivetran types
+```
+
+**Causa:** El conector asigna `LONG` a `Int64`, nunca a `UInt64`. Este error se produce cuando el tipo de una columna se modifica manualmente en una tabla gestionada por Fivetran.
+
+**Soluciones:**
+
+1. **No modifique manualmente los tipos de las columnas** en las tablas gestionadas por Fivetran.
+2. **Para solucionarlo**: vuelva a cambiar la columna al tipo esperado (por ejemplo, `Int64`) o elimine la tabla y vuelva a sincronizarla.
+3. **Para tipos personalizados**: Cree una [vista materializada](/es/reference/statements/create/view#materialized-view) sobre la tabla gestionada por Fivetran.
+
+***
+
+<div id="no-primary-keys">
+  ### La tabla no tiene claves primarias
+</div>
+
+**Mensaje de error:**
+
+```sh
+Failed to alter table ... cause: no primary keys for table
+```
+
+**Causa:** Toda tabla de ClickHouse requiere un `ORDER BY`. Cuando el origen no tiene una clave primaria, Fivetran agrega `_fivetran_id` automáticamente. Este error se produce en casos excepcionales en los que el origen define una PK, pero los datos no la contienen.
+
+**Soluciones:**
+
+1. **Contacta con el soporte de Fivetran** para investigar la canalización de origen.
+2. **Comprueba el esquema de origen**: Asegúrate de que las columnas de la clave primaria estén presentes en los datos.
+
+***
+
+<div id="role-based-grants">
+  ### Fallo en los privilegios basados en roles
+</div>
+
+**Mensaje de error:**
+
+```sh
+user is missing the required grants on *.*: ALTER, CREATE DATABASE, CREATE TABLE, INSERT, SELECT
+```
+
+**Causa:** El conector verifica los privilegios con:
+
+```sql
+SELECT access_type, database, table, column FROM system.grants WHERE user_name = 'my_user'
+```
+
+Esto solo devuelve los privilegios concedidos directamente. Los privilegios asignados mediante un rol de ClickHouse tienen `user_name = NULL` y `role_name = 'my_role'`, por lo que esta comprobación no los detecta.
+
+**Solución:**
+
+**Concede los privilegios directamente** al usuario de Fivetran:
+
+```sql
+GRANT CURRENT GRANTS ON *.* TO fivetran_user;
+```
+
+***
+
+<div id="best-practices">
+  ## Buenas prácticas
+</div>
+
+<div id="dedicated-service">
+  ### Servicio de ClickHouse dedicado para Fivetran
+</div>
+
+En caso de una alta carga de ingestión, considere usar la [separación de cómputo y cómputo](/es/products/cloud/features/infrastructure/warehouses) de ClickHouse Cloud para crear un servicio dedicado a las cargas de escritura de Fivetran. Esto aísla la ingestión de las consultas analíticas y evita la contención de recursos.
+
+Por ejemplo, puede usarse la siguiente arquitectura:
+
+* **Servicio A (escritura)**: destino de Fivetran + otras herramientas de ingestión (ClickPipes, conectores de Kafka)
+* **Servicio B (lectura)**: herramientas de BI, dashboards, consultas ad hoc
+
+<div id="optimizing-reading-queries">
+  ### Optimización de las consultas de lectura
+</div>
+
+ClickHouse usa `SharedReplacingMergeTree` para las tablas de destino de Fivetran, que es la versión del [motor de tabla `ReplacingMergeTree`](/es/concepts/features/operations/update/replacing-merge-tree) en ClickHouse Cloud. Las filas duplicadas con la misma clave primaria son normales: la deduplicación se produce de forma asíncrona durante las fusiones en segundo plano. En el momento de la lectura, debes tener cuidado para evitar devolver filas duplicadas, ya que es posible que algunas filas aún no se hayan deduplicado.
+
+Usar la palabra clave `FINAL` es la forma más sencilla de evitar filas duplicadas, ya que fuerza la fusión, en el momento de la lectura, de cualquier fila que todavía no se haya deduplicado:
+
+```sql
+SELECT * FROM schema.table FINAL WHERE ...
+```
+
+Hay formas de optimizar esta operación `FINAL`; por ejemplo, filtrando por las columnas clave mediante una condición `WHERE`. Para obtener más información, consulta la sección [rendimiento de FINAL](/es/concepts/features/operations/update/replacing-merge-tree#final-performance) de la guía de ReplacingMergeTree.
+
+Si esas optimizaciones no son suficientes, tienes otras opciones para evitar usar `FINAL` sin dejar de gestionar correctamente los duplicados:
+
+* Si quieres consultar una columna numérica que siempre aumenta, [puedes usar `max(the_column)`](/es/concepts/features/operations/insert/deduplication#avoiding-final).
+* Si necesitas recuperar el valor más reciente de algunas columnas para una clave concreta, puedes usar [`argMax(the_column, _fivetran_id)`](https://clickhouse.com/blog/10-best-practice-tips#perfecting_replacingmergetree).
+
+<div id="primary-key-optimization">
+  ### Optimización de la clave primaria y ORDER BY
+</div>
+
+Fivetran replica la clave primaria de la tabla de origen como la cláusula `ORDER BY` de ClickHouse. Cuando la tabla de origen no tiene PK, `_fivetran_id` (un UUID) pasa a ser la clave de ordenación, lo que puede provocar un rendimiento deficiente en las consultas, ya que ClickHouse construye su [índice primario disperso](/es/guides/clickhouse/data-modelling/sparse-primary-indexes) a partir de las columnas de `ORDER BY`.
+
+**Recomendaciones en este caso, si ninguna otra optimización es suficiente:**
+
+1. **Trate las tablas de Fivetran como tablas de staging sin procesar.** No las consulte directamente para análisis.
+2. **Si las consultas siguen sin ofrecer un rendimiento suficiente**, use una [vista materializada actualizable](/es/concepts/features/materialized-views/refreshable-materialized-view) para crear una copia de la tabla con un `ORDER BY` optimizado para sus patrones de consulta. A diferencia de las vistas materializadas incrementales, las vistas materializadas actualizables vuelven a ejecutar la consulta completa según una programación, lo que gestiona correctamente las operaciones `UPDATE` y `DELETE` que Fivetran ejecuta durante las sincronizaciones:
+   ```sql
+   CREATE MATERIALIZED VIEW schema.table_optimized
+   REFRESH EVERY 1 HOUR
+   ENGINE = ReplacingMergeTree()
+   ORDER BY (user_id, event_date)
+   AS SELECT * FROM schema.table_raw FINAL;
+   ```
+
+<Note>
+  Evite las vistas materializadas incrementales (no actualizables) en tablas gestionadas por Fivetran. Como Fivetran ejecuta operaciones `UPDATE` y `DELETE` para mantener los datos sincronizados, las vistas materializadas incrementales no reflejarán estos cambios y contendrán datos obsoletos o incorrectos.
+</Note>
+
+<div id="dont-modify-tables">
+  ### No modifiques manualmente las tablas gestionadas por Fivetran
+</div>
+
+Evita hacer cambios manuales de DDL (p. ej., `ALTER TABLE ... MODIFY COLUMN`) en las tablas gestionadas por Fivetran. El conector espera el esquema que creó. Los cambios manuales pueden provocar [errores de correspondencia de tipos](#uint64-type-error) y fallos por incompatibilidades de esquema.
+
+Usa vistas materializadas para las transformaciones personalizadas.
+
+<div id="debugging">
+  ## Operaciones de depuración
+</div>
+
+Al diagnosticar fallos:
+
+* Consulte el `system.query_log` de ClickHouse para detectar problemas del lado del servidor.
+* Solicite ayuda a Fivetran si los problemas son del lado del cliente.
+
+Para errores del conector, [cree una incidencia en GitHub](https://github.com/ClickHouse/clickhouse-fivetran-destination/issues) o póngase en contacto con [soporte de ClickHouse](/es/resources/about/support).
+
+<div id="debugging-fivetran-syncs">
+  ### Depuración de sincronizaciones de Fivetran
+</div>
+
+Utilice las siguientes consultas para diagnosticar fallos de sincronización en ClickHouse.
+
+<div id="check-errors">
+  #### Revisa los errores recientes de ClickHouse relacionados con Fivetran
+</div>
+
+```sql
+SELECT event_time, query, exception_code, exception
+FROM system.query_log
+WHERE client_name LIKE 'fivetran-destination%'
+  AND exception_code > 0
+ORDER BY event_time DESC
+LIMIT 50;
+```
+
+<div id="check-activity">
+  #### Consultar la actividad reciente del usuario de Fivetran
+</div>
+
+```sql
+SELECT event_time, query_kind, query, exception_code, exception
+FROM system.query_log
+WHERE user = '{fivetran_user}'
+ORDER BY event_time DESC
+LIMIT 100;
+```

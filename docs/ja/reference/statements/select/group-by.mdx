@@ -1,0 +1,413 @@
+---
+description: 'GROUP BY 句のドキュメント'
+sidebarTitle: 'GROUP BY'
+slug: /sql-reference/statements/select/group-by
+title: 'GROUP BY 句'
+doc_type: 'reference'
+---
+
+`GROUP BY` 句は、`SELECT` クエリを集約モードに切り替えます。動作は次のとおりです。
+
+* `GROUP BY` 句には、式のリスト (または単一の式。この場合は長さ 1 のリストと見なされます) が含まれます。このリストは「グループ化キー」として機能し、個々の式はそれぞれ「キー式」と呼ばれます。
+* [SELECT](/ja/reference/statements/select/index)、[HAVING](/ja/reference/statements/select/having)、および [ORDER BY](/ja/reference/statements/select/order-by) 句内のすべての式は、キー式に基づいて計算されるか、非キー式 (通常のカラムを含む) に対する [集約関数](/ja/reference/functions/aggregate-functions/index) に基づいて計算される**必要があります**。言い換えると、テーブルから選択される各カラムは、キー式で使用するか、集約関数の内部で使用するかのいずれかでなければならず、両方で使用することはできません。
+* `SELECT` クエリを集約した結果には、ソーステーブル内の「グループ化キー」の一意な値ごとに 1 行が含まれます。通常、これにより行数は大幅に減少し、多くの場合は桁違いに少なくなりますが、必ずしもそうとは限りません。すべての「グループ化キー」の値が相互に異なっている場合、行数は変わりません。
+
+カラム名ではなくカラム番号でテーブル内のデータをグループ化したい場合は、設定 [enable&#95;positional&#95;arguments](/ja/reference/settings/session-settings#enable_positional_arguments) を有効にします。
+
+<Note>
+  テーブルに対して集約を実行する方法は、もう 1 つあります。クエリ内でテーブルのカラムが集約関数の内部でしか使用されていない場合は、`GROUP BY` 句を省略でき、キーの空集合に対する集約が行われるものと見なされます。このようなクエリは、常に 1 行だけを返します。
+</Note>
+
+<div id="null-processing">
+  ## NULL の扱い
+</div>
+
+グループ化では、ClickHouse は [NULL](/ja/reference/syntax#null) を 1 つの値として解釈し、`NULL==NULL` とみなします。これは、他のほとんどの文脈における `NULL` の扱いとは異なります。
+
+これが何を意味するのかを示す例を見てみましょう。
+
+次のテーブルがあるとします。
+
+```text
+┌─x─┬────y─┐
+│ 1 │    2 │
+│ 2 │ ᴺᵁᴸᴸ │
+│ 3 │    2 │
+│ 3 │    3 │
+│ 3 │ ᴺᵁᴸᴸ │
+└───┴──────┘
+```
+
+クエリ `SELECT sum(x), y FROM t_null_big GROUP BY y` の結果は次のとおりです。
+
+```text
+┌─sum(x)─┬────y─┐
+│      4 │    2 │
+│      3 │    3 │
+│      5 │ ᴺᵁᴸᴸ │
+└────────┴──────┘
+```
+
+`y = NULL` に対する `GROUP BY` では、`NULL` を実際の値であるかのように扱って `x` が合計されていることがわかります。
+
+`GROUP BY` に複数のキーを渡すと、`NULL` を特定の値であるかのように扱って、選択した値のすべての組み合わせが結果として返されます。
+
+<div id="rollup-modifier">
+  ## ロールアップ修飾子
+</div>
+
+`ROLLUP` 修飾子は、`GROUP BY` リスト内の順序に基づいてキー式の小計を計算するために使用されます。小計の行は、結果テーブルの後に追加されます。
+
+小計は逆順で計算されます。まずリスト内の最後のキー式の小計が計算され、次にその前のキー式、というように、最初のキー式まで順に計算されます。
+
+小計の行では、すでに &quot;grouped&quot; されているキー式の値は `0` または空文字列に設定されます。
+
+<Note>
+  [HAVING](/ja/reference/statements/select/having) 句が小計の結果に影響する場合があることに注意してください。
+</Note>
+
+**例**
+
+テーブル t を考えます:
+
+```text
+┌─year─┬─month─┬─day─┐
+│ 2019 │     1 │   5 │
+│ 2019 │     1 │  15 │
+│ 2020 │     1 │   5 │
+│ 2020 │     1 │  15 │
+│ 2020 │    10 │   5 │
+│ 2020 │    10 │  15 │
+└──────┴───────┴─────┘
+```
+
+```sql title="Query"
+SELECT year, month, day, count(*) FROM t GROUP BY ROLLUP(year, month, day);
+```
+
+`GROUP BY` 句には 3 つのキー式があるため、結果には右から左へ「ロールアップ」された小計を含む 4 つのテーブルが含まれます。
+
+* `GROUP BY year, month, day`;
+* `GROUP BY year, month` (`day` カラムは 0 で埋められます) ;
+* `GROUP BY year` (この場合、`month` と `day` のカラムはどちらも 0 で埋められます) ;
+* および totals (3 つのキー式のカラムはすべて 0 になります) 。
+
+```text title="Response"
+┌─year─┬─month─┬─day─┬─count()─┐
+│ 2020 │    10 │  15 │       1 │
+│ 2020 │     1 │   5 │       1 │
+│ 2019 │     1 │   5 │       1 │
+│ 2020 │     1 │  15 │       1 │
+│ 2019 │     1 │  15 │       1 │
+│ 2020 │    10 │   5 │       1 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│ 2019 │     1 │   0 │       2 │
+│ 2020 │     1 │   0 │       2 │
+│ 2020 │    10 │   0 │       2 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│ 2019 │     0 │   0 │       2 │
+│ 2020 │     0 │   0 │       4 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│    0 │     0 │   0 │       6 │
+└──────┴───────┴─────┴─────────┘
+```
+
+同じクエリは、`WITH` キーワードを使って記述することもできます。
+
+```sql title="Query"
+SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
+```
+
+**関連項目**
+
+* SQL標準との互換性については、[group&#95;by&#95;use&#95;nulls](/ja/reference/settings/session-settings#group_by_use_nulls) 設定を参照してください。
+
+<div id="cube-modifier">
+  ## CUBE 修飾子
+</div>
+
+`CUBE` 修飾子は、`GROUP BY` リスト内のキー式のあらゆる組み合わせに対する小計を計算するために使用されます。小計の行は、結果テーブルの後に追加されます。
+
+小計の行では、&quot;グループ化された&quot;すべてのキー式の値が `0` または空文字列に設定されます。
+
+<Note>
+  [HAVING](/ja/reference/statements/select/having) 句は小計の結果に影響する可能性があることに注意してください。
+</Note>
+
+**例**
+
+テーブル t について考えます:
+
+```text
+┌─year─┬─month─┬─day─┐
+│ 2019 │     1 │   5 │
+│ 2019 │     1 │  15 │
+│ 2020 │     1 │   5 │
+│ 2020 │     1 │  15 │
+│ 2020 │    10 │   5 │
+│ 2020 │    10 │  15 │
+└──────┴───────┴─────┘
+```
+
+```sql title="Query"
+SELECT year, month, day, count(*) FROM t GROUP BY CUBE(year, month, day);
+```
+
+`GROUP BY` 句には 3 つのキー式があるため、結果には、キー式のすべての組み合わせに対する小計を含む 8 つのテーブルが含まれます。
+
+* `GROUP BY year, month, day`
+* `GROUP BY year, month`
+* `GROUP BY year, day`
+* `GROUP BY year`
+* `GROUP BY month, day`
+* `GROUP BY month`
+* `GROUP BY day`
+* および totals。
+
+`GROUP BY` に含まれないカラムは、ゼロで埋められます。
+
+```text title="Response"
+┌─year─┬─month─┬─day─┬─count()─┐
+│ 2020 │    10 │  15 │       1 │
+│ 2020 │     1 │   5 │       1 │
+│ 2019 │     1 │   5 │       1 │
+│ 2020 │     1 │  15 │       1 │
+│ 2019 │     1 │  15 │       1 │
+│ 2020 │    10 │   5 │       1 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│ 2019 │     1 │   0 │       2 │
+│ 2020 │     1 │   0 │       2 │
+│ 2020 │    10 │   0 │       2 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│ 2020 │     0 │   5 │       2 │
+│ 2019 │     0 │   5 │       1 │
+│ 2020 │     0 │  15 │       2 │
+│ 2019 │     0 │  15 │       1 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│ 2019 │     0 │   0 │       2 │
+│ 2020 │     0 │   0 │       4 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│    0 │     1 │   5 │       2 │
+│    0 │    10 │  15 │       1 │
+│    0 │    10 │   5 │       1 │
+│    0 │     1 │  15 │       2 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│    0 │     1 │   0 │       4 │
+│    0 │    10 │   0 │       2 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│    0 │     0 │   5 │       3 │
+│    0 │     0 │  15 │       3 │
+└──────┴───────┴─────┴─────────┘
+┌─year─┬─month─┬─day─┬─count()─┐
+│    0 │     0 │   0 │       6 │
+└──────┴───────┴─────┴─────────┘
+```
+
+同じクエリは、`WITH`キーワードを使って記述することもできます。
+
+```sql title="Query"
+SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
+```
+
+**関連項目**
+
+* SQL 標準との互換性については、[group&#95;by&#95;use&#95;nulls](/ja/reference/settings/session-settings#group_by_use_nulls) 設定を参照してください。
+
+<div id="with-totals-modifier">
+  ## WITH TOTALS 修飾子
+</div>
+
+`WITH TOTALS` 修飾子を指定すると、追加でもう 1 行が計算されます。この行では、キーカラムにはデフォルト値 (ゼロまたは空文字列) が入り、集約関数のカラムにはすべての行を対象に計算された値 (「total」値) が入ります。
+
+この追加の行は、`JSON*`、`TabSeparated*`、`Pretty*` フォーマットでのみ、他の行とは別に出力されます。
+
+* `XML` および `JSON*` フォーマットでは、この行は別個の `totals` フィールドとして出力されます。
+* `TabSeparated*`、`CSV*`、`Vertical` フォーマットでは、この行はメインの結果の後に、空行を 1 行挟んで出力されます (他のデータの後) 。
+* `Pretty*` フォーマットでは、この行はメインの結果の後に別のテーブルとして出力されます。
+* `Template` フォーマットでは、この行は指定されたテンプレートに従って出力されます。
+* その他のフォーマットでは利用できません。
+
+<Note>
+  totals は `SELECT` クエリの結果では出力されますが、`INSERT INTO ... SELECT` では出力されません。
+</Note>
+
+[HAVING](/ja/reference/statements/select/having) がある場合、`WITH TOTALS` の処理方法は複数あります。動作は `totals_mode` 設定に依存します。
+
+<div id="configuring-totals-processing">
+  ### totals の処理設定
+</div>
+
+デフォルトでは、`totals_mode = 'before_having'` です。この場合、`HAVING` と `max_rows_to_group_by` を通過しないものも含め、すべての行に対して &#39;totals&#39; が計算されます。
+
+その他の選択肢では、&#39;totals&#39; には `HAVING` を通過した行だけが含まれ、`max_rows_to_group_by` および `group_by_overflow_mode = 'any'` の設定に対する動作も異なります。
+
+`after_having_exclusive` – `max_rows_to_group_by` を通過しなかった行は含めません。言い換えると、`max_rows_to_group_by` を省略した場合と比べて、&#39;totals&#39; の行数はそれ以下または同じになります。
+
+`after_having_inclusive` – `max_rows_to_group_by` を通過しなかったすべての行を &#39;totals&#39; に含めます。言い換えると、`max_rows_to_group_by` を省略した場合と比べて、&#39;totals&#39; の行数はそれ以上または同じになります。
+
+`after_having_auto` – `HAVING` を通過した行数を数えます。それが一定の割合 (デフォルトでは 50%) を超える場合は、`max_rows_to_group_by` を通過しなかったすべての行を &#39;totals&#39; に含めます。そうでない場合は含めません。
+
+`totals_auto_threshold` – デフォルト値は 0.5 です。`after_having_auto` の係数です。
+
+`max_rows_to_group_by` と `group_by_overflow_mode = 'any'` を使用しない場合、`after_having` の各バリエーションはすべて同じなので、どれを使っても構いません (たとえば `after_having_auto`) 。
+
+`WITH TOTALS` は、[JOIN](/ja/reference/statements/select/join) 句内のサブクエリを含むサブクエリでも使用できます (この場合、対応する totals の値が結合されます) 。
+
+<div id="group-by-all">
+  ## GROUP BY ALL
+</div>
+
+`GROUP BY ALL` は、集約関数ではない SELECT 対象のすべての式を列挙するのと同じです。
+
+たとえば:
+
+```sql
+SELECT
+    a * 2,
+    b,
+    count(c),
+FROM t
+GROUP BY ALL
+```
+
+と同じです
+
+```sql
+SELECT
+    a * 2,
+    b,
+    count(c),
+FROM t
+GROUP BY a * 2, b
+```
+
+特別なケースとして、ある関数の引数に集約関数とその他のフィールドの両方が含まれている場合、`GROUP BY` キーには、その関数から抽出できる非集約フィールドの最大集合が含まれます。
+
+例えば:
+
+```sql
+SELECT
+    substring(a, 4, 2),
+    substring(substring(a, 1, 2), 1, count(b))
+FROM t
+GROUP BY ALL
+```
+
+と同じです
+
+```sql
+SELECT
+    substring(a, 4, 2),
+    substring(substring(a, 1, 2), 1, count(b))
+FROM t
+GROUP BY substring(a, 4, 2), substring(a, 1, 2)
+```
+
+<div id="examples">
+  ## 例
+</div>
+
+例:
+
+```sql
+SELECT
+    count(),
+    median(FetchTiming > 60 ? 60 : FetchTiming),
+    count() - sum(Refresh)
+FROM hits
+```
+
+MySQLとは異なり (標準SQLに準拠しているため) 、キーや集約関数に含まれていないカラムの値は取得できません (定数式を除く) 。これを回避するには、&#39;any&#39; 集約関数 (最初に見つかった値を取得) または &#39;min/max&#39; を使用できます。
+
+例:
+
+```sql
+SELECT
+    domainWithoutWWW(URL) AS domain,
+    count(),
+    any(Title) AS title -- 各ドメインで最初に出現したページヘッダーを取得する。
+FROM hits
+GROUP BY domain
+```
+
+異なるキー値ごとに、`GROUP BY` は一連の集約関数の値を計算します。
+
+<div id="grouping-sets-modifier">
+  ## GROUPING SETS 修飾子
+</div>
+
+これは最も一般的な修飾子です。
+この修飾子では、複数の集約キーのセット (grouping sets) を手動で指定できます。
+集約は各 grouping set ごとに個別に実行され、その後、すべての結果が結合されます。
+あるカラムが grouping set に含まれていない場合、そのカラムはデフォルト値で補われます。
+
+つまり、上述の修飾子は `GROUPING SETS` で表現できます。
+`ROLLUP`、`CUBE`、`GROUPING SETS` 修飾子を使ったクエリは構文上は同等ですが、実行時の動作が異なる場合があります。
+`GROUPING SETS` はすべてを並列に実行しようとするのに対し、`ROLLUP` と `CUBE` は集約結果の最終マージを単一スレッドで実行します。
+
+ソースカラムにデフォルト値が含まれている場合、その行がそれらのカラムをキーとして使用する集約の一部なのかどうかを判別しにくいことがあります。
+この問題を解決するには、`GROUPING` 関数を使用する必要があります。
+
+**例**
+
+次の 2 つのクエリは同等です。
+
+```sql
+-- クエリ 1
+SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
+
+-- クエリ 2
+SELECT year, month, day, count(*) FROM t GROUP BY
+GROUPING SETS
+(
+    (year, month, day),
+    (year, month),
+    (year),
+    ()
+);
+```
+
+**関連項目**
+
+* SQL 標準との互換性を確保するための [group&#95;by&#95;use&#95;nulls](/ja/reference/settings/session-settings#group_by_use_nulls) 設定。
+
+<div id="implementation-details">
+  ## 実装の詳細
+</div>
+
+集約は列指向DBMSの最も重要な機能の1つであり、その実装は ClickHouse の中でも特に重点的に最適化されている部分の1つです。デフォルトでは、集約はハッシュテーブルを用いてメモリ内で実行されます。これには40種類以上の特殊化があり、「グループ化キー」のデータ型に応じて自動的に選択されます。
+
+<div id="group-by-optimization-depending-on-table-sorting-key">
+  ### tableのソートキーに応じた GROUP BY の最適化
+</div>
+
+tableが何らかのキーでソートされており、`GROUP BY` 式にソートキーの少なくともプレフィックス、または単射関数が含まれている場合、集約をより効率的に実行できます。この場合、tableから新しいキーを読み込むと、集約の中間結果を確定してクライアントに送信できます。この動作は [optimize&#95;aggregation&#95;in&#95;order](/ja/reference/settings/session-settings#optimize_aggregation_in_order) 設定で有効になります。この最適化により、集約中のメモリ使用量は削減されますが、場合によってはクエリの実行が遅くなることがあります。
+
+<div id="group-by-in-external-memory">
+  ### 外部メモリでの GROUP BY
+</div>
+
+`GROUP BY` 実行時のメモリ使用量を抑えるために、一時データをディスクにダンプするよう有効化できます。
+[max&#95;bytes&#95;before&#95;external&#95;group&#95;by](/ja/reference/settings/session-settings#max_bytes_before_external_group_by) 設定は、`GROUP BY` の一時データをファイルシステムにダンプする RAM 使用量のしきい値を決定します。0 (デフォルト) に設定すると無効になります。
+あるいは、[max&#95;bytes&#95;ratio&#95;before&#95;external&#95;group&#95;by](/ja/reference/settings/session-settings#max_bytes_ratio_before_external_group_by) を設定することもできます。これにより、クエリのメモリ使用量が一定のしきい値に達した場合にのみ、外部メモリでの `GROUP BY` を使用できます。
+
+`max_bytes_before_external_group_by` を使用する場合は、`max_memory_usage` をその約 2 倍に設定することを推奨します (または `max_bytes_ratio_before_external_group_by=0.5`) 。これは、集約には 2 つの段階があるためです。1 つ目はデータの読み込みと中間データの生成、2 つ目は中間データのマージです。ファイルシステムへのデータのダンプが発生するのは、段階 1 の間だけです。一時データがダンプされなかった場合、段階 2 では段階 1 と同程度のメモリが必要になる可能性があります。
+
+たとえば、[max&#95;memory&#95;usage](/ja/reference/settings/session-settings#max_memory_usage) を 10000000000 に設定し、外部集約を使用したい場合は、`max_bytes_before_external_group_by` を 10000000000、`max_memory_usage` を 20000000000 に設定するのが合理的です。外部集約がトリガーされた場合 (一時データのダンプが少なくとも 1 回発生していれば) 、RAM の最大消費量は `max_bytes_before_external_group_by` をわずかに上回る程度にとどまります。
+
+分散クエリ処理では、外部集約はリモートサーバーで実行されます。リクエスト元のサーバーが使用する RAM を少量に抑えるには、`distributed_aggregation_memory_efficient` を 1 に設定します。
+
+ディスクに書き出されたデータをマージする場合や、`distributed_aggregation_memory_efficient` 設定が有効なときにリモートサーバーからの結果をマージする場合に消費される RAM は、合計 RAM 量のうち最大で `1/256 * the_number_of_threads` です。
+
+外部集約が有効でも、データ量が `max_bytes_before_external_group_by` 未満であれば (つまりデータがディスクに書き出されなければ) 、クエリは外部集約を使わない場合と同じ速度で実行されます。一時データが書き出された場合、実行時間は数倍長くなります (およそ 3 倍) 。
+
+`GROUP BY` の後に [LIMIT](/ja/reference/statements/select/limit) 付きの [ORDER BY](/ja/reference/statements/select/order-by) がある場合、使用される RAM 量はテーブル全体ではなく `LIMIT` のデータ量に依存します。ただし、`ORDER BY` に `LIMIT` がない場合は、外部ソート (`max_bytes_before_external_sort`) を有効にすることを忘れないでください。

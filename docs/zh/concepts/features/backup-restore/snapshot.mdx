@@ -1,0 +1,244 @@
+---
+description: '如何使用云对象存储创建和恢复云原生表的轻量级快照。'
+sidebarTitle: '快照备份'
+slug: /operations/backup/snapshot
+title: '快照备份与恢复'
+doc_type: 'guide'
+keywords: ['snapshot', 'backup', 'restore', 'SharedMergeTree', 'SharedSet', 'SharedJoin', 'lightweight backup', 'cloud backup', 'S3', 'Azure Blob Storage', 'snapshot_locks', 'snapshot_parts', 'experimental_lightweight_snapshot']
+---
+
+快照备份是一种适用于云原生表引擎的轻量级备份模式。它不会复制数据，而是将每个 part 对应的锁节点写入 ClickHouse Keeper。这些锁会在快照保留期间阻止服务器删除被引用的对象存储 parts。随后，备份只记录对象存储引用，而不实际复制任何数据，因此无论表有多大，都能快速创建快照。
+
+轻量级备份路径适用于 [SharedMergeTree](/zh/products/cloud/features/infrastructure/shared-merge-tree)、SharedSet 和 SharedJoin 表。对于所有其他引擎类型——例如日志或 Memory——备份会自动回退为标准的复制式备份。
+
+<div id="create-a-snapshot">
+  ## 创建快照
+</div>
+
+快照备份 使用标准的 [`BACKUP`](/zh/concepts/features/backup-restore/overview#syntax) 命令，并将 `experimental_lightweight_snapshot = true`。`id` 设置是必需的——它用于为快照命名，并在解锁和可观测性命令中引用该快照：
+
+```sql
+BACKUP { TABLE [db.]table_name | DATABASE db_name | ALL [EXCEPT {TABLES | DATABASES} ...] }
+TO { S3(...) | AzureBlobStorage(...) }
+SETTINGS experimental_lightweight_snapshot = true, id = '<snapshot_id>'
+```
+
+该命令会返回 `id` 和 `status`，可使用 `id` 在 [`system.backups`](/zh/reference/system-tables/backups) 中跟踪该操作。
+
+将单个表备份到 S3：
+
+```sql
+BACKUP TABLE mydb.events
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'events_snapshot_1'
+```
+
+备份整个数据库：
+
+```sql
+BACKUP DATABASE mydb
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/mydb/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'mydb_snapshot_1'
+```
+
+备份所有表，但跳过其中一个：
+
+```sql
+BACKUP ALL
+EXCEPT TABLES mydb.staging_table
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/full/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'full_snapshot_1'
+```
+
+同样的命令也适用于 Azure Blob 存储：
+
+```sql
+BACKUP TABLE mydb.events
+TO AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=...', 'my-container', 'snapshots/events/')
+SETTINGS experimental_lightweight_snapshot = true, id = 'events_snapshot_1'
+```
+
+<div id="restore-to-same-service">
+  ## 恢复到同一服务
+</div>
+
+由于快照保存的是对象存储中文件的引用，而不是数据副本，因此要恢复到新的或其他 ClickHouse 服务，就必须能够访问原始对象存储。正因如此，不支持通过 SQL 执行跨服务恢复——只能通过 UI 进行。通过 SQL，你可以使用 `snapshot_from_current_service = 1`，从外部备份 bucket 将快照恢复到同一服务。这样会经由目标端磁盘直接读取对象，而不是通过远程快照读取器：
+
+```sql
+RESTORE TABLE mydb.events AS mydb.events_restored
+FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS snapshot_from_current_service = 1
+```
+
+The `AS` 子句会将数据恢复到一个新的表名下，原始表保持不变。若要覆盖原始表，请先将其删除：
+
+```sql
+DROP TABLE mydb.events;
+
+RESTORE TABLE mydb.events
+FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS snapshot_from_current_service = 1
+```
+
+<div id="unlock-snapshot">
+  ## 解锁快照
+</div>
+
+每个快照都会在 ClickHouse Keeper 中持有锁，防止其引用的对象存储文件被垃圾回收。在 恢复 完成后，或当某个快照不再需要时，应将其解锁以释放这些锁。
+
+解锁分为两种形式：一种是系统级解锁，一次性移除该快照的所有锁；另一种是按表解锁，只移除单个表的锁，同时保持快照其余部分不变。
+
+**系统级解锁** — 移除该快照的所有锁：
+
+```sql
+SYSTEM UNLOCK SNAPSHOT '<snapshot_id>'
+FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+```
+
+**单表解锁** — 仅移除单个表的锁：
+
+```sql
+ALTER TABLE mydb.events UNLOCK SNAPSHOT '<snapshot_id>'
+FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+```
+
+如果创建快照时已将快照目标端存储在 Keeper 中，则 `FROM` 子句为可选项 (可在 `system.snapshot_locks` 的 `info` 列中查看) ：
+
+```sql
+SYSTEM UNLOCK SNAPSHOT '<snapshot_id>'
+
+-- 或按表级别：
+ALTER TABLE mydb.events UNLOCK SNAPSHOT '<snapshot_id>'
+```
+
+解锁后，相应的行会从 `system.snapshot_locks` 中消失，而不再被其他快照引用的 parts 也会从 `system.snapshot_parts` 中消失。
+
+<div id="observability">
+  ## 可观测性
+</div>
+
+<div id="system-backups">
+  ### system.backups
+</div>
+
+所有快照操作都会显示在 [`system.backups`](/zh/reference/system-tables/backups) 中，与常规的备份和恢复操作一并列出。使用你设置的 `id` (或命令返回的 UUID) 查询即可：
+
+```sql
+SELECT id, name, status, error, start_time, end_time, num_files, uncompressed_size, compressed_size
+FROM system.backups
+WHERE id = 'events_snapshot_1'
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+id:                events_snapshot_1
+name:              S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', '[HIDDEN]')
+status:            BACKUP_CREATED
+error:
+start_time:        2024-06-01 10:00:00
+end_time:          2024-06-01 10:00:03
+num_files:         42
+uncompressed_size: 1073741824
+compressed_size:   0
+```
+
+<div id="system-snapshot-locks">
+  ### system.snapshot_locks
+</div>
+
+`system.snapshot_locks` 显示当前在 Keeper 中注册的已提交快照。当快照被提交时，会在 `/clickhouse/snapshot/committed/{snapshot_id}` 下创建一个 Keeper 节点。在删除任何数据分区片段之前，服务器会检查是否有某个已提交快照持有该分区片段的锁。如果有，则会跳过删除。该锁会一直保留，直到你显式对该快照执行解锁。
+
+```sql
+SELECT *
+FROM system.snapshot_locks
+```
+
+| 列           | 类型         | 描述                    |
+| ----------- | ---------- | --------------------- |
+| `id`        | `String`   | 快照 ID                 |
+| `info`      | `String`   | 快照目标位置，例如 `S3('...')` |
+| `ctime`     | `DateTime` | 此锁在 Keeper 中的创建时间     |
+| `lock_path` | `String`   | 此锁的 Keeper 路径         |
+
+每一行代表一个已提交的快照。如果你看到某些快照锁对应的 backup destination 已不再有效，请运行 `SYSTEM UNLOCK SNAPSHOT` 将其清理掉。
+
+要检查某个特定快照锁是否存在：
+
+```sql
+SELECT id, info, lock_path
+FROM system.snapshot_locks
+WHERE id = 'events_snapshot_1'
+```
+
+<div id="system-snapshot-parts">
+  ### system.snapshot_parts
+</div>
+
+`system.snapshot_parts` 显示当前被至少一个快照锁固定的数据分区片段。对于每个被锁定的数据分区片段，`/clickhouse/snapshot/{table_uuid}/{part_name}` 处都会有一个 Keeper 节点，其中包含该分区片段的压缩大小和未压缩大小。此表通过读取这些节点，显示当前哪些数据分区片段受保护而不会被删除。
+
+```sql
+SELECT *
+FROM system.snapshot_parts
+ORDER BY data_compressed_bytes DESC
+LIMIT 20
+```
+
+| 列                         | 类型       | 描述              |
+| ------------------------- | -------- | --------------- |
+| `name`                    | `String` | 数据分区片段名称        |
+| `table_id`                | `String` | 该分区片段所属表的 UUID  |
+| `data_compressed_bytes`   | `UInt64` | 该分区片段的压缩后大小     |
+| `data_uncompressed_bytes` | `UInt64` | 该分区片段的未压缩大小     |
+| `snapshots_size`          | `UInt64` | 当前持有该分区片段锁的快照数量 |
+
+`snapshots_size > 1` 的数据分区片段被多个快照引用，在所有持有锁的快照都解锁之前，不会从对象存储中删除。
+
+要检查被固定的存储总量：
+
+```sql
+SELECT
+    formatReadableSize(sum(data_compressed_bytes)) AS total_pinned_compressed,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS total_pinned_uncompressed,
+    count() AS parts_count
+FROM system.snapshot_parts
+```
+
+要查找被快照锁定、但已删除或在服务器上已不再活跃的 parts——也就是说，仅因快照锁而保留在对象存储中的数据：
+
+```sql
+SELECT
+    count(*),
+    sum(data_uncompressed_bytes)
+FROM system.snapshot_parts
+WHERE (name, table_id) NOT IN (
+    SELECT
+        name,
+        toString(tables.uuid)
+    FROM system.parts
+    INNER JOIN system.tables ON (parts.`table` = tables.name) AND parts.active
+)
+```
+
+```response
+┌─count()─┬─sum(data_uncompressed_bytes)─┐
+│    1000 │                        96037 │
+└─────────┴──────────────────────────────┘
+```
+
+这有助于了解在原始数据更改或删除后保留快照会带来多少存储开销。
+
+<div id="server-settings">
+  ## 服务器设置
+</div>
+
+以下服务器配置参数用于控制快照行为。它们在服务器配置文件中设置，而不是在 SQL 中设置。
+
+| 设置                                                                                                                                    | 类型     | 默认值   | 无需重启即可更改 | 描述                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ------ | ----- | -------- | -------------------------------------------------------------------------- |
+| [`max_held_snapshots`](/zh/reference/settings/server-settings/settings#max_held_snapshots)                                               | UInt64 | `0`   | 否        | 可同时保留的轻量级快照的最大数量。`0` 表示不受限制。如果达到上限，创建新快照时会抛出异常。                            |
+| [`max_snapshot_commit_thread_pool_size`](/zh/reference/settings/server-settings/settings#max_snapshot_commit_thread_pool_size)           | UInt64 | `64`  | 是        | 用于将快照锁节点提交到 Keeper 的线程数。如果在包含大量 parts 的大表上创建快照较慢，请增大此值。                    |
+| [`max_snapshot_commit_thread_pool_free_size`](/zh/reference/settings/server-settings/settings#max_snapshot_commit_thread_pool_free_size) | UInt64 | `0`   | 是        | 如果快照提交线程池中的空闲线程数超过此值，ClickHouse 会释放这些线程并缩减线程池。线程会在有需要时重新创建。`0` 表示永不释放空闲线程。 |
+| [`snapshot_cleaner_period`](/zh/reference/settings/server-settings/settings#snapshot_cleaner_period)                                     | UInt64 | `120` | 否        | 快照清理器的运行频率 (单位为秒) ，用于移除不再被任何快照锁引用的 parts。仅适用于 ClickHouse Cloud。            |
+| [`snapshot_cleaner_pool_size`](/zh/reference/settings/server-settings/settings#snapshot_cleaner_pool_size)                               | UInt64 | `128` | 否        | 快照清理器线程池中的线程数。仅适用于 ClickHouse Cloud。                                       |

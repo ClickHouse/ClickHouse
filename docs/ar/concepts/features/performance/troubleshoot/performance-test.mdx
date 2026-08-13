@@ -1,0 +1,36 @@
+---
+description: 'دليل لاختبار أداء الأجهزة وإجراء قياس الأداء باستخدام ClickHouse'
+sidebarTitle: 'اختبار الأجهزة'
+slug: /operations/performance-test
+title: 'كيفية اختبار أجهزتك باستخدام ClickHouse'
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/ar/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+يمكنك إجراء اختبار أساسي لأداء ClickHouse على أي خادم دون تثبيت حزم ClickHouse.
+
+<div id="automated-run">
+  ## التشغيل الآلي
+</div>
+
+يمكنك تشغيل الاختبار المعياري باستخدام برنامج نصي واحد.
+
+1. نزّل البرنامج النصي.
+
+```bash
+wget https://raw.githubusercontent.com/ClickHouse/ClickBench/main/hardware/hardware.sh
+```
+
+2. شغّل البرنامج النصي.
+
+```bash
+chmod a+x ./hardware.sh
+./hardware.sh
+```
+
+3. انسخ الناتج وأرسله إلى feedback@clickhouse.com
+
+تُنشر جميع النتائج هنا: https://clickhouse.com/benchmark/hardware/
