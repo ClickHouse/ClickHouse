@@ -78,9 +78,17 @@ public:
 
         bool hasPartitionWildcard() const;
         bool hasSchemaHashWildcard() const;
+        /// Deliberately has no setting-aware variant: it classifies persisted table metadata
+        /// (partition strategy validation, the readonly guard for writes/truncate), which must
+        /// not change meaning with the per-query `use_glob_ast_parser` setting.
         bool hasGlobsIgnorePlaceholders() const;
         bool hasGlobs() const;
+        /// Setting-aware variant for read/listing paths: with use_glob_ast the path is
+        /// classified by the AST parser, under which a literal brace group such as "{a}"
+        /// is not a glob. Pass the same use_glob_ast_parser value that drives the matcher.
+        bool hasGlobs(bool use_glob_ast) const;
         std::string cutGlobs(bool supports_partial_prefix) const;
+        std::string cutGlobs(bool supports_partial_prefix, bool use_glob_ast) const;
     };
 
     using Paths = std::vector<Path>;
@@ -140,6 +148,9 @@ public:
 
     virtual bool isArchive() const { return false; }
     bool isPathInArchiveWithGlobs() const;
+    /// Setting-aware variant: classifies the path inside the archive with the parser
+    /// selected by use_glob_ast_parser in the given context.
+    bool isPathInArchiveWithGlobs(const ContextPtr & context) const;
     virtual std::string getPathInArchive() const;
 
     virtual void check(ContextPtr context);

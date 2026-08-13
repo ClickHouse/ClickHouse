@@ -50,7 +50,10 @@ std::shared_ptr<StorageObjectStorage>
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
 {
     const auto context = args.getLocalContext();
-    StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
+    /// Stored tables classify their persisted path with the legacy glob parser regardless of
+    /// the session `use_glob_ast_parser` (see `contextWithPinnedGlobParser`).
+    StorageObjectStorageConfiguration::initialize(
+        *configuration, args.engine_args, contextWithPinnedGlobParser(context), false, &args.table_id);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current

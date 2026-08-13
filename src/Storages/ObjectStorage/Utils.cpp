@@ -348,5 +348,16 @@ extern const SettingsUInt64 max_download_buffer_size;
 extern const SettingsBool use_cache_for_count_from_files;
 extern const SettingsString filesystem_cache_name;
 extern const SettingsUInt64 filesystem_cache_boundary_alignment;
+extern const SettingsBool use_glob_ast_parser;
+}
+
+ContextPtr contextWithPinnedGlobParser(const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::use_glob_ast_parser])
+        return context;
+
+    auto pinned = Context::createCopy(context);
+    pinned->setSetting("use_glob_ast_parser", false);
+    return pinned;
 }
 }

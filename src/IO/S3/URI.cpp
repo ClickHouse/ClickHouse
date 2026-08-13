@@ -32,7 +32,7 @@ namespace ErrorCodes
 namespace S3
 {
 
-URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_presigned_query_parameters, S3UriStyle uri_style)
+URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_presigned_query_parameters, S3UriStyle uri_style, bool use_glob_ast_parser)
 {
     /// Case when AWS Private Link Interface is being used
     /// E.g. (bucket.vpce-07a1cd78f1bd55c5f-j3a3vg6w.s3.us-east-1.vpce.amazonaws.com/bucket-name/key)
@@ -40,7 +40,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
     static const RE2 aws_private_link_style_pattern(R"(bucket\.vpce\-([a-z0-9\-.]+)\.vpce\.amazonaws\.com(:\d{1,5})?)");
 
     if (allow_archive_path_syntax)
-        std::tie(uri_str, archive_pattern) = getURIAndArchivePattern(uri_);
+        std::tie(uri_str, archive_pattern) = getURIAndArchivePattern(uri_, use_glob_ast_parser);
     else
         uri_str = uri_;
 

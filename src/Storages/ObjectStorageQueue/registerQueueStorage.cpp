@@ -8,6 +8,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Formats/FormatFactory.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageFactory.h>
@@ -53,7 +54,10 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     auto configuration = std::make_shared<Configuration>();
     /// Parse with the create context so a `SETTINGS s3_allow_server_credentials_in_user_queries = 1` on the
     /// `CREATE` is honored (see `StorageS3Configuration::fromAST`); the processing context stays global below.
-    StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, args.getLocalContext(), false, &args.table_id);
+    /// The persisted path is classified with the legacy glob parser regardless of the session
+    /// `use_glob_ast_parser`, consistent with the fully pinned queue read path.
+    StorageObjectStorageConfiguration::initialize(
+        *configuration, args.engine_args, contextWithPinnedGlobParser(args.getLocalContext()), false, &args.table_id);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current

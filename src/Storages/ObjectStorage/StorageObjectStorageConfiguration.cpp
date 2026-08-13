@@ -6,6 +6,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
+#include <Common/parseGlobs.h>
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
@@ -32,6 +33,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsFileLikeEngineDefaultPartitionStrategy file_like_engine_default_partition_strategy;
+    extern const SettingsBool use_glob_ast_parser;
 }
 
 void StorageObjectStorageConfiguration::update( ///NOLINT
@@ -259,6 +261,9 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
         columns.getOrdinary(),
         context,
         format,
+        /// Deliberately setting-independent: this classifies persisted table metadata, and the same
+        /// stored path is revalidated on ATTACH / server startup / replicated-DDL replay with a
+        /// different context. Whether a table can start must not depend on `use_glob_ast_parser`.
         getRawPath().hasGlobsIgnorePlaceholders(),
         getRawPath().hasPartitionWildcard(),
         partition_columns_in_data_file);
@@ -315,14 +320,27 @@ bool StorageObjectStorageConfiguration::Path::hasGlobs() const
     return path.find_first_of("*?{") != std::string::npos;
 }
 
+bool StorageObjectStorageConfiguration::Path::hasGlobs(bool use_glob_ast) const
+{
+    if (!use_glob_ast)
+        return hasGlobs();
+    return GlobAST::GlobString(path).hasGlobs();
+}
+
 std::string StorageObjectStorageConfiguration::Path::cutGlobs(bool supports_partial_prefix) const
 {
-    if (supports_partial_prefix)
-    {
-        return path.substr(0, path.find_first_of("*?{"));
-    }
+    return cutGlobs(supports_partial_prefix, /*use_glob_ast=*/ false);
+}
 
-    auto first_glob_pos = path.find_first_of("*?{");
+std::string StorageObjectStorageConfiguration::Path::cutGlobs(bool supports_partial_prefix, bool use_glob_ast) const
+{
+    const size_t first_glob_pos = use_glob_ast
+        ? GlobAST::GlobString(path).firstGlobPosition()
+        : path.find_first_of("*?{");
+
+    if (supports_partial_prefix)
+        return path.substr(0, first_glob_pos);
+
     auto end_of_path_without_globs = path.substr(0, first_glob_pos).rfind('/');
     if (end_of_path_without_globs == std::string::npos || end_of_path_without_globs == 0)
         return "/";
@@ -346,6 +364,13 @@ bool StorageObjectStorageConfiguration::isNamespaceWithGlobs() const
 bool StorageObjectStorageConfiguration::isPathInArchiveWithGlobs() const
 {
     return getPathInArchive().find_first_of("*?{") != std::string::npos;
+}
+
+bool StorageObjectStorageConfiguration::isPathInArchiveWithGlobs(const ContextPtr & context) const
+{
+    if (!context->getSettingsRef()[Setting::use_glob_ast_parser])
+        return isPathInArchiveWithGlobs();
+    return GlobAST::GlobString(getPathInArchive()).hasGlobs();
 }
 
 std::string StorageObjectStorageConfiguration::getPathInArchive() const

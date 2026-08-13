@@ -64,7 +64,6 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
-#include <Common/re2.h>
 #include <Common/ErrnoException.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <base/defines.h>
@@ -107,6 +106,8 @@ namespace Setting
     extern const SettingsBool engine_file_empty_if_not_exists;
     extern const SettingsBool engine_file_skip_empty_files;
     extern const SettingsBool engine_file_truncate_on_insert;
+    extern const SettingsUInt64 glob_expansion_max_elements;
+    extern const SettingsBool use_glob_ast_parser;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsMaxThreads max_parsing_threads;
@@ -145,7 +146,6 @@ namespace ErrorCodes
     extern const int CANNOT_APPEND_TO_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int CANNOT_DETECT_FORMAT;
-    extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNSUPPORTED_METHOD;
     extern const int TOO_DEEP_RECURSION;
 }
@@ -167,7 +167,8 @@ void listFilesWithRegexpMatchingImpl(
     std::vector<std::string> & result,
     std::unordered_set<std::string> & matched_paths,
     bool recursive,
-    size_t depth)
+    size_t depth,
+    bool use_glob_ast)
 {
     if (depth > MAX_LIST_FILES_RECURSION_DEPTH)
         throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
@@ -192,7 +193,12 @@ void listFilesWithRegexpMatchingImpl(
         }
     };
 
-    const size_t first_glob_pos = for_match.find_first_of("*?{");
+    /// Split at the first glob under the matcher's classification: a literal brace path
+    /// like "data_{x}.csv" must take the exact-path branch below, not directory enumeration
+    /// (which e.g. cannot find a readable file inside an unlistable directory).
+    const size_t first_glob_pos = use_glob_ast
+        ? GlobAST::GlobString(for_match).firstGlobPosition()
+        : for_match.find_first_of("*?{");
 
     if (first_glob_pos == std::string::npos)
     {
@@ -228,12 +234,16 @@ void listFilesWithRegexpMatchingImpl(
 
     const std::string current_glob = suffix_with_globs.substr(0, next_slash_after_glob_pos);
 
-    auto regexp = makeRegexpPatternFromGlobs(current_glob);
+    std::optional<GlobMatcher> glob_matcher;
+    if (use_glob_ast)
+        glob_matcher.emplace(GlobMatcher::createNew(current_glob));
+    else
+        glob_matcher.emplace(GlobMatcher::createLegacy(current_glob));
 
-    re2::RE2 matcher(regexp);
-    if (!matcher.ok())
-        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-            "Cannot compile regex from glob ({}): {}", for_match, matcher.error());
+    auto matches_name = [&](const String & name) -> bool
+    {
+        return glob_matcher->matches(name);
+    };
 
     bool skip_regex = current_glob == "/*";
     if (!recursive)
@@ -253,7 +263,7 @@ void listFilesWithRegexpMatchingImpl(
     /// (`recursive` is `false`) to avoid producing the same results twice.
     if (current_glob == "/**" && looking_for_directory)
         listFilesWithRegexpMatchingImpl(prefix_without_globs + "/", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                        total_bytes_to_read, result, matched_paths, false, depth + 1);
+                                        total_bytes_to_read, result, matched_paths, false, depth + 1, use_glob_ast);
 
     const fs::directory_iterator end;
     std::error_code ec;
@@ -271,7 +281,7 @@ void listFilesWithRegexpMatchingImpl(
         /// Condition is_directory means what kind of path is it in current iteration of ls
         if (!it->is_directory() && !looking_for_directory)
         {
-            if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
+            if (skip_regex || matches_name(file_name))
             {
                 const size_t file_size = it->file_size(ec);
                 if (ec)
@@ -302,22 +312,57 @@ void listFilesWithRegexpMatchingImpl(
                     : (looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob);
                 listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
                                                 descent_pattern,
-                                                total_bytes_to_read, result, matched_paths, recursive, depth + 1);
+                                                total_bytes_to_read, result, matched_paths, recursive, depth + 1, use_glob_ast);
             }
-            else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
+            else if (looking_for_directory && matches_name(file_name))
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, result, matched_paths, false, depth + 1);
+                                                total_bytes_to_read, result, matched_paths, false, depth + 1, use_glob_ast);
         }
     }
 }
 
 std::vector<std::string> listFilesWithRegexpMatching(
     const std::string & for_match,
-    size_t & total_bytes_to_read)
+    size_t & total_bytes_to_read,
+    size_t max_expansion,
+    bool use_glob_ast,
+    bool * unexpanded_glob_fallback = nullptr)
 {
     std::vector<std::string> result;
 
-    Strings for_match_paths_expanded = expandSelectionGlob(for_match);
+    Strings for_match_paths_expanded;
+    if (use_glob_ast)
+    {
+        GlobAST::GlobString glob(for_match);
+        /// When the expansion exceeds the budget, traverse the unexpanded pattern once
+        /// (enums are then matched per directory level) instead of throwing. This collapses
+        /// overlapping enum alternatives (e.g. `{top,top}.csv` matches `top.csv` once instead
+        /// of twice), so the caller cannot derive the glob classification from the number of
+        /// returned paths anymore — report the fallback so the source stays readonly.
+        if (glob.expansionSize() <= max_expansion)
+        {
+            for_match_paths_expanded = glob.expand(max_expansion);
+        }
+        else
+        {
+            /// The unexpanded traversal splits the pattern at every raw '/', so an enum whose
+            /// alternatives span path segments (e.g. `{a/b,c/d}.csv`) would be cut apart and
+            /// match nothing. Fail closed instead of silently returning the wrong file set.
+            if (glob.hasSlashInsideEnums())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Glob expansion of `{}` would produce more than {} paths, and its enum alternatives span path "
+                    "segments, so the pattern cannot be matched without expansion. "
+                    "Consider simplifying the glob pattern or increasing the `glob_expansion_max_elements` setting.",
+                    for_match, max_expansion);
+
+            for_match_paths_expanded = {for_match};
+            if (unexpanded_glob_fallback)
+                *unexpanded_glob_fallback = true;
+        }
+    }
+    else
+        for_match_paths_expanded = expandSelectionGlob(for_match);
 
     for (const auto & for_match_expanded : for_match_paths_expanded)
     {
@@ -327,7 +372,7 @@ std::vector<std::string> listFilesWithRegexpMatching(
         /// (e.g. `{top,top}.tsv` or `{a*,*}`) keep their pre-existing behavior of reading the
         /// same concrete file once per alternative, rather than being silently collapsed.
         std::unordered_set<std::string> matched_paths;
-        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, matched_paths, false, 0);
+        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, matched_paths, false, 0, use_glob_ast);
     }
 
     return result;
@@ -363,7 +408,7 @@ void checkCreationIsAllowed(
 /// Splits the archive syntax (e.g. "archive.zip::file*.parquet") into
 /// the first ("archive.zip") and second ("file*.parquet") parts.
 /// If the source string doesn't follow the archive syntax, the function just returns it in the second part.
-std::pair<String, String> splitToArchivePathAndPathInArchive(const String & source)
+std::pair<String, String> splitToArchivePathAndPathInArchive(const String & source, bool use_glob_ast)
 {
     size_t pos = source.find("::");
     if (pos == String::npos)
@@ -382,15 +427,25 @@ std::pair<String, String> splitToArchivePathAndPathInArchive(const String & sour
 
     /// possible situations when the first part can be archive is only if one of the following is true:
     /// - it contains supported archive extension
-    /// - it contains characters that could mean glob expression
-    if (!hasSupportedArchiveExtension(path_to_archive_view) && path_to_archive_view.find_first_of("*?{") == std::string_view::npos)
+    /// - it contains a glob expression under the selected glob parser (e.g. `data_{x}` is a glob
+    ///   for the legacy parser but literal text for the AST parser)
+    const bool archive_path_has_globs = use_glob_ast
+        ? GlobAST::GlobString(String{path_to_archive_view}).hasGlobs()
+        : path_to_archive_view.find_first_of("*?{") != std::string_view::npos;
+    if (!hasSupportedArchiveExtension(path_to_archive_view) && !archive_path_has_globs)
         return {{}, source};
 
     return {String{path_to_archive_view}, String{filename_view}};
 }
 
 /// Finds files matching a specified pattern with globs.
-Strings getPathsList(const String & path_with_globs, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read)
+Strings getPathsList(
+    const String & path_with_globs,
+    const String & user_files_path,
+    const ContextPtr & context,
+    size_t & total_bytes_to_read,
+    bool use_glob_ast,
+    bool * unexpanded_glob_fallback = nullptr)
 {
     fs::path user_files_absolute_path = fs::weakly_canonical(user_files_path);
     fs::path fs_pattern(path_with_globs);
@@ -398,6 +453,8 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
         fs_pattern = user_files_absolute_path / fs_pattern;
 
     Strings paths;
+
+    const size_t max_expansion = context->getSettingsRef()[Setting::glob_expansion_max_elements];
 
     /// Do not use fs::canonical or fs::weakly_canonical.
     /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
@@ -410,7 +467,7 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
         /// so we don't make a list of files here.
         paths.push_back(pattern);
     }
-    else if (pattern.find_first_of("*?{") == std::string::npos)
+    else if (use_glob_ast ? !GlobAST::GlobString(pattern).hasGlobs() : pattern.find_first_of("*?{") == std::string::npos)
     {
         if (!fs::is_directory(pattern))
         {
@@ -424,14 +481,14 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
         else
         {
             /// We list non-directory files under that directory.
-            paths = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read);
+            paths = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read, max_expansion, use_glob_ast);
             can_be_directory = false;
         }
     }
     else
     {
         /// We list only non-directory files.
-        paths = listFilesWithRegexpMatching(pattern, total_bytes_to_read);
+        paths = listFilesWithRegexpMatching(pattern, total_bytes_to_read, max_expansion, use_glob_ast, unexpanded_glob_fallback);
         can_be_directory = false;
     }
 
@@ -448,27 +505,33 @@ StorageFile::ArchiveInfo getArchiveInfo(
     const std::string & file_in_archive,
     const std::string & user_files_path,
     const ContextPtr & context,
-    size_t & total_bytes_to_read
+    size_t & total_bytes_to_read,
+    bool use_glob_ast
 )
 {
     StorageFile::ArchiveInfo archive_info;
     archive_info.path_in_archive = file_in_archive;
 
-    if (file_in_archive.find_first_of("*?{") != std::string::npos)
+    if (use_glob_ast)
     {
-        auto matcher = std::make_shared<re2::RE2>(makeRegexpPatternFromGlobs(file_in_archive));
-        if (!matcher->ok())
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-                "Cannot compile regex from glob ({}): {}", file_in_archive, matcher->error());
+        auto glob_string = std::make_unique<GlobAST::GlobString>(file_in_archive);
 
-        archive_info.filter = [matcher, matcher_mutex = std::make_shared<std::mutex>()](const std::string & p) mutable
+        if (glob_string->hasGlobs())
         {
-            std::lock_guard lock(*matcher_mutex);
-            return re2::RE2::FullMatch(p, *matcher);
-        };
+            auto matcher = std::make_shared<GlobMatcher>(GlobMatcher::createNew(std::move(glob_string)));
+            archive_info.filter = [matcher](const std::string & p) { return matcher->matches(p); };
+        }
+    }
+    else
+    {
+        if (file_in_archive.find_first_of("*?{") != std::string::npos)
+        {
+            auto matcher = std::make_shared<GlobMatcher>(GlobMatcher::createLegacy(file_in_archive));
+            archive_info.filter = [matcher](const std::string & p) { return matcher->matches(p); };
+        }
     }
 
-    archive_info.paths_to_archives = getPathsList(path_to_archive, user_files_path, context, total_bytes_to_read);
+    archive_info.paths_to_archives = getPathsList(path_to_archive, user_files_path, context, total_bytes_to_read, use_glob_ast);
 
     return archive_info;
 }
@@ -1077,7 +1140,7 @@ namespace
     };
 }
 
-StorageFile::FileSource StorageFile::FileSource::parse(const String & source, const ContextPtr & context, std::optional<bool> allow_archive_path_syntax)
+StorageFile::FileSource StorageFile::FileSource::parse(const String & source, const ContextPtr & context, std::optional<bool> allow_archive_path_syntax, std::optional<bool> use_glob_ast_parser)
 {
     String filename;
     String path_to_archive;
@@ -1085,20 +1148,29 @@ StorageFile::FileSource StorageFile::FileSource::parse(const String & source, co
     if (!allow_archive_path_syntax)
         allow_archive_path_syntax = context->getSettingsRef()[Setting::allow_archive_path_syntax];
 
+    if (!use_glob_ast_parser)
+        use_glob_ast_parser = context->getSettingsRef()[Setting::use_glob_ast_parser];
+
     if (*allow_archive_path_syntax)
-        std::tie(path_to_archive, filename) = splitToArchivePathAndPathInArchive(source);
+        std::tie(path_to_archive, filename) = splitToArchivePathAndPathInArchive(source, *use_glob_ast_parser);
     else
         filename = source;
 
     FileSource res;
     String user_files_path = context->getUserFilesPath();
 
-    if (!path_to_archive.empty())
-        res.archive_info = getArchiveInfo(path_to_archive, filename, user_files_path, context, res.total_bytes_to_read);
-    else
-        res.paths = getPathsList(filename, user_files_path, context, res.total_bytes_to_read);
+    /// Set when the pattern's enum expansion exceeded `glob_expansion_max_elements` and the
+    /// listing traversed the unexpanded pattern instead: the path count then underestimates
+    /// the expansion multiplicity (overlapping alternatives collapse), so the source must be
+    /// classified as globbed regardless of how many paths matched.
+    bool unexpanded_glob_fallback = false;
 
-    res.with_globs = res.paths.size() > 1;
+    if (!path_to_archive.empty())
+        res.archive_info = getArchiveInfo(path_to_archive, filename, user_files_path, context, res.total_bytes_to_read, *use_glob_ast_parser);
+    else
+        res.paths = getPathsList(filename, user_files_path, context, res.total_bytes_to_read, *use_glob_ast_parser, &unexpanded_glob_fallback);
+
+    res.with_globs = res.paths.size() > 1 || unexpanded_glob_fallback;
 
     if (res.archive_info)
     {
@@ -2776,7 +2848,14 @@ void registerStorageFile(StorageFactory & factory)
                 else if (type == Field::Types::UInt64)
                     source_fd = static_cast<int>(literal->value.safeGet<UInt64>());
                 else if (type == Field::Types::String)
-                    file_source = StorageFile::FileSource::parse(literal->value.safeGet<String>(), factory_args.getLocalContext());
+                    /// The resolved paths and the glob classification become table state that must
+                    /// survive `ATTACH` / server restart / DDL replay unchanged, so pin the legacy,
+                    /// setting-independent glob parser here.
+                    file_source = StorageFile::FileSource::parse(
+                        literal->value.safeGet<String>(),
+                        factory_args.getLocalContext(),
+                        /* allow_archive_path_syntax = */ {},
+                        /* use_glob_ast_parser = */ false);
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be path or file descriptor");
             }

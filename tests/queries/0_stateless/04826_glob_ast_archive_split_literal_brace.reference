@@ -1,0 +1,6 @@
+AST parser reads the exact filename:
+42
+Legacy parser keeps archive syntax (glob archive path matches nothing):
+AST parser writes the exact filename under archive syntax:
+43
+AST parser still takes archive syntax for a real enum glob (matches nothing):

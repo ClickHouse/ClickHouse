@@ -1,12 +1,239 @@
 #include <Common/parseGlobs.h>
+#include <Common/Exception.h>
 #include <Common/re2.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <gtest/gtest.h>
 
+#include <map>
+#include <optional>
+#include <random>
+#include <string>
+
 using namespace DB;
+
+TEST(Common, GlobAST)
+{
+    // Smoke tests.
+    {
+        auto s = GlobAST::GlobString("123");
+        EXPECT_EQ(s.getExpressions().size(), 1);
+        EXPECT_EQ(s.getExpressions().front().type(), GlobAST::ExpressionType::CONSTANT);
+    }
+    {
+        auto s = GlobAST::GlobString("123{123,456,789,234,567,890}");
+        EXPECT_EQ(s.getExpressions().size(), 2);
+        EXPECT_EQ(s.getExpressions().front().type(), GlobAST::ExpressionType::CONSTANT);
+        EXPECT_EQ(s.getExpressions().back().type(), GlobAST::ExpressionType::ENUM);
+        EXPECT_EQ(s.getExpressions().back().cardinality(), 6);
+    }
+    {
+        auto s = GlobAST::GlobString("123{123}{12..23}");
+        EXPECT_EQ(s.getExpressions().size(), 3);
+        EXPECT_EQ(s.getExpressions().front().type(), GlobAST::ExpressionType::CONSTANT);
+        EXPECT_EQ(s.getExpressions().back().type(), GlobAST::ExpressionType::RANGE);
+    }
+    {
+        auto s = GlobAST::GlobString("123{12..23}{1223}");
+        EXPECT_EQ(s.getExpressions().size(), 3);
+        EXPECT_EQ(s.getExpressions().front().type(), GlobAST::ExpressionType::CONSTANT);
+        EXPECT_EQ(s.getExpressions().back().type(), GlobAST::ExpressionType::ENUM);
+    }
+    {
+        /// A single-character brace group is literal text, not a one-element enum
+        /// (parity with the legacy parser, whose enum pattern requires >= 2 chars).
+        auto s = GlobAST::GlobString("{a}");
+        for (const auto & expression : s.getExpressions())
+            EXPECT_EQ(expression.type(), GlobAST::ExpressionType::CONSTANT);
+        EXPECT_EQ(s.dump(), "{a}");
+        EXPECT_FALSE(s.hasEnums());
+    }
+    {
+        /// An enum body may not begin or end with ',' (no empty edge alternative), so
+        /// these are literal text, not enums (legacy parity).
+        for (const auto * glob : {"{a,}", "{,a}", "{,}", "{a,b,}", "{,a,b}"})
+        {
+            auto s = GlobAST::GlobString(glob);
+            EXPECT_FALSE(s.hasEnums()) << "glob=" << glob;
+            EXPECT_EQ(s.dump(), glob) << "glob=" << glob;
+        }
+    }
+    {
+        /// An enum body may not contain a nested '{', so these are literal text.
+        for (const auto * glob : {"{a{b}", "{0b{}", "{1{?}"})
+        {
+            auto s = GlobAST::GlobString(glob);
+            EXPECT_FALSE(s.hasEnums()) << "glob=" << glob;
+            EXPECT_EQ(s.dump(), glob) << "glob=" << glob;
+        }
+    }
+    {
+        /// A range needs digits on both sides; an empty side ("{..1}", "{0..}") is not a
+        /// range but a one-element enum matching the literal body (legacy parity).
+        auto missing_start = GlobAST::GlobString("{..1}");
+        EXPECT_EQ(missing_start.getExpressions().size(), 1);
+        EXPECT_EQ(missing_start.getExpressions().front().type(), GlobAST::ExpressionType::ENUM);
+
+        auto missing_end = GlobAST::GlobString("{0..}");
+        EXPECT_EQ(missing_end.getExpressions().size(), 1);
+        EXPECT_EQ(missing_end.getExpressions().front().type(), GlobAST::ExpressionType::ENUM);
+
+        /// Range endpoints are digits only; a leading sign is not a range ("{+1..2}",
+        /// "{1..+2}"), so the brace body is treated as a literal enum element.
+        for (const auto * glob : {"{+1..2}", "{1..+2}", "{-1..2}"})
+        {
+            auto signed_range = GlobAST::GlobString(glob);
+            EXPECT_EQ(signed_range.getExpressions().size(), 1) << "glob=" << glob;
+            EXPECT_EQ(signed_range.getExpressions().front().type(), GlobAST::ExpressionType::ENUM) << "glob=" << glob;
+        }
+    }
+
+    // Range tests.
+    {
+        auto s = GlobAST::GlobString("f{1..9}");
+        EXPECT_EQ(s.getExpressions().size(), 2);
+        EXPECT_EQ(s.getExpressions().back().type(), GlobAST::ExpressionType::RANGE);
+
+        auto r = std::get<GlobAST::Range>(s.getExpressions().back().getData());
+        EXPECT_EQ(r.start, 1);
+        EXPECT_EQ(r.end, 9);
+    }
+    {
+        auto s = GlobAST::GlobString("f{0..10}");
+        EXPECT_EQ(s.getExpressions().size(), 2);
+        EXPECT_EQ(s.getExpressions().back().type(), GlobAST::ExpressionType::RANGE);
+
+        auto r = std::get<GlobAST::Range>(s.getExpressions().back().getData());
+        EXPECT_EQ(r.start, 0);
+        EXPECT_EQ(r.end, 10);
+    }
+    {
+        auto s = GlobAST::GlobString("f{10..20}");
+        EXPECT_EQ(s.getExpressions().size(), 2);
+        EXPECT_EQ(s.getExpressions().back().type(), GlobAST::ExpressionType::RANGE);
+
+        auto r = std::get<GlobAST::Range>(s.getExpressions().back().getData());
+        EXPECT_EQ(r.start, 10);
+        EXPECT_EQ(r.end, 20);
+    }
+    {
+        auto s = GlobAST::GlobString("f{00..10}");
+        EXPECT_EQ(s.getExpressions().size(), 2);
+        EXPECT_EQ(s.getExpressions().back().type(), GlobAST::ExpressionType::RANGE);
+
+        auto r = std::get<GlobAST::Range>(s.getExpressions().back().getData());
+        EXPECT_EQ(r.start, 0);
+        EXPECT_EQ(r.end, 10);
+        EXPECT_EQ(r.start_digit_count, 2);
+        EXPECT_EQ(r.end_digit_count, 2);
+    }
+    {
+        auto s = GlobAST::GlobString("f{9..000}");
+        EXPECT_EQ(s.getExpressions().size(), 2);
+        EXPECT_EQ(s.getExpressions().back().type(), GlobAST::ExpressionType::RANGE);
+        EXPECT_EQ(s.getExpressions().back().dump(), "{9..000}");
+
+        auto r = std::get<GlobAST::Range>(s.getExpressions().back().getData());
+        EXPECT_EQ(r.start, 9);
+        EXPECT_EQ(r.end, 0);
+        EXPECT_EQ(r.start_digit_count, 1);
+        EXPECT_EQ(r.end_digit_count, 3);
+    }
+}
+
+class GlobASTEchoTest : public ::testing::TestWithParam<std::string> {};
+
+TEST_P(GlobASTEchoTest, EchoTest)
+{
+    const auto & glob = GetParam();
+    EXPECT_EQ(GlobAST::GlobString(glob).dump(), glob);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Common,
+    GlobASTEchoTest,
+    ::testing::Values(
+        // Basic constant
+        "a",
+        "aaa",
+        "file.txt",
+        "/path/to/file",
+        "?",
+        "*",
+        "/?",
+
+        // Single-character brace group is literal text, not an enum
+        "{a}",
+
+        // Simple enum
+        "{test}",
+        "{a,b}",
+        "f{hello,world,one,two,three}",
+        "f{a,b,c,d,e,f,g,h}",
+        "f{test.tar.gz}",
+
+        // Single-element range
+        "{5..5}",
+        "{0..0}",
+        "{00..00}",
+
+        // Ascending numeric ranges
+        "{1..9}",
+        "{0..10}",
+        "{10..20}",
+        "{95..103}",
+        "{99..109}",
+
+        // Descending numeric ranges
+        "{9..1}",
+        "{20..15}",
+        "{200..199}",
+        "{103..95}",
+
+        // Zero-padded ranges
+        "{00..10}",
+        "{000..9}",
+        "{01..9}",
+        "{001..0009}",
+        "{0009..0001}",  // descending with padding
+        "{9..000}",      // mixed digit count
+
+        // Mixed content
+        "f{1..9}",
+        "file{1..5}",
+        "log{2023..2025}.txt",
+        "data{00..99}.csv",
+        "backup_{1..3}{a..c}",
+
+        // Multiple braces
+        "{1..2}{a..b}",
+        "{1..1}{2..2}",
+        "{0..0}{0..0}",
+        "f{1..2}{1..2}",
+        "{a,b}{1,2}",
+        "prefix{a,b}middle{1,2}suffix",
+
+        // Complex patterns
+        "*_{{a,b,c,d}}/?.csv",
+        "{1,2,3}blabla{a.x,b.x,c.x}smth[]_else{aa,bb}?*",
+
+        // Globstars and non-globstar star runs
+        "**/file.txt",
+        "data/**/file.txt",
+        "data/**/sub/**/file.txt",
+        "data/**",
+        "**",
+        "a**/b",
+        "?**/file.txt",
+        "***/file.txt",
+        "**/"
+    )
+);
 
 
 TEST(Common, makeRegexpPatternFromGlobs)
 {
+    EXPECT_EQ(makeRegexpPatternFromGlobs("?"), "[^/]");
+
     EXPECT_EQ(makeRegexpPatternFromGlobs("?"), "[^/]");
     EXPECT_EQ(makeRegexpPatternFromGlobs("*"), "[^/]*");
     EXPECT_EQ(makeRegexpPatternFromGlobs("/?"), "/[^/]");
@@ -88,5 +315,742 @@ TEST(Common, makeRegexpPatternFromGlobs)
         re2::RE2 re(makeRegexpPatternFromGlobs("data/?**/part1.tsv"));
         EXPECT_FALSE(RE2::FullMatch("data/part1.tsv", re));           /// zero directory levels: not matched
         EXPECT_TRUE(RE2::FullMatch("data/sub1/part1.tsv", re));       /// one directory level (name starts with any char)
+    }
+}
+
+TEST(Common, GlobASTExpand)
+{
+    using V = std::vector<std::string>;
+
+    // No globs — single result.
+    EXPECT_EQ(GlobAST::GlobString("file.csv").expand(), V({"file.csv"}));
+
+    // Single enum.
+    EXPECT_EQ(GlobAST::GlobString("file{a,b,c}.csv").expand(), V({"filea.csv", "fileb.csv", "filec.csv"}));
+
+    // Multiple enums — cartesian product.
+    EXPECT_EQ(GlobAST::GlobString("{a,b}{1,2}").expand(), V({"a1", "a2", "b1", "b2"}));
+
+    // Enum with prefix, middle, suffix.
+    EXPECT_EQ(
+        GlobAST::GlobString("prefix{a,b}middle{1,2}suffix").expand(),
+        V({"prefixamiddle1suffix", "prefixamiddle2suffix", "prefixbmiddle1suffix", "prefixbmiddle2suffix"}));
+
+    // Single-element enum — braces are stripped (matches legacy expandSelectionGlob behavior).
+    EXPECT_EQ(GlobAST::GlobString("{test}").expand(), V({"test"}));
+
+    // Wildcards are passed through as literal text.
+    EXPECT_EQ(GlobAST::GlobString("*.csv").expand(), V({"*.csv"}));
+    EXPECT_EQ(GlobAST::GlobString("file?.csv").expand(), V({"file?.csv"}));
+    EXPECT_EQ(GlobAST::GlobString("{a,b}/*.csv").expand(), V({"a/*.csv", "b/*.csv"}));
+
+    // Ranges are passed through as literal text by default (expand_ranges=false).
+    EXPECT_EQ(GlobAST::GlobString("f{1..9}.csv").expand(), V({"f{1..9}.csv"}));
+    EXPECT_EQ(GlobAST::GlobString("{a,b}{1..3}.csv").expand(), V({"a{1..3}.csv", "b{1..3}.csv"}));
+
+    // Ranges are expanded into concrete values with expand_ranges=true.
+    EXPECT_EQ(GlobAST::GlobString("f{1..3}.csv").expand(1000, true), V({"f1.csv", "f2.csv", "f3.csv"}));
+    EXPECT_EQ(GlobAST::GlobString("f{1..1}.csv").expand(1000, true), V({"f1.csv"}));
+    EXPECT_EQ(GlobAST::GlobString("f{3..1}.csv").expand(1000, true), V({"f1.csv", "f2.csv", "f3.csv"}));
+
+    // Ranges with zero-padding.
+    EXPECT_EQ(GlobAST::GlobString("f{01..03}.csv").expand(1000, true), V({"f01.csv", "f02.csv", "f03.csv"}));
+    EXPECT_EQ(GlobAST::GlobString("f{001..003}.csv").expand(1000, true), V({"f001.csv", "f002.csv", "f003.csv"}));
+
+    // Mixed-width padding derives from the lower endpoint (legacy parity):
+    // {0..010} has a one-digit lower endpoint, so values are unpadded.
+    EXPECT_EQ(GlobAST::GlobString("f{0..010}.csv").expand(1000, true),
+              V({"f0.csv", "f1.csv", "f2.csv", "f3.csv", "f4.csv", "f5.csv", "f6.csv", "f7.csv", "f8.csv", "f9.csv", "f10.csv"}));
+    // {00..10} has a two-digit lower endpoint, so values are padded to width 2.
+    EXPECT_EQ(GlobAST::GlobString("f{00..10}.csv").expand(1000, true),
+              V({"f00.csv", "f01.csv", "f02.csv", "f03.csv", "f04.csv", "f05.csv", "f06.csv", "f07.csv", "f08.csv", "f09.csv", "f10.csv"}));
+
+    // Range + enum cartesian product.
+    EXPECT_EQ(GlobAST::GlobString("{a,b}{1..3}.csv").expand(1000, true), V({"a1.csv", "a2.csv", "a3.csv", "b1.csv", "b2.csv", "b3.csv"}));
+
+    // Range cardinality guard.
+    EXPECT_THROW(GlobAST::GlobString("f{1..2000}.csv").expand(100, true), DB::Exception);
+    EXPECT_NO_THROW(GlobAST::GlobString("f{1..100}.csv").expand(1000, true));
+
+    // Parity with old expandSelectionGlob.
+    EXPECT_EQ(GlobAST::GlobString("file{1,2,3}").expand(), expandSelectionGlob("file{1,2,3}"));
+    EXPECT_EQ(
+        GlobAST::GlobString("{a,b}{1,2}").expand(),
+        expandSelectionGlob("{a,b}{1,2}"));
+    EXPECT_EQ(GlobAST::GlobString("{test}").expand(), expandSelectionGlob("{test}"));
+    EXPECT_EQ(GlobAST::GlobString("{a,b,c}").expand(), expandSelectionGlob("{a,b,c}"));
+    EXPECT_EQ(GlobAST::GlobString("prefix{x,y}suffix").expand(), expandSelectionGlob("prefix{x,y}suffix"));
+    EXPECT_EQ(GlobAST::GlobString("{a,b}{c,d}{e,f}").expand(), expandSelectionGlob("{a,b}{c,d}{e,f}"));
+    EXPECT_EQ(GlobAST::GlobString("no_globs.csv").expand(), expandSelectionGlob("no_globs.csv"));
+    EXPECT_EQ(GlobAST::GlobString("file{1,2,3}.csv").expand(), expandSelectionGlob("file{1,2,3}.csv"));
+    EXPECT_EQ(GlobAST::GlobString("prefix{a,b}middle{1,2}suffix").expand(), expandSelectionGlob("prefix{a,b}middle{1,2}suffix"));
+
+    // Cardinality guard.
+    EXPECT_THROW(GlobAST::GlobString("{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}").expand(100), DB::Exception);
+    EXPECT_NO_THROW(GlobAST::GlobString("{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}{1,2,3,4,5,6,7,8,9,10}").expand(1000));
+}
+
+/// Test suite for GlobString::matches() — direct AST-based matching without regex.
+class GlobASTMatchTest : public ::testing::TestWithParam<std::tuple<std::string, std::string, bool>> {};
+
+TEST_P(GlobASTMatchTest, MatchTest)
+{
+    const auto & [glob, candidate, expected] = GetParam();
+    auto glob_string = GlobAST::GlobString(glob);
+    EXPECT_EQ(glob_string.matches(candidate), expected)
+        << "glob=" << glob << " candidate=" << candidate << " expected=" << expected;
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Common,
+    GlobASTMatchTest,
+    ::testing::Values(
+        // --- Constants ---
+        std::make_tuple("abc", "abc", true),
+        std::make_tuple("abc", "abcd", false),
+        std::make_tuple("abc", "ab", false),
+        std::make_tuple("abc", "", false),
+        std::make_tuple("", "", true),
+        std::make_tuple("/path/to/file.csv", "/path/to/file.csv", true),
+        std::make_tuple("/path/to/file.csv", "/path/to/file.tsv", false),
+
+        // --- Single-character brace group is literal, not a one-element enum ---
+        std::make_tuple("{a}", "{a}", true),
+        std::make_tuple("{a}", "a", false),
+
+        // --- Malformed brace groups are literal text (legacy parity) ---
+        // Empty leading/trailing enum alternative
+        std::make_tuple("{a,}", "{a,}", true),
+        std::make_tuple("{a,}", "a", false),
+        std::make_tuple("{,a}", "{,a}", true),
+        std::make_tuple("{,a}", "a", false),
+        std::make_tuple("{,}", "{,}", true),
+        std::make_tuple("{,}", "", false),
+        // Nested '{' in the body
+        std::make_tuple("{a{b}", "{a{b}", true),
+        std::make_tuple("{a{b}", "ab", false),
+        // Range with an empty side is a one-element enum matching the literal body
+        std::make_tuple("{..1}", "..1", true),
+        std::make_tuple("{..1}", "0", false),
+        std::make_tuple("{0..}", "0..", true),
+        std::make_tuple("{0..}", "0", false),
+        // A signed range endpoint is not a range; the body is a literal enum element
+        std::make_tuple("{+1..2}", "+1..2", true),
+        std::make_tuple("{+1..2}", "1", false),
+        std::make_tuple("{+1..2}", "2", false),
+
+        // --- Question mark wildcard ---
+        std::make_tuple("?", "a", true),
+        std::make_tuple("?", "Z", true),
+        std::make_tuple("?", "1", true),
+        std::make_tuple("?", "", false),
+        std::make_tuple("?", "ab", false),
+        std::make_tuple("?", "/", false),  // '?' does not match '/'
+        std::make_tuple("file?.csv", "file1.csv", true),
+        std::make_tuple("file?.csv", "fileA.csv", true),
+        std::make_tuple("file?.csv", "file.csv", false),
+        std::make_tuple("file?.csv", "file12.csv", false),
+        std::make_tuple("??", "ab", true),
+        std::make_tuple("??", "a", false),
+        std::make_tuple("??", "abc", false),
+
+        // --- Single asterisk wildcard ---
+        std::make_tuple("*", "", true),
+        std::make_tuple("*", "anything", true),
+        std::make_tuple("*", "file.csv", true),
+        std::make_tuple("*", "/", false),  // '*' does not match '/'
+        std::make_tuple("*", "a/b", false),
+        std::make_tuple("/*.csv", "/data.csv", true),
+        std::make_tuple("/*.csv", "/anything.csv", true),
+        std::make_tuple("/*.csv", "/data.tsv", false),
+        std::make_tuple("/*.csv", "/.csv", true),
+        std::make_tuple("/data*", "/data", true),
+        std::make_tuple("/data*", "/data123", true),
+        std::make_tuple("/data*", "/dat", false),
+        std::make_tuple("/data*.csv", "/data.csv", true),
+        std::make_tuple("/data*.csv", "/data123.csv", true),
+        std::make_tuple("/data*.csv", "/data.tsv", false),
+        std::make_tuple("/*", "/anything", true),
+        std::make_tuple("/*", "/", true),
+        std::make_tuple("*/*", "a/b", true),
+        std::make_tuple("*/*", "abc/def", true),
+        std::make_tuple("*/*", "abc", false),
+
+        // --- Double asterisk wildcard ---
+        std::make_tuple("**", "", true),
+        std::make_tuple("**", "anything", true),
+        std::make_tuple("**", "a/b/c", true),      // '**' matches across '/'
+        // Legacy translates '**' to the regex `[^/]*[^{}]*`, so a brace is matched
+        // as long as it does not appear at or after the first '/'.
+        std::make_tuple("**", "a{b", true),        // brace before any '/' is matched
+        std::make_tuple("**", "a}b", true),        // brace before any '/' is matched
+        std::make_tuple("**", "a/b{c", false),     // brace at/after the first '/' is not matched
+        std::make_tuple("**", "a/b}c", false),     // brace at/after the first '/' is not matched
+
+        // --- Globstar: a whole-segment "**/" matches zero or more directory components ---
+        std::make_tuple("data/**/part1.tsv", "data/part1.tsv", true),       // zero directory levels
+        std::make_tuple("data/**/part1.tsv", "data/sub1/part1.tsv", true),  // one directory level
+        std::make_tuple("data/**/part1.tsv", "data/a/b/part1.tsv", true),   // two directory levels
+        std::make_tuple("data/**/part1.tsv", "data/a/b/c/part1.tsv", true), // three directory levels
+        std::make_tuple("data/**/part1.tsv", "data/{a}/part1.tsv", true),   // directory name with braces
+        std::make_tuple("data/**/part1.tsv", "data/part2.tsv", false),      // wrong filename
+        std::make_tuple("data/**/part1.tsv", "other/part1.tsv", false),     // wrong prefix
+        std::make_tuple("**/part1.tsv", "part1.tsv", true),                 // globstar at the start, zero levels
+        std::make_tuple("**/part1.tsv", "a/b/part1.tsv", true),             // globstar at the start, two levels
+        std::make_tuple("data/**/sub/**/f", "data/sub/f", true),            // two globstars, both zero levels
+        std::make_tuple("data/**/sub/**/f", "data/a/sub/b/f", true),        // two globstars, one level each
+        std::make_tuple("**/", "", true),                                   // trailing globstar: empty prefix
+        std::make_tuple("**/", "a/", true),                                 // trailing globstar: one component
+        std::make_tuple("**/", "a", false),                                 // trailing globstar: must end with '/'
+        // A "**" that does not form a whole segment is not a globstar: the leading '?'
+        // requires at least one character in the directory component.
+        std::make_tuple("data/?**/part1.tsv", "data/part1.tsv", false),
+        std::make_tuple("data/?**/part1.tsv", "data/sub1/part1.tsv", true),
+        // Trailing "**" (not followed by '/') keeps the legacy DOUBLE_ASTERISK meaning.
+        std::make_tuple("data/**", "data/a/b", true),
+        std::make_tuple("data/**", "data/a/b{c", false),                    // brace after the first '/' in the tail
+
+        // --- Ranges ---
+        std::make_tuple("f{1..9}", "f1", true),
+        std::make_tuple("f{1..9}", "f5", true),
+        std::make_tuple("f{1..9}", "f9", true),
+        std::make_tuple("f{1..9}", "f0", false),    // 0 out of range
+        std::make_tuple("f{1..9}", "f10", false),   // 10 out of range
+        std::make_tuple("f{1..9}", "f", false),     // no digits
+        std::make_tuple("f{0..10}", "f0", true),
+        std::make_tuple("f{0..10}", "f10", true),
+        std::make_tuple("f{0..10}", "f5", true),
+        std::make_tuple("f{0..10}", "f11", false),
+        std::make_tuple("f{10..20}", "f10", true),
+        std::make_tuple("f{10..20}", "f15", true),
+        std::make_tuple("f{10..20}", "f20", true),
+        std::make_tuple("f{10..20}", "f9", false),
+        std::make_tuple("f{10..20}", "f21", false),
+
+        // --- Zero-padded ranges ---
+        std::make_tuple("f{00..10}", "f00", true),
+        std::make_tuple("f{00..10}", "f05", true),
+        std::make_tuple("f{00..10}", "f10", true),
+        std::make_tuple("f{00..10}", "f0", false),   // wrong width (1 digit, need 2)
+        std::make_tuple("f{00..10}", "f5", false),    // wrong width
+        std::make_tuple("f{00..10}", "f010", false),  // wrong width (3 digits)
+        std::make_tuple("f{0001..0009}", "f0001", true),
+        std::make_tuple("f{0001..0009}", "f0009", true),
+        std::make_tuple("f{0001..0009}", "f0005", true),
+        std::make_tuple("f{0001..0009}", "f1", false),    // wrong width
+        std::make_tuple("f{0001..0009}", "f0010", false),  // out of range
+
+        // --- Descending ranges ---
+        std::make_tuple("f{20..15}", "f15", true),
+        std::make_tuple("f{20..15}", "f20", true),
+        std::make_tuple("f{20..15}", "f17", true),
+        std::make_tuple("f{20..15}", "f14", false),
+        std::make_tuple("f{20..15}", "f21", false),
+        std::make_tuple("f{9..000}", "f000", true),
+        std::make_tuple("f{9..000}", "f009", true),
+        std::make_tuple("f{9..000}", "f005", true),
+        std::make_tuple("f{9..000}", "f9", false),     // wrong width (need 3 digits)
+
+        // --- Enums ---
+        std::make_tuple("{a,b,c}", "a", true),
+        std::make_tuple("{a,b,c}", "b", true),
+        std::make_tuple("{a,b,c}", "c", true),
+        std::make_tuple("{a,b,c}", "d", false),
+        std::make_tuple("{a,b,c}", "", false),
+        std::make_tuple("file{1,2,3}.csv", "file1.csv", true),
+        std::make_tuple("file{1,2,3}.csv", "file2.csv", true),
+        std::make_tuple("file{1,2,3}.csv", "file4.csv", false),
+        std::make_tuple("{hello,world}", "hello", true),
+        std::make_tuple("{hello,world}", "world", true),
+        std::make_tuple("{hello,world}", "xyz", false),
+
+        // --- Mixed expressions ---
+        std::make_tuple("file{1..3}*.csv", "file1data.csv", true),
+        std::make_tuple("file{1..3}*.csv", "file2.csv", true),
+        std::make_tuple("file{1..3}*.csv", "file3abc.csv", true),
+        std::make_tuple("file{1..3}*.csv", "file4.csv", false),
+        std::make_tuple("{a,b}/*.csv", "a/data.csv", true),
+        std::make_tuple("{a,b}/*.csv", "b/data.csv", true),
+        std::make_tuple("{a,b}/*.csv", "c/data.csv", false),
+
+        // --- Complex patterns ---
+        std::make_tuple("{1,2,3}blabla{a.x,b.x,c.x}smth[]_else{aa,bb}?*",
+                        "1blablaa.xsmth[]_elseaaXY", true),
+        std::make_tuple("{1,2,3}blabla{a.x,b.x,c.x}smth[]_else{aa,bb}?*",
+                        "2blablab.xsmth[]_elsebbZ", true),
+        std::make_tuple("{1,2,3}blabla{a.x,b.x,c.x}smth[]_else{aa,bb}?*",
+                        "4blablaa.xsmth[]_elseaaXY", false),  // 4 not in enum
+
+        // --- Double brace ---
+        std::make_tuple("*_{{a,b,c,d}}/?.csv", "x_{a}/1.csv", true),
+        std::make_tuple("*_{{a,b,c,d}}/?.csv", "x_{d}/Z.csv", true),
+        std::make_tuple("*_{{a,b,c,d}}/?.csv", "x_{e}/1.csv", false),
+
+        // --- Consecutive ranges (backtracking) ---
+        std::make_tuple("f{0..9}{0..9}", "f00", true),
+        std::make_tuple("f{0..9}{0..9}", "f59", true),
+        std::make_tuple("f{0..9}{0..9}", "f99", true),
+        std::make_tuple("f{0..9}{0..9}", "f0", false),    // only 1 digit total, need 2
+        std::make_tuple("f{0..9}{0..9}", "f100", false),   // 3 digits but ranges only produce 2
+        std::make_tuple("f{0..9}{0..9}{0..9}", "f000", true),
+        std::make_tuple("f{0..9}{0..9}{0..9}", "f123", true),
+        std::make_tuple("f{0..9}{0..9}{0..9}", "f999", true),
+        std::make_tuple("f{0..9}{0..9}{0..9}", "f12", false),   // only 2 digits
+        std::make_tuple("f{0..9}{0..9}{0..9}", "f1234", false), // 4 digits
+        std::make_tuple("/file{0..9}{0..9}{0..9}", "/file000", true),
+        std::make_tuple("/file{0..9}{0..9}{0..9}", "/file444", true),
+        std::make_tuple("/file{0..9}{0..9}{0..9}", "/file1", false),
+        std::make_tuple("f{0..10}{0..10}", "f00", true),
+        std::make_tuple("f{0..10}{0..10}", "f1010", true),
+        std::make_tuple("f{0..10}{0..10}", "f55", true),
+        std::make_tuple("f{0..10}{0..10}", "f110", true),  // 1+10: both in range
+
+        // --- Wildcards inside enum alternatives (legacy parity: '?' is a wildcard) ---
+        std::make_tuple("file{a?,b?}.csv", "filea1.csv", true),
+        std::make_tuple("file{a?,b?}.csv", "fileb9.csv", true),
+        std::make_tuple("file{a?,b?}.csv", "filec1.csv", false),  // 'c' not an alternative
+        std::make_tuple("file{a?,b?}.csv", "filea.csv", false),   // '?' needs one char
+        std::make_tuple("file{a?,b?}.csv", "filea/.csv", false),  // '?' does not match '/'
+        std::make_tuple("{ab?,cd?}", "abx", true),
+        std::make_tuple("{ab?,cd?}", "cd9", true),
+        std::make_tuple("{ab?,cd?}", "ab", false),
+        // '*' inside braces is not an enum — braces are literal, '*' is a wildcard.
+        std::make_tuple("{a*,b*}", "axyz", false),
+        std::make_tuple("{a*,b*}", "{axyz,b}", true),
+
+        // --- Mixed-width range padding derives from the lower endpoint (legacy parity) ---
+        std::make_tuple("f{0..010}", "f10", true),    // width 1 -> unpadded
+        std::make_tuple("f{0..010}", "f5", true),
+        std::make_tuple("f{0..010}", "f010", false),  // not zero-padded to 3
+        std::make_tuple("f{00..10}", "f00", true),    // width 2 -> padded
+        std::make_tuple("f{00..10}", "f0", false),
+
+        // --- Full size_t range endpoints (checked accumulation, no 19-digit cap) ---
+        std::make_tuple("v{0..18446744073709551615}", "v18446744073709551615", true),
+        std::make_tuple("v{0..18446744073709551615}", "v42", true),
+
+        // --- '?' matches a whole UTF-8 code point, like RE2 [^/] ---
+        std::make_tuple("file?.csv", "file\xc3\xa9.csv", true),  // fileé.csv
+        std::make_tuple("?", "\xc3\xa9", true),                     // é
+
+        // --- "**" allows braces before the first slash (legacy [^/]*[^{}]*) ---
+        std::make_tuple("/**", "/a{b}c", true),
+        std::make_tuple("/**", "/dir/file", true)
+    )
+);
+
+
+/// Systematic parity test: GlobAST::GlobString::expand() must agree with expandSelectionGlob()
+/// for all patterns that only contain enum globs (no ranges/wildcards).
+class GlobASTExpandParityTest : public ::testing::TestWithParam<std::string> {};
+
+TEST_P(GlobASTExpandParityTest, ExpandParity)
+{
+    const auto & glob = GetParam();
+    EXPECT_EQ(GlobAST::GlobString(glob).expand(), expandSelectionGlob(glob))
+        << "Expand mismatch for glob: " << glob;
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Common,
+    GlobASTExpandParityTest,
+    ::testing::Values(
+        "no_globs.csv",
+        "{test}",
+        "{a,b,c}",
+        "file{1,2,3}.csv",
+        "{a,b}{1,2}",
+        "{a,b}{c,d}{e,f}",
+        "prefix{x,y}suffix",
+        "prefix{a,b}middle{1,2}suffix",
+        "{hello,world}",
+        "file{x,y,z}.{csv,tsv}",
+        "*.csv",
+        "file?.csv",
+        "{a,b}/*.csv"
+    )
+);
+
+/// Edge-case tests for specific bug fixes addressed during review.
+TEST(Common, GlobASTExponentialBacktracking)
+{
+    /// Pattern with many wildcards that could cause exponential backtracking
+    /// without memoization. This must complete in reasonable time.
+    GlobAST::GlobString pattern("*a*b*c*d*e*f*g*h*i*j*");
+    EXPECT_TRUE(pattern.matches("XaXbXcXdXeXfXgXhXiXjX"));
+    EXPECT_FALSE(pattern.matches("XaXbXcXdXeXfXgXhXiX"));
+
+    /// Worst-case for wildcard: long non-matching candidate.
+    /// Without memoization this would be O(2^n); with it, O(n*e).
+    std::string long_candidate(200, 'a');
+    GlobAST::GlobString many_stars("*a*a*a*a*a*a*a*a*a*a*b");
+    EXPECT_FALSE(many_stars.matches(long_candidate));
+}
+
+TEST(Common, GlobASTFindDoubleDot)
+{
+    /// Patterns with single dots inside braces should be parsed as enums, not ranges.
+    /// This tests the fix: find_first_of("..") -> find("..") in tryParseRangeMatcher.
+    GlobAST::GlobString single_dot("{a.x,b.x}");
+    EXPECT_EQ(single_dot.getExpressions().size(), 1);
+    EXPECT_EQ(single_dot.getExpressions().front().type(), GlobAST::ExpressionType::ENUM);
+    EXPECT_TRUE(single_dot.matches("a.x"));
+    EXPECT_TRUE(single_dot.matches("b.x"));
+
+    /// A pattern with ".." should still be parsed as a range.
+    GlobAST::GlobString range("{1..5}");
+    EXPECT_EQ(range.getExpressions().size(), 1);
+    EXPECT_EQ(range.getExpressions().front().type(), GlobAST::ExpressionType::RANGE);
+    EXPECT_TRUE(range.matches("3"));
+}
+
+TEST(Common, GlobASTExpansionSize)
+{
+    /// expansionSize() counts only what expand() actually enumerates: enum alternatives
+    /// (and ranges when expand_ranges is set). Wildcards and unexpanded ranges are a factor
+    /// of 1, unlike cardinality() where a wildcard saturates the whole product to SIZE_MAX.
+    EXPECT_EQ(GlobAST::GlobString("file.csv").expansionSize(), 1);
+    EXPECT_EQ(GlobAST::GlobString("{a,b}{1,2}").expansionSize(), 4);
+    EXPECT_EQ(GlobAST::GlobString("{a,b,c}").expansionSize(), 3);
+    /// Wildcards do not multiply the expansion (rendered as literal text).
+    EXPECT_EQ(GlobAST::GlobString("file{a,b}*.csv").expansionSize(), 2);
+    EXPECT_EQ(GlobAST::GlobString("*.csv").expansionSize(), 1);
+    /// Ranges count only when expand_ranges is requested.
+    EXPECT_EQ(GlobAST::GlobString("f{1..9}.csv").expansionSize(), 1);
+    EXPECT_EQ(GlobAST::GlobString("f{1..9}.csv").expansionSize(/*expand_ranges=*/true), 9);
+    EXPECT_EQ(GlobAST::GlobString("{a,b}{1..3}.csv").expansionSize(/*expand_ranges=*/true), 6);
+    /// It must equal the actual number of strings expand() produces.
+    EXPECT_EQ(GlobAST::GlobString("{a,b}{c,d}{e,f}").expansionSize(),
+              GlobAST::GlobString("{a,b}{c,d}{e,f}").expand().size());
+}
+
+TEST(Common, GlobASTFirstGlobPosition)
+{
+    /// Offset of the first glob expression under the AST classification; npos when the
+    /// whole pattern is literal. Differs from find_first_of("*?{") on literal brace
+    /// groups, which are not globs.
+    EXPECT_EQ(GlobAST::GlobString("").firstGlobPosition(), std::string::npos);
+    EXPECT_EQ(GlobAST::GlobString("file.csv").firstGlobPosition(), std::string::npos);
+    EXPECT_EQ(GlobAST::GlobString("data_{x}.csv").firstGlobPosition(), std::string::npos);
+    EXPECT_EQ(GlobAST::GlobString("{a}").firstGlobPosition(), std::string::npos);
+    EXPECT_EQ(GlobAST::GlobString("{}").firstGlobPosition(), std::string::npos);
+    EXPECT_EQ(GlobAST::GlobString("a{b").firstGlobPosition(), std::string::npos);
+
+    EXPECT_EQ(GlobAST::GlobString("*").firstGlobPosition(), 0);
+    EXPECT_EQ(GlobAST::GlobString("a*b").firstGlobPosition(), 1);
+    EXPECT_EQ(GlobAST::GlobString("ab?").firstGlobPosition(), 2);
+    EXPECT_EQ(GlobAST::GlobString("**/x").firstGlobPosition(), 0);
+    EXPECT_EQ(GlobAST::GlobString("/a/{1..3}/x").firstGlobPosition(), 3);
+    EXPECT_EQ(GlobAST::GlobString("{a,b}/x").firstGlobPosition(), 0);
+    /// Literal '{' from a "{{" pair precedes the enum that starts at the second brace.
+    EXPECT_EQ(GlobAST::GlobString("a{{b,c}}").firstGlobPosition(), 2);
+    /// The literal brace group does not stop the scan; the later wildcard does.
+    EXPECT_EQ(GlobAST::GlobString("data_{x}.csv/*").firstGlobPosition(), 13);
+}
+
+TEST(Common, GlobASTRangeOverflow)
+{
+    /// Large range cardinality must not overflow.
+    GlobAST::GlobString large_range("{0..18446744073709551614}");
+    EXPECT_EQ(large_range.getExpressions().front().cardinality(), std::numeric_limits<size_t>::max());
+
+    /// Expansion of such a range with expand_ranges=true must throw, not hang or overflow.
+    EXPECT_THROW(large_range.expand(1000, true), DB::Exception);
+
+    /// Matching with huge range end: candidate value exceeding the range
+    /// should be rejected without overflow in digit accumulation.
+    EXPECT_FALSE(large_range.matches("99999999999999999999999"));
+    EXPECT_TRUE(large_range.matches("0"));
+    EXPECT_TRUE(large_range.matches("12345"));
+}
+
+TEST(Common, GlobASTMatchStateSpaceLimit)
+{
+    /// matches caps its memoization state space (candidate length x pattern expressions)
+    /// and throws instead of allocating an unbounded table.
+    GlobAST::GlobString wide(std::string(70, '?'));
+    EXPECT_THROW(wide.matches(std::string(1 << 20, 'a')), DB::Exception);
+
+    /// The same pattern still matches ordinary candidates after the throw
+    /// (the reused per-thread buffer must be left in a valid state).
+    EXPECT_TRUE(wide.matches(std::string(70, 'a')));
+    EXPECT_FALSE(wide.matches(std::string(71, 'a')));
+}
+
+TEST(Common, GlobASTWildcardInsideEnums)
+{
+    /// A '?' inside an enum alternative is a wildcard for matching but is rendered as literal
+    /// text by expand(), so object storage must not turn such a pattern into exact keys. The
+    /// shape passes hasExactlyOneEnum(), so the exact-key guard has to rely on
+    /// hasQuestionOrAsterisk(), which the parser sets for a '?' inside an enum as well.
+    GlobAST::GlobString with_question("file_{a?,b?}.csv");
+    EXPECT_TRUE(with_question.hasExactlyOneEnum());
+    EXPECT_TRUE(with_question.hasQuestionOrAsterisk());
+    EXPECT_TRUE(with_question.matches("file_a1.csv"));
+    EXPECT_TRUE(with_question.matches("file_b2.csv"));
+    EXPECT_FALSE(with_question.matches("file_a.csv"));
+
+    /// A '*' inside a brace group makes the group literal text plus a wildcard rather than an
+    /// enum, so it is not an exact-key candidate either.
+    GlobAST::GlobString with_asterisk("file_{a*,b*}.csv");
+    EXPECT_FALSE(with_asterisk.hasExactlyOneEnum());
+    EXPECT_TRUE(with_asterisk.hasQuestionOrAsterisk());
+
+    /// A plain enum stays expandable.
+    GlobAST::GlobString plain("file_{a,b}.csv");
+    EXPECT_TRUE(plain.hasExactlyOneEnum());
+    EXPECT_FALSE(plain.hasQuestionOrAsterisk());
+}
+
+TEST(Common, GlobASTLiteralBraceGroupBesideEnum)
+{
+    /// A literal brace group like "{0}" parses as constant text, so the pattern holds
+    /// exactly one enum — but the legacy exact-key contract (hasExactlyOneBracketsExpansion)
+    /// requires the enum's '{' to be the only one in the pattern. Probing exact keys for
+    /// such patterns would change strict missing-file semantics vs the legacy listing path,
+    /// so hasExactlyOneEnum must reject them.
+    GlobAST::GlobString with_literal_group("dir_{0}/file_{a,b}.csv");
+    EXPECT_FALSE(with_literal_group.hasExactlyOneEnum());
+    EXPECT_TRUE(with_literal_group.matches("dir_{0}/file_a.csv"));
+    EXPECT_FALSE(with_literal_group.matches("dir_0/file_a.csv"));
+
+    /// Doubled braces contribute literal '{' text around the inner enum.
+    GlobAST::GlobString doubled("file_{{a,b}}.csv");
+    EXPECT_FALSE(doubled.hasExactlyOneEnum());
+
+    /// A stray '}' or ',' before the enum's '{' makes the legacy expandSelectionGlob
+    /// scanner throw BAD_ARGUMENTS, so such patterns must stay off the exact-key path.
+    GlobAST::GlobString closing_only("dir_}/file_{a,b}.csv");
+    EXPECT_FALSE(closing_only.hasExactlyOneEnum());
+
+    GlobAST::GlobString comma_prefix("dir_,/file_{a,b}.csv");
+    EXPECT_FALSE(comma_prefix.hasExactlyOneEnum());
+
+    /// After the enum the legacy scanner never sees them (it stops at the enum's '}'
+    /// and the expanded remainders contain no braces), so they stay expandable.
+    GlobAST::GlobString closing_suffix("file_{a,b}_}.csv");
+    EXPECT_TRUE(closing_suffix.hasExactlyOneEnum());
+
+    GlobAST::GlobString comma_suffix("file_{a,b}_,.csv");
+    EXPECT_TRUE(comma_suffix.hasExactlyOneEnum());
+}
+
+TEST(Common, GlobASTSlashInsideEnums)
+{
+    /// An enum whose alternatives span path segments is only meaningful after expansion:
+    /// a per-directory traversal splits the pattern at raw slashes, cutting the enum body
+    /// apart (the first segment would be the impossible "{a"). Callers that may skip the
+    /// expansion (the over-cap fallback in `listFilesWithRegexpMatching`) must detect this.
+    GlobAST::GlobString spanning("{a/b,c/d}.csv");
+    EXPECT_TRUE(spanning.hasSlashInsideEnums());
+    EXPECT_TRUE(spanning.matches("a/b.csv"));
+    EXPECT_TRUE(spanning.matches("c/d.csv"));
+
+    /// A slash in only one alternative still makes the pattern unsplittable.
+    GlobAST::GlobString one_alternative("dir/{a,b/c}.csv");
+    EXPECT_TRUE(one_alternative.hasSlashInsideEnums());
+
+    /// Slashes in constant text are ordinary path separators, and a range body is digits only.
+    GlobAST::GlobString plain_slashes("dir/sub/file_{a,b}.csv");
+    EXPECT_FALSE(plain_slashes.hasSlashInsideEnums());
+
+    GlobAST::GlobString with_range("dir/file_{1..10}.csv");
+    EXPECT_FALSE(with_range.hasSlashInsideEnums());
+
+    /// A single-character brace group parses as constant text, so it holds no enum at all.
+    GlobAST::GlobString literal_group("dir/{a}/file.csv");
+    EXPECT_FALSE(literal_group.hasSlashInsideEnums());
+}
+
+/// The archive-vs-plain split of object-storage paths (`archive::inner`) must use the
+/// selected glob parser for its "left side is a glob" capability check, mirroring
+/// `splitToArchivePathAndPathInArchive` for the `file` engine.
+TEST(Common, GlobASTArchiveURISplit)
+{
+    /// A supported archive extension splits under both parsers.
+    for (bool use_ast : {false, true})
+    {
+        auto [path, pattern] = getURIAndArchivePattern("data.tar::foo.csv", use_ast);
+        EXPECT_EQ(path, "data.tar");
+        ASSERT_TRUE(pattern.has_value());
+        EXPECT_EQ(*pattern, "foo.csv");
+    }
+
+    /// `{x}` is a glob to the legacy parser but constant text to the AST parser,
+    /// so under the AST parser the whole string stays one exact (non-archive) path.
+    {
+        auto [path, pattern] = getURIAndArchivePattern("data_{x}::foo.csv", /*use_glob_ast*/ false);
+        EXPECT_EQ(path, "data_{x}");
+        ASSERT_TRUE(pattern.has_value());
+        EXPECT_EQ(*pattern, "foo.csv");
+    }
+    {
+        auto [path, pattern] = getURIAndArchivePattern("data_{x}::foo.csv", /*use_glob_ast*/ true);
+        EXPECT_EQ(path, "data_{x}::foo.csv");
+        EXPECT_FALSE(pattern.has_value());
+    }
+
+    /// An enum is a glob under both parsers, so the split happens under both.
+    for (bool use_ast : {false, true})
+    {
+        auto [path, pattern] = getURIAndArchivePattern("data_{a,b}::foo.csv", use_ast);
+        EXPECT_EQ(path, "data_{a,b}");
+        ASSERT_TRUE(pattern.has_value());
+        EXPECT_EQ(*pattern, "foo.csv");
+    }
+
+    /// No archive extension and no glob on the left: never split.
+    for (bool use_ast : {false, true})
+    {
+        auto [path, pattern] = getURIAndArchivePattern("plain::foo.csv", use_ast);
+        EXPECT_EQ(path, "plain::foo.csv");
+        EXPECT_FALSE(pattern.has_value());
+    }
+}
+
+TEST(Common, GlobASTMatchDeepRecursionGuard)
+{
+    /// A long run of `*` stays far below the memo-table cap against a short candidate
+    /// (the state space is candidate length x expressions), but every asterisk expression
+    /// adds one recursion frame on the zero-consumption branch of matchesImpl. The matcher
+    /// must fail with an exception (stack guard) instead of exhausting the thread stack.
+    GlobAST::GlobString deep(std::string(400000, '*'));
+    EXPECT_THROW(deep.matches("abc"), DB::Exception);
+
+    /// The matcher must stay usable on the same thread after the guard fired.
+    GlobAST::GlobString simple("a*c");
+    EXPECT_TRUE(simple.matches("abc"));
+}
+
+/// Differential fuzzer: the AST matcher (use_glob_ast_parser = 1) must agree with the
+/// legacy regex matcher (makeRegexpPatternFromGlobs + re2::RE2::FullMatch) on every
+/// (pattern, candidate) pair. Patterns and candidates are drawn from a small alphabet
+/// rich in glob metacharacters, with a fixed seed for reproducibility. Divergences are
+/// deduplicated by pattern and reported in bulk so a single run surfaces every distinct
+/// disagreement at once.
+///
+/// The fuzzer runs over the input domain where the legacy parser is *correct*. An earlier
+/// (unrestricted) run found 40 diverging patterns; three were genuine AST bugs now fixed
+/// in GlobString::parse (empty enum edges "{,0}", nested '{' in enum "{b{,1}", empty-sided
+/// ranges "{..1}"). The remaining divergences are all cases where legacy is buggy relative
+/// to POSIX shell semantics and the AST is correct, so they are excluded from the domain
+/// rather than asserted (each is covered by explicit cases in GlobASTMatchTest):
+///   * Brace body of a legacy-escaped char (e.g. "{-}"): legacy escapes '-' -> "\-" before
+///     enum detection, inflating the body to two chars, so it matches '-' instead of the
+///     literal "{-}". Excluded by dropping '-' from the pattern alphabet.
+///   * Wildcard runs mixing '*' and '?' ("*?*", "*??*") and runs of 3+ stars ("***"):
+///     legacy's makeRegexpPatternFromGlobs does not update its 'previous' char after a '?',
+///     so a '*' preceded by "*?...?" is treated as the second star of a "**" and becomes
+///     "[^{}]"; star runs of 3+ get an extra "[^{}]" per star with no AST analogue. Exact
+///     "**" runs are NOT excluded: both whole-segment globstars ("data/**/x") and legacy
+///     double-stars ("a**", "data/**") are part of the fuzzed domain.
+TEST(Common, GlobASTLegacyMatchFuzz)
+{
+    /// Pattern alphabet of glob metacharacters plus a literal the legacy escaper treats
+    /// specially ('.'). '-' is intentionally omitted: legacy escapes it before enum
+    /// detection, so a brace body like "{-}" wrongly becomes an enum (see comment above).
+    static const std::string PATTERN_ALPHABET = "ab01{},*?./";
+    /// Candidate alphabet includes braces and slashes to probe enum/wildcard edges.
+    static const std::string CANDIDATE_ALPHABET = "ab01/.{}";
+
+    constexpr int num_patterns = 20000;
+    constexpr int candidates_per_pattern = 40;
+    constexpr size_t max_pattern_len = 6;
+    constexpr size_t max_candidate_len = 6;
+    constexpr size_t max_reported = 40;
+
+    std::mt19937 rng(0xC10BA5); // NOLINT(cert-msc32-c,cert-msc51-cpp,bugprone-random-generator-seed): deterministic seed for reproducible fuzzing
+
+    auto random_string = [&](const std::string & alphabet, size_t max_len)
+    {
+        size_t len = rng() % (max_len + 1);
+        std::string s;
+        s.reserve(len);
+        for (size_t i = 0; i < len; ++i)
+            s += alphabet[rng() % alphabet.size()];
+        return s;
+    };
+
+    /// Legacy wildcard-run bugs (see the comment above): a '*' separated from a previous
+    /// '*' only by '?'s, or a run of 3+ stars. Exact "**" runs are kept in the domain so
+    /// the fuzzer exercises both globstar ("**/" as a whole segment) and legacy
+    /// double-star semantics against the oracle.
+    auto has_legacy_buggy_wildcard_run = [](const std::string & s)
+    {
+        if (s.contains("***"))
+            return true;
+        for (size_t i = 0; i < s.size(); ++i)
+        {
+            if (s[i] != '*')
+                continue;
+            size_t j = i + 1;
+            while (j < s.size() && s[j] == '?')
+                ++j;
+            if (j > i + 1 && j < s.size() && s[j] == '*')
+                return true;
+        }
+        return false;
+    };
+
+    std::map<std::string, std::string> divergences;   // pattern -> first disagreeing sample
+    size_t compared = 0;
+    size_t skipped = 0;
+
+    for (int p = 0; p < num_patterns && divergences.size() < max_reported; ++p)
+    {
+        /// Patterns are at least one character long.
+        std::string pattern = random_string(PATTERN_ALPHABET, max_pattern_len - 1);
+        pattern += PATTERN_ALPHABET[rng() % PATTERN_ALPHABET.size()];
+
+        if (has_legacy_buggy_wildcard_run(pattern))
+        {
+            ++skipped;
+            continue;
+        }
+
+        bool legacy_ok = true;
+        bool ast_ok = true;
+        std::optional<GlobMatcher> legacy;
+        std::optional<GlobMatcher> ast;
+        /// Ok: a pattern that one engine rejects (throws on) is recorded as a divergence below.
+        try { legacy = GlobMatcher::createLegacy(pattern); } catch (...) { legacy_ok = false; }  /// Ok
+        try { ast = GlobMatcher::createNew(pattern); } catch (...) { ast_ok = false; }  /// Ok
+
+        /// One engine accepting a pattern that the other rejects is itself a divergence.
+        if (legacy_ok != ast_ok)
+        {
+            divergences.emplace(pattern, "construction: legacy_ok=" + std::to_string(legacy_ok)
+                                             + " ast_ok=" + std::to_string(ast_ok));
+            continue;
+        }
+        if (!legacy_ok)
+            continue;
+
+        /// Always probe the pattern itself and the empty string, then random candidates.
+        std::vector<std::string> candidates{pattern, ""};
+        for (int c = 0; c < candidates_per_pattern; ++c)
+            candidates.push_back(random_string(CANDIDATE_ALPHABET, max_candidate_len));
+
+        for (const auto & candidate : candidates)
+        {
+            bool legacy_match = legacy->matches(candidate);
+            bool ast_match = ast->matches(candidate);
+            ++compared;
+            if (legacy_match != ast_match && !divergences.contains(pattern))
+            {
+                divergences.emplace(pattern, "candidate=[" + candidate + "] legacy="
+                                                 + std::to_string(legacy_match) + " ast=" + std::to_string(ast_match));
+            }
+        }
+    }
+
+    if (!divergences.empty())
+    {
+        std::string report = "AST vs legacy matcher diverged on " + std::to_string(divergences.size())
+            + " distinct pattern(s) (compared " + std::to_string(compared) + " pairs, skipped "
+            + std::to_string(skipped) + " wildcard-run patterns):\n";
+        for (const auto & [pattern, sample] : divergences)
+            report += "  pattern=[" + pattern + "] " + sample + "\n";
+        ADD_FAILURE() << report;
     }
 }

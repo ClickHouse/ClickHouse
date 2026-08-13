@@ -56,6 +56,8 @@ namespace Setting
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
     extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
+    extern const SettingsUInt64 glob_expansion_max_elements;
+    extern const SettingsBool use_glob_ast_parser;
 }
 
 namespace ErrorCodes
@@ -74,7 +76,12 @@ namespace FailPoints
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
 {
+    /// The sample path feeds hive-partition column discovery, which is shared table metadata.
+    if (!is_table_function)
+        context = contextWithPinnedGlobParser(context);
+
     const auto path = configuration->getRawPath();
+    const bool use_glob_ast = context->getSettingsRef()[Setting::use_glob_ast_parser];
 
     /// When use_hive_partitioning is enabled, we need a real file path even in distributed mode
     /// (not a path from the distributed task queue), so force distributed_processing to false.
@@ -82,8 +89,14 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
         local_distributed_processing = false;
 
+    std::optional<GlobAST::GlobString> glob_string;
+    if (use_glob_ast)
+        glob_string.emplace(path.path);
+
+    const bool has_globs = use_glob_ast ? glob_string->hasGlobs() : path.hasGlobs();
+
     /// For non-glob paths, return directly without any S3 API calls.
-    if (!configuration->isArchive() && !path.hasGlobs() && !local_distributed_processing)
+    if (!configuration->isArchive() && !has_globs && !local_distributed_processing)
         return path.path;
 
     /// For pure brace-expansion globs like {a,b,c}.tsv (no wildcards * or ? involved),
@@ -92,11 +105,32 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     /// creating a file iterator just to get a sample path string.
     /// Archives are excluded because they need the file iterator to return paths from inside
     /// the archive (e.g. archive.zip::file.csv), not the raw archive path.
-    if (!configuration->isArchive() && containsOnlyEnumGlobs(path.path))
+    if (!configuration->isArchive())
     {
-        auto expanded = expandSelectionGlob(path.path);
+        const size_t max_expansion = context->getSettingsRef()[Setting::glob_expansion_max_elements];
+        Strings expanded;
+        if (use_glob_ast)
+        {
+            if (glob_string->hasEnums() && !glob_string->hasRanges() && !glob_string->hasQuestionOrAsterisk()
+                && glob_string->cardinality() <= max_expansion)
+                expanded = glob_string->expand(max_expansion, /*expand_ranges=*/false);
+        }
+        else if (containsOnlyEnumGlobs(path.path))
+        {
+            expanded = expandSelectionGlob(path.path);
+        }
+
+        /// The first expansion is returned without an existence check, which is sound only
+        /// when all expansions share the same directory part (the sample feeds hive-partition
+        /// column discovery). Enum alternatives may contain '/'; when they disagree about the
+        /// layout, fall through to the listing iterator, which samples what is actually read.
         if (!expanded.empty())
-            return expanded.front();
+        {
+            const auto directory_part = [](const std::string & p) { return std::string_view(p).substr(0, p.find_last_of('/') + 1); };
+            const auto sample_directory = directory_part(expanded.front());
+            if (std::all_of(expanded.begin(), expanded.end(), [&](const std::string & p) { return directory_part(p) == sample_directory; }))
+                return expanded.front();
+        }
     }
 
     auto query_settings = configuration->getQuerySettings(context);
@@ -238,7 +272,12 @@ StorageObjectStorage::StorageObjectStorage(
     configuration->check(context);
 
     if (need_resolve_columns_or_format)
-        resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
+    {
+        /// The inferred schema/format become persisted table metadata for stored tables, so the
+        /// path classification driving the inference listing must not depend on the session setting.
+        const auto inference_context = is_table_function ? context : contextWithPinnedGlobParser(context);
+        resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, inference_context);
+    }
     else
         validateSupportedColumns(columns, *configuration);
 
@@ -729,6 +768,11 @@ void StorageObjectStorage::read(
 
     configuration->modifyFormatSettings(modified_format_settings.value(), *local_context);
 
+    /// The step's context drives the file iterator (glob classification, matcher, archive filter):
+    /// a stored table must list the same object set in every session, so pin the parser choice
+    /// to the one its persisted metadata was built with.
+    const auto read_context = is_table_function ? local_context : contextWithPinnedGlobParser(local_context);
+
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         storage_id,
         object_storage,
@@ -741,7 +785,7 @@ void StorageObjectStorage::read(
         distributed_processing,
         read_from_format_info,
         need_only_count,
-        local_context,
+        read_context,
         max_block_size,
         num_streams);
 
@@ -772,6 +816,9 @@ SinkToStoragePtr StorageObjectStorage::write(
                         raw_path.path);
     }
 
+    /// Deliberately setting-independent: whether a stored table path makes the table readonly
+    /// must not flip with the per-query `use_glob_ast_parser` setting, otherwise one session
+    /// could write literal keys that another session's reads expand differently.
     if (raw_path.hasGlobsIgnorePlaceholders())
     {
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
@@ -843,6 +890,7 @@ void StorageObjectStorage::truncate(
                         "Truncate is not supported for data lake engine");
     }
 
+    /// Deliberately setting-independent, same as the readonly guard in `write`.
     if (path.hasGlobsIgnorePlaceholders())
     {
         throw Exception(

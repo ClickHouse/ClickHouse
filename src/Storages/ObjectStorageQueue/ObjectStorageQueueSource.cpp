@@ -74,7 +74,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNKNOWN_EXCEPTION;
     extern const int TOO_MANY_PARTS;
     extern const int TABLE_IS_READ_ONLY;
@@ -121,8 +120,16 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression can not have wildcards inside namespace name");
 
     const auto & reading_path = configuration->getPathForRead();
+    /// Deliberately pinned to the legacy glob classifier, matching the setting-independent path
+    /// validation in the `StorageObjectStorageQueue` constructor: the path is persisted table
+    /// metadata, and the queue is polled by background streaming whose context does not come from
+    /// the query that created the table, so whether an existing table can be read must not depend
+    /// on the per-session `use_glob_ast_parser` setting. Otherwise a path like `queue_{x}.csv`
+    /// (a glob for the legacy parser, literal text for the AST parser) would pass CREATE / ATTACH
+    /// and then fail every poll with "path without globs" as soon as the setting is enabled.
+    constexpr bool use_glob_ast = false;
 
-    if (!reading_path.hasGlobs())
+    if (!reading_path.hasGlobs(use_glob_ast))
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -133,19 +140,15 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     const auto globbed_key = reading_path.path;
     const auto start_after = metadata->getStartAfterForListing();
     object_storage_iterator = object_storage->iterate(
-        reading_path.cutGlobs(configuration->supportsPartialPathPrefix()),
+        reading_path.cutGlobs(configuration->supportsPartialPathPrefix(), use_glob_ast),
         list_objects_batch_size_,
         /*with_tags=*/ false,
         start_after);
 
-    matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_key));
-    if (!matcher->ok())
-    {
-        throw Exception(
-            ErrorCodes::CANNOT_COMPILE_REGEXP,
-            "Cannot compile regex from glob ({}): {}",
-            globbed_key, matcher->error());
-    }
+    if (use_glob_ast)
+        matcher.emplace(GlobMatcher::createNew(globbed_key));
+    else
+        matcher.emplace(GlobMatcher::createLegacy(globbed_key));
 
     recursive = globbed_key == "/**";
     if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate_, virtual_columns, context_))
@@ -226,7 +229,7 @@ ObjectStorageQueueSource::FileIterator::next()
 
             for (auto it = new_batch.begin(); it != new_batch.end();)
             {
-                if (!recursive && !re2::RE2::FullMatch((*it)->getPath(), *matcher))
+                if (!recursive && !matcher->matches((*it)->getPath()))
                     it = new_batch.erase(it);
                 else
                     ++it;

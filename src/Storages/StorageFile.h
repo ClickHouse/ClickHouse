@@ -65,7 +65,14 @@ public:
         std::optional<String> format_from_filenames; /// Set if we managed to figure out which file format is used from the names of the file(s).
         std::optional<ArchiveInfo> archive_info; /// Set if the archive syntax is used.
 
-        static FileSource parse(const String & source, const ContextPtr & context, std::optional<bool> allow_archive_path_syntax = {});
+        /// `use_glob_ast_parser` overrides the `use_glob_ast_parser` setting from the context.
+        /// Instantiating a table from persisted DDL must pass `false`: the resolved paths and the
+        /// glob classification become table state, so they must not depend on a per-session setting.
+        static FileSource parse(
+            const String & source,
+            const ContextPtr & context,
+            std::optional<bool> allow_archive_path_syntax = {},
+            std::optional<bool> use_glob_ast_parser = {});
     };
 
     /// From file descriptor
