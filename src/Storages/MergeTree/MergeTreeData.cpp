@@ -915,12 +915,20 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     if (parts.empty())
         return {};
 
+    ConditionSelectivityEstimatorPtr cached;
+    if (local_context->getSettingsRef()[Setting::use_statistics_cache])
     {
         std::lock_guard<std::mutex> lock(stats_mutex);
-        if (local_context->getSettingsRef()[Setting::use_statistics_cache]
-            && cached_estimator)
-            return cached_estimator;
+        cached = cached_estimator;
     }
+
+    /// The cached estimator is built by refreshStatistics() over all active parts.
+    /// Return it only if the query reads exactly that part set; a query pruned by
+    /// partition/PK analysis must compose statistics over the surviving parts
+    /// (issue #110281). The estimator is immutable once published, so the comparison
+    /// can run outside the mutex.
+    if (cached && !cached->isStale(parts))
+        return cached;
 
     LOG_DEBUG(log, "Loading statistics");
     ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
@@ -10781,9 +10789,11 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (my_snapshot->getColumns().getAllPhysical().sizeOfDifference(src_snapshot->getColumns().getAllPhysical()))
         throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Tables have different structure");
 
+    /// The definitions are compared as text, so the text must not depend on whether the user has
+    /// written redundant parentheses: `PARTITION BY (a)` and `PARTITION BY a` are the same key.
     auto query_to_string = [] (const ASTPtr & ast)
     {
-        return ast ? ast->formatWithSecretsOneLine() : "";
+        return ast ? ast->formatIgnoringRedundantParentheses() : "";
     };
 
     if (query_to_string(my_snapshot->getSortingKeyAST()) != query_to_string(src_snapshot->getSortingKeyAST()))
@@ -10808,10 +10818,10 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
         std::unordered_set<std::string> my_query_strings;
         for (const auto & description : my_descriptions)
-            my_query_strings.insert(description.definition_ast->formatWithSecretsOneLine());
+            my_query_strings.insert(description.definition_ast->formatIgnoringRedundantParentheses());
 
         for (const auto & src_description : src_descriptions)
-            if (!my_query_strings.contains(src_description.definition_ast->formatWithSecretsOneLine()))
+            if (!my_query_strings.contains(src_description.definition_ast->formatIgnoringRedundantParentheses()))
                 return false;
 
         return true;
@@ -12622,7 +12632,9 @@ bool MergeTreeData::scheduleStreamingJob(BackgroundJobsAssignee & assignee)
     bool any_enriched = false;
     subscription_manager.executeOnEachSubscription([&](StreamSubscriptionPtr & subscription)
     {
-        any_enriched |= enrichSubscription(*subscription->as<MergeTreeBoundsSubscription>(), local_parts, promoters);
+        auto & bounds_subscription = *subscription->as<MergeTreeBoundsSubscription>();
+        any_enriched |= enrichSubscription(bounds_subscription, local_parts, promoters);
+        bounds_subscription.onEnrichmentRound();
     });
 
     if (any_enriched)
