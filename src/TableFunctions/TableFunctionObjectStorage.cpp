@@ -247,11 +247,13 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     /// Only use parallel replicas if the Cluster variant of this table function exists
     /// (e.g. `s3Cluster` for `s3`). Table functions without a Cluster variant (e.g. `paimonLocal`)
     /// cannot distribute work via task iterators, so distributing would just read all data on every replica.
+    /// `getName`, not `Definition::name`: with `TableFunctionObjectStorageClusterFallback`
+    /// the definition is the *Cluster one, while the invoked function is `s3`.
     const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
         && query_settings[Setting::parallel_replicas_for_cluster_engines]
         && context->canUseTaskBasedParallelReplicas()
         && !context->isDistributed()
-        && TableFunctionFactory::instance().isTableFunctionName(String(name) + "Cluster");
+        && TableFunctionFactory::instance().isTableFunctionName(getName() + "Cluster");
 
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
