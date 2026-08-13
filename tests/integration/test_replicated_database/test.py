@@ -425,10 +425,17 @@ def test_alter_drop_part(started_cluster, engine):
         dummy_node.query(f"INSERT INTO {database}.alter_drop_part VALUES (456)")
     else:
         main_node.query(f"SYSTEM SYNC REPLICA {database}.alter_drop_part PULL")
+        # A part covered by a pending drop is never fetched, so sync before dropping.
+        dummy_node.query(f"SYSTEM SYNC REPLICA {database}.alter_drop_part LIGHTWEIGHT")
+        assert (
+            dummy_node.query(f"SELECT CounterID FROM {database}.alter_drop_part")
+            == "123\n"
+        )
     main_node.query(f"ALTER TABLE {database}.alter_drop_part DROP PART '{part_name}'")
     assert main_node.query(f"SELECT CounterID FROM {database}.alter_drop_part") == ""
     if engine == "ReplicatedMergeTree":
         # The DROP operation is still replicated at the table engine level
+        dummy_node.query(f"SYSTEM SYNC REPLICA {database}.alter_drop_part LIGHTWEIGHT")
         assert (
             dummy_node.query(f"SELECT CounterID FROM {database}.alter_drop_part") == ""
         )
@@ -460,11 +467,14 @@ def test_alter_detach_part(started_cluster, engine):
         dummy_node.query(f"INSERT INTO {database}.alter_detach VALUES (456)")
     else:
         main_node.query(f"SYSTEM SYNC REPLICA {database}.alter_detach PULL")
+        # A part covered by a pending detach is never fetched, so sync before detaching.
+        dummy_node.query(f"SYSTEM SYNC REPLICA {database}.alter_detach LIGHTWEIGHT")
     main_node.query(f"ALTER TABLE {database}.alter_detach DETACH PART '{part_name}'")
     detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='{database}' AND table='alter_detach'"
     assert main_node.query(detached_parts_query) == f"{part_name}\n"
     if engine == "ReplicatedMergeTree":
         # The detach operation is still replicated at the table engine level
+        dummy_node.query(f"SYSTEM SYNC REPLICA {database}.alter_detach LIGHTWEIGHT")
         assert dummy_node.query(detached_parts_query) == f"{part_name}\n"
     else:
         assert dummy_node.query(detached_parts_query) == ""
@@ -487,6 +497,11 @@ def test_alter_drop_detached_part(started_cluster, engine):
         f"CREATE TABLE {database}.alter_drop_detached (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)"
     )
     main_node.query(f"INSERT INTO {database}.alter_drop_detached VALUES (123)")
+    if engine == "ReplicatedMergeTree":
+        # A part covered by a pending detach is never fetched, so sync before detaching.
+        dummy_node.query(
+            f"SYSTEM SYNC REPLICA {database}.alter_drop_detached LIGHTWEIGHT"
+        )
     main_node.query(
         f"ALTER TABLE {database}.alter_drop_detached DETACH PART '{part_name}'"
     )
@@ -500,6 +515,10 @@ def test_alter_drop_detached_part(started_cluster, engine):
     )
     detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='{database}' AND table='alter_drop_detached'"
     assert main_node.query(detached_parts_query) == ""
+    if engine == "ReplicatedMergeTree":
+        dummy_node.query(
+            f"SYSTEM SYNC REPLICA {database}.alter_drop_detached LIGHTWEIGHT"
+        )
     assert dummy_node.query(detached_parts_query) == f"{part_name}\n"
 
     main_node.query(f"DROP DATABASE {database} SYNC")
