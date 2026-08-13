@@ -13,32 +13,30 @@
 namespace DB
 {
 
-/// Directory tree of file records: pure path topology, no blob lifecycle. An empty path is the
+/// Directory tree of file metadata: pure path topology, no blob lifecycle. An empty path is the
 /// root directory. Every mutating operation enforces that the parent exists and is a directory,
 /// matching the on-disk metadata backends. Not thread-safe.
 class InMemoryDirectoryTree
 {
 public:
-    using Record = DiskObjectStorageMetadata;
-
     bool existsFile(const NormalizedPath & path) const;
     bool existsDirectory(const NormalizedPath & path) const;
     bool existsFileOrDirectory(const NormalizedPath & path) const;
 
-    /// The record of the file at `path`, or nullptr.
-    Record * getRecord(const NormalizedPath & path);
-    const Record * getRecord(const NormalizedPath & path) const;
+    /// The metadata of the file at `path`, or nullptr.
+    DiskObjectStorageMetadata * getMetadata(const NormalizedPath & path);
+    const DiskObjectStorageMetadata * getMetadata(const NormalizedPath & path) const;
 
     /// Children of the directory at `path` as full paths, in lexicographic order; throws if
     /// there is no directory there.
     std::vector<std::string> listDirectory(const NormalizedPath & path) const;
 
-    /// Insert a file at `path`, returning the record it displaced (if any); throws if the
+    /// Insert a file at `path`, returning the metadata it displaced (if any); throws if the
     /// parent is missing or a directory occupies `path`.
-    std::optional<Record> putFile(const NormalizedPath & path, Record record);
+    std::optional<DiskObjectStorageMetadata> putFile(const NormalizedPath & path, DiskObjectStorageMetadata metadata);
 
-    /// Detach the file at `path` and return its record; throws if there is no file there.
-    Record removeFile(const NormalizedPath & path);
+    /// Detach the file at `path` and return its metadata; throws if there is no file there.
+    DiskObjectStorageMetadata removeFile(const NormalizedPath & path);
 
     /// Create the directory at `path` under an existing parent; an existing directory is kept,
     /// a file with this name throws.
@@ -50,29 +48,29 @@ public:
     /// Remove the directory at `path`; throws if it is missing, a file, or non-empty.
     void removeDirectory(const NormalizedPath & path);
 
-    /// Detach the whole subtree at `path`, visiting every file record with its path relative to
+    /// Detach the whole subtree at `path`, visiting every file metadata with its path relative to
     /// `path` ("." for a file at `path` itself). A missing `path` is a no-op.
-    void removeSubtree(const NormalizedPath & path, const std::function<void(const std::string &, Record &)> & visitor);
+    void removeSubtree(const NormalizedPath & path, const std::function<void(const std::string &, DiskObjectStorageMetadata &)> & visitor);
 
     /// Move the file at `from` to `to`. With `replace`, an existing destination file is
-    /// displaced and returned; without it, any existing destination throws.
-    std::optional<Record> moveFile(const NormalizedPath & from, const NormalizedPath & to, bool replace);
+    /// displaced and its metadata returned; without it, any existing destination throws.
+    std::optional<DiskObjectStorageMetadata> moveFile(const NormalizedPath & from, const NormalizedPath & to, bool replace);
 
     /// Relink the directory at `from` to `to`, which must not exist and must not lie inside
     /// `from`.
     void moveDirectory(const NormalizedPath & from, const NormalizedPath & to);
 
-    /// Visit every file record under the directory at `path` with its full path.
-    void forEachRecordUnder(const NormalizedPath & path, const std::function<void(const std::string &, Record &)> & visitor) const;
+    /// Visit every file metadata under the directory at `path` with its full path.
+    void forEachMetadataUnder(const NormalizedPath & path, const std::function<void(const std::string &, DiskObjectStorageMetadata &)> & visitor) const;
 
 private:
-    /// A file (holds a record) or a directory (holds children).
+    /// A file (holds metadata) or a directory (holds children).
     struct Node
     {
-        std::optional<Record> record;
+        std::optional<DiskObjectStorageMetadata> metadata;
         std::map<std::string, std::shared_ptr<Node>> children;
 
-        bool isFile() const { return record.has_value(); }
+        bool isFile() const { return metadata.has_value(); }
     };
     using NodePtr = std::shared_ptr<Node>;
 

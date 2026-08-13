@@ -63,7 +63,7 @@ time_t MetadataStorageFromMemory::getLastChanged(const std::string & path) const
 
 const DiskObjectStorageMetadata & MetadataStorageFromMemory::getRecordUnlocked(const std::string & path) const
 {
-    const auto * record = tree.getRecord(normalizePath(path));
+    const auto * record = tree.getMetadata(normalizePath(path));
     if (!record)
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File `{}` doesn't exist", path);
     return *record;
@@ -177,7 +177,7 @@ void MetadataStorageFromMemory::putRecordUnlocked(const std::string & path, Disk
 DiskObjectStorageMetadata & MetadataStorageFromMemory::findRecordOfBlobUnlocked(const std::string & remote_path)
 {
     DiskObjectStorageMetadata * found = nullptr;
-    tree.forEachRecordUnder({}, [&](const std::string &, DiskObjectStorageMetadata & record)
+    tree.forEachMetadataUnder({}, [&](const std::string &, DiskObjectStorageMetadata & record)
     {
         for (const auto & object : record.objects)
         {
@@ -215,7 +215,7 @@ bool MetadataStorageFromMemory::hasTransientBuildState() const
         return true;
 
     bool found = false;
-    tree.forEachRecordUnder({}, [&](const std::string &, DiskObjectStorageMetadata & record)
+    tree.forEachMetadataUnder({}, [&](const std::string &, DiskObjectStorageMetadata & record)
     {
         found = found || record.ref_count > 0;
     });
@@ -310,7 +310,7 @@ void MetadataStorageFromMemoryTransaction::moveFile(const std::string & path_fro
     std::unique_lock lock(storage.metadata_mutex);
 
     storage.tree.moveFile(normalizePath(path_from), normalizePath(path_to), /*replace=*/false);
-    for (auto & object : storage.tree.getRecord(normalizePath(path_to))->objects)
+    for (auto & object : storage.tree.getMetadata(normalizePath(path_to))->objects)
         object.local_path = path_to;
 }
 
@@ -322,7 +322,7 @@ void MetadataStorageFromMemoryTransaction::replaceFile(const std::string & path_
     /// for disposal.
     if (auto displaced = storage.tree.moveFile(normalizePath(path_from), normalizePath(path_to), /*replace=*/true))
         storage.releaseRecordUnlocked(*displaced);
-    for (auto & object : storage.tree.getRecord(normalizePath(path_to))->objects)
+    for (auto & object : storage.tree.getMetadata(normalizePath(path_to))->objects)
         object.local_path = path_to;
 }
 
@@ -331,7 +331,7 @@ void MetadataStorageFromMemoryTransaction::moveDirectory(const std::string & pat
     std::unique_lock lock(storage.metadata_mutex);
 
     storage.tree.moveDirectory(normalizePath(path_from), normalizePath(path_to));
-    storage.tree.forEachRecordUnder(normalizePath(path_to), [](const std::string & full_path, DiskObjectStorageMetadata & record)
+    storage.tree.forEachMetadataUnder(normalizePath(path_to), [](const std::string & full_path, DiskObjectStorageMetadata & record)
     {
         for (auto & object : record.objects)
             object.local_path = full_path;

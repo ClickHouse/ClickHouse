@@ -59,16 +59,16 @@ bool InMemoryDirectoryTree::existsFileOrDirectory(const NormalizedPath & path) c
     return resolve(path) != nullptr;
 }
 
-InMemoryDirectoryTree::Record * InMemoryDirectoryTree::getRecord(const NormalizedPath & path)
+DiskObjectStorageMetadata * InMemoryDirectoryTree::getMetadata(const NormalizedPath & path)
 {
     auto node = resolve(path);
-    return node && node->isFile() ? &*node->record : nullptr;
+    return node && node->isFile() ? &*node->metadata : nullptr;
 }
 
-const InMemoryDirectoryTree::Record * InMemoryDirectoryTree::getRecord(const NormalizedPath & path) const
+const DiskObjectStorageMetadata * InMemoryDirectoryTree::getMetadata(const NormalizedPath & path) const
 {
     auto node = resolve(path);
-    return node && node->isFile() ? &*node->record : nullptr;
+    return node && node->isFile() ? &*node->metadata : nullptr;
 }
 
 std::vector<std::string> InMemoryDirectoryTree::listDirectory(const NormalizedPath & path) const
@@ -84,26 +84,26 @@ std::vector<std::string> InMemoryDirectoryTree::listDirectory(const NormalizedPa
     return result;
 }
 
-std::optional<InMemoryDirectoryTree::Record> InMemoryDirectoryTree::putFile(const NormalizedPath & path, Record record)
+std::optional<DiskObjectStorageMetadata> InMemoryDirectoryTree::putFile(const NormalizedPath & path, DiskObjectStorageMetadata metadata)
 {
     auto [parent, leaf] = resolveParent(path);
 
-    std::optional<Record> displaced;
+    std::optional<DiskObjectStorageMetadata> displaced;
     if (auto it = parent->children.find(leaf); it != parent->children.end())
     {
         if (!it->second->isFile())
             throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Cannot create file `{}`: a directory with this name exists", path.string());
-        displaced.emplace(std::move(*it->second->record));
+        displaced.emplace(std::move(*it->second->metadata));
         parent->children.erase(it);
     }
 
     auto node = std::make_shared<Node>();
-    node->record.emplace(std::move(record));
+    node->metadata.emplace(std::move(metadata));
     parent->children.emplace(std::move(leaf), std::move(node));
     return displaced;
 }
 
-InMemoryDirectoryTree::Record InMemoryDirectoryTree::removeFile(const NormalizedPath & path)
+DiskObjectStorageMetadata InMemoryDirectoryTree::removeFile(const NormalizedPath & path)
 {
     auto [parent, leaf] = resolveParent(path);
 
@@ -111,9 +111,9 @@ InMemoryDirectoryTree::Record InMemoryDirectoryTree::removeFile(const Normalized
     if (it == parent->children.end() || !it->second->isFile())
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File `{}` doesn't exist", path.string());
 
-    Record record = std::move(*it->second->record);
+    DiskObjectStorageMetadata metadata = std::move(*it->second->metadata);
     parent->children.erase(it);
-    return record;
+    return metadata;
 }
 
 void InMemoryDirectoryTree::createDirectory(const NormalizedPath & path)
@@ -160,7 +160,7 @@ void InMemoryDirectoryTree::removeDirectory(const NormalizedPath & path)
     parent->children.erase(it);
 }
 
-void InMemoryDirectoryTree::removeSubtree(const NormalizedPath & path, const std::function<void(const std::string &, Record &)> & visitor)
+void InMemoryDirectoryTree::removeSubtree(const NormalizedPath & path, const std::function<void(const std::string &, DiskObjectStorageMetadata &)> & visitor)
 {
     auto node = resolve(path);
     if (!node)
@@ -170,7 +170,7 @@ void InMemoryDirectoryTree::removeSubtree(const NormalizedPath & path, const std
     {
         if (current.isFile())
         {
-            visitor(relative_path.empty() ? "." : relative_path.string(), *current.record);
+            visitor(relative_path.empty() ? "." : relative_path.string(), *current.metadata);
             return;
         }
         for (auto & [name, child] : current.children)
@@ -187,7 +187,7 @@ void InMemoryDirectoryTree::removeSubtree(const NormalizedPath & path, const std
     parent->children.erase(leaf);
 }
 
-std::optional<InMemoryDirectoryTree::Record> InMemoryDirectoryTree::moveFile(const NormalizedPath & from, const NormalizedPath & to, bool replace)
+std::optional<DiskObjectStorageMetadata> InMemoryDirectoryTree::moveFile(const NormalizedPath & from, const NormalizedPath & to, bool replace)
 {
     auto [from_parent, from_leaf] = resolveParent(from);
     auto from_it = from_parent->children.find(from_leaf);
@@ -196,12 +196,12 @@ std::optional<InMemoryDirectoryTree::Record> InMemoryDirectoryTree::moveFile(con
 
     auto [to_parent, to_leaf] = resolveParent(to);
 
-    std::optional<Record> displaced;
+    std::optional<DiskObjectStorageMetadata> displaced;
     if (auto to_it = to_parent->children.find(to_leaf); to_it != to_parent->children.end())
     {
         if (!replace || !to_it->second->isFile())
             throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File `{}` already exists", to.string());
-        displaced.emplace(std::move(*to_it->second->record));
+        displaced.emplace(std::move(*to_it->second->metadata));
         to_parent->children.erase(to_it);
     }
 
@@ -244,7 +244,7 @@ void InMemoryDirectoryTree::moveDirectory(const NormalizedPath & from, const Nor
     to_parent->children.emplace(std::move(to_leaf), std::move(node));
 }
 
-void InMemoryDirectoryTree::forEachRecordUnder(const NormalizedPath & path, const std::function<void(const std::string &, Record &)> & visitor) const
+void InMemoryDirectoryTree::forEachMetadataUnder(const NormalizedPath & path, const std::function<void(const std::string &, DiskObjectStorageMetadata &)> & visitor) const
 {
     auto node = resolve(path);
     if (!node || node->isFile())
@@ -254,7 +254,7 @@ void InMemoryDirectoryTree::forEachRecordUnder(const NormalizedPath & path, cons
     {
         if (current.isFile())
         {
-            visitor(full_path.string(), *current.record);
+            visitor(full_path.string(), *current.metadata);
             return;
         }
         for (auto & [name, child] : current.children)
