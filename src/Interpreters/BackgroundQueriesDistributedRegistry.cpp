@@ -120,7 +120,7 @@ BackgroundQueryHandle::~BackgroundQueryHandle()
         if (!registry_ptr)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The background queries registry was destroyed before a background query was finalized");
 
-        registry_ptr->finalizeQuery(*this, Status::Aborted, 0, "");
+        registry_ptr->finalizeQuery(*this, Status::NotStarted, 0, "");
     }
     catch (...)
     {

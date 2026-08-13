@@ -50,7 +50,7 @@ public:
         Finished = 2,
         Failed = 3,
         Unknown = 4,
-        Aborted = 5,
+        NotStarted = 5,
         InternalRegistryError = 6,
     };
 

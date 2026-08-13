@@ -16,7 +16,7 @@ namespace DB
 ColumnsDescription StorageSystemBackgroundQueries::getColumnsDescription()
 {
     auto status_type = std::make_shared<DataTypeEnum8>(
-        DataTypeEnum8::Values{{"Running", 1}, {"Finished", 2}, {"Failed", 3}, {"Unknown", 4}, {"Aborted", 5}, {"RegistryInternalError", 6}});
+        DataTypeEnum8::Values{{"Running", 1}, {"Finished", 2}, {"Failed", 3}, {"Unknown", 4}, {"NotStarted", 5}, {"InternalRegistryError", 6}});
 
     return ColumnsDescription
     {
@@ -24,7 +24,7 @@ ColumnsDescription StorageSystemBackgroundQueries::getColumnsDescription()
         {"host", std::make_shared<DataTypeString>(), "Fully qualified domain name of the server that runs the query."},
         {"user", std::make_shared<DataTypeString>(), "User who submitted the query."},
         {"query", std::make_shared<DataTypeString>(), "Query text, truncated to the `background_queries_registry_max_query_length` server setting."},
-        {"status", status_type, "Status of the query. `Unknown` means that the server running the query stopped reporting its status, so the outcome was not recorded and the query may or may not have completed. `Aborted` means that the server shut down before the query started. `RegistryInternalError` means that the query's entry cannot be read from the registry."},
+        {"status", status_type, "Status of the query. `Unknown` means that the server running the query stopped reporting its status, so the outcome was not recorded and the query may or may not have completed. `NotStarted` means that the server shut down before the query started. `InternalRegistryError` means that the query's entry cannot be read from the registry."},
         {"exception_code", std::make_shared<DataTypeInt32>(), "Code of the exception if the query failed."},
         {"exception", std::make_shared<DataTypeString>(), "Message of the exception if the query failed."},
         {"submit_time", std::make_shared<DataTypeDateTime>(), "Time when the query was submitted."},
