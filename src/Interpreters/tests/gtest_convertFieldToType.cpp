@@ -455,8 +455,7 @@ TEST(ConvertFieldToTypeStrictness, TemporalExactContractAllOverflowModes)
             const auto to_type = type_factory.get(type_name);
 
             /// Exact-target caller (convert_inexact_floats=false): an inexact float is rejected (Null) in
-            /// every mode. This is the guard the bot asked for: without threading the contract into the
-            /// saturate/throw coerce helpers, this returned Field(0) instead of Null.
+            /// every mode, the saturate/throw coerce helpers included.
             EXPECT_TRUE(convertFieldToType(inexact, *to_type, from_type.get(), format_settings,
                                            /*strict=*/ false, /*convert_inexact_floats=*/ false).isNull())
                 << "type=" << type_name << " overflow=" << static_cast<int>(overflow);
