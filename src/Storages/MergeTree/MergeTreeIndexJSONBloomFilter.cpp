@@ -546,7 +546,7 @@ struct JSONPathMatch
     JSONBloomRole role = JSONBloomRole::Scalar;
 };
 
-bool isStructuralJSONSubcolumn(const DataTypeObject & object_type, const String & path)
+bool isStructuralJSONSubcolumn(const DataTypeObject & object_type, const String & path, size_t array_json_bridge)
 {
     const auto delimiter = path.rfind('.');
     if (delimiter == String::npos || object_type.getTypedPaths().contains(path))
@@ -564,6 +564,13 @@ bool isStructuralJSONSubcolumn(const DataTypeObject & object_type, const String 
             continue;
 
         DataTypePtr parent_type = typed_path->second;
+        if (prefix_end == array_json_bridge)
+        {
+            parent_type = removeJSONBloomWrappers(parent_type);
+            if (const auto * array_type = typeid_cast<const DataTypeArray *>(parent_type.get());
+                array_type && isObject(array_type->getNestedType()))
+                parent_type = array_type->getNestedType();
+        }
         if (prefix_end != delimiter)
             parent_type = parent_type->tryGetSubcolumnType(path.substr(prefix_end + 1, delimiter - prefix_end - 1));
 
@@ -648,6 +655,7 @@ std::optional<JSONPathMatch> tryMatchDirectJSONPath(const RPNBuilderTreeNode & n
             return std::nullopt;
 
         String path(subcolumn_name);
+        size_t array_json_bridge = String::npos;
         if (const size_t type_hint = path.find(".:`"); type_hint != String::npos)
         {
             const size_t type_end = path.find('`', type_hint + 3);
@@ -665,6 +673,7 @@ std::optional<JSONPathMatch> tryMatchDirectJSONPath(const RPNBuilderTreeNode & n
                 const auto * array_type = typeid_cast<const DataTypeArray *>(hinted_type.get());
                 if (!array_type || !isObject(array_type->getNestedType()))
                     return std::nullopt;
+                array_json_bridge = type_hint;
                 path.erase(type_hint, type_end - type_hint + 1);
             }
         }
@@ -672,7 +681,7 @@ std::optional<JSONPathMatch> tryMatchDirectJSONPath(const RPNBuilderTreeNode & n
         if (path.empty())
             return std::nullopt;
 
-        if (isStructuralJSONSubcolumn(object_type, path))
+        if (isStructuralJSONSubcolumn(object_type, path, array_json_bridge))
             return std::nullopt;
 
         return JSONPathMatch{std::move(path), subcolumn_type, nullptr, JSONBloomRole::Scalar};
