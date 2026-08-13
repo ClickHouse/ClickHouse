@@ -6154,6 +6154,12 @@ Force the use of optimization when it is applicable, but heuristics decided not 
     DECLARE(Bool, allow_limit_by_partitions_independently, true, R"(
 Enable independent `LIMIT BY` evaluation per partition on separate threads when the partition expression is a deterministic function of the `LIMIT BY` columns.
 )", 0) \
+    DECLARE(Bool, allow_creating_set_partitions_independently, true, R"(
+Enable parallel per-partition pre-deduplication of the subquery result when building the set for `IN (subquery)`, when the partition expression of the subquery's `MergeTree` table is a deterministic function of the subquery output columns. Each partition is read through a separate stream and deduplicated independently, so the single set-filling transform only hashes unique rows. Not applied with `FINAL`, parallel replicas, `GLOBAL IN`, when the data has a single partition, or when the largest partition holds more than twice the rows of the average partition; see [force_creating_set_partitions_independently](#force_creating_set_partitions_independently) to bypass this check). While the set is being built, the per-stream deduplication tables together hold roughly one extra copy of the unique keys.
+)", 0) \
+    DECLARE(Bool, force_creating_set_partitions_independently, false, R"(
+Force per-partition pre-deduplication for `IN (subquery)` set building when it is applicable, but the partition-skew check (largest partition more than twice the average) decided not to use it. Only bypasses the skew check of [allow_creating_set_partitions_independently](#allow_creating_set_partitions_independently); the remaining conditions still apply.
+)", 0) \
     DECLARE(Bool, allow_distinct_partitions_independently, true, R"(
 Enable independent `DISTINCT` evaluation per partition on separate threads when the partition expression is a deterministic function of the `DISTINCT` columns, skipping the cross-stream merge. Beneficial when the number of partitions is close to the number of cores and partitions have roughly the same size; otherwise a cost heuristic skips it, see [max_number_of_partitions_for_independent_distinct](#max_number_of_partitions_for_independent_distinct) and [force_distinct_partitions_independently](#force_distinct_partitions_independently). Not applied with `FINAL` or parallel replicas.
 
