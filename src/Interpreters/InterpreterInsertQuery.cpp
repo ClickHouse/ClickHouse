@@ -1067,7 +1067,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
             select_query = sq;
             if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
                 ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0));
-            ApplyWithSubqueryVisitor(local_context).visit(select.list_of_selects->children.at(0));
+            ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0));
 
             JoinedTables joined_tables(Context::createCopy(local_context), *sq);
             if (joined_tables.tablesCount() == 1)
@@ -1238,6 +1238,12 @@ BlockIO InterpreterInsertQuery::execute()
     if (!query.table_function && !skip_target_insert_access_check)
         context->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
+    /// Access the storage itself guards the write with (e.g. the source access of a table of a
+    /// `URL` database). It is also checked when the sink is created, but that happens in a
+    /// background flush for asynchronous inserts, so the check has to be repeated here.
+    if (!query.table_function)
+        table->checkInsertIsAllowed(context);
+
     if (!allow_materialized)
     {
         for (const auto & column : metadata_snapshot->getColumns())
@@ -1281,6 +1287,16 @@ BlockIO InterpreterInsertQuery::execute()
     }
 
     res.pipeline.addStorageHolder(table);
+
+    /// Keep the share lock until the pipeline finishes (not just while it is being built), so that
+    /// the dependent-view discovery and the commit of the inserted data are indivisible with respect
+    /// to an exclusive lock on the table. The atomic `CREATE MATERIALIZED VIEW ... POPULATE` relies
+    /// on this: under its brief exclusive lock on the source, any concurrent `INSERT` has either
+    /// already committed (and is covered by the pinned snapshot) or has not yet discovered the
+    /// dependent views (and will see the newly registered view).
+    QueryPlanResourceHolder insert_resources;
+    insert_resources.table_locks.emplace_back(std::move(table_lock));
+    res.pipeline.addResources(std::move(insert_resources));
 
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
         res.pipeline.addStorageHolder(mv->getTargetTable());

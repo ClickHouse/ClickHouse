@@ -8,7 +8,6 @@ namespace DB
 WatermarkSettingsPtr WatermarkSettings::clone() const
 {
     auto result = std::make_shared<WatermarkSettings>(*this);
-
     if (result->expression)
         result->expression = result->expression->clone();
 
@@ -44,6 +43,9 @@ StreamSettingsPtr StreamSettings::clone() const
 
 bool StreamSettings::operator==(const StreamSettings & rhs) const
 {
+    if (subscribe_for_updates != rhs.subscribe_for_updates)
+        return false;
+
     /// Compare cursors
     {
         if ((cursor == nullptr) != (rhs.cursor == nullptr))

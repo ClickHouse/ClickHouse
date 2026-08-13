@@ -126,10 +126,14 @@ std::optional<WatermarkSettings> parseWatermarkClause(IParser::Pos & pos, Expect
 
 bool ParserStreamSettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    ParserKeyword s_bounded{Keyword::BOUNDED};
     ParserKeyword s_cursor{Keyword::CURSOR};
     ParserKeyword s_watermark{Keyword::WATERMARK};
 
     auto stream_settings = make_intrusive<ASTStreamSettings>();
+
+    if (s_bounded.ignore(pos, expected))
+        stream_settings->setSubscribeForUpdates(false);
 
     if (s_cursor.ignore(pos, expected))
     {
@@ -137,7 +141,7 @@ bool ParserStreamSettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         if (!cursor.has_value())
             return false;
 
-        stream_settings->cursor = buildCursorTree(cursor.value());
+        stream_settings->setCursor(buildCursorTree(cursor.value()));
     }
 
     if (s_watermark.ignore(pos, expected))
@@ -146,7 +150,7 @@ bool ParserStreamSettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         if (!watermark.has_value())
             return false;
 
-        stream_settings->watermark = std::make_shared<WatermarkSettings>(std::move(watermark.value()));
+        stream_settings->setWatermark(std::make_shared<WatermarkSettings>(std::move(watermark.value())));
     }
 
     node = std::move(stream_settings);

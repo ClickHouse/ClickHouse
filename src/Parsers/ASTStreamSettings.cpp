@@ -62,41 +62,76 @@ ASTPtr ASTStreamSettings::clone() const
 {
     auto cloned_stream_settings = make_intrusive<ASTStreamSettings>();
 
+    cloned_stream_settings->setSubscribeForUpdates(subscribe_for_updates);
     if (cursor)
-        cloned_stream_settings->cursor = cursor->clone();
-
+        cloned_stream_settings->setCursor(cursor->clone());
     if (watermark)
-        cloned_stream_settings->watermark = watermark->clone();
+        cloned_stream_settings->setWatermark(watermark->clone());
 
     return cloned_stream_settings;
 }
 
 bool ASTStreamSettings::hasTweaks() const
 {
-    return cursor != nullptr || watermark != nullptr;
+    return !subscribe_for_updates || cursor != nullptr || watermark != nullptr;
+}
+
+void ASTStreamSettings::setSubscribeForUpdates(bool subscribe_for_updates_)
+{
+    subscribe_for_updates = subscribe_for_updates_;
+}
+
+void ASTStreamSettings::setCursor(CursorTreeNodePtr cursor_)
+{
+    cursor = std::move(cursor_);
+}
+
+void ASTStreamSettings::setWatermark(WatermarkSettingsPtr watermark_)
+{
+    watermark = std::move(watermark_);
+    children.push_back(watermark->expression);
 }
 
 void ASTStreamSettings::formatImpl(WriteBuffer & ostr, const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const
 {
+    bool need_space = false;
+
+    if (!subscribe_for_updates)
+    {
+        ostr << "BOUNDED";
+        need_space = true;
+    }
+
     if (cursor)
     {
+        if (need_space)
+            ostr << ' ';
         ostr << "CURSOR ";
         formatCursorTree(ostr, cursor.get());
+        need_space = true;
     }
 
     if (watermark)
     {
-        if (cursor)
+        if (need_space)
             ostr << ' ';
-
         ostr << "WATERMARK ";
         formatWatermark(ostr, *watermark, format_settings, state, frame);
     }
 }
 
+void ASTStreamSettings::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
+{
+    if (watermark)
+        f(nullptr, &watermark->expression);
+}
+
 void ASTStreamSettings::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "StreamSettings");
+
+    if (!subscribe_for_updates)
+        w.writeInt("subscribe_for_updates", 0);
 
     if (cursor)
         w.writeFieldValue("cursor_tree", Field(cursorTreeToMap(cursor)));
@@ -112,6 +147,9 @@ void ASTStreamSettings::writeJSON(WriteBuffer & out) const
 void ASTStreamSettings::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
+
+    if (r.has("subscribe_for_updates"))
+        setSubscribeForUpdates(r.getInt("subscribe_for_updates") != 0);
 
     if (r.has("cursor_tree"))
     {
@@ -142,7 +180,7 @@ void ASTStreamSettings::readJSON(const Poco::JSON::Object & json)
                     "`StreamSettings` 'cursor_tree' value is out of Int64 range during AST JSON deserialization");
         }
 
-        cursor = buildCursorTree(map);
+        setCursor(buildCursorTree(map));
     }
 
     if (r.has("watermark_column"))
@@ -162,10 +200,11 @@ void ASTStreamSettings::readJSON(const Poco::JSON::Object & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "`StreamSettings` 'watermark_idle_timeout_ms' must be non-negative during AST JSON deserialization");
 
-        watermark = std::make_shared<WatermarkSettings>();
-        watermark->column = std::move(column);
-        watermark->expression = std::move(expression);
-        watermark->idle_timeout = std::chrono::milliseconds(idle_timeout_ms);
+        auto new_watermark = std::make_shared<WatermarkSettings>();
+        new_watermark->column = std::move(column);
+        new_watermark->expression = std::move(expression);
+        new_watermark->idle_timeout = std::chrono::milliseconds(idle_timeout_ms);
+        setWatermark(std::move(new_watermark));
     }
 }
 

@@ -11,6 +11,13 @@ namespace
         PrometheusQueryTree query_tree{input};
         return "\n" + query_tree.toString() + "\n" + query_tree.dumpTree();
     }
+
+    /// Parses a query consisting of a single string literal and returns its unescaped value.
+    String parseStringLiteral(std::string_view input)
+    {
+        PrometheusQueryTree query_tree{input};
+        return typeid_cast<const PrometheusQueryTree::StringLiteral &>(*query_tree.getRoot()).string;
+    }
 }
 
 
@@ -1180,6 +1187,27 @@ PrometheusQueryTree(INSTANT_VECTOR):
 }
 
 
+TEST(PromQLParser, DurationUnitOrder)
+{
+    for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
+             {"up[1m1d]", 6},
+             {"up[1h2h]", 6},
+             {"up offset 1ms1s", 14},
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_EQ(error_pos, expected_error_pos) << query;
+    }
+
+    EXPECT_NO_THROW(PrometheusQueryTree{"up[1y2w3d4h5m6s7ms]"});
+    EXPECT_NO_THROW(PrometheusQueryTree{"up[1d2h5ms]"});
+}
+
+
 TEST(PromQLParser, ErrorPosition)
 {
     for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
@@ -1196,6 +1224,24 @@ TEST(PromQLParser, ErrorPosition)
 
         EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos));
         EXPECT_EQ(error_pos, expected_error_pos);
+    }
+}
+
+
+TEST(PromQLParser, InvalidStringQuoteEscapes)
+{
+    for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
+             {R"(up{label="a\'b"})", 11},
+             {R"(up{label='a\"b'})", 11},
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos));
+        EXPECT_EQ(error_pos, expected_error_pos) << query;
+        EXPECT_NE(error_message.find("Invalid escape sequence"), String::npos) << query;
     }
 }
 
@@ -1283,4 +1329,30 @@ PrometheusQueryTree(STRING):
     StringLiteral('日本語')
 )");
 
+}
+
+
+TEST(PromQLParser, RejectUnicodeSurrogateEscapes)
+{
+    auto expect_rejected = [](std::string_view query, size_t expected_error_pos)
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+        EXPECT_FALSE(query_tree.tryParse(query, /* timestamp_scale = */ 3, &error_message, &error_pos)) << query;
+        EXPECT_NE(error_message.find("surrogate range 0xD800-0xDFFF"), String::npos) << query << ": " << error_message;
+        EXPECT_EQ(error_pos, expected_error_pos) << query;
+    };
+
+    expect_rejected(R"("\uD800")", 1);
+    expect_rejected(R"("\uDFFF")", 1);
+    expect_rejected(R"("\U0000D800")", 1);
+    expect_rejected(R"("\U0000DFFF")", 1);
+    expect_rejected(R"("ab\uD800cd")", 3);
+
+    /// Code points right outside the surrogate range are still accepted and encoded as UTF-8.
+    EXPECT_EQ(parseStringLiteral(R"("\uD7FF")"), "\xED\x9F\xBF");
+    EXPECT_EQ(parseStringLiteral(R"("\uE000")"), "\xEE\x80\x80");
+    EXPECT_EQ(parseStringLiteral(R"("\U00010000")"), "\xF0\x90\x80\x80");
+    EXPECT_EQ(parseStringLiteral(R"("\U0010FFFF")"), "\xF4\x8F\xBF\xBF");
 }

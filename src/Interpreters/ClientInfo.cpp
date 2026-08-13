@@ -476,6 +476,21 @@ void ClientInfo::setInitialQuery()
         client_name = std::string(VERSION_NAME) + " " + client_name;
 }
 
+void ClientInfo::setClientVersionFromConnectionIfUnknown()
+{
+    if (client_version_major != 0 || client_version_minor != 0 || client_version_patch != 0)
+        return;
+
+    if (connection_client_version_major == 0 && connection_client_version_minor == 0 && connection_client_version_patch == 0)
+        return;
+
+    client_version_major = connection_client_version_major;
+    client_version_minor = connection_client_version_minor;
+    client_version_patch = connection_client_version_patch;
+    if (client_tcp_protocol_version == 0)
+        client_tcp_protocol_version = connection_tcp_protocol_version;
+}
+
 bool ClientInfo::clientVersionEquals(const ClientInfo & other, bool compare_patch) const
 {
     bool patch_equals = compare_patch ? client_version_patch == other.client_version_patch : true;

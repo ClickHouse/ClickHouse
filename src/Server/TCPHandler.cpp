@@ -2482,6 +2482,13 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         const auto & config_ref = Context::getGlobalContextInstance()->getServerSettings();
         if (config_ref[ServerSetting::validate_tcp_client_information])
             validateClientInfo(session->getClientInfo(), client_info);
+
+        /// An older peer can forward a server-initiated query whose context was never filled with
+        /// a version, so `client_info.read` above overwrote the session seed with 0.0.0. Take the
+        /// peer's version from the connection hello instead: otherwise the version-gated
+        /// compatibility decisions below would wrongly downgrade, and a second distributed hop
+        /// would trip the zero-version check in `RemoteQueryExecutor` during a rolling upgrade.
+        client_info.setClientVersionFromConnectionIfUnknown();
     }
 
     /// Per query settings are also passed via TCP.

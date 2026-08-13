@@ -27,6 +27,18 @@ Can be overridden by explicit `dictionary_block_frontcoding_compression` index a
 Default dictionary block size for text indexes.
 Can be overridden by explicit `dictionary_block_size` index argument.
 
+## text_index_max_memory_usage_before_flush {#text_index_max_memory_usage_before_flush}
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1073741824" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1073741824"},{"label": "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"}]}]}/>
+
+Maximum estimated memory retained by a text index builder before flushing a temporary segment.
+
+## text_index_max_processed_tokens_before_flush {#text_index_max_processed_tokens_before_flush}
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100000000" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "100000000"},{"label": "New setting"}]}]}/>
+
+Maximum number of processed tokens accumulated by a text index builder before flushing a temporary segment.
+
 ## text_index_posting_list_block_size {#text_index_posting_list_block_size}
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1048576" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1048576"},{"label": "New setting"}]}]}/>
