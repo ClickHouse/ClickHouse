@@ -38,15 +38,17 @@ std::optional<ColumnIdMapping> DiskColumnIdMappingStore::load()
 {
     const auto column_ids_path = fs::path(data.getRelativeDataPath()) / MergeTreeData::COLUMN_IDS_FILE_NAME;
 
-    const DiskPtr authoritative_disk = getAuthoritativeDisk();
     std::unique_ptr<ReadBufferFromFileBase> mapping_buf;
-    if (!authoritative_disk->isBroken())
-        mapping_buf = authoritative_disk->readFileIfExists(column_ids_path, getReadSettings());
+    // Try to read the mapping from the first disk that has it
+    for (auto& disk : data.getStoragePolicy()->getDisks())
+    {
+        if (!disk->isBroken() && disk->existsFile(column_ids_path))
+        {
+            mapping_buf = disk->readFile(column_ids_path, getReadSettings());
+            break;
+        }
+    }
 
-    /// This file, not `serialization_info_version`, is what makes a table use column IDs: the setting
-    /// defaults from the server config, so requiring a mapping on its say-so would refuse every table
-    /// that predates a change of that default. A mapping that really is gone is caught from the
-    /// evidence instead, by `IMergeTreeDataPart::loadColumns`.
     if (!mapping_buf)
         return {};
 
@@ -56,8 +58,6 @@ std::optional<ColumnIdMapping> DiskColumnIdMappingStore::load()
     return loaded_mapping;
 }
 
-/// One copy, not one per disk like `format_version.txt`: parts are self-describing (`columns.txt`
-/// stores the IDs), so no disk ever reads its own copy of the mapping.
 DiskPtr DiskColumnIdMappingStore::getAuthoritativeDisk() const
 {
     const auto & disks = data.getStoragePolicy()->getDisks();
@@ -66,9 +66,6 @@ DiskPtr DiskColumnIdMappingStore::getAuthoritativeDisk() const
             "Storage policy for table {} has no disks to hold `{}`",
             data.getStorageID().getNameForLogs(), MergeTreeData::COLUMN_IDS_FILE_NAME);
 
-    /// Only ever the first disk, never "wherever a copy turns up": a copy elsewhere cannot be proven
-    /// current at load time, and adopting a stale one resurrects DROP + re-ADD bytes under a reused
-    /// name. `MergeTreeData::checkAlterIsPossible` refuses the policy changes that would move it.
     return disks.front();
 }
 
@@ -136,33 +133,6 @@ void DiskColumnIdMappingStore::store(const ColumnIdMapping & mapping)
         {
             tryLogCurrentException(log, "Failed to remove stale column ID mapping copy");
         }
-    }
-}
-
-/// Swept off every disk, not just the one `store` wrote to: a surviving inactive mapping makes a
-/// post-restart ALTER take the already-active path while parts still hold logical filenames.
-void DiskColumnIdMappingStore::remove() noexcept
-{
-    try
-    {
-        const auto column_ids_path = fs::path(data.getRelativeDataPath()) / MergeTreeData::COLUMN_IDS_FILE_NAME;
-        for (const auto & disk : data.getStoragePolicy()->getDisks())
-        {
-            if (disk->isBroken() || disk->isReadOnly() || disk->isWriteOnce())
-                continue;
-            try
-            {
-                disk->removeFileIfExists(column_ids_path);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Failed to remove column ID mapping from disk");
-            }
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Failed to resolve the disks holding the column ID mapping");
     }
 }
 

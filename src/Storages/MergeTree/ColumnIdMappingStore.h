@@ -26,9 +26,6 @@ public:
 
     /// Store @mapping durably, wherever this table's mapping belongs.
     virtual void store(const ColumnIdMapping & mapping) = 0;
-
-    /// Undo an activation that never committed.  Best-effort by contract.
-    virtual void remove() noexcept = 0;
 };
 
 using ColumnIdMappingStorePtr = std::unique_ptr<ColumnIdMappingStore>;
@@ -41,7 +38,6 @@ public:
 
     std::optional<ColumnIdMapping> load() override;
     void store(const ColumnIdMapping & mapping) override;
-    void remove() noexcept override;
 
 private:
     /// The one disk that holds `column_ids.json`: the storage policy's first.
