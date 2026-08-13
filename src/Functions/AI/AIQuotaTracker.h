@@ -3,9 +3,16 @@
 #include <Core/Types.h>
 #include <Common/Exception.h>
 
+#include <atomic>
+
 namespace DB
 {
 
+/// Tracks AI-function quota usage for one query. A single instance is shared by every AI function
+/// call in the query (owned by the query `Context`), so the counters are updated concurrently from
+/// the pipeline threads and are `atomic`. `checkQuotas` and `recordAttempt` are separate, so at the
+/// limit a few concurrent calls can each pass the check before recording (overshoot bounded by the
+/// number of in-flight calls) - the same relaxation the setting docs already allow.
 class AIQuotaTracker
 {
 public:
@@ -36,10 +43,10 @@ private:
     const UInt64 max_api_calls;
     const bool throw_on_quota_exceeded;
 
-    bool quota_exceeded = false;
-    UInt64 input_tokens = 0;
-    UInt64 output_tokens = 0;
-    UInt64 api_calls = 0;
+    std::atomic<bool> quota_exceeded = false;
+    std::atomic<UInt64> input_tokens = 0;
+    std::atomic<UInt64> output_tokens = 0;
+    std::atomic<UInt64> api_calls = 0;
 };
 
 }

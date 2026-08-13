@@ -45,10 +45,6 @@ namespace Setting
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
     extern const SettingsBool ai_function_throw_on_error;
-    extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_api_calls_per_query;
-    extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsString ai_function_text_default_credentials;
     extern const SettingsBool ai_function_allow_insecure_endpoint;
 }
@@ -499,11 +495,10 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
 
-    AIQuotaTracker quota(
-        settings[Setting::ai_function_max_input_tokens_per_query].value,
-        settings[Setting::ai_function_max_output_tokens_per_query].value,
-        settings[Setting::ai_function_max_api_calls_per_query].value,
-        settings[Setting::ai_function_throw_on_quota_exceeded].value);
+    /// Shared across every AI function call in the query so the `ai_function_max_*_per_query` limits
+    /// bound the whole query, not a single block.
+    auto quota_tracker = getContext()->getAIQuotaTracker();
+    AIQuotaTracker & quota = *quota_tracker;
 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
     timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);

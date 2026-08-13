@@ -11,39 +11,39 @@ namespace ErrorCodes
 
 bool AIQuotaTracker::checkQuotas()
 {
-    if (quota_exceeded)
+    if (quota_exceeded.load(std::memory_order_relaxed))
         return true;
 
-    if (max_api_calls > 0 && api_calls >= max_api_calls)
+    if (UInt64 calls = api_calls.load(std::memory_order_relaxed); max_api_calls > 0 && calls >= max_api_calls)
     {
         if (throw_on_quota_exceeded)
             throw Exception(ErrorCodes::LIMIT_EXCEEDED,
                 "AI API call limit reached: {} calls made, maximum: {}. "
                 "This is controlled by the 'ai_function_max_api_calls_per_query' setting",
-                api_calls, max_api_calls);
-        quota_exceeded = true;
+                calls, max_api_calls);
+        quota_exceeded.store(true, std::memory_order_relaxed);
         return true;
     }
 
-    if (max_input_tokens > 0 && input_tokens >= max_input_tokens)
+    if (UInt64 in_tokens = input_tokens.load(std::memory_order_relaxed); max_input_tokens > 0 && in_tokens >= max_input_tokens)
     {
         if (throw_on_quota_exceeded)
             throw Exception(ErrorCodes::LIMIT_EXCEEDED,
                 "AI input token limit reached or exceeded: {} tokens consumed, maximum: {}. "
                 "This is controlled by the 'ai_function_max_input_tokens_per_query' setting",
-                input_tokens, max_input_tokens);
-        quota_exceeded = true;
+                in_tokens, max_input_tokens);
+        quota_exceeded.store(true, std::memory_order_relaxed);
         return true;
     }
 
-    if (max_output_tokens > 0 && output_tokens >= max_output_tokens)
+    if (UInt64 out_tokens = output_tokens.load(std::memory_order_relaxed); max_output_tokens > 0 && out_tokens >= max_output_tokens)
     {
         if (throw_on_quota_exceeded)
             throw Exception(ErrorCodes::LIMIT_EXCEEDED,
                 "AI output token limit reached or exceeded: {} tokens generated, maximum: {}. "
                 "This is controlled by the 'ai_function_max_output_tokens_per_query' setting",
-                output_tokens, max_output_tokens);
-        quota_exceeded = true;
+                out_tokens, max_output_tokens);
+        quota_exceeded.store(true, std::memory_order_relaxed);
         return true;
     }
 
@@ -52,13 +52,13 @@ bool AIQuotaTracker::checkQuotas()
 
 void AIQuotaTracker::recordAttempt()
 {
-    ++api_calls;
+    api_calls.fetch_add(1, std::memory_order_relaxed);
 }
 
 void AIQuotaTracker::recordTokens(UInt64 in_tokens, UInt64 out_tokens)
 {
-    input_tokens += in_tokens;
-    output_tokens += out_tokens;
+    input_tokens.fetch_add(in_tokens, std::memory_order_relaxed);
+    output_tokens.fetch_add(out_tokens, std::memory_order_relaxed);
 }
 
 }
