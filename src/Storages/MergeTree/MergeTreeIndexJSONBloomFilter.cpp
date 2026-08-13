@@ -23,7 +23,6 @@
 #include <DataTypes/DataTypesCache.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatSettings.h>
-#include <Functions/FunctionsComparison.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -951,7 +950,7 @@ MergeTreeIndexConditionJSONBloomFilter::MergeTreeIndexConditionJSONBloomFilter(
     : header(header_)
     , hash_functions(hash_functions_)
     , tokenizer(tokenizer_)
-    , comparison_format_settings(ComparisonParams(context).format_settings)
+    , comparison_format_settings(getJSONComparisonFormatSettings(context))
 {
     if (!predicate)
     {
@@ -1114,7 +1113,7 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
 
         auto key_node = function.getArgumentAt(0);
         auto path = tryMatchJSONPath(key_node, header);
-        if (!path || isDynamic(removeJSONBloomWrappers(path->type)))
+        if (!path || path->cast_type || isDynamic(removeJSONBloomWrappers(path->type)))
             return false;
 
         auto future_set = function.getArgumentAt(1).tryGetPreparedSet();
