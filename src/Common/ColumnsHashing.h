@@ -333,16 +333,6 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 };
 
-class HashMethodSerializedContext : public HashMethodContext
-{
-public:
-    explicit HashMethodSerializedContext(const HashMethodContextSettings & settings_)
-        : settings(settings_)
-    {}
-
-    HashMethodContextSettings settings;
-};
-
 /** Hash by concatenating serialized key values.
   * The serialized value differs in that it uniquely allows to deserialize it, having only the position with which it starts.
   * That is, for example, for strings, it contains first the serialized length of the string, and then the bytes.
@@ -357,7 +347,7 @@ struct HashMethodSerialized
 
     static HashMethodContextPtr createContext(const HashMethodContextSettings & settings)
     {
-        return std::make_shared<HashMethodSerializedContext>(settings);
+        return std::make_shared<HashMethodSettingsContext>(settings);
     }
 
     static constexpr bool has_cheap_key_calculation = false;
@@ -409,7 +399,7 @@ struct HashMethodSerialized
     HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & context)
         : key_columns(key_columns_), keys_size(key_columns_.size())
     {
-        const auto * hash_serialized_context = typeid_cast<const HashMethodSerializedContext *>(context.get());
+        const auto * hash_serialized_context = typeid_cast<const HashMethodSettingsContext *>(context.get());
         if (!hash_serialized_context)
         {
             const auto & cached_val = *context;

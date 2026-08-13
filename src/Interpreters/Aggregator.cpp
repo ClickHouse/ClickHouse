@@ -1058,6 +1058,14 @@ void NO_INLINE Aggregator::executeImplBatch(
     PrefetchingHelper prefetching;
     size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
 
+    /// When the state precomputes per-row hashes, `emplaceKey`/`findKey` prefetch on their own,
+    /// reusing the precomputed hash. The generic look-ahead below would compute every key and
+    /// its hash a second time only to prefetch the same bucket - skip it in that case.
+    [[maybe_unused]] bool state_prefetches_by_hash = false;
+    if constexpr (State::has_pre_computed_hashes
+        && ColumnsHashing::columns_hashing_impl::HasPrefetchByHashMemberFunc<decltype(method.data)>)
+        state_prefetches_by_hash = state.can_precompute_hashes;
+
     /// Optimization for special case when there are no aggregate functions.
     if (params.aggregates_size == 0)
     {
@@ -1077,13 +1085,16 @@ void NO_INLINE Aggregator::executeImplBatch(
             {
                 if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
                 {
-                    if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
-                        prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
-
-                    if (i + prefetch_look_ahead < row_end)
+                    if (!state_prefetches_by_hash)
                     {
-                        auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
-                        method.data.prefetch(std::move(key_holder));
+                        if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
+                            prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+
+                        if (i + prefetch_look_ahead < row_end)
+                        {
+                            auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
+                            method.data.prefetch(std::move(key_holder));
+                        }
                     }
                 }
 
@@ -1173,13 +1184,16 @@ void NO_INLINE Aggregator::executeImplBatch(
             {
                 if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
                 {
-                    if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
-                        prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
-
-                    if (i + prefetch_look_ahead < row_end)
+                    if (!state_prefetches_by_hash)
                     {
-                        auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
-                        method.data.prefetch(std::move(key_holder));
+                        if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
+                            prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+
+                        if (i + prefetch_look_ahead < row_end)
+                        {
+                            auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
+                            method.data.prefetch(std::move(key_holder));
+                        }
                     }
                 }
 
@@ -1243,15 +1257,18 @@ void NO_INLINE Aggregator::executeImplBatch(
 
             if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
             {
-                if (i == key_start + PrefetchingHelper::iterationsToMeasure())
-                    prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
-
-                /// Bound by `key_end` (not `row_end`): when all keys are const the key
-                /// columns hold 1 row, so the look-ahead must not cross that row.
-                if (i + prefetch_look_ahead < key_end)
+                if (!state_prefetches_by_hash)
                 {
-                    auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
-                    method.data.prefetch(std::move(key_holder));
+                    if (i == key_start + PrefetchingHelper::iterationsToMeasure())
+                        prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+
+                    /// Bound by `key_end` (not `row_end`): when all keys are const the key
+                    /// columns hold 1 row, so the look-ahead must not cross that row.
+                    if (i + prefetch_look_ahead < key_end)
+                    {
+                        auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
+                        method.data.prefetch(std::move(key_holder));
+                    }
                 }
             }
 

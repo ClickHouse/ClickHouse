@@ -1096,10 +1096,13 @@ public:
         __builtin_prefetch(&buf[place]);
     }
 
+    /// Whether a key hashing to `hash_key` is definitely absent from the table.
+    /// The zero key is stored outside `buf`, so when it is present, an empty cell
+    /// at the key's place proves nothing: the requested key may be the zero key itself.
     bool ALWAYS_INLINE isEmptyCell(size_t hash_key) const
     {
         const auto place = grower.place(hash_key);
-        return buf[place].isZero(*this);
+        return buf[place].isZero(*this) && !this->hasZero();
     }
 
     void reserve(size_t num_elements)

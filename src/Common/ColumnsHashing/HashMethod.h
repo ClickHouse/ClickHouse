@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ColumnsHashingImpl.h>
+#include <Common/HashTable/Prefetching.h>
 #include <Common/SipHash.h>
 #include <bit>
 #include <Columns/ColumnFixedString.h>
@@ -454,11 +455,32 @@ struct HashMethodKeysFixed
     static constexpr bool has_cheap_key_calculation = true;
     /// `packFixed` copies a few fixed-width fields into the key; no allocation.
     static constexpr bool has_cheap_key_holder = true;
-    static constexpr bool has_pre_computed_hashes = false;
+    /// When the whole block of keys is batch-packed upfront (`prepared_keys`), the per-row
+    /// canonical hashes can be precomputed from it in one pass and reused both to prefetch
+    /// the target bucket ahead of time and to skip rehashing the key in `emplace`/`find`.
+    /// Nullable and low-cardinality variants never use `prepared_keys`, so they are excluded
+    /// at compile time.
+    static constexpr bool has_pre_computed_hashes = !has_nullable_keys_ && !has_low_cardinality_;
+
+    static HashMethodContextPtr createContext(const HashMethodContextSettings & settings)
+    {
+        return std::make_shared<HashMethodSettingsContext>(settings);
+    }
 
     LowCardinalityKeys<has_low_cardinality> low_cardinality_keys;
     Sizes key_sizes;
     size_t keys_size;
+
+    /// See `HashMethodSerialized` for the meaning of these members: the same precomputed-hash
+    /// prefetch protocol from `columns_hashing_impl::HashMethodBase` applies here. Only used
+    /// when `has_pre_computed_hashes` is true.
+    PaddedPODArray<size_t> precomputed_hashes;
+    bool precomputed_hashes_initialized = true;
+    bool can_precompute_hashes = false;
+    size_t min_bytes_for_prefetch = 0;
+    std::unique_ptr<PrefetchingHelper> prefetching;
+    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
+    size_t calibration_row = PrefetchingHelper::iterationsToMeasure();
 
     /// SSSE3 shuffle method can be used. Shuffle masks will be calculated and stored here.
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
@@ -480,7 +502,7 @@ struct HashMethodKeysFixed
         return true;
     }
 
-    HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &)
+    HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr & context)
         : Base(key_columns), key_sizes(key_sizes_), keys_size(key_columns.size())
     {
         if constexpr (has_low_cardinality)
@@ -504,6 +526,23 @@ struct HashMethodKeysFixed
         if (usePreparedKeys(key_sizes))
         {
             packFixedBatch(keys_size, Base::getActualColumns(), key_sizes, prepared_keys);
+        }
+
+        /// Precomputing canonical hashes requires the batch-packed keys, the caller's
+        /// opt-in (mirrors `enable_software_prefetch_in_aggregation`) and a context to read
+        /// the settings from. Callers that don't pass a settings context (Set, JOIN,
+        /// `arrayUniq`-style functions) keep the old behavior. The hash-table size threshold
+        /// (`min_bytes_for_prefetch`) is enforced lazily on the first emplace/find call.
+        if constexpr (has_pre_computed_hashes)
+        {
+            const auto * settings_context = context ? typeid_cast<const HashMethodSettingsContext *>(context.get()) : nullptr;
+            if (settings_context && !prepared_keys.empty() && settings_context->settings.enable_prefetch)
+            {
+                can_precompute_hashes = true;
+                precomputed_hashes_initialized = false;
+                min_bytes_for_prefetch = settings_context->settings.min_bytes_for_prefetch;
+                prefetching = std::make_unique<PrefetchingHelper>();
+            }
         }
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
@@ -557,6 +596,30 @@ struct HashMethodKeysFixed
                 columns_data[i] = Base::getActualColumns()[i]->getRawData().data();
         }
 #endif
+    }
+
+    /// Compute per-row canonical hashes from `prepared_keys` using `Data::hash`.
+    /// Called once on the first `emplaceKey`/`findKey`, when `Data` becomes known.
+    /// Also applies the `min_bytes_for_prefetch` size-threshold contract: skip the
+    /// precomputed-hash + prefetch path while the hash table still fits into caches.
+    /// Matches `Aggregator::executeImpl`'s `prefetch` gate.
+    template <typename Data>
+    NO_INLINE void initPrecomputedHashes(const Data & data, size_t first_row)
+        requires has_pre_computed_hashes
+    {
+        precomputed_hashes_initialized = true;
+        calibration_row = first_row + PrefetchingHelper::iterationsToMeasure();
+
+        if (min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= min_bytes_for_prefetch)
+        {
+            can_precompute_hashes = false;
+            return;
+        }
+
+        const size_t rows = prepared_keys.size();
+        precomputed_hashes.resize(rows);
+        for (size_t i = 0; i < rows; ++i)
+            precomputed_hashes[i] = data.hash(prepared_keys[i]);
     }
 
     ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const

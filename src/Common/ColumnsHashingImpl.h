@@ -46,6 +46,18 @@ public:
 
 using HashMethodContextPtr = std::shared_ptr<HashMethodContext>;
 
+/// A context that carries the settings, for methods that need nothing else from it
+/// (e.g. to decide whether to precompute per-row hashes and prefetch).
+class HashMethodSettingsContext : public HashMethodContext
+{
+public:
+    explicit HashMethodSettingsContext(const HashMethodContextSettings & settings_)
+        : settings(settings_)
+    {}
+
+    HashMethodContextSettings settings;
+};
+
 struct LastElementCacheStats
 {
     UInt64 hits = 0;
@@ -60,6 +72,17 @@ struct LastElementCacheStats
 
 namespace columns_hashing_impl
 {
+
+/// Whether the hash table supports bucket addressing by a precomputed hash. Required for the
+/// precomputed-hash prefetch path: methods with `has_pre_computed_hashes` may be instantiated
+/// with tables that cannot use it (e.g. `FixedHashTable` is directly addressed by the key and
+/// has no hash at all), and for those the path must compile out.
+template <typename Data>
+concept HasPrefetchByHashMemberFunc = requires(const Data & data, size_t hash)
+{
+    data.prefetchByHash(hash);
+    data.isEmptyCell(hash);
+};
 
 struct LastElementCacheBase
 {
@@ -230,7 +253,7 @@ public:
 
         auto & derived = static_cast<Derived &>(*this);
         auto key_holder = derived.getKeyHolder(row, pool);
-        if constexpr (Derived::has_pre_computed_hashes)
+        if constexpr (Derived::has_pre_computed_hashes && HasPrefetchByHashMemberFunc<Data>)
         {
             /// Single gate in the hot path: `precomputed_hashes_initialized` is set to `true`
             /// after the first call (regardless of whether hashes were actually computed), so
@@ -278,7 +301,7 @@ public:
         }
 
         auto & derived = static_cast<Derived &>(*this);
-        if constexpr (Derived::has_pre_computed_hashes)
+        if constexpr (Derived::has_pre_computed_hashes && HasPrefetchByHashMemberFunc<Data>)
         {
             /// See note in `emplaceKey`: single gate via `precomputed_hashes_initialized`.
             if (!derived.precomputed_hashes_initialized) [[unlikely]]
