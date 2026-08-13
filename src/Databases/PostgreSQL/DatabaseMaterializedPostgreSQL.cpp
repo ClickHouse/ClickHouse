@@ -1225,25 +1225,33 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         {
             /// The `PostgreSQLSettings` are not passed: this engine does not use a connection pool,
             /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, /*storage_settings=*/ nullptr, args.context, false);
+            configuration = StoragePostgreSQL::processNamedCollectionResult(
+                *named_collection, /*storage_settings=*/ nullptr, args.context, /*require_table=*/ false);
         }
         else
         {
-            if (engine_args.size() != 4)
+            /// The TLS/SSL parameters are trailing `key = value` arguments; the copy keeps them in
+            /// the stored `CREATE DATABASE` query, where they are masked when it is formatted.
+            ASTs positional_arguments = engine_args;
+            configuration.ssl = StoragePostgreSQL::extractSSLParamsFromArguments(positional_arguments, args.context);
+
+            if (positional_arguments.size() != 4)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "MaterializedPostgreSQL Database require `host:port`, `database_name`, `username`, `password`.");
+                                "MaterializedPostgreSQL Database require `host:port`, `database_name`, `username`, `password` "
+                                "(optionally followed by sslmode = '...', sslrootcert_pem = '...', "
+                                "sslcert_pem = '...', sslkey_pem = '...').");
 
-            for (auto & engine_arg : engine_args)
-                engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
+            for (auto & positional_argument : positional_arguments)
+                positional_argument = evaluateConstantExpressionOrIdentifierAsLiteral(positional_argument, args.context);
 
-            auto parsed_host_port = parseAddress(safeGetLiteralValue<String>(engine_args[0], engine_name), 5432);
+            auto parsed_host_port = parseAddress(safeGetLiteralValue<String>(positional_arguments[0], engine_name), 5432);
 
             configuration.host = parsed_host_port.first;
             configuration.port = parsed_host_port.second;
             configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-            configuration.database = safeGetLiteralValue<String>(engine_args[1], engine_name);
-            configuration.username = safeGetLiteralValue<String>(engine_args[2], engine_name);
-            configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
+            configuration.database = safeGetLiteralValue<String>(positional_arguments[1], engine_name);
+            configuration.username = safeGetLiteralValue<String>(positional_arguments[2], engine_name);
+            configuration.password = safeGetLiteralValue<String>(positional_arguments[3], engine_name);
         }
 
         /// An internal metadata replay (server startup / restore, the same distinction
@@ -1289,17 +1297,18 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
                 args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
         }
 
+        auto postgresql_replica_settings = std::make_unique<MaterializedPostgreSQLSettings>();
+        if (engine_define->settings)
+            postgresql_replica_settings->loadFromQuery(*engine_define);
+
         auto connection_info = postgres::formatConnectionString(
             configuration.database,
             configuration.host,
             configuration.port,
             configuration.username,
             configuration.password,
-            args.context->getSettingsRef()[Setting::postgresql_connection_attempt_timeout]);
-
-        auto postgresql_replica_settings = std::make_unique<MaterializedPostgreSQLSettings>();
-        if (engine_define->settings)
-            postgresql_replica_settings->loadFromQuery(*engine_define);
+            args.context->getSettingsRef()[Setting::postgresql_connection_attempt_timeout],
+            configuration.ssl);
 
         /// The coordination validator is skipped only when an already-persisted definition is replayed:
         /// an internal metadata replay (server startup / restore) and the short attach syntax
@@ -1591,6 +1600,22 @@ The expanded value must also be a **single Keeper node name**: an empty value, o
 Together with [`materialized_postgresql_keeper_path`](#materialized-postgresql-keeper-path), this setting forms the **coordination identity** of the replica, which must stay the same for the lifetime of the coordinated setup. Both settings are re-expanded from the current server configuration on every startup, while the shared nested tables keep the expansion they were created with and the `<keeper_path>/replicas/<name>` registration is persistent. A configuration-only change of a macro they expand through (directly, or through an intermediate config macro) is therefore refused when the replica starts up, with an error naming both the new and the previously used identity: continuing would make the replica elect, register and tear down under a different Keeper identity than the shared data it already holds, leaving the old `/replicas` subtree unable to drain (leaking the shared replication slot, publication and snapshot marker) and possibly splitting leader election from the shared nested-table path. Restore the configuration to the values the replica was created with, or drop the engine on that replica and recreate it on the new coordination path.
 
 The refusal keeps the engine mounted and droppable, and dropping it in that state tears down the coordination state that actually exists: the drop path takes the identity persisted in the metadata of the nested tables the replica owns, not the one the current configuration expands to, so it unregisters and makes its last-replica decision under the original identity instead of orphaning it. This also holds when the settings cannot be expanded at all any more, for instance because a macro they go through was removed from the configuration. A replica whose name changed while it had registered itself but had not created any nested table yet - the one window in which no nested-table metadata records the original identity - is recovered from its registration in Keeper instead: that registration stores an identity of the replica that no macro feeds into, so the stale node is recognized and removed (both when the replica starts up and when it is dropped) rather than being left behind to keep the shared `replicas` node non-empty forever, which would stop any future drop from ever becoming the last-replica drop.
+
+## TLS/SSL {#tls-ssl}
+
+TLS/SSL parameters are forwarded to `libpq` and can be supplied through a [named collection](/operations/named-collections) or as trailing key-value arguments of the engine: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`; when unset, the `libpq` default of `prefer` applies), and the certificates and the key in one of two forms. `sslrootcert` (CA certificate), `sslcert` (client certificate) and `sslkey` (client private key) are paths to server-local files, accepted only from a named collection defined in the server configuration file. `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` accept the literal contents of the corresponding file instead, can be specified from SQL, and are masked in logs and `SHOW` queries like a password.
+
+Example of connecting to a PostgreSQL server that enforces TLS, verifying the server certificate:
+
+```sql
+CREATE DATABASE postgres_db
+ENGINE = MaterializedPostgreSQL('postgres-host:5432', 'postgres_database', 'postgres_user', 'postgres_password',
+                                sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----');
+```
+
+The TLS/SSL parameters are part of the PostgreSQL connection parameters, which are fixed when the database is created; recreate the database to change them.
 
 ## Notes {#notes}
 
