@@ -1576,11 +1576,24 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// Case 3 below. Wrapping it in tuple() would send it through the tuple-set
                     /// rewrite, where the least supertype of the tuple LHS and a NULL column becomes
                     /// `Nullable(Tuple(...))` and fails, while the function-node analog
-                    /// `(1, 2) IN (materialize(NULL))` returns 0.
+                    /// `(1, 2) IN (materialize(NULL))` returns 0. A string RHS takes the
+                    /// cast-to-LHS-type fallback instead: the constant `Set` path parses such a set
+                    /// element into the tuple type, so a non-parseable value raises the same parsing
+                    /// error (e.g. `('a', 'b') IN (_table)` over a `merge` table) instead of
+                    /// `NO_COMMON_TYPE`. The cast target stays non-`Nullable`: `Nullable(Tuple)`
+                    /// columns are gated by `allow_experimental_nullable_tuple_type`, and the
+                    /// constant `Set` path throws for a non-parseable tuple element rather than
+                    /// skipping it, so a throwing `CAST` matches it.
                     if (left_is_tuple && !right_is_tuple)
                     {
                         auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
-                        node = buildScalarInComparison(fn_args[0], in_second_argument, is_not_in, compare_nulls);
+                        QueryTreeNodePtr right_argument = in_second_argument;
+                        const auto & left_type = in_first_argument->getResultType();
+                        const auto & right_type = in_second_argument_column->getColumnType();
+                        if (isStringOrFixedString(removeNullable(removeLowCardinality(right_type)))
+                            && !tryGetLeastSupertype(DataTypes{left_type, right_type}))
+                            right_argument = castNodeToType(right_argument, left_type, scope);
+                        node = buildScalarInComparison(fn_args[0], right_argument, is_not_in, compare_nulls);
                         resolveFunction(node, scope);
                         return ProjectionNames{proj};
                     }
