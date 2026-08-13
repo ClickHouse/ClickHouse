@@ -164,6 +164,10 @@ def test_limit_uint64_max_is_accepted():
         assert sorted(result["data"]) == ALL_LABELS
         assert "warnings" not in result
 
+    result = get_success_json(f"/api/v1/query?query=cpu_usage&time=1000&limit={2**64 - 1}")
+    assert len(result["data"]["result"]) == 2
+    assert "warnings" not in result
+
 
 def test_query_limit():
     """/api/v1/query truncates a vector result to `limit` series (two series match `cpu_usage`)."""
@@ -200,10 +204,8 @@ def test_query_scalar_result_is_not_truncated_by_limit():
 
 def test_invalid_limit_is_rejected_on_query_endpoints():
     """The query endpoints validate `limit` the same way as the metadata endpoints."""
-    uint64_max = 2**64 - 1
     for path in [
         "/api/v1/query?query=cpu_usage&time=1000&limit=abc",
-        f"/api/v1/query?query=cpu_usage&time=1000&limit={uint64_max}",
         "/api/v1/query_range?query=cpu_usage&start=1000&end=1030&step=15&limit=-1",
     ]:
         response = get_response(path)
