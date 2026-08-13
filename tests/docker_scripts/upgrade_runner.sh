@@ -497,9 +497,11 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       collision on a non-test database, a different init failure on an `rdb_test_` DB, and unrelated
 #       `TABLE_ALREADY_EXISTS` errors all still surface.
 # `StorageFileLog (...filelog_bad_path_attach)` + `The absolute data path should be inside` is the expected
-#       relaxed-reattach branch (`StorageFileLog.cpp:195-198`) of `04202_filelog_attach_path_outside_user_files`: the
-#       test ATTACHes a path outside `user_files_path`, and stress threads run with a fixed `--database=test_N`, whose
-#       tables are never torn down, so it is re-attached on the upgrade restart and logs instead of throwing.
+#       relaxed-reattach branch (`StorageFileLog.cpp:195-198`) of `04202_filelog_attach_path_outside_user_files`,
+#       which ATTACHes a path outside `user_files_path`. The table outlives the test only when stress stops the
+#       fixture before its own final `DROP`; a fixed `--database=test_N` then adds no framework teardown either
+#       (`clickhouse-test` skips that only for a fixed database), so it is re-attached on the upgrade restart and
+#       logs instead of throwing.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
