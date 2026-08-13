@@ -1,5 +1,8 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Common/Exception.h>
+#include <Common/ThreadPool.h>
+#include <base/scope_guard.h>
 #include <gtest/gtest.h>
 #include <condition_variable>
 #include <limits>
@@ -7,6 +10,11 @@
 #include <thread>
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_SCHEDULE_TASK;
+}
 
 TEST(BackgroundSchedulePool, Schedule)
 {
@@ -282,6 +290,58 @@ TEST(BackgroundSchedulePool, ScheduleAfterTerminitePool)
 
     ASSERT_EQ(task->schedule(), false);
     ASSERT_EQ(delayed_task->scheduleAfter(1), false);
+}
+
+/// Failing to spawn a schedule pool's initial threads must throw a recoverable exception, not
+/// abort the server. The fault injector forces the spawn to throw.
+TEST(BackgroundSchedulePool, CtorThrowsInsteadOfAbortOnSpawnFailure)
+{
+    CannotAllocateThreadFaultInjector::setFaultProbability(1.0);
+    SCOPE_EXIT({ CannotAllocateThreadFaultInjector::setFaultProbability(0.0); });
+
+    bool threw_cannot_schedule = false;
+    try
+    {
+        auto pool = BackgroundSchedulePool::create(4, 4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
+    }
+    catch (const Exception & e)
+    {
+        threw_cannot_schedule = (e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK);
+    }
+
+    EXPECT_TRUE(threw_cannot_schedule) << "constructor must throw CANNOT_SCHEDULE_TASK, not abort, when it cannot spawn initial threads";
+}
+
+/// The case above fails the first spawn, so `threads` is empty and the teardown has nothing to
+/// join. A partial fault probability makes some constructions fail after a worker already
+/// started, which is what exercises the join. Without it this test aborts rather than fails.
+TEST(BackgroundSchedulePool, CtorJoinsPartiallySpawnedThreadsOnFailure)
+{
+    CannotAllocateThreadFaultInjector::setFaultProbability(0.5);
+    SCOPE_EXIT({ CannotAllocateThreadFaultInjector::setFaultProbability(0.0); });
+
+    size_t threw = 0;
+    size_t constructed = 0;
+    for (size_t i = 0; i < 200; ++i)
+    {
+        try
+        {
+            auto pool
+                = BackgroundSchedulePool::create(8, 8, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
+            ++constructed;
+            pool->join();
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::CANNOT_SCHEDULE_TASK);
+            ++threw;
+        }
+    }
+
+    /// With 8 initial threads at probability 0.5 both outcomes are overwhelmingly likely to occur;
+    /// the assertion that matters is that neither aborted the process.
+    EXPECT_EQ(threw + constructed, 200u);
+    EXPECT_GT(threw, 0u) << "no construction failed, so the teardown path was never exercised";
 }
 
 /// A huge delay must not wrap into a past deadline and fire immediately.
