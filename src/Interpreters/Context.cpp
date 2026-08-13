@@ -8634,6 +8634,27 @@ PreparedSetsCachePtr Context::getPreparedSetsCache() const
     return prepared_sets_cache;
 }
 
+void Context::armDeferredSubqueryMaterialization()
+{
+    deferred_subquery_materialization = std::make_shared<std::atomic_bool>(false);
+}
+
+bool Context::isSubqueryMaterializationDeferred() const
+{
+    return deferred_subquery_materialization != nullptr;
+}
+
+void Context::setSubqueryMaterializationDeferred()
+{
+    chassert(deferred_subquery_materialization);
+    deferred_subquery_materialization->store(true);
+}
+
+bool Context::wasSubqueryMaterializationDeferred() const
+{
+    return deferred_subquery_materialization && deferred_subquery_materialization->load();
+}
+
 ReverseLookupCache & Context::getReverseLookupCache() const
 {
     auto query_context = getQueryContext();
