@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-old-analyzer
+-- no-old-analyzer: streaming queries are not supported with the old analyzer (`NOT_IMPLEMENTED`).
 -- A streaming read (`FROM ... STREAM`) has no marks by which the number of streams could be
 -- clamped, and `groupPartitionsByStreams` creates one `MergeTreeCommitOrderSequentialSource`
 -- per stream. Before the fix, a huge `max_threads * max_streams_to_max_threads_ratio` product
