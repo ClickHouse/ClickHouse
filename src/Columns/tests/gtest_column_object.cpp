@@ -1,5 +1,6 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeDynamic.h>
@@ -651,4 +652,55 @@ TEST(ColumnObject, CompressDecompressPreservesSharedDataPathMatcherAcrossRepeate
     const auto & second_object = assert_cast<const ColumnObject &>(*decompressed_second);
     ASSERT_TRUE(second_object.getSharedDataPathMatcher());
     ASSERT_EQ(second_object.getSharedDataPathPrefix(), source_object.getSharedDataPathPrefix());
+}
+
+TEST(ColumnObject, UpdateFromInvalidatesNestedStatisticsInsideWrapperColumns)
+{
+    /// Regression: a patch splice on a wrapper column (Tuple/Array/Nullable/Map) only calls the
+    /// wrapper's own generic updateFrom, never a nested ColumnObject's own override -- cloneEmpty()
+    /// propagates the nested column's pre-patch statistics into the result, and nothing invalidates
+    /// them even though the splice can introduce a path that changes the dynamic/shared-data split.
+    auto tuple_type = DataTypeFactory::instance().get("Tuple(j JSON(max_dynamic_types=10, max_dynamic_paths=1))");
+
+    auto dst = tuple_type->createColumn();
+    auto & dst_object = assert_cast<ColumnObject &>(assert_cast<ColumnTuple &>(*dst).getColumn(0));
+    dst_object.insert(Object{{"a", Field{UInt64(1)}}});
+    ASSERT_TRUE(dst_object.getDynamicPaths().contains("a"));
+
+    /// Force statistics to be computed and cached on the pre-patch column (getOrCalculateStatistics
+    /// computes on demand but doesn't cache; takeOrCalculateStatisticsFrom is what actually stores
+    /// it, as a real merge structure-decision would).
+    VectorWithMemoryTracking<ColumnPtr> dst_as_source;
+    dst_as_source.push_back(dst_object.getPtr());
+    dst_object.takeOrCalculateStatisticsFrom(dst_as_source);
+    ASSERT_TRUE(dst_object.getStatistics());
+
+    auto src = tuple_type->createColumn();
+    auto & src_object = assert_cast<ColumnObject &>(assert_cast<ColumnTuple &>(*src).getColumn(0));
+    /// "b" is new to `dst`; with max_dynamic_paths already spent on "a", it can only land in shared data.
+    src_object.insert(Object{{"b", Field{UInt64(2)}}});
+
+    IColumn::Versions dst_versions;
+    dst_versions.push_back(0);
+    IColumn::Versions src_versions;
+    src_versions.push_back(1);
+    IColumn::Offsets src_row_indices;
+    src_row_indices.push_back(0);
+    IColumn::Offsets dst_row_indices;
+    dst_row_indices.push_back(0);
+
+    IColumn::Patch::Source source{.column = *src, .versions = src_versions};
+    IColumn::Patch patch
+    {
+        .sources = {source},
+        .src_col_indices = nullptr,
+        .src_row_indices = src_row_indices,
+        .dst_row_indices = dst_row_indices,
+        .dst_versions = dst_versions,
+    };
+
+    auto result = dst->updateFrom(patch);
+    const auto & result_object = assert_cast<const ColumnObject &>(assert_cast<const ColumnTuple &>(*result).getColumn(0));
+
+    ASSERT_FALSE(result_object.getStatistics());
 }
