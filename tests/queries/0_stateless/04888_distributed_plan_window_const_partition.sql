@@ -39,6 +39,18 @@ SELECT 'constant key', count() FROM
     FROM t_const_window
 );
 
+-- A constant partition key must build a gather whose sort description is nothing but that constant.
+-- `make_distributed_plan` is repeated inside because the outer `SETTINGS` propagates into the subquery,
+-- and the outer query must stay local: distributed it fails with `ReadFromStorage is not serializable`.
+SELECT 'const gather is const-sorted', count() > 0 FROM
+(
+    EXPLAIN SELECT uniq(modulo(v, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
+        OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS roll
+    FROM t_const_window SETTINGS make_distributed_plan = 1
+)
+WHERE explain ILIKE '%GatherExchange (sorted by (''c''_String ASC))%'
+SETTINGS make_distributed_plan = 0;
+
 -- Constants wrapped in LowCardinality and Nullable reach the same shape.
 SELECT 'constant key, LowCardinality', count() FROM
 (
@@ -62,6 +74,17 @@ SELECT 'column key', count() FROM
         OVER (PARTITION BY a ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS roll
     FROM t_const_window
 );
+
+-- A column partition key keeps a column in the gather's sort description, so this arm and the constant
+-- one above are distinguishable rather than both merely returning the same row count.
+SELECT 'column gather is column-sorted', count() > 0 FROM
+(
+    EXPLAIN SELECT uniq(modulo(v, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
+        OVER (PARTITION BY a ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS roll
+    FROM t_const_window SETTINGS make_distributed_plan = 1
+)
+WHERE explain ILIKE '%GatherExchange (sorted by (a ASC))%'
+SETTINGS make_distributed_plan = 0;
 
 SELECT 'mixed key', count() FROM
 (
