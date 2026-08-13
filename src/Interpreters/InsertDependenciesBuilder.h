@@ -184,6 +184,10 @@ public:
     /// A `Buffer` or a `Distributed` ends a branch, since the write it forwards runs as an `INSERT` of
     /// its own whose sinks are not modelled here; a topology mixing a forwarded and a direct branch
     /// into one such storage is outside the answer.
+    /// It describes the catalog as of this call, where a view appears only once its `CREATE` has
+    /// executed, so two creations of the same view that are both still unregistered are each answered
+    /// as though the other did not exist. A caller that must not build such a pair twice has to hold a
+    /// reservation from here through its own dependency registration.
     static DuplicateNonParallelSinkVerdict
     insertWouldDuplicateNonParallelSink(const StorageID & source, const StorageID & new_view_target, ContextPtr context);
 
