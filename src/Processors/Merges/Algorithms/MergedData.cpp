@@ -18,7 +18,10 @@ namespace
 
 bool hasNonAdditiveByteSizeAt(const IColumn & column)
 {
-    if (column.getDataType() == TypeIndex::LowCardinality || column.isReplicated() || column.hasDynamicStructure())
+    if (column.getDataType() == TypeIndex::LowCardinality
+        || column.getDataType() == TypeIndex::AggregateFunction
+        || column.isReplicated()
+        || column.hasDynamicStructure())
         return true;
 
     bool result = false;

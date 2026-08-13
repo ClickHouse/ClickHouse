@@ -1,7 +1,12 @@
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/tests/gtest_global_register.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -138,6 +143,71 @@ size_t getFirstLowCardinalityChunkSize(SortingQueueStrategy strategy, size_t max
     return status.chunk.getNumRows();
 }
 
+Chunk makeAggregateFunctionChunk(const AggregateFunctionPtr & function, const std::vector<UInt64> & keys)
+{
+    auto key = ColumnUInt64::create();
+    auto payload = ColumnAggregateFunction::create(function);
+    auto values = ColumnUInt64::create();
+
+    for (UInt64 value = 0; value < 1000; ++value)
+        values->insertValue(value);
+
+    const IColumn * arguments[] = {values.get()};
+    for (const auto value : keys)
+    {
+        key->insertValue(value);
+        payload->insertDefault();
+        for (size_t row = 0; row < values->size(); ++row)
+            function->add(payload->getData().back(), arguments, row, &payload->createOrGetArena());
+    }
+
+    return Chunk(Columns{std::move(key), std::move(payload)}, keys.size());
+}
+
+size_t getFirstAggregateFunctionChunkSize(SortingQueueStrategy strategy)
+{
+    tryRegisterAggregateFunctions();
+
+    auto argument_type = std::make_shared<DataTypeUInt64>();
+    DataTypes argument_types{argument_type};
+    AggregateFunctionProperties properties;
+    auto function = AggregateFunctionFactory::instance().get("uniqExact", NullsAction::EMPTY, argument_types, {}, properties);
+    auto payload_type = std::make_shared<DataTypeAggregateFunction>(function, argument_types, Array{});
+    auto header = std::make_shared<const Block>(Block{
+        {ColumnUInt64::create(), argument_type, "key"},
+        {payload_type->createColumn(), payload_type, "payload"},
+    });
+
+    SortDescription description;
+    description.emplace_back("key");
+
+    MergingSortedAlgorithm algorithm(
+        header,
+        2,
+        description,
+        1000,
+        1024,
+        std::nullopt,
+        strategy,
+        0,
+        nullptr,
+        std::nullopt,
+        false);
+
+    std::vector<UInt64> second_keys;
+    for (UInt64 key = 1; key < 100; ++key)
+        second_keys.push_back(key);
+
+    IMergingAlgorithm::Inputs inputs(2);
+    inputs[0].chunk = makeAggregateFunctionChunk(function, {0, 1000});
+    inputs[1].chunk = makeAggregateFunctionChunk(function, second_keys);
+    algorithm.initialize(std::move(inputs));
+
+    auto status = algorithm.merge();
+    chassert(status.chunk);
+    return status.chunk.getNumRows();
+}
+
 }
 
 TEST(MergingSortedBatchLimits, MaxBlockSizeBytes)
@@ -165,4 +235,11 @@ TEST(MergingSortedBatchLimits, MaxBlockSizeBytesWithRepeatedLowCardinalityValues
     EXPECT_EQ(
         getFirstLowCardinalityChunkSize(SortingQueueStrategy::Default, 100),
         getFirstLowCardinalityChunkSize(SortingQueueStrategy::Batch, 100));
+}
+
+TEST(MergingSortedBatchLimits, MaxBlockSizeBytesWithAggregateFunctionState)
+{
+    const auto default_chunk_size = getFirstAggregateFunctionChunkSize(SortingQueueStrategy::Default);
+    EXPECT_EQ(default_chunk_size, getFirstAggregateFunctionChunkSize(SortingQueueStrategy::Batch));
+    EXPECT_EQ(2uz, default_chunk_size);
 }
