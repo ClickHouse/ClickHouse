@@ -31,9 +31,9 @@ SELECT hex(bitmapBuild([1, 2, 3, 4, 5])) AS res, toTypeName(bitmapBuild([1, 2, 3
 SELECT hex(bitmapBuild([-128, -1]::Array(Int8))) AS res, toTypeName(bitmapBuild([-128, -1]::Array(Int8))) AS type;
         )",
         R"(
-┌─res──────────┬─type─────────────────────────────────┐
-│ 000280FF     │ AggregateFunction(groupBitmap, Int8) │
-└──────────────┴──────────────────────────────────────┘
+┌─res──────┬─type─────────────────────────────────┐
+│ 000280FF │ AggregateFunction(groupBitmap, Int8) │
+└──────────┴──────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapBuild = {20, 1};
@@ -467,7 +467,7 @@ that does not fit is simply not found, so the corresponding replacement does not
         {"Usage example", "SELECT bitmapContains(bitmapBuild([1, 2, 3]), 2) AS res;",
         R"(
 ┌─res─┐
-│  1  │
+│   1 │
 └─────┘
     )"},
         {"Signed bitmap", "SELECT bitmapContains(bitmapBuild([-1]::Array(Int8)), 255) AS res;",
