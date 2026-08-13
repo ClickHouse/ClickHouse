@@ -340,3 +340,71 @@ def test_batch_delete_failure_logs_every_object(started_cluster):
     )
 
     node.query("DROP TABLE IF EXISTS t_batch_del SYNC")  # cleanup (failpoint disabled)
+
+
+def test_batch_delete_non_azure_failure_logs_every_object(started_cluster):
+    # Negative control for the catch(...) fallback in removeObjectsBatchIfExists: when SubmitBatch fails
+    # with a NON-Azure exception (an injected credential AuthenticationException, a std::exception that is
+    # NOT an Azure::Storage::StorageException), the batch path must still emit one Delete event per object
+    # before rethrowing, carrying the placeholder error_code = -1 (no HTTP status) plus the exception text.
+    node.query("DROP TABLE IF EXISTS t_batch_del_auth SYNC")
+    node.query(
+        """
+        CREATE TABLE t_batch_del_auth (k UInt64) ENGINE = MergeTree ORDER BY k
+        SETTINGS storage_policy = 'azure_policy', min_bytes_for_wide_part = 0
+        """
+    )
+    for i in range(3):
+        node.query(f"INSERT INTO t_batch_del_auth SELECT number + {i * 100} FROM numbers(100)")
+
+    table_uuid = node.query(
+        "SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_batch_del_auth'"
+    ).strip()
+    expected_blobs = set(
+        node.query(
+            "SELECT remote_path FROM system.remote_data_paths "
+            f"WHERE disk_name = 'azure_disk' AND local_path LIKE '%{table_uuid}%'"
+        ).split()
+    )
+    assert expected_blobs, "the table must be backed by remote objects"
+
+    logged = set()
+    node.query("SYSTEM ENABLE FAILPOINT azure_inject_auth_failure_on_request")
+    try:
+        try:
+            node.query("DROP TABLE t_batch_del_auth SYNC")
+        except Exception:
+            pass
+
+        blob_list = ", ".join(f"'{p}'" for p in expected_blobs)
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            node.query("SYSTEM FLUSH LOGS")
+            logged = set(
+                node.query(
+                    "SELECT remote_path FROM system.blob_storage_log "
+                    "WHERE event_type = 'Delete' AND error_code = -1 "
+                    f"AND remote_path IN ({blob_list})"
+                ).split()
+            )
+            if logged >= expected_blobs:
+                break
+            time.sleep(0.5)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT azure_inject_auth_failure_on_request")
+
+    missing = expected_blobs - logged
+    assert not missing, (
+        f"expected one failed Delete event (error_code=-1) per object, "
+        f"missing {len(missing)}/{len(expected_blobs)}: {sorted(missing)[:5]}"
+    )
+
+    blob_list = ", ".join(f"'{p}'" for p in expected_blobs)
+    errors = node.query(
+        "SELECT DISTINCT error FROM system.blob_storage_log "
+        "WHERE event_type = 'Delete' AND error_code = -1 "
+        f"AND remote_path IN ({blob_list})"
+    )
+    assert "Authentication" in errors, f"expected the auth exception text in the log, got: {errors!r}"
+
+    node.query("DROP TABLE IF EXISTS t_batch_del_auth SYNC")  # cleanup (failpoint disabled)
