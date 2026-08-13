@@ -6,6 +6,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ColumnsDescription.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 
 
@@ -248,7 +249,12 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
         }
     }
 
-    if (columns != from_zk.columns)
+    /// Different versions serialize the same columns to a different text: the redundant parentheses
+    /// the user has written around a column `DEFAULT`, `CODEC` or `TTL` expression were kept by
+    /// 26.5..26.7 and are not written by any other version, so when the texts differ, compare the
+    /// columns structurally before rejecting.
+    if (columns != from_zk.columns
+        && ColumnsDescription::parse(columns) != ColumnsDescription::parse(from_zk.columns))
         throw Exception(
             ErrorCodes::METADATA_MISMATCH,
             "Existing table metadata in ZooKeeper differs in columns. "
