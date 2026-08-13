@@ -218,6 +218,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
             .column_name = required_columns.front(),
             .max_token_bytes = json_tokenizer.getMaxTokenBytes(),
             .json_type = index_description.data_types.front(),
+            .path_matcher = json_tokenizer.getPathMatcher(),
         };
     }
 

@@ -1697,7 +1697,10 @@ static std::optional<JSONPathValuesBuildInfo> getJSONPathValuesBuildInfo(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tokenizer `jsonPathValues` requires exactly one source column");
 
     const auto & json_tokenizer = assert_cast<const JSONPathValuesTokenizer &>(tokenizer);
-    return JSONPathValuesBuildInfo{required_columns.front(), json_tokenizer.getMaxTokenBytes()};
+    return JSONPathValuesBuildInfo{
+        required_columns.front(),
+        json_tokenizer.getMaxTokenBytes(),
+        json_tokenizer.getPathMatcher()};
 }
 
 MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
@@ -1788,7 +1791,10 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
         const auto & column_object = assert_cast<const ColumnObject &>(*source_column);
         const auto & type_object = assert_cast<const DataTypeObject &>(*source.type);
         JSONPathValuesTextIndexConsumer consumer(granule_builder);
-        JSONPathValues::Extractor<JSONPathValuesTextIndexConsumer> extractor(json_path_values->max_token_bytes, consumer);
+        JSONPathValues::Extractor<JSONPathValuesTextIndexConsumer> extractor(
+            json_path_values->max_token_bytes,
+            *json_path_values->path_matcher,
+            consumer);
         enumerateJSONValues<true>(column_object, type_object, extractor, *pos, rows_read);
         ProfileEvents::increment(ProfileEvents::JSONPathValuesTextIndexInputRows, rows_read);
         *pos += rows_read;

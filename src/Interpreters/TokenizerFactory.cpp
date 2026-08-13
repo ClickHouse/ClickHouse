@@ -52,6 +52,116 @@ void assertParamsCount(size_t params_count, size_t max_count, std::string_view t
     }
 }
 
+std::vector<String> castStringArray(const Field & field, std::string_view argument_name, bool reject_empty)
+{
+    const auto values = castAs<Array>(field, argument_name);
+    std::vector<String> result;
+    result.reserve(values.size());
+    for (const auto & value : values)
+    {
+        auto string = castAs<String>(value, argument_name);
+        if (reject_empty && string.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Tokenizer argument '{}' cannot contain an empty path",
+                argument_name);
+        result.emplace_back(std::move(string));
+    }
+    return result;
+}
+
+std::unique_ptr<ITokenizer> createJSONPathValuesTokenizer(
+    UInt64 max_token_bytes,
+    std::vector<String> skip_paths = {},
+    std::vector<String> skip_path_regexps = {})
+{
+    const auto * tokenizer_name = JSONPathValuesTokenizer::getExternalName();
+    if (!JSONPathValues::isValidMaxTokenBytes(max_token_bytes))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Tokenizer '{}' argument 'max_token_bytes' must be between 1 and {}, got {}",
+            tokenizer_name,
+            JSONPathValues::MAX_TOKEN_BYTES,
+            max_token_bytes);
+
+    return std::make_unique<JSONPathValuesTokenizer>(
+        max_token_bytes,
+        std::move(skip_paths),
+        std::move(skip_path_regexps));
+}
+
+std::unique_ptr<ITokenizer> createJSONPathValuesTokenizer(const FieldVector & args)
+{
+    const auto * tokenizer_name = JSONPathValuesTokenizer::getExternalName();
+    assertParamsCount(args.size(), 1, tokenizer_name);
+    const UInt64 max_token_bytes = args.empty()
+        ? JSONPathValues::DEFAULT_MAX_TOKEN_BYTES
+        : castAs<UInt64>(args[0], "max_token_bytes");
+    return createJSONPathValuesTokenizer(max_token_bytes);
+}
+
+std::unique_ptr<ITokenizer> createJSONPathValuesTokenizer(const ASTFunction & function)
+{
+    if (!function.arguments)
+        return createJSONPathValuesTokenizer(FieldVector{});
+
+    bool has_named_argument = false;
+    for (const auto & child : function.arguments->children)
+    {
+        const auto * argument = child->as<ASTFunction>();
+        has_named_argument |= argument && argument->name == "equals";
+    }
+    if (!has_named_argument)
+        return createJSONPathValuesTokenizer(getFieldsFromIndexArgumentsAST(function.arguments));
+
+    std::unordered_map<String, Field> options;
+    for (const auto & child : function.arguments->children)
+    {
+        const auto * argument = child->as<ASTFunction>();
+        if (!argument || argument->name != "equals" || !argument->arguments || argument->arguments->children.size() != 2)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Tokenizer '{}' cannot mix positional and named arguments",
+                JSONPathValuesTokenizer::getExternalName());
+
+        const auto * name = argument->arguments->children[0]->as<ASTIdentifier>();
+        if (!name)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tokenizer argument name must be an identifier");
+        if (!options.emplace(name->name(), getFieldFromIndexArgumentAST(argument->arguments->children[1])).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tokenizer argument '{}' is specified more than once", name->name());
+    }
+
+    UInt64 max_token_bytes = JSONPathValues::DEFAULT_MAX_TOKEN_BYTES;
+    std::vector<String> skip_paths;
+    std::vector<String> skip_path_regexps;
+    if (auto it = options.find("max_token_bytes"); it != options.end())
+    {
+        max_token_bytes = castAs<UInt64>(it->second, "max_token_bytes");
+        options.erase(it);
+    }
+    if (auto it = options.find("skip_paths"); it != options.end())
+    {
+        skip_paths = castStringArray(it->second, "skip_paths", true);
+        options.erase(it);
+    }
+    if (auto it = options.find("skip_paths_regexp"); it != options.end())
+    {
+        skip_path_regexps = castStringArray(it->second, "skip_paths_regexp", false);
+        options.erase(it);
+    }
+    if (!options.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Unknown tokenizer argument '{}' for tokenizer '{}'",
+            options.begin()->first,
+            JSONPathValuesTokenizer::getExternalName());
+
+    return createJSONPathValuesTokenizer(
+        max_token_bytes,
+        std::move(skip_paths),
+        std::move(skip_path_regexps));
+}
+
 }
 
 std::unordered_map<String, ITokenizer::Type> TokenizerFactory::getAllTokenizers() const
@@ -135,6 +245,8 @@ std::unique_ptr<ITokenizer> TokenizerFactory::get(const ASTPtr & ast) const
 
     if (const auto * function = ast->as<ASTFunction>())
     {
+        if (function->name == JSONPathValuesTokenizer::getName())
+            return createJSONPathValuesTokenizer(*function);
         args = getFieldsFromIndexArgumentsAST(function->arguments);
         return get(function->name, args);
     }
@@ -227,21 +339,7 @@ static void registerTokenizers(TokenizerFactory & factory)
 
     auto json_path_values_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {
-        const auto * tokenizer_name = JSONPathValuesTokenizer::getExternalName();
-        assertParamsCount(args.size(), 1, tokenizer_name);
-
-        const UInt64 max_token_bytes = args.empty()
-            ? JSONPathValues::DEFAULT_MAX_TOKEN_BYTES
-            : castAs<UInt64>(args[0], "max_token_bytes");
-        if (!JSONPathValues::isValidMaxTokenBytes(max_token_bytes))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Tokenizer '{}' argument 'max_token_bytes' must be between 1 and {}, got {}",
-                tokenizer_name,
-                JSONPathValues::MAX_TOKEN_BYTES,
-                max_token_bytes);
-
-        return std::make_unique<JSONPathValuesTokenizer>(max_token_bytes);
+        return createJSONPathValuesTokenizer(args);
     };
 
     factory.registerTokenizer(

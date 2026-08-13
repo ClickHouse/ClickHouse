@@ -8,6 +8,7 @@
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
+#include <Functions/JSONPathValues.h>
 
 #include <limits>
 
@@ -40,6 +41,43 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_STRING_SIZE;
 #endif
+}
+
+JSONPathValuesTokenizer::JSONPathValuesTokenizer(
+    size_t max_token_bytes_,
+    std::vector<String> skip_paths,
+    std::vector<String> skip_path_regexps)
+    : ITokenizerHelper(Type::JSONPathValues)
+    , max_token_bytes(max_token_bytes_)
+    , path_matcher(std::make_shared<JSONPathValues::PathMatcher>(std::move(skip_paths), std::move(skip_path_regexps)))
+{
+}
+
+String JSONPathValuesTokenizer::getDescription() const
+{
+    if (path_matcher->getSkipPaths().empty() && path_matcher->getSkipPathRegexps().empty())
+        return fmt::format("{}({})", getName(), max_token_bytes);
+
+    String result = fmt::format("{}(max_token_bytes = {}, skip_paths = [", getName(), max_token_bytes);
+    bool first = true;
+    for (const auto & path : path_matcher->getSkipPaths())
+    {
+        if (!first)
+            result += ", ";
+        first = false;
+        result += quoteString(path);
+    }
+    result += "], skip_paths_regexp = [";
+    first = true;
+    for (const auto & regexp : path_matcher->getSkipPathRegexps())
+    {
+        if (!first)
+            result += ", ";
+        first = false;
+        result += quoteString(regexp);
+    }
+    result += "])";
+    return result;
 }
 
 bool NgramsTokenizer::nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const

@@ -23,6 +23,11 @@
 namespace DB
 {
 
+namespace JSONPathValues
+{
+class PathMatcher;
+}
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -359,15 +364,14 @@ struct ArrayTokenizer final : public ITokenizerHelper<ArrayTokenizer>
 /// tokenizer interface and are not used for `JSON` values.
 struct JSONPathValuesTokenizer final : public ITokenizerHelper<JSONPathValuesTokenizer>
 {
-    explicit JSONPathValuesTokenizer(size_t max_token_bytes_)
-        : ITokenizerHelper(Type::JSONPathValues)
-        , max_token_bytes(max_token_bytes_)
-    {
-    }
+    explicit JSONPathValuesTokenizer(
+        size_t max_token_bytes_,
+        std::vector<String> skip_paths_ = {},
+        std::vector<String> skip_path_regexps_ = {});
 
     static const char * getName() { return "jsonPathValues"; }
     static const char * getExternalName() { return getName(); }
-    String getDescription() const override { return fmt::format("{}({})", getName(), max_token_bytes); }
+    String getDescription() const override;
 
     bool nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
@@ -381,9 +385,11 @@ struct JSONPathValuesTokenizer final : public ITokenizerHelper<JSONPathValuesTok
 
     bool supportsStringLike() const override { return false; }
     size_t getMaxTokenBytes() const { return max_token_bytes; }
+    const std::shared_ptr<const JSONPathValues::PathMatcher> & getPathMatcher() const { return path_matcher; }
 
 private:
     size_t max_token_bytes;
+    std::shared_ptr<const JSONPathValues::PathMatcher> path_matcher;
 };
 
 /// Parser extracting sparse grams (the same as function sparseGrams).

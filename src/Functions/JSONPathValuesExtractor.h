@@ -65,8 +65,16 @@ public:
     {
     }
 
+    Extractor(size_t max_token_bytes_, const PathMatcher & path_matcher_, Consumer & consumer_)
+        : max_token_bytes(max_token_bytes_)
+        , path_matcher(&path_matcher_)
+        , consumer(consumer_)
+    {
+    }
+
     void beginRow() {}
     void consumeNull(std::string_view, bool) {}
+    bool shouldConsumePath(std::string_view path) const { return !path_matcher || !path_matcher->shouldSkip(path); }
     void setRow(size_t row) { consumer.setRow(row); }
     void finishRows(size_t rows) { consumer.finishRows(rows); }
 
@@ -224,6 +232,7 @@ private:
 
         void setRow(size_t) {}
         void finishRows(size_t) {}
+        bool shouldConsumePath(std::string_view path) const { return extractor.shouldConsumePath(prefixed(path)); }
 
     private:
         String prefixed(std::string_view path) const
@@ -288,6 +297,7 @@ private:
 
         void setRow(size_t) {}
         void finishRows(size_t) {}
+        bool shouldConsumePath(std::string_view path) const { return extractor.shouldConsumePath(prefixed(path)); }
 
     private:
         String prefixed(std::string_view path) const
@@ -560,6 +570,7 @@ private:
     }
 
     size_t max_token_bytes;
+    const PathMatcher * path_matcher = nullptr;
     std::array<char, 2048> scratch{};
     String serialization_prefix;
     String path_type_prefix;

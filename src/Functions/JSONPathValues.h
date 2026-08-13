@@ -1,15 +1,99 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Common/SipHash.h>
+#include <Common/re2.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <base/types.h>
 
+#include <algorithm>
 #include <array>
 #include <limits>
+#include <memory>
 #include <optional>
+#include <vector>
+
+namespace DB::ErrorCodes
+{
+extern const int CANNOT_COMPILE_REGEXP;
+}
 
 namespace DB::JSONPathValues
 {
+
+class PathMatcher
+{
+public:
+    PathMatcher(std::vector<String> skip_paths_, std::vector<String> skip_path_regexps_)
+        : skip_path_regexps(std::move(skip_path_regexps_))
+    {
+        std::sort(skip_paths_.begin(), skip_paths_.end());
+        skip_paths_.erase(std::unique(skip_paths_.begin(), skip_paths_.end()), skip_paths_.end());
+        for (auto & path : skip_paths_)
+        {
+            if (skip_paths.empty() || !matchesPathOrSubtree(path, skip_paths.back()))
+                skip_paths.emplace_back(std::move(path));
+        }
+
+        std::sort(skip_path_regexps.begin(), skip_path_regexps.end());
+        skip_path_regexps.erase(
+            std::unique(skip_path_regexps.begin(), skip_path_regexps.end()),
+            skip_path_regexps.end());
+        regexps.reserve(skip_path_regexps.size());
+        for (const auto & regexp_string : skip_path_regexps)
+        {
+            auto regexp = std::make_unique<re2::RE2>(regexp_string, regexpOptions());
+            if (!regexp->ok())
+                throw Exception(
+                    DB::ErrorCodes::CANNOT_COMPILE_REGEXP,
+                    "Invalid regexp '{}': {}",
+                    regexp_string,
+                    regexp->error());
+            regexps.emplace_back(std::move(regexp));
+        }
+    }
+
+    bool shouldSkip(std::string_view path) const
+    {
+        const auto it = std::upper_bound(skip_paths.begin(), skip_paths.end(), path);
+        if (it != skip_paths.begin() && matchesPathOrSubtree(path, *std::prev(it)))
+            return true;
+
+        for (const auto & regexp : regexps)
+        {
+            if (re2::RE2::PartialMatch(path, *regexp))
+                return true;
+        }
+        return false;
+    }
+
+    const std::vector<String> & getSkipPaths() const { return skip_paths; }
+    const std::vector<String> & getSkipPathRegexps() const { return skip_path_regexps; }
+
+private:
+    static bool matchesPathOrSubtree(std::string_view path, std::string_view prefix)
+    {
+        if (!path.starts_with(prefix))
+            return false;
+        auto suffix = path.substr(prefix.size());
+        if (suffix.empty() || suffix.starts_with('.'))
+            return true;
+        while (suffix.starts_with("[]"))
+            suffix.remove_prefix(2);
+        return suffix.empty() || suffix.starts_with('.');
+    }
+
+    static re2::RE2::Options regexpOptions()
+    {
+        re2::RE2::Options options;
+        options.set_log_errors(false);
+        return options;
+    }
+
+    std::vector<String> skip_paths;
+    std::vector<String> skip_path_regexps;
+    std::vector<std::unique_ptr<re2::RE2>> regexps;
+};
 
 inline constexpr UInt64 DEFAULT_MAX_TOKEN_BYTES = 1024;
 inline constexpr UInt64 MAX_TOKEN_BYTES = 1024 * 1024;

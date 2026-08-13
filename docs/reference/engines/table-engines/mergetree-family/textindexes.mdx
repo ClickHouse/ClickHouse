@@ -1185,18 +1185,29 @@ SELECT * FROM events WHERE has(data.tags::Array(String), 'bug')
 
 The `jsonPathValues` tokenizer creates opaque, path-qualified tokens for exact and fuzzy searches on JSON subcolumns. Nulls and empty strings are omitted. The token-size limit must be between 1 byte and 1 MiB. Specify it in production schemas so the schema does not depend on the default.
 
-Its signature is `jsonPathValues([max_token_bytes])`; `max_token_bytes` defaults to `1024`.
+Its arguments are:
+
+- `max_token_bytes`: maximum token size, default `1024`.
+- `skip_paths`: paths whose values should not be indexed. A path also skips its descendants, like `SKIP` in a `JSON` type declaration.
+- `skip_paths_regexp`: RE2 regular expressions for paths whose values should not be indexed. The expressions use partial matching, like the default behavior of `SKIP REGEXP` in a `JSON` type declaration.
+
+Use named arguments when specifying skipped paths. The positional form `jsonPathValues([max_token_bytes])` remains supported.
 
 ```sql
 CREATE TABLE events
 (
     id UInt64,
     data JSON,
-    INDEX json_tokens data TYPE text(tokenizer = jsonPathValues(1024))
+    INDEX json_tokens data TYPE text(tokenizer = jsonPathValues(
+        max_token_bytes = 1024,
+        skip_paths = ['request_id', 'payload.raw'],
+        skip_paths_regexp = ['^metadata\\.', '.*_id$']))
 )
 ENGINE = MergeTree
 ORDER BY id;
 ```
+
+Queries on skipped paths read the source `JSON` column without using this index. Changing either skip list requires rebuilding or materializing the index for existing data parts.
 
 The index supports equality, `IN` on String subcolumns, `has` on array subcolumns, `startsWith`, `endsWith`, prefix `LIKE` patterns such as `LIKE 'error%'`, simple substring `LIKE` and `ILIKE` predicates, `match`, `multiSearchAny`, and `multiSearchAnyUTF8`. Elements of concrete arrays are indexed individually on both declared and dynamic paths. Use an explicit array type when querying a dynamic path, for example `has(data.tags.:\`Array(Nullable(String))\`, 'bug')`. Declared paths of type `JSON` are traversed recursively: their leaf paths are indexed, but the whole subdocument is not. Scalar leaves below one level of `Array(JSON)` are also indexed as array elements, so predicates such as `has(data.items[].price, 10)` can use the index. Null leaves, nested arrays, maps, and tuples below `Array(JSON)` are not indexed. Whole-array equality, whole-`JSON`-subdocument equality, and casts such as `CAST(data.tags AS Array(String))` are not optimized.
 

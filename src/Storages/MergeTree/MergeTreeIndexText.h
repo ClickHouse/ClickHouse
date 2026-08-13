@@ -446,10 +446,16 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 struct ITokenizer;
 using TokenizerPtr = const ITokenizer *;
 
+namespace JSONPathValues
+{
+class PathMatcher;
+}
+
 struct JSONPathValuesBuildInfo
 {
     String source_column_name;
     UInt64 max_token_bytes;
+    std::shared_ptr<const JSONPathValues::PathMatcher> path_matcher;
 };
 
 class MergeTreeIndexTextPostprocessor;

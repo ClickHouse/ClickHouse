@@ -82,6 +82,12 @@ void enumerateJSONValues(
 
     auto consume_shared = [&](std::string_view path, std::string_view value_data)
     {
+        if constexpr (requires { consumer.shouldConsumePath(path); })
+        {
+            if (!consumer.shouldConsumePath(path))
+                return;
+        }
+
         ReadBufferFromMemory buffer(value_data);
 
         char type_index = 0;
@@ -167,6 +173,12 @@ void enumerateJSONValues(
 
     auto consume_path = [&](PathInfo & entry, size_t row)
     {
+        if constexpr (requires { consumer.shouldConsumePath(entry.path); })
+        {
+            if (!consumer.shouldConsumePath(entry.path))
+                return;
+        }
+
         if ((entry.is_dynamic || entry.is_nullable) && entry.column->isNullAt(row))
         {
             consumer.consumeNull(entry.path, entry.is_nullable);
