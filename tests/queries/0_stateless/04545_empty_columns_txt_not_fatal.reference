@@ -2,6 +2,10 @@
 1000	499500	12688800205083956790
 -- t_empty_columns: rows after empty columns.txt reload
 1000	499500	12688800205083956790
+-- t_empty_columns: rebuilt columns.txt on disk
+columns format version: 1
+`a` UInt64
+`s` String
 -- t_empty_columns: rows after recovered reload
 1000	499500	12688800205083956790
 -- t_empty_columns: rows after absent columns.txt reload
@@ -10,6 +14,12 @@
 1000	499500	12444261028201855304
 -- t_empty_columns_bn: rows after empty columns.txt reload
 1000	499500	12444261028201855304
+-- t_empty_columns_bn: rebuilt columns.txt on disk
+columns format version: 1
+`a` UInt64
+`s` String
+`_block_number` UInt64
+`_block_offset` UInt64
 -- t_empty_columns_bn: rows after recovered reload
 1000	499500	12444261028201855304
 -- t_empty_columns_bn: rows after absent columns.txt reload
@@ -18,6 +28,11 @@
 500	250000	6753304225218678229
 -- t_empty_columns_ld: rows after empty columns.txt reload
 500	250000	6753304225218678229
+-- t_empty_columns_ld: rebuilt columns.txt on disk
+columns format version: 1
+`a` UInt64
+`s` String
+`_row_exists` UInt8
 -- t_empty_columns_ld: rows after recovered reload
 500	250000	6753304225218678229
 -- t_empty_columns_ld: rows after absent columns.txt reload
@@ -68,3 +83,11 @@
 1000000	2000
 -- t_empty_columns_shared_offsets_data: consistent part after recovery
 1
+-- t_empty_columns_projection: rows before
+600	134550
+-- t_empty_columns_projection: usable projection after recovery
+1
+-- t_empty_columns_projection: _block_number listed once in the rebuilt columns.txt
+1
+-- t_empty_columns_projection: rows after recovery
+600	134550

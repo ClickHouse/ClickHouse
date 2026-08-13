@@ -52,6 +52,10 @@ run_case()
     # per-column digest (not just count()) also catches a recovery that keeps the row count but drops
     # a physical column, which would then read back as all-default values.
     ${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${table}"
+    # The part is quiescent here, so the file on disk is the one recovery wrote: a rebuild that never
+    # reached disk would still be zero bytes and re-run recovery on every load.
+    echo "-- ${table}: rebuilt columns.txt on disk"
+    awk 'NR == 1 { print } /^`/ { print }' "${data_path}columns.txt"
     ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE ${table}" 2>/dev/null
     echo "-- ${table}: rows after recovered reload"
     ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(a), sum(cityHash64(s)) FROM ${table}"
@@ -354,3 +358,37 @@ ${CLICKHOUSE_CLIENT} --query "SELECT sum(arraySum(n.a)), sum(length(n.b)) FROM t
 echo "-- t_empty_columns_shared_offsets_data: consistent part after recovery"
 ${CLICKHOUSE_CLIENT} --query "CHECK TABLE t_empty_columns_shared_offsets_data SETTINGS check_query_single_value_result = 1"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_empty_columns_shared_offsets_data"
+
+# ---- Case K: recovering a projection part must not list a stored virtual twice ----
+# A projection lists the parent virtuals it stores among its own physical columns, so a rebuild that
+# appends the persistent virtuals unconditionally writes `_block_number` twice; the projection then
+# fails to load with DUPLICATE_COLUMN and is marked broken.
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_empty_columns_projection"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE t_empty_columns_projection (id UInt64, v UInt64)
+    ENGINE = MergeTree ORDER BY id
+    SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+             min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0,
+             enable_block_number_column = 1, enable_block_offset_column = 1,
+             allow_commit_order_projection = 1, deduplicate_merge_projection_mode = 'rebuild';
+"
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE t_empty_columns_projection ADD PROJECTION p (SELECT id, v, _block_number ORDER BY v)"
+${CLICKHOUSE_CLIENT} --max_insert_threads 1 --min_insert_block_size_rows 100000 --min_insert_block_size_bytes 0 --max_block_size 100000 --query "INSERT INTO t_empty_columns_projection SELECT number, number * 2 FROM numbers(300)"
+${CLICKHOUSE_CLIENT} --max_insert_threads 1 --min_insert_block_size_rows 100000 --min_insert_block_size_bytes 0 --max_block_size 100000 --query "INSERT INTO t_empty_columns_projection SELECT number + 300, number FROM numbers(300)"
+# Merge so the projection is materialized in one part, then freeze the layout.
+${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE t_empty_columns_projection FINAL"
+${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES t_empty_columns_projection"
+proj_path=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.projection_parts WHERE database = currentDatabase() AND table = 't_empty_columns_projection' AND active LIMIT 1")
+${CLICKHOUSE_CLIENT} --query "SELECT throwIf(substring('${proj_path}', 1, 1) != '/', 'Projection path is relative: ${proj_path}')" > /dev/null || exit 1
+echo "-- t_empty_columns_projection: rows before"
+${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(v) FROM t_empty_columns_projection"
+${CLICKHOUSE_CLIENT} --query "DETACH TABLE t_empty_columns_projection"
+: > "${proj_path}columns.txt"
+${CLICKHOUSE_CLIENT} --query "ATTACH TABLE t_empty_columns_projection" 2>/dev/null
+echo "-- t_empty_columns_projection: usable projection after recovery"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.projection_parts WHERE database = currentDatabase() AND table = 't_empty_columns_projection' AND active AND NOT is_broken"
+echo "-- t_empty_columns_projection: _block_number listed once in the rebuilt columns.txt"
+grep -c '^`_block_number`' "${proj_path}columns.txt"
+echo "-- t_empty_columns_projection: rows after recovery"
+${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(v) FROM t_empty_columns_projection"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_empty_columns_projection"

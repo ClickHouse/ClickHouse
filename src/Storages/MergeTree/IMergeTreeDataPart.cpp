@@ -2393,17 +2393,22 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
                 "Cannot rebuild columns.txt of part {}: {} was discarded as corrupted",
                 name, COLUMNS_SUBSTREAMS_FILE_NAME);
 
+        NameSet loaded_column_names;
         for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
         {
             if (getFirstFileNameForColumn(column).has_value())
+            {
                 loaded_columns.push_back(column);
+                loaded_column_names.insert(column.name);
+            }
         }
 
         /// Persistent virtual columns the part carries (getAllPhysical omits them), in the order
-        /// writeColumns wrote them: after the physical columns.
+        /// writeColumns wrote them: after the physical columns. A projection lists the parent
+        /// virtuals it stores among its own physical columns, so skip what is already present.
         for (const auto & column : metadata_snapshot->virtuals.getNamesAndTypes(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader))
         {
-            if (getFirstFileNameForColumn(column).has_value())
+            if (!loaded_column_names.contains(column.name) && getFirstFileNameForColumn(column).has_value())
                 loaded_columns.push_back(column);
         }
 
