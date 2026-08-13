@@ -862,7 +862,17 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 /// Populate the merged part's minmax index in the parts arena (the object and the
                 /// hyperrectangle/Field allocations of `merge` both land there).
                 ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-                global_ctx->new_data_part->getMinMaxIndex()->merge(*part->getMinMaxIndex());
+
+                /// The source part may carry an index that has lost the block column ranges: it was loaded
+                /// before `part_minmax_index_columns` was widened (no block column slots at all), or it was
+                /// mutated before the index started to be materialized for mutated parts (whole-universe
+                /// ranges). `merge` truncates to the shorter of the two indices, so an unrepaired narrow
+                /// source would strip the block columns from the merged index too, and the merged part
+                /// would be stored without the block column files. Repair a copy of the source index -
+                /// the source part itself must keep what its on-disk state says.
+                IMergeTreeDataPart::MinMaxIndex repaired_minmax_idx = *part->getMinMaxIndex();
+                repaired_minmax_idx.repairInheritedBlockColumns(*part, global_ctx->metadata_snapshot);
+                global_ctx->new_data_part->getMinMaxIndex()->merge(repaired_minmax_idx);
             }
             const auto & result_statistics = global_ctx->gathered_data.statistics;
 
