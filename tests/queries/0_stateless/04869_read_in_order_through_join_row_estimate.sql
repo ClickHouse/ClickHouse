@@ -4,6 +4,13 @@
 -- to produce, so the announcement must be bounded by it too - otherwise a read that stops after
 -- one granule looks like a full scan to the row limits.
 
+-- The announcement is delivered per source, and only when the source runs. In-order reading may
+-- split a part into several sources (e.g. reading from object storage), and then a query that
+-- stops early never runs the later sources, so their announcements are never delivered.
+-- `max_threads = 1` keeps the whole part in a single source, whose announcement is delivered on
+-- the first read on every storage. Parallel replicas skip the announcement altogether (the rows
+-- would be counted once per replica), so they are disabled explicitly.
+
 DROP TABLE IF EXISTS t_left_04869;
 DROP TABLE IF EXISTS t_right_04869;
 
@@ -23,6 +30,7 @@ LIMIT 1
 SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1,
     query_plan_read_in_order_through_join = 1, read_in_order_use_virtual_row = 1,
     query_plan_join_swap_table = 0, max_block_size = 10,
+    max_threads = 1, enable_parallel_replicas = 0,
     max_rows_to_read = 100, read_overflow_mode = 'throw',
     collect_hash_table_stats_during_joins = 0, enable_join_runtime_filters = 0;
 
@@ -35,6 +43,7 @@ LIMIT 1
 SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1,
     query_plan_read_in_order_through_join = 1, read_in_order_use_virtual_row = 1,
     query_plan_join_swap_table = 0, max_block_size = 10,
+    max_threads = 1, enable_parallel_replicas = 0,
     max_rows_to_read = 100, read_overflow_mode = 'throw',
     collect_hash_table_stats_during_joins = 0, enable_join_runtime_filters = 0,
     max_bytes_ratio_before_external_join = 0, max_bytes_before_external_join = 0;
@@ -50,6 +59,7 @@ LIMIT 1
 SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1,
     query_plan_read_in_order_through_join = 1, read_in_order_use_virtual_row = 1,
     query_plan_join_swap_table = 0, max_block_size = 10,
+    max_threads = 1, enable_parallel_replicas = 0,
     max_rows_to_read = 100, read_overflow_mode = 'throw',
     collect_hash_table_stats_during_joins = 0, enable_join_runtime_filters = 0,
     max_bytes_ratio_before_external_join = 0, max_bytes_before_external_join = 0; -- { serverError TOO_MANY_ROWS }
@@ -64,6 +74,7 @@ LIMIT 1
 SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1,
     query_plan_read_in_order_through_join = 1, read_in_order_use_virtual_row = 1,
     query_plan_join_swap_table = 0, max_block_size = 10,
+    max_threads = 1, enable_parallel_replicas = 0,
     max_rows_to_read = 100, read_overflow_mode = 'throw',
     collect_hash_table_stats_during_joins = 0, enable_join_runtime_filters = 0,
     max_bytes_ratio_before_external_join = 0, max_bytes_before_external_join = 0; -- { serverError TOO_MANY_ROWS }
