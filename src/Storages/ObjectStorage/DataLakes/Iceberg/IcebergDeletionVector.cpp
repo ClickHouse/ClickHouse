@@ -77,14 +77,11 @@ void validateDeletionVectorPositionsAgainstDataFile(
 namespace
 {
 
-DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVectorUncached(
+using FooterBlobsPtr = PuffinFilesCache::FooterBlobsPtr;
+
+FooterBlobsPtr readFooterBlobs(
     ObjectStoragePtr object_storage,
     const String & puffin_path,
-    Int64 content_offset,
-    Int64 content_size_in_bytes,
-    const IcebergPathFromMetadata & expected_data_file,
-    UInt64 expected_cardinality,
-    Int64 data_file_record_count,
     ContextPtr context,
     LoggerPtr log,
     bool disable_filesystem_cache)
@@ -104,9 +101,43 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVectorUncached(
     if (!file_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine Puffin file size for '{}'", puffin_path);
 
-    const auto blobs = readPuffinFooterBlobsFromSeekable(*seekable, *file_size);
+    return std::make_shared<const std::vector<PuffinBlob>>(readPuffinFooterBlobsFromSeekable(*seekable, *file_size));
+}
+
+DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVectorUncached(
+    ObjectStoragePtr object_storage,
+    const String & puffin_path,
+    Int64 content_offset,
+    Int64 content_size_in_bytes,
+    const IcebergPathFromMetadata & expected_data_file,
+    UInt64 expected_cardinality,
+    Int64 data_file_record_count,
+    ContextPtr context,
+    LoggerPtr log,
+    bool disable_filesystem_cache,
+    FooterBlobsPtr preloaded_footer)
+{
+    RelativePathWithMetadata puffin_object{puffin_path};
+    auto read_settings = context->getReadSettings();
+    if (disable_filesystem_cache)
+        read_settings.enable_filesystem_cache = false;
+
+    auto read_buffer = createReadBuffer(puffin_object, object_storage, context, log, read_settings);
+
+    auto * seekable = dynamic_cast<SeekableReadBuffer *>(read_buffer.get());
+    if (!seekable)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin deletion vector read requires a seekable buffer");
+
+    auto file_size = tryGetFileSizeFromReadBuffer(*read_buffer);
+    if (!file_size)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine Puffin file size for '{}'", puffin_path);
+
+    FooterBlobsPtr footer_owner = preloaded_footer;
+    if (!footer_owner)
+        footer_owner = std::make_shared<const std::vector<PuffinBlob>>(readPuffinFooterBlobsFromSeekable(*seekable, *file_size));
+
     bindDeletionVectorBlob(
-        blobs,
+        *footer_owner,
         content_offset,
         content_size_in_bytes,
         expected_data_file.serialize(),
@@ -215,7 +246,8 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
             data_file_record_count,
             context,
             log,
-            false);
+            false,
+            nullptr);
     }
 
     RelativePathWithMetadata puffin_object{puffin_path};
@@ -238,11 +270,15 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
             data_file_record_count,
             context,
             log,
-            false);
+            false,
+            nullptr);
     }
 
+    const String storage_identity = PuffinFilesCache::makeStorageIdentity(*object_storage);
+
+    auto footer_key = PuffinFilesCache::tryCreateFooterKey(storage_identity, puffin_path, puffin_object.metadata->etag);
     auto cache_key = PuffinFilesCache::tryCreateKey(
-        PuffinFilesCache::makeStorageIdentity(*object_storage),
+        storage_identity,
         puffin_path,
         puffin_object.metadata->etag,
         content_offset,
@@ -251,17 +287,24 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
         expected_cardinality_u64,
         static_cast<UInt64>(data_file_record_count));
 
-    /// Empty etag is the only reason `tryCreateKey` returns nullopt; that case is handled above.
-    if (!cache_key)
+    /// Empty etag is the only reason tryCreate* returns nullopt; that case is handled above.
+    if (!footer_key || !cache_key)
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "PuffinFilesCache::tryCreateKey returned nullopt for non-empty etag on '{}'",
+            "PuffinFilesCache::tryCreate* returned nullopt for non-empty etag on '{}'",
             puffin_path);
     }
 
+    /// Footer is keyed by file identity only, so N DV slices in one coalesced Puffin share one parse.
+    /// Resolve the footer only on a deletion-vector cache miss (nested getOrSet on a separate CacheBase).
     return cache->getOrSetDeletionVector(*cache_key, [&]()
     {
+        auto footer = cache->getOrSetFooter(*footer_key, [&]()
+        {
+            return readFooterBlobs(object_storage, puffin_path, context, log, /*disable_filesystem_cache=*/ true);
+        });
+
         return loadDeletionVectorUncached(
             object_storage,
             puffin_path,
@@ -272,7 +315,8 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
             data_file_record_count,
             context,
             log,
-            true);
+            true,
+            footer);
     });
 }
 
