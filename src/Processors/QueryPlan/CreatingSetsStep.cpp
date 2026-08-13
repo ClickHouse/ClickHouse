@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
+#include <Processors/Transforms/DistinctTransform.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include <Core/Settings.h>
@@ -55,6 +56,23 @@ CreatingSetStep::CreatingSetStep(
 
 void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    /// With a single input stream the set fill deduplicates just as well on its own; the pre-distinct
+    /// only pays off by deduplicating disjoint streams in parallel. The partition count can drop to one
+    /// after the flag was set (e.g. a later filter pushdown re-runs part selection), so check the final
+    /// stream count here.
+    if (preliminary_distinct && pipeline.getNumStreams() > 1)
+    {
+        pipeline.addSimpleTransform(
+            [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+            {
+                if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                    return nullptr;
+
+                /// Deduplicate independently per stream
+                return std::make_shared<DistinctTransform>(header, SizeLimits{}, 0, Names{});
+            });
+    }
+
     pipeline.addCreatingSetsTransform(
         getOutputHeader(),
         set_and_key,
@@ -77,12 +95,17 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
     settings.out << prefix;
     settings.out << "Set: ";
     settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(set_and_key->key, settings.pretty_names) : set_and_key->key) << '\n';
+
+    if (preliminary_distinct)
+        settings.out << prefix << "Pre-distinct: 1\n";
 }
 
 void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     if (set_and_key->set)
         map.add("Set", set_and_key->key);
+    if (preliminary_distinct)
+        map.add("Pre-distinct", true);
 }
 
 
