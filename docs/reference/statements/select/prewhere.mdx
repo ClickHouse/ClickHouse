@@ -12,7 +12,7 @@ With prewhere optimization, at first only the columns necessary for executing pr
 
 ## Controlling Prewhere Manually {#controlling-prewhere-manually}
 
-The clause is normally evaluated while ClickHouse reads data from a table. Use `PREWHERE` when the filtering conditions reference a small number of columns but strongly reduce the number of rows. This reduces the volume of data read for the remaining columns.
+Use `PREWHERE` when the filtering conditions reference a small number of columns but strongly reduce the number of rows. This reduces the volume of data read for the remaining columns.
 
 A query may simultaneously specify `PREWHERE` and `WHERE`. In this case, `PREWHERE` precedes `WHERE`.
 
@@ -21,12 +21,12 @@ If the [optimize_move_to_prewhere](/reference/settings/session-settings/optimize
 If query has [FINAL](/reference/statements/select/from#final-modifier) modifier, the `PREWHERE` optimization is not always correct. It is enabled only if both settings [optimize_move_to_prewhere](/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) and [optimize_move_to_prewhere_if_final](/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere_if_final) are turned on.
 
 <Note>
-The `PREWHERE` section is normally executed before `FINAL`, so the results of `FROM ... FINAL` queries may be skewed when using `PREWHERE` with fields not in the `ORDER BY` section of a table.
+By default, the `PREWHERE` section is executed before `FINAL`, so the results of `FROM ... FINAL` queries may be skewed when using `PREWHERE` with fields not in the `ORDER BY` section of a table.
 </Note>
 
 ## `PREWHERE` with `JOIN` {#prewhere-with-join}
 
-With the analyzer enabled, a `PREWHERE` condition can directly reference columns from no more than one table in a [`JOIN`](/reference/statements/select/join). ClickHouse applies the condition to that table's rows before they reach the join.
+When `enable_analyzer = 1`, a `PREWHERE` condition can directly reference columns from no more than one table in a [`JOIN`](/reference/statements/select/join). ClickHouse applies the condition to that table's rows before they reach the join.
 
 In contrast, a `WHERE` condition filters the result of the join. The optimizer may apply it before the join when doing so does not change the result. Moving the same condition between `PREWHERE` and `WHERE` can therefore produce different results, particularly for outer joins.
 
@@ -71,7 +71,7 @@ ORDER BY table_1.id;
 
 ## Limitations {#limitations}
 
-`PREWHERE` is only supported by tables from the [*MergeTree](/reference/engines/table-engines/mergetree-family/index) family.
+Support for `PREWHERE` depends on the table engine. It is supported by tables from the [*MergeTree](/reference/engines/table-engines/mergetree-family/index) family.
 
 ## Example {#example}
 

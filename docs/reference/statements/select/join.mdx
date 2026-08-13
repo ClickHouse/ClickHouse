@@ -452,17 +452,9 @@ The columns specified in `USING` must have the same names in both subqueries, an
 
 The `USING` clause specifies one or more columns to join, which establishes the equality of these columns. The list of columns is set without brackets. More complex join conditions are not supported.
 
-### Syntax Limitations {#syntax-limitations}
-
-When a `SELECT` query contains multiple `JOIN` clauses, `*` can select all columns only when joining tables, not subqueries.
-
-For `ON`, `WHERE`, and `GROUP BY` clauses:
-
-- Arbitrary expressions cannot be used in `ON`, `WHERE`, and `GROUP BY` clauses, but you can define an expression in a `SELECT` clause and then use it in these clauses via an alias.
-
 ### Performance {#performance}
 
-When running a `JOIN`, there is no optimization of the order of execution in relation to other stages of the query. The join (a search in the right table) is run before filtering in `WHERE` and before aggregation.
+A `WHERE` condition logically filters the result of a `JOIN`, but the optimizer may apply it before the join when doing so does not change the result.
 
 Each time a query is run with the same `JOIN`, the subquery is run again because the result is not cached. To avoid this, use the special [Join](/reference/engines/table-engines/special/join) table engine, which is a prepared array for joining that is always in RAM.
 
