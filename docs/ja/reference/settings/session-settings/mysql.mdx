@@ -27,7 +27,7 @@ MySQL 型を対応する ClickHouse 型にどのように変換するかを定�
 * `datetime64`: 精度が `0` でない場合、`DATETIME` 型と `TIMESTAMP` 型を `DateTime` ではなく `DateTime64` に変換します。
 * `date2Date32`: `DATE` を `Date` ではなく `Date32` に変換します。`date2String` より優先されます。
 * `date2String`: `DATE` を `Date` ではなく `String` に変換します。`datetime64` によって上書きされます。
-* `geometry`: MySQL の空間型 (`LINESTRING`、`POLYGON`、`MULTILINESTRING`、`MULTIPOLYGON`、`MULTIPOINT`) を対応する ClickHouse のジオメトリ型に変換し、汎用の `GEOMETRY` 型を包括的な `Geometry` 型に変換します。`POINT` はこのオプションに関係なく、常に `Point` に変換されます。汎用の `GEOMETRY` カラムは任意のサブタイプを保持できるため、対応する ClickHouse の型がないサブタイプの値 (`GEOMETRYCOLLECTION`) を読み取ると、読み取り時に例外が発生します。一方、`GEOMETRYCOLLECTION` として宣言されたカラムは `String` にマッピングされます。
+* `geometry`: MySQL の空間型 (`LINESTRING`、`POLYGON`、`MULTILINESTRING`、`MULTIPOLYGON`、`MULTIPOINT`) を対応する ClickHouse のジオメトリ型に変換し、汎用の `GEOMETRY` 型を包括的な `Geometry` 型に変換します。`POINT` はこのオプションに関係なく、常に `Point` に変換されます。汎用の `GEOMETRY` カラムは任意のサブタイプを保持できるため、対応する ClickHouse の型がないサブタイプの値 (`GEOMETRYCOLLECTION`) を読み取ると、読み取り時に例外が発生します。一方、`GEOMETRYCOLLECTION` として宣言されたカラムは `String` にマッピングされます。`POINT` 以外の nullable な空間カラムも `Nullable(String)` にマッピングされます。これは、`Nullable` 内にネストできるジオメトリ型は `Point` のみであるためです。このような文字列はすべて、MySQL から返される 4 バイトの SRID プレフィックスに WKB ペイロードが続く形式です。上記はすべて、MySQL テーブルのカラム型からスキーマを推論する場合に適用されます。ソースがクエリ (`mysql` テーブル関数または `MySQL` テーブルエンジンの `query(...)` 引数) の場合、MySQL はすべての空間結果カラムを具体的なサブタイプなしの汎用 `GEOMETRY` として報告するため、`POINT` を含むそのようなカラムは `String` (nullable の場合は `Nullable(String)`) にマッピングされます。
 
 <div id="mysql_max_rows_to_insert">
   ## mysql_max_rows_to_insert

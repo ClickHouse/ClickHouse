@@ -1552,11 +1552,23 @@ const SessionSettingsExplorer = () => {
     },
     {
       label: "materialize_*",
-      count: 3,
+      count: 2,
       settings: [
         { name: "materialize_skip_indexes_on_insert", href: "/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert", default: "1" },
-        { name: "materialize_statistics_on_insert", href: "/reference/settings/session-settings/materialize#materialize_statistics_on_insert", default: "0" },
         { name: "materialize_ttl_after_modify", href: "/reference/settings/session-settings/materialize#materialize_ttl_after_modify", default: "1" }
+      ],
+      children: []
+    },
+    {
+      label: "materialize_statistics_on_insert_*",
+      count: 2,
+      settings: [
+        { name: "materialize_statistics_on_insert", href: "/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert", default: "1" },
+        {
+          name: "materialize_statistics_on_insert_max_table_size",
+          href: "/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert_max_table_size",
+          default: "26843545600"
+        }
       ],
       children: []
     },
@@ -3432,7 +3444,7 @@ const SessionSettingsExplorer = () => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count} ${entry.count === 1 ? "configuração" : "configurações"}`
+    const countLabel = `${entry.count} ${entry.count === 1 ? "setting" : "settings"}`
 
     return (
       <div key={key} className="min-w-max">
@@ -3529,7 +3541,7 @@ const SessionSettingsExplorer = () => {
       )}
       <div className="mt-3 w-full overflow-x-auto rounded-xl border border-gray-200 bg-gray-50/50 px-4 py-3 font-mono text-sm leading-6 dark:border-white/10 dark:bg-transparent">
         <div className="flex min-w-full items-center justify-between gap-4">
-          <div className="min-w-max font-semibold">/session-configurações</div>
+          <div className="min-w-max font-semibold">/session-settings</div>
           <button
             type="button"
             aria-label={allGroupsExpanded ? "Recolher tudo" : "Expandir tudo"}

@@ -77,6 +77,40 @@ SETTINGS
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
+<div id="tls-ssl">
+  ### TLS/SSL
+</div>
+
+TLS/SSL パラメータは `libpq` に渡され、名前付きコレクション のキーまたは末尾のキー・バリュー引数として設定できます。`sslmode` (`disable`、`allow`、`prefer`、`require`、`verify-ca`、`verify-full`) と、証明書および秘密鍵は、2 つの形式のいずれかで指定できます。未設定の場合は、`libpq` のデフォルト設定が適用されます (`sslmode=prefer`) 。
+
+* `sslrootcert` (CA 証明書、または特別な値 `system`) 、`sslcert` (クライアント証明書) 、`sslkey` (クライアント秘密鍵) は、サーバー上のローカルファイルへのパスです。これらはサーバー設定ファイルで定義された 名前付きコレクション でのみ指定でき、クエリでオーバーライドすることはできません。サーバー自身の権限でファイルを開くためです。
+* `sslrootcert_pem`、`sslcert_pem`、`sslkey_pem` には、パスの代わりに対応するファイルの内容をリテラルとして指定します。これらはクエリ、SQL で作成した 名前付きコレクション、または 名前付きコレクション のオーバーライドとしてなど、どこでも指定でき、パスワードと同様にログおよび `SHOW` クエリではマスクされます。
+
+たとえば、暗号化された接続を必須とし、サーバー証明書を検証するには:
+
+```xml
+<named_collections>
+    <postgres_creds>
+        <host>localhost</host>
+        <port>5432</port>
+        <user>postgres</user>
+        <password>****</password>
+        <sslmode>verify-full</sslmode>
+        <sslrootcert>/etc/clickhouse-server/postgresql-ca.crt</sslrootcert>
+    </postgres_creds>
+</named_collections>
+```
+
+設定ファイルを使用せず、証明書の内容をクエリで渡す場合は次のとおりです：
+
+```sql
+CREATE TABLE postgres_table (id UInt64, value String)
+ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
+                    sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----');
+```
+
 <div id="settings">
   ## 設定
 </div>

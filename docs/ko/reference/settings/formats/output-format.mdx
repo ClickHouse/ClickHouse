@@ -262,6 +262,20 @@ Decimal 값을 출력할 때 후행 0도 함께 출력합니다. 예: 1.23 대�
 
 기본값: 1024.
 
+<div id="output_format_image_streaming_animation">
+  ## output_format_image_streaming_animation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "애니메이션의 모든 프레임을 메모리에 버퍼링하지 않고, `t`의 다음 값을 확인하는 즉시 `PNG`와 같은 이미지 출력 형식에서 각 프레임을 기록할지 제어하는 새로운 설정입니다."}]}]} />
+
+`PNG`와 같은 이미지 출력 형식에서 쿼리가 끝날 때까지 모든 프레임을 메모리에 버퍼링하지 않고, `t` 컬럼의 다음 값을 확인하는 즉시 애니메이션의 각 프레임을 기록합니다.
+
+메모리에는 프레임 1개만 유지되며, 쿼리가 실행되는 동안 프레임이 출력으로 전달됩니다. 대신 `t`의 값은 감소하지 않아야 합니다. 그렇지 않으면 쿼리에서 예외가 발생합니다. 또한 애니메이션 헤더를 기록할 때는 프레임 수를 알 수 없으므로, 선언된 프레임 수는 정확한 값이 아니라 상한값입니다. 브라우저에서는 이러한 파일을 재생할 수 있지만, 선언된 프레임 수를 신뢰하는 디코더는 마지막 실제 프레임 뒤에서 오류를 보고합니다.
+
+기본값: `false`.
+
 <div id="output_format_image_terminal_mode">
   ## output_format_image_terminal_mode
 </div>
@@ -279,6 +293,36 @@ Decimal 값을 출력할 때 후행 0도 함께 출력합니다. 예: 1.23 대�
 * `auto` — 출력 대상이 터미널이면 해당 capability를 감지해 `iterm`, `kitty`, `sixel`을 이 순서대로 사용하고, 그렇지 않으면 원시 이미지 바이트를 기록합니다.
 
 기본값: &#96;&#96; (비어 있음).
+
+<div id="output_format_image_time_divisor_seconds">
+  ## output_format_image_time_divisor_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "60"},{"label": "이미지 출력 형식(예: `PNG`)에서 애니메이션을 생성할 수 있도록 `t` 컬럼의 시간 단위 분모를 제어하는 새로운 설정입니다."}]}]} />
+
+이미지 출력 형식(예: `PNG`)에서 사용하는 `t` 컬럼 시간 단위의 분모(초)입니다.
+
+[`output_format_image_time_multiplier_seconds`](/ko/reference/settings/formats/output-format#output_format_image_time_multiplier_seconds)를 참조하십시오.
+
+기본값: 60.
+
+<div id="output_format_image_time_multiplier_seconds">
+  ## output_format_image_time_multiplier_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`PNG`와 같은 이미지 출력 형식이 애니메이션을 생성하도록 하는 `t` 컬럼 시간 단위의 분자를 제어하는 새로운 설정입니다."}]}]} />
+
+`PNG`와 같은 이미지 출력 형식에서 사용하는 `t` 컬럼 시간 단위의 분자이며, 단위는 초입니다.
+
+`t` 컬럼이 있으면 해당 포맷은 애니메이션을 생성하며, 이때 `t`는 프레임의 상대 시간 오프셋입니다.
+`t`의 1단위는 `output_format_image_time_multiplier_seconds / output_format_image_time_divisor_seconds`초에 해당합니다.
+기본값(`1` 및 `60`)을 사용하면 `t`의 1단위는 1/60초입니다.
+
+기본값: 1.
 
 <div id="output_format_image_width">
   ## output_format_image_width

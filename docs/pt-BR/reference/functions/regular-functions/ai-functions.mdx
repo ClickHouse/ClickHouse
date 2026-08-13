@@ -359,6 +359,58 @@ late and damaged package
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
+<div id="aiFilter">
+  ## aiFilter
+</div>
+
+Introduzido em: v26.8.0
+
+Avalia uma condição em linguagem natural em relação ao texto fornecido usando um provedor de LLM e retorna um valor booleano (`UInt8`) adequado para `WHERE`, `PREWHERE` e `JOIN ... ON`.
+
+A função solicita que o modelo responda apenas com `true` ou `false` em letras minúsculas. Solicitações com falha (quando
+`ai_function_throw_on_error` está desabilitado) e respostas não reconhecidas são mapeadas para `0`, portanto a linha é filtrada.
+
+**Aviso:** Não confie nos resultados de `aiFilter` sem analisá-los cuidadosamente. Predicados baseados em LLM podem estar incorretos
+ou ser inconsistentes; use-os apenas quando falsos positivos e falsos negativos forem aceitáveis.
+
+As credenciais (uma coleção nomeada que especifica o provedor, o modelo, o endpoint e, opcionalmente, uma chave de API)
+são obtidas da chave `credentials` do mapa de parâmetros opcional ou da
+configuração `ai_function_text_default_credentials` quando o mapa não a inclui.
+
+Observação: usar `aiFilter` em `JOIN ... ON` avalia a LLM uma vez para cada par candidato e pode ser caro.
+
+**Sintaxe**
+
+```sql
+aiFilter(text, condition[, params])
+```
+
+**Aliases**: `AIFilter`
+
+**Argumentos**
+
+* `text` — Texto a ser avaliado. [`String`](/pt-BR/reference/data-types/string)
+* `condition` — Condição constante em linguagem natural que o texto deve atender. [`String`](/pt-BR/reference/data-types/string)
+* `params` — `Map(String, String)` constante e opcional de parâmetros. Chaves específicas da função: `temperature` (temperatura de amostragem que controla a aleatoriedade; padrão `0.0`), `max_tokens` (máximo de tokens de saída por chamada; padrão `1024`). Os parâmetros comuns `credentials` e `model` também se aplicam (consulte [Funções de IA](/pt-BR/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/pt-BR/reference/data-types/map)
+
+**Valor retornado**
+
+`1` se o texto atender à condição; caso contrário, `0`. Retorna o valor padrão (`0`) se a solicitação falhar e `ai_function_throw_on_error` estiver desabilitado. [`UInt8`](/pt-BR/reference/data-types/int-uint)
+
+**Exemplos**
+
+**Filtrar avaliações irritadas**
+
+```sql title=Query
+SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
+```
+
+**Filtre uma coluna usando credenciais explícitas**
+
+```sql title=Query
+SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
+```
+
 <div id="aiGenerate">
   ## aiGenerate
 </div>
@@ -426,10 +478,13 @@ Introduzido em: v26.8.0
 
 Calcula a similaridade semântica entre dois textos usando o provedor de embeddings configurado.
 
-Calcula o embedding de ambos os textos e retorna a similaridade de cosseno entre os dois vetores
-no intervalo `[-1, 1]`: `1` significa que os textos são semanticamente idênticos, `0` significa que não têm relação,
-e valores negativos indicam significados opostos. É o complemento de `cosineDistance` para os
-mesmos embeddings (`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
+Calcula os embeddings vetoriais de ambos os textos e retorna a
+[similaridade de cosseno](https://en.wikipedia.org/wiki/Cosine_similarity). Uma pontuação de `-1` é atribuída a
+vetores de embedding opostos; semanticamente, isso significa que textos com pontuações próximas de `-1` têm significados
+opostos. Uma pontuação de `0` significa que os vetores são ortogonais: semanticamente não relacionados. Por fim, uma pontuação de `1`
+significa que os vetores de embedding apontam na mesma direção; textos com pontuações próximas de `1` têm
+significados semelhantes. É o complemento de `cosineDistance` para os mesmos embeddings
+(`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
 
 O processamento em lotes, as credenciais e o parâmetro `dimensions` são iguais aos de `aiEmbed`, incluindo a
 configuração de credenciais padrão `ai_function_embedding_default_credentials`.

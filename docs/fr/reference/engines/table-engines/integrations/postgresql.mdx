@@ -77,6 +77,40 @@ Certains paramètres peuvent être redéfinis par des arguments clé-valeur :
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
+<div id="tls-ssl">
+  ### TLS/SSL
+</div>
+
+Les paramètres TLS/SSL sont transmis à `libpq` et peuvent être définis comme clés d’une collection nommée ou comme arguments clé-valeur en fin de liste : `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` ou `verify-full`), ainsi que les certificats et la clé, sous l’une de deux formes. S’ils ne sont pas définis, les valeurs par défaut de `libpq` s’appliquent (`sslmode=prefer`).
+
+* `sslrootcert` (certificat de CA ou valeur spéciale `system`), `sslcert` (certificat client) et `sslkey` (clé privée du client) sont des chemins vers des fichiers locaux au serveur. Ils ne peuvent être spécifiés que dans une collection nommée définie dans le fichier de configuration du serveur et ne peuvent pas être remplacés dans une requête : le serveur ouvre les fichiers avec ses propres privilèges.
+* `sslrootcert_pem`, `sslcert_pem` et `sslkey_pem` acceptent le contenu littéral du fichier correspondant plutôt qu’un chemin. Ils peuvent être spécifiés n’importe où — dans une requête, dans une collection nommée créée avec SQL ou pour remplacer les valeurs d’une collection nommée — et sont masqués dans les journaux et les requêtes `SHOW`, comme un mot de passe.
+
+Par exemple, pour exiger une connexion chiffrée et vérifier le certificat du serveur :
+
+```xml
+<named_collections>
+    <postgres_creds>
+        <host>localhost</host>
+        <port>5432</port>
+        <user>postgres</user>
+        <password>****</password>
+        <sslmode>verify-full</sslmode>
+        <sslrootcert>/etc/clickhouse-server/postgresql-ca.crt</sslrootcert>
+    </postgres_creds>
+</named_collections>
+```
+
+Même chose sans fichier de configuration, en transmettant le contenu du certificat dans la requête :
+
+```sql
+CREATE TABLE postgres_table (id UInt64, value String)
+ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
+                    sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----');
+```
+
 <div id="settings">
   ## Paramètres
 </div>

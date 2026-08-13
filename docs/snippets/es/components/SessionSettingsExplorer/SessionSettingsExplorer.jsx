@@ -1552,11 +1552,23 @@ const SessionSettingsExplorer = () => {
     },
     {
       label: "materialize_*",
-      count: 3,
+      count: 2,
       settings: [
         { name: "materialize_skip_indexes_on_insert", href: "/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert", default: "1" },
-        { name: "materialize_statistics_on_insert", href: "/reference/settings/session-settings/materialize#materialize_statistics_on_insert", default: "0" },
         { name: "materialize_ttl_after_modify", href: "/reference/settings/session-settings/materialize#materialize_ttl_after_modify", default: "1" }
+      ],
+      children: []
+    },
+    {
+      label: "materialize_statistics_on_insert_*",
+      count: 2,
+      settings: [
+        { name: "materialize_statistics_on_insert", href: "/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert", default: "1" },
+        {
+          name: "materialize_statistics_on_insert_max_table_size",
+          href: "/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert_max_table_size",
+          default: "26843545600"
+        }
       ],
       children: []
     },
@@ -3432,7 +3444,7 @@ const SessionSettingsExplorer = () => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count} ${entry.count === 1 ? "setting" : "settings"}`
+    const countLabel = `${entry.count} ${entry.count === 1 ? "configuración" : "configuraciones"}`
 
     return (
       <div key={key} className="min-w-max">
@@ -3484,7 +3496,7 @@ const SessionSettingsExplorer = () => {
                 </span>
                 {item.value.default !== undefined && (
                   <span title="Valor predeterminado" className="whitespace-nowrap text-gray-500 dark:text-gray-400">
-                    (predeterminado: {item.value.default})
+                    (valor predeterminado: {item.value.default})
                   </span>
                 )}
               </div>

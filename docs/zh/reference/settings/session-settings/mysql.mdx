@@ -27,7 +27,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * `datetime64`：当精度不为 `0` 时，将 `DATETIME` 和 `TIMESTAMP` 类型转换为 `DateTime64`，而不是 `DateTime`。
 * `date2Date32`：将 `DATE` 转换为 `Date32`，而不是 `Date`。其优先次序高于 `date2String`。
 * `date2String`：将 `DATE` 转换为 `String`，而不是 `Date`。会被 `datetime64` 覆盖。
-* `geometry`：将 MySQL 的空间类型 (`LINESTRING`、`POLYGON`、`MULTILINESTRING`、`MULTIPOLYGON`、`MULTIPOINT`) 转换为对应的 ClickHouse 几何类型，并将通用的 `GEOMETRY` 类型转换为总括类型 `Geometry`。无论是否启用此选项，`POINT` 始终都会转换为 `Point`。由于通用的 `GEOMETRY` 列可以保存任意子类型，如果读取到某个子类型在 ClickHouse 中没有对应类型的值 (`GEOMETRYCOLLECTION`)，会在读取时抛出异常；声明为 `GEOMETRYCOLLECTION` 的列会映射为 `String`。
+* `geometry`：将 MySQL 的空间类型 (`LINESTRING`、`POLYGON`、`MULTILINESTRING`、`MULTIPOLYGON`、`MULTIPOINT`) 转换为对应的 ClickHouse 几何类型，并将通用的 `GEOMETRY` 类型转换为总括类型 `Geometry`。无论是否启用此选项，`POINT` 始终都会转换为 `Point`。由于通用的 `GEOMETRY` 列可以保存任意子类型，如果读取到某个子类型在 ClickHouse 中没有对应类型的值 (`GEOMETRYCOLLECTION`)，会在读取时抛出异常；声明为 `GEOMETRYCOLLECTION` 的列会映射为 `String`。除 `POINT` 外，可为 NULL 的空间列也会映射为 `Nullable(String)`，因为 `Point` 是唯一可嵌套在 `Nullable` 中的几何类型。每个此类字符串均由 4 字节的 SRID 前缀和 MySQL 返回的 WKB 载荷组成。以上内容适用于根据 MySQL 表的列类型推断 schema 的情况；当 source 为查询 (`mysql` 表函数或 `MySQL` 表引擎的 `query(...)` 参数) 时，MySQL 会将每个空间结果列都报告为不含具体子类型的通用 `GEOMETRY`，因此此类列 (包括 `POINT`) 会映射为 `String` (如果可为 NULL，则为 `Nullable(String)`) 。
 
 <div id="mysql_max_rows_to_insert">
   ## mysql_max_rows_to_insert

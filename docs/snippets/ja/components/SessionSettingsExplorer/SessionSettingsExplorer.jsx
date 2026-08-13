@@ -1,6 +1,6 @@
 const SessionSettingsExplorer = () => {
   // Mintlify の本番レンダラーは、エクスポートされたコンポーネントをモジュールスコープのバインディングを保持せずに評価します。
-  // Lazy state により生成データをその評価スコープ内に保持し、マウントごとに一度だけ構築します。
+  // Lazy state は生成されたデータをその評価スコープ内に保持し、マウントごとに一度だけ構築します。
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -1551,11 +1551,23 @@ const SessionSettingsExplorer = () => {
     },
     {
       label: "materialize_*",
-      count: 3,
+      count: 2,
       settings: [
         { name: "materialize_skip_indexes_on_insert", href: "/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert", default: "1" },
-        { name: "materialize_statistics_on_insert", href: "/reference/settings/session-settings/materialize#materialize_statistics_on_insert", default: "0" },
         { name: "materialize_ttl_after_modify", href: "/reference/settings/session-settings/materialize#materialize_ttl_after_modify", default: "1" }
+      ],
+      children: []
+    },
+    {
+      label: "materialize_statistics_on_insert_*",
+      count: 2,
+      settings: [
+        { name: "materialize_statistics_on_insert", href: "/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert", default: "1" },
+        {
+          name: "materialize_statistics_on_insert_max_table_size",
+          href: "/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert_max_table_size",
+          default: "26843545600"
+        }
       ],
       children: []
     },

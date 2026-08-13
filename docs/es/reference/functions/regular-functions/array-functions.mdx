@@ -5402,7 +5402,8 @@ relleno con ceros hasta una potencia de dos mayor; se **rechaza con una excepci�
 silenciosamente un vector más largo. Use una longitud compatible o pase `output_dims` para calcular una proyección
 truncada de una longitud arbitraria (véase más abajo).
 
-El resultado tiene el mismo tipo de elemento que la entrada; un array de entrada vacío devuelve un array vacío.
+El resultado tiene el mismo tipo de elemento que la entrada; un array de entrada vacío devuelve un array vacío
+(`output_dims` no se aplica a él).
 
 * `seed` (opcional, valor predeterminado `0`): selecciona el patrón de signos; el mismo seed siempre produce la misma
   transformada.

@@ -307,7 +307,7 @@ const FormatSettingsExplorer = () => {
     },
     {
       label: "output_format_*",
-      count: 103,
+      count: 106,
       settings: [
         {
           name: "output_format_always_write_decimal_point_in_float_and_decimal",
@@ -342,7 +342,10 @@ const FormatSettingsExplorer = () => {
         { name: "output_format_decimal_trailing_zeros", href: "/reference/settings/formats/output-format#output_format_decimal_trailing_zeros", default: "0" },
         { name: "output_format_float_precision", href: "/reference/settings/formats/output-format#output_format_float_precision", default: "0" },
         { name: "output_format_image_height", href: "/reference/settings/formats/output-format#output_format_image_height", default: "1024" },
+        { name: "output_format_image_streaming_animation", href: "/reference/settings/formats/output-format#output_format_image_streaming_animation", default: "0" },
         { name: "output_format_image_terminal_mode", href: "/reference/settings/formats/output-format#output_format_image_terminal_mode", default: '""' },
+        { name: "output_format_image_time_divisor_seconds", href: "/reference/settings/formats/output-format#output_format_image_time_divisor_seconds", default: "60" },
+        { name: "output_format_image_time_multiplier_seconds", href: "/reference/settings/formats/output-format#output_format_image_time_multiplier_seconds", default: "1" },
         { name: "output_format_image_width", href: "/reference/settings/formats/output-format#output_format_image_width", default: "1024" },
         { name: "output_format_json_array_of_rows", href: "/reference/settings/formats/output-format#output_format_json_array_of_rows", default: "0" },
         { name: "output_format_json_escape_forward_slashes", href: "/reference/settings/formats/output-format#output_format_json_escape_forward_slashes", default: "1" },
@@ -561,11 +564,11 @@ const FormatSettingsExplorer = () => {
   }
 
   const filterEntry = (entry) => {
-    const paramètres = entry.paramètres.filter((paramètre) => matchesSearch(paramètre.name))
+    const settings = entry.settings.filter((setting) => matchesSearch(setting.name))
     const children = entry.children.map(filterEntry).filter(Boolean)
-    const count = paramètres.length + children.reduce((total, child) => total + child.count, 0)
+    const count = settings.length + children.reduce((total, child) => total + child.count, 0)
     if (!count) return null
-    return { ...entry, count, paramètres, children }
+    return { ...entry, count, settings, children }
   }
 
   const filteredEntries = isSearching ? entries.map(filterEntry).filter(Boolean) : entries
@@ -602,7 +605,7 @@ const FormatSettingsExplorer = () => {
   const renderGroup = (entry, continuations = [], isLast = false, path = []) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
-    const items = [...entry.paramètres.map((paramètre) => ({ type: "paramètre", value: paramètre })), ...entry.children.map((child) => ({ type: "group", value: child }))]
+    const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
     const countLabel = `${entry.count} ${entry.count === 1 ? "paramètre" : "paramètres"}`
 
     return (
@@ -655,7 +658,7 @@ const FormatSettingsExplorer = () => {
                 </span>
                 {item.value.default !== undefined && (
                   <span title="Valeur par défaut" className="whitespace-nowrap text-gray-500 dark:text-gray-400">
-                    (par défaut : {item.value.default})
+                    (par défaut : {item.value.default})
                   </span>
                 )}
               </div>
@@ -694,7 +697,7 @@ const FormatSettingsExplorer = () => {
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            {matchingCount} matching {matchingCount === 1 ? "paramètre" : "paramètres"}
+            {matchingCount} correspondant{matchingCount === 1 ? "" : "s"} {matchingCount === 1 ? "paramètre" : "paramètres"}
           </span>
         </div>
       )}

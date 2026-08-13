@@ -132,7 +132,7 @@ AI 函数发起的单个 HTTP 请求 (AI 聊天补全和 embedding API 调用) �
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "新增设置"}]}]} />
 
-当调用未在参数映射中传递 `credentials` 时，文本 AI 函数 (`aiGenerate`、`aiClassify`、`aiExtract`、`aiTranslate`) 将使用此命名集合的名称。为空表示没有默认值：此类调用必须显式传递 `credentials`。聊天补全端点与嵌入向量端点不同，因此该设置与 `ai_function_embedding_default_credentials` 分开。
+当调用未在参数映射中传递 `credentials` 时，文本 AI 函数 (`aiGenerate`、`aiClassify`、`aiFilter`、`aiExtract`、`aiTranslate`) 将使用此命名集合的名称。为空表示没有默认值：此类调用必须显式传递 `credentials`。聊天补全端点和模型与嵌入向量端点和模型不同，因此该设置与 `ai_function_embedding_default_credentials` 分开。
 
 <div id="ai_function_throw_on_error">
   ## ai_function_throw_on_error

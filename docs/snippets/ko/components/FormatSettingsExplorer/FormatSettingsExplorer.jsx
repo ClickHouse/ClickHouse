@@ -1,7 +1,7 @@
 const FormatSettingsExplorer = () => {
   // Mintlify의 프로덕션 렌더러는 모듈 스코프 바인딩을 유지하지 않은 채
-  // 내보낸 컴포넌트를 평가합니다. 지연 상태를 사용하면 생성된 데이터를 해당
-  // 평가 스코프에 유지하면서 마운트당 한 번만 생성할 수 있습니다.
+  // 내보낸 컴포넌트를 평가합니다. 지연 상태는 생성된 데이터를 해당 평가
+  // 스코프에 유지하여 마운트당 한 번만 생성되도록 합니다.
   const [entries] = useState(() => [
     {
       label: "bool_*",
@@ -307,7 +307,7 @@ const FormatSettingsExplorer = () => {
     },
     {
       label: "output_format_*",
-      count: 103,
+      count: 106,
       settings: [
         {
           name: "output_format_always_write_decimal_point_in_float_and_decimal",
@@ -342,7 +342,10 @@ const FormatSettingsExplorer = () => {
         { name: "output_format_decimal_trailing_zeros", href: "/reference/settings/formats/output-format#output_format_decimal_trailing_zeros", default: "0" },
         { name: "output_format_float_precision", href: "/reference/settings/formats/output-format#output_format_float_precision", default: "0" },
         { name: "output_format_image_height", href: "/reference/settings/formats/output-format#output_format_image_height", default: "1024" },
+        { name: "output_format_image_streaming_animation", href: "/reference/settings/formats/output-format#output_format_image_streaming_animation", default: "0" },
         { name: "output_format_image_terminal_mode", href: "/reference/settings/formats/output-format#output_format_image_terminal_mode", default: '""' },
+        { name: "output_format_image_time_divisor_seconds", href: "/reference/settings/formats/output-format#output_format_image_time_divisor_seconds", default: "60" },
+        { name: "output_format_image_time_multiplier_seconds", href: "/reference/settings/formats/output-format#output_format_image_time_multiplier_seconds", default: "1" },
         { name: "output_format_image_width", href: "/reference/settings/formats/output-format#output_format_image_width", default: "1024" },
         { name: "output_format_json_array_of_rows", href: "/reference/settings/formats/output-format#output_format_json_array_of_rows", default: "0" },
         { name: "output_format_json_escape_forward_slashes", href: "/reference/settings/formats/output-format#output_format_json_escape_forward_slashes", default: "1" },

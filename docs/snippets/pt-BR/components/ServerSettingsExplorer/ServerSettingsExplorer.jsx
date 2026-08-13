@@ -1433,7 +1433,7 @@ const ServerSettingsExplorer = () => {
         { name: "hsts_max_age", href: "/reference/settings/server-settings/settings/other#hsts_max_age" },
         { name: "iceberg_background_schedule_pool_size", href: "/reference/settings/server-settings/settings/other#iceberg_background_schedule_pool_size", default: "10" },
         { name: "ignore_empty_sql_security_in_create_view_query", href: "/reference/settings/server-settings/settings/other#ignore_empty_sql_security_in_create_view_query", default: "1" },
-        { name: "include_from", href: "/reference/settings/server-settings/settings/other#include_from", default: "/etc/metrika.xml" },
+        { name: "include_from", href: "/reference/settings/server-settings/settings/other#include_from", default: '""' },
         { name: "insert_deduplication_version", href: "/reference/settings/server-settings/settings/other#insert_deduplication_version", default: "new_unified_hash" },
         { name: "io_thread_pool_queue_size", href: "/reference/settings/server-settings/settings/other#io_thread_pool_queue_size", default: "10000" },
         { name: "keep_alive_timeout", href: "/reference/settings/server-settings/settings/other#keep_alive_timeout", default: "30" },

@@ -77,6 +77,40 @@ SETTINGS
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
+<div id="tls-ssl">
+  ### TLS/SSL
+</div>
+
+Параметры TLS/SSL передаются в `libpq` и могут быть заданы как ключи именованной коллекции или как завершающие аргументы ключ-значение: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` или `verify-full`), а также сертификаты и ключ — в одном из двух вариантов. Если параметры не заданы, используются значения `libpq` по умолчанию (`sslmode=prefer`).
+
+* `sslrootcert` (CA‑сертификат или специальное значение `system`), `sslcert` (клиентский сертификат) и `sslkey` (закрытый ключ клиента) задают пути к файлам, локальным для сервера. Их можно указать только в именованной коллекции, определённой в файле конфигурации сервера, и нельзя переопределить в запросе: сервер открывает эти файлы от своего имени.
+* `sslrootcert_pem`, `sslcert_pem` и `sslkey_pem` принимают вместо пути буквальное содержимое соответствующего файла. Их можно указать где угодно — в запросе, в именованной коллекции, созданной с помощью SQL, или при переопределении именованной коллекции. В журналах и запросах `SHOW` они маскируются, как пароль.
+
+Например, чтобы потребовать зашифрованное подключение и проверить сертификат сервера:
+
+```xml
+<named_collections>
+    <postgres_creds>
+        <host>localhost</host>
+        <port>5432</port>
+        <user>postgres</user>
+        <password>****</password>
+        <sslmode>verify-full</sslmode>
+        <sslrootcert>/etc/clickhouse-server/postgresql-ca.crt</sslrootcert>
+    </postgres_creds>
+</named_collections>
+```
+
+То же самое без файла конфигурации, с передачей содержимого сертификата в запросе:
+
+```sql
+CREATE TABLE postgres_table (id UInt64, value String)
+ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
+                    sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----');
+```
+
 <div id="settings">
   ## Настройки
 </div>

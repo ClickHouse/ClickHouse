@@ -70,7 +70,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `rabbitmq_max_block_size` - RabbitMQ からデータをフラッシュする前に収集する行数。デフォルト: [max&#95;insert&#95;block&#95;size](/ja/reference/settings/session-settings/max-insert#max_insert_block_size)。
 * `rabbitmq_flush_interval_ms` - RabbitMQ からデータをフラッシュするまでのタイムアウト。デフォルト: [stream&#95;flush&#95;interval&#95;ms](/ja/reference/settings/session-settings/stream#stream_flush_interval_ms)。
 * `rabbitmq_queue_settings_list` - キューの作成時に RabbitMQ の設定を指定できます。使用可能な設定: `x-max-length`, `x-max-length-bytes`, `x-message-ttl`, `x-expires`, `x-priority`, `x-max-priority`, `x-overflow`, `x-dead-letter-exchange`, `x-queue-type`。`durable` 設定はキューに対して自動的に有効になります。
-* `rabbitmq_address` - 接続先アドレス。この設定または `rabbitmq_host_port` のいずれかを使用してください。
+* `rabbitmq_address` - 接続先アドレス: `amqp(s)://user:password@host:port/vhost`。この設定または `rabbitmq_host_port` のいずれかを使用してください。両方が設定されている場合は、`rabbitmq_address` が使用されます。その host と port は [remote&#95;url&#95;allow&#95;hosts](/ja/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) と照合されます。
 * `rabbitmq_vhost` - RabbitMQ vhost。デフォルト: `'/'`。
 * `rabbitmq_queue_consume` - ユーザー定義キューを使用し、exchange、キュー、binding の宣言を含む RabbitMQ のセットアップは行いません。デフォルト: `false`。
 * `rabbitmq_username` - RabbitMQ のユーザー名。
@@ -87,7 +87,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
   ### SSL 接続
 </div>
 
-接続アドレスには、`rabbitmq_secure = 1` または `amqps` のいずれかを使用します: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`。
+`rabbitmq_host_port` 形式では、TLS を使用するために `rabbitmq_secure = 1` を設定します。
+`rabbitmq_address` 形式ではトランスポートは URI スキームによって決まるため、`amqps` を使用します: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`。アドレス形式では `rabbitmq_secure` は無視され、平文の `amqp://` アドレスと `rabbitmq_secure = 1` を併用すると、暗号化されていない状態で暗黙的に接続する代わりに拒否されます。
 使用しているライブラリのデフォルトの動作では、作成された TLS 接続が十分に安全かどうかは確認されません。証明書が期限切れ、自己署名、欠落、無効のいずれであっても、接続はそのまま許可されます。より厳格な証明書検証は、今後実装される可能性があります。
 
 また、rabbitmq 関連の設定に加えてフォーマット設定を追加することもできます。

@@ -258,6 +258,24 @@ PostgreSQL `date` 및 `timestamp`/`timestamptz` 타입을, PostgreSQL 타입보�
 
 이 설정은 중첩 테이블 생성 시 타입 추론(type inference)으로 선택되는 컬럼 타입만 제어하므로, `CREATE DATABASE` 시점에 지정해야 합니다. 이후에는 `ALTER DATABASE ... MODIFY SETTING`으로 변경할 수 없습니다(이미 생성된 중첩 테이블은 고정된 컬럼 타입을 유지하므로, 이러한 변경은 거부됩니다). 변경하려면 데이터베이스를 다시 생성하십시오. 컬럼 타입을 명시적으로 선언하는 `MaterializedPostgreSQL` 테이블 엔진에는 적용되지 않습니다.
 
+<div id="tls-ssl">
+  ## TLS/SSL
+</div>
+
+TLS/SSL 매개변수는 `libpq`로 전달되며, [명명된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 통해 제공하거나 엔진의 후행 키-값 인수로 지정할 수 있습니다. `sslmode`(`disable`, `allow`, `prefer`, `require`, `verify-ca`, `verify-full`; 설정하지 않으면 `libpq`의 기본값인 `prefer`가 적용됨)와 인증서 및 키는 두 가지 형식 중 하나로 제공할 수 있습니다. `sslrootcert`(CA 인증서), `sslcert`(클라이언트 인증서), `sslkey`(클라이언트 개인 키)는 서버 로컬 파일의 경로이며, 서버 구성 파일에 정의된 명명된 컬렉션에서만 사용할 수 있습니다. 반면 `sslrootcert_pem`, `sslcert_pem`, `sslkey_pem`에는 해당 파일의 리터럴 내용을 지정할 수 있으며, SQL에서 지정할 수 있고 비밀번호처럼 로그와 `SHOW` 쿼리에서 마스킹됩니다.
+
+TLS를 강제하는 PostgreSQL 서버에 연결하고 서버 인증서를 검증하는 예시:
+
+```sql
+CREATE DATABASE postgres_db
+ENGINE = MaterializedPostgreSQL('postgres-host:5432', 'postgres_database', 'postgres_user', 'postgres_password',
+                                sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----');
+```
+
+TLS/SSL 매개변수는 데이터베이스 생성 시 고정되는 PostgreSQL 연결 매개변수이므로, 변경하려면 데이터베이스를 다시 생성해야 합니다.
+
 <div id="notes">
   ## 참고
 </div>

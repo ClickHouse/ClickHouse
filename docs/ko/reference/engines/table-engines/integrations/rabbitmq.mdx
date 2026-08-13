@@ -70,12 +70,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `rabbitmq_max_block_size` - RabbitMQ에서 데이터를 플러시하기 전에 수집할 행 수입니다. 기본값: [max&#95;insert&#95;block&#95;size](/ko/reference/settings/session-settings/max-insert#max_insert_block_size).
 * `rabbitmq_flush_interval_ms` - RabbitMQ에서 데이터를 플러시하기 위한 timeout입니다. 기본값: [stream&#95;flush&#95;interval&#95;ms](/ko/reference/settings/session-settings/stream#stream_flush_interval_ms).
 * `rabbitmq_queue_settings_list` - 큐를 생성할 때 RabbitMQ 설정을 지정할 수 있습니다. 사용 가능한 설정: `x-max-length`, `x-max-length-bytes`, `x-message-ttl`, `x-expires`, `x-priority`, `x-max-priority`, `x-overflow`, `x-dead-letter-exchange`, `x-queue-type`. 큐에서는 `durable` 설정이 자동으로 활성화됩니다.
-* `rabbitmq_address` - 연결에 사용할 주소입니다. 이 설정 또는 `rabbitmq_host_port`를 사용하십시오.
+* `rabbitmq_address` - 연결에 사용할 주소입니다: `amqp(s)://user:password@host:port/vhost`. 이 설정 또는 `rabbitmq_host_port`를 사용하십시오. 둘 다 설정된 경우 `rabbitmq_address`가 사용됩니다. 해당 host와 port는 [remote&#95;url&#95;allow&#95;hosts](/ko/reference/settings/server-settings/settings/remote#remote_url_allow_hosts)와 대조하여 확인됩니다.
 * `rabbitmq_vhost` - RabbitMQ vhost입니다. 기본값: `'/'`.
 * `rabbitmq_queue_consume` - 사용자 정의 큐를 사용하고 exchange, 큐, binding 선언 등 RabbitMQ 설정은 수행하지 않습니다. 기본값: `false`.
 * `rabbitmq_username` - RabbitMQ 사용자 이름입니다.
 * `rabbitmq_password` - RabbitMQ 비밀번호입니다.
-* `reject_unhandled_messages` - 오류 발생 시 메시지를 거부합니다(RabbitMQ negative acknowledgement 전송). `rabbitmq_queue_settings_list`에 `x-dead-letter-exchange`가 정의되어 있으면 이 설정은 자동으로 활성화됩니다.
+* `reject_unhandled_messages` - 오류 발생 시 메시지를 거부합니다(RabbitMQ negative 확인 응답 전송). `rabbitmq_queue_settings_list`에 `x-dead-letter-exchange`가 정의되어 있으면 이 설정은 자동으로 활성화됩니다.
 * `rabbitmq_commit_on_select` - select 쿼리가 실행될 때 메시지를 commit합니다. 기본값: `false`.
 * `rabbitmq_max_rows_per_message` — 행 기반 포맷에서 하나의 RabbitMQ 메시지에 기록할 수 있는 최대 행 수입니다. 기본값: `1`.
 * `rabbitmq_empty_queue_backoff_start_ms` — RabbitMQ 큐가 비어 있을 때 읽기를 다시 예약하기 위한 시작 백오프 지점입니다.
@@ -87,7 +87,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
   ### SSL 연결
 </div>
 
-연결 주소에 `rabbitmq_secure = 1` 또는 `amqps`를 사용하십시오: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`.
+`rabbitmq_host_port` 형식에서는 TLS를 사용하려면 `rabbitmq_secure = 1`을 설정하십시오.
+`rabbitmq_address` 형식에서는 전송 방식이 URI scheme으로 결정되므로 `amqps`를 사용하십시오: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`. 주소 형식에서는 `rabbitmq_secure`가 무시되며, `rabbitmq_secure = 1`을 평문 `amqp://` 주소와 함께 사용하면 암호화되지 않은 상태로 연결하는 대신 거부됩니다.
 사용 중인 라이브러리의 기본 동작은 생성된 TLS 연결이 충분히 안전한지 확인하지 않는 것입니다. 인증서가 만료되었거나, 자체 서명되었거나, 누락되었거나, 유효하지 않더라도 연결은 그대로 허용됩니다. 더 엄격한 인증서 검사는 향후 구현될 수 있습니다.
 
 또한 rabbitmq 관련 설정과 함께 포맷 설정도 추가할 수 있습니다.

@@ -34,6 +34,8 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 
 引数は [named collections](/ja/concepts/features/configuration/server-config/named-collections) を使用して渡すこともできます。この場合、`host` と `port` は別々に指定する必要があります。この方法は本番環境に推奨されます。
 
+TLS/SSL パラメータは `libpq` に転送され、named collection のキーまたは末尾のキー・バリュー引数として指定できます。指定できるのは `sslmode` (`disable`、`allow`、`prefer`、`require`、`verify-ca`、`verify-full`。未設定の場合は `libpq` のデフォルトである `prefer` が適用されます) と、2 つの形式のいずれかで指定する証明書および秘密鍵です。`sslrootcert` (CA 証明書、または特別な値 `system`) 、`sslcert` (クライアント証明書) 、`sslkey` (クライアント秘密鍵) はサーバーローカルファイルへのパスであり、サーバー設定ファイルで定義された named collection でのみ指定できます。代わりに、`sslrootcert_pem`、`sslcert_pem`、`sslkey_pem` には対応するファイルの内容を直接指定できます。たとえば、`postgresql('host:port', 'database', 'table', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')` のように指定します。これらはパスワードと同様に、ログおよび `SHOW` クエリではマスクされます。
+
 <div id="returned-value">
   ## 戻り値
 </div>

@@ -262,6 +262,20 @@ La altura, en píxeles, de la imagen de salida para formatos de salida de imagen
 
 Valor predeterminado: 1024.
 
+<div id="output_format_image_streaming_animation">
+  ## output_format_image_streaming_animation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nueva configuración que controla si los formatos de salida de imagen, como `PNG`, escriben cada fotograma de una animación en cuanto se detecta el siguiente valor de `t`, en lugar de almacenar todos los fotogramas en búfer en memoria."}]}]} />
+
+En los formatos de salida de imagen, como `PNG`, escribe cada fotograma de una animación en cuanto se detecta el siguiente valor de la columna `t`, en lugar de almacenar todos los fotogramas en búfer en memoria hasta el final de la consulta.
+
+Solo se conserva un fotograma en memoria y los fotogramas llegan a la salida mientras la consulta aún se está ejecutando. A cambio, los valores de `t` deben ser no decrecientes; de lo contrario, la consulta genera una excepción. Además, el número de fotogramas se desconoce cuando debe escribirse la cabecera de la animación, por lo que el número de fotogramas declarado es un límite superior, no el valor exacto. Los navegadores reproducen este tipo de archivo, pero los decodificadores que confían en el número declarado notifican un error después del último fotograma real.
+
+Valor predeterminado: `false`.
+
 <div id="output_format_image_terminal_mode">
   ## output_format_image_terminal_mode
 </div>
@@ -279,6 +293,36 @@ Valores posibles:
 * `auto` — si la salida es un terminal, detecta sus capacidades y usa `iterm`, `kitty` o `sixel` (en este orden); en caso contrario, escribe los bytes sin procesar de la imagen.
 
 Valor predeterminado: &#96;&#96; (vacío).
+
+<div id="output_format_image_time_divisor_seconds">
+  ## output_format_image_time_divisor_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "60"},{"label": "Nueva configuración que controla el denominador de la unidad de tiempo de la columna `t`, lo que permite que los formatos de salida de imagen como `PNG` generen una animación."}]}]} />
+
+El denominador, en segundos, de la unidad de tiempo de la columna `t` para formatos de salida de imagen como `PNG`.
+
+Consulte [`output_format_image_time_multiplier_seconds`](/es/reference/settings/formats/output-format#output_format_image_time_multiplier_seconds).
+
+Valor predeterminado: 60.
+
+<div id="output_format_image_time_multiplier_seconds">
+  ## output_format_image_time_multiplier_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nueva configuración que controla el numerador de la unidad de tiempo de la columna `t`, lo que permite que formatos de salida de imagen como `PNG` generen una animación."}]}]} />
+
+El numerador de la unidad de tiempo de la columna `t`, en segundos, para formatos de salida de imagen como `PNG`.
+
+La presencia de una columna `t` hace que el formato genere una animación, en la que `t` representa el desfase temporal relativo
+del fotograma. Una unidad de `t` equivale a `output_format_image_time_multiplier_seconds / output_format_image_time_divisor_seconds` segundos.
+Con los valores predeterminados (`1` y `60`), una unidad de `t` equivale a 1/60 de segundo.
+
+Valor predeterminado: 1.
 
 <div id="output_format_image_width">
   ## output_format_image_width

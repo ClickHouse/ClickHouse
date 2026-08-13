@@ -76,6 +76,40 @@ SETTINGS
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
+<div id="tls-ssl">
+  ### TLS/SSL
+</div>
+
+TLS/SSL 매개변수는 `libpq`로 전달되며, 명명된 컬렉션 키 또는 후행 키-값 인수로 설정할 수 있습니다. `sslmode`(`disable`, `allow`, `prefer`, `require`, `verify-ca` 또는 `verify-full`)와 인증서 및 키는 다음 두 가지 형식 중 하나로 지정할 수 있습니다. 설정하지 않으면 `libpq` 기본값(`sslmode=prefer`)이 적용됩니다.
+
+* `sslrootcert`(CA 인증서 또는 특수 값 `system`), `sslcert`(클라이언트 인증서), `sslkey`(클라이언트 private key)는 서버 로컬 파일의 경로입니다. 서버 구성 파일에 정의된 명명된 컬렉션에서만 지정할 수 있으며, 쿼리에서 재정의할 수 없습니다. 서버가 자체 권한으로 파일을 열기 때문입니다.
+* `sslrootcert_pem`, `sslcert_pem`, `sslkey_pem`은 경로 대신 해당 파일의 리터럴 내용을 받습니다. 쿼리, SQL로 생성한 명명된 컬렉션 또는 명명된 컬렉션 재정의 등 어디에서나 지정할 수 있으며, 비밀번호와 마찬가지로 logs 및 `SHOW` 쿼리에서 마스킹됩니다.
+
+예를 들어, 암호화된 연결을 요구하고 server certificate를 확인하려면 다음과 같이 합니다.
+
+```xml
+<named_collections>
+    <postgres_creds>
+        <host>localhost</host>
+        <port>5432</port>
+        <user>postgres</user>
+        <password>****</password>
+        <sslmode>verify-full</sslmode>
+        <sslrootcert>/etc/clickhouse-server/postgresql-ca.crt</sslrootcert>
+    </postgres_creds>
+</named_collections>
+```
+
+설정 파일 없이 인증서 내용을 쿼리에 전달하는 방법은 다음과 같습니다:
+
+```sql
+CREATE TABLE postgres_table (id UInt64, value String)
+ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
+                    sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----');
+```
+
 <div id="settings">
   ## 설정
 </div>

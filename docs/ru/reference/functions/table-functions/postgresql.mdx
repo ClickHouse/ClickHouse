@@ -35,6 +35,8 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 
 Аргументы также можно передавать с помощью [именованных коллекций](/ru/concepts/features/configuration/server-config/named-collections). В этом случае `host` и `port` нужно указывать отдельно. Такой подход рекомендуется для производственной среды.
 
+Параметры TLS/SSL передаются в `libpq` и могут быть указаны как ключи именованной коллекции или как аргументы в формате «ключ-значение», добавленные в конце: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` или `verify-full`; если не задан, используется значение `prefer` по умолчанию для `libpq`), а также сертификаты и ключ в одной из двух форм. `sslrootcert` (CA‑сертификат или специальное значение `system`), `sslcert` (клиентский сертификат) и `sslkey` (закрытый ключ клиента) задают пути к локальным файлам сервера и могут быть указаны только в именованной коллекции, определённой в файле конфигурации сервера. Вместо них `sslrootcert_pem`, `sslcert_pem` и `sslkey_pem` принимают непосредственно содержимое соответствующего файла — например, `postgresql('host:port', 'database', 'table', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')` — и маскируются в журналах и запросах `SHOW`, как пароль.
+
 <div id="returned-value">
   ## Возвращаемое значение
 </div>

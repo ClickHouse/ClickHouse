@@ -70,7 +70,7 @@ Paramètres facultatifs :
 * `rabbitmq_max_block_size` - Nombre de lignes collectées avant le vidage des données depuis RabbitMQ. Par défaut : [max&#95;insert&#95;block&#95;size](/fr/reference/settings/session-settings/max-insert#max_insert_block_size).
 * `rabbitmq_flush_interval_ms` - Délai d’attente avant le vidage des données depuis RabbitMQ. Par défaut : [stream&#95;flush&#95;interval&#95;ms](/fr/reference/settings/session-settings/stream#stream_flush_interval_ms).
 * `rabbitmq_queue_settings_list` - permet de définir les paramètres RabbitMQ lors de la création d’une file. Paramètres disponibles : `x-max-length`, `x-max-length-bytes`, `x-message-ttl`, `x-expires`, `x-priority`, `x-max-priority`, `x-overflow`, `x-dead-letter-exchange`, `x-queue-type`. Le paramètre `durable` est activé automatiquement pour la file.
-* `rabbitmq_address` - Adresse de connexion. Utilisez soit ce paramètre, soit `rabbitmq_host_port`.
+* `rabbitmq_address` - Adresse de connexion : `amqp(s)://user:password@host:port/vhost`. Utilisez soit ce paramètre, soit `rabbitmq_host_port` ; si les deux sont définis, `rabbitmq_address` est utilisé. Son hôte et son port sont vérifiés par rapport à [remote&#95;url&#95;allow&#95;hosts](/fr/reference/settings/server-settings/settings/remote#remote_url_allow_hosts).
 * `rabbitmq_vhost` - vhost RabbitMQ. Par défaut : `'/'`.
 * `rabbitmq_queue_consume` - Utilise des files définies par l’utilisateur et n’effectue aucune configuration RabbitMQ : déclaration des exchanges, des files et des liaisons. Par défaut : `false`.
 * `rabbitmq_username` - Nom d’utilisateur RabbitMQ.
@@ -87,7 +87,8 @@ Paramètres facultatifs :
   ### Connexion SSL
 </div>
 
-Utilisez soit `rabbitmq_secure = 1`, soit `amqps` dans l&#39;adresse de connexion : `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`.
+Avec la forme `rabbitmq_host_port`, définissez `rabbitmq_secure = 1` pour utiliser TLS.
+Avec la forme `rabbitmq_address`, le transport est déterminé par le schéma URI ; utilisez donc `amqps` : `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`. `rabbitmq_secure` est ignoré pour cette forme d&#39;adresse, et `rabbitmq_secure = 1` associé à une adresse `amqp://` en texte brut est rejeté plutôt que d&#39;établir silencieusement une connexion en clair.
 Par défaut, la bibliothèque utilisée ne vérifie pas si la connexion TLS établie est suffisamment sécurisée. Que le certificat soit expiré, autosigné, absent ou invalide, la connexion est simplement autorisée. Une vérification plus stricte des certificats pourra être mise en œuvre à l&#39;avenir.
 
 Des paramètres de format peuvent également être ajoutés avec les paramètres liés à RabbitMQ.

@@ -117,6 +117,7 @@
     "pt-BR/reference/settings/session-settings/log-query",
     "pt-BR/reference/settings/session-settings/low-cardinality",
     "pt-BR/reference/settings/session-settings/materialize",
+    "pt-BR/reference/settings/session-settings/materialize-statistics-on-insert",
     "pt-BR/reference/settings/session-settings/materialized-views",
     "pt-BR/reference/settings/session-settings/max",
     "pt-BR/reference/settings/session-settings/max-ast",

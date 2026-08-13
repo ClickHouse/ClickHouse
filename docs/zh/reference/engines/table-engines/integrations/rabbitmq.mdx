@@ -61,7 +61,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 * `rabbitmq_exchange_type` – RabbitMQ exchange 的类型：`direct`、`fanout`、`topic`、`headers`、`consistent_hash`。默认值：`fanout`。
 * `rabbitmq_routing_key_list` – 以逗号分隔的路由键列表。
-* `rabbitmq_schema` – 如果 format 需要 schema 定义，则必须使用此参数。例如，[Cap&#39;n Proto](https://capnproto.org/) 需要提供 schema 文件的路径以及根对象 `schema.capnp:Message` 的名称。
+* `rabbitmq_schema` – 如果 格式 需要 schema 定义，则必须使用此参数。例如，[Cap&#39;n Proto](https://capnproto.org/) 需要提供 schema 文件的路径以及根对象 `schema.capnp:Message` 的名称。
 * `rabbitmq_num_consumers` – 每个表的消费者数量。如果单个消费者的吞吐量不足，请指定更多消费者。默认值：`1`
 * `rabbitmq_num_queues` – 队列总数。增加此数量可显著提升性能。默认值：`1`。
 * `rabbitmq_queue_base` - 为队列名称指定提示信息。此设置的使用场景见下文。
@@ -70,24 +70,25 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `rabbitmq_max_block_size` - 从 RabbitMQ 刷新数据前收集的行数。默认值：[max&#95;insert&#95;block&#95;size](/zh/reference/settings/session-settings/max-insert#max_insert_block_size)。
 * `rabbitmq_flush_interval_ms` - 从 RabbitMQ 刷新数据的超时时间。默认值：[stream&#95;flush&#95;interval&#95;ms](/zh/reference/settings/session-settings/stream#stream_flush_interval_ms)。
 * `rabbitmq_queue_settings_list` - 允许在创建队列时设置 RabbitMQ 参数。可用设置：`x-max-length`、`x-max-length-bytes`、`x-message-ttl`、`x-expires`、`x-priority`、`x-max-priority`、`x-overflow`、`x-dead-letter-exchange`、`x-queue-type`。队列的 `durable` 设置会自动启用。
-* `rabbitmq_address` - 连接地址。使用此设置或 `rabbitmq_host_port`。
+* `rabbitmq_address` - 连接地址：`amqp(s)://user:password@host:port/vhost`。使用此设置或 `rabbitmq_host_port`；如果两者都已设置，则使用 `rabbitmq_address`。其主机和端口会根据 [remote&#95;url&#95;allow&#95;hosts](/zh/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) 进行检查。
 * `rabbitmq_vhost` - RabbitMQ vhost。默认值：`'/'`。
 * `rabbitmq_queue_consume` - 使用用户定义的队列，且不执行任何 RabbitMQ 设置：声明 exchanges、队列、bindings。默认值：`false`。
 * `rabbitmq_username` - RabbitMQ 用户名。
 * `rabbitmq_password` - RabbitMQ 密码。
 * `reject_unhandled_messages` - 发生错误时拒绝消息 (向 RabbitMQ 发送负确认) 。如果在 `rabbitmq_queue_settings_list` 中定义了 `x-dead-letter-exchange`，则会自动启用此设置。
 * `rabbitmq_commit_on_select` - 在执行 select 查询时提交消息。默认值：`false`。
-* `rabbitmq_max_rows_per_message` — 对于基于行的 format，单条 RabbitMQ 消息中写入的最大行数。默认值：`1`。
+* `rabbitmq_max_rows_per_message` — 对于按行组织的格式，单条 RabbitMQ 消息中写入的最大行数。默认值：`1`。
 * `rabbitmq_empty_queue_backoff_start_ms` — 当 RabbitMQ 队列为空时，重新调度读取的 backoff 起始点。
 * `rabbitmq_empty_queue_backoff_end_ms` — 当 RabbitMQ 队列为空时，重新调度读取的 backoff 结束点。
 * `rabbitmq_empty_queue_backoff_step_ms` — 当 RabbitMQ 队列为空时，重新调度读取的 backoff 步长。
-* `rabbitmq_handle_error_mode` — RabbitMQ engine 的错误处理方式。Possible values: default (如果消息解析失败则抛出 exception) 、stream (exception 消息和原始消息将保存在虚拟列 `_error` 和 `_raw_message` 中) 、dead&#95;letter&#95;queue (与错误相关的数据将保存在 system.dead&#95;letter&#95;queue 中) 。
+* `rabbitmq_handle_error_mode` — RabbitMQ 引擎 的错误处理方式。Possible values: default (如果消息解析失败则抛出 exception) 、stream (exception 消息和原始消息将保存在虚拟列 `_error` 和 `_raw_message` 中) 、dead&#95;letter&#95;queue (与错误相关的数据将保存在 system.dead&#95;letter&#95;queue 中) 。
 
 <div id="ssl-connection">
   ### SSL 连接
 </div>
 
-在连接地址中使用 `rabbitmq_secure = 1` 或 `amqps`：`rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`。
+使用 `rabbitmq_host_port` 形式时，设置 `rabbitmq_secure = 1` 以使用 TLS。
+使用 `rabbitmq_address` 形式时，传输方式由 URI 方案决定，因此请使用 `amqps`：`rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`。对于地址形式，`rabbitmq_secure` 会被忽略；同时使用 `rabbitmq_secure = 1` 和明文 `amqp://` 地址会被拒绝，而不会在未加密的情况下静默连接。
 所使用库的默认行为是，不会检查所建立的 TLS 连接是否足够安全。无论证书已过期、为自签名、缺失还是无效，都会允许建立连接。未来可能会实现更严格的证书检查。
 
 也可以在添加 RabbitMQ 相关设置的同时，添加格式设置。

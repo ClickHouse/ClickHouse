@@ -358,6 +358,54 @@ late and damaged package
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
+<div id="aiFilter">
+  ## aiFilter
+</div>
+
+導入バージョン: v26.8.0
+
+LLMプロバイダー を使用して指定されたテキストに対する自然言語の条件を評価し、`WHERE`、`PREWHERE`、`JOIN ... ON` で使用できるブール値 (`UInt8`) を返します。
+
+この関数は、モデルに小文字の `true` または `false` のみで応答するよう求めます。失敗したリクエスト (`ai_function_throw_on_error` が無効な場合) および認識できない応答は `0` にマッピングされるため、行は除外されます。
+
+**警告:** `aiFilter` の結果を無批判に信用しないでください。LLM ベースの述語は不正確であったり、一貫性を欠いたりする可能性があります。偽陽性や偽陰性が許容される場合にのみ使用してください。
+
+認証情報 (provider、model、endpoint、および必要に応じて API key を指定する 名前付きコレクション) は、任意の パラメータマップ の `credentials` キーから取得されます。このキーが map で省略されている場合は、`ai_function_text_default_credentials` 設定から取得されます。
+
+注: `JOIN ... ON` で `aiFilter` を使用すると、候補ペアごとに LLM が一度評価されるため、コストが高くなる可能性があります。
+
+**構文**
+
+```sql
+aiFilter(text, condition[, params])
+```
+
+**別名**: `AIFilter`
+
+**引数**
+
+* `text` — 評価対象のテキスト。[`String`](/ja/reference/data-types/string)
+* `condition` — テキストが満たす必要がある、定数の自然言語条件。[`String`](/ja/reference/data-types/string)
+* `params` — 任意の定数 `Map(String, String)` 型パラメータ。関数固有のキー: `temperature` (ランダム性を制御するサンプリング温度、デフォルトは `0.0`) 、`max_tokens` (呼び出しあたりの最大出力トークン数、デフォルトは `1024`) 。共通パラメータの `credentials` と `model` も適用されます ([AI 関数](/ja/reference/functions/regular-functions/ai-functions)を参照) 。[`Map(String, String)`](/ja/reference/data-types/map)
+
+**戻り値**
+
+テキストが条件に一致する場合は `1`、それ以外の場合は `0`。リクエストが失敗し、`ai_function_throw_on_error` が無効の場合は、デフォルト値 (`0`) を返します。[`UInt8`](/ja/reference/data-types/int-uint)
+
+**例**
+
+**怒りを含むレビューをフィルタリングする**
+
+```sql title=Query
+SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
+```
+
+**認証情報を明示的に指定してカラムをフィルタリングする**
+
+```sql title=Query
+SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
+```
+
 <div id="aiGenerate">
   ## aiGenerate
 </div>
@@ -425,10 +473,13 @@ SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_b
 
 設定された埋め込みプロバイダーを使用して、2つのテキスト間の意味的な類似度を計算します。
 
-両方のテキストの埋め込みを計算し、2つのベクトルのコサイン類似度を
-`[-1, 1]` の範囲で返します。`1` はテキストが意味的に同一であること、`0` は無関係であることを示し、
-負の値は意味が反対であることを示します。これは、同じ埋め込みに対する
-`cosineDistance` の補数です (`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`) 。
+両方のテキストのベクトル埋め込みを計算し、それらの
+[コサイン類似度](https://en.wikipedia.org/wiki/Cosine_similarity)を返します。`-1` のスコアは
+反対方向の埋め込みベクトルに与えられ、意味的には、スコアが `-1` に近いテキストは意味が反対であることを示します。
+`0` のスコアはベクトルが直交している、つまり意味的に無関係であることを示します。最後に、`1` のスコアは
+埋め込みベクトルが同じ方向を向いていることを意味し、スコアが `1` に近いテキストは
+意味が類似しています。これは、同じ埋め込みに対する `cosineDistance` の補数です
+(`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`) 。
 
 バッチ処理、認証情報、`dimensions` パラメータは `aiEmbed` と同じであり、
 `ai_function_embedding_default_credentials` のデフォルト認証情報設定も含まれます。

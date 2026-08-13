@@ -117,6 +117,7 @@
     "ar/reference/settings/session-settings/log-query",
     "ar/reference/settings/session-settings/low-cardinality",
     "ar/reference/settings/session-settings/materialize",
+    "ar/reference/settings/session-settings/materialize-statistics-on-insert",
     "ar/reference/settings/session-settings/materialized-views",
     "ar/reference/settings/session-settings/max",
     "ar/reference/settings/session-settings/max-ast",

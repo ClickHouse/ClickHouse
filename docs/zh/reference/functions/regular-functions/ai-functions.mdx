@@ -357,6 +357,58 @@ late and damaged package
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
+<div id="aiFilter">
+  ## aiFilter
+</div>
+
+引入版本：v26.8.0
+
+使用 LLM 提供商根据给定文本评估自然语言条件，并返回适用于 `WHERE`、`PREWHERE` 和 `JOIN ... ON` 的布尔值 (`UInt8`) 。
+
+该函数要求模型仅以小写 `true` 或 `false` 作答。失败的请求 (当
+`ai_function_throw_on_error` 被禁用时) 和无法识别的响应都会映射为 `0`，因此会过滤掉该行。
+
+**Warning：** 请勿在未经审查的情况下信任 `aiFilter` 的结果。基于 LLM 的谓词可能不正确
+或不一致；仅应在可以接受假阳性和假阴性的场景中使用。
+
+凭据 (指定提供商、模型、端点以及可选 API 密钥的命名集合)
+取自可选参数映射中的 `credentials` 键；如果映射中未指定该键，则取自
+`ai_function_text_default_credentials` 设置。
+
+注意：在 `JOIN ... ON` 中使用 `aiFilter` 时，会针对每个候选对调用一次 LLM，因此成本可能很高。
+
+**语法**
+
+```sql
+aiFilter(text, condition[, params])
+```
+
+**别名**：`AIFilter`
+
+**参数**
+
+* `text` — 要评估的文本。[`String`](/zh/reference/data-types/string)
+* `condition` — 文本必须满足的固定自然语言条件。[`String`](/zh/reference/data-types/string)
+* `params` — 可选的固定 `Map(String, String)` 参数映射。函数特定键：`temperature` (控制随机性的采样温度；默认值为 `0.0`) 和 `max_tokens` (每次调用允许的最大输出标记数；默认值为 `1024`) 。通用参数 `credentials` 和 `model` 同样适用 (请参阅 [AI 函数](/zh/reference/functions/regular-functions/ai-functions)) 。[`Map(String, String)`](/zh/reference/data-types/map)
+
+**返回值**
+
+文本符合条件时返回 `1`，否则返回 `0`。如果请求失败且禁用了 `ai_function_throw_on_error`，则返回默认值 (`0`) 。[`UInt8`](/zh/reference/data-types/int-uint)
+
+**示例**
+
+**过滤愤怒评论**
+
+```sql title=Query
+SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
+```
+
+**使用显式凭据筛选列**
+
+```sql title=Query
+SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
+```
+
 <div id="aiGenerate">
   ## aiGenerate
 </div>
@@ -424,10 +476,13 @@ SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_b
 
 使用已配置的嵌入向量提供商计算两段文本的语义相似度。
 
-计算两段文本的嵌入向量，并返回这两个向量的余弦相似度，
-取值范围为 `[-1, 1]`：`1` 表示两段文本在语义上完全一致，`0` 表示毫不相关，
-负值表示语义相反。这与基于相同嵌入向量计算的 `cosineDistance` 互为补集
-(`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`) 。
+计算两段文本的嵌入向量，并返回其
+[余弦相似度](https://en.wikipedia.org/wiki/Cosine_similarity)。得分为 `-1` 表示
+嵌入向量方向相反；在语义上，这意味着得分接近 `-1` 的文本含义相反。
+得分为 `0` 表示向量正交：在语义上毫不相关。最后，得分为 `1`
+表示嵌入向量指向相同方向，得分接近 `1` 的文本
+含义相似。这与基于相同嵌入向量计算的 `cosineDistance` 互为补集
+(`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`)。
 
 批处理、凭据和 `dimensions` 参数均与 `aiEmbed` 相同，包括
 `ai_function_embedding_default_credentials` 默认凭据设置。

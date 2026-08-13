@@ -262,6 +262,20 @@ Hauteur, en pixels, de l’image produite pour les formats de sortie d’image t
 
 Valeur par défaut : 1024.
 
+<div id="output_format_image_streaming_animation">
+  ## output_format_image_streaming_animation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nouveau paramètre déterminant si les formats de sortie d’images tels que `PNG` écrivent chaque image d’une animation dès que la valeur suivante de `t` est reçue, au lieu de mettre toutes les images en mémoire tampon."}]}]} />
+
+Pour les formats de sortie d’images tels que `PNG`, écrivez chaque image d’une animation dès que la valeur suivante de la colonne `t` est reçue, au lieu de mettre toutes les images en mémoire tampon jusqu’à la fin de la requête.
+
+Une seule image est conservée en mémoire, et les images sont écrites dans la sortie alors que la requête est encore en cours d’exécution. En contrepartie, les valeurs de `t` doivent être non décroissantes, faute de quoi la requête lève une exception. De plus, le nombre d’images n’est pas connu lorsque l’en-tête de l’animation doit être écrit : le nombre déclaré constitue donc une borne supérieure plutôt que la valeur exacte. Les navigateurs peuvent lire un tel fichier, mais les décodeurs qui se fient au nombre déclaré signalent une erreur après la dernière image réelle.
+
+Valeur par défaut : `false`.
+
 <div id="output_format_image_terminal_mode">
   ## output_format_image_terminal_mode
 </div>
@@ -279,6 +293,36 @@ Valeurs possibles :
 * `auto` — si la sortie est un terminal, détecter ses capacités et utiliser `iterm`, `kitty` ou `sixel` (dans cet ordre) ; sinon, écrire les octets bruts de l’image.
 
 Valeur par défaut : &#96;&#96; (vide).
+
+<div id="output_format_image_time_divisor_seconds">
+  ## output_format_image_time_divisor_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "60"},{"label": "Nouveau paramètre contrôlant le dénominateur de l'unité de temps de la colonne `t`, permettant aux formats de sortie d'image tels que `PNG` de produire une animation."}]}]} />
+
+Le dénominateur, en secondes, de l&#39;unité de temps de la colonne `t` pour les formats de sortie d&#39;image tels que `PNG`.
+
+Consultez [`output_format_image_time_multiplier_seconds`](/fr/reference/settings/formats/output-format#output_format_image_time_multiplier_seconds).
+
+Valeur par défaut : 60.
+
+<div id="output_format_image_time_multiplier_seconds">
+  ## output_format_image_time_multiplier_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nouveau paramètre contrôlant le numérateur de l'unité de temps de la colonne `t`, permettant aux formats de sortie d'images tels que `PNG` de produire une animation."}]}]} />
+
+Le numérateur de l&#39;unité de temps de la colonne `t`, en secondes, pour les formats de sortie d&#39;images tels que `PNG`.
+
+La présence d&#39;une colonne `t` fait que le format produit une animation, dans laquelle `t` représente le décalage temporel relatif
+de l&#39;image. Une unité de `t` correspond à `output_format_image_time_multiplier_seconds / output_format_image_time_divisor_seconds` secondes.
+Avec les valeurs par défaut (`1` et `60`), une unité de `t` correspond à 1/60 de seconde.
+
+Valeur par défaut : 1.
 
 <div id="output_format_image_width">
   ## output_format_image_width

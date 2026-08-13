@@ -262,6 +262,20 @@ Decimal 値を出力する際に、末尾のゼロも出力します。例: 1.23
 
 デフォルト値: 1024。
 
+<div id="output_format_image_streaming_animation">
+  ## output_format_image_streaming_animation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "画像出力フォーマット（`PNG` など）が、すべてのフレームをメモリにバッファリングする代わりに、`t` の次の値を検出するとすぐにアニメーションの各フレームを書き込むかどうかを制御する新しい設定。"}]}]} />
+
+`PNG` などの画像出力フォーマットでは、クエリの終了までアニメーションのすべてのフレームをメモリにバッファリングする代わりに、`t` カラムの次の値を検出するとすぐに各フレームを書き込みます。
+
+メモリに保持されるフレームは 1 つだけで、クエリの実行中にフレームが出力されます。その代わり、`t` の値は非減少である必要があります。そうでない場合、クエリは例外を送出します。また、アニメーションのヘッダーを書き込む時点ではフレーム数が不明なため、宣言されるフレーム数は正確な値ではなく上限値になります。ブラウザーはこのようなファイルを再生できますが、宣言されたフレーム数を信頼するデコーダは、実際の最後のフレームの後にエラーを報告します。
+
+デフォルト値: `false`。
+
 <div id="output_format_image_terminal_mode">
   ## output_format_image_terminal_mode
 </div>
@@ -279,6 +293,36 @@ Decimal 値を出力する際に、末尾のゼロも出力します。例: 1.23
 * `auto` — 出力先が端末の場合は、その対応機能を検出して `iterm`、`kitty`、`sixel` のいずれかを使用します (この順序) 。それ以外の場合は、生の画像バイト列を書き出します。
 
 デフォルト値: &#96;&#96; (空)。
+
+<div id="output_format_image_time_divisor_seconds">
+  ## output_format_image_time_divisor_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "60"},{"label": "PNG などの画像出力フォーマットでアニメーションを生成する、`t` カラムの時間単位の分母を制御する新しい設定。"}]}]} />
+
+`PNG` などの画像出力フォーマットにおける、`t` カラムの時間単位の分母 (秒) 。
+
+[`output_format_image_time_multiplier_seconds`](/ja/reference/settings/formats/output-format#output_format_image_time_multiplier_seconds) を参照してください。
+
+デフォルト値: 60。
+
+<div id="output_format_image_time_multiplier_seconds">
+  ## output_format_image_time_multiplier_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "画像出力フォーマット（`PNG` など）でアニメーションを生成する `t` カラムの時間単位の分子を制御する新しい設定。"}]}]} />
+
+`PNG` などの画像出力フォーマットにおける `t` カラムの時間単位の分子 (秒) 。
+
+`t` カラムがある場合、このフォーマットはアニメーションを生成します。このとき、`t` はフレームの相対時間オフセットを表します。
+`t` の 1 単位は、`output_format_image_time_multiplier_seconds / output_format_image_time_divisor_seconds` 秒に相当します。
+デフォルト値 (`1` と `60`) では、`t` の 1 単位は 1/60 秒です。
+
+デフォルト値: 1。
 
 <div id="output_format_image_width">
   ## output_format_image_width

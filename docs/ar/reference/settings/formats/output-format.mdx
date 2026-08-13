@@ -262,6 +262,20 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 القيمة الافتراضية: 1024.
 
+<div id="output_format_image_streaming_animation">
+  ## output_format_image_streaming_animation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد جديد يحدد ما إذا كانت تنسيقات إخراج الصور، مثل `PNG`، تكتب كل إطار من الرسوم المتحركة فور ظهور القيمة التالية لـ `t`، بدلًا من تخزين جميع الإطارات مؤقتًا في الذاكرة."}]}]} />
+
+بالنسبة إلى تنسيقات إخراج الصور، مثل `PNG`، اكتب كل إطار من الرسوم المتحركة فور ظهور القيمة التالية في العمود `t`، بدلًا من تخزين جميع الإطارات مؤقتًا في الذاكرة حتى نهاية الاستعلام.
+
+يُحتفَظ بإطار واحد فقط في الذاكرة، وتُرسَل الإطارات إلى الإخراج بينما لا يزال الاستعلام قيد التنفيذ. وفي المقابل، يجب أن تكون قيم `t` غير متناقصة، وإلا يطرح الاستعلام استثناءً. كذلك، لا يكون عدد الإطارات معروفًا عند كتابة ترويسة الرسوم المتحركة، لذا يكون عدد الإطارات المُعلَن حدًا أعلى وليس القيمة الدقيقة. تشغّل المتصفحات هذا النوع من الملفات، لكن برامج فك الترميز التي تعتمد على العدد المُعلَن تُبلّغ عن خطأ بعد آخر إطار فعلي.
+
+القيمة الافتراضية: `false`.
+
 <div id="output_format_image_terminal_mode">
   ## output_format_image_terminal_mode
 </div>
@@ -279,6 +293,36 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * `auto` — إذا كان الإخراج موجَّهًا إلى طرفية، فاكتشف إمكاناتها واستخدم `iterm` أو `kitty` أو `sixel` (بهذا الترتيب)؛ وإلا فاكتب بايتات الصورة الخام.
 
 القيمة الافتراضية: &#96;&#96; (فارغ).
+
+<div id="output_format_image_time_divisor_seconds">
+  ## output_format_image_time_divisor_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "60"},{"label": "إعداد جديد يتحكم في مقام الوحدة الزمنية للعمود `t`، مما يتيح لتنسيقات إخراج الصور مثل `PNG` إنشاء رسوم متحركة."}]}]} />
+
+مقام الوحدة الزمنية للعمود `t`، بالثواني، لتنسيقات إخراج الصور مثل `PNG`.
+
+راجع [`output_format_image_time_multiplier_seconds`](/ar/reference/settings/formats/output-format#output_format_image_time_multiplier_seconds).
+
+القيمة الافتراضية: 60.
+
+<div id="output_format_image_time_multiplier_seconds">
+  ## output_format_image_time_multiplier_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "إعداد جديد يتحكم في بسط وحدة الزمن للعمود `t`، مما يتيح لتنسيقات إخراج الصور مثل `PNG` إنتاج رسوم متحركة."}]}]} />
+
+بسط وحدة الزمن للعمود `t`، بالثواني، في تنسيقات إخراج الصور مثل `PNG`.
+
+يؤدي وجود عمود `t` إلى إنتاج التنسيق لرسوم متحركة، حيث يمثل `t` إزاحة الزمن النسبية
+للإطار. تقابل وحدة واحدة من `t` عددًا من الثواني يساوي `output_format_image_time_multiplier_seconds / output_format_image_time_divisor_seconds`.
+باستخدام القيم الافتراضية (`1` و`60`)، تساوي وحدة واحدة من `t` ‏1/60 من الثانية.
+
+القيمة الافتراضية: 1.
 
 <div id="output_format_image_width">
   ## output_format_image_width

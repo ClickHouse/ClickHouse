@@ -359,6 +359,58 @@ late and damaged package
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
+<div id="aiFilter">
+  ## aiFilter
+</div>
+
+أُضيف في: v26.8.0
+
+يقيّم شرطًا مكتوبًا بلغة طبيعية على النص المحدد باستخدام موفّر LLM، ويُرجع قيمة منطقية (`UInt8`) مناسبة للاستخدام في `WHERE` و`PREWHERE` و`JOIN ... ON`.
+
+تطلب الدالة من النموذج أن يردّ بـ `true` أو `false` فقط وبأحرف صغيرة. تُحوَّل الطلبات الفاشلة (عندما يكون
+`ai_function_throw_on_error` معطّلًا) والاستجابات غير المعروفة إلى `0`، وبالتالي يُستبعد الصف.
+
+**تحذير:** لا تعتمد على نتائج `aiFilter` دون تدقيق. قد تكون المسندات المستندة إلى LLM غير صحيحة
+أو غير متسقة؛ لذا لا تستخدمها إلا عندما تكون الإيجابيات الكاذبة والسلبيات الكاذبة مقبولة.
+
+تُؤخذ بيانات الاعتماد (مجموعة مسمّاة تحدد الموفّر والنموذج ونقطة النهاية، ومفتاح واجهة برمجة تطبيقات اختياريًا)
+من المفتاح `credentials` في خريطة المعلمات الاختيارية، أو من إعداد
+`ai_function_text_default_credentials` إذا لم تتضمنه الخريطة.
+
+ملاحظة: يؤدي استخدام `aiFilter` في `JOIN ... ON` إلى تقييم LLM مرة واحدة لكل زوج مرشّح، وقد يكون ذلك مكلفًا.
+
+**البنية**
+
+```sql
+aiFilter(text, condition[, params])
+```
+
+**الأسماء المستعارة**: `AIFilter`
+
+**الوسيطات**
+
+* `text` — النص المراد تقييمه. [`String`](/ar/reference/data-types/string)
+* `condition` — شرط ثابت باللغة الطبيعية يجب أن يستوفيه النص. [`String`](/ar/reference/data-types/string)
+* `params` — `Map(String, String)` ثابت اختياري للمعلمات. المفاتيح الخاصة بالدالة هي: `temperature` (درجة حرارة أخذ العينات التي تتحكم في العشوائية؛ القيمة الافتراضية `0.0`) و`max_tokens` (الحد الأقصى لرموز الإخراج لكل استدعاء؛ القيمة الافتراضية `1024`). تنطبق أيضًا المعلمتان العامتان `credentials` و`model` (راجع [دوال الذكاء الاصطناعي](/ar/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ar/reference/data-types/map)
+
+**القيمة المُعادة**
+
+`1` إذا كان النص يطابق الشرط، و`0` في غير ذلك. تُرجع القيمة الافتراضية (`0`) إذا فشل الطلب وكان `ai_function_throw_on_error` معطّلًا. [`UInt8`](/ar/reference/data-types/int-uint)
+
+**أمثلة**
+
+**تصفية المراجعات الغاضبة**
+
+```sql title=Query
+SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
+```
+
+**تصفية عمود باستخدام بيانات اعتماد مُحدَّدة صراحةً**
+
+```sql title=Query
+SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
+```
+
 <div id="aiGenerate">
   ## aiGenerate
 </div>
@@ -426,9 +478,12 @@ SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_b
 
 يحسب التشابه الدلالي بين نصّين باستخدام موفّر التضمين المُهيّأ.
 
-يحسب تضمين كلٍّ من النصّين ويُرجع تشابه جيب التمام بين المتجهين
-ضمن النطاق `[-1, 1]`: تعني `1` أن النصّين متطابقان دلاليًا، وتعني `0` أنهما غير مرتبطين،
-وتعني القيم السالبة أنهما متعاكسان. وهو مكمّل `cosineDistance` للتضمينات
+يحسب التضمينات المتجهية لكلا النصّين ويُرجع
+[تشابه جيب التمام](https://en.wikipedia.org/wiki/Cosine_similarity). تُمنح درجة `-1` لمتجهات التضمين
+المتعاكسة، ويعني ذلك دلاليًا أن النصوص ذات الدرجات التي تقترب من `-1` متعاكسة في
+المعنى. وتعني درجة `0` أن المتجهات متعامدة، أي غير مرتبطة دلاليًا. وأخيرًا، تعني درجة `1`
+أن متجهات التضمين تشير في الاتجاه نفسه، وأن النصوص ذات الدرجات التي تقترب من `1`
+متشابهة في المعنى. وهو مكمّل `cosineDistance` للتضمينات
 نفسها (`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
 
 تتطابق عملية التجميع على دفعات وبيانات الاعتماد والمعلمة `dimensions` مع `aiEmbed`، بما في ذلك

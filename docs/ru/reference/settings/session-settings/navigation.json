@@ -117,6 +117,7 @@
     "ru/reference/settings/session-settings/log-query",
     "ru/reference/settings/session-settings/low-cardinality",
     "ru/reference/settings/session-settings/materialize",
+    "ru/reference/settings/session-settings/materialize-statistics-on-insert",
     "ru/reference/settings/session-settings/materialized-views",
     "ru/reference/settings/session-settings/max",
     "ru/reference/settings/session-settings/max-ast",

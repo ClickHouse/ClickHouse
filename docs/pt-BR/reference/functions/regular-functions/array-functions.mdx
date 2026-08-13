@@ -5402,7 +5402,8 @@ preenchimento com zeros até uma potência de dois maior; ela é **rejeitada com
 retornar silenciosamente um vetor mais longo. Use um comprimento compatível ou passe `output_dims` para calcular uma
 projeção truncada de um comprimento arbitrário (veja abaixo).
 
-O resultado tem o mesmo tipo de elemento da entrada; um array de entrada vazio retorna um array vazio.
+O resultado tem o mesmo tipo de elemento da entrada; um array de entrada vazio retorna um array vazio
+(`output_dims` não se aplica a ele).
 
 * `seed` (opcional, padrão `0`): seleciona o padrão de sinais; a mesma seed sempre produz a mesma
   transformada.

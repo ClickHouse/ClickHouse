@@ -65,12 +65,12 @@ Parâmetros opcionais:
 * `rabbitmq_num_consumers` – O número de consumidores por tabela. Especifique mais consumidores se o throughput de um consumidor for insuficiente. Padrão: `1`
 * `rabbitmq_num_queues` – Número total de filas. Aumentar esse número pode melhorar significativamente o desempenho. Padrão: `1`.
 * `rabbitmq_queue_base` - Especifique um prefixo para os nomes das filas. Os casos de uso dessa configuração são descritos abaixo.
-* `rabbitmq_persistent` - Se definido como 1 (true), o modo de entrega da insert query será definido como 2 (marca as mensagens como &#39;persistent&#39;). Padrão: `0`.
+* `rabbitmq_persistent` - Se definido como 1 (true), o modo de entrega da consulta INSERT será definido como 2 (marca as mensagens como &#39;persistent&#39;). Padrão: `0`.
 * `rabbitmq_skip_broken_messages` – Tolerância do parser de mensagens do RabbitMQ a mensagens incompatíveis com o schema por bloco. Se `rabbitmq_skip_broken_messages = N`, o motor ignora *N* mensagens do RabbitMQ que não podem ser analisadas (uma mensagem equivale a uma linha de dados). Padrão: `0`.
 * `rabbitmq_max_block_size` - Número de linhas coletadas antes do flush dos dados do RabbitMQ. Padrão: [max&#95;insert&#95;block&#95;size](/pt-BR/reference/settings/session-settings/max-insert#max_insert_block_size).
 * `rabbitmq_flush_interval_ms` - Timeout para flush dos dados do RabbitMQ. Padrão: [stream&#95;flush&#95;interval&#95;ms](/pt-BR/reference/settings/session-settings/stream#stream_flush_interval_ms).
 * `rabbitmq_queue_settings_list` - permite definir configurações do RabbitMQ ao criar uma fila. Configurações disponíveis: `x-max-length`, `x-max-length-bytes`, `x-message-ttl`, `x-expires`, `x-priority`, `x-max-priority`, `x-overflow`, `x-dead-letter-exchange`, `x-queue-type`. A configuração `durable` é ativada automaticamente para a fila.
-* `rabbitmq_address` - Endereço para conexão. Use esta configuração ou `rabbitmq_host_port`.
+* `rabbitmq_address` - Endereço para conexão: `amqp(s)://user:password@host:port/vhost`. Use esta configuração ou `rabbitmq_host_port`; se ambas estiverem definidas, `rabbitmq_address` será usada. O host e a porta dela são verificados em [remote&#95;url&#95;allow&#95;hosts](/pt-BR/reference/settings/server-settings/settings/remote#remote_url_allow_hosts).
 * `rabbitmq_vhost` - vhost do RabbitMQ. Padrão: `'/'`.
 * `rabbitmq_queue_consume` - Use filas definidas pelo usuário e não faça nenhuma configuração do RabbitMQ: declaração de exchanges, filas e bindings. Padrão: `false`.
 * `rabbitmq_username` - Nome de usuário do RabbitMQ.
@@ -87,7 +87,8 @@ Parâmetros opcionais:
   ### Conexão SSL
 </div>
 
-Use `rabbitmq_secure = 1` ou `amqps` no endereço da conexão: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`.
+Com a forma `rabbitmq_host_port`, defina `rabbitmq_secure = 1` para usar TLS.
+Com a forma `rabbitmq_address`, o transporte é definido pelo esquema de URI; portanto, use `amqps`: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`. `rabbitmq_secure` é ignorado para a forma de endereço, e `rabbitmq_secure = 1` junto com um endereço `amqp://` em texto simples é rejeitado em vez de conectar silenciosamente sem criptografia.
 O comportamento padrão da biblioteca usada é não verificar se a conexão TLS criada é segura o suficiente. Se o certificado estiver expirado, for autoassinado, estiver ausente ou for inválido, a conexão simplesmente é permitida. Verificações mais rigorosas dos certificados poderão ser implementadas no futuro.
 
 Também é possível adicionar configurações de formato junto com as configurações relacionadas ao RabbitMQ.

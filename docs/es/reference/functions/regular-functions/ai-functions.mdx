@@ -359,6 +359,58 @@ late and damaged package
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
+<div id="aiFilter">
+  ## aiFilter
+</div>
+
+Introducido en: v26.8.0
+
+Evalúa una condición en lenguaje natural sobre el texto proporcionado mediante un proveedor de LLM y devuelve un valor booleano (`UInt8`) apto para `WHERE`, `PREWHERE` y `JOIN ... ON`.
+
+La función solicita al modelo que responda únicamente con `true` o `false` en minúsculas. Las solicitudes fallidas (cuando
+`ai_function_throw_on_error` está deshabilitado) y las respuestas no reconocidas se asignan a `0`, por lo que se excluye la fila.
+
+**Advertencia:** No confíe en los resultados de `aiFilter` sin revisarlos detenidamente. Los predicados basados en LLM pueden ser incorrectos
+o inconsistentes; utilícelos solo cuando los falsos positivos y los falsos negativos sean aceptables.
+
+Las credenciales (una colección nombrada que especifica el proveedor, el modelo, el endpoint y, opcionalmente, una API key)
+se obtienen de la clave `credentials` del mapa de parámetros opcional o de la
+configuración `ai_function_text_default_credentials` cuando el mapa no la incluye.
+
+Nota: al usar `aiFilter` en `JOIN ... ON`, el LLM se evalúa una vez por cada par candidato, lo que puede resultar costoso.
+
+**Sintaxis**
+
+```sql
+aiFilter(text, condition[, params])
+```
+
+**Alias**: `AIFilter`
+
+**Argumentos**
+
+* `text` — Texto que se evaluará. [`String`](/es/reference/data-types/string)
+* `condition` — Condición constante en lenguaje natural que debe cumplir el texto. [`String`](/es/reference/data-types/string)
+* `params` — `Map(String, String)` constante opcional de parámetros. Claves específicas de la función: `temperature` (temperatura de muestreo que controla la aleatoriedad; valor predeterminado: `0.0`), `max_tokens` (máximo de tokens de salida por llamada; valor predeterminado: `1024`). También se aplican los parámetros comunes `credentials` y `model` (consulte [Funciones de IA](/es/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/es/reference/data-types/map)
+
+**Valor devuelto**
+
+`1` si el texto cumple la condición; `0` en caso contrario. Devuelve el valor predeterminado (`0`) si la solicitud falla y `ai_function_throw_on_error` está deshabilitado. [`UInt8`](/es/reference/data-types/int-uint)
+
+**Ejemplos**
+
+**Filtrar reseñas de usuarios enfadados**
+
+```sql title=Query
+SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
+```
+
+**Filtra una columna con credenciales explícitas**
+
+```sql title=Query
+SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
+```
+
 <div id="aiGenerate">
   ## aiGenerate
 </div>
@@ -426,10 +478,13 @@ Introducido en: v26.8.0
 
 Calcula la similitud semántica entre dos textos mediante el proveedor de embeddings configurado.
 
-Calcula el embedding de ambos textos y devuelve la similitud coseno entre los dos vectores
-en el rango `[-1, 1]`: `1` significa que los textos son semánticamente idénticos, `0` que no están relacionados
-y los valores negativos que son opuestos. Es el complemento de `cosineDistance` para los
-mismos embeddings (`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
+Calcula los embeddings vectoriales de ambos textos y devuelve su
+[similitud coseno](https://en.wikipedia.org/wiki/Cosine_similarity). Una puntuación de `-1` se asigna a
+vectores de embeddings opuestos; semánticamente, esto significa que los textos con puntuaciones cercanas a `-1` tienen significados
+opuestos. Una puntuación de `0` significa que los vectores son ortogonales: no están relacionados semánticamente. Por último, una puntuación de `1`
+significa que los vectores de embeddings apuntan en la misma dirección; los textos con puntuaciones cercanas a `1` son
+similares en significado. Es el complemento de `cosineDistance` para los mismos embeddings
+(`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
 
 El procesamiento por lotes, las credenciales y el parámetro `dimensions` son iguales que en `aiEmbed`, incluida la
 configuración de credenciales predeterminadas `ai_function_embedding_default_credentials`.

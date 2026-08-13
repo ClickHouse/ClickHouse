@@ -262,6 +262,20 @@ A altura, em pixels, da imagem de saída para formatos de saída de imagem, como
 
 Valor padrão: 1024.
 
+<div id="output_format_image_streaming_animation">
+  ## output_format_image_streaming_animation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração que controla se formatos de saída de imagem, como `PNG`, gravam cada quadro de uma animação assim que o próximo valor de `t` é recebido, em vez de manter todos os quadros em buffer na memória."}]}]} />
+
+Para formatos de saída de imagem, como `PNG`, grave cada quadro de uma animação assim que o próximo valor da coluna `t` for recebido, em vez de manter todos os quadros em buffer na memória até o fim da consulta.
+
+Apenas um quadro é mantido na memória, e os quadros são enviados para a saída enquanto a consulta ainda está em execução. Em contrapartida, os valores de `t` devem ser não decrescentes; caso contrário, a consulta lança uma exceção. Além disso, o número de quadros não é conhecido quando o cabeçalho da animação precisa ser gravado, portanto, a contagem declarada de quadros é um limite superior, e não o valor exato. Os navegadores reproduzem esse arquivo, mas os decodificadores que confiam na contagem declarada relatam um erro após o último quadro real.
+
+Valor padrão: `false`.
+
 <div id="output_format_image_terminal_mode">
   ## output_format_image_terminal_mode
 </div>
@@ -279,6 +293,36 @@ Valores possíveis:
 * `auto` — se a saída for um terminal, detecta as capacidades dele e usa `iterm`, `kitty` ou `sixel` (nessa ordem); caso contrário, grava os bytes brutos da imagem.
 
 Valor padrão: &#96;&#96; (vazio).
+
+<div id="output_format_image_time_divisor_seconds">
+  ## output_format_image_time_divisor_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "60"},{"label": "Nova configuração que controla o denominador da unidade de tempo da coluna `t`, fazendo com que formatos de saída de imagem, como `PNG`, produzam uma animação."}]}]} />
+
+O denominador da unidade de tempo da coluna `t`, em segundos, para formatos de saída de imagem, como `PNG`.
+
+Consulte [`output_format_image_time_multiplier_seconds`](/pt-BR/reference/settings/formats/output-format#output_format_image_time_multiplier_seconds).
+
+Valor padrão: 60.
+
+<div id="output_format_image_time_multiplier_seconds">
+  ## output_format_image_time_multiplier_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração que controla o numerador da unidade de tempo da coluna `t`, fazendo com que formatos de saída de imagem, como `PNG`, produzam uma animação."}]}]} />
+
+O numerador, em segundos, da unidade de tempo da coluna `t` para formatos de saída de imagem, como `PNG`.
+
+A presença de uma coluna `t` faz com que o formato produza uma animação, na qual `t` representa o deslocamento temporal relativo
+do quadro. Uma unidade de `t` corresponde a `output_format_image_time_multiplier_seconds / output_format_image_time_divisor_seconds` segundos.
+Com os valores padrão (`1` e `60`), uma unidade de `t` equivale a 1/60 de segundo.
+
+Valor padrão: 1.
 
 <div id="output_format_image_width">
   ## output_format_image_width

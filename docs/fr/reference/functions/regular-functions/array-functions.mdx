@@ -5402,7 +5402,8 @@ un remplissage par zéros jusqu&#39;à une puissance de deux supérieure ; elle
 renvoyer silencieusement un vecteur plus long. Utilisez une longueur prise en charge ou passez `output_dims` pour calculer une
 projection tronquée d&#39;une longueur arbitraire (voir ci-dessous).
 
-Le résultat a le même type d&#39;élément que l&#39;entrée ; un tableau d&#39;entrée vide renvoie un tableau vide.
+Le résultat a le même type d&#39;élément que l&#39;entrée ; un tableau d&#39;entrée vide renvoie un tableau vide
+(`output_dims` ne s&#39;y applique pas).
 
 * `seed` (facultatif, `0` par défaut) : sélectionne le motif de signes ; la même valeur de seed produit toujours la même
   transformée.

@@ -1552,11 +1552,23 @@ const SessionSettingsExplorer = () => {
     },
     {
       label: "materialize_*",
-      count: 3,
+      count: 2,
       settings: [
         { name: "materialize_skip_indexes_on_insert", href: "/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert", default: "1" },
-        { name: "materialize_statistics_on_insert", href: "/reference/settings/session-settings/materialize#materialize_statistics_on_insert", default: "0" },
         { name: "materialize_ttl_after_modify", href: "/reference/settings/session-settings/materialize#materialize_ttl_after_modify", default: "1" }
+      ],
+      children: []
+    },
+    {
+      label: "materialize_statistics_on_insert_*",
+      count: 2,
+      settings: [
+        { name: "materialize_statistics_on_insert", href: "/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert", default: "1" },
+        {
+          name: "materialize_statistics_on_insert_max_table_size",
+          href: "/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert_max_table_size",
+          default: "26843545600"
+        }
       ],
       children: []
     },
@@ -3516,7 +3528,7 @@ const SessionSettingsExplorer = () => {
           type="search"
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
-          placeholder="Поиск настроек, например parallel replicas или %materialized%"
+          placeholder="Поиск настроек, e.g. parallel replicas or %materialized%"
           className="w-full rounded-lg border border-gray-500 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-600 focus:border-gray-600 focus:outline-0 focus-visible:outline-0 dark:border-white/30 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-[#fdff75]"
         />
       </div>

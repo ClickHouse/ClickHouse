@@ -117,6 +117,7 @@
     "ko/reference/settings/session-settings/log-query",
     "ko/reference/settings/session-settings/low-cardinality",
     "ko/reference/settings/session-settings/materialize",
+    "ko/reference/settings/session-settings/materialize-statistics-on-insert",
     "ko/reference/settings/session-settings/materialized-views",
     "ko/reference/settings/session-settings/max",
     "ko/reference/settings/session-settings/max-ast",

@@ -25,16 +25,6 @@ INSERT 시 스킵 인덱스를 생성하고 저장할지 지정합니다. 비활
 
 관련 항목: [exclude&#95;materialize&#95;skip&#95;indexes&#95;on&#95;insert](/ko/reference/settings/session-settings/other#exclude_materialize_skip_indexes_on_insert).
 
-<div id="materialize_statistics_on_insert">
-  ## materialize_statistics_on_insert
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "기본적으로 INSERT 시 통계를 생성하지 않으며, 대신 머지에 의존합니다"}]}, {"id": "row-2","items": [{"label": "24.6"},{"label": "1"},{"label": "INSERT 시 통계 머티리얼라이즈를 비활성화할 수 있는 새로운 설정이 추가되었습니다"}]}]} />
-
-INSERT 시 통계를 생성하고 삽입할지 여부를 지정합니다. 비활성화하면 통계는 머지 중 또는 명시적으로 MATERIALIZE STATISTICS를 실행할 때 생성되어 저장됩니다
-
 <div id="materialize_ttl_after_modify">
   ## materialize_ttl_after_modify
 </div>

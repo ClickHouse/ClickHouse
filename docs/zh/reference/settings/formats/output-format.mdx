@@ -262,6 +262,20 @@ Possible values: 非负数。请注意，如果该值过小或过大，`zstdlib`
 
 默认值：1024。
 
+<div id="output_format_image_streaming_animation">
+  ## output_format_image_streaming_animation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置，用于控制 `PNG` 等图像输出格式是否在检测到 `t` 的下一个值后立即写入动画的每一帧，而不是将所有帧缓冲在内存中。"}]}]} />
+
+对于 `PNG` 等图像输出格式，检测到 `t` 列的下一个值后，立即写入动画的每一帧，而不是将所有帧缓冲在内存中直至查询结束。
+
+内存中只保留一帧，查询尚在运行时，帧便会输出。相应地，`t` 的值必须是非递减的，否则查询会引发异常。此外，写入动画请求头时尚无法确定帧数，因此声明的帧数为上限，而非精确值。浏览器可以播放此类文件，但信任声明帧数的解码器会在最后一个实际帧后报告错误。
+
+默认值：`false`。
+
 <div id="output_format_image_terminal_mode">
   ## output_format_image_terminal_mode
 </div>
@@ -279,6 +293,36 @@ Possible values: 非负数。请注意，如果该值过小或过大，`zstdlib`
 * `auto` — 如果输出目标是终端，则检测其支持情况并使用 `iterm`、`kitty` 或 `sixel` (按此顺序) ；否则写出原始图像字节。
 
 默认值：&#96;&#96; (空) 。
+
+<div id="output_format_image_time_divisor_seconds">
+  ## output_format_image_time_divisor_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "60"},{"label": "新增设置，用于控制 `t` 列时间单位的分母，使 `PNG` 等图像输出格式生成动画。"}]}]} />
+
+对于 `PNG` 等图像输出格式，`t` 列时间单位的分母，单位为秒。
+
+请参阅 [`output_format_image_time_multiplier_seconds`](/zh/reference/settings/formats/output-format#output_format_image_time_multiplier_seconds)。
+
+默认值：60。
+
+<div id="output_format_image_time_multiplier_seconds">
+  ## output_format_image_time_multiplier_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "用于控制 `t` 列时间单位分子的新增设置，使 `PNG` 等图像输出格式生成动画。"}]}]} />
+
+对于 `PNG` 等图像输出格式，`t` 列时间单位的分子，以秒为单位。
+
+存在 `t` 列时，该格式会生成动画，其中 `t` 表示帧的相对时间偏移量。
+一个 `t` 单位对应 `output_format_image_time_multiplier_seconds / output_format_image_time_divisor_seconds` 秒。
+使用默认值 (`1` 和 `60`) 时，一个 `t` 单位为 1/60 秒。
+
+默认值：1。
 
 <div id="output_format_image_width">
   ## output_format_image_width

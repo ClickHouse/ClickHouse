@@ -25,16 +25,6 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 راجع أيضًا [exclude&#95;materialize&#95;skip&#95;indexes&#95;on&#95;insert](/ar/reference/settings/session-settings/other#exclude_materialize_skip_indexes_on_insert).
 
-<div id="materialize_statistics_on_insert">
-  ## materialize_statistics_on_insert
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "تعطيل إنشاء الإحصاءات عند INSERT افتراضيًا، والاعتماد بدلًا من ذلك على عمليات الدمج"}]}, {"id": "row-2","items": [{"label": "24.6"},{"label": "1"},{"label": "تمت إضافة إعداد جديد يتيح تعطيل تجسيد الإحصاءات عند INSERT"}]}]} />
-
-يحدّد ما إذا كانت عمليات INSERT تُنشئ الإحصاءات وتُدرجها. إذا كان هذا الخيار معطّلًا، فسيتم إنشاء الإحصاءات وتخزينها أثناء عمليات الدمج أو باستخدام MATERIALIZE STATISTICS صراحةً
-
 <div id="materialize_ttl_after_modify">
   ## materialize_ttl_after_modify
 </div>

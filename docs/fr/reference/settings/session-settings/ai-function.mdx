@@ -132,7 +132,7 @@ Délai initial, en millisecondes, avant la première nouvelle tentative d’une 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nouveau paramètre"}]}]} />
 
-Nom de la collection nommée utilisée par les fonctions d’IA de texte (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) lorsque l&#39;appel ne transmet pas `credentials` dans son mappage de paramètres. Une valeur vide signifie qu&#39;il n&#39;y a pas de valeur par défaut : ces appels doivent donc transmettre `credentials` explicitement. Un endpoint de chat-completions étant différent d&#39;un endpoint d&#39;embeddings, ce paramètre est distinct de `ai_function_embedding_default_credentials`.
+Nom de la collection nommée utilisée par les fonctions d’IA de texte (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`) lorsque l&#39;appel ne transmet pas `credentials` dans son mappage de paramètres. Une valeur vide signifie qu&#39;il n&#39;y a pas de valeur par défaut : ces appels doivent donc transmettre `credentials` explicitement. Un endpoint de chat-completions et son modèle étant différents d&#39;un endpoint d&#39;embeddings, ce paramètre est distinct de `ai_function_embedding_default_credentials`.
 
 <div id="ai_function_throw_on_error">
   ## ai_function_throw_on_error

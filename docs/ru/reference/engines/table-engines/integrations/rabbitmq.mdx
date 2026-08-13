@@ -70,7 +70,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `rabbitmq_max_block_size` - Количество строк, собираемых перед сбросом данных из RabbitMQ. По умолчанию: [max&#95;insert&#95;block&#95;size](/ru/reference/settings/session-settings/max-insert#max_insert_block_size).
 * `rabbitmq_flush_interval_ms` - Тайм-аут для сброса данных из RabbitMQ. По умолчанию: [stream&#95;flush&#95;interval&#95;ms](/ru/reference/settings/session-settings/stream#stream_flush_interval_ms).
 * `rabbitmq_queue_settings_list` - позволяет задавать настройки RabbitMQ при создании очереди. Доступные настройки: `x-max-length`, `x-max-length-bytes`, `x-message-ttl`, `x-expires`, `x-priority`, `x-max-priority`, `x-overflow`, `x-dead-letter-exchange`, `x-queue-type`. Настройка `durable` автоматически включается для очереди.
-* `rabbitmq_address` - Адрес для подключения. Используйте либо эту настройку, либо `rabbitmq_host_port`.
+* `rabbitmq_address` - Адрес для подключения: `amqp(s)://user:password@host:port/vhost`. Используйте либо эту настройку, либо `rabbitmq_host_port`; если заданы обе, используется `rabbitmq_address`. Ее хост и порт проверяются по [remote&#95;url&#95;allow&#95;hosts](/ru/reference/settings/server-settings/settings/remote#remote_url_allow_hosts).
 * `rabbitmq_vhost` - RabbitMQ vhost. По умолчанию: `'/'`.
 * `rabbitmq_queue_consume` - Использовать пользовательские очереди и не выполнять никакую настройку RabbitMQ: объявление exchanges, очередей и привязок. По умолчанию: `false`.
 * `rabbitmq_username` - Имя пользователя RabbitMQ.
@@ -87,7 +87,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
   ### SSL‑соединение
 </div>
 
-Используйте либо `rabbitmq_secure = 1`, либо `amqps` в адресе подключения: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`.
+При использовании формы `rabbitmq_host_port` установите `rabbitmq_secure = 1`, чтобы использовать TLS.
+При использовании формы `rabbitmq_address` транспорт определяется схемой URI, поэтому используйте `amqps`: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`. Параметр `rabbitmq_secure` игнорируется для формы адреса, а сочетание `rabbitmq_secure = 1` с незашифрованным адресом `amqp://` отклоняется, вместо того чтобы молча подключаться по незашифрованному соединению.
 По умолчанию используемая библиотека не проверяет, достаточно ли безопасно созданное TLS‑соединение. Просрочен ли сертификат, самоподписан ли он, отсутствует или недействителен — подключение всё равно разрешается. Более строгая проверка сертификатов, возможно, будет реализована в будущем.
 
 Также вместе с настройками RabbitMQ можно добавлять настройки формата.

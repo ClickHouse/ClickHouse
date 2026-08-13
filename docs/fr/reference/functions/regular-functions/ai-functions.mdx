@@ -359,6 +359,58 @@ late and damaged package
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
+<div id="aiFilter">
+  ## aiFilter
+</div>
+
+Introduit dans : v26.8.0
+
+Évalue une condition en langage naturel sur le texte fourni à l’aide d’un fournisseur de LLM et renvoie une valeur booléenne (`UInt8`) utilisable dans `WHERE`, `PREWHERE` et `JOIN ... ON`.
+
+La fonction demande au modèle de répondre uniquement par `true` ou `false` en minuscules. Les requêtes échouées (lorsque
+`ai_function_throw_on_error` est désactivé) et les réponses non reconnues sont mappées sur `0`, de sorte que la ligne est filtrée.
+
+**Avertissement :** Ne vous fiez pas aux résultats d’`aiFilter` sans les examiner attentivement. Les prédicats basés sur des LLM peuvent être incorrects
+ou incohérents ; utilisez-les uniquement lorsque les faux positifs et les faux négatifs sont acceptables.
+
+Les identifiants (une collection nommée spécifiant le fournisseur, le modèle, le point de terminaison et, éventuellement, une clé API)
+sont extraits de la clé `credentials` de la map de paramètres facultative ou du paramètre
+`ai_function_text_default_credentials` lorsque la map ne la contient pas.
+
+Remarque : l’utilisation d’`aiFilter` dans `JOIN ... ON` évalue le LLM une fois par paire candidate et peut être coûteuse.
+
+**Syntaxe**
+
+```sql
+aiFilter(text, condition[, params])
+```
+
+**Alias** : `AIFilter`
+
+**Arguments**
+
+* `text` — Texte à évaluer. [`String`](/fr/reference/data-types/string)
+* `condition` — Condition constante, exprimée en langage naturel, à laquelle le texte doit répondre. [`String`](/fr/reference/data-types/string)
+* `params` — `Map(String, String)` constant facultatif de paramètres. Clés propres à la fonction : `temperature` (température d’échantillonnage contrôlant l’aléa ; valeur par défaut : `0.0`), `max_tokens` (nombre maximal de tokens de sortie par appel ; valeur par défaut : `1024`). Les paramètres communs `credentials` et `model` s’appliquent également (voir [Fonctions d’IA](/fr/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/fr/reference/data-types/map)
+
+**Valeur renvoyée**
+
+`1` si le texte répond à la condition, `0` sinon. Renvoie la valeur par défaut (`0`) si la requête échoue et que `ai_function_throw_on_error` est désactivé. [`UInt8`](/fr/reference/data-types/int-uint)
+
+**Exemples**
+
+**Filtrer les avis négatifs**
+
+```sql title=Query
+SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
+```
+
+**Filtrer une colonne avec des identifiants explicites**
+
+```sql title=Query
+SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
+```
+
 <div id="aiGenerate">
   ## aiGenerate
 </div>
@@ -426,10 +478,13 @@ Introduite dans : v26.8.0
 
 Calcule la similarité sémantique entre deux textes à l’aide du fournisseur d’embeddings configuré.
 
-Calcule l’embedding des deux textes et renvoie la similarité cosinus entre les deux vecteurs
-dans la plage `[-1, 1]` : `1` signifie que les textes sont sémantiquement identiques, `0` qu’ils ne sont pas liés,
-et des valeurs négatives qu’ils sont opposés. Il s’agit du complément de `cosineDistance` pour les
-mêmes embeddings (`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
+Calcule les embeddings vectoriels des deux textes et renvoie leur
+[similarité cosinus](https://en.wikipedia.org/wiki/Cosine_similarity). Un score de `-1` est attribué à des
+vecteurs d’embedding opposés ; sur le plan sémantique, cela signifie que les textes dont les scores approchent `-1` ont un sens opposé.
+Un score de `0` signifie que les vecteurs sont orthogonaux : ils ne sont pas liés sémantiquement. Enfin, un score de `1`
+signifie que les vecteurs d’embedding pointent dans la même direction ; les textes dont les scores approchent `1` ont un sens
+similaire. Il s’agit du complément de `cosineDistance` pour les mêmes embeddings
+(`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
 
 Le batching, les identifiants et le paramètre `dimensions` sont identiques à ceux d’`aiEmbed`, y compris le
 paramètre d’identifiant par défaut `ai_function_embedding_default_credentials`.

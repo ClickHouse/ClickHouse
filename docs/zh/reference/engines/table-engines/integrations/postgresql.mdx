@@ -76,6 +76,40 @@ SETTINGS
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
+<div id="tls-ssl">
+  ### TLS/SSL
+</div>
+
+TLS/SSL 参数会传递给 `libpq`，可将其设为命名集合的键或尾随键值参数：`sslmode` (`disable`、`allow`、`prefer`、`require`、`verify-ca` 或 `verify-full`) ，以及两种形式之一的证书和私钥。未设置时，将使用 `libpq` 的默认值 (`sslmode=prefer`) 。
+
+* `sslrootcert` (CA 证书或特殊值 `system`) 、`sslcert` (客户端证书) 和 `sslkey` (客户端私钥) 是服务器本地文件的路径。它们只能在服务器配置文件中定义的命名集合中指定，不能在查询中覆盖：服务器会使用自身的特权打开这些文件。
+* `sslrootcert_pem`、`sslcert_pem` 和 `sslkey_pem` 接受相应文件的原始内容，而非路径。它们可在任何位置指定——查询中、通过 SQL 创建的命名集合中，或作为对命名集合的覆盖——并且会像密码一样在日志和 `SHOW` 查询中被掩码处理。
+
+例如，要强制使用加密连接并验证服务器证书：
+
+```xml
+<named_collections>
+    <postgres_creds>
+        <host>localhost</host>
+        <port>5432</port>
+        <user>postgres</user>
+        <password>****</password>
+        <sslmode>verify-full</sslmode>
+        <sslrootcert>/etc/clickhouse-server/postgresql-ca.crt</sslrootcert>
+    </postgres_creds>
+</named_collections>
+```
+
+不使用配置文件，直接在查询中传入证书内容：
+
+```sql
+CREATE TABLE postgres_table (id UInt64, value String)
+ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
+                    sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----');
+```
+
 <div id="settings">
   ## 设置
 </div>

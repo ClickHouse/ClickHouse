@@ -35,9 +35,9 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1"},{"label": "新设置"}]}]} />
 
-启用后，合并操作会为新的 parts 生成并存储统计信息。
+启用后，合并操作会为新的 parts 构建并存储统计信息。
 否则，这些统计信息可通过显式执行 [MATERIALIZE STATISTICS](/zh/reference/statements/alter/statistics)
-或[在 INSERT 时](/zh/reference/settings/session-settings/materialize#materialize_statistics_on_insert)创建/存储
+或[在 INSERT 时](/zh/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert)创建/存储
 
 <div id="materialize_ttl_recalculate_only">
   ## materialize_ttl_recalculate_only

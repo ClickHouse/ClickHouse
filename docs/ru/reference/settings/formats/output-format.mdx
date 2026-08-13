@@ -262,6 +262,20 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Значение по умолчанию: 1024.
 
+<div id="output_format_image_streaming_animation">
+  ## output_format_image_streaming_animation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Новая настройка, управляющая тем, записывают ли форматы вывода изображений, такие как `PNG`, каждый кадр анимации сразу после появления следующего значения `t`, вместо буферизации всех кадров в памяти."}]}]} />
+
+Для форматов вывода изображений, таких как `PNG`, записывать каждый кадр анимации сразу после появления следующего значения в столбце `t` вместо буферизации всех кадров в памяти до завершения запроса.
+
+В памяти хранится только один кадр, а кадры выводятся ещё во время выполнения запроса. Взамен значения `t` должны быть неубывающими, иначе запрос генерирует исключение. Кроме того, на момент записи заголовка анимации число кадров неизвестно, поэтому указанное число кадров является верхней границей, а не точным значением. Браузеры воспроизводят такой файл, но декодеры, полагающиеся на указанное число кадров, сообщают об ошибке после последнего фактического кадра.
+
+Значение по умолчанию: `false`.
+
 <div id="output_format_image_terminal_mode">
   ## output_format_image_terminal_mode
 </div>
@@ -279,6 +293,35 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * `auto` — если вывод направлен в терминал, определить его возможности и использовать `iterm`, `kitty` или `sixel` (в этом порядке); в противном случае записывать сырые байты изображения.
 
 Значение по умолчанию: &#96;&#96; (пусто).
+
+<div id="output_format_image_time_divisor_seconds">
+  ## output_format_image_time_divisor_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "60"},{"label": "Новая настройка, определяющая знаменатель единицы времени столбца `t`, благодаря чему форматы вывода изображений, такие как `PNG`, могут создавать анимацию."}]}]} />
+
+Знаменатель единицы времени столбца `t` в секундах для форматов вывода изображений, таких как `PNG`.
+
+См. [`output_format_image_time_multiplier_seconds`](/ru/reference/settings/formats/output-format#output_format_image_time_multiplier_seconds).
+
+Значение по умолчанию: 60.
+
+<div id="output_format_image_time_multiplier_seconds">
+  ## output_format_image_time_multiplier_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Новая настройка, задающая числитель единицы времени для столбца `t`, благодаря чему форматы вывода изображений, такие как `PNG`, создают анимацию."}]}]} />
+
+Числитель единицы времени для столбца `t` в секундах для форматов вывода изображений, таких как `PNG`.
+
+При наличии столбца `t` формат создаёт анимацию, в которой `t` задаёт относительное смещение времени кадра. Одна единица `t` соответствует `output_format_image_time_multiplier_seconds / output_format_image_time_divisor_seconds` секундам.
+При значениях по умолчанию (`1` и `60`) одна единица `t` равна 1/60 секунды.
+
+Значение по умолчанию: 1.
 
 <div id="output_format_image_width">
   ## output_format_image_width

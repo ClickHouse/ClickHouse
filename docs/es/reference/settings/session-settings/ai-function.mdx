@@ -132,7 +132,7 @@ Retraso inicial, en milisegundos, antes del primer reintento de una solicitud a 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración"}]}]} />
 
-Nombre de la colección con nombre que usan las funciones de IA de texto (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) cuando la llamada no incluye `credentials` en su mapa de parámetros. Vacío significa que no hay ningún valor predeterminado: esas llamadas deben pasar `credentials` explícitamente. Un endpoint de chat-completions es distinto de uno de embeddings, por lo que esto es independiente de `ai_function_embedding_default_credentials`.
+Nombre de la colección con nombre que usan las funciones de IA de texto (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`) cuando la llamada no incluye `credentials` en su mapa de parámetros. Vacío significa que no hay ningún valor predeterminado: esas llamadas deben pasar `credentials` explícitamente. Un endpoint y un modelo de chat-completions son distintos de los de embeddings, por lo que esto es independiente de `ai_function_embedding_default_credentials`.
 
 <div id="ai_function_throw_on_error">
   ## ai_function_throw_on_error

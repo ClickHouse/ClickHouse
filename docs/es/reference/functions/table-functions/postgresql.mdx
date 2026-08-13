@@ -35,6 +35,8 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 
 Los argumentos también pueden pasarse mediante [colecciones con nombre](/es/concepts/features/configuration/server-config/named-collections). En este caso, `host` y `port` deben especificarse por separado. Este enfoque se recomienda para entornos de producción.
 
+Los parámetros TLS/SSL se reenvían a `libpq` y pueden proporcionarse como claves de colecciones con nombre o como argumentos de clave-valor al final: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` o `verify-full`; si no se especifica, se aplica el valor predeterminado `prefer` de `libpq`), así como los certificados y la clave, de una de estas dos formas. `sslrootcert` (certificado de CA o el valor especial `system`), `sslcert` (certificado de cliente) y `sslkey` (clave privada de cliente) son rutas a archivos locales del servidor y solo pueden especificarse en una colección con nombre definida en el archivo de configuración del servidor. Como alternativa, `sslrootcert_pem`, `sslcert_pem` y `sslkey_pem` aceptan el contenido literal del archivo correspondiente —por ejemplo, `postgresql('host:port', 'database', 'table', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`— y se enmascaran en los registros y las consultas `SHOW`, al igual que una contraseña.
+
 <div id="returned-value">
   ## Valor devuelto
 </div>

@@ -1,7 +1,7 @@
 const FormatSettingsExplorer = () => {
   // Рендерер Mintlify в production-окружении оценивает экспортируемый компонент,
   // не сохраняя привязки области видимости модуля. Ленивое состояние хранит
-  // сгенерированные данные в этой области оценки, создавая их только один раз при монтировании.
+  // сгенерированные данные в этой области оценки и создаёт их только один раз при монтировании.
   const [entries] = useState(() => [
     {
       label: "bool_*",
@@ -307,7 +307,7 @@ const FormatSettingsExplorer = () => {
     },
     {
       label: "output_format_*",
-      count: 103,
+      count: 106,
       settings: [
         {
           name: "output_format_always_write_decimal_point_in_float_and_decimal",
@@ -342,7 +342,10 @@ const FormatSettingsExplorer = () => {
         { name: "output_format_decimal_trailing_zeros", href: "/reference/settings/formats/output-format#output_format_decimal_trailing_zeros", default: "0" },
         { name: "output_format_float_precision", href: "/reference/settings/formats/output-format#output_format_float_precision", default: "0" },
         { name: "output_format_image_height", href: "/reference/settings/formats/output-format#output_format_image_height", default: "1024" },
+        { name: "output_format_image_streaming_animation", href: "/reference/settings/formats/output-format#output_format_image_streaming_animation", default: "0" },
         { name: "output_format_image_terminal_mode", href: "/reference/settings/formats/output-format#output_format_image_terminal_mode", default: '""' },
+        { name: "output_format_image_time_divisor_seconds", href: "/reference/settings/formats/output-format#output_format_image_time_divisor_seconds", default: "60" },
+        { name: "output_format_image_time_multiplier_seconds", href: "/reference/settings/formats/output-format#output_format_image_time_multiplier_seconds", default: "1" },
         { name: "output_format_image_width", href: "/reference/settings/formats/output-format#output_format_image_width", default: "1024" },
         { name: "output_format_json_array_of_rows", href: "/reference/settings/formats/output-format#output_format_json_array_of_rows", default: "0" },
         { name: "output_format_json_escape_forward_slashes", href: "/reference/settings/formats/output-format#output_format_json_escape_forward_slashes", default: "1" },
