@@ -87,3 +87,34 @@ TEST(CancellationChecker, RearmsWaitOnEarlierDeadline)
     EXPECT_TRUE(killed);
     EXPECT_FALSE(long_query->isKilled());
 }
+
+/// A task must never be cancelled before its timeout has elapsed: the query then fails with a
+/// self-contradictory `Timeout exceeded: elapsed 999.672 ms, maximum: 1000 ms`, and everything that
+/// measures the query against its own timeout (`query_duration_ms` in `system.query_log`) sees a
+/// value below it. Deadlines are aligned up to a grid, which usually hides how the current time is
+/// converted to milliseconds - but when the deadline already sits on the grid the alignment adds no
+/// padding, and rounding the current time down then placed the deadline up to 1 ms in the past.
+TEST(CancellationChecker, DeadlineIsNeverBeforeTheTimeout)
+{
+    /// Every sub-millisecond phase of `now`, against every phase of the grid the deadline can land on.
+    for (const Int64 timeout_ms : {1, 7, 50, 99, 100, 101, 999, 1000, 1001, 60'000})
+    {
+        for (Int64 now_ms = 0; now_ms < 1000; ++now_ms)
+        {
+            for (Int64 sub_ms_ns = 0; sub_ms_ns < 1'000'000; sub_ms_ns += 9'973)
+            {
+                const Int64 now_ns = (1'000'000 + now_ms) * 1'000'000 + sub_ms_ns;
+                const auto now = std::chrono::steady_clock::time_point{
+                    std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::nanoseconds{now_ns})};
+
+                const UInt64 deadline_ms = CancellationChecker::taskDeadlineMs(now, timeout_ms);
+
+                ASSERT_GE(static_cast<Int64>(deadline_ms) * 1'000'000, now_ns + timeout_ms * 1'000'000)
+                    << "a task appended " << sub_ms_ns << " ns into a millisecond with a timeout of " << timeout_ms
+                    << " ms is cancelled "
+                    << (static_cast<double>(now_ns + timeout_ms * 1'000'000 - static_cast<Int64>(deadline_ms) * 1'000'000) / 1e6)
+                    << " ms early";
+            }
+        }
+    }
+}

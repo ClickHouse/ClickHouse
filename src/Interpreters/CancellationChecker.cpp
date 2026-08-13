@@ -80,6 +80,18 @@ void CancellationChecker::terminateThread()
     cond_var.notify_all();
 }
 
+UInt64 CancellationChecker::taskDeadlineMs(std::chrono::steady_clock::time_point now, Int64 timeout_ms)
+{
+    /// Round the current time up to a whole millisecond. Truncating it puts the deadline up to 1 ms
+    /// before `now + timeout_ms`, and whenever the grid rounding below adds no padding (the deadline
+    /// is already on the grid, which happens for one task in `CANCELLATION_GRID_MS`) that is when
+    /// the task is cancelled - ahead of its own timeout.
+    const UInt64 now_ms = std::chrono::ceil<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    /// Round up to the next grid boundary to enable batching of timeout checks.
+    /// This ensures tasks are never cancelled before their timeout, only slightly after.
+    return ((now_ms + timeout_ms + CANCELLATION_GRID_MS - 1) / CANCELLATION_GRID_MS) * CANCELLATION_GRID_MS;
+}
+
 bool CancellationChecker::appendTask(const QueryStatusPtr & query, const Int64 timeout, OverflowMode overflow_mode)
 {
     if (timeout <= 0) // Avoid cases when the timeout is less or equal zero
@@ -95,11 +107,7 @@ bool CancellationChecker::appendTask(const QueryStatusPtr & query, const Int64 t
 
     std::unique_lock<std::mutex> lock(m);
     LOG_TEST(log, "Added to set. query: {}, timeout: {} milliseconds", query->getInfo().query, capped_timeout);
-    const auto now = std::chrono::steady_clock::now();
-    const UInt64 now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-    /// Round up to the next grid boundary to enable batching of timeout checks.
-    /// This ensures tasks are never cancelled before their timeout, only slightly after.
-    const UInt64 end_time = ((now_ms + capped_timeout + CANCELLATION_GRID_MS - 1) / CANCELLATION_GRID_MS) * CANCELLATION_GRID_MS;
+    const UInt64 end_time = taskDeadlineMs(std::chrono::steady_clock::now(), capped_timeout);
     auto iter = query_set.emplace(query, capped_timeout, end_time, overflow_mode);
     if (iter == query_set.begin()) // Only notify if the new task is the earliest one
         cond_var.notify_all();
