@@ -85,6 +85,7 @@ void registerAggregateFunctionCramersV(AggregateFunctionFactory &);
 void registerAggregateFunctionTheilsU(AggregateFunctionFactory &);
 void registerAggregateFunctionContingency(AggregateFunctionFactory &);
 void registerAggregateFunctionCramersVBiasCorrected(AggregateFunctionFactory &);
+void registerAggregateFunctionGini(AggregateFunctionFactory &);
 void registerAggregateFunctionSingleValueOrNull(AggregateFunctionFactory &);
 void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory &);
 void registerAggregateFunctionNothing(AggregateFunctionFactory &);
@@ -97,6 +98,7 @@ void registerAggregateFunctionKolmogorovSmirnovTest(AggregateFunctionFactory & f
 void registerAggregateFunctionLargestTriangleThreeBuckets(AggregateFunctionFactory & factory);
 void registerAggregateFunctionDistinctDynamicTypes(AggregateFunctionFactory & factory);
 void registerAggregateFunctionDistinctJSONPathsAndTypes(AggregateFunctionFactory & factory);
+void registerAggregateFunctionMergedJSONPatch(AggregateFunctionFactory & factory);
 
 void registerAggregateFunctionLast2Samples(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory);
@@ -183,6 +185,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionTheilsU(factory);
         registerAggregateFunctionContingency(factory);
         registerAggregateFunctionCramersVBiasCorrected(factory);
+        registerAggregateFunctionGini(factory);
         registerAggregateFunctionsBitmap(factory);
         registerAggregateFunctionsNumericIndexedVector(factory);
         registerAggregateFunctionsMaxIntersections(factory);
@@ -212,6 +215,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionLargestTriangleThreeBuckets(factory);
         registerAggregateFunctionDistinctDynamicTypes(factory);
         registerAggregateFunctionDistinctJSONPathsAndTypes(factory);
+        registerAggregateFunctionMergedJSONPatch(factory);
         registerAggregateFunctionLast2Samples(factory);
         registerAggregateFunctionTimeseries(factory);
         registerAggregateFunctionTimeseriesGroupArray(factory);

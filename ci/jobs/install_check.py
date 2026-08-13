@@ -230,17 +230,107 @@ done
         f"Install tgz over a dangling symlink in {image}": r"""#!/bin/bash -ex
 # A symlink whose target does not exist yet has to survive the installation as well: `-e`
 # follows the link, so the installer must test for the link itself before testing existence.
+# There is no destination inode to write through in this case, so the installed file has to
+# get the mode from the package - a `umask`-derived mode would install a binary
+# non-executable - and the ownership every installed file has.
 mkdir -p /etc/clickhouse-client /shared
 ln -s /shared/config.xml /etc/clickhouse-client/config.xml
 for pkg in /packages/clickhouse-client*tgz; do
     package=${pkg%-*}
     package=${package##*/}
     tar xf "$pkg"
+    mode=$(stat -c %a "/$package/etc/clickhouse-client/config.xml")
+    # A restrictive `umask` makes a mode that comes from the installation instead of from the
+    # package visible in the assertion below.
+    umask 077
     "/$package/install/doinst.sh"
 done
 [ -L /etc/clickhouse-client/config.xml ]
 [ "$(readlink /etc/clickhouse-client/config.xml)" = "/shared/config.xml" ]
-[ -s /shared/config.xml ]""",
+[ -s /shared/config.xml ]
+[ "$(stat -c %a /shared/config.xml)" = "$mode" ]
+[ "$(stat -c %U:%G /shared/config.xml)" = "root:root" ]""",
+        f"Install tgz over a chain of dangling symlinks in {image}": r"""#!/bin/bash -ex
+# A destination symlink may point at another symlink, and writing through the destination
+# followed the whole chain, so the installer has to create only the final referent and keep
+# every level of the indirection, not just the first one. The hops here are relative, so that
+# a hop resolved against the wrong directory is caught as well.
+mkdir -p /etc/clickhouse-client /shared /real
+ln -s ../../shared/config.xml /etc/clickhouse-client/config.xml
+ln -s ../real/config.xml /shared/config.xml
+for pkg in /packages/clickhouse-client*tgz; do
+    package=${pkg%-*}
+    package=${package##*/}
+    tar xf "$pkg"
+    mode=$(stat -c %a "/$package/etc/clickhouse-client/config.xml")
+    umask 077
+    "/$package/install/doinst.sh"
+done
+[ -L /etc/clickhouse-client/config.xml ]
+[ "$(readlink /etc/clickhouse-client/config.xml)" = "../../shared/config.xml" ]
+[ -L /shared/config.xml ]
+[ "$(readlink /shared/config.xml)" = "../real/config.xml" ]
+[ -f /real/config.xml ] && [ ! -L /real/config.xml ]
+[ -s /real/config.xml ]
+[ "$(stat -c %a /real/config.xml)" = "$mode" ]
+[ "$(stat -c %U:%G /real/config.xml)" = "root:root" ]""",
+        f"Install tgz over a dangling symlink with a backslash in the target in {image}": r"""#!/bin/bash -ex
+# The installer runs under `/bin/sh`, which is `dash` on Debian, and `dash`'s `echo` expands
+# backslash escapes: `\t` in a resolved link target would come back as a tab. The resolved
+# path has to be returned byte-for-byte, so a target with a backslash lands at the literal
+# path instead of failing or landing at a mangled one.
+mkdir -p /etc/clickhouse-client '/shared/a\tb'
+ln -s '/shared/a\tb/config.xml' /etc/clickhouse-client/config.xml
+for pkg in /packages/clickhouse-client*tgz; do
+    package=${pkg%-*}
+    package=${package##*/}
+    tar xf "$pkg"
+    mode=$(stat -c %a "/$package/etc/clickhouse-client/config.xml")
+    umask 077
+    "/$package/install/doinst.sh"
+done
+[ -L /etc/clickhouse-client/config.xml ]
+[ "$(readlink /etc/clickhouse-client/config.xml)" = '/shared/a\tb/config.xml' ]
+[ -s '/shared/a\tb/config.xml' ]
+[ "$(stat -c %a '/shared/a\tb/config.xml')" = "$mode" ]
+[ "$(stat -c %U:%G '/shared/a\tb/config.xml')" = "root:root" ]""",
+        f"Install tgz over a symlink into a missing directory in {image}": r"""#!/bin/bash -ex
+# A destination pointing into a directory that does not exist is an error the administrator
+# has to see: creating that directory would give it the `umask` of the installation and no
+# defined ownership, which can leave the installed file unreachable while the installation
+# reports success. Writing through the link failed in this case too, so the installer keeps
+# failing instead of materializing a half-usable tree.
+mkdir -p /etc/clickhouse-client
+ln -s /missing/config.xml /etc/clickhouse-client/config.xml
+# Not /tmp: the test image boots systemd, which runs `systemd-tmpfiles` with `D /tmp`
+# concurrently with this script and can wipe the log between writing and reading it.
+for pkg in /packages/clickhouse-client*tgz; do
+    package=${pkg%-*}
+    package=${package##*/}
+    tar xf "$pkg"
+    ! "/$package/install/doinst.sh" > /root/install.log 2>&1
+done
+grep -q "the directory /missing does not exist" /root/install.log
+[ ! -e /missing ]
+[ -L /etc/clickhouse-client/config.xml ]""",
+        f"Install tgz over a symlink loop in {image}": r"""#!/bin/bash -ex
+# A chain of symlinks that never reaches a real path cannot be installed. Writing through
+# the destination used to fail with `ELOOP`; following the chain has to fail just as
+# loudly instead of spinning forever, and it has to leave the links as they were.
+mkdir -p /etc/clickhouse-client /shared
+ln -s /shared/config.xml /etc/clickhouse-client/config.xml
+ln -s /etc/clickhouse-client/config.xml /shared/config.xml
+# Not /tmp: the test image boots systemd, which runs `systemd-tmpfiles` with `D /tmp`
+# concurrently with this script and can wipe the log between writing and reading it.
+for pkg in /packages/clickhouse-client*tgz; do
+    package=${pkg%-*}
+    package=${package##*/}
+    tar xf "$pkg"
+    ! "/$package/install/doinst.sh" > /root/install.log 2>&1
+done
+grep -q "Too many levels of symbolic links" /root/install.log
+[ "$(readlink /etc/clickhouse-client/config.xml)" = "/shared/config.xml" ]
+[ "$(readlink /shared/config.xml)" = "/etc/clickhouse-client/config.xml" ]""",
     }
     return test_install(image, tests)
 
