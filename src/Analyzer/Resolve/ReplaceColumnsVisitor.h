@@ -47,8 +47,23 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node)
     {
+        bool subtree_replaced = false;
         if (auto replacement_node = findTransitiveReplacement(node, replacement_map))
+        {
             node = replacement_node;
+            subtree_replaced = true;
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child && replaced_subtrees.contains(child.get()))
+                subtree_replaced = true;
+
+        /// A node nothing was replaced under keeps the types it was resolved with, and rebuilding it
+        /// goes through FunctionFactory, which does not own executable or WebAssembly UDFs.
+        if (!subtree_replaced)
+            return;
+
+        replaced_subtrees.insert(node.get());
 
         if (auto * function_node = node->as<FunctionNode>(); function_node && function_node->isResolved())
         {
@@ -92,6 +107,8 @@ public:
 private:
     const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map;
     const ContextPtr & context;
+    /// Nodes a replacement happened at or under. The tree being visited owns every entry.
+    std::unordered_set<const IQueryTreeNode *> replaced_subtrees;
 };
 
 }

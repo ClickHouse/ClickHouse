@@ -1,0 +1,14 @@
+udf outside a lambda
+1
+udf inside a lambda body
+1
+udf inside a lambda body, nested
+1
+udf beside a restored join column, join_use_nulls
+1
+udf before a restored join column, join_use_nulls
+1
+udf in a lambda whose parameter is a restored join column, join_use_nulls
+1
+udf in a retyped lambda body, restored column also read outside
+1

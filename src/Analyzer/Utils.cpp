@@ -967,8 +967,23 @@ public:
                 return;
 
             column_node->setColumnType(arguments->getTypes()[it - names.begin()]);
+            retyped_subtrees.insert(node.get());
+            return;
         }
-        else if (auto * function_node = node->as<FunctionNode>(); function_node && function_node->isResolved())
+
+        bool subtree_retyped = false;
+        for (const auto & child : node->getChildren())
+            if (child && retyped_subtrees.contains(child.get()))
+                subtree_retyped = true;
+
+        /// A node no parameter read was retyped under keeps the types it was resolved with, and
+        /// rebuilding it goes through FunctionFactory, which does not own executable or WebAssembly UDFs.
+        if (!subtree_retyped)
+            return;
+
+        retyped_subtrees.insert(node.get());
+
+        if (auto * function_node = node->as<FunctionNode>(); function_node && function_node->isResolved())
         {
             rerunLambdaArgumentsResolve(function_node, context);
             rerunFunctionResolve(function_node, context);
@@ -1001,6 +1016,8 @@ public:
 private:
     const LambdaArgumentsNode * arguments;
     const ContextPtr & context;
+    /// Nodes a parameter read was retyped at or under. The body being visited owns every entry.
+    std::unordered_set<const IQueryTreeNode *> retyped_subtrees;
 };
 
 }
