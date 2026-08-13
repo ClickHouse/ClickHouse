@@ -150,7 +150,7 @@ A *Bloom filter* is a data structure that allows space-efficient testing of set 
 
 Because Bloom filters can more efficiently handle testing for a large number of discrete values, they can be appropriate for conditional expressions that produce more values to test. In particular, a Bloom filter index can be applied to arrays, where every value of the array is tested, and to maps, by converting either the keys or values to an array using the mapKeys or mapValues function.
 
-There are four Data Skipping Index types based on Bloom filters:
+Data skipping index types based on Bloom filters include:
 
 * The basic **bloom_filter** which takes a single optional parameter of the allowed "false positive" rate between 0 and 1 (if unspecified, .025 is used).
 
