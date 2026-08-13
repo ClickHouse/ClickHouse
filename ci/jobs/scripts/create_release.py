@@ -518,8 +518,8 @@ class ReleaseInfo:
                     Shell.check(
                         f"{GIT_PREFIX} reset --hard FETCH_HEAD", strict=True, verbose=True
                     )
-                # VERSION_GITHASH tracks the branch tip the bump lands on.
-                version.githash = Shell.get_output_or_raise("git rev-parse HEAD")
+                # VERSION_GITHASH is the released commit — the baseline the next release's tweak counts from, not the backport-advanced tip.
+                version.githash = self.commit_sha
                 latest_release_version = CHVersion.get_release_version()
                 assert not version.is_older(latest_release_version), (
                     f"BUG: refusing to write version [{version.string}] onto branch "
