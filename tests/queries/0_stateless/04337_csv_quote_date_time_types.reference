@@ -24,6 +24,12 @@ negative subsecond DateTime64 Unix timestamp is unquoted with safe delimiter
 1
 negative subsecond DateTime64 Unix timestamp is quoted with conflicting delimiter
 1
+positive DateTime64 Unix timestamp is unquoted with minus delimiter
+1
+positive Time values are unquoted with minus delimiter
+1	1
+positive temporal tuple remains flattened with minus delimiter
+1705571101.123-12:30:00-12:30:00.456-42
 DateTime64 dot quoting follows trimmed fractional output
 0	1
 CustomSeparated CSV escaping uses its field delimiter

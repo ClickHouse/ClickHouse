@@ -882,7 +882,7 @@ ReturnType SerializationTuple::deserializeTextCSVImpl(IColumn & column, ReadBuff
         }
         else
         {
-            bool result;
+            bool result = false;
             {
                 PeekableReadBufferCheckpoint checkpoint(peekable_buf);
                 if (try_local_whole_tuple())

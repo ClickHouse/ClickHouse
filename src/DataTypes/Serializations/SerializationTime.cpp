@@ -178,7 +178,7 @@ bool SerializationTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer & is
 
 void SerializationTime::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const bool quote = textCSVMayNeedQuotes(settings);
+    const bool quote = textCSVNeedsQuotes(column, row_num, settings);
 
     if (quote)
         writeChar('"', ostr);
@@ -194,6 +194,18 @@ bool SerializationTime::textCSVMayNeedQuotes(const FormatSettings & settings) co
         || settings.csv.force_quote_date_time_types
         || delimiter == ':'
         || delimiter == '-'
+        || isNumericASCII(delimiter);
+}
+
+bool SerializationTime::textCSVNeedsQuotes(
+    const IColumn & column, size_t row_num, const FormatSettings & settings) const
+{
+    const auto value = assert_cast<const ColumnType &>(column).getData()[row_num];
+    const char delimiter = settings.csv.delimiter;
+    return settings.csv.quote_date_time_types
+        || settings.csv.force_quote_date_time_types
+        || delimiter == ':'
+        || (value < 0 && delimiter == '-')
         || isNumericASCII(delimiter);
 }
 

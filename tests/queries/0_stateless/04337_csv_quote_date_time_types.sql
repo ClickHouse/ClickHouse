@@ -80,6 +80,37 @@ SETTINGS
     date_time_output_format = 'unix_timestamp',
     format_csv_delimiter = '-';
 
+SELECT 'positive DateTime64 Unix timestamp is unquoted with minus delimiter' FORMAT TSVRaw;
+SELECT formatRow('CSV', toDateTime64('2024-01-18 09:45:01.123', 3, 'UTC')) = '1705571101.123\n'
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    date_time_output_format = 'unix_timestamp',
+    format_csv_delimiter = '-';
+
+SELECT 'positive Time values are unquoted with minus delimiter' FORMAT TSVRaw;
+SELECT
+    formatRow('CSV', toTime('12:30:00')) = '12:30:00\n',
+    formatRow('CSV', toTime64('12:30:00.456', 3)) = '12:30:00.456\n'
+FORMAT TSVRaw
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    format_csv_delimiter = '-';
+
+SELECT 'positive temporal tuple remains flattened with minus delimiter' FORMAT TSVRaw;
+SELECT
+    tuple(
+        toDateTime64('2024-01-18 09:45:01.123', 3, 'UTC'),
+        toTime('12:30:00'),
+        toTime64('12:30:00.456', 3)) AS t,
+    42 AS n
+FORMAT Template
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    date_time_output_format = 'unix_timestamp',
+    format_csv_delimiter = '-',
+    format_template_row_format = '${t:CSV}-${n:CSV}\n',
+    format_template_resultset_format = '${data}';
+
 SELECT 'DateTime64 dot quoting follows trimmed fractional output' FORMAT TSVRaw;
 SELECT
     startsWith(formatRow('CSV', toDateTime64('2024-01-18 09:45:01', 3, 'UTC')), '"'),
