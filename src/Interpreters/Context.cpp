@@ -61,6 +61,7 @@
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <IO/AsynchronousReader.h>
+#include <IO/ConnectionTimeouts.h>
 #include <IO/S3Settings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskLocal.h>
@@ -897,7 +898,7 @@ struct ContextSharedPart : boost::noncopyable
 
         std::lock_guard lock(mutex);
         config = config_value;
-        access_control->setExternalAuthenticatorsConfig(*config_value);
+        access_control->setExternalAuthenticatorsConfig(*config_value, ConnectionTimeouts::getHTTPTimeouts(Settings(), server_settings));
     }
 
     const Poco::Util::AbstractConfiguration & getConfigRefWithLock(const std::lock_guard<ContextSharedMutex> &) const TSA_REQUIRES(this->mutex)
@@ -1967,8 +1968,9 @@ const AccessControl & Context::getAccessControl() const
 
 void Context::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
 {
+    auto token_http_timeouts = ConnectionTimeouts::getHTTPTimeouts(getSettingsRef(), getServerSettings());
     std::lock_guard lock(shared->mutex);
-    shared->access_control->setExternalAuthenticatorsConfig(config);
+    shared->access_control->setExternalAuthenticatorsConfig(config, token_http_timeouts);
 }
 
 std::unique_ptr<GSSAcceptorContext> Context::makeGSSAcceptorContext() const

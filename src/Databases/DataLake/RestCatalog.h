@@ -188,9 +188,15 @@ protected:
         TableMetadata & result) const;
 
     Config loadConfig();
-    virtual DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const;
+    virtual DB::HTTPHeaderEntries getAuthHeaders(
+        bool update_token,
+        const String & method = {},
+        const Poco::URI & url = {},
+        const DB::HTTPHeaderEntries & extra_headers = {},
+        const String & body = {}) const;
 
     void validateAuthHeaders(const DB::HTTPHeaderEntry & header) const;
+
     static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
 
     void sendRequest(
@@ -257,7 +263,12 @@ public:
         return DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE;
     }
 
-    DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const override;
+    DB::HTTPHeaderEntries getAuthHeaders(
+        bool update_token,
+        const String & method = {},
+        const Poco::URI & url = {},
+        const DB::HTTPHeaderEntries & extra_headers = {},
+        const String & body = {}) const override;
 
     const std::string & getGoogleADCClientId() const { return google_adc_client_id; }
     const std::string & getGoogleADCClientSecret() const { return google_adc_client_secret; }

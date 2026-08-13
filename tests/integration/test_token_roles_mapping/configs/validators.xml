@@ -1,0 +1,29 @@
+<clickhouse>
+    <token_processors>
+        <hs256_groups>
+            <type>jwt_static_key</type>
+            <algo>HS256</algo>
+            <static_key>roles_mapping_test_secret</static_key>
+            <static_key_in_base64>false</static_key_in_base64>
+            <allow_no_expiration>true</allow_no_expiration>
+        </hs256_groups>
+    </token_processors>
+
+    <user_directories>
+        <token>
+            <processor>hs256_groups</processor>
+            <default_profile>default</default_profile>
+            <roles_mapping>
+                <map>
+                    <from>8a1b2c3d-4e5f-6789-abcd-ef0123456789</from>
+                    <to>ch_admin</to>
+                </map>
+                <map>
+                    <from>9f8e7d6c-5b4a-3210-fedc-ba0987654321</from>
+                    <to>ch_analyst</to>
+                </map>
+            </roles_mapping>
+            <roles_filter>^ch_[a-z_]+$</roles_filter>
+        </token>
+    </user_directories>
+</clickhouse>

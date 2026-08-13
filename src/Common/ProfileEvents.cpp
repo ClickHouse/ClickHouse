@@ -1536,6 +1536,52 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageListObjectsCacheMisses, "Number of times object storage list objects operation miss the cache.", ValueType::Number) \
     M(ObjectStorageListObjectsCacheExactMatchHits, "Number of times object storage list objects operation hit the cache with an exact match.", ValueType::Number) \
     M(ObjectStorageListObjectsCachePrefixMatchHits, "Number of times object storage list objects operation miss the cache using prefix matching.", ValueType::Number) \
+    \
+    M(DataLakeRestCatalogLoadConfig, "Number of 'load config' requests to Iceberg REST catalog.", ValueType::Number) \
+    M(DataLakeRestCatalogLoadConfigMicroseconds, "Total time of 'load config' requests to Iceberg REST catalog.", ValueType::Microseconds) \
+    M(DataLakeRestCatalogGetNamespaces, "Number of 'get namespaces' requests to Iceberg REST catalog.", ValueType::Number) \
+    M(DataLakeRestCatalogGetNamespacesMicroseconds, "Total time of 'get namespaces' requests to Iceberg REST catalog.", ValueType::Microseconds) \
+    M(DataLakeRestCatalogGetTables, "Number of 'get tables' requests to Iceberg REST catalog.", ValueType::Number) \
+    M(DataLakeRestCatalogGetTablesMicroseconds, "Total time of 'get tables' requests to Iceberg REST catalog.", ValueType::Microseconds) \
+    M(DataLakeRestCatalogGetTableMetadata, "Number of 'get table metadata' requests to Iceberg REST catalog.", ValueType::Number) \
+    M(DataLakeRestCatalogGetTableMetadataMicroseconds, "Total time of 'get table metadata' requests to Iceberg REST catalog.", ValueType::Microseconds) \
+    M(DataLakeRestCatalogGetCredentials, "Number of 'get credentials' requests to Iceberg REST catalog.", ValueType::Number) \
+    M(DataLakeRestCatalogGetCredentialsMicroseconds, "Total time of 'get credentials' requests to Iceberg REST catalog.", ValueType::Microseconds) \
+    M(DataLakeRestCatalogCreateNamespace, "Number of 'create namespace' requests to Iceberg REST catalog.", ValueType::Number) \
+    M(DataLakeRestCatalogCreateNamespaceMicroseconds, "Total time of 'create namespace' requests to Iceberg REST catalog.", ValueType::Microseconds) \
+    M(DataLakeRestCatalogCreateTable, "Number of 'create table' requests to Iceberg REST catalog.", ValueType::Number) \
+    M(DataLakeRestCatalogCreateTableMicroseconds, "Total time of 'create table' requests to Iceberg REST catalog.", ValueType::Microseconds) \
+    M(DataLakeRestCatalogUpdateTable, "Number of 'update table' requests to Iceberg REST catalog.", ValueType::Number) \
+    M(DataLakeRestCatalogUpdateTableMicroseconds, "Total time of 'update table' requests to Iceberg REST catalog.", ValueType::Microseconds) \
+    M(DataLakeRestCatalogDropTable, "Number of 'drop table' requests to Iceberg REST catalog.", ValueType::Number) \
+    M(DataLakeRestCatalogDropTableMicroseconds, "Total time of 'drop table' requests to Iceberg REST catalog.", ValueType::Microseconds) \
+    \
+    M(DataLakeGlueCatalogGetDatabases, "Number of 'get databases' requests to Iceberg Glue catalog.", ValueType::Number) \
+    M(DataLakeGlueCatalogGetDatabasesMicroseconds, "Total time of 'get databases' requests to Iceberg Glue catalog.", ValueType::Microseconds) \
+    M(DataLakeGlueCatalogGetTables, "Number of 'get tables' requests to Iceberg Glue catalog.", ValueType::Number) \
+    M(DataLakeGlueCatalogGetTablesMicroseconds, "Total time of 'get tables' requests to Iceberg Glue catalog.", ValueType::Microseconds) \
+    M(DataLakeGlueCatalogGetTable, "Number of 'get table' requests to Iceberg Glue catalog.", ValueType::Number) \
+    M(DataLakeGlueCatalogGetTableMicroseconds, "Total time of 'get table' requests to Iceberg Glue catalog.", ValueType::Microseconds) \
+    M(DataLakeGlueCatalogCreateDatabase, "Number of 'create database' requests to Iceberg Glue catalog.", ValueType::Number) \
+    M(DataLakeGlueCatalogCreateDatabaseMicroseconds, "Total time of 'create database' requests to Iceberg Glue catalog.", ValueType::Microseconds) \
+    M(DataLakeGlueCatalogCreateTable, "Number of 'create table' requests to Iceberg Glue catalog.", ValueType::Number) \
+    M(DataLakeGlueCatalogCreateTableMicroseconds, "Total time of 'create table' requests to Iceberg Glue catalog.", ValueType::Microseconds) \
+    M(DataLakeGlueCatalogUpdateTable, "Number of 'update table' requests to Iceberg Glue catalog.", ValueType::Number) \
+    M(DataLakeGlueCatalogUpdateTableMicroseconds, "Total time of 'update table' requests to Iceberg Glue catalog.", ValueType::Microseconds) \
+    M(DataLakeGlueCatalogDropTable, "Number of 'drop table' requests to Iceberg Glue catalog.", ValueType::Number) \
+    M(DataLakeGlueCatalogDropTableMicroseconds, "Total time of 'drop table' requests to Iceberg Glue catalog.", ValueType::Microseconds) \
+    \
+    M(DataLakeUnityCatalogGetTables, "Number of 'get tables' requests to Iceberg Unity catalog.", ValueType::Number) \
+    M(DataLakeUnityCatalogGetTablesMicroseconds, "Total time of 'get tables' requests to Iceberg Unity catalog.", ValueType::Microseconds) \
+    M(DataLakeUnityCatalogGetTable, "Number of 'get table' requests to Iceberg Unity catalog.", ValueType::Number) \
+    M(DataLakeUnityCatalogGetTableMicroseconds, "Total time of 'get table' requests to Iceberg Unity catalog.", ValueType::Microseconds) \
+    M(DataLakeUnityCatalogGetTableMetadata, "Number of 'get table metadata' requests to Iceberg Unity catalog.", ValueType::Number) \
+    M(DataLakeUnityCatalogGetTableMetadataMicroseconds, "Total time of 'get table metadata' requests to Iceberg Unity catalog.", ValueType::Microseconds) \
+    M(DataLakeUnityCatalogGetSchemas, "Number of 'get schemas' requests to Iceberg Unity catalog.", ValueType::Number) \
+    M(DataLakeUnityCatalogGetSchemasMicroseconds, "Total time of 'get schemas' requests to Iceberg Unity catalog.", ValueType::Microseconds) \
+    M(DataLakeUnityCatalogGetCredentials, "Number of 'get credentials' requests to Iceberg Unity catalog.", ValueType::Number) \
+    M(DataLakeUnityCatalogGetCredentialsMicroseconds, "Total time of 'get credentials' requests to Iceberg Unity catalog.", ValueType::Microseconds) \
+    \
     M(ObjectStorageClusterSentToMatchedReplica, "Number of tasks in ObjectStorageCluster request sent to matched replica.", ValueType::Number) \
     M(ObjectStorageClusterSentToNonMatchedReplica, "Number of tasks in ObjectStorageCluster request sent to non-matched replica.", ValueType::Number) \
     M(ObjectStorageClusterProcessedTasks, "Number of processed tasks in ObjectStorageCluster request.", ValueType::Number) \

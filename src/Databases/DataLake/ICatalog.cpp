@@ -104,44 +104,44 @@ void TableMetadata::setLocation(const std::string & location_)
 
     if (pos_to_path == std::string::npos)
     {
+        /// An empty path is allowed for AWS S3 Tables: the table location is just `s3://<bucket>`.
         if (storage_type_str == "s3://")
-        { // empty path is allowed for AWS S3Table
+        {
             location_without_path = location_;
             path.clear();
             bucket = location_.substr(pos_to_bucket);
+            return;
         }
-        else
-            throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected location format: {}", location_);
+
+        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected location format: {}", location_);
+    }
+
+    pos_to_path = pos_to_bucket + pos_to_path;
+
+    location_without_path = location_.substr(0, pos_to_path);
+    path = location_.substr(pos_to_path + 1);
+
+    /// For Azure ABFSS format: abfss://container@account.dfs.core.windows.net/path
+    /// The bucket (container) is the part before '@', not the whole string before '/'
+    String bucket_part = location_.substr(pos_to_bucket, pos_to_path - pos_to_bucket);
+    auto at_pos = bucket_part.find('@');
+    if (at_pos != std::string::npos)
+    {
+        /// Azure ABFSS format: extract container (before @) and account (after @)
+        bucket = bucket_part.substr(0, at_pos);
+        azure_account_with_suffix = bucket_part.substr(at_pos + 1);
+
+        LOG_TEST(getLogger("TableMetadata"),
+                 "Parsed Azure location - container: {}, account: {}, path: {}",
+                 bucket, azure_account_with_suffix, path);
     }
     else
     {
-        pos_to_path = pos_to_bucket + pos_to_path;
-
-        location_without_path = location_.substr(0, pos_to_path);
-        path = location_.substr(pos_to_path + 1);
-
-        /// For Azure ABFSS format: abfss://container@account.dfs.core.windows.net/path
-        /// The bucket (container) is the part before '@', not the whole string before '/'
-        String bucket_part = location_.substr(pos_to_bucket, pos_to_path - pos_to_bucket);
-        auto at_pos = bucket_part.find('@');
-        if (at_pos != std::string::npos)
-        {
-            /// Azure ABFSS format: extract container (before @) and account (after @)
-            bucket = bucket_part.substr(0, at_pos);
-            azure_account_with_suffix = bucket_part.substr(at_pos + 1);
-
-            LOG_TEST(getLogger("TableMetadata"),
-                    "Parsed Azure location - container: {}, account: {}, path: {}",
-                    bucket, azure_account_with_suffix, path);
-        }
-        else
-        {
-            /// Standard format (S3, GCS, etc.)
-            bucket = bucket_part;
-            LOG_TEST(getLogger("TableMetadata"),
-                    "Parsed location without path: {}, path: {}",
-                    location_without_path, path);
-        }
+        /// Standard format (S3, GCS, etc.)
+        bucket = bucket_part;
+        LOG_TEST(getLogger("TableMetadata"),
+                 "Parsed location without path: {}, path: {}",
+                 location_without_path, path);
     }
 }
 
@@ -295,8 +295,22 @@ std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metad
             metadata_location = metadata_location.substr(storage_type_str.size());
         if (data_location.starts_with(storage_type_str))
             data_location = data_location.substr(storage_type_str.size());
-        else if (!endpoint.empty() && data_location.starts_with(endpoint))
-            data_location = data_location.substr(endpoint.size());
+        else if (!endpoint.empty())
+        {
+            std::string normalized_endpoint = endpoint;
+            if (normalized_endpoint.ends_with('/'))
+                normalized_endpoint.pop_back();
+
+            if (data_location.starts_with(normalized_endpoint))
+            {
+                data_location = data_location.substr(normalized_endpoint.size());
+                /// `metadata_location` is relative to the bucket (the `s3://` prefix is stripped above),
+                /// while `data_location` still has the leading slash left over from the endpoint,
+                /// e.g. "/bucket/table-uuid/". Drop it so that the prefix comparison below works.
+                if (azure_account_with_suffix.empty() && data_location.starts_with('/'))
+                    data_location = data_location.substr(1);
+            }
+        }
 
         if (metadata_location.starts_with(data_location))
         {
