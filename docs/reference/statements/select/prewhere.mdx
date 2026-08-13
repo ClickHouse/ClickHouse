@@ -1,34 +1,34 @@
 ---
-description: 'Documentation for PREWHERE Clause'
+description: 'Documentation for the `PREWHERE` clause in ClickHouse'
 sidebarTitle: 'PREWHERE'
 slug: /sql-reference/statements/select/prewhere
 title: 'PREWHERE Clause'
 doc_type: 'reference'
 ---
 
-`PREWHERE` is an optimization that can reduce the amount of data read by filtering rows before reading all the columns required by a query. ClickHouse can apply it automatically by moving eligible conditions from [`WHERE`](/reference/statements/select/where) to `PREWHERE`. You can specify `PREWHERE` explicitly to control which conditions are applied at this stage.
+`PREWHERE` can reduce the amount of data read by filtering rows before ClickHouse reads all the columns required by a query. ClickHouse can apply this optimization automatically by moving eligible conditions from [`WHERE`](/reference/statements/select/where) to `PREWHERE`. You can also specify `PREWHERE` explicitly to control which conditions are applied at this stage.
 
-With `PREWHERE`, ClickHouse first reads only the columns needed to evaluate the condition. It then reads the other columns required by the query only for blocks that contain at least one matching row. This can reduce the amount of data read when the condition uses fewer columns than the rest of the query and filters out many blocks.
+With `PREWHERE`, ClickHouse first reads only the columns needed to evaluate the condition. It reads the remaining columns only for blocks that contain at least one matching row. This is most effective when the condition uses fewer columns than the rest of the query and filters out many blocks.
 
-## Controlling `PREWHERE` Manually {#controlling-prewhere-manually}
+## Controlling `PREWHERE` manually {#controlling-prewhere-manually}
 
-Use `PREWHERE` when the filtering conditions reference a small number of columns but strongly reduce the number of rows. This reduces the volume of data read for the remaining columns.
+Specify `PREWHERE` manually when a condition references a small number of columns and filters out many rows.
 
-A query may simultaneously specify `PREWHERE` and `WHERE`. In this case, `PREWHERE` precedes `WHERE`.
+A query can contain both `PREWHERE` and `WHERE`; `PREWHERE` is evaluated first.
 
-If the [optimize_move_to_prewhere](/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) setting is set to 0, heuristics to automatically move parts of expressions from `WHERE` to `PREWHERE` are disabled.
+Set [`optimize_move_to_prewhere`](/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) to `0` to prevent ClickHouse from automatically moving conditions from `WHERE` to `PREWHERE`.
 
-If query has [FINAL](/reference/statements/select/from#final-modifier) modifier, the `PREWHERE` optimization is not always correct. It is enabled only if both settings [optimize_move_to_prewhere](/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) and [optimize_move_to_prewhere_if_final](/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere_if_final) are turned on.
+For queries with the [`FINAL`](/reference/statements/select/from#final-modifier) modifier, ClickHouse moves conditions from `WHERE` to `PREWHERE` only when both [`optimize_move_to_prewhere`](/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) and [`optimize_move_to_prewhere_if_final`](/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere_if_final) are enabled.
 
 <Note>
-By default, the `PREWHERE` section is executed before `FINAL`, so the results of `FROM ... FINAL` queries may be skewed when using `PREWHERE` with fields not in the `ORDER BY` section of a table.
+By default, `PREWHERE` is evaluated before `FINAL`. In queries that use `FROM ... FINAL`, applying `PREWHERE` to columns outside the table's `ORDER BY` key can produce different results than applying the same condition after `FINAL`.
 </Note>
 
 ## `PREWHERE` with `JOIN` {#prewhere-with-join}
 
-When `enable_analyzer = 1`, a `PREWHERE` condition can directly reference columns from no more than one table in a [`JOIN`](/reference/statements/select/join). ClickHouse applies the condition to that table's rows before they reach the join.
+When `enable_analyzer = 1`, a `PREWHERE` condition in a [`JOIN`](/reference/statements/select/join) can directly reference columns from at most one table. ClickHouse applies the condition to that table's rows before they reach the join.
 
-In contrast, a `WHERE` condition filters the result of the join. The optimizer may apply it before the join when doing so does not change the result. Moving the same condition between `PREWHERE` and `WHERE` can therefore produce different results, particularly for outer joins.
+By contrast, a `WHERE` condition logically filters the joined result, although the optimizer may apply it before the join when doing so does not change the result. Using the same condition in `PREWHERE` and `WHERE` can therefore produce different results, particularly with outer joins.
 
 The following example uses a `PREWHERE` condition that references `table_2`:
 
@@ -71,9 +71,11 @@ ORDER BY table_1.id;
 
 ## Limitations {#limitations}
 
-Not every table engine supports `PREWHERE`. All engines in the [*MergeTree](/reference/engines/table-engines/mergetree-family/index) family do.
+All table engines in the [*MergeTree](/reference/engines/table-engines/mergetree-family/index) family support `PREWHERE`; support varies for other table engines.
 
-## Example {#example}
+## Reducing data reads with `PREWHERE` {#example}
+
+The following example compares automatically and manually selected `PREWHERE` conditions.
 
 ```sql
 CREATE TABLE mydata
@@ -87,29 +89,49 @@ ORDER BY A AS
 SELECT
     number,
     0,
-    if(number between 1000 and 2000, 'x', toString(number))
+    if(number BETWEEN 1000 AND 2000, 'x', toString(number))
 FROM numbers(10000000);
 
 SELECT count()
 FROM mydata
 WHERE (B = 0) AND (C = 'x');
+```
 
+```text
 1 row in set. Elapsed: 0.074 sec. Processed 10.00 million rows, 168.89 MB (134.98 million rows/s., 2.28 GB/s.)
+```
 
--- let's enable tracing to see which predicate are moved to PREWHERE
-set send_logs_level='debug';
+Enable debug-level logging to see which predicates ClickHouse moves to `PREWHERE`:
 
-MergeTreeWhereOptimizer: condition "B = 0" moved to PREWHERE  
--- Clickhouse moves automatically `B = 0` to PREWHERE, but it has no sense because B is always 0.
+```sql
+SET send_logs_level = 'debug';
+```
 
--- Let's move other predicate `C = 'x'` 
+Run the query again:
 
+```sql
+SELECT count()
+FROM mydata
+WHERE (B = 0) AND (C = 'x');
+```
+
+```text
+MergeTreeWhereOptimizer: condition "B = 0" moved to PREWHERE
+```
+
+ClickHouse automatically moves `B = 0` to `PREWHERE`. This condition does not filter any rows because `B` is always `0`.
+
+Move the more selective `C = 'x'` condition to `PREWHERE` manually:
+
+```sql
 SELECT count()
 FROM mydata
 PREWHERE C = 'x'
 WHERE B = 0;
-
-1 row in set. Elapsed: 0.069 sec. Processed 10.00 million rows, 158.89 MB (144.90 million rows/s., 2.30 GB/s.)
-
--- This query with manual `PREWHERE` processes slightly less data: 158.89 MB VS 168.89 MB
 ```
+
+```text
+1 row in set. Elapsed: 0.069 sec. Processed 10.00 million rows, 158.89 MB (144.90 million rows/s., 2.30 GB/s.)
+```
+
+The manual `PREWHERE` query processes slightly less data: 158.89 MB instead of 168.89 MB.
