@@ -1487,3 +1487,253 @@ def test_similarity_const_nullable_operand(started_cluster):
         settings=AI_SETTINGS,
     )
     assert parse_nullable_float(value_result) == pytest.approx(expected_similarity("cat", "kitten"), abs=1e-4)
+
+
+# ---------------------------------------------------------------------------
+# How many API calls a query shape issues
+#
+# These assert `AIAPICalls`, not output: the count is a property of the planner and the
+# row loop, and it is what an implementation that evaluated AI functions lazily would
+# change. Exact integers, so they hold on any host given the pinned settings.
+# ---------------------------------------------------------------------------
+
+LAZY_ROWS = 64
+LAZY_BLOCK = 16
+LAZY_DISTINCT = 4
+CHAT_CALL = "aiClassify(x, ['positive','negative','neutral'], map('credentials', 'ai_mock'))"
+EMBED_CALL = "aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed'))"
+
+
+@pytest.fixture(scope="module")
+def call_count_tables(started_cluster):
+    """One-part tables for the call-count scenarios, plus a duplicate-heavy one."""
+    instance.query("DROP TABLE IF EXISTS lazy_rows SYNC")
+    instance.query(
+        "CREATE TABLE lazy_rows (id UInt32, x String) ENGINE = MergeTree ORDER BY id"
+    )
+    instance.query(
+        f"INSERT INTO lazy_rows SELECT number, concat('row ', toString(number)) "
+        f"FROM numbers({LAZY_ROWS})"
+    )
+    instance.query("OPTIMIZE TABLE lazy_rows FINAL")
+
+    instance.query("DROP TABLE IF EXISTS lazy_dup SYNC")
+    instance.query(
+        "CREATE TABLE lazy_dup (id UInt32, x String) ENGINE = MergeTree ORDER BY id"
+    )
+    instance.query(
+        f"INSERT INTO lazy_dup SELECT number, concat('dup ', toString(number % "
+        f"{LAZY_DISTINCT})) FROM numbers({LAZY_ROWS})"
+    )
+    instance.query("OPTIMIZE TABLE lazy_dup FINAL")
+    yield
+    instance.query("DROP TABLE IF EXISTS lazy_rows SYNC")
+    instance.query("DROP TABLE IF EXISTS lazy_dup SYNC")
+
+
+def run_and_count_calls(sql, prefix, extra_settings=None):
+    """Run `sql` and return the number of provider requests it issued."""
+    settings = dict(AI_SETTINGS)
+    settings["max_block_size"] = LAZY_BLOCK
+    settings["max_threads"] = 1
+    # `preferred_block_size_bytes` can split a block below `max_block_size` on its own.
+    settings["preferred_block_size_bytes"] = 0
+    if extra_settings:
+        settings.update(extra_settings)
+    qid = unique_query_id(prefix)
+    instance.query(sql, settings=settings, query_id=qid)
+    return int(get_profile_events(qid)["api_calls"])
+
+
+# `expected` is what the implementation does today; `ideal` is what a maximally lazy
+# implementation would do. They differ only for dedup, which does not exist: identical
+# inputs are embedded once per row (`aiEmbed.cpp`, the live-row collection loop).
+@pytest.mark.parametrize(
+    "case, sql, expected, ideal, settings",
+    [
+        (
+            "filter",
+            f"SELECT {CHAT_CALL} FROM lazy_rows WHERE id % 8 = 0 FORMAT Null",
+            LAZY_ROWS // 8,
+            LAZY_ROWS // 8,
+            {},
+        ),
+        (
+            "limit",
+            f"SELECT {CHAT_CALL} FROM lazy_rows LIMIT 5 FORMAT Null",
+            5,
+            5,
+            {},
+        ),
+        (
+            "order_by_limit",
+            f"SELECT {CHAT_CALL} FROM lazy_rows ORDER BY id LIMIT 5 FORMAT Null",
+            5,
+            5,
+            {},
+        ),
+        (
+            "ai_predicate_last",
+            f"SELECT count() FROM lazy_rows WHERE id % 8 = 0 AND {CHAT_CALL} = 'positive' "
+            f"FORMAT Null",
+            LAZY_ROWS // 8,
+            LAZY_ROWS // 8,
+            {},
+        ),
+        (
+            "short_circuit_if",
+            f"SELECT if(id % 8 = 0, {CHAT_CALL}, '') FROM lazy_rows FORMAT Null",
+            LAZY_ROWS // 8,
+            LAZY_ROWS // 8,
+            {"short_circuit_function_evaluation": "force_enable"},
+        ),
+        (
+            "prewhere",
+            f"SELECT {CHAT_CALL} FROM lazy_rows PREWHERE id % 8 = 0 FORMAT Null",
+            LAZY_ROWS // 8,
+            LAZY_ROWS // 8,
+            {},
+        ),
+        (
+            # Batch size 1 makes one request per input, so the count can show dedup.
+            # It does not: every row is embedded even though there are four distinct values.
+            "no_dedup_of_identical_inputs",
+            f"SELECT {EMBED_CALL} FROM lazy_dup FORMAT Null",
+            LAZY_ROWS,
+            LAZY_DISTINCT,
+            {"ai_function_embedding_max_batch_size": 1},
+        ),
+        (
+            # The control for the case above: deduplicating in SQL costs four requests.
+            "distinct_subquery_control",
+            f"SELECT {EMBED_CALL} FROM (SELECT DISTINCT x FROM lazy_dup) FORMAT Null",
+            LAZY_DISTINCT,
+            LAZY_DISTINCT,
+            {"ai_function_embedding_max_batch_size": 1},
+        ),
+        (
+            # Common subexpression elimination: `aiEmbed` is deterministic, so evaluating
+            # it in both the filter and the projection must not double the requests.
+            "cse_filter_and_projection",
+            f"SELECT {EMBED_CALL} FROM lazy_rows WHERE length({EMBED_CALL}) > 0 FORMAT Null",
+            LAZY_ROWS,
+            LAZY_ROWS,
+            {"ai_function_embedding_max_batch_size": 1},
+        ),
+    ],
+)
+def test_api_call_count_per_query_shape(call_count_tables, case, sql, expected, ideal, settings):
+    calls = run_and_count_calls(sql, f"calls_{case}", settings)
+    assert calls == expected, (
+        f"{case}: {calls} API calls, expected {expected} (a maximally lazy implementation "
+        f"would issue {ideal})"
+    )
+
+
+def _create_quota_parts(name, parts=8, rows_per_part=8):
+    """Create a MergeTree table of `parts` unmerged parts (merges stopped) so a scan over it
+    produces several blocks - the shape needed to tell a per-query quota from a per-block one.
+    A single-part table cannot: one block is one allowance. `SYSTEM STOP MERGES` keeps a
+    background merge from collapsing the parts before the scan and masking the difference."""
+    instance.query(f"DROP TABLE IF EXISTS {name} SYNC")
+    instance.query(
+        f"CREATE TABLE {name} (id UInt32, x String) ENGINE = MergeTree ORDER BY id"
+    )
+    instance.query(f"SYSTEM STOP MERGES {name}")
+    for part in range(parts):
+        base = part * rows_per_part
+        instance.query(
+            f"INSERT INTO {name} SELECT number + {base}, "
+            f"concat('row ', toString(number + {base})) FROM numbers({rows_per_part})"
+        )
+
+
+# `max_block_size` = 8 with 8-row parts gives one block per part, so a per-block tracker
+# reaches at most 8 (< the caps below) and never fires, while a per-query tracker accumulates
+# across all 64 rows.
+_QUOTA_SCOPE_SETTINGS = {
+    "max_block_size": 8,
+    "max_threads": 1,
+    "preferred_block_size_bytes": 0,
+}
+
+
+def test_api_call_quota_is_per_query(started_cluster):
+    """`ai_function_max_api_calls_per_query` must bound the query, not each block of it.
+
+    The tracker is shared per query (owned by the query `Context`), so every block and every
+    pipeline stream draws on one allowance. It used to be a stack local in `executeImpl` with
+    no shared state, so each block started with a fresh allowance and the effective ceiling
+    grew with the data.
+    """
+    limit = 10
+    _create_quota_parts("quota_parts")
+    try:
+        qid = unique_query_id("quota_scope")
+        instance.query(
+            f"SELECT {CHAT_CALL} FROM quota_parts FORMAT Null",
+            settings={
+                **AI_SETTINGS,
+                **_QUOTA_SCOPE_SETTINGS,
+                "ai_function_max_api_calls_per_query": limit,
+                "ai_function_throw_on_quota_exceeded": 0,
+            },
+            query_id=qid,
+        )
+        calls = int(get_profile_events(qid)["api_calls"])
+    finally:
+        instance.query("DROP TABLE IF EXISTS quota_parts SYNC")
+
+    assert calls <= limit, (
+        f"{calls} API calls with ai_function_max_api_calls_per_query = {limit}: the quota "
+        "is tracked per executeImpl call, so the query spent a multiple of its own cap"
+    )
+
+
+def test_api_call_quota_throws_per_query(started_cluster):
+    """With `ai_function_throw_on_quota_exceeded = 1` (the default) the query must raise once
+    the per-query call quota is reached. No single 8-row block reaches the cap of 10, so a
+    per-block tracker never throws and the query completes; the per-query tracker throws."""
+    _create_quota_parts("quota_throw")
+    try:
+        error = instance.query_and_get_error(
+            f"SELECT {CHAT_CALL} FROM quota_throw FORMAT Null",
+            settings={
+                **AI_SETTINGS,
+                **_QUOTA_SCOPE_SETTINGS,
+                "ai_function_max_api_calls_per_query": 10,
+                "ai_function_throw_on_quota_exceeded": 1,
+            },
+        )
+    finally:
+        instance.query("DROP TABLE IF EXISTS quota_throw SYNC")
+
+    assert "AI API call limit reached" in error, error
+
+
+def test_input_token_quota_is_per_query(started_cluster):
+    """`ai_function_max_input_tokens_per_query` must bound the query too. The mock reports
+    `prompt_tokens = 10` per chat call, so a per-block tracker tops out at 80 tokens per 8-row
+    block (< the 100-token cap) and never fires, while the per-query tracker stops the scan."""
+    limit = 100
+    _create_quota_parts("quota_tokens")
+    try:
+        qid = unique_query_id("quota_tokens")
+        instance.query(
+            f"SELECT {CHAT_CALL} FROM quota_tokens FORMAT Null",
+            settings={
+                **AI_SETTINGS,
+                **_QUOTA_SCOPE_SETTINGS,
+                "ai_function_max_input_tokens_per_query": limit,
+                "ai_function_throw_on_quota_exceeded": 0,
+            },
+            query_id=qid,
+        )
+        input_tokens = int(get_profile_events(qid)["input_tokens"])
+    finally:
+        instance.query("DROP TABLE IF EXISTS quota_tokens SYNC")
+
+    assert input_tokens <= limit, (
+        f"{input_tokens} input tokens with ai_function_max_input_tokens_per_query = {limit}: "
+        "the quota is tracked per executeImpl call, so the query spent a multiple of its cap"
+    )
