@@ -569,10 +569,6 @@ struct ChangelogReadResult
     /// Whether the changelog file was written using compression
     bool compressed_log;
     bool error;
-
-    /// True if this file contained a duplicated log index (cleaned via cleanAfter).
-    /// That is the on-disk signature of a cross-segment writeAt rewrite (#112101).
-    bool had_duplicate_index{false};
 };
 
 ChangelogRecord readChangelogRecord(ReadBuffer & read_buf, const std::string & filepath)
@@ -668,10 +664,7 @@ public:
 
                 /// Check for duplicated changelog ids
                 if (entry_storage.contains(record.header.index))
-                {
                     entry_storage.cleanAfter(record.header.index - 1);
-                    result.had_duplicate_index = true;
-                }
 
                 result.total_entries_read_from_log += 1;
 
@@ -1914,8 +1907,6 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     uint64_t last_read_index = 0;
 
     uint64_t remove_logs_before_index = 0;
-    /// Set when a gap after a duplicated index indicates leftover segments from an incomplete writeAt (#112101).
-    uint64_t remove_logs_after_write_at_residue = 0;
     /// Got through changelog files in order of start_index
     for (const auto & [changelog_start_index, changelog_description_ptr] : existing_changelogs)
     {
@@ -1972,23 +1963,6 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
                 {
                     if (!last_log_read_result->error)
                     {
-                        /// Cross-segment writeAt queues async removal of later segments, then
-                        /// acknowledges the rewritten entry. A crash in between leaves a clean
-                        /// rewrite (duplicate index in the earlier file) plus stale later files.
-                        /// That is recoverable — the same residue removeAllLogsAfter already
-                        /// cleans when the last file is broken/incomplete (#112101).
-                        if (last_log_read_result->had_duplicate_index)
-                        {
-                            LOG_WARNING(
-                                log,
-                                "Found gap in changelogs from {} to {} after a duplicated log index in the preceding file. "
-                                "Treating later changelogs as leftovers from an incomplete writeAt and removing them.",
-                                last_read_index,
-                                changelog_description.from_log_index);
-                            remove_logs_after_write_at_residue = last_log_read_result->log_start_index;
-                            break;
-                        }
-
                         throw Exception(
                             ErrorCodes::CORRUPTED_DATA,
                             "Some records were lost, last found log index {}, while the next log index on disk is {}. Manual intervention "
@@ -2031,9 +2005,6 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
 
     if (remove_logs_before_index)
         removeAllLogFilesBefore(remove_logs_before_index);
-
-    if (remove_logs_after_write_at_residue)
-        removeAllLogsAfter(remove_logs_after_write_at_residue);
 
     const auto move_from_latest_logs_disks = [&](auto & description)
     {
@@ -2443,8 +2414,7 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
         last_durable_idx = std::min(last_durable_idx, index - 1);
     }
 
-    /// Removals queued for superseded segments when writeAt jumps to an earlier file.
-    /// Wait for them outside writer_mutex so writeThread is not pinned behind unlinks (#112101).
+    /// Superseded-segment removals; wait outside writer_mutex so writeThread is not pinned on unlinks.
     std::vector<ChangelogFileOperationPtr> pending_superseded_removes;
 
     {
@@ -2492,9 +2462,7 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
         }
     }
 
-    /// Do not append/ack the rewrite until superseded changelog files are gone.
-    /// Otherwise a crash leaves a durable rewritten entry plus stale higher-index
-    /// segments, and startup treats the gap as CORRUPTED_DATA (#112101).
+    /// Append the rewrite only after superseded changelog files are gone.
     for (const auto & op : pending_superseded_removes)
         op->done.wait(false);
 
