@@ -201,6 +201,9 @@ public:
     RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
     bool canRemoveColumnsFromOutput() const override;
 
+    bool canGetRequiredColumns() const override { return true; }
+    RemoveUnusedColumnsResult getRequiredColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) const override;
+
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
@@ -218,6 +221,27 @@ protected:
     void updateOutputHeader() override;
 
     bool isDummyColumnOfThisStep(const ActionsDAG::Node * node) const;
+
+    /// Everything removeUnusedColumns needs to know, computed without touching the step. Shared by
+    /// removeUnusedColumns and getRequiredColumns so their answers cannot differ.
+    struct RequiredColumnsPlan
+    {
+        RemoveUnusedColumnsResult result;
+
+        bool remove_inputs = false;
+        /// DAG output positions to keep, and to drop. A dropped output also leaves actions_after_join.
+        std::vector<size_t> kept_dag_output_positions;
+        std::vector<size_t> dropped_dag_output_positions;
+        /// Set when no output is left and the step has to put its dummy column back.
+        bool adds_dummy_output = false;
+        /// Nodes that have to survive pruning besides the kept outputs: the join conditions, and one
+        /// input per side that would otherwise lose every column.
+        ActionsDAG::NodeRawConstPtrs extra_pruning_roots;
+        /// Whether removeUnusedActions would erase any node.
+        bool removes_any_action = false;
+    };
+
+    RequiredColumnsPlan analyzeRequiredColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) const;
 
     std::vector<std::pair<String, String>> describeJoinProperties() const;
     JoinEstimation getEstimation() const;
