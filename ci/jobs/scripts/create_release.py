@@ -401,16 +401,23 @@ class ReleaseInfo:
                         f"so the only commit since the previous release is the "
                         f"automated version bump — there is nothing to release."
                     )
-                # This X.Y.P line already has a release tag; a fresh release here would duplicate it.
-                line_tags = Shell.get_output(
-                    f"git tag --list 'v{version.major}.{version.minor}.{version.patch}.*'"
+                # A fresh patch release must sit on a higher X.Y.P line than the last
+                # published release (the post-release bump advances the patch). Compare
+                # the file's line to the last -stable/-lts tag, ignoring the vX.Y.1.1-new marker.
+                last_tag = Shell.get_output(
+                    "git describe --tags --abbrev=0 "
+                    f"--match 'v*-stable' --match 'v*-lts' {shlex.quote(commit_ref)}"
                 )
-                assert not line_tags, (
-                    f"a release tag for {version.major}.{version.minor}.{version.patch} "
-                    f"already exists ([{line_tags.split()[0]}]); either the workflow was "
-                    f"triggered for a commit with a superseded release, or there is a bug "
-                    f"in the release/versioning logic"
-                )
+                m = re.match(r"v(\d+)\.(\d+)\.(\d+)\.", last_tag)
+                if m:
+                    assert (version.major, version.minor, version.patch) > tuple(
+                        int(x) for x in m.groups()
+                    ), (
+                        f"version {version.major}.{version.minor}.{version.patch} is not "
+                        f"ahead of the last release {last_tag}: the post-release bump is "
+                        f"missing, or the run targets a superseded/duplicate commit, or "
+                        f"there is a bug in the release/versioning logic"
+                    )
             self.is_recovery = False
         self.release_type = release_type
         return self
