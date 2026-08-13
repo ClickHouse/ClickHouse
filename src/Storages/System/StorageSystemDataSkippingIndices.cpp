@@ -117,7 +117,9 @@ protected:
                     continue;
                 const auto indices = metadata_snapshot->getSecondaryIndices();
 
-                auto secondary_index_sizes = table->getSecondaryIndexSizes();
+                IStorage::IndexSizeByName secondary_index_sizes;
+                if (table->isGrantedToExposeMetadata(context, AccessType::SHOW_TABLES))
+                    secondary_index_sizes = table->getSecondaryIndexSizes();
                 for (const auto & index : indices)
                 {
                     ++rows_count;
@@ -164,19 +166,34 @@ protected:
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(index.granularity);
 
-                    auto & secondary_index_size = secondary_index_sizes[index.name];
+                    auto secondary_index_size = secondary_index_sizes.find(index.name);
 
                     // 'compressed bytes' column
                     if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(secondary_index_size.data_compressed);
+                    {
+                        if (secondary_index_size != secondary_index_sizes.end())
+                            res_columns[res_index++]->insert(secondary_index_size->second.data_compressed);
+                        else
+                            res_columns[res_index++]->insertDefault();
+                    }
 
                     // 'uncompressed bytes' column
                     if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(secondary_index_size.data_uncompressed);
+                    {
+                        if (secondary_index_size != secondary_index_sizes.end())
+                            res_columns[res_index++]->insert(secondary_index_size->second.data_uncompressed);
+                        else
+                            res_columns[res_index++]->insertDefault();
+                    }
 
                     /// 'marks_bytes' column
                     if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(secondary_index_size.marks);
+                    {
+                        if (secondary_index_size != secondary_index_sizes.end())
+                            res_columns[res_index++]->insert(secondary_index_size->second.marks);
+                        else
+                            res_columns[res_index++]->insertDefault();
+                    }
                 }
             }
         }

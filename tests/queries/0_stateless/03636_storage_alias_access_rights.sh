@@ -12,6 +12,9 @@ ${CLICKHOUSE_CLIENT} -m --query "
     DROP TABLE IF EXISTS test_table;
     DROP TABLE IF EXISTS test_alias;
     DROP TABLE IF EXISTS test_alias_access;
+    DROP TABLE IF EXISTS test_alias_buffer_access;
+    DROP TABLE IF EXISTS test_buffer_access;
+    DROP TABLE IF EXISTS test_table_access;
 
     SET allow_experimental_alias_table_engine = 1;
 
@@ -112,44 +115,141 @@ ${CLICKHOUSE_CLIENT} --user="${username}" --query "DROP TABLE test_alias;"
 echo "Test target table still exists"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM test_table;"
 
-# Test: CREATE
+# Test target access checks for a newly created `Alias`
 ${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE test_table_access
+    (
+        id UInt64,
+        value String,
+        INDEX value_idx value TYPE minmax GRANULARITY 1
+    )
+    ENGINE = MergeTree
+    ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+    INSERT INTO test_table_access SELECT number + 1, randomString(4096) FROM numbers(2);
+
+    CREATE TABLE test_buffer_access (id UInt64, value String)
+    ENGINE = Buffer(currentDatabase(), test_table_access, 1, 1000, 1000, 1000, 1000, 1000000, 1000000);
+    INSERT INTO test_buffer_access VALUES (3, 'three');
+
     CREATE USER ${access_username} NOT IDENTIFIED;
     GRANT CREATE TABLE ON test_alias_access TO ${access_username};
+    GRANT CREATE TABLE ON test_alias_buffer_access TO ${access_username};
     GRANT TABLE ENGINE ON Alias TO ${access_username};
+    GRANT SELECT ON system.data_skipping_indices TO ${access_username};
 "
+
 echo "Test CREATE without target permission"
-${CLICKHOUSE_CLIENT} --user="${access_username}" --query "CREATE TABLE test_alias_access ENGINE = Alias('test_table');" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "CREATE TABLE test_alias_access ENGINE = Alias('test_table_access');" 2>&1 | grep -o "ACCESS_DENIED" | uniq
 
-${CLICKHOUSE_CLIENT} --query "GRANT SHOW COLUMNS ON test_table TO ${access_username};"
+${CLICKHOUSE_CLIENT} --query "GRANT SHOW COLUMNS ON test_table_access TO ${access_username};"
 echo "Test CREATE with target permission"
-${CLICKHOUSE_CLIENT} --user="${access_username}" --query "CREATE TABLE test_alias_access ENGINE = Alias('test_table');"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "CREATE TABLE test_alias_access ENGINE = Alias('test_table_access');"
 
-# Test: trivial `count`
-${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON test_alias_access TO ${access_username};"
+${CLICKHOUSE_CLIENT} --query "GRANT SHOW COLUMNS ON test_buffer_access TO ${access_username};"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "CREATE TABLE test_alias_buffer_access ENGINE = Alias('test_buffer_access');"
+
+${CLICKHOUSE_CLIENT} --query "
+    GRANT SELECT ON test_alias_access TO ${access_username};
+    GRANT SELECT ON test_alias_buffer_access TO ${access_username};
+    REVOKE SHOW COLUMNS ON test_table_access FROM ${access_username};
+    REVOKE SHOW COLUMNS ON test_buffer_access FROM ${access_username};
+"
+
 echo "Test count without target SELECT permission"
-${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SELECT count() FROM test_alias_access;" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SELECT count() FROM test_alias_access SETTINGS optimize_trivial_count_query = 1;" 2>&1 | grep -o "ACCESS_DENIED" | uniq
 
-# Test: statistics forwarded from the target table
-${CLICKHOUSE_CLIENT} --query "REVOKE SHOW COLUMNS ON test_table FROM ${access_username};"
-echo "Test statistics without target permission"
+echo "Test table statistics without target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
-    SELECT isNull(total_rows), isNull(total_bytes)
+    SELECT
+        isNull(total_rows),
+        isNull(total_bytes),
+        isNull(total_bytes_uncompressed),
+        empty(data_paths),
+        empty(storage_policy)
     FROM system.tables
     WHERE database = currentDatabase() AND name = 'test_alias_access';
 "
 
-${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON test_table TO ${access_username};"
-echo "Test count with target SELECT permission"
-${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SELECT count() FROM test_alias_access;"
-echo "Test statistics with target permission"
+echo "Test column statistics without target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
-    SELECT total_rows, total_bytes > 0
+    SELECT name, data_compressed_bytes > 0
+    FROM system.columns
+    WHERE database = currentDatabase() AND table = 'test_alias_access'
+    ORDER BY name;
+"
+
+echo "Test index statistics without target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
+    SELECT sum(data_compressed_bytes + data_uncompressed_bytes + marks_bytes) > 0
+    FROM system.data_skipping_indices
+    WHERE database = currentDatabase() AND table = 'test_alias_access';
+"
+
+echo "Test lifetime statistics without target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
+    SELECT isNull(lifetime_rows), isNull(lifetime_bytes)
+    FROM system.tables
+    WHERE database = currentDatabase() AND name = 'test_alias_buffer_access';
+"
+
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT(value) ON test_table_access TO ${access_username};"
+
+echo "Test direct and Alias count with column-scoped target SELECT permission using the old analyzer"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
+    SELECT
+        (SELECT count() FROM test_table_access),
+        (SELECT count() FROM test_alias_access)
+    SETTINGS optimize_trivial_count_query = 1, enable_analyzer = 0;
+"
+
+echo "Test direct and Alias count with column-scoped target SELECT permission using the new analyzer"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
+    SELECT
+        (SELECT count() FROM test_table_access),
+        (SELECT count() FROM test_alias_access)
+    SETTINGS optimize_trivial_count_query = 1, enable_analyzer = 1;
+"
+
+echo "Test table statistics with target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
+    SELECT
+        total_rows,
+        total_bytes > 0,
+        total_bytes_uncompressed > 0,
+        notEmpty(data_paths),
+        notEmpty(storage_policy)
     FROM system.tables
     WHERE database = currentDatabase() AND name = 'test_alias_access';
+"
+
+echo "Test column statistics with column-scoped target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
+    SELECT name, data_compressed_bytes > 0
+    FROM system.columns
+    WHERE database = currentDatabase() AND table = 'test_alias_access'
+    ORDER BY name;
+"
+
+echo "Test index statistics with target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
+    SELECT sum(data_compressed_bytes + data_uncompressed_bytes + marks_bytes) > 0
+    FROM system.data_skipping_indices
+    WHERE database = currentDatabase() AND table = 'test_alias_access';
+"
+
+${CLICKHOUSE_CLIENT} --query "GRANT SHOW TABLES ON test_buffer_access TO ${access_username};"
+echo "Test lifetime statistics with target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
+    SELECT lifetime_rows, lifetime_bytes > 0
+    FROM system.tables
+    WHERE database = currentDatabase() AND name = 'test_alias_buffer_access';
 "
 
 ${CLICKHOUSE_CLIENT} --query "
+    DROP TABLE test_alias_buffer_access;
     DROP TABLE test_alias_access;
+    DROP TABLE test_buffer_access;
+    DROP TABLE test_table_access;
     DROP USER ${access_username};
 "

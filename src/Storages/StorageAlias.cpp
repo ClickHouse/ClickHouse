@@ -80,6 +80,15 @@ bool StorageAlias::isTargetAccessGranted(const TargetAccess & access_check) cons
     return access->isGranted(access_check.access_type, target_database, target_table, access_check.column_names);
 }
 
+bool StorageAlias::isGrantedToExposeMetadata(ContextPtr query_context, AccessType access_type, const String & column_name) const
+{
+    Names column_names;
+    if (!column_name.empty())
+        column_names.push_back(column_name);
+
+    return isTargetAccessGranted(TargetAccess{query_context, access_type, std::move(column_names)});
+}
+
 /// AliasSink: Writes data to the target table using full INSERT pipeline
 /// which triggers materialized views on the target table.
 class AliasSink final : public SinkToStorage, WithContext
@@ -417,11 +426,22 @@ StorageSnapshotPtr StorageAlias::getStorageSnapshotWithoutData(const StorageMeta
     return getTargetTable()->getStorageSnapshotWithoutData(metadata_snapshot, query_context);
 }
 
-bool StorageAlias::supportsTrivialCountOptimization(
-    const StorageSnapshotPtr & storage_snapshot,
-    ContextPtr query_context) const
+bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
-    if (!isTargetAccessGranted(TargetAccess{query_context, AccessType::SELECT}))
+    if (!storage_snapshot)
+        return false;
+
+    bool has_select_access = false;
+    for (const auto & column : storage_snapshot->metadata->getColumns())
+    {
+        if (isGrantedToExposeMetadata(query_context, AccessType::SELECT, column.name))
+        {
+            has_select_access = true;
+            break;
+        }
+    }
+
+    if (!has_select_access)
         return false;
 
     auto target = tryGetTargetTable();
@@ -430,7 +450,7 @@ bool StorageAlias::supportsTrivialCountOptimization(
 
 std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const
 {
-    if (!isTargetAccessGranted(TargetAccess{query_context, AccessType::SHOW_TABLES}))
+    if (!isGrantedToExposeMetadata(query_context, AccessType::SHOW_TABLES))
         return {};
 
     auto target = tryGetTargetTable();
@@ -439,7 +459,7 @@ std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const
 
 std::optional<UInt64> StorageAlias::totalBytes(ContextPtr query_context) const
 {
-    if (!isTargetAccessGranted(TargetAccess{query_context, AccessType::SHOW_TABLES}))
+    if (!isGrantedToExposeMetadata(query_context, AccessType::SHOW_TABLES))
         return {};
 
     auto target = tryGetTargetTable();

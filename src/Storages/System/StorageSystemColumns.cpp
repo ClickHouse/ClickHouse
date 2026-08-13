@@ -146,9 +146,10 @@ protected:
             Names cols_required_for_sampling;
             IStorage::ColumnSizeByName column_sizes;
             SerializationInfoByName serialization_hints{{}};
+            StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
+            bool needs_column_metadata = false;
 
             {
-                StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
                 TableLockHolder table_lock = storage->tryLockForShare(query_id, Poco::Timespan(lock_acquire_timeout.count() * 1000));
 
                 if (table_lock == nullptr)
@@ -160,8 +161,22 @@ protected:
                 const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
                 columns = metadata_snapshot->getColumns();
 
+                needs_column_metadata = columns_mask[7] || columns_mask[8] || columns_mask[9] || columns_mask[21];
+                bool can_expose_any_column_metadata = !needs_column_metadata;
+                if (needs_column_metadata)
+                {
+                    for (const auto & column : columns)
+                    {
+                        if (storage->isGrantedToExposeMetadata(context, AccessType::SHOW_COLUMNS, column.name))
+                        {
+                            can_expose_any_column_metadata = true;
+                            break;
+                        }
+                    }
+                }
+
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
-                if (columns_mask[7] || columns_mask[8] || columns_mask[9])
+                if (can_expose_any_column_metadata && (columns_mask[7] || columns_mask[8] || columns_mask[9]))
                 {
                     if (auto sizes = storage->tryGetColumnSizes())
                         column_sizes = std::move(*sizes);
@@ -176,7 +191,7 @@ protected:
                 if (columns_mask[14])
                     cols_required_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();
 
-                if (columns_mask[21])
+                if (can_expose_any_column_metadata && columns_mask[21])
                 {
                     if (auto hints = storage->tryGetSerializationHints())
                         serialization_hints = std::move(*hints);
@@ -195,6 +210,9 @@ protected:
                 ++position;
                 if (need_to_check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
                     continue;
+
+                const bool can_expose_column_metadata
+                    = !needs_column_metadata || storage->isGrantedToExposeMetadata(context, AccessType::SHOW_COLUMNS, column.name);
 
                 size_t src_index = 0;
                 size_t res_index = 0;
@@ -227,7 +245,7 @@ protected:
 
                 {
                     const auto it = column_sizes.find(column.name);
-                    if (it == std::end(column_sizes))
+                    if (!can_expose_column_metadata || it == std::end(column_sizes))
                     {
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
@@ -331,7 +349,7 @@ protected:
                 /// serialization_hint
                 if (columns_mask[src_index++])
                 {
-                    if (auto it = serialization_hints.find(column.name); it != serialization_hints.end())
+                    if (auto it = serialization_hints.find(column.name); can_expose_column_metadata && it != serialization_hints.end())
                         res_columns[res_index++]->insert(ISerialization::kindStackToString(it->second->getKindStack()));
                     else
                         res_columns[res_index++]->insertDefault();

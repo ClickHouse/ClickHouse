@@ -35,9 +35,25 @@ ACCESS_DENIED
 Test CREATE with target permission
 Test count without target SELECT permission
 ACCESS_DENIED
-Test statistics without target permission
+Test table statistics without target permission
+1	1	1	1	1
+Test column statistics without target permission
+id	0
+value	0
+Test index statistics without target permission
+0
+Test lifetime statistics without target permission
 1	1
-Test count with target SELECT permission
+Test direct and Alias count with column-scoped target SELECT permission using the old analyzer
+2	2
+Test direct and Alias count with column-scoped target SELECT permission using the new analyzer
+2	2
+Test table statistics with target permission
+2	1	1	1	1
+Test column statistics with column-scoped target permission
+id	0
+value	1
+Test index statistics with target permission
 1
-Test statistics with target permission
+Test lifetime statistics with target permission
 1	1
