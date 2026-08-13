@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, need-query-parameters
 -- no-fasttest: the PostgreSQL integration is not available in the fast test build.
 
 -- A TLS parameter of a PostgreSQL source given twice in the trailing key-value arguments must be
