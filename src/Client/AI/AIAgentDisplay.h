@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Client/AI/MarkdownFormatter.h>
+#include <Client/TerminalMarkdownRenderer.h>
+#include <Common/TerminalSize.h>
 
 #include <algorithm>
 #include <atomic>
@@ -84,7 +85,27 @@ public:
         if (!use_colors)
             output_stream << safe;
         else if (final)
-            output_stream << renderMarkdownToANSI(safe);
+        {
+            /// The final answer is a Markdown document: it is rendered with the same renderer
+            /// the `help` command uses for the embedded documentation, word-wrapped to the
+            /// terminal width.
+            TerminalMarkdownRenderer renderer;
+            try
+            {
+                const uint16_t detected_width = getTerminalWidth();
+                if (detected_width >= 20)
+                    renderer.width = detected_width;
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+                /// Ok: if the terminal width cannot be determined, the default is used.
+            }
+            String rendered = renderer.render(safe);
+            /// `render` ends with a newline of its own; the common one is appended below.
+            if (rendered.ends_with('\n'))
+                rendered.pop_back();
+            output_stream << rendered;
+        }
         else
             output_stream << "\033[2m" << safe << "\033[0m";
         output_stream << "\n" << std::flush;
@@ -126,16 +147,47 @@ public:
     /// quoting it) is untrusted: a prompt-injected response could carry raw ANSI/OSC escape
     /// sequences taking control of the user's terminal (clipboard writes, cursor movement,
     /// prompt spoofing). Drop all control characters except newlines and tabs; the display
-    /// adds its own formatting escapes on top of the sanitized text.
+    /// adds its own formatting escapes on top of the sanitized text. Besides the C0 controls
+    /// and DEL, the C1 controls U+0080..U+009F (UTF-8 `C2 80`..`C2 9F`) are dropped as well:
+    /// on terminals that honor them, `U+009B`/`U+009D` open CSI/OSC sequences without any ESC
+    /// byte. Stray non-UTF-8 bytes in that range are dropped too (an 8-bit terminal could
+    /// interpret them as C1), while continuation bytes of valid multi-byte sequences are kept.
     static std::string sanitizeForTerminal(const std::string & text)
     {
         std::string result;
         result.reserve(text.size());
-        for (char c : text)
+        const size_t size = text.size();
+        size_t i = 0;
+        while (i < size)
         {
-            const auto byte = static_cast<unsigned char>(c);
-            if (c == '\n' || c == '\t' || (byte >= 0x20 && byte != 0x7F))
-                result += c;
+            const auto byte = static_cast<unsigned char>(text[i]);
+            if (byte < 0x80)
+            {
+                if (text[i] == '\n' || text[i] == '\t' || (byte >= 0x20 && byte != 0x7F))
+                    result += text[i];
+                ++i;
+            }
+            else if (byte >= 0xC0)
+            {
+                /// A multi-byte sequence: copied whole, so its continuation bytes (which fall
+                /// into 0x80..0xBF by construction) are never confused with standalone C1 bytes.
+                size_t length = byte >= 0xF0 ? 4 : (byte >= 0xE0 ? 3 : 2);
+                size_t actual = 1;
+                while (actual < length && i + actual < size
+                       && (static_cast<unsigned char>(text[i + actual]) & 0xC0) == 0x80)
+                    ++actual;
+                const bool is_c1_control = byte == 0xC2 && actual == 2
+                    && static_cast<unsigned char>(text[i + 1]) <= 0x9F;
+                if (!is_c1_control)
+                    result.append(text, i, actual);
+                i += actual;
+            }
+            else
+            {
+                /// A stray continuation byte outside of a multi-byte sequence: invalid UTF-8,
+                /// and 0x80..0x9F could still be honored as a C1 control - drop it.
+                ++i;
+            }
         }
         return result;
     }

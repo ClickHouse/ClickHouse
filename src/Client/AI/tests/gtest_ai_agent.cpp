@@ -179,4 +179,23 @@ TEST(AIAgent, DisplaySanitizesControlCharacters)
         "safe\ntext\twith[31mansi]52;c;evil and  control  bytes");
 }
 
+TEST(AIAgent, DisplaySanitizesC1ControlCharacters)
+{
+    /// The C1 controls U+009B (CSI) and U+009D (OSC) open escape sequences without any ESC
+    /// byte on terminals that honor them, so they must be dropped in their UTF-8 form too.
+    EXPECT_EQ(AIAgentDisplay::sanitizeForTerminal("a\xC2\x9B""31mb\xC2\x9D""52;c;evil\xC2\x87""c"), "a31mb52;c;evilc");
+
+    /// Stray non-UTF-8 bytes in the C1 range could be honored by an 8-bit terminal.
+    EXPECT_EQ(AIAgentDisplay::sanitizeForTerminal("a\x9B""31mb"), "a31mb");
+
+    /// Legitimate multi-byte text is preserved, including characters whose continuation
+    /// bytes fall into the 0x80..0x9F range (`€` is `E2 82 AC`), U+00A0..U+00BF after the
+    /// `C2` lead byte (`§` is `C2 A7`), and 4-byte sequences.
+    EXPECT_EQ(AIAgentDisplay::sanitizeForTerminal("é € § 語 🙂"), "é € § 語 🙂");
+
+    /// A truncated sequence at the end of the text does not read out of bounds.
+    EXPECT_EQ(AIAgentDisplay::sanitizeForTerminal("a\xC2"), "a\xC2");
+    EXPECT_EQ(AIAgentDisplay::sanitizeForTerminal("a\xE2\x82"), "a\xE2\x82");
+}
+
 #endif
