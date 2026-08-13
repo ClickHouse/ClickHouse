@@ -48,6 +48,8 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/FailPoint.h>
 #include <Common/Jemalloc.h>
+#include <Common/thread_local_rng.h>
+#include <base/sleep.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
@@ -106,6 +108,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char mt_mutate_task_pause_in_prepare[];
+    extern const char mutate_task_random_sleep_in_prepare[];
     extern const char merge_task_projection_stage_pause[];
     extern const char mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc[];
 }
@@ -1576,6 +1579,44 @@ static void finalizeMutatedPart(
         }
     }
 
+    /// A mutation that does not rewrite the whole part only hardlinks the source part's files, so a
+    /// minmax index the source part never materialized on disk would be silently lost. That is the case
+    /// for the `_block_number` / `_block_offset` ranges of a level-0 part: `MinMaxIndex::load` synthesizes
+    /// them from the part name and the row count instead of reading a file. The mutated part is no longer
+    /// eligible for that synthesis (its `mutation` is not zero, and a mutation may drop rows, so the
+    /// offset range is no longer `[0, rows_count - 1]`), and it would read back the whole universe.
+    /// Materialize the index the new part inherits, for the files that were not carried over, repairing the
+    /// ranges a part mutated before this became the behaviour has already lost.
+    /// The index the new part will carry in memory: the repaired one when it was repaired, so that the
+    /// part prunes correctly right away and not only after the next reload of the table.
+    IMergeTreeDataPart::MinMaxIndexPtr new_minmax_index = source_part->getMinMaxIndex();
+
+    if (source_part->storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING && source_part->rows_count)
+    {
+        auto minmax_index = std::make_shared<IMergeTreeDataPart::MinMaxIndex>(*new_minmax_index);
+        if (minmax_index->initialized)
+        {
+            /// The mutated part keeps the block range of the source part's name, so repairing against the
+            /// source part re-derives exactly the ranges the new part's own name would give.
+            minmax_index->repairInheritedBlockColumns(*source_part, metadata_snapshot);
+
+            auto files = minmax_index->store(
+                metadata_snapshot,
+                new_data_part->getDataPartStorage(),
+                new_data_part->checksums,
+                new_data_part->storage.getSettings());
+
+            for (auto & file : files)
+            {
+                file->finalize();
+                if (sync)
+                    file->sync();
+            }
+
+            new_minmax_index = std::move(minmax_index);
+        }
+    }
+
     {
         /// Write file with checksums.
         auto out_checksums = new_data_part->getDataPartStorage().writeFile("checksums.txt", 4096, context->getWriteSettings());
@@ -1622,7 +1663,7 @@ static void finalizeMutatedPart(
 
     new_data_part->rows_count = source_part->rows_count;
     new_data_part->index_granularity = source_part->index_granularity;
-    new_data_part->setMinMaxIndex(source_part->getMinMaxIndex());
+    new_data_part->setMinMaxIndex(std::move(new_minmax_index));
     new_data_part->modification_time = time(nullptr);
 
     if ((*new_data_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])
@@ -1761,8 +1802,6 @@ struct MutationContext
     MergeTreeTransactionPtr txn;
 
     HardlinkedFiles hardlinked_files;
-
-    bool need_prefix = true;
 
     scope_guard temporary_directory_lock;
 
@@ -2111,7 +2150,6 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
 
     auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
         *ctx->data,
-        ctx->log,
         result,
         projection,
         ctx->new_data_part.get(),
@@ -3279,8 +3317,7 @@ MutateTask::MutateTask(
     const MergeTreeTransactionPtr & txn,
     MergeTreeData & data_,
     MergeTreeDataMergerMutator & mutator_,
-    PartitionActionBlocker & merges_blocker_,
-    bool need_prefix_)
+    PartitionActionBlocker & merges_blocker_)
     : ctx(std::make_shared<MutationContext>())
 {
     ctx->data = &data_;
@@ -3298,7 +3335,6 @@ MutateTask::MutateTask(
     ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
-    ctx->need_prefix = need_prefix_;
 }
 
 
@@ -3690,6 +3726,13 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 bool MutateTask::prepare()
 {
     FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_task_pause_in_prepare);
+    fiu_do_on(FailPoints::mutate_task_random_sleep_in_prepare,
+    {
+        /// Deliberate fault injection for stress tests: widen the window between an ALTER and the
+        /// part rewrite, so concurrent queries routinely read parts the mutation has not rewritten
+        /// yet. The delay is bounded, so tests that wait for mutations finish only a little later.
+        sleepForMilliseconds(thread_local_rng() % 3000);
+    });
 
     ProfileEvents::increment(ProfileEvents::MutationTotalParts);
     ctx->checkOperationIsNotCanceled();
@@ -3786,9 +3829,6 @@ bool MutateTask::prepare()
             files_to_copy_instead_of_hardlinks.insert(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
 
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
-        std::string prefix;
-        if (ctx->need_prefix)
-            prefix = "tmp_clone_";
 
         IDataPartStorage::ClonePartParams clone_params
         {
@@ -3803,7 +3843,7 @@ bool MutateTask::prepare()
 
         {
             std::tie(part, lock) = ctx->data->cloneAndLoadDataPart(
-                ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings(), true/*must_on_same_disk*/);
+                ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings(), true/*must_on_same_disk*/);
             part->getDataPartStorage().beginTransaction();
             ctx->temporary_directory_lock = std::move(lock);
         }
@@ -3924,28 +3964,12 @@ bool MutateTask::prepare()
     }
     ctx->disk = single_disk_volume->getDisk();
 
-    std::string prefix;
-    if (ctx->need_prefix)
-        prefix = TEMP_DIRECTORY_PREFIX;
+    String tmp_part_dir_name = TEMP_DIRECTORY_PREFIX + ctx->future_part->name;
 
-    String tmp_part_dir_name = prefix + ctx->future_part->name;
-    ctx->temporary_directory_lock = ctx->data->getTemporaryPartDirectoryHolder(tmp_part_dir_name);
+    /// The name is deterministic, so claim it and reclaim a leftover of an interrupted mutation.
+    ctx->temporary_directory_lock = ctx->data->claimTemporaryPartDirectory(ctx->disk, tmp_part_dir_name);
 
-    /// Reclaim a stale leftover temporary directory (a mutation interrupted or rolled back and retried
-    /// with the same deterministic name) BEFORE constructing the part storage. Otherwise packed storage
-    /// seeds its archive reader and snapshots the mark layout from the leftover data.packed, and
-    /// finalizeWriter later carries every logical file the new mutation did not rewrite into the new
-    /// part. The temporary-directory lock above guarantees no concurrent operation owns this name.
-    {
-        auto relative_tmp_dir = fs::path(ctx->data->getRelativeDataPath()) / tmp_part_dir_name;
-        if (ctx->disk->existsDirectory(relative_tmp_dir))
-        {
-            LOG_WARNING(ctx->log, "Removing old temporary directory {}", (fs::path(ctx->disk->getPath()) / relative_tmp_dir).string());
-            ctx->disk->removeRecursive(relative_tmp_dir);
-        }
-    }
-
-    auto builder = ctx->data->getDataPartBuilder(ctx->future_part->name, single_disk_volume, tmp_part_dir_name, getReadSettings());
+    auto builder = ctx->data->getDataPartBuilder(ctx->future_part->name, single_disk_volume, tmp_part_dir_name, getReadSettings(), PartDirIntent::CreateFresh);
     builder.withPartFormat(ctx->future_part->part_format);
     builder.withPartInfo(ctx->future_part->part_info);
 
