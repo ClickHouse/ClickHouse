@@ -176,26 +176,19 @@ class CacheRunnerHooks:
         # Step 2: Apply the fetched records sequentially
         for job_name, record in fetched_records:
             assert Utils.normalize_string(job_name) not in workflow_config.cache_success
-            if workflow.is_event_push() and record.branch != env.BRANCH:
-                # TODO: make this behaviour configurable?
+            # Only pull_request workflows may reuse a record produced on any
+            # branch. Every other event (push, schedule, dispatch, merge_queue)
+            # may reuse only a record produced on the same branch, so e.g. a
+            # merge_queue run never reuses a pull_request's green result and its
+            # drift guard keeps exercising the merged-with-master state.
+            if not workflow.is_event_pull_request() and record.branch != env.BRANCH:
                 print(
-                    f"NOTE: Result for [{job_name}] cached from branch [{record.branch}] - skip for workflow with event=PUSH"
+                    f"NOTE: Result for [{job_name}] cached from branch [{record.branch}] - skip for workflow with event=[{workflow.event}]"
                 )
                 continue
             workflow_config.cache_success.append(job_name)
             workflow_config.cache_success_base64.append(Utils.to_base64(job_name))
             workflow_config.cache_jobs[job_name] = record
-        # single threaded variant
-        # for job_name, job_digest in workflow_config.digest_jobs.items():
-        #     record = cache.fetch_success(job_name=job_name, job_digest=job_digest)
-        #     if record:
-        #         assert (
-        #             Utils.normalize_string(job_name)
-        #             not in workflow_config.cache_success
-        #         )
-        #         workflow_config.cache_success.append(job_name)
-        #         workflow_config.cache_success_base64.append(Utils.to_base64(job_name))
-        #         workflow_config.cache_jobs[job_name] = record
 
         print("Check artifacts to reuse")
         for job in workflow.jobs:
@@ -257,11 +250,16 @@ class CacheRunnerHooks:
             # cache is enabled, and it's a job that supposed to be cached (has defined digest config)
             workflow_runtime = RunConfig.from_workflow_data()
             job_digest = workflow_runtime.digest_jobs[job.name]
-            # if_not_exist=workflow.is_event_pull_request() - to not overwrite record from "push" workflow, as it can reuse only from push, "pull_request" - from both
+            # Dual of the reuse rule above: only a push workflow, which produces
+            # the canonical default-branch record, may overwrite an existing
+            # record. Every other event (pull_request, schedule, dispatch,
+            # merge_queue) writes only into an empty slot (if_not_exist=True), so
+            # a narrow-branch record never clobbers the push/master record that
+            # both push (same branch) and pull_request (any branch) can reuse.
             Cache.push_success_record(
                 job.name,
                 job_digest,
                 workflow_runtime.sha,
                 workflow_name=workflow.name,
-                if_not_exist=workflow.is_event_pull_request(),
+                if_not_exist=not workflow.is_event_push(),
             )
