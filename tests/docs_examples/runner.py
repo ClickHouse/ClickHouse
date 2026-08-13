@@ -26,6 +26,11 @@ reported as `skipped`: the runner can be pointed at an arbitrary existing server
 touch global state there. Pass `--global-objects` to run these examples too - which is only safe
 against a dedicated server, such as the one the CI job starts for the purpose.
 
+Similarly, an example that calls an external service (the `ai*` functions, which send prompts to a
+model provider) is skipped by default: on a server with provider credentials configured, running it
+would make real outbound calls, incur spend, and ship the example's text off the box. Pass
+`--external-calls` to run these examples too.
+
 Each example that runs gets one of three outcomes:
 
   * `ok`     - the example ran, and its output matches the documented response (or the example
@@ -36,7 +41,8 @@ Each example that runs gets one of three outcomes:
 Examples that are not `ok` must be listed in the known-failures file, which records why each one
 cannot pass. The run fails if an example fails that is not on the list, and also if a listed example
 starts passing, so that the list shrinks as the documentation is fixed. Regenerate it with
-`--update-known-failures` (which requires a complete run: `--global-objects` and no `--filter`)
+`--update-known-failures` (which requires a complete run: `--global-objects`, `--external-calls`
+and no `--filter`)
 after checking that every new entry is justified. An entry can also be
 marked `unstable`, for the handful of examples whose output is random enough to sometimes match the
 documented one; any outcome of those is accepted.
@@ -105,7 +111,8 @@ OUTPUT_SETTINGS = {
 OK, ERROR, OUTPUT = "ok", "error", "output"
 # Not an outcome, only a known-failures entry: accept whatever this example does.
 UNSTABLE = "unstable"
-# The example creates global, server-wide objects and `--global-objects` was not given.
+# The example creates global, server-wide objects and `--global-objects` was not given, or it
+# calls an external service and `--external-calls` was not given.
 SKIPPED = "skipped"
 
 # A statement that creates, changes or removes state that lives outside the scratch database of
@@ -120,6 +127,13 @@ GLOBAL_OBJECT_RE = re.compile(
     r"|^\s*INSERT\s+INTO\s+(?:TABLE\s+)?FUNCTION\b",
     re.IGNORECASE,
 )
+
+# A call of a function that reaches out to an external service: the `ai*` family sends the given
+# text to a model provider. On a server that has provider credentials configured, such an example
+# would make a real outbound call, incur spend, and ship the example's text off the box, so it only
+# runs with an explicit opt-in. Deliberately case-sensitive, matching how the functions are
+# registered (`aiGenerate`, `aiClassify`, ...).
+EXTERNAL_CALL_RE = re.compile(r"\bai[A-Z][A-Za-z0-9]*\s*\(")
 
 
 class Example:
@@ -142,6 +156,10 @@ class Example:
     @property
     def creates_global_objects(self):
         return any(GLOBAL_OBJECT_RE.match(statement) for statement in split_statements(self.query))
+
+    @property
+    def calls_external_services(self):
+        return bool(EXTERNAL_CALL_RE.search(self.query))
 
     @property
     def output_format(self):
@@ -301,7 +319,7 @@ def normalize(text):
 RUN_ID = uuid.uuid4().hex[:8]
 
 
-def run_entity(client, entity_index, examples, global_objects):
+def run_entity(client, entity_index, examples, global_objects, external_calls):
     """Run all examples of one entity, in order, in one session and one database of its own."""
     database = f"docs_examples_{RUN_ID}_{entity_index}"
     session = f"docs_examples_{RUN_ID}_{entity_index}"
@@ -317,6 +335,11 @@ def run_entity(client, entity_index, examples, global_objects):
                 outcomes.append(Outcome(
                     example, SKIPPED,
                     "The example creates global, server-wide objects; pass --global-objects to run it",
+                ))
+            elif not external_calls and example.calls_external_services:
+                outcomes.append(Outcome(
+                    example, SKIPPED,
+                    "The example calls an external service; pass --external-calls to run it",
                 ))
             else:
                 outcomes.append(run_example(client, database, session, example))
@@ -476,8 +499,9 @@ def report(outcomes, known, example_ids, verbose):
     print(f"\nRan {total - skipped} examples of {len(entities)} entities: "
           f"{total - skipped - failing} ok, {failing} not ok ({len(known)} known)")
     if skipped:
-        print(f"{skipped} example(s) create global, server-wide objects and were skipped;"
-              " pass --global-objects to run them against a dedicated server")
+        print(f"{skipped} example(s) create global, server-wide objects or call external services"
+              " and were skipped; pass --global-objects and/or --external-calls to run them"
+              " against a dedicated server")
 
     if unexpected:
         print(f"\n{len(unexpected)} example(s) unexpectedly not ok:\n")
@@ -534,6 +558,12 @@ def main():
         " databases, files written through a table function);"
         " only safe against a server dedicated to this check",
     )
+    parser.add_argument(
+        "--external-calls",
+        action="store_true",
+        help="run the examples that call an external service (the ai* functions);"
+        " on a server with provider credentials configured they make real outbound calls",
+    )
     parser.add_argument("--report", help="write the outcome of every example to this file, as JSON")
     parser.add_argument("--verbose", action="store_true", help="list the outcome of every example")
     args = parser.parse_args()
@@ -546,6 +576,9 @@ def main():
         return 1
     if args.update_known_failures and not args.global_objects:
         print("--update-known-failures requires --global-objects", file=sys.stderr)
+        return 1
+    if args.update_known_failures and not args.external_calls:
+        print("--update-known-failures requires --external-calls", file=sys.stderr)
         return 1
 
     client = Client(args.host, args.port, args.user, args.password, args.timeout)
@@ -573,7 +606,7 @@ def main():
         outcomes = [
             outcome
             for group in pool.map(
-                lambda i: run_entity(client, i, by_entity[entities[i]], args.global_objects),
+                lambda i: run_entity(client, i, by_entity[entities[i]], args.global_objects, args.external_calls),
                 range(len(entities)),
             )
             for outcome in group

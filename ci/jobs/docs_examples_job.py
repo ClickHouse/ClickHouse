@@ -143,8 +143,11 @@ def main():
             # nor `pipefail`, so the exit code of the runner would be lost.
             # `--global-objects`: the server above is started for this job alone, so the examples
             # that create users, roles or databases can run without disturbing anything.
+            # `--external-calls`: the server has no model-provider credentials configured, so the
+            # `ai*` examples cannot reach any external service; running them keeps their
+            # known-failures entries validated.
             ok = Shell.check(
-                f"python3 ./tests/docs_examples/runner.py --global-objects --report {REPORT} > {RUNNER_LOG} 2>&1",
+                f"python3 ./tests/docs_examples/runner.py --global-objects --external-calls --report {REPORT} > {RUNNER_LOG} 2>&1",
                 verbose=True,
             )
             print(Shell.get_output(f"cat {RUNNER_LOG}"))
