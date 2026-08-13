@@ -119,6 +119,18 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
 std::unordered_map<const ActionsDAG::Node *, ActionsDAG::NodeRawConstPtrs>
 collectVolumeReducingFunctionsReplacingTheirArgument(const ActionsDAG & actions);
 
+/// Volume-reducing function nodes of `actions` (and their aliases among the outputs) that must stay
+/// in the lower part when the DAG is split in two by `trySplitFilter` or
+/// `tryExecuteFunctionsAfterSorting`. Lifting such a function would make its wide argument cross
+/// the step again, undoing `tryPushDownVolumeReducingFunction` and re-triggering it, so the three
+/// optimizations would move the same nodes in opposite directions forever. This is a wider set than
+/// `collectVolumeReducingFunctionsReplacingTheirArgument`: after `tryMergeExpressions` merges the
+/// pushed step into its neighbor, the argument may be a computed column or have other readers
+/// (a `Filter` condition), yet the function still has to stay below. Functions whose argument is
+/// surfaced by the DAG anyway are not collected — the wide column crosses the step regardless, so
+/// lifting them loses nothing.
+std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKeepBelow(const ActionsDAG & actions);
+
 /// Convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values
 size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 

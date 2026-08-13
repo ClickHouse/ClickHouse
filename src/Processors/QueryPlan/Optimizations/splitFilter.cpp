@@ -60,8 +60,7 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
     /// the two optimizations from moving the same nodes in opposite directions forever.
     std::unordered_set<const ActionsDAG::Node *> volume_reducing_functions;
     if (settings.push_down_volume_reducing_functions)
-        for (const auto & [_, functions] : collectVolumeReducingFunctionsReplacingTheirArgument(expr))
-            volume_reducing_functions.insert(functions.begin(), functions.end());
+        volume_reducing_functions = collectVolumeReducingFunctionsToKeepBelow(expr);
 
     auto split = expr.splitActionsForFilter(filter_column_name, std::move(volume_reducing_functions));
 

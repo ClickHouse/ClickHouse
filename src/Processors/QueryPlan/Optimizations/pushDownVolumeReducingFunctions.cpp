@@ -229,6 +229,54 @@ collectVolumeReducingFunctionsReplacingTheirArgument(const ActionsDAG & actions)
     return result;
 }
 
+std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKeepBelow(const ActionsDAG & actions)
+{
+    /// A column the DAG surfaces crosses the step no matter where the function is computed, so the
+    /// function may be lifted as before.
+    std::unordered_set<const ActionsDAG::Node *> surfaced;
+    for (const auto * output : actions.getOutputs())
+        surfaced.insert(resolveAliases(output));
+
+    std::unordered_set<const ActionsDAG::Node *> split_nodes;
+    for (const auto & node : actions.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || !node.function_base->isVolumeReducing())
+            continue;
+
+        if (!node.function_base->isDeterministic() || !node.function_base->isDeterministicInScopeOfQuery())
+            continue;
+
+        if (node.children.size() != 1)
+            continue;
+
+        /// Unlike in `collectVolumeReducingFunctionsReplacingTheirArgument`, the argument does not
+        /// have to be an `INPUT` with no other readers: `tryMergeExpressions` can merge the pushed
+        /// step with the step below it (the argument becomes a computed column) or with a `Filter`
+        /// whose condition reads the argument. Lifting the function in those cases would make the
+        /// wide argument cross the step again, undoing `tryPushDownVolumeReducingFunction` and
+        /// re-triggering it forever.
+        const auto * argument = resolveAliases(node.children.front());
+        if (!isSupportedArgumentType(node.function_base->getName(), argument->result_type))
+            continue;
+
+        if (surfaced.contains(argument))
+            continue;
+
+        split_nodes.insert(&node);
+    }
+
+    if (split_nodes.empty())
+        return split_nodes;
+
+    /// Prefer splitting at the output itself, so that an alias of a kept function does not end up
+    /// alone in the lifted part.
+    for (const auto * output : actions.getOutputs())
+        if (split_nodes.contains(resolveAliases(output)))
+            split_nodes.insert(output);
+
+    return split_nodes;
+}
+
 /// Pushes volume-reducing functions (`length`, `lengthUTF8`, `empty`, `notEmpty`) from an
 /// `Expression` / `Filter` step below its child step, so that the wide `String` / `FixedString` /
 /// `Array` / `Map` argument is replaced by the fixed-size result:

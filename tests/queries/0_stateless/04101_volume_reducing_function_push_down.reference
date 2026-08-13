@@ -45,3 +45,10 @@ eq: distinct subquery
 eq: distinct union subquery
 eq: alias collides with sort key
 eq: stateful function in the same expression
+converges: filter condition reading the argument
+0
+1
+converges: argument computed below the sorting
+1
+6
+13

@@ -504,4 +504,22 @@ FROM (
     SETTINGS query_plan_push_down_volume_reducing_functions = 0, max_threads = 1, max_block_size = 1
 );
 
+-- ----------------------------------------------------------------------------
+-- Convergence regressions: shapes on which the pass used to ping-pong with
+-- `mergeExpressions` and `trySplitFilter` / `tryExecuteFunctionsAfterSorting` until
+-- `TOO_MANY_QUERY_PLAN_OPTIMIZATIONS` was thrown.
+-- ----------------------------------------------------------------------------
+
+-- The pushed function is merged into the `Filter`, whose condition also reads the argument.
+-- `trySplitFilter` must keep the function in the filter part instead of lifting it back above
+-- the filter, where the pass would push it down again, forever.
+SELECT 'converges: filter condition reading the argument';
+SELECT s != '' FROM volume_reducing_function_push_down WHERE s < 'zzzzzzzz' ORDER BY id;
+
+-- The pushed function is merged with the expression below the `Sorting` that computes its
+-- argument. `tryExecuteFunctionsAfterSorting` must keep the function below the sort even though
+-- the argument is a computed column of the merged expression, not an input.
+SELECT 'converges: argument computed below the sorting';
+SELECT length(s2) FROM (SELECT concat(s, '!') AS s2, id FROM volume_reducing_function_push_down ORDER BY id);
+
 DROP TABLE volume_reducing_function_push_down;

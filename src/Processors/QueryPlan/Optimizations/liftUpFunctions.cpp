@@ -43,40 +43,6 @@ static bool areNodesConvertableToBlock(const ActionsDAG::NodeRawConstPtrs & node
     return true;
 }
 
-static const ActionsDAG::Node * unwrapAlias(const ActionsDAG::Node * node)
-{
-    while (node->type == ActionsDAG::ActionType::ALIAS)
-        node = node->children.at(0);
-
-    return node;
-}
-
-/// `tryPushDownVolumeReducingFunction` moves these functions below the `SortingStep` so that the
-/// sort carries their fixed-size result instead of the wide argument. Keeping them below the sort
-/// here prevents the two optimizations from moving the same nodes in opposite directions forever.
-static std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKeepBelow(
-    const ActionsDAG & actions,
-    bool keep_volume_reducing_functions)
-{
-    std::unordered_set<const ActionsDAG::Node *> split_nodes;
-    if (!keep_volume_reducing_functions)
-        return split_nodes;
-
-    for (const auto & [_, functions] : collectVolumeReducingFunctionsReplacingTheirArgument(actions))
-        split_nodes.insert(functions.begin(), functions.end());
-
-    if (split_nodes.empty())
-        return split_nodes;
-
-    /// Prefer splitting at the output itself, so that an alias of a kept function does not end up
-    /// alone in the lifted part.
-    for (const auto * output : actions.getOutputs())
-        if (split_nodes.contains(unwrapAlias(output)))
-            split_nodes.insert(output);
-
-    return split_nodes;
-}
-
 size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
@@ -115,12 +81,14 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
                 return 0;
     }
 
-    /// Keep only the volume-reducing functions that `tryPushDownVolumeReducingFunction` would push
-    /// below this sort. The rest of the DAG is still lifted, preserving the previous behavior for
-    /// unsupported overloads and mixed expressions.
-    auto volume_reducing_functions = collectVolumeReducingFunctionsToKeepBelow(
-        expression,
-        settings.push_down_volume_reducing_functions);
+    /// `tryPushDownVolumeReducingFunction` moves these functions below the `SortingStep` so that
+    /// the sort carries their fixed-size result instead of the wide argument. Keeping them below
+    /// the sort here prevents the two optimizations from moving the same nodes in opposite
+    /// directions forever. The rest of the DAG is still lifted, preserving the previous behavior
+    /// for unsupported overloads and mixed expressions.
+    std::unordered_set<const ActionsDAG::Node *> volume_reducing_functions;
+    if (settings.push_down_volume_reducing_functions)
+        volume_reducing_functions = collectVolumeReducingFunctionsToKeepBelow(expression);
     auto [needed_for_sorting, unneeded_for_sorting, _]
         = expression.splitActionsBySortingDescription(sort_columns, std::move(volume_reducing_functions));
 
