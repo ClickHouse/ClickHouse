@@ -132,6 +132,7 @@ The following limitations apply to deletion vectors:
 - Data files must be in Parquet format
 - Column-scoped deletion vectors (`fields` in the Puffin blob) are not supported
 - Writing deletion vectors is not supported
+- `DELETE` / `UPDATE` mutations on Iceberg format version 3+ tables are rejected (writers must not add position-delete files)
 
 Parsed deletion vectors can be cached in memory when `use_puffin_files_cache` is enabled and the puffin file has a non-empty `etag`. Empty deletion vectors are cached as well, so repeated reads do not re-fetch the puffin file. The cache can be cleared with `SYSTEM DROP PUFFIN FILES CACHE`.
 
@@ -393,8 +394,9 @@ y: 993
 
 ### DELETE {#iceberg-writes-delete}
 
-Deleting extra rows in the merge-on-read format is also supported in ClickHouse.
+Deleting extra rows in the merge-on-read format is also supported in ClickHouse for Iceberg format version 2.
 This query will create a new snapshot with position delete files.
+Mutations on format version 3+ tables are rejected until ClickHouse can write deletion vectors (Iceberg v3 writers must not add new position-delete files).
 
 ### Example {#example-iceberg-writes-delete}
 
