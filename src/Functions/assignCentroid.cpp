@@ -18,6 +18,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <mutex>
 #include <utility>
@@ -43,6 +44,7 @@ namespace ErrorCodes
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
+    extern const int INCORRECT_DATA;
 }
 
 /// Named (not anonymous) so the TargetSpecific::* namespaces the macro generates cannot collide with
@@ -192,6 +194,12 @@ struct CentroidMatrix
             double s = 0;
             for (size_t j = 0; j < dim; ++j)
             {
+                /// A non-finite centroid loses every comparison in the kernel (`score < bs` is false for NaN)
+                /// and is therefore silently unreachable, rather than an error. Free to check here: this loop
+                /// already reads every coordinate to build the norm.
+                if (!std::isfinite(cen[j]))
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "assignCentroid: centroid {} must not contain non-finite values (NaN or Inf)", c);
                 ct[j * k + c] = cen[j];
                 s += static_cast<double>(cen[j]) * static_cast<double>(cen[j]);
             }
@@ -216,6 +224,14 @@ struct CentroidMatrix
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                     "assignCentroid: input vector has {} dimensions but centroids have {}", len, dim);
         }
+
+        /// A NaN probe never satisfies `score < bs`, so it would fall through to the `ids[0]` fallback and
+        /// return a plausible-looking id instead of failing. Swept linearly - the check above has established
+        /// that the rows are dense, so the payload is exactly `n * dim` floats.
+        for (size_t i = 0; i < n * dim; ++i)
+            if (!std::isfinite(vec_data[i]))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "assignCentroid: input vector must not contain non-finite values (NaN or Inf)");
 
         VectorWithMemoryTracking<Float32> best_score(n, std::numeric_limits<Float32>::max());
         for (size_t row = 0; row < n; ++row)

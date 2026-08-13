@@ -76,6 +76,14 @@ SELECT assignCentroid(1.0::Float32, [[0.0]]::Array(Array(Float32))); -- { server
 -- The vector and the centroids must agree on dimension.
 SELECT assignCentroid([1.0, 2.0, 3.0]::Array(Float32), [[0.0, 0.0]]::Array(Array(Float32))); -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 SELECT assignCentroid([1.0, 2.0]::Array(Float32), []::Array(Array(Float32))); -- { serverError BAD_ARGUMENTS }
+-- Non-finite input is rejected rather than silently mapped. `score < bs` is false for NaN, so a NaN probe
+-- would otherwise fall through to the first id and look like a legitimate answer, and a NaN centroid would
+-- be quietly unreachable.
+SELECT assignCentroid([toFloat32(nan)]::Array(Float32), [[0.0], [1.0]]::Array(Array(Float32))); -- { serverError INCORRECT_DATA }
+SELECT assignCentroid([toFloat32(inf)]::Array(Float32), [[0.0], [1.0]]::Array(Array(Float32))); -- { serverError INCORRECT_DATA }
+SELECT assignCentroid([-toFloat32(inf)]::Array(Float32), [[0.0], [1.0]]::Array(Array(Float32))); -- { serverError INCORRECT_DATA }
+SELECT assignCentroid([5.0]::Array(Float32), [[toFloat32(nan)], [1.0]]::Array(Array(Float32))); -- { serverError INCORRECT_DATA }
+SELECT assignCentroid([5.0]::Array(Float32), [[toFloat32(inf)], [1.0]]::Array(Array(Float32))); -- { serverError INCORRECT_DATA }
 -- The centroid argument has to be constant, so the matrix is built once per block rather than per row.
 SELECT assignCentroid(v, materialize([[0.0, 0.0]]::Array(Array(Float32)))) FROM (SELECT [1.0, 2.0]::Array(Float32) AS v); -- { serverError ILLEGAL_COLUMN }
 

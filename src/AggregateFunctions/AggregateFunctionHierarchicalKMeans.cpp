@@ -908,6 +908,13 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "hierarchicalKMeans: max_iter must be greater than 0");
         if (sample_cap == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "hierarchicalKMeans: sample_cap must be greater than 0");
+        /// The reservoir holds at most `sample_cap` points and a point yields at most one centroid, so a
+        /// smaller cap makes the exact-`k` contract unsatisfiable: training would silently return `sample_cap`
+        /// centroids instead of `k`.
+        if (sample_cap < k)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "hierarchicalKMeans: sample_cap ({}) must be at least k ({}), otherwise the reservoir cannot "
+                "hold enough points to train k centroids", sample_cap, k);
 
         /// `add` reads the nested column as `ColumnFloat32`, so `Float32` is required exactly - accepting any float
         /// here would reinterpret e.g. `Float64` payload as `Float32` and silently train on garbage.

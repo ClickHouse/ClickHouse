@@ -68,6 +68,8 @@ SELECT hierarchicalKMeans(4, 16, 20, 1000000, 0, 1, 999)(v) FROM blobs; -- { ser
 -- Invalid parameters are rejected, not silently clamped to something the caller did not ask for.
 SELECT hierarchicalKMeans(256, 1)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
 SELECT hierarchicalKMeans(256, 16, 0)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
+-- A reservoir smaller than k could never yield k centroids, so the contract is rejected up front.
+SELECT hierarchicalKMeans(2, 16, 20, 1)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
 -- Ragged input: all vectors must share a dimension.
 SELECT hierarchicalKMeans(2)(v) FROM (SELECT arrayJoin([[1.0, 2.0], [3.0]])::Array(Float32) AS v); -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 
