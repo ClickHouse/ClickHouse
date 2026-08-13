@@ -5,7 +5,7 @@
 ClickHouse can execute a query on a single node using its standard pipeline: plan the
 query, read from MergeTree, apply filters/expressions/joins/aggregations, return results.
 But when data is spread across multiple nodes (shared storage like S3, or a multi-node
-cluster), we need to decide HOW to distribute the work:
+cluster), the optimizer must decide how to distribute the work:
 
 - Should a join shuffle both sides by the join key, or broadcast the smaller table to
   all nodes?
@@ -31,7 +31,7 @@ is bounded by a fail-closed task budget instead (see the search section below).
 **Without Cascades**: ClickHouse's existing distributed query execution (via the
 `Distributed` table engine or parallel replicas) uses fixed strategies — typically gather
 all data to the coordinator, or use two-phase aggregation with a fixed distribution.
-There's no cost-based comparison of broadcast vs shuffle vs local strategies.
+There is no cost-based comparison of broadcast, shuffle, and local strategies.
 
 **With Cascades**: The optimizer takes the logical query plan (already with a fixed join
 order) and explores all valid physical execution strategies, estimates their cost, and
@@ -83,7 +83,7 @@ before execution. During search, an expression whose input has no implementation
 the required properties is never recorded as a group's best, and a search that proves
 the query has no distributable plan rejects it at the root. A plan that received
 exchange steps but cannot be converted to distributed stages is rejected instead of
-silently running the exchanges as no-ops locally, and a search that does not finish
+silently running the exchanges as no-ops locally. A search that does not finish
 within the task budget rejects the query instead of building a plan from a partial memo.
 
 ## Key Concepts
@@ -117,8 +117,8 @@ required properties.
 
 Each physical expression has **properties** describing what it produces:
 
-- **Distribution**: How many nodes the data is spread across, whether it's replicated,
-  and which columns it's partitioned by.
+- **Distribution**: How many nodes the data is spread across, whether it is replicated,
+  and which columns it is partitioned by.
   - `{1 node}` — all data on the coordinator
   - `{4 nodes}` — data split across 4 nodes (any partitioning)
   - `{4 nodes, by custkey}` — data hash-partitioned by `custkey` across 4 nodes
@@ -128,8 +128,8 @@ Each physical expression has **properties** describing what it produces:
 
 A parent step **requires** specific properties from its child. For example, a
 `ShuffleHashJoin` on `custkey` requires both inputs to be distributed `{4 nodes, by custkey}`.
-If the child doesn't naturally produce that distribution, an **enforcer** (exchange step)
-is added to bridge the gap.
+If the child does not naturally produce that distribution, an **enforcer** (exchange
+step) is added to bridge the gap.
 
 ### Exchange Steps (New Step Types)
 
@@ -222,13 +222,14 @@ The root group is optimized for `{1 node}` (the coordinator must return the fina
 Each child group is optimized for whatever properties its parent requires. The optimizer
 works top-down, recursively optimizing each group. The search carries no per-subtree cost
 budget: a best plan taken from a partially optimized sibling group is an upper bound, not
-a lower bound, so a budget derived from it can prune plans that would become cheapest. The search is bounded by the task budget instead, which
-fails closed: if optimization does not finish within the budget, the query is rejected
-with a clear error (naming the remaining task) rather than built from a partial memo.
+a lower bound, so a budget derived from it can prune plans that would become cheapest.
+The search is bounded by the task budget instead, which fails closed: if optimization
+does not finish within the budget, the query is rejected with a clear error (naming the
+remaining task) rather than built from a partial memo.
 
 The four stages are driven by six concrete task types on the stack: `OptimizeGroupTask`
-and `ExploreGroupTask` drive a whole group; `ExploreExpressionTask` and
-`OptimizeExpressionTask` collect the transformation resp. implementation rules that match
+and `ExploreGroupTask` drive a whole group; `ExploreExpressionTask` collects the matching
+transformation rules and `OptimizeExpressionTask` the matching implementation rules for
 one expression; `ApplyRuleTask` runs a chosen rule; and `OptimizeInputsTask` walks an
 expression's inputs and costs it once they are all optimized.
 
@@ -263,7 +264,11 @@ implementation, preventing re-entry loops from self-referential enforcers.
 A physical expression is a query plan step paired with an **implementation strategy**
 (`ImplementationStrategyPtr` on `GroupExpression`). The strategy names the physical
 algorithm chosen for that step and owns its per-operator cost. Logical expressions and
-`DefaultImplementation` passthroughs carry no strategy (`strategy == nullptr`).
+`DefaultImplementation` passthroughs carry no strategy (`strategy == nullptr`). Note
+that the strategy pointer does not decide whether an expression is logical or physical:
+that is decided by which of the group's two lists holds it (`logical_expressions` or
+`physical_expressions`), and physical expressions without a strategy are normal (a
+single-node top-N, every `DefaultImplementation` product).
 
 Strategies are grouped by operator family — `IJoinStrategy`, `IAggregationStrategy`,
 `IReadStrategy` — and each concrete strategy implements `estimateOperatorCost` in
@@ -554,41 +559,57 @@ branch-and-bound pruning as the primary bound.
 1. **Decouple statistics** from pre-Cascades code.
 2. **Convergence detection and sound branch-and-bound pruning** instead of relying on
    the fail-closed task budget alone.
+3. **Pruned expressions keep no cost**: same-group best-cost pruning drops an
+   expression before its cost is recorded, but plan extraction considers only costed
+   expressions as acyclic fallbacks for self-referential enforcers. A cheaper
+   over-providing enforcer can therefore prune the only fallback a later composition
+   needs. Recording the cost before the early return closes the gap.
 
 ### Cost Model
 
-3. **Range selectivity over aggregate results**: a `HAVING` range predicate
+4. **Range selectivity over aggregate results**: a `HAVING` range predicate
    (`sum(x) > c`) gets the same default factor as a base-column range, which can
    overestimate it by orders of magnitude; no statistics can exist for an aggregate
    output.
-4. **`arrayJoin` fan-out**: an `ExpressionStep` with `arrayJoin` grows the row count,
+5. **`arrayJoin` fan-out**: an `ExpressionStep` with `arrayJoin` grows the row count,
    which is not estimated yet.
+6. **Build-side choice of a shuffle join is a near-tie**: with the build priced as
+   parallel work, the two orientations of a shuffle join differ by well under a
+   percent, so the chosen build side is effectively arbitrary. Measured plans show the
+   orientations perform alike, but the choice can flip between runs and builds, which
+   makes plan-shape tests fragile. A size-aware hash cost (a table beyond the cache
+   costs more per row) would restore a principled asymmetry.
+7. **Scan-volume refinements**: the scan estimate charges every touched column at
+   granule volume. Measured scans show three bounded deviations: a size-only string
+   predicate (`s <> ''`) reads only the string sizes; a scattered point-key selection
+   decompresses whole compression blocks per granule; and a lazily materialized
+   payload column is read for fewer rows than the granule selection.
 
 ### Optimizer Features
 
-5. **`ReplicatedRead` validation and gating**: the rule assumes every worker sees the
+8. **`ReplicatedRead` validation and gating**: the rule assumes every worker sees the
    same complete table (shared storage) and has no hard size gate; an oversized
    replicated read loses only on cost.
-6. **Runtime bloom filter placement in Cascades**: the pre-Cascades pass may add
+9. **Runtime bloom filter placement in Cascades**: the pre-Cascades pass may add
    `BuildRuntimeFilterStep` and Cascades passes it through, but Cascades does not
    create or cost runtime-filter alternatives. The single biggest gap vs StarRocks.
-7. **Join ordering in Cascades**: the pre-Cascades join orderer already offers `dphyp`
+10. **Join ordering in Cascades**: the pre-Cascades join orderer already offers `dphyp`
    (inner joins) alongside `dpsub`, `dpsize`, and `greedy`; in an algorithm chain such as
    `dphyp,greedy`, unsupported cases fall through to the next algorithm. Cascades still
    receives a single fixed order; feeding the top k orders into the memo (the hybrid TOP-K
    of Gretscher & Dittrich, PVLDB 2025) is future work.
-8. **Window function distribution**: `WindowStep` currently goes through
+11. **Window function distribution**: `WindowStep` currently goes through
    `DefaultImplementation` at `{1 node}`. Needs a `WindowImplementation` rule
    that sets distribution by PARTITION BY key.
-9. **CTE / common subplan sharing**: Detect `CommonSubplanReferenceStep` and
+12. **CTE / common subplan sharing**: Detect `CommonSubplanReferenceStep` and
    map to existing groups instead of cloning.
-10. **Dependent group-by key elimination**: Remove redundant GROUP BY columns using
+13. **Dependent group-by key elimination**: Remove redundant GROUP BY columns using
    functional dependencies from MergeTree keys.
-11. **Width through same-type value-changing functions**: a deterministic `String` ->
+14. **Width through same-type value-changing functions**: a deterministic `String` ->
    `String` function (`substring`, `hex`) keeps the source column's average width even
    though the bytes change; width preservation needs a value-pass-through rule separate
    from the NDV rule.
-12. **Reads from remote shards**: a read from a `Distributed` table (or the `remote`/
+15. **Reads from remote shards**: a read from a `Distributed` table (or the `remote`/
    `cluster` table functions) with genuinely remote shards is rejected up front
    (`checkStepSupportedByCascades`); localhost shards are inlined and planned normally.
    Supporting it as a coordinator-pinned single-task source is future work.
@@ -598,7 +619,9 @@ branch-and-bound pruning as the primary bound.
 ## Worked Example
 
 This section traces the optimizer through a concrete query to show how all the
-pieces work together.
+pieces work together. The cost numbers come from an older calibration of the model,
+so treat them as illustrations of the comparisons, not as current values; the chosen
+shapes are unchanged.
 
 ### Query
 
