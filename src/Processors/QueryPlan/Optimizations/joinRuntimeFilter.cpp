@@ -401,12 +401,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
         if (!join_key_build_side.type->equals(*join_key_probe_side.type))
         {
-            DataTypePtr common_type;
-            try
-            {
-                common_type = getLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type});
-            }
-            catch (const Exception &)
+            auto common_type = tryGetLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type});
+            if (!common_type)
             {
                 /// The keys still can be joined by the values that they have in common, see
                 /// `JoinCommon::tryGetCommonSubtypeForJoinKeys`, but a runtime filter cannot be built this way:
