@@ -1084,10 +1084,32 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             /// may not match the individual file's format capabilities.
             /// See https://github.com/ClickHouse/ClickHouse/issues/96829
             const auto actual_format = object_info->getFileFormat().value_or(configuration->format);
-            const bool format_supports_prewhere =
+            bool format_supports_prewhere =
                 FormatFactory::instance().checkIfFormatSupportsPrewhere(actual_format, context_, format_settings);
 
-            /// Save filters for fallback FilterTransform when format doesn't support PREWHERE.
+            /// Filters that reference DEFAULT columns must run after AddingDefaultsTransform, even
+            /// when the format supports PREWHERE — otherwise the reader evaluates them against
+            /// missing/type-default values. Related: https://github.com/ClickHouse/ClickHouse/issues/114616
+            auto filter_requires_defaulted_column = [&](const NamesAndTypesList & required_columns) -> bool
+            {
+                for (const auto & column : required_columns)
+                {
+                    if (read_from_format_info.columns_description.hasDefault(column.name))
+                        return true;
+                }
+                return false;
+            };
+            if (format_supports_prewhere && read_from_format_info.columns_description.hasDefaults())
+            {
+                if ((format_filter_info->row_level_filter
+                     && filter_requires_defaulted_column(format_filter_info->row_level_filter->actions.getRequiredColumns()))
+                    || (format_filter_info->prewhere_info
+                        && filter_requires_defaulted_column(format_filter_info->prewhere_info->prewhere_actions.getRequiredColumns())))
+                    format_supports_prewhere = false;
+            }
+
+            /// Save filters for fallback FilterTransform when format doesn't support PREWHERE
+            /// (or when PREWHERE was disabled above because a filter needs DEFAULT columns).
             if (!format_supports_prewhere)
             {
                 if (format_filter_info->row_level_filter)
@@ -1307,6 +1329,19 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             });
         }
 
+        /// Fill DEFAULT columns before fallback filters. Filters that reference a DEFAULT
+        /// column (or a column that PREWHERE pruning would otherwise drop as a DEFAULT
+        /// dependency) must see the real computed values, not type defaults / missing columns.
+        /// Related: https://github.com/ClickHouse/ClickHouse/issues/114616
+        if (read_from_format_info.columns_description.hasDefaults())
+        {
+            builder.addSimpleTransform(
+                [&](const SharedHeader & header)
+                {
+                    return std::make_shared<AddingDefaultsTransform>(header, read_from_format_info.columns_description, *input_format, context_);
+                });
+        }
+
         /// Apply row-level security filter and `PREWHERE` as fallback `FilterTransform`s
         /// when the file format doesn't support `PREWHERE`. For mixed-format data lake
         /// tables (e.g. Iceberg with Parquet + ORC files), table-level `PREWHERE` support
@@ -1323,6 +1358,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// fail with `NOT_FOUND_COLUMN_IN_BLOCK` in the schema-changed path because the
         /// reader emits file-side names, while filter expressions reference query-side
         /// names.)
+        ///
+        /// They also run AFTER `AddingDefaultsTransform` so a policy / PREWHERE on a
+        /// DEFAULT column (or depending on one) sees real values.
         ///
         /// Order between the two filters matters: row-level filter first, `PREWHERE`
         /// second. This mirrors the canonical filter pipeline used everywhere else in
@@ -1369,15 +1407,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
                     /*update_row_numbers_info=*/true);
             });
-        }
-
-        if (read_from_format_info.columns_description.hasDefaults())
-        {
-            builder.addSimpleTransform(
-                [&](const SharedHeader & header)
-                {
-                    return std::make_shared<AddingDefaultsTransform>(header, read_from_format_info.columns_description, *input_format, context_);
-                });
         }
 
         source = input_format;

@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Storages/IStorage.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -26,6 +27,97 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_parsing_to_custom_serialization;
+}
+
+namespace
+{
+/// Columns with a `DEFAULT` / `MATERIALIZED` / `ALIAS` expression may be missing from the data
+/// file and are filled by `AddingDefaultsTransform`. That transform needs every input of those
+/// expressions present in the block, so when the query (or a row policy / PREWHERE) requests such
+/// a column we must also read the expression's inputs — otherwise the source fails with
+/// `UNKNOWN_IDENTIFIER` (or, historically, silently evaluated the policy against type defaults).
+void appendColumnsRequiredForDefaults(Strings & columns_to_read, const ColumnsDescription & all_columns)
+{
+    std::unordered_set<std::string> present(columns_to_read.begin(), columns_to_read.end());
+    std::vector<String> to_visit = columns_to_read;
+
+    for (size_t i = 0; i < to_visit.size(); ++i)
+    {
+        const auto default_desc = all_columns.getDefault(to_visit[i]);
+        if (!default_desc || !default_desc->expression)
+            continue;
+
+        RequiredSourceColumnsVisitor::Data columns_context;
+        RequiredSourceColumnsVisitor(columns_context).visit(default_desc->expression->clone());
+        for (const auto & required : columns_context.requiredColumns())
+        {
+            if (!all_columns.has(required))
+                continue;
+            if (present.insert(required).second)
+            {
+                columns_to_read.push_back(required);
+                to_visit.push_back(required);
+            }
+        }
+    }
+}
+
+/// After `applyPrewhereActions` the format header only keeps filter DAG outputs, which drops
+/// inputs that are still needed to compute `DEFAULT` expressions of columns that remain (or of
+/// columns the filters themselves reference). Collect those inputs so they can be retained in
+/// `format_header` for `AddingDefaultsTransform`.
+NameSet collectColumnsRequiredForDefaults(
+    const Block & columns_that_may_need_defaults,
+    const ColumnsDescription & columns_description,
+    const FilterDAGInfoPtr & row_level_filter,
+    const PrewhereInfoPtr & prewhere_info)
+{
+    NameSet defaulted;
+    auto seed = [&](const String & name)
+    {
+        if (columns_description.hasDefault(name))
+            defaulted.insert(name);
+    };
+
+    for (const auto & column : columns_that_may_need_defaults)
+        seed(column.name);
+
+    if (row_level_filter)
+        for (const auto & column : row_level_filter->actions.getRequiredColumns())
+            seed(column.name);
+
+    if (prewhere_info)
+        for (const auto & column : prewhere_info->prewhere_actions.getRequiredColumns())
+            seed(column.name);
+
+    NameSet required_inputs;
+    std::vector<String> to_visit(defaulted.begin(), defaulted.end());
+    NameSet visited;
+    for (size_t i = 0; i < to_visit.size(); ++i)
+    {
+        const String & name = to_visit[i];
+        if (!visited.insert(name).second)
+            continue;
+
+        const auto default_desc = columns_description.getDefault(name);
+        if (!default_desc || !default_desc->expression)
+            continue;
+
+        RequiredSourceColumnsVisitor::Data columns_context;
+        RequiredSourceColumnsVisitor(columns_context).visit(default_desc->expression->clone());
+        for (const auto & required : columns_context.requiredColumns())
+        {
+            required_inputs.insert(required);
+            if (columns_description.hasDefault(required))
+                to_visit.push_back(required);
+        }
+    }
+
+    /// The defaulted columns themselves must stay readable too when a filter references them but
+    /// `applyPrewhereActions` dropped them from the pruned header.
+    required_inputs.insert(defaulted.begin(), defaulted.end());
+    return required_inputs;
+}
 }
 
 ReadFromFormatInfo prepareReadingFromFormat(
@@ -101,6 +193,11 @@ ReadFromFormatInfo prepareReadingFromFormat(
         {
             columns_to_read.push_back(ExpressionActions::getSmallestColumn(columns_in_data_file).name);
         }
+
+        /// Pull in inputs of DEFAULT expressions for requested columns missing from the file
+        /// (see appendColumnsRequiredForDefaults). Done after subcolumn canonicalization so we
+        /// only expand real storage columns the format will read.
+        appendColumnsRequiredForDefaults(columns_to_read, storage_snapshot->metadata->getColumns());
 
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
     }
@@ -279,12 +376,29 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
     /// expression and preserved for use further down the query pipeline).
     /// If row_level_filter was already applied in a previous call, don't re-apply it;
     /// only apply the new prewhere_info on top.
-    new_info.format_header = SourceStepWithFilter::applyPrewhereActions(
+    Block pruned_header = SourceStepWithFilter::applyPrewhereActions(
         info.format_header, info.row_level_filter ? nullptr : row_level_filter, prewhere_info);
 
-    /// We assume that any format that supports prewhere also supports subset of subcolumns, so we
-    /// don't need to replace subcolumns with their nested columns etc.
-    new_info.source_header = new_info.format_header;
+    /// Retain columns that `AddingDefaultsTransform` still needs after pruning. The format reader
+    /// emits `format_header`; defaults are filled on that block before `ExtractColumnsTransform`
+    /// narrows it to `requested_columns` / `source_header`. Without this, a `DEFAULT` such as
+    /// `d DEFAULT a * 2` fails with `UNKNOWN_IDENTIFIER` when PREWHERE/row-policy pruning drops `a`.
+    /// Related: https://github.com/ClickHouse/ClickHouse/issues/114616
+    const FilterDAGInfoPtr effective_row_level_filter = info.row_level_filter ? info.row_level_filter : row_level_filter;
+    const NameSet columns_for_defaults = collectColumnsRequiredForDefaults(
+        pruned_header, info.columns_description, effective_row_level_filter, prewhere_info);
+
+    new_info.format_header = pruned_header;
+    for (const auto & column : info.format_header)
+    {
+        if (columns_for_defaults.contains(column.name) && !new_info.format_header.has(column.name))
+            new_info.format_header.insert(column);
+    }
+
+    /// Source output follows the pruned header (plus hive/virtual columns below). Default-only
+    /// dependency columns stay in `format_header` for `AddingDefaultsTransform` and are dropped
+    /// again by `ExtractColumnsTransform` via `requested_columns`.
+    new_info.source_header = pruned_header;
 
     /// Hive partition columns come from the file path, not the data file, so prewhere column
     /// pruning above does not concern them. Carry them over and keep their position before the
@@ -298,12 +412,16 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
     for (const auto & requested_virtual_column : new_info.requested_virtual_columns)
         new_info.source_header.insert({requested_virtual_column.type->createColumn(), requested_virtual_column.type, requested_virtual_column.name});
 
-    for (const auto & col : new_info.format_header)
+    for (const auto & col : pruned_header)
     {
         new_info.requested_columns.emplace_back(col.name, col.type);
+    }
+
+    for (const auto & col : new_info.format_header)
+    {
         if (info.format_header.has(col.name))
         {
-            /// Column read from file.
+            /// Column read from file (or retained as a DEFAULT dependency).
             new_info.columns_description.add(info.columns_description.get(col.name));
         }
         else

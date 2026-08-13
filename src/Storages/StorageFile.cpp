@@ -38,6 +38,7 @@
 #include <Disks/IO/getIOUringReader.h>
 
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -49,6 +50,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
@@ -1849,18 +1851,75 @@ Chunk StorageFileSource::generate()
                 }
             }
 
+            /// If a row policy / PREWHERE references a column filled by DEFAULT, do not push those
+            /// filters into the format reader: it would see missing/type-default values. Strip them
+            /// here and apply FilterTransforms after AddingDefaultsTransform below.
+            FilterDAGInfoPtr deferred_row_level_filter;
+            PrewhereInfoPtr deferred_prewhere_info;
+            FormatFilterInfoPtr reader_format_filter_info = format_filter_info;
+            Block reader_header = block_for_format;
+
+            auto filter_requires_defaulted_column = [&](const NamesAndTypesList & required_columns) -> bool
+            {
+                for (const auto & column : required_columns)
+                {
+                    if (columns_description.hasDefault(column.name))
+                        return true;
+                }
+                return false;
+            };
+
+            bool defer_filters = false;
+            if (format_filter_info && columns_description.hasDefaults())
+            {
+                if (format_filter_info->row_level_filter
+                    && filter_requires_defaulted_column(format_filter_info->row_level_filter->actions.getRequiredColumns()))
+                    defer_filters = true;
+                if (format_filter_info->prewhere_info
+                    && filter_requires_defaulted_column(format_filter_info->prewhere_info->prewhere_actions.getRequiredColumns()))
+                    defer_filters = true;
+            }
+
+            if (defer_filters)
+            {
+                deferred_row_level_filter = format_filter_info->row_level_filter;
+                deferred_prewhere_info = format_filter_info->prewhere_info;
+                reader_format_filter_info = std::make_shared<FormatFilterInfo>(
+                    format_filter_info->filter_actions_dag,
+                    format_filter_info->context.lock(),
+                    format_filter_info->column_mapper,
+                    nullptr,
+                    nullptr);
+                reader_format_filter_info->current_schema_column_mapper = format_filter_info->current_schema_column_mapper;
+                reader_format_filter_info->condition_hash = format_filter_info->condition_hash;
+                reader_format_filter_info->rows_to_read = format_filter_info->rows_to_read;
+
+                auto add_filter_inputs = [&](const ActionsDAG & dag)
+                {
+                    for (const auto & required : dag.getRequiredColumns())
+                    {
+                        if (!reader_header.has(required.name))
+                            reader_header.insert({required.type, required.name});
+                    }
+                };
+                if (deferred_row_level_filter)
+                    add_filter_inputs(deferred_row_level_filter->actions);
+                if (deferred_prewhere_info)
+                    add_filter_inputs(deferred_prewhere_info->prewhere_actions);
+            }
+
             if (object_with_metadata.has_value())
             {
                 input_format = FormatFactory::instance().getInputWithMetadata(
                     storage->format_name,
                     *read_buf,
-                    block_for_format,
+                    reader_header,
                     getContext(),
                     max_block_size,
                     object_with_metadata,
                     storage->format_settings,
                     parser_shared_resources,
-                    format_filter_info,
+                    reader_format_filter_info,
                     /*is_remote_fs=*/false,
                     CompressionMethod::None,
                     need_only_count);
@@ -1874,12 +1933,12 @@ Chunk StorageFileSource::generate()
                 input_format = FormatFactory::instance().getInput(
                     storage->format_name,
                     *read_buf,
-                    block_for_format,
+                    reader_header,
                     getContext(),
                     max_block_size,
                     storage->format_settings,
                     parser_shared_resources,
-                    format_filter_info,
+                    reader_format_filter_info,
                     /*is_remote_fs=*/false,
                     CompressionMethod::None,
                     need_only_count);
@@ -1894,11 +1953,42 @@ Chunk StorageFileSource::generate()
             QueryPipelineBuilder builder;
             builder.init(Pipe(input_format));
 
+            /// Fill DEFAULT columns before row-policy / PREWHERE filters that may reference them.
+            /// The format reader would otherwise evaluate those filters against missing/type-default
+            /// values (silently wrong results), or AddingDefaultsTransform would fail with
+            /// UNKNOWN_IDENTIFIER when a dependency was pruned from the read set.
+            /// Related: https://github.com/ClickHouse/ClickHouse/issues/114616
             if (columns_description.hasDefaults())
             {
                 builder.addSimpleTransform([&](const SharedHeader & header)
                 {
                     return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
+                });
+            }
+
+            if (deferred_row_level_filter)
+            {
+                auto row_level_actions = std::make_shared<ExpressionActions>(deferred_row_level_filter->actions.clone());
+                builder.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<FilterTransform>(
+                        header,
+                        row_level_actions,
+                        deferred_row_level_filter->column_name,
+                        deferred_row_level_filter->do_remove_column);
+                });
+            }
+
+            if (deferred_prewhere_info)
+            {
+                auto prewhere_actions = std::make_shared<ExpressionActions>(deferred_prewhere_info->prewhere_actions.clone());
+                builder.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<FilterTransform>(
+                        header,
+                        prewhere_actions,
+                        deferred_prewhere_info->prewhere_column_name,
+                        deferred_prewhere_info->remove_prewhere_column);
                 });
             }
 
@@ -2176,7 +2266,7 @@ void StorageFile::read(
         /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
-    if (query_info.prewhere_info)
+    if (query_info.prewhere_info || query_info.row_level_filter)
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
 
     bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
