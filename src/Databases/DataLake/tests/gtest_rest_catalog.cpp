@@ -284,7 +284,6 @@ TEST(RestCatalog, ApplySettingsChangesWithoutAuthenticationRejected)
         /* oauth_server_use_request_body */false,
         context);
 
-<<<<<<< HEAD
     DB::SettingsChanges changes;
     changes.emplace_back("catalog_credential", "id:secret");
     expectThrowsCode([&] { catalog.applySettingsChanges(changes); }, DB::ErrorCodes::BAD_ARGUMENTS);
