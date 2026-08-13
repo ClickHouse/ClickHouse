@@ -54,7 +54,7 @@ done
 # already-FAILED dictionary replays its stored exception without reading, and a file rejected while
 # its footer is parsed reads only the footer, both of which are indistinguishable from a real read by
 # the error message alone. ParquetReadRowGroups is counted only once row groups are being read.
-${CLICKHOUSE_CLIENT} --query="system flush logs"
+${CLICKHOUSE_CLIENT} --query="system flush logs query_log"
 ${CLICKHOUSE_CLIENT} --query="
     select 'reloads_that_read', countIf(ProfileEvents['ParquetReadRowGroups'] > 0)
     from system.query_log
