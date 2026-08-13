@@ -44,6 +44,13 @@ namespace ErrorCodes
     extern const int NO_COMMON_TYPE;
 }
 
+static UInt32 checkedRelationBit32(size_t relation)
+{
+    if (relation >= std::numeric_limits<UInt32>::digits)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Relation {} does not fit in a DPsub UInt32 mask", relation);
+    return UInt32{1} << relation;
+}
+
 /// Pack a `BitSet` (boost::dynamic_bitset) of relation ids into a native 32-bit mask.
 /// Used by the DPsub hot path, where the relation count is guaranteed below 32 so every
 /// set bit fits, allowing the per-CCP work to run on native integers instead of allocating
@@ -53,8 +60,7 @@ static UInt32 toMask(const BitSet & bits)
     UInt32 mask = 0;
     for (auto bit : bits)
     {
-        chassert(bit < std::numeric_limits<UInt32>::digits);
-        mask |= (static_cast<UInt32>(1) << bit);
+        mask |= checkedRelationBit32(bit);
     }
     return mask;
 }
@@ -706,14 +712,25 @@ private:
     double computeSelectivity(const JoinActionRef & edge);
     double computeSelectivity(const std::vector<JoinActionRef *> & edges);
     double computeSelectivity(const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right);
-    std::optional<UInt64> estimateCardinality(
-        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind) const;
     JoinOrderCardinalityEstimate estimateCardinality(
         std::optional<UInt64> left_rows,
         std::optional<UInt64> right_rows,
         double selectivity,
         JoinKind join_kind,
         const JoinOrderCardinalityCap & canonical_cap) const;
+
+    /// Assessment of a predicate-free transitively-connected pair for the DPsub acceptor.
+    struct TransitivePairAssessment
+    {
+        bool admitted = false;
+        JoinOrderCardinalityCap canonical_cap;
+    };
+    template <typename Subset>
+    TransitivePairAssessment assessTransitivePair(
+        const Subset & left_relations,
+        const Subset & right_relations,
+        std::optional<UInt64> left_rows,
+        std::optional<UInt64> right_rows) const;
 
     struct JoinCandidateConnectivity
     {
@@ -743,9 +760,10 @@ private:
     bool costingPropertiesEnabled() const;
     void resetCandidateState();
     void recordCanonicalCapAssessment(const JoinOrderCardinalityCap & cap) const;
+    template <typename Subset>
     JoinOrderCardinalityCap getCanonicalCap(
-        const BitSet & left_relations,
-        const BitSet & right_relations,
+        const Subset & left_relations,
+        const Subset & right_relations,
         std::optional<UInt64> left_rows,
         std::optional<UInt64> right_rows) const;
     size_t getColumnStats(const BitSet & rels, const String & column_name);
@@ -1037,12 +1055,6 @@ static std::optional<UInt64> estimateJoinCardinality(
     return static_cast<UInt64>(joined_rows);
 }
 
-std::optional<UInt64> JoinOrderOptimizer::estimateCardinality(
-    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind) const
-{
-    return estimateJoinCardinality(left_rows, right_rows, selectivity, join_kind);
-}
-
 bool JoinOrderOptimizer::costingPropertiesEnabled() const
 {
     return proven_uniqueness_enabled && canonical_properties;
@@ -1221,8 +1233,14 @@ void JoinOrderOptimizer::recordCanonicalCapAssessment(const JoinOrderCardinality
         LOG_TRACE(log, "Canonical join-order cap proven: upper bound {}", proof.upper_bound);
 }
 
+static BitSet toRelationBitSet(UInt32 subset)
+{
+    return BitSet::fromUInt(subset);
+}
+
+template <typename Subset>
 JoinOrderCardinalityCap JoinOrderOptimizer::getCanonicalCap(
-    const BitSet & left_relations, const BitSet & right_relations, std::optional<UInt64> left_rows, std::optional<UInt64> right_rows) const
+    const Subset & left_relations, const Subset & right_relations, std::optional<UInt64> left_rows, std::optional<UInt64> right_rows) const
 {
     if (!costingPropertiesEnabled())
         return JoinOrderNoCardinalityCapReason::Disabled;
@@ -1244,6 +1262,21 @@ JoinOrderCardinalityEstimate JoinOrderOptimizer::estimateCardinality(
     if (result.rows)
         result.rows = std::min(*result.rows, cap->upper_bound);
     return result;
+}
+
+template <typename Subset>
+JoinOrderOptimizer::TransitivePairAssessment JoinOrderOptimizer::assessTransitivePair(
+    const Subset & left_relations, const Subset & right_relations, std::optional<UInt64> left_rows, std::optional<UInt64> right_rows) const
+{
+    if (!query_graph.areTransitivelyConnected(toRelationBitSet(left_relations), toRelationBitSet(right_relations)))
+        return {};
+
+    if (transitive_predicates_enabled)
+        return {.admitted = true, .canonical_cap = {}};
+
+    const auto cap = getCanonicalCap(left_relations, right_relations, left_rows, right_rows);
+    recordCanonicalCapAssessment(cap);
+    return {.admitted = getProvenCap(cap) != nullptr, .canonical_cap = cap};
 }
 
 JoinOrderOptimizer::JoinCandidateAssessment JoinOrderOptimizer::assessCandidate(
@@ -1389,7 +1422,7 @@ void JoinOrderOptimizer::initDPsubScratch()
         if (auto pin_it = query_graph.outer_join_conditions.find(edge); pin_it != query_graph.outer_join_conditions.end())
         {
             dpsub_data.edge_pinned[i] = 1;
-            dpsub_data.edge_pin_mask[i] = static_cast<UInt32>(1) << pin_it->second;
+            dpsub_data.edge_pin_mask[i] = checkedRelationBit32(pin_it->second);
         }
     }
 
@@ -1559,7 +1592,7 @@ double JoinOrderOptimizer::computeSelectivityMask(
                 auto relation = equiv_member.getSourceRelations().getSingleBit();
                 if (!relation)
                     continue;
-                const UInt32 relation_bit = static_cast<UInt32>(1) << *relation;
+                const UInt32 relation_bit = checkedRelationBit32(*relation);
                 if (left_mask & relation_bit)
                 {
                     has_left = true;
@@ -1720,7 +1753,10 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
 
     auto left = buildPhysicalPlan(dptable, entry.left);
     auto right = buildPhysicalPlan(dptable, entry.right);
-    return std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.estimated_rows, std::move(join_operator));
+    auto result = std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.estimated_rows, std::move(join_operator));
+    result->used_canonical_cap = entry.used_canonical_cap;
+    result->canonical_cap_obligations = entry.canonical_cap_obligations;
+    return result;
 }
 
 /** Implements the `Dpsub` bottom-up dynamic programming algorithm for optimal bushy join tree generation.
@@ -1735,6 +1771,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
 */
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
 {
+    resetCandidateState();
+
     const size_t n = query_graph.relation_stats.size();
     using Bitvector = UInt32; // choose UInt64 or even UInt128 for larger sets
     // A budget cap on nr. of connected components considered by DPsub to avoid excessive optimization time on large join graphs.
@@ -1759,6 +1797,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
         double cost{.0};
         double sel{.0};
         JoinKind kind{JoinKind::Inner};
+        bool used_canonical_cap{false};
+        UInt64 canonical_cap_obligations{0};
         std::vector<JoinActionRef*> edges; // needed for physical plan generation
     };
     using DPTable = DPTable<DPEntry, Bitvector>;

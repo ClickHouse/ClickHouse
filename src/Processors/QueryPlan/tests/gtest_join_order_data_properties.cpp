@@ -736,7 +736,7 @@ TEST(JoinOrderDataProperties, AllAlgorithmsConsumeCanonicalCaps)
     settings.enable_join_transitive_predicates = false;
     settings.query_plan_optimize_join_order_data_property_diagnostics = false;
 
-    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE};
+    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE, JoinOrderAlgorithm::DPSUB};
     for (const auto algorithm : algorithms)
     {
         settings.query_plan_optimize_join_order_algorithm = {algorithm};
@@ -807,7 +807,7 @@ TEST(JoinOrderDataProperties, MissingRowsBypassCanonicalLookupsForAllAlgorithms)
     settings.query_plan_optimize_join_order_data_property_diagnostics = false;
     settings.query_plan_optimize_join_order_use_proven_uniqueness = true;
 
-    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE};
+    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE, JoinOrderAlgorithm::DPSUB};
     for (const auto algorithm : algorithms)
     {
         settings.query_plan_optimize_join_order_algorithm = {algorithm};
@@ -835,7 +835,7 @@ TEST(JoinOrderDataProperties, AllAlgorithmsConsumeCanonicalTriangleCaps)
     settings.enable_join_transitive_predicates = false;
     settings.query_plan_optimize_join_order_data_property_diagnostics = false;
 
-    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE};
+    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE, JoinOrderAlgorithm::DPSUB};
     for (const auto algorithm : algorithms)
     {
         settings.query_plan_optimize_join_order_algorithm = {algorithm};
@@ -885,7 +885,7 @@ TEST(JoinOrderDataProperties, PhysicalJoinMaterializesEveryMemberUsedByCanonical
     settings.enable_join_transitive_predicates = false;
     settings.query_plan_optimize_join_order_use_proven_uniqueness = true;
 
-    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE};
+    constexpr std::array algorithms{JoinOrderAlgorithm::GREEDY, JoinOrderAlgorithm::DPSIZE, JoinOrderAlgorithm::DPSUB};
     for (const auto algorithm : algorithms)
     {
         settings.query_plan_optimize_join_order_algorithm = {algorithm};
@@ -1102,6 +1102,78 @@ TEST(JoinOrderDataProperties, ProvenCanonicalAssessmentAdmitsTransitiveCandidate
         EXPECT_DOUBLE_EQ(ac->cost, 10.0);
         EXPECT_FALSE(ac->join_operator.expression.empty());
     }
+}
+
+TEST(JoinOrderDataProperties, DPsubProoflessTransitiveChainPreservesFeatureOffBehavior)
+{
+    Settings source_settings;
+    QueryPlanOptimizationSettings settings(source_settings, 0, {}, ExpressionActionsSettings{}, {}, false);
+    settings.enable_join_transitive_predicates = false;
+    settings.query_plan_optimize_join_order_algorithm = {JoinOrderAlgorithm::DPSUB};
+    settings.query_plan_optimize_join_order_data_property_diagnostics = false;
+
+    constexpr std::array outcomes{
+        TransitiveChainCanonicalOutcome::NotProven,
+        TransitiveChainCanonicalOutcome::MissingInputRows,
+        TransitiveChainCanonicalOutcome::Unsupported};
+    for (const auto outcome : outcomes)
+    {
+        SCOPED_TRACE(static_cast<int>(outcome));
+        settings.query_plan_optimize_join_order_use_proven_uniqueness = false;
+        const auto feature_off = optimizeTransitiveChain(settings, outcome);
+        settings.query_plan_optimize_join_order_use_proven_uniqueness = true;
+        const auto canonical_on = optimizeTransitiveChain(settings, outcome);
+
+        expectSamePlan(feature_off.plan, canonical_on.plan);
+        EXPECT_FALSE(findEntry(canonical_on.plan, BitSet().set(0).set(2)));
+        expectInnerJoinsHaveExpressions(canonical_on.plan);
+    }
+}
+
+TEST(JoinOrderDataProperties, DPsubProvenCanonicalAssessmentAdmitsTransitiveCandidate)
+{
+    Settings source_settings;
+    QueryPlanOptimizationSettings settings(source_settings, 0, {}, ExpressionActionsSettings{}, {}, false);
+    settings.enable_join_transitive_predicates = false;
+    settings.query_plan_optimize_join_order_algorithm = {JoinOrderAlgorithm::DPSUB};
+    settings.query_plan_optimize_join_order_data_property_diagnostics = false;
+
+    settings.query_plan_optimize_join_order_use_proven_uniqueness = false;
+    const auto feature_off = optimizeTransitiveChain(settings, TransitiveChainCanonicalOutcome::Proven);
+    EXPECT_FALSE(findEntry(feature_off.plan, BitSet().set(0).set(2)));
+
+    /// DPsub assesses transitive pairs per candidate during enumeration, so unlike DPhyp
+    /// (static topology, see `DPhypProvenCapDoesNotCreateSyntheticTopology`) a `Proven`
+    /// canonical assessment admits the pair, matching greedy and DPsize.
+    settings.query_plan_optimize_join_order_use_proven_uniqueness = true;
+    const auto canonical_on = optimizeTransitiveChain(settings, TransitiveChainCanonicalOutcome::Proven);
+    const auto ac = findEntry(canonical_on.plan, BitSet().set(0).set(2));
+    ASSERT_TRUE(ac);
+    EXPECT_EQ(ac->join_operator.kind, JoinKind::Inner);
+    EXPECT_EQ(ac->estimated_rows, 10u);
+    EXPECT_FALSE(ac->join_operator.expression.empty());
+    expectInnerJoinsHaveExpressions(canonical_on.plan);
+}
+
+TEST(JoinOrderDataProperties, DPsubIndependentTransitiveAdmissionStillUsesProvenCanonicalCap)
+{
+    Settings source_settings;
+    QueryPlanOptimizationSettings settings(source_settings, 0, {}, ExpressionActionsSettings{}, {}, false);
+    settings.enable_join_transitive_predicates = true;
+    settings.query_plan_optimize_join_order_algorithm = {JoinOrderAlgorithm::DPSUB};
+    settings.query_plan_optimize_join_order_use_proven_uniqueness = true;
+    settings.query_plan_optimize_join_order_data_property_diagnostics = false;
+
+    /// Independent transitive admission must not make the token's default/disabled cap look
+    /// pre-assessed. DPsub still has to perform the canonical lookup and apply the proven cap.
+    const auto optimized = optimizeTransitiveChain(settings, TransitiveChainCanonicalOutcome::Proven);
+    const auto ac = findEntry(optimized.plan, BitSet().set(0).set(2));
+    ASSERT_TRUE(ac);
+    EXPECT_EQ(ac->join_operator.kind, JoinKind::Inner);
+    EXPECT_EQ(ac->estimated_rows, 10u);
+    EXPECT_TRUE(ac->used_canonical_cap);
+    EXPECT_FALSE(ac->join_operator.expression.empty());
+    expectInnerJoinsHaveExpressions(optimized.plan);
 }
 
 TEST(JoinOrderDataProperties, SynthesizedTransitivePredicateOrderIsDeterministic)

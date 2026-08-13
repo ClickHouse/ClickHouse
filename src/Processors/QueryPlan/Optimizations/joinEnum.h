@@ -2,6 +2,7 @@
 
 #include <bit>
 #include <concepts>
+#include <limits>
 #include <vector>
 #include <base/types.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
@@ -108,6 +109,12 @@ void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::initDPTable(TDPTable & dp_tab
         for (auto relation : edge_sources)
             relations.push_back(static_cast<UInt>(relation));
 
+        const bool valid_relations = relations[0] < std::numeric_limits<UInt>::digits && relations[1] < std::numeric_limits<UInt>::digits
+            && relations[0] < query_graph.relation_stats.size() && relations[1] < query_graph.relation_stats.size();
+        chassert(valid_relations);
+        if (!valid_relations)
+            continue;
+
         UInt left_mask = (static_cast<UInt>(1) << relations[0]);
         UInt right_mask = (static_cast<UInt>(1) << relations[1]);
 
@@ -140,6 +147,11 @@ void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::setTableNeighbor(TDPTable & d
 template <class TConsumer, class TDPTable, class TQueryGraph>
 void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::enumerate(TConsumer & consumer, const TQueryGraph & query_graph)
 {
+    const bool supported_relation_count = n() < std::numeric_limits<UInt>::digits;
+    chassert(supported_relation_count);
+    if (!supported_relation_count)
+        return;
+
     const UInt full_set_mask = (static_cast<UInt>(1) << n()) - 1;
 
     initDPTable(consumer.getDPTable(), query_graph);
@@ -196,10 +208,10 @@ void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::enumerate(TConsumer & consume
             /// A predicate-free transitively-connected pair is admitted by the consumer, which
             /// embodies the setting/proof gate. The check must run before `setTableNeighbor`:
             /// a rejected pair must not mark subset connectivity or consume enumeration budget.
-            else if (consumer.canAcceptTransitivePair(query_graph, lhs, rhs))
+            else if (auto admission = consumer.getTransitiveAdmission(query_graph, lhs, rhs))
             {
                 setTableNeighbor(dp_table, lhs, rhs);
-                consumer.accept(lhs | rhs, lhs, rhs);
+                consumer.accept(std::move(*admission));
                 LOG_TEST(log, "lhs-rhs transitively connected through equivalences, but not directly connected.");
             }
             else
