@@ -14,7 +14,7 @@ Avec l’optimisation prewhere, seules les colonnes nécessaires à l’exécuti
   ## Contrôle manuel de PREWHERE
 </div>
 
-Cette clause a la même signification que la clause `WHERE`. La différence réside dans les données lues depuis la table. Le contrôle manuel de `PREWHERE` est utile pour les conditions de filtrage utilisées par une minorité des colonnes de la requête, mais qui offrent un fort pouvoir de filtration des données. Cela réduit le volume de données à lire.
+Cette clause filtre l’unique expression de table à laquelle elle s’applique, généralement lors de la lecture de cette table. Le contrôle manuel de `PREWHERE` est utile pour les conditions de filtrage utilisées par une minorité des colonnes de la requête, mais qui offrent un fort pouvoir de filtration des données. Cela réduit le volume de données à lire.
 
 Une requête peut spécifier simultanément `PREWHERE` et `WHERE`. Dans ce cas, `PREWHERE` est appliqué avant `WHERE`.
 
@@ -24,6 +24,12 @@ Si la requête utilise le modificateur [FINAL](/fr/reference/statements/select/f
 
 <Note>
   La section `PREWHERE` est exécutée avant `FINAL` ; les résultats des requêtes `FROM ... FINAL` peuvent donc être faussés lors de l’utilisation de `PREWHERE` avec des champs qui ne figurent pas dans la section `ORDER BY` d’une table.
+</Note>
+
+<Note>
+  `PREWHERE` appartient à une expression de table unique ; il filtre donc cette entrée avant l’exécution d’une [JOIN](/fr/reference/statements/select/join). `WHERE` est évalué sur le résultat de la jointure, et l’optimiseur peut librement le déplacer sous la jointure lorsque cela renvoie les mêmes lignes. La même condition peut donc produire des résultats différents dans les deux clauses.
+
+  Par exemple, `SELECT a.id FROM a LEFT JOIN b ON a.id = b.x PREWHERE b.y > 50` est équivalent à `SELECT a.id FROM a LEFT JOIN (SELECT * FROM b WHERE y > 50) AS b ON a.id = b.x`, et non à la même requête avec `WHERE b.y > 50` : les lignes de `b` sont supprimées avant l’exécution de la jointure, de sorte que les lignes de `a` qui perdent leur correspondance sont renvoyées au lieu d’être supprimées, avec les colonnes de `b` remplies conformément au paramètre [join&#95;use&#95;nulls](/fr/reference/settings/session-settings/join#join_use_nulls).
 </Note>
 
 <div id="limitations">

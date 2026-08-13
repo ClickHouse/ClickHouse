@@ -14,7 +14,7 @@ Prewhere 是一种用于更高效执行过滤的优化机制。即使未显式�
   ## 手动控制 PREWHERE
 </div>
 
-该子句与 `WHERE` 子句含义相同。区别在于从表中读取哪些数据。对于查询中只有少数列会用到、但能显著过滤数据的过滤条件，可以手动将其放到 `PREWHERE` 中，从而减少需要读取的数据量。
+该子句会过滤其所应用的单个表表达式，通常在读取该表时进行过滤。对于查询中只有少数列会用到、但能显著过滤数据的过滤条件，可以手动将其放到 `PREWHERE` 中，从而减少需要读取的数据量。
 
 一个查询可以同时指定 `PREWHERE` 和 `WHERE`。在这种情况下，`PREWHERE` 会先于 `WHERE` 执行。
 
@@ -24,6 +24,12 @@ Prewhere 是一种用于更高效执行过滤的优化机制。即使未显式�
 
 <Note>
   `PREWHERE` 部分会在 `FINAL` 之前执行，因此，如果对不在表的 `ORDER BY` 部分中的字段使用 `PREWHERE`，`FROM ... FINAL` 查询的结果可能会出现偏差。
+</Note>
+
+<Note>
+  `PREWHERE` 属于单个表表达式，因此会在执行 [JOIN](/zh/reference/statements/select/join) 之前过滤该输入。`WHERE` 会对 join 的结果求值；如果移至 join 之后仍会返回相同的行，优化器可以自由地进行这一转换。因此，同一条件在这两个子句中可能产生不同的结果。
+
+  例如，`SELECT a.id FROM a LEFT JOIN b ON a.id = b.x PREWHERE b.y > 50` 等价于 `SELECT a.id FROM a LEFT JOIN (SELECT * FROM b WHERE y > 50) AS b ON a.id = b.x`，而不等价于使用 `WHERE b.y > 50` 的同一查询：会在执行 join 前移除 `b` 的行，因此失去匹配项的 `a` 行会被返回而非丢弃，`b` 的列则会按照 [join&#95;use&#95;nulls](/zh/reference/settings/session-settings/join#join_use_nulls) 指定的方式填充。
 </Note>
 
 <div id="limitations">

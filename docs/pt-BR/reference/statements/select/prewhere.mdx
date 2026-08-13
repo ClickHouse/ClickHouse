@@ -14,7 +14,7 @@ Com a otimização de prewhere, primeiro são lidas apenas as colunas necessári
   ## Controlando o PREWHERE manualmente
 </div>
 
-A cláusula tem o mesmo significado da cláusula `WHERE`. A diferença está em quais dados são lidos da tabela. Ao controlar manualmente o `PREWHERE` para condições de filtragem usadas por uma minoria das colunas na consulta, mas que proporcionam uma filtragem de dados significativa, reduz-se o volume de dados lidos.
+A cláusula filtra a expressão de tabela à qual é aplicada, normalmente durante a leitura dessa tabela. Ao controlar manualmente o `PREWHERE` para condições de filtragem usadas por uma minoria das colunas na consulta, mas que proporcionam uma filtragem de dados significativa, reduz-se o volume de dados lidos.
 
 Uma consulta pode especificar `PREWHERE` e `WHERE` simultaneamente. Nesse caso, `PREWHERE` vem antes de `WHERE`.
 
@@ -24,6 +24,12 @@ Se a consulta tiver o modificador [FINAL](/pt-BR/reference/statements/select/fro
 
 <Note>
   A seção `PREWHERE` é executada antes de `FINAL`, portanto os resultados das consultas `FROM ... FINAL` podem ser distorcidos ao usar `PREWHERE` com campos que não estão na seção `ORDER BY` de uma tabela.
+</Note>
+
+<Note>
+  `PREWHERE` pertence a uma única expressão de tabela, portanto filtra essa entrada antes da execução de um [JOIN](/pt-BR/reference/statements/select/join). `WHERE` é avaliado no resultado do join, e o otimizador pode movê-lo para depois do join quando isso retornar as mesmas linhas. Portanto, a mesma condição pode produzir resultados diferentes nas duas cláusulas.
+
+  Por exemplo, `SELECT a.id FROM a LEFT JOIN b ON a.id = b.x PREWHERE b.y > 50` é equivalente a `SELECT a.id FROM a LEFT JOIN (SELECT * FROM b WHERE y > 50) AS b ON a.id = b.x`, e não à mesma consulta com `WHERE b.y > 50`: as linhas de `b` são removidas antes da execução do join, portanto as linhas de `a` que perdem sua correspondência são retornadas em vez de descartadas, com as colunas de `b` preenchidas conforme especificado por [join&#95;use&#95;nulls](/pt-BR/reference/settings/session-settings/join#join_use_nulls).
 </Note>
 
 <div id="limitations">

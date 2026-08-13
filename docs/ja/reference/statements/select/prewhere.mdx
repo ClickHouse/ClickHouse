@@ -14,7 +14,7 @@ prewhere 最適化では、まず prewhere 式の実行に必要なカラムだ�
   ## PREWHERE を手動で制御する
 </div>
 
-この句は `WHERE` 句と同じ意味です。違いは、テーブルからどのデータを読み取るかにあります。`PREWHERE` を手動で制御するのは、クエリ内で使用されるカラムの一部にしか関係しない一方で、データを大きく絞り込めるフィルタ条件に対してです。これにより、読み取るデータ量を削減できます。
+この句は、適用先の単一テーブル式をフィルタリングし、通常はそのテーブルの読み取り時に処理します。`PREWHERE` を手動で制御するのは、クエリ内で使用されるカラムの一部にしか関係しない一方で、データを大きく絞り込めるフィルタ条件に対してです。これにより、読み取るデータ量を削減できます。
 
 1 つのクエリで `PREWHERE` と `WHERE` を同時に指定できます。この場合、`PREWHERE` は `WHERE` より先に適用されます。
 
@@ -24,6 +24,12 @@ prewhere 最適化では、まず prewhere 式の実行に必要なカラムだ�
 
 <Note>
   `PREWHERE` セクションは `FINAL` より前に実行されるため、テーブルの `ORDER BY` セクションに含まれないフィールドに対して `PREWHERE` を使用すると、`FROM ... FINAL` クエリの結果が偏る可能性があります。
+</Note>
+
+<Note>
+  `PREWHERE` は単一のテーブル式に属するため、[JOIN](/ja/reference/statements/select/join) が実行される前にその入力をフィルタリングします。`WHERE` は JOIN の結果に対して評価され、同じ行が返される場合、オプティマイザはこれを JOIN より下流へ自由に移動できます。そのため、同じ条件でも 2 つの句では異なる結果になる可能性があります。
+
+  たとえば、`SELECT a.id FROM a LEFT JOIN b ON a.id = b.x PREWHERE b.y > 50` は `SELECT a.id FROM a LEFT JOIN (SELECT * FROM b WHERE y > 50) AS b ON a.id = b.x` と同等であり、`WHERE b.y > 50` を使用した同じクエリとは同等ではありません。JOIN が実行される前に `b` の行が除外されるため、対応する行を失った `a` の行は除外されずに返され、`b` のカラムは [join&#95;use&#95;nulls](/ja/reference/settings/session-settings/join#join_use_nulls) の指定に従って補完されます。
 </Note>
 
 <div id="limitations">
