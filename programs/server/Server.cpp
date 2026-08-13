@@ -3450,7 +3450,9 @@ try
             {
                 dumpCoverageReportIfPossible();
                 LOG_WARNING(log, "Closed connections to introspection servers. But {} remain. Will shutdown forcefully.", current_connections);
-                safeExit(0);
+                /// No leak check: remaining connection handlers still own memory it would report as
+                /// leaked. Reported, because here stderr is the server log.
+                safeExit(0, LeakCheck::SkipAndReport);
             }
 
             LOG_INFO(log, "Closed connections to introspection servers.");
