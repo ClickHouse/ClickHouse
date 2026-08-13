@@ -72,6 +72,7 @@ for local_plan in 0 1; do
     SELECT ProfileEvents['ParallelReplicasHandleRequestMicroseconds'] > 0
     FROM system.query_log
     WHERE query_id = '$query_id'
+      AND current_database = 'default' -- not currentDatabase(): the SELECT above ran after USE default
       AND type = 'QueryFinish'
       AND query_kind = 'Select'
       AND event_time >= now() - INTERVAL 600 SECOND"
