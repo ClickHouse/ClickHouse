@@ -87,8 +87,18 @@ class ScopedNonBlocking
 {
 public:
     explicit ScopedNonBlocking(Poco::Net::SocketImpl & socket_impl_)
-        : socket_impl(socket_impl_), was_blocking(socket_impl_.getBlocking())
+        : socket_impl(socket_impl_)
     {
+#if USE_SILK
+        if (auto * fiber_socket_impl = dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(&socket_impl))
+        {
+            was_blocking = !fiber_socket_impl->getDontWait();
+            if (was_blocking)
+                fiber_socket_impl->setDontWait(true);
+            return;
+        }
+#endif
+        was_blocking = socket_impl.getBlocking();
         if (was_blocking)
             socket_impl.setBlocking(false);
     }
@@ -100,6 +110,13 @@ public:
 
         try
         {
+#if USE_SILK
+            if (auto * fiber_socket_impl = dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(&socket_impl))
+            {
+                fiber_socket_impl->setDontWait(false);
+                return;
+            }
+#endif
             socket_impl.setBlocking(true);
         }
         catch (...)
@@ -113,34 +130,10 @@ public:
 
 private:
     Poco::Net::SocketImpl & socket_impl;
-    bool was_blocking;
+    /// For regular (non-silk) socket: whether it was blocking before.
+    /// For silk socket: whether it was dont-wait before.
+    bool was_blocking = false;
 };
-
-#if USE_SILK
-class ScopedDontWait
-{
-public:
-    explicit ScopedDontWait(Silk::SecureFiberStreamSocketImpl & socket_impl_)
-        : socket_impl(socket_impl_), was_dont_wait(socket_impl_.getDontWait())
-    {
-        if (!was_dont_wait)
-            socket_impl.setDontWait(true);
-    }
-
-    ~ScopedDontWait()
-    {
-        if (!was_dont_wait)
-            socket_impl.setDontWait(false);
-    }
-
-    ScopedDontWait(const ScopedDontWait &) = delete;
-    ScopedDontWait & operator=(const ScopedDontWait &) = delete;
-
-private:
-    Silk::SecureFiberStreamSocketImpl & socket_impl;
-    bool was_dont_wait;
-};
-#endif
 
 }
 
@@ -155,13 +148,6 @@ SocketState getSocketState(const Poco::Net::StreamSocket & socket)
         /// performed) has no TLS state to inspect, so fall back to the raw file-descriptor check.
         if (auto * ssl = secure->ssl())
         {
-#if USE_SILK
-            if (auto * silk_secure = dynamic_cast<Silk::SecureFiberStreamSocketImpl *>(secure))
-            {
-                ScopedDontWait dont_wait(*silk_secure);
-                return getSSLSocketState(ssl);
-            }
-#endif
             ScopedNonBlocking non_blocking(*secure);
             return getSSLSocketState(ssl);
         }
