@@ -19,6 +19,11 @@ using RaftAppendResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buff
 struct KeeperConfiguration;
 using KeeperConfigurationPtr = std::shared_ptr<KeeperConfiguration>;
 
+/// Translate coordination settings into the `raft_params` NuRaft is started with. Split out of
+/// `KeeperServer::launchRaftServer` so the translation - unit conversions and the narrowing to the
+/// int32 most of these fields are - can be tested without starting a server.
+nuraft::raft_params buildRaftParams(const CoordinationSettings & coordination_settings, LoggerPtr log);
+
 class KeeperServer
 {
 public:
@@ -65,6 +70,10 @@ private:
         /// Follower counters include only voting peers; learners include all peers.
         /// Both get_peer_info_all and get_srv_config_all hold the raft lock internally.
         KeeperServer::RespondingCounts getRespondingCounts();
+
+        /// Fill is_alive / is_synced / peer_last_log_index / last_succ_resp_ms for members.
+        /// Must be called only when this raft instance is the leader.
+        void applyPeerHealthToMembers(std::vector<KeeperClusterMemberInfo> & members, uint64_t self_log_idx);
 
         using nuraft::raft_server::raft_server;
 

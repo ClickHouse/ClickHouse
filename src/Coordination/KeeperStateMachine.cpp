@@ -198,6 +198,9 @@ void KeeperStateMachine::preprocessUncommittedLogEntries(uint64_t start_idx, uin
 
     start_idx = std::min(start_idx, end_idx);
     auto entries = log_store->log_entries(start_idx, end_idx);
+    if (!entries)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Log entries [{}, {}) unavailable due to concurrent truncation or compaction", start_idx, end_idx);
 
     if (entries->size() != end_idx - std::min(start_idx, end_idx))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of log entries returned by log store: start_idx={}, end_idx={}, count={}", start_idx, end_idx, entries->size());
@@ -1288,7 +1291,7 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
     else
     {
         LOG_WARNING(log, "Cannot push snapshot task into queue");
-        /// Run cleanup inline so snapshot mode is disabled and `when_done(false)` fires once.
+        /// Run cleanup inline so the read view is retired and `when_done(false)` fires once.
         snapshot_cleanup_transferred = true;
         /// push returned false, so the task was not consumed; the use-after-move is unreachable.
         /// NOLINTNEXTLINE(bugprone-use-after-move,hicpp-invalid-access-moved)
@@ -1926,6 +1929,12 @@ KeeperStorageStats KeeperStateMachine::getStorageStats() const
     std::shared_lock storage_lock(state_machine_storage_mutex);
     std::lock_guard response_lock(process_and_responses_lock);
     return storage->getStorageStats();
+}
+
+std::unique_ptr<KeeperNodesReadView> KeeperStateMachine::getStorageReadView() const
+{
+    KEEPER_STORAGE_LOCK_SHARED(lock);
+    return storage->issueReadView();
 }
 
 void KeeperStateMachine::dumpWatches(WriteBufferFromOwnString & buf) const

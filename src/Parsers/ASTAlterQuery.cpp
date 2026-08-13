@@ -1,6 +1,5 @@
 #include <Parsers/ASTAlterQuery.h>
 
-#include <Core/ServerSettings.h>
 #include <Databases/DataLake/DataLakeConstants.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
@@ -501,6 +500,13 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
                 case DataDestinationType::DISK:
                 case DataDestinationType::VOLUME:
                 case DataDestinationType::SHARD:
+                    /// `TO SHARD` exists only in the `MOVE PART` grammar branch, and
+                    /// `movePartitionToShard` reads the part name off an `ASTLiteral`.
+                    if (move_destination_type == DataDestinationType::SHARD && !part)
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "move_destination_type 'SHARD' requires the PART form ('part' set) of MOVE "
+                            "during AST JSON deserialization");
                     if (move_destination_name.empty())
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
@@ -509,6 +515,13 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
                             magic_enum::enum_name(move_destination_type));
                     break;
                 case DataDestinationType::TABLE:
+                    /// `TO TABLE` exists only in the `MOVE PARTITION` grammar branch, and
+                    /// `getPartitionIDFromQuery` downcasts `partition` to `ASTPartition`.
+                    if (part)
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "move_destination_type 'TABLE' requires the PARTITION form ('part' unset) of MOVE "
+                            "during AST JSON deserialization");
                     if (to_table.empty())
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
@@ -864,6 +877,9 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
                 break;
             case DataDestinationType::VOLUME:
                 ostr << "VOLUME ";
+                break;
+            case DataDestinationType::SHARD:
+                ostr << "SHARD ";
                 break;
             case DataDestinationType::TABLE:
                 ostr << "TABLE ";
