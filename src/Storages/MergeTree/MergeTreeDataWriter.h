@@ -14,6 +14,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
+#include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 
 
 namespace DB
@@ -118,13 +119,17 @@ public:
         ContextPtr context);
 
     /// For mutation: MATERIALIZE PROJECTION.
+    /// `source_parts`/`patch_parts` are the main/patch parts the projection block was calculated
+    /// from, used to preserve JSON `SHARED REGEXP` placement provenance (see writeProjectionPartImpl).
     static MergeTreeTemporaryPartPtr writeTempProjectionPart(
         const MergeTreeData & data,
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
         size_t block_num,
-        ContextPtr context);
+        ContextPtr context,
+        const MergeTreeData::DataPartsVector & source_parts,
+        const PatchPartsForReader & patch_parts);
 
     static Block mergeBlock(
         Block && block,
@@ -152,7 +157,9 @@ private:
         const ProjectionDescription & projection,
         MergeTreeIndices indices,
         bool merge_is_needed,
-        bool try_adaptive_codec);
+        bool try_adaptive_codec,
+        const MergeTreeData::DataPartsVector & source_parts,
+        const PatchPartsForReader & patch_parts);
 
     MergeTreeData & data;
     LoggerPtr log;

@@ -1631,8 +1631,12 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
     if (squashed_chunk)
     {
         auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
+        /// TODO: global_ctx->future_part->patch_parts is a plain DataPartsVector, not the
+        /// PatchPartsForReader this needs for rename-aware provenance lookup; a merge that combines
+        /// a lightweight-update patch into a JSON-column projection may not retain its provenance.
         auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-            *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+            *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context,
+            global_ctx->future_part->parts, /*patch_parts=*/ {});
 
         tmp_part->finalize();
         tmp_part->part->getDataPartStorage().commitTransaction();
@@ -1673,8 +1677,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
         if (squashed_chunk)
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
+            /// See the analogous call above: future_part->patch_parts isn't a PatchPartsForReader.
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+                *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context,
+                global_ctx->future_part->parts, /*patch_parts=*/ {});
 
             temp_part->finalize();
             temp_part->part->getDataPartStorage().commitTransaction();
