@@ -792,7 +792,7 @@ protected:
                     res_columns[res_index++]->insert(static_cast<UInt64>(database->getObjectMetadataModificationTime(table_name)));
 
                 StorageMetadataHandle metadata_snapshot;
-                if (table)
+                if (can_expose_metadata)
                     metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
 
                 if (columns_mask[src_index++])

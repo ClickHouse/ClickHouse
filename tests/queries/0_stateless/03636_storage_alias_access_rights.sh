@@ -124,8 +124,11 @@ ${CLICKHOUSE_CLIENT} --query "
         INDEX value_idx value TYPE minmax GRANULARITY 1
     )
     ENGINE = MergeTree
+    PARTITION BY id % 2
     ORDER BY id
+    SAMPLE BY id
     SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+    ALTER TABLE test_table_access MODIFY COMMENT 'target table comment';
     INSERT INTO test_table_access SELECT number + 1, randomString(4096) FROM numbers(2);
 
     CREATE TABLE test_buffer_access (id UInt64, value String)
@@ -171,6 +174,19 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     WHERE database = currentDatabase() AND name = 'test_alias_access';
 "
 
+echo "Test table metadata without target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
+    SELECT
+        empty(partition_key),
+        empty(sorting_key),
+        empty(primary_key),
+        empty(sampling_key),
+        empty(skipping_indices_types),
+        empty(comment)
+    FROM system.tables
+    WHERE database = currentDatabase() AND name = 'test_alias_access';
+"
+
 echo "Test column statistics without target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     SELECT name, data_compressed_bytes > 0
@@ -179,9 +195,9 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     ORDER BY name;
 "
 
-echo "Test index statistics without target permission"
+echo "Test index metadata and statistics without target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
-    SELECT sum(data_compressed_bytes + data_uncompressed_bytes + marks_bytes) > 0
+    SELECT count()
     FROM system.data_skipping_indices
     WHERE database = currentDatabase() AND table = 'test_alias_access';
 "
@@ -215,6 +231,19 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     WHERE database = currentDatabase() AND name = 'test_alias_access';
 "
 
+echo "Test table metadata with target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
+    SELECT
+        notEmpty(partition_key),
+        notEmpty(sorting_key),
+        notEmpty(primary_key),
+        notEmpty(sampling_key),
+        notEmpty(skipping_indices_types),
+        notEmpty(comment)
+    FROM system.tables
+    WHERE database = currentDatabase() AND name = 'test_alias_access';
+"
+
 echo "Test column statistics with column-scoped target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     SELECT name, data_compressed_bytes > 0
@@ -223,9 +252,12 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
     ORDER BY name;
 "
 
-echo "Test index statistics with target permission"
+echo "Test index metadata and statistics with target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
-    SELECT sum(data_compressed_bytes + data_uncompressed_bytes + marks_bytes) > 0
+    SELECT
+        count(),
+        countIf(notEmpty(name) AND notEmpty(type) AND notEmpty(expr) AND granularity > 0),
+        sum(data_compressed_bytes + data_uncompressed_bytes + marks_bytes) > 0
     FROM system.data_skipping_indices
     WHERE database = currentDatabase() AND table = 'test_alias_access';
 "

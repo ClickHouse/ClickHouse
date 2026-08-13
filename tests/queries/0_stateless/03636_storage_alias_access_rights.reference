@@ -37,10 +37,12 @@ Test count without target SELECT permission
 ACCESS_DENIED
 Test table statistics without target permission
 1	1	1	1	1
+Test table metadata without target permission
+1	1	1	1	1	1
 Test column statistics without target permission
 id	0
 value	0
-Test index statistics without target permission
+Test index metadata and statistics without target permission
 0
 Test lifetime statistics without target permission
 1	1
@@ -48,10 +50,12 @@ Test direct and Alias count with column-scoped target SELECT permission using th
 2	2
 Test table statistics with target permission
 2	1	1	1	1
+Test table metadata with target permission
+1	1	1	1	1	1
 Test column statistics with column-scoped target permission
 id	0
 value	1
-Test index statistics with target permission
-1
+Test index metadata and statistics with target permission
+1	1	1
 Test lifetime statistics with target permission
 1	1
