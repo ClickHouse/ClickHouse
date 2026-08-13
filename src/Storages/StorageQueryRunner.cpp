@@ -74,7 +74,7 @@ namespace QueryRunnerSetting
     extern const QueryRunnerSettingsUInt64 max_queue_size;
     extern const QueryRunnerSettingsQueryRunnerMode mode;
     extern const QueryRunnerSettingsString shard;
-    extern const QueryRunnerSettingsUInt64 threads;
+    extern const QueryRunnerSettingsNonZeroUInt64 threads;
 }
 
 namespace ErrorCodes
@@ -210,8 +210,8 @@ private:
 class QueryRunnerJobCompletion
 {
 public:
-    QueryRunnerJobCompletion(std::shared_ptr<PrefixLatch> pending_, std::shared_ptr<CountDownLatch> batch_)
-        : pending(std::move(pending_)), batch(std::move(batch_)), seq(pending->issue())
+    QueryRunnerJobCompletion(PrefixLatch & pending_, std::shared_ptr<CountDownLatch> batch_)
+        : pending(pending_), batch(std::move(batch_)), seq(pending.issue())
     {
     }
 
@@ -219,11 +219,11 @@ public:
     {
         if (batch)
             batch->countDown();
-        pending->retire(seq);
+        pending.retire(seq);
     }
 
 private:
-    const std::shared_ptr<PrefixLatch> pending;
+    PrefixLatch & pending;
     const std::shared_ptr<CountDownLatch> batch;
     const UInt64 seq;
 };
@@ -335,7 +335,6 @@ public:
               num_threads_,
               0,
               num_threads_ + max_queue_size_)
-        , pending(std::make_shared<PrefixLatch>())
     {
         client_info.client_name = String(client_name);
         client_info.setInitialQuery();
@@ -352,11 +351,11 @@ public:
             LOG_ERROR(LogFrequencyLimiter(log, 5), "Cannot schedule the query (max_queue_size = {}), discarding it", max_queue_size);
     }
 
-    const std::shared_ptr<PrefixLatch> & getPending() const { return pending; }
+    PrefixLatch & getPending() { return pending; }
 
     void waitForAllPending(const QueryStatusPtr & query_status)
     {
-        pending->waitForAllIssued(query_status);
+        pending.waitForAllIssued(query_status);
     }
 
     void shutdown()
@@ -623,11 +622,10 @@ private:
     ClientInfo client_info;
     const size_t max_queue_size;
     LoggerPtr log;
+    PrefixLatch pending;
     ThreadPool pool;
 
     std::atomic<bool> shutdown_called = false;
-
-    const std::shared_ptr<PrefixLatch> pending;
 
     std::mutex pools_mutex;
     std::map<std::pair<UInt64, String>, ConnectionPoolWithFailoverPtr> pools TSA_GUARDED_BY(pools_mutex);
@@ -890,7 +888,7 @@ void registerStorageQueryRunner(StorageFactory & factory)
         settings.loadFromQuery(*args.storage_def);
 
         const UInt64 num_threads = settings[QueryRunnerSetting::threads];
-        if (num_threads < 1 || num_threads > 1024)
+        if (num_threads > 1024)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'threads' setting of the QueryRunner engine must be in the range [1, 1024], got {}", num_threads);
 
         const UInt64 max_queue_size = settings[QueryRunnerSetting::max_queue_size];

@@ -691,7 +691,7 @@ ThreadPoolImpl<Thread>::~ThreadPoolImpl()
 }
 
 template <typename Thread>
-void ThreadPoolImpl<Thread>::finishNoLock()
+void ThreadPoolImpl<Thread>::finishNoLock(const std::lock_guard<std::mutex> &)
 {
     finished = true;
 
@@ -703,7 +703,7 @@ template <typename Thread>
 void ThreadPoolImpl<Thread>::finish()
 {
     std::lock_guard lock(mutex);
-    finishNoLock();
+    finishNoLock(lock);
 }
 
 template <typename Thread>
@@ -711,7 +711,7 @@ void ThreadPoolImpl<Thread>::finalize()
 {
     {
         std::lock_guard lock(mutex);
-        finishNoLock();
+        finishNoLock(lock);
 
         /// scheduleImpl doesn't check for `finished` outside the critical section,
         /// so we set remaining_pool_capacity to a large negative value

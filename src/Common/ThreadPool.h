@@ -264,7 +264,7 @@ private:
     /// recently-active workers stay in the LIFO position they earned.
     void wakeUpExcessIdleThreadsNoLock();
 
-    void finishNoLock();
+    void finishNoLock(const std::lock_guard<std::mutex> & lock);
     void finalize();
     void onDestroy();
 };
