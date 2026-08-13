@@ -294,6 +294,35 @@ ReturnType SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & 
     return ReturnType(true);
 }
 
+void SerializationMap::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const auto & column_map = assert_cast<const ColumnMap &>(column);
+
+    const auto & nested_array = column_map.getNestedColumn();
+    const auto & nested_tuple = column_map.getNestedData();
+    const auto & offsets = nested_array.getOffsets();
+
+    size_t offset = offsets[row_num - 1];
+    size_t next_offset = offsets[row_num];
+
+    const size_t level = settings.hive_text.nesting_level;
+    const char entry_separator = getHiveTextDelimiter(settings, level);
+    const char key_value_separator = getHiveTextDelimiter(settings, level + 1);
+
+    auto child_settings = settings;
+    child_settings.hive_text.nesting_level = level + 2;
+
+    for (size_t i = offset; i < next_offset; ++i)
+    {
+        if (i != offset)
+            writeChar(entry_separator, ostr);
+
+        key_serialization->serializeTextHive(nested_tuple.getColumn(0), i, ostr, child_settings);
+        writeChar(key_value_separator, ostr);
+        value_serialization->serializeTextHive(nested_tuple.getColumn(1), i, ostr, child_settings);
+    }
+}
+
 void SerializationMap::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     auto writer = [&settings](WriteBuffer & buf, const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)

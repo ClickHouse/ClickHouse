@@ -53,6 +53,8 @@ Note: a flattened header is not read back into a Tuple by name when `input_forma
 If it set to true, then separate columns written in CSV format can be deserialized to Tuple column.
 
 This applies only to bare `Tuple`. A `Nullable(Tuple)` is always written as a single CSV field (see [output_format_csv_serialize_tuple_into_separate_columns](#output_format_csv_serialize_tuple_into_separate_columns)) and is likewise read back from a single field, never from separate columns, regardless of this setting. Separate-columns parsing is not supported for `Nullable(Tuple)` because a leading `\N` field is ambiguous (it may be the outer NULL of the tuple or the NULL of its first element).
+
+Because a bare `Tuple` then occupies one field per element, a `\N` in the field of a direct top-level element is that element and not the whole column, so [input_format_null_as_default](#input_format_null_as_default) applies to that element. A row that supplies a single field for the whole tuple is short by the remaining elements and is rejected instead of taking the column default. Set this setting to `0` to read such a field as the whole column again. A `\N` in the field of an element of a nested `Tuple` is still read as that whole nested element.
 )", 0) \
     DECLARE(Bool, output_format_csv_crlf_end_of_line, false, R"(
 If it is set true, end of line in CSV format will be \\r\\n instead of \\n.
@@ -274,6 +276,9 @@ Delimiter between a pair of map key/values in Hive Text File
 )", 0) \
     DECLARE(Bool, input_format_hive_text_allow_variable_number_of_columns, true, R"(
 Ignore extra columns in Hive Text input (if file has more columns than expected) and treat missing fields in Hive Text input as default values
+)", 0) \
+    DECLARE(Char, format_hive_text_rows_delimiter, '\n', R"(
+Delimiter at the end of each row in the Hive Text output format
 )", 0) \
     DECLARE(UInt64, input_format_msgpack_number_of_columns, 0, R"(
 The number of columns in inserted MsgPack data. Used for automatic schema inference from data.
@@ -1621,9 +1626,35 @@ Possible values:
 
 Default value: `` (empty).
 )", 0) \
+    DECLARE(UInt64, output_format_image_time_multiplier_seconds, 1, R"(
+The numerator of the time unit of the `t` column, in seconds, for image output formats such as `PNG`.
+
+The presence of a `t` column makes the format produce an animation, in which `t` is the relative time offset
+of the frame. One unit of `t` corresponds to `output_format_image_time_multiplier_seconds / output_format_image_time_divisor_seconds` seconds.
+With the default values (`1` and `60`), one unit of `t` is 1/60 of a second.
+
+Default value: 1.
+)", 0) \
+    DECLARE(UInt64, output_format_image_time_divisor_seconds, 60, R"(
+The denominator of the time unit of the `t` column, in seconds, for image output formats such as `PNG`.
+
+See [`output_format_image_time_multiplier_seconds`](#output_format_image_time_multiplier_seconds).
+
+Default value: 60.
+)", 0) \
+    DECLARE(Bool, output_format_image_streaming_animation, false, R"(
+For image output formats such as `PNG`, write each frame of an animation as soon as the next value of the `t` column is seen, instead of buffering all the frames in memory until the end of the query.
+
+Only one frame is kept in memory, and the frames reach the output while the query is still running. In exchange, the values of `t` must be non-decreasing, otherwise the query throws an exception, and the number of frames is not known when the header of the animation has to be written, so the declared frame count is an upper bound rather than the exact value. Browsers play such a file, but decoders that trust the declared count report an error after the last real frame.
+
+Default value: `false`.
+)", 0) \
     DECLARE(UInt64, input_format_max_block_size_bytes, 0, R"(
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
 0 means no limit in bytes.
+)", 0) \
+    DECLARE(UInt64, input_format_json_max_string_column_growth_step, 0, R"(
+When building the JSON column's internal String buffers while parsing JSON from string, cap the power-of-two growth at this many bytes: once the reserved size reaches this value, the buffer grows by increments of this size instead of doubling. This bounds over-allocation for large JSON columns. 0 means unlimited (pure doubling).
 )", 0) \
     DECLARE(UInt64, input_format_max_block_wait_ms, 0, R"(
 Limits the maximum time in milliseconds to wait before emitting a block during parsing in row-based input formats. 0 means no limit.
