@@ -29,52 +29,151 @@ INSERT INTO tj SELECT number, number FROM numbers(10);
 INSERT INTO ta SELECT number, number * 2 FROM numbers(10);
 INSERT INTO tb SELECT number, number FROM numbers(10);
 
--- No join at all.
+SELECT 'no join';
 SELECT count() FROM t1 FORMAT Null SETTINGS log_comment = '04891_join_count_none_new', enable_analyzer = 1;
 SELECT count() FROM t1 FORMAT Null SETTINGS log_comment = '04891_join_count_none_old', enable_analyzer = 0;
 
--- A single INNER JOIN. The strictness is not written, so it comes from `join_default_strictness`.
+SYSTEM FLUSH LOGS query_log;
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND event_date >= yesterday()
+  AND log_comment LIKE '04891\_join\_count\_none%'
+ORDER BY log_comment;
+
+SELECT 'single inner join';
+-- The strictness is not written, so it comes from `join_default_strictness`.
 SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04891_join_count_inner_new', enable_analyzer = 1, join_algorithm = 'hash';
 SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04891_join_count_inner_old', enable_analyzer = 0, join_algorithm = 'hash';
 
--- Three tables, so two physical joins. The arrays hold distinct values, so they report a single
--- element each while the count is 2.
+SYSTEM FLUSH LOGS query_log;
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND event_date >= yesterday()
+  AND log_comment LIKE '04891\_join\_count\_inner%'
+ORDER BY log_comment;
+
+SELECT 'three tables, two joins';
+-- The arrays hold distinct values, so they report a single element each while the count is 2.
 SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t2.a = t3.a FORMAT Null SETTINGS log_comment = '04891_join_count_two_new', enable_analyzer = 1, join_algorithm = 'hash';
 SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t2.a = t3.a FORMAT Null SETTINGS log_comment = '04891_join_count_two_old', enable_analyzer = 0, join_algorithm = 'hash';
 
--- CROSS JOIN, for which the strictness is meaningless. It has no `ON` clause, so its condition is
--- a constant and it is executed by `ConstantJoin` rather than by the requested `hash` algorithm.
--- That is why every join reports an algorithm of its own: otherwise a plain CROSS JOIN would show
--- one executed join and an empty list of algorithms.
+SYSTEM FLUSH LOGS query_log;
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND event_date >= yesterday()
+  AND log_comment LIKE '04891\_join\_count\_two%'
+ORDER BY log_comment;
+
+SELECT 'cross join';
+-- Strictness is meaningless for it. It has no `ON` clause, so its condition is a constant and it
+-- is executed by `ConstantJoin` rather than by the requested `hash` algorithm. That is why every
+-- join reports an algorithm of its own: otherwise a plain CROSS JOIN would show one executed join
+-- and an empty list of algorithms.
 SELECT count() FROM t1, t2 FORMAT Null SETTINGS log_comment = '04891_join_count_cross_new', enable_analyzer = 1, join_algorithm = 'hash';
 SELECT count() FROM t1, t2 FORMAT Null SETTINGS log_comment = '04891_join_count_cross_old', enable_analyzer = 0, join_algorithm = 'hash';
 
--- A table of the Join engine is joined by `FilledJoinStep` and not by `JoinStep`.
+SYSTEM FLUSH LOGS query_log;
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND event_date >= yesterday()
+  AND log_comment LIKE '04891\_join\_count\_cross%'
+ORDER BY log_comment;
+
+SELECT 'join engine table';
+-- It is joined by `FilledJoinStep` and not by `JoinStep`.
 SELECT count() FROM t1 ANY LEFT JOIN tj USING (a) FORMAT Null SETTINGS log_comment = '04891_join_count_filled_new', enable_analyzer = 1;
 SELECT count() FROM t1 ANY LEFT JOIN tj USING (a) FORMAT Null SETTINGS log_comment = '04891_join_count_filled_old', enable_analyzer = 0;
 
+SYSTEM FLUSH LOGS query_log;
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND event_date >= yesterday()
+  AND log_comment LIKE '04891\_join\_count\_filled%'
+ORDER BY log_comment;
+
+SELECT 'asof join';
 -- ASOF is a strictness and not a kind, so it is reported in `used_join_strictness`.
 SELECT count() FROM ta ASOF LEFT JOIN tb USING (a, t) FORMAT Null SETTINGS log_comment = '04891_join_count_asof_new', enable_analyzer = 1, join_algorithm = 'hash';
 SELECT count() FROM ta ASOF LEFT JOIN tb USING (a, t) FORMAT Null SETTINGS log_comment = '04891_join_count_asof_old', enable_analyzer = 0, join_algorithm = 'hash';
 
--- PASTE JOIN is not one of the `join_algorithm` values, but it still reports itself, so that a
--- query whose only join is a paste join does not show an empty list of algorithms.
+SYSTEM FLUSH LOGS query_log;
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND event_date >= yesterday()
+  AND log_comment LIKE '04891\_join\_count\_asof%'
+ORDER BY log_comment;
+
+SELECT 'paste join';
+-- PASTE is not one of the `join_algorithm` values, but it still reports itself, so that a query
+-- whose only join is a paste join does not show an empty list of algorithms.
 SELECT count() FROM (SELECT number AS a FROM numbers(10)) p1 PASTE JOIN (SELECT number AS a FROM numbers(10)) p2 FORMAT Null SETTINGS log_comment = '04891_join_count_paste_new', enable_analyzer = 1;
 SELECT count() FROM (SELECT number AS a FROM numbers(10)) p1 PASTE JOIN (SELECT number AS a FROM numbers(10)) p2 FORMAT Null SETTINGS log_comment = '04891_join_count_paste_old', enable_analyzer = 0;
 
--- `full_sorting_merge` keeps everything in memory here.
+SYSTEM FLUSH LOGS query_log;
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND event_date >= yesterday()
+  AND log_comment LIKE '04891\_join\_count\_paste%'
+ORDER BY log_comment;
+
+SELECT 'full sorting merge';
+-- It keeps everything in memory here.
 SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04891_join_count_fsm', join_algorithm = 'full_sorting_merge';
 
--- `grace_hash` with many buckets writes the buckets it is not currently joining to disk.
+SYSTEM FLUSH LOGS query_log;
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND event_date >= yesterday()
+  AND log_comment LIKE '04891\_join\_count\_fsm%'
+ORDER BY log_comment;
+
+SELECT 'grace hash spilling';
+-- With many buckets it writes the buckets it is not currently joining to disk.
 SELECT count() FROM (SELECT number AS a FROM numbers(10000)) g1 JOIN (SELECT number AS a FROM numbers(10000)) g2 ON g1.a = g2.a
 FORMAT Null
 SETTINGS log_comment = '04891_join_count_grace_spill', join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 32, grace_hash_join_max_buckets = 32;
 
--- `partial_merge` over its memory limit sorts the right table into temporary files.
+SYSTEM FLUSH LOGS query_log;
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND event_date >= yesterday()
+  AND log_comment LIKE '04891\_join\_count\_grace\_spill%'
+ORDER BY log_comment;
+
+SELECT 'partial merge spilling';
+-- Over its memory limit it sorts the right table into temporary files.
 SELECT count() FROM (SELECT number AS a FROM numbers(10000)) m1 JOIN (SELECT number AS a FROM numbers(10000)) m2 ON m1.a = m2.a
 FORMAT Null
 SETTINGS log_comment = '04891_join_count_merge_spill', join_algorithm = 'partial_merge', default_max_bytes_in_join = 0, max_bytes_in_join = 1024;
 
+SYSTEM FLUSH LOGS query_log;
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND event_date >= yesterday()
+  AND log_comment LIKE '04891\_join\_count\_merge\_spill%'
+ORDER BY log_comment;
+
+SELECT 'hash switching to grace hash';
 -- A hash join that exceeds `max_bytes_before_external_join` is replaced by `grace_hash` while the
 -- query is already running, so both algorithms are reported for the one join. The threshold has to
 -- be well above zero: `grace_hash` keeps doubling the number of buckets to get each of them under
@@ -84,24 +183,43 @@ SELECT count() FROM (SELECT number AS a FROM numbers(10000)) s1 JOIN (SELECT num
 FORMAT Null
 SETTINGS log_comment = '04891_join_count_switch', join_algorithm = 'hash', max_bytes_before_external_join = 65536;
 
+SYSTEM FLUSH LOGS query_log;
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND event_date >= yesterday()
+  AND log_comment LIKE '04891\_join\_count\_switch%'
+ORDER BY log_comment;
+
+SELECT 'group by spilling';
 -- `spilled_to_disk` is not about joins only: GROUP BY and ORDER BY report themselves through the
 -- same temporary data scopes.
 SELECT a, count() FROM (SELECT number AS a FROM numbers(100000)) GROUP BY a
 FORMAT Null
 SETTINGS log_comment = '04891_join_count_group_by_spill', max_bytes_before_external_group_by = 1000000, max_bytes_ratio_before_external_group_by = 0, group_by_two_level_threshold = 1000;
 
+SYSTEM FLUSH LOGS query_log;
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND event_date >= yesterday()
+  AND log_comment LIKE '04891\_join\_count\_group\_by\_spill%'
+ORDER BY log_comment;
+
+SELECT 'order by spilling';
 SELECT a FROM (SELECT number AS a FROM numbers(100000)) ORDER BY a
 FORMAT Null
 SETTINGS log_comment = '04891_join_count_order_by_spill', max_bytes_before_external_sort = 100000, max_bytes_ratio_before_external_sort = 0;
 
 SYSTEM FLUSH LOGS query_log;
-
-SELECT log_comment, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND type = 'QueryFinish'
   AND event_date >= yesterday()
-  AND log_comment LIKE '04891\_join\_count\_%'
+  AND log_comment LIKE '04891\_join\_count\_order\_by\_spill%'
 ORDER BY log_comment;
 
 DROP TABLE t1;
