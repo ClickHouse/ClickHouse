@@ -2341,6 +2341,7 @@ void Planner::buildPlanForQueryNode()
     }
 
     auto from_stage = join_tree_query_plan.stage;
+    const bool is_parallel_replicas_custom_key = join_tree_query_plan.is_parallel_replicas_custom_key;
     query_plan = std::move(join_tree_query_plan.query_plan);
     used_row_policies = std::move(join_tree_query_plan.used_row_policies);
     auto & mapping = join_tree_query_plan.query_node_to_plan_step_mapping;
@@ -2631,8 +2632,10 @@ void Planner::buildPlanForQueryNode()
 
         /// Under custom-key parallel replicas the per-replica LIMIT BY is not final (the split does not align
         /// with the LIMIT BY key), so the initiator must re-apply it over the merged stream (#111555). The
-        /// replica applies it as a preliminary, deferring OFFSET to the finalizing initiator.
-        const bool custom_key_parallel_replicas = planner_context->getQueryContext()->canUseParallelReplicasCustomKey();
+        /// replica applies it as a preliminary, deferring OFFSET to the finalizing initiator. Use the flag
+        /// from the actual plan, not the ambient setting: the setting can be on while sharding-key pushdown
+        /// (not custom-key) built the after-aggregation stage.
+        const bool custom_key_parallel_replicas = is_parallel_replicas_custom_key;
         const bool apply_limit_by = expression_analysis_result.hasLimitBy()
             && (!query_processing_info.isFromAggregationState()
                 || (custom_key_parallel_replicas && query_processing_info.isFinalizingStage()));

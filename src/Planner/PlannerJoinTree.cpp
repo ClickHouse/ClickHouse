@@ -1447,6 +1447,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
 
     QueryProcessingStage::Enum till_stage = QueryProcessingStage::Enum::FetchColumns;
+    bool is_parallel_replicas_custom_key = false;
 
     if (wrap_read_columns_in_subquery)
     {
@@ -1732,11 +1733,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     if (settings[Setting::parallel_replicas_count] > 1)
                     {
                         if (auto parallel_replicas_custom_key_filter_info= buildCustomKeyFilterIfNeeded(storage, table_expression_query_info, planner_context))
+                        {
+                            is_parallel_replicas_custom_key = true;
                             where_filters.emplace_back(std::move(*parallel_replicas_custom_key_filter_info), makeDescription("Parallel replicas custom key filter"));
+                        }
                     }
                     else if (auto * distributed = typeid_cast<StorageDistributed *>(storage.get());
                              distributed && query_context->canUseParallelReplicasCustomKeyForCluster(*distributed->getCluster()))
                     {
+                        is_parallel_replicas_custom_key = true;
                         planner_context->getMutableQueryContext()->setSetting("distributed_group_by_no_merge", 2);
                         /// We disable prefer_localhost_replica because if one of the replicas is local it will create a single local plan
                         /// instead of executing the query with multiple replicas
@@ -1870,6 +1875,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             planner_context->getMutableQueryContext()->setSetting("prefer_localhost_replica", Field{0});
                             auto modified_query_info = select_query_info;
                             modified_query_info.cluster = std::move(cluster);
+                            is_parallel_replicas_custom_key = true;
                             till_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
                             QueryPlan query_plan_parallel_replicas;
                             auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
@@ -2226,6 +2232,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     return JoinTreeQueryPlan{
         .query_plan = std::move(query_plan),
         .stage = till_stage,
+        .is_parallel_replicas_custom_key = is_parallel_replicas_custom_key,
         .used_row_policies = std::move(used_row_policies),
         .useful_sets = std::move(useful_sets),
         .query_node_to_plan_step_mapping = std::move(query_node_to_plan_step_mapping),
