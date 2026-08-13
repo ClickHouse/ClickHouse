@@ -54,12 +54,18 @@ std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast, 
 /// `rows_reached_by_parser` is the 1-based number of the row the parser had reached when it threw
 /// (see IInputFormat::getRowsReachedOnParseError); when known, inference samples only that many rows,
 /// so a row the parser never reached cannot contaminate the diagnosis of an earlier failure.
+/// `data_is_truncated` tells that `data` is a bounded prefix of a longer payload (e.g. captured by a
+/// PrefixCapturingReadBuffer that hit its cap). Inference treats the end of the data as the end of a
+/// row, so a row cut off by such a bound could masquerade as a structure mismatch; when the flag is set
+/// and inference had to consume the sample up to the cut to reach its row bound, the diagnostic is
+/// suppressed rather than trusted.
 String getInsertDataSchemaMismatchDescription(
     std::string_view data,
     const String & format_name,
     const Block & expected_header,
     const ContextPtr & context,
-    std::optional<size_t> rows_reached_by_parser = std::nullopt);
+    std::optional<size_t> rows_reached_by_parser = std::nullopt,
+    bool data_is_truncated = false);
 
 /// Same as getInsertDataSchemaMismatchDescription, but reads a bounded prefix of the data from a file,
 /// decompressing it the same way `INSERT ... FROM INFILE` itself would. Used for the client-side INFILE
@@ -86,7 +92,10 @@ std::optional<size_t> getRowsReachedFromParseErrorMessage(std::string_view messa
 /// captured on every insert, including the ones that succeed. The full schema-inference sampling bound
 /// (`input_format_max_bytes_to_read_for_schema_inference`, 32 MiB by default) would add a large copy to
 /// the hot path for a best-effort error message; a small prefix is enough to infer the structure (column
-/// count and types), so the capture is capped at a much smaller dedicated size.
+/// count and types), so the capture is capped at a much smaller dedicated size. A row cut off by the cap
+/// cannot masquerade as a structure mismatch: the diagnostic is suppressed when the sampled rows do not
+/// lie whole within the captured prefix (see the `data_is_truncated` parameter of
+/// getInsertDataSchemaMismatchDescription).
 size_t getInsertDataPrefixCaptureLimitForDiagnostic(const ContextPtr & context);
 
 /// Attaches getInsertDataSchemaMismatchDescription as a lazy diagnostic to the input format that
@@ -106,6 +115,11 @@ public:
 
     std::string_view getCapturedPrefix() const { return captured; }
 
+    /// Whether more bytes streamed through than the cap allowed to capture, i.e. the captured prefix
+    /// is a truncated view of the data (see the `data_is_truncated` parameter of
+    /// getInsertDataSchemaMismatchDescription).
+    bool isPrefixTruncated() const { return prefix_truncated; }
+
     /// Keep diagnostics that inspect the buffer chain (e.g. the file name added to error messages)
     /// working as if the wrapper were not there.
     const ReadBuffer & getWrappedReadBuffer() const override { return in; }
@@ -124,6 +138,7 @@ private:
     ReadBuffer & in;
     size_t max_bytes_to_capture;
     String captured;
+    bool prefix_truncated = false;
 };
 
 }

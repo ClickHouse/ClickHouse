@@ -67,7 +67,8 @@ String getInsertDataSchemaMismatchDescription(
     const String & format_name,
     const Block & expected_header,
     const ContextPtr & context,
-    std::optional<size_t> rows_reached_by_parser)
+    std::optional<size_t> rows_reached_by_parser,
+    bool data_is_truncated)
 {
     if (data.empty())
         return {};
@@ -168,8 +169,18 @@ String getInsertDataSchemaMismatchDescription(
         inference_context->setInsertionTable(StorageID::createEmpty());
 
         auto buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
+        const ReadBuffer & inference_buffer = *buffer;
         SingleReadBufferIterator read_buffer_iterator(std::move(buffer));
         inferred_columns = readSchemaFromFormat(format_name, format_settings, read_buffer_iterator, inference_context);
+
+        /// When the sample is a truncated prefix of the payload, inference treats the cut as the end of
+        /// a row, so a row cut off by the capture bound could masquerade as a structure mismatch — e.g. a
+        /// `TSV` row whose first field is longer than the bound looks like a single-column row. If
+        /// inference stopped before the cut, every sampled row lies whole within the prefix and the
+        /// result can be trusted; if it consumed the sample up to the cut, the last sampled row may be an
+        /// artifact of the truncation, so do not risk a misleading explanation.
+        if (data_is_truncated && inference_buffer.count() >= data.size())
+            return {};
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -1042,6 +1053,7 @@ String getInsertDataSchemaMismatchDescriptionFromFile(
         return {};
 
     String prefix;
+    bool prefix_is_truncated = false;
     try
     {
         /// Decompress the same way the INSERT itself does (see getReadBufferFromASTInsertQuery), so the
@@ -1060,6 +1072,10 @@ String getInsertDataSchemaMismatchDescriptionFromFile(
             prefix.append(buffer->position(), to_copy);
             buffer->position() += to_copy;
         }
+
+        /// Remember whether the file goes on past the sampling bound, so a row cut off by it is not
+        /// mistaken for a structure mismatch (see the `data_is_truncated` parameter).
+        prefix_is_truncated = !buffer->eof();
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -1069,7 +1085,7 @@ String getInsertDataSchemaMismatchDescriptionFromFile(
         return {};
     }
 
-    return getInsertDataSchemaMismatchDescription(prefix, format_name, expected_header, context, rows_reached_by_parser);
+    return getInsertDataSchemaMismatchDescription(prefix, format_name, expected_header, context, rows_reached_by_parser, prefix_is_truncated);
 }
 
 size_t getInsertDataPrefixCaptureLimitForDiagnostic(const ContextPtr & context)
@@ -1111,12 +1127,11 @@ PrefixCapturingReadBuffer::PrefixCapturingReadBuffer(ReadBuffer & in_, size_t ma
 
 void PrefixCapturingReadBuffer::captureFromCurrentBuffer()
 {
-    if (captured.size() >= max_bytes_to_capture)
-        return;
-
     size_t available = static_cast<size_t>(working_buffer.end() - pos);
     size_t to_copy = std::min(max_bytes_to_capture - captured.size(), available);
     captured.append(pos, to_copy);
+    if (to_copy < available)
+        prefix_truncated = true;
 }
 
 bool PrefixCapturingReadBuffer::nextImpl()
@@ -1229,7 +1244,12 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
                     std::optional<size_t> rows_reached_by_parser) -> String
                 {
                     return getInsertDataSchemaMismatchDescription(
-                        captured_prefix_buffer->getCapturedPrefix(), format_name, expected_header, context, rows_reached_by_parser);
+                        captured_prefix_buffer->getCapturedPrefix(),
+                        format_name,
+                        expected_header,
+                        context,
+                        rows_reached_by_parser,
+                        captured_prefix_buffer->isPrefixTruncated());
                 });
         else
             setInsertSchemaMismatchDiagnostic(*format, ast, header, context);
