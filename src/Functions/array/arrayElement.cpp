@@ -2780,13 +2780,13 @@ Operator `[n]` provides the same functionality.
 
     FunctionDocumentation::Description description_null = R"(
 Gets the element of the provided array with index `n` where `n` can be any integer type.
-If the index falls outside of the bounds of an array, `NULL` is returned instead of a default value.
+If the index falls outside of the bounds of an array, `NULL` is returned instead of a default value,
+as long as the result type can be nullable. For element types that are not already nullable and cannot be
+put inside `Nullable` (such as `Array`, `Map`), the default value of the element type is returned instead.
 
 When `n` is an array of integers, returns an array of the elements at the specified positions.
 This is equivalent to `arrayMap(i -> arrayElementOrNull(arr, i), n)`, but has a separate, more efficient implementation.
-Out-of-bounds positions and `NULL` indexes produce `NULL` values in the result array when the element type can be wrapped in `Nullable`;
-for element types that cannot be inside `Nullable` (such as `Array`, `Map`), they produce the default value instead.
-This is the same behavior as for a scalar index.
+Out-of-bounds positions and `NULL` indexes produce `NULL` values in the result array, following the same rule as for a scalar index.
 
 :::note
 Arrays in ClickHouse are one-indexed.

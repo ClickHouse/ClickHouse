@@ -130,6 +130,16 @@ SELECT arr[idx] FROM test_nullable_index ORDER BY ALL;
 SELECT arrayElementOrNull(arr, idx) FROM test_nullable_index ORDER BY ALL;
 DROP TABLE test_nullable_index;
 
+SELECT '-- arrayElementOrNull yields the default value for element types that cannot be inside Nullable';
+SELECT toTypeName(arrayElementOrNull([[1, 2], [3]], 5));
+SELECT arrayElementOrNull([[1, 2], [3]], 5);
+SELECT toTypeName(arrayElementOrNull([map('a', 1)], 5));
+SELECT arrayElementOrNull([map('a', 1)], 5);
+SELECT toTypeName(arrayElementOrNull([[1, 2], [3]], [2, 5, NULL]));
+SELECT arrayElementOrNull([[1, 2], [3]], [2, 5, NULL]);
+SELECT toTypeName(arrayElementOrNull([map('a', 1)], [1, 5, NULL]));
+SELECT arrayElementOrNull([map('a', 1)], [1, 5, NULL]);
+
 SELECT '-- Equivalence with arrayMap; every row must be 1';
 SELECT toTypeName(x) = toTypeName(y) AND toString(x) = toString(y) FROM (SELECT [10, 20, 30, 40][[2, 4, 1]] AS x, arrayMap(i -> [10, 20, 30, 40][i], [2, 4, 1]) AS y);
 SELECT toTypeName(x) = toTypeName(y) AND toString(x) = toString(y) FROM (SELECT [10, 20, 30][[1, 5, 0, -1, -9]] AS x, arrayMap(i -> [10, 20, 30][i], [1, 5, 0, -1, -9]) AS y);
@@ -154,6 +164,8 @@ SELECT toTypeName(x) = toTypeName(y) AND toString(x) = toString(y) FROM (SELECT 
 SELECT toTypeName(x) = toTypeName(y) AND toString(x) = toString(y) FROM (SELECT [[1, 2], [3]][[2, NULL]] AS x, arrayMap(i -> [[1, 2], [3]][i], [2, NULL]) AS y);
 SELECT toTypeName(x) = toTypeName(y) AND toString(x) = toString(y) FROM (SELECT [('a', 1)][[1, NULL]] AS x, arrayMap(i -> [('a', 1)][i], [1, NULL]) AS y);
 SELECT toTypeName(x) = toTypeName(y) AND toString(x) = toString(y) FROM (SELECT arrayElementOrNull([10, 20, 30], [1, NULL, 5]) AS x, arrayMap(i -> arrayElementOrNull([10, 20, 30], i), [1, NULL, 5]) AS y);
+SELECT toTypeName(x) = toTypeName(y) AND toString(x) = toString(y) FROM (SELECT arrayElementOrNull([[1, 2], [3]], [2, 5, NULL]) AS x, arrayMap(i -> arrayElementOrNull([[1, 2], [3]], i), [2, 5, NULL]) AS y);
+SELECT toTypeName(x) = toTypeName(y) AND toString(x) = toString(y) FROM (SELECT arrayElementOrNull([map('a', 1)], [1, 5, NULL]) AS x, arrayMap(i -> arrayElementOrNull([map('a', 1)], i), [1, 5, NULL]) AS y);
 SELECT countIf(NOT (toTypeName(x) = toTypeName(y) AND toString(x) = toString(y))) = 0 FROM (SELECT arr[idx] AS x, arrayMap(i -> arr[i], idx) AS y FROM (SELECT range(number % 5) AS arr, arrayMap(j -> if(j % 3 = 0, NULL, toInt32(j) - 3), range(number % 7)) AS idx FROM numbers(100)));
 SELECT countIf(NOT (toTypeName(x) = toTypeName(y) AND toString(x) = toString(y))) = 0 FROM (SELECT arrayElementOrNull(arr, idx) AS x, arrayMap(i -> arrayElementOrNull(arr, i), idx) AS y FROM (SELECT arrayMap(j -> toString(j), range(number % 5)) AS arr, arrayMap(j -> if(j % 3 = 0, NULL, toInt32(j) - 3), range(number % 7)) AS idx FROM numbers(100)));
 

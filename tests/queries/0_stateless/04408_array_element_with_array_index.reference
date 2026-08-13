@@ -117,7 +117,18 @@ Array(Nullable(UInt8))
 [NULL,0]
 [10,NULL,NULL]
 [NULL,NULL]
+-- arrayElementOrNull yields the default value for element types that cannot be inside Nullable
+Array(UInt8)
+[]
+Map(String, UInt8)
+{}
+Array(Array(UInt8))
+[[3],[],[]]
+Array(Map(String, UInt8))
+[{'a':1},{},{}]
 -- Equivalence with arrayMap; every row must be 1
+1
+1
 1
 1
 1
