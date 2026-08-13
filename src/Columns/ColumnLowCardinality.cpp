@@ -382,7 +382,24 @@ MutableColumnPtr ColumnLowCardinality::cloneNullable() const
 
 int ColumnLowCardinality::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator) const
 {
-    const auto & low_cardinality_column = assert_cast<const ColumnLowCardinality &>(rhs);
+    const auto * low_cardinality_rhs = typeid_cast<const ColumnLowCardinality *>(&rhs);
+
+    if (!low_cardinality_rhs)
+    {
+        /// See the comment in `doInsertFrom`: for a non-native LowCardinality column the right hand side
+        /// can legitimately be a full column of the same data type. Such a column is never `Nullable`,
+        /// so comparing against the dictionary's nested column is exact.
+        if (is_native)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", rhs.getName());
+
+        const auto & nested = *getDictionary().getNestedColumn();
+        size_t index = getIndexes().getUInt(n);
+        if (collator)
+            return nested.compareAtWithCollation(index, m, rhs, nan_direction_hint, *collator);
+        return nested.compareAt(index, m, rhs, nan_direction_hint);
+    }
+
+    const auto & low_cardinality_column = *low_cardinality_rhs;
     size_t n_index = getIndexes().getUInt(n);
     size_t m_index = low_cardinality_column.getIndexes().getUInt(m);
     if (collator)

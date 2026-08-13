@@ -15,6 +15,16 @@ a_10
 b_9
 b_9
 b_9
+mixed parts: partial sorting threshold
+1600	a_0	a_638
+1600	b_2	b_9
+a_0
+a_1
+a_10
+mixed parts: sorting after a read-in-order prefix
+a_0
+a_1
+a_2
 mixed parts: aggregation, distinct, functions
 4000	2010	a_0	b_9	16890
 2010

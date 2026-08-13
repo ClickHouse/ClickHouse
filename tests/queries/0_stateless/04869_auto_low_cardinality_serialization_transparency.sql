@@ -65,10 +65,28 @@ SELECT DISTINCT serialization_kind FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_auto_lc_mixed' AND active AND column = 'lc'
 ORDER BY serialization_kind;
 
--- Every query below combines chunks that come from both parts.
+-- Every query below combines chunks that come from both parts. `max_threads = 1` puts the chunks of
+-- both parts through the same transform, which is what makes the representations meet.
 SELECT 'mixed parts: order by encoded column';
 SELECT lc FROM t_auto_lc_mixed ORDER BY lc, id LIMIT 3;
 SELECT lc FROM t_auto_lc_mixed ORDER BY lc DESC, id LIMIT 3;
+
+-- `PartialSortingTransform` keeps the threshold row of a previous chunk and compares the next chunk
+-- against it. The threshold optimization needs a limit of at least 1500 rows, or the top-k threshold
+-- tracker (which for a `String` sort column also needs `use_top_k_dynamic_filtering_for_variable_length_types`).
+SELECT 'mixed parts: partial sorting threshold';
+SELECT count(), min(lc), max(lc) FROM (SELECT lc FROM t_auto_lc_mixed ORDER BY lc LIMIT 1600)
+SETTINGS max_threads = 1, max_block_size = 2000;
+SELECT count(), min(lc), max(lc) FROM (SELECT lc FROM t_auto_lc_mixed ORDER BY lc DESC LIMIT 1600)
+SETTINGS max_threads = 1, max_block_size = 2000;
+SELECT lc FROM t_auto_lc_mixed ORDER BY lc LIMIT 3
+SETTINGS max_threads = 1, max_block_size = 100, use_top_k_dynamic_filtering = 1,
+    use_top_k_dynamic_filtering_for_variable_length_types = 1, query_plan_max_limit_for_top_k_optimization = 1000;
+
+-- `FinishSortingTransform` compares the tail of the previous chunk against the next one.
+SELECT 'mixed parts: sorting after a read-in-order prefix';
+SELECT lc FROM t_auto_lc_mixed ORDER BY id, lc LIMIT 3
+SETTINGS max_threads = 1, max_block_size = 100, optimize_read_in_order = 1;
 
 SELECT 'mixed parts: aggregation, distinct, functions';
 SELECT count(), uniqExact(lc), min(lc), max(lc), sum(length(lc)) FROM t_auto_lc_mixed;
