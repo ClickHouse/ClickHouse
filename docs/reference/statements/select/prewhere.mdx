@@ -26,9 +26,9 @@ The `PREWHERE` section is executed before `FINAL`, so the results of `FROM ... F
 
 ## PREWHERE with JOIN {#prewhere-with-join}
 
-In queries that use [JOIN](/reference/statements/select/join), all columns in the `PREWHERE` condition must come from the same table. ClickHouse applies the condition while reading that table, before joining it with the other tables.
+With the analyzer enabled (the default), a `PREWHERE` condition can directly reference columns from only one of the tables in a [JOIN](/reference/statements/select/join). The condition is associated with that table and is applied to its rows before they reach the join.
 
-In this example, `PREWHERE` filters `table_2` before the two tables are joined:
+The following example attaches the `PREWHERE` condition to `table_2`:
 
 ```sql
 CREATE TABLE table_1
