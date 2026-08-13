@@ -1,7 +1,0 @@
-<clickhouse>
-    <remote_url_allow_hosts>
-        <host>localhost:19672</host>
-        <host>localhost:19673</host>
-        <host>localhost:19674</host>
-    </remote_url_allow_hosts>
-</clickhouse>

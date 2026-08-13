@@ -16,9 +16,8 @@ namespace
 String makeMetadataJSON(const String & default_expression)
 {
     /// The `columns` payload as `ColumnsDescription::toString` produces it. The versions that kept
-    /// the redundant parentheses of the user (before `IAST::FormatSettings::ignore_redundant_parentheses`)
-    /// stored `(y + 1)` where the current version stores `y + 1`, and the stored string is compared
-    /// with the local one on every server restart.
+    /// the redundant parentheses of the user (26.5..26.7) stored `(y + 1)` where every other version
+    /// stores `y + 1`, and the stored string is compared with the local one on every server restart.
     String columns = "columns format version: 1\n2 columns:\n`x` UInt64\tDEFAULT\t" + default_expression + "\n`y` UInt64\n";
 
     String escaped_columns;
@@ -48,8 +47,8 @@ TEST(ObjectStorageQueueTableMetadata, ColumnsComparisonIgnoresRedundantParenthes
     auto parenthesized = ObjectStorageQueueTableMetadata::parse(makeMetadataJSON("(y + 1)"));
     auto different = ObjectStorageQueueTableMetadata::parse(makeMetadataJSON("y + 2"));
 
-    /// A table created by a version that stored the redundant parentheses must be accepted
-    /// by a version that does not store them, and vice versa.
+    /// A table created by a version that stored the redundant parentheses (26.5..26.7) must be
+    /// accepted by a version that does not store them, and vice versa.
     EXPECT_NO_THROW(plain.checkEquals(parenthesized));
     EXPECT_NO_THROW(parenthesized.checkEquals(plain));
 

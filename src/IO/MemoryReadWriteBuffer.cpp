@@ -92,7 +92,7 @@ void MemoryWriteBuffer::nextImpl()
 
 void MemoryWriteBuffer::addChunk()
 {
-    size_t next_chunk_size = 0;
+    size_t next_chunk_size;
     if (chunk_list.empty())
     {
         chunk_tail = chunk_list.before_begin();

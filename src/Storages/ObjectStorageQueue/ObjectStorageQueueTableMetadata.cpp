@@ -348,9 +348,9 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
     }
 
     /// Different versions serialize the same columns to a different text: the redundant parentheses
-    /// the user has written around a column `DEFAULT`, `CODEC` or `TTL` expression were kept by some
-    /// versions and are suppressed now (`IAST::FormatSettings::ignore_redundant_parentheses`),
-    /// so when the texts differ, compare the columns structurally before rejecting.
+    /// the user has written around a column `DEFAULT`, `CODEC` or `TTL` expression were kept by
+    /// 26.5..26.7 and are not written by any other version, so when the texts differ, compare the
+    /// columns structurally before rejecting.
     if (columns != from_zk.columns
         && ColumnsDescription::parse(columns) != ColumnsDescription::parse(from_zk.columns))
         throw Exception(

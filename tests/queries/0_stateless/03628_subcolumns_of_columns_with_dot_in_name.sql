@@ -51,8 +51,7 @@ optimize table test final;
 select * from test;
 select * from test order by my.tuple.a;
 
--- Allowed: only an unrelated element `b` is added, the key subcolumn `my.tuple.a` is unchanged.
-alter table test modify column my.tuple Tuple(a UInt32, b UInt32);
+alter table test modify column my.tuple Tuple(a UInt32, b UInt32); -- {serverError ALTER_OF_COLUMN_IS_FORBIDDEN}
 alter table test update `my.tuple` = tuple(0, 0) where 1; -- {serverError CANNOT_UPDATE_COLUMN}
 
 drop table test;
