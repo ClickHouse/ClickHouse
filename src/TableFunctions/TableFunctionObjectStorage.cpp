@@ -1959,7 +1959,7 @@ SET allow_experimental_iceberg_compaction = 1
 OPTIMIZE TABLE iceberg_writes_example MANIFEST;
 ```
 
-To reclaim files, use [`expire_snapshots`](#iceberg-expire-snapshots), which requires format version 2 and a non-transactional catalog.
+To reclaim files, use [`expire_snapshots`](#iceberg-expire-snapshots). It requires format version 2, and rejects tables backed by a transactional catalog.
 
 ### Expire Snapshots {#iceberg-expire-snapshots}
 
