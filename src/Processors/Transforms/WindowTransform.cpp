@@ -3116,7 +3116,7 @@ The [dense_rank](/reference/functions/window-functions/dense_rank) function prov
 ```sql
 rank ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
@@ -3194,7 +3194,7 @@ Alias: `denseRank` (case-sensitive)
 ```sql
 dense_rank ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
@@ -3411,7 +3411,7 @@ Numbers the current row within its partition starting from 1.
 ```sql
 row_number (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
-        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
@@ -3547,7 +3547,7 @@ Returns the first non-NULL value evaluated against the nth row (offset) in its o
 ```sql
 nth_value (x, offset)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
-        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
@@ -3624,7 +3624,7 @@ To get behavior identical to the `lag`, use `ROWS BETWEEN UNBOUNDED PRECEDING AN
 ```sql
 lagInFrame(x[, offset[, default]])
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
@@ -3783,7 +3783,7 @@ To get behavior identical to the `lead`, use `ROWS BETWEEN UNBOUNDED PRECEDING A
 ```sql
 leadInFrame(x[, offset[, default]])
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```
@@ -4316,9 +4316,9 @@ This is useful for monotonically increasing metrics, such as counters, where a d
 ```sql
 nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]] | [window_name])
 FROM table_name
-WINDOW window_name AS ([PARTITION BY grouping_column] [ORDER BY sorting_column] [ROWS or RANGE expression_to_bound_rows_within_the_group])
+WINDOW window_name AS ([PARTITION BY grouping_column] [ORDER BY sorting_column] [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group])
 ```
 
 For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
