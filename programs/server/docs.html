@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>ClickHouse Reference</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Source Reference - ClickHouse Documentation</title>
+    <meta name="description" content="Search the ClickHouse source reference.">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="" data-doc-canonical>
+    <link rel="sitemap" type="application/xml" href="/docs/sitemap.xml">
     <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDExIDEwIj48c3R5bGU+LmJne2ZpbGw6I2ZmMH0ub3tmaWxsOiMwMDB9PC9zdHlsZT48cmVjdCBjbGFzcz0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiLz48cGF0aCBkPSJNMSwxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik0zLDEgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTUsMSBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNNywxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik05LDQuMjUgaDEgdjEuNSBoLTEgeiIgY2xhc3M9Im8iLz48L3N2Zz4K">
     <style>
         * {
@@ -362,18 +367,6 @@
         #doc .admonition-warning { --adm-color: #D79400; }
         #doc .admonition-danger  { --adm-color: #E5403A; }
 
-        /* Theme switcher (sun / moon), like in `play.html`: only the icon for the *other* theme is
-           shown, and clicking it switches and memoizes the choice. */
-        #theme {
-            cursor: pointer;
-            font-size: 14pt;
-            user-select: none;
-            line-height: 1;
-        }
-        [data-theme="light"] #toggle-light, [data-theme="dark"] #toggle-dark {
-            display: none;
-        }
-
         #status {
             font-size: 9pt;
             color: var(--muted);
@@ -384,36 +377,1288 @@
             white-space: pre-wrap;
             font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
         }
+
+        /* ClickHouse documentation shell. Keep this page self-contained rather than depending on
+           the generated classes or runtime styles of the hosted documentation website. */
+        :root {
+            --bg: #FFFFFF;
+            --fg: #242424;
+            --panel-bg: #FFFFFF;
+            --sidebar-bg: #FFFFFF;
+            --border: #E7E7E7;
+            --border-soft: #F0F0F0;
+            --muted: #707070;
+            --muted-strong: #505050;
+            --hover-bg: #F7F7F7;
+            --active-bg: #F3F3F3;
+            --code-bg: #F1F1F1;
+            --pre-bg: #171717;
+            --link: #242424;
+            --primary: #F3C600;
+            --topbar-height: 3rem;
+            --sidebar-width: 19rem;
+            color-scheme: light;
+        }
+        [data-theme="dark"] {
+            --bg: #111111;
+            --fg: #EEEEEE;
+            --panel-bg: #111111;
+            --sidebar-bg: #111111;
+            --border: #303030;
+            --border-soft: #262626;
+            --muted: #A0A0A0;
+            --muted-strong: #C7C7C7;
+            --hover-bg: #1B1B1B;
+            --active-bg: #252525;
+            --code-bg: #262626;
+            --pre-bg: #090909;
+            --link: #EEEEEE;
+            color-scheme: dark;
+        }
+
+        html, body {
+            background: var(--bg);
+            color: var(--fg);
+            font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        }
+        body {
+            height: 100vh;
+            overflow: hidden;
+        }
+        button, input, summary {
+            font: inherit;
+        }
+        button, summary {
+            color: inherit;
+        }
+        a {
+            color: inherit;
+        }
+
+        #sidebar {
+            position: fixed;
+            inset: 0 auto 0 0;
+            z-index: 40;
+            width: var(--sidebar-width);
+            display: flex;
+            flex-direction: column;
+            background: var(--sidebar-bg);
+            border-right: 1px solid var(--border);
+        }
+        #header {
+            min-height: 4rem;
+            padding: 0 1.65rem;
+            background: transparent;
+            color: var(--fg);
+            flex-wrap: nowrap;
+            gap: 0.75rem;
+        }
+        .compatibility-marker {
+            display: none;
+        }
+        #header .brand-link {
+            min-width: 0;
+            display: flex;
+            align-items: center;
+            color: inherit;
+            text-decoration: none;
+        }
+        .docs-logo {
+            width: auto;
+            height: 1.625rem;
+            flex: 0 0 auto;
+            object-fit: contain;
+        }
+        .docs-logo-dark {
+            display: none;
+        }
+        [data-theme="dark"] .docs-logo-light {
+            display: none;
+        }
+        [data-theme="dark"] .docs-logo-dark {
+            display: block;
+        }
+        #header-spacer {
+            flex: 1;
+        }
+        #theme {
+            width: 4.75rem;
+            height: 1.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex: 0 0 auto;
+            border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+            border-radius: 999px;
+            padding: 0.25rem;
+            background: transparent;
+            color: #9F9F9F;
+            font-size: 0;
+            user-select: none;
+        }
+        #theme button {
+            width: 1.25rem;
+            height: 1.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            border: 0;
+            border-radius: 999px;
+            background: transparent;
+            color: inherit;
+            cursor: pointer;
+            transition: background 0.2s ease, color 0.2s ease;
+        }
+        #theme button:hover {
+            color: var(--fg);
+        }
+        #theme button[aria-pressed="true"] {
+            background: color-mix(in srgb, var(--border) 50%, transparent);
+            color: var(--muted-strong);
+        }
+        [data-theme="dark"] #theme {
+            border-color: rgba(255, 255, 255, 0.07);
+        }
+        [data-theme="dark"] #theme button[aria-pressed="true"] {
+            background: rgba(255, 255, 255, 0.07);
+        }
+        #theme svg {
+            width: 0.75rem;
+            height: 0.75rem;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 1.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        #sidebar-tools {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 2.65rem;
+            gap: 0.5rem;
+            padding: 0.8rem 1.65rem 1.2rem;
+        }
+        #search-bar {
+            position: relative;
+            min-width: 0;
+            padding: 0;
+            background: transparent;
+        }
+        #search-icon {
+            position: absolute;
+            z-index: 1;
+            top: 50%;
+            left: 0.85rem;
+            width: 1rem;
+            height: 1rem;
+            transform: translateY(-50%);
+            fill: none;
+            stroke: var(--muted-strong);
+            stroke-width: 1.8;
+            pointer-events: none;
+        }
+        #search {
+            width: 100%;
+            height: 2.55rem;
+            border: 1px solid var(--border);
+            border-radius: 0.4rem;
+            background: var(--panel-bg);
+            color: var(--fg);
+            padding: 0 2.8rem 0 2.45rem;
+            outline: none;
+            font-size: 0.875rem;
+            font-weight: 400;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+        }
+        #search::placeholder {
+            color: var(--muted);
+        }
+        #search:focus {
+            border-color: var(--muted);
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
+        }
+        #search-shortcut {
+            position: absolute;
+            top: 50%;
+            right: 0.65rem;
+            transform: translateY(-50%);
+            color: var(--muted);
+            font-size: 0.7rem;
+            pointer-events: none;
+        }
+        #connection-settings {
+            position: relative;
+        }
+        #connection-settings > summary {
+            width: 2.65rem;
+            height: 2.55rem;
+            display: grid;
+            place-items: center;
+            border: 1px solid var(--border);
+            border-radius: 0.4rem;
+            background: var(--panel-bg);
+            cursor: pointer;
+            list-style: none;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+        }
+        #connection-settings > summary::-webkit-details-marker {
+            display: none;
+        }
+        #connection-settings > summary:hover {
+            background: var(--hover-bg);
+        }
+        #connection-settings > summary svg {
+            width: 1.05rem;
+            height: 1.05rem;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 1.7;
+        }
+        #connection-settings[open] > summary {
+            background: var(--active-bg);
+        }
+        #connection-params {
+            position: absolute;
+            z-index: 60;
+            top: calc(100% + 0.5rem);
+            right: 0;
+            width: 17rem;
+            display: grid;
+            gap: 0.65rem;
+            margin: 0;
+            padding: 1rem;
+            border: 1px solid var(--border);
+            border-radius: 0.55rem;
+            background: var(--panel-bg);
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.15);
+        }
+        #connection-params label {
+            display: grid;
+            gap: 0.3rem;
+            color: var(--muted-strong);
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        #connection-params input,
+        #url, #user, #password {
+            width: 100%;
+            min-width: 0;
+            border: 1px solid var(--border);
+            border-radius: 0.35rem;
+            background: var(--bg);
+            color: var(--fg);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.75rem;
+            padding: 0.55rem 0.65rem;
+            outline: none;
+        }
+        #connection-params input:focus {
+            border-color: var(--muted);
+        }
+
+        #sidebar-content {
+            min-height: 0;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        #sidebar-content h2 {
+            margin: 0;
+            padding: 0 1.65rem 0.65rem;
+            color: var(--fg);
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+        #results {
+            width: auto;
+            max-width: none;
+            flex: 1;
+            overflow-y: auto;
+            border: 0;
+            background: transparent;
+            padding: 0 1rem 1rem;
+        }
+        #results:empty {
+            display: none;
+        }
+        .result {
+            position: relative;
+            margin: 0.1rem 0;
+            padding: 0.55rem 0.65rem 0.55rem 1rem;
+            border: 0;
+            border-radius: 0.35rem;
+            background: transparent;
+        }
+        .result::before {
+            content: "";
+            position: absolute;
+            left: 0.35rem;
+            top: 0.65rem;
+            bottom: 0.65rem;
+            width: 2px;
+            border-radius: 2px;
+            background: var(--type-accent, var(--border));
+            opacity: 0.65;
+        }
+        .result:hover {
+            background: var(--hover-bg);
+        }
+        .result.selected {
+            background: var(--active-bg);
+            color: var(--fg);
+        }
+        .result.selected::before {
+            background: var(--primary);
+            opacity: 1;
+        }
+        .result .name {
+            overflow: hidden;
+            color: var(--fg);
+            font-family: inherit;
+            font-size: 0.875rem;
+            font-weight: 500;
+            line-height: 1.35;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            word-break: normal;
+        }
+        .result .type,
+        .result.selected .type {
+            overflow: hidden;
+            margin-top: 0.15rem;
+            color: var(--muted);
+            font-size: 0.675rem;
+            letter-spacing: 0.045em;
+            line-height: 1.3;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .result .name .alias-badge {
+            margin-left: 0.35rem;
+            color: var(--muted);
+            background: transparent;
+            border-color: var(--border);
+        }
+        .result.selected .name .alias-badge {
+            color: var(--muted);
+            background: var(--panel-bg);
+            border-color: var(--border);
+        }
+        #sidebar-empty {
+            padding: 0 1.65rem;
+            color: var(--muted);
+            font-size: 0.8rem;
+            line-height: 1.55;
+        }
+        #results:not(:empty) + #sidebar-empty {
+            display: none;
+        }
+        #status {
+            min-height: 2rem;
+            padding: 0.45rem 1.65rem;
+            border-top: 1px solid var(--border-soft);
+            color: var(--muted);
+            font-size: 0.7rem;
+        }
+
+        #page {
+            height: 100vh;
+            margin-left: var(--sidebar-width);
+            overflow-y: auto;
+            background: var(--bg);
+            scrollbar-width: thin;
+            scrollbar-color: var(--border) var(--bg);
+        }
+        #topbar {
+            position: sticky;
+            top: 0;
+            z-index: 30;
+            height: var(--topbar-height);
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding: 0 3rem;
+            border-bottom: 1px solid var(--border);
+            background: color-mix(in srgb, var(--bg) 94%, transparent);
+            backdrop-filter: blur(12px);
+        }
+        #site-navigation {
+            height: 100%;
+            display: flex;
+            align-items: stretch;
+            gap: 1.55rem;
+        }
+        #site-navigation > a,
+        .nav-menu-trigger {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0;
+            border: 0;
+            background: transparent;
+            color: var(--muted-strong);
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+        #site-navigation > a:hover,
+        .nav-menu-trigger:hover,
+        .nav-menu.open .nav-menu-trigger {
+            color: var(--fg);
+        }
+        #site-navigation > a.active,
+        .nav-menu-trigger.active {
+            color: var(--fg);
+            font-weight: 600;
+        }
+        #site-navigation > a.active::after,
+        .nav-menu-trigger.active::after {
+            content: "";
+            position: absolute;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            height: 2px;
+            background: var(--fg);
+        }
+        .nav-menu {
+            position: relative;
+            height: 100%;
+            display: flex;
+            align-items: stretch;
+        }
+        .nav-menu-trigger:focus-visible {
+            outline: 2px solid var(--primary);
+            outline-offset: 4px;
+            border-radius: 2px;
+        }
+        .nav-menu-chevron {
+            width: 0.75rem;
+            height: 0.75rem;
+            fill: none;
+            stroke: var(--muted);
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            stroke-width: 1.8;
+            transition: transform 0.15s ease;
+        }
+        .nav-menu.open .nav-menu-chevron {
+            transform: rotate(180deg);
+        }
+        .nav-menu-panel {
+            position: absolute;
+            z-index: 70;
+            top: calc(100% - 5px);
+            left: -4px;
+            width: 14rem;
+        }
+        .nav-menu-panel[hidden] {
+            display: none;
+        }
+        .nav-menu-panel.wide {
+            width: 27.5rem;
+        }
+        .nav-menu-surface {
+            padding: 0.25rem;
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            background: var(--panel-bg);
+            box-shadow: 0 20px 25px -5px rgba(107, 114, 128, 0.08), 0 8px 10px -6px rgba(107, 114, 128, 0.08);
+        }
+        .nav-menu-surface.columns {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            column-gap: 0;
+        }
+        .nav-menu-column {
+            min-width: 0;
+        }
+        .nav-menu-column + .nav-menu-column {
+            border-left: 1px solid var(--border-soft);
+        }
+        .nav-menu-column-title {
+            min-height: 2.25rem;
+            display: flex;
+            align-items: center;
+            padding: 0.5rem 0.65rem;
+            color: var(--fg);
+            font-size: 0.875rem;
+            font-weight: 500;
+            line-height: 1.25;
+        }
+        .nav-menu-item {
+            min-width: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            min-height: 2.25rem;
+            padding: 0.5rem 0.65rem;
+            border-radius: 0.75rem;
+            color: var(--muted-strong);
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+            line-height: 1.25;
+        }
+        .nav-menu-item:hover,
+        .nav-menu-item:focus-visible {
+            background: var(--hover-bg);
+            color: var(--fg);
+            outline: none;
+        }
+        .nav-menu-item.nav-menu-column-title {
+            color: var(--fg);
+            font-weight: 500;
+        }
+        .nav-menu-item[aria-current="location"] {
+            color: var(--fg);
+            font-weight: 600;
+        }
+        .nav-menu-item.section-item {
+            margin-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border-soft);
+            border-radius: 0.75rem 0.75rem 0 0;
+        }
+        .nav-menu-item.external::after {
+            content: "↗";
+            margin-left: auto;
+            color: var(--muted);
+            font-size: 0.75rem;
+        }
+        .nav-menu-icon {
+            width: 1rem;
+            height: 1rem;
+            flex: 0 0 auto;
+        }
+        [data-theme="dark"] .nav-menu-surface {
+            box-shadow: none;
+        }
+        #mobile-site-navigation {
+            display: none;
+        }
+        #topbar > a {
+            color: var(--muted-strong);
+            text-decoration: none;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        #topbar > a:hover {
+            color: var(--fg);
+        }
+        #topbar .github-link {
+            margin-left: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+            color: #374151;
+            font-size: 0.8125rem;
+            font-weight: 500;
+        }
+        [data-theme="dark"] #topbar .github-link {
+            color: var(--muted-strong);
+        }
+        #topbar .github-link svg {
+            width: 1rem;
+            height: 1rem;
+            flex: 0 0 auto;
+        }
+        #topbar .get-started {
+            margin-left: 1rem;
+            display: flex;
+            align-items: center;
+            padding: 0.375rem 1rem;
+            border-radius: 0.25rem;
+            background: #1C1C1C;
+            color: #FFFFFF;
+            text-decoration: none;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            line-height: 1.5;
+            white-space: nowrap;
+            transition: background-color 0.15s, color 0.15s;
+        }
+        #topbar .get-started:hover {
+            background: #333333;
+            color: #FFFFFF;
+        }
+        [data-theme="dark"] #topbar .get-started {
+            background: #FDFF75;
+            color: #1C1C1C;
+        }
+        [data-theme="dark"] #topbar .get-started:hover {
+            background: #EAEC6A;
+            color: #1C1C1C;
+        }
+        #mobile-header {
+            display: none;
+        }
+        #mobile-nav-toggle {
+            display: none;
+        }
+        #sidebar-backdrop {
+            display: none;
+        }
+
+        #main {
+            width: 100%;
+            max-width: 65rem;
+            min-height: calc(100vh - var(--topbar-height));
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 16.5rem;
+            align-items: start;
+            gap: 4.5rem;
+            margin: 0 auto;
+            padding: 2.5rem 2rem 5rem;
+        }
+        #doc {
+            min-width: 0;
+            overflow: visible;
+            padding: 0;
+            background: transparent;
+            color: var(--muted-strong);
+            font-size: 1rem;
+            line-height: 1.72;
+            scrollbar-width: auto;
+        }
+        #doc.empty {
+            min-height: 65vh;
+            display: flex;
+            align-items: flex-start;
+            justify-content: flex-start;
+            color: var(--muted-strong);
+            font-size: 1rem;
+        }
+        #doc .empty-content {
+            max-width: 34rem;
+        }
+        #doc .empty-content .eyebrow {
+            margin-bottom: 0.75rem;
+            color: var(--muted);
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        #doc .empty-content h1 {
+            margin: 0 0 1rem;
+        }
+        #doc .empty-content p {
+            margin: 0;
+        }
+        #doc .entity-type {
+            display: block;
+            margin: 0 0 0.65rem;
+            padding: 0;
+            background: transparent;
+            color: var(--muted);
+            font-size: 0.8rem;
+            font-weight: 500;
+            letter-spacing: 0;
+            text-transform: none;
+        }
+        #doc .entity-type::before {
+            content: "Source reference  /  ";
+        }
+        #doc h1 {
+            margin: 0 0 1.4rem;
+            padding: 0;
+            border: 0;
+            color: var(--fg);
+            font-size: 2.25rem;
+            font-weight: 650;
+            letter-spacing: -0.035em;
+            line-height: 1.15;
+        }
+        #doc h2 {
+            margin: 2.8rem 0 1rem;
+            padding: 0;
+            border: 0;
+            color: var(--fg);
+            font-size: 1.55rem;
+            font-weight: 650;
+            letter-spacing: -0.02em;
+            line-height: 1.3;
+        }
+        #doc h3 {
+            margin: 2rem 0 0.75rem;
+            color: var(--fg);
+            font-size: 1.15rem;
+            font-weight: 650;
+            line-height: 1.4;
+        }
+        #doc h1, #doc h2, #doc h3, #doc h4, #doc h5, #doc h6 {
+            scroll-margin-top: calc(var(--topbar-height) + 1.5rem);
+        }
+        #doc p, #doc ul, #doc ol, #doc table, #doc blockquote, #doc details {
+            margin-top: 1rem;
+            margin-bottom: 1rem;
+        }
+        #doc .server-rendered-markdown {
+            white-space: pre-wrap;
+        }
+        #doc .doc-section-heading {
+            margin: 2rem 0 0.75rem;
+            color: var(--fg);
+            font-size: 1.05rem;
+            font-weight: 650;
+            line-height: 1.4;
+            scroll-margin-top: calc(var(--topbar-height) + 1.5rem);
+        }
+        #doc a {
+            color: var(--fg);
+            text-decoration-color: color-mix(in srgb, var(--fg) 45%, transparent);
+            text-underline-offset: 0.18em;
+        }
+        #doc a:hover {
+            text-decoration-color: var(--fg);
+        }
+        #doc code {
+            border-radius: 0.25rem;
+            color: var(--fg);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.86em;
+        }
+        #doc pre {
+            border: 1px solid color-mix(in srgb, #FFFFFF 10%, transparent);
+            border-radius: 0.55rem;
+            padding: 1rem 1.1rem;
+            line-height: 1.55;
+            box-shadow: inset 0 1px rgba(255, 255, 255, 0.04);
+        }
+        #doc pre code {
+            color: #EEEEEE;
+        }
+        #doc .code-wrapper .copy-button {
+            border-radius: 0.3rem;
+            font-family: inherit;
+        }
+        #doc table {
+            width: 100%;
+            display: block;
+            overflow-x: auto;
+            border-collapse: separate;
+            border-spacing: 0;
+            border: 1px solid var(--border);
+            border-radius: 0.45rem;
+            font-size: 0.9rem;
+        }
+        #doc th, #doc td {
+            padding: 0.65rem 0.8rem;
+            border: 0;
+            border-right: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            text-align: left;
+        }
+        #doc th {
+            color: var(--fg);
+            background: var(--hover-bg);
+            font-weight: 600;
+        }
+        #doc tr:last-child td {
+            border-bottom: 0;
+        }
+        #doc th:last-child, #doc td:last-child {
+            border-right: 0;
+        }
+        #doc blockquote {
+            border: 0;
+            border-radius: 0.45rem;
+            background: var(--hover-bg);
+            padding: 0.8rem 1rem 0.8rem 2.65rem;
+            color: var(--muted-strong);
+        }
+        #doc .admonition {
+            border: 1px solid color-mix(in srgb, var(--adm-color) 25%, var(--border));
+            border-left: 4px solid var(--adm-color);
+            border-radius: 0.45rem;
+            padding: 0.8rem 1rem;
+        }
+        #doc .source-link {
+            font-size: 0.65em;
+        }
+        #doc .heading-anchor {
+            color: var(--muted);
+        }
+
+        #toc {
+            position: sticky;
+            top: calc(var(--topbar-height) + 2.5rem);
+            max-height: calc(100vh - var(--topbar-height) - 5rem);
+            overflow-y: auto;
+            padding-bottom: 2rem;
+            color: var(--muted);
+            scrollbar-width: thin;
+        }
+        #toc[hidden] {
+            display: none;
+        }
+        #toc-title {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+            color: var(--muted-strong);
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        #toc-title svg {
+            width: 0.9rem;
+            height: 0.9rem;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 1.7;
+        }
+        #toc-links {
+            display: grid;
+            gap: 0;
+            border-left: 1px solid var(--border);
+        }
+        #toc-links a {
+            margin-left: -1px;
+            padding: 0.32rem 0 0.32rem 1rem;
+            border-left: 1px solid transparent;
+            color: var(--muted);
+            text-decoration: none;
+            font-size: 0.8rem;
+            line-height: 1.35;
+        }
+        #toc-links a.depth-3 {
+            padding-left: 1.75rem;
+        }
+        #toc-links a:hover {
+            color: var(--fg);
+            border-left-color: var(--fg);
+        }
+
+        @media (max-width: 72rem) {
+            #main {
+                max-width: 48rem;
+                grid-template-columns: minmax(0, 1fr);
+            }
+            #toc {
+                display: none;
+            }
+        }
+
+        @media (max-width: 64rem) {
+            #sidebar {
+                width: clamp(19rem, calc(85vw - 0.75rem), 22rem);
+                border-right: 0;
+                transform: translateX(-100%);
+                transition: transform 0.45s cubic-bezier(0.32, 0.72, 0, 1);
+                box-shadow: none;
+            }
+            body.mobile-nav-open #sidebar {
+                transform: translateX(0);
+            }
+            #header {
+                min-height: 3.375rem;
+                padding: 1rem 1rem 0;
+                gap: 0;
+            }
+            #header .docs-logo {
+                width: 10.423rem;
+                height: 2rem;
+            }
+            #header-spacer {
+                min-width: 0.75rem;
+            }
+            #theme {
+                width: 6.5rem;
+                height: 2.375rem;
+            }
+            #theme button {
+                width: 1.875rem;
+                height: 1.875rem;
+            }
+            #theme svg {
+                width: 0.875rem;
+                height: 0.875rem;
+            }
+            #mobile-site-navigation {
+                display: grid;
+                flex: 0 0 auto;
+                gap: 0.5rem;
+                margin-top: 1.5rem;
+                padding: 0 1rem;
+                border: 0;
+            }
+            .mobile-select-trigger {
+                width: 100%;
+                height: 2.5rem;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 0.375rem;
+                overflow: hidden;
+                padding: 0.375rem 0.875rem 0.375rem 1rem;
+                border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+                border-radius: 0.85rem;
+                background: transparent;
+                color: var(--fg);
+                font-size: 1rem;
+                font-weight: 400;
+                cursor: pointer;
+                white-space: nowrap;
+            }
+            .mobile-select-trigger:hover,
+            .mobile-select-trigger[aria-expanded="true"] {
+                background: color-mix(in srgb, var(--fg) 5%, transparent);
+            }
+            .mobile-select-trigger-label {
+                min-width: 0;
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .mobile-select-leading-icon {
+                width: 1rem;
+                height: 1rem;
+                flex: 0 0 auto;
+                fill: none;
+                stroke: currentColor;
+                stroke-linecap: round;
+                stroke-linejoin: round;
+                stroke-width: 1.5;
+            }
+            #mobile-site-navigation .mobile-menu-chevron {
+                width: 0.75rem;
+                height: 0.75rem;
+                flex: 0 0 auto;
+                fill: none;
+                stroke: var(--muted);
+                stroke-linecap: round;
+                stroke-linejoin: round;
+                stroke-width: 1.5;
+                transition: transform 0.15s ease;
+            }
+            .mobile-select-trigger[aria-expanded="true"] .mobile-menu-chevron {
+                transform: rotate(180deg);
+            }
+            .mobile-select-menu {
+                display: grid;
+                margin-top: 0.25rem;
+                padding: 0.25rem;
+                border: 1px solid var(--border);
+                border-radius: 0.85rem;
+                background: var(--panel-bg);
+                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+            }
+            .mobile-select-menu[hidden] {
+                display: none;
+            }
+            .mobile-select-option {
+                min-height: 2.25rem;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 0.75rem;
+                padding: 0.45rem 0.75rem;
+                border: 2px solid transparent;
+                border-radius: 0.25rem;
+                background: transparent;
+                color: var(--fg);
+                text-align: left;
+                text-decoration: none;
+                font-size: 0.875rem;
+                font-weight: 400;
+                cursor: pointer;
+            }
+            .mobile-select-option:hover {
+                background: var(--hover-bg);
+            }
+            .mobile-select-option:focus-visible {
+                border-color: var(--fg);
+                outline: none;
+            }
+            .mobile-select-check {
+                width: 1rem;
+                height: 1rem;
+                fill: none;
+                stroke: currentColor;
+                stroke-linecap: round;
+                stroke-linejoin: round;
+                stroke-width: 1.8;
+            }
+            #sidebar-backdrop {
+                position: fixed;
+                inset: 0;
+                z-index: 35;
+                background: rgba(0, 0, 0, 0.32);
+            }
+            body.mobile-nav-open #sidebar-backdrop {
+                display: block;
+            }
+            #page {
+                margin-left: 0;
+            }
+            #topbar {
+                display: none;
+            }
+            #mobile-header {
+                position: sticky;
+                top: 0;
+                z-index: 30;
+                height: 4rem;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 1rem;
+                padding: 0 1rem;
+                border-bottom: 1px solid var(--border);
+                background: color-mix(in srgb, var(--bg) 94%, transparent);
+                backdrop-filter: blur(12px);
+            }
+            #mobile-nav-toggle {
+                width: 2.4rem;
+                height: 2.4rem;
+                display: grid;
+                place-items: center;
+                padding: 0;
+                border: 1px solid var(--border);
+                border-radius: 0.4rem;
+                background: var(--panel-bg);
+                cursor: pointer;
+            }
+            #mobile-nav-toggle svg {
+                width: 1.15rem;
+                height: 1.15rem;
+                fill: none;
+                stroke: currentColor;
+                stroke-width: 1.7;
+            }
+            #mobile-brand {
+                min-width: 0;
+                display: flex;
+            }
+            #mobile-brand .docs-logo {
+                width: 10.423rem;
+                height: 2rem;
+            }
+            #main {
+                min-height: calc(100vh - 4rem);
+                padding-top: 2rem;
+            }
+        }
+
+        @media (max-width: 40rem) {
+            #main {
+                padding: 1.6rem 1.25rem 4rem;
+            }
+            #doc h1 {
+                font-size: 1.9rem;
+            }
+            #doc h2 {
+                font-size: 1.35rem;
+            }
+        }
     </style>
 </head>
 <body>
-    <div id="header">
-        <!-- The ClickHouse logo, matching the one in `play.html`. -->
-        <svg id="logo" viewBox="0 0 11 10" xmlns="http://www.w3.org/2000/svg">
-            <rect x="0" y="0" width="11" height="10" fill="#FF0"/>
-            <path d="M1,1 h1 v8 h-1 z" fill="#000"/>
-            <path d="M3,1 h1 v8 h-1 z" fill="#000"/>
-            <path d="M5,1 h1 v8 h-1 z" fill="#000"/>
-            <path d="M7,1 h1 v8 h-1 z" fill="#000"/>
-            <path d="M9,4.25 h1 v1.5 h-1 z" fill="#000"/>
-        </svg>
-        <h1>ClickHouse <span class="accent">Reference</span></h1>
-        <form id="connection-params" onsubmit="return false">
-            <input spellcheck="false" id="url" type="text" placeholder="URL" />
-            <input spellcheck="false" id="user" type="text" placeholder="user" />
-            <input spellcheck="false" id="password" type="password" placeholder="password" />
-        </form>
-        <div id="theme" title="Switch color theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
+    <aside id="sidebar" aria-label="Source reference navigation">
+        <div id="header">
+            <a class="brand-link" href="/docs" aria-label="ClickHouse Documentation home page">
+                <img class="docs-logo docs-logo-light" alt="ClickHouse Docs" src="https://mintcdn.com/private-7c7dfe99/h2VHbIjccjT9ClSc/_site/logo/light.svg?fit=max&amp;auto=format&amp;n=h2VHbIjccjT9ClSc&amp;q=85&amp;s=b8a838f982def2b530a95016300bc7ec">
+                <img class="docs-logo docs-logo-dark" alt="ClickHouse Docs" src="https://mintcdn.com/private-7c7dfe99/h2VHbIjccjT9ClSc/_site/logo/dark.svg?fit=max&amp;auto=format&amp;n=h2VHbIjccjT9ClSc&amp;q=85&amp;s=563dcf3fc5bb3694597dec207c9b4ecf">
+            </a>
+            <!-- Stable served-page marker retained for existing integration checks. -->
+            <span class="compatibility-marker" aria-hidden="true">ClickHouse <span class="accent">Reference</span></span>
+            <div id="header-spacer"></div>
+            <div id="theme" role="group" aria-label="Theme preference">
+                <button type="button" id="toggle-system" data-theme-preference-value="system" aria-label="Switch to system theme" aria-pressed="false">
+                    <svg viewBox="0 0 18 18" aria-hidden="true"><path d="M4.5 15.5 9 14.5l4.5 1M9 11.75v2.75"/><rect x="1.75" y="2.75" width="14.5" height="9" rx="2"/></svg>
+                </button>
+                <button type="button" id="toggle-light" data-theme-preference-value="light" aria-label="Switch to light theme" aria-pressed="false">
+                    <svg viewBox="0 0 18 18" aria-hidden="true"><path d="M9 1.25v1M14.48 3.52l-.707.707M16.75 9h-1M14.48 14.48l-.707-.707M9 16.75v-1M3.52 14.48l.707-.707M1.25 9h1M3.52 3.52l.707.707"/><circle cx="9" cy="9" r="4.25"/></svg>
+                </button>
+                <button type="button" id="toggle-dark" data-theme-preference-value="dark" aria-label="Switch to dark theme" aria-pressed="false">
+                    <svg viewBox="0 0 18 18" aria-hidden="true"><path d="M13 11.75A6.25 6.25 0 0 1 7.912 1.878 7.25 7.25 0 1 0 16.259 10.826 6.22 6.22 0 0 1 13 11.75Z"/></svg>
+                </button>
+            </div>
+        </div>
+        <nav id="mobile-site-navigation" aria-label="ClickHouse website">
+            <div class="mobile-select">
+                <button class="mobile-select-trigger" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="mobile-language-menu">
+                    <span class="mobile-select-trigger-label">
+                        <svg class="mobile-select-leading-icon" viewBox="0 0 18 18" aria-hidden="true"><path d="M2.25 3.75h8.5M6.5 2.25v1.5M4 6.25c.75 2 2.2 3.7 4.25 4.75M9.5 5.25c-.8 2.8-2.55 5-5.25 6.5M10.75 15.75l2.5-6.5 2.5 6.5M11.65 13.4h3.2"/></svg>
+                        <span>English</span>
+                    </span>
+                    <svg class="mobile-menu-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m2.5 4.5 3.5 3 3.5-3"/></svg>
+                </button>
+                <div class="mobile-select-menu" id="mobile-language-menu" role="menu" aria-label="English" hidden>
+                    <button class="mobile-select-option" type="button" role="menuitem" lang="en">English<svg class="mobile-select-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3 3 7-7"/></svg></button>
+                    <button class="mobile-select-option" type="button" role="menuitem" lang="ar">العربية</button>
+                    <button class="mobile-select-option" type="button" role="menuitem" lang="es">Español</button>
+                    <button class="mobile-select-option" type="button" role="menuitem" lang="fr">Français</button>
+                    <button class="mobile-select-option" type="button" role="menuitem" lang="ja">日本語</button>
+                    <button class="mobile-select-option" type="button" role="menuitem" lang="ko">한국어</button>
+                    <button class="mobile-select-option" type="button" role="menuitem" lang="pt-BR">Português (BR)</button>
+                    <button class="mobile-select-option" type="button" role="menuitem" lang="ru">Русский</button>
+                    <button class="mobile-select-option" type="button" role="menuitem" lang="zh-CN">简体中文</button>
+                </div>
+            </div>
+            <div class="mobile-select">
+                <button class="mobile-select-trigger" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="mobile-area-menu">
+                    <span class="mobile-select-trigger-label">Database</span>
+                    <svg class="mobile-menu-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m2.5 4.5 3.5 3 3.5-3"/></svg>
+                </button>
+                <div class="mobile-select-menu" id="mobile-area-menu" role="menu" aria-label="Database" hidden>
+                    <a class="mobile-select-option" role="menuitem" href="https://clickhouse.com/docs">Home</a>
+                    <a class="mobile-select-option" role="menuitem" aria-current="true" href="https://clickhouse.com/docs/get-started">Database<svg class="mobile-select-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3 3 7-7"/></svg></a>
+                    <a class="mobile-select-option" role="menuitem" href="https://clickhouse.com/docs/products/cloud/getting-started/cloud-get-started">Solutions</a>
+                    <a class="mobile-select-option" role="menuitem" href="https://clickhouse.com/docs/integrations/home">Integrations</a>
+                    <a class="mobile-select-option" role="menuitem" href="https://clickhouse.com/docs/resources/support-center/home">Resources</a>
+                </div>
+            </div>
+            <div class="mobile-select">
+                <button class="mobile-select-trigger" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="mobile-section-menu">
+                    <span class="mobile-select-trigger-label">Reference</span>
+                    <svg class="mobile-menu-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m2.5 4.5 3.5 3 3.5-3"/></svg>
+                </button>
+                <div class="mobile-select-menu" id="mobile-section-menu" role="menu" aria-label="Reference" hidden>
+                    <a class="mobile-select-option" role="menuitem" href="https://clickhouse.com/docs/get-started">Get started</a>
+                    <a class="mobile-select-option" role="menuitem" href="https://clickhouse.com/docs/concepts">Concepts</a>
+                    <a class="mobile-select-option" role="menuitem" href="https://clickhouse.com/docs/guides/clickhouse">Guides</a>
+                    <a class="mobile-select-option" role="menuitem" aria-current="true" href="https://clickhouse.com/docs/reference/home">Reference<svg class="mobile-select-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3 3 7-7"/></svg></a>
+                </div>
+            </div>
+        </nav>
+        <div id="sidebar-tools">
+            <div id="search-bar">
+                <svg id="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+                <input spellcheck="false" autocomplete="off" id="search" type="text"
+                       aria-label="Search source reference" placeholder="Search…" />
+                <kbd id="search-shortcut">⌘K</kbd>
+            </div>
+            <details id="connection-settings">
+                <summary title="Connection settings" aria-label="Connection settings">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6"/></svg>
+                </summary>
+                <form id="connection-params" onsubmit="return false">
+                    <label>Server URL<input spellcheck="false" id="url" type="text" placeholder="URL" /></label>
+                    <label>User<input spellcheck="false" id="user" type="text" placeholder="user" /></label>
+                    <label>Password<input spellcheck="false" id="password" type="password" placeholder="password" /></label>
+                </form>
+            </details>
+        </div>
+        <div id="sidebar-content">
+            <h2>Source reference</h2>
+            <div id="results"></div>
+            <div id="sidebar-empty">Search functions, settings, table engines, data types, formats, and other entities documented by this ClickHouse server.</div>
+        </div>
+        <div id="status" aria-live="polite"></div>
+    </aside>
+    <div id="sidebar-backdrop"></div>
+
+    <div id="page">
+        <header id="topbar">
+            <nav id="site-navigation" aria-label="ClickHouse website">
+                <a href="https://clickhouse.com/docs">Home</a>
+                <div class="nav-menu">
+                    <button class="nav-menu-trigger active" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="database-menu">
+                        Database
+                        <svg class="nav-menu-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m2.5 4.5 3.5 3 3.5-3"/></svg>
+                    </button>
+                    <div class="nav-menu-panel" id="database-menu" role="menu" hidden>
+                        <div class="nav-menu-surface">
+                            <a class="nav-menu-item" role="menuitem" href="https://clickhouse.com/docs/get-started"><img class="nav-menu-icon" alt="" aria-hidden="true" data-menu-icon="get_started"/><span>Get started</span></a>
+                            <a class="nav-menu-item" role="menuitem" href="https://clickhouse.com/docs/concepts"><img class="nav-menu-icon" alt="" aria-hidden="true" data-menu-icon="concepts"/><span>Concepts</span></a>
+                            <a class="nav-menu-item" role="menuitem" href="https://clickhouse.com/docs/guides/clickhouse"><img class="nav-menu-icon" alt="" aria-hidden="true" data-menu-icon="guides"/><span>Guides</span></a>
+                            <a class="nav-menu-item" role="menuitem" aria-current="location" href="https://clickhouse.com/docs/reference/home"><img class="nav-menu-icon" alt="" aria-hidden="true" data-menu-icon="reference"/><span>Reference</span></a>
+                        </div>
+                    </div>
+                </div>
+                <div class="nav-menu">
+                    <button class="nav-menu-trigger" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="solutions-menu">
+                        Solutions
+                        <svg class="nav-menu-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m2.5 4.5 3.5 3 3.5-3"/></svg>
+                    </button>
+                    <div class="nav-menu-panel wide" id="solutions-menu" role="menu" hidden>
+                        <div class="nav-menu-surface columns">
+                            <div class="nav-menu-column">
+                                <a class="nav-menu-item nav-menu-column-title" role="menuitem" href="https://clickhouse.com/docs"><span class="nav-menu-icon" aria-hidden="true"></span><span>ClickHouse Cloud</span></a>
+                                <a class="nav-menu-item" role="menuitem" href="https://clickhouse.com/docs/products/cloud/getting-started/cloud-get-started"><img class="nav-menu-icon" alt="" aria-hidden="true" data-menu-icon="cloud"/><span>ClickHouse Cloud</span></a>
+                                <a class="nav-menu-item" role="menuitem" href="https://clickhouse.com/docs/products/managed-postgres/overview"><img class="nav-menu-icon" alt="" aria-hidden="true" data-menu-icon="postgres"/><span>ClickHouse Managed Postgres</span></a>
+                                <a class="nav-menu-item" role="menuitem" href="https://clickhouse.com/docs/clickstack"><img class="nav-menu-icon" alt="" aria-hidden="true" data-menu-icon="clickstack"/><span>ClickStack</span></a>
+                                <a class="nav-menu-item external" role="menuitem" href="https://langfuse.com/docs" target="_blank" rel="noopener"><img class="nav-menu-icon" alt="" aria-hidden="true" data-menu-icon="langfuse"/><span>Langfuse</span></a>
+                            </div>
+                            <div class="nav-menu-column">
+                                <a class="nav-menu-item nav-menu-column-title" role="menuitem" href="https://clickhouse.com/docs"><span class="nav-menu-icon" aria-hidden="true"></span><span>Open source</span></a>
+                                <a class="nav-menu-item" role="menuitem" href="https://clickhouse.com/docs/products/agentic-data-stack/overview"><img class="nav-menu-icon" alt="" aria-hidden="true" data-menu-icon="agentic"/><span>Agentic Data Stack</span></a>
+                                <a class="nav-menu-item" role="menuitem" href="https://clickhouse.com/docs/chdb"><img class="nav-menu-icon" alt="" aria-hidden="true" data-menu-icon="chdb"/><span>chDB</span></a>
+                                <a class="nav-menu-item" role="menuitem" href="https://clickhouse.com/docs/products/kubernetes-operator/overview"><img class="nav-menu-icon" alt="" aria-hidden="true" data-menu-icon="kubernetes"/><span>Kubernetes Operator</span></a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="nav-menu">
+                    <button class="nav-menu-trigger" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="integrations-menu">
+                        Integrations
+                        <svg class="nav-menu-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m2.5 4.5 3.5 3 3.5-3"/></svg>
+                    </button>
+                    <div class="nav-menu-panel" id="integrations-menu" role="menu" hidden>
+                        <div class="nav-menu-surface">
+                            <a class="nav-menu-item section-item" role="menuitem" href="https://clickhouse.com/docs/integrations/home"><span>Ecosystem</span></a>
+                            <a class="nav-menu-item" role="menuitem" href="https://clickhouse.com/docs/integrations/clickpipes/home"><img class="nav-menu-icon" alt="" aria-hidden="true" data-menu-icon="clickpipes"/><span>ClickPipes</span></a>
+                            <a class="nav-menu-item" role="menuitem" href="https://clickhouse.com/docs/integrations/language-clients/index"><img class="nav-menu-icon" alt="" aria-hidden="true" data-menu-icon="language_clients"/><span>Language clients</span></a>
+                            <a class="nav-menu-item" role="menuitem" href="https://clickhouse.com/docs/integrations/connectors/data-sources/index"><img class="nav-menu-icon" alt="" aria-hidden="true" data-menu-icon="connectors"/><span>Connectors</span></a>
+                        </div>
+                    </div>
+                </div>
+                <div class="nav-menu resources">
+                    <button class="nav-menu-trigger" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="resources-menu">
+                        Resources
+                        <svg class="nav-menu-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m2.5 4.5 3.5 3 3.5-3"/></svg>
+                    </button>
+                    <div class="nav-menu-panel" id="resources-menu" role="menu" hidden>
+                        <div class="nav-menu-surface">
+                            <a class="nav-menu-item" role="menuitem" href="https://clickhouse.com/docs/resources/support-center/home"><img class="nav-menu-icon" alt="" aria-hidden="true" data-menu-icon="support"/><span>Support center</span></a>
+                            <a class="nav-menu-item" role="menuitem" href="https://clickhouse.com/docs/resources/develop-contribute"><img class="nav-menu-icon" alt="" aria-hidden="true" data-menu-icon="contribute"/><span>Development &amp; contributing</span></a>
+                            <a class="nav-menu-item" role="menuitem" href="https://clickhouse.com/docs/resources/changelogs/cloud/index"><img class="nav-menu-icon" alt="" aria-hidden="true" data-menu-icon="changelogs"/><span>Changelogs</span></a>
+                            <a class="nav-menu-item" role="menuitem" href="https://clickhouse.com/docs/resources/about/index"><img class="nav-menu-icon" alt="" aria-hidden="true" data-menu-icon="about"/><span>About</span></a>
+                        </div>
+                    </div>
+                </div>
+            </nav>
+            <a class="github-link" href="https://github.com/ClickHouse/ClickHouse" target="_blank" rel="noopener noreferrer" aria-label="ClickHouse on GitHub, 49.2k stars">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M8 1.75A6.75 6.75 0 0 0 5.87 14.9c.34.06.46-.14.46-.32 0-.16-.01-.69-.01-1.26-1.7.32-2.14-.6-2.27-.98-.08-.19-.41-.79-.7-.95-.24-.13-.58-.44-.01-.45.53-.01.91.49 1.04.69.61 1.02 1.58.73 1.97.56.06-.44.24-.74.43-.91-1.5-.17-3.07-.75-3.07-3.33 0-.73.26-1.34.69-1.81-.07-.17-.3-.86.07-1.79 0 0 .57-.18 1.86.69A6.5 6.5 0 0 1 8 4.31c.57 0 1.14.08 1.68.23 1.29-.88 1.86-.69 1.86-.69.37.93.14 1.62.07 1.79.43.47.69 1.07.69 1.81 0 2.59-1.58 3.16-3.08 3.33.25.21.46.62.46 1.25 0 .9-.01 1.63-.01 1.86 0 .18.13.39.47.32A6.75 6.75 0 0 0 8 1.75Z"/></svg>
+                <span>49.2k</span>
+            </a>
+            <a class="get-started" href="https://clickhouse.cloud/signUp?loc=docs-nav-signUp-cta" target="_blank" rel="noopener noreferrer">Get Started</a>
+        </header>
+        <header id="mobile-header">
+            <a id="mobile-brand" href="/docs" aria-label="ClickHouse Documentation home page">
+                <img class="docs-logo docs-logo-light" alt="ClickHouse Docs" src="https://mintcdn.com/private-7c7dfe99/h2VHbIjccjT9ClSc/_site/logo/light.svg?fit=max&amp;auto=format&amp;n=h2VHbIjccjT9ClSc&amp;q=85&amp;s=b8a838f982def2b530a95016300bc7ec">
+                <img class="docs-logo docs-logo-dark" alt="ClickHouse Docs" src="https://mintcdn.com/private-7c7dfe99/h2VHbIjccjT9ClSc/_site/logo/dark.svg?fit=max&amp;auto=format&amp;n=h2VHbIjccjT9ClSc&amp;q=85&amp;s=563dcf3fc5bb3694597dec207c9b4ecf">
+            </a>
+            <button type="button" id="mobile-nav-toggle" aria-label="Open navigation" aria-expanded="false">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+            </button>
+        </header>
+        <main id="main">
+            <!-- DOC_INITIAL_CONTENT_BEGIN -->
+            <article id="doc" class="empty">
+                <div class="empty-content">
+                    <div class="eyebrow">Source reference</div>
+                    <h1>Search the ClickHouse reference</h1>
+                    <p>Find functions, settings, engines, data types, formats, and other entities documented by this ClickHouse server.</p>
+                </div>
+            </article>
+            <!-- DOC_INITIAL_CONTENT_END -->
+            <aside id="toc" aria-label="On this page" hidden>
+                <div id="toc-title">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>
+                    <span>On this page</span>
+                </div>
+                <nav id="toc-links"></nav>
+            </aside>
+        </main>
     </div>
-    <div id="search-bar">
-        <input spellcheck="false" autocomplete="off" autofocus id="search" type="text"
-               placeholder="Search functions, settings, table engines, data types…" />
-    </div>
-    <div id="main">
-        <div id="results"></div>
-        <div id="doc" class="empty">Start typing to search the documentation.</div>
-    </div>
-    <div id="status"></div>
 
     <!-- Marked (Markdown renderer) and KaTeX (TeX math renderer).
          When this page is served by ClickHouse, these CDN links are rewritten to embedded,
@@ -432,6 +1677,187 @@
     const $url = document.getElementById('url');
     const $user = document.getElementById('user');
     const $password = document.getElementById('password');
+    const $page = document.getElementById('page');
+    const $toc = document.getElementById('toc');
+    const $toc_links = document.getElementById('toc-links');
+    const $mobile_nav_toggle = document.getElementById('mobile-nav-toggle');
+    const $sidebar_backdrop = document.getElementById('sidebar-backdrop');
+
+    /// Exact menu icons from the documentation navigation, embedded as data URLs so the source
+    /// reference remains self-contained when it is served by a ClickHouse server.
+    const MENU_ICON_DATA = {"get_started":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiByb2xlPSJpbWciIGFyaWEtbGFiZWw9ImxpZ2h0ZW5pbmciPgo8c3R5bGU+CiAgcGF0aCB7IHN0cm9rZTogcmdiKDgwLCA4MCwgODApOyB9CiAgQG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTogZGFyaykgewogICAgcGF0aCB7IHN0cm9rZTogcmdiKDIwMCwgMjAwLCAyMDApOyB9CiAgfQo8L3N0eWxlPgo8cGF0aCBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMS41IiBkPSJtMTMgOC0zIDMgNCAyLTMgMyI+PC9wYXRoPjxwYXRoIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlLXdpZHRoPSIxLjUiIGQ9Ik0xOSAyMUg1YTIgMiAwIDAgMS0yLTJWNWEyIDIgMCAwIDEgMi0yaDE0YTIgMiAwIDAgMSAyIDJ2MTRhMiAyIDAgMCAxLTIgMloiIGNsaXAtcnVsZT0iZXZlbm9kZCI+PC9wYXRoPgo8L3N2Zz4=","concepts":"data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiByb2xlPSJpbWciIGFyaWEtbGFiZWw9ImxpZ2h0LWJ1bGItb24iPgo8c3R5bGU+CiAgcGF0aCB7IHN0cm9rZTogcmdiKDgwLCA4MCwgODApOyB9CiAgQG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTogZGFyaykgewogICAgcGF0aCB7IHN0cm9rZTogcmdiKDIwMCwgMjAwLCAyMDApOyB9CiAgfQo8L3N0eWxlPgo8cGF0aCBkPSJNMTUgMTUuMTg5OUg5IiBzdHJva2Utd2lkdGg9IjEuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48L3BhdGg+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik04LjU0MDk0IDE0Ljg5NjJDNi43NjQ5NCAxMy42NDEyIDUuNjk5OTQgMTEuNDUwMiA2LjA3NDk0IDkuMDM4MTlDNi40ODA5NCA2LjQzMTE5IDguNjUzOTQgNC4zNTAxOSAxMS4yNzQ5IDQuMDQzMTlDMTQuOTEyOSAzLjYxNjE5IDE3Ljk5OTkgNi40NDgxOSAxNy45OTk5IDEwLjAwMDJDMTcuOTk5OSAxMi4wMjUyIDE2Ljk5MzkgMTMuODEyMiAxNS40NTY5IDE0Ljg5ODJDMTUuMTgwOSAxNS4wOTMyIDE0Ljk5OTkgMTUuMzk1MiAxNC45OTk5IDE1LjczMzJWMTguNTAwMkMxNC45OTk5IDE5Ljg4MTIgMTMuODgwOSAyMS4wMDAyIDEyLjQ5OTkgMjEuMDAwMkgxMS40OTk5QzEwLjExODkgMjEuMDAwMiA4Ljk5OTk0IDE5Ljg4MTIgOC45OTk5NCAxOC41MDAyVjE1LjczNzJDOC45OTk5NCAxNS4zOTYyIDguODE3OTQgMTUuMDkyMiA4LjU0MDk0IDE0Ljg5NjJaIiBzdHJva2Utd2lkdGg9IjEuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48L3BhdGg+PHBhdGggZD0iTTIwIDUuMDAwMDZMMjEuMTkgMy44MTAwNiIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PC9wYXRoPjxwYXRoIGQ9Ik0zLjk5OTU3IDE1TDIuODA5NTcgMTYuMTkiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjwvcGF0aD48cGF0aCBkPSJNNC45OTk1NyA0LjAwMDA2TDMuODA5NTcgMi44MTAwNiIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PC9wYXRoPjxwYXRoIGQ9Ik0yMCAxNUwyMS4xOSAxNi4xOSIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PC9wYXRoPjxwYXRoIGQ9Ik0yMSAxMEgyMi42OSIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PC9wYXRoPjxwYXRoIGQ9Ik0xLjMwOTU3IDEwSDIuOTk5NTciIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjwvcGF0aD48cGF0aCBkPSJNOSAxOEgxNC44NyIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PC9wYXRoPgo8L3N2Zz4=","guides":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiByb2xlPSJpbWciIGFyaWEtbGFiZWw9ImJvb2siPgo8c3R5bGU+CiAgcGF0aCB7IHN0cm9rZTogcmdiKDgwLCA4MCwgODApOyB9CiAgQG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTogZGFyaykgewogICAgcGF0aCB7IHN0cm9rZTogcmdiKDIwMCwgMjAwLCAyMDApOyB9CiAgfQo8L3N0eWxlPgo8cGF0aCBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMS41IiBkPSJNMTIgMTYuMzdhNi4zNjggNi4zNjggMCAwIDAtNy40OTUtMS4xMmMtLjY4NC4zNjQtMS41MDktLjA4NS0xLjUwOS0uODZWNS4yOTVjMC0uNjM3LjI5NC0xLjI0OS44MTItMS42MThBNi4zNjcgNi4zNjcgMCAwIDEgMTIgNC4zNjRhNi4zNjcgNi4zNjcgMCAwIDEgOC4xOTEtLjY4N2MuNTE4LjM3LjgxMy45ODEuODEzIDEuNjE4djkuMDk1YzAgLjc3NS0uODI2IDEuMjI1LTEuNTA5Ljg2QTYuMzY4IDYuMzY4IDAgMCAwIDEyIDE2LjM3WiIgY2xpcC1ydWxlPSJldmVub2RkIj48L3BhdGg+PHBhdGggc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjEuNSIgZD0iTTQuNTA1IDE5LjM4N0E2LjM2OCA2LjM2OCAwIDAgMSAxMiAyMC41MDdhNi4zNjggNi4zNjggMCAwIDEgNy40OTUtMS4xMk0xMiAxNi4zN1Y0LjM2MyI+PC9wYXRoPgo8L3N2Zz4=","reference":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiByb2xlPSJpbWciIGFyaWEtbGFiZWw9ImZvbGRlci1vcGVuIj4KPHN0eWxlPgogIHBhdGggeyBzdHJva2U6IHJnYig4MCwgODAsIDgwKTsgfQogIEBtZWRpYSAocHJlZmVycy1jb2xvci1zY2hlbWU6IGRhcmspIHsKICAgIHBhdGggeyBzdHJva2U6IHJnYigyMDAsIDIwMCwgMjAwKTsgfQogIH0KPC9zdHlsZT4KPHBhdGggc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIGQ9Ik0yIDZWMTguNUMyIDE5LjA1MjMgMi40NDc3MiAxOS41IDMgMTkuNUgxOUMxOS41NTIzIDE5LjUgMjAgMTkuMDUyMyAyMCAxOC41VjE3LjY3MzJDMjAgMTcuNTU4NiAyMC4wMTk3IDE3LjQ0NDggMjAuMDU4MyAxNy4zMzY5TDIyLjAyMjcgMTEuODM2M0MyMi4yNTUzIDExLjE4NTEgMjEuNzcyNSAxMC41IDIxLjA4MSAxMC41SDIxQzIwLjQ0NzcgMTAuNSAyMCAxMC4wNTIzIDIwIDkuNVY4LjVDMjAgNy45NDc3MiAxOS41NTIzIDcuNSAxOSA3LjVIOS4xNzcwM0M4Ljc2ODEzIDcuNSA4LjQwMDQyIDcuMjUxMDUgOC4yNDg1NiA2Ljg3MTM5TDcuNzUxNDQgNS42Mjg2MUM3LjU5OTU4IDUuMjQ4OTUgNy4yMzE4NyA1IDYuODIyOTcgNUgzQzIuNDQ3NzIgNSAyIDUuNDQ3NzEgMiA2WiI+PC9wYXRoPjxwYXRoIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBkPSJNMiAxOS41TDguMjAwNjMgMTAuOTE0NUM4LjM4ODY0IDEwLjY1NDIgOC42OTAyMSAxMC41IDkuMDExMzEgMTAuNUgyMSI+PC9wYXRoPgo8L3N2Zz4=","cloud":"data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjUiIHZpZXdCb3g9IjAgMCAyNCAyNSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHN0eWxlPgogIHBhdGggeyBzdHJva2U6IGJsYWNrOyB9CiAgQG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTogZGFyaykgewogICAgcGF0aCB7IHN0cm9rZTogd2hpdGU7IH0KICB9Cjwvc3R5bGU+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xMjBfMTIzNzQpIj4KPHBhdGggZD0iTTcuNSAxMi41QzcuNSAxMS4wMTY2IDcuOTM5ODcgOS41NjY2IDguNzYzOTggOC4zMzMyM0M5LjU4ODA5IDcuMDk5ODYgMTAuNzU5NCA2LjEzODU2IDEyLjEyOTkgNS41NzA5MUMxMy41MDAzIDUuMDAzMjUgMTUuMDA4MyA0Ljg1NDcyIDE2LjQ2MzIgNS4xNDQxMUMxNy45MTggNS40MzM1IDE5LjI1NDQgNi4xNDc4MSAyMC4zMDMzIDcuMTk2N0MyMS4zNTIyIDguMjQ1NiAyMi4wNjY1IDkuNTgxOTcgMjIuMzU1OSAxMS4wMzY4QzIyLjY0NTMgMTIuNDkxNyAyMi40OTY4IDEzLjk5OTcgMjEuOTI5MSAxNS4zNzAxQzIxLjM2MTQgMTYuNzQwNiAyMC40MDAxIDE3LjkxMTkgMTkuMTY2OCAxOC43MzZDMTcuOTMzNCAxOS41NjAxIDE2LjQ4MzQgMjAgMTUgMjBINi43NUM1LjM1NzYxIDIwIDQuMDIyMjYgMTkuNDQ2OSAzLjAzNzY5IDE4LjQ2MjNDMi4wNTMxMiAxNy40Nzc3IDEuNSAxNi4xNDI0IDEuNSAxNC43NUMxLjUgMTMuMzU3NiAyLjA1MzEyIDEyLjAyMjMgMy4wMzc2OSAxMS4wMzc3QzQuMDIyMjYgMTAuMDUzMSA1LjM1NzYxIDkuNSA2Ljc1IDkuNUM3LjE4OTI1IDkuNDk5ODQgNy42MjY4NyA5LjU1MzM2IDguMDUzMTMgOS42NTkzOCIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgo8L2c+CjxkZWZzPgo8Y2xpcFBhdGggaWQ9ImNsaXAwXzEyMF8xMjM3NCI+CjxyZWN0IHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgZmlsbD0id2hpdGUiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAgMC41KSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPg==","postgres":"data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHN0eWxlPgogIHBhdGggeyBzdHJva2U6IHJnYig4MCwgODAsIDgwKTsgZmlsbDogbm9uZTsgfQogIC5leWUgeyBmaWxsOiByZ2IoODAsIDgwLCA4MCk7IHN0cm9rZTogbm9uZTsgfQogIEBtZWRpYSAocHJlZmVycy1jb2xvci1zY2hlbWU6IGRhcmspIHsKICAgIHBhdGggeyBzdHJva2U6IHJnYigyMDAsIDIwMCwgMjAwKTsgfQogICAgLmV5ZSB7IGZpbGw6IHJnYigyMDAsIDIwMCwgMjAwKTsgfQogIH0KPC9zdHlsZT4KPHBhdGggZD0iTTExLjk0MzggMTUuMDQ1QzExLjg3MjUgMTcuNTM1IDExLjk1ODcgMjAuMDQzOCAxMi4yMDYyIDIwLjY1NUMxMi40NDYyIDIxLjI2MjUgMTIuOTY3NSAyMi40NDc1IDE0Ljc2MzggMjIuMDY1QzE2LjI2MzggMjEuNzQyNSAxNi44MDc1IDIxLjEyIDE3LjA0MzggMTkuNzQ3NUMxNy4yNjY2IDE4LjI5IDE3LjQ1MTYgMTYuODI3IDE3LjU5ODggMTUuMzZNOS43ODc1IDIuNTY1QzkuNzg3NSAyLjU2NSAxLjY2ODc1IC0wLjc1Mzc0OSAyLjA0NzUgNi43OTVDMi4xMjYyNSA4LjQgNC4zNSAxOC45NDUgNi45OTc1IDE1Ljc1NzVDNy45Njg3NSAxNC41OTUgOC44NDI1IDEzLjY4MzggOC44NDI1IDEzLjY4MzhNMTQuMTc4OCAxLjk1NzVDMTMuODk3NSAyLjA0NzUgMTguNjk3NSAwLjIwMjUwMSAyMS40MjM4IDMuNjlDMjIuMzg3NSA0LjkyIDIxLjI3MzggOS45NTI1IDE4LjYgMTMuOTEyNSIgc3Ryb2tlLXdpZHRoPSIwLjk2ODI3NiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CjxwYXRoIGQ9Ik0xOC42IDEzLjkxMjVDMTguNiAxMy45MTI1IDE4Ljc3NjMgMTQuNzcxMyAyMS4zMDM4IDE0LjI1QzIyLjQxMzggMTQuMDE3NSAyMS43NDYzIDE0Ljg4NzUgMjAuNjIxMyAxNS40MTI1QzE5LjY5ODggMTUuODQgMTcuNjMyNSAxNS45NDg4IDE3LjU5ODggMTUuMzZDMTcuNTA4OCAxMy44MzM4IDE4LjY4NjIgMTQuMjk1IDE4LjYgMTMuOTEyNVpNMTguNiAxMy45MTI1QzE4LjUyNSAxMy41Njc1IDE4IDEzLjIzIDE3LjY1MTMgMTIuMzlDMTcuMzQ3NSAxMS42NTEzIDEzLjQ4ODcgNi4wMTEyNSAxOC43MiA2Ljg0NzVDMTguOTExMiA2LjgxIDE3LjM1NSAxLjg2NzUgMTIuNDU3NSAxLjc4ODc1QzcuNTYgMS43MSA3LjcyNSA3LjgxMTI1IDcuNzI1IDcuODExMjUiIHN0cm9rZS13aWR0aD0iMC45NjgyNzYiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJiZXZlbCIvPgo8cGF0aCBkPSJNMTAuNTc1IDE0LjQzNzVDOS44ODg3NSAxNS4xOTg3IDEwLjA4NzUgMTUuMzMzNyA4LjcyNjI1IDE1LjYxNUM3LjM0MjUgMTUuODk2MiA4LjE1NjI1IDE2LjQwMjUgOC42ODUgMTYuNTM3NUM5LjMyNjI1IDE2LjY5ODcgMTAuODExMyAxNi45MjM3IDExLjgxNjMgMTUuNTIxMkMxMi4xMiAxNS4wOSAxMS44MTYyIDE0LjQwNzUgMTEuMzkyNSAxNC4yMzVDMTEuMTkgMTQuMTUyNSAxMC45MiAxNC4wNDc1IDEwLjU3MTMgMTQuNDM3NSIgc3Ryb2tlLXdpZHRoPSIwLjk2ODI3NiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CjxwYXRoIGQ9Ik0xMC41MjYyIDE0LjQyMjVDMTAuNDU4NyAxMy45NzI1IDEwLjY3NjIgMTMuNDQgMTAuOTA1IDEyLjgxNzVDMTEuMjUzNyAxMS44OCAxMi4wNTYyIDEwLjk0MjUgMTEuNDE1IDcuOTcyNUMxMC45MzUgNS43NiA3LjcyNSA3LjUxMTI1IDcuNzIxMjUgNy44MTEyNUM3LjcxNzUgOC4xMTEyNSA3Ljg2NzUgOS4zMzM3NSA3LjY2ODc1IDEwLjc1NUM3LjQwNjI1IDEyLjYxMTIgOC44NSAxNC4xODI1IDEwLjUwNzUgMTQuMDE3NSIgc3Ryb2tlLXdpZHRoPSIwLjk2ODI3NiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CjxwYXRoIGNsYXNzPSJleWUiIGQ9Ik05Ljc2MTI1IDcuNzY2MjVDOS43NDYyNSA3Ljg2NzUgOS45NDg3NSA4LjE0MTI1IDEwLjIxMTIgOC4xNzg3NUMxMC40NzM3IDguMjE2MjUgMTAuNjk4NyA4LjAwMjUgMTAuNzE3NSA3Ljg5NzVDMTAuNzMyNSA3Ljc5NjI1IDEwLjUzIDcuNjgzNzUgMTAuMjY3NSA3LjY0NjI1QzEwLjAwNSA3LjYwODc1IDkuNzggNy42NjUgOS43NjEyNSA3Ljc2NjI1WiIgc3Ryb2tlLXdpZHRoPSIwLjMyMjc1OSIvPgo8cGF0aCBjbGFzcz0iZXllIiBkPSJNMTcuNzc4NyA3Ljk0NjI1QzE3Ljc5MzcgOC4wNDc1IDE3LjU5MTIgOC4zMjEyNSAxNy4zMjg3IDguMzU4NzVDMTcuMDY2MiA4LjM5NjI1IDE2Ljg0MTIgOC4xNzg3NSAxNi44MjYyIDguMDc3NUMxNi44MTEyIDcuOTc2MjUgMTcuMDEzNyA3Ljg2Mzc1IDE3LjI3NjIgNy44MjYyNUMxNy41Mzg3IDcuNzg4NzUgMTcuNzYzNyA3Ljg0MTI1IDE3Ljc3ODcgNy45NDYyNVoiIHN0cm9rZS13aWR0aD0iMC4xNjEzNzkiLz4KPHBhdGggZD0iTTE4LjcyIDYuODQ3NUMxOC43NjUgNy42NTM3NSAxOC41NDc1IDguMTk3NSAxOC41MjEzIDkuMDU2MjVDMTguNDgzOCAxMC4zMDEyIDE5LjExMzggMTEuNzI2MiAxOC4xNTc1IDEzLjE1MTIiIHN0cm9rZS13aWR0aD0iMC45NjgyNzYiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgo8L3N2Zz4=","clickstack":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MiIgaGVpZ2h0PSI0MiIgZmlsbD0ibm9uZSIgdmlld0JveD0iMCAwIDQyIDQyIj4KPHN0eWxlPgogIHBhdGggeyBmaWxsOiByZ2IoODAsIDgwLCA4MCk7IH0KICBAbWVkaWEgKHByZWZlcnMtY29sb3Itc2NoZW1lOiBkYXJrKSB7CiAgICBwYXRoIHsgZmlsbDogcmdiKDIwMCwgMjAwLCAyMDApOyB9CiAgfQo8L3N0eWxlPgo8cGF0aCBkPSJNMTEuMyAyMi4xYy45IDAgMS42Mi43MiAxLjYyIDEuNjF2NS45YTEuNjIgMS42MiAwIDAgMS0zLjIzIDB2LTUuOWMwLS44OS43My0xLjYxIDEuNjItMS42MW0xMi45Mi0zLjc4Yy45IDAgMS42MS43MyAxLjYxIDEuNjJ2OS42OGExLjYyIDEuNjIgMCAwIDEtMy4yMyAwdi05LjY4YzAtLjkuNzMtMS42MiAxLjYyLTEuNjJtNi40Ny0zLjc3Yy44OCAwIDEuNi43MiAxLjYgMS42MXYxMy40NmExLjYyIDEuNjIgMCAwIDEtMy4yMiAwVjE2LjE2YzAtLjkuNzItMS42MSAxLjYxLTEuNjFtLTEyLjkyLTMuNzhjLjg5IDAgMS42MS43MiAxLjYxIDEuNjF2MTcuMjNhMS42MSAxLjYxIDAgMCAxLTMuMjMgMFYxMi4zOGMwLS44OS43My0xLjYxIDEuNjItMS42MSIvPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTI5LjYyIDBDMzYuNDYgMCA0MiA1LjU0IDQyIDEyLjM4djE3LjI0QzQyIDM2LjQ2IDM2LjQ2IDQyIDI5LjYyIDQySDEyLjM4QTEyLjQgMTIuNCAwIDAgMSAwIDI5LjYyVjEyLjM4QzAgNS41NCA1LjU0IDAgMTIuMzggMHpNMTIuMzggMy4yM2E5LjE1IDkuMTUgMCAwIDAtOS4xNSA5LjE1djE3LjI0YzAgNS4wNSA0LjEgOS4xNSA5LjE1IDkuMTVoMTcuMjRjNS4wNSAwIDkuMTUtNC4xIDkuMTUtOS4xNVYxMi4zOGMwLTUuMDUtNC4xLTkuMTUtOS4xNS05LjE1eiIgY2xpcC1ydWxlPSJldmVub2RkIi8+Cjwvc3ZnPg==","langfuse":"data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxwYXRoIGQ9Ik0yNTQuNzUgMzAyLjI1TDI4NS4yNSAzMjYuNzVDMjg1LjI1IDMyNi43NSAzMDguNTg3IDMwOS40MTggMzI1Ljc1IDMwNi44NzVDMzQzLjc1IDMwNC4yMDggMzYyLjk1NCAzMTQuMjQ0IDM4MC43NSAzMjYuMjA4QzQwNy42MjkgMzQ0LjI3OSA0MzAuMjUgMzY3LjIwOCA0MzAuMjUgMzY3LjIwOEw0NTYuNzUgMzQxLjIwOEM0NTYuNzUgMzQxLjIwOCAzODMuNjg2IDI2Mi4wNDcgMzI1Ljc1IDI2OS4yMDhDMjg3Ljc1IDI3My45MDUgMjU0Ljc1IDMwMi4yNSAyNTQuNzUgMzAyLjI1WiIgZmlsbD0iI0ZGNUQ1RiIvPgo8cGF0aCBkPSJNODAuMjUgMTUxLjI4Nkw1NS4yNSAxNzguNzg2QzU1LjI1IDE3OC43ODYgMTI0LjkwMiAyNDMuNzg2IDE3OS43NSAyNDMuNzg2QzIwNC43NSAyNDMuNzg2IDIzOS40MTkgMjI0LjIwMSAyNjkuMjUgMTk4Ljc1N0MyODYuMjUgMTg0LjI1NyAzMDUuMjUgMTY3Ljc4NiAzMjQuMjUgMTY3Ljc4NkMzMzcuMDIxIDE2Ny43ODYgMzUzLjg2NiAxNzQuNTUxIDM2OS43NSAxOTIuMzE2QzM2OS43NSAxOTIuMzE2IDM4MC4wMDMgMTg2LjE2OCAzODYuMjUgMTgxLjc1QzM5MS43NCAxNzcuODY4IDM5OS44OTYgMTcxLjI1IDM5OS44OTYgMTcxLjI1QzM3Ny4wNDcgMTQ2Ljg2NCAzNDMuOTk4IDEyOS4wMzggMzI0LjI1IDEzMC43ODZDMjkyLjI1IDEzMC43OSAyNjkuMjUgMTUwLjcxMSAyNDAuNzUgMTczLjc1QzIxMi4yNSAxOTYuNzg5IDIwMC4yNSAyMDYuMjg2IDE3OS43NSAyMDYuMjg2QzE0NS4yNSAyMDYuMjg2IDgwLjI1IDE1MS4yODYgODAuMjUgMTUxLjI4NloiIGZpbGw9IiM0RTlDRkYiLz4KPHBhdGggZD0iTTgwLjI1IDM2MC43NUw1NS4yNSAzMzMuMjVDNTUuMjUgMzMzLjI1IDEyNC45MDIgMjY4LjI1IDE3OS43NSAyNjguMjVDMjA0Ljc1IDI2OC4yNSAyMzkuNDE5IDI4Ny44MzUgMjY5LjI1IDMxMy4yNzlDMjg2LjI1IDMyNy43NzkgMzA1LjI1IDM0NC4yNSAzMjQuMjUgMzQ0LjI1QzMzNy4wODMgMzQ0LjI1IDM1My43OTkgMzM3LjIwNyAzNjkuNzUgMzE5LjI1QzM2OS43NSAzMTkuMjUgMzc5LjMzOSAzMjUuMTYxIDM4NS4yNSAzMjkuMjVDMzkxLjMyOCAzMzMuNDU1IDQwMC4yNSAzNDAuNDA3IDQwMC4yNSAzNDAuNDA3QzM3Ny4zOSAzNjQuOTg3IDM0NC4xIDM4My4wMDcgMzI0LjI1IDM4MS4yNUMyOTIuMjUgMzgxLjI0NiAyNzMuMjUgMzY0LjI4OSAyNDQuNzUgMzQxLjI1QzIxNi4yNSAzMTguMjExIDIwMC4yNSAzMDUuNzUgMTc5Ljc1IDMwNS43NUMxNDUuMjUgMzA1Ljc1IDgwLjI1IDM2MC43NSA4MC4yNSAzNjAuNzVaIiBmaWxsPSIjNEU5Q0ZGIi8+CjxwYXRoIGQ9Ik00MDYuMjUgMjEzLjI1QzM5OS43NDUgMjE3Ljc0NiAzODkuMjUgMjI0LjI1IDM4OS4yNSAyMjQuMjVDMzg5LjI1IDIyNC4yNSAzOTUuMjUgMjM3LjI1IDM5NS4yNSAyNTQuNzVDMzk1LjI1IDI3Mi4yNSAzODkuNzUgMjg3LjI1IDM4OS43NSAyODcuMjVDMzg5Ljc1IDI4Ny4yNSAzOTkuMTcyIDI5My4xMzUgNDA1LjI1IDI5Ny4yNUM0MTEuNTY0IDMwMS41MjUgNDIxLjI1IDMwOC43NSA0MjEuMjUgMzA4Ljc1QzQyMS4yNSAzMDguNzUgNDMyLjc1IDI4NC43NSA0MzIuNzUgMjU0Ljc1QzQzMi43NSAyMjQuNzUgNDIxLjI1IDIwMi4yNSA0MjEuMjUgMjAyLjI1QzQyMS4yNSAyMDIuMjUgNDEyLjIyNiAyMDkuMTIgNDA2LjI1IDIxMy4yNVoiIGZpbGw9IiM0RTlDRkYiLz4KPHBhdGggZD0iTTI1Ni4yNSAyMDkuMjVMMjg1LjI1IDE4NS4yNUMyODUuMjUgMTg1LjI1IDMwOC41ODcgMjAyLjA0IDMyNS43NSAyMDQuNTgzQzM0My43NSAyMDcuMjUgMzYyLjk1NCAxOTcuMjE0IDM4MC43NSAxODUuMjVDNDA3LjYyOSAxNjcuMTc5IDQzMC4yNSAxNDQuMjUgNDMwLjI1IDE0NC4yNUw0NTYuNzUgMTcwLjI1QzQ1Ni43NSAxNzAuMjUgMzgzLjY4NiAyNDkuNDExIDMyNS43NSAyNDIuMjVDMjg3Ljc1IDIzNy41NTMgMjU2LjI1IDIwOS4yNSAyNTYuMjUgMjA5LjI1WiIgZmlsbD0iI0ZGNUQ1RiIvPgo8cGF0aCBkPSJNMTg2LjI1NSAxMzAuMjVDMjIzLjc1NSAxMzAuMjUgMjU1LjI1IDE2Mi4yNSAyNTUuMjUgMTYyLjI1QzI1NS4yNSAxNjIuMjUgMjQ2LjQ4NyAxNjkuMTU1IDI0MC43NSAxNzMuNzVDMjM0Ljc3NSAxNzguNTM2IDIyNS4yNSAxODYuMjUgMjI1LjI1IDE4Ni4yNUMyMjUuMjUgMTg2LjI1IDIwOC43NTUgMTY4Ljc1IDE4Ni4yNTUgMTY4Ljc1QzE3Ny4wMjggMTY4Ljc1IDE2NS4wMzkgMTc0LjI5MiAxNTIuMjU1IDE4NS4yNUMxNDIuMzkxIDE5My43MDUgMTMyLjEyOSAyMDQuMjE2IDEyNS4yNTUgMjE3LjI1QzExOS4zMSAyMjguNTIgMTE2LjA2OCAyNDEuODAyIDExNS43NTUgMjU1Ljc1QzExNS4zNjEgMjczLjI2OSAxMjEuNTcxIDI5MS42MzQgMTMxLjc1NSAzMDYuMjVDMTM4LjU4IDMxNi4wNDYgMTQ2LjcyNiAzMjMuNDE4IDE1NS4yNTUgMzI5Ljc1QzE2Ni4zMjMgMzM3Ljk2OCAxNzcuODY1IDM0My43NSAxODYuMjU1IDM0My43NUMxOTUuMjE3IDM0My43NSAyMDMuMjc0IDM0MC42MzUgMjA5LjI1NSAzMzcuNzVDMjE4Ljc1NSAzMzIuMjUgMjI2LjI1IDMyNS43NSAyMjYuMjUgMzI1Ljc1TDI1NS43NSAzNTAuMjVDMjU1Ljc1IDM1MC4yNSAyNDMuNzUgMzYyLjI1IDIyNy4yNTUgMzcxLjI1QzIxNi41OTUgMzc2LjUwNyAyMDIuODk1IDM4MS43NSAxODYuMjU1IDM4MS43NUMxNjkuNjI2IDM4MS43NSAxNTAuMzE1IDM3Mi45MTUgMTMyLjI1NSAzNTkuMjVDMTIwLjU3OSAzNTAuNDE2IDEwOS4xMzUgMzM5Ljk0OCAxMDAuMjU1IDMyNy4yNUM4NS43MDA1IDMwNi40MzggNzguMjAwNCAyODEuMTE4IDc4LjI1MDIgMjU1Ljc1Qzc4LjMwMDggMjMwLjA2NSA4Ni41ODIzIDIwNC42MjUgMTAxLjI1NSAxODMuNzVDMTI0LjI1NSAxNTMuNzUgMTU4LjI3MyAxMzAuMjUgMTg2LjI1NSAxMzAuMjVaIiBmaWxsPSIjRkY1RDVGIi8+Cjwvc3ZnPgo=","agentic":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCIgZmlsbD0ibm9uZSIgdmlld0JveD0iMCAwIDIwIDIwIj4KPHN0eWxlPgogIHBhdGggeyBzdHJva2U6IHJnYig4MCwgODAsIDgwKTsgfQogIEBtZWRpYSAocHJlZmVycy1jb2xvci1zY2hlbWU6IGRhcmspIHsKICAgIHBhdGggeyBzdHJva2U6IHJnYigyMDAsIDIwMCwgMjAwKTsgfQogIH0KPC9zdHlsZT4KPHBhdGggc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjEuNSIgZD0iTTcuNzUuNzVoNC41bS0xMS41IDE4aDE4LjVtLTE0LjUtOS41aDIuNW01LjUgMGgyLjVNMSA0LjVoMTh2MTBIMXoiLz4KPC9zdmc+","chdb":"data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTcyIiBoZWlnaHQ9IjE2MCIgdmlld0JveD0iMCAwIDE3MiAxNjAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxzdHlsZT4KICBwYXRoIHsgZmlsbDogcmdiKDgwLCA4MCwgODApOyB9CiAgQG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTogZGFyaykgewogICAgcGF0aCB7IGZpbGw6IHJnYigyMDAsIDIwMCwgMjAwKTsgfQogIH0KPC9zdHlsZT4KPHBhdGggZD0iTTg1Ljc1NTQgMTU5LjA4MkM2NS4wMTU0IDE1OS4wODIgNDQuMjY1NCAxNTkuMDkyIDIzLjUyNTQgMTU5LjA4MkMxMi4zNzU0IDE1OS4wODIgMi4wMDU0IDE0OS40ODIgMC4zMjU0MDMgMTM4LjQ1MkMtMS42MjQ2IDEyNS42NzIgNS40ODU0IDExNS40MzIgMTMuNzQ1NCAxMTEuNjIyQzE3LjE3NTQgMTEwLjA0MiAyMC43MTU0IDEwOS4wMjIgMjQuNTY1NCAxMDkuMDQyQzM3LjcyNTQgMTA5LjA5MiA1MC44OTU0IDEwOS4wMDIgNjQuMDU1NCAxMDkuMTAyQzY2LjUzNTQgMTA5LjEyMiA2Ny41NDU0IDEwOC40MDIgNjcuMzk1NCAxMDUuODUyQzY3LjI0NTQgMTAzLjIwMiA2Ny4yODU0IDEwMC41MTIgNjcuNDY1NCA5Ny44NjIxQzY3LjYxNTQgOTUuNjQyMSA2Ni44NzU0IDk0LjEyMjEgNjUuMDk1NCA5Mi43NjIxQzYwLjUzNTQgODkuMjgyMSA1Ni4wMjU0IDg1LjcyMjEgNTEuNjM1NCA4Mi4wMjIxQzQ0LjMyNTQgNzUuODcyMSAzOC45ODU0IDY4LjQxMjEgMzYuOTU1NCA1OC44ODIxQzM1LjQ5NTQgNTIuMDIyMSAzNS43OTU0IDQ1LjExMjEgMzYuODE1NCAzOC4yNjIxQzM3Ljc4NTQgMzEuODEyMSAzOS43NzU0IDI1LjYzMjEgNDMuNTQ1NCAyMC4yMDIxQzQ3LjYzNTQgMTQuMzAyMSA1Mi45NDU0IDEwLjE1MjEgNjAuMzE1NCA5LjIwMjA3QzYxLjE4NTQgOS4wOTIwNyA2MS45NDU0IDguODEyMDcgNjIuNDk1NCA4LjEyMjA3QzY2LjkxNTQgMi41NTIwNyA3My4zMzU0IDEuMTUyMDcgNzkuNzk1NCAwLjQwMjA3MUM4Ny40NDU0IC0wLjQ4NzkyOSA5NS4wNzU0IC0wLjAwNzkyODg1IDEwMi4zOTUgMi45MzIwN0MxMDQuNjQ1IDMuODQyMDcgMTA2LjQ4NSA1LjE0MjA3IDEwNy45ODUgNi45NTIwN0MxMDkuMjg1IDguNTEyMDcgMTEwLjg4NSA5LjQ5MjA3IDExMi44NDUgOS43MjIwN0MxMjIuMTY1IDEwLjgxMjEgMTI4LjE2NSAxNi41MTIxIDEzMS44NzUgMjQuNDUyMUMxMzcuODI1IDM3LjE2MjEgMTM5LjM2NSA1MC40MjIxIDEzNC40OTUgNjMuOTQyMUMxMzEuNzg1IDcxLjQ1MjEgMTI2LjQ5NSA3Ny4wNjIxIDEyMC41MjUgODIuMTAyMUMxMTUuNzU1IDg2LjEyMjEgMTEwLjcwNSA4OS43OTIxIDEwNi4xNDUgOTQuMDgyMUMxMDQuODE1IDk1LjMzMjEgMTA0LjIyNSA5Ni42NzIxIDEwNC4zMTUgOTguNDcyMUMxMDQuNDI1IDEwMC41NTIgMTA0LjMzNSAxMDIuNjMyIDEwNC4zNDUgMTA0LjcyMkMxMDQuMzQ1IDEwOS4wMzIgMTA0LjM0NSAxMDkuMDUyIDEwOC44MDUgMTA5LjA1MkMxMjEuNDY1IDEwOS4wNTIgMTM0LjEzNSAxMDguOTQyIDE0Ni43OTUgMTA5LjA5MkMxNTcuNjk1IDEwOS4yMjIgMTY1Ljc1NSAxMTQuMzkyIDE2OS44MDUgMTI0LjQyMkMxNzUuNjk1IDEzOS4wMTIgMTY3Ljk5NSAxNTMuODYyIDE1My44NzUgMTU4LjIwMkMxNTEuNjc1IDE1OC44ODIgMTQ5LjUwNSAxNTkuMTAyIDE0Ny4yNDUgMTU5LjEwMkMxMjYuNzU1IDE1OS4wODIgMTA2LjI1NSAxNTkuMDkyIDg1Ljc2NTQgMTU5LjA5Mkw4NS43NTU0IDE1OS4wODJaTTczLjYyNTQgOTIuOTgyMUM3My42MjU0IDkyLjk4MjEgNzMuNjU1NCA5Mi45ODIxIDczLjY3NTQgOTIuOTgyMUM3My42NzU0IDEwMy44OTIgNzMuNTU1NCAxMTQuODAyIDczLjcwNTQgMTI1LjcxMkM3My44OTU0IDE0MC4zMjIgODYuNTk1NCAxNTIuOTIyIDEwMC45MTUgMTUyLjY5MkMxMTUuOTA1IDE1Mi40NTIgMTMwLjkwNSAxNTIuNjkyIDE0NS45MDUgMTUyLjc2MkMxNDguMjY1IDE1Mi43NzIgMTUwLjU5NSAxNTIuNTQyIDE1Mi44MTUgMTUxLjg2MkMxNjEuMDk1IDE0OS4zMjIgMTY2LjM2NSAxNDAuNjAyIDE2NS4yOTUgMTMxLjQzMkMxNjQuMzE1IDEyMi45ODIgMTU3LjAyNSAxMTUuODcyIDE0OC4zNTUgMTE1LjU0MkMxMzQuNTM1IDExNS4wMjIgMTIwLjY5NSAxMTUuMjMyIDEwNi44NjUgMTE1LjMxMkMxMDQuODk1IDExNS4zMjIgMTA0LjIwNSAxMTYuMTUyIDEwNC4zMDUgMTE4LjA1MkMxMDQuNDA1IDExOS44OTIgMTA1LjIzNSAxMjEuMDcyIDEwNy4wMzUgMTIxLjQwMkMxMDguMTc1IDEyMS42MTIgMTA5LjM0NSAxMjEuNjYyIDExMC41MDUgMTIxLjY3MkMxMTcuNDE1IDEyMS43MTIgMTI0LjMzNSAxMjEuNjcyIDEzMS4yNDUgMTIxLjc2MkMxMzQuMDg1IDEyMS43OTIgMTM1LjMxNSAxMjMuNTEyIDEzNC40NTUgMTI1Ljk3MkMxMzMuODU1IDEyNy43MDIgMTMyLjQxNSAxMjcuOTYyIDEzMC44MjUgMTI3Ljk2MkMxMjMuMzI1IDEyNy45NDIgMTE1LjgyNSAxMjcuNzIyIDEwOC4zMzUgMTI4LjAwMkMxMDIuODE1IDEyOC4yMTIgOTguMTg1NCAxMjMuOTIyIDk4LjI0NTQgMTE3LjkxMkM5OC40MzU0IDk4LjY3MjEgOTguMTg1NCA3OS40MzIxIDk4LjA4NTQgNjAuMTkyMUM5OC4wNjU0IDU3LjAwMjEgOTcuODk1NCA1Ni44MzIxIDk0LjY0NTQgNTYuODMyMUM4OC43MjU0IDU2LjgyMjEgODIuODE1NCA1Ni44MzIxIDc2Ljg5NTQgNTYuODMyMUM3My42NTU0IDU2LjgzMjEgNzMuNjA1NCA1Ni44OTIxIDczLjYwNTQgNjAuMjQyMUM3My42MDU0IDcxLjE1MjEgNzMuNjA1NCA4Mi4wNjIxIDczLjYwNTQgOTIuOTcyMUw3My42MjU0IDkyLjk4MjFaTTUwLjExNTQgMTUyLjY5MkM1MC4xMTU0IDE1Mi42OTIgNTAuMTE1NCAxNTIuNzEyIDUwLjExNTQgMTUyLjcyMkM1OS4xOTU0IDE1Mi43MjIgNjguMjc1NCAxNTIuNzMyIDc3LjM1NTQgMTUyLjcwMkM3OC4xOTU0IDE1Mi43MDIgNzkuNDA1NCAxNTMuMTcyIDc5Ljc5NTQgMTUyLjA4MkM4MC4xMjU0IDE1MS4xNzIgNzguOTk1NCAxNTAuNzQyIDc4LjQzNTQgMTUwLjE4MkM3NS4zNzU0IDE0Ny4xMDIgNzIuMzA1NCAxNDMuOTQyIDcwLjgzNTQgMTM5LjgwMkM2OS43OTU0IDEzNi44OTIgNjguMDM1NCAxMzYuMDgyIDY1LjE5NTQgMTM2LjEwMkM1NS42OTU0IDEzNi4xODIgNDYuMjA1NCAxMzYuMTAyIDM2LjcwNTQgMTM2LjA4MkMzNS43MjU0IDEzNi4wODIgMzQuNjc1NCAxMzYuMjcyIDMzLjgwNTQgMTM1LjYwMkMzMi42NTU0IDEzNC43MDIgMzIuMDc1NCAxMzMuNTMyIDMyLjUyNTQgMTMyLjA5MkMzMy4wNTU0IDEzMC40MDIgMzQuMzc1NCAxMjkuOTQyIDM2LjA0NTQgMTI5Ljk1MkM0NS43MDU0IDEyOS45NjIgNTUuMzc1NCAxMjkuODkyIDY1LjAzNTQgMTI5Ljk0MkM2Ni44NzU0IDEyOS45NDIgNjcuNTU1NCAxMjkuMzgyIDY3LjQ2NTQgMTI3LjUwMkM2Ny4zMjU0IDEyNC42NzIgNjcuNDI1NCAxMjEuODQyIDY3LjM5NTQgMTE5LjAxMkM2Ny4zNjU0IDExNS42MzIgNjcuMTk1NCAxMTUuNDQyIDYzLjg3NTQgMTE1LjQ1MkM1MC44NzU0IDExNS40ODIgMzcuODg1NCAxMTUuNTMyIDI0Ljg4NTQgMTE1LjU2MkMyMi43ODU0IDExNS41NjIgMjAuNjY1NCAxMTUuNjkyIDE4LjcwNTQgMTE2LjMzMkMxMS42NzU0IDExOC42MjIgNC43NDU0IDEyNi43NDIgNi40MjU0IDEzNy4zNDJDNy43NDU0IDE0NS43MDIgMTUuMzg1NCAxNTIuNjMyIDIzLjg3NTQgMTUyLjcwMkMzMi42MjU0IDE1Mi43NzIgNDEuMzY1NCAxNTIuNzIyIDUwLjExNTQgMTUyLjcyMlYxNTIuNjkyWk04NS44NTU0IDUwLjEyMjFDODUuODU1NCA1MC4xMjIxIDg1Ljg1NTQgNTAuMTIyMSA4NS44NTU0IDUwLjExMjFDOTEuMjY1NCA1MC4xMTIxIDk2LjY3NTQgNTAuMTQyMSAxMDIuMDg1IDUwLjEwMjFDMTA1LjI1NSA1MC4wODIxIDEwNi45NzUgNDguNjAyMSAxMDcuNTc1IDQ1LjQ2MjFDMTA4LjU2NSA0MC4zMTIxIDEwOS4zNzUgMzUuMTMyMSAxMDkuODQ1IDI5LjkyMjFDMTEwLjY2NSAyMS4wMjIxIDEwNS44ODUgMTIuMzcyMSA5Ny45NDU0IDguNjYyMDdDOTIuNzI1NCA2LjIyMjA3IDg3LjA1NTQgNi43MjIwNyA4MS41MDU0IDYuODEyMDdDNzkuNzA1NCA2Ljg0MjA3IDc3Ljg2NTQgNy4wMjIwNyA3Ni4wOTU0IDcuNjMyMDdDNjcuMDU1NCAxMC43NzIxIDYwLjg0NTQgMTkuODkyMSA2MS41OTU0IDI5Ljc3MjFDNjEuOTk1NCAzNS4wNTIxIDYzLjA2NTQgNDAuMzAyMSA2NC4wOTU0IDQ1LjUxMjFDNjQuNzc1NCA0OC45NzIxIDY2LjM4NTQgNTAuMDkyMSA2OS44NTU0IDUwLjExMjFDNzUuMTg1NCA1MC4xNTIxIDgwLjUxNTQgNTAuMTIyMSA4NS44MzU0IDUwLjEyMjFIODUuODU1NFpNMTA0LjQwNSA3Mi4wODIxSDEwNC4zNDVDMTA0LjM0NSA3Ni43NDIxIDEwNC4zNDUgODEuNDAyMSAxMDQuMzQ1IDg2LjA1MjFDMTA0LjM0NSA4Ni42MDIxIDEwNC4xNzUgODcuMzMyMSAxMDQuODY1IDg3LjU2MjFDMTA1LjEzNSA4Ny42NTIxIDEwNS42MjUgODcuMzIyMSAxMDUuOTI1IDg3LjA3MjFDMTExLjE3NSA4Mi42MDIxIDExNi44ODUgNzguNjgyMSAxMjEuNzE1IDczLjcyMjFDMTI1LjcwNSA2OS42MjIxIDEyOS4wMTUgNjUuMDQyMSAxMzAuNDE1IDU5LjQyMjFDMTMyLjk4NSA0OS4xMTIxIDEzMi4xMDUgMzguOTQyMSAxMjguMjQ1IDI5LjExMjFDMTI1Ljg3NSAyMy4wNzIxIDEyMi4wNTUgMTguMTIyMSAxMTUuNjQ1IDE1Ljc3MjFDMTE1LjEyNSAxNS41ODIxIDExNC41NDUgMTUuMTQyMSAxMTQuMDI1IDE1LjYxMjFDMTEzLjQ1NSAxNi4xNDIxIDExNC4wMjUgMTYuNjgyMSAxMTQuMjI1IDE3LjE4MjFDMTE2LjM0NSAyMi42NzIxIDExNi43NzUgMjguMzAyMSAxMTUuNzY1IDM0LjA5MjFDMTE1LjE5NSAzNy4zNjIxIDExNC43ODUgNDAuNjYyMSAxMTQuMzA1IDQzLjk1MjFDMTEzLjUwNSA0OS40ODIxIDExMS43NDUgNTQuMzEyMSAxMDUuNzA1IDU2LjE3MjFDMTA0LjM4NSA1Ni41ODIxIDEwNC40MTUgNTcuNzQyMSAxMDQuNDE1IDU4Ljg1MjFDMTA0LjQxNSA2My4yNjIxIDEwNC40MTUgNjcuNjcyMSAxMDQuNDE1IDcyLjA3MjFMMTA0LjQwNSA3Mi4wODIxWk02Ny40MjU0IDcxLjkxMjFDNjcuNDI1NCA3MS45MTIxIDY3LjM5NTQgNzEuOTEyMSA2Ny4zNzU0IDcxLjkxMjFDNjcuMzc1NCA2Ny42NzIxIDY3LjMyNTQgNjMuNDIyMSA2Ny4zOTU0IDU5LjE4MjFDNjcuNDI1NCA1Ny40NzIxIDY2LjkyNTQgNTYuNDgyMSA2NS4xNzU0IDU1Ljg0MjFDNjEuNTE1NCA1NC41MDIxIDU5LjMxNTQgNTEuNzcyMSA1OC4xODU0IDQ3Ljk3MjFDNTcuNDE1NCA0NS4zODIxIDU3LjQwNTQgNDIuNzEyMSA1Ni44OTU0IDQwLjEwMjFDNTUuNDM1NCAzMi42MzIxIDU0LjM3NTQgMjUuMTQyMSA1Ny4zNjU0IDE3Ljc1MjFDNTcuNTk1NCAxNy4xNzIxIDU3Ljk0NTQgMTYuNDAyMSA1Ny4zMDU0IDE1Ljg5MjFDNTYuNjY1NCAxNS4zNzIxIDU2LjAwNTQgMTUuOTYyMSA1NS40NzU0IDE2LjI1MjFDNTIuMDI1NCAxOC4xMDIxIDQ5LjMzNTQgMjAuNzcyMSA0Ny4zNDU0IDI0LjE0MjFDNDIuMzU1NCAzMi42MDIxIDQwLjk5NTQgNDEuODQyMSA0MS4zNjU0IDUxLjUwMjFDNDEuNTk1NCA1Ny41NDIxIDQzLjE2NTQgNjMuMTIyMSA0Ni4zNzU0IDY4LjIzMjFDNTEuMzI1NCA3Ni4xMTIxIDU4Ljg5NTQgODEuMjIyMSA2Ni4wOTU0IDg2LjY5MjFDNjcuNTY1NCA4Ny44MDIxIDY3LjM5NTQgODYuMTcyMSA2Ny4zOTU0IDg1LjQxMjFDNjcuNDM1NCA4MC45MjIxIDY3LjQxNTQgNzYuNDIyMSA2Ny40MTU0IDcxLjkzMjFMNjcuNDI1NCA3MS45MTIxWiIvPgo8L3N2Zz4K","kubernetes":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCIgdmlld0JveD0iMCAwIDIwMDAgMjAwMCIgZmlsbD0ibm9uZSIgcm9sZT0iaW1nIiBhcmlhLWxhYmVsPSJvcGVyYXRvciI+CjxzdHlsZT4KICBwYXRoIHsgZmlsbDogcmdiKDgwLCA4MCwgODApOyB9CiAgQG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTogZGFyaykgewogICAgcGF0aCB7IGZpbGw6IHJnYigyMDAsIDIwMCwgMjAwKTsgfQogIH0KPC9zdHlsZT4KPHBhdGggZD0iTTE4NzUuNTMsMTE4OC42OWMtMzkuNDktNS0xMDQuNzctMy4wOS0xNDAuMjMtMTkuMjUtMTMuNDgtNi4xNC0xNS4yOS0xOS4yOS0yMC43OC0yMi42OS0zLjQ0LTIuMTItMjEuMjEtNC44NS0yMS45Ni01LjcxLDcuNTQtNTUuODEsOC4xOC0xMTIuMTYsMi4yNS0xNjcuNzEtMTEuOTItMTExLjg5LTUwLjQ4LTIyMC40OC0xMTIuNzItMzE0LjYtLjE2LS45Ny4zNS0yLjEsMS4yNy0zLjMyLDMuNTctNC43LDEzLjM1LTEwLjgxLDE1LjYtMTUuMjIsMi42MS01LjExLDEuNDItMTIuMjYsMy44LTE5LjE4LDUuOTYtMTcuMjksNTAuMy00NC43Nyw2Ni45LTU1LjIzLDMwLjQyLTE5LjE1LDg0Ljc2LTQxLjA5LDk3LjI2LTc2LjU5LDEzLjc3LTM5LjEtMTQuOTItNzUuMTYtNTYuMDItNzAuNC01MS4xOCw1Ljk1LTEwMy42NSwxMDMuMDUtMTU0LjM1LDEyNy4yNy0xNS4zNSw3LjM0LTIwLjY2LjMtMzIuMTgsMy43My00LjEsMS4yMy0xMC40MSw3LjktMTUuNjIsMTAuOTMtMS44NCwxLjA3LTMuNTMsMS42OS00Ljk2LDEuNDctOTkuNzEtMTA1Ljc0LTIzNS4xMS0xNzguNi0zNzguNTEtMjA1LjEyLTIxLjQxLTMuOTYtNDMuMDgtNi4yMy02NC41OS05LjQxLS45MS0xLjY1LTEuMzctMy40OS0xLjU5LTUuNDQtLjY4LTYuMDEuOTktMTIuOTMtLjQ1LTE3LjY2LS40NC0xLjQzLTExLjU0LTEwLjYzLTEzLjktMTQuODQtNy45Ni0xNC4yMy00LjM4LTUwLjMxLTMuMDctNjcuMzEsMi45Ny0zOC42LDIwLjc5LTk3LjkxLDcuODctMTMyLjktMjAuNjgtNTYuMDQtOTYuODQtNDMuNTgtMTAzLjc1LDE0LjA0LTYuNTIsNTQuMzcsMjIuMSwxMjAuNjMsMTIuNDEsMTc2LjItMi40NCwxMy45OS0xMy44NCwxNy4yNy0xNy4wOSwyNi4wMi0xLjg2LDUuMDMtMS42LDEwLjc3LTEuNDYsMTYuMy4wNSwyLjAzLjA5LDQuMDIsMCw1Ljk0LTE3MC4xNywxMy42OS0zMzAuMDUsOTEuNjYtNDQ3Ljc4LDIxMy44Ni0uOTIuMTgtMi4yLS4zMi0zLjY4LTEuMjEtNC44OC0yLjkxLTExLjk0LTkuOTctMTUuNDktMTAuOTQtNC4yLTEuMTQtMTYuMTUsMS43NS0yMy4zNy41Mi0xNy45OC0zLjA2LTcwLjg2LTU4LjE4LTg1Ljg3LTczLjYxLTE3LjY2LTE4LjE0LTMyLjgzLTQxLjA5LTU3LjQ2LTUxLjc0LTQ4LjYzLTIxLjAzLTk0LjY3LDIyLjY0LTcxLjY0LDcxLjYzLDE0LjI3LDMwLjM0LDY1LjA1LDUxLjc4LDkzLjA5LDY5LjI2LDE2LjQzLDEwLjI0LDU4LjQzLDM2LjQyLDY3LDUyLjI0LDQuNjQsOC41NiwyLjE0LDE3LjUzLDUuNzksMjQuMzksMi4yMSw0LjE0LDEwLjQxLDcuODMsMTMuNjgsMTIuMzguOTQsMS4zLDEuNDcsMi42NywxLjM0LDQuMTUtLjE5LDIuMDktMTguOTEsMzAuNjEtMjEuODUsMzUuNzgtNDkuMTIsODYuNTktODEuMSwxODMuNjYtOTAuMjYsMjgzLjI5LTUsNTQuNDUtMi43MSwxMDkuMDEsMy43MSwxNjMuMTctLjA4LjExLS4yMS4yMi0uMzcuMzMtMi45OSwyLjA2LTE5LjE2LDQuNTUtMjIuNSw2LjY1LS45Ny42MS03LjM0LDEzLjMyLTEwLjk2LDE2LjY5LTEzLjQxLDEyLjQ4LTY3LjU3LDE4LjUzLTg3LjE2LDIwLjYtMjkuNDcsMy4xMy02Mi4wNiwxLjU5LTkwLjI1LDEwLjMzLTcyLjI1LDIyLjQtNTAuOTksMTE4LjQyLDI2Ljg0LDEwNS44Nyw0OS43MS04LjAzLDEwNC42NC00Ni43NCwxNTYuOTktNDkuOSwxOS40MS0xLjE3LDIyLjYsOS45NCwzMS43NCwxMS4wNiw0LjIxLjUzLDE5Ljc4LTQuNjEsMjMuMjItMy41My4xNy4wNi4zMS4xMi40MS4yMSw1LjQ3LDE2Ljg1LDExLjU5LDMzLjQ2LDE4LjMyLDQ5Ljc5LDQ5LjE1LDExOS4zMywxMzEuMDUsMjIzLjkyLDIzNS40NSwyOTkuOTQsMTcuODUsMTIuOTksMzcuMTEsMjQuMzMsNTQuODYsMzcuMDgtMi41LDguNDEtOS43OSwxNy43NC04LjEsMjYuNzQsMy42NSwxOS42Myw2LjkzLDE4LjgtMS41MSwzOS40Mi0xNy41Niw0Mi45Mi01MS4zOCw3Ny44My03Mi4zMywxMTcuMzEtNDMuMDQsODEuMTIsNDEuNTIsMTI5LjUzLDg1LjYxLDcxLjI1LDE4LjA0LTIzLjg1LDI2Ljc1LTcwLjEzLDM3LjEyLTk5LjM4LDUuODYtMTYuNSwyMS45OS02MS44NSwzNC40OC03MS44NCw1Ljg2LTQuNjgsMTkuOTEtNy43NywyMi4yOS0xMC4wNSwxLjkxLTEuODQsOS45MS0yMS4wOCwxMS4yOS0yMS4zLDE1OC42Niw1OS43NSwzMzcuNjUsNjAuMzQsNDk2LjIyLjEyLDEuNDIsMy4zMiw4Ljk2LDE5Ljk4LDEwLjQ0LDIxLjE4LDIuNiwyLjEyLDE1LjMsNC4wOSwyMS4xLDguMzYsMjMuNjYsMTcuNDksNDYuNDksMTE3LjY4LDU5Ljc2LDE0OC41NiwzNS4xNyw4MS44MiwxMjUuMDcsNDkuNjMsMTA5LjQ3LTIwLjM5LTEwLjc5LTQ4LjQzLTczLjItMTAyLjktODguMjktMTU1Ljk3LTQuODUtMTcuMDUsNC4yOS0yMS42MSwzLjg0LTMyLjUyLS4yOC02LjU3LTcuNzUtMTQuMDUtNy4yLTIxLjQxLDE0NS4wNy04Ni4zNCwyNTYuNzYtMjI1Ljk2LDMwNy43Ni0zODcuMjcsNC4xOC0yLjY2LDE3LjEsMi45NywyMi4wMSwyLjYxLDguMjItLjU5LDEzLjYyLTEyLjQzLDMxLjY1LTExLjQxLDQzLjYxLDIuNDcsOTUuNzYsMzIuNTgsMTM3LjU3LDQ0Ljg5LDMzLjg0LDkuOTcsNzYuNjQsOS40Nyw4OS4xNC0zMC44NiwxNC43NC00Ny41My0zMC44OC03MC42Ni03MC4yNy03NS42NFpNMTAxNi4zOCw3NjIuMTZjMC0zLjY0LDIuOTMtNi42Myw2LjYyLTYuNjNoNDkuNzJjMy42NiwwLDYuNjUsMi45OSw2LjY1LDYuNjN2NTUzLjc1YzAsMy42My0yLjk5LDYuNjMtNi42NSw2LjYzaC00OS43MmMtMi42NiwwLTQuOTItMS41Ny01Ljk3LTMuNzktLjQyLS44Ni0uNjUtMS44My0uNjUtMi44NHYtNTUzLjc1Wk05NDYuNzIsNzU1LjUzYzMuNjYsMCw2LjY1LDIuOTksNi42NSw2LjYzdjU1My43NWMwLDMuNjMtMi45OCw2LjYzLTYuNjUsNi42M2gtNDkuNzZjLTMuNjMsMC02LjU5LTMtNi41OS02LjYzdi01NTMuNzVjMC0zLjY0LDIuOTYtNi42Myw2LjU5LTYuNjNoNDkuNzZaTTQyMC40LDEwOTcuOTNjLTEyLjU1LTEyNi4zNCwxMy40LTI2MC42OSw3OC4yLTM2OC45NCwxLjE0LTEuOTEtLjg0LTQuMzIsNC4xMy0zLjI1bDE2LjczLDE1LjQ2LDc4Ljk0LDcyLjkyYy0zNy40NSw2Ni40Ni01OC44MSwxNDMuMTktNTguODEsMjI0LjkxLDAsNy43Mi4xOSwxNS40LjU3LDIzLjAzbC0xMDQuNzQsMzEuMzctMTUuMDMsNC41Wk02OTMuNzUsMTUxOS4xMmwtNy43LDE5LjM1Yy0zLjIsMi45LTE2LjY5LTguMTItMjAuNDMtMTAuNi0xNi4wNi0xMC43MS0zMy45Mi0yNS44Ni00OC40Ni0zOC43Ny03NC4yNS02NS45NC0xMzAuNDItMTUyLjQzLTE2NC43OS0yNDYuODVsMTYuMS0yLjgsMTA4LjQ2LTE4Ljg1YzMzLjg4LDc4LjU3LDg5LjA3LDE0NS43NiwxNTguMywxOTQuM2wtNDEuNDksMTA0LjIxWk03MDAuNzgsNjg5LjgzbC04Ni45NC02Mi43OC0yMS4yNC0xNS4zNGMtMi4yNy0zLjM0LDEzLjg0LTE4LjI0LDE3LjE4LTIxLjQ4LDgzLjk0LTgxLjUyLDIwNC4yOC0xMzAuNTQsMzE3LjM0LTE0OC4wOGwtMi4yMiwzNy45NS02LjIzLDEwNi45OWMtODIuMjUsMTQuNDEtMTU2Ljk2LDUwLjczLTIxNy44OCwxMDIuNzRaTTc2NC4zNSwxMzE1Ljkxdi01NTMuNzVjMC0zLjY0LDIuOTktNi42Myw2LjYyLTYuNjNoNDkuNzZjMy42NiwwLDYuNiwyLjk5LDYuNiw2LjYzdjU1My43NWMwLDMuNjMtMi45NSw2LjYzLTYuNiw2LjYzaC00OS43NmMtMy42MywwLTYuNjItMy02LjYyLTYuNjNaTTk5OC40NSwxNjM1LjkyYy02Mi40Mi0uMDQtMTI0LjcxLTEwLjEyLTE4NC40OS0zMC40bDEyLjctMjMuNjIsNTMuNDYtOTkuNDNjMzcuNzUsMTAuMDYsNzcuNDEsMTUuNDEsMTE4LjMzLDE1LjQxczgwLjU4LTUuMzUsMTE4LjMzLTE1LjQxbDUzLjkyLDEwMC4yNywxMi4yNSwyMi43OGMtNTkuNzgsMjAuMjgtMTIyLjA3LDMwLjM2LTE4NC40OSwzMC40Wk0xMjA1LjM2LDEzMTUuOTFjMCwzLjYzLTMsNi42My02LjYzLDYuNjNoLTQ5Ljc2Yy0zLjY2LDAtNi41OS0zLTYuNTktNi42M3YtNTUzLjc1YzAtMy42NCwyLjkzLTYuNjMsNi41OS02LjYzaDQ5Ljc2YzEuNjEsMCwzLjA5LjU5LDQuMjQsMS41NSwxLjQ2LDEuMjIsMi4zOSwzLjA1LDIuMzksNS4wOHY1NTMuNzVaTTEwNzguMjQsNTg3LjA5bC02LjI3LTEwNy4zOS0yLjE5LTM3LjU1YzExMy4wNiwxNy41NCwyMzMuNCw2Ni41NiwzMTcuMzUsMTQ4LjA4LDMuMzQsMy4yNCwxOS40NCwxOC4xNSwxNy4xOCwyMS40OGwtMTkuNSwxNC4wOC04OC42OSw2NC4wNGMtNjAuOTMtNTIuMDEtMTM1LjY1LTg4LjMyLTIxNy44OC0xMDIuNzRaTTEzMzEuMzQsOTgyLjY4djExMi43NWMwLDMuNjYtMi45OSw2LjYtNi41OSw2LjZoLTQ5Ljc0Yy0zLjY2LDAtNi42Ni0yLjk1LTYuNjYtNi42di0xMTIuNzVjMC0zLjY2LDMtNi42NSw2LjY2LTYuNjVoNDkuNzRjMy42NiwwLDYuNTksMi45OSw2LjU5LDYuNjVaTTEzNzkuNzQsMTQ4OS4xMWMtMTQuNTQsMTIuOTEtMzIuMzksMjguMDYtNDguNDYsMzguNzctMy43NCwyLjQ3LTE3LjIzLDEzLjQ5LTIwLjQzLDEwLjZsLTcuMDctMTcuNzctNDIuMTEtMTA1Ljc5YzY5LjIzLTQ4LjU1LDEyNC40Mi0xMTUuNzQsMTU4LjI5LTE5NC4zbDExMS4zOSwxOS4zNSwxMy4xOCwyLjI5Yy0zNC4zNiw5NC40Mi05MC41NCwxODAuOTItMTY0Ljc5LDI0Ni44NVpNMTU3Ni40OSwxMDk3LjkzbC0xMi4wMS0zLjU5LTEwNy43Ni0zMi4yOGMuMzktNy42My41OC0xNS4zLjU4LTIzLjAzLDAtODEuNzItMjEuMzctMTU4LjQ1LTU4LjgxLTIyNC45MWw4MC45LTc0LjczLDE0Ljc3LTEzLjY1YzQuOTgtMS4wNywyLjk5LDEuMzQsNC4xNCwzLjI1LDY0LjgxLDEwOC4yNSw5MC43NiwyNDIuNTksNzguMTksMzY4Ljk0WiIvPgo8L3N2Zz4KCg==","clickpipes":"data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiByb2xlPSJpbWciIGFyaWEtbGFiZWw9InBpcGUiPgo8c3R5bGU+CiAgcGF0aCB7IHN0cm9rZTogcmdiKDgwLCA4MCwgODApOyB9CiAgQG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTogZGFyaykgewogICAgcGF0aCB7IHN0cm9rZTogcmdiKDIwMCwgMjAwLCAyMDApOyB9CiAgfQo8L3N0eWxlPgo8ZyBjbGlwLXBhdGg9InVybCgjY2xpcDBfODEzMF82MDU4KSI+PHBhdGggZD0iTTEwLjUgMTUuNzVWMTMuNUMxMC41IDEyLjcwNDQgMTAuODE2MSAxMS45NDEzIDExLjM3ODcgMTEuMzc4N0MxMS45NDEzIDEwLjgxNjEgMTIuNzA0NCAxMC41IDEzLjUgMTAuNUgxNS43NSIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PC9wYXRoPjxwYXRoIGQ9Ik0xNS43NSA0LjVIMTMuNUMxMS4xMTMxIDQuNSA4LjgyMzg3IDUuNDQ4MjEgNy4xMzYwNCA3LjEzNjA0QzUuNDQ4MjEgOC44MjM4NyA0LjUgMTEuMTEzMSA0LjUgMTMuNVYxNS43NSIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PC9wYXRoPjxwYXRoIGQ9Ik0xOCAzLjc1SDE2LjVDMTYuMDg1OCAzLjc1IDE1Ljc1IDQuMDg1NzkgMTUuNzUgNC41VjEwLjVDMTUuNzUgMTAuOTE0MiAxNi4wODU4IDExLjI1IDE2LjUgMTEuMjVIMThDMTguNDE0MiAxMS4yNSAxOC43NSAxMC45MTQyIDE4Ljc1IDEwLjVWNC41QzE4Ljc1IDQuMDg1NzkgMTguNDE0MiAzLjc1IDE4IDMuNzVaIiBzdHJva2Utd2lkdGg9IjEuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48L3BhdGg+PHBhdGggZD0iTTEwLjUgMTUuNzVINC41QzQuMDg1NzkgMTUuNzUgMy43NSAxNi4wODU4IDMuNzUgMTYuNVYxOEMzLjc1IDE4LjQxNDIgNC4wODU3OSAxOC43NSA0LjUgMTguNzVIMTAuNUMxMC45MTQyIDE4Ljc1IDExLjI1IDE4LjQxNDIgMTEuMjUgMThWMTYuNUMxMS4yNSAxNi4wODU4IDEwLjkxNDIgMTUuNzUgMTAuNSAxNS43NVoiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjwvcGF0aD48cGF0aCBkPSJNMTAuNSAxOC43NVYyMS43NSIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PC9wYXRoPjxwYXRoIGQ9Ik00LjUgMTguNzVWMjEuNzUiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjwvcGF0aD48cGF0aCBkPSJNMjEuNzUgNC41SDE4Ljc1IiBzdHJva2Utd2lkdGg9IjEuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48L3BhdGg+PHBhdGggZD0iTTIxLjc1IDEwLjVIMTguNzUiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjwvcGF0aD48L2c+PGRlZnM+PGNsaXBQYXRoIGlkPSJjbGlwMF84MTMwXzYwNTgiPjxyZWN0IHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgZmlsbD0id2hpdGUiPjwvcmVjdD48L2NsaXBQYXRoPjwvZGVmcz4KPC9zdmc+","language_clients":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiByb2xlPSJpbWciIGFyaWEtbGFiZWw9ImNvZGUtaW4tc3F1YXJlIj4KPHN0eWxlPgogIHBhdGggeyBzdHJva2U6IHJnYig4MCwgODAsIDgwKTsgfQogIEBtZWRpYSAocHJlZmVycy1jb2xvci1zY2hlbWU6IGRhcmspIHsKICAgIHBhdGggeyBzdHJva2U6IHJnYigyMDAsIDIwMCwgMjAwKTsgfQogIH0KPC9zdHlsZT4KPHBhdGggc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjEuNSIgZD0ibTEyLjk1MiA4LjY2MS0xLjkwNSA2LjY3TTguOTAzIDEyLjk0OGwtMS45MDUtMS45MDUgMS45MDUtMS45MDVNMTUuMDk4IDE0Ljg1NGwxLjkwNC0xLjkwNS0xLjkwNC0xLjkwNSI+PC9wYXRoPjxwYXRoIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlLXdpZHRoPSIxLjUiIGQ9Ik03Ljk5OCAyLjk5Mmg4LjAwM2E1LjAwMiA1LjAwMiAwIDAgMSA1LjAwMyA1LjAwMnY4LjAwNEE1LjAwMiA1LjAwMiAwIDAgMSAxNiAyMUg3Ljk5OGE1LjAwMiA1LjAwMiAwIDAgMS01LjAwMi01LjAwMlY3Ljk5NGE1LjAwMiA1LjAwMiAwIDAgMSA1LjAwMi01LjAwMloiIGNsaXAtcnVsZT0iZXZlbm9kZCI+PC9wYXRoPgo8L3N2Zz4=","connectors":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiByb2xlPSJpbWciIGFyaWEtbGFiZWw9ImludGVncmF0aW9ucyI+CjxzdHlsZT4KICBwYXRoIHsgc3Ryb2tlOiByZ2IoODAsIDgwLCA4MCk7IH0KICBAbWVkaWEgKHByZWZlcnMtY29sb3Itc2NoZW1lOiBkYXJrKSB7CiAgICBwYXRoIHsgc3Ryb2tlOiByZ2IoMjAwLCAyMDAsIDIwMCk7IH0KICB9Cjwvc3R5bGU+CjxwYXRoIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlLXdpZHRoPSIxLjUiIGQ9Ik0xMCA5LjA1NkM5LjA5NCA3LjgxOCA3LjY1MiA3IDYgN3YwYTUgNSAwIDAgMC01IDV2MGE1IDUgMCAwIDAgNSA1djBhNS4yOTkgNS4yOTkgMCAwIDAgNC41NDMtMi41NzJMMTIgMTJsMS40NTctMi40MjhBNS4yOTkgNS4yOTkgMCAwIDEgMTggN3YwYTUgNSAwIDAgMSA1IDV2MGE1IDUgMCAwIDEtNSA1djBjLTEuNjUyIDAtMy4wOTQtLjgxOC00LTIuMDU2Ij48L3BhdGg+PHBhdGggc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjEuNSIgZD0ibTkuOTMgNi4wMjguNTIxIDIuOTU0LTIuOTU0LjUyIj48L3BhdGg+Cjwvc3ZnPg==","support":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiByb2xlPSJpbWciIGFyaWEtbGFiZWw9InN1cHBvcnQiPgo8c3R5bGU+CiAgcGF0aCB7IHN0cm9rZTogcmdiKDgwLCA4MCwgODApOyB9CiAgQG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTogZGFyaykgewogICAgcGF0aCB7IHN0cm9rZTogcmdiKDIwMCwgMjAwLCAyMDApOyB9CiAgfQo8L3N0eWxlPgo8cGF0aCBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMS41IiBkPSJNMTYgMThINWEyIDIgMCAwIDEtMi0yVjVhMiAyIDAgMCAxIDItMmgxMWEyIDIgMCAwIDEgMiAydjExYTIgMiAwIDAgMS0yIDJaIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiPjwvcGF0aD48cGF0aCBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMS41IiBkPSJNMTAuNDY3IDExLjUwNHYtLjIwN2MwLS42NzguNDE5LTEuMDQ1LjgzOS0xLjMyNy40MS0uMjc2LjgyLS42MzYuODItMS4zYTEuNjU5IDEuNjU5IDAgMCAwLTMuMzE4IDBNMTAuNDY2IDEzLjg0M2EuMTQ4LjE0OCAwIDAgMC0uMTUuMTUuMTUuMTUgMCAxIDAgLjE1LS4xNSI+PC9wYXRoPjxwYXRoIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlLXdpZHRoPSIxLjUiIGQ9Ik0xOCA2aDFhMiAyIDAgMCAxIDIgMnYxMWEyIDIgMCAwIDEtMiAySDhhMiAyIDAgMCAxLTItMnYtMSI+PC9wYXRoPgo8L3N2Zz4=","contribute":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDI1NiAyNTYiPgo8c3R5bGU+CiAgcGF0aCB7IGZpbGw6IHJnYig4MCwgODAsIDgwKTsgfQogIEBtZWRpYSAocHJlZmVycy1jb2xvci1zY2hlbWU6IGRhcmspIHsKICAgIHBhdGggeyBmaWxsOiByZ2IoMjAwLCAyMDAsIDIwMCk7IH0KICB9Cjwvc3R5bGU+CjxwYXRoIGQ9Ik0xMDQsNjRBMzIsMzIsMCwxLDAsNjQsOTV2NjZhMzIsMzIsMCwxLDAsMTYsMFY5NUEzMi4wNiwzMi4wNiwwLDAsMCwxMDQsNjRaTTU2LDY0QTE2LDE2LDAsMSwxLDcyLDgwLDE2LDE2LDAsMCwxLDU2LDY0Wk04OCwxOTJhMTYsMTYsMCwxLDEtMTYtMTZBMTYsMTYsMCwwLDEsODgsMTkyWm0xMjAtMzFWMTEwLjYzYTIzLjg1LDIzLjg1LDAsMCwwLTctMTdMMTYzLjMxLDU2SDE5MmE4LDgsMCwwLDAsMC0xNkgxNDRhOCw4LDAsMCwwLTgsOFY5NmE4LDgsMCwwLDAsMTYsMFY2Ny4zMUwxODkuNjYsMTA1YTgsOCwwLDAsMSwyLjM0LDUuNjZWMTYxYTMyLDMyLDAsMSwwLDE2LDBabS04LDQ3YTE2LDE2LDAsMSwxLDE2LTE2QTE2LDE2LDAsMCwxLDIwMCwyMDhaIj48L3BhdGg+Cjwvc3ZnPg==","changelogs":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiByb2xlPSJpbWciIGFyaWEtbGFiZWw9Imhpc3RvcnkiPgo8c3R5bGU+CiAgcGF0aCB7IHN0cm9rZTogcmdiKDgwLCA4MCwgODApOyB9CiAgQG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTogZGFyaykgewogICAgcGF0aCB7IHN0cm9rZTogcmdiKDIwMCwgMjAwLCAyMDApOyB9CiAgfQo8L3N0eWxlPgo8cGF0aCBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMS41IiBkPSJNMTIgNC45OTdINC45OTdNMTIgNC45OTdBOC4wMDMgOC4wMDMgMCAxIDEgMy45OTcgMTNNNy45OTggMS45OTZsLTMgMy4wMDFNNy45OTggNy45OThsLTMtMyI+PC9wYXRoPjxwYXRoIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlLXdpZHRoPSIxLjUiIGQ9Ik0xNS4wMDEgMTMuNzVoLTMuODFWOS44MzQiPjwvcGF0aD4KPC9zdmc+","about":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTYgMjU2Ij4KPHN0eWxlPgogIC5zdHJva2UgeyBzdHJva2U6IGJsYWNrOyBmaWxsOiBub25lOyB9CiAgLmZpbGxlZCB7IGZpbGw6IGJsYWNrOyB9CiAgQG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTogZGFyaykgewogICAgLnN0cm9rZSB7IHN0cm9rZTogd2hpdGU7IH0KICAgIC5maWxsZWQgeyBmaWxsOiB3aGl0ZTsgfQogIH0KPC9zdHlsZT4KPHJlY3Qgd2lkdGg9IjI1NiIgaGVpZ2h0PSIyNTYiIGZpbGw9Im5vbmUiLz4KPGNpcmNsZSBjbGFzcz0ic3Ryb2tlIiBjeD0iMTI4IiBjeT0iMTI4IiByPSI5NiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjE2Ii8+CjxwYXRoIGNsYXNzPSJzdHJva2UiIGQ9Ik0xMjAsMTIwYTgsOCwwLDAsMSw4LDh2NDBhOCw4LDAsMCwwLDgsOCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjE2Ii8+CjxjaXJjbGUgY2xhc3M9ImZpbGxlZCIgY3g9IjEyNCIgY3k9Ijg0IiByPSIxMiIvPgo8L3N2Zz4="};
+    for (const icon of document.querySelectorAll('[data-menu-icon]')) {
+        icon.src = MENU_ICON_DATA[icon.dataset.menuIcon];
+    }
+
+    function setMobileSelect(select, open) {
+        const trigger = select.querySelector('.mobile-select-trigger');
+        const menu = select.querySelector('.mobile-select-menu');
+        select.classList.toggle('open', open);
+        trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+        menu.hidden = !open;
+    }
+
+    function closeMobileSelects(except) {
+        for (const select of document.querySelectorAll('.mobile-select')) {
+            if (select !== except) setMobileSelect(select, false);
+        }
+    }
+
+    function setMobileNavigation(open) {
+        document.body.classList.toggle('mobile-nav-open', open);
+        $mobile_nav_toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        $mobile_nav_toggle.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation');
+        if (!open) closeMobileSelects();
+    }
+
+    function setSiteMenu(menu, open) {
+        const trigger = menu.querySelector('.nav-menu-trigger');
+        const panel = menu.querySelector('.nav-menu-panel');
+        menu.classList.toggle('open', open);
+        trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+        panel.hidden = !open;
+    }
+
+    function closeSiteMenus(except) {
+        for (const menu of document.querySelectorAll('.nav-menu')) {
+            if (menu !== except) setSiteMenu(menu, false);
+        }
+    }
+
+    /// Initialize the same top-level menu groups as `docs/docs.json`. Desktop menus support hover,
+    /// click, and arrow-key navigation. The mobile drawer mirrors the hosted docs selectors: a
+    /// language selector, the product-area selector, and the active Database section selector.
+    function initializeSiteNavigation() {
+        const menus = [...document.querySelectorAll('.nav-menu')];
+        const supports_hover = window.matchMedia('(hover: hover)').matches;
+
+        for (const menu of menus) {
+            const trigger = menu.querySelector('.nav-menu-trigger');
+            const panel = menu.querySelector('.nav-menu-panel');
+            const items = [...panel.querySelectorAll('.nav-menu-item')];
+            let close_timer = null;
+
+            trigger.addEventListener('click', e => {
+                e.stopPropagation();
+                const open = !menu.classList.contains('open');
+                closeSiteMenus(menu);
+                setSiteMenu(menu, open);
+            });
+            trigger.addEventListener('keydown', e => {
+                if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    closeSiteMenus(menu);
+                    setSiteMenu(menu, true);
+                    if (items.length) items[0].focus();
+                } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    const index = menus.indexOf(menu);
+                    const offset = e.key === 'ArrowRight' ? 1 : -1;
+                    menus[(index + offset + menus.length) % menus.length]
+                        .querySelector('.nav-menu-trigger').focus();
+                }
+            });
+            panel.addEventListener('keydown', e => {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setSiteMenu(menu, false);
+                    trigger.focus();
+                } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    const index = items.indexOf(document.activeElement);
+                    const offset = e.key === 'ArrowDown' ? 1 : -1;
+                    items[(index + offset + items.length) % items.length].focus();
+                }
+            });
+            for (const item of items) item.addEventListener('click', () => closeSiteMenus());
+
+            if (supports_hover) {
+                menu.addEventListener('mouseenter', () => {
+                    clearTimeout(close_timer);
+                    closeSiteMenus(menu);
+                    setSiteMenu(menu, true);
+                });
+                menu.addEventListener('mouseleave', () => {
+                    close_timer = setTimeout(() => setSiteMenu(menu, false), 120);
+                });
+            }
+        }
+
+        document.addEventListener('click', e => {
+            if (!e.target.closest('.nav-menu')) closeSiteMenus();
+        });
+
+        for (const select of document.querySelectorAll('.mobile-select')) {
+            const trigger = select.querySelector('.mobile-select-trigger');
+            const menu = select.querySelector('.mobile-select-menu');
+            const items = [...menu.querySelectorAll('[role="menuitem"]')];
+
+            trigger.addEventListener('click', e => {
+                e.stopPropagation();
+                const open = trigger.getAttribute('aria-expanded') !== 'true';
+                closeMobileSelects(select);
+                setMobileSelect(select, open);
+                if (open && items.length) items[0].focus();
+            });
+            trigger.addEventListener('keydown', e => {
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    closeMobileSelects(select);
+                    setMobileSelect(select, true);
+                    if (items.length) items[0].focus();
+                }
+            });
+            menu.addEventListener('keydown', e => {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setMobileSelect(select, false);
+                    trigger.focus();
+                } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    const index = items.indexOf(document.activeElement);
+                    const offset = e.key === 'ArrowDown' ? 1 : -1;
+                    items[(index + offset + items.length) % items.length].focus();
+                }
+            });
+            for (const item of items) {
+                item.addEventListener('click', () => setMobileSelect(select, false));
+            }
+        }
+
+        document.addEventListener('click', e => {
+            if (!e.target.closest('.mobile-select')) closeMobileSelects();
+        });
+    }
+
+    function clearTableOfContents() {
+        $toc_links.replaceChildren();
+        $toc.hidden = true;
+    }
+
+    function showEmptyState(title, message) {
+        $doc.className = 'empty';
+        $doc.replaceChildren();
+        document.title = 'Source Reference - ClickHouse Documentation';
+        const canonical = document.querySelector('[data-doc-canonical]');
+        if (canonical && location.protocol !== 'file:') canonical.href = new URL('/docs', location.origin).href;
+
+        const content = document.createElement('div');
+        content.className = 'empty-content';
+        const eyebrow = document.createElement('div');
+        eyebrow.className = 'eyebrow';
+        eyebrow.innerText = 'Source reference';
+        const heading = document.createElement('h1');
+        heading.innerText = title;
+        const paragraph = document.createElement('p');
+        paragraph.innerText = message;
+        content.appendChild(eyebrow);
+        content.appendChild(heading);
+        content.appendChild(paragraph);
+        $doc.appendChild(content);
+        clearTableOfContents();
+    }
 
     if (!$url.value) {
         $url.value = location.protocol != 'file:' ? location.origin : 'http://localhost:8123/';
@@ -446,34 +1872,53 @@
     }
 
     /* ----------------------------------------------------------------------------------------
-       Color theme. Precedence matches `play.html`: the `?theme=` query parameter, then the value
-       memoized in `localStorage`, then the operating-system preference. The user's choice (made
-       with the switcher) is remembered in `localStorage`.
+       Color theme. Precedence is the `?theme=` query parameter, then the value memoized in
+       `localStorage`, then the system option. The system option resolves to the operating-system
+       preference and keeps following it when that preference changes.
        ---------------------------------------------------------------------------------------- */
 
-    function setColorTheme(new_theme, update_preference) {
-        if (update_preference) {
-            window.localStorage.setItem('theme', new_theme);
+    const color_theme_media_query = window.matchMedia('(prefers-color-scheme: dark)');
+    let color_theme_preference = 'system';
+
+    function setColorTheme(new_preference, update_preference) {
+        if (['system', 'dark', 'light'].indexOf(new_preference) === -1) {
+            return;
         }
-        document.documentElement.setAttribute('data-theme', new_theme);
+
+        if (update_preference) {
+            window.localStorage.setItem('theme', new_preference);
+        }
+
+        color_theme_preference = new_preference;
+        const resolved_theme = new_preference === 'system'
+            ? (color_theme_media_query.matches ? 'dark' : 'light')
+            : new_preference;
+        document.documentElement.setAttribute('data-theme', resolved_theme);
+        document.documentElement.setAttribute('data-theme-preference', new_preference);
+
+        for (const button of document.querySelectorAll('[data-theme-preference-value]')) {
+            button.setAttribute('aria-pressed', String(button.dataset.themePreferenceValue === new_preference));
+        }
     }
 
     {
         let theme = new URL(window.location).searchParams.get('theme');
-        if (['dark', 'light'].indexOf(theme) === -1) {
+        if (['system', 'dark', 'light'].indexOf(theme) === -1) {
             theme = window.localStorage.getItem('theme');
         }
-        if (theme) {
-            setColorTheme(theme);
-        } else {
-            /// Autodetect from the OS preference, and keep following it if it changes later
-            /// (some systems switch automatically between day and night).
-            const media_query_list = window.matchMedia('(prefers-color-scheme: dark)');
-            setColorTheme(media_query_list.matches ? 'dark' : 'light');
-            media_query_list.addEventListener('change', e => setColorTheme(e.matches ? 'dark' : 'light'));
+        if (['system', 'dark', 'light'].indexOf(theme) === -1) {
+            theme = 'system';
         }
+        setColorTheme(theme);
     }
 
+    color_theme_media_query.addEventListener('change', () => {
+        if (color_theme_preference === 'system') {
+            setColorTheme('system');
+        }
+    });
+
+    document.getElementById('toggle-system').onclick = () => setColorTheme('system', true);
     document.getElementById('toggle-light').onclick = () => setColorTheme('light', true);
     document.getElementById('toggle-dark').onclick = () => setColorTheme('dark', true);
 
@@ -522,6 +1967,34 @@
         'Asynchronous Metric':           '#9A8FCF',
         'System Table':                  '#8A8F99',
     };
+
+    /// Stable, crawlable path segment for every `system.documentation` entity type. Keep this map
+    /// in sync with `DOCUMENTATION_ROUTES` in `WebUIRequestHandler.cpp`: the server resolves these
+    /// paths before the client loads, while the client uses them for in-site navigation.
+    const ENTITY_TYPE_ROUTE = {
+        'Function':                      'functions',
+        'Aggregate Function':            'aggregate-functions',
+        'Table Function':                'table-functions',
+        'Table Engine':                  'table-engines',
+        'Database Engine':               'database-engines',
+        'Data Type':                     'data-types',
+        'Dictionary Layout':             'dictionary-layouts',
+        'Dictionary Source':             'dictionary-sources',
+        'Aggregate Function Combinator': 'aggregate-function-combinators',
+        'Data Skipping Index':           'data-skipping-indexes',
+        'Disk Type':                     'disk-types',
+        'Setting':                       'settings',
+        'MergeTree Setting':             'mergetree-settings',
+        'Server Setting':                'server-settings',
+        'Format':                        'formats',
+        'Compression Codec':             'compression-codecs',
+        'Profile Event':                 'profile-events',
+        'Current Metric':                'current-metrics',
+        'Asynchronous Metric':           'asynchronous-metrics',
+        'System Table':                  'system-tables',
+    };
+    const ROUTE_ENTITY_TYPE = Object.fromEntries(
+        Object.entries(ENTITY_TYPE_ROUTE).map(([type, route]) => [route, type]));
 
     function buildURL() {
         /// Always request CORS headers, exactly like `/play` and `/schema`. When this page is opened
@@ -960,8 +2433,9 @@
             current = [];
             selected = -1;
             renderResults();
-            $doc.className = 'empty';
-            $doc.innerText = 'Start typing to search the documentation.';
+            showEmptyState(
+                'Search the ClickHouse reference',
+                'Find functions, settings, engines, data types, formats, and other entities documented by this ClickHouse server.');
             $status.innerText = '';
             return;
         }
@@ -984,6 +2458,7 @@
             }
             if (!response.ok) {
                 $status.innerText = '';
+                clearTableOfContents();
                 $doc.className = 'empty';
                 $doc.innerHTML = `<div class="error"></div>`;
                 $doc.querySelector('.error').innerText = text;
@@ -1014,6 +2489,7 @@
             if (seq !== request_seq || conn !== connection_seq) {
                 return;
             }
+            clearTableOfContents();
             $doc.className = 'empty';
             $doc.innerHTML = `<div class="error"></div>`;
             $doc.querySelector('.error').innerText = e.toString();
@@ -1058,19 +2534,24 @@
             el.appendChild(type);
             /// Clicking a result opens it: this is a user-initiated page change, so it adds a
             /// history entry.
-            el.addEventListener('click', () => openEntity(i));
+            el.addEventListener('click', () => {
+                setMobileNavigation(false);
+                openEntity(i);
+            });
             $results.appendChild(el);
         });
     }
 
     async function renderDoc() {
         if (selected < 0 || !current[selected]) {
-            $doc.className = 'empty';
-            $doc.innerText = 'No matches.';
+            showEmptyState('No matches', 'Try a different function, setting, engine, data type, or format name.');
             return;
         }
         const row = current[selected];
         $doc.className = '';
+        document.title = `${row.name} | ClickHouse Reference`;
+        const canonical = document.querySelector('[data-doc-canonical]');
+        if (canonical && location.protocol !== 'file:') canonical.href = new URL(entityPath(row), location.origin).href;
         /// `marked.parse` turns the Markdown stored in `system.documentation` into HTML.
         const html = marked.parse(preprocessMarkdown(row.description || ''));
         $doc.innerHTML =
@@ -1095,6 +2576,8 @@
         /// Post-process the rendered HTML: give headings stable anchors, and rewrite relative links.
         /// The names map is needed to recognize links that point to another documented entity.
         processHeadingAnchors(body);
+        processGeneratedSectionHeadings(body);
+        renderTableOfContents(body);
         await loadAllNames();
         rewriteLinks(body);
         linkifyReferences(body);
@@ -1105,8 +2588,8 @@
         /// just colors it in a moment later.
         highlightCodeBlocks(body);
 
-        /// The doc pane scrolls back to the top for a freshly opened entity.
-        $doc.scrollTop = 0;
+        /// The page scrolls back to the top for a freshly opened entity.
+        $page.scrollTop = 0;
 
         /// Keep the selected item visible in the list.
         const sel = $results.children[selected];
@@ -1156,10 +2639,58 @@
             anchor.className = 'heading-anchor';
             anchor.textContent = '#';
             anchor.setAttribute('aria-label', 'Link to this section');
-            anchor.href = stateToHash({ q: $search.value.trim(), name: current[selected].name, type: current[selected].type, section: id });
+            anchor.href = stateToURL({ q: $search.value.trim(), name: current[selected].name, type: current[selected].type, section: id });
             anchor.addEventListener('click', e => { e.preventDefault(); openSection(id); });
             h.appendChild(anchor);
         }
+    }
+
+    /// Generated entity documentation commonly represents section titles as a paragraph containing
+    /// only bold text. Give those titles the same anchors and outline behavior as Markdown headings.
+    function processGeneratedSectionHeadings(body) {
+        const used_ids = new Set([...body.querySelectorAll('[id]')].map(element => element.id));
+        for (const paragraph of body.querySelectorAll(':scope > p')) {
+            if (paragraph.children.length !== 1
+                || paragraph.firstElementChild.tagName !== 'STRONG'
+                || paragraph.textContent.trim() !== paragraph.firstElementChild.textContent.trim()
+                || paragraph.textContent.trim().length > 80) {
+                continue;
+            }
+
+            let id = slugify(paragraph.textContent);
+            if (!id) continue;
+            const base_id = id;
+            for (let suffix = 2; used_ids.has(id); ++suffix) id = `${base_id}-${suffix}`;
+            used_ids.add(id);
+            paragraph.id = id;
+            paragraph.classList.add('doc-section-heading');
+        }
+    }
+
+    /// Build the compact right-hand outline used by the main documentation website. The page title
+    /// is already visible above the content, so only second- and third-level sections are included.
+    function renderTableOfContents(body) {
+        $toc_links.replaceChildren();
+        for (const heading of body.querySelectorAll('h2[id], h3[id], p.doc-section-heading[id]')) {
+            const label = heading.cloneNode(true);
+            for (const anchor of label.querySelectorAll('.heading-anchor')) anchor.remove();
+
+            const link = document.createElement('a');
+            link.className = heading.tagName === 'H3' ? 'depth-3' : 'depth-2';
+            link.href = stateToURL({
+                q: $search.value.trim(),
+                name: current[selected].name,
+                type: current[selected].type,
+                section: heading.id,
+            });
+            link.innerText = label.textContent.trim();
+            link.addEventListener('click', e => {
+                e.preventDefault();
+                openSection(heading.id);
+            });
+            $toc_links.appendChild(link);
+        }
+        $toc.hidden = $toc_links.children.length === 0;
     }
 
     function slugify(text) {
@@ -1228,7 +2759,7 @@
             const entity = resolveDocEntity(candidateTerm(a, href), href);
             if (entity) {
                 a.classList.add('doc-internal-link');
-                a.href = stateToHash({ q: $search.value.trim(), name: entity.name, type: entity.type, section: '' });
+                a.href = stateToURL({ q: $search.value.trim(), name: entity.name, type: entity.type, section: '' });
                 a.addEventListener('click', e => { e.preventDefault(); openTerm(entity); });
             } else {
                 a.href = toDocsURL(href);
@@ -1353,7 +2884,7 @@
         if (!entity) return;
         const a = document.createElement('a');
         a.className = 'doc-internal-link';
-        a.href = stateToHash({ q: $search.value.trim(), name: entity.name, type: entity.type, section: '' });
+        a.href = stateToURL({ q: $search.value.trim(), name: entity.name, type: entity.type, section: '' });
         a.addEventListener('click', e => { e.preventDefault(); openTerm(entity); });
         a.appendChild(code.cloneNode(true)); /// Keep the monospace `code` styling inside the link.
         code.replaceWith(a);
@@ -1415,9 +2946,10 @@
     /* ----------------------------------------------------------------------------------------
        Navigation and browser-history integration.
 
-       The current state (search term, open entity, and in-page section) is mirrored into the URL
-       fragment. Opening a different entity pushes a new history entry; merely changing the search
-       term replaces the current one, so typing does not flood the back-stack.
+       Every entity has a stable `/docs/<type>/<name>` URL. The server returns that entity's title
+       and content in the initial HTML for crawlers, and this client-side navigation keeps the same
+       paths while avoiding full-page reloads. The previous hash format remains readable so existing
+       bookmarks are migrated to their canonical paths on first load.
        ---------------------------------------------------------------------------------------- */
 
     function currentState() {
@@ -1430,7 +2962,7 @@
         };
     }
 
-    function stateToHash(state) {
+    function legacyStateToHash(state) {
         const params = new URLSearchParams();
         if (state.q) params.set('q', state.q);
         if (state.name) params.set('name', state.name);
@@ -1440,7 +2972,57 @@
         return s ? '#' + s : '#';
     }
 
+    function persistentQueryString() {
+        const params = new URLSearchParams(location.search);
+        /// These keys belonged to the old navigation representation. Connection and display keys,
+        /// such as `user` and `theme`, must survive navigation between entity paths.
+        for (const key of ['q', 'name', 'type', 'section']) params.delete(key);
+        const query = params.toString();
+        return query ? '?' + query : '';
+    }
+
+    function encodeURLPathSegment(value) {
+        /// `encodeURIComponent` leaves five RFC 3986 reserved punctuation characters untouched;
+        /// encode them as well so client-generated links exactly match the C++ canonicalizer.
+        return encodeURIComponent(value).replace(/[!'()*]/g, character =>
+            '%' + character.charCodeAt(0).toString(16).toUpperCase());
+    }
+
+    function entityPath(entity) {
+        const route = ENTITY_TYPE_ROUTE[entity.type];
+        return entity.name && route
+            ? `/docs/${route}/${encodeURLPathSegment(entity.name)}`
+            : '/docs';
+    }
+
+    function stateToURL(state) {
+        /// Keep the checked-in HTML usable as a local file: a `file:` URL has no server that could
+        /// resolve `/docs/...`, so local previews retain the legacy hash representation.
+        if (location.protocol === 'file:') return legacyStateToHash(state);
+
+        const path = entityPath(state);
+        const section = state.section ? '#' + encodeURIComponent(state.section) : '';
+        return path + persistentQueryString() + section;
+    }
+
     function readStateFromURL() {
+        if (location.protocol !== 'file:') {
+            const match = /^\/docs\/([^/]+)\/([^/]+)\/?$/.exec(location.pathname);
+            if (match && ROUTE_ENTITY_TYPE[match[1]]) {
+                try {
+                    const name = decodeURIComponent(match[2]);
+                    const section = location.hash ? decodeURIComponent(location.hash.slice(1)) : '';
+                    return { q: name, name, type: ROUTE_ENTITY_TYPE[match[1]], section };
+                } catch (e) {
+                    /// The server returns a 400 for malformed path encoding. If a local proxy lets
+                    /// one through, leave the server-rendered error page intact.
+                    return { q: '', name: '', type: '', section: '' };
+                }
+            }
+        }
+
+        /// Legacy single-page bookmarks encoded every field in the hash. Reading these here lets
+        /// `replaceURL` below migrate them to the stable path without breaking shared links.
         const params = new URLSearchParams(location.hash.replace(/^#/, ''));
         return {
             q: params.get('q') || '',
@@ -1452,12 +3034,12 @@
 
     function pushURL() {
         const state = currentState();
-        history.pushState(state, '', stateToHash(state));
+        history.pushState(state, '', stateToURL(state));
     }
 
     function replaceURL() {
         const state = currentState();
-        history.replaceState(state, '', stateToHash(state));
+        history.replaceState(state, '', stateToURL(state));
     }
 
     /// Open the entity at the given result index (a user-initiated page change → push history).
@@ -1525,6 +3107,25 @@
     /* ----------------------------------------------------------------------------------------
        Event wiring.
        ---------------------------------------------------------------------------------------- */
+
+    $mobile_nav_toggle.addEventListener('click', () => {
+        setMobileNavigation(!document.body.classList.contains('mobile-nav-open'));
+    });
+    $sidebar_backdrop.addEventListener('click', () => setMobileNavigation(false));
+
+    /// Match the hosted documentation search shortcut and make it useful on narrow screens by
+    /// opening the navigation before focusing the search field.
+    document.addEventListener('keydown', e => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+            e.preventDefault();
+            if (window.matchMedia('(max-width: 64rem)').matches) setMobileNavigation(true);
+            $search.focus();
+        } else if (e.key === 'Escape') {
+            closeSiteMenus();
+            closeMobileSelects();
+            if (document.body.classList.contains('mobile-nav-open')) setMobileNavigation(false);
+        }
+    });
 
     /// Debounce keystrokes so we issue at most one query per short interval, giving an "instant"
     /// feel without flooding the server. A search-term change replaces the current history entry.
@@ -1770,6 +3371,7 @@
        ---------------------------------------------------------------------------------------- */
 
     (async function init() {
+        initializeSiteNavigation();
         verifyDocsURLCompatibility();
         /// Load the set of documented names in the background; it is only needed for link rewriting.
         loadAllNames();
@@ -1782,7 +3384,7 @@
             /// Normalize the URL to the canonical encoding of the restored state.
             replaceURL();
         }
-        $search.focus();
+        if (window.matchMedia('(min-width: 1025px)').matches) $search.focus();
     })();
 
     </script>

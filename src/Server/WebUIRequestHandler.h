@@ -121,7 +121,7 @@ private:
 class DocsWebUIRequestHandler : public HTTPRequestHandler
 {
 public:
-    explicit DocsWebUIRequestHandler(IServer &) {}
+    explicit DocsWebUIRequestHandler(IServer & server_) : server(server_) {}
     explicit DocsWebUIRequestHandler(IServer & server_, const std::unordered_map<String, String> & http_response_headers_override_)
         : DocsWebUIRequestHandler(server_)
     {
@@ -129,6 +129,7 @@ public:
     }
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 private:
+    IServer & server;
     /// Overrides for response headers.
     std::unordered_map<String, String> http_response_headers_override;
 };
