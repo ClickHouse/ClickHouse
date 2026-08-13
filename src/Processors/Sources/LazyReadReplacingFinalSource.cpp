@@ -249,9 +249,9 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
 
         /// The cache key is stamped later by `setAggregationHashTableCacheKeys` when this plan is
         /// optimized in `work` (key == 0 keeps preallocation disabled until then), but the other
-        /// fields must be real: the first query to touch the process-wide statistics cache creates
-        /// it with `max_entries_for_hash_table_stats` as its capacity, so a default-constructed
-        /// value of 0 here would create it permanently empty for the whole server.
+        /// fields must be real, exactly like in `Planner`: with a default-constructed
+        /// `max_entries_for_hash_table_stats` of 0 this dedup aggregation would keep no statistics
+        /// at all, so repeated `FINAL` queries would never get a size hint for it.
         const auto stats_collecting_params = StatsCollectingParams(
             /*key_=*/0,
             settings[Setting::collect_hash_table_stats_during_aggregation],
