@@ -583,27 +583,45 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     return true;
 }
 
-std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG & dag)
+std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG::Node * predicate)
 {
     std::vector<RuntimeFilterIndexAnalysisDescriptor> res;
+    if (!predicate)
+        return res;
 
-    for (const auto & dag_node : dag.getNodes())
+    /// Decompose the AND chain of the predicate: only a top-level conjunct is guaranteed to
+    /// be applied to every row. An `__applyFilter` sitting elsewhere in the DAG — under an
+    /// OR or a NOT, or in an unrelated expression computed alongside the filter — must not
+    /// be used for pruning.
+    std::vector<const ActionsDAG::Node *> conjuncts = {predicate};
+    while (!conjuncts.empty())
     {
-        if (dag_node.type != ActionsDAG::ActionType::FUNCTION || !dag_node.function_base)
+        const auto * node = conjuncts.back();
+        conjuncts.pop_back();
+
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.front();
+
+        if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
             continue;
-        if (dag_node.function_base->getName() != "__applyFilter" || dag_node.children.size() != 2)
+
+        if (node->function_base->getName() == "and")
+        {
+            conjuncts.insert(conjuncts.end(), node->children.begin(), node->children.end());
+            continue;
+        }
+
+        if (node->function_base->getName() != "__applyFilter" || node->children.size() != 2)
             continue;
 
         /// Argument 0: const String label whose VALUE is the runtime filter rendezvous key.
-        const auto * label = dag_node.children[0];
-        if (!label->column || !isColumnConst(*label->column))
+        const auto * label = node->children[0];
+        if (!label->column || !isColumnConst(*label->column) || !isString(label->result_type))
             continue;
-        const Field id_field = (*label->column)[0];
-        if (id_field.getType() != Field::Types::String)
-            continue;
+        String filter_id(label->column->getDataAt(0));
 
         /// Argument 1: the probe key column, possibly wrapped in a CAST.
-        const auto * key_arg = dag_node.children[1];
+        const auto * key_arg = node->children[1];
         while (key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
                && (key_arg->function_base->getName() == "CAST" || key_arg->function_base->getName() == "_CAST")
                && !key_arg->children.empty())
@@ -618,10 +636,15 @@ std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(cons
         if (key_arg->type != ActionsDAG::ActionType::INPUT)
             continue;
 
-        res.push_back({id_field.safeGet<String>(), key_arg->result_name, key_arg->result_type});
+        res.push_back({std::move(filter_id), key_arg->result_name, key_arg->result_type});
     }
 
     return res;
+}
+
+std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG & dag, const String & filter_column_name)
+{
+    return findAppliedRuntimeFilters(dag.tryFindInOutputs(filter_column_name));
 }
 
 void registerLeftSideIndexAnalysisSecondPass(QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
@@ -650,7 +673,7 @@ void registerLeftSideIndexAnalysisSecondPass(QueryPlan::Node & node, const Query
         return;
 
     /// After push-down the key column is already in the read step's namespace, so no remapping is needed.
-    for (const auto & descr : findAppliedRuntimeFilters(filter_step->getExpression()))
+    for (const auto & descr : findAppliedRuntimeFilters(filter_step->getExpression(), filter_step->getFilterColumnName()))
         read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type);
 }
 

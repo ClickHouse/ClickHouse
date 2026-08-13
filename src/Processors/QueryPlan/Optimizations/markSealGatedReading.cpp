@@ -52,17 +52,22 @@ ProbeSide findProbeSide(QueryPlan::Node * node)
     while (node)
     {
         if (const auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
-            append(findAppliedRuntimeFilters(filter_step->getExpression()));
+            append(findAppliedRuntimeFilters(filter_step->getExpression(), filter_step->getFilterColumnName()));
 
         if (auto * reading = typeid_cast<ReadFromMergeTree *>(node->step.get()))
         {
             res.reading = reading;
             if (res.runtime_filters.empty())
             {
-                if (const auto & dag = reading->getFilterActionsDAG())
-                    append(findAppliedRuntimeFilters(*dag));
+                /// The combined pushed-down filter of the source step: the predicate is its
+                /// first output (see SourceStepWithFilterBase::applyFilters).
+                if (const auto & dag = reading->getFilterActionsDAG(); dag && !dag->getOutputs().empty())
+                    append(findAppliedRuntimeFilters(dag->getOutputs().front()));
                 if (res.runtime_filters.empty() && reading->getQueryInfo().prewhere_info)
-                    append(findAppliedRuntimeFilters(reading->getQueryInfo().prewhere_info->prewhere_actions));
+                {
+                    const auto & prewhere_info = *reading->getQueryInfo().prewhere_info;
+                    append(findAppliedRuntimeFilters(prewhere_info.prewhere_actions, prewhere_info.prewhere_column_name));
+                }
             }
             return res;
         }
