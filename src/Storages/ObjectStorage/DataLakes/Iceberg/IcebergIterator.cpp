@@ -353,6 +353,7 @@ IcebergIterator::IcebergIterator(
         });
 }
 
+// ensureDeletesReady is called lazily so that delete and data manifest downloads overlap.
 void IcebergIterator::ensureDeletesReady()
 {
     std::lock_guard lock(deletes_mutex);
