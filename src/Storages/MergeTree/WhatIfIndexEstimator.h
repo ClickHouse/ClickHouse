@@ -36,9 +36,7 @@ public:
         enum EstimateSource { Empirical, Statistical, ApplicabilityOnly };
         EstimateSource estimate_source = ApplicabilityOnly;
 
-        /// Both pairs come from the same analysis, so a merge finishing mid-estimate cannot make
-        /// a sampled count exceed its total. The totals are what the query could have read after
-        /// partition pruning, which is also the denominator sampling will divide
+        /// both pairs come from the same analysis, so sampled can never exceed total
         UInt64 sampled_parts = 0;
         UInt64 total_parts = 0;
         UInt64 sampled_marks = 0;

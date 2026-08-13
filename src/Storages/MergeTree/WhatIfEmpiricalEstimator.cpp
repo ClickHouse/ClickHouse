@@ -78,10 +78,7 @@ bool tryEstimateEmpirical(
 
     Names index_columns = index_helper->getColumnsRequiredForIndexCalc();
     if (index_columns.empty())
-    {
-        result.empirical_unsupported_reason = "The index does not read any column, so there is nothing to aggregate";
         return false;
-    }
 
     /// With non-zero seek gaps a real read coalesces ranges, so our per-granule count would diverge
     if (context->getSettingsRef()[Setting::merge_tree_min_rows_for_seek] != 0
@@ -284,10 +281,7 @@ bool tryEstimateEmpirical(
     }
 
     if (total_data_granules == 0)
-    {
-        result.empirical_unsupported_reason = "No granule of the baseline could be aggregated";
         return false;
-    }
 
     result.skip_ratio = static_cast<double>(skipped_data_granules) / static_cast<double>(total_data_granules);
     result.estimated_marks = total_data_granules - skipped_data_granules;

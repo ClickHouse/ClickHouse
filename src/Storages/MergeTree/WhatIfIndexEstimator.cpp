@@ -143,8 +143,6 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     WhatIfIndexEstimator::IndexResult result;
     result.index_name = index_desc.name;
     result.index_type = index_desc.type;
-    /// Taken from the analysis, not from the live table counters: those are read at a different
-    /// instant, so a concurrent merge could report more sampled parts or marks than the total
     result.total_parts = analysis.parts_before_pk;
     result.total_marks = analysis.total_marks_pk;
 
