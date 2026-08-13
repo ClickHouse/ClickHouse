@@ -7,12 +7,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_cancel_minmax_set_build"
 
 # A partition key makes the minmax_count projection eligible, and `auto_statistics_types = ''` keeps
-# the set from being built via the statistics estimation path.
+# the set from being built via the statistics estimation path. All rows land in one partition: `KILL
+# MUTATION` only cancels mutate tasks that already hold a `system.merges` entry, so a single part
+# makes the task waited for below the only one there is.
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_cancel_minmax_set_build (a Int32, b Int32)
     ENGINE = MergeTree ORDER BY a PARTITION BY a % 3
     SETTINGS number_of_free_entries_in_pool_to_execute_mutation = 0, auto_statistics_types = '';
-    INSERT INTO t_cancel_minmax_set_build SELECT number, number + 1 FROM numbers(15);"
+    INSERT INTO t_cancel_minmax_set_build SELECT number * 3, number + 1 FROM numbers(15);"
 
 # The minmax_count projection must actually be chosen for the predicate shape under test, otherwise
 # the cancellation below never reaches the projection's synchronous filter evaluation. The projection
@@ -54,8 +56,9 @@ i=0
 while [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.merges WHERE database = currentDatabase() AND table = 't_cancel_minmax_set_build'")" -ne 0 ]; do
     sleep 0.3
     i=$((i + 1))
-    if [ "$i" -gt 100 ]; then
-        break
+    if [ "$i" -gt 200 ]; then
+        echo "Cancelled mutation did not drain from system.merges in time" >&2
+        exit 1
     fi
 done
 
