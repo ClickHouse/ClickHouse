@@ -461,22 +461,26 @@ void MergeTreePartition::load(const IMergeTreeDataPart & part)
     FormatSettings settings;
     /// For compatibility we should read values of Bool data type as 0/1 int Field, not as bool true/false Field.
     settings.binary.read_bool_field_as_int = true;
-    value.resize(partition_key_sample.columns());
+    /// Publish only once every column is read. Filling `value` in place would leave the columns
+    /// past a failure as Nulls, so `writePartLog` would report a part real, part invented value;
+    /// left empty, `serializeText` prints `tuple()`.
+    Row loaded(partition_key_sample.columns());
     size_t i = 0;
     try
     {
         for (; i < partition_key_sample.columns(); ++i)
-            partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file, settings);
+            partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(loaded[i], *file, settings);
     }
     catch (Exception & e)
     {
         /// Otherwise the failure surfaces as a bare "Attempt to read after EOF" with no hint that
-        /// partition.dat of this part is the damaged file. The values not yet read stay Null.
+        /// partition.dat of this part is the damaged file.
         e.addMessage(
             "while reading partition value of column {} from partition.dat of part {}",
             backQuote(partition_key_sample.getByPosition(i).name), part.name);
         throw;
     }
+    value = std::move(loaded);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(

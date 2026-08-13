@@ -65,10 +65,11 @@ TEST(MergeTreePartitionSerializeNull, PlainStringKey)
     EXPECT_EQ(serialized, "ᴺᵁᴸᴸ");
 }
 
-/// The tuple branch takes a different code path and needs the same guard, including the case
-/// where only some of the values were deserialized before the throw. Tuple elements go through
-/// serializeTextQuoted, which renders a null as NULL rather than the pretty ᴺᵁᴸᴸ above.
-TEST(MergeTreePartitionSerializeNull, CompositeKeyPartiallyLoaded)
+/// The tuple branch takes a different code path and needs the same guard. `load` no longer
+/// publishes a half-filled `value`, so a partition mixing real values with Nulls arrives only
+/// from some other route; the guard stays because serializing must never throw. Tuple elements
+/// go through serializeTextQuoted, which renders a null as NULL rather than the pretty ᴺᵁᴸᴸ above.
+TEST(MergeTreePartitionSerializeNull, CompositeKeyWithSomeNulls)
 {
     auto lc_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     auto metadata = metadataWithPartitionKey({{"dc_name", lc_string}, {"shard", std::make_shared<DataTypeUInt64>()}});
