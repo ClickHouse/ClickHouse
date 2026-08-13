@@ -225,6 +225,16 @@ void MetadataStorageFromMemoryTransaction::commit(const TransactionCommitOptions
     if (!std::holds_alternative<NoCommitOptions>(options))
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "In-memory metadata transaction cannot carry external commit options");
+
+    /// The storage has no removal queue, so nothing would ever dispose of the blobs this
+    /// transaction released: the owner must drain `takePendingOwnRemovals` (and the replication
+    /// records) before the commit, or the blobs leak silently.
+    if (!pending_own_removals.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "In-memory metadata transaction is committed with {} released blobs not taken", pending_own_removals.size());
+    if (!replication_records.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "In-memory metadata transaction is committed with {} replication records not taken", replication_records.size());
 }
 
 TransactionCommitOutcomeVariant MetadataStorageFromMemoryTransaction::tryCommit(const TransactionCommitOptionsVariant & options)

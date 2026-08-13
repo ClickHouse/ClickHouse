@@ -564,6 +564,30 @@ TEST_F(DiskObjectStorageOverMemoryMetadataTest, CopyFilePreservesInlineContent)
     tx->undo();
 }
 
+TEST_F(DiskObjectStorageOverMemoryMetadataTest, CommitRequiresDrainedRemovals)
+{
+    auto wrapped = disk->wrapWithMemoryMetadata();
+    auto memory = wrapped->getMetadataStorage();
+    auto tx = wrapped->createTransaction();
+
+    {
+        auto buf = tx->writeFile("data.bin", 4096, WriteMode::Rewrite, {});
+        writeString("first", *buf);
+        buf->finalize();
+    }
+    {
+        auto buf = tx->writeFile("data.bin", 4096, WriteMode::Rewrite, {});
+        writeString("second", *buf);
+        buf->finalize();
+    }
+
+    /// The commit refuses undrained released blobs (a logical error, so only the drained path is
+    /// exercised here): take them, as the owner of the storage does, and the commit succeeds.
+    EXPECT_EQ(takePendingOwnRemovals(tx).size(), 1u);
+    tx->commit();
+    EXPECT_EQ(memory->getFileSize("data.bin"), 6u);
+}
+
 TEST_F(DiskObjectStorageOverMemoryMetadataTest, EmptyFileUploadsNoBlob)
 {
     auto wrapped = disk->wrapWithMemoryMetadata();
