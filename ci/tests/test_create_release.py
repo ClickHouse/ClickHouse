@@ -1348,4 +1348,4 @@ def test_prepare_refuses_rereleasing_an_already_released_line(tmp_path):
     )
     assert result.returncode != 0, "re-releasing an already-released line should fail"
     out = result.stdout + result.stderr
-    assert "has already been created" in out
+    assert "a release tag for 26.6.2 already exists" in out

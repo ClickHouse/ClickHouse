@@ -401,15 +401,15 @@ class ReleaseInfo:
                         f"so the only commit since the previous release is the "
                         f"automated version bump — there is nothing to release."
                     )
-                # This X.Y.P line already has a release tag; creating it again would duplicate an existing release.
+                # This X.Y.P line already has a release tag; a fresh release here would duplicate it.
                 line_tags = Shell.get_output(
                     f"git tag --list 'v{version.major}.{version.minor}.{version.patch}.*'"
                 )
                 assert not line_tags, (
-                    f"release {version.major}.{version.minor}.{version.patch} has "
-                    f"already been created (tag [{line_tags.split()[0]}]); either the "
-                    f"workflow was triggered for a commit with a superseded release, "
-                    f"or there is a bug in the release/versioning logic"
+                    f"a release tag for {version.major}.{version.minor}.{version.patch} "
+                    f"already exists ([{line_tags.split()[0]}]); either the workflow was "
+                    f"triggered for a commit with a superseded release, or there is a bug "
+                    f"in the release/versioning logic"
                 )
             self.is_recovery = False
         self.release_type = release_type
