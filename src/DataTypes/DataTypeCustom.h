@@ -28,9 +28,10 @@ public:
 
     virtual String getName() const = 0;
 
-    /// A copy with any embedded child types transformed, or itself when it embeds none (the common
-    /// case). Overridden by names that embed types (e.g. Nested) to stay in sync with a rebuilt type.
-    virtual DataTypeCustomNamePtr transformChildren(const ChildTransform &) const { return shared_from_this(); }
+    /// A copy in sync with `transformed`, the rebuilt type this name belongs to, or itself when the
+    /// name embeds no child types (the common case). An override must take its new children out of
+    /// `transformed`, which already holds them, rather than transform its own copy again.
+    virtual DataTypeCustomNamePtr transformChildren(const IDataType &) const { return shared_from_this(); }
 };
 
 /** Describe a data type customization

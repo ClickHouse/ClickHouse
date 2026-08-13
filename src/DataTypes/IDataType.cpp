@@ -355,7 +355,7 @@ DataTypePtr IDataType::transformChildren(const ChildTransform & transform) const
     if (auto customization = cloneCustomization())
     {
         if (custom_name)
-            customization->name = custom_name->transformChildren(transform);
+            customization->name = custom_name->transformChildren(*result);
         result->setCustomization(std::move(customization));
     }
 

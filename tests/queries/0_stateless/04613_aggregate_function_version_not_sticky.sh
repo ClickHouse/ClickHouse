@@ -38,3 +38,31 @@ $CLICKHOUSE_CLIENT --query "
     WHERE database = currentDatabase() AND table = 't_agg_version_sticky' AND name = 's';
 
     DROP TABLE t_agg_version_sticky;"
+
+# A Variant addresses its elements by name: the discriminator order and the serialization a reader
+# picks both come from the names alone. Assigning a version rewrites a name, since version 0 is
+# omitted from it while a default version is printed, so versions are not assigned inside a Variant.
+# The bytes a Variant column is served as therefore do not depend on this assignment.
+
+# The state below is stored under the first element, whose version-less spelling is the spelling of
+# the second, and served to a client that asks for version 0. Reading the state back is the oracle:
+# an element rebuilt under the other name would fail to be addressed at all, and one rebuilt with a
+# version 0 name would have its version-1 payload read as a version-0 one.
+
+VARIANT="Variant(AggregateFunction(0, sumMap, Array(UInt32), Array(UInt32)), AggregateFunction(1, sumMap, Array(UInt32), Array(UInt32)))"
+NATIVE="$CLICKHOUSE_TMP/04613_variant.native"
+
+$CLICKHOUSE_LOCAL --query "
+    SET allow_experimental_variant_type = 1, allow_suspicious_variant_types = 1;
+
+    SELECT CAST(CAST(sumMapState(CAST([1, 2], 'Array(UInt32)'), CAST([10, 20], 'Array(UInt32)')),
+                     'AggregateFunction(1, sumMap, Array(UInt32), Array(UInt32))'), '$VARIANT') AS v
+    INTO OUTFILE '$NATIVE' TRUNCATE FORMAT Native;"
+
+$CLICKHOUSE_LOCAL --query "
+    SET allow_experimental_variant_type = 1, allow_suspicious_variant_types = 1;
+
+    SELECT variantType(v), finalizeAggregation(variantElement(v, 'AggregateFunction(1, sumMap, Array(UInt32), Array(UInt32))'))
+    FROM file('$NATIVE', Native);"
+
+rm -f "$NATIVE"

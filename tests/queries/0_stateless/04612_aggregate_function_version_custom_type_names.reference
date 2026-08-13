@@ -9,3 +9,4 @@ finalizeAggr⋯ment(w, 1)): ([1,2],[10,20])
 n	Nested(x AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))
 s	SimpleAggregateFunction(anyLast, AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))
 w	SimpleAggregateFunction(anyLast, Array(AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))))
+deep nested ok

@@ -47,3 +47,17 @@ $CLICKHOUSE_CLIENT --query "
     ORDER BY name;
 
     DROP TABLE t_agg_version_names;"
+
+# `Nested` keeps its elements both in its `Array(Tuple(...))` representation and in its custom name,
+# and both hold the same types. Rebuilding the name from the already rebuilt representation keeps the
+# assignment linear in the nesting depth. Transforming the name's own copy again instead doubles the
+# work per level: at this depth that is upwards of 2^30 visited leaves, which no timeout allows,
+# while reusing the rebuilt elements stays in the milliseconds.
+
+DEEP="AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64))"
+for _ in {1..30}; do DEEP="Nested(x $DEEP)"; done
+
+$CLICKHOUSE_LOCAL --query "
+    SET flatten_nested = 0;
+
+    SELECT CAST(defaultValueOfTypeName('$DEEP'), '$DEEP') AS n FORMAT Native" > /dev/null && echo 'deep nested ok'

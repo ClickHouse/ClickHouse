@@ -32,17 +32,23 @@ String DataTypeNestedCustomName::getName() const
     return s.str();
 }
 
-DataTypeCustomNamePtr DataTypeNestedCustomName::transformChildren(const ChildTransform & transform) const
+DataTypeCustomNamePtr DataTypeNestedCustomName::transformChildren(const IDataType & transformed) const
 {
-    DataTypes new_elems;
-    new_elems.reserve(elems.size());
+    /// `Nested(...)` is represented as `Array(Tuple(...))` holding these very elements, so the
+    /// rebuilt type already carries them transformed.
+    const auto * array = typeid_cast<const DataTypeArray *>(&transformed);
+    if (!array)
+        return shared_from_this();
+
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(array->getNestedType().get());
+    if (!tuple || tuple->getElements().size() != elems.size())
+        return shared_from_this();
+
+    const auto & new_elems = tuple->getElements();
     bool changed = false;
-    for (const auto & elem : elems)
-    {
-        auto new_elem = transform(elem)->transformChildren(transform);
-        changed |= new_elem.get() != elem.get();
-        new_elems.push_back(std::move(new_elem));
-    }
+    for (size_t i = 0; i < elems.size(); ++i)
+        changed |= new_elems[i].get() != elems[i].get();
+
     if (!changed)
         return shared_from_this();
     return std::make_shared<DataTypeNestedCustomName>(new_elems, names);

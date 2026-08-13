@@ -83,12 +83,9 @@ public:
     DataTypePtr cloneWithVersion(size_t version_) const;
 };
 
-/// Assigns a serialization version to every nested DataTypeAggregateFunction in `type`.
-///
-/// The type object is shared across concurrent queries (it lives in the table's column description),
-/// so each versioned leaf is replaced by a copy carrying the version rather than mutated in place,
-/// avoiding a data race; `type` is reassigned only if some leaf changes. The generic transformChildren
-/// traversal covers every container and preserves custom names.
+/// Assigns a serialization version to every nested DataTypeAggregateFunction in `type`, except inside
+/// a Variant (see DataTypeVariant::doTransformChildren). Replaces each versioned leaf rather than
+/// mutating it, because `type` is shared across concurrent queries.
 ///
 /// `if_empty` keeps an already-explicit version; `revision` picks the version (nullopt forces 0).
 void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision = std::nullopt);

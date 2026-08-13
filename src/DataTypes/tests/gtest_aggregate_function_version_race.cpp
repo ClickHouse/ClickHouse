@@ -265,8 +265,7 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderNullableIsAssigne
     ASSERT_EQ(asAgg(source_tuple->getElements()[0]).getVersion(), 1u);
 }
 
-/// Variant is covered by the generic traversal (the old hand-written walk skipped it).
-GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderVariantIsAssigned)
+GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderVariantIsNotAssigned)
 {
     tryRegisterAggregateFunctions();
 
@@ -276,25 +275,12 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderVariantIsAssigned
     DataTypePtr assigned = variant;
     setVersionToAggregateFunctions(assigned, /*if_empty=*/true, /*revision=*/std::nullopt);
 
-    ASSERT_NE(assigned.get(), variant.get());
-    const auto * assigned_variant = typeid_cast<const DataTypeVariant *>(assigned.get());
-    ASSERT_NE(assigned_variant, nullptr);
+    ASSERT_EQ(assigned.get(), variant.get());
 
-    /// Leaf forced to version 0, discriminator order kept.
-    const auto & source_variants = typeid_cast<const DataTypeVariant &>(*variant).getVariants();
-    const auto & assigned_variants = assigned_variant->getVariants();
-    ASSERT_EQ(assigned_variants.size(), source_variants.size());
-    for (size_t i = 0; i < source_variants.size(); ++i)
+    for (const auto & nested : typeid_cast<const DataTypeVariant &>(*assigned).getVariants())
     {
-        if (const auto * agg = typeid_cast<const DataTypeAggregateFunction *>(assigned_variants[i].get()))
-        {
-            ASSERT_EQ(agg->getVersion(), 0u);
-            ASSERT_EQ(asAgg(source_variants[i]).getVersion(), 1u); // source untouched
-        }
-        else
-        {
-            ASSERT_EQ(assigned_variants[i].get(), source_variants[i].get()); // non-agg untouched
-        }
+        if (const auto * agg = typeid_cast<const DataTypeAggregateFunction *>(nested.get()))
+            ASSERT_EQ(agg->getVersion(), 1u);
     }
 }
 
