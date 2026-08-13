@@ -22,7 +22,7 @@ SETTINGS force_data_skipping_indices = 'idx';
 
 SELECT 'nested cast', groupArray(id)
 FROM json_bf_nested_containers
-WHERE CAST(CAST(j.v AS Int64) AS String) = '7' AND j.flag = true
-SETTINGS force_data_skipping_indices = 'idx';
+WHERE CAST(CAST(j.v AS Int64) AS String) = '7'
+SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
 DROP TABLE json_bf_nested_containers;
