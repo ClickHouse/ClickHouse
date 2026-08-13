@@ -15,7 +15,16 @@ bool ask(std::string question, ReadBuffer & in, WriteBuffer & out, bool default_
         writeText(question, out);
         out.next();
         readStringUntilNewlineInto(answer, in);
+        /// Checked before the newline itself is consumed below, so pressing Enter (an empty
+        /// answer, but a completed line) is distinguishable from terminating the input.
+        const bool input_ended = in.eof();
         skipToNextLineOrEOF(in);
+
+        /// EOF (e.g. Ctrl+D) means the input was aborted, not answered: fail closed instead of
+        /// acting on the default, like the `std::getline` overload below. Otherwise a prompt
+        /// with `default_yes` would treat aborted input as an approval.
+        if (answer.empty() && input_ended)
+            return false;
 
         if (answer.empty())
             return default_yes;
