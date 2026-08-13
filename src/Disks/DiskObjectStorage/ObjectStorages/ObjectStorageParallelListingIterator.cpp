@@ -51,7 +51,8 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     std::function<void()> check_cancellation_,
     size_t max_pending_range_bytes_,
     size_t max_buffered_object_bytes_,
-    bool allow_start_after_)
+    bool allow_start_after_,
+    std::string root_range_end_)
     : num_threads(std::max<size_t>(num_threads_, 1))
     , max_buffered_objects(std::max<size_t>(max_buffered_keys_, 1))
     , max_buffered_object_bytes(std::max<size_t>(max_buffered_object_bytes_, 1))
@@ -75,6 +76,10 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
 {
     ListRange root;
     root.prefix = std::move(root_prefix_);
+    /// Bounds only this root range (`listRange` stops paginating once past `end`); the ranges created for
+    /// the sub-"directories" discovered within the bound carry no bound of their own — their keys sort
+    /// within it already. See the constructor comment.
+    root.end = std::move(root_range_end_);
     root.split_pos = root.prefix.size();
     /// A zero budget disables flat keyspace splitting (and the `StartAfter` requests it issues), so a flat
     /// directory is paginated serially; the hierarchical delimiter walk is unaffected.

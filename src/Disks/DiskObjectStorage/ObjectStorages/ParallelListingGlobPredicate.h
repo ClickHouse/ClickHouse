@@ -3,6 +3,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace DB
 {
@@ -48,9 +49,28 @@ std::function<bool(const std::string & common_prefix)> makeShouldDescendPredicat
 /// the keyspace split — over a wider prefix than the serial iterator uses, so the serial iterator wins.
 /// For a trailing-slash glob (`root/year=*/`) the final segment names the matching directory markers and
 /// counts as such a level itself: the predicate descends one extra level to surface the markers.
+///
+/// The widened level itself is walked too, and pruning applies only to the sub-"directories" (common
+/// prefixes) it exposes: the *loose objects* directly under the widened prefix are all listed, while the
+/// narrower serial listing (`Prefix = key_prefix`) never fetches the ones outside `key_prefix`'s key
+/// region. A bucket with many such objects (e.g. loose files next to a Hive-style tree) would make the
+/// widened walk page through all of them — strictly worse than staying serial. So before committing to a
+/// widening, `list_loose_objects_sample(widened_prefix)` is called — exactly once, and only when the
+/// widening is otherwise chosen — with the keys of the loose objects (`Contents`, not common prefixes) on
+/// the *first* delimited page of the widened prefix; any sampled key outside `key_prefix`'s region keeps
+/// the glob on the serial iterator. Loose objects sorting *after* the region that hide beyond the sampled
+/// page are handled at listing time instead: the walk's root range is bounded by
+/// `leastKeyAfterPrefixRegion(key_prefix)`, so pagination stops once past the last possibly-matching key.
 std::optional<std::string> chooseDelimitedListingStartPrefix(
     const std::string & glob_path,
     const std::string & key_prefix,
-    const std::function<bool(const std::string & prefix)> & is_prefix_allowed);
+    const std::function<bool(const std::string & prefix)> & is_prefix_allowed,
+    const std::function<std::vector<std::string>(const std::string & widened_prefix)> & list_loose_objects_sample);
+
+/// The least key that sorts after every key starting with `prefix` — the exclusive upper bound of the
+/// prefix's key region — or `std::nullopt` when no such key exists (`prefix` is empty or all 0xFF bytes).
+/// Used to bound a listing that starts from a prefix *wider* than `prefix` (see
+/// `chooseDelimitedListingStartPrefix`) to the region the narrower listing would have covered.
+std::optional<std::string> leastKeyAfterPrefixRegion(const std::string & prefix);
 
 }

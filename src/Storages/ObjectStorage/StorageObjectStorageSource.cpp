@@ -1690,6 +1690,14 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         /// directory buckets) keep the parallel walk by starting it one '/' boundary earlier; see
         /// `chooseDelimitedListingStartPrefix`.
         std::optional<std::string> listing_start_prefix;
+
+        /// The request path treats `list_object_keys_size = 0` as "use the storage-configured
+        /// default page size", so resolve the zero the same way before it sizes the buffered-key
+        /// cap below: deriving the cap from the raw zero would collapse it to a single key while
+        /// every listed page still carries a full default-sized batch, blocking the workers on the
+        /// count budget and serializing the parallel listing.
+        const size_t page_size = list_object_keys_size ? list_object_keys_size : object_storage->getListObjectsDefaultPageSize();
+
         if (parallelism > 1
             && !key_with_globs.path.contains("**")
             && !globSelectorSpansPathComponents(key_with_globs.path))
@@ -1697,7 +1705,21 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
             listing_start_prefix = chooseDelimitedListingStartPrefix(
                 key_with_globs.path,
                 key_prefix,
-                [&](const std::string & prefix) { return object_storage->supportsDelimitedListingFromPrefix(prefix); });
+                [&](const std::string & prefix) { return object_storage->supportsDelimitedListingFromPrefix(prefix); },
+                /// Invoked (once) only when the walk would start from a prefix wider than `key_prefix`:
+                /// samples the loose objects on the first delimited page of the widened level, whose keys
+                /// decide whether the widened walk would scan objects the serial listing never fetches.
+                /// Tags-free — only the keys matter here.
+                [&](const std::string & widened_prefix)
+                {
+                    auto page = object_storage->listObjectsSingleLevel(
+                        widened_prefix, "/", page_size, /* with_tags */ false, /* start_after */ {}, /* continuation_token */ {});
+                    std::vector<std::string> keys;
+                    keys.reserve(page.objects.size());
+                    for (const auto & object : page.objects)
+                        keys.push_back(object->getPath());
+                    return keys;
+                });
         }
 
         if (listing_start_prefix.has_value())
@@ -1709,12 +1731,14 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
                 parallelism,
                 *listing_start_prefix);
 
-            /// The request path treats `list_object_keys_size = 0` as "use the storage-configured
-            /// default page size", so resolve the zero the same way before it sizes the buffered-key
-            /// cap below: deriving the cap from the raw zero would collapse it to a single key while
-            /// every listed page still carries a full default-sized batch, blocking the workers on the
-            /// count budget and serializing the parallel listing.
-            const size_t page_size = list_object_keys_size ? list_object_keys_size : object_storage->getListObjectsDefaultPageSize();
+            /// A walk started from a prefix wider than the glob's fixed prefix (directory buckets, see
+            /// `chooseDelimitedListingStartPrefix`) is cut off at the end of the fixed prefix's key
+            /// region, so loose objects of the widened level sorting after every possibly-matching key —
+            /// which the sampled first page cannot rule out — are not paged through.
+            std::string root_range_end;
+            if (*listing_start_prefix != key_prefix)
+                if (auto bound = leastKeyAfterPrefixRegion(key_prefix))
+                    root_range_end = std::move(*bound);
 
             /// Capture the object storage by shared_ptr so it outlives the iterator's worker threads.
             auto list_level = [storage = object_storage, page_size, with_tags]
@@ -1755,7 +1779,8 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
                 std::move(check_cancellation),
                 ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES,
                 ObjectStorageParallelListingIterator::DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
-                /* allow_start_after */ object_storage->supportsStartAfterListing());
+                /* allow_start_after */ object_storage->supportsStartAfterListing(),
+                std::move(root_range_end));
         }
         else
         {

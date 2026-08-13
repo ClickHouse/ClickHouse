@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <future>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -219,6 +220,29 @@ ObjectStorageParallelListingIterator::ProbeLevelFunction makeProbeLevel(const Fa
             res.common_prefixes.resize(1);
         return res;
     };
+}
+
+/// The `list_loose_objects_sample` callback of `chooseDelimitedListingStartPrefix` over the fake, wired
+/// exactly as `GlobIterator` does against a real storage: the keys of the loose objects (`Contents`, not
+/// common prefixes) on the first delimited page under `widened_prefix`.
+std::function<std::vector<std::string>(const std::string &)> makeLooseObjectsSample(const FakeS3 & s3)
+{
+    return [&s3](const std::string & widened_prefix)
+    {
+        auto page = s3.list(widened_prefix, "/", /* start_after */ {}, /* token */ {});
+        std::vector<std::string> keys;
+        keys.reserve(page.objects.size());
+        for (const auto & object : page.objects)
+            keys.push_back(object->relative_path);
+        return keys;
+    };
+}
+
+/// For choice-level assertions of `chooseDelimitedListingStartPrefix` that do not model a bucket: a
+/// widened level with no loose objects at all, so the loose-object guard never rejects the widening.
+std::vector<std::string> noLooseObjects(const std::string &)
+{
+    return {};
 }
 
 std::vector<std::string> drain(ObjectStorageParallelListingIterator & iterator)
@@ -868,26 +892,26 @@ TEST(ObjectStorageParallelListing, DirectoryBucketStartsWalkFromPathBoundary)
     auto plain_bucket = [](const std::string &) { return true; };
 
     /// A '/'-aligned prefix is used as it is, and a plain bucket never needs the widening.
-    EXPECT_EQ(chooseDelimitedListingStartPrefix("root/*/data.csv", "root/", directory_bucket), "root/");
-    EXPECT_EQ(chooseDelimitedListingStartPrefix("root/year=*/month=*/data.csv", "root/year=", plain_bucket), "root/year=");
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("root/*/data.csv", "root/", directory_bucket, noLooseObjects), "root/");
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("root/year=*/month=*/data.csv", "root/year=", plain_bucket, noLooseObjects), "root/year=");
 
     /// A mid-component prefix with at least one "directory" level left below it backs up to the boundary.
-    EXPECT_EQ(chooseDelimitedListingStartPrefix("root/year=*/month=*/data.csv", "root/year=", directory_bucket), "root/");
-    EXPECT_EQ(chooseDelimitedListingStartPrefix("a/b/c_*/f.csv", "a/b/c_", directory_bucket), "a/b/");
-    EXPECT_EQ(chooseDelimitedListingStartPrefix("year=*/month=*/data.csv", "year=", directory_bucket), "");
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("root/year=*/month=*/data.csv", "root/year=", directory_bucket, noLooseObjects), "root/");
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("a/b/c_*/f.csv", "a/b/c_", directory_bucket, noLooseObjects), "a/b/");
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("year=*/month=*/data.csv", "year=", directory_bucket, noLooseObjects), "");
 
     /// With no "directory" level left below the widened prefix the walk would list a single flat range over a
     /// wider prefix than the serial iterator uses — and serially, since those endpoints reject the keyspace
     /// split — so it must stay serial.
-    EXPECT_EQ(chooseDelimitedListingStartPrefix("data_??.csv", "data_", directory_bucket), std::nullopt);
-    EXPECT_EQ(chooseDelimitedListingStartPrefix("root/data_??.csv", "root/data_", directory_bucket), std::nullopt);
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("data_??.csv", "data_", directory_bucket, noLooseObjects), std::nullopt);
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("root/data_??.csv", "root/data_", directory_bucket, noLooseObjects), std::nullopt);
 
     /// For a trailing-slash glob the final segment names the matching directory markers and is itself a
     /// "directory" level of the walk, so one segment below the widened prefix is enough to keep the walk.
-    EXPECT_EQ(chooseDelimitedListingStartPrefix("root/year=*/", "root/year=", directory_bucket), "root/");
-    EXPECT_EQ(chooseDelimitedListingStartPrefix("year=*/", "year=", directory_bucket), "");
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("root/year=*/", "root/year=", directory_bucket, noLooseObjects), "root/");
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("year=*/", "year=", directory_bucket, noLooseObjects), "");
     /// Without the trailing slash the same shape matches regular keys at that level: no level to walk.
-    EXPECT_EQ(chooseDelimitedListingStartPrefix("root/year=*", "root/year=", directory_bucket), std::nullopt);
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("root/year=*", "root/year=", directory_bucket, noLooseObjects), std::nullopt);
 
     /// End to end on such an endpoint: the widened walk must produce every key of the matching sub-tree
     /// exactly once, prune the non-matching siblings the wider prefix exposes, and never send a `StartAfter`.
@@ -901,16 +925,19 @@ TEST(ObjectStorageParallelListing, DirectoryBucketStartsWalkFromPathBoundary)
     /// Siblings of `root/year=.../` that the narrower prefix `root/year=` would have excluded by itself.
     for (int i = 0; i < 40; ++i)
         s3.add(fmt::format("root/other={:02}/month=01/data_000.parquet", i));
-    s3.add("root/loose.parquet");
+    /// A loose object at the walk's own level *inside* the fixed prefix's key region: the serial
+    /// `Prefix=root/year=` listing fetches it too, so it must not send the shape serial (see
+    /// `WidenedWalkStaysSerialWhenLooseObjectsShow` for keys outside the region) and it is still emitted.
+    s3.add("root/year=stray.parquet");
     s3.finalize();
 
     const std::string glob = "root/year=*/month=*/data_*.parquet";
-    const auto start_prefix = chooseDelimitedListingStartPrefix(glob, "root/year=", directory_bucket);
+    const auto start_prefix = chooseDelimitedListingStartPrefix(glob, "root/year=", directory_bucket, makeLooseObjectsSample(s3));
     ASSERT_EQ(start_prefix, "root/");
 
-    /// Everything below the pruned `root/other=.../` siblings stays unlisted; the loose file that the wider
-    /// prefix exposes at the walk's own level is still emitted (as with the serial iterator, only the
-    /// per-file regexp of `GlobIterator` decides about such keys).
+    /// Everything below the pruned `root/other=.../` siblings stays unlisted; the loose in-region file that
+    /// the wider prefix exposes at the walk's own level is still emitted (as with the serial iterator, only
+    /// the per-file regexp of `GlobIterator` decides about such keys).
     std::vector<std::string> expected;
     for (const auto & key : s3.keys)
         if (!key.starts_with("root/other="))
@@ -926,7 +953,8 @@ TEST(ObjectStorageParallelListing, DirectoryBucketStartsWalkFromPathBoundary)
             /* allow_keyspace_split */ false, /* check_cancellation */ {},
             /* max_pending_range_bytes */ ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES,
             /* max_buffered_object_bytes */ ObjectStorageParallelListingIterator::DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
-            /* allow_start_after */ false);
+            /* allow_start_after */ false,
+            /* root_range_end */ leastKeyAfterPrefixRegion("root/year=").value());
         auto got = drain(iterator);
         std::sort(got.begin(), got.end());
         EXPECT_EQ(got, expected) << "threads=" << threads;
@@ -957,7 +985,7 @@ TEST(ObjectStorageParallelListing, DirectoryBucketKeepsWalkForTrailingSlashGlob)
     s3.finalize();
 
     const std::string glob = "root/year=*/";
-    const auto start_prefix = chooseDelimitedListingStartPrefix(glob, "root/year=", directory_bucket);
+    const auto start_prefix = chooseDelimitedListingStartPrefix(glob, "root/year=", directory_bucket, makeLooseObjectsSample(s3));
     ASSERT_EQ(start_prefix, "root/");
 
     const re2::RE2 matcher(makeRegexpPatternFromGlobs(glob));
@@ -972,7 +1000,8 @@ TEST(ObjectStorageParallelListing, DirectoryBucketKeepsWalkForTrailingSlashGlob)
             /* allow_keyspace_split */ false, /* check_cancellation */ {},
             /* max_pending_range_bytes */ ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES,
             /* max_buffered_object_bytes */ ObjectStorageParallelListingIterator::DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
-            /* allow_start_after */ false);
+            /* allow_start_after */ false,
+            /* root_range_end */ leastKeyAfterPrefixRegion("root/year=").value());
         auto listed = drain(iterator);
 
         /// The walk may emit extra non-matching keys (the downstream per-file matcher drops them);
@@ -986,6 +1015,114 @@ TEST(ObjectStorageParallelListing, DirectoryBucketKeepsWalkForTrailingSlashGlob)
         }
         std::sort(matched.begin(), matched.end());
         EXPECT_EQ(matched, expected) << "threads=" << threads;
+    }
+    EXPECT_EQ(s3.requests_with_start_after.load(), 0u);
+}
+
+TEST(ObjectStorageParallelListing, WidenedWalkStaysSerialWhenLooseObjectsShow)
+{
+    /// Regression: pruning of the widened walk applies only to the sub-"directories" (common prefixes) the
+    /// wider prefix exposes; its *loose objects* are all listed and only discarded downstream by the
+    /// per-file regexp. A directory bucket whose widened level holds many loose objects outside the fixed
+    /// prefix's key region (`root/*.log` next to `root/year=*/`) would make the widened walk page through
+    /// keys the serial `Prefix=root/year=` listing never fetches — strictly worse than staying serial. The
+    /// choice must therefore sample the widened level's first page and keep such shapes on the serial
+    /// iterator.
+    auto directory_bucket = [](const std::string & prefix) { return prefix.empty() || prefix.ends_with('/'); };
+    const std::string glob = "root/year=*/month=*/data_*.parquet";
+
+    /// A sampled loose object outside the fixed prefix's key region rejects the widening; loose objects
+    /// inside the region do not (the serial listing fetches them too).
+    auto out_of_region = [](const std::string &) { return std::vector<std::string>{"root/2026-01-01.log"}; };
+    EXPECT_EQ(chooseDelimitedListingStartPrefix(glob, "root/year=", directory_bucket, out_of_region), std::nullopt);
+    auto in_region = [](const std::string &) { return std::vector<std::string>{"root/year=stray.parquet"}; };
+    EXPECT_EQ(chooseDelimitedListingStartPrefix(glob, "root/year=", directory_bucket, in_region), "root/");
+
+    /// The sample costs a listing request, so it must not be taken when no widening happens (a plain
+    /// bucket, or a '/'-aligned prefix) or when a cheaper check already rejected the widening.
+    size_t samples_taken = 0;
+    auto counting_sample = [&samples_taken](const std::string &) { ++samples_taken; return std::vector<std::string>{}; };
+    auto plain_bucket = [](const std::string &) { return true; };
+    EXPECT_EQ(chooseDelimitedListingStartPrefix(glob, "root/year=", plain_bucket, counting_sample), "root/year=");
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("root/*/data.csv", "root/", directory_bucket, counting_sample), "root/");
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("root/data_??.csv", "root/data_", directory_bucket, counting_sample), std::nullopt);
+    EXPECT_EQ(samples_taken, 0u);
+    EXPECT_EQ(chooseDelimitedListingStartPrefix(glob, "root/year=", directory_bucket, counting_sample), "root/");
+    EXPECT_EQ(samples_taken, 1u);
+
+    /// End to end over a bucket: loose objects sort before `root/year=`, so they show up on the widened
+    /// level's first page (the lexicographically first entries under `root/`) no matter how many they are.
+    FakeS3 s3;
+    s3.page_size = 7;
+    s3.reject_start_after = true;
+    for (int i = 0; i < 500; ++i)
+        s3.add(fmt::format("root/{:04}.log", i));
+    for (int y = 2020; y <= 2022; ++y)
+        for (int m = 1; m <= 3; ++m)
+            s3.add(fmt::format("root/year={}/month={:02}/data_000.parquet", y, m));
+    s3.finalize();
+
+    EXPECT_EQ(chooseDelimitedListingStartPrefix(glob, "root/year=", directory_bucket, makeLooseObjectsSample(s3)), std::nullopt);
+}
+
+TEST(ObjectStorageParallelListing, WidenedWalkIsBoundedToThePrefixRegion)
+{
+    /// The counterpart of `WidenedWalkStaysSerialWhenLooseObjectsShow` for loose objects sorting *after*
+    /// the fixed prefix's key region: they hide beyond the sampled first page whenever enough matching
+    /// entries precede them, so the sample cannot reject them up front. Instead the walk's root range is
+    /// bounded by `leastKeyAfterPrefixRegion(key_prefix)`: pagination of the widened level must stop at
+    /// the end of the region rather than page through every later loose object (and must not emit them).
+    EXPECT_EQ(leastKeyAfterPrefixRegion("root/year="), "root/year>");
+    EXPECT_EQ(leastKeyAfterPrefixRegion("abc"), "abd");
+    EXPECT_EQ(leastKeyAfterPrefixRegion("a\xff"), "b");
+    EXPECT_EQ(leastKeyAfterPrefixRegion("\xff\xff"), std::nullopt);
+    EXPECT_EQ(leastKeyAfterPrefixRegion(""), std::nullopt);
+
+    auto directory_bucket = [](const std::string & prefix) { return prefix.empty() || prefix.ends_with('/'); };
+    const std::string glob = "root/year=*/month=*/data_*.parquet";
+
+    FakeS3 s3;
+    s3.page_size = 7;
+    s3.reject_start_after = true;
+    for (int y = 0; y < 30; ++y)
+        for (int m = 1; m <= 3; ++m)
+            s3.add(fmt::format("root/year={:04}/month={:02}/data_000.parquet", y, m));
+    for (int i = 0; i < 500; ++i)
+        s3.add(fmt::format("root/z-log-{:04}", i)); /// after every `root/year=...` key
+    s3.finalize();
+
+    /// The first page under `root/` holds only (matching) `root/year=.../` groups, so the loose-object
+    /// sample sees nothing and the widened walk is rightly kept.
+    const auto start_prefix = chooseDelimitedListingStartPrefix(glob, "root/year=", directory_bucket, makeLooseObjectsSample(s3));
+    ASSERT_EQ(start_prefix, "root/");
+
+    const auto make_iterator = [&](size_t threads, std::string root_range_end)
+    {
+        return std::make_unique<ObjectStorageParallelListingIterator>(
+            *start_prefix, threads, /* max_buffered_keys */ 128, makeListLevel(s3), makeProbeLevel(s3),
+            makeShouldDescendPredicate(glob),
+            /* allow_keyspace_split */ false, /* check_cancellation */ std::function<void()>{},
+            /* max_pending_range_bytes */ ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES,
+            /* max_buffered_object_bytes */ ObjectStorageParallelListingIterator::DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
+            /* allow_start_after */ false,
+            std::move(root_range_end));
+    };
+
+    /// Reference: the same walk without the bound pages through (and emits) every trailing loose object.
+    s3.requests.store(0);
+    drain(*make_iterator(1, /* root_range_end */ {}));
+    const size_t requests_without_bound = s3.requests.load();
+
+    const auto expected = expectedUnder(s3, "root/year=");
+    for (size_t threads : {1, 2, 4, 16})
+    {
+        s3.requests.store(0);
+        auto got = drain(*make_iterator(threads, leastKeyAfterPrefixRegion("root/year=").value()));
+        std::sort(got.begin(), got.end());
+        EXPECT_EQ(got, expected) << "threads=" << threads; /// in particular, no `root/z-log-...` key
+        /// The bound stops the root level's pagination at the end of the region: the ~500/7 pages of
+        /// trailing loose objects are not fetched (not merely filtered out after fetching).
+        EXPECT_LT(s3.requests.load() + 50, requests_without_bound) << "threads=" << threads;
     }
     EXPECT_EQ(s3.requests_with_start_after.load(), 0u);
 }

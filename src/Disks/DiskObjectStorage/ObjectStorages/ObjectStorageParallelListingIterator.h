@@ -135,6 +135,13 @@ public:
     /// the pending-range budget trim resumes a hierarchical parent by re-listing it from the beginning with
     /// the '/' delimiter and locally discarding what the kept child ranges already cover, instead of
     /// resuming after the last kept child by key.
+    /// `root_range_end`, when non-empty, is an inclusive upper bound on the keys of interest under
+    /// `root_prefix`: pagination of the root level stops once its listed entries sort past it, so entries
+    /// beyond the bound are neither fetched page by page nor emitted. Used when `root_prefix` is *wider*
+    /// than the glob's fixed prefix (see `chooseDelimitedListingStartPrefix`) to stop the walk's own level
+    /// at the end of the fixed prefix's key region instead of paging through every later loose object.
+    /// Sub-"directories" discovered within the bound are walked unbounded — their keys share the
+    /// discovered prefix and therefore sort within the bound already.
     ObjectStorageParallelListingIterator(
         std::string root_prefix_,
         size_t num_threads_,
@@ -146,7 +153,8 @@ public:
         std::function<void()> check_cancellation_ = {},
         size_t max_pending_range_bytes_ = DEFAULT_MAX_PENDING_RANGE_BYTES,
         size_t max_buffered_object_bytes_ = DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
-        bool allow_start_after_ = true);
+        bool allow_start_after_ = true,
+        std::string root_range_end_ = {});
 
     ~ObjectStorageParallelListingIterator() override;
 
