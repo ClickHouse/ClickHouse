@@ -393,23 +393,16 @@ class ReleaseInfo:
                         f"so the only commit since the previous release is the "
                         f"automated version bump — there is nothing to release."
                     )
-                # A fresh patch release must sit on a higher X.Y.P line than the last
-                # published release (the post-release bump advances the patch). Compare
-                # the file's line to the last -stable/-lts tag, ignoring the vX.Y.1.1-new marker.
-                last_tag = Shell.get_output(
-                    "git describe --tags --abbrev=0 "
-                    f"--match 'v*-stable' --match 'v*-lts' {shlex.quote(commit_ref)}"
+                # A -stable/-lts tag for this exact X.Y.P line means it was already published (the post-release bump did not advance it) — refuse.
+                released = Shell.get_output(
+                    f"git tag --list 'v{version.major}.{version.minor}.{version.patch}.*-stable' "
+                    f"'v{version.major}.{version.minor}.{version.patch}.*-lts'"
                 )
-                m = re.match(r"v(\d+)\.(\d+)\.(\d+)\.", last_tag)
-                if m:
-                    assert (version.major, version.minor, version.patch) > tuple(
-                        int(x) for x in m.groups()
-                    ), (
-                        f"inconsistent branch state: {FILE_WITH_VERSION_PATH} describes "
-                        f"{version.major}.{version.minor}.{version.patch}, which is not "
-                        f"ahead of the last release tag {last_tag}. Fix the branch (apply "
-                        f"the post-release version bump) before creating a new release"
-                    )
+                assert not released, (
+                    f"release line {version.major}.{version.minor}.{version.patch} already "
+                    f"published as [{released.split()[0]}]: the post-release bump is missing, "
+                    f"or the ref targets a superseded/duplicate commit"
+                )
             self.is_tag_pushed = False
         self.release_type = release_type
         return self
