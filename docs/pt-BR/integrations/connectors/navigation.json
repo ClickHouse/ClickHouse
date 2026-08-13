@@ -217,6 +217,7 @@
         "pt-BR/integrations/connectors/sql-clients/dbeaver",
         "pt-BR/integrations/connectors/sql-clients/dbvisualizer",
         "pt-BR/integrations/connectors/sql-clients/jupysql",
+        "pt-BR/integrations/connectors/sql-clients/probedeck",
         "pt-BR/integrations/connectors/sql-clients/qstudio",
         "pt-BR/integrations/connectors/sql-clients/tablum",
         "pt-BR/integrations/connectors/sql-clients/marimo"
