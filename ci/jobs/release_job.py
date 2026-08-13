@@ -18,8 +18,6 @@ import tempfile
 from pathlib import Path
 from typing import List, Tuple
 
-from ci.praktika.gh import GH
-from ci.praktika.git import Git
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.secret import Secret
@@ -435,154 +433,15 @@ def main():
         )
 
     if args.release_type == "patch":
-
-        def create_changelog_pr():
-            if args.dry_run:
-                print("Dry-run: skipping ChangeLog PR creation")
-                return
-            with open(RELEASE_INFO_FILE) as f:
-                release_tag = json.load(f)["release_tag"]
-            pr_branch = f"auto/{release_tag}"
-            # Idempotent: an already-merged PR needs no branch re-push.
-            if GH.get_pr_state_by_branch(pr_branch, "ClickHouse/ClickHouse") == "MERGED":
-                print(f"ChangeLog PR for [{pr_branch}] already merged — skipping")
-                return
-            commit_msg = f"Update version_date.tsv and changelogs after {release_tag}"
-            pr_title = f"Update version_date.tsv and changelog after {release_tag}"
-            pr_body = (
-                f"Update version_date.tsv and changelogs after {release_tag}\n"
-                "### Changelog category (leave one):\n"
-                "- Not for changelog (changelog entry is not required)"
-            )
-
-            Shell.check(
-                "git config user.email robot-clickhouse@users.noreply.github.com",
-                strict=True,
-            )
-            Shell.check("git config user.name robot-clickhouse", strict=True)
-            # The PR must contain ONLY the generated release artifacts, on a clean
-            # master base - never the unrelated commits HEAD carries when the
-            # release runs from a feature branch, nor any file `git add -A` would
-            # sweep in. Capture whatever the generation steps above changed, but
-            # scope the scan to exactly their output paths so a stray file left
-            # elsewhere on a reused runner cannot leak in; then hard-reset onto
-            # origin/master (-f, so the switch can't abort on "local changes would
-            # be overwritten"), restore those paths, and stage only them. -B so a
-            # rerun re-creates the branch instead of failing on "already exists".
-            # Collect the paths as clean, one-per-line names (NOT via
-            # `git status --porcelain` slicing: Shell.get_output strips the
-            # output, which eats the leading space of a worktree-modified line and
-            # would drop a char off the first path). Tracked changes vs HEAD +
-            # any untracked new files, scoped to the artifact paths.
-            # The exact files the generation steps touch. update-docker-version.sh
-            # bumps `ARG VERSION` in these Dockerfiles (keeper's Dockerfile.alpine
-            # / Dockerfile.ubuntu are symlinks to keeper/Dockerfile, so the edit
-            # lands on keeper/Dockerfile itself). Listed explicitly rather than
-            # globbed so nothing unexpected is ever swept in.
-            pathspec = " ".join(
-                [
-                    "utils/list-versions/version_date.tsv",
-                    "docs/changelogs/" + shlex.quote(release_tag) + ".md",
-                    "SECURITY.md",
-                    "docker/keeper/Dockerfile",
-                    "docker/keeper/Dockerfile.distroless",
-                    "docker/server/Dockerfile.alpine",
-                    "docker/server/Dockerfile.distroless",
-                    "docker/server/Dockerfile.ubuntu",
-                ]
-            )
-            changed = Shell.get_output(
-                f"git diff --name-only HEAD -- {pathspec}", strict=True
-            )
-            untracked = Shell.get_output(
-                f"git ls-files --others --exclude-standard -- {pathspec}", strict=True
-            )
-            artifact_files = sorted(
-                {f for f in changed.splitlines() + untracked.splitlines() if f.strip()}
-            )
-            backup_dir = tempfile.mkdtemp(prefix="changelog-artifacts-")
-            for f in artifact_files:
-                dst = os.path.join(backup_dir, f)
-                os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
-                shutil.copy2(f, dst)
-            Shell.check(f"git checkout -f -B {pr_branch} origin/master", strict=True)
-            for f in artifact_files:
-                os.makedirs(os.path.dirname(f) or ".", exist_ok=True)
-                shutil.copy2(os.path.join(backup_dir, f), f)
-            shutil.rmtree(backup_dir, ignore_errors=True)
-            if artifact_files:
-                Shell.check(
-                    "git add -- "
-                    + " ".join(shlex.quote(f) for f in artifact_files),
-                    strict=True,
-                )
-            # If the changelog PR was already merged on a previous run, master
-            # (and this branch, freshly checked out from it) already contain the
-            # generated files, so there is nothing to commit — `git commit`
-            # would fail with "nothing to commit". Only commit and push when
-            # there are staged changes; the already-merged PR is then picked up
-            # by the existing-PR lookup below, which skips `gh pr create`.
-            if Shell.check("git diff --cached --quiet"):
-                print(
-                    "No changelog/version changes to commit — already up to date,"
-                    " skipping commit/push"
-                )
-            else:
-                Shell.check(
-                    f"git commit -m {shlex.quote(commit_msg)}",
-                    strict=True,
-                )
-                # Retry the spurious "Unable to determine if workflow can be
-                # created or updated due to timeout; `workflows` scope may be
-                # required" rejection that GitHub's push-time workflow-file check
-                # throws on a repo this size (the same transient push_release_tag
-                # retries past). GH_TOKEN is the robot PAT, which carries the
-                # workflow scope, so the scope itself is not the problem.
-                Git.push(
-                    "ClickHouse/ClickHouse",
-                    f"{pr_branch}:{pr_branch}",
-                    force=True,
-                    strict=True,
-                    retries=3,
-                )
-
-            with tempfile.NamedTemporaryFile(
-                mode="w", delete=False, suffix=".txt", encoding="utf-8"
-            ) as body_file:
-                body_file.write(pr_body)
-                body_file_path = body_file.name
-
-            try:
-                # On a rerun after a partial failure the PR may already exist for
-                # this branch (the branch is force-pushed above); `gh pr create`
-                # would then fail with "already exists". Only treat an OPEN or
-                # MERGED PR as reusable — a PR closed without merge must be
-                # recreated, otherwise the downstream merge_prs step (which looks up
-                # open/merged PRs) would find nothing and fail after publication.
-                existing_pr = GH.get_pr_url_by_branch(
-                    branch=pr_branch, repo="ClickHouse/ClickHouse"
-                )
-                if existing_pr:
-                    print(f"ChangeLog PR already exists [{existing_pr}] — skipping create")
-                else:
-                    cmd = (
-                        f"gh pr create --base master --head {shlex.quote(pr_branch)}"
-                        f" --title {shlex.quote(pr_title)}"
-                        f" --body-file {body_file_path}"
-                        f" --label 'do not test'"
-                        + (
-                            f" --assignee {shlex.quote(args.assignee)}"
-                            if args.assignee
-                            else ""
-                        )
-                    )
-                    assert GH.do_command_with_retries(cmd), "Failed to create PR"
-            finally:
-                os.unlink(body_file_path)
-
+        assignee_flag = (
+            f" --assignee {shlex.quote(args.assignee)}" if args.assignee else ""
+        )
         step(
             name="Create ChangeLog PR",
-            command=create_changelog_pr,
+            command=[
+                f"python3 ./ci/jobs/scripts/create_release.py --create-changelog-pr"
+                f"{assignee_flag} {dry_run_flag}".strip()
+            ],
             workdir=REPO_PATH,
         )
 
