@@ -26,7 +26,7 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
 
     auto description = ColumnsDescription
     {
-        {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Whether this query comes directly from user or was issues by ClickHouse server in a scope of distributed query execution."},
+        {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Whether the query is initial. Possible values: 1 — an initial (top-level) query, 0 — a child query initiated by another query, including queries for distributed execution and internal subqueries."},
 
         {"user", std::make_shared<DataTypeString>(), "The user who made the query. Keep in mind that for distributed processing, queries are sent to remote servers under the default user. The field contains the username for a specific query, not for a query that this query initiated."},
         {"query_id", std::make_shared<DataTypeString>(), "Query ID, if defined."},
