@@ -49,19 +49,19 @@ std::string_view stringView(const rapidjson::Value & value)
   * wire insert path infers an `Array(JSON)` column for, and both surfaces write the same
   * collection.
   */
-ASTPtr parseInsertedValue(const rapidjson::Value & value)
+ASTPtr parseInsertedValue(const rapidjson::Value & value, std::string_view field_name)
 {
     if (value.IsArray())
     {
         auto array = makeASTFunction("array");
         for (const auto & element : value.GetArray())
-            array->arguments->children.push_back(parseInsertedValue(element));
+            array->arguments->children.push_back(parseInsertedValue(element, field_name));
         return array;
     }
     if (auto constant = tryParseMongoConstant(value))
         return constant;
     if (value.IsObject())
-        return makeMongoJSONValue(value);
+        return makeMongoJSONValue(value, field_name);
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot translate a value of the inserted document into a constant");
 }
 
@@ -91,7 +91,10 @@ void flattenDocument(const std::string & prefix, const rapidjson::Value & docume
         if (it->value.IsObject() && !tryParseMongoConstant(it->value))
             flattenDocument(path, it->value, fields);
         else
-            fields.push_back({std::move(path), parseInsertedValue(it->value)});
+        {
+            auto value = parseInsertedValue(it->value, path);
+            fields.push_back({std::move(path), std::move(value)});
+        }
     }
 }
 

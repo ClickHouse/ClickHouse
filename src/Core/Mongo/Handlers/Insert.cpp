@@ -4,10 +4,12 @@
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
+#include <Parsers/Mongo/MongoConstants.h>
 #include <Parsers/Mongo/Utils.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+
 #include <fmt/format.h>
 #include <Common/DateLUT.h>
 #include <Common/Exception.h>
@@ -24,7 +26,6 @@
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
-extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::MongoProtocol
@@ -50,132 +51,14 @@ std::optional<String> getSimpleTypeField(const rapidjson::Value & document)
     return std::nullopt;
 }
 
-/// Tells whether an object is an Extended JSON scalar wrapper, such as `{"$date": ...}` or
-/// `{"$oid": "..."}`: the serialization of a BSON-only type, which is a value rather than a
-/// subdocument. Mongo forbids `$` at the start of a stored field name, so no real subdocument
-/// looks like this.
-bool isExtendedJSONWrapper(const rapidjson::Value & value)
-{
-    if (!value.IsObject() || value.ObjectEmpty())
-        return false;
-    std::string_view name = value.MemberBegin()->name.GetString();
-    return !name.empty() && name.front() == '$';
-}
-
-/// Converts an Extended JSON scalar wrapper into a column type and the value to insert into it.
-/// A wrapper of a BSON type that has no ClickHouse counterpart is rejected rather than descended
-/// into, which would turn the field into bogus `<field>.$<wrapper>` columns.
-std::pair<String, rapidjson::Value>
-convertExtendedJSONWrapper(const rapidjson::Value & wrapper, const String & field_name, rapidjson::Document::AllocatorType & allocator)
-{
-    const auto & member = *wrapper.MemberBegin();
-    std::string_view name = member.name.GetString();
-
-    if (name == "$oid" && member.value.IsString())
-    {
-        rapidjson::Value value;
-        value.CopyFrom(member.value, allocator);
-        return {"String", std::move(value)};
-    }
-
-    if (name == "$numberDecimal" && member.value.IsString())
-    {
-        /// The scale is derived from the value, the same way the filters do it for
-        /// `$numberDecimal`: a fixed scale would silently round part of the value space of
-        /// Mongo's `Decimal128`, which is a decimal floating point type.
-        std::string_view text(member.value.GetString(), member.value.GetStringLength());
-        auto scale = Mongo::decimalScaleOfNumberDecimal(text);
-        if (!scale)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The value '{}' of '$numberDecimal' of the field '{}' cannot be represented exactly by a Decimal128",
-                text,
-                field_name);
-        rapidjson::Value value;
-        value.CopyFrom(member.value, allocator);
-        return {fmt::format("Decimal128({})", *scale), std::move(value)};
-    }
-
-    if (name == "$date")
-    {
-        /// A Mongo date is an instant in UTC: the legacy Extended JSON spells it as the number of
-        /// milliseconds since the epoch and the canonical one wraps that in `$numberLong`. It is
-        /// written as text so that the way the server reads it does not depend on any setting.
-        std::optional<Int64> milliseconds;
-        if (member.value.IsInt64())
-            milliseconds = member.value.GetInt64();
-        else if (member.value.IsObject() && member.value.MemberCount() == 1 && member.value.MemberBegin()->value.IsString())
-        {
-            Int64 parsed = 0;
-            std::string_view text = member.value.MemberBegin()->value.GetString();
-            ReadBufferFromMemory buffer(text.data(), text.size());
-            if (tryReadText(parsed, buffer) && buffer.eof())
-                milliseconds = parsed;
-        }
-        if (milliseconds)
-        {
-            WriteBufferFromOwnString formatted;
-            writeDateTimeText(DateTime64(*milliseconds), 3, formatted, DateLUT::instance("UTC"));
-            rapidjson::Value value;
-            value.SetString(formatted.str().c_str(), static_cast<rapidjson::SizeType>(formatted.str().size()), allocator);
-            return {"DateTime64(3, 'UTC')", std::move(value)};
-        }
-    }
-
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED, "The BSON type '{}' of the field '{}' is not supported by an insert", name, field_name);
-}
-
-/** Flattens a Mongo document into a JSON object whose member names are the ClickHouse column
-  * names: nested documents become dot separated paths, `_id` is dropped, and values of types
-  * that do not map onto a column are skipped.
-  *
-  * Both the inferred schema and the inserted rows are derived from this flattened form, so a
-  * document can never produce a value for a column that is not in the schema.
+/** The Extended JSON wrapper conversion is shared with the dialect (`Parsers/Mongo/MongoConstants.h`),
+  * so that a document written over the wire and the same document written by `insertOne` become
+  * one and the same stored value.
   */
-/// Replaces every Extended JSON wrapper inside a nested value with the value it wraps, so that
-/// a wrapper never reaches the inserted JSON as a document with a `$`-named field. The type the
-/// wrapper named is dropped here: a value this deep lands in a `JSON` or `Dynamic` column, which
-/// keeps the serialized form.
-rapidjson::Value convertWrappersDeep(const rapidjson::Value & value, const String & field_name, rapidjson::Document::AllocatorType & allocator)
-{
-    if (isExtendedJSONWrapper(value))
-        return convertExtendedJSONWrapper(value, field_name, allocator).second;
+using Mongo::convertMongoExtendedJSONWrapper;
+using Mongo::convertMongoExtendedJSONWrappersDeep;
+using Mongo::isMongoExtendedJSONWrapper;
 
-    if (value.IsObject())
-    {
-        rapidjson::Value out(rapidjson::kObjectType);
-        for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it)
-        {
-            rapidjson::Value key;
-            key.CopyFrom(it->name, allocator);
-            rapidjson::Value converted = convertWrappersDeep(it->value, field_name, allocator);
-            out.AddMember(key, converted, allocator);
-        }
-        return out;
-    }
-
-    if (value.IsArray())
-    {
-        rapidjson::Value out(rapidjson::kArrayType);
-        for (const auto & element : value.GetArray())
-        {
-            rapidjson::Value converted = convertWrappersDeep(element, field_name, allocator);
-            out.PushBack(converted, allocator);
-        }
-        return out;
-    }
-
-    rapidjson::Value out;
-    out.CopyFrom(value, allocator);
-    return out;
-}
-
-/** Converts the Extended JSON wrappers among the elements of an array. When every element is a
-  * wrapper of one and the same type, that type is returned so the column becomes an array of it -
-  * an array of `$date` values becomes `Array(DateTime64(3, 'UTC'))`; otherwise the elements keep
-  * their converted serializations and the column type is inferred from them as usual.
-  */
 /// The widest of two decimal types when both are decimal, so that an array of `$numberDecimal`
 /// values of different scales still becomes one decimal column: every value fits a scale that is
 /// the maximum of the individual ones, only padded with zeros. Nothing when either type is not a
@@ -193,6 +76,11 @@ std::optional<String> mergeDecimalTypes(const String & left, const String & righ
     return fmt::format("Decimal128({})", std::max(left_scale, right_scale));
 }
 
+/** Converts the Extended JSON wrappers among the elements of an array. When every element is a
+  * wrapper of one and the same type, that type is returned so the column becomes an array of it -
+  * an array of `$date` values becomes `Array(DateTime64(3, 'UTC'))`; otherwise the elements keep
+  * their converted serializations and the column type is inferred from them as usual.
+  */
 std::optional<String> convertWrappersInArray(
     const rapidjson::Value & array, const String & field_name, rapidjson::Value & out, rapidjson::Document::AllocatorType & allocator)
 {
@@ -201,9 +89,9 @@ std::optional<String> convertWrappersInArray(
 
     for (const auto & element : array.GetArray())
     {
-        if (isExtendedJSONWrapper(element))
+        if (isMongoExtendedJSONWrapper(element))
         {
-            auto [type, value] = convertExtendedJSONWrapper(element, field_name, allocator);
+            auto [type, value] = convertMongoExtendedJSONWrapper(element, field_name, allocator);
             if (!common_type)
                 common_type = std::move(type);
             else if (*common_type != type)
@@ -218,7 +106,7 @@ std::optional<String> convertWrappersInArray(
         else
         {
             all_wrappers = false;
-            rapidjson::Value converted = convertWrappersDeep(element, field_name, allocator);
+            rapidjson::Value converted = convertMongoExtendedJSONWrappersDeep(element, field_name, allocator);
             out.PushBack(converted, allocator);
         }
     }
@@ -228,6 +116,13 @@ std::optional<String> convertWrappersInArray(
     return std::nullopt;
 }
 
+/** Flattens a Mongo document into a JSON object whose member names are the ClickHouse column
+  * names: nested documents become dot separated paths, `_id` is dropped, and values of types
+  * that do not map onto a column are skipped.
+  *
+  * Both the inferred schema and the inserted rows are derived from this flattened form, so a
+  * document can never produce a value for a column that is not in the schema.
+  */
 void flattenDocument(
     const rapidjson::Value & document,
     const String & prefix,
@@ -247,9 +142,9 @@ void flattenDocument(
 
         String full_name = prefix.empty() ? name : prefix + "." + name;
 
-        if (isExtendedJSONWrapper(it->value))
+        if (isMongoExtendedJSONWrapper(it->value))
         {
-            auto [type, value] = convertExtendedJSONWrapper(it->value, full_name, allocator);
+            auto [type, value] = convertMongoExtendedJSONWrapper(it->value, full_name, allocator);
             wrapper_types[full_name] = std::move(type);
             rapidjson::Value key(full_name.c_str(), static_cast<rapidjson::SizeType>(full_name.size()), allocator);
             out.AddMember(key, value, allocator);
