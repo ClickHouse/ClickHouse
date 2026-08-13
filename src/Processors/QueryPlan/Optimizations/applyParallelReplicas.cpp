@@ -302,14 +302,10 @@ public:
             return;
         }
 
+        /// Ship the sort with the fragment and merge the already sorted streams on the initiator
         const auto * sorting_step = typeid_cast<const SortingStep *>(parent_step);
         if (sorting_step && sortingCanBeShipped(*sorting_step) && subtreeIsShippable(parent_node))
         {
-            /// Ship the sort with the fragment and merge the already sorted streams on the initiator. Without
-            /// this the sort stays above the union, so neither the local fragment nor the shipped one contains
-            /// a `Sorting` above the read, `requestReadingInOrder` is never called and both sides fall back to
-            /// `CoordinationMode::Default`. With the sort inside the fragment each side re-derives read-in-order
-            /// from the same sort description, so they agree on `WithOrder`/`ReverseOrder`.
             const auto sort_description = sorting_step->getSortDescription();
             const UInt64 limit = sorting_step->getLimit();
             /// `exact_rows_before_limit` needs the exact count, so the bound must not be applied per replica.
