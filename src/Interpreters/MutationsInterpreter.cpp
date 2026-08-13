@@ -714,6 +714,9 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// just like for a classical ALTER UPDATE (see the READ_COLUMN branch below,
     /// which only rebuilds when the column type changes and so misses patches).
     NameSet patch_updated_columns;
+    /// Columns whose data is rewritten with another type by this mutation (ALTER MODIFY COLUMN).
+    /// If the conversion changes values, MATERIALIZED columns computed from them become stale.
+    NameSet type_changed_columns;
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
     bool has_lightweight_delete_materialization = false;
     bool has_rewrite_parts = false;
@@ -733,6 +736,16 @@ void MutationsInterpreter::prepare(bool dry_run)
         if (command.type == MutationCommand::READ_COLUMN && command.read_for_patch
             && command.column_name != RowExistsColumn::name)
             patch_updated_columns.insert(command.column_name);
+
+        if (command.type == MutationCommand::READ_COLUMN && command.data_type)
+        {
+            if (const auto & part = source.getMergeTreeDataPart())
+            {
+                auto part_column = part->tryGetColumn(command.column_name);
+                if (part_column && !part_column->type->equals(*command.data_type))
+                    type_changed_columns.insert(command.column_name);
+            }
+        }
 
         auto alter = command.ast();
         if (alter && alter->update_assignments)
@@ -754,7 +767,10 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// We need to know which columns affect which MATERIALIZED columns, data skipping indices
     /// and projections to recalculate them if dependencies are updated.
     std::unordered_map<String, Names> column_to_affected_materialized;
-    if (!updated_columns.empty())
+    /// The same the other way round and without the filter above, to walk chains of MATERIALIZED columns.
+    std::unordered_map<String, Names> column_to_dependent_materialized;
+    std::unordered_map<String, Names> materialized_column_required_columns;
+    if (!updated_columns.empty() || !type_changed_columns.empty())
     {
         /// Collect ephemeral columns and include them in the analysis set so
         /// TreeRewriter can resolve MATERIALIZED expressions that reference them.
@@ -783,10 +799,11 @@ void MutationsInterpreter::prepare(bool dry_run)
                 if (std::ranges::any_of(required_columns,
                     [&](const auto & dep) { return ephemeral_columns.contains(dep); }))
                 {
-                    /// Warn if the mutation also updates a non-ephemeral dependency
+                    /// Warn if the mutation also rewrites a non-ephemeral dependency
                     /// of this MATERIALIZED column — the on-disk value will become stale.
                     if (std::ranges::any_of(required_columns, [&](const auto & dep)
-                        { return !ephemeral_columns.contains(dep) && updated_columns.contains(dep); }))
+                        { return !ephemeral_columns.contains(dep)
+                            && (updated_columns.contains(dep) || type_changed_columns.contains(dep)); }))
                         LOG_WARNING(logger,
                             "MATERIALIZED column '{}' depends on both EPHEMERAL and regular "
                             "columns that are being updated. Its value will NOT be recalculated "
@@ -796,13 +813,51 @@ void MutationsInterpreter::prepare(bool dry_run)
                     continue;
                 }
 
+                materialized_column_required_columns[column.name] = required_columns;
+
                 for (const auto & dependency : required_columns)
-                    if (updated_columns.contains(dependency))
+                {
+                    column_to_dependent_materialized[dependency].push_back(column.name);
+
+                    if (updated_columns.contains(dependency) || type_changed_columns.contains(dependency))
                         column_to_affected_materialized[dependency].push_back(column.name);
+                }
             }
         }
 
-        validateUpdateColumns(source, metadata_snapshot, updated_columns, column_to_affected_materialized, context);
+        if (!updated_columns.empty())
+            validateUpdateColumns(source, metadata_snapshot, updated_columns, column_to_affected_materialized, context);
+    }
+
+    /// MATERIALIZED columns to recompute because the type of a column they read changed: their stored
+    /// values were computed from data this mutation rewrites, so they no longer match the expression
+    /// (ALTER UPDATE of the same column already recalculates them).
+    /// Key columns are skipped: recomputing them in place would break the sort order or the partition id
+    /// of the part, so a conversion that can change their values is rejected in checkAlterIsPossible.
+    NameSet recalculated_materialized_columns;
+    if (!type_changed_columns.empty())
+    {
+        auto key_columns = getKeyColumns(source, metadata_snapshot);
+        std::vector<String> to_visit(type_changed_columns.begin(), type_changed_columns.end());
+        while (!to_visit.empty())
+        {
+            auto current = std::move(to_visit.back());
+            to_visit.pop_back();
+
+            auto it = column_to_dependent_materialized.find(current);
+            if (it == column_to_dependent_materialized.end())
+                continue;
+
+            for (const auto & materialized_column : it->second)
+            {
+                if (key_columns.contains(materialized_column))
+                    continue;
+
+                /// A recalculated MATERIALIZED column may itself be read by another one.
+                if (recalculated_materialized_columns.insert(materialized_column).second)
+                    to_visit.push_back(materialized_column);
+            }
+        }
     }
 
     StorageInMemoryMetadata::HasDependencyCallback has_dependency =
@@ -825,6 +880,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         /// above because they are not user-issued UPDATEs.
         NameSet columns_for_dependencies = updated_columns;
         columns_for_dependencies.insert(patch_updated_columns.begin(), patch_updated_columns.end());
+        /// Recomputed MATERIALIZED columns change data as well, so what depends on them must be rebuilt too.
+        columns_for_dependencies.insert(recalculated_materialized_columns.begin(), recalculated_materialized_columns.end());
         dependencies = getAllColumnDependencies(metadata_snapshot, columns_for_dependencies, has_dependency);
     }
 
@@ -1460,6 +1517,67 @@ void MutationsInterpreter::prepare(bool dry_run)
             stages.back().column_to_updated.emplace(column_name, make_intrusive<ASTIdentifier>(column_name));
     }
 
+    /// Stages after the one that reads the columns at their new type, so the expressions are evaluated on
+    /// the converted values. A MATERIALIZED column reading another recalculated one goes into a later stage
+    /// to see its new value instead of the one stored in the source part.
+    if (!recalculated_materialized_columns.empty())
+    {
+        std::unordered_map<String, size_t> stage_of_column;
+        for (const auto & column_name : recalculated_materialized_columns)
+            stage_of_column.emplace(column_name, 0);
+
+        /// Push every column past the columns it reads. A chain cannot be longer than the number of columns.
+        for (size_t iteration = 0; iteration < recalculated_materialized_columns.size(); ++iteration)
+        {
+            bool moved = false;
+            for (const auto & column_name : recalculated_materialized_columns)
+            {
+                for (const auto & required : materialized_column_required_columns[column_name])
+                {
+                    auto it = stage_of_column.find(required);
+                    if (it != stage_of_column.end() && it->second >= stage_of_column[column_name])
+                    {
+                        stage_of_column[column_name] = it->second + 1;
+                        moved = true;
+                    }
+                }
+            }
+
+            if (!moved)
+                break;
+        }
+
+        size_t last_stage = 0;
+        for (const auto & [_, stage_index] : stage_of_column)
+            last_stage = std::max(last_stage, stage_index);
+
+        std::vector<Names> columns_by_stage(last_stage + 1);
+        for (const auto & column : columns_desc)
+        {
+            if (auto it = stage_of_column.find(column.name); it != stage_of_column.end())
+                columns_by_stage[it->second].push_back(column.name);
+        }
+
+        for (const auto & column_names : columns_by_stage)
+        {
+            if (column_names.empty())
+                continue;
+
+            stages.emplace_back(context);
+            for (const auto & column_name : column_names)
+            {
+                const auto & column = columns_desc.get(column_name);
+                ASTPtr materialized_column = makeASTFunction(
+                    "_CAST", column.default_desc.expression->clone(), make_intrusive<ASTLiteral>(column.type->getName()));
+
+                /// Subcolumns must be taken from the whole converted column instead of being extracted
+                /// from the source part, otherwise the old values are read.
+                replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized_column, all_columns);
+                stages.back().column_to_updated.emplace(column_name, materialized_column);
+            }
+        }
+    }
+
     /// We care about affected indices and projections because we also need to rewrite them
     /// when one of index columns updated or filtered with delete.
     /// The same about columns, that are needed for calculation of TTL expressions.
@@ -1585,7 +1703,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             [&](const auto & col)
             {
                 return updated_columns.contains(col) || changed_columns.contains(col)
-                    || patch_updated_columns.contains(col);
+                    || patch_updated_columns.contains(col) || recalculated_materialized_columns.contains(col);
             });
 
         if (changed)
@@ -1631,7 +1749,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             [&](const auto & col)
             {
                 return updated_columns.contains(col) || changed_columns.contains(col)
-                    || patch_updated_columns.contains(col);
+                    || patch_updated_columns.contains(col) || recalculated_materialized_columns.contains(col);
             });
 
         if (changed)

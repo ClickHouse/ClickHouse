@@ -5319,6 +5319,25 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             columns_in_projections.emplace(col, projection.name);
     }
 
+    /// A MATERIALIZED column that is part of a key is computed from other columns, so changing the type
+    /// of one of them changes its values. A mutation cannot apply that to an existing part: the sort
+    /// order and the partition id are fixed when the part is written, which is also why MATERIALIZE
+    /// COLUMN refuses key columns. Such an ALTER is allowed only when the conversion preserves values.
+    std::unordered_map<String, String> columns_used_in_key_materialized_columns;
+    for (const auto & column : old_metadata.getColumns())
+    {
+        if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression
+            || !columns_in_keys.contains(column.name))
+            continue;
+
+        /// getAll() instead of the physical columns: the expression may read an ALIAS or EPHEMERAL column.
+        auto required_columns = getRequiredColumnsWithSubcolumnsReplaced(
+            column.default_desc.expression, old_metadata.getColumns().getAll(), local_context);
+
+        for (const String & col : required_columns)
+            columns_used_in_key_materialized_columns.emplace(col, column.name);
+    }
+
     NameSet dropped_columns;
 
     std::map<String, const IDataType *> old_types;
@@ -5587,6 +5606,19 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                                         "to type {} is not safe because it can change the representation "
                                         "of primary key", backQuoteIfNeed(command.column_name),
                                         it->second->getName(), command.data_type->getName());
+                }
+
+                if (auto materialized_it = columns_used_in_key_materialized_columns.find(command.column_name);
+                    materialized_it != columns_used_in_key_materialized_columns.end() && command.data_type)
+                {
+                    auto it = old_types.find(command.column_name);
+                    if (it != old_types.end() && !isSafeForKeyConversion(it->second, command.data_type.get()))
+                        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                        "ALTER of column {} from type {} to type {} is not safe because it changes the "
+                                        "values of the MATERIALIZED column {}, which is part of a key expression and "
+                                        "cannot be recalculated", backQuoteIfNeed(command.column_name),
+                                        it->second->getName(), command.data_type->getName(),
+                                        backQuoteIfNeed(materialized_it->second));
                 }
 
                 if (old_metadata.getColumns().has(command.column_name))
