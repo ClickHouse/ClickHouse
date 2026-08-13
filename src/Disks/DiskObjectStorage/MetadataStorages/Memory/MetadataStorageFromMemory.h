@@ -27,12 +27,6 @@ class MetadataStorageFromMemory final : public IMetadataStorage
 
     void assertExists(const std::string & path) const;
 
-    /// Queue the blobs of a removed/overwritten record for disposal; `ref_count > 0` releases nothing.
-    void releaseRecordUnlocked(const DiskObjectStorageMetadata & record);
-
-    /// Insert a file `record` at `path`, disposing of the blob of a file it overwrites.
-    void putRecordUnlocked(const std::string & path, DiskObjectStorageMetadata record);
-
     /// The unique record whose objects contain `remote_path`; throws if none.
     DiskObjectStorageMetadata & findRecordOfBlobUnlocked(const std::string & remote_path);
 
@@ -94,14 +88,8 @@ public:
 
     ObjectStorageKeyGeneratorPtr getKeyGenerator() const override { return key_generator; }
 
-    /// Blobs of removed or overwritten sole-owner records; the caller deletes them physically.
-    /// Clears the accumulator.
-    std::vector<String> takePendingOwnRemovals();
-
-    /// Records accumulated by `recordBlobsReplication`, keyed by blob. Clears the accumulator.
-    std::unordered_map<String, Locations> takeReplicationRecords();
-
-    /// True if any shared-blob mark or non-empty accumulator is present.
+    /// True if any shared-blob (`ref_count > 0`) mark is present. Marks are consumed by the
+    /// storage's owner, so a freshly created or loaded storage must have none.
     bool hasTransientBuildState() const;
 
 private:
@@ -111,9 +99,6 @@ private:
     ObjectStorageKeyGeneratorPtr key_generator;
 
     InMemoryDirectoryTree tree;
-
-    std::vector<String> pending_own_removals;
-    std::unordered_map<String, Locations> replication_records;
 
     mutable SharedMutex metadata_mutex;
 };
@@ -158,8 +143,24 @@ public:
     void incrementBlobRefCount(const std::string & blob) override;
     void decrementBlobRefCount(const std::string & blob) override;
 
+    /// Blobs of removed or overwritten sole-owner records; the caller deletes them physically.
+    /// Clears the accumulator.
+    std::vector<String> takePendingOwnRemovals();
+
+    /// Records accumulated by `recordBlobsReplication`, keyed by blob. Clears the accumulator.
+    std::unordered_map<String, Locations> takeReplicationRecords();
+
 private:
+    /// Queue the blobs of a removed/overwritten record for disposal; `ref_count > 0` releases nothing.
+    void releaseRecordUnlocked(const DiskObjectStorageMetadata & metadata);
+
+    /// Insert a file `metadata` at `path`, disposing of the blob of a file it overwrites.
+    void putRecordUnlocked(const std::string & path, DiskObjectStorageMetadata metadata);
+
     MetadataStorageFromMemory & storage;
+
+    std::vector<String> pending_own_removals;
+    std::unordered_map<String, Locations> replication_records;
 };
 
 }

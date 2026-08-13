@@ -156,24 +156,6 @@ struct stat MetadataStorageFromMemory::stat(const String &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "stat() method is not implemented for MetadataStorageFromMemory");
 }
 
-void MetadataStorageFromMemory::releaseRecordUnlocked(const DiskObjectStorageMetadata & record)
-{
-    /// A positive count means the blob is referenced elsewhere and must not be deleted.
-    if (record.ref_count > 0)
-        return;
-
-    for (const auto & object : record.objects)
-        pending_own_removals.push_back(object.remote_path);
-}
-
-void MetadataStorageFromMemory::putRecordUnlocked(const std::string & path, DiskObjectStorageMetadata record)
-{
-    chassert(record.objects.empty() || record.inline_data.empty());
-
-    if (auto displaced = tree.putFile(normalizePath(path), std::move(record)))
-        releaseRecordUnlocked(*displaced);
-}
-
 DiskObjectStorageMetadata & MetadataStorageFromMemory::findRecordOfBlobUnlocked(const std::string & remote_path)
 {
     DiskObjectStorageMetadata * found = nullptr;
@@ -195,24 +177,9 @@ DiskObjectStorageMetadata & MetadataStorageFromMemory::findRecordOfBlobUnlocked(
     return *found;
 }
 
-std::vector<String> MetadataStorageFromMemory::takePendingOwnRemovals()
-{
-    std::unique_lock lock(metadata_mutex);
-    return std::exchange(pending_own_removals, {});
-}
-
-std::unordered_map<String, Locations> MetadataStorageFromMemory::takeReplicationRecords()
-{
-    std::unique_lock lock(metadata_mutex);
-    return std::exchange(replication_records, {});
-}
-
 bool MetadataStorageFromMemory::hasTransientBuildState() const
 {
     std::shared_lock lock(metadata_mutex);
-
-    if (!pending_own_removals.empty() || !replication_records.empty())
-        return true;
 
     bool found = false;
     tree.forEachMetadataUnder({}, [&](const std::string &, DiskObjectStorageMetadata & record)
@@ -223,6 +190,34 @@ bool MetadataStorageFromMemory::hasTransientBuildState() const
 }
 
 /// MetadataStorageFromMemoryTransaction
+
+void MetadataStorageFromMemoryTransaction::releaseRecordUnlocked(const DiskObjectStorageMetadata & metadata)
+{
+    /// A positive count means the blob is referenced elsewhere and must not be deleted.
+    if (metadata.ref_count > 0)
+        return;
+
+    for (const auto & object : metadata.objects)
+        pending_own_removals.push_back(object.remote_path);
+}
+
+void MetadataStorageFromMemoryTransaction::putRecordUnlocked(const std::string & path, DiskObjectStorageMetadata metadata)
+{
+    chassert(metadata.objects.empty() || metadata.inline_data.empty());
+
+    if (auto displaced = storage.tree.putFile(normalizePath(path), std::move(metadata)))
+        releaseRecordUnlocked(*displaced);
+}
+
+std::vector<String> MetadataStorageFromMemoryTransaction::takePendingOwnRemovals()
+{
+    return std::exchange(pending_own_removals, {});
+}
+
+std::unordered_map<String, Locations> MetadataStorageFromMemoryTransaction::takeReplicationRecords()
+{
+    return std::exchange(replication_records, {});
+}
 
 void MetadataStorageFromMemoryTransaction::commit(const TransactionCommitOptionsVariant & options)
 {
@@ -245,7 +240,7 @@ void MetadataStorageFromMemoryTransaction::createMetadataFile(const std::string 
     DiskObjectStorageMetadata record(storage.compatible_key_prefix, path);
     record.objects = objects;
 
-    storage.putRecordUnlocked(path, std::move(record));
+    putRecordUnlocked(path, std::move(record));
 }
 
 void MetadataStorageFromMemoryTransaction::writeInlineDataToFile(const std::string & path, const std::string & data)
@@ -255,7 +250,7 @@ void MetadataStorageFromMemoryTransaction::writeInlineDataToFile(const std::stri
     DiskObjectStorageMetadata record(storage.compatible_key_prefix, path);
     record.inline_data = data;
 
-    storage.putRecordUnlocked(path, std::move(record));
+    putRecordUnlocked(path, std::move(record));
 }
 
 void MetadataStorageFromMemoryTransaction::unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects)
@@ -271,7 +266,7 @@ void MetadataStorageFromMemoryTransaction::unlinkFile(const std::string & path, 
 
     auto record = storage.tree.removeFile(normalizePath(path));
     if (should_remove_objects)
-        storage.releaseRecordUnlocked(record);
+        releaseRecordUnlocked(record);
 }
 
 void MetadataStorageFromMemoryTransaction::createDirectory(const std::string & path)
@@ -301,7 +296,7 @@ void MetadataStorageFromMemoryTransaction::removeRecursive(const std::string & p
     storage.tree.removeSubtree(normalizePath(path), [&](const std::string & relative_path, DiskObjectStorageMetadata & record)
     {
         if (!should_remove_objects || should_remove_objects(relative_path))
-            storage.releaseRecordUnlocked(record);
+            releaseRecordUnlocked(record);
     });
 }
 
@@ -321,7 +316,7 @@ void MetadataStorageFromMemoryTransaction::replaceFile(const std::string & path_
     /// Overwrite semantics: the displaced destination record's sole-owner blobs are queued
     /// for disposal.
     if (auto displaced = storage.tree.moveFile(normalizePath(path_from), normalizePath(path_to), /*replace=*/true))
-        storage.releaseRecordUnlocked(*displaced);
+        releaseRecordUnlocked(*displaced);
     for (auto & object : storage.tree.getMetadata(normalizePath(path_to))->objects)
         object.local_path = path_to;
 }
@@ -359,9 +354,8 @@ void MetadataStorageFromMemoryTransaction::recordBlobsReplication(const StoredOb
     if (missing_locations.empty())
         return;
 
-    std::unique_lock lock(storage.metadata_mutex);
     /// A blob is written and recorded once; a repeated record carries the same set.
-    storage.replication_records[blob.remote_path] = missing_locations;
+    replication_records[blob.remote_path] = missing_locations;
 }
 
 StoredObjects MetadataStorageFromMemoryTransaction::getSubmittedForRemovalBlobs()

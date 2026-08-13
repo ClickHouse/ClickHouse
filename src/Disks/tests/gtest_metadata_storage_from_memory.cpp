@@ -36,6 +36,35 @@ StoredObjects singleObject(const String & remote_path, const String & local_path
     return {StoredObject(remote_path, local_path, bytes_size)};
 }
 
+std::shared_ptr<MetadataStorageFromMemoryTransaction> typed(const MetadataTransactionPtr & tx)
+{
+    auto result = std::dynamic_pointer_cast<MetadataStorageFromMemoryTransaction>(tx);
+    EXPECT_TRUE(result);
+    return result;
+}
+
+std::shared_ptr<MetadataStorageFromMemoryTransaction> memoryTransactionOf(const DiskTransactionPtr & tx)
+{
+    auto * object_tx = dynamic_cast<DiskObjectStorageTransaction *>(tx.get());
+    EXPECT_TRUE(object_tx);
+    return typed(object_tx->getMetadataTransaction());
+}
+
+std::vector<String> takePendingOwnRemovals(const MetadataTransactionPtr & tx)
+{
+    return typed(tx)->takePendingOwnRemovals();
+}
+
+std::vector<String> takePendingOwnRemovals(const DiskTransactionPtr & tx)
+{
+    return memoryTransactionOf(tx)->takePendingOwnRemovals();
+}
+
+std::unordered_map<String, Locations> takeReplicationRecords(const MetadataTransactionPtr & tx)
+{
+    return typed(tx)->takeReplicationRecords();
+}
+
 }
 
 TEST(MetadataStorageFromMemory, OverwriteReleasesCreatedBlob)
@@ -50,9 +79,9 @@ TEST(MetadataStorageFromMemory, OverwriteReleasesCreatedBlob)
     EXPECT_EQ(storage->getFileSize("a.bin"), 20u);
     EXPECT_EQ(storage->getStorageObjects("a.bin").at(0).remote_path, "blobs/second");
 
-    EXPECT_EQ(storage->takePendingOwnRemovals(), std::vector<String>{"blobs/first"});
+    EXPECT_EQ(takePendingOwnRemovals(tx), std::vector<String>{"blobs/first"});
     /// The accumulator is take-out.
-    EXPECT_TRUE(storage->takePendingOwnRemovals().empty());
+    EXPECT_TRUE(takePendingOwnRemovals(tx).empty());
 }
 
 TEST(MetadataStorageFromMemory, OverwriteDropsSharedBlob)
@@ -65,7 +94,7 @@ TEST(MetadataStorageFromMemory, OverwriteDropsSharedBlob)
     tx->createMetadataFile("a.bin", singleObject("blobs/fresh", "a.bin", 20));
 
     /// The shared blob belongs to another owner: it must not be scheduled for deletion.
-    EXPECT_TRUE(storage->takePendingOwnRemovals().empty());
+    EXPECT_TRUE(takePendingOwnRemovals(tx).empty());
     EXPECT_EQ(storage->getStorageObjects("a.bin").at(0).remote_path, "blobs/fresh");
     /// The rewrite replaced the record, so the share mark is gone with it.
     EXPECT_EQ(storage->getHardlinkCount("a.bin"), 0u);
@@ -80,7 +109,7 @@ TEST(MetadataStorageFromMemory, InlineOverwriteReleasesCreatedBlob)
     tx->createMetadataFile("a.bin", singleObject("blobs/first", "a.bin", 10));
     tx->writeInlineDataToFile("a.bin", "tiny");
 
-    EXPECT_EQ(storage->takePendingOwnRemovals(), std::vector<String>{"blobs/first"});
+    EXPECT_EQ(takePendingOwnRemovals(tx), std::vector<String>{"blobs/first"});
     EXPECT_EQ(storage->readInlineDataToString("a.bin"), "tiny");
     EXPECT_EQ(storage->getFileSize("a.bin"), 4u);
     EXPECT_TRUE(storage->getStorageObjects("a.bin").empty());
@@ -104,7 +133,7 @@ TEST(MetadataStorageFromMemory, UnlinkFileRouting)
     EXPECT_THROW(tx->unlinkFile("no_such_file.bin", /*if_exists=*/false, /*should_remove_objects=*/true), Exception);
 
     /// Only the owned record removed with should_remove_objects=true releases its blob.
-    EXPECT_EQ(storage->takePendingOwnRemovals(), std::vector<String>{"blobs/created_removed"});
+    EXPECT_EQ(takePendingOwnRemovals(tx), std::vector<String>{"blobs/created_removed"});
     EXPECT_FALSE(storage->existsFile("created_removed.bin"));
     EXPECT_FALSE(storage->existsFile("created_kept.bin"));
     EXPECT_FALSE(storage->existsFile("shared.bin"));
@@ -133,7 +162,7 @@ TEST(MetadataStorageFromMemory, MoveDirectoryRekeysSubtree)
     EXPECT_EQ(storage->getStorageObjects("sub/a.bin").at(0).local_path, "sub/a.bin");
 
     /// A rename is not a removal: nothing is scheduled for deletion.
-    EXPECT_TRUE(storage->takePendingOwnRemovals().empty());
+    EXPECT_TRUE(takePendingOwnRemovals(tx).empty());
 
     EXPECT_THROW(tx->moveDirectory("no_such_dir", "somewhere"), Exception);
     tx->createDirectory("other.tmp");
@@ -189,7 +218,7 @@ TEST(MetadataStorageFromMemory, MoveFileSemantics)
     EXPECT_EQ(storage->getStorageObjects("to.bin").at(0).local_path, "to.bin");
 
     /// A move is not a removal.
-    EXPECT_TRUE(storage->takePendingOwnRemovals().empty());
+    EXPECT_TRUE(takePendingOwnRemovals(tx).empty());
 }
 
 TEST(MetadataStorageFromMemory, ReplaceFileOverwritesDestination)
@@ -207,7 +236,7 @@ TEST(MetadataStorageFromMemory, ReplaceFileOverwritesDestination)
     EXPECT_EQ(storage->getStorageObjects("occupied.bin").at(0).remote_path, "blobs/from");
     EXPECT_EQ(storage->getStorageObjects("occupied.bin").at(0).local_path, "occupied.bin");
     /// The overwritten record's blob is queued for disposal.
-    EXPECT_EQ(storage->takePendingOwnRemovals(), std::vector<String>{"blobs/occupied"});
+    EXPECT_EQ(takePendingOwnRemovals(tx), std::vector<String>{"blobs/occupied"});
 
     /// Replacing onto a free name is a plain move.
     tx->replaceFile("occupied.bin", "free.bin");
@@ -234,7 +263,7 @@ TEST(MetadataStorageFromMemory, RemoveRecursiveHonorsPredicate)
     EXPECT_FALSE(storage->existsFile("sub/kept.bin"));
     EXPECT_FALSE(storage->existsFile("sub/removed.bin"));
     EXPECT_TRUE(storage->existsFile("outside.bin"));
-    EXPECT_EQ(storage->takePendingOwnRemovals(), std::vector<String>{"blobs/removed"});
+    EXPECT_EQ(takePendingOwnRemovals(tx), std::vector<String>{"blobs/removed"});
 }
 
 TEST(MetadataStorageFromMemory, ReplicationRecordsAccumulate)
@@ -246,12 +275,12 @@ TEST(MetadataStorageFromMemory, ReplicationRecordsAccumulate)
     tx->recordBlobsReplication(StoredObject("blobs/b", "b.bin", 1), {"eu-west-1"});
     tx->recordBlobsReplication(StoredObject("blobs/c", "c.bin", 1), /*missing_locations=*/{});
 
-    auto records = storage->takeReplicationRecords();
+    auto records = takeReplicationRecords(tx);
     ASSERT_EQ(records.size(), 2u);
     EXPECT_EQ(records.at("blobs/a"), (Locations{"eu-west-1", "us-east-1"}));
     EXPECT_EQ(records.at("blobs/b"), Locations{"eu-west-1"});
 
-    EXPECT_TRUE(storage->takeReplicationRecords().empty());
+    EXPECT_TRUE(takeReplicationRecords(tx).empty());
 }
 
 TEST(MetadataStorageFromMemory, DirectoriesAndSubdirectoryListing)
@@ -374,10 +403,10 @@ TEST(MetadataStorageFromMemory, TransientBuildStateDetection)
     tx->createMetadataFile("owned.bin", singleObject("blobs/owned", "owned.bin", 1));
     EXPECT_FALSE(storage->hasTransientBuildState());
 
+    /// Accumulators are transaction state and do not mark the storage.
     tx->recordBlobsReplication(StoredObject("blobs/owned", "owned.bin", 1), {"eu-west-1"});
-    EXPECT_TRUE(storage->hasTransientBuildState());
-    storage->takeReplicationRecords();
     EXPECT_FALSE(storage->hasTransientBuildState());
+    EXPECT_EQ(takeReplicationRecords(tx).size(), 1u);
 
     tx->createMetadataFile("shared.bin", singleObject("blobs/shared", "shared.bin", 1));
     tx->incrementBlobRefCount("blobs/shared");
@@ -387,9 +416,8 @@ TEST(MetadataStorageFromMemory, TransientBuildStateDetection)
 
     tx->createMetadataFile("dropped.bin", singleObject("blobs/dropped", "dropped.bin", 1));
     tx->unlinkFile("dropped.bin", /*if_exists=*/false, /*should_remove_objects=*/true);
-    EXPECT_TRUE(storage->hasTransientBuildState());
-    storage->takePendingOwnRemovals();
     EXPECT_FALSE(storage->hasTransientBuildState());
+    EXPECT_EQ(takePendingOwnRemovals(tx), std::vector<String>{"blobs/dropped"});
 }
 
 /// A real disk transaction bound to a memory metadata storage: uploads hit the real object
@@ -467,7 +495,7 @@ TEST_F(DiskObjectStorageOverMemoryMetadataTest, WritesApplyEagerly)
     /// An eagerly applied removal releases the created blob for pre-commit disposal.
     tx->removeFile("data.bin");
     EXPECT_FALSE(memory->existsFile("data.bin"));
-    EXPECT_EQ(memory->takePendingOwnRemovals(), std::vector<String>{objects.at(0).remote_path});
+    EXPECT_EQ(takePendingOwnRemovals(tx), std::vector<String>{objects.at(0).remote_path});
 
     /// The blob is still tracked by the transaction and reclaimed by undo.
     tx->undo();
@@ -569,7 +597,7 @@ TEST_F(DiskObjectStorageOverMemoryMetadataTest, PendingOwnRemovalsAwaitCommitOrU
     tx->removeFile("removed.bin");
 
     /// The dropped blob is only recorded; physical deletion is the caller's job.
-    auto pending = memory->takePendingOwnRemovals();
+    auto pending = takePendingOwnRemovals(tx);
     ASSERT_EQ(pending.size(), 1u);
     EXPECT_TRUE(fs::exists(pending.at(0)));
     EXPECT_TRUE(fs::exists(kept_blob));
@@ -594,7 +622,7 @@ TEST_F(DiskObjectStorageOverMemoryMetadataTest, UndoRemovesRewrittenBlobs)
     }
 
     /// The overwritten first blob awaits pre-commit disposal, the live one backs the file.
-    EXPECT_EQ(memory->takePendingOwnRemovals().size(), 1u);
+    EXPECT_EQ(takePendingOwnRemovals(tx).size(), 1u);
     EXPECT_EQ(countBlobs(), 2u);
 
     /// undo drops everything the transaction uploaded, including the overwritten blob.
