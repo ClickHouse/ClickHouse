@@ -4,6 +4,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/Transforms/JoiningTransform.h>
@@ -152,6 +153,43 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     {
         if (join->pipelineType() == JoinPipelineType::YShaped)
         {
+            /// The plan sharded this join by primary-key ranges, but the stream counts diverged at
+            /// pipeline-building time (e.g. a data-dependent `PREWHERE` pruned one side down to a single
+            /// empty stream), so the per-shard pipeline cannot be built. Degrade to the single-stream
+            /// merge join instead of failing: each side's per-shard streams are sorted by the join keys
+            /// and the merge preserves the order the merge join requires.
+            if (!primary_key_sharding.empty() && join->getTableJoin().kind() != JoinKind::Paste)
+            {
+                auto merge_to_single_sorted_stream = [&](QueryPipelineBuilder & pipeline, const Names & key_names)
+                {
+                    if (pipeline.getNumStreams() <= 1)
+                        return;
+
+                    SortDescription sort_description;
+                    sort_description.reserve(key_names.size());
+                    for (const auto & key_name : key_names)
+                        sort_description.emplace_back(key_name);
+
+                    auto transform = std::make_shared<MergingSortedTransform>(
+                        pipeline.getSharedHeader(),
+                        pipeline.getNumStreams(),
+                        sort_description,
+                        max_block_size,
+                        /*max_block_size_bytes=*/ 0,
+                        /*max_dynamic_subcolumns_=*/ std::nullopt,
+                        SortingQueueStrategy::Default);
+
+                    /// Report the merge under this step so that `EXPLAIN PIPELINE` lists it.
+                    transform->setQueryPlanStep(this, static_cast<size_t>(JoinStage::Default));
+                    processors.emplace_back(transform);
+                    pipeline.addTransform(std::move(transform));
+                };
+
+                const auto & on_clause = join->getTableJoin().getOnlyClause();
+                merge_to_single_sorted_stream(*pipelines[0], on_clause.key_names_left);
+                merge_to_single_sorted_stream(*pipelines[1], on_clause.key_names_right);
+            }
+
             joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
                 std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, this, &processors);
             joined_pipeline->resize(max_streams);
