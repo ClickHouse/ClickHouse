@@ -2,6 +2,8 @@
 #include <Parsers/Access/ASTShowAccessEntitiesQuery.h>
 #include <Parsers/Access/parseAccessEntityName.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <base/range.h>
@@ -92,6 +94,26 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
             all = true;
     }
 
+    String like;
+    bool not_like = false;
+    bool case_insensitive_like = false;
+
+    if (ParserKeyword{Keyword::NOT}.ignore(pos, expected))
+        not_like = true;
+
+    if (bool insensitive = ParserKeyword{Keyword::ILIKE}.ignore(pos, expected); insensitive || ParserKeyword{Keyword::LIKE}.ignore(pos, expected))
+    {
+        if (insensitive)
+            case_insensitive_like = true;
+
+        ASTPtr like_ast;
+        if (!ParserStringLiteral{}.parse(pos, like_ast, expected))
+            return false;
+        like = like_ast->as<ASTLiteral &>().value.safeGet<String>();
+    }
+    else if (not_like)
+        return false;
+
     auto query = make_intrusive<ASTShowAccessEntitiesQuery>();
     node = query;
 
@@ -102,6 +124,9 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
     query->enabled_roles = enabled_roles;
     query->short_name = std::move(short_name);
     query->database_and_table_name = std::move(database_and_table_name);
+    query->like = std::move(like);
+    query->not_like = not_like;
+    query->case_insensitive_like = case_insensitive_like;
 
     return true;
 }
