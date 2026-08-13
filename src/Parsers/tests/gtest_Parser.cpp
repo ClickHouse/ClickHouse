@@ -22,6 +22,7 @@
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Common/re2.h>
 #include <string_view>
+#include <unordered_set>
 #include <gtest/gtest.h>
 #include <Parsers/tests/gtest_common.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -142,6 +143,49 @@ TEST(ParserExecuteAsQuery, OutputOptionChildOrderIsCanonical)
         ASTPtr reparsed = parseQuery(parser, formatted, "", 0, 0, 0);
         ASSERT_NE(nullptr, reparsed) << "reparse of: " << formatted;
         EXPECT_EQ(ast->getTreeHash(false), reparsed->getTreeHash(false)) << "roundtrip of: " << query;
+    }
+}
+
+/// `IAST`'s copy constructor copies `children` as-is, so a `clone()` built on `make_intrusive<T>(*this)`
+/// has to clear them before re-adding: otherwise the clone keeps pointing at the original's nodes and
+/// mutating one is visible through the other. The AST fuzzer reports that as
+/// `IAST::clone() is broken for some AST node`. See `ASTDropQuery::clone`.
+TEST(ParserQueryWithOutput, CloneOwnsItsChildren)
+{
+    const std::vector<String> queries = {
+        "DROP TABLE db.t",
+        "DROP TABLE t1, t2, t3",
+        "DROP TABLE IF EXISTS db.t SYNC FORMAT JSONEachRow",
+        "TRUNCATE TABLE db.t",
+        "DETACH TABLE db.t PERMANENTLY",
+        "UNDROP TABLE db.t",
+        "UNDROP TABLE db.t FORMAT JSONEachRow",
+        "DESCRIBE FILESYSTEM CACHE 'cache'",
+        "DESCRIBE FILESYSTEM CACHE 'cache' FORMAT JSONEachRow",
+    };
+
+    const auto collect = [](const IAST & ast, auto & self) -> std::unordered_set<const IAST *>
+    {
+        std::unordered_set<const IAST *> nodes{&ast};
+        for (const auto & child : ast.children)
+            nodes.merge(self(*child, self));
+        return nodes;
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        ASTPtr cloned = ast->clone();
+        const auto original_nodes = collect(*ast, collect);
+        for (const auto * node : collect(*cloned, collect))
+            EXPECT_FALSE(original_nodes.contains(node)) << "clone shares a node with the original: " << query;
+
+        /// The clone must also reproduce the child order a fresh parse produces, so that a query
+        /// and its clone hash the same.
+        EXPECT_EQ(ast->getTreeHash(false), cloned->getTreeHash(false)) << "clone of: " << query;
     }
 }
 
