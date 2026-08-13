@@ -856,17 +856,21 @@ const std::vector<JoinActionRef *> & JoinOrderOptimizer::collectJoinEdgesMask(UI
 
         if (std::popcount(applicable) <= 1)
         {
-            /// Base-relation filter or constant predicate: it becomes applicable as soon as its single
-            /// relation is present, so attach it at the earliest (two-relation) join to filter as low
-            /// as possible.
-            if (two_relations && (edge.fromLeft() || edge.fromRight() || edge.fromNone()))
+            /// Base-relation filter or constant predicate (the edge references at most one relation).
+            /// It becomes applicable as soon as its single relation is present, so attach it at the
+            /// lowest join that introduces that relation (the split whose one side is exactly that
+            /// relation) to filter as low as possible. A pure constant predicate has no source
+            /// relation (`applicable == 0`), so fall back to the earliest two-relation join for it.
+            const bool relation_introduced = applicable != 0 && (left_mask == applicable || right_mask == applicable);
+            const bool constant_at_earliest_join = applicable == 0 && two_relations;
+            if (relation_introduced || constant_at_earliest_join)
                 out.push_back(&edge);
         }
         else if ((applicable & ~left_mask) && (applicable & ~right_mask))
         {
             /// The predicate spans the split (a connecting equi-predicate, or a single-table ON-clause
             /// conjunct pinned to the opposite side): neither side alone contains all the relations it
-            /// needs. This join is the lowest one that makes it applicable, so attach it here — into the
+            /// needs. This join is the lowest one that makes it applicable, so attach it here: into the
             /// correct join's ON condition.
             out.push_back(&edge);
         }
