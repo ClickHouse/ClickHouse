@@ -7,7 +7,6 @@
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <Disks/createVolume.h>
 #include <IO/HashingWriteBuffer.h>
@@ -1125,18 +1124,6 @@ static std::unordered_map<String, std::vector<String>> getProjectionOutputToSour
     return output_to_sources;
 }
 
-/// mergeJSONSharedDataPathRules requires matching type shapes at each level (see
-/// applyJSONSharedDataPathPolicyImpl in DataTypeObject.cpp) and otherwise silently no-ops. A
-/// candidate found via getProjectionOutputToSourceIdentifiers can differ from the target by
-/// exactly the wrapper a type-stripping expression removed (e.g. `assumeNotNull(j)` strips the
-/// Nullable that the source column `j` still has), so look through a source-only Nullable layer.
-static DataTypePtr unwrapNullableToMatch(const DataTypePtr & target, const DataTypePtr & source)
-{
-    if (typeid_cast<const DataTypeNullable *>(source.get()) && !typeid_cast<const DataTypeNullable *>(target.get()))
-        return assert_cast<const DataTypeNullable &>(*source).getNestedType();
-    return source;
-}
-
 /// Mirrors applyJSONSharedDataPathPoliciesForMutation (MutateTask.cpp) for a projection's own declared
 /// columns: prefer each source's own projection part, else fall back to that source's main columns.
 static void applyJSONSharedDataPathPoliciesForProjection(
@@ -1172,8 +1159,7 @@ static void applyJSONSharedDataPathPoliciesForProjection(
                 if (!source_column)
                     source_column = source_part->tryGetColumn(candidate_name);
                 if (source_column)
-                    result_column.type = mergeJSONSharedDataPathRules(
-                        result_column.type, unwrapNullableToMatch(result_column.type, source_column->type));
+                    result_column.type = mergeJSONSharedDataPathRules(result_column.type, source_column->type);
             }
         }
 

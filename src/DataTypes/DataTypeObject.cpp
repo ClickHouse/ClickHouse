@@ -1109,6 +1109,23 @@ bool typesEqualIgnoringJSONSharedDataPathPolicy(const IDataType * from, const ID
 
 DataTypePtr applyJSONSharedDataPathPolicyImpl(const DataTypePtr & type, const DataTypePtr & policy_source_type, bool merge_rules)
 {
+    /// A target/source pair can differ by exactly a Nullable wrapper when the provenance came from
+    /// an expression that added or removed nullability (e.g. assumeNotNull(j)/toNullable(j)) while
+    /// the underlying JSON structure is otherwise unrelated to that wrapper; look through the extra
+    /// Nullable on whichever side has it so the policy can still be found and merged underneath.
+    if (const auto * target_nullable = typeid_cast<const DataTypeNullable *>(type.get());
+        target_nullable && !typeid_cast<const DataTypeNullable *>(policy_source_type.get()))
+    {
+        auto nested = applyJSONSharedDataPathPolicyImpl(target_nullable->getNestedType(), policy_source_type, merge_rules);
+        if (nested == target_nullable->getNestedType())
+            return type;
+        return std::make_shared<DataTypeNullable>(std::move(nested));
+    }
+
+    if (const auto * source_nullable = typeid_cast<const DataTypeNullable *>(policy_source_type.get());
+        source_nullable && !typeid_cast<const DataTypeNullable *>(type.get()))
+        return applyJSONSharedDataPathPolicyImpl(type, source_nullable->getNestedType(), merge_rules);
+
     if (const auto * object = typeid_cast<const DataTypeObject *>(type.get()))
     {
         const auto * source_object = typeid_cast<const DataTypeObject *>(policy_source_type.get());
