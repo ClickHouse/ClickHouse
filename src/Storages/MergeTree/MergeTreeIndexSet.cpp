@@ -671,9 +671,8 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
         if (restore_nullable && node.type == ActionsDAG::ActionType::INPUT)
             return nullptr;
 
-        /// Only a `Nullable` the query side added is reconcilable, and only when `toNullable` over the
-        /// granule type reproduces the query-side type exactly. Dropping a `Nullable` the granule
-        /// holds would substitute values for its NULLs, so fall back to `UNKNOWN_FIELD` instead.
+        /// Only a `Nullable` the query side added is reconcilable: dropping a `Nullable` the granule
+        /// holds would substitute values for its NULLs.
         if (restore_nullable && !makeNullableOrLowCardinalityNullable(index_type)->equals(*node.result_type))
             return nullptr;
 
@@ -696,10 +695,8 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
             key_column_inputs[column_name] = result_node;
         }
 
-        /// Restore the query-side type, so that the enclosing function keeps the argument type its
-        /// `IFunctionBase` was resolved for. `toNullable` never introduces a NULL, so the granule
-        /// values and the pruning they drive are unchanged, and a `Nullable` atom result is already
-        /// mapped to `UNKNOWN_FIELD` in `traverseDAG`.
+        /// Restore the query-side type for the enclosing function. `toNullable` wraps the type
+        /// without introducing a NULL, so the mask the granule drives is unchanged.
         if (restore_nullable)
         {
             auto to_nullable_function = FunctionFactory::instance().get("toNullable", context);
@@ -726,9 +723,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
             return nullptr;
     }
 
-    /// Every child is a constant, a key column input restored to its query-side type, or a function
-    /// built the same way, so the argument types are the ones `node.function_base` was resolved for
-    /// and the result type it declares stays valid for what execution produces.
+    /// Children carry their query-side types, so `node.function_base` still declares the right type.
     return &result_dag.addFunction(node.function_base, children, {});
 }
 
