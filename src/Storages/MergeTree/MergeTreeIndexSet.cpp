@@ -661,26 +661,52 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
     auto column_name = tree_node.getColumnName();
     if (auto key_column_it = key_columns.find(column_name); key_column_it != key_columns.end())
     {
-        /// Check result type of node equals column type. If they are different, we fall back
-        /// to nullptr since executeAction in ExpressionActions will otherwise error.
+        /// A name match does not imply a type match: the query-side node can carry a `Nullable` the
+        /// granule does not.
+        const auto & index_type = key_column_it->second;
+        const bool restore_nullable = !node.result_type->equals(*index_type);
+
         /// INPUT cannot be re-typed: a second input under the same name would be
         /// left unbound, because `ExpressionActions::execute` maps each name to one block column.
-        const auto & index_type = key_column_it->second;
-        if (node.type == ActionsDAG::ActionType::INPUT && !node.result_type->equals(*index_type))
+        if (restore_nullable && node.type == ActionsDAG::ActionType::INPUT)
             return nullptr;
+
+        /// Only a `Nullable` the query side added is reconcilable, and only when `toNullable` over the
+        /// granule type reproduces the query-side type exactly. Dropping a `Nullable` the granule
+        /// holds would substitute values for its NULLs, so fall back to `UNKNOWN_FIELD` instead.
+        if (restore_nullable && !makeNullableOrLowCardinalityNullable(index_type)->equals(*node.result_type))
+            return nullptr;
+
+        const ActionsDAG::Node * result_node = nullptr;
 
         /// Check if we already created an INPUT for this key column
         auto it = key_column_inputs.find(column_name);
         if (it != key_column_inputs.end())
-            return it->second;
+        {
+            result_node = it->second;
+        }
+        else
+        {
+            result_node = node_to_check;
 
-        const auto * result_node = node_to_check;
+            /// Bind to the type the granule block holds, not the query-side type.
+            if (node.type != ActionsDAG::ActionType::INPUT)
+                result_node = &result_dag.addInput(column_name, index_type);
 
-        /// Bind to the type the granule block holds, not the query-side type.
-        if (node.type != ActionsDAG::ActionType::INPUT)
-            result_node = &result_dag.addInput(column_name, index_type);
+            key_column_inputs[column_name] = result_node;
+        }
 
-        key_column_inputs[column_name] = result_node;
+        /// Restore the query-side type, so that the enclosing function keeps the argument type its
+        /// `IFunctionBase` was resolved for. `toNullable` never introduces a NULL, so the granule
+        /// values and the pruning they drive are unchanged, and a `Nullable` atom result is already
+        /// mapped to `UNKNOWN_FIELD` in `traverseDAG`.
+        if (restore_nullable)
+        {
+            auto to_nullable_function = FunctionFactory::instance().get("toNullable", context);
+            result_node = &result_dag.addFunction(to_nullable_function, {result_node}, {});
+        }
+
+        chassert(result_node->result_type->equals(*node.result_type));
         return result_node;
     }
 
@@ -700,22 +726,10 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
             return nullptr;
     }
 
-    /// Re-resolve against the granule-side argument types instead of reusing the query-side
-    /// `IFunctionBase`, whose return type was resolved for the query's types. Functions absent from
-    /// the factory (internal casts, lambdas, parametric functions) and argument types the function
-    /// rejects both fall back to `UNKNOWN_FIELD`.
-    auto resolver = FunctionFactory::instance().tryGet(node.function_base->getName(), context);
-    if (!resolver)
-        return nullptr;
-
-    try
-    {
-        return &result_dag.addFunction(resolver, children, {});
-    }
-    catch (const Exception &)
-    {
-        return nullptr;
-    }
+    /// Every child is a constant, a key column input restored to its query-side type, or a function
+    /// built the same way, so the argument types are the ones `node.function_base` was resolved for
+    /// and the result type it declares stays valid for what execution produces.
+    return &result_dag.addFunction(node.function_base, children, {});
 }
 
 const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const ActionsDAG::Node & node,
