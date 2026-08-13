@@ -62,6 +62,7 @@ ASTPtr ASTStreamSettings::clone() const
 {
     auto cloned_stream_settings = make_intrusive<ASTStreamSettings>();
 
+    cloned_stream_settings->setSubscribeForUpdates(subscribe_for_updates);
     if (cursor)
         cloned_stream_settings->setCursor(cursor->clone());
     if (watermark)
@@ -72,7 +73,12 @@ ASTPtr ASTStreamSettings::clone() const
 
 bool ASTStreamSettings::hasTweaks() const
 {
-    return cursor != nullptr || watermark != nullptr;
+    return !subscribe_for_updates || cursor != nullptr || watermark != nullptr;
+}
+
+void ASTStreamSettings::setSubscribeForUpdates(bool subscribe_for_updates_)
+{
+    subscribe_for_updates = subscribe_for_updates_;
 }
 
 void ASTStreamSettings::setCursor(CursorTreeNodePtr cursor_)
@@ -88,17 +94,27 @@ void ASTStreamSettings::setWatermark(WatermarkSettingsPtr watermark_)
 
 void ASTStreamSettings::formatImpl(WriteBuffer & ostr, const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const
 {
+    bool need_space = false;
+
+    if (!subscribe_for_updates)
+    {
+        ostr << "BOUNDED";
+        need_space = true;
+    }
+
     if (cursor)
     {
+        if (need_space)
+            ostr << ' ';
         ostr << "CURSOR ";
         formatCursorTree(ostr, cursor.get());
+        need_space = true;
     }
 
     if (watermark)
     {
-        if (cursor)
+        if (need_space)
             ostr << ' ';
-
         ostr << "WATERMARK ";
         formatWatermark(ostr, *watermark, format_settings, state, frame);
     }
@@ -114,6 +130,9 @@ void ASTStreamSettings::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "StreamSettings");
 
+    if (!subscribe_for_updates)
+        w.writeInt("subscribe_for_updates", 0);
+
     if (cursor)
         w.writeFieldValue("cursor_tree", Field(cursorTreeToMap(cursor)));
 
@@ -128,6 +147,9 @@ void ASTStreamSettings::writeJSON(WriteBuffer & out) const
 void ASTStreamSettings::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
+
+    if (r.has("subscribe_for_updates"))
+        setSubscribeForUpdates(r.getInt("subscribe_for_updates") != 0);
 
     if (r.has("cursor_tree"))
     {
