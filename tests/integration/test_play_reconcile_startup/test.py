@@ -93,6 +93,7 @@ def test_play_reconcile_startup(started_cluster, nodejs_container):
         "dirty-startup-run-leak",
         "dirty-startup-adopt-restamp",
         "dirty-startup-allblank-edit-survives",
+        "dirty-startup-allblank-entry-reowned",
         "dirty-startup-merge-entry-reowned",
     ):
         assert "PASS [{}]".format(scenario) in out, "scenario {} did not run:\n{}".format(
