@@ -7,7 +7,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnTuple.h>
-#include <Common/OptimizedRegularExpression.h>
 #include <Common/SipHash.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
@@ -27,10 +26,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/BloomFilterHash.h>
-#include <Interpreters/ITokenizer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
-#include <Interpreters/TokenizerFactory.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTFunction.h>
@@ -65,11 +62,10 @@ enum class JSONBloomDomain : UInt8
 {
     /// Append only: values are persisted inside the token hashes of `jsonbf_v1` index granules.
     Typed = 1,
-    Ngram = 2,
-    AlwaysPresent = 3,
-    UnsupportedDynamicType = 4,
-    DynamicTypePresence = 5,
-    DynamicComplexPresence = 6,
+    AlwaysPresent = 2,
+    UnsupportedDynamicType = 3,
+    DynamicTypePresence = 4,
+    DynamicComplexPresence = 5,
 };
 
 UInt64 finishTokenHash(SipHash & hash)
@@ -238,9 +234,8 @@ String appendMapKey(
 class JSONBloomExtractor
 {
 public:
-    JSONBloomExtractor(HashSet<UInt64> & hashes_, TokenizerPtr tokenizer_)
+    explicit JSONBloomExtractor(HashSet<UInt64> & hashes_)
         : hashes(hashes_)
-        , tokenizer(tokenizer_)
     {
     }
 
@@ -395,6 +390,7 @@ private:
 
     void emitTuple(
         std::string_view path,
+        JSONBloomRole role,
         const DataTypeTuple & tuple_type,
         const ColumnTuple & tuple_column,
         size_t row,
@@ -404,7 +400,7 @@ private:
         const auto & element_names = tuple_type.getElementNames();
         const auto & columns = tuple_column.getColumns();
         for (size_t i = 0; i != element_types.size(); ++i)
-            emitValue(appendPath(path, element_names[i]), JSONBloomRole::Scalar, element_types[i], *columns[i], row, is_dynamic);
+            emitValue(appendPath(path, element_names[i]), role, element_types[i], *columns[i], row, is_dynamic);
     }
 
     void emitScalar(
@@ -425,24 +421,6 @@ private:
         }
 
         hashes.insert(hashTypedValue(path, role, type, column, row));
-
-        if (tokenizer && WhichDataType(type).isStringOrFixedString())
-        {
-            const auto value = column.getDataAt(row);
-            size_t position = 0;
-            size_t token_start = 0;
-            size_t token_length = 0;
-            while (position < value.size()
-                && tokenizer->nextInString(value.data(), value.size(), position, token_start, token_length))
-            {
-                hashes.insert(hashToken(
-                    path,
-                    role,
-                    JSONBloomDomain::Ngram,
-                    {},
-                    std::string_view(value.data() + token_start, token_length)));
-            }
-        }
     }
 
     void emitValue(
@@ -477,7 +455,7 @@ private:
         if (const auto * object_type = typeid_cast<const DataTypeObject *>(type.get()))
         {
             NestedConsumer consumer(*this, String(path), role);
-            enumerateJSONValues<false>(assert_cast<const ColumnObject &>(column), *object_type, consumer, row, 1);
+            enumerateJSONValues(assert_cast<const ColumnObject &>(column), *object_type, consumer, row, 1);
             return;
         }
 
@@ -495,7 +473,7 @@ private:
 
         if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
         {
-            emitTuple(path, *tuple_type, assert_cast<const ColumnTuple &>(column), row, is_dynamic);
+            emitTuple(path, role, *tuple_type, assert_cast<const ColumnTuple &>(column), row, is_dynamic);
             return;
         }
 
@@ -512,7 +490,6 @@ private:
     }
 
     HashSet<UInt64> & hashes;
-    TokenizerPtr tokenizer;
 };
 
 bool hashMatchesFilter(const BloomFilterPtr & bloom_filter, UInt64 hash, size_t hash_functions)
@@ -659,7 +636,7 @@ std::optional<JSONPathMatch> tryMatchJSONPath(const RPNBuilderTreeNode & node, c
     {
         auto match = tryMatchJSONPath(function.getArgumentAt(0), header);
         const auto * dag_node = node.getDAGNode();
-        if (!match || !dag_node)
+        if (!match || !dag_node || match->cast_type)
             return std::nullopt;
         match->cast_type = removeJSONBloomWrappers(dag_node->result_type);
         if (typeid_cast<const DataTypeObject *>(match->cast_type.get())
@@ -852,57 +829,14 @@ std::vector<UInt64> makeArrayElementProbes(
     return hashes;
 }
 
-void appendDynamicStringPresenceAlternatives(
-    std::vector<std::vector<UInt64>> & alternatives,
-    std::string_view path,
-    JSONBloomRole role)
-{
-    for (const auto & runtime_type : getDynamicScalarTypes())
-    {
-        if (!WhichDataType(runtime_type).isStringOrFixedString())
-            alternatives.push_back({dynamicTypePresenceHash(path, role, *runtime_type)});
-    }
-    alternatives.push_back({dynamicComplexPresenceHash(path, role)});
-}
-
-std::vector<UInt64> makeNgramProbes(
-    std::string_view path,
-    JSONBloomRole role,
-    const ITokenizer & tokenizer,
-    std::string_view value,
-    const String & function_name)
-{
-    VectorWithMemoryTracking<String> tokens;
-    if (function_name == "like")
-        tokenizer.stringLikeToTokens(value.data(), value.size(), tokens);
-    else if (function_name == "startsWith")
-        tokenizer.substringToTokens(value.data(), value.size(), tokens, true, false);
-    else if (function_name == "endsWith")
-        tokenizer.substringToTokens(value.data(), value.size(), tokens, false, true);
-    else
-        tokenizer.substringToTokens(value.data(), value.size(), tokens, false, false);
-
-    tokens = tokenizer.compactTokens(tokens);
-    std::vector<UInt64> result;
-    result.reserve(tokens.size());
-    for (const auto & token : tokens)
-        result.push_back(hashToken(path, role, JSONBloomDomain::Ngram, {}, token));
-    return result;
-}
-
 }
 
 MergeTreeIndexAggregatorJSONBloomFilter::MergeTreeIndexAggregatorJSONBloomFilter(
-    size_t bits_per_row_,
-    size_t hash_functions_,
-    String column_name_,
-    DataTypePtr column_type_,
-    TokenizerPtr tokenizer_)
+    size_t bits_per_row_, size_t hash_functions_, String column_name_, DataTypePtr column_type_)
     : bits_per_row(bits_per_row_)
     , hash_functions(hash_functions_)
     , column_name(std::move(column_name_))
     , column_type(std::move(column_type_))
-    , tokenizer(tokenizer_)
 {
 }
 
@@ -934,22 +868,17 @@ void MergeTreeIndexAggregatorJSONBloomFilter::update(const Block & block, size_t
 
     /// `MergeTreeIndexGranuleBloomFilter` cannot serialize a filter with zero hashes.
     hashes.insert(alwaysPresentHash());
-    JSONBloomExtractor extractor(hashes, tokenizer);
-    enumerateJSONValues<false>(*object_column, *object_type, extractor, *pos, rows);
+    JSONBloomExtractor extractor(hashes);
+    enumerateJSONValues(*object_column, *object_type, extractor, *pos, rows);
 
     *pos += rows;
     total_rows += rows;
 }
 
 MergeTreeIndexConditionJSONBloomFilter::MergeTreeIndexConditionJSONBloomFilter(
-    const ActionsDAG::Node * predicate,
-    ContextPtr context,
-    const Block & header_,
-    size_t hash_functions_,
-    TokenizerPtr tokenizer_)
+    const ActionsDAG::Node * predicate, ContextPtr context, const Block & header_, size_t hash_functions_)
     : header(header_)
     , hash_functions(hash_functions_)
-    , tokenizer(tokenizer_)
     , comparison_format_settings(getJSONComparisonFormatSettings(context))
 {
     if (!predicate)
@@ -1229,109 +1158,14 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
         return function_name == "hasAny" ? !out.hashes.empty() : !out.alternatives.empty();
     }
 
-    if (!tokenizer)
-        return false;
-
-    const bool dynamic_string_dispatch = isDynamic(removeJSONBloomWrappers(path->type));
-    if (!dynamic_string_dispatch
-        && !WhichDataType(removeJSONBloomWrappers(path->type)).isStringOrFixedString())
-        return false;
-    if (path->cast_type
-        && (!dynamic_string_dispatch || !WhichDataType(path->cast_type).isStringOrFixedString()))
-        return false;
-
-    if (function_name == "multiSearchAny" && constant.getType() == Field::Types::Array)
-    {
-        for (const auto & value : constant.safeGet<Array>())
-        {
-            if (value.getType() != Field::Types::String)
-                return false;
-            auto probes = makeNgramProbes(path->path, path->role, *tokenizer, value.safeGet<String>(), function_name);
-            if (probes.empty())
-                return false;
-            out.alternatives.emplace_back(std::move(probes));
-        }
-        if (out.alternatives.empty())
-            return false;
-        if (dynamic_string_dispatch)
-            appendDynamicStringPresenceAlternatives(out.alternatives, path->path, path->role);
-        out.function = RPNElement::FUNCTION_ANY;
-        return true;
-    }
-
-    if (constant.getType() != Field::Types::String)
-        return false;
-
-    if (function_name == "like" || function_name == "startsWith" || function_name == "endsWith")
-    {
-        out.hashes = makeNgramProbes(
-            path->path,
-            path->role,
-            *tokenizer,
-            constant.safeGet<String>(),
-            function_name);
-        if (out.hashes.empty())
-            return false;
-        if (dynamic_string_dispatch)
-        {
-            out.alternatives.emplace_back(std::move(out.hashes));
-            appendDynamicStringPresenceAlternatives(out.alternatives, path->path, path->role);
-            out.function = RPNElement::FUNCTION_ANY;
-        }
-        else
-            out.function = RPNElement::FUNCTION_ALL;
-        return true;
-    }
-
-    if (function_name == "match")
-    {
-        const auto analysis = OptimizedRegularExpression::analyze(constant.safeGet<String>());
-        if (!analysis.alternatives.empty())
-        {
-            for (const auto & alternative : analysis.alternatives)
-            {
-                auto probes = makeNgramProbes(path->path, path->role, *tokenizer, alternative, function_name);
-                if (probes.empty())
-                    return false;
-                out.alternatives.emplace_back(std::move(probes));
-            }
-            if (out.alternatives.empty())
-                return false;
-            if (dynamic_string_dispatch)
-                appendDynamicStringPresenceAlternatives(out.alternatives, path->path, path->role);
-            out.function = RPNElement::FUNCTION_ANY;
-            return true;
-        }
-
-        if (analysis.required_substring.empty())
-            return false;
-        out.hashes = makeNgramProbes(path->path, path->role, *tokenizer, analysis.required_substring, function_name);
-        if (out.hashes.empty())
-            return false;
-        if (dynamic_string_dispatch)
-        {
-            out.alternatives.emplace_back(std::move(out.hashes));
-            appendDynamicStringPresenceAlternatives(out.alternatives, path->path, path->role);
-            out.function = RPNElement::FUNCTION_ANY;
-        }
-        else
-            out.function = RPNElement::FUNCTION_ALL;
-        return true;
-    }
-
     return false;
 }
 
 MergeTreeIndexJSONBloomFilter::MergeTreeIndexJSONBloomFilter(
-    StorageMetadataPtr metadata_snapshot_,
-    const IndexDescription & index_,
-    size_t bits_per_row_,
-    size_t hash_functions_,
-    std::unique_ptr<ITokenizer> tokenizer_)
+    StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_, size_t bits_per_row_, size_t hash_functions_)
     : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
     , bits_per_row(bits_per_row_)
     , hash_functions(hash_functions_)
-    , tokenizer(std::move(tokenizer_))
 {
 }
 
@@ -1343,23 +1177,14 @@ MergeTreeIndexGranulePtr MergeTreeIndexJSONBloomFilter::createIndexGranule() con
 MergeTreeIndexAggregatorPtr MergeTreeIndexJSONBloomFilter::createIndexAggregator() const
 {
     return std::make_shared<MergeTreeIndexAggregatorJSONBloomFilter>(
-        bits_per_row,
-        hash_functions,
-        index.column_names.front(),
-        index.data_types.front(),
-        tokenizer.get());
+        bits_per_row, hash_functions, index.column_names.front(), index.data_types.front());
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexJSONBloomFilter::createIndexCondition(
     const ActionsDAG::Node * predicate,
     ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionJSONBloomFilter>(
-        predicate,
-        context,
-        index.sample_block,
-        hash_functions,
-        tokenizer.get());
+    return std::make_shared<MergeTreeIndexConditionJSONBloomFilter>(predicate, context, index.sample_block, hash_functions);
 }
 
 namespace
@@ -1386,16 +1211,10 @@ std::unordered_map<String, ASTPtr> parseJSONBloomOptions(const ASTPtr & argument
     return options;
 }
 
-struct JSONBloomOptions
-{
-    Float64 false_positive_rate = 0.025;
-    std::unique_ptr<ITokenizer> tokenizer;
-};
-
-JSONBloomOptions getJSONBloomOptions(const IndexDescription & index)
+Float64 getJSONBloomFalsePositiveRate(const IndexDescription & index)
 {
     auto options = parseJSONBloomOptions(index.arguments);
-    JSONBloomOptions result;
+    Float64 result = 0.025;
 
     if (auto it = options.find("false_positive_rate"); it != options.end())
     {
@@ -1404,15 +1223,7 @@ JSONBloomOptions getJSONBloomOptions(const IndexDescription & index)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "`jsonbf_v1` argument `false_positive_rate` must be a `Float64` between 0 and 1");
-        result.false_positive_rate = value.safeGet<Float64>();
-        options.erase(it);
-    }
-
-    if (auto it = options.find("tokenizer"); it != options.end())
-    {
-        result.tokenizer = TokenizerFactory::instance().get(it->second);
-        if (result.tokenizer->getType() != ITokenizer::Type::Ngrams)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`jsonbf_v1` only supports the `ngrams` tokenizer");
+        result = value.safeGet<Float64>();
         options.erase(it);
     }
 
@@ -1428,19 +1239,14 @@ MergeTreeIndexPtr jsonBloomFilterIndexCreator(
     const IndexDescription & index,
     const MergeTreeSettings &)
 {
-    auto options = getJSONBloomOptions(index);
-    const auto [bits_per_row, hash_functions] = BloomFilterHash::calculationBestPractices(options.false_positive_rate);
-    return std::make_shared<MergeTreeIndexJSONBloomFilter>(
-        std::move(metadata_snapshot),
-        index,
-        bits_per_row,
-        hash_functions,
-        std::move(options.tokenizer));
+    const auto false_positive_rate = getJSONBloomFalsePositiveRate(index);
+    const auto [bits_per_row, hash_functions] = BloomFilterHash::calculationBestPractices(false_positive_rate);
+    return std::make_shared<MergeTreeIndexJSONBloomFilter>(std::move(metadata_snapshot), index, bits_per_row, hash_functions);
 }
 
 void jsonBloomFilterIndexValidator(const IndexDescription & index, bool, const MergeTreeSettings &)
 {
-    getJSONBloomOptions(index);
+    getJSONBloomFalsePositiveRate(index);
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "`jsonbf_v1` must be created on one direct `JSON` column");
     if (!index.isSimpleSingleColumnIndex())

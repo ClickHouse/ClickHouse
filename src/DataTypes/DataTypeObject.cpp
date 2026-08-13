@@ -880,7 +880,11 @@ static DataTypePtr createJSON(const ASTPtr & arguments)
 
 void registerDataTypeJSON(DataTypeFactory & factory)
 {
-    factory.registerDataType("JSON", createJSON, DataTypeFactory::Case::Insensitive, Documentation{
+    factory.registerDataType(
+        "JSON",
+        createJSON,
+        DataTypeFactory::Case::Insensitive,
+        Documentation{
             .description = String(R"DOCS_MD(
 import WhenToUseJson from '/snippets/_when-to-use-json.mdx';
 
@@ -1575,8 +1579,7 @@ SELECT json FROM format(TSV, 'json JSON(a.b.c UInt32, SKIP a.b.d, SKIP REGEXP \'
 {"a" : {"b" : {"c" : 4, "d" : [6, 7]}}, "c" : 43}
 {"a" : {"b" : {"c" : 5, "d" : [8, 9]}}, "b" : {"c" : 11, "j" : [1, 2, 3]}, "d" : {"e" : {"f" : ["s3", "s4"], "g" : 44}, "h" : "2020-02-02 10:00:00"}}')
 ```
-)DOCS_MD")
-            + R"DOCS_MD(
+)DOCS_MD") + R"DOCS_MD(
 ```text title="Response"
 ┌─json──────────────────────────────────────────────────────────┐
 │ {"a":{"b":{"c":1}},"c":"42","d":{"i":["1","2","3"]}}          │
@@ -2211,7 +2214,7 @@ ENGINE = MergeTree
 ORDER BY tuple()
 ```
 
-The optional `tokenizer = ngrams(N)` argument also supports positive string predicates such as `LIKE`, `startsWith`, `endsWith`, `multiSearchAny`, and `match`. Runtime `Dynamic` types that cannot be represented make the containing index granule conservative, so ClickHouse reads it instead of risking a false negative.
+Runtime `Dynamic` types that cannot be represented make the containing index granule conservative, so ClickHouse reads it instead of risking a false negative.
 
 See [`jsonbf_v1`](/concepts/features/performance/skip-indexes#bloom-filter-types) in the data skipping index documentation for details.
 

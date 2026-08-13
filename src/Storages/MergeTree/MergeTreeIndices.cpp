@@ -250,10 +250,13 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
         .related = {"set", "tokenbf_v1"}});
     registerValidator("bloom_filter", bloomFilterIndexValidator);
 
-    registerCreator("jsonbf_v1", jsonBloomFilterIndexCreator, Documentation{
-        .description = "A path-aware Bloom filter over scalar values in a JSON column, with optional n-grams for string values.",
-        .syntax = "INDEX name json TYPE jsonbf_v1([false_positive_rate = p][, tokenizer = ngrams(n)]) GRANULARITY g",
-        .related = {"bloom_filter", "text"}});
+    registerCreator(
+        "jsonbf_v1",
+        jsonBloomFilterIndexCreator,
+        Documentation{
+            .description = "A path-aware Bloom filter over scalar values in a JSON column.",
+            .syntax = "INDEX name json TYPE jsonbf_v1([false_positive_rate = p]) GRANULARITY g",
+            .related = {"bloom_filter"}});
     registerValidator("jsonbf_v1", jsonBloomFilterIndexValidator);
 
 #if USE_USEARCH

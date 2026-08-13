@@ -12,8 +12,6 @@
 #include <DataTypes/DataTypesCache.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteIntText.h>
 
 #include <limits>
 
@@ -23,10 +21,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int TOO_LARGE_STRING_SIZE;
 }
 
-template <bool path_major = false, typename Consumer>
+template <typename Consumer>
 void enumerateJSONValues(
     const ColumnObject & column_object,
     const DataTypeObject & type_object,
@@ -44,9 +41,6 @@ void enumerateJSONValues(
         SerializationPtr serialization;
         bool is_dynamic = false;
         bool is_nullable = false;
-        ColumnVariant::Discriminator cached_discriminator = ColumnVariant::NULL_DISCRIMINATOR;
-        const IDataType * cached_dynamic_type = nullptr;
-        SerializationPtr cached_dynamic_serialization{};
     };
 
     const auto & typed_path_types = type_object.getTypedPaths();
@@ -97,43 +91,6 @@ void enumerateJSONValues(
         SerializationPtr serialization;
         const auto & cache = getSimpleDataTypesCache();
         const auto binary_type_index = static_cast<BinaryTypeIndex>(type_index);
-
-        if constexpr (path_major && requires { consumer.consumeSharedScalar(path, binary_type_index, std::string_view{}); })
-        {
-            if (binary_type_index == BinaryTypeIndex::String)
-            {
-                ++buffer.position();
-                size_t size = 0;
-                readVarUInt(size, buffer);
-                if (size > DEFAULT_MAX_STRING_SIZE)
-                    throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size.");
-                if (size > buffer.available())
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse shared String value of JSON");
-                consumer.consumeSharedScalar(path, binary_type_index, std::string_view(buffer.position(), size));
-                return;
-            }
-            if (binary_type_index == BinaryTypeIndex::Bool)
-            {
-                ++buffer.position();
-                UInt8 value = 0;
-                readBinary(value, buffer);
-                consumer.consumeSharedScalar(
-                    path,
-                    binary_type_index,
-                    value ? format_settings.bool_true_representation : format_settings.bool_false_representation);
-                return;
-            }
-            if (binary_type_index == BinaryTypeIndex::Int64)
-            {
-                ++buffer.position();
-                Int64 value = 0;
-                readBinary(value, buffer);
-                char text[max_int_width<Int64>];
-                const char * end = itoa(value, text);
-                consumer.consumeSharedScalar(path, binary_type_index, std::string_view(text, end - text));
-                return;
-            }
-        }
 
         if (cache.hasElement(binary_type_index))
         {
@@ -190,39 +147,17 @@ void enumerateJSONValues(
             return;
         }
 
-        const IDataType * type = nullptr;
-        SerializationPtr serialization;
-        if constexpr (path_major)
-        {
-            if (entry.cached_discriminator != discriminator)
-            {
-                entry.cached_discriminator = discriminator;
-                entry.cached_dynamic_type
-                    = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariant(discriminator).get();
-                const auto & type_name = dynamic_column.getVariantInfo().variant_names[discriminator];
-                auto [serialization_it, inserted] = serializations_cache.try_emplace(type_name);
-                if (inserted)
-                    serialization_it->second = entry.cached_dynamic_type->getDefaultSerialization();
-                entry.cached_dynamic_serialization = serialization_it->second;
-            }
-            type = entry.cached_dynamic_type;
-            serialization = entry.cached_dynamic_serialization;
-        }
-        else
-        {
-            type = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariant(discriminator).get();
-            const auto & type_name = dynamic_column.getVariantInfo().variant_names[discriminator];
-            auto [serialization_it, inserted] = serializations_cache.try_emplace(type_name);
-            if (inserted)
-                serialization_it->second = type->getDefaultSerialization();
-            serialization = serialization_it->second;
-        }
+        const auto * type
+            = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariant(discriminator).get();
         const auto & type_name = dynamic_column.getVariantInfo().variant_names[discriminator];
+        auto [serialization_it, inserted] = serializations_cache.try_emplace(type_name);
+        if (inserted)
+            serialization_it->second = type->getDefaultSerialization();
         consumer.consumeValue(
             entry.path,
             *type,
             type_name,
-            *serialization,
+            *serialization_it->second,
             variant_column.getVariantByGlobalDiscriminator(discriminator),
             variant_row,
             true,
@@ -232,54 +167,29 @@ void enumerateJSONValues(
     chassert(start_row <= shared_data_offsets.size());
     const size_t end_row = start_row + std::min(num_rows, shared_data_offsets.size() - start_row);
 
-    if constexpr (path_major)
+    for (size_t row = start_row; row != end_row; ++row)
     {
-        for (auto & path : sorted_paths)
+        consumer.beginRow();
+        const size_t start = shared_data_offsets[static_cast<ssize_t>(row) - 1];
+        const size_t end = shared_data_offsets[static_cast<ssize_t>(row)];
+        size_t sorted_paths_index = 0;
+
+        for (size_t shared_index = start; shared_index != end; ++shared_index)
         {
-            for (size_t row = start_row; row != end_row; ++row)
+            const auto shared_path = shared_data_paths->getDataAt(shared_index);
+            while (sorted_paths_index < sorted_paths.size() && sorted_paths[sorted_paths_index].path < shared_path)
             {
-                consumer.setRow(row - start_row);
-                consume_path(path, row);
-            }
-        }
-
-        for (size_t row = start_row; row != end_row; ++row)
-        {
-            consumer.setRow(row - start_row);
-            const size_t start = shared_data_offsets[static_cast<ssize_t>(row) - 1];
-            const size_t end = shared_data_offsets[static_cast<ssize_t>(row)];
-            for (size_t shared_index = start; shared_index != end; ++shared_index)
-                consume_shared(shared_data_paths->getDataAt(shared_index), shared_data_values->getDataAt(shared_index));
-        }
-
-        consumer.finishRows(end_row - start_row);
-    }
-    else
-    {
-        for (size_t row = start_row; row != end_row; ++row)
-        {
-            consumer.beginRow();
-            const size_t start = shared_data_offsets[static_cast<ssize_t>(row) - 1];
-            const size_t end = shared_data_offsets[static_cast<ssize_t>(row)];
-            size_t sorted_paths_index = 0;
-
-            for (size_t shared_index = start; shared_index != end; ++shared_index)
-            {
-                const auto shared_path = shared_data_paths->getDataAt(shared_index);
-                while (sorted_paths_index < sorted_paths.size() && sorted_paths[sorted_paths_index].path < shared_path)
-                {
-                    consume_path(sorted_paths[sorted_paths_index], row);
-                    ++sorted_paths_index;
-                }
-
-                consume_shared(shared_path, shared_data_values->getDataAt(shared_index));
-            }
-
-            for (; sorted_paths_index < sorted_paths.size(); ++sorted_paths_index)
                 consume_path(sorted_paths[sorted_paths_index], row);
+                ++sorted_paths_index;
+            }
 
-            consumer.endRow();
+            consume_shared(shared_path, shared_data_values->getDataAt(shared_index));
         }
+
+        for (; sorted_paths_index < sorted_paths.size(); ++sorted_paths_index)
+            consume_path(sorted_paths[sorted_paths_index], row);
+
+        consumer.endRow();
     }
 }
 
