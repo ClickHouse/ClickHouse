@@ -221,6 +221,24 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replic
 /// and has no counterpart in the single-replica plan. Such a set builds itself from the temporary table,
 /// which is exactly the work we wanted to move off the replicas, so leave it alone instead of failing.
 /// For the probe plan the two plans must mirror each other, and an unmatched set stays a hard error.
+/// Whether the query has any `IN (subquery)` set to ship at all. Without one the shipped plan is identical
+/// to the probe, and building it a second time is pure waste - measured at ~0.5 ms of plan build plus
+/// ~1.5 ms of optimization on a single-table query.
+bool planHasSubquerySets(const QueryPlan & plan)
+{
+    Stack stack;
+    bool has_sets = false;
+    traverseQueryPlan(
+        stack,
+        *plan.getRootNode(),
+        [&](auto & frame_node)
+        {
+            if (const auto * creating_sets_step = typeid_cast<const DelayedCreatingSetsStep *>(frame_node.step.get()))
+                has_sets |= !creating_sets_step->getSets().empty();
+        });
+    return has_sets;
+}
+
 void moveSetsFromLocalPlanToReplicasPlan(
     const QueryPlan & single_replica_plan, const QueryPlan & parallel_replicas_plan, bool allow_unmatched_sets = false)
 {
@@ -466,7 +484,7 @@ void considerEnablingParallelReplicas(
                 /// Replicas are worth it. Only now is it worth building the variant that ships the `IN`
                 /// sets: doing it for the probe would pay for materializing them even when the probe is
                 /// thrown away, and would break the hash matching above.
-                if (optimization_settings.parallel_replicas_ship_prepared_sets)
+                if (optimization_settings.parallel_replicas_ship_prepared_sets && planHasSubquerySets(query_plan))
                 {
                     if (auto shipped_plan
                         = optimization_settings.query_plan_with_parallel_replicas_builder(built_sets, /*ship_in_subqueries*/ true))
