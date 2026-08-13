@@ -8,6 +8,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <base/defines.h>
+#include <condition_variable>
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
@@ -137,10 +138,27 @@ public:
         using OrderingDomain = std::pair<Bucket, std::string>;
         std::map<OrderingDomain, std::set<std::string>> foreign_held_files_per_domain TSA_GUARDED_BY(next_mutex);
 
+        /// Ordered mode only. Files handed out to a processing thread whose `trySetProcessing`
+        /// outcome is not known yet. A later file of the domain must not start processing
+        /// while a smaller file can still turn out to be foreign-held: with several processing
+        /// threads, committing the later file would advance the `processed` pointer past it.
+        /// Registered under `mutex` (the hand-out order), resolved under `next_mutex`.
+        std::map<OrderingDomain, std::set<std::string>> unresolved_set_processing_per_domain TSA_GUARDED_BY(next_mutex);
+        std::condition_variable set_processing_resolved_cv;
+
         OrderingDomain getOrderingDomain(const std::string & path) const;
         void recordForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
         void resolveForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
         bool isBlockedByForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
+
+        void registerUnresolvedSetProcessing(const std::string & path);
+        void resolveSetProcessing(const std::string & path);
+        void resolveSetProcessingUnlocked(const std::string & path) TSA_REQUIRES(next_mutex);
+        bool hasSmallerUnresolvedSetProcessing(const std::string & path) TSA_REQUIRES(next_mutex);
+        /// Waits until the file at `path` is allowed to start a set-processing attempt.
+        /// TSA does not understand the `std::unique_lock` needed by the condition variable.
+        enum class OrderingDomainGate { Proceed, Blocked, Shutdown };
+        OrderingDomainGate waitOrderingDomainGate(const std::string & path) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
         std::pair<ObjectInfoPtr, FileMetadataPtr> next();
         void filterProcessableFiles(ObjectInfos & objects) TSA_REQUIRES(next_mutex);

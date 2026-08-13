@@ -636,6 +636,10 @@ void ObjectStorageQueueSource::FileIterator::recheckForeignProcessingLater(
 
     std::lock_guard lock(next_mutex);
 
+    /// The set-processing attempt is resolved: wake up the later files of the
+    /// ordering domain waiting for its outcome.
+    resolveSetProcessingUnlocked(object_info->getPath());
+
     if (!foreign_processing)
     {
         /// The failed attempt discovered a terminal state instead of a foreign
@@ -696,6 +700,74 @@ bool ObjectStorageQueueSource::FileIterator::isBlockedByForeignHeldFile(const st
     return it != foreign_held_files_per_domain.end() && *it->second.begin() < path;
 }
 
+void ObjectStorageQueueSource::FileIterator::registerUnresolvedSetProcessing(const std::string & path)
+{
+    if (mode != ObjectStorageQueueMode::ORDERED)
+        return;
+
+    std::lock_guard lock(next_mutex);
+    unresolved_set_processing_per_domain[getOrderingDomain(path)].insert(path);
+}
+
+void ObjectStorageQueueSource::FileIterator::resolveSetProcessing(const std::string & path)
+{
+    if (mode != ObjectStorageQueueMode::ORDERED)
+        return;
+
+    std::lock_guard lock(next_mutex);
+    resolveSetProcessingUnlocked(path);
+}
+
+void ObjectStorageQueueSource::FileIterator::resolveSetProcessingUnlocked(const std::string & path)
+{
+    if (unresolved_set_processing_per_domain.empty())
+        return;
+
+    const auto it = unresolved_set_processing_per_domain.find(getOrderingDomain(path));
+    if (it == unresolved_set_processing_per_domain.end())
+        return;
+
+    it->second.erase(path);
+    if (it->second.empty())
+        unresolved_set_processing_per_domain.erase(it);
+
+    set_processing_resolved_cv.notify_all();
+}
+
+bool ObjectStorageQueueSource::FileIterator::hasSmallerUnresolvedSetProcessing(const std::string & path)
+{
+    if (unresolved_set_processing_per_domain.empty())
+        return false;
+
+    const auto it = unresolved_set_processing_per_domain.find(getOrderingDomain(path));
+    return it != unresolved_set_processing_per_domain.end() && !it->second.empty() && *it->second.begin() < path;
+}
+
+ObjectStorageQueueSource::FileIterator::OrderingDomainGate
+ObjectStorageQueueSource::FileIterator::waitOrderingDomainGate(const std::string & path)
+{
+    std::unique_lock lock(next_mutex);
+
+    while (!shutdown_called)
+    {
+        if (isBlockedByForeignHeldFile(path))
+        {
+            resolveSetProcessingUnlocked(path);
+            return OrderingDomainGate::Blocked;
+        }
+
+        if (!hasSmallerUnresolvedSetProcessing(path))
+            return OrderingDomainGate::Proceed;
+
+        /// The outcome of the smaller file's set-processing attempt resolves within
+        /// one keeper round trip; the timeout only guards against a missed wake-up.
+        set_processing_resolved_cv.wait_for(lock, std::chrono::milliseconds(100));
+    }
+
+    resolveSetProcessingUnlocked(path);
+    return OrderingDomainGate::Shutdown;
+}
+
 ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 {
     while (!shutdown_called)
@@ -723,6 +795,11 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
             object_info = result.object_info;
             file_metadata = result.file_metadata;
             bucket_info = result.bucket_info;
+
+            /// While `mutex` is held: later files of the domain must see this file
+            /// as unresolved before they can be handed out.
+            if (object_info && !file_metadata)
+                registerUnresolvedSetProcessing(object_info->getPath());
         }
         else
         {
@@ -738,6 +815,11 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
                 std::tie(object_info, file_metadata) = objects_to_retry.front();
                 objects_to_retry.pop_front();
             }
+
+            /// While `mutex` is held: later files of the domain must see this file
+            /// as unresolved before they can be handed out.
+            if (object_info && !file_metadata)
+                registerUnresolvedSetProcessing(object_info->getPath());
         }
 
         if (!object_info)
@@ -749,17 +831,20 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
         if (shutdown_called)
         {
             LOG_DEBUG(log, "Shutdown was called, stopping file iterator");
+            if (!file_metadata)
+                resolveSetProcessing(object_info->getPath());
             return {};
         }
 
         if (mode == ObjectStorageQueueMode::ORDERED)
         {
-            bool blocked = false;
-            {
-                std::lock_guard lock(next_mutex);
-                blocked = isBlockedByForeignHeldFile(object_info->getPath());
-            }
-            if (blocked)
+            /// Wait until the set-processing attempts of the smaller files of the ordering
+            /// domain are resolved: any of them can still turn out to be foreign-held, and
+            /// committing this file would advance the `processed` pointer past a held file.
+            const auto gate = waitOrderingDomainGate(object_info->getPath());
+            if (gate == OrderingDomainGate::Shutdown)
+                return {};
+            if (gate == OrderingDomainGate::Blocked)
             {
                 /// A smaller file of the same ordering domain is held by a foreign
                 /// `processing` node: processing this file would advance the `processed`
@@ -774,8 +859,18 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         if (!file_metadata)
         {
-            file_metadata = metadata->getFileMetadata(object_info->getPath(), bucket_info, foreign_processing_node_cache_ttl_sec.load());
-            if (!file_metadata->trySetProcessing())
+            bool set_processing = false;
+            try
+            {
+                file_metadata = metadata->getFileMetadata(object_info->getPath(), bucket_info, foreign_processing_node_cache_ttl_sec.load());
+                set_processing = file_metadata->trySetProcessing();
+            }
+            catch (...)
+            {
+                resolveSetProcessing(object_info->getPath());
+                throw;
+            }
+            if (!set_processing)
             {
                 /// If the file is processing by another processor, recheck it when
                 /// the cached observation of its `processing` node expires.
@@ -789,6 +884,7 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
                 /// This server now owns the file: it no longer blocks its ordering domain.
                 std::lock_guard lock(next_mutex);
                 resolveForeignHeldFile(object_info->getPath());
+                resolveSetProcessingUnlocked(object_info->getPath());
             }
         }
 

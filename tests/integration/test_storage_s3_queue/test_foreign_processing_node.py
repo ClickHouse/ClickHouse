@@ -830,3 +830,85 @@ def test_terminal_failure_replaces_cached_retriable_local_failure(started_cluste
         DROP TABLE IF EXISTS {table_name};
         """
         )
+
+
+def test_later_files_wait_for_unresolved_set_processing_with_multiple_threads(started_cluster):
+    """A later file must wait for the set-processing outcome of a smaller file of its domain.
+
+    With several processing threads sharing one ordering domain (`buckets = 1`), a later
+    file could be handed out while the set-processing attempt of a smaller file was still
+    in flight. When that attempt then lost the race to a foreign `processing` node, the
+    later file was already being processed, and committing it advanced the max processed
+    path past the held file - losing it forever.
+
+    The race window cannot be hit deterministically from outside, so a failpoint parks the
+    set-processing attempt of the smallest file before its multi request: while it is
+    parked, its outcome is unknown, and the other processing thread must not ingest the
+    later files.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_multithreaded_domain_gate_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    files_to_generate = 3
+    generate_random_files(started_cluster, files_path, files_to_generate, start_ind=0, row_num=1)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            # Several processing threads share one ordering domain.
+            "s3queue_processing_threads_num": 2,
+            "s3queue_buckets": 1,
+            "s3queue_loading_retries": 100,
+            "s3queue_foreign_processing_node_cache_ttl_seconds": 5,
+        },
+    )
+
+    # The foreign processor holds the SMALLEST file: its set-processing attempt is the
+    # first to start and parks at the failpoint with the outcome unknown.
+    conflict_file = f"{files_path}/test_0.csv"
+    conflict_node = node.query(f"SELECT sipHash64('{conflict_file}')").strip()
+    zk = started_cluster.get_kazoo_client("zoo1")
+    zk.ensure_path(f"{keeper_path}/processing")
+    zk.create(f"{keeper_path}/processing/{conflict_node}", b"another processor")
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {SET_PROCESSING_PAUSE_FAILPOINT}")
+    try:
+        create_mv(node, table_name, dst_table_name)
+
+        wait_failpoint_paused(node, SET_PROCESSING_PAUSE_FAILPOINT)
+
+        def get_count():
+            return int(node.query(f"SELECT count() FROM {dst_table_name}").strip())
+
+        # While the outcome of the smallest file is unknown, the other processing thread
+        # must not ingest the later files: the smallest file can (and here does) turn out
+        # to be held by a foreign processor.
+        time.sleep(5)
+        assert get_count() == 0
+
+        # The parked attempt resumes and loses the race to the foreign `processing` node.
+        node.query(f"SYSTEM DISABLE FAILPOINT {SET_PROCESSING_PAUSE_FAILPOINT}")
+
+        # The foreign processor releases the file without committing it: every file
+        # is ingested once the cached observation expires. Without the wait, the later
+        # files would have advanced the max processed path past `test_0.csv` and the
+        # count would stay at two.
+        zk.delete(f"{keeper_path}/processing/{conflict_node}")
+        run_with_retry(lambda x: x == files_to_generate, get_count)
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {SET_PROCESSING_PAUSE_FAILPOINT}")
+        node.query(
+            f"""
+        DROP TABLE IF EXISTS {dst_table_name};
+        DROP TABLE IF EXISTS {table_name};
+        """
+        )
