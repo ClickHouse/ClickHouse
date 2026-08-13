@@ -174,6 +174,8 @@ The result should contain ten towns with their transaction counts and average pr
 ## Known limits {#known-limits}
 
 - ProbeDeck runs on iOS and iPadOS 17.0 or later.
+- Free users can save one connection at a time. Deleting it frees the slot; ProbeDeck Pro allows
+  unlimited saved connections.
 - It supports the ClickHouse HTTP(S) interface, not the native protocol.
 - ProbeDeck loads SQL results in pages of 200 rows and caps each request at 10,000 rows. Use a
   selective `WHERE` clause and `LIMIT` for large tables.
