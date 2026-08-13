@@ -3,7 +3,10 @@
 
 -- Stateless Workers only run the stages of a distributed plan, so a non-zero
 -- `distributed_plan_workers_num` enables `make_distributed_plan` on its own (issue #114501).
--- Everything runs locally so that the implied plan never dials a Worker.
+-- The environment may pin `make_distributed_plan` with a `const` constraint (ClickHouse Cloud
+-- does), and the pin vetoes the derivation, so the assertions compare against the pin
+-- (`readonly` in `system.settings`) instead of expecting fixed values. Everything runs locally
+-- so that the implied plan never dials a Worker.
 
 -- A global GROUP BY limit cannot be enforced once aggregation is split per bucket, and the test
 -- server profile sets one, so clear it for the aggregation below.
@@ -16,21 +19,21 @@ INSERT INTO t_dp_workers SELECT number, number FROM numbers(100000);
 SELECT 'off while the workers num is zero';
 SELECT getSetting('make_distributed_plan');
 
-SELECT 'implied by a per-query workers num';
-SELECT getSetting('make_distributed_plan') SETTINGS distributed_plan_workers_num = 3;
+SELECT 'implied by a per-query workers num unless pinned const';
+SELECT getSetting('make_distributed_plan') = (SELECT readonly = 0 FROM system.settings WHERE name = 'make_distributed_plan') SETTINGS distributed_plan_workers_num = 3;
 
-SELECT 'the implied plan still adjusts the settings it does not support';
-SELECT getSetting('compile_expressions') SETTINGS distributed_plan_workers_num = 3, compile_expressions = 1;
+SELECT 'the implied plan adjusts the settings it does not support, unless pinned const';
+SELECT getSetting('compile_expressions') = (SELECT readonly != 0 FROM system.settings WHERE name = 'make_distributed_plan') SETTINGS distributed_plan_workers_num = 3, compile_expressions = 1;
 
-SELECT 'implied by a session workers num';
+SELECT 'implied by a session workers num unless pinned const';
 SET distributed_plan_workers_num = 3;
-SELECT getSetting('make_distributed_plan');
+SELECT getSetting('make_distributed_plan') = (SELECT readonly = 0 FROM system.settings WHERE name = 'make_distributed_plan');
 
 SELECT 'the query distributes with make_distributed_plan left alone';
 -- sum() and not a bare count() so the trivial-count optimization cannot fold the plan away.
-SELECT 'distributes'
+SELECT (count() > 0) = (SELECT readonly = 0 FROM system.settings WHERE name = 'make_distributed_plan')
 FROM (EXPLAIN PIPELINE SELECT sum(v) FROM t_dp_workers)
-WHERE explain LIKE '%ReadFromDistributedPlanSource%' LIMIT 1;
+WHERE explain LIKE '%ReadFromDistributedPlanSource%';
 
 DROP TABLE t_dp_workers;
 

@@ -121,6 +121,15 @@ void SettingsConstraints::get(const MergeTreeSettings &, std::string_view short_
     writability = checker.constraint.writability;
 }
 
+SettingConstraintWritability SettingsConstraints::getWritability(std::string_view setting_name) const
+{
+    auto it = constraints.find(resolveSettingNameWithCache(setting_name));
+    if (it == constraints.end())
+        return SettingConstraintWritability::WRITABLE;
+
+    return it->second.writability;
+}
+
 void SettingsConstraints::merge(const SettingsConstraints & other)
 {
     if (access_control->doesSettingsConstraintsReplacePrevious())

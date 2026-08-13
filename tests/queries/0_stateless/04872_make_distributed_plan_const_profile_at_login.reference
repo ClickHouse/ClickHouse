@@ -1,0 +1,6 @@
+derived at login without the constraint
+OK
+vetoed at login by the const constraint
+OK
+still derived in a readonly session
+OK

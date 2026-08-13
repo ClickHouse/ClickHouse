@@ -2398,6 +2398,9 @@ void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_i
     applySettingsChangesWithLock(profiles_info.settings, lock);
     settings_constraints_and_current_profiles = profiles_info.getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
     contextSanityClampSettingsWithLock(*this, *settings, lock);
+
+    /// The profile may have brought constraints that veto the value just derived above.
+    finalizeSettingsWithLock(lock);
 }
 
 void Context::setCurrentProfile(const String & profile_name, bool check_constraints)
@@ -3376,7 +3379,11 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
 void Context::finalizeSettingsWithLock(const std::lock_guard<ContextSharedMutex> &)
 {
     applySettingsQuirks(*settings);
-    adjustSettingsForMakeDistributedPlan(*settings);
+
+    /// A `const` constraint pins make_distributed_plan against the derived value too.
+    const auto writability = getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.getWritability("make_distributed_plan");
+
+    adjustSettingsForMakeDistributedPlan(*settings, writability != SettingConstraintWritability::CONST);
 }
 
 void Context::applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex>& lock)
@@ -7572,7 +7579,6 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     setCurrentProfile(shared->system_profile_name, check_constraints);
 
     applySettingsQuirks(*settings, getLogger("SettingsQuirks"));
-    adjustSettingsForMakeDistributedPlan(*settings);
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 
     makeBackgroundContext(config);

@@ -1,7 +1,7 @@
-derived again after DEFAULT clears an explicit off
+derived again after DEFAULT clears an explicit off, unless pinned const
 false
-true
+1
 stays off after DEFAULT when no workers are configured
 false
-DEFAULT in the same statement as the workers num still derives
-true
+DEFAULT in the same statement as the workers num still derives, unless pinned const
+1

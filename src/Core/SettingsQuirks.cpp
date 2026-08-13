@@ -99,12 +99,12 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
 /// TODO: This is a temporary workaround (issues #109476, #109329). Remove each override once
 /// distributed plans support the corresponding feature - e.g. for the text index direct read,
 /// let the worker re-run the rewrite over its pinned part list instead of disabling it.
-void adjustSettingsForMakeDistributedPlan(Settings & settings)
+void adjustSettingsForMakeDistributedPlan(Settings & settings, bool derivation_allowed)
 {
     /// Stateless Workers only run the stages of a distributed plan, so asking for Workers implies
     /// asking for the plan. Deriving instead of assigning keeps a later zero count from pinning it on.
     if (!settings[Setting::make_distributed_plan].changed)
-        settings[Setting::make_distributed_plan].value = settings[Setting::distributed_plan_workers_num] != 0;
+        settings[Setting::make_distributed_plan].value = derivation_allowed && settings[Setting::distributed_plan_workers_num] != 0;
 
     if (!settings[Setting::make_distributed_plan])
         return;

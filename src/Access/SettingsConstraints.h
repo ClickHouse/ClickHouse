@@ -75,6 +75,10 @@ public:
     void get(const Settings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, std::vector<Field> & disallowed_values, SettingConstraintWritability & writability) const;
     void get(const MergeTreeSettings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, std::vector<Field> & disallowed_values, SettingConstraintWritability & writability) const;
 
+    /// The stored writability of the setting, without the readonly-mode and feature-tier
+    /// restrictions that the check functions fold in.
+    SettingConstraintWritability getWritability(std::string_view setting_name) const;
+
     void merge(const SettingsConstraints & other);
 
     /// Checks whether `change` violates these constraints and throws an exception if so.

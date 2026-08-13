@@ -23,7 +23,8 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log = nullptr);
 /// when it is enabled, adjust the settings that control features distributed query plans do not
 /// support yet. Applied whenever settings changes are applied to a context, so that every context
 /// driving analysis, planning or task execution sees the adjusted values.
-void adjustSettingsForMakeDistributedPlan(Settings & settings);
+/// `derivation_allowed = false` vetoes the derivation (e.g. a `const` constraint pins the setting).
+void adjustSettingsForMakeDistributedPlan(Settings & settings, bool derivation_allowed);
 
 /// Verify that some settings have sane values. Alters the value to a reasonable one if not
 void doSettingsSanityCheckClamp(Settings & settings, LoggerPtr log);
