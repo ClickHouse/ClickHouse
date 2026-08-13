@@ -1,0 +1,3 @@
+<clickhouse>
+    <include_from>/etc/clickhouse-server/config.d/users_stale_include_source.xml</include_from>
+</clickhouse>

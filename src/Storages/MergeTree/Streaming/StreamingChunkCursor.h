@@ -2,6 +2,7 @@
 
 #include <Processors/Chunk.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Storages/MergeTree/Streaming/CursorUtils.h>
 
 #include <base/types.h>
 
@@ -12,8 +13,7 @@ namespace DB
 struct StreamingChunkCursorInfo : public ChunkInfoCloneable<StreamingChunkCursorInfo>
 {
     String partition_id;
-    Int64 last_block_number = -1;
-    Int64 last_block_offset = -1;
+    PartitionCursor cursor;
 };
 
 /// This step will calculate and set StreamingChunkCursorInfo for each chunk.

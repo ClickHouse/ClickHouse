@@ -363,10 +363,8 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleRunningPipeline()
 
     if (auto cursor = chunk.getChunkInfos().extract<StreamingChunkCursorInfo>())
     {
-        auto & position = last_emitted_positions[cursor->partition_id];
-        position.block_number = cursor->last_block_number;
-        position.block_offset = cursor->last_block_offset;
-        LOG_TEST(log, "Cursor for partition '{}' updated from chunk to ({}, {})", cursor->partition_id, position.block_number, position.block_offset);
+        last_emitted_positions[cursor->partition_id] = cursor->cursor;
+        LOG_TEST(log, "Cursor for partition '{}' updated from chunk to ({}, {})", cursor->partition_id, cursor->cursor.block_number, cursor->cursor.block_offset);
     }
 
     if (!input.isFinished())
@@ -541,6 +539,10 @@ IProcessor::PipelineUpdate MergeTreeCommitOrderSequentialSource::updatePipeline(
 
         auto * sub_output = sub_pipe->getOutputPort(0);
         auto sub_processors = Pipe::detachProcessors(std::move(sub_pipe.value()));
+
+        /// We need to retag the processors in order to track their execution time correctly in EXPLAIN ANALYZE
+        for (auto & processor : sub_processors)
+            processor->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
 
         auto & input = inputs.front();
         connect(*sub_output, input);
