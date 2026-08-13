@@ -111,7 +111,9 @@ namespace ErrorCodes
 
 static constexpr auto bad_arguments_error_message = "Storage URL requires 1-4 arguments: "
                                                     "url, name of used format (taken from file extension by default), "
-                                                    "optional compression method, optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
+                                                    "optional compression method, optional headers (specified as `headers('name'='value', 'name2'='value2')`). "
+                                                    "An additional `http_method = 'POST'` key-value argument may be specified "
+                                                    "(POST overrides the default GET for SELECT; POST or PUT override the default POST for INSERT)";
 
 static const std::unordered_set<std::string_view> required_configuration_keys = {
     "url",
@@ -144,6 +146,17 @@ namespace
     }
 }
 
+
+static void validateHTTPMethod(const String & http_method)
+{
+    if (!http_method.empty() && http_method != Poco::Net::HTTPRequest::HTTP_POST
+        && http_method != Poco::Net::HTTPRequest::HTTP_PUT)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "HTTP method can be POST or PUT (current: {}). For INSERT the default is POST and PUT can override it. "
+            "For SELECT the default is GET and POST can override it (PUT applies to writes only)",
+            http_method);
+}
 
 bool urlWithGlobs(const String & uri)
 {
@@ -212,16 +225,16 @@ IStorageURLBase::IStorageURLBase(
     {
         ColumnsDescription columns;
         if (format_name == "auto")
-            std::tie(columns, format_name) = getTableStructureAndFormatFromData(uri, compression_method, headers, format_settings, context_);
+            std::tie(columns, format_name) = getTableStructureAndFormatFromData(uri, compression_method, headers, http_method, format_settings, context_);
         else
-            columns = getTableStructureFromData(format_name, uri, compression_method, headers, format_settings, context_);
+            columns = getTableStructureFromData(format_name, uri, compression_method, headers, http_method, format_settings, context_);
 
         storage_metadata.setColumns(columns);
     }
     else
     {
         if (format_name == "auto")
-            format_name = getTableStructureAndFormatFromData(uri, compression_method, headers, format_settings, context_).second;
+            format_name = getTableStructureAndFormatFromData(uri, compression_method, headers, http_method, format_settings, context_).second;
 
         /// We don't allow special columns in URL storage.
         if (!columns_.hasOnlyOrdinary())
@@ -832,9 +845,18 @@ private:
     const String http_method;
 };
 
+std::string IStorageURLBase::chooseReadMethod(const String & http_method)
+{
+    /// PUT in `http_method` applies to writes only (pre-signed upload URLs, see issue #44326),
+    /// so reads keep the default GET in that case.
+    if (http_method == Poco::Net::HTTPRequest::HTTP_POST)
+        return Poco::Net::HTTPRequest::HTTP_POST;
+    return Poco::Net::HTTPRequest::HTTP_GET;
+}
+
 std::string IStorageURLBase::getReadMethod() const
 {
-    return Poco::Net::HTTPRequest::HTTP_GET;
+    return chooseReadMethod(http_method);
 }
 
 std::vector<std::pair<std::string, std::string>> IStorageURLBase::getReadURIParams(
@@ -869,9 +891,15 @@ namespace
             std::optional<String> format_,
             const CompressionMethod & compression_method_,
             const HTTPHeaderEntries & headers_,
+            const String & read_method_,
             const std::optional<FormatSettings> & format_settings_,
             const ContextPtr & context_)
-            : WithContext(context_), format(std::move(format_)), compression_method(compression_method_), headers(headers_), format_settings(format_settings_)
+            : WithContext(context_)
+            , format(std::move(format_))
+            , compression_method(compression_method_)
+            , headers(headers_)
+            , read_method(read_method_)
+            , format_settings(format_settings_)
         {
             url_options_to_check.reserve(urls_to_check_.size());
             for (const auto & url : urls_to_check_)
@@ -952,7 +980,7 @@ namespace
                     url_options_to_check[current_index].cend(),
                     getContext(),
                     {},
-                    Poco::Net::HTTPRequest::HTTP_GET,
+                    read_method,
                     {},
                     getHTTPTimeouts(getContext()),
                     credentials,
@@ -1007,7 +1035,7 @@ namespace
                 url_options_to_check[current_index - 1].cend(),
                 getContext(),
                 {},
-                Poco::Net::HTTPRequest::HTTP_GET,
+                read_method,
                 {},
                 getHTTPTimeouts(getContext()),
                 credentials,
@@ -1073,6 +1101,7 @@ namespace
         std::optional<String> format;
         const CompressionMethod & compression_method;
         const HTTPHeaderEntries & headers;
+        const String read_method;
         Poco::Net::HTTPBasicCredentials credentials;
         const std::optional<FormatSettings> & format_settings;
     };
@@ -1083,6 +1112,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     const String & uri,
     CompressionMethod compression_method,
     const HTTPHeaderEntries & headers,
+    const String & http_method,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context)
 {
@@ -1102,7 +1132,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     else
         urls_to_check = {uri};
 
-    URLReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, format_settings, context);
+    URLReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, chooseReadMethod(http_method), format_settings, context);
     if (format)
         return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
     return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
@@ -1113,20 +1143,22 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     const String & uri,
     CompressionMethod compression_method,
     const HTTPHeaderEntries & headers,
+    const String & http_method,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context)
 {
-    return getTableStructureAndFormatFromDataImpl(format, uri, compression_method, headers, format_settings, context).first;
+    return getTableStructureAndFormatFromDataImpl(format, uri, compression_method, headers, http_method, format_settings, context).first;
 }
 
 std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndFormatFromData(
     const String & uri,
     CompressionMethod compression_method,
     const HTTPHeaderEntries & headers,
+    const String & http_method,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context)
 {
-    return getTableStructureAndFormatFromDataImpl(std::nullopt, uri, compression_method, headers, format_settings, context);
+    return getTableStructureAndFormatFromDataImpl(std::nullopt, uri, compression_method, headers, http_method, format_settings, context);
 }
 
 bool IStorageURLBase::supportsSubsetOfColumns(const ContextPtr & context) const
@@ -1489,8 +1521,11 @@ void StorageURLWithFailover::read(
 
 SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
-    if (http_method.empty())
-        http_method = Poco::Net::HTTPRequest::HTTP_POST;
+    /// Do not modify the `http_method` member here: this storage instance is shared between
+    /// queries, and `getReadMethod` derives the read method from the member, so persisting
+    /// the write default would flip subsequent reads of a table created without an explicit
+    /// `http_method` from GET to POST (and would race concurrent reads).
+    const String write_method = http_method.empty() ? Poco::Net::HTTPRequest::HTTP_POST : http_method;
 
     bool has_wildcards = uri.contains(PartitionedSink::PARTITION_ID_WILDCARD);
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
@@ -1519,7 +1554,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             getHTTPTimeouts(context),
             compression_method,
             headers,
-            http_method);
+            write_method);
     }
 
     return std::make_shared<StorageURLSink>(
@@ -1531,7 +1566,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
         getHTTPTimeouts(context),
         compression_method,
         headers,
-        http_method);
+        write_method);
 }
 
 SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)
@@ -1647,16 +1682,22 @@ FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Argum
 }
 
 size_t StorageURL::evalArgsAndCollectHeaders(
-    ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context, bool evaluate_arguments)
+    ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context, bool evaluate_arguments, String * out_http_method)
 {
-    ASTs::iterator headers_it = url_function_args.end();
+    /// Key-value arguments (`headers(...)`, and `http_method = '...'` when requested by the
+    /// caller) are extracted here and moved to the end of the array, so that the remaining
+    /// arguments keep their positional meaning. The arguments themselves stay in the array
+    /// to survive in the `CREATE` query AST (e.g. for `SHOW CREATE TABLE` and DETACH/ATTACH).
+    std::unordered_set<const IAST *> key_value_args;
+    bool has_headers_arg = false;
+    bool has_http_method_arg = false;
 
     for (auto arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
     {
         const auto * headers_ast_function = (*arg_it)->as<ASTFunction>();
         if (headers_ast_function && headers_ast_function->name == "headers")
         {
-            if (headers_it != url_function_args.end())
+            if (has_headers_arg)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "URL table function can have only one key-value argument: headers=(). {}",
@@ -1693,23 +1734,71 @@ size_t StorageURL::evalArgsAndCollectHeaders(
                 header_entries.emplace_back(arg_name, arg_value.safeGet<String>());
             }
 
-            headers_it = arg_it;
+            has_headers_arg = true;
+            key_value_args.insert(arg_it->get());
 
             continue;
         }
 
         if (headers_ast_function && headers_ast_function->name == "equals")
+        {
+            /// `http_method = 'POST'` (or `method = 'POST'`) key-value argument, mirroring the
+            /// named collection keys of the same names. Other `key = value` arguments are named
+            /// collection overrides and are handled by tryGetNamedCollectionWithOverrides.
+            if (out_http_method)
+            {
+                const auto * equals_args_expr = assert_cast<const ASTExpressionList *>(headers_ast_function->arguments.get());
+                ASTs equals_args = equals_args_expr->children;
+
+                String key;
+                if (equals_args.size() == 2)
+                {
+                    if (const auto * key_identifier = equals_args[0]->as<ASTIdentifier>())
+                        key = key_identifier->name();
+                    else if (const auto * key_literal = equals_args[0]->as<ASTLiteral>();
+                             key_literal && key_literal->value.getType() == Field::Types::Which::String)
+                        key = key_literal->value.safeGet<String>();
+                }
+
+                if (key == "http_method" || key == "method")
+                {
+                    if (has_http_method_arg)
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "URL table function can have only one `http_method` key-value argument. {}",
+                            bad_arguments_error_message);
+
+                    auto ast_literal = evaluateConstantExpressionOrIdentifierAsLiteral(equals_args[1], context);
+                    const auto & method_value = ast_literal->as<ASTLiteral>()->value;
+                    if (method_value.getType() != Field::Types::Which::String)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as `{}` value", key);
+
+                    *out_http_method = method_value.safeGet<String>();
+                    if (out_http_method->empty())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP method cannot be empty");
+                    validateHTTPMethod(*out_http_method);
+
+                    has_http_method_arg = true;
+                    key_value_args.insert(arg_it->get());
+                }
+            }
+
             continue;
+        }
 
         if (evaluate_arguments)
             (*arg_it) = evaluateConstantExpressionOrIdentifierAsLiteral((*arg_it), context);
     }
 
-    if (headers_it == url_function_args.end())
+    if (key_value_args.empty())
         return url_function_args.size();
 
-    std::rotate(headers_it, std::next(headers_it), url_function_args.end());
-    return url_function_args.size() - 1;
+    auto key_value_boundary = std::stable_partition(
+        url_function_args.begin(),
+        url_function_args.end(),
+        [&key_value_args](const ASTPtr & arg) { return !key_value_args.contains(arg.get()); });
+
+    return key_value_boundary - url_function_args.begin();
 }
 
 void StorageURL::processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection)
@@ -1728,12 +1817,7 @@ void StorageURL::processNamedCollectionResult(Configuration & configuration, con
     configuration.headers = getHeadersFromNamedCollection(collection);
 
     configuration.http_method = collection.getOrDefault<String>("http_method", collection.getOrDefault<String>("method", ""));
-    if (!configuration.http_method.empty() && configuration.http_method != Poco::Net::HTTPRequest::HTTP_POST
-        && configuration.http_method != Poco::Net::HTTPRequest::HTTP_PUT)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "HTTP method can be POST or PUT (current: {}). For insert default is POST, for select GET",
-            configuration.http_method);
+    validateHTTPMethod(configuration.http_method);
 
     configuration.format = collection.getOrDefault<String>("format", "auto");
     configuration.compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
@@ -2199,7 +2283,7 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const Contex
     }
     else
     {
-        size_t count = evalArgsAndCollectHeaders(args, configuration.headers, local_context);
+        size_t count = evalArgsAndCollectHeaders(args, configuration.headers, local_context, /*evaluate_arguments=*/ true, &configuration.http_method);
 
         if (count == 0 || count > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, bad_arguments_error_message);
@@ -2441,6 +2525,12 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
             "The URL engine does not support headers(...) when dispatching to the {} engine (URL '{}')",
             engine_name, configuration.url);
 
+    if (!configuration.http_method.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The URL engine does not support http_method when dispatching to the {} engine (URL '{}')",
+            engine_name, configuration.url);
+
     const String & format = configuration.format;
     const String & compression = configuration.compression_method;
 
@@ -2658,7 +2748,7 @@ Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the [
 
 The `URL` engine is also a unified wrapper that dispatches to the right backend based on the URL scheme, so a recognized non-HTTP scheme is delegated to the matching engine — see [Dispatching by URL scheme](#scheme-dispatch) below.
 
-Syntax: `URL(URL [,Format] [,CompressionMethod])`
+Syntax: `URL(URL [,Format] [,CompressionMethod] [,http_method='POST'])`
 
 - The `URL` parameter must conform to the structure of a Uniform Resource Locator. For an `http`/`https` URL (the default backend), it must point to a server that uses HTTP or HTTPS, and getting a response from the server does not require any additional headers. A URL with a recognized non-HTTP scheme (`file://`, `s3://`, `az://`, `hdfs://`, …) is instead delegated to the matching engine — see [Dispatching by URL scheme](#scheme-dispatch) below.
 
@@ -2704,6 +2794,18 @@ CREATE TABLE s3_via_url (a UInt32, b String) ENGINE = URL('s3://bucket/key.csv',
 `INSERT` and `SELECT` queries are transformed to `POST` and `GET` requests,
 respectively. For processing `POST` requests, the remote server must support
 [Chunked transfer encoding](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
+
+The method can be overridden with the `http_method` key-value argument (also available as the
+`http_method` key of a [named collection](/reference/operations/named-collections)):
+`http_method='POST'` makes `SELECT` queries use `POST` instead of the default `GET`, for servers
+that accept only `POST`; for `INSERT` queries, `PUT` can be specified instead of the default
+`POST`. `PUT` applies to writes only: a `SELECT` through a configuration with `http_method='PUT'`
+still uses `GET`.
+
+```sql
+CREATE TABLE post_only_source (word String, value UInt64)
+ENGINE = URL('http://127.0.0.1:12345/', CSV, http_method='POST')
+```
 
 You can limit the maximum number of HTTP GET redirect hops using the [max_http_get_redirects](/reference/settings/session-settings/max#max_http_get_redirects) setting.
 

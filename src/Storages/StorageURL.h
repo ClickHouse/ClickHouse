@@ -63,6 +63,7 @@ public:
         const String & uri,
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
+        const String & http_method,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context);
 
@@ -70,6 +71,7 @@ public:
         const String & uri,
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
+        const String & http_method,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context);
 
@@ -81,6 +83,11 @@ public:
         const HTTPHeaderEntries & headers,
         const Poco::Net::HTTPBasicCredentials & credentials,
         const ContextPtr & context);
+
+    /// The HTTP method effectively used for reads: POST when `http_method` is POST,
+    /// GET otherwise. PUT in `http_method` applies to writes only (pre-signed upload
+    /// URLs), so reads keep the default GET in that case.
+    static std::string chooseReadMethod(const String & http_method);
 
 protected:
     friend class ReadFromURL;
@@ -109,7 +116,9 @@ protected:
     // In this case, format_settings is not set.
     std::optional<FormatSettings> format_settings;
     HTTPHeaderEntries headers;
-    String http_method; /// For insert can choose Put instead of default Post.
+    /// Overrides the default HTTP method: POST for reads (default is GET);
+    /// POST or PUT for writes (default is POST). PUT applies to writes only.
+    String http_method;
     ASTPtr partition_by;
     bool distributed_processing;
     bool supports_prewhere = false;
@@ -154,6 +163,7 @@ private:
         const String & uri,
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
+        const String & http_method,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context);
 
@@ -387,9 +397,17 @@ public:
     static Configuration getConfiguration(ASTs & args, const ContextPtr & context, const StorageID * table_id = nullptr);
 
     /// Does evaluateConstantExpressionOrIdentifierAsLiteral() on all arguments.
-    /// If `headers(...)` argument is present, parses it and moves it to the end of the array.
-    /// Returns number of arguments excluding `headers(...)`.
-    static size_t evalArgsAndCollectHeaders(ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context, bool evaluate_arguments = true);
+    /// If a `headers(...)` argument is present, parses it and moves it to the end of the array.
+    /// If `out_http_method` is not null and a `http_method = '...'` (or `method = '...'`)
+    /// key-value argument is present, validates it, stores the value into `*out_http_method`,
+    /// and moves the argument to the end of the array as well.
+    /// Returns the number of arguments excluding the key-value arguments moved to the end.
+    static size_t evalArgsAndCollectHeaders(
+        ASTs & url_function_args,
+        HTTPHeaderEntries & header_entries,
+        const ContextPtr & context,
+        bool evaluate_arguments = true,
+        String * out_http_method = nullptr);
 
     static void processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection);
 

@@ -1,7 +1,9 @@
 #include <TableFunctions/TableFunctionURL.h>
 
 #include <TableFunctions/registerTableFunctions.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/IdentifierNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -109,8 +111,33 @@ VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(cons
     for (size_t i = 0; i < table_function_arguments_size; ++i)
     {
         auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
-        if (function_node && function_node->getFunctionName() == "headers")
+        if (!function_node)
+            continue;
+
+        if (function_node->getFunctionName() == "headers")
+        {
             result.push_back(i);
+            continue;
+        }
+
+        /// The `http_method = 'POST'` / `method = 'POST'` key-value argument: its left-hand
+        /// side is a bare identifier that must not be resolved as a column reference.
+        if (function_node->getFunctionName() == "equals")
+        {
+            const auto & equals_arguments = function_node->getArguments().getNodes();
+            if (equals_arguments.size() != 2)
+                continue;
+
+            String key;
+            if (const auto * identifier_node = equals_arguments[0]->as<IdentifierNode>())
+                key = identifier_node->getIdentifier().getFullName();
+            else if (const auto * constant_node = equals_arguments[0]->as<ConstantNode>();
+                     constant_node && constant_node->getValue().getType() == Field::Types::Which::String)
+                key = constant_node->getValue().safeGet<String>();
+
+            if (key == "http_method" || key == "method")
+                result.push_back(i);
+        }
     }
 
     return result;
@@ -138,20 +165,18 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
     }
     else
     {
-        size_t count = StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, context);
-        /// ITableFunctionFileLike cannot parse headers argument, so remove it.
-        ASTPtr headers_ast;
-        if (count != args.size())
-        {
-            chassert(count + 1 == args.size());
-            headers_ast = args.back();
-            args.pop_back();
-        }
+        size_t count = StorageURL::evalArgsAndCollectHeaders(
+            args, configuration.headers, context, /*evaluate_arguments=*/ true, &configuration.http_method);
+
+        /// ITableFunctionFileLike cannot parse the key-value arguments (`headers(...)` and
+        /// `http_method = '...'`), which evalArgsAndCollectHeaders moved to the end, so
+        /// detach them for the call and reattach afterwards.
+        ASTs key_value_args(args.begin() + count, args.end());
+        args.resize(count);
 
         ITableFunctionFileLike::parseArgumentsImpl(args, context);
 
-        if (headers_ast)
-            args.push_back(headers_ast);
+        args.insert(args.end(), key_value_args.begin(), key_value_args.end());
     }
 
     /// Resolve relative URLs against the url_base setting.
@@ -178,6 +203,12 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The url table function does not support headers(...) when dispatching to the {} engine (URL '{}')",
+                storageEngineNameForURLScheme(target), filename);
+
+        if (!configuration.http_method.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The url table function does not support http_method when dispatching to the {} engine (URL '{}')",
                 storageEngineNameForURLScheme(target), filename);
 
         buildDelegate(target, context);
@@ -437,6 +468,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 filename,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
+                configuration.http_method,
                 std::nullopt,
                 context).first;
         }
@@ -446,6 +478,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 filename,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
+                configuration.http_method,
                 std::nullopt,
                 context);
         }
@@ -492,17 +525,18 @@ import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBa
 ## Syntax {#syntax}
 
 ```sql
-url(URL [,format] [,structure] [,headers])
+url(URL [,format] [,structure] [,headers] [,http_method='POST'])
 ```
 
 ## Parameters {#parameters}
 
 | Parameter   | Description                                                                                                                                            |
 |-------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `URL`       | A single-quoted URL whose scheme selects the backend. An `http`/`https` (or unrecognized) URL is a server address accepting `GET` or `POST` requests (for `SELECT` or `INSERT` queries correspondingly); a recognized non-HTTP scheme (`file://`, `s3://`, `az://`, `hdfs://`, …) is delegated to the matching table function — see [Dispatching by URL scheme](#scheme-dispatch). Type: [String](/reference/data-types/string). |
+| `URL`       | A single-quoted URL whose scheme selects the backend. An `http`/`https` (or unrecognized) URL is a server address accepting `GET` or `POST` requests (for `SELECT` or `INSERT` queries correspondingly; the method can be overridden with the `http_method` argument); a recognized non-HTTP scheme (`file://`, `s3://`, `az://`, `hdfs://`, …) is delegated to the matching table function — see [Dispatching by URL scheme](#scheme-dispatch). Type: [String](/reference/data-types/string). |
 | `format`    | [Format](/reference/formats/index) of the data. Type: [String](/reference/data-types/string).                                                  |
 | `structure` | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](/reference/data-types/string).     |
 | `headers`   | Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.                                                  |
+| `http_method` | Key-value argument overriding the HTTP method: `http_method='POST'` makes `SELECT` queries use `POST` instead of the default `GET` (for servers that accept only `POST`); for `INSERT` queries, `POST` (the default) or `PUT` can be specified. The same value can be set through the `http_method` key of a [named collection](/reference/operations/named-collections). `PUT` applies to writes only: a `SELECT` through a configuration with `http_method='PUT'` still uses `GET`. |
 
 ## Returned value {#returned-value}
 
@@ -514,6 +548,12 @@ Getting the first 3 lines of a table that contains columns of `String` and [UInt
 
 ```sql
 SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32', headers('Accept'='text/csv; charset=utf-8')) LIMIT 3;
+```
+
+Reading from an HTTP server that accepts only `POST` requests:
+
+```sql
+SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32', http_method='POST') LIMIT 3;
 ```
 
 Inserting data from a `URL` into a table:
