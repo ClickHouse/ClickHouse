@@ -12,7 +12,7 @@
 namespace DB
 {
 
-constinit FiberLocal<ThreadStatus *, FiberLocalSlot::CurrentThread> current_thread;
+constinit FiberLocal<ThreadStatus *, FiberLocalSlot::CURRENT_THREAD> current_thread;
 
 namespace ErrorCodes
 {

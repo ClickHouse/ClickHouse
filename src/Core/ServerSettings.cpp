@@ -2319,6 +2319,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "ssh",
         "ssh_server",
 
+        /// Silk fiber runtime
+        "silk",
+
         /// Testing
         "_functional_tests_helper_database_replicated_replace_args_macros",
     };

@@ -3,7 +3,7 @@
 #include <utility>
 
 // MemoryTrackerBlockerInThread
-constinit FiberLocal<VariableContext, FiberLocalSlot::MemoryTrackerBlockerLevel, /* default_value = */ VariableContext::Max> MemoryTrackerBlockerInThread::level;
+constinit FiberLocal<VariableContext, FiberLocalSlot::MEMORY_TRACKER_BLOCKER_LEVEL, /* default_value = */ VariableContext::Max> MemoryTrackerBlockerInThread::level;
 
 MemoryTrackerBlockerInThread::MemoryTrackerBlockerInThread(VariableContext level_)
     : previous_level(level)

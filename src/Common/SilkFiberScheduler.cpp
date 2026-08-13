@@ -34,7 +34,7 @@ namespace
 /// Therefore, release-acquire is required.
 std::atomic<bool> fiber_scheduler_initialized = false;
 
-constinit FiberLocal<bool, FiberLocalSlot::InsideSilkFiber> inside_silk_fiber;
+constinit FiberLocal<bool, FiberLocalSlot::INSIDE_SILK_FIBER> inside_silk_fiber;
 
 struct FiberContext
 {

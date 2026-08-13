@@ -12,7 +12,7 @@
 
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
-constinit FiberLocal<bool, FiberLocalSlot::MemoryTrackerAlwaysThrowOnAllocation> memory_tracker_always_throw_logical_error_on_allocation;
+constinit FiberLocal<bool, FiberLocalSlot::MEMORY_TRACKER_ALWAYS_THROW_ON_ALLOCATION> memory_tracker_always_throw_logical_error_on_allocation;
 #endif
 
 namespace

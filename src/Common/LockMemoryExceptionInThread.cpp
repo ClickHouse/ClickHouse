@@ -2,9 +2,9 @@
 #include <base/defines.h>
 
 /// LockMemoryExceptionInThread
-constinit FiberLocal<uint64_t, FiberLocalSlot::LockMemoryExceptionCounter> LockMemoryExceptionInThread::counter;
-constinit FiberLocal<VariableContext, FiberLocalSlot::LockMemoryExceptionLevel> LockMemoryExceptionInThread::level;
-constinit FiberLocal<bool, FiberLocalSlot::LockMemoryExceptionBlockFaultInjections> LockMemoryExceptionInThread::block_fault_injections;
+constinit FiberLocal<uint64_t, FiberLocalSlot::LOCK_MEMORY_EXCEPTION_COUNTER> LockMemoryExceptionInThread::counter;
+constinit FiberLocal<VariableContext, FiberLocalSlot::LOCK_MEMORY_EXCEPTION_LEVEL> LockMemoryExceptionInThread::level;
+constinit FiberLocal<bool, FiberLocalSlot::LOCK_MEMORY_EXCEPTION_BLOCK_FAULT_INJECTIONS> LockMemoryExceptionInThread::block_fault_injections;
 LockMemoryExceptionInThread::LockMemoryExceptionInThread(VariableContext level_, bool block_fault_injections_)
     : previous_level(level)
     , previous_block_fault_injections(block_fault_injections)

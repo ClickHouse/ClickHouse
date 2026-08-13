@@ -50,7 +50,7 @@ namespace OpenTelemetry
 {
 
 /// This code can be executed inside coroutines, we should use coroutine local tracing context.
-static constinit FiberLocal<TracingContextOnThread, FiberLocalSlot::TraceContext> current_trace_context;
+static constinit FiberLocal<TracingContextOnThread, FiberLocalSlot::TRACE_CONTEXT> current_trace_context;
 
 bool Span::addAttribute(std::string_view name, UInt64 value) noexcept
 {

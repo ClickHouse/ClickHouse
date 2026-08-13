@@ -40,8 +40,8 @@ struct ThreadLocalStorageFirstSeen
 
 /// Only allocates on first access, which happens at fiber start (FiberContext::main)
 /// outside of silk_thread_local_storage_sanitizer_access_hook. See silk_thread_local_storage_sanitizer_fiber_init_hook.
-constinit FiberLocal<ThreadLocalStorageFirstSeen, FiberLocalSlot::ThreadLocalStorageSanitizerFirstSeen> first_seen;
-constinit FiberLocal<bool, FiberLocalSlot::ThreadLocalStorageSanitizerInside> inside_access_hook;
+constinit FiberLocal<ThreadLocalStorageFirstSeen, FiberLocalSlot::THREAD_LOCAL_STORAGE_SANITIZER_FIRST_SEEN> first_seen;
+constinit FiberLocal<bool, FiberLocalSlot::THREAD_LOCAL_STORAGE_SANITIZER_INSIDE> inside_access_hook;
 }
 
 extern "C" void silk_thread_local_storage_sanitizer_fiber_init_hook() noexcept

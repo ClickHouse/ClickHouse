@@ -21,7 +21,7 @@ class TraceCollector;
 struct MemoryTrackerBlockerInThread
 {
 private:
-    static constinit FiberLocal<VariableContext, FiberLocalSlot::MemoryTrackerBlockerLevel, /* default_value = */ VariableContext::Max> level;
+    static constinit FiberLocal<VariableContext, FiberLocalSlot::MEMORY_TRACKER_BLOCKER_LEVEL, /* default_value = */ VariableContext::Max> level;
 
     std::optional<VariableContext> previous_level;
 

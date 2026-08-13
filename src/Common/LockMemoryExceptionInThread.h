@@ -19,9 +19,9 @@
 struct LockMemoryExceptionInThread
 {
 private:
-    static constinit FiberLocal<uint64_t, FiberLocalSlot::LockMemoryExceptionCounter> counter;
-    static constinit FiberLocal<VariableContext, FiberLocalSlot::LockMemoryExceptionLevel> level;
-    static constinit FiberLocal<bool, FiberLocalSlot::LockMemoryExceptionBlockFaultInjections> block_fault_injections;
+    static constinit FiberLocal<uint64_t, FiberLocalSlot::LOCK_MEMORY_EXCEPTION_COUNTER> counter;
+    static constinit FiberLocal<VariableContext, FiberLocalSlot::LOCK_MEMORY_EXCEPTION_LEVEL> level;
+    static constinit FiberLocal<bool, FiberLocalSlot::LOCK_MEMORY_EXCEPTION_BLOCK_FAULT_INJECTIONS> block_fault_injections;
 
     VariableContext previous_level;
     bool previous_block_fault_injections;
