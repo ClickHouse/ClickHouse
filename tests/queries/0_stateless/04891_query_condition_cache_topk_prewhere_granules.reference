@@ -1,0 +1,35 @@
+--- QCC starts empty
+0
+--- ASC LIMIT 5: ground truth (QCC off)
+0
+1
+2
+3
+4
+--- ASC LIMIT 5: the first run records PREWHERE-filtered granules
+0
+1
+2
+3
+4
+1
+--- ASC LIMIT 5: the second run consults them, must match ground truth
+0
+1
+2
+3
+4
+--- DESC LIMIT 5: must not reuse the ASC plan's granule decisions
+99999
+99998
+99997
+99996
+99995
+---
+99999
+99998
+99997
+99996
+99995
+--- The second run reads fewer marks
+1	1
