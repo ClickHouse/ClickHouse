@@ -179,7 +179,8 @@ All schema changes must be run against the **read-write** service, including:
 - [Modifying TTL](/clickstack/managing/ttl#modifying-ttl) to change retention
 - Creating [materialized views](/clickstack/managing/materialized-views) for query acceleration
 - Adding [skip indexes, projections and other performance optimizations](/clickstack/managing/performance-tuning)
-- Creating users and granting roles
+
+Users, roles and grants aren't schema changes - they're shared by every service in the warehouse and only need to be created once. The [setup steps](#prepare-read-write-service) above create them on the read-write service, alongside the database.
 
 Connect to the read-write service using the [SQL console or ClickHouse client](/clickstack/managing/admin). Because the warehouse shares storage and access controls, the changes are immediately visible to the read-only service. If you've [separated merges from ingestion](#separating-merges), statements can be submitted against either read-write service - but note that mutations are executed and tracked on the merge service.
 
