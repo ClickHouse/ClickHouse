@@ -112,10 +112,10 @@ class EndpointConfig:
     per_call_budget_ms: int
     embed_batch_budget_ms: int
     embed_batch_size: int
-    max_est_usd: float
+    max_api_calls: int
+    max_tokens: int
     price_in_per_1m: float
     price_out_per_1m: float
-    est_output_tokens: int
     mock_delay_ms: int
     kill_budget_sec: int
     latency_gate_real: bool
@@ -204,10 +204,14 @@ def resolve():
         embed_batch_budget_ms=_env_int("AI_E2E_EMBED_BATCH_BUDGET_MS", 10000),
         # Mirrors the `ai_function_embedding_max_batch_size` default.
         embed_batch_size=_env_int("AI_E2E_EMBED_BATCH_SIZE", 100),
-        max_est_usd=_env_float("AI_E2E_MAX_EST_USD", 1.0),
+        # Hard ceilings on what the session may spend, in units the run actually
+        # measures. Both are enforced from `system.query_log` after every query, so they
+        # bound a retry storm too - unlike a pre-run estimate, which can only guess.
+        max_api_calls=_env_int("AI_E2E_MAX_API_CALLS", 2000),
+        max_tokens=_env_int("AI_E2E_MAX_TOKENS", 2_000_000),
+        # Pricing is optional and only decorates the report; it gates nothing.
         price_in_per_1m=_env_float("AI_E2E_PRICE_IN_PER_1M", 0.0),
         price_out_per_1m=_env_float("AI_E2E_PRICE_OUT_PER_1M", 0.0),
-        est_output_tokens=_env_int("AI_E2E_EST_OUTPUT_TOKENS", 64),
         mock_delay_ms=_env_int("AI_E2E_MOCK_DELAY_MS", 200),
         kill_budget_sec=_env_int("AI_E2E_KILL_BUDGET_SEC", 10),
         latency_gate_real=_env_bool("AI_E2E_LATENCY_GATE_REAL"),
@@ -220,34 +224,61 @@ def request_timeout_sec(cfg):
     return max(1, math.ceil(cfg.per_call_budget_ms / 1000))
 
 
-@dataclasses.dataclass
-class SpendEstimate:
-    chat_calls: int
-    input_tokens: int
-    output_tokens: int
-    usd: float
-    priced: bool
-
-    def format(self):
-        cost = f"${self.usd:.4f}" if self.priced else "unpriced (AI_E2E_PRICE_* unset)"
-        return (
-            f"{self.chat_calls} chat calls, ~{self.input_tokens} input tokens, "
-            f"~{self.output_tokens} output tokens -> {cost}"
-        )
+class BudgetExceeded(RuntimeError):
+    pass
 
 
-def estimate_spend(cfg, texts, chat_calls):
-    """Estimate the cost of a run.
+class Budget:
+    """Cumulative meter over a session, checked after every query.
 
-    Input tokens are approximated as len(text)/4. Output is `AI_E2E_EST_OUTPUT_TOKENS`
-    per chat call rather than `max_tokens`, which overestimates these corpora by more
-    than an order of magnitude and would abort runs costing cents. Unpriced is reported
-    as unpriced, never as zero.
+    A pre-run estimate cannot bound a run: it has to guess the number of calls, it prices
+    each corpus string once even when several suites send it, and it is blind to retries.
+    Counting what `system.query_log` reports after each query needs no pricing table, and
+    stops a runaway inside the run rather than after it.
     """
-    input_tokens = sum(max(1, len(text) // 4) for text in texts)
-    output_tokens = chat_calls * cfg.est_output_tokens
-    priced = cfg.price_in_per_1m > 0 or cfg.price_out_per_1m > 0
-    usd = (
-        input_tokens * cfg.price_in_per_1m + output_tokens * cfg.price_out_per_1m
-    ) / 1_000_000
-    return SpendEstimate(chat_calls, input_tokens, output_tokens, usd, priced)
+
+    def __init__(self, max_api_calls, max_tokens):
+        self.max_api_calls = max_api_calls
+        self.max_tokens = max_tokens
+        self.api_calls = 0
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.queries = 0
+
+    @property
+    def tokens(self):
+        return self.input_tokens + self.output_tokens
+
+    def record(self, events):
+        """Add one query's usage, and stop the session if it went over."""
+        self.queries += 1
+        self.api_calls += int(events.get("api_calls") or 0)
+        self.input_tokens += int(events.get("input_tokens") or 0)
+        self.output_tokens += int(events.get("output_tokens") or 0)
+        if self.max_api_calls and self.api_calls > self.max_api_calls:
+            raise BudgetExceeded(
+                f"{self.api_calls} API calls over {self.queries} queries exceeds "
+                f"AI_E2E_MAX_API_CALLS={self.max_api_calls}. Raise the ceiling or lower "
+                "AI_E2E_DATA_SCALE."
+            )
+        if self.max_tokens and self.tokens > self.max_tokens:
+            raise BudgetExceeded(
+                f"{self.tokens} tokens over {self.queries} queries exceeds "
+                f"AI_E2E_MAX_TOKENS={self.max_tokens}."
+            )
+
+    def usd(self, price_in_per_1m, price_out_per_1m):
+        """Cost, when rates are configured. `None` means unpriced, never zero."""
+        if not price_in_per_1m and not price_out_per_1m:
+            return None
+        return (
+            self.input_tokens * price_in_per_1m + self.output_tokens * price_out_per_1m
+        ) / 1_000_000
+
+    def summary(self, price_in_per_1m=0.0, price_out_per_1m=0.0):
+        cost = self.usd(price_in_per_1m, price_out_per_1m)
+        priced = f"${cost:.4f}" if cost is not None else "unpriced (AI_E2E_PRICE_* unset)"
+        return (
+            f"{self.queries} queries, {self.api_calls}/{self.max_api_calls} API calls, "
+            f"{self.tokens}/{self.max_tokens} tokens -> {priced}"
+        )

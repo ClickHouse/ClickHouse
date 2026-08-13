@@ -1453,16 +1453,31 @@ def test_api_call_quota_is_per_query(started_cluster):
     the table here has eight parts.
     """
     limit = 10
+    parts_wanted = 8
     instance.query("DROP TABLE IF EXISTS quota_parts SYNC")
     instance.query(
         "CREATE TABLE quota_parts (id UInt32, x String) ENGINE = MergeTree ORDER BY id"
     )
-    for part in range(8):
+    # The parts are load-bearing: with one part the query gets one allowance and the
+    # assertion would hold for the wrong reason. Background merges would collapse eight
+    # tiny parts within seconds, so stop them first and check the layout held.
+    instance.query("SYSTEM STOP MERGES quota_parts")
+    for part in range(parts_wanted):
         instance.query(
             f"INSERT INTO quota_parts SELECT number + {part * 8}, "
             f"concat('row ', toString(number + {part * 8})) FROM numbers(8)"
         )
     try:
+        active_parts = int(
+            instance.query(
+                "SELECT count() FROM system.parts WHERE database = currentDatabase() "
+                "AND table = 'quota_parts' AND active"
+            ).strip()
+        )
+        assert active_parts == parts_wanted, (
+            f"{active_parts} active parts, expected {parts_wanted}: the test cannot "
+            "distinguish per-query from per-block accounting without them"
+        )
         qid = unique_query_id("quota_scope")
         settings = dict(AI_SETTINGS)
         settings.update(
@@ -1481,6 +1496,7 @@ def test_api_call_quota_is_per_query(started_cluster):
         )
         calls = int(get_profile_events(qid)["api_calls"])
     finally:
+        instance.query("SYSTEM START MERGES quota_parts")
         instance.query("DROP TABLE IF EXISTS quota_parts SYNC")
 
     assert calls <= limit, (

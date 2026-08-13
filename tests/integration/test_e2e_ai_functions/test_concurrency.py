@@ -58,12 +58,15 @@ def a3_tables(instance, cfg):
         [("id", "UInt32"), ("text", "String"), ("label", "String")],
         ai_corpus.classify(),
     )
-    # Eight parts, so several pipeline streams can call `executeImpl` at once.
+    # Eight parts, so several pipeline streams can call `executeImpl` at once. Merges are
+    # stopped because they would collapse the parts and quietly remove the parallelism the
+    # case is about.
     instance.query("DROP TABLE IF EXISTS a3_parts SYNC")
     instance.query(
         "CREATE TABLE a3_parts (id UInt32, text String, label String) "
         "ENGINE = MergeTree ORDER BY id"
     )
+    instance.query("SYSTEM STOP MERGES a3_parts")
     for row in ai_corpus.classify():
         instance.query(
             "INSERT INTO a3_parts VALUES ({}, '{}', '{}')".format(

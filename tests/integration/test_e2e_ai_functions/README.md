@@ -377,12 +377,17 @@ Three things to get right when running:
 
 ## 7. Guards
 
-**Spend.** `config.py` estimates input tokens from the resolved corpus (`len(text)/4`) and output
-tokens as `AI_E2E_EST_OUTPUT_TOKENS` per chat call — not `max_tokens`, which overestimates these
-corpora by more than an order of magnitude and would abort a run costing cents. It prices them with
-`AI_E2E_PRICE_*`, prints the estimate per suite, and aborts when the total exceeds
-`AI_E2E_MAX_EST_USD`. Pricing left at `0` prints token counts and does not gate. Suite B's mock
-experiments cost nothing and are excluded.
+**Spend.** Metered, not estimated. Every query's `AIAPICalls` and token counts are read back from
+`system.query_log` and accumulated by a session-scoped `Budget`; the session stops the moment a run
+passes `AI_E2E_MAX_API_CALLS` or `AI_E2E_MAX_TOKENS`.
+
+This replaced a pre-run USD estimate, which was the wrong instrument three times over: it was inert
+unless the operator also supplied a pricing table, it had to guess the call count (it was 3-4× low,
+pricing each corpus string once even where several suites send it), and it was blind to retries — so
+the one scenario that can genuinely run away, a retry storm against a flapping endpoint, was exactly
+the one it could not bound. Counting what the server reports needs no pricing table and stops a
+runaway *inside* the run. Pricing stays optional and only decorates the end-of-session line; unpriced
+is reported as unpriced, never as zero. Suite B's mock experiments cost nothing and are not metered.
 
 **Time.** Two real layers plus a backstop:
 

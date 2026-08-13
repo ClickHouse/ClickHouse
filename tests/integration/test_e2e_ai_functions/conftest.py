@@ -92,21 +92,13 @@ INSTANCE_ENV = {
     "AI_E2E_API_KEY": CFG.api_key,
 }
 
-cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance(
-    "node",
-    main_configs=["configs/ai_e2e_collections.xml"],
-    env_variables=dict(INSTANCE_ENV),
-    stay_alive=True,
-)
-
-
 class _RedactKey(logging.Filter):
     """Keep the API key out of captured log records.
 
-    `helpers/cluster.py` logs the whole `env_variables` dict at DEBUG, `pytest.ini` sets
-    `log_level = DEBUG`, and captured logs are attached to failures. Scrubbing the `.env`
-    file on disk does nothing about that path.
+    `ClickHouseCluster.__init__` logs the whole process environment at DEBUG
+    (`helpers/cluster.py:585`), `pytest.ini` sets `log_level = DEBUG`, and the job packages
+    `ci/tmp/*.log` into `logs.tar.gz`. Scrubbing the `.env` file on disk does nothing about
+    that path.
     """
 
     def __init__(self, secret):
@@ -118,7 +110,7 @@ class _RedactKey(logging.Filter):
             return True
         try:
             message = record.getMessage()
-        except Exception:
+        except Exception:  # a record whose args do not format must not break logging
             return True
         if self.secret in message:
             record.msg = message.replace(self.secret, "[scrubbed]")
@@ -126,10 +118,37 @@ class _RedactKey(logging.Filter):
         return True
 
 
-if CFG.api_key:
-    logging.getLogger().addFilter(_RedactKey(CFG.api_key))
-    for _name in ("root", "helpers.cluster", "docker"):
-        logging.getLogger(_name).addFilter(_RedactKey(CFG.api_key))
+def _install_key_redaction():
+    """Attach the redaction filter everywhere records can escape.
+
+    A filter on a logger only sees records emitted through that logger: records from child
+    loggers reach the root *handlers* directly and bypass the root logger's filters. So the
+    handlers are the load-bearing attachment point.
+    """
+    if not CFG.api_key:
+        return
+    root = logging.getLogger()
+    root.addFilter(_RedactKey(CFG.api_key))
+    for handler in root.handlers:
+        handler.addFilter(_RedactKey(CFG.api_key))
+
+
+# Before the cluster is constructed: its constructor is what logs the environment.
+_install_key_redaction()
+
+
+def pytest_configure(config):
+    """pytest installs its capture handlers after import, so filter those too."""
+    _install_key_redaction()
+
+
+cluster = ClickHouseCluster(__file__)
+node = cluster.add_instance(
+    "node",
+    main_configs=["configs/ai_e2e_collections.xml"],
+    env_variables=dict(INSTANCE_ENV),
+    stay_alive=True,
+)
 
 
 def _scrub_env_files():
@@ -253,9 +272,10 @@ def _create_mock_collections(instance, port):
 class Runner:
     """Runs a query, then reads its own AI counters back from `system.query_log`."""
 
-    def __init__(self, instance, cfg):
+    def __init__(self, instance, cfg, budget=None):
         self.instance = instance
         self.cfg = cfg
+        self.budget = budget
 
     def settings(self, extra=None, counting=False, rows=0):
         settings = dict(AI_SETTINGS)
@@ -286,6 +306,9 @@ class Runner:
             timeout=timeout,
         )
         events = read_ai_events(self.instance, query_id)
+        # Meter every query, so a runaway is stopped inside the run.
+        if self.budget is not None:
+            self.budget.record(events)
         return result, events
 
     def error(self, sql, case="query", settings=None, timeout=None):
@@ -336,8 +359,16 @@ def clean_mock(mock):
 
 
 @pytest.fixture(scope="session")
-def q(started_cluster):
-    return Runner(node, CFG)
+def budget():
+    """Session-wide meter. Shared by every query the `q` fixture runs."""
+    meter = ai_config.Budget(CFG.max_api_calls, CFG.max_tokens)
+    yield meter
+    print(f"\n[ai-e2e] spend: {meter.summary(CFG.price_in_per_1m, CFG.price_out_per_1m)}")
+
+
+@pytest.fixture(scope="session")
+def q(started_cluster, budget):
+    return Runner(node, CFG, budget)
 
 
 @pytest.fixture(scope="session")
@@ -395,21 +426,12 @@ def preflight(started_cluster, request):
     if status in ("401", "403"):
         raise RuntimeError(f"endpoint rejected the key: HTTP {status}")
 
-    # A0-4: refuse to start a run that would exceed the spend cap.
-    texts = ai_corpus.all_live_texts(CFG.data_scale)
-    chat_calls = (
-        len(ai_corpus.arith(CFG.data_scale))
-        + len(ai_corpus.classify()) * 2
-        + len(ai_corpus.extract()) * 2
-        + len(ai_corpus.translate())
+    # A0-4: state the ceilings. They are enforced per query by the `budget` meter rather
+    # than estimated up front, so this only has to be legible, not predictive.
+    print(
+        f"\n[ai-e2e] ceilings: {CFG.max_api_calls} API calls, {CFG.max_tokens} tokens "
+        f"(AI_E2E_MAX_API_CALLS / AI_E2E_MAX_TOKENS), scale {CFG.data_scale}"
     )
-    estimate = ai_config.estimate_spend(CFG, texts, chat_calls)
-    print(f"\n[ai-e2e] spend estimate: {estimate.format()}")
-    if estimate.priced and estimate.usd > CFG.max_est_usd:
-        raise RuntimeError(
-            f"estimated ${estimate.usd:.4f} exceeds AI_E2E_MAX_EST_USD="
-            f"{CFG.max_est_usd}; lower AI_E2E_DATA_SCALE or raise the cap"
-        )
 
     # A0-2: one real call, so a broken collection fails here and not in every case.
     node.query(
