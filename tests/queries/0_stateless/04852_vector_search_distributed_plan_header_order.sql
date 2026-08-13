@@ -35,6 +35,7 @@ SETTINGS vector_search_with_rescoring = 0,
     distributed_plan_default_reader_bucket_count = 3,
     distributed_plan_default_shuffle_join_bucket_count = 3,
     distributed_plan_max_rows_to_broadcast = 0,
-    enable_parallel_replicas = 0;
+    enable_parallel_replicas = 0,
+    max_rows_to_group_by = 0; -- the test runner may randomize it, and `make_distributed_plan` rejects aggregation with it
 
 DROP TABLE tab_dist_header;
