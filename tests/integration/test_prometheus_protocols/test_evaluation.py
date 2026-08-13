@@ -513,12 +513,12 @@ def do_query_test(
     actual_result_from_http_api = execute_query_in_clickhouse_http_api(query, timestamp)
     assert (
         http_api_response_close_to(
-            actual_result_from_http_api, actual_prometheus_result, eps=eps
+            actual_result_from_http_api, actual_result, eps=eps
         )
         == clickhouse_http_api_result_is_same_as_prometheus
     ), (
         f"actual_result_from_http_api: {actual_result_from_http_api}, "
-        f"prometheus_result: {actual_prometheus_result}"
+        f"prometheus_result: {actual_result}"
     )
 
 
@@ -607,12 +607,12 @@ def do_range_query_test(
     )
     assert (
         http_api_response_close_to(
-            actual_result_from_http_api, actual_prometheus_result, eps=eps
+            actual_result_from_http_api, actual_result, eps=eps
         )
         == clickhouse_http_api_result_is_same_as_prometheus
     ), (
         f"actual_result_from_http_api: {actual_result_from_http_api}, "
-        f"prometheus_result: {actual_prometheus_result}"
+        f"prometheus_result: {actual_result}"
     )
 
 
