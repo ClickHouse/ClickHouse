@@ -12,7 +12,9 @@
 #include <base/types.h>
 
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 namespace ProfileEvents
@@ -20,9 +22,6 @@ namespace ProfileEvents
 extern const Event PuffinFilesCacheHits;
 extern const Event PuffinFilesCacheMisses;
 extern const Event PuffinFilesCacheWeightLost;
-extern const Event PuffinFooterCacheHits;
-extern const Event PuffinFooterCacheMisses;
-extern const Event PuffinFooterCacheWeightLost;
 }
 
 namespace DB
@@ -88,8 +87,6 @@ struct PuffinFooterCacheKey
     String etag;
 
     bool operator==(const PuffinFooterCacheKey & other) const;
-
-    UInt64 approximateMemoryBytes() const;
 };
 
 struct PuffinFooterCacheKeyHash
@@ -97,45 +94,13 @@ struct PuffinFooterCacheKeyHash
     size_t operator()(const PuffinFooterCacheKey & key) const;
 };
 
-struct PuffinFooterCacheCell : private boost::noncopyable
-{
-    using BlobsPtr = std::shared_ptr<const std::vector<PuffinBlob>>;
-
-    BlobsPtr blobs;
-    UInt64 memory_bytes = 0;
-
-    PuffinFooterCacheCell(BlobsPtr blobs_, UInt64 key_memory_bytes_);
-
-    static UInt64 calculateMemorySize(const BlobsPtr & blobs_, UInt64 key_memory_bytes_);
-
-private:
-    static constexpr size_t SIZE_IN_MEMORY_OVERHEAD = 256;
-};
-
-struct PuffinFooterCacheWeightFunction
-{
-    size_t operator()(const PuffinFooterCacheCell & cell) const;
-};
-
-class PuffinFooterCache
-    : public CacheBase<PuffinFooterCacheKey, PuffinFooterCacheCell, PuffinFooterCacheKeyHash, PuffinFooterCacheWeightFunction>
-{
-public:
-    using Base = CacheBase<PuffinFooterCacheKey, PuffinFooterCacheCell, PuffinFooterCacheKeyHash, PuffinFooterCacheWeightFunction>;
-
-    PuffinFooterCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio);
-
-private:
-    void onEntryRemoval(size_t weight_loss, const MappedPtr &) override;
-};
-
 /// Cache for parsed content loaded from Puffin files (deletion vectors today, indexes later).
-/// Also owns a sibling footer cache so coalesced multi-DV Puffins parse the footer once per file.
+/// Also memoizes parsed footers so coalesced multi-DV Puffins parse the footer once per file.
 class PuffinFilesCache : public CacheBase<PuffinFilesCacheKey, PuffinFilesCacheCell, PuffinFilesCacheKeyHash, PuffinFilesCacheWeightFunction>
 {
 public:
     using Base = CacheBase<PuffinFilesCacheKey, PuffinFilesCacheCell, PuffinFilesCacheKeyHash, PuffinFilesCacheWeightFunction>;
-    using FooterBlobsPtr = PuffinFooterCacheCell::BlobsPtr;
+    using FooterBlobsPtr = std::shared_ptr<const std::vector<PuffinBlob>>;
 
     PuffinFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio);
 
@@ -158,50 +123,33 @@ public:
         const String & file_path,
         const String & etag);
 
-    /// Clears deletion-vector and footer entries.
+    /// Clears deletion-vector entries and footer memo.
     void clear();
 
     void setMaxSizeInBytes(size_t max_size_in_bytes);
     void setMaxCount(size_t max_count);
 
+    /// Small memo (not a weighted LRU): footers are tiny; bound by entry count only.
     template <typename LoadFunc>
     FooterBlobsPtr getOrSetFooter(const PuffinFooterCacheKey & key, LoadFunc && load_fn)
     {
-        bool loaded = false;
-        auto load_fn_wrapper = [&]()
         {
-            loaded = true;
-            auto blobs = load_fn();
-            LOG_TRACE(
-                log,
-                "Loaded puffin footer into cache for {} | {} | {} ({} blobs)",
-                key.storage_identity,
-                key.file_path,
-                key.etag,
-                blobs ? blobs->size() : 0);
-            return std::make_shared<PuffinFooterCacheCell>(std::move(blobs), key.approximateMemoryBytes());
-        };
-
-        auto [cell, outcome] = footer_cache.getOrSetWithOutcome(key, load_fn_wrapper);
-        const bool served_from_cache = outcome == CacheGetOrSetOutcome::Hit;
-        if (!served_from_cache)
-        {
-            LOG_TRACE(
-                log,
-                "Puffin footer cache miss for {} | {} | {}{}",
-                key.storage_identity,
-                key.file_path,
-                key.etag,
-                loaded ? "" : " (waited)");
-            ProfileEvents::increment(ProfileEvents::PuffinFooterCacheMisses);
-        }
-        else
-        {
-            LOG_TRACE(log, "Puffin footer cache hit for {} | {} | {}", key.storage_identity, key.file_path, key.etag);
-            ProfileEvents::increment(ProfileEvents::PuffinFooterCacheHits);
+            std::lock_guard lock(footer_mutex);
+            if (auto it = footer_memo.find(key); it != footer_memo.end())
+                return it->second;
         }
 
-        return cell->blobs;
+        auto blobs = load_fn();
+
+        std::lock_guard lock(footer_mutex);
+        if (auto it = footer_memo.find(key); it != footer_memo.end())
+            return it->second;
+
+        if (footer_memo_max_count > 0 && footer_memo.size() >= footer_memo_max_count)
+            footer_memo.clear();
+
+        footer_memo.emplace(key, blobs);
+        return blobs;
     }
 
     template <typename LoadFunc>
@@ -318,7 +266,9 @@ private:
     static DataLakeObjectMetadata::ExcludedRowsPtr cloneExcludedRows(const PuffinFilesCacheCell & cell);
 
     LoggerPtr log;
-    PuffinFooterCache footer_cache;
+    mutable std::mutex footer_mutex;
+    std::unordered_map<PuffinFooterCacheKey, FooterBlobsPtr, PuffinFooterCacheKeyHash> footer_memo;
+    size_t footer_memo_max_count = 0;
 
     void onEntryRemoval(size_t weight_loss, const MappedPtr &) override;
 };

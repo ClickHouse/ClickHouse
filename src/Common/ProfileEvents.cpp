@@ -115,9 +115,6 @@
     M(PuffinFilesCacheHits, "Number of times parsed Puffin file content has been found in the cache.", ValueType::Number) \
     M(PuffinFilesCacheMisses, "Number of times parsed Puffin file content has not been found in the cache and had to be read from disk.", ValueType::Number) \
     M(PuffinFilesCacheWeightLost, "Approximate number of bytes evicted from the Puffin files cache.", ValueType::Number) \
-    M(PuffinFooterCacheHits, "Number of times a parsed Puffin footer has been found in the cache.", ValueType::Number) \
-    M(PuffinFooterCacheMisses, "Number of times a parsed Puffin footer has not been found in the cache and had to be read from disk.", ValueType::Number) \
-    M(PuffinFooterCacheWeightLost, "Approximate number of bytes evicted from the Puffin footer cache.", ValueType::Number) \
     M(VectorSimilarityIndexCacheHits, "Number of times an index granule has been found in the vector index cache.", ValueType::Number) \
     M(VectorSimilarityIndexCacheMisses, "Number of times an index granule has not been found in the vector index cache and had to be read from disk.", ValueType::Number) \
     M(VectorSimilarityIndexCacheWeightLost, "Approximate number of bytes evicted from the vector index cache.", ValueType::Number) \

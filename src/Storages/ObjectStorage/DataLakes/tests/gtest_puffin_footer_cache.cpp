@@ -10,8 +10,6 @@ using namespace DB;
 
 namespace ProfileEvents
 {
-extern const Event PuffinFooterCacheHits;
-extern const Event PuffinFooterCacheMisses;
 extern const Event PuffinFilesRead;
 }
 
@@ -64,7 +62,7 @@ PuffinFilesCache::FooterBlobsPtr loadFixtureFooter()
 
 }
 
-TEST(PuffinFooterCache, CoalescedSlicesShareOneFooterParse)
+TEST(PuffinFooterMemo, CoalescedSlicesShareOneFooterParse)
 {
     PuffinFilesCache cache("SLRU", 1'000'000, 100, 0.5);
 
@@ -79,8 +77,6 @@ TEST(PuffinFooterCache, CoalescedSlicesShareOneFooterParse)
     ASSERT_TRUE(key_b.has_value());
 
     auto & counters = ProfileEvents::global_counters;
-    const auto footer_hits_before = counters[ProfileEvents::PuffinFooterCacheHits].load();
-    const auto footer_misses_before = counters[ProfileEvents::PuffinFooterCacheMisses].load();
     const auto files_read_before = counters[ProfileEvents::PuffinFilesRead].load();
 
     size_t footer_loads = 0;
@@ -118,13 +114,11 @@ TEST(PuffinFooterCache, CoalescedSlicesShareOneFooterParse)
     });
 
     EXPECT_EQ(footer_loads, 1u);
-    EXPECT_EQ(counters[ProfileEvents::PuffinFooterCacheMisses].load() - footer_misses_before, 1u);
-    EXPECT_EQ(counters[ProfileEvents::PuffinFooterCacheHits].load() - footer_hits_before, 1u);
     /// One footer parse (`PuffinFilesRead` in readPuffinFooter) plus two blob reads.
     EXPECT_EQ(counters[ProfileEvents::PuffinFilesRead].load() - files_read_before, 3u);
 }
 
-TEST(PuffinFooterCache, ClearDropsFooterEntries)
+TEST(PuffinFooterMemo, ClearDropsFooterEntries)
 {
     PuffinFilesCache cache("SLRU", 1'000'000, 100, 0.5);
     const auto footer_key = PuffinFilesCache::tryCreateFooterKey("Local:////test", "coalesced.puffin", "etag-1");
