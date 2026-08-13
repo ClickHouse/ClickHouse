@@ -950,28 +950,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             validate_codec_setting("default_compression_codec", (*storage_settings)[MergeTreeSetting::default_compression_codec].value);
         }
 
-        /// UNIQUE KEY tables must reside on local-only storage policies.
-        /// CREATE only; ATTACH must still load existing tables.
-        if (metadata.hasUniqueKey() && args.mode <= LoadingStrictnessLevel::CREATE)
-        {
-            StoragePolicyPtr resolved_storage_policy = (*storage_settings)[MergeTreeSetting::disk].changed
-                ? context->getStoragePolicyFromDisk((*storage_settings)[MergeTreeSetting::disk])
-                : context->getStoragePolicy((*storage_settings)[MergeTreeSetting::storage_policy]);
-
-            for (const auto & disk : resolved_storage_policy->getDisks())
-            {
-                const auto & desc = disk->getDataSourceDescription();
-                if (desc.type != DataSourceType::Local)
-                {
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "UNIQUE KEY on non-local disks is not yet supported "
-                        "(disk `{}` has source type `{}`). "
-                        "UNIQUE KEY tables must currently reside on a local-only storage policy.",
-                        disk->getName(), desc.toString());
-                }
-            }
-        }
-
         metadata.add_minmax_index_for_numeric_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns];
         metadata.add_minmax_index_for_string_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns];
         metadata.add_minmax_index_for_temporal_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_temporal_columns];

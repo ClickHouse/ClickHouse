@@ -3087,17 +3087,18 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         for (auto & part : broken_parts_to_detach)
             part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
 
-    /// UNIQUE KEY — SST sweep + per-part validation for parts that landed
-    /// without a usable sidecar (restore, freeze taken before UK shipped, or a
-    /// corrupt/truncated SST that survived because it carries no checksums.txt
-    /// entry). The active set is captured here under `part_lock`; the I/O-heavy
-    /// per-part validate+rebuild runs below, after the lock is released.
+    /// UNIQUE KEY - SST sweep + per-part validation. The sidecar is recorded in
+    /// `checksums.txt`, so a missing or wrongly-sized SST is already rejected by
+    /// `checkConsistencyBase` above; what is left for the validation below is
+    /// size-preserving damage plus parts that legitimately carry no SST entry
+    /// (written before the sidecar was checksummed, or - once the index is
+    /// written outside the INSERT commit - produced asynchronously). The active
+    /// set is captured here under `part_lock`; the I/O-heavy per-part
+    /// validate+rebuild runs below, after the lock is released.
     ///
     /// The sweep deletes files, so it stays gated on writability. Validation is
-    /// read-only I/O and runs regardless: a UK part with a missing/corrupt SST
-    /// on readonly storage must fail the load, not activate unprobeable. (UK
-    /// tables require local disks per the storage-policy guard, so static/web
-    /// UK parts are practically unreachable — still fail closed, not skip.)
+    /// read-only I/O and runs regardless: a UK part with an unusable SST on
+    /// readonly storage must fail the load, not activate unprobeable.
     MutableDataPartsVector active_uk_parts_to_rebuild;
     const bool uk_storage_is_writable = !is_static_storage && !all_disks_are_readonly && !is_table_readonly;
     if (uk_storage_is_writable)
@@ -6125,12 +6126,12 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                     "ALTER TABLE ... MATERIALIZE TTL is not supported on tables with UNIQUE KEY");
 
             /// MATERIALIZE / CLEAR COLUMN rewrite the whole part via MutateTask
-            /// regardless of which column is targeted (compact and full-rewrite
-            /// parts lose all sidecars; `unique_key_index.sst` is in
-            /// `getFileNamesWithoutChecksums` → `files_to_skip`), so the dense
-            /// index is dropped even for a non-UK column. Reject both for the
-            /// whole table until mutation-side SST rebuild lands (mirrors the
-            /// REWRITE-family stance below).
+            /// regardless of which column is targeted, so the dense index is
+            /// invalidated even for a non-UK column: a full rewrite produces no
+            /// `unique_key_index.sst`, and the hardlink path would carry over an
+            /// SST whose `row_number` values no longer match the new part's row
+            /// offsets. Reject both for the whole table until mutation-side SST
+            /// rebuild lands (mirrors the REWRITE-family stance below).
             if (command.type == MutationCommand::MATERIALIZE_COLUMN)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "ALTER TABLE ... MATERIALIZE COLUMN `{}` is not supported on tables with UNIQUE KEY: "
