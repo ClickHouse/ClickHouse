@@ -2698,6 +2698,8 @@ void registerStorageRemote(StorageFactory & factory)
         .supports_parallel_insert = true,
         .supports_schema_inference = true,
         .supports_named_collections = true,
+        /// The same identifier is a cluster name when no collection with that name exists.
+        .named_collection_argument_is_ambiguous = true,
         .source_access_type = AccessTypeObjects::Source::REMOTE,
         .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
     };

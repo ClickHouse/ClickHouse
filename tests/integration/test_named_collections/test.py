@@ -1238,3 +1238,93 @@ def test_drop_collection_recreated_under_lazily_loaded_table(cluster):
     node.query("DROP TABLE lazy_recreate_db.t")
     node.query("DROP NAMED COLLECTION lazy_recreated_collection")
     node.query("DROP DATABASE lazy_recreate_db")
+
+
+def test_drop_not_used_by_lazily_loaded_remote_table(cluster):
+    """Unlike `Distributed`, the `Remote` engine resolves its arguments through named collections, but
+    an identifier first argument is still a valid positional argument for it — a cluster name — when
+    no collection with that name exists. A collection created later with the same name as the cluster
+    must not be considered used by the table when the dependency is reconstructed from the metadata at
+    lazy load: for such engines the decision replicates the engine's own argument parsing, which takes
+    the named-collection branch only for a `(collection, key = value, ...)` argument list."""
+    node = cluster.instances["node"]
+
+    node.query("DROP DATABASE IF EXISTS lazy_remote_db")
+    node.query("DROP NAMED COLLECTION IF EXISTS lazy_dist_cluster")
+
+    node.query(
+        "CREATE DATABASE lazy_remote_db ENGINE = Atomic SETTINGS lazy_load_tables = 1"
+    )
+    node.query(
+        "CREATE TABLE lazy_remote_db.r (dummy UInt8) ENGINE = Remote(lazy_dist_cluster, system, one)"
+    )
+    node.query(
+        "CREATE NAMED COLLECTION lazy_dist_cluster AS url = 'http://localhost:8123', format = 'CSV'"
+    )
+
+    node.restart_clickhouse()
+
+    assert (
+        node.query(
+            "SELECT engine FROM system.tables WHERE database = 'lazy_remote_db' AND name = 'r'"
+        ).strip()
+        == "TableProxy"
+    )
+
+    # The table references the cluster `lazy_dist_cluster`, not the collection of the same name.
+    node.query("DROP NAMED COLLECTION lazy_dist_cluster")
+    node.query("DROP DATABASE lazy_remote_db")
+
+
+def test_drop_while_used_by_lazily_loaded_table_function(cluster):
+    """A table created with `CREATE TABLE ... AS f(...)` carries a table function instead of an engine
+    in its stored definition, and a database with `lazy_load_tables = 1` deliberately does not attach
+    it as a lazy proxy (`DatabaseOrdinary::shouldLazyLoad`): it is loaded eagerly as a
+    `StorageTableFunctionProxy`, and that load registers the dependency on the named collection the
+    function used via `ITableFunction::getUsedNamedCollectionName`. This pins that contract: the
+    dependency survives a restart of such a database, `DROP NAMED COLLECTION` stays refused before the
+    first access, and a detach after the restart moves the dependency to the detached list."""
+    node = cluster.instances["node"]
+
+    node.query("DROP DATABASE IF EXISTS lazy_tf_db")
+    node.query("DROP NAMED COLLECTION IF EXISTS lazy_bigquery_collection")
+
+    node.query(
+        "CREATE DATABASE lazy_tf_db ENGINE = Atomic SETTINGS lazy_load_tables = 1"
+    )
+    node.query(
+        "CREATE NAMED COLLECTION lazy_bigquery_collection AS "
+        "project = 'p', dataset = 'd', table = 't', access_token = 'secret'"
+    )
+    # The explicit column list keeps the create local: the structure is not inferred, so no request
+    # to the (nonexistent) BigQuery endpoint is made.
+    node.query(
+        "CREATE TABLE lazy_tf_db.t (x Int64) AS bigquery(lazy_bigquery_collection)"
+    )
+
+    # The restart forgets everything that was registered while the table was created. The table comes
+    # back as a table-function proxy (not a lazy `TableProxy`), whose load re-registers the dependency.
+    node.restart_clickhouse()
+
+    assert (
+        node.query(
+            "SELECT engine FROM system.tables WHERE database = 'lazy_tf_db' AND name = 't'"
+        ).strip()
+        == "Proxy"
+    )
+
+    assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+        "DROP NAMED COLLECTION lazy_bigquery_collection"
+    )
+
+    # A detach after that restart moves the reconstructed dependency to the detached list.
+    node.query("DETACH TABLE lazy_tf_db.t")
+    assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+        "DROP NAMED COLLECTION lazy_bigquery_collection"
+    )
+
+    # The collection is released once the metadata that references it is gone.
+    node.query("ATTACH TABLE lazy_tf_db.t")
+    node.query("DROP TABLE lazy_tf_db.t")
+    node.query("DROP NAMED COLLECTION lazy_bigquery_collection")
+    node.query("DROP DATABASE lazy_tf_db")

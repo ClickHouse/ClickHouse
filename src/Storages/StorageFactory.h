@@ -84,6 +84,12 @@ public:
         /// an identifier as the first argument means something else: a cluster name for
         /// `Distributed`, a database name for `Buffer`, a dictionary name for `Dictionary`.
         bool supports_named_collections = false;
+        /// Only meaningful together with `supports_named_collections`: whether an identifier first
+        /// argument is also a valid positional argument when the named-collection lookup does not
+        /// resolve, so that syntax alone cannot prove that the table uses a collection. `Remote`
+        /// falls back to interpreting it as a cluster name; every other engine either rejects an
+        /// unknown collection or does not accept an identifier positionally.
+        bool named_collection_argument_is_ambiguous = false;
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
@@ -124,6 +130,7 @@ public:
         .supports_unique_key = false,
         .supports_sql_security = false,
         .supports_named_collections = false,
+        .named_collection_argument_is_ambiguous = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
     }, Documentation documentation = {});

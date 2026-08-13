@@ -238,12 +238,36 @@ std::optional<std::string> tryGetUsedNamedCollectionName(const String & engine_n
     if (it == storages.end() || !it->second.features.supports_named_collections)
         return std::nullopt;
 
-    /// Whether a collection with that name currently exists is deliberately not checked: for these
-    /// engines the identifier can only reference a named collection, so the signal is stable across
-    /// restarts, and a dependency on a collection that is missing right now protects the table when
-    /// the collection is created (or recreated after an unchecked drop) later. A dependency on a
-    /// collection that never appears is harmless.
-    return getCollectionName(asts);
+    /// For most of these engines, whether a collection with that name currently exists is
+    /// deliberately not checked: the identifier can only reference a named collection, so the signal
+    /// is stable across restarts, and a dependency on a collection that is missing right now protects
+    /// the table when the collection is created (or recreated after an unchecked drop) later. A
+    /// dependency on a collection that never appears is harmless.
+    auto collection_name = getCollectionName(asts);
+    if (!collection_name)
+        return std::nullopt;
+
+    if (it->second.features.named_collection_argument_is_ambiguous)
+    {
+        /// For `Remote` the same identifier is a valid positional argument (a cluster name) when the
+        /// named-collection lookup does not resolve, so syntax alone cannot prove that the table uses
+        /// a collection. Replicate the decision the engine's own argument parsing would make at this
+        /// moment (which is exactly what a non-lazy load of the same metadata does): the
+        /// named-collection branch is taken only when a collection with that name exists, and only
+        /// `key = value` overrides may follow the collection name there — a positional argument list
+        /// never looks like that.
+        NamedCollectionFactory::instance().loadIfNot();
+        if (!NamedCollectionFactory::instance().exists(*collection_name))
+            return std::nullopt;
+        for (auto ast = std::next(asts.begin()); ast != asts.end(); ++ast)
+        {
+            const auto * function = (*ast)->as<ASTFunction>();
+            if (!function || function->name != "equals")
+                return std::nullopt;
+        }
+    }
+
+    return collection_name;
 }
 
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
