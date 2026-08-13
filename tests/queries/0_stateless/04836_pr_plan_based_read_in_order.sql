@@ -79,4 +79,22 @@ FROM (EXPLAIN PIPELINE SELECT a FROM t_pr_read_in_order ORDER BY a LIMIT 5);
 SELECT 'in_order_pool desc', countIf(explain LIKE '%ReadPoolParallelReplicasInOrder%') > 0
 FROM (EXPLAIN PIPELINE SELECT a FROM t_pr_read_in_order ORDER BY a DESC LIMIT 5);
 
+-- A top-N is restated as a `LimitStep` inside the fragment, because `SortingStep::serialize` drops the sort's
+-- own limit. That row cut must not be shipped when `exact_rows_before_limit` is on: it would truncate a
+-- replica's stream before `rows_before_limit_at_least` is counted. So the "local top-N" step is expected only
+-- when the statistic is not requested.
+SELECT 'local_top_n exact=0', countIf(explain LIKE '%local top-N%') > 0
+FROM (EXPLAIN pretty = 0 SELECT a FROM t_pr_read_in_order ORDER BY a LIMIT 5 SETTINGS exact_rows_before_limit = 0);
+SELECT 'local_top_n exact=1', countIf(explain LIKE '%local top-N%') > 0
+FROM (EXPLAIN pretty = 0 SELECT a FROM t_pr_read_in_order ORDER BY a LIMIT 5 SETTINGS exact_rows_before_limit = 1);
+
+-- The rows are still correct with the statistic requested, in both directions. (The value of
+-- `rows_before_limit_at_least` itself is not asserted: it is still inexact under
+-- `parallel_replicas_local_plan = 1`, the same as classic parallel replicas - see the FIXME in
+-- `applyParallelReplicas.cpp` and https://github.com/ClickHouse/ClickHouse/issues/114723.)
+SELECT 'exact asc',  a FROM t_pr_read_in_order ORDER BY a      LIMIT 5 SETTINGS exact_rows_before_limit = 1, parallel_replicas_plan_based = 0;
+SELECT 'exact asc',  a FROM t_pr_read_in_order ORDER BY a      LIMIT 5 SETTINGS exact_rows_before_limit = 1, parallel_replicas_plan_based = 1;
+SELECT 'exact desc', a FROM t_pr_read_in_order ORDER BY a DESC LIMIT 5 SETTINGS exact_rows_before_limit = 1, parallel_replicas_plan_based = 0;
+SELECT 'exact desc', a FROM t_pr_read_in_order ORDER BY a DESC LIMIT 5 SETTINGS exact_rows_before_limit = 1, parallel_replicas_plan_based = 1;
+
 DROP TABLE t_pr_read_in_order;
