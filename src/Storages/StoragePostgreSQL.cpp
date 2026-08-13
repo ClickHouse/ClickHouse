@@ -36,6 +36,7 @@
 
 #include <Parsers/getInsertQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -599,6 +600,151 @@ SinkToStoragePtr StoragePostgreSQL::write(
     return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_or_query.getTableName(), remote_table_schema, on_conflict);
 }
 
+postgres::ConnectionSSLParams StoragePostgreSQL::getSSLParams(const NamedCollection & named_collection)
+{
+    /// A path to a certificate or a key is only accepted from the server configuration file: the
+    /// server opens the file with its own privileges, so taking a path from SQL would let anyone
+    /// who can define a PostgreSQL source probe the local filesystem, and authenticate with a
+    /// client certificate they are not allowed to read themselves.
+    const bool from_config = named_collection.getSourceId() == NamedCollection::SourceId::CONFIG;
+
+    auto get_path = [&](const std::string & key, const std::string & contents_key)
+    {
+        auto value = named_collection.getOrDefault<String>(key, "");
+
+        /// Checked before the empty fast path: overriding a configured path with the empty string
+        /// would silently drop the credential the operator configured, e.g. disable the verification
+        /// of the server certificate against `sslrootcert`.
+        if (named_collection.isQueryOverridden(key))
+        {
+            /// Outside the server configuration file the path key is not accepted at all, overridden
+            /// or not, so the override rejection would name the wrong remedy.
+            if (!from_config)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "`{}` can only be specified in a named collection defined in the server configuration file. "
+                    "Pass the contents of the file in `{}` instead",
+                    key, contents_key);
+
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`{}` cannot be overridden in a query. "
+                "Pass the contents of the file in `{}` instead",
+                key, contents_key);
+        }
+
+        /// An empty contents override never replaces the stored credential with another one - it can
+        /// only silently drop whatever form of it the collection carries, a path or the contents
+        /// alike. Checked before the empty fast path below so a credential the collection stores in
+        /// the contents form is protected too.
+        if (named_collection.isQueryOverridden(contents_key) && named_collection.getOrDefault<String>(contents_key, "").empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`{}` cannot be overridden with an empty `{}`", key, contents_key);
+
+        if (value.empty())
+            return value;
+
+        if (!from_config)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`{}` can only be specified in a named collection defined in the server configuration file. "
+                "Pass the contents of the file in `{}` instead",
+                key, contents_key);
+
+        /// The contents are the SQL-safe form of the same credential, so a query passing them replaces
+        /// the path inherited from the collection - that is the only way to override the credential
+        /// from SQL at all. Both forms coming from the collection definition itself remain ambiguous.
+        if (named_collection.isQueryOverridden(contents_key))
+        {
+            /// A credential the operator explicitly locked (`<sslrootcert overridable="false">`) cannot
+            /// be replaced through the contents form either.
+            if (!named_collection.isOverridable(key, /* default_value= */ true))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
+
+            return String{};
+        }
+
+        if (!named_collection.getOrDefault<String>(contents_key, "").empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "`{}` and `{}` cannot be specified at the same time", key, contents_key);
+
+        return value;
+    };
+
+    postgres::ConnectionSSLParams ssl_params;
+    ssl_params.ssl_mode = named_collection.getOrDefault<String>("sslmode", "");
+    ssl_params.ssl_root_cert = get_path("sslrootcert", "sslrootcert_pem");
+    ssl_params.ssl_cert = get_path("sslcert", "sslcert_pem");
+    ssl_params.ssl_key = get_path("sslkey", "sslkey_pem");
+    ssl_params.ssl_root_cert_pem = named_collection.getOrDefault<String>("sslrootcert_pem", "");
+    ssl_params.ssl_cert_pem = named_collection.getOrDefault<String>("sslcert_pem", "");
+    ssl_params.ssl_key_pem = named_collection.getOrDefault<String>("sslkey_pem", "");
+    return ssl_params;
+}
+
+postgres::ConnectionSSLParams StoragePostgreSQL::extractSSLParamsFromArguments(ASTs & arguments, ContextPtr context_)
+{
+    /// The TLS/SSL parameters may follow the positional arguments as `key = value` pairs. Only
+    /// `sslmode` and the contents forms are accepted there: a certificate or key path is taken from
+    /// the server configuration file alone, for the reason described at `getSSLParams`.
+    static const std::initializer_list<std::pair<std::string_view, std::string_view>> tls_path_keys
+        = {{"sslrootcert", "sslrootcert_pem"}, {"sslcert", "sslcert_pem"}, {"sslkey", "sslkey_pem"}};
+
+    std::map<String, String> values;
+
+    size_t num_positional_arguments = arguments.size();
+    while (num_positional_arguments > 0)
+    {
+        const auto * function = arguments[num_positional_arguments - 1]->as<ASTFunction>();
+        if (!function || function->name != "equals" || !function->arguments || function->arguments->children.size() != 2)
+            break;
+
+        const auto * identifier = function->arguments->children[0]->as<ASTIdentifier>();
+        if (!identifier)
+            break;
+
+        const String key = identifier->name();
+        bool is_accepted_key = (key == "sslmode");
+        for (const auto & [path_key, contents_key] : tls_path_keys)
+        {
+            if (key == path_key)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "`{}` can only be specified in a named collection defined in the server configuration file. "
+                    "Pass the contents of the file in `{}` instead",
+                    path_key, contents_key);
+            if (key == contents_key)
+                is_accepted_key = true;
+        }
+
+        /// Anything else is left in place, so that it is reported as an unexpected argument.
+        if (!is_accepted_key)
+            break;
+
+        auto value = evaluateConstantExpressionOrIdentifierAsLiteral(function->arguments->children[1], context_);
+        if (!values.emplace(key, checkAndGetLiteralArgument<String>(value, key)).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument `{}` is specified more than once", key);
+
+        --num_positional_arguments;
+    }
+
+    arguments.resize(num_positional_arguments);
+
+    auto get = [&](const String & key)
+    {
+        auto it = values.find(key);
+        return it == values.end() ? String{} : it->second;
+    };
+
+    postgres::ConnectionSSLParams ssl_params;
+    ssl_params.ssl_mode = get("sslmode");
+    ssl_params.ssl_root_cert_pem = get("sslrootcert_pem");
+    ssl_params.ssl_cert_pem = get("sslcert_pem");
+    ssl_params.ssl_key_pem = get("sslkey_pem");
+    return ssl_params;
+}
+
 StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table)
 {
     StoragePostgreSQL::Configuration configuration;
@@ -612,7 +758,9 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
             required_arguments.insert("table");
     }
 
-    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache"};
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments
+        = {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache",
+           "sslmode", "sslrootcert", "sslcert", "sslkey", "sslrootcert_pem", "sslcert_pem", "sslkey_pem"};
     if (storage_settings)
         for (const auto & name : storage_settings->getAllRegisteredNames())
             optional_arguments.insert(name);
@@ -646,6 +794,8 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     configuration.schema = named_collection.getOrDefault<String>("schema", "");
     configuration.on_conflict = named_collection.getOrDefault<String>("on_conflict", "");
 
+    configuration.ssl = getSSLParams(named_collection);
+
     if (storage_settings)
         storage_settings->loadFromNamedCollection(named_collection);
 
@@ -657,17 +807,23 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
     StoragePostgreSQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
     {
-        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context);
+        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context, /*require_table=*/ true);
     }
     else
     {
+        /// `engine_args` is a copy of the stored argument list, so removing the extracted trailing
+        /// `key = value` arguments here keeps them in the stored query, where they are masked when
+        /// it is formatted.
+        configuration.ssl = extractSSLParamsFromArguments(engine_args, context);
+
         if (engine_args.size() < 5 || engine_args.size() > 7)
         {
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Storage PostgreSQL requires from 5 to 7 parameters: "
                 "PostgreSQL('host:port', 'database', 'table' (or query), 'username', 'password' "
-                "[, 'schema', 'ON CONFLICT ...']. Got: {}",
+                "[, 'schema', 'ON CONFLICT ...'] [, sslmode = '...', sslrootcert_pem = '...', "
+                "sslcert_pem = '...', sslkey_pem = '...']. Got: {}",
                 engine_args.size());
         }
 
@@ -819,6 +975,38 @@ The table structure can differ from the original PostgreSQL table structure:
 Some parameters can be overridden by key value arguments:
 ```sql
 SELECT * FROM postgresql(postgres_creds, table='table1');
+```
+
+### TLS/SSL {#tls-ssl}
+
+TLS/SSL parameters are forwarded to `libpq` and can be set as named collection keys or trailing key-value arguments: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`), and the certificates and the key, in one of two forms. When unset, `libpq` defaults apply (`sslmode=prefer`).
+
+- `sslrootcert` (CA certificate, or the special value `system`), `sslcert` (client certificate) and `sslkey` (client private key) are paths to server-local files. They can only be specified in a named collection defined in the server configuration file and cannot be overridden in a query: the server opens the files with its own privileges.
+- `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` accept the literal contents of the corresponding file instead of a path. They can be specified anywhere — in a query, in a named collection created with SQL, or as an override of a named collection — and are masked in logs and `SHOW` queries like a password.
+
+For example, to require an encrypted connection and verify the server certificate:
+
+```xml
+<named_collections>
+    <postgres_creds>
+        <host>localhost</host>
+        <port>5432</port>
+        <user>postgres</user>
+        <password>****</password>
+        <sslmode>verify-full</sslmode>
+        <sslrootcert>/etc/clickhouse-server/postgresql-ca.crt</sslrootcert>
+    </postgres_creds>
+</named_collections>
+```
+
+The same without a configuration file, passing the certificate contents in the query:
+
+```sql
+CREATE TABLE postgres_table (id UInt64, value String)
+ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
+                    sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----');
 ```
 
 ## Settings {#settings}
