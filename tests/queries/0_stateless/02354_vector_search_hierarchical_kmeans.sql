@@ -63,8 +63,11 @@ SELECT hierarchicalKMeans(1)([]::Array(Float32)); -- { serverError BAD_ARGUMENTS
 SELECT hierarchicalKMeans(1, 16, 20, 1000000, 0, 1)([0, 0]::Array(Float32)); -- { serverError BAD_ARGUMENTS }
 SELECT hierarchicalKMeans(0)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
 SELECT hierarchicalKMeans(4, 16, 20, 0)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
-SELECT hierarchicalKMeans()(v) FROM blobs; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT hierarchicalKMeans(4)(v, v) FROM blobs; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT hierarchicalKMeans(4, 16, 20, 1000000, 0, 1, 999)(v) FROM blobs; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+-- Invalid parameters are rejected, not silently clamped to something the caller did not ask for.
+SELECT hierarchicalKMeans(256, 1)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
+SELECT hierarchicalKMeans(256, 16, 0)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
 -- Ragged input: all vectors must share a dimension.
 SELECT hierarchicalKMeans(2)(v) FROM (SELECT arrayJoin([[1.0, 2.0], [3.0]])::Array(Float32) AS v); -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 

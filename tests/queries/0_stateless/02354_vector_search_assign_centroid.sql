@@ -24,30 +24,37 @@ FROM numbers(301);
 CREATE DICTIONARY cents_dict (cid UInt64, vec Array(Float32))
 PRIMARY KEY cid SOURCE(CLICKHOUSE(TABLE 'cents')) LAYOUT(FLAT(MAX_ARRAY_SIZE 100000)) LIFETIME(0);
 
-CREATE TABLE probes (v Array(Float32)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE probes (id UInt32, v Array(Float32)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO probes
-SELECT arrayMap(i -> toFloat32(sipHash64(number + 31, i) % 997) / 997, range(37))::Array(Float32)
+SELECT number, arrayMap(i -> toFloat32(sipHash64(number + 31, i) % 997) / 997, range(37))::Array(Float32)
 FROM numbers(1003);
 
 SELECT '-- the GEMM kernel matches a brute-force argmin exactly';
 -- 301 centroids is not a multiple of the kernel's column block, and 1003 rows is not a multiple of its
 -- row block, so this covers both the padding lanes and the row remainder.
+-- A CROSS JOIN rather than a correlated subquery: the old analyzer cannot resolve an outer column inside
+-- a subquery, and this test runs under both analyzers.
 SELECT countIf(fast != brute), count() FROM (
-    SELECT assignCentroid(v, 'cents_dict') AS fast,
-           (SELECT argMin(cid, L2Distance(vec, p.v)) FROM cents) AS brute
-    FROM probes AS p
+    SELECT p.id AS id, any(p.fast) AS fast, argMin(c.cid, L2Distance(c.vec, p.v)) AS brute
+    FROM (SELECT id, v, assignCentroid(v, 'cents_dict') AS fast FROM probes) AS p
+    CROSS JOIN cents AS c
+    GROUP BY p.id
 );
 
 SELECT '-- row counts either side of the kernel row block agree with brute force';
 SELECT countIf(fast != brute) FROM (
-    SELECT assignCentroid(v, 'cents_dict') AS fast,
-           (SELECT argMin(cid, L2Distance(vec, p.v)) FROM cents) AS brute
-    FROM (SELECT v FROM probes LIMIT 1) AS p
+    SELECT p.id AS id, any(p.fast) AS fast, argMin(c.cid, L2Distance(c.vec, p.v)) AS brute
+    FROM (SELECT id, v, assignCentroid(v, 'cents_dict') AS fast
+          FROM (SELECT id, v FROM probes ORDER BY id LIMIT 1)) AS p
+    CROSS JOIN cents AS c
+    GROUP BY p.id
 );
 SELECT countIf(fast != brute) FROM (
-    SELECT assignCentroid(v, 'cents_dict') AS fast,
-           (SELECT argMin(cid, L2Distance(vec, p.v)) FROM cents) AS brute
-    FROM (SELECT v FROM probes LIMIT 7) AS p
+    SELECT p.id AS id, any(p.fast) AS fast, argMin(c.cid, L2Distance(c.vec, p.v)) AS brute
+    FROM (SELECT id, v, assignCentroid(v, 'cents_dict') AS fast
+          FROM (SELECT id, v FROM probes ORDER BY id LIMIT 7)) AS p
+    CROSS JOIN cents AS c
+    GROUP BY p.id
 );
 
 SELECT '-- the dictionary form returns the dictionary cid, not the row position';
@@ -57,7 +64,7 @@ SELECT '-- inline and dictionary forms agree when the ids line up';
 SELECT countIf(a != b) FROM (
     SELECT assignCentroid(v, 'cents_dict') AS a,
            assignCentroid(v, (SELECT groupArray(vec) FROM (SELECT vec FROM cents ORDER BY cid))) AS b
-    FROM (SELECT v FROM probes LIMIT 50)
+    FROM (SELECT v FROM probes ORDER BY id LIMIT 50)
 );
 
 SELECT '-- errors';
