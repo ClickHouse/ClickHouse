@@ -179,29 +179,18 @@ zkutil::ZooKeeperPtr BackgroundQueriesDistributedRegistry::getZooKeeper() const
 {
     auto zookeeper = global_context->getZooKeeper();
     if (!zookeeper->isFeatureEnabled(KeeperFeatureFlag::CREATE_TTL)
+        || !zookeeper->isFeatureEnabled(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS)
         || !zookeeper->isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "The background queries registry requires a [Zoo]Keeper server that supports the `CREATE_TTL` "
-            "and `LIST_WITH_STAT_AND_DATA` feature flags, and they must be enabled");
+            "The background queries registry requires a [Zoo]Keeper server that supports the `CREATE_TTL`, "
+            "`CREATE_IF_NOT_EXISTS` and `LIST_WITH_STAT_AND_DATA` feature flags, and they must be enabled");
     return zookeeper;
-}
-
-void BackgroundQueriesDistributedRegistry::ensureIncarnationNode(const zkutil::ZooKeeperPtr & zookeeper)
-{
-    auto code = zookeeper->tryCreate(incarnation_path, host, zkutil::CreateMode::Ephemeral);
-    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
-        throw zkutil::KeeperException::fromPath(code, incarnation_path);
 }
 
 BackgroundQueryHandlePtr BackgroundQueriesDistributedRegistry::registerQuery(const String & query_id, const String & user, const String & query)
 {
     auto component_guard = Coordination::setCurrentComponent("BackgroundQueriesDistributedRegistry::registerQuery");
     auto zookeeper = getZooKeeper();
-
-    zookeeper->createAncestors(entries_path);
-    zookeeper->createIfNotExists(entries_path, "");
-    zookeeper->createIfNotExists(incarnations_path, "");
-    ensureIncarnationNode(zookeeper);
 
     Entry entry{
         .query_id = query_id,
@@ -215,10 +204,19 @@ BackgroundQueryHandlePtr BackgroundQueriesDistributedRegistry::registerQuery(con
         .submit_time = time(nullptr),
     };
 
-    String entry_path;
-    auto code = zookeeper->tryCreate(entry_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential, entry_path, entry_ttl_ms);
-    if (code != Coordination::Error::ZOK)
-        throw zkutil::KeeperException::fromPath(code, entry_path_prefix);
+    Coordination::Requests ops;
+    for (const auto & ancestor : Coordination::getAncestorNodePaths(entries_path))
+        ops.push_back(zkutil::makeCreateRequest(ancestor, "", zkutil::CreateMode::Persistent, /*ignore_if_exists=*/ true));
+
+    ops.insert(ops.end(), {
+        zkutil::makeCreateRequest(entries_path, "", zkutil::CreateMode::Persistent, /*ignore_if_exists=*/ true),
+        zkutil::makeCreateRequest(incarnations_path, "", zkutil::CreateMode::Persistent, /*ignore_if_exists=*/ true),
+        zkutil::makeCreateRequest(incarnation_path, host, zkutil::CreateMode::Ephemeral, /*ignore_if_exists=*/ true),
+        zkutil::makeCreateRequest(entry_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential, /*ignore_if_exists=*/ false, entry_ttl_ms),
+    });
+
+    auto responses = zookeeper->multi(ops);
+    auto entry_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
 
     return BackgroundQueryHandlePtr(new BackgroundQueryHandle(weak_from_this(), std::move(entry_path), std::move(entry)));
 }
@@ -286,7 +284,9 @@ void BackgroundQueriesDistributedRegistry::threadFunction()
             /// If the session has changed, we need to recreate our ephemeral incarnation node.
             if (auto zookeeper = getZooKeeper(); zookeeper != incarnation_node_session)
             {
-                ensureIncarnationNode(zookeeper);
+                auto code = zookeeper->tryCreate(incarnation_path, host, zkutil::CreateMode::Ephemeral);
+                if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+                    throw zkutil::KeeperException::fromPath(code, incarnation_path);
                 incarnation_node_session = zookeeper;
             }
         }

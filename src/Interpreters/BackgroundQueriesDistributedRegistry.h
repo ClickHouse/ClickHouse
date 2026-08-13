@@ -89,7 +89,6 @@ private:
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
-    void ensureIncarnationNode(const zkutil::ZooKeeperPtr & zookeeper);
     zkutil::ZooKeeperPtr incarnation_node_session;
 
     void threadFunction();

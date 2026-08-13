@@ -2053,7 +2053,7 @@ void KeeperMultiException::check(
     throw KeeperException(exception_code);
 }
 
-Coordination::RequestPtr makeCreateRequest(const std::string & path, const std::string & data, int create_mode, bool ignore_if_exists)
+Coordination::RequestPtr makeCreateRequest(const std::string & path, const std::string & data, int create_mode, bool ignore_if_exists, int64_t ttl)
 {
     auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
     request->path = path;
@@ -2061,6 +2061,8 @@ Coordination::RequestPtr makeCreateRequest(const std::string & path, const std::
     request->is_ephemeral = create_mode == CreateMode::Ephemeral || create_mode == CreateMode::EphemeralSequential;
     request->is_sequential = create_mode == CreateMode::PersistentSequential || create_mode == CreateMode::EphemeralSequential;
     request->not_exists = ignore_if_exists;
+    request->include_ttl = ttl != 0;
+    request->ttl = ttl;
     return request;
 }
 
