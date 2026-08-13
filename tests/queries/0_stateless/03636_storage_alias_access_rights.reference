@@ -24,3 +24,14 @@ ACCESS_DENIED
 Test DROP alias with permission
 Test target table still exists
 1
+Test CREATE without target permission
+ACCESS_DENIED
+Test CREATE with target permission
+Test count without target SELECT permission
+ACCESS_DENIED
+Test statistics without target permission
+1	1
+Test count with target SELECT permission
+1
+Test statistics with target permission
+1	1

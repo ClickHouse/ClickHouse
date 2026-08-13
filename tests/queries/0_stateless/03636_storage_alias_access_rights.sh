@@ -4,11 +4,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 username="user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+access_username="access_user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 ${CLICKHOUSE_CLIENT} -m --query "
     DROP USER IF EXISTS ${username};
+    DROP USER IF EXISTS ${access_username};
     DROP TABLE IF EXISTS test_table;
     DROP TABLE IF EXISTS test_alias;
+    DROP TABLE IF EXISTS test_alias_access;
 
     SET allow_experimental_alias_table_engine = 1;
 
@@ -96,3 +99,45 @@ ${CLICKHOUSE_CLIENT} --user="${username}" --query "DROP TABLE test_alias;"
 # Verify target table still exists
 echo "Test target table still exists"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM test_table;"
+
+# Test: CREATE
+${CLICKHOUSE_CLIENT} --query "
+    CREATE USER ${access_username} NOT IDENTIFIED;
+    GRANT CREATE TABLE ON test_alias_access TO ${access_username};
+    GRANT TABLE ENGINE ON Alias TO ${access_username};
+"
+echo "Test CREATE without target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "CREATE TABLE test_alias_access ENGINE = Alias('test_table');" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+
+${CLICKHOUSE_CLIENT} --query "GRANT SHOW COLUMNS ON test_table TO ${access_username};"
+echo "Test CREATE with target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "CREATE TABLE test_alias_access ENGINE = Alias('test_table');"
+
+# Test: trivial `count`
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON test_alias_access TO ${access_username};"
+echo "Test count without target SELECT permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SELECT count() FROM test_alias_access;" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+
+# Test: statistics forwarded from the target table
+${CLICKHOUSE_CLIENT} --query "REVOKE SHOW COLUMNS ON test_table FROM ${access_username};"
+echo "Test statistics without target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
+    SELECT isNull(total_rows), isNull(total_bytes)
+    FROM system.tables
+    WHERE database = currentDatabase() AND name = 'test_alias_access';
+"
+
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON test_table TO ${access_username};"
+echo "Test count with target SELECT permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SELECT count() FROM test_alias_access;"
+echo "Test statistics with target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
+    SELECT total_rows, total_bytes > 0
+    FROM system.tables
+    WHERE database = currentDatabase() AND name = 'test_alias_access';
+"
+
+${CLICKHOUSE_CLIENT} --query "
+    DROP TABLE test_alias_access;
+    DROP USER ${access_username};
+"

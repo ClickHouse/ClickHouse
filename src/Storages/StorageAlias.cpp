@@ -14,6 +14,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/Settings.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 
 
 namespace DB
@@ -62,6 +63,18 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
     }
 
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
+}
+
+bool StorageAlias::isTargetAccessGranted(const TargetAccess & access_check) const
+{
+    if (!access_check.context)
+        return false;
+
+    auto access = access_check.context->getAccess();
+    if (access_check.column_names.empty())
+        return access->isGranted(access_check.access_type, target_database, target_table);
+
+    return access->isGranted(access_check.access_type, target_database, target_table, access_check.column_names);
 }
 
 /// AliasSink: Writes data to the target table using full INSERT pipeline
@@ -330,6 +343,35 @@ StorageSnapshotPtr StorageAlias::getStorageSnapshotWithoutData(const StorageMeta
     return getTargetTable()->getStorageSnapshotWithoutData(metadata_snapshot, query_context);
 }
 
+bool StorageAlias::supportsTrivialCountOptimization(
+    const StorageSnapshotPtr & storage_snapshot,
+    ContextPtr query_context) const
+{
+    if (!isTargetAccessGranted(TargetAccess{query_context, AccessType::SELECT}))
+        return false;
+
+    auto target = tryGetTargetTable();
+    return target && target->supportsTrivialCountOptimization(storage_snapshot, query_context);
+}
+
+std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const
+{
+    if (!isTargetAccessGranted(TargetAccess{query_context, AccessType::SHOW_TABLES}))
+        return {};
+
+    auto target = tryGetTargetTable();
+    return target ? target->totalRows(query_context) : std::optional<UInt64>{};
+}
+
+std::optional<UInt64> StorageAlias::totalBytes(ContextPtr query_context) const
+{
+    if (!isTargetAccessGranted(TargetAccess{query_context, AccessType::SHOW_TABLES}))
+        return {};
+
+    auto target = tryGetTargetTable();
+    return target ? target->totalBytes(query_context) : std::optional<UInt64>{};
+}
+
 void StorageAlias::rename(const String & /* new_path_to_table_data */, const StorageID & new_table_id)
 {
     // Only rename the alias itself, not the target table
@@ -411,6 +453,9 @@ void registerStorageAlias(StorageFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Storage Alias does not support explicit column definitions");
         }
+
+        if (!(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
+            local_context->checkAccess(AccessType::SHOW_COLUMNS, target_database, target_table);
 
         return std::make_shared<StorageAlias>(
             args.table_id,

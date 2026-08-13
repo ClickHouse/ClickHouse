@@ -172,11 +172,7 @@ public:
         auto target = tryGetTargetTable();
         return target && target->supportsSparseSerialization();
     }
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override
-    {
-        auto target = tryGetTargetTable();
-        return target && target->supportsTrivialCountOptimization(storage_snapshot, query_context);
-    }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override;
     bool supportsPartitionBy() const override { return getTargetTable()->supportsPartitionBy(); }
     bool supportsTTL() const override { return getTargetTable()->supportsTTL(); }
 
@@ -237,8 +233,8 @@ public:
         return target->tryLockForShare(query_id, Poco::Timespan(acquire_timeout.count() * 1000));
     }
 
-    std::optional<UInt64> totalRows(ContextPtr query_context) const override { auto target = tryGetTargetTable(); return target ? target->totalRows(query_context) : std::optional<UInt64>{}; }
-    std::optional<UInt64> totalBytes(ContextPtr query_context) const override { auto target = tryGetTargetTable(); return target ? target->totalBytes(query_context) : std::optional<UInt64>{}; }
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override { auto target = tryGetTargetTable(); return target ? target->totalBytesUncompressed(settings) : std::optional<UInt64>{}; }
     std::optional<UInt64> lifetimeRows() const override { auto target = tryGetTargetTable(); return target ? target->lifetimeRows() : std::optional<UInt64>{}; }
     std::optional<std::optional<UInt64>> tryLifetimeRows() const override
@@ -282,6 +278,8 @@ public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
 protected:
+    bool isTargetAccessGranted(const TargetAccess & access_check) const;
+
     String target_database;
     String target_table;
 };
