@@ -2,6 +2,7 @@
 
 #include <DataTypes/IDataType.h>
 
+#include <algorithm>
 #include <map>
 #include <optional>
 #include <unordered_map>
@@ -304,8 +305,11 @@ private:
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
     void fuzzCodecFunction(ASTFunction & codec_fn);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
+    void fuzzColumnDeclarationList(ASTExpressionList & columns);
     void fuzzIndexDeclaration(ASTIndexDeclaration & index);
+    void fuzzIndexDeclarationList(ASTExpressionList & indices);
     void fuzzProjectionDeclaration(ASTProjectionDeclaration & projection);
+    void fuzzProjectionDeclarationList(ASTExpressionList & projections);
     void fuzzProjectionWithSettings(ASTProjectionDeclaration & projection);
     String pickFuzzedTableName(const String & full_name);
     void fuzzTableName(ASTTableExpression & table);
@@ -356,6 +360,23 @@ private:
 
     void extractPredicates(const ASTPtr & node, ASTs & predicates, const std::string & op, int negProb);
     ASTPtr permutePredicateClause(const ASTPtr & predicate, int negProb);
+
+    /// Reshape a declaration list - reorder it, and drop one of several entries - then fuzz the
+    /// declarations that survive. Dropping the last one is never worth it: an empty list puts the
+    /// whole feature out of reach for every later iteration over the same corpus.
+    template <typename ASTDeclaration, typename FuzzDeclaration>
+    void fuzzDeclarationList(ASTs & declarations, FuzzDeclaration && fuzz_declaration)
+    {
+        if (declarations.size() > 1 && fuzz_rand() % 5 == 0)
+            std::shuffle(declarations.begin(), declarations.end(), fuzz_rand);
+
+        if (declarations.size() > 1 && fuzz_rand() % 10 == 0)
+            declarations.erase(declarations.begin() + fuzz_rand() % declarations.size());
+
+        for (auto & declaration_ast : declarations)
+            if (auto * declaration = declaration_ast->as<ASTDeclaration>())
+                fuzz_declaration(*declaration, declaration_ast);
+    }
 
     template <typename Container>
     const auto & pickRandomly(pcg64 & rand, const Container & container)

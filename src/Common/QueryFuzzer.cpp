@@ -1688,25 +1688,10 @@ void QueryFuzzer::fuzzRefreshStrategy(ASTRefreshStrategy & strategy)
 void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
 {
     if (create.columns_list && create.columns_list->columns)
-    {
-        for (auto & ast : create.columns_list->columns->children)
-        {
-            if (auto * column = ast->as<ASTColumnDeclaration>())
-            {
-                fuzzColumnDeclaration(*column);
-                fuzz(ast);
-            }
-        }
-    }
+        fuzzColumnDeclarationList(*create.columns_list->columns);
 
     if (create.columns_list && create.columns_list->indices)
-    {
-        for (auto & ast : create.columns_list->indices->children)
-        {
-            if (auto * index = ast->as<ASTIndexDeclaration>())
-                fuzzIndexDeclaration(*index);
-        }
-    }
+        fuzzIndexDeclarationList(*create.columns_list->indices);
 
     if (create.storage && create.storage->engine && create.database && !create.table)
     {
@@ -1727,22 +1712,62 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         fuzzTableStorage(*create.storage);
     }
 
-    /// Fuzz inner target tables (storage + columns live in `targets`): MV To, window-view Inner,
-    /// and TimeSeries Samples/Tags/Metrics.
+    /// Fuzz the view targets: MV `TO`, window-view `INNER`, and TimeSeries `SAMPLES`/`TAGS`/`METRICS`.
     if (create.targets)
     {
+        /// The clauses are formatted in vector order, so shuffling them writes `TAGS`/`METRICS`/
+        /// `SAMPLES` (or `TO`/`INNER`) out in an order the parser is unlikely to see otherwise.
+        auto & view_targets = create.targets->targets;
+        if (view_targets.size() > 1 && fuzz_rand() % 5 == 0)
+            std::shuffle(view_targets.begin(), view_targets.end(), fuzz_rand);
+
+        /// Drop one of several targets, never the only one: a TimeSeries table missing `TAGS` has to
+        /// be rejected rather than half-created.
+        if (view_targets.size() > 1 && fuzz_rand() % 10 == 0)
+        {
+            const auto kind = view_targets[fuzz_rand() % view_targets.size()].kind;
+            /// Detach the registered children first, or they outlive the erased target in `children`.
+            /// These two setters do it themselves; `resetTableASTWithQueryParams` only nulls the member.
+            create.targets->setInnerEngine(kind, nullptr);
+            create.targets->setInnerColumns(kind, nullptr);
+            if (auto table_ast = create.targets->getTableASTWithQueryParams(kind))
+            {
+                create.targets->resetTableASTWithQueryParams(kind);
+                auto & target_children = create.targets->children;
+                target_children.erase(
+                    std::remove(target_children.begin(), target_children.end(), table_ast), target_children.end());
+            }
+            std::erase_if(view_targets, [kind](const ViewTarget & target) { return target.kind == kind; });
+        }
+
         for (auto * inner_storage : create.targets->getInnerEngines())
             if (inner_storage)
                 fuzzTableStorage(*inner_storage);
 
         for (auto kind : create.targets->getKinds())
-            if (auto * inner_cols = create.targets->getInnerColumns(kind); inner_cols && inner_cols->columns)
-                for (auto & col_ast : inner_cols->columns->children)
-                    if (auto * col = col_ast->as<ASTColumnDeclaration>())
-                    {
-                        fuzzColumnDeclaration(*col);
-                        fuzz(col_ast);
-                    }
+            if (auto * inner_cols = create.targets->getInnerColumns(kind))
+            {
+                if (inner_cols->columns)
+                    fuzzColumnDeclarationList(*inner_cols->columns);
+                if (inner_cols->indices)
+                    fuzzIndexDeclarationList(*inner_cols->indices);
+                if (inner_cols->projections)
+                    fuzzProjectionDeclarationList(*inner_cols->projections);
+            }
+
+        /// Swap an external target (MV/window-view `TO`, TimeSeries Samples/Tags/Metrics) for a fuzzed
+        /// clone of the same table, so the push lands in another engine. Inner targets have no
+        /// `table_id` and are skipped.
+        for (auto kind : create.targets->getKinds())
+        {
+            const auto table_id = create.targets->getTableID(kind);
+            if (table_id.empty() || fuzz_rand() % 5 != 0)
+                continue;
+
+            const auto new_table_name = pickFuzzedTableName(table_id.getTableName());
+            if (!new_table_name.empty())
+                create.targets->setTableID(kind, StorageID(table_id.database_name, new_table_name));
+        }
     }
 
     /// Fuzz CREATE MATERIALIZED VIEW: toggle POPULATE and refresh strategy parameters
@@ -2175,17 +2200,8 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         }
     }
 
-    /// Fuzz or drop existing projections
     if (create.columns_list && create.columns_list->projections)
-    {
-        auto & projs = create.columns_list->projections->children;
-        for (auto & proj_ast : projs)
-            if (auto * proj = proj_ast->as<ASTProjectionDeclaration>())
-                fuzzProjectionDeclaration(*proj);
-        /// Drop a random projection (exercises projection removal path)
-        if (!projs.empty() && fuzz_rand() % 50 == 0)
-            projs.erase(projs.begin() + fuzz_rand() % projs.size());
-    }
+        fuzzProjectionDeclarationList(*create.columns_list->projections);
 
     /// Fuzz constraints: toggle CHECK ↔ ASSUME and fuzz the predicate expression
     if (create.columns_list && create.columns_list->constraints)
@@ -2507,6 +2523,19 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
     }
 }
 
+/// Reordering leaves the list no longer lined up positionally with whatever writes into it, and a
+/// dropped column leaves any key, index or constraint clause naming it dangling.
+void QueryFuzzer::fuzzColumnDeclarationList(ASTExpressionList & columns)
+{
+    fuzzDeclarationList<ASTColumnDeclaration>(
+        columns.children,
+        [&](ASTColumnDeclaration & column, ASTPtr & column_ast)
+        {
+            fuzzColumnDeclaration(column);
+            fuzz(column_ast);
+        });
+}
+
 /// String case, validity and normalization functions (string → string or UInt8).
 /// Used both as a swap group and to wrap text index pre/postprocessor expressions.
 static const std::unordered_set<String> string_case_functions
@@ -2772,6 +2801,13 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
     }
 }
 
+/// Skip indexes are applied, and printed by EXPLAIN, in declaration order, so reordering them matters.
+void QueryFuzzer::fuzzIndexDeclarationList(ASTExpressionList & indices)
+{
+    fuzzDeclarationList<ASTIndexDeclaration>(
+        indices.children, [&](ASTIndexDeclaration & index, ASTPtr &) { fuzzIndexDeclaration(index); });
+}
+
 void QueryFuzzer::fuzzProjectionWithSettings(ASTProjectionDeclaration & projection)
 {
     static const UInt64 granularity_values[] = {1, 64, 128, 256, 512, 1024, 4096, 8192, 65536};
@@ -2980,6 +3016,14 @@ void QueryFuzzer::fuzzProjectionDeclaration(ASTProjectionDeclaration & projectio
     /// These are the only two settings accepted by ProjectionDescription::loadSettings.
     /// Valid ranges: index_granularity >= 1; index_granularity_bytes >= 1024.
     fuzzProjectionWithSettings(projection);
+}
+
+/// A tie between two equally good matching projections is broken by declaration order.
+void QueryFuzzer::fuzzProjectionDeclarationList(ASTExpressionList & projections)
+{
+    fuzzDeclarationList<ASTProjectionDeclaration>(
+        projections.children,
+        [&](ASTProjectionDeclaration & projection, ASTPtr &) { fuzzProjectionDeclaration(projection); });
 }
 
 static const std::map<size_t, Strings> swapAggrs
