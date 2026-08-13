@@ -17,6 +17,9 @@ nan
 1
 0.25
 nan
+Nullable(Float64)	nan
+Nullable(Float64)	1
+Nullable(Float64)	0.25
 Nullable(Nothing)	1
 Nullable(Nothing)	1
 Nullable(Nothing)	1
@@ -26,6 +29,9 @@ Nullable(Nothing)	1
 Nullable(Nothing)	1
 Nullable(Nothing)	1
 Nullable(Nothing)	1
+Nullable(Float64)	1
+Nullable(Float64)	1
+Nullable(Float64)	1
 0.36666666666666664
 0.4
 1
