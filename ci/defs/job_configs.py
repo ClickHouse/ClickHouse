@@ -1805,8 +1805,7 @@ class JobConfigs:
         name=JobNames.PROMQL_COMPLIANCE,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         run_in_docker="clickhouse/test-base",
-        # Ordering only: wait for integration upload post-hooks; do not skip this job
-        # when unrelated integration shards fail (see run_unless_cancelled).
+        # Wait for integration upload post-hooks, including failed integration jobs.
         run_after=[
             j.name
             for j in (
@@ -1819,7 +1818,7 @@ class JobConfigs:
             "python3 ./ci/jobs/scripts/job_hooks/promql_compliance_comment_hook.py",
         ],
         # No digest_config: output depends on PR SHA and S3 JSON; script-only cache keys
-        # would skip later labeled PRs after one successful run (see PR review).
+        # would skip later labeled PRs after one successful run.
         timeout=600,
         enable_gh_auth=True,
         allow_failure=True,

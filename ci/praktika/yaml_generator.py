@@ -341,7 +341,18 @@ class PullRequestPushYamlGen:
         job_items = []
         for i, job in enumerate(self.workflow_config.jobs):
             job_name_normalized = Utils.normalize_string(job.name)
-            needs = ", ".join(sorted(map(Utils.normalize_string, _all_needs(job.name))))
+            # A `run_unless_cancelled` job does not gate on upstream status, so it
+            # only needs its direct dependencies plus the cache-check job.
+            if job.run_unless_cancelled:
+                job_needs = set(self.workflow_config.job_to_config[job.name].needs)
+                if (
+                    self.workflow_config.config.enable_cache
+                    and job.name != Settings.CI_CONFIG_JOB_NAME
+                ):
+                    job_needs.add(Settings.CI_CONFIG_JOB_NAME)
+            else:
+                job_needs = _all_needs(job.name)
+            needs = ", ".join(sorted(map(Utils.normalize_string, job_needs)))
             job_name = job.name
             job_addons = []
             for addon in job.addons:
