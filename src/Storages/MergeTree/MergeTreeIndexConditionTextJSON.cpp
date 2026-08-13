@@ -632,7 +632,7 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
         if (function_name == "equals" && !hasStableJSONPathValuesSerialization(*expression_type))
             return false;
 
-        if (!has_multiple_needles)
+        if (function_name == "equals")
         {
             Field converted = convertFieldToType(value_field, *expression_type, value_type.get(), {}, true);
             if (converted.isNull())
@@ -1023,6 +1023,8 @@ MergeTreeIndexConditionText::tryMatchJSONPathValuesNode(const RPNBuilderTreeNode
                     return info;
             }
         }
+
+        return std::nullopt;
     }
 
     auto json_info = tryMatchJSONPathValuesSubcolumn(

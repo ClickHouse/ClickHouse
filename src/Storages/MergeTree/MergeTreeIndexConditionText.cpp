@@ -8,6 +8,7 @@
 #include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -33,6 +34,7 @@
 #include <absl/container/inlined_vector.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
@@ -711,7 +713,7 @@ static std::optional<RPNBuilderTreeNode> tryUnwrapIndexArgument(
             const auto source = wrapper.getArgumentAt(0);
             const auto * source_dag_node = source.getDAGNode();
             if (!source_dag_node
-                || !WhichDataType(removeNullable(source_dag_node->result_type)).isStringOrFixedString())
+                || !WhichDataType(removeNullable(source_dag_node->result_type)).isString())
                 break;
             argument.emplace(source);
             if (unwrapped)
@@ -2027,7 +2029,10 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
             const auto path_type = json_index_info->source_type
                 ? removeNullableOrLowCardinalityNullable(json_index_info->source_type)
                 : nullptr;
-            if (!path_type || !WhichDataType(path_type).isFixedString())
+            if (!path_type
+                || !WhichDataType(path_type).isFixedString()
+                || assert_cast<const ColumnFixedString &>(*set_column).getN()
+                    != assert_cast<const DataTypeFixedString &>(*path_type).getN())
                 return false;
         }
 
