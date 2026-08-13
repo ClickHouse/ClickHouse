@@ -19,11 +19,6 @@ using RaftAppendResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buff
 struct KeeperConfiguration;
 using KeeperConfigurationPtr = std::shared_ptr<KeeperConfiguration>;
 
-/// Translate coordination settings into the `raft_params` NuRaft is started with. Split out of
-/// `KeeperServer::launchRaftServer` so the translation - unit conversions and the narrowing to the
-/// int32 most of these fields are - can be tested without starting a server.
-nuraft::raft_params buildRaftParams(const CoordinationSettings & coordination_settings, LoggerPtr log);
-
 class KeeperServer
 {
 public:
@@ -71,10 +66,6 @@ private:
         /// Both get_peer_info_all and get_srv_config_all hold the raft lock internally.
         KeeperServer::RespondingCounts getRespondingCounts();
 
-        /// Fill is_alive / is_synced / peer_last_log_index / last_succ_resp_ms for members.
-        /// Must be called only when this raft instance is the leader.
-        void applyPeerHealthToMembers(std::vector<KeeperClusterMemberInfo> & members, uint64_t self_log_idx);
-
         using nuraft::raft_server::raft_server;
 
         /// Keeper context for accessing coordination settings (e.g. commit profiler).
@@ -92,7 +83,7 @@ private:
 
     nuraft::ptr<KeeperStateManager> state_manager;
 
-    nuraft::ptr<KeeperStateMachine> state_machine;
+    nuraft::ptr<IKeeperStateMachine> state_machine;
 
     nuraft::ptr<KeeperRaftServer> raft_instance; // TSA_GUARDED_BY(server_write_mutex);
     nuraft::ptr<nuraft::asio_service> asio_service;
@@ -145,7 +136,7 @@ public:
         SnapshotsQueue & snapshots_queue_,
         KeeperContextPtr keeper_context_,
         KeeperSnapshotManagerS3 & snapshot_manager_s3,
-        KeeperStateMachine::CommitCallback commit_callback);
+        IKeeperStateMachine::CommitCallback commit_callback);
 
     /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
     void startup(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6 = true);
@@ -163,7 +154,7 @@ public:
     /// Return set of the non-active sessions
     std::vector<int64_t> getDeadSessions();
 
-    nuraft::ptr<KeeperStateMachine> getKeeperStateMachine() const { return state_machine; }
+    nuraft::ptr<IKeeperStateMachine> getKeeperStateMachine() const { return state_machine; }
 
     void forceRecovery();
 
@@ -227,7 +218,6 @@ public:
     std::optional<AuthenticationData> getAuthenticationData() const { return state_manager->getAuthenticationData(); }
 
     std::vector<std::pair<std::string, Int32>> getExpiredTTLPathsForGarbageCollector(size_t batch_size) const;
-    std::vector<std::pair<std::string, Int32>> getContainerCandidatesForGarbageCollector(size_t batch_size, UInt64 max_never_used_interval_ms) const;
 
     const KeeperContextPtr & getKeeperContext() const { return keeper_context; }
 };

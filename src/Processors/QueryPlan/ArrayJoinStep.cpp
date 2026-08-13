@@ -88,7 +88,7 @@ void ArrayJoinStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Columns", std::move(columns_array));
 }
 
-void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings) const
 {
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
 }
@@ -106,11 +106,6 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
     writeVarUInt(array_join.columns.size(), ctx.out);
     for (const auto & column : array_join.columns)
         writeStringBinary(column, ctx.out);
-}
-
-QueryPlanStepPtr ArrayJoinStep::clone() const
-{
-    return std::make_unique<ArrayJoinStep>(*this);
 }
 
 QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)

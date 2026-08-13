@@ -112,12 +112,6 @@ public:
     Hash getContentHash() const;
     ASTPtr getSourceAST() const override { return ast; }
     Columns getKeyColumns() const;
-    /// Number of rows on the right-hand side *before* deduplication — the full length of the
-    /// original `IN (...)` list, including repeated and `NULL` values. Available in O(1) and without
-    /// materializing anything, unlike `getKeyColumns`. The deduplicated count is `get`'s
-    /// `getTotalRowCount`. Useful for callers whose cost is proportional to the original list length
-    /// (e.g. `buildOrderedSetInplace`, which filters the original key columns).
-    size_t getInputRowCount() const;
 private:
     void fillSetElementsOnce() const;
     Columns getUniqueKeyColumns() const;
@@ -185,11 +179,6 @@ public:
         const SizeLimits & network_transfer_limits,
         const PreparedSetsCachePtr & prepared_sets_cache);
 
-    /// Prepare the set for a distributed plan, which ships its values with the worker tasks:
-    /// retain the values, and make the source run as a distributed plan when its shape allows
-    /// it. The following `build` call must skip the cache: a cached set has no values.
-    void prepareForDistributedPlan(const ContextPtr & context);
-
     void buildSetInplace(const ContextPtr & context);
 
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
@@ -200,10 +189,6 @@ public:
 
     const QueryPlan * getQueryPlan() const { return source.get(); }
     QueryPlan * getQueryPlan() { return source.get(); }
-
-    /// The set is backed by a `GLOBAL IN` / `GLOBAL JOIN` external table, either through the
-    /// set that fills that table or through the table stored next to the set itself.
-    bool hasExternalTable() const;
 
 private:
     Hash hash;

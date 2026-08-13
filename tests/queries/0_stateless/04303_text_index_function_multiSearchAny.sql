@@ -4,8 +4,6 @@
 -- Substring search is intended to be used with the ngrams (or sparseGrams) tokenizer: every needle
 -- is decomposed into ngrams, so the index can prune on arbitrary substrings instead of whole tokens.
 
-SET explain_query_plan_default = 'legacy';
-
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab

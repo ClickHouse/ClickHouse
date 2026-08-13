@@ -509,8 +509,8 @@ void StorageWindowView::alter(
 
     shutdown_called = false;
 
-    clean_cache_task = getContext()->getSchedulePool()->createTask(getStorageID(), getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
-    fire_task = getContext()->getSchedulePool()->createTask(
+    clean_cache_task = getContext()->getSchedulePool().createTask(getStorageID(), getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
+    fire_task = getContext()->getSchedulePool().createTask(
         getStorageID(), getStorageID().getFullTableName(), [this] { is_proctime ? threadFuncFireProc() : threadFuncFireEvent(); });
     clean_cache_task->deactivate();
     fire_task->deactivate();
@@ -773,23 +773,6 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
     {
         modified_select.setExpression(ASTSelectQuery::Expression::HAVING, {});
         modified_select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
-        modified_select.group_by_all = false;
-        /// Same for the GROUP BY modifiers: a leftover WITH TOTALS/ROLLUP/CUBE/GROUPING SETS
-        /// flag makes the interpreter reject the rewritten aggregation-free query.
-        modified_select.group_by_with_totals = false;
-        modified_select.group_by_with_rollup = false;
-        modified_select.group_by_with_cube = false;
-        modified_select.group_by_with_grouping_sets = false;
-        /// WINDOW definitions and LIMIT BY expressions may reference aliases of the original
-        /// select list, which is rewritten to raw source columns below, so they must not
-        /// survive either (removeJoin does the same for the join branch above). QUALIFY is
-        /// cleared for the same reason.
-        modified_select.setExpression(ASTSelectQuery::Expression::WINDOW, {});
-        modified_select.setExpression(ASTSelectQuery::Expression::QUALIFY, {});
-        modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_BY, {});
-        modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, {});
-        modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, {});
-        modified_select.limit_by_all = false;
     }
 
     auto select_list = make_intrusive<ASTExpressionList>();
@@ -812,24 +795,9 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
         order_by_elem->direction = 1;
         order_by->children.push_back(order_by_elem);
         modified_select.setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_by));
-        /// The original query may have used ORDER BY ALL, but the clause was replaced above,
-        /// so the flag must not survive: otherwise the analysis of this query would treat
-        /// the timestamp sort element as the ALL keyword and expand it over all columns.
-        modified_select.order_by_all = false;
     }
     else
-    {
         modified_select.setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
-        /// LIMIT ... WITH TIES requires an ORDER BY clause, which was just removed;
-        /// a stale flag would be a logical error in InterpreterSelectQuery.
-        modified_select.limit_with_ties = false;
-    }
-
-    /// INTERPOLATE belongs to the replaced (or removed) ORDER BY ... WITH FILL clause, and it may
-    /// reference aliases of the original select list, which was rewritten to raw source columns above.
-    /// `RequiredSourceColumnsVisitor` traverses INTERPOLATE independently of ORDER BY, so a stale
-    /// clause would pull unknown identifiers into the source query.
-    modified_select.setExpression(ASTSelectQuery::Expression::INTERPOLATE, {});
 
     const auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
     select_with_union_query->list_of_selects = make_intrusive<ASTExpressionList>();
@@ -1369,8 +1337,8 @@ StorageWindowView::StorageWindowView(
     if (disabled_due_to_analyzer)
         return;
 
-    clean_cache_task = getContext()->getSchedulePool()->createTask(getStorageID(), getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
-    fire_task = getContext()->getSchedulePool()->createTask(
+    clean_cache_task = getContext()->getSchedulePool().createTask(getStorageID(), getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
+    fire_task = getContext()->getSchedulePool().createTask(
         getStorageID(), getStorageID().getFullTableName(), [this] { is_proctime ? threadFuncFireProc() : threadFuncFireEvent(); });
     clean_cache_task->deactivate();
     fire_task->deactivate();
@@ -1767,26 +1735,6 @@ void StorageWindowView::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr que
         StorageID view_id = *view_ids.begin();
         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Table has dependency {}", view_id);
     }
-}
-
-void StorageWindowView::checkTableSizeBelowDropLimit(ContextPtr query_context) const
-{
-    if (!has_inner_table)
-        return;
-
-    /// Mirror `dropInnerTableIfAny`: it drops `inner_table_id` and, when
-    /// `has_inner_target_table`, also `target_table_id`. We must size-check both;
-    /// otherwise a `CREATE OR REPLACE` codepath that lands on this storage could
-    /// silently delete an over-limit inner table under a zeroed drop guard.
-    auto check_one = [&](const StorageID & inner_id)
-    {
-        if (auto inner = DatabaseCatalog::instance().tryGetTable(inner_id, getContext()))
-            inner->checkTableSizeBelowDropLimit(query_context);
-    };
-
-    check_one(inner_table_id);
-    if (has_inner_target_table)
-        check_one(target_table_id);
 }
 
 void StorageWindowView::drop()

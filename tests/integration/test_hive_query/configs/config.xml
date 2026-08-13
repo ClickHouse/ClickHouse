@@ -1,5 +1,0 @@
-<clickhouse>
-    <hdfs>
-        <libhdfs3_conf>/etc/clickhouse-server/extra_conf.d/hdfs-site.xml</libhdfs3_conf>
-    </hdfs>
-</clickhouse>

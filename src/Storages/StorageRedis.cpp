@@ -456,20 +456,14 @@ Chunk StorageRedis::getBySerializedKeys(const RedisArray & keys, PaddedPODArray<
     if (values.isNull() || values.size() == 0)
         return Chunk(std::move(columns), 0);
 
-    if (null_map && null_map->size() != keys.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "StorageRedis::getBySerializedKeys: null_map size {} does not match keys size {}",
-            null_map->size(), keys.size());
+    if (null_map)
+    {
+        null_map->clear();
+        null_map->resize_fill(keys.size(), 1);
+    }
 
     for (size_t i = 0; i < values.size(); ++i)
     {
-        if (null_map && !(*null_map)[i])
-        {
-            for (size_t col_idx = 0; col_idx < sample_block.columns(); ++col_idx)
-                columns[col_idx]->insert(sample_block.getByPosition(col_idx).type->getDefault());
-            continue;
-        }
-
         if (!values.get<RedisBulkString>(i).isNull())
         {
             fillColumns(keys.get<RedisBulkString>(i).value(),
@@ -558,15 +552,7 @@ Chunk StorageRedis::getByKeys(const ColumnsWithTypeAndName & keys, const Names &
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageRedis supports only one key, got: {}", keys.size());
 
-    /// `StorageMetadataHandle` owns the snapshot, so it has to be bound to a named local:
-    /// `operator->` is deleted on a temporary.
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-    auto pk_type = metadata_snapshot->getSampleBlock().getByName(primary_key).type;
-    /// `null_map` is an output parameter, so start from a clean state: `resize_fill` alone would keep
-    /// pre-existing values if the caller passed an already sized array.
-    null_map.clear();
-    null_map.resize_fill(keys[0].column->size(), 1);
-    auto raw_keys = serializeKeysToRawString(keys[0], pk_type, &null_map);
+    auto raw_keys = serializeKeysToRawString(keys[0]);
 
     if (raw_keys.size() != keys[0].column->size())
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", raw_keys.size(), keys[0].column->size());

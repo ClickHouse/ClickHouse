@@ -36,6 +36,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
@@ -65,13 +66,15 @@ DatabaseHDFS::DatabaseHDFS(const String & name_, const String & source_url, Cont
     }
 }
 
-StoragePtr DatabaseHDFS::addTable(const std::string & table_name, StoragePtr table_storage) const
+void DatabaseHDFS::addTable(const std::string & table_name, StoragePtr table_storage) const
 {
     std::lock_guard lock(mutex);
-    /// `emplace` keeps the existing entry if the key is already there, so `first->second` is the storage
-    /// a concurrent call for the same name inserted first. Nothing that locks `mutex` again may be called
-    /// here: it is the non-recursive base `IDatabase::mutex`, shared with `getDatabaseName`.
-    return loaded_tables.emplace(table_name, table_storage).first->second;
+    auto [_, inserted] = loaded_tables.emplace(table_name, table_storage);
+    if (!inserted)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Table with name `{}` already exists in database `{}` (engine {})",
+            table_name, getDatabaseName(), getEngineName());
 }
 
 std::string DatabaseHDFS::getTablePath(const std::string & table_name) const
@@ -135,7 +138,7 @@ StoragePtr DatabaseHDFS::getTableImpl(const String & name, ContextPtr context_) 
     /// TableFunctionHDFS throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(args, context_, name);
     if (table_storage)
-        return addTable(name, table_storage);
+        addTable(name, table_storage);
 
     return table_storage;
 }

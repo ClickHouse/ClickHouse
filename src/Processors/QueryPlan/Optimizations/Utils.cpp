@@ -165,17 +165,12 @@ FilterResult filterResultForNotMatchedRows(
     if (!filter_node)
         return FilterResult::UNKNOWN;
 
-    ActionsDAG::NodeRawConstPtrs targets = {filter_node};
-    auto conjunction_atoms = ActionsDAG::extractConjunctionAtoms(filter_node);
-    if (conjunction_atoms.size() > 1)
-        targets.insert(targets.end(), conjunction_atoms.begin(), conjunction_atoms.end());
-
     ColumnsWithTypeAndName filter_output;
     try
     {
         filter_output = ActionsDAG::evaluatePartialResult(
             filter_input,
-            targets,
+            { filter_node },
             /*input_rows_count=*/1,
             { .skip_materialize = true, .allow_unknown_function_arguments = allow_unknown_function_arguments }
         );
@@ -186,20 +181,7 @@ FilterResult filterResultForNotMatchedRows(
         return FilterResult::UNKNOWN;
     }
 
-    if (auto result = getFilterResult(filter_output[0]); result != FilterResult::UNKNOWN)
-        return result;
-
-    /// In filter context NULL is equivalent to false, but `and` with a constant NULL argument
-    /// does not fold to a constant: the result is 0 or NULL depending on the other arguments
-    /// (e.g. `NULL = 42 AND <unknown>`).
-    /// Both are falsy, so if any conjunction atom is a falsy constant, the filter cannot pass.
-    for (size_t i = 1; i < filter_output.size(); ++i)
-    {
-        if (getFilterResult(filter_output[i]) == FilterResult::FALSE)
-            return FilterResult::FALSE;
-    }
-
-    return FilterResult::UNKNOWN;
+    return getFilterResult(filter_output[0]);
 }
 }
 }

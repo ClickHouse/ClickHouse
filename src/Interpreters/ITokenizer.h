@@ -1,7 +1,5 @@
 #pragma once
 
-#include "config.h"
-
 #include <Common/assert_cast.h>
 #include <Common/StringUtils.h>
 #include <Columns/IColumn_fwd.h>
@@ -34,12 +32,6 @@ public:
         Array,
         SparseGrams,
         AsciiCJK,
-#if USE_ICU
-        Icu,
-#endif
-#if USE_MECAB
-        Japanese,
-#endif
     };
 
     ITokenizer() = delete;
@@ -47,9 +39,6 @@ public:
     ITokenizer(const ITokenizer &) = default;
 
     Type getType() const { return type; }
-
-    /// Mutable state across calls: callers must clone per thread rather than share.
-    virtual bool isStateful() const { return false; }
 
     virtual ~ITokenizer() = default;
     virtual std::unique_ptr<ITokenizer> clone() const = 0;
@@ -363,28 +352,8 @@ struct SparseGramsTokenizer final : public ITokenizerHelper<SparseGramsTokenizer
 
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
     bool supportsStringLike() const override { return true; }
-    bool isStateful() const override { return true; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
-
-    /// Streams tokens straight to the callback instead of pulling one at a time via `nextInString`.
-    /// Emits the same tokens in the same order.
-    template <Fn<bool(const char *, size_t)> Callback>
-    void forEachTokenImpl(const char * __restrict data, size_t length, Callback && callback) const
-    {
-        previous_data = data;
-        previous_len = length;
-        sparse_grams_iterator.set(data, data + length);
-
-        Pos token_begin = nullptr;
-        Pos token_end = nullptr;
-        while (sparse_grams_iterator.get(token_begin, token_end))
-            if (callback(token_begin, static_cast<size_t>(token_end - token_begin)))
-                return;
-
-        previous_data = nullptr;
-        previous_len = 0;
-    }
 private:
     size_t min_gram_length;
     size_t max_gram_length;
@@ -465,36 +434,6 @@ struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
     bool supportsStringLike() const override { return true; }
 };
 
-#if USE_ICU
-/// Tokenizer based on ICU's word break iteration (UAX #29). For scripts without whitespace between
-/// words (e.g. Chinese, Japanese, Thai) ICU applies dictionary-based segmentation, so such text is
-/// split into meaningful word tokens rather than single characters.
-struct IcuTokenizer final : public ITokenizerHelper<IcuTokenizer>
-{
-    explicit IcuTokenizer(String locale_) : ITokenizerHelper(Type::Icu), locale(std::move(locale_)) {}
-
-    static const char * getName() { return "icu"; }
-    static const char * getExternalName() { return getName(); }
-    String getDescription() const override;
-
-    bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
-    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
-
-    bool supportsStringLike() const override { return false; }
-    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
-
-    const String & getLocale() const { return locale; }
-
-private:
-    String locale;
-};
-#endif
-
-/// The Japanese (MeCab) tokenizer is declared in its own header (`JapaneseTokenizer.h`) so that this
-/// widely-included header does not pull in `<mecab.h>`. `forEachToken` dispatches it via the base
-/// `nextInString` (see `Type::Japanese` below), so the concrete type is not needed here.
-
 namespace detail
 {
 
@@ -554,7 +493,7 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
         case ITokenizer::Type::SparseGrams:
         {
             const auto & sparse_grams_tokenizer = assert_cast<const SparseGramsTokenizer &>(tokenizer);
-            sparse_grams_tokenizer.forEachTokenImpl(data, length, callback);
+            detail::forEachTokenImpl(sparse_grams_tokenizer, data, length, callback);
             return;
         }
         case ITokenizer::Type::AsciiCJK:
@@ -563,21 +502,6 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
             detail::forEachTokenImpl(ascii_cjk_tokenizer, data, length, callback);
             return;
         }
-#if USE_ICU
-        case ITokenizer::Type::Icu:
-        {
-            const auto & icu_tokenizer = assert_cast<const IcuTokenizer &>(tokenizer);
-            detail::forEachTokenImpl(icu_tokenizer, data, length, callback);
-            return;
-        }
-#endif
-#if USE_MECAB
-        case ITokenizer::Type::Japanese:
-            /// Dispatch through the base virtual `nextInString` so this header needn't see the
-            /// MeCab-dependent `JapaneseTokenizer` definition.
-            detail::forEachTokenImpl(tokenizer, data, length, callback);
-            return;
-#endif
     }
 }
 

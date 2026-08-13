@@ -17,7 +17,6 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Formats/ParseError.h>
 
 
@@ -224,19 +223,6 @@ bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & dat
     for (const auto & data_part : data_parts)
     {
         if (parts_names[idx++] != data_part->name)
-            return true;
-    }
-    return false;
-}
-
-bool ConditionSelectivityEstimator::isStale(const RangesInDataParts & parts) const
-{
-    if (parts.size() != parts_names.size())
-        return true;
-    size_t idx = 0;
-    for (const auto & part : parts)
-    {
-        if (parts_names[idx++] != part.data_part->name)
             return true;
     }
     return false;
@@ -521,11 +507,8 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
 
         if (column_estimator.stats == nullptr)
             column_estimator.stats = column_stats;
-        else if (column_estimator.stats->structureEquals(*column_stats))
+        else
             column_estimator.stats->merge(column_stats);
-        /// else: incompatible statistics (e.g. a concurrent ALTER changed the column type,
-        /// shifting the aggregate-function state layout). Skip this part's statistics so the
-        /// estimator still works with the compatible parts instead of crashing.
     }
 }
 

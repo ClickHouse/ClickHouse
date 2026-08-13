@@ -56,10 +56,7 @@ struct ExtractNumericType
         if (!in.eof())
         {
             if constexpr (is_floating_point<NumericType>)
-                /// This generic extractor has no access to precise_float_parsing, so it stays on the
-                /// imprecise parser: that matches the pre-26.7 behavior of visitParamExtractFloat /
-                /// simpleJSONExtractFloat and keeps them reproducible without the setting.
-                tryReadFloatImpreciseForCompatibility(x, in);
+                tryReadFloatText(x, in);
             else
                 tryReadIntText(x, in);
         }

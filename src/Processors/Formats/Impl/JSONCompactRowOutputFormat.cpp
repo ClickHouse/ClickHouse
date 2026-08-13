@@ -99,7 +99,7 @@ void registerOutputFormatJSONCompact(FormatFactory & factory)
 
 ## Description {#description}
 
-The `JSONCompactStrings` format differs from [JSONStrings](/reference/formats/JSON/JSONStrings) only in that data rows are output as arrays, not as objects.
+The `JSONCompactStrings` format differs from [JSONStrings](./JSONStrings.md) only in that data rows are output as arrays, not as objects.
 
 ## Example usage {#example-usage}
 

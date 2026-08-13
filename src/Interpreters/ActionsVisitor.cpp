@@ -28,10 +28,8 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
-#include <Columns/ColumnTuple.h>
 
 #include <Storages/StorageSet.h>
 #if CLICKHOUSE_CLOUD
@@ -58,7 +56,6 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Interpreters/convertColumnToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/misc.h>
@@ -106,12 +103,7 @@ static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypes
 
 namespace
 {
-/// Build the constant right-hand side of `IN` as a single-row column plus its exact type, without
-/// materializing a `Field`. Each `tuple`/`array` element is evaluated individually
-/// (`evaluateConstantExpressionAsColumn` fast-paths literals) and assembled column-natively, because
-/// interpreting a large tuple/array as a whole function through `evaluateConstantExpression` is
-/// extremely slow.
-std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
+std::pair<Field, DataTypePtr> buildCollectionFieldAndTypeFromASTFunction(
     const boost::intrusive_ptr<ASTFunction> & func, ContextPtr context)
 {
     if (!func)
@@ -119,40 +111,55 @@ std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
 
     const auto & args = func->arguments->children;
 
-    /// An empty `tuple()` is not handled here: `ColumnTuple::create` rejects a zero-column tuple, so it
-    /// falls through to the generic path below, which builds a size-1 empty-tuple column of type `Tuple()`.
-    if (func->name == "tuple" && !args.empty())
+    if (func->name == "tuple")
     {
-        Columns element_columns;
-        element_columns.reserve(args.size());
+        Tuple rhs_tuple;
+        rhs_tuple.reserve(args.size());
 
         DataTypes element_types;
         element_types.reserve(args.size());
 
         for (const auto & arg : args)
         {
-            auto [column, type] = evaluateConstantExpressionAsColumn(arg, context);
-            element_columns.emplace_back(column->convertToFullColumnIfConst());
-            element_types.emplace_back(std::move(type));
+            if (const auto * lit = arg->as<ASTLiteral>())
+            {
+                const Field & value = lit->value;
+                rhs_tuple.emplace_back(value);
+                element_types.emplace_back(applyVisitor(FieldToDataType(), value));
+            }
+            else
+            {
+                auto value_raw = evaluateConstantExpression(arg, context);
+                rhs_tuple.emplace_back(std::move(value_raw.first));
+                element_types.emplace_back(std::move(value_raw.second));
+            }
         }
 
-        auto tuple_column = ColumnTuple::create(std::move(element_columns));
-        return {std::move(tuple_column), std::make_shared<DataTypeTuple>(std::move(element_types))};
+        return {Field(std::move(rhs_tuple)), std::make_shared<DataTypeTuple>(std::move(element_types))};
     }
 
     if (func->name == "array")
     {
-        Columns element_columns;
-        element_columns.reserve(args.size());
+        Array rhs_array;
+        rhs_array.reserve(args.size());
 
         DataTypes element_types;
         element_types.reserve(args.size());
 
         for (const auto & arg : args)
         {
-            auto [column, type] = evaluateConstantExpressionAsColumn(arg, context);
-            element_columns.emplace_back(column->convertToFullColumnIfConst());
-            element_types.emplace_back(std::move(type));
+            if (const auto * lit = arg->as<ASTLiteral>())
+            {
+                const Field & value = lit->value;
+                rhs_array.emplace_back(value);
+                element_types.emplace_back(applyVisitor(FieldToDataType(), value));
+            }
+            else
+            {
+                auto value_raw = evaluateConstantExpression(arg, context);
+                rhs_array.emplace_back(std::move(value_raw.first));
+                element_types.emplace_back(std::move(value_raw.second));
+            }
         }
 
         DataTypePtr nested_type;
@@ -161,24 +168,19 @@ std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
         else
             nested_type = getLeastSupertype(element_types);
 
-        auto data = nested_type->createColumn();
-        data->reserve(element_columns.size());
-        for (size_t i = 0; i < element_columns.size(); ++i)
+        for (size_t i = 0; i < rhs_array.size(); ++i)
         {
-            /// Every element is convertible to the common supertype, so this never fails.
-            ColumnPtr converted = convertColumnToTypeOrThrow(*element_columns[i], element_types[i], nested_type);
-            data->insertRangeFrom(*converted, 0, 1);
+            if (!rhs_array[i].isNull())
+                rhs_array[i] = convertFieldToType(rhs_array[i], *nested_type, element_types[i].get());
         }
 
-        auto offsets = ColumnArray::ColumnOffsets::create();
-        offsets->insertValue(element_columns.size());
-        auto array_column = ColumnArray::create(std::move(data), std::move(offsets));
-        return {std::move(array_column), std::make_shared<DataTypeArray>(std::move(nested_type))};
+        return {Field(std::move(rhs_array)), std::make_shared<DataTypeArray>(std::move(nested_type))};
     }
 
     /// For non tuple/array functions, we fall back to the generic path
     ASTPtr func_ast = func;
-    return evaluateConstantExpressionAsColumn(func_ast, context);
+    auto value_raw = evaluateConstantExpression(func_ast, context);
+    return value_raw;
 }
 
 
@@ -194,7 +196,7 @@ ColumnsWithTypeAndName createBlockForSet(
     const ASTPtr & right_arg,
     ContextPtr context)
 {
-    auto [right_arg_column, right_arg_type] = evaluateConstantExpressionAsColumn(right_arg, context);
+    auto [right_arg_value, right_arg_type] = evaluateConstantExpression(right_arg, context);
 
     GetSetElementParams params{
         .transform_null_in = context->getSettingsRef()[Setting::transform_null_in],
@@ -202,7 +204,7 @@ ColumnsWithTypeAndName createBlockForSet(
     };
 
     /// Reuse the analyzer logic
-    return getSetElementsForConstantValue(left_arg_type, right_arg_column, right_arg_type, params);
+    return getSetElementsForConstantValue(left_arg_type, right_arg_value, right_arg_type, params);
 }
 
 /** Create a block for set from literal.
@@ -219,10 +221,10 @@ ColumnsWithTypeAndName createBlockForSet(
         .forbid_unknown_enum_values = context->getSettingsRef()[Setting::validate_enum_literals_in_operators],
     };
 
-    auto [right_arg_column, right_arg_type] = buildCollectionColumnAndTypeFromASTFunction(right_arg, context);
+    auto [right_arg_value, right_arg_type] = buildCollectionFieldAndTypeFromASTFunction(right_arg, context);
 
     /// Reuse the analyzer logic
-    return getSetElementsForConstantValue(left_arg_type, right_arg_column, right_arg_type, params);
+    return getSetElementsForConstantValue(left_arg_type, right_arg_value, right_arg_type, params);
 }
 }
 
@@ -1093,33 +1095,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         if (has_lambda_arguments && !data.only_consts)
         {
             function_builder->getLambdaArgumentTypes(argument_types);
-
-            /// Validate every lambda argument BEFORE visiting any lambda body. getLambdaArgumentTypes
-            /// only fills in the placeholder argument types for positions that actually expect a lambda;
-            /// where it does not (e.g. arrayFold's accumulator: arrayFold(lambda, arr, another_lambda)),
-            /// the placeholder DataTypeFunction keeps null argument/return types. Those nulls must be
-            /// rejected up front: a later lambda that stays unresolved can be copied into an earlier
-            /// lambda's argument type, so visiting the earlier lambda's body first would take the
-            /// non-lambda path and dereference the null return type (FunctionArrayMapped::getReturnTypeImpl).
-            for (size_t i = 0; i < node.arguments->children.size(); ++i)
-            {
-                const auto * lambda = node.arguments->children[i]->as<ASTFunction>();
-                if (!lambda || lambda->name != "lambda")
-                    continue;
-
-                const auto * lambda_type = typeid_cast<const DataTypeFunction *>(argument_types[i].get());
-                bool lambda_types_resolved = lambda_type != nullptr;
-                if (lambda_type)
-                    for (const auto & arg_type : lambda_type->getArgumentTypes())
-                        if (!arg_type)
-                        {
-                            lambda_types_resolved = false;
-                            break;
-                        }
-                if (!lambda_types_resolved)
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Function '{}' does not expect a lambda expression as argument {}", node.name, i + 1);
-            }
 
             /// Call recursively for lambda expressions.
             for (size_t i = 0; i < node.arguments->children.size(); ++i)
