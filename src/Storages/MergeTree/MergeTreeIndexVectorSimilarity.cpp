@@ -86,7 +86,9 @@ namespace
 {
 
 const std::set<String> methods = {
+#if USE_USEARCH
     "hnsw",
+#endif
 #if USE_SCANN
     "scann",
 #endif
