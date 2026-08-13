@@ -31,6 +31,7 @@ public:
 
     std::string_view getAlgorithm() const override { return "CONSTANT"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
+    bool anyTakeLastRow() const override { return any_take_last_row; }
 
     bool isCloneSupported() const override
     {

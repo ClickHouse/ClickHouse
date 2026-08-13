@@ -1,5 +1,7 @@
 #include <Processors/Formats/Impl/ORCBlockOutputFormat.h>
 
+#include <unordered_map>
+
 #if USE_ORC
 
 #include <Common/assert_cast.h>
@@ -11,6 +13,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsCommon.h>
 
@@ -20,6 +23,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/NestedUtils.h>
@@ -234,6 +238,32 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
                 getORCType(map_type->getKeyType(), Nested::concatenateName(column_path, "key")),
                 getORCType(map_type->getValueType(), Nested::concatenateName(column_path, "value"))
                 );
+            break;
+        }
+        case TypeIndex::Variant:
+        {
+            const auto & variant_type = assert_cast<const DataTypeVariant &>(*unwrapped);
+            auto union_type = orc::createUnionType();
+            /// ORC keeps one physical stream per union branch and identifies a branch only by its
+            /// ORC type, so two variants that map to the same ORC type (e.g. `Int32` and `UInt32`,
+            /// both ORC `int`) would produce a union with duplicate branches, which the reader
+            /// rejects. Reject such a `Variant` up front instead of writing an unreadable file.
+            std::unordered_map<String, String> variant_by_orc_type;
+            /// A union child is addressed by its type name, the way a `Variant` subcolumn is
+            /// (`v.Int32`). Iceberg has no union type, so no field id is expected to be found there.
+            for (const auto & nested_type : variant_type.getVariants())
+            {
+                auto child_type = getORCType(nested_type, Nested::concatenateName(column_path, nested_type->getName()));
+                auto [it, inserted] = variant_by_orc_type.emplace(child_type->toString(), nested_type->getName());
+                if (!inserted)
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "Type {} is not supported for ORC output format: variants {} and {} are both written as ORC type '{}', "
+                        "and ORC unions with duplicate branch types cannot be read back",
+                        unwrapped->getName(), it->second, nested_type->getName(), it->first);
+                union_type->addUnionChild(std::move(child_type));
+            }
+            result = std::move(union_type);
             break;
         }
         default:
@@ -593,6 +623,42 @@ void ORCBlockOutputFormat::writeColumn(
             orc::ColumnVectorBatch & values_orc_column = *map_orc_column.elements;
             auto value_type = map_type.getValueType();
             writeColumn(values_orc_column, *nested_columns[1], value_type, nullptr);
+            break;
+        }
+        case TypeIndex::Variant:
+        {
+            auto & union_orc_column = dynamic_cast<orc::UnionVectorBatch &>(orc_column);
+            const auto & variant_column = assert_cast<const ColumnVariant &>(column);
+            const auto & variant_types = assert_cast<const DataTypeVariant &>(*type).getVariants();
+
+            /// The ORC union branches are created in the same order as the Variant's variants (see
+            /// getORCType), so a global discriminator is exactly the ORC tag. A Variant NULL row (the
+            /// NULL discriminator) is written as a NULL union row.
+            bool has_nulls = orc_column.hasNulls;
+            for (size_t i = 0; i < rows; ++i)
+            {
+                auto global_discr = variant_column.globalDiscriminatorAt(i);
+                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR || (null_bytemap && (*null_bytemap)[i]))
+                {
+                    union_orc_column.notNull[i] = 0;
+                    union_orc_column.tags[i] = 0;
+                    union_orc_column.offsets[i] = 0;
+                    has_nulls = true;
+                }
+                else
+                {
+                    union_orc_column.tags[i] = static_cast<unsigned char>(global_discr);
+                    union_orc_column.offsets[i] = variant_column.offsetAt(i);
+                }
+            }
+            union_orc_column.hasNulls = has_nulls;
+
+            /// Each branch column already contains exactly the rows routed to it (in offset order).
+            for (size_t i = 0; i < variant_types.size(); ++i)
+            {
+                auto nested_type = variant_types[i];
+                writeColumn(*union_orc_column.children[i], variant_column.getVariantByGlobalDiscriminator(i), nested_type, nullptr);
+            }
             break;
         }
         default:

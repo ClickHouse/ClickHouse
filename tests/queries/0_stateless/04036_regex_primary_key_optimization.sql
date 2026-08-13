@@ -124,7 +124,11 @@ SELECT * FROM test_regex_prefix WHERE match(id, '^aaa[12]') ORDER BY id SETTINGS
 SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa^bbb')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
 SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa^bbb') SETTINGS force_primary_key = 1, max_rows_to_read = 2;
 SELECT * FROM test_regex_prefix WHERE match(id, '^aaa^bbb') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 2;
--- Metacharacter '$' stops prefix extraction
+-- An exact point range selects the row it matches
+SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa-1$')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa-1$') SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+SELECT * FROM test_regex_prefix WHERE match(id, '^aaa-1$') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 2;
+-- No row contains exactly 'aaa'
 SELECT trimLeft(explain) FROM (EXPLAIN PLAN indexes=1 SELECT id FROM test_regex_prefix WHERE match(id, '^aaa$')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
 SELECT count() FROM test_regex_prefix WHERE match(id, '^aaa$') SETTINGS force_primary_key = 1, max_rows_to_read = 2;
 SELECT * FROM test_regex_prefix WHERE match(id, '^aaa$') ORDER BY id SETTINGS force_primary_key = 1, max_rows_to_read = 2;

@@ -4,12 +4,9 @@
         <max_threads>1</max_threads>
     </settings>
 
-    <!-- The queries deliberately do NOT set input_format_arrow_use_native_reader /
-         output_format_arrow_use_native_writer: they exercise the default path, which is the native
-         implementation on this branch and the Apache Arrow library on the compared master build, so
-         the comparison directly measures the speedup of this change. Pinning those settings would also
-         make every query fail on the master server (the settings do not exist there yet), which the
-         perf runner reports as an error and fails the whole test. -->
+    <!-- The native Arrow IPC reader and writer are the only implementation: the Apache Arrow
+         library-based ones were removed, along with the settings that used to select between them.
+         These queries therefore measure the absolute encode/decode throughput of the Arrow path. -->
 
     <!-- Source data covering the encoder/decoder paths that are not a plain memcpy: nullable columns
          (validity bitmap), Bool (bit packing), Date (uint16->int32 widening), DateTime64 (rescale),

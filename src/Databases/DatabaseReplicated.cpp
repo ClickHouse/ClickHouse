@@ -1313,10 +1313,14 @@ void DatabaseReplicated::assertDigest(const ContextPtr & local_context)
     {
         if (auto txn = local_context->getZooKeeperMetadataTransaction())
         {
-            txn->addFinalizer([this, local_context]()
+            /// Weak because the `Context` owns this transaction. It cannot expire here:
+            /// `commit` runs the finalizer while its caller still holds that `Context`.
+            txn->addFinalizer([this, weak_context = ContextWeakPtr{local_context}]()
             {
+                auto context = weak_context.lock();
+                chassert(context);
                 std::lock_guard lock{metadata_mutex};
-                assertDigestWithProbability(local_context);
+                assertDigestWithProbability(context);
             });
         }
     }
@@ -1332,10 +1336,13 @@ void DatabaseReplicated::assertDigestInTransactionOrInline(const ContextPtr & lo
 #if defined(DEBUG_OR_SANITIZER_BUILD)
     if (txn)
     {
-        txn->addFinalizer([this, local_context]()
+        /// Weak for the same reason as in `assertDigest` above.
+        txn->addFinalizer([this, weak_context = ContextWeakPtr{local_context}]()
         {
+            auto context = weak_context.lock();
+            chassert(context);
             std::lock_guard lock{metadata_mutex};
-            assertDigestWithProbability(local_context);
+            assertDigestWithProbability(context);
         });
     }
     else
@@ -1730,10 +1737,11 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             dropped_dictionaries += table->isDictionary();
             table->flushAndShutdown(/*is_drop=*/true);
 
-            if (table->getName() == "MaterializedView" || table->getName() == "WindowView")
+            if (table->getName() == "MaterializedView" || table->getName() == "WindowView" || table->getName() == "TimeSeries")
             {
-                /// We have to drop MV inner table, so MV will not try to do it implicitly breaking some invariants.
-                /// Also we have to commit metadata transaction, because it's not committed by default for inner tables of MVs.
+                /// These storages own inner tables. Drop them here, while the recovery metadata transaction is
+                /// available: the deferred drop runs without one, so the inner DROP would be re-routed into the
+                /// replicated DDL log, rejected, and retried forever, and waitTableFinallyDropped never returns.
                 /// Yep, I hate inner tables of materialized views.
                 auto mv_drop_inner_table_context = make_query_context();
                 table->dropInnerTableIfAny(/* sync */ true, mv_drop_inner_table_context);
@@ -2287,7 +2295,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(
         create.attach = true;
 
     if (create.select && create.isView())
-        ApplyWithSubqueryVisitor(context_).visit(*create.select);
+        ApplyWithSubqueryVisitor::visit(*create.select);
 
     return ast;
 }

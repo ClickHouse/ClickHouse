@@ -74,6 +74,7 @@ public:
 
     std::string_view getAlgorithm() const override { return toString(JoinAlgorithm::GRACE_HASH); }
     const TableJoin & getTableJoin() const override { return *table_join; }
+    bool anyTakeLastRow() const override { return any_take_last_row; }
 
     void initialize(const Block & sample_block) override;
 

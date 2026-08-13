@@ -58,6 +58,7 @@ public:
 
     std::string_view getAlgorithm() const override { return toString(JoinAlgorithm::PARALLEL_HASH); }
     const TableJoin & getTableJoin() const override { return *table_join; }
+    bool anyTakeLastRow() const override { return any_take_last_row; }
     bool addBlockToJoin(const Block & right_block_, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     JoinResultPtr joinBlock(Block block) override;
