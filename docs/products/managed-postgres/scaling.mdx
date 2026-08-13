@@ -160,7 +160,7 @@ If writes fill the disk faster than autoscaling can complete, the instance goes 
 | Up to 512 GB    | 7 GB free       | 10 GB free          |
 | Over 512 GB     | 2% free         | 3% free             |
 
-Reads keep working, while writes fail with the standard Postgres error `cannot execute INSERT in a read-only transaction`. Read-only mode lifts automatically once free space recovers, usually right after the scale-up cutover completes.
+Reads keep working, while writes fail with the standard Postgres error `cannot execute INSERT in a read-only transaction`. If free space keeps shrinking, existing connections are terminated so that every session picks up the read-only setting; reads work again once clients reconnect. Read-only mode lifts automatically once free space recovers, usually right after the scale-up cutover completes.
 
 ### Example {#autoscaling-example}
 
