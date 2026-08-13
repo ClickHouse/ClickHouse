@@ -2799,6 +2799,18 @@ bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & n
         LOG_WARNING(log, "Storage policy for Distributed table has multiple volumes. "
                             "Only {} volume will be used to store data. Other will be ignored.", data_volume->getName());
 
+    /// A reloaded configuration may have added a disk without a real host filesystem path (e.g. `web`,
+    /// a remote `plain` disk, or `borrow_from_cache`) to this policy. Such a disk cannot back the local
+    /// insert queue (see the same check in the constructor), so reject the new policy before publishing
+    /// it; the caller logs the error and the table keeps the previous policy.
+    for (const DiskPtr & disk : new_data_volume->getDisks())
+        if (!disk->isPathOnLocalFilesystem())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Disk '{}' does not have a real filesystem path and cannot back a `Distributed` table's local insert queue; "
+                "keeping the previous storage policy for table {}",
+                disk->getName(), getStorageID().getNameForLogs());
+
     std::atomic_store(&storage_policy, new_storage_policy);
     std::atomic_store(&data_volume, new_data_volume);
 
