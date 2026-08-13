@@ -170,9 +170,6 @@ def main():
     # cannot pass on a repo this large).
     os.environ["GH_TOKEN"] = _GH_TOKEN_SECRET.get_value()
 
-    # Linear body: no `if ok` / recovery-flag / dry-run gating in the orchestrator.
-    # The `ok` short-circuit lives inside step() so a failed step skips the rest;
-    # the remaining runtime checks are delegated into the (self-gating) steps.
     results = []
     ok = True
 
@@ -326,9 +323,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    # Prepare validates the ref and refuses skip-repo/skip-docker against a
-    # non-recovery ref itself, so the orchestrator passes those inputs and does
-    # not gate on the result.
+    # prepare refuses skip-repo/skip-docker on a non-recovery ref, so pass them.
     skip_flags = " ".join(
         f for f in (
             "--skip-repo" if args.skip_repo else "",
