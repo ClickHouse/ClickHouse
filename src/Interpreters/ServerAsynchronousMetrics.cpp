@@ -81,12 +81,12 @@ namespace
 
 DimensionalMetrics::MetricFamily & filesystem_cache_size_bytes = DimensionalMetrics::Factory::instance().registerMetric(
     "filesystem_cache_size_bytes",
-    "Filesystem cache size in bytes, labelled by cache name and user id.",
+    "Filesystem cache size in bytes, labelled by cache name and cache client id (`user_id`).",
     {"cache_name", "user_id"});
 
 DimensionalMetrics::MetricFamily & filesystem_cache_elements = DimensionalMetrics::Factory::instance().registerMetric(
     "filesystem_cache_elements",
-    "Filesystem cache elements (file segments), labelled by cache name and user id.",
+    "Filesystem cache elements (file segments), labelled by cache name and cache client id (`user_id`).",
     {"cache_name", "user_id"});
 
 template <typename Max, typename T>

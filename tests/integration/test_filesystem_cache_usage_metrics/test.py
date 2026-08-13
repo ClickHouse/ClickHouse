@@ -57,13 +57,22 @@ def test_filesystem_cache_usage_metrics(start_cluster):
         "current_size": current_size,
         "current_elements_num": current_elements,
     }
+    # The `user_id` label is the filesystem cache client, which for a plain server
+    # is `Context::getFilesystemCacheUser` and falls back to the server UUID when it
+    # is not set (see `getCommonUserID` in `FileCache.cpp`). Pin the exact value, so
+    # that a change of the label's meaning shows up as a test failure rather than
+    # silently passing an "is not empty" check.
     metrics = {
-        metric: (int(value), int(labelled_users))
-        for metric, value, labelled_users in (
+        metric: (int(value), int(expected_users), int(distinct_users))
+        for metric, value, expected_users, distinct_users in (
             row.split("\t")
             for row in node.query(
                 f"""
-                SELECT metric, toUInt64(sum(value)), countIf(labels['user_id'] != '')
+                SELECT
+                    metric,
+                    toUInt64(sum(value)),
+                    countIf(labels['user_id'] = toString(serverUUID())),
+                    uniqExact(labels['user_id'])
                 FROM system.dimensional_metrics
                 WHERE metric IN ({", ".join(repr(metric) for metric in METRICS)})
                   AND labels['cache_name'] = '{CACHE_NAME}'
@@ -74,9 +83,10 @@ def test_filesystem_cache_usage_metrics(start_cluster):
     }
     assert metrics.keys() == METRICS.keys()
     for metric, setting in METRICS.items():
-        value, labelled_users = metrics[metric]
+        value, expected_users, distinct_users = metrics[metric]
         assert value == int(settings[setting]) > 0
-        assert labelled_users > 0
+        assert distinct_users == 1
+        assert expected_users == 1
 
     node.query(f"SYSTEM DROP FILESYSTEM CACHE '{CACHE_NAME}'")
     node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
