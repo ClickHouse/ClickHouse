@@ -11,6 +11,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <DataTypes/hasNullable.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
@@ -2448,11 +2449,14 @@ void ReadFromMergeTree::buildIndexes(
 
                 /// The skip-index top-k path ranks granules via raw Field comparison
                 /// (MinMaxGranuleItem::operator<) which does not respect nulls_direction
-                /// or collation. Only allow types where raw Field ordering matches
+                /// or collation, and orders NaN as the greatest value regardless of the
+                /// ORDER BY direction. Only allow types where raw Field ordering matches
                 /// the ORDER BY semantics.
                 /// TODO: generalize MinMaxGranuleItem comparison and getTopKMarks to use
-                /// nulls_direction/collator so this restriction can be lifted.
+                /// nulls_direction/collator and a NaN-aware float order so this restriction
+                /// can be lifted.
                 if (top_k_filter_info->data_type->isNullable()
+                    || hasTypeThatCanContainFloat(top_k_filter_info->data_type)
                     || !top_k_filter_info->data_type->isValueRepresentedByNumber())
                     return false;
 

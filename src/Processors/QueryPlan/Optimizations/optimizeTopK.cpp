@@ -1,6 +1,7 @@
 #include <Columns/Collator.h>
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/hasNullable.h>
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -151,11 +152,13 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 
     /// The skip-index top-k path ranks granules via raw Field comparison
     /// (MinMaxGranuleItem::operator<) which does not respect nulls_direction
-    /// or collation. Restrict it to types where raw Field ordering matches
+    /// or collation, and orders NaN as the greatest value regardless of the
+    /// ORDER BY direction. Restrict it to types where raw Field ordering matches
     /// ORDER BY semantics. This check mirrors the guard in
     /// ReadFromMergeTree::buildIndexes for defense-in-depth.
     bool skip_index_type_eligible = sort_column.type->isValueRepresentedByNumber()
         && !sort_column.type->isNullable()
+        && !hasTypeThatCanContainFloat(sort_column.type)
         && !sort_col_desc.collator;
 
     bool use_skip_index = settings.use_skip_indexes_for_top_k
