@@ -53,9 +53,6 @@
           "$ref": "./products/agentic-data-stack/navigation.json"
         },
         {
-          "$ref": "./chdb/navigation.json"
-        },
-        {
           "$ref": "./products/kubernetes-operator/navigation.json"
         }
       ],
