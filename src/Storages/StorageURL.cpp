@@ -158,6 +158,16 @@ static void validateHTTPMethod(const String & http_method)
             http_method);
 }
 
+/// GET and POST responses for the same URL are unrelated data sources, so the effective
+/// read method is part of the schema cache key. GET keeps the plain URL as the key
+/// (and as the user-visible `source` in system.schema_inference_cache).
+static String schemaCacheSource(const String & url, const String & read_method)
+{
+    if (read_method == Poco::Net::HTTPRequest::HTTP_GET)
+        return url;
+    return read_method + ':' + url;
+}
+
 bool urlWithGlobs(const String & uri)
 {
     return (uri.contains('{') && uri.contains('}')) || uri.contains('|');
@@ -371,7 +381,7 @@ void StorageURLSource::setCredentials(Poco::Net::HTTPBasicCredentials & credenti
 StorageURLSource::StorageURLSource(
     const ReadFromFormatInfo & info,
     std::shared_ptr<IteratorWrapper> uri_iterator_,
-    const std::string & http_method,
+    const std::string & http_method_,
     std::function<void(std::ostream &)> callback,
     const String & format_,
     const std::optional<FormatSettings> & format_settings_,
@@ -401,6 +411,7 @@ StorageURLSource::StorageURLSource(
     , parser_shared_resources(std::move(parser_shared_resources_))
     , format_filter_info(std::move(format_filter_info_))
     , headers(getHeaders(headers_))
+    , http_method(http_method_)
     , need_only_count(need_only_count_)
     , storage_id(std::move(storage_id_))
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
@@ -671,13 +682,13 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
 void StorageURLSource::addNumRowsToCache(const String & uri, size_t num_rows)
 {
-    auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
+    auto cache_key = getKeyForSchemaCache(schemaCacheSource(uri, http_method), format, format_settings, getContext());
     StorageURL::getSchemaCache(getContext()).addNumRows(cache_key, num_rows);
 }
 
 std::optional<size_t> StorageURLSource::tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time)
 {
-    auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
+    auto cache_key = getKeyForSchemaCache(schemaCacheSource(uri, http_method), format, format_settings, getContext());
     auto get_last_mod_time = [&]() -> std::optional<time_t>
     {
         /// Some URLs could not have Last-Modified header, in this case we cannot be sure that
@@ -1004,7 +1015,7 @@ namespace
             if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url])
                 return;
 
-            auto key = getKeyForSchemaCache(current_url_option, *format, format_settings, getContext());
+            auto key = getKeyForSchemaCache(schemaCacheSource(current_url_option, read_method), *format, format_settings, getContext());
             StorageURL::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
 
@@ -1013,7 +1024,7 @@ namespace
             if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url])
                 return;
 
-            auto key = getKeyForSchemaCache(current_url_option, *format, format_settings, getContext());
+            auto key = getKeyForSchemaCache(schemaCacheSource(current_url_option, read_method), *format, format_settings, getContext());
             StorageURL::getSchemaCache(getContext()).addColumns(key, columns);
         }
 
@@ -1060,7 +1071,7 @@ namespace
             {
                 auto get_last_mod_time = [&]() -> std::optional<time_t>
                 {
-                    auto last_mod_time = StorageURL::tryGetLastModificationTime(url, headers, credentials, context);
+                    auto last_mod_time = StorageURL::tryGetLastModificationTime(url, headers, read_method, credentials, context);
                     /// Some URLs could not have Last-Modified header, in this case we cannot be sure that
                     /// data wasn't changed after adding it's schema to cache. Use schema from cache only if
                     /// special setting for this case is enabled.
@@ -1071,7 +1082,7 @@ namespace
 
                 if (format)
                 {
-                    auto cache_key = getKeyForSchemaCache(url, *format, format_settings, context);
+                    auto cache_key = getKeyForSchemaCache(schemaCacheSource(url, read_method), *format, format_settings, context);
                     if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                         return columns;
                 }
@@ -1082,7 +1093,7 @@ namespace
                     /// If we have such entry for some format, we can use this format to read the file.
                     for (const auto & format_name : FormatFactory::instance().getAllInputFormats())
                     {
-                        auto cache_key = getKeyForSchemaCache(url, format_name, format_settings, context);
+                        auto cache_key = getKeyForSchemaCache(schemaCacheSource(url, read_method), format_name, format_settings, context);
                         if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                         {
                             format = format_name;
@@ -1578,6 +1589,7 @@ SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)
 std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
     const String & url,
     const HTTPHeaderEntries & headers,
+    const String & read_method,
     const Poco::Net::HTTPBasicCredentials & credentials,
     const ContextPtr & context)
 {
@@ -1587,6 +1599,7 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
 
     auto buf = BuilderRWBufferFromHTTP(uri)
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                   .withMethod(read_method)
                    .withSettings(context->getReadSettings())
                    .withTimeouts(getHTTPTimeouts(context))
                    .withHostFilter(&context->getRemoteHostFilter())
@@ -2660,6 +2673,17 @@ void registerStorageURL(StorageFactory & factory)
                 partition_by = args.storage_def->partition_by->clone();
 
             auto config = StorageURL::getConfiguration(engine_args, context, &args.table_id);
+
+            /// The index-page listing requests are plain GET; a silent fallback to probing the
+            /// literal `*` URL would read different files, so reject the combination explicitly.
+            /// PUT applies to writes only and keeps the pre-existing behavior.
+            if (urlPathHasListableGlobs(config.url)
+                && IStorageURLBase::chooseReadMethod(config.http_method) == Poco::Net::HTTPRequest::HTTP_POST)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages (URL '{}')",
+                    config.url);
+
             const bool use_object_storage
                 = config.http_method.empty()
                 && urlPathHasListableGlobs(config.url);
@@ -2800,7 +2824,8 @@ The method can be overridden with the `http_method` key-value argument (also ava
 `http_method='POST'` makes `SELECT` queries use `POST` instead of the default `GET`, for servers
 that accept only `POST`; for `INSERT` queries, `PUT` can be specified instead of the default
 `POST`. `PUT` applies to writes only: a `SELECT` through a configuration with `http_method='PUT'`
-still uses `GET`.
+still uses `GET`. `http_method='POST'` cannot be combined with `*`/`**` wildcards expanded from
+[HTTP index pages](#wildcards-with-http-index-pages) — such tables are rejected.
 
 ```sql
 CREATE TABLE post_only_source (word String, value UInt64)

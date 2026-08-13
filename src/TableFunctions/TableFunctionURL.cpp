@@ -4,6 +4,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/IdentifierNode.h>
+#include <Poco/Net/HTTPRequest.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -358,6 +359,16 @@ StoragePtr TableFunctionURL::getStorage(
     /// `DisclosedGlobIterator` / `parseRemoteDescription` and cannot list index pages, so it must not
     /// take over such queries via the parallel-replicas path — that would silently fall back to the
     /// old literal/template expansion and read different (or no) files than the non-cluster path.
+    /// The index-page listing requests are plain GET; a silent fallback to probing the
+    /// literal `*` URL would read different files, so reject the combination explicitly.
+    /// PUT applies to writes only and keeps the pre-existing behavior.
+    if (!is_insert_query && urlPathHasListableGlobs(source)
+        && IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_POST)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages (URL '{}')",
+            source);
+
     const bool use_web_wildcard = !is_insert_query && configuration.http_method.empty() && urlPathHasListableGlobs(source);
 
     const bool can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
@@ -439,6 +450,13 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
     {
         ColumnsDescription columns;
         String sample_path = filename;
+
+        if (!is_insert_query && urlPathHasListableGlobs(filename)
+            && IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_POST)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages (URL '{}')",
+                filename);
 
         if (configuration.http_method.empty() && urlPathHasListableGlobs(filename))
         {
@@ -536,7 +554,7 @@ url(URL [,format] [,structure] [,headers] [,http_method='POST'])
 | `format`    | [Format](/reference/formats/index) of the data. Type: [String](/reference/data-types/string).                                                  |
 | `structure` | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](/reference/data-types/string).     |
 | `headers`   | Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.                                                  |
-| `http_method` | Key-value argument overriding the HTTP method: `http_method='POST'` makes `SELECT` queries use `POST` instead of the default `GET` (for servers that accept only `POST`); for `INSERT` queries, `POST` (the default) or `PUT` can be specified. The same value can be set through the `http_method` key of a [named collection](/reference/operations/named-collections). `PUT` applies to writes only: a `SELECT` through a configuration with `http_method='PUT'` still uses `GET`. |
+| `http_method` | Key-value argument overriding the HTTP method: `http_method='POST'` makes `SELECT` queries use `POST` instead of the default `GET` (for servers that accept only `POST`); for `INSERT` queries, `POST` (the default) or `PUT` can be specified. The same value can be set through the `http_method` key of a [named collection](/reference/operations/named-collections). `PUT` applies to writes only: a `SELECT` through a configuration with `http_method='PUT'` still uses `GET`. `http_method='POST'` cannot be combined with `*`/`**` wildcards expanded from HTTP index pages — such queries are rejected. |
 
 ## Returned value {#returned-value}
 

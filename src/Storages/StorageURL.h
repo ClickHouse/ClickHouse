@@ -81,6 +81,7 @@ public:
     static std::optional<time_t> tryGetLastModificationTime(
         const String & url,
         const HTTPHeaderEntries & headers,
+        const String & read_method,
         const Poco::Net::HTTPBasicCredentials & credentials,
         const ContextPtr & context);
 
@@ -232,7 +233,7 @@ public:
     StorageURLSource(
         const ReadFromFormatInfo & info,
         std::shared_ptr<IteratorWrapper> uri_iterator_,
-        const std::string & http_method,
+        const std::string & http_method_,
         std::function<void(std::ostream &)> callback,
         const String & format,
         const std::optional<FormatSettings> & format_settings,
@@ -294,6 +295,8 @@ private:
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     HTTPHeaderEntries headers;
+    /// The HTTP method used for the reads (the result of IStorageURLBase::getReadMethod).
+    String http_method;
     bool need_only_count;
     StorageID storage_id;
     size_t total_rows_in_file = 0;

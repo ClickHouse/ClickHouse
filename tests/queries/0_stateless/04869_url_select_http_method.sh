@@ -23,6 +23,7 @@ TAG_POST="${CLICKHOUSE_DATABASE}_62352_post"
 TAG_PUT_READ="${CLICKHOUSE_DATABASE}_62352_put_read"
 TAG_ENGINE="${CLICKHOUSE_DATABASE}_62352_engine"
 TAG_INFER="${CLICKHOUSE_DATABASE}_62352_infer"
+TAG_CACHE="${CLICKHOUSE_DATABASE}_62352_cache"
 
 # 1. Default: SELECT through url() uses GET.
 $CLICKHOUSE_CLIENT $SETTINGS_OPT -q "SELECT * FROM url('${CLICKHOUSE_URL}&query=SELECT+1&log_comment=${TAG_GET}', 'LineAsString', 'line String')"
@@ -47,6 +48,18 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE url_post_62352"
 #    so both the inference request and the data request must use POST.
 $CLICKHOUSE_CLIENT $SETTINGS_OPT --schema_inference_use_cache_for_url=0 -q "SELECT * FROM url('${CLICKHOUSE_URL}&query=SELECT+5+AS+x+FORMAT+TSVWithNamesAndTypes&log_comment=${TAG_INFER}', 'TSVWithNamesAndTypes', http_method='POST')"
 
+# 7. http_method='POST' is rejected with `*`/`**` wildcards expanded from HTTP index pages
+#    (for both the url table function and the URL engine), instead of silently probing the
+#    literal `*` URL.
+$CLICKHOUSE_CLIENT -q "SELECT * FROM url('http://localhost:1/files/*.csv', 'CSV', 'x String', http_method='POST')" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
+$CLICKHOUSE_CLIENT -q "CREATE TABLE url_wild_62352 (x String) ENGINE = URL('http://localhost:1/files/*.csv', CSV, http_method='POST')" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
+
+# 8. The schema-inference cache is method-aware: with the cache enabled (the default), a
+#    repeated POST inference stays all-POST — the cache-validation probe follows the
+#    configured method too instead of falling back to GET.
+$CLICKHOUSE_CLIENT $SETTINGS_OPT -q "SELECT * FROM url('${CLICKHOUSE_URL}&query=SELECT+6+AS+x+FORMAT+TSVWithNamesAndTypes&log_comment=${TAG_CACHE}', 'TSVWithNamesAndTypes', http_method='POST')"
+$CLICKHOUSE_CLIENT $SETTINGS_OPT -q "SELECT * FROM url('${CLICKHOUSE_URL}&query=SELECT+6+AS+x+FORMAT+TSVWithNamesAndTypes&log_comment=${TAG_CACHE}', 'TSVWithNamesAndTypes', http_method='POST')"
+
 # Verify the methods that were actually used, per tag.
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
@@ -57,6 +70,6 @@ $CLICKHOUSE_CLIENT -q "
     WHERE event_date >= yesterday()
       AND type = 'QueryFinish'
       AND current_database = currentDatabase()
-      AND log_comment IN ('${TAG_GET}', '${TAG_POST}', '${TAG_PUT_READ}', '${TAG_ENGINE}', '${TAG_INFER}')
+      AND log_comment IN ('${TAG_GET}', '${TAG_POST}', '${TAG_PUT_READ}', '${TAG_ENGINE}', '${TAG_INFER}', '${TAG_CACHE}')
     GROUP BY log_comment
     ORDER BY log_comment"
