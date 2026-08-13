@@ -20,6 +20,7 @@ CLICKHOUSE_CLIENT_QUIET=$(echo "${CLICKHOUSE_CLIENT}" | sed "s/--send_logs_level
 PG_DB="${CLICKHOUSE_DATABASE}_pg"
 MYSQL_DB="${CLICKHOUSE_DATABASE}_mysql"
 MYSQL_ATTACH_QUERY_ID="${CLICKHOUSE_DATABASE}_mysql_attach_${RANDOM}${RANDOM}"
+MYSQL_SCAN_QUERY_ID="${CLICKHOUSE_DATABASE}_mysql_scan_${RANDOM}${RANDOM}"
 PG_SCAN_QUERY_ID="${CLICKHOUSE_DATABASE}_pg_scan_${RANDOM}${RANDOM}"
 
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${PG_DB}"
@@ -44,6 +45,11 @@ ${CLICKHOUSE_CLIENT_QUIET} --query_id "${MYSQL_ATTACH_QUERY_ID}" -q \
 ${CLICKHOUSE_CLIENT_QUIET} --query_id "${PG_SCAN_QUERY_ID}" -q \
     "SELECT count() FROM system.tables WHERE database = '${PG_DB}' SETTINGS show_remote_databases_in_system_tables = 1"
 
+# The same scan over the MySQL database reaches DatabaseMySQL::getTablesIterator. Without its
+# tolerance the query aborts with ALL_CONNECTION_TRIES_FAILED instead of returning an empty result.
+${CLICKHOUSE_CLIENT_QUIET} --query_id "${MYSQL_SCAN_QUERY_ID}" -q \
+    "SELECT count() FROM system.tables WHERE database = '${MYSQL_DB}' SETTINGS show_remote_databases_in_system_tables = 1"
+
 # Wait for the background cleaner task's first (immediately scheduled) run to hit the connection failure.
 for _ in {1..120}
 do
@@ -59,6 +65,8 @@ ${CLICKHOUSE_CLIENT} -q "
     SELECT 'mysql_attach_warning_seen', count() >= 1 FROM system.text_log WHERE query_id = '${MYSQL_ATTACH_QUERY_ID}' AND logger_name = 'DatabaseMySQL' AND level = 'Warning';
     SELECT 'mysql_pool_warning_seen', count() >= 1 FROM system.text_log WHERE query_id = '${MYSQL_ATTACH_QUERY_ID}' AND logger_name = 'mysqlxx::Pool' AND level = 'Warning';
     SELECT 'mysql_failover_warning_seen', count() >= 1 FROM system.text_log WHERE query_id = '${MYSQL_ATTACH_QUERY_ID}' AND logger_name = 'Application' AND level = 'Warning' AND message LIKE 'Connection to%mysql%failed%times';
+    SELECT 'mysql_scan_no_error', count() = 0 FROM system.text_log WHERE query_id = '${MYSQL_SCAN_QUERY_ID}' AND level = 'Error';
+    SELECT 'mysql_scan_warning_seen', count() >= 1 FROM system.text_log WHERE query_id = '${MYSQL_SCAN_QUERY_ID}' AND logger_name LIKE '%DatabaseMySQL::getTablesIterator%' AND level = 'Warning';
     SELECT 'pg_scan_no_error', count() = 0 FROM system.text_log WHERE query_id = '${PG_SCAN_QUERY_ID}' AND level = 'Error';
     SELECT 'pg_scan_warning_seen', count() >= 1 FROM system.text_log WHERE query_id = '${PG_SCAN_QUERY_ID}' AND logger_name LIKE '%DatabasePostgreSQL::getTablesIterator%' AND level = 'Warning';
     SELECT 'pg_pool_warning_seen', count() >= 1 FROM system.text_log WHERE query_id = '${PG_SCAN_QUERY_ID}' AND logger_name = 'PostgreSQLConnectionPool' AND level = 'Warning';
