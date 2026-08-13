@@ -13,8 +13,13 @@ WORKING_FOLDER="${CLICKHOUSE_TMP}/04884_clickhouse_local_overlay_table_name_leng
 rm -rf "${WORKING_FOLDER}"
 mkdir -p "${WORKING_FOLDER}"
 
+pad() { printf '%*s' "$1" '' | tr ' ' "${2:-d}"; }
+
 # 214 characters saturates the per-table budget to 0, so every table name is rejected.
-LONG_DB=$(printf 'd%.0s' $(seq 1 214))
+LONG_DB=$(pad 214)
+# 211 leaves a budget of exactly 2: long enough to hold t0, short enough that a 3-character
+# destination is refused while this database is the receiver.
+RESCUE_DB=$(pad 211)
 
 echo "--- long default_database: CREATE TABLE is rejected up front ---"
 ${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/long_table" \
@@ -26,10 +31,24 @@ ${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/long_view" \
     -q "CREATE VIEW v AS SELECT 1" \
     -- --default_database="${LONG_DB}" 2>&1 | grep -o -m1 'ARGUMENT_OUT_OF_BOUND'
 
-echo "--- long default_database: RENAME TABLE to a rejected name is refused ---"
-${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/long_rename" \
-    -q "CREATE TABLE t0 (a UInt8) ENGINE = MergeTree ORDER BY a; RENAME TABLE t0 TO t1" \
-    -- --default_database="${LONG_DB}" 2>&1 | grep -o -m1 'ARGUMENT_OUT_OF_BOUND'
+# RENAME reaches the check through its own call site, so the receiving database needs a nonzero
+# budget: the source name must be creatable for the rename to be the statement under test. Each
+# statement runs in its own process, because a `-q` list stops at the first error.
+echo "--- rescue default_database: the source table is creatable ---"
+${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/rename_over" \
+    -q "CREATE TABLE t0 (a UInt8) ENGINE = MergeTree ORDER BY a; SELECT 'source created'" \
+    -- --default_database="${RESCUE_DB}"
+echo "--- rescue default_database: RENAME to a name over the limit is refused ---"
+${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/rename_over" \
+    -q "RENAME TABLE t0 TO t01" \
+    -- --default_database="${RESCUE_DB}" 2>&1 | grep -o -m1 'ARGUMENT_OUT_OF_BOUND'
+echo "--- rescue default_database: RENAME within the limit is still accepted ---"
+${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/rename_in" \
+    -q "CREATE TABLE t0 (a UInt8) ENGINE = MergeTree ORDER BY a" \
+    -- --default_database="${RESCUE_DB}"
+${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/rename_in" \
+    -q "RENAME TABLE t0 TO t9; SELECT 'rename accepted'" \
+    -- --default_database="${RESCUE_DB}"
 
 # The limit is read back through the overlay, so this arm follows the disk's real NAME_MAX.
 SHORT_DB="db04884"
@@ -37,27 +56,22 @@ ALLOWED_LENGTH=$(${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/probe" \
     -q "SELECT getMaxTableNameLengthForDatabase(currentDatabase())" \
     -- --default_database="${SHORT_DB}" | tr -d '[:space:]')
 
-USE_S3_PLAIN_REWRITEABLE_AS_DB_DISK=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.disks WHERE name='disk_db_remote' AND type = 'ObjectStorage' AND object_storage_type='S3' AND metadata_type='PlainRewritable'" | tr -d '[:space:]')
-# When using s3_plain_rewriteable as a db_disk, minio doesn't allow the path segment to have more than 255 characters
-# Refer: https://github.com/minio/minio/blob/ddd9a84cd769e6bed67f5fe860f8f3c7527a6971/cmd/xl-storage.go#L154-L167
-if [ "${USE_S3_PLAIN_REWRITEABLE_AS_DB_DISK}" == "0" ]; then
-    echo "--- short default_database: a name at exactly the limit still works ---"
-    ALLOWED_NAME=$(printf 't%.0s' $(seq 1 "${ALLOWED_LENGTH}"))
-    ${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/boundary" \
-        -q "CREATE TABLE ${ALLOWED_NAME} (a UInt8) ENGINE = MergeTree ORDER BY a; DROP TABLE ${ALLOWED_NAME}; SELECT 'boundary ok'" \
-        -- --default_database="${SHORT_DB}"
+echo "--- short default_database: a name at exactly the limit still works ---"
+ALLOWED_NAME=$(pad "${ALLOWED_LENGTH}" t)
+${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/boundary" \
+    -q "CREATE TABLE ${ALLOWED_NAME} (a UInt8) ENGINE = MergeTree ORDER BY a; DROP TABLE ${ALLOWED_NAME}; SELECT 'boundary ok'" \
+    -- --default_database="${SHORT_DB}"
 
-    # escapeForFileName emits 3 bytes per non-word byte, so the check must measure the escaped name.
-    echo "--- short default_database: the escaped length is what counts ---"
-    ESCAPED_FIT=$(printf -- '-%.0s' $(seq 1 $((ALLOWED_LENGTH / 3))))
-    ${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/escaped" \
-        -q "CREATE TABLE \`${ESCAPED_FIT}\` (a UInt8) ENGINE = MergeTree ORDER BY a; DROP TABLE \`${ESCAPED_FIT}\`; SELECT 'escaped ok'" \
-        -- --default_database="${SHORT_DB}"
-    ESCAPED_OVER=$(printf -- '-%.0s' $(seq 1 $((ALLOWED_LENGTH / 3 + 1))))
-    ${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/escaped_over" \
-        -q "CREATE TABLE \`${ESCAPED_OVER}\` (a UInt8) ENGINE = MergeTree ORDER BY a" \
-        -- --default_database="${SHORT_DB}" 2>&1 | grep -o -m1 'ARGUMENT_OUT_OF_BOUND'
-fi
+# escapeForFileName emits 3 bytes per non-word byte, so the check must measure the escaped name.
+echo "--- short default_database: the escaped length is what counts ---"
+ESCAPED_FIT=$(pad $((ALLOWED_LENGTH / 3)) -)
+${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/escaped" \
+    -q "CREATE TABLE \`${ESCAPED_FIT}\` (a UInt8) ENGINE = MergeTree ORDER BY a; DROP TABLE \`${ESCAPED_FIT}\`; SELECT 'escaped ok'" \
+    -- --default_database="${SHORT_DB}"
+ESCAPED_OVER=$(pad $((ALLOWED_LENGTH / 3 + 1)) -)
+${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/escaped_over" \
+    -q "CREATE TABLE \`${ESCAPED_OVER}\` (a UInt8) ENGINE = MergeTree ORDER BY a" \
+    -- --default_database="${SHORT_DB}" 2>&1 | grep -o -m1 'ARGUMENT_OUT_OF_BOUND'
 
 echo "--- short default_database: an existing table still loads in a later run ---"
 ${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/persist" \
@@ -66,5 +80,15 @@ ${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/persist" \
 ${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/persist" \
     -q "SELECT x FROM t" \
     -- --default_database="${SHORT_DB}"
+
+# ATTACH carries the name past the check by design, and the budget here is 0, so this name is over
+# the limit. Reading it back in a later process asserts the load path does not reject it.
+echo "--- long default_database: an over-limit name already on disk still loads ---"
+${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/attached" \
+    -q "ATTACH TABLE ta UUID '11111111-2222-3333-4444-555555555555' (a UInt8) ENGINE = MergeTree ORDER BY a; INSERT INTO ta VALUES (7); SELECT 'attach accepted'" \
+    -- --default_database="${LONG_DB}"
+${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/attached" \
+    -q "SELECT count(), sum(a) FROM ta" \
+    -- --default_database="${LONG_DB}"
 
 rm -rf "${WORKING_FOLDER}"
