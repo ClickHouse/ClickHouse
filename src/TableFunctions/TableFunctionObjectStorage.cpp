@@ -1949,7 +1949,7 @@ value: 993
 
 ### Compaction {#iceberg-writes-compaction}
 
-Data compaction (merging position delete files into data files) is not implemented in the open-source build: `OPTIMIZE TABLE` on an Iceberg table reports `NOT_IMPLEMENTED` there. It does not publish the rewritten generation, so no reader would select it.
+Data compaction (merging position delete files into data files) is not implemented in the open-source build: `OPTIMIZE TABLE` on an Iceberg table reports `NOT_IMPLEMENTED` there. It does not publish the rewritten generation atomically, so which generation a reader resolves is undefined.
 
 Manifest compaction consolidates a table's manifest files. It requires Iceberg format version 2: version 1 and version 3 tables are rejected.
 

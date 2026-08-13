@@ -469,8 +469,9 @@ bool IcebergMetadata::optimize(
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "OPTIMIZE TABLE is not yet supported for Iceberg data compaction: the rewritten generation is not published "
-            "(no version increment, no version hint and no catalog commit), so no reader would select it, while the "
-            "previous generation's files are deleted even though retained snapshots still reference them");
+            "atomically (no version increment, no version hint and no catalog commit), so which generation a reader "
+            "resolves is undefined, while the previous generation's files are deleted even though retained snapshots "
+            "still reference them");
     }
     else
     {
