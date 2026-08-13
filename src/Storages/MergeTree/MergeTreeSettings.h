@@ -35,6 +35,7 @@ struct MergeTreeSettingsImpl;
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 struct MutableColumnsAndConstraints;
+struct StatisticsBuildOptions;
 
 /// List of available types supported in MergeTreeSettings object
 #define MERGETREE_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
@@ -127,6 +128,8 @@ struct MergeTreeSettings
 private:
     std::unique_ptr<MergeTreeSettingsImpl> impl;
 };
+
+StatisticsBuildOptions getStatisticsBuildOptions(const MergeTreeSettings & settings);
 
 /// Column-level Merge-Tree settings which overwrite MergeTree settings
 namespace MergeTreeColumnSettings

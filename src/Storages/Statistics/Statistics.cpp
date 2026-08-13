@@ -7,11 +7,11 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/Statistics/StatisticsAssumedAllDistinct.h>
 #include <Storages/Statistics/StatisticsBasic.h>
 #include <Storages/Statistics/StatisticsCountMinSketch.h>
 #include <Storages/Statistics/StatisticsMinMax.h>
@@ -22,6 +22,8 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
+
+#include <algorithm>
 
 #include "config.h" /// USE_DATASKETCHES
 
@@ -160,16 +162,6 @@ std::optional<Float64> StatisticsUtils::interpolateLessLinear(
     return interpolateLessLinearTyped<Float64>(Field(*val_as_float), Field(*min_as_float), Field(*max_as_float), row_count);
 }
 
-/// Returns the first available uniq-style cardinality estimator (prefers Uniq over UniqV2 because Uniq has better precision).
-static const IStatistics * findUniqStats(const ColumnStatistics::StatsMap & m)
-{
-    if (auto it = m.find(StatisticsType::Uniq); it != m.end())
-        return it->second.get();
-    if (auto it = m.find(StatisticsType::UniqV2); it != m.end())
-        return it->second.get();
-    return nullptr;
-}
-
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
     : stat(stat_)
 {
@@ -180,28 +172,68 @@ ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_des
 {
 }
 
-void ColumnStatistics::build(const ColumnPtr & column)
+void ColumnStatistics::build(const ColumnPtr & column, const StatisticsBuildOptions & options)
 {
     rows += column->size();
-    for (const auto & stat : stats)
-        stat.second->build(column);
+
+    auto build_decision = assumed_all_distinct_policy.decideBuild(stats_desc, stats, column, options);
+    if (build_decision)
+        build_decision->applyReplacements(stats_desc, stats);
+
+    for (const auto & [type, stat_ptr] : stats)
+    {
+        ColumnPtr build_column = column;
+        if (build_decision && build_decision->replaces(type))
+        {
+            /// The probe already accounted for every row of this block.
+            if (!build_decision->rows_to_count)
+                continue;
+            build_column = build_decision->rows_to_count;
+        }
+
+        stat_ptr->build(build_column);
+    }
 }
 
 void ColumnStatistics::merge(const ColumnStatisticsPtr & other)
 {
-    rows += other->rows;
-    for (const auto & stat_it : stats)
+    if (rows == 0 && !structureEquals(*other))
     {
-        if (auto it = other->stats.find(stat_it.first); it != other->stats.end())
-        {
-            stat_it.second->merge(it->second);
-        }
+        /// Adopt the other side's structure, but with freshly created statistics objects:
+        /// sharing `other`'s StatisticsPtr instances would let subsequent merges into `this`
+        /// mutate `other`'s statistics. The fresh empty statistics are filled by the regular
+        /// merge below.
+        auto fresh = other->cloneEmpty();
+        stats_desc = std::move(fresh->stats_desc);
+        stats = std::move(fresh->stats);
+    }
+
+    auto merge_decision = UniqAssumedAllDistinctPolicy::decideMerge(stats, other->stats);
+
+    rows += other->rows;
+    mergeRegularStatistics(other, merge_decision);
+    if (merge_decision)
+        merge_decision->apply(stats_desc, stats);
+}
+
+void ColumnStatistics::mergeRegularStatistics(
+    const ColumnStatisticsPtr & other, const std::optional<AssumedAllDistinctMergeDecision> & merge_decision)
+{
+    for (auto & [type, stat_ptr] : stats)
+    {
+        if (merge_decision && merge_decision->shouldSkipRegularMerge(type))
+            continue;
+
+        if (auto other_it = other->stats.find(type); other_it != other->stats.end())
+            stat_ptr->merge(other_it->second);
     }
     for (const auto & stat_it : other->stats)
     {
         if (!stats.contains(stat_it.first))
         {
             stats.insert(stat_it);
+            if (auto desc_it = other->stats_desc.types_to_desc.find(stat_it.first); desc_it != other->stats_desc.types_to_desc.end())
+                stats_desc.types_to_desc.try_emplace(stat_it.first, desc_it->second);
         }
     }
 }
@@ -230,7 +262,11 @@ bool ColumnStatistics::structureEquals(const ColumnStatistics & other) const
         if (i->first != j->first)
             return false;
         if (!i->second->isCompatibleWith(*j->second))
+        {
+            if (UniqAssumedAllDistinctPolicy::isStructureCompatible(i->first, *i->second, *j->second))
+                continue;
             return false;
+        }
     }
 
     return true;
@@ -239,6 +275,11 @@ bool ColumnStatistics::structureEquals(const ColumnStatistics & other) const
 std::shared_ptr<ColumnStatistics> ColumnStatistics::cloneEmpty() const
 {
     return MergeTreeStatisticsFactory::instance().get(stats_desc);
+}
+
+bool ColumnStatistics::hasStaleAssumedStatistics(const ColumnStatistics & part_stats, const StatisticsBuildOptions & options) const
+{
+    return UniqAssumedAllDistinctPolicy::hasStaleAssumedStatistics(stats_desc, part_stats.stats, options);
 }
 
 UInt64 IStatistics::estimateCardinality() const
@@ -312,7 +353,7 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
         if (auto estimate = it->second->estimateEqual(val))
             return estimate;
 
-    const IStatistics * uniq_stats = findUniqStats(stats);
+    const IStatistics * uniq_stats = findPreferredCardinalityStatistics(stats);
     if (stats_desc.data_type->isValueRepresentedByNumber() && uniq_stats != nullptr && stats.contains(StatisticsType::TDigest))
     {
         /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.
@@ -366,7 +407,7 @@ std::optional<Float64> ColumnStatistics::estimateRange(const Range & range) cons
 
 UInt64 ColumnStatistics::estimateCardinality() const
 {
-    if (const IStatistics * uniq_stats = findUniqStats(stats))
+    if (const IStatistics * uniq_stats = findPreferredCardinalityStatistics(stats))
     {
         return uniq_stats->estimateCardinality();
     }
@@ -448,7 +489,7 @@ Estimate ColumnStatistics::getEstimate() const
     for (const auto & [type, _] : stats)
         info.types.insert(type);
 
-    if (const IStatistics * uniq_stats = findUniqStats(stats))
+    if (const IStatistics * uniq_stats = findPreferredCardinalityStatistics(stats))
         info.estimated_cardinality = uniq_stats->estimateCardinality();
 
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
@@ -489,11 +530,21 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
     ///       UInt64  stat_size
     ///       <stat_size> bytes of per-statistics payload
     /// The per-stat size prefix lets a reader skip statistics types it doesn't recognize.
-    writeIntBinary(StatisticsFileVersion::V4, buf);
+    std::vector<std::pair<StatisticsType, StatisticsPtr>> serialized_stats;
+    serialized_stats.reserve(stats.size());
 
     UInt64 stat_types_mask = 0;
-    for (const auto & [type, _] : stats)
-        stat_types_mask |= 1ULL << static_cast<UInt8>(type);
+    for (const auto & [_, stat_ptr] : stats)
+    {
+        auto serialized_type = getSerializedStatisticsType(*stat_ptr);
+        stat_types_mask |= 1ULL << static_cast<UInt8>(serialized_type);
+        serialized_stats.emplace_back(serialized_type, stat_ptr);
+    }
+
+    std::ranges::sort(
+        serialized_stats, [](const auto & lhs, const auto & rhs) { return static_cast<UInt8>(lhs.first) < static_cast<UInt8>(rhs.first); });
+
+    writeIntBinary(StatisticsFileVersion::V4, buf);
 
     writeIntBinary(stat_types_mask, buf);
     writeStringBinary(stats_desc.data_type->getName(), buf);
@@ -502,7 +553,7 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
     writeIntBinary(rows, buf);
 
     /// Write each statistics blob with a length prefix, by serializing into a temp buffer first.
-    for (const auto & [type, stat_ptr] : stats)
+    for (const auto & [_, stat_ptr] : serialized_stats)
     {
         String temp_data;
         WriteBufferFromString temp_buf(temp_data);
@@ -593,9 +644,12 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
                         consumed,
                         stat_size);
 
-                auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
-                result->stats_desc.types_to_desc.emplace(type, SingleStatisticsDescription(type, ast, false));
-                result->stats[type] = std::move(stat_ptr);
+                const auto & desc = stat_ptr->getDescription();
+                if (isAssumedAllDistinctSerializedStatisticsType(type) || !result->stats.contains(desc.type))
+                {
+                    result->stats_desc.types_to_desc.insert_or_assign(desc.type, desc);
+                    result->stats[desc.type] = stat_ptr;
+                }
             }
             else
             {
@@ -677,17 +731,17 @@ void checkColumnTypeMatchesStatistics(const String & column_name, const ColumnSt
 
 }
 
-void ColumnsStatistics::build(const Block & block)
+void ColumnsStatistics::build(const Block & block, const StatisticsBuildOptions & options)
 {
     for (const auto & [column_name, stat] : *this)
     {
         const auto & col = block.getByName(column_name);
         checkColumnTypeMatchesStatistics(column_name, stat, col.type);
-        stat->build(col.column);
+        stat->build(col.column, options);
     }
 }
 
-void ColumnsStatistics::buildIfExists(const Block & block)
+void ColumnsStatistics::buildIfExists(const Block & block, const StatisticsBuildOptions & options)
 {
     for (const auto & [column_name, stat] : *this)
     {
@@ -695,7 +749,7 @@ void ColumnsStatistics::buildIfExists(const Block & block)
             continue;
         const auto & col = block.getByName(column_name);
         checkColumnTypeMatchesStatistics(column_name, stat, col.type);
-        stat->build(col.column);
+        stat->build(col.column, options);
     }
 }
 
@@ -775,6 +829,18 @@ void MergeTreeStatisticsFactory::validate(
         if (it == validators.end())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'", type);
 
+        if (desc.materialization == StatisticsMaterialization::AssumedAllDistinct)
+        {
+            if (!isUniqLikeStatisticsType(type))
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Statistics type '{}' cannot use assumed_all_distinct materialization", type);
+            if (!supportsAssumedAllDistinctStatistics(desc, data_type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_STATISTICS,
+                    "Statistics of type '{}' does not support assumed_all_distinct materialization for data type {}",
+                    type,
+                    data_type->getName());
+        }
+
         if (!it->second(desc, data_type))
             throw Exception(
                 ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type '{}' does not support data type type {}", type, data_type->getName());
@@ -818,7 +884,8 @@ ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescri
                 "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'",
                 type);
 
-        auto stat_ptr = (it->second)(desc, stats_desc.data_type);
+        auto stat_ptr = desc.materialization == StatisticsMaterialization::AssumedAllDistinct ? createAssumedAllDistinctStatistics(desc)
+                                                                                              : (it->second)(desc, stats_desc.data_type);
         column_stat->stats[type] = stat_ptr;
     }
 
@@ -838,7 +905,7 @@ MergeTreeStatisticsFactory::get(const std::vector<StatisticsType> & stat_types, 
                 "Unknown statistic type '{}'. Available types: 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'",
                 type);
 
-        auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
+        auto ast = makeStatisticsTypeAST(type);
         SingleStatisticsDescription desc(type, ast, false);
 
         if (!it->second(desc, data_type))
@@ -852,17 +919,27 @@ MergeTreeStatisticsFactory::get(const std::vector<StatisticsType> & stat_types, 
 
 StatisticsPtr MergeTreeStatisticsFactory::tryCreateSingle(StatisticsType type, const DataTypePtr & data_type) const
 {
-    auto vit = validators.find(type);
+    const auto logical_type = getLogicalStatisticsType(type);
+    const auto materialization = isAssumedAllDistinctSerializedStatisticsType(type) ? StatisticsMaterialization::AssumedAllDistinct
+                                                                                    : StatisticsMaterialization::Default;
+
+    auto vit = validators.find(logical_type);
     if (vit == validators.end())
         return nullptr;
 
-    auto ast = make_intrusive<ASTIdentifier>(statisticsTypeToString(type));
-    SingleStatisticsDescription desc(type, ast, false);
+    SingleStatisticsDescription desc(logical_type, makeStatisticsTypeAST(logical_type, materialization), false, materialization);
+
+    if (materialization == StatisticsMaterialization::AssumedAllDistinct)
+    {
+        if (!supportsAssumedAllDistinctStatistics(desc, data_type))
+            return nullptr;
+        return createAssumedAllDistinctStatistics(desc);
+    }
 
     if (!vit->second(desc, data_type))
         return nullptr;
 
-    auto cit = creators.find(type);
+    auto cit = creators.find(logical_type);
     if (cit == creators.end())
         return nullptr;
 
@@ -874,19 +951,11 @@ static ColumnStatisticsDescription::StatisticsTypeDescMap parseColumnStatisticsF
     ParserStatisticsType stat_type_parser;
     auto stats_ast = parseQuery(stat_type_parser, "(" + str + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
-    ColumnStatisticsDescription::StatisticsTypeDescMap result;
+    if (!stats_ast->as<ASTFunction &>().arguments)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a statistics type list, got: {}", stats_ast->formatForLogging());
 
-    for (const auto & arg : stats_ast->as<ASTFunction &>().arguments->children)
-    {
-        const auto * arg_func = arg->as<ASTFunction>();
-        if (!arg_func)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a function for statistic type, got: {}", arg->formatForLogging());
-
-        auto stat_type = stringToStatisticsType(arg_func->name);
-        result.emplace(stat_type, SingleStatisticsDescription(stat_type, arg, true));
-    }
-
-    return result;
+    return ColumnStatisticsDescription::fromStatisticsDescriptionAST(stats_ast, "auto_statistics_types", nullptr, /*is_implicit_=*/true)
+        .types_to_desc;
 }
 
 void removeImplicitStatistics(ColumnsDescription & columns)

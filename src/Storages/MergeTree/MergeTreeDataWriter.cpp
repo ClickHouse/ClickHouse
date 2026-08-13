@@ -20,6 +20,7 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -829,7 +830,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
         statistics = ColumnsStatistics(metadata_snapshot->getColumns());
-        statistics.build(block);
+        statistics.build(block, getStatisticsBuildOptions(*data_settings));
     }
 
     /// Size of part would not be greater than block.bytes() + epsilon

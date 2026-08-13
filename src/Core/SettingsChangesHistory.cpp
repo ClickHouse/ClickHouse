@@ -1367,6 +1367,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_merge_coordinator_distribution_algorithm", "water_filling", "sainte_lague", "Enable Sainte-Lague distribution by default."},
             {"text_index_max_processed_tokens_before_flush", 100000000, 100000000, "New setting"},
             {"text_index_max_memory_usage_before_flush", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"},
+            {"auto_statistics_assume_floats_distinct", false, false, "New setting to materialize Float cardinality statistics with an all-distinct assumption."},
+            {"auto_statistics_assume_long_strings_distinct", false, false, "New setting to materialize long String cardinality statistics with an all-distinct assumption."},
+            {"auto_statistics_long_string_distinct_min_length", 64, 64, "New setting controlling the average string length threshold for all-distinct cardinality statistics."},
+            {"auto_statistics_long_string_distinct_probe_rows", 1000, 1000, "New setting controlling how many rows are probed for long-string all-distinct cardinality statistics."},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
