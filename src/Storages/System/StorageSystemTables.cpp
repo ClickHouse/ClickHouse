@@ -726,7 +726,7 @@ protected:
                 /// whole system.tables scan. Every metadata-dependent column below is guarded on
                 /// `table` being non-null.
 
-                const bool can_expose_metadata = table && table->isGrantedToExposeMetadata(context, AccessType::SHOW_TABLES);
+                const bool can_expose_metadata = table && table->isGrantedToExposeMetadata(context, AccessType::SHOW_TABLES, {});
 
                 TableLockHolder lock;
 

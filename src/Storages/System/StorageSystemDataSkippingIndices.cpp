@@ -118,7 +118,7 @@ protected:
                 const auto indices = metadata_snapshot->getSecondaryIndices();
 
                 IStorage::IndexSizeByName secondary_index_sizes;
-                if (table->isGrantedToExposeMetadata(context, AccessType::SHOW_TABLES))
+                if (table->isGrantedToExposeMetadata(context, AccessType::SHOW_TABLES, {}))
                     secondary_index_sizes = table->getSecondaryIndexSizes();
                 for (const auto & index : indices)
                 {

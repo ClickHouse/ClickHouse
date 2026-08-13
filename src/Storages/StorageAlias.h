@@ -36,7 +36,7 @@ public:
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
     StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext()); }
-    bool isGrantedToExposeMetadata(ContextPtr query_context, AccessType access_type, const String & column_name = {}) const override;
+    bool isGrantedToExposeMetadata(ContextPtr query_context, AccessType access_type, const String & column_name) const override;
 
     /// Read from target table
     void read(

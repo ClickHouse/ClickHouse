@@ -450,7 +450,7 @@ bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & s
 
 std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const
 {
-    if (!isGrantedToExposeMetadata(query_context, AccessType::SHOW_TABLES))
+    if (!isGrantedToExposeMetadata(query_context, AccessType::SHOW_TABLES, {}))
         return {};
 
     auto target = tryGetTargetTable();
@@ -459,7 +459,7 @@ std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const
 
 std::optional<UInt64> StorageAlias::totalBytes(ContextPtr query_context) const
 {
-    if (!isGrantedToExposeMetadata(query_context, AccessType::SHOW_TABLES))
+    if (!isGrantedToExposeMetadata(query_context, AccessType::SHOW_TABLES, {}))
         return {};
 
     auto target = tryGetTargetTable();
