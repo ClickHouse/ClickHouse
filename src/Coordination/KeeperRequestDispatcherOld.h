@@ -18,9 +18,6 @@
 #include <Common/Macros.h>
 #include <Poco/JSON/Object.h>
 
-/// White-box unit test of the SessionID error path (befriended inside KeeperRequestDispatcherOld).
-class KeeperDispatcherOld_SessionIDErrorReachesWaiter_Test;
-
 namespace DB
 {
 
@@ -30,7 +27,7 @@ namespace DB
 class KeeperRequestDispatcherOld
 {
 private:
-    friend class ::KeeperDispatcherOld_SessionIDErrorReachesWaiter_Test;
+    friend class KeeperRequestDispatcherOldTestAccessor;
 
     using RequestsQueue = ConcurrentBoundedQueue<KeeperRequestForSession>;
     using ResponsesQueue = ConcurrentBoundedQueue<KeeperResponseForSession>;

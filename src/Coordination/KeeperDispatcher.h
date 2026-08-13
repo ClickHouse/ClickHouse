@@ -23,11 +23,6 @@
 #include <Coordination/KeeperRequestDispatcherOld.h>
 #include <Coordination/KeeperRequestDispatcher.h>
 
-/// White-box unit test that registers a getSessionID waiter (befriended inside KeeperDispatcher).
-class KeeperDispatcher_SessionIDErrorReachesRealWaiter_Test;
-class KeeperDispatcher_PendingSessionIDRequestsFailOnShutdown_Test;
-class KeeperDispatcher_PendingSessionIDRequestsFailOnThrowingShutdown_Test;
-
 #include <future>
 
 namespace DB
@@ -38,9 +33,7 @@ namespace DB
 class KeeperDispatcher
 {
 private:
-    friend class ::KeeperDispatcher_SessionIDErrorReachesRealWaiter_Test;
-    friend class ::KeeperDispatcher_PendingSessionIDRequestsFailOnShutdown_Test;
-    friend class ::KeeperDispatcher_PendingSessionIDRequestsFailOnThrowingShutdown_Test;
+    friend class KeeperDispatcherTestAccessor;
 
     using ClusterUpdateQueue = ConcurrentBoundedQueue<ClusterUpdateAction>;
 

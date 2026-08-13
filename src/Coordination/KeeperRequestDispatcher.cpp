@@ -13,6 +13,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
+#include <Common/assert_cast.h>
 #include <base/sleep.h>
 
 template class NonblockingBoundedQueue<DB::KeeperRequestForSession>;
@@ -1112,14 +1113,11 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
     /// node). Their identity is (server_id, internal_id).
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
     {
-        const auto * head = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest *>(req.request.get());
-        const auto * committed = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest *>(request_for_session.request.get());
-        if (head == nullptr || committed == nullptr
-            || head->server_id != committed->server_id
-            || head->internal_id != committed->internal_id)
-        {
+        /// Session id -1 is reserved for SessionID requests, so the matching head is one too.
+        const auto & head = assert_cast<const Coordination::ZooKeeperSessionIDRequest &>(*req.request);
+        const auto & committed = assert_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session.request);
+        if (head.server_id != committed.server_id || head.internal_id != committed.internal_id)
             return;
-        }
     }
 
     if (current_stream_is_suspect.load())
