@@ -1,5 +1,4 @@
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -15,12 +14,13 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/castColumn.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/CastOverloadResolver.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
+#include <DataTypes/DataTypeFactory.h>
 
 namespace DB
 {
@@ -46,7 +46,11 @@ public:
         return std::make_shared<FunctionCastOrDefault>(context);
     }
 
-    explicit FunctionCastOrDefault(ContextPtr context_) : keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable]) { }
+    explicit FunctionCastOrDefault(ContextPtr context_)
+        : keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable])
+        , cast_or_null_resolver(createCastOverloadResolver(context_, CastType::accurateOrNull, {}))
+    {
+    }
 
     String getName() const override { return name; }
 
@@ -78,7 +82,21 @@ public:
                 getName(),
                 arguments[1].type->getName());
 
-        DataTypePtr result_type = DataTypeFactory::instance().get(type_column_typed->getValue<String>());
+        /// Delegate type determination to the cast resolver. This ensures that
+        /// DataTypeValidationSettings and timezone substitution are applied
+        /// consistently between getReturnTypeImpl and executeImpl.
+        ColumnsWithTypeAndName cast_args{arguments[0], arguments[1]};
+        DataTypePtr result_type = removeNullable(cast_or_null_resolver->getReturnType(cast_args));
+
+        /// The resolver uses CastType::accurateOrNull which wraps non-Nullable
+        /// targets in Nullable (to detect cast failures via NULL). We strip that
+        /// wrapper above. But when the user explicitly requested a Nullable target
+        /// type, the resolver didn't add the Nullable wrapper — the target was
+        /// already Nullable — so removeNullable incorrectly stripped the
+        /// user-requested Nullable. Restore it.
+        auto user_target_type = DataTypeFactory::instance().get(type_column_typed->getValue<String>());
+        if (user_target_type->isNullable())
+            result_type = makeNullable(result_type);
 
         if (keep_nullable && arguments.front().type->isNullable())
             result_type = makeNullable(result_type);
@@ -105,7 +123,18 @@ public:
         auto non_const_column_to_cast = column_to_cast.column->convertToFullColumnIfConst();
         ColumnWithTypeAndName column_to_cast_non_const { non_const_column_to_cast, column_to_cast.type, column_to_cast.name };
 
-        auto cast_result = castColumnAccurateOrNull(column_to_cast_non_const, return_type);
+        auto nullable_return_type = makeNullable(return_type);
+        ColumnsWithTypeAndName cast_args
+        {
+            column_to_cast_non_const,
+            {
+                DataTypeString().createColumnConst(non_const_column_to_cast->size(), return_type->getName()),
+                std::make_shared<DataTypeString>(),
+                ""
+            }
+        };
+        auto cast_func = cast_or_null_resolver->build(cast_args);
+        auto cast_result = cast_func->execute(cast_args, nullable_return_type, non_const_column_to_cast->size(), false);
 
         const auto & cast_result_nullable = assert_cast<const ColumnNullable &>(*cast_result);
         const auto & null_map_data = cast_result_nullable.getNullMapData();
@@ -171,8 +200,8 @@ public:
     }
 
 private:
-
     bool keep_nullable;
+    FunctionOverloadResolverPtr cast_or_null_resolver;
 };
 
 class FunctionCastOrDefaultTyped final : public IFunction
