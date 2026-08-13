@@ -19,7 +19,7 @@
 2
 3
 4
---- DESC LIMIT 5: must not reuse the ASC plan's granule decisions
+--- DESC LIMIT 5: must not reuse the granule decisions of the ASC plan
 99999
 99998
 99997

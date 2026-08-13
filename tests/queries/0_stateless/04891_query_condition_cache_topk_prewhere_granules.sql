@@ -73,7 +73,7 @@ SELECT k FROM tab ORDER BY k ASC LIMIT 5 SETTINGS log_comment = '04891_second';
 -- the first chunk has `k >= 8192`). The `__topKFilter(k)` PREWHERE condition of both
 -- plans hashes identically, so without the TopK plan salt on the cache key the DESC
 -- run would reuse the ASC verdicts and lose all of its rows.
-SELECT '--- DESC LIMIT 5: must not reuse the ASC plan''s granule decisions';
+SELECT '--- DESC LIMIT 5: must not reuse the granule decisions of the ASC plan';
 SELECT k FROM tab ORDER BY k DESC LIMIT 5 SETTINGS use_query_condition_cache = 0;
 SELECT '---';
 SELECT k FROM tab ORDER BY k DESC LIMIT 5;
