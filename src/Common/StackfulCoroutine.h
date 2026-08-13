@@ -51,9 +51,9 @@ public:
         CoroutinePtr & current_coroutine = getCurrentCoroutine();
         CoroutinePtr parent_coroutine = current_coroutine;
         current_coroutine = this;
-        FiberLocalStorage::swap(*coroutine_locals);
+        FiberLocalStorage::swapCoroutineLocal(*coroutine_locals);
         impl = std::move(impl).resume();
-        FiberLocalStorage::swap(*coroutine_locals);
+        FiberLocalStorage::swapCoroutineLocal(*coroutine_locals);
         /// Restore parent coroutine.
         current_coroutine = parent_coroutine;
     }

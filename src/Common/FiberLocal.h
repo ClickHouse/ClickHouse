@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -17,8 +18,8 @@ namespace FiberLocalSlot
 {
 enum : size_t
 {
-    CURRENT_THREAD,
     TRACE_CONTEXT,
+    CURRENT_THREAD,
     INSIDE_SILK_FIBER,
     LOCK_MEMORY_EXCEPTION_COUNTER,
     LOCK_MEMORY_EXCEPTION_LEVEL,
@@ -34,6 +35,9 @@ enum : size_t
 #endif
     COUNT,
 };
+
+/// Slots below this are private to a stackful coroutine; the rest stay shared with its thread.
+inline constexpr size_t COROUTINE_LOCAL_COUNT = CURRENT_THREAD;
 }
 
 /// Support defaults while keeping FiberLocal zero-overhead on access and
@@ -137,6 +141,14 @@ public:
     static void swap(FiberLocalStorage & saved) noexcept
     {
         thread_storage.slots.swap(saved.slots);
+    }
+
+    static void swapCoroutineLocal(FiberLocalStorage & saved) noexcept
+    {
+        std::swap_ranges(
+            thread_storage.slots.begin(),
+            thread_storage.slots.begin() + FiberLocalSlot::COROUTINE_LOCAL_COUNT,
+            saved.slots.begin());
     }
 
     void destroySlots() noexcept;
