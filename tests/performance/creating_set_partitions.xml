@@ -1,0 +1,63 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>partitions</name>
+            <values>
+                <value>2</value>
+                <value>16</value>
+                <value>64</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Per-partition set building has no partition-count heuristic (any parallelism beats the
+         single-stream set fill), so both the 16- and 64-partition tables exercise the optimization. -->
+    <create_query>CREATE TABLE test_{partitions} (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a PARTITION BY sipHash64(a) % {partitions}</create_query>
+
+    <!-- The best shape for the optimization: duplicates spread through the table in insertion order
+         (`ORDER BY tuple()`), so the ordinary serial set fill takes a random hash-cell miss per row,
+         while the parallel per-partition pre-deduplication removes the duplicates before the fill. -->
+    <create_query>CREATE TABLE test_unsorted_{partitions} (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % {partitions}</create_query>
+
+    <!-- Skewed layouts where the per-partition build would lose: the skew check must decline them, so
+         these queries pin the absence of a regression. 90% of the rows in one partition with unique keys
+         is the worst measured shape; 30% with heavy duplication sits just past the threshold. -->
+    <create_query>CREATE TABLE t_skew90_uniq_{partitions} (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY if(sipHash64(a) % 10 &lt; 9, 0, 1 + sipHash64(a) % 15)</create_query>
+    <create_query>CREATE TABLE t_skew30_dup_{partitions} (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY if(sipHash64(a) % 10 &lt; 3, 0, 1 + sipHash64(a) % 15)</create_query>
+
+    <!-- ~100 duplicates per key: the set fill deduplicates 10M rows down to 100K unique keys. -->
+    <fill_query>INSERT INTO test_{partitions} SELECT number % 100000, number FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_{partitions} FINAL</fill_query>
+
+    <!-- ~300 duplicates per key; more rows so the queries are long enough for stable measurement. -->
+    <fill_query>INSERT INTO test_unsorted_{partitions} SELECT number % 100000, number FROM numbers_mt(30000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_unsorted_{partitions} FINAL</fill_query>
+
+    <fill_query>INSERT INTO t_skew90_uniq_{partitions} SELECT number FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_skew90_uniq_{partitions} FINAL</fill_query>
+
+    <fill_query>INSERT INTO t_skew30_dup_{partitions} SELECT number % 100000 FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_skew30_dup_{partitions} FINAL</fill_query>
+
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM test_{partitions}) FORMAT Null</query>
+
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM test_{partitions} WHERE b > 1) FORMAT Null</query>
+
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE (number, number + 1) IN (SELECT a, a + 1 FROM test_{partitions}) FORMAT Null</query>
+
+    <!-- propagation: a per-partition LIMIT BY passes the disjointness up to the set build -->
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM test_{partitions} LIMIT 2 BY a) FORMAT Null</query>
+
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM test_unsorted_{partitions}) FORMAT Null</query>
+
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE (number, number + 1) IN (SELECT a, a + 1 FROM test_unsorted_{partitions}) FORMAT Null</query>
+
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM t_skew90_uniq_{partitions}) FORMAT Null</query>
+
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM t_skew30_dup_{partitions}) FORMAT Null</query>
+
+    <drop_query>DROP TABLE test_{partitions}</drop_query>
+    <drop_query>DROP TABLE test_unsorted_{partitions}</drop_query>
+    <drop_query>DROP TABLE t_skew90_uniq_{partitions}</drop_query>
+    <drop_query>DROP TABLE t_skew30_dup_{partitions}</drop_query>
+</test>
