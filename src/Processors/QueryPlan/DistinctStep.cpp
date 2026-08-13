@@ -101,12 +101,6 @@ bool DistinctStep::scatterStreamsByHash(QueryPipelineBuilder & pipeline) const
     if (!distinct_sort_desc.empty())
         return false;
 
-    /// `max_rows_in_distinct` / `max_bytes_in_distinct` are enforced by the single final transform that
-    /// sees the whole merged input. Deduplicating per stream would turn them into independent per-stream
-    /// limits, so in that case we keep the single stream and the limits stay global.
-    if (set_size_limits.max_rows != 0 || set_size_limits.max_bytes != 0)
-        return false;
-
     /// With a limit the transform stops as soon as it has enough values, so the single stream is not the
     /// bottleneck it is otherwise. Keeping it also keeps the values that a `LIMIT` without `ORDER BY`
     /// returns: the first ones in the order the input arrives, rather than an arbitrary subset.
@@ -149,6 +143,13 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
             pipeline.resize(1);
     }
 
+    /// The scattered streams hold disjoint parts of one DISTINCT set, and `max_rows_in_distinct` and
+    /// `max_bytes_in_distinct` limit the size of the whole of it, so the transforms below add up their
+    /// sizes here and check the limits against the total.
+    DistinctSharedSetSizePtr shared_set_size;
+    if (scattered && (set_size_limits.max_rows != 0 || set_size_limits.max_bytes != 0))
+        shared_set_size = std::make_shared<DistinctSharedSetSize>();
+
     pipeline.addSimpleTransform(
         [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
@@ -161,7 +162,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
             if (!distinct_sort_desc.empty())
                 return std::make_shared<DistinctSortedStreamTransform>(header, set_size_limits, limit_hint, distinct_sort_desc, columns);
 
-            return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns);
+            return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns, shared_set_size);
         });
 
     /// The step is declared to return a single stream. Collecting the scattered streams back costs

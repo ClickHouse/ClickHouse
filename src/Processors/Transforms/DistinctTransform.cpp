@@ -38,10 +38,12 @@ DistinctTransform::DistinctTransform(
     SharedHeader header_,
     const SizeLimits & set_size_limits_,
     const UInt64 limit_hint_,
-    const Names & columns_)
+    const Names & columns_,
+    DistinctSharedSetSizePtr shared_set_size_)
     : ISimpleTransform(header_, header_, true)
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits_)
+    , shared_set_size(std::move(shared_set_size_))
 {
     const size_t num_columns = columns_.empty() ? header_->columns() : columns_.size();
     key_columns_pos.reserve(num_columns);
@@ -248,11 +250,29 @@ void DistinctTransform::transform(Chunk & chunk)
     if (num_selected == 0)
         return;
 
+    const auto new_set_bytes = data.getTotalByteCount();
+
+    /// The size of the whole DISTINCT set: this transform's own set, unless the set is deduplicated
+    /// in parallel, in which case the sizes of all the disjoint parts of it add up.
+    UInt64 checked_rows = new_set_size;
+    UInt64 checked_bytes = new_set_bytes;
+    if (shared_set_size)
+    {
+        /// The number of bytes is reported by the hash table and is not guaranteed to only grow.
+        const UInt64 new_rows = new_set_size - accounted_set_rows;
+        const UInt64 new_bytes = new_set_bytes > accounted_set_bytes ? new_set_bytes - accounted_set_bytes : 0;
+        accounted_set_rows = new_set_size;
+        accounted_set_bytes = new_set_bytes;
+
+        checked_rows = shared_set_size->rows.fetch_add(new_rows, std::memory_order_relaxed) + new_rows;
+        checked_bytes = shared_set_size->bytes.fetch_add(new_bytes, std::memory_order_relaxed) + new_bytes;
+    }
+
     /// In case of overflow_mode = 'break' `check` returns false instead of throwing.
     /// Stop reading, but still emit the new rows from the current chunk (their keys are
     /// already in the set): 'break' means return a partial result as if the source data
     /// ran out, not discard it.
-    if (!set_size_limits.check(new_set_size, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+    if (!set_size_limits.check(checked_rows, checked_bytes, "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
         stopReading();
 
     if (num_selected == num_rows)
