@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <numeric>
 
@@ -1003,6 +1004,15 @@ public:
         if (n > 0 && (d.dim == 0 || n % d.dim != 0))
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "hierarchicalKMeans: corrupt aggregate state ({} values for dimension {})", n, d.dim);
+
+        /// States are user-transportable via `hierarchicalKMeansState`, so `n` is untrusted input that is
+        /// about to become an allocation. The reservoir can never hold more than `sample_cap` vectors, so
+        /// anything above that is corrupt or hostile. Divide rather than multiply - `sample_cap * dim`
+        /// overflows for large caps.
+        if (d.dim != 0 && n / d.dim > sample_cap)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "hierarchicalKMeans: aggregate state holds {} vectors, above the sample_cap of {}",
+                n / d.dim, sample_cap);
 
         d.samples.resize(n);
         buf.readStrict(reinterpret_cast<char *>(d.samples.data()), n * sizeof(Float));

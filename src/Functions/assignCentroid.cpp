@@ -298,7 +298,9 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isDeterministic() const override { return false; } /// dictionary form depends on external, mutable state
     bool isSuitableForConstantFolding() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return false; } /// we require arg #1 to stay const
+    /// The second argument (the centroids, or the dictionary name) must stay constant - see
+    /// `getArgumentsThatAreAlwaysConstant` below - so the matrix is built once per block, not once per row.
+    bool useDefaultImplementationForConstants() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
