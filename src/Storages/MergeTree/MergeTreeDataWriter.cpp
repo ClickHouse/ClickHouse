@@ -1109,13 +1109,17 @@ static void applyJSONSharedDataPathPoliciesForProjection(
     {
         for (const auto & source_part : source_parts)
         {
+            /// A rebuild can add a column to the projection that an existing projection sub-part
+            /// doesn't have yet (see MergeTask::prepareProjectionsToMergeAndRebuild); the fallback
+            /// to the source's own main column must apply per-column, not only when no sub-part
+            /// exists at all, or such a column silently skips provenance merging entirely.
+            std::optional<NameAndTypePair> source_column;
             const auto & source_projection_parts = source_part->getProjectionParts();
             if (auto it = source_projection_parts.find(projection_name); it != source_projection_parts.end())
-            {
-                if (auto source_column = it->second->tryGetColumn(result_column.name))
-                    result_column.type = mergeJSONSharedDataPathRules(result_column.type, source_column->type);
-            }
-            else if (auto source_column = source_part->tryGetColumn(result_column.name))
+                source_column = it->second->tryGetColumn(result_column.name);
+            if (!source_column)
+                source_column = source_part->tryGetColumn(result_column.name);
+            if (source_column)
                 result_column.type = mergeJSONSharedDataPathRules(result_column.type, source_column->type);
         }
 
