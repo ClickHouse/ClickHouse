@@ -22,62 +22,22 @@ bool isTransparentForSealGating(IQueryPlanStep * step)
     return typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step);
 }
 
-struct ProbeSide
+/// The reading step of the join's probe input, if the input is a plain read (possibly
+/// behind expressions and filters). The applied runtime filters are already registered on
+/// it by collectAppliedJoinRuntimeFilters, with the key names resolved to physical columns.
+ReadFromMergeTree * findProbeSideReading(QueryPlan::Node * node)
 {
-    ReadFromMergeTree * reading = nullptr;
-    /// All `__applyFilter` conjuncts found on the way (a multi-key join plants one per key).
-    std::vector<RuntimeFilterIndexAnalysisDescriptor> runtime_filters;
-};
-
-/// The runtime filters are planted as FilterStep conjuncts above the reading step (they are
-/// not pushed into the reading step's own filter, which is populated earlier in the second
-/// pass), so look for them while walking down. The reading step's own filter and prewhere are
-/// checked too in case a later optimization moved the conjuncts there.
-ProbeSide findProbeSide(QueryPlan::Node * node)
-{
-    ProbeSide res;
-
-    auto append = [&](std::vector<RuntimeFilterIndexAnalysisDescriptor> found)
-    {
-        for (auto & descr : found)
-        {
-            bool seen = std::any_of(
-                res.runtime_filters.begin(), res.runtime_filters.end(),
-                [&](const auto & existing) { return existing.filter_id == descr.filter_id; });
-            if (!seen)
-                res.runtime_filters.push_back(std::move(descr));
-        }
-    };
-
     while (node)
     {
-        if (const auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
-            append(findAppliedRuntimeFilters(filter_step->getExpression(), filter_step->getFilterColumnName()));
-
         if (auto * reading = typeid_cast<ReadFromMergeTree *>(node->step.get()))
-        {
-            res.reading = reading;
-            if (res.runtime_filters.empty())
-            {
-                /// The combined pushed-down filter of the source step: the predicate is its
-                /// first output (see SourceStepWithFilterBase::applyFilters).
-                if (const auto & dag = reading->getFilterActionsDAG(); dag && !dag->getOutputs().empty())
-                    append(findAppliedRuntimeFilters(dag->getOutputs().front()));
-                if (res.runtime_filters.empty() && reading->getQueryInfo().prewhere_info)
-                {
-                    const auto & prewhere_info = *reading->getQueryInfo().prewhere_info;
-                    append(findAppliedRuntimeFilters(prewhere_info.prewhere_actions, prewhere_info.prewhere_column_name));
-                }
-            }
-            return res;
-        }
+            return reading;
 
         if (!isTransparentForSealGating(node->step.get()) || node->children.size() != 1)
-            return res;
+            return nullptr;
 
         node = node->children.front();
     }
-    return res;
+    return nullptr;
 }
 
 /// Find the build-side runtime filter step with the given rendezvous key. A multi-key join
@@ -117,8 +77,15 @@ void tryMarkJoin(QueryPlan::Node & node)
 
     const size_t probe_idx = join_step->swap_streams ? 1 : 0;
 
-    auto [reading, matches] = findProbeSide(node.children[probe_idx]);
-    if (!reading || matches.empty())
+    auto * reading = findProbeSideReading(node.children[probe_idx]);
+    if (!reading)
+        return;
+
+    /// The applied runtime filters of the read, registered by collectAppliedJoinRuntimeFilters
+    /// (they may belong to several joins of the plan; the build-side lookup below associates
+    /// each with this join or rejects it).
+    const auto & matches = reading->getJoinRuntimeFiltersForIndexAnalysis();
+    if (matches.empty())
         return;
 
     if (reading->isQueryWithFinal() || reading->isParallelReadingEnabled())
@@ -127,26 +94,34 @@ void tryMarkJoin(QueryPlan::Node & node)
     /// Cover the longest primary-key PREFIX with the matched filters, in the key order: only
     /// a prefix condition can cut mark ranges (a filter on a non-leading key column selects
     /// rows scattered over the whole part), so gating on anything else would only delay the
-    /// probe side. Each covering filter must also be guaranteed to convert into a positive
-    /// predicate once complete: a NOT-contains (ANTI) filter never does, and an
-    /// exact-set-only key type may lose its set to a bloom-filter overflow.
+    /// probe side. Each covering filter must be built by THIS join's build side and be
+    /// guaranteed to convert into a positive predicate once complete: a NOT-contains (ANTI)
+    /// filter never does, and an exact-set-only key type may lose its set to a bloom-filter
+    /// overflow.
     const auto & primary_key_columns = reading->getStorageMetadata()->getPrimaryKey().column_names;
     std::vector<RuntimeFilterIndexAnalysisDescriptor> prefix;
     std::vector<BuildRuntimeFilterStep *> build_steps;
     for (const auto & pk_column : primary_key_columns)
     {
-        auto it = std::find_if(
-            matches.begin(), matches.end(),
-            [&](const auto & descr) { return descr.key_column_name == pk_column; });
-        if (it == matches.end())
+        const RuntimeFilterIndexAnalysisDescriptor * covering = nullptr;
+        BuildRuntimeFilterStep * covering_build_step = nullptr;
+        for (const auto & descr : matches)
+        {
+            if (descr.key_column_name != pk_column)
+                continue;
+            if (auto * build_step = findBuildSideRuntimeFilter(node.children[1 - probe_idx], descr.filter_id))
+            {
+                covering = &descr;
+                covering_build_step = build_step;
+                break;
+            }
+        }
+
+        if (!covering || !covering_build_step->canSealPrunePrimaryKey())
             break;
 
-        auto * build_step = findBuildSideRuntimeFilter(node.children[1 - probe_idx], it->filter_id);
-        if (!build_step || !build_step->canSealPrunePrimaryKey())
-            break;
-
-        prefix.push_back(*it);
-        build_steps.push_back(build_step);
+        prefix.push_back(*covering);
+        build_steps.push_back(covering_build_step);
     }
 
     if (prefix.empty())

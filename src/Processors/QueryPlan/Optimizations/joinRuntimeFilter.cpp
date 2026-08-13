@@ -620,10 +620,13 @@ std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(cons
             continue;
         String filter_id(label->column->getDataAt(0));
 
-        /// Argument 1: the probe key column, possibly wrapped in a CAST.
+        /// Argument 1: the probe key column, possibly wrapped in a CAST and/or aliases
+        /// (composing the filter through expression steps turns a renamed key into an alias
+        /// of the physical column - looking through it reports the physical name).
         const auto * key_arg = node->children[1];
-        while (key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
-               && (key_arg->function_base->getName() == "CAST" || key_arg->function_base->getName() == "_CAST")
+        while ((key_arg->type == ActionsDAG::ActionType::ALIAS
+                || (key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
+                    && (key_arg->function_base->getName() == "CAST" || key_arg->function_base->getName() == "_CAST")))
                && !key_arg->children.empty())
             key_arg = key_arg->children.front();
 
@@ -647,34 +650,42 @@ std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(cons
     return findAppliedRuntimeFilters(dag.tryFindInOutputs(filter_column_name));
 }
 
-void registerLeftSideIndexAnalysisSecondPass(QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
+void collectAppliedJoinRuntimeFilters(const Stack & stack)
 {
-    if (!optimization_settings.enable_join_runtime_filters_index_analysis)
-        return;
+    const auto & frame = stack.back();
 
-    /// We only care about the __applyFilter FilterStep that runtime-filter push-down planted above a read.
-    auto * filter_step = typeid_cast<FilterStep *>(node.step.get());
-    if (!filter_step || node.children.size() != 1)
-        return;
-
-    QueryPlan::Node * child = node.children.front();
-    ReadFromMergeTree * read_step = nullptr;
-    while (child)
-    {
-        if ((read_step = typeid_cast<ReadFromMergeTree *>(child->step.get())))
-            break;
-        const bool passthrough = child->children.size() == 1
-            && (typeid_cast<ExpressionStep *>(child->step.get()) || typeid_cast<FilterStep *>(child->step.get()));
-        if (!passthrough)
-            break;
-        child = child->children.front();
-    }
+    auto * read_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
     if (!read_step)
         return;
 
-    /// After push-down the key column is already in the read step's namespace, so no remapping is needed.
-    for (const auto & descr : findAppliedRuntimeFilters(filter_step->getExpression(), filter_step->getFilterColumnName()))
-        read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type);
+    /// Walk up from the reading step composing the filters through the expression steps,
+    /// exactly like optimizePrimaryKeyConditionAndLimit does for the index analysis, so a
+    /// renamed key resolves to its physical column and a computed one becomes a function
+    /// (which then fails the bare-column check) instead of colliding with a physical
+    /// column's name. Unlike that pass, nothing is attached to the step's filter and no
+    /// index analysis is redone: only the applied `__applyFilter` conjuncts are registered.
+    std::vector<const ActionsDAG *> expression_dags;
+    for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
+    {
+        if (const auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
+        {
+            auto filter_dag = filter_step->getExpression().clone();
+            for (auto it = expression_dags.rbegin(); it != expression_dags.rend(); ++it)
+                filter_dag = ActionsDAG::merge((*it)->clone(), std::move(filter_dag));
+
+            for (const auto & descr : findAppliedRuntimeFilters(filter_dag, filter_step->getFilterColumnName()))
+                read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type);
+        }
+        else if (const auto * expression_step = typeid_cast<ExpressionStep *>(iter->node->step.get()))
+        {
+            /// Composing filters through `arrayJoin` is unsound (see optimizePrimaryKeyConditionAndLimit).
+            if (expression_step->getExpression().hasArrayJoin())
+                break;
+            expression_dags.push_back(&expression_step->getExpression());
+        }
+        else
+            break;
+    }
 }
 
 }

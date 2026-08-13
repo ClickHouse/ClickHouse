@@ -161,8 +161,6 @@ size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes &, const 
 /// This condition can potentially be pushed down all the way to the storage and filter unmatched rows very early.
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
-/// Try to prune LHS table granules using JoinRuntimeFilter & index analysis
-void registerLeftSideIndexAnalysisSecondPass(QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings);
 
 /// Find the `__applyFilter(<key>, key_column)` conjuncts planted by tryAddJoinRuntimeFilter
 /// among the top-level AND conjuncts of the given filter predicate. One descriptor per
@@ -220,6 +218,8 @@ using Stack = std::vector<Frame>;
 
 /// Second pass optimizations
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
+/// Register the applied `__applyFilter` conjuncts on the reading step at the top of the stack.
+void collectAppliedJoinRuntimeFilters(const Stack & stack);
 void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns, bool suppress_for_vector_search = true);

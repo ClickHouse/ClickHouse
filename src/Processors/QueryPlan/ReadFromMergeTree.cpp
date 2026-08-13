@@ -280,6 +280,7 @@ namespace Setting
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_skip_indexes_on_data_read;
+    extern const SettingsBool enable_join_runtime_filters_index_analysis;
     extern const SettingsBool use_indexes_refiner_in_read_pools;
     extern const SettingsUInt64 join_runtime_filter_exact_values_limit;
     extern const SettingsBool use_skip_indexes_for_top_k;
@@ -4414,11 +4415,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             storage_snapshot->metadata, context, seal_gated_reading->pk_prefix_filters);
     }
 
-    /// The runtime filters to apply during reading. A read gated on a filter's seal already
-    /// prunes by that filter at task-cut time, granule-exact through the primary key, so its
-    /// read-time index analysis would be pure overhead: it is dropped here (filters of other
-    /// joins are kept).
-    auto runtime_filters_for_data_read = join_runtime_filters_for_index_analysis;
+    /// The runtime filters to apply during reading. The registration alone does not mean the
+    /// read-time analysis is on: the descriptors are also collected for seal-gated reading.
+    /// A read gated on a filter's seal already prunes by that filter at task-cut time,
+    /// granule-exact through the primary key, so its read-time index analysis would be pure
+    /// overhead: it is dropped here (filters of other joins are kept).
+    auto runtime_filters_for_data_read = context->getSettingsRef()[Setting::enable_join_runtime_filters_index_analysis]
+        ? join_runtime_filters_for_index_analysis
+        : std::vector<RuntimeFilterIndexAnalysisDescriptor>{};
     if (seal_gate_refiner)
         std::erase_if(
             runtime_filters_for_data_read,

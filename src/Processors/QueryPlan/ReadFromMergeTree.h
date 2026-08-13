@@ -314,6 +314,10 @@ public:
     };
 
     void addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type);
+    const std::vector<RuntimeFilterIndexAnalysisDescriptor> & getJoinRuntimeFiltersForIndexAnalysis() const
+    {
+        return join_runtime_filters_for_index_analysis;
+    }
 
     static AnalysisResultPtr selectRangesToRead(
         const RangesInDataParts & parts,

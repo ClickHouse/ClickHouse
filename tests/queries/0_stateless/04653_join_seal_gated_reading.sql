@@ -128,6 +128,18 @@ SELECT count() > 0 AS has_gated_reads_string_key FROM (
 DROP TABLE t_seal_probe_str;
 DROP TABLE t_seal_build_str;
 
+-- Renamed keys resolve to physical columns: a computed column shadowing the primary key
+-- name must not be gated (the filter is not on the primary key), while an alias of the
+-- physical primary key column is gated regardless of its name.
+SELECT /* seal_shadowed_key */ count() FROM (SELECT intDiv(k, 100) * 100 AS k, v FROM t_seal_probe) AS p JOIN t_seal_build AS b ON p.k = b.k;
+SELECT count() > 0 AS has_gated_reads_shadowed_key FROM (
+    EXPLAIN PIPELINE SELECT count() FROM (SELECT intDiv(k, 100) * 100 AS k, v FROM t_seal_probe) AS p JOIN t_seal_build AS b ON p.k = b.k
+) WHERE explain LIKE '%SealGatedRead%';
+SELECT /* seal_gated_aliased_key */ count() FROM (SELECT k AS renamed_k, v FROM t_seal_probe) AS p JOIN t_seal_build AS b ON p.renamed_k = b.k;
+SELECT count() > 0 AS has_gated_reads_aliased_key FROM (
+    EXPLAIN PIPELINE SELECT count() FROM (SELECT k AS renamed_k, v FROM t_seal_probe) AS p JOIN t_seal_build AS b ON p.renamed_k = b.k
+) WHERE explain LIKE '%SealGatedRead%';
+
 -- With a composite primary key, gating requires the filters to cover a key PREFIX: a filter
 -- on the second key column alone selects rows scattered over the whole part and cannot cut
 -- ranges, so such a probe is not gated (and stays correct).

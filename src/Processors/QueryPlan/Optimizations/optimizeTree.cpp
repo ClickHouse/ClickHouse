@@ -308,10 +308,11 @@ void optimizeTreeSecondPass(
                 }
             });
 
-        /// After the __applyFilter filters been fixed, do work to indicate index analysis again
-        if (optimization_settings.enable_join_runtime_filters_index_analysis)
-            traverseQueryPlan(stack, root,
-                [&](auto & frame_node) { registerLeftSideIndexAnalysisSecondPass(frame_node, optimization_settings); });
+        /// After the __applyFilter conjuncts settled, register them on the reading steps
+        /// (both the read-time index analysis and seal-gated reading consume them).
+        if (optimization_settings.enable_join_runtime_filters_index_analysis
+            || optimization_settings.join_seal_gated_reading)
+            traverseQueryPlan(stack, root, [&](auto &) { collectAppliedJoinRuntimeFilters(stack); });
     }
 
     /// Run after runtime filter push-down so that chains of joins are detected correctly. The pass only
