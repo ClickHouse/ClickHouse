@@ -86,6 +86,21 @@ struct PipeWithResources
     QueryPlanResourceHolder resources;
 };
 
+SelectQueryInfo makeSelectQueryInfoForPartitionRead(const SelectQueryInfo & initial)
+{
+    SelectQueryInfo info = initial;
+
+    if (info.row_level_filter)
+    {
+        info.row_level_filter = std::make_shared<FilterDAGInfo>();
+        info.row_level_filter->actions = initial.row_level_filter->actions.clone();
+        info.row_level_filter->column_name = initial.row_level_filter->column_name;
+        info.row_level_filter->do_remove_column = initial.row_level_filter->do_remove_column;
+    }
+
+    return info;
+}
+
 /// Returns safe snapshot reading plan from the specified partition.
 QueryPlanPtr buildPartitionReadingPlan(
     const String & partition_id,
@@ -101,10 +116,11 @@ QueryPlanPtr buildPartitionReadingPlan(
     const UInt64 & max_block_size,
     const SharedHeader & output_header)
 {
+    auto partition_query_info = makeSelectQueryInfoForPartitionRead(query_info);
     auto plan = MergeTreeDataSelectExecutor(storage).read(
         inner_columns,
         storage_snapshot,
-        query_info,
+        partition_query_info,
         context,
         max_block_size,
         requested_num_streams,
@@ -308,6 +324,7 @@ MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
     , requested_num_streams(requested_num_streams_)
     , max_block_size(max_block_size_)
     , subscription(std::move(subscription_))
+    , stream_settings(*query_info_.table_expression_modifiers->getStreamSettings())
     , log(getLogger("MergeTreeCommitOrderSequentialSource"))
     , last_emitted_positions(buildMergeTreeCursor(query_info_.table_expression_modifiers->getStreamSettings()->cursor))
 {
@@ -379,8 +396,25 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration()
     return Status::Async;
 }
 
+IProcessor::Status MergeTreeCommitOrderSequentialSource::handleBoundedReconfiguration()
+{
+    const auto result = handleReconfiguration();
+
+    // Finish after the first completed snapshot, or once the first enrichment shows nothing (more) to read.
+    if (subscription->updatesCount() > 0 && (finished_snapshots > 0 || result == Status::Async))
+    {
+        outputs.front().finish();
+        return Status::Finished;
+    }
+
+    return result;
+}
+
 void MergeTreeCommitOrderSequentialSource::handlePipelineEnd()
 {
+    ++finished_snapshots;
+    LOG_TEST(log, "Finished reading snapshot #{}", finished_snapshots);
+
     for (const auto & [partition_id, safe_block_number] : reading_up_to_block_numbers)
     {
         auto & position = last_emitted_positions[partition_id];
@@ -398,8 +432,11 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::prepare()
     if (has_running_sub_pipeline)
         return handleRunningPipeline();
 
-    if (!pending_snapshot.has_value())
+    if (!pending_snapshot.has_value() && !reading_up_to_block_numbers.empty())
         handlePipelineEnd();
+
+    if (!stream_settings.subscribe_for_updates)
+        return handleBoundedReconfiguration();
 
     return handleReconfiguration();
 }
@@ -411,12 +448,12 @@ void MergeTreeCommitOrderSequentialSource::work()
     chassert(!pending_snapshot.has_value());
 
     subscription->drain();
-    const auto safe_block_numbers = subscription->snapshot();
-    const auto classification = getPartitionsClassification(safe_block_numbers, last_emitted_positions);
 
     if (subscription->isDisabled())
         return;
 
+    const auto safe_block_numbers = subscription->snapshot();
+    const auto classification = getPartitionsClassification(safe_block_numbers, last_emitted_positions);
     if (classification.readable_partitions.empty())
         return;
 
@@ -481,6 +518,10 @@ IProcessor::PipelineUpdate MergeTreeCommitOrderSequentialSource::updatePipeline(
 
         auto * sub_output = sub_pipe->getOutputPort(0);
         auto sub_processors = Pipe::detachProcessors(std::move(sub_pipe.value()));
+
+        /// We need to retag the processors in order to track their execution time correctly in EXPLAIN ANALYZE
+        for (auto & processor : sub_processors)
+            processor->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
 
         auto & input = inputs.front();
         connect(*sub_output, input);
