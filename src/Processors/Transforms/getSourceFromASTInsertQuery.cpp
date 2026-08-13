@@ -961,18 +961,11 @@ std::optional<RowNumberMarker> parseRowNumberAfter(std::string_view message, std
     }
 }
 
-}
-
-std::optional<size_t> getRowsReachedFromParseErrorMessage(std::string_view message)
+/// Finds the row markers a parser appends to its error message and returns the row bound they carry,
+/// taking the rightmost marker. See getRowsReachedFromParseErrorMessage below for how untrusted
+/// lookalikes of a marker in the message are dealt with.
+std::optional<size_t> getRowsReachedFromRowMarkers(std::string_view message)
 {
-    /// `IInputFormat::generate` appends "(in file/uri <path>)" after the parser's row marker, and the
-    /// file name is chosen by the user, so a spoofed marker inside it (e.g. a file named
-    /// "data at row 50.tsv") would be the rightmost one. Nothing after that point can be trusted;
-    /// cut the search short there. The same substring inside an excerpt of the data can only make the
-    /// cut happen before the genuine marker, which degrades to unbounded sampling, not to a wrong bound.
-    if (size_t file_name_pos = message.find(": (in file/uri "); file_name_pos != std::string_view::npos)
-        message = message.substr(0, file_name_pos);
-
     /// `IRowInputFormat` appends "(at row N)" where the counter already includes the failing row.
     auto row_input_format_marker = parseRowNumberAfter(message, "(at row ", ")");
 
@@ -1003,6 +996,36 @@ std::optional<size_t> getRowsReachedFromParseErrorMessage(std::string_view messa
         consider(values_marker, values_marker->rows + 1);
     if (values_batch_marker)
         consider(values_batch_marker, values_batch_marker->rows);
+
+    return rows_reached;
+}
+
+}
+
+std::optional<size_t> getRowsReachedFromParseErrorMessage(std::string_view message)
+{
+    /// `IInputFormat::generate` appends "(in file/uri <path>)" after the parser's row marker. Both the
+    /// excerpt of the data quoted in the parser's message and the user-chosen file name may contain a
+    /// lookalike of that suffix or of a row marker, and a lookalike cannot be told apart from the genuine
+    /// thing. So consider every occurrence of the suffix as its potential start (plus the whole message,
+    /// for when every occurrence is a lookalike inside the data) and take the smallest row bound the
+    /// interpretations produce. The genuine interpretation is among them, so the result can never exceed
+    /// the true bound: a smaller bound only shrinks the sample (an explanation is lost at worst), while a
+    /// larger one would sample rows the parser never reached and could turn a value-level error into a
+    /// bogus structure mismatch.
+    static constexpr std::string_view file_name_suffix = ": (in file/uri ";
+
+    std::optional<size_t> rows_reached;
+    auto consider_interpretation = [&](std::string_view candidate)
+    {
+        auto bound = getRowsReachedFromRowMarkers(candidate);
+        if (bound && (!rows_reached || *bound < *rows_reached))
+            rows_reached = bound;
+    };
+
+    consider_interpretation(message);
+    for (size_t pos = message.find(file_name_suffix); pos != std::string_view::npos; pos = message.find(file_name_suffix, pos + 1))
+        consider_interpretation(message.substr(0, pos));
 
     return rows_reached;
 }
