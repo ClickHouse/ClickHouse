@@ -109,8 +109,17 @@ void StorageObjectStorageConfiguration::initialize(
             ? storage_settings[DataLakeStorageSetting::disk].value
             : "";
     }
-    if (disk_name.empty() && engine_args.empty() && table_id)
+    if (engine_args.empty() && table_id)
+    {
+        if (!disk_name.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Table engine arguments cannot be omitted when `disk` is set: the catalog assigns an absolute "
+                "table location, while `disk` requires a path relative to its own root. "
+                "Specify the path in the table engine arguments explicitly");
+
         engine_args = configuration_to_initialize.completeEngineArgsFromCatalog(*table_id, local_context);
+    }
 
     if (!disk_name.empty())
         configuration_to_initialize.fromDisk(disk_name, engine_args, local_context, with_table_structure);
