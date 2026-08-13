@@ -15,7 +15,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Functions/FunctionsComparison.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -161,7 +160,7 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     , params(params_)
     , owned_tokenizer(token_extactor_ && token_extactor_->isStateful() ? token_extactor_->clone() : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : token_extactor_)
-    , comparison_format_settings(ComparisonParams(context).format_settings)
+    , comparison_format_settings(getJSONComparisonFormatSettings(context))
 {
     if (!predicate)
     {

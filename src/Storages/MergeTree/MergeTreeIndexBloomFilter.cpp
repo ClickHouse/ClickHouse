@@ -11,7 +11,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Functions/FunctionsComparison.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>
@@ -291,7 +290,7 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     : WithContext(context_)
     , header(header_)
     , hash_functions(hash_functions_)
-    , comparison_format_settings(ComparisonParams(context_).format_settings)
+    , comparison_format_settings(getJSONComparisonFormatSettings(context_))
 {
     if (!predicate)
     {

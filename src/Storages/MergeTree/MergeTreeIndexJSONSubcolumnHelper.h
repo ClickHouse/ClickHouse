@@ -6,6 +6,7 @@
 #include <Core/Field.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -42,6 +43,8 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const String & json_function_name);
 
 class RPNBuilderTreeNode; /// forward declaration to avoid heavy include
+
+FormatSettings getJSONComparisonFormatSettings(const ContextPtr & context);
 
 /// Like `tryMatchJSONSubcolumnToIndex`, but also handles CAST / `::` syntax.
 /// Given a tree node, tries direct column-name match first, then unwraps

@@ -1,11 +1,26 @@
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Formats/FormatFactory.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
+}
+
+FormatSettings getJSONComparisonFormatSettings(const ContextPtr & context)
+{
+    auto format_settings = getFormatSettings(context);
+    format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
+    return format_settings;
+}
 
 /// Extract the JSON path from a subcolumn name, stripping any `.:\`Type\`` suffix.
 /// For example:
