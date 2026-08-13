@@ -73,9 +73,9 @@ ORDER BY table_1.id;
 
 All table engines in the [*MergeTree](/reference/engines/table-engines/mergetree-family/index) family support `PREWHERE`; support varies for other table engines.
 
-## Reducing data reads with `PREWHERE` {#example}
+## Using `PREWHERE` explicitly {#example}
 
-The following example compares automatically and manually selected `PREWHERE` conditions.
+The following example specifies a selective condition in `PREWHERE`:
 
 ```sql
 CREATE TABLE mydata
@@ -94,44 +94,12 @@ FROM numbers(10000000);
 
 SELECT count()
 FROM mydata
-WHERE (B = 0) AND (C = 'x');
-```
-
-```text
-1 row in set. Elapsed: 0.074 sec. Processed 10.00 million rows, 168.89 MB (134.98 million rows/s., 2.28 GB/s.)
-```
-
-Enable debug-level logging to see which predicates ClickHouse moves to `PREWHERE`:
-
-```sql
-SET send_logs_level = 'debug';
-```
-
-Run the query again:
-
-```sql
-SELECT count()
-FROM mydata
-WHERE (B = 0) AND (C = 'x');
-```
-
-```text
-MergeTreeWhereOptimizer: condition "B = 0" moved to PREWHERE
-```
-
-ClickHouse automatically moves `B = 0` to `PREWHERE`. This condition does not filter any rows because `B` is always `0`.
-
-Move the more selective `C = 'x'` condition to `PREWHERE` manually:
-
-```sql
-SELECT count()
-FROM mydata
 PREWHERE C = 'x'
 WHERE B = 0;
 ```
 
 ```text
-1 row in set. Elapsed: 0.069 sec. Processed 10.00 million rows, 158.89 MB (144.90 million rows/s., 2.30 GB/s.)
+   ┌─count()─┐
+1. │    1001 │
+   └─────────┘
 ```
-
-The manual `PREWHERE` query processes slightly less data: 158.89 MB instead of 168.89 MB.
