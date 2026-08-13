@@ -1288,47 +1288,34 @@ void StorageReplicatedMergeTree::createReplicaAttempt(const StorageMetadataPtr &
         /// serialized the same table definition to a different text: the redundant parentheses
         /// the user has written around key or column expressions were kept by some versions and
         /// are suppressed now (`IAST::FormatSettings::ignore_redundant_parentheses`). When the
-        /// texts differ, compare structurally before rejecting, so that a retry of a partially
-        /// created replica after an upgrade still recognizes its own nodes.
+        /// texts differ, compare structurally, so that a retry of a partially created replica
+        /// after an upgrade still recognizes its own nodes. These lambdas are only reached for
+        /// an empty, never-active replica at our own path; a structural mismatch or unparseable
+        /// node throws (e.g. `METADATA_MISMATCH`), which describes the problem better than the
+        /// `REPLICA_ALREADY_EXISTS` the fall-through create attempt would produce.
         auto is_same_metadata = [&](const String & zk_metadata_str)
         {
             if (zk_metadata_str == local_metadata)
                 return true;
-            try
-            {
-                auto zk_metadata_parsed = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
-                    zk_metadata_str,
-                    metadata_snapshot->getColumns(),
-                    metadata_snapshot->add_minmax_index_for_numeric_columns,
-                    metadata_snapshot->add_minmax_index_for_string_columns,
-                    getContext());
-                return ReplicatedMergeTreeTableMetadata(*this, metadata_snapshot).checkEquals(
-                    zk_metadata_parsed,
-                    metadata_snapshot->columns,
-                    metadata_snapshot->virtuals,
-                    getStorageID().getNameForLogs(),
-                    getContext());
-            }
-            catch (...)
-            {
-                /// Unparseable or structurally different metadata: the node does not belong
-                /// to an equivalent table definition, so it cannot be reused.
-                return false;
-            }
+            auto zk_metadata_parsed = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
+                zk_metadata_str,
+                metadata_snapshot->getColumns(),
+                metadata_snapshot->add_minmax_index_for_numeric_columns,
+                metadata_snapshot->add_minmax_index_for_string_columns,
+                getContext());
+            return ReplicatedMergeTreeTableMetadata(*this, metadata_snapshot).checkEquals(
+                zk_metadata_parsed,
+                metadata_snapshot->columns,
+                metadata_snapshot->virtuals,
+                getStorageID().getNameForLogs(),
+                getContext());
         };
 
         auto is_same_columns = [&](const String & zk_columns_str)
         {
             if (zk_columns_str == local_columns)
                 return true;
-            try
-            {
-                return ColumnsDescription::parse(zk_columns_str) == metadata_snapshot->getColumns();
-            }
-            catch (...)
-            {
-                return false;
-            }
+            return ColumnsDescription::parse(zk_columns_str) == metadata_snapshot->getColumns();
         };
 
         if (zk_host.empty() &&
