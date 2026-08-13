@@ -28,7 +28,7 @@ The `PREWHERE` section is executed before `FINAL`, so the results of `FROM ... F
 
 With the analyzer enabled, a `PREWHERE` condition can directly reference columns from no more than one table in a [`JOIN`](/reference/statements/select/join). ClickHouse applies the condition to that table's rows before they reach the join.
 
-In the following example, the `PREWHERE` condition filters `table_2` before it is joined with `table_1`:
+The following example uses a `PREWHERE` condition that references `table_2`:
 
 ```sql
 CREATE TABLE table_1
