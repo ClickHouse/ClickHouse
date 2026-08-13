@@ -183,8 +183,8 @@ Use `tmp` subdirectory in the current directory for temporary files (logs, downl
 
 Always use YYYY-MM-DD (ISO) date format. Never write in the American date style. Never omit the year in dates. Never use the relative time (like xxx days ago).
 
-Do not try/catch exceptions to fall-back to a less-optimized case. Let the exceptions propagate.
+Do not try/catch exceptions to fall back to a less-optimized case. Let the exceptions propagate.
 
 Prefer functional (.sql/.sh) tests over unit (gtest) tests whenever possible. Unit tests are larger, too specific, and they are difficult to maintain.
 
-When you want to test changes in CI, you can write and run a throwaway script, but you don't need to commit it in the repository, because we don't have automated CI tests.
+When you want to test changes in the CI scripts, you can write and run a throwaway script, but you don't need to commit it in the repository, because we don't have automated CI tests.
