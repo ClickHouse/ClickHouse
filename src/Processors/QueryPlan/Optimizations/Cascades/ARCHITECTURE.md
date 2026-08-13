@@ -67,6 +67,11 @@ The Cascades optimizer is **only active** when both `enable_cascades_optimizer =
 `make_distributed_plan = 1` are set. Without these settings, the existing pipeline
 runs as before.
 
+`IN (subquery)` follows the `rewrite_in_to_join` setting like the rest of the planner;
+Cascades does not force the join form. In the default set form the memo ingests the
+plan with its `DelayedCreatingSets` placeholder as an ordinary step, and the
+set-building subqueries are planned separately, distributed like any other query.
+
 The feature fails closed. `make_distributed_plan` first rejects plan shapes the
 distributed pipeline cannot execute correctly (`WITH TOTALS`, `ROLLUP`, `CUBE`, extremes,
 `PASTE JOIN`) and distributed reads a worker cannot reproduce (pinned block-number
@@ -315,23 +320,38 @@ total_cost = work * work_weight + network * network_weight + sequential * sequen
 
 - `work`: rows or bytes processed, divided by parallelism (I/O + CPU combined)
 - `network`: bytes transferred between nodes
-- `sequential`: single-threaded phases (hash table builds, merge cursors)
+- `sequential`: single-threaded phases (gather/scatter funnels, merge cursors)
+
+Every dimension is priced as wall-clock per node. Work divides by the parallelism of
+the expression. Network follows the same rule: a shuffle moves `1/N` of the data per
+node with all nodes concurrent, so it divides by the node count; a broadcast charges
+its payload once (every receiver ingests all of it, in parallel); a gather or scatter
+funnels every row through one endpoint, so its transfer stays undivided and each row
+also pays `funnel_sequential_cost_per_row`. A hash-table build counts as work, not as
+a sequential phase: `parallel_hash` shards the build across the threads of a node
+(a broadcast join still builds the full table on every node, a shuffle join `1/N`).
+`sequential_weight` is the per-node thread count: a serial phase holds one thread
+while work spreads over all of them, so one serial row costs about `threads` work
+rows (Brent's law).
 
 In addition, every exchange adds a fixed `exchange_fixed_overhead` to `sequential`
-(connection setup and metadata), which keeps tiny-table exchanges from looking free.
-A `BroadcastExchange` charges its network transfer once per receiving node, and a
+(connection setup and metadata), which keeps a plan over a small input local. A
 partial top-N is charged for scanning its whole input while its sorted gather carries
 up to `limit * node_count` rows.
 
-With a high `sequential_weight`, the optimizer prefers plans that minimize
-single-node bottlenecks (e.g., shuffle over broadcast for large hash tables).
+A table read is priced on its scan volume, not on its output: the rows the primary
+key keeps (from the index analysis) times the row width, with the output estimate as
+a lower bound (stat hints mark tiny stand-in tables whose physical selection says
+nothing about the pretended size). A filter off the sorting key prunes no granules,
+so the scan can exceed the output estimate by orders of magnitude; without this a
+replicated read of such a table would look almost free.
 
 The whole cost configuration is overridable at query time via one JSON parameter —
 the three weights, the per-exchange overhead, and the calibration constants
 (`expression_cost_per_row`, `hash_table_build_factor`, `unknown_leaf_cost`,
 `funnel_sequential_cost_per_row`, `merge_sequential_cost_per_row`):
 ```sql
-SET param__internal_cascades_cost_config = '{"work_weight":1,"network_weight":1,"sequential_weight":1000}';
+SET param__internal_cascades_cost_config = '{"work_weight":1,"network_weight":1,"sequential_weight":32}';
 ```
 
 `cpu_weight` is also accepted as a legacy alias for `work_weight` when `work_weight`
@@ -400,7 +420,8 @@ The lists below use class names; `getName` log names may omit the `Implementatio
 **Transformation rules** (generate logically equivalent expressions):
 - `JoinCommutativity` — swaps join sides (left ↔ right) for joins where the swap is
   semantics-preserving: `INNER ALL`, `CROSS`, and `SEMI`/`ANY`/`ANTI` strictness;
-  never `ASOF` or `INNER ANY`
+  never `ASOF` or `INNER ANY`, and never `ANY` under `join_any_take_last_row` (the
+  kept row comes from the hash-table build side, so a swap changes the result)
 - `TwoStageAggregationTransformation` — splits aggregation into partial + merge
 - `TwoStageTopN` — splits a top-N sort into a per-node bounded sort, a sorted-merge
   gather, and a coordinator limit
@@ -422,7 +443,9 @@ The lists below use class names; `getName` log names may omit the `Implementatio
 - `ReplicatedReadImplementation` — full table read on each node (shared storage)
 - `ReplicatedSubplanImplementation` — when the parent requires a replicated result,
   re-runs a replication-safe step identically on every node over replicated inputs,
-  extending replicated reads to whole subtrees without a `BroadcastExchange`
+  extending replicated reads to whole subtrees without a `BroadcastExchange`.
+  `ANY`/`RightAny` joins are not replication-safe: with duplicate build-side keys the
+  kept row depends on the parallel build order, so nodes could produce different rows
 - `TopNImplementation` — bounded sort at one node, or per node for the top-N partial
 - `DefaultImplementation` — wraps otherwise-unhandled steps at `{1 node}`; operators
   with dedicated rules above are excluded
@@ -449,6 +472,12 @@ over a read — are prepopulated from index analysis, column statistics, or test
 join and aggregation statistics are derived by `StatisticsDerivation.cpp`. Join estimates
 are clamped to the semantics of the join kind and strictness (an outer join keeps its
 preserved side, semi/anti/any joins cannot exceed it, a paste join is position-wise).
+A standalone `FilterStep` (e.g. `HAVING`) is estimated from the input column NDVs:
+an equality counts as `1/NDV`, its negation as the complement, and other predicates
+get default factors; `and`/`or`/`not` compose. Equality columns the plan below already
+enforces (the keys of an inner join under the filter) are tracked as equivalence
+classes, and an equality inside such a class removes nothing. A read also carries its
+physical scan volume (see the cost model) next to the output estimate.
 
 Row widths drive the exchange costs, so they come from measured data, not type sizes.
 A read's per-column average widths come from the parts' column-data sizes (compact parts
@@ -528,8 +557,10 @@ branch-and-bound pruning as the primary bound.
 
 ### Cost Model
 
-3. **Filter selectivity**: a standalone `FilterStep` (above a join or expression) is
-   currently modeled as selectivity 1; only filters fused into reads are estimated.
+3. **Range selectivity over aggregate results**: a `HAVING` range predicate
+   (`sum(x) > c`) gets the same default factor as a base-column range, which can
+   overestimate it by orders of magnitude; no statistics can exist for an aggregate
+   output.
 4. **`arrayJoin` fan-out**: an `ExpressionStep` with `arrayJoin` grows the row count,
    which is not estimated yet.
 
