@@ -639,8 +639,8 @@ Max amount of parts which can be merged at once (0 - disabled). Doesn't affect
 OPTIMIZE FINAL query.
 )", 0) \
     DECLARE(Bool, materialize_statistics_on_merge, true, R"(When enabled, merges will build and store statistics for new parts.
-    Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/reference/statements/alter/statistics)
-    or [during INSERTs](/reference/settings/session-settings/materialize#materialize_statistics_on_insert))", 0) \
+    Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md)
+    or [during INSERTs](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert))", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
 When enabled, merges build and store skip indices for new parts.
 Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/reference/statements/alter/skipping-index#materialize-index)

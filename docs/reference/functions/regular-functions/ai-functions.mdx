@@ -333,6 +333,56 @@ late and damaged package
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
+## aiFilter {#aiFilter}
+
+Introduced in: v26.8.0
+
+Evaluates a natural-language condition against the given text using an LLM provider and returns a boolean (`UInt8`) suitable for `WHERE`, `PREWHERE`, and `JOIN ... ON`.
+
+The function asks the model to respond with only lowercase `true` or `false`. Failed requests (when
+`ai_function_throw_on_error` is disabled) and unrecognised responses map to `0`, so the row is filtered out.
+
+**Warning:** Do not trust `aiFilter` results without scrutiny. LLM-based predicates can be incorrect
+or inconsistent; use them only where false positives and false negatives are acceptable.
+
+Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
+are taken from the `credentials` key of the optional parameter map, or from the
+`ai_function_text_default_credentials` setting when the map omits it.
+
+Note: using `aiFilter` in `JOIN ... ON` evaluates the LLM once per candidate pair and can be expensive.
+
+**Syntax**
+
+```sql
+aiFilter(text, condition[, params])
+```
+
+**Aliases**: `AIFilter`
+
+**Arguments**
+
+- `text` — Text to evaluate. [`String`](/reference/data-types/string)
+- `condition` — Constant natural-language condition the text must satisfy. [`String`](/reference/data-types/string)
+- `params` — Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024`). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/reference/data-types/map)
+
+**Returned value**
+
+`1` if the text matches the condition, `0` otherwise. Returns the default value (`0`) if the request failed and `ai_function_throw_on_error` is disabled. [`UInt8`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Filter angry reviews**
+
+```sql title=Query
+SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
+```
+
+**Filter a column with explicit credentials**
+
+```sql title=Query
+SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
+```
+
 ## aiGenerate {#aiGenerate}
 
 Introduced in: v26.4.0
@@ -396,10 +446,13 @@ Introduced in: v26.8.0
 
 Computes the semantic similarity of two texts using the configured embedding provider.
 
-Calculates the embedding of both texts and returns the cosine similarity of the two vectors
-in the range `[-1, 1]`: `1` means the texts are semantically identical, `0` means unrelated,
-and negative values mean opposite. This is the complement of `cosineDistance` over the
-same embeddings (`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
+Calculates the vector embeddings of both texts and returns their
+[cosine similarity](https://en.wikipedia.org/wiki/Cosine_similarity). A score of `-1` is given to
+opposite embedding vectors, semantically this means texts with scores approaching `-1` are opposite in
+meaning. A score of `0` means the vectors are orthogonal: semantically unrelated. Finally, a score of `1`
+means the embedding vectors are pointing in the same direction, texts with scores approaching `1` are
+similar in meaning. This is the complement of `cosineDistance` over the same embeddings
+(`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
 
 Batching, credentials, and the `dimensions` parameter match `aiEmbed`, including the
 `ai_function_embedding_default_credentials` default-credentials setting.
