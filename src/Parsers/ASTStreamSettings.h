@@ -13,6 +13,7 @@ namespace DB
 ///
 struct ASTStreamSettings : public IAST
 {
+    bool subscribe_for_updates = true;
     CursorTreeNodePtr cursor;
     WatermarkSettingsPtr watermark;
 
@@ -21,6 +22,7 @@ public:
     ASTPtr clone() const override;
     bool hasTweaks() const;
 
+    void setSubscribeForUpdates(bool subscribe_for_updates_);
     void setCursor(CursorTreeNodePtr cursor_);
     void setWatermark(WatermarkSettingsPtr watermark_);
 
