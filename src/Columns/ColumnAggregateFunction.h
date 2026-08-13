@@ -218,7 +218,13 @@ public:
     /// `max_states_to_serialize` states, so that an uncompressed estimate and a compression ratio derived
     /// from the result describe the same population of states even when state size or compressibility
     /// changes along the column.
-    SampledStateSizes sampledStateSizes(size_t max_states_to_serialize) const;
+    ///
+    /// `repetitions` is how many times the whole column appears on the wire: `NativeWriter::writeData`
+    /// materializes constants, so a state-bearing `ColumnConst` sends its stored payload once per row of
+    /// the block. All three figures describe the repeated payload. Identical copies compress far better
+    /// than one copy suggests (and not at all once a copy outgrows the codec's match window), so the
+    /// compressed figure is measured on a repeated sample rather than scaled from one copy.
+    SampledStateSizes sampledStateSizes(size_t max_states_to_serialize, size_t repetitions = 1) const;
 
     size_t byteSizeAt(size_t n) const override;
 

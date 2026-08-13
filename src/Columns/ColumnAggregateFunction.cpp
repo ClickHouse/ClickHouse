@@ -536,11 +536,11 @@ size_t ColumnAggregateFunction::sampledSerializedStateBytes(size_t max_states_to
     return static_cast<size_t>(static_cast<double>(serialized_bytes) * static_cast<double>(rows) / static_cast<double>(serialized_states));
 }
 
-ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledStateSizes(size_t max_states_to_serialize) const
+ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledStateSizes(size_t max_states_to_serialize, size_t repetitions) const
 {
     SampledStateSizes res;
     const size_t rows = data.size();
-    if (rows == 0)
+    if (rows == 0 || repetitions == 0)
         return res;
 
     /// The same periodic sample as in sampledSerializedStateBytes, serialized through a compression buffer
@@ -560,18 +560,58 @@ ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledState
 
     /// `compressed_buf.count()` is the size of the sample before compression, `null_buf.count()` is the
     /// size of the compressed data that reached the underlying buffer.
-    res.sample_bytes = compressed_buf.count();
+    const size_t one_copy_sample_bytes = compressed_buf.count();
+    const size_t one_copy_compressed_bytes = null_buf.count();
+
+    res.sample_bytes = one_copy_sample_bytes * repetitions;
+    res.bytes = serialized_states == rows
+        ? one_copy_sample_bytes
+        : static_cast<size_t>(
+              static_cast<double>(one_copy_sample_bytes) * static_cast<double>(rows) / static_cast<double>(serialized_states));
+    res.bytes *= repetitions;
+
+    size_t compressed = one_copy_compressed_bytes;
+    if (repetitions > 1)
+    {
+        /// The wire repeats the same serialized payload, and identical copies compress to almost nothing
+        /// while they fit the codec's match window - and not at all once a copy outgrows it - so the
+        /// repetitions have to be measured, not scaled: scaling the one-copy figure would pin the repeated
+        /// payload's compression ratio to one copy's. Serialize the same sample enough times to observe
+        /// the marginal cost of one more copy, and extrapolate the remaining copies from it.
+        static constexpr size_t max_repeated_sample_bytes = 1024 * 1024;
+        const size_t measured_repetitions = std::min(
+            repetitions, std::max<size_t>(2, max_repeated_sample_bytes / std::max<size_t>(one_copy_sample_bytes, 1)));
+
+        NullWriteBuffer repeated_null_buf;
+        CompressedWriteBuffer repeated_compressed_buf(repeated_null_buf);
+        for (size_t repetition = 0; repetition < measured_repetitions; ++repetition)
+            for (size_t i = 0; i < rows; i += period)
+                func->serialize(data[i], repeated_compressed_buf, version);
+        repeated_compressed_buf.finalize();
+        const size_t measured_compressed_bytes = repeated_null_buf.count();
+
+        if (measured_repetitions == repetitions)
+            compressed = measured_compressed_bytes;
+        else
+        {
+            /// The per-block framing of both measurements cancels out in the difference, so the marginal
+            /// figure is the copies' own compressed size.
+            const double marginal_compressed_bytes_per_copy = measured_compressed_bytes > one_copy_compressed_bytes
+                ? static_cast<double>(measured_compressed_bytes - one_copy_compressed_bytes)
+                    / static_cast<double>(measured_repetitions - 1)
+                : 0.0;
+            compressed = one_copy_compressed_bytes
+                + static_cast<size_t>(marginal_compressed_bytes_per_copy * static_cast<double>(repetitions - 1));
+        }
+    }
+
     /// The compressed format writes a checksum and a block header in front of every compressed block, so a
     /// sample of a few tiny states comes out of `CompressedWriteBuffer` larger than it went in. When the
     /// states are actually sent, that framing is amortized over `min_compress_block_size` of data, so such
     /// a sample says nothing about how well the states compress - report it as incompressible rather than
     /// as expanding, the same clamp `Aggregator::estimateSizeOfCompressedState` applies via
     /// `compressedSampleSize`.
-    res.compressed_bytes = std::min(res.sample_bytes, null_buf.count());
-    res.bytes = serialized_states == rows
-        ? res.sample_bytes
-        : static_cast<size_t>(
-              static_cast<double>(res.sample_bytes) * static_cast<double>(rows) / static_cast<double>(serialized_states));
+    res.compressed_bytes = std::min(res.sample_bytes, compressed);
     return res;
 }
 

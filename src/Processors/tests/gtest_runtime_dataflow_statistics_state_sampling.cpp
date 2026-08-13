@@ -423,3 +423,54 @@ TEST(RuntimeDataflowStatisticsStateSampling, ConstantCarrierCountsEveryRowOfTheB
     EXPECT_GE(stats->output_bytes, rows * exact.compressed_bytes / 2);
     EXPECT_LE(stats->output_bytes, rows * exact.compressed_bytes * 2);
 }
+
+/// The repetitions of a constant state must also be *compressed* like the materialized column the wire
+/// carries, not scaled from one copy: `NativeWriter::writeData` sends `rows` identical serialized states in
+/// one compressed stream, which compress to almost nothing while a copy fits the codec's match window.
+/// Multiplying the one-copy `sample_bytes` and `compressed_bytes` by the row count keeps the one-copy
+/// ratio, so a constant state that is incompressible on its own - or tiny, like a repeated `countState()` -
+/// would overstate `output_bytes` by the repeated payload's real compression ratio and could disable
+/// automatic parallel replicas on constant `-State` outputs.
+TEST(RuntimeDataflowStatisticsStateSampling, ConstantStateCompressesAcrossRepetitions)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t rows = 48;
+    /// One copy of the state is ~16 KiB of distinct values: incompressible on its own, well inside LZ4's
+    /// 64 KiB match window when repeated back to back.
+    constexpr size_t elements_in_state = 2000;
+
+    AggregateFunctionPtr function;
+    auto column = createSkewedGroupArrayColumn(/*rows=*/1, /*giant_state_row=*/0, elements_in_state, function);
+
+    /// The ground truth: the materialized column the wire carries, i.e. the same state `rows` times,
+    /// measured exactly by the one-copy primitive (the limit covers every state, so nothing is scaled).
+    auto materialized = ColumnAggregateFunction::create(function);
+    for (size_t row = 0; row < rows; ++row)
+        materialized->insertFrom(*column, 0);
+    const auto exact = materialized->sampledStateSizes(rows);
+    ASSERT_EQ(exact.bytes, exact.sample_bytes);
+    ASSERT_GT(exact.sample_bytes, rows * elements_in_state * sizeof(UInt64) / 2);
+    /// The identical copies compress: an estimate that keeps the one-copy ratio of ~1 lands close to
+    /// `sample_bytes`, far more than the 2x margin asserted below allows.
+    ASSERT_LT(exact.compressed_bytes * 8, exact.sample_bytes);
+
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+
+    const size_t cache_key = 0x111985 + 6;
+
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows);
+
+        Block header;
+        header.insert(ColumnWithTypeAndName{nullptr, state_type, "constant_state"});
+
+        Chunk chunk(Columns{ColumnConst::create(std::move(column), rows)}, rows);
+        updater.recordOutputChunk(chunk, header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, exact.compressed_bytes / 2);
+    EXPECT_LE(stats->output_bytes, exact.compressed_bytes * 2);
+}

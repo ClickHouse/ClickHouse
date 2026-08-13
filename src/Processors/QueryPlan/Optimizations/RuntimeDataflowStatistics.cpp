@@ -378,11 +378,14 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistic
             /// inside the block, and the compression side stays behind the same cap instead of
             /// serializing a prefix of up to `min(8192, rows)` states a second time. The clamp of the
             /// compressed size to the sample size - a sample of tiny states must read as
-            /// incompressible, not as expanding - lives in `sampledStateSizes`.
-            const auto sizes = aggregate_column->sampledStateSizes(max_states_to_serialize);
-            serialized_state_bytes += sizes.bytes * repetitions;
-            sample_bytes += sizes.sample_bytes * repetitions;
-            compressed_bytes += sizes.compressed_bytes * repetitions;
+            /// incompressible, not as expanding - lives in `sampledStateSizes`, and so does the
+            /// handling of the repetitions a constant carrier puts on the wire: identical copies
+            /// compress far better than one copy suggests, so the repeated payload is measured there
+            /// instead of scaling the one-copy figures, which would keep the one-copy ratio.
+            const auto sizes = aggregate_column->sampledStateSizes(max_states_to_serialize, repetitions);
+            serialized_state_bytes += sizes.bytes;
+            sample_bytes += sizes.sample_bytes;
+            compressed_bytes += sizes.compressed_bytes;
         }
     }
 

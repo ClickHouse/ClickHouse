@@ -121,6 +121,85 @@ TEST(ColumnAggregateFunctionSampledStateSizes, TinySampleIsClampedToIncompressib
     EXPECT_GT(sizes.sample_bytes, 0u);
 }
 
+namespace
+{
+
+/// A `groupArray(UInt64)` column of one state holding `elements` distinct values: about
+/// `elements * sizeof(UInt64)` on the wire and incompressible on its own.
+ColumnAggregateFunction::MutablePtr createDistinctGroupArrayColumn(size_t elements)
+{
+    AggregateFunctionProperties properties;
+    auto function = AggregateFunctionFactory::instance().get(
+        "groupArray", NullsAction::EMPTY, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{}, properties);
+
+    auto column = ColumnAggregateFunction::create(function);
+
+    auto values = ColumnUInt64::create();
+    for (size_t i = 0; i < elements; ++i)
+        values->insert(UInt64(i) * 0x9E3779B97F4A7C15ULL);
+    const IColumn * arguments[1] = {values.get()};
+
+    column->insertDefault();
+    for (size_t i = 0; i < elements; ++i)
+        column->getAggregateFunction()->add(column->getData()[0], arguments, i, &column->createOrGetArena());
+    return column;
+}
+
+}
+
+/// `NativeWriter::writeData` materializes a constant column, so a state-bearing `ColumnConst` puts its
+/// stored payload on the wire once per row of the block - `repetitions` identical copies, which compress
+/// to almost nothing while a copy fits the codec's match window. The repeated payload must be measured:
+/// scaling the one-copy compressed size by the repetitions would pin the ratio to one copy's, i.e. report
+/// the repeated payload of an incompressible state as incompressible.
+TEST(ColumnAggregateFunctionSampledStateSizes, RepeatedPayloadCompressesAcrossCopies)
+{
+    tryRegisterAggregateFunctions();
+
+    /// One copy is ~16 KiB - incompressible on its own (distinct values), well inside LZ4's 64 KiB match
+    /// window when repeated.
+    auto column = createDistinctGroupArrayColumn(/*elements=*/2000);
+
+    const auto one_copy = column->sampledStateSizes(/*max_states_to_serialize=*/1);
+    ASSERT_GT(one_copy.sample_bytes, 10000u);
+    ASSERT_GT(one_copy.compressed_bytes * 2, one_copy.sample_bytes);
+
+    constexpr size_t repetitions = 48;
+    const auto repeated = column->sampledStateSizes(/*max_states_to_serialize=*/1, repetitions);
+
+    /// The uncompressed figures scale with the repetitions exactly.
+    EXPECT_EQ(repeated.bytes, one_copy.bytes * repetitions);
+    EXPECT_EQ(repeated.sample_bytes, one_copy.sample_bytes * repetitions);
+
+    /// The identical copies compress: the repeated payload's compressed size is far below the scaled
+    /// one-copy figure, but still at least a copy.
+    EXPECT_LT(repeated.compressed_bytes * 4, repeated.sample_bytes);
+    EXPECT_GE(repeated.compressed_bytes * 2, one_copy.compressed_bytes);
+}
+
+/// The flip side: once one copy outgrows the codec's match window, the copies do not compress against each
+/// other, and the measured marginal cost of a copy - extrapolated when the repetitions exceed the measuring
+/// budget - must reflect that instead of assuming repetitions compress.
+TEST(ColumnAggregateFunctionSampledStateSizes, RepeatedGiantPayloadStaysIncompressible)
+{
+    tryRegisterAggregateFunctions();
+
+    /// One copy is ~800 KiB of distinct values - beyond LZ4's 64 KiB match window, so even identical
+    /// copies do not compress. It also exceeds half the measuring budget, so 512 repetitions are
+    /// extrapolated from a measured prefix.
+    auto column = createDistinctGroupArrayColumn(/*elements=*/100000);
+
+    const auto one_copy = column->sampledStateSizes(/*max_states_to_serialize=*/1);
+    ASSERT_GT(one_copy.sample_bytes, 500000u);
+
+    constexpr size_t repetitions = 512;
+    const auto repeated = column->sampledStateSizes(/*max_states_to_serialize=*/1, repetitions);
+
+    EXPECT_EQ(repeated.sample_bytes, one_copy.sample_bytes * repetitions);
+    EXPECT_GE(repeated.compressed_bytes * 2, repeated.sample_bytes);
+    EXPECT_LE(repeated.compressed_bytes, repeated.sample_bytes);
+}
+
 TEST(ColumnAggregateFunctionSampledStateSizes, EmptyColumn)
 {
     tryRegisterAggregateFunctions();
