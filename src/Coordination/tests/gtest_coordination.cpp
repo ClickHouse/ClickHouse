@@ -7,6 +7,8 @@
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/SummingStateMachine.h>
 #include <Coordination/KeeperContext.h>
+#include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperServer.h>
 #include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperStorage.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
@@ -62,6 +64,110 @@ TEST(CoordinationSettingsValidation, RejectZeroBatchSizes)
              "<max_requests_batch_size>1</max_requests_batch_size>"
              "<max_requests_append_size>1</max_requests_append_size>"
              "</coordination_settings></keeper_server></clickhouse>"));
+}
+
+TEST(CoordinationSettingsParse, NuraftSnapshotSyncCtxTimeout)
+{
+    auto load = [](const std::string & xml)
+    {
+        std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(stream);
+        DB::CoordinationSettings settings;
+        settings.loadFromConfig("keeper_server.coordination_settings", *config);
+        return settings[DB::CoordinationSetting::nuraft_snapshot_sync_ctx_timeout_ms].totalMilliseconds();
+    };
+
+    /// The default must stay 0, which is what `raft_server::get_snapshot_sync_ctx_timeout` treats as
+    /// "derive from raft_limits_response_limit * heart_beat_interval_ms". Anything else would change
+    /// the snapshot-install budget of every existing installation on upgrade.
+    EXPECT_EQ(load("<clickhouse><keeper_server><coordination_settings>"
+                   "</coordination_settings></keeper_server></clickhouse>"),
+              0);
+
+    /// A bare number in the config is milliseconds, which is the unit
+    /// `raft_params::snapshot_sync_ctx_timeout_` expects. Had the setting been declared with a
+    /// coarser unit, the same config would mean a budget 1000 times larger.
+    EXPECT_EQ(load("<clickhouse><keeper_server><coordination_settings>"
+                   "<nuraft_snapshot_sync_ctx_timeout_ms>60000</nuraft_snapshot_sync_ctx_timeout_ms>"
+                   "</coordination_settings></keeper_server></clickhouse>"),
+              60000);
+
+    /// The setting itself is unbounded, so an operator can configure more milliseconds than the
+    /// int32 `raft_params::snapshot_sync_ctx_timeout_` can hold. Such a value survives parsing and
+    /// must be narrowed by `buildRaftParams` rather than wrapping - covered by the tests below.
+    EXPECT_GT(load("<clickhouse><keeper_server><coordination_settings>"
+                   "<nuraft_snapshot_sync_ctx_timeout_ms>3000000000</nuraft_snapshot_sync_ctx_timeout_ms>"
+                   "</coordination_settings></keeper_server></clickhouse>"),
+              std::numeric_limits<int32_t>::max());
+}
+
+/// The composition that actually reaches NuRaft: config text -> setting -> `raft_params` field.
+/// Parsing and narrowing are pinned separately below, but only this test would notice the timeout
+/// being handed over in the wrong unit or bypassing the narrowing.
+TEST(CoordinationSettingsParse, BuildRaftParams)
+{
+    auto build = [](const std::string & xml)
+    {
+        std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(stream);
+        DB::CoordinationSettings settings;
+        settings.loadFromConfig("keeper_server.coordination_settings", *config);
+        return DB::buildRaftParams(settings, getLogger("CoordinationSettingsParse"));
+    };
+
+    /// 0 is what makes `raft_server::get_snapshot_sync_ctx_timeout` fall back to
+    /// `raft_limits_response_limit * heart_beat_interval_`, i.e. today's behaviour.
+    EXPECT_EQ(build("<clickhouse><keeper_server><coordination_settings>"
+                    "</coordination_settings></keeper_server></clickhouse>")
+                  .snapshot_sync_ctx_timeout_,
+              0);
+
+    /// Milliseconds all the way through: 60000 in the config must be 60000 in `raft_params`, not
+    /// 60 and not 60000000.
+    EXPECT_EQ(build("<clickhouse><keeper_server><coordination_settings>"
+                    "<nuraft_snapshot_sync_ctx_timeout_ms>60000</nuraft_snapshot_sync_ctx_timeout_ms>"
+                    "</coordination_settings></keeper_server></clickhouse>")
+                  .snapshot_sync_ctx_timeout_,
+              60000);
+
+    /// The field is an int32, so an operator value beyond its range must be narrowed here rather
+    /// than wrapping to a negative timeout.
+    EXPECT_EQ(build("<clickhouse><keeper_server><coordination_settings>"
+                    "<nuraft_snapshot_sync_ctx_timeout_ms>3000000000</nuraft_snapshot_sync_ctx_timeout_ms>"
+                    "</coordination_settings></keeper_server></clickhouse>")
+                  .snapshot_sync_ctx_timeout_,
+              std::numeric_limits<int32_t>::max());
+
+    /// Neighbouring millisecond settings go through the same conversion, so pin one of them too.
+    EXPECT_EQ(build("<clickhouse><keeper_server><coordination_settings>"
+                    "<heart_beat_interval_ms>250</heart_beat_interval_ms>"
+                    "</coordination_settings></keeper_server></clickhouse>")
+                  .heart_beat_interval_,
+              250);
+}
+
+/// Every `nuraft::raft_params` field Keeper configures from an unbounded setting is narrowed by this
+/// function, so a value that does not fit must be reported and capped instead of wrapping to a
+/// negative timeout or gap.
+TEST(CoordinationSettingsParse, ValueOrMaxInt32)
+{
+    auto log = getLogger("CoordinationSettingsParse");
+
+    EXPECT_EQ(DB::getValueOrMaxInt32AndLogWarning(0, "test", log), 0);
+    EXPECT_EQ(DB::getValueOrMaxInt32AndLogWarning(60000, "test", log), 60000);
+    EXPECT_EQ(
+        DB::getValueOrMaxInt32AndLogWarning(std::numeric_limits<int32_t>::max(), "test", log),
+        std::numeric_limits<int32_t>::max());
+
+    /// Above the range it caps rather than wrapping negative.
+    EXPECT_EQ(
+        DB::getValueOrMaxInt32AndLogWarning(
+            static_cast<uint64_t>(std::numeric_limits<int32_t>::max()) + 1, "test", log),
+        std::numeric_limits<int32_t>::max());
+    EXPECT_EQ(DB::getValueOrMaxInt32AndLogWarning(3000000000, "test", log), std::numeric_limits<int32_t>::max());
+    EXPECT_EQ(
+        DB::getValueOrMaxInt32AndLogWarning(std::numeric_limits<uint64_t>::max(), "test", log),
+        std::numeric_limits<int32_t>::max());
 }
 
 TEST_P(CoordinationTest, RaftServerConfigParse)
@@ -395,6 +501,7 @@ static void testLogAndStateMachine(
         DB::LogFileSettings{
             .force_sync = true, .compress_logs = param.enable_compression, .rotate_interval = (*settings)[DB::CoordinationSetting::rotate_log_storage_interval]},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         keeper_context);
     changelog.init(state_machine->last_commit_index(), (*settings)[DB::CoordinationSetting::reserved_log_items]);
 
@@ -443,6 +550,7 @@ static void testLogAndStateMachine(
         DB::LogFileSettings{
             .force_sync = true, .compress_logs = param.enable_compression, .rotate_interval = (*settings)[DB::CoordinationSetting::rotate_log_storage_interval]},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         keeper_context);
     restore_changelog.init(restore_machine->last_commit_index(), (*settings)[DB::CoordinationSetting::reserved_log_items]);
 

@@ -30,19 +30,19 @@
 -- value materialization: an out-of-range literal clamps exactly like CAST
 3599999	3599999
 2106-02-07	2106-02-07
-2299-12-31	2299-12-31
+9999-12-31	9999-12-31
 2106-02-07 06:28:15	2106-02-07 06:28:15
 -3599999	-3599999
 3599999	3599999
 -- value materialization: wide-integer and float sources clamp like CAST too
 2106-02-07	2106-02-07
 2106-02-07	2106-02-07
-2299-12-31	2299-12-31
-2299-12-31	2299-12-31
+9999-12-31	9999-12-31
+9999-12-31	9999-12-31
 3599999	3599999
 2106-02-07 06:28:15	2106-02-07 06:28:15
 2106-02-07	2106-02-07
-2299-12-31
+9999-12-31
 3599999
 -- UInt32 keeps clamping into Time; the UInt32 -> DateTime cast is unaffected (UInt32::max is the DateTime maximum)
 3599999	3599999

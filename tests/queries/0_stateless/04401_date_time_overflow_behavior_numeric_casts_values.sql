@@ -121,12 +121,12 @@ DROP TABLE t_parity;
 SET input_format_values_deduce_templates_of_expressions = 1;
 
 -- Same parity requirement at the Date32 boundary, for a FRACTIONAL day number. This pins the coerce
--- helper's day-number/timestamp predicate to the transform's own form: `> N-1` and `>= N` agree for
--- every integer source but diverge on a fractional value in (N-1, N), where the day-number arm keeps
--- ~2299 while the timestamp arm reinterprets the value as seconds and lands in 1970. 120530 is the
--- first timestamp-domain day number (DATE_LUT_MAX_EXTEND_DAY_NUM), so 120529.5 is the carrier;
--- 120528.5 and 120530.5 are controls that already agreed, so the test cannot pass by routing
--- everything to one arm. Both sides are printed per row, so a future divergence diffs.
+-- helper's day-number/timestamp predicate to the transform's own form: a fractional value just below
+-- DATE_LUT_MAX_EXTEND_DAY_NUM stays a day number and keeps ~9999, while one just above is
+-- reinterpreted as seconds and lands in 1970. 2932896 is the boundary, so 2932895.5 and 2932896.5
+-- straddle it and land on different arms; 2932894.5 is a control inside the day-number domain. The
+-- pair cannot pass by routing everything to one arm. Both sides are printed per row, so a future
+-- divergence diffs.
 --
 -- Reaching the coerce helper needs BOTH: an expression rather than a bare literal (`+ 0`; a literal
 -- goes through the text serializer, see the note above the t_vals_time section), AND templates
@@ -137,20 +137,32 @@ SELECT '-- VALUES coercion agrees with CAST for a fractional Date32 day number a
 SET date_time_overflow_behavior = 'ignore';
 SET input_format_values_deduce_templates_of_expressions = 0;
 CREATE TABLE t_parity_frac (v Float64, x Date32) ENGINE = Memory;
-INSERT INTO t_parity_frac VALUES (120528.5, 120528.5 + 0), (120529.5, 120529.5 + 0), (120530.5, 120530.5 + 0);
+INSERT INTO t_parity_frac VALUES (2932894.5, 2932894.5 + 0), (2932895.5, 2932895.5 + 0), (2932896.5, 2932896.5 + 0);
 SELECT toString(v), 'VALUES', toString(x), 'CAST', toString(CAST(v AS Date32)) FROM t_parity_frac ORDER BY v;
 DROP TABLE t_parity_frac;
 
 SELECT '-- VALUES coercion agrees with CAST for a fractional Date32 day number at the boundary (saturate)';
 SET date_time_overflow_behavior = 'saturate';
 CREATE TABLE t_parity_frac (v Float64, x Date32) ENGINE = Memory;
-INSERT INTO t_parity_frac VALUES (120528.5, 120528.5 + 0), (120529.5, 120529.5 + 0), (120530.5, 120530.5 + 0);
+INSERT INTO t_parity_frac VALUES (2932894.5, 2932894.5 + 0), (2932895.5, 2932895.5 + 0), (2932896.5, 2932896.5 + 0);
 SELECT toString(v), 'VALUES', toString(x), 'CAST', toString(CAST(v AS Date32)) FROM t_parity_frac ORDER BY v;
 DROP TABLE t_parity_frac;
+SET input_format_values_deduce_templates_of_expressions = 1;
+
+-- The boundary day number ITSELF (an integer, not a fraction) is the carrier for the strict-vs-
+-- non-strict form of the same predicate: `>` keeps 2932896 a day number (9999-12-31) while `>=`
+-- reinterprets it as seconds and lands in 1970. 2932895 and 2932897 are controls on either side.
+SELECT '-- VALUES coercion agrees with CAST for the boundary Date32 day number itself (ignore)';
+SET date_time_overflow_behavior = 'ignore';
+SET input_format_values_deduce_templates_of_expressions = 0;
+CREATE TABLE t_parity_bnd (v Int64, x Date32) ENGINE = Memory;
+INSERT INTO t_parity_bnd VALUES (2932895, 2932895 + 0), (2932896, 2932896 + 0), (2932897, 2932897 + 0);
+SELECT toString(v), 'VALUES', toString(x), 'CAST', toString(CAST(v AS Date32)) FROM t_parity_bnd ORDER BY v;
+DROP TABLE t_parity_bnd;
 SET input_format_values_deduce_templates_of_expressions = 1;
 
 -- The `values` table function reaches the same helper through convertFieldToTypeOrThrow, with its own
 -- default format settings (so it is not affected by the SET above), and needs no template opt-out.
 SELECT '-- values() table function agrees with CAST for the same fractional Date32 day numbers';
 SELECT toString(v), 'VALUES', toString(CAST(x AS Date32)), 'CAST', toString(CAST(v AS Date32))
-FROM values('v Float64, x Date32', (120528.5, 120528.5), (120529.5, 120529.5), (120530.5, 120530.5)) ORDER BY v;
+FROM values('v Float64, x Date32', (2932894.5, 2932894.5), (2932895.5, 2932895.5), (2932896.5, 2932896.5)) ORDER BY v;
