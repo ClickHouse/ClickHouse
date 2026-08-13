@@ -445,7 +445,7 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
     /// the marker would be appended once per round.
     auto base_description = parent_node->step->getStepDescription();
     constexpr std::string_view marker = " [volume-reducing functions]";
-    auto description = base_description.find(marker) != std::string_view::npos
+    auto description = base_description.contains(marker)
         ? std::string{base_description}
         : fmt::format("{}{}", base_description, marker);
     pushed_node.step->setStepDescription(std::move(description), settings.max_step_description_length);
