@@ -29,34 +29,18 @@
 
 /// `hierarchicalKMeans(k [, branching] [, max_iter] [, sample_cap] [, seed] [, spherical])(vec)`
 ///
-/// Parametric aggregate that trains `k` cluster centroids from the aggregated vectors and returns them as
-/// `Array(Array(Float32))` (k rows of `dim` floats). Intended to build the coarse quantizer for an IVF vector index:
+/// Trains `k` centroids from the aggregated vectors and returns them as `Array(Array(Float32))` - the coarse
+/// quantizer for a SQL-side IVF index. Keeps a bounded reservoir of `sample_cap` vectors, so memory is
+/// O(sample_cap * dim) whatever the input size; centroids follow the distribution, not the row count.
 ///
-///     INSERT INTO centroids
-///     SELECT rowNumberInAllBlocks()::UInt32 AS cid, c
-///     FROM (SELECT arrayJoin(hierarchicalKMeans(32768)(vec)) AS c FROM sample);
+/// "Hierarchical" is the training algorithm, not the output: centroids grow by recursive `branching`-way
+/// splits, so per-point work is O(branching * log_branching(k)) rather than flat Lloyd's O(k), which is what
+/// makes k in the tens of thousands trainable. The output is the flat set of `k` leaves.
+/// See https://en.wikipedia.org/wiki/K-means_clustering
 ///
-/// The table feeding it may hold anywhere from ~1-2M to billions of vectors: the aggregate keeps a bounded
-/// RESERVOIR of `sample_cap` vectors (uniform sample), so memory is O(sample_cap * dim) regardless of input size.
-/// A small table (< sample_cap) is kept in full; a billion-row table is uniformly downsampled. k-means centroids
-/// depend on the data distribution, not the count, so a large sample yields essentially the same centroids as
-/// training on all rows.
-///
-/// "Hierarchical" refers to the TRAINING algorithm, not the output: centroids are grown by a recursive
-/// split (branch `branching` at each level), so per-point work is O(branching * log_branching(k)) instead of the
-/// O(k) of flat Lloyd - this is what makes k in the tens of thousands trainable. The OUTPUT is the flat set of
-/// `k` leaf centroids (the tree is scaffolding, discarded). Leaves are allocated to children proportional to
-/// population, which keeps final cell sizes balanced (anti-skew).
-///
-/// Distance is squared L2 throughout, matching `assignCentroid`. With `spherical = 1` the centroids are
-/// renormalized to unit length after every Lloyd update, which turns the same L2 argmin into an exact
-/// cosine/inner-product argmin (with `||c|| = 1` the `||c||^2` term is constant, so `argmin ||x-c||^2 ==
-/// argmax x.c == argmax cos(x, c)` for any `||x||`). Use it when the search path ranks by `cosineDistance`
-/// and the vectors are not L2-normalized at ingest; if they are normalized, plain L2 is already equivalent.
-///
-/// Training is parallelized over the thread pool shared with vector similarity index builds
-/// (`max_build_vector_similarity_index_thread_pool_size`), and the hot argmin/accumulate loops are
-/// runtime-dispatched to the widest SIMD the CPU supports.
+/// Squared L2 throughout, matching `assignCentroid`. `spherical = 1` renormalizes centroids to unit length,
+/// making the same L2 argmin an exact cosine argmin - for when the search ranks by `cosineDistance` and the
+/// vectors are not normalized at ingest. Training runs on the vector-index build pool; hot loops are SIMD.
 
 namespace DB
 {
@@ -86,13 +70,9 @@ using Float = Float32;
 
 DECLARE_MULTITARGET_CODE(
 
-/// For every point, find `argmin_c (||c||^2 - 2 x.c)`, which is `argmin_c ||x - c||^2` with the constant
-/// `||x||^2` dropped.
-///
-/// `ct` is COLUMN-major (`ct[j * k + c]` = coordinate `j` of centroid `c`). That layout is what makes this
-/// vectorize: the inner loop over centroids walks `k` contiguous floats scaled by a broadcast `x[j]`, and the
-/// `k` accumulators stay in registers for the whole `d` loop. In the hierarchical path `k == branching` (16 by
-/// default), so a tile is two AVX2 FMAs per dimension with no accumulator traffic at all.
+/// For every point, `argmin_c (||c||^2 - 2 x.c)` - that is `argmin_c ||x - c||^2` with the constant `||x||^2`
+/// dropped. `ct` is column-major (`ct[j * k + c]`), so the inner loop walks `k` contiguous floats against a
+/// broadcast `x[j]` and the `k` accumulators stay in registers. In the tree `k == branching`, 16 by default.
 void assignRows(
     const Float * __restrict pts, size_t n, size_t d,
     const Float * __restrict ct, const Float * __restrict cnorm, size_t k,
@@ -291,15 +271,9 @@ struct KMeansParams
     size_t num_threads = 1;
 };
 
-/// Renormalize centroids to unit length. With `||c|| = 1` the `||c||^2` term of the argmin is a constant, so
-/// the same L2 kernels become an exact cosine/inner-product argmin.
-///
-/// The `||c|| = 1` guarantee has to be absolute - a single zero-norm centroid would leave `assignCentroid`
-/// ranking against a direction-less centroid and quietly break the cosine equivalence the whole mode rests
-/// on. Zero-norm INPUT vectors are rejected at `add` time (cosine is undefined for them), so the only way to
-/// reach a zero here is exact cancellation of a cluster mean, e.g. a cluster of perfectly antipodal points.
-/// Substitute a fixed unit vector in that case: the direction is arbitrary, but no arbitrary choice is worse
-/// than a centroid that satisfies neither metric.
+/// Renormalize centroids to unit length, which turns the L2 argmin into an exact cosine argmin. The
+/// guarantee must be absolute or `assignCentroid` ends up ranking against a direction-less centroid.
+/// Zero-norm inputs are rejected at `add`, so a zero here is an exactly cancelling mean - substitute e0.
 void normalizeCentroids(Float * centroids, size_t k, size_t d)
 {
     for (size_t c = 0; c < k; ++c)
@@ -402,10 +376,8 @@ VectorWithMemoryTracking<Float> kMeansLloyd(
     VectorWithMemoryTracking<UInt64> counts(k);
     VectorWithMemoryTracking<UInt8> changed_flags(num_threads);
 
-    /// Per-thread accumulation buffers, so the mean update is parallel too - it is only 1/k of the assignment
-    /// work, but leaving it serial would cap the whole speedup by Amdahl at large thread counts. The buffers
-    /// are `k * d` doubles EACH, so cap the threads for this step by a memory budget rather than blowing up
-    /// on a large flat `k`.
+    /// Per-thread accumulation buffers so the mean update is parallel too; leaving it serial would cap the
+    /// speedup by Amdahl. Each is `k * d` doubles, so bound the threads for this step by a memory budget.
     static constexpr size_t ACCUM_BUDGET_BYTES = 256 * 1024 * 1024;
     const size_t accum_bytes_per_thread = k * d * sizeof(double) + k * sizeof(UInt64);
     const size_t accum_threads
@@ -485,16 +457,9 @@ VectorWithMemoryTracking<Float> kMeansLloyd(
     return centroids;
 }
 
-/// Split `k` leaves across the `B` children, proportional to population (largest-remainder).
-///
-/// Two constraints decide the shape, and getting either wrong silently loses centroids - the caller has no
-/// way to emit a leaf it was promised but cannot train:
-///   * a child with NO points gets NO leaves. k-means reseeds empty clusters while iterating, but the final
-///     bucketing pass can still leave a centroid owning nothing, and handing that child a leaf (as an
-///     unconditional `leaves(B, 1)` does) means `processTask` skips it and the leaf is gone.
-///   * no child gets more leaves than it has points, since it can only ever emit one centroid per point.
-/// Whatever those two rules displace is redistributed to children that still have headroom, so the total is
-/// exactly `k` whenever the node has at least `k` points at all.
+/// Split `k` leaves across the `B` children, proportional to population (largest-remainder). Two rules, and
+/// breaking either silently loses centroids: a child with no points gets no leaves, and no child gets more
+/// leaves than points. What that displaces goes to children with headroom, so the total is exactly `k`.
 VectorWithMemoryTracking<size_t> apportion(const VectorWithMemoryTracking<size_t> & pop, size_t k)
 {
     const size_t B = pop.size();
@@ -644,12 +609,9 @@ void processTask(
     for (size_t i = 0; i < n; ++i)
         ++pop[assign[i]];
 
-    /// If one child captured every point the split made no progress, and since `apportion` would then hand
-    /// that child all `k` leaves the recursion would reproduce this exact node forever. It happens on
-    /// degenerate input - a node whose points are all identical, say, where every centroid collapses onto the
-    /// same value. Emit a flat k-means here instead; `kMeansLloyd` clamps to `min(k, n)` and always
-    /// terminates. Past this check every child is strictly smaller than its parent, which is what bounds the
-    /// recursion.
+    /// If one child captured every point the split made no progress, and `apportion` would hand it all `k`
+    /// leaves - the walk would then reproduce this node forever (all-identical points, say). Emit a flat
+    /// k-means instead. Past this check every child is strictly smaller than its parent, bounding the walk.
     size_t non_empty = 0;
     for (size_t c = 0; c < br; ++c)
         non_empty += (pop[c] > 0);
@@ -685,13 +647,9 @@ void processTask(
     }
 }
 
-/// Level-by-level (breadth-first) walk of the training tree, appending the `k` leaf centroids to `out`.
-///
-/// Breadth-first rather than recursive because the two levels of parallelism live in different regimes and
-/// must not nest: near the root there are few nodes but each holds most of the points, so the win is
-/// splitting ROWS across threads; deep in the tree there are thousands of tiny nodes, so the win is running
-/// NODES concurrently. Nesting them (a pooled task waiting on sub-tasks from the same pool) can deadlock, so
-/// each level picks exactly one regime.
+/// Breadth-first walk of the training tree, appending the `k` leaf centroids to `out`. Not recursive: near
+/// the root a few nodes hold most points so ROWS split across threads, deep down thousands of tiny NODES run
+/// concurrently, and nesting the two would deadlock the pool - so each level picks exactly one regime.
 void trainHierarchical(
     const Float * sample, size_t sample_rows, size_t d, size_t k, size_t branching,
     size_t iters, bool spherical, UInt64 seed, PaddedPODArray<Float> & out)
@@ -766,18 +724,13 @@ struct HierarchicalKMeansData
     UInt64 seen = 0;
     UInt32 dim = 0;
 
-    /// `pcg32_fast` rather than `pcg64` specifically because this generator crosses the serialization
-    /// boundary: `IO/Operators_pcg_random.h` can round-trip it, while `pcg64` carries a 128-bit state that
-    /// pcg's own stream operators cannot emit here (`unsigned __int128` has no `ostream` overload). The
-    /// training RNG in `insertResultInto` is never serialized and stays `pcg64`.
+    /// `pcg32_fast` not `pcg64` because this generator is serialized: `IO/Operators_pcg_random.h` round-trips
+    /// it, while pcg's stream operators cannot emit `pcg64`'s 128-bit state. The training RNG stays `pcg64`.
     pcg32_fast rng; /// seeded in create()
 
     /// Uniform in `[0, limit)`. One 32-bit draw does not cover a `limit` past 2^32, which `seen` reaches on a
-    /// large enough stream, so widen with a second draw exactly as `ReservoirSampler` does.
-    ///
-    /// Every caller passes a value it has just established is positive, but none of that survives across the
-    /// call boundary for the static analyzer. Guard rather than suppress: the branch is perfectly predicted
-    /// and it removes the divide-by-zero as a class instead of asserting it cannot happen.
+    /// long stream, so widen with a second draw as `ReservoirSampler` does. The `limit == 0` guard is for the
+    /// analyzer, which cannot see that every caller has just established the value is positive.
     UInt64 genRandom(UInt64 limit)
     {
         if (limit == 0)
@@ -815,12 +768,9 @@ struct HierarchicalKMeansData
         }
     }
 
-    /// Merge two reservoirs into a sample of their union.
-    ///
-    /// Every branch below has to make a RANDOM decision about which side a kept row comes from. An earlier
-    /// version fixed the per-side counts to their expectation (`cap * seen / total_seen`), which is not a
-    /// uniform merge and is not even order-independent: with `cap = 1` and two one-row states the split is
-    /// `floor(1 * 1 / 2) = 0`, so the left sample was always dropped and the right one always kept.
+    /// Merge two reservoirs into a uniform sample of their union. Every branch must decide RANDOMLY which
+    /// side a kept row comes from: fixing the per-side count to its expectation is neither uniform nor even
+    /// order-independent (`cap = 1`, two one-row states -> `floor(1*1/2) = 0` always drops the left one).
     void merge(const HierarchicalKMeansData & other, UInt64 cap)
     {
         if (other.dim == 0)
@@ -870,18 +820,10 @@ struct HierarchicalKMeansData
             return;
         }
 
-        /// Both sides overflowed the reservoir, so each holds exactly `cap` rows.
-        ///
-        /// How many of the `cap` result slots come from `other` is a HYPERGEOMETRIC draw - `cap` items taken
-        /// from the `seen + other.seen` combined stream, of which `other.seen` belong to `other`. Deciding it
-        /// per slot with an independent coin gets the count distribution wrong (binomial, so `cap = 2` with
-        /// `seen = other.seen = 3` yields P(both from other) = 1/4 instead of the correct 1/5), and picking
-        /// the row WITH replacement can emit the same underlying row twice, which a size-`cap` sample of the
-        /// union can never do.
-        ///
-        /// Drawn by urn simulation, which is exact and needs no floating point: `genRandom(remaining_total)
-        /// < remaining_b` is precisely `remaining_b / remaining_total`. It costs O(cap), against the
-        /// O(cap * d) the row copying below already costs.
+        /// Both sides overflowed, so each holds exactly `cap` rows. How many slots come from `other` is a
+        /// HYPERGEOMETRIC draw over the combined stream - a per-slot coin gives the wrong (binomial) count,
+        /// and picking rows with replacement can duplicate one. The urn simulation below is exact and O(cap).
+        /// See https://en.wikipedia.org/wiki/Hypergeometric_distribution
         UInt64 take_b = 0;
         {
             UInt64 remaining_total = seen + other.seen;
@@ -944,6 +886,11 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Aggregate function hierarchicalKMeans requires at least the parameter k");
 
+        if (params.size() > 6)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Aggregate function hierarchicalKMeans accepts at most 6 parameters "
+                "(k, branching, max_iter, sample_cap, seed, spherical), got {}", params.size());
+
         k          = params[0].safeGet<UInt64>();
         branching  = params.size() > 1 ? params[1].safeGet<UInt64>() : 16;
         max_iter   = params.size() > 2 ? params[2].safeGet<UInt64>() : 20;
@@ -951,10 +898,14 @@ public:
         seed       = params.size() > 4 ? params[4].safeGet<UInt64>() : 0;
         spherical  = params.size() > 5 && params[5].safeGet<UInt64>() != 0;
 
+        /// Reject rather than clamp. Silently substituting `branching = 2` for a caller who asked for 1 trains
+        /// something other than what was requested, which hides typos and makes experiments irreproducible.
         if (k == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "hierarchicalKMeans: k must be greater than 0");
-        branching = std::max<size_t>(branching, 2);
-        max_iter = std::max<size_t>(max_iter, 1);
+        if (branching < 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "hierarchicalKMeans: branching must be at least 2, got {}", branching);
+        if (max_iter == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "hierarchicalKMeans: max_iter must be greater than 0");
         if (sample_cap == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "hierarchicalKMeans: sample_cap must be greater than 0");
 

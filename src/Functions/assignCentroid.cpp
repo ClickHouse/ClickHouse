@@ -22,19 +22,17 @@
 #include <mutex>
 #include <utility>
 
-/// `assignCentroid(vec, centroids)` -> UInt32 cluster id: the index of the nearest (L2) centroid to `vec`.
+/// assignCentroid(vec, centroids) -> UInt32 cluster id: the index of the nearest (L2) centroid to vec.
 ///
 /// The second argument is a CONSTANT and may be either:
-///   * `Array(Array(Float32))` - the centroids inline. The returned id is the position in this array
-///     (matching the usual `arrayJoin(hierarchicalKMeans(...))` + `rowNumberInAllBlocks()` convention).
-///   * `String` - the name of a Dictionary holding columns (`cid` UInt*, `vec` Array(Float32)). The centroids
-///     are read once and cached (per dictionary version); the returned id is the dictionary's `cid`.
+///   * Array(Array(Float32)) - the centroids inline. The returned id is the position in this array
+///     (matching the usual arrayJoin(hierarchicalKMeans(...)) + rowNumberInAllBlocks() convention).
+///   * String - the name of a Dictionary holding columns (cid UInt*, vec Array(Float32)). The centroids
+///     are read once and cached (per dictionary version); the returned id is the dictionary's cid.
 ///
 /// Both forms share one kernel. The centroids are materialized into a column-major matrix ONCE per call
 /// (from the const value, or from the cached dictionary read), then every row in the block is scored against
-/// all centroids via the reformulation argmin_c ||x - c||^2 = argmin_c(||c||^2 - 2 x.c). Because the second
-/// argument is a `ColumnConst`, the matrix is never broadcast per row (unlike an `arrayMap` over a const array
-/// in SQL, which materializes the array for every row and blows up memory).
+/// all centroids via the reformulation argmin_c ||x - c||^2 = argmin_c(||c||^2 - 2 x.c).
 
 namespace DB
 {
@@ -47,50 +45,35 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-/// Named (not anonymous) so the `TargetSpecific::*` namespaces the macro generates cannot collide with
+/// Named (not anonymous) so the TargetSpecific::* namespaces the macro generates cannot collide with
 /// identically named kernels from another translation unit.
 namespace AssignCentroidImpl
 {
 namespace
 {
 
-/// GEMM microkernel shape. `ROW_BLOCK * COL_BLOCK` accumulators must fit in the vector register file:
-/// 6 x 16 floats is 12 YMM registers on AVX2 (of 16) or 6 ZMM on AVX-512, leaving enough for the operands.
-/// Keeping the accumulators in REGISTERS is the entire point - an accumulator block that lives in L1 instead
-/// pays a load and a store per FMA and tops out around a quarter of FP peak no matter how well it is tiled.
+/// Register-blocking shape: 6 x 16 accumulators is 12 YMM registers on AVX2 (of 16), leaving the rest for
+/// operands. They must stay in registers - an L1-resident accumulator costs a load and a store per FMA.
+/// See https://en.wikipedia.org/wiki/Loop_nest_optimization
 constexpr size_t ROW_BLOCK = 6;
 constexpr size_t COL_BLOCK = 16;
 
 DECLARE_MULTITARGET_CODE(
 
-/// Score `n` rows against ONE packed tile of `width` centroids, keeping the running best score/id per row.
+/// Score n rows against ONE packed tile of width centroids, keeping the running best score/id per row.
+/// First check build() and assignBlock() to understand how the initial preparation is done.
 ///
-/// This is a GEMM (rows x dim times dim x width), not a sequence of GEMVs, and the distinction is the entire
-/// performance story at large `k`. A per-row pass streams the whole centroid tile for every single vector, so
-/// with a 32768 x 768 centroid set (~100 MB) the kernel is pure memory bandwidth and runs nowhere near FP
-/// peak - measured at ~2.6 ms per vector, which is almost exactly the time to read 100 MB from L3/DRAM.
-/// Blocking `ROW_BLOCK` rows together cuts that traffic by the same factor: the arithmetic per centroid float
-/// loaded goes from 1 MAC to `ROW_BLOCK` MACs.
-///
-/// `pack` is column-major within the tile (`pack[j * width + c]`), so the innermost loop is a contiguous FMA
-/// over `COL_BLOCK` centroids against a broadcast `x[j]`. Both inner extents are compile-time constants, which
-/// is what lets clang fully unroll them and keep `acc` in registers for the whole `dim` loop.
-///
-/// Loop order is row-block outermost so the block's `ROW_BLOCK * dim` floats stay in L1 while every centroid
-/// sub-block streams past; the centroid tile is then read once per row block rather than once per row.
-///
-/// `width` is a multiple of `COL_BLOCK` - the caller pads the tile with zero centroids whose `cnorm` is
-/// infinite, so the padding lanes can never win the argmin and no scalar remainder loop is needed.
-///
-/// Accumulation order per (row, centroid) pair is unchanged, so results are bit-identical to the per-row form.
-///
-/// All rows are known to have exactly `dim` elements (validated by the caller), so row `r` starts at
-/// `r * dim` and the offsets array does not need to be touched in the hot loop.
+/// A blocked GEMM rather than a sequence of GEMVs: scoring one row at a time re-reads the whole centroid tile
+/// per vector, which at 32768 x 768 (~100 MB) is bandwidth-bound; blocking ROW_BLOCK rows cut it 3.5x.
+/// See https://en.wikipedia.org/wiki/Matrix_multiplication_algorithm (the cache-blocked algorithm), or
+/// Goto & van de Geijn, "Anatomy of High-Performance Matrix Multiplication", ACM TOMS 34(3), 2008, which is
+/// where this microkernel shape comes from.
 void scoreTile(
     const Float32 * __restrict vec_data, size_t n, size_t dim,
     const Float32 * __restrict pack, const Float32 * __restrict cnorm_tile, const UInt32 * __restrict ids_tile,
     size_t width, Float32 * __restrict best_score, UInt32 * __restrict res)
 {
+    /// Compute the score for this row and update best so far
     auto reduce_row = [&](size_t row, const Float32 * __restrict a, size_t c0, size_t count)
     {
         Float32 bs = best_score[row];
@@ -109,13 +92,13 @@ void scoreTile(
     };
 
     size_t row = 0;
-    for (; row + ROW_BLOCK <= n; row += ROW_BLOCK)
+    for (; row + ROW_BLOCK <= n; row += ROW_BLOCK) /// 6 incoming vectors at a time
     {
-        for (size_t c0 = 0; c0 < width; c0 += COL_BLOCK)
+        for (size_t c0 = 0; c0 < width; c0 += COL_BLOCK) /// 16 centroids at a time
         {
             Float32 acc[ROW_BLOCK][COL_BLOCK] = {};
 
-            for (size_t j = 0; j < dim; ++j)
+            for (size_t j = 0; j < dim; ++j) /// one per dimension
             {
                 const Float32 * __restrict col = pack + j * width + c0;
                 for (size_t r = 0; r < ROW_BLOCK; ++r)
@@ -153,12 +136,10 @@ void scoreTile(
 
 ) // DECLARE_MULTITARGET_CODE
 
-/// Runtime dispatch to the widest ISA the CPU supports. Where multitarget code is disabled (ARM, and any
-/// build with `ENABLE_MULTITARGET_CODE=OFF`) only `Default` exists, which is why the kernel above is written
-/// as plain contiguous loops the compiler can auto-vectorize on its own.
-///
-/// Note this is SIMD only, deliberately: `executeImpl` already runs concurrently on many pipeline threads,
-/// one per block, so spawning threads inside it would just oversubscribe.
+/// Runtime dispatch to the widest ISA the CPU supports. Where multitarget code is off (ARM, or
+/// ENABLE_MULTITARGET_CODE=OFF) only Default exists, hence the plain loops above that auto-vectorize.
+/// SIMD only, deliberately: executeImpl already runs on one pipeline thread per block, so threading here
+/// would only oversubscribe.
 void scoreTile(
     const Float32 * vec_data, size_t n, size_t dim,
     const Float32 * pack, const Float32 * cnorm_tile, const UInt32 * ids_tile,
@@ -190,11 +171,14 @@ struct CentroidMatrix
 {
     size_t k = 0;
     size_t dim = 0;
-    VectorWithMemoryTracking<Float32> ct;      /// column-major: ct[j * k + c] = coordinate j of centroid c
-    VectorWithMemoryTracking<Float32> cnorm;   /// ||c||^2
+
+    /// ct is the k centroids laid out in column-major form : ct[j * k + c] = coordinate j of centroid c
+    VectorWithMemoryTracking<Float32> ct;
+
+    VectorWithMemoryTracking<Float32> cnorm;   /// ||c||^2 - squared norm of the k centroids
     VectorWithMemoryTracking<UInt32> ids;      /// cluster id returned when centroid c is nearest
 
-    /// `rows` is row-major (k * dim). `id_values` (optional) gives the id per centroid; default is 0..k-1.
+    /// build() is called only once per block of INSERT. rows is the array of centroids in row-major form
     void build(const Float32 * rows, size_t k_, size_t dim_, const UInt32 * id_values)
     {
         k = k_;
@@ -216,16 +200,15 @@ struct CentroidMatrix
         }
     }
 
-    /// Assign every vector in a block to its nearest-centroid id, writing ids into `res` (already sized `n`).
-    ///
-    /// Tiled over centroids: for each tile of `tile` centroids we pack them contiguously once, then score ALL `n`
-    /// vectors against that cache-resident tile before moving on. This streams the (multi-MB) centroid matrix from
-    /// memory ONCE per block instead of once per vector - the naive per-vector loop re-reads all `k * dim` floats
-    /// for every row, which makes a large-`k` scan memory-bandwidth-bound and kills thread scaling. Same math as
-    /// before: argmin_c ||x - c||^2 = argmin_c(||c||^2 - 2 x.c).
+    /// Assign every vector in a block to its nearest-centroid id, writing ids into res (already sized n).
+    /// Worked example : a block has three rows: [[1,2], [3,4,5], [6]]. ClickHouse stores:
+    /// vec_data = [1, 2, 3, 4, 5, 6]     ← every row's floats, concatenated
+    /// offsets  = [2, 5, 6]              ← where each row ENDS (exclusive)
+    /// vec_data is the flat float buffer for the whole block — all rows vectors laid end to end
+    /// offsets is one number per row: the end position of that row's slice.
     void assignBlock(const Float32 * vec_data, const ColumnArray::Offsets & offsets, size_t n, PaddedPODArray<UInt32> & res) const
     {
-        for (size_t row = 0; row < n; ++row) /// validate dimensions up front
+        for (size_t row = 0; row < n; ++row) /// validate dimensions up front - the hot loop in GEMM needs that
         {
             size_t start = row ? offsets[row - 1] : 0;
             size_t len = offsets[row] - start;
@@ -238,38 +221,48 @@ struct CentroidMatrix
         for (size_t row = 0; row < n; ++row)
             res[row] = ids.empty() ? 0 : ids[0];
 
-        /// Two-level blocking. The tile is sized so `tile * dim * 4B` stays around L2 (it is re-read once per
-        /// row block), which in turn keeps the `ROW_BLOCK * tile` accumulators inside L1. A fixed tile would
-        /// get this wrong at one end or the other: 1024 centroids is 3 MB at dim=768 (spills L2) but only
-        /// 512 KB at dim=128 (leaves L2 half empty).
+        /// Worked example to understand a TILE :
+        /// With k=32768 and dim=768, the full centroid matrix is 32768 × 768 × 4 B = 100 MB.
+        /// Every input vector must be compared against all of it. Sweep the whole 100 MB once
+        /// per vector and you're reading from DRAM the entire time.
+        /// So instead: grab 'tile' centroids, score all n rows against that slice, then move to
+        /// the next slice. The slice is small enough to live in L2 cache. Note the tile is about
+        /// L2 cache and ROW_BLOCK / COL_BLOCK in another routine is about registers.
+        ///
+        /// tile = 512 KB ÷ (768 × 4 B) = 170, rounded down to a multiple of 16 → 160 centroids per slice
         static constexpr size_t L2_TILE_BYTES = 512 * 1024;
         constexpr size_t CB = AssignCentroidImpl::COL_BLOCK;
         const size_t tile = std::clamp<size_t>(
             (L2_TILE_BYTES / (dim * sizeof(Float32))) / CB * CB, CB, 1024);
 
         VectorWithMemoryTracking<Float32> pack(tile * dim);
-        /// Padded to a whole number of `COL_BLOCK`s so the kernel needs no scalar remainder loop. The padding
-        /// centroids are all-zero with an infinite `cnorm`, so they can never win the argmin.
         VectorWithMemoryTracking<Float32> cnorm_tile(tile);
         VectorWithMemoryTracking<UInt32> ids_tile(tile);
+
+        /// Note the tile increment. This loop will run for 32768/160 = 205 times for the example.
         for (size_t c0 = 0; c0 < k; c0 += tile)
         {
             const size_t width = std::min(tile, k - c0);
             const size_t padded = (width + CB - 1) / CB * CB;
 
-            for (size_t j = 0; j < dim; ++j) /// pack the tile contiguously (reads ct once per tile)
+            for (size_t j = 0; j < dim; ++j)
             {
-                /// `.data()` arithmetic rather than `&pack[...]`: the end of the last row is one past the end
-                /// of the buffer, and forming that as a reference trips the libc++ hardening bounds check.
                 Float32 * pack_row = pack.data() + j * padded;
+
+                /// ct has been laid out in column major form in build(). We will copy
+                /// 160 floats (1 dimension of each of the 160 centroids in the tile)
                 std::copy(&ct[j * k + c0], &ct[j * k + c0] + width, pack_row);
-                std::fill(pack_row + width, pack_row + padded, 0.0f);
+
+                std::fill(pack_row + width, pack_row + padded, 0.0f); /// if any padding
             }
+            /// Lay out the squared-norms and ids also for tile
             std::copy(&cnorm[c0], &cnorm[c0] + width, cnorm_tile.begin());
             std::fill(cnorm_tile.begin() + width, cnorm_tile.begin() + padded, std::numeric_limits<Float32>::infinity());
             std::copy(&ids[c0], &ids[c0] + width, ids_tile.begin());
             std::fill(ids_tile.begin() + width, ids_tile.begin() + padded, 0u);
 
+            /// Example: if vec_data is an INSERT block of 1000 vectors, we will score the 1000
+            /// against 160 centroids in each iteration and keep track in best_score & res
             AssignCentroidImpl::scoreTile(
                 vec_data, n, dim, pack.data(), cnorm_tile.data(), ids_tile.data(), padded,
                 best_score.data(), res.data());
@@ -299,9 +292,7 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} requires 2 arguments: assignCentroid(vec, centroids | dict_name)", name);
 
-        /// The kernel reads the nested column as `ColumnFloat32`, so `Float32` is required exactly - accepting any
-        /// float here would reinterpret e.g. `Float64` payload as `Float32` and silently produce wrong ids.
-        /// Note that array literals such as `[1.0, 2.0]` are `Array(Float64)` and must be CAST explicitly.
+        /// The kernel reads the nested column as ColumnFloat32, so Float32 is required exactly
         const auto * vec_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
         if (!vec_type || !WhichDataType(vec_type->getNestedType()).isFloat32())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -317,6 +308,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        /// Resolve nothing for an empty block. A distributed initiator can legitimately see zero rows with no
+        /// local copy of the dictionary, and reading it here would throw where an empty column is the answer.
+        if (input_rows_count == 0)
+            return ColumnUInt32::create();
+
         std::shared_ptr<const CentroidMatrix> matrix;
         if (isString(arguments[1].type))
         {
@@ -343,8 +339,6 @@ public:
     }
 
 private:
-    /// Holds the context and performs the `dictGet` access check on first use. Reusing it (instead of keeping a
-    /// bare `ContextPtr`) is what the style check asks for, and it also gives us the access check for free.
     mutable FunctionDictHelper dict_helper;
     mutable std::mutex cache_mutex;
     mutable const IDictionary * cached_dict_ptr = nullptr; /// identity changes on dictionary reload
@@ -394,7 +388,7 @@ private:
         return matrix;
     }
 
-    /// Read the named dictionary once (columns `cid`, `vec`), cache the matrix until the dictionary reloads.
+    /// Read the named dictionary once (columns cid, vec), cache the matrix until the dictionary reloads.
     std::shared_ptr<const CentroidMatrix> getDictionaryMatrix(const String & dict_name) const
     {
         auto dictionary = dict_helper.getDictionary(dict_name);
@@ -405,7 +399,7 @@ private:
                 return cached_matrix;
         }
 
-        /// Full-read the dictionary (same mechanism the `dictionary()` table function uses).
+        /// Full-read the dictionary (same mechanism the dictionary() table function uses).
         QueryPipeline pipeline(dictionary->read(Names{"cid", "vec"}, /*max_block_size=*/65536, /*num_streams=*/1));
         PullingPipelineExecutor executor(pipeline);
 
@@ -413,11 +407,20 @@ private:
         Block block;
         while (executor.pull(block))
         {
-            const auto & cid_col = block.getByName("cid").column;
+            const auto & cid_with_type = block.getByName("cid");
+
+            /// `getUInt` accepts any arithmetic column, so a `Float64` or `Int64` key would be silently cast
+            /// and we would hand back an id the dictionary never stored. Check the type, not just the range.
+            if (!WhichDataType(cid_with_type.type).isNativeUInt())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "assignCentroid: attribute `cid` of dictionary {} must be an unsigned integer, got {}",
+                    dict_name, cid_with_type.type->getName());
+
+            const auto & cid_col = cid_with_type.column;
             const auto & vec_col = block.getByName("vec");
 
             /// The dictionary type is only known here (the name is a runtime string), and the kernel below reads
-            /// the nested column as `ColumnFloat32`, so reject anything else instead of reinterpreting the payload.
+            /// the nested column as ColumnFloat32, so reject anything else instead of reinterpreting the payload.
             const auto * vec_type = typeid_cast<const DataTypeArray *>(vec_col.type.get());
             if (!vec_type || !WhichDataType(vec_type->getNestedType()).isFloat32())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -438,8 +441,6 @@ private:
         if (centroids.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "assignCentroid: dictionary {} produced no centroids", dict_name);
 
-        /// Sort by cid so the row order is stable/inspectable (ids are stored explicitly, so order is not required
-        /// for correctness).
         std::sort(centroids.begin(), centroids.end(), [](const auto & a, const auto & b) { return a.first < b.first; });
 
         size_t k = centroids.size();
@@ -457,8 +458,7 @@ private:
                     dict_name, centroids[c].first, centroids[c].second.size(), dim);
             std::copy(centroids[c].second.begin(), centroids[c].second.end(), &row_major[c * dim]);
 
-            /// The result type is `UInt32`, so a wider dictionary key would wrap and return a different
-            /// centroid id than the one that was matched. Reject it instead of narrowing silently.
+            /// The result type is exactly UInt32 - reject anything greater
             if (centroids[c].first > std::numeric_limits<UInt32>::max())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "assignCentroid: dictionary {} has cid {} which exceeds the UInt32 range of the result",
