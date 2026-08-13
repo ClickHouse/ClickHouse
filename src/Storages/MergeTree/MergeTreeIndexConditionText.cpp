@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 
+#include "config.h"
+
 #include <set>
 #include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -127,12 +129,14 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     const ActionsDAG::Node * predicate,
     ContextPtr context_,
     const Block & index_sample_block,
+    const std::optional<String> & normalized_index_column_name_,
     TokenizerPtr tokenizer_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
     bool has_positions_)
     : WithContext(context_)
     , header(index_sample_block)
+    , normalized_index_column_name(normalized_index_column_name_)
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
     , preprocessor(preprocessor_)
@@ -891,10 +895,11 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     auto direct_read_mode = getDirectReadMode(function_name);
 
     auto index_column_name = index_column_node.getColumnName();
-    bool has_index_column = header.has(index_column_name);
-    bool has_map_keys_column = header.has(fmt::format("mapKeys({})", index_column_name));
-    bool has_map_values_column = header.has(fmt::format("mapValues({})", index_column_name));
+    bool has_index_column = hasIndexForColumn(index_column_name);
+    bool has_map_keys_column = hasIndexForColumn(fmt::format("mapKeys({})", index_column_name));
+    bool has_map_values_column = hasIndexForColumn(fmt::format("mapValues({})", index_column_name));
 
+    bool candidate_for_exact_mode = true;
     if (traverseMapElementValueNode(index_column_node, value_field))
     {
         has_index_column = true;
@@ -902,11 +907,13 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// If we use index on `mapValues(m)` for `func(m['key'], 'value')`, we can use direct read only as a hint
         /// because we have to match the specific key to the value and therefore execute a real filter.
         direct_read_mode = getHintOrNoneMode();
+        candidate_for_exact_mode = false;
     }
     else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues"))
     {
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
+        candidate_for_exact_mode = false;
         bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens";
 
         /// Convert non-string values to their text representation to match the format produced by `JSONAllValues`.
@@ -930,6 +937,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             {
                 has_index_column = true;
                 direct_read_mode = getHintOrNoneMode();
+                candidate_for_exact_mode = false;
             }
         }
     }
@@ -1175,7 +1183,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             SplitByNonAlphaTokenizer::getExternalName(),
             SplitByStringTokenizer::getExternalName(),
             AsciiCJKTokenizer::getExternalName(),
+#if USE_ICU
             IcuTokenizer::getExternalName(),
+#endif
             NgramsTokenizer::getExternalName(),
         };
         if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))
@@ -1265,10 +1275,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             auto patterns = stringLikeToPatterns(value_field, false);
             if (patterns.size() == 1)
             {
+                const auto pattern_read_mode = candidate_for_exact_mode ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+
                 out.function = RPNElement::FUNCTION_LIKE;
                 out.text_search_queries.emplace_back(
                     std::make_shared<TextSearchQuery>(
-                        function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact, VectorWithMemoryTracking<String>(), std::move(patterns)));
+                        function_name, TextSearchMode::Any, pattern_read_mode, VectorWithMemoryTracking<String>(), std::move(patterns)));
                 return true;
             }
         }
@@ -1294,10 +1306,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         auto patterns = stringLikeToPatterns(value_field, true);
         if (patterns.size() == 1)
         {
+            const auto pattern_read_mode = candidate_for_exact_mode ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+
             out.function = RPNElement::FUNCTION_LIKE;
             out.text_search_queries.emplace_back(
                 std::make_shared<TextSearchQuery>(
-                    function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact, VectorWithMemoryTracking<String>(), std::move(patterns)));
+                    function_name, TextSearchMode::Any, pattern_read_mode, VectorWithMemoryTracking<String>(), std::move(patterns)));
             return true;
         }
         return false;
@@ -1550,7 +1564,7 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
         if (function.getArgumentsSize() == 2 && function.getFunctionName() == "arrayElement")
         {
             const auto column_name = function.getArgumentAt(0).getColumnName();
-            return header.has(fmt::format("mapValues({})", column_name));
+            return hasIndexForColumn(fmt::format("mapValues({})", column_name));
         }
         return false;
     }
@@ -1651,7 +1665,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     auto has_index = [&](const RPNBuilderTreeNode & node)
     {
-        return header.has(node.getColumnName())
+        return hasIndexForColumn(node.getColumnName())
             || hasIndexForMapElementValue(node)
             || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
     };
