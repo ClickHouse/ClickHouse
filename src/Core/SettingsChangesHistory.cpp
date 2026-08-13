@@ -88,6 +88,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_query_deduplication", false, false, "The setting is obsolete, the feature has been removed."},
             {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
             {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
+            {"allow_experimental_database_s3_tables", false, false, "New setting to enable experimental database S3 tables (AWS Iceberg REST catalog)."},
             {"object_storage_cluster_join_mode", "allow", "allow", "New setting"},
             {"export_merge_tree_partition_task_timeout_seconds", "3600", "86400", "Increase default value to make it more realistic"},
             {"export_merge_tree_part_allow_lossy_cast", false, false, "New setting to gate lossy casts in EXPORT PART/PARTITION behind explicit acknowledgment"},
@@ -156,6 +157,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
+            {"analyzer_compatibility_apply_final_to_all_joined_tables", true, true, "New compatibility setting controlling whether FINAL on the left-most table of a JOIN is applied to the other joined tables. Introduced with default true (the old behavior) for backports to versions before 26.6."},
             {"max_bytes_before_external_join", 0, 0, "New setting to control automatic spilling of hash joins to disk. Non-zero value enables spilling and sets the byte threshold."},
             {"allow_iceberg_remove_orphan_files", false, false, "New setting to gate Iceberg orphan file removal"},
             {"iceberg_orphan_files_older_than_seconds", 259200, 259200, "New setting for default orphan file age threshold"},
@@ -474,9 +476,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_database_glue_catalog", false, true, "Turned ON by default for Antalya (alias)."},
             // {"input_format_parquet_use_metadata_cache", true, true, "New setting, turned ON by default"}, // https://github.com/Altinity/ClickHouse/pull/586
             {"iceberg_timezone_for_timestamptz", "UTC", "UTC", "New setting."},
-            {"object_storage_remote_initiator", false, false, "New setting."},
             {"allow_experimental_iceberg_read_optimization", true, true, "New setting."},
-            {"object_storage_cluster_join_mode", "allow", "allow", "New setting"},
             {"lock_object_storage_task_distribution_ms", 500, 500, "New setting."},
             {"allow_retries_in_cluster_requests", false, false, "New setting"},
             // {"allow_experimental_export_merge_tree_part", false, true, "Turned ON by default for Antalya."},
