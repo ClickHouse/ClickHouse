@@ -6935,7 +6935,13 @@ size_t MergeTreeData::getNumberOfOutdatedPartsWithExpiredRemovalTime() const
 
 std::pair<size_t, size_t> MergeTreeData::getMaxPartsCountAndSizeForPartitionWithState(DataPartState state) const
 {
-    auto lock = readLockParts();
+    /// Take a snapshot of parts under the shared lock, then compute outside the lock
+    /// to reduce lock hold time under high-concurrency inserts.
+    DataPartsVector parts_snapshot;
+    {
+        auto lock = readLockParts();
+        parts_snapshot = getDataPartsVectorForInternalUsage({state}, lock);
+    }
 
     size_t cur_parts_count = 0;
     size_t cur_parts_size = 0;
@@ -6944,7 +6950,7 @@ std::pair<size_t, size_t> MergeTreeData::getMaxPartsCountAndSizeForPartitionWith
 
     const String * cur_partition_id = nullptr;
 
-    for (const auto & part : getDataPartsStateRange(state))
+    for (const auto & part : parts_snapshot)
     {
         if (!cur_partition_id || part->info.getPartitionId() != *cur_partition_id)
         {
@@ -7061,7 +7067,20 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             dead_blobs_over_threshold = dead_blobs_count - dead_blobs_to_delay_insert + 1;
     }
 
-    auto [parts_count_in_partition, size_of_partition] = getMaxPartsCountAndSizeForPartition();
+    size_t parts_count_in_partition = 0;
+    size_t size_of_partition = 0;
+    {
+        /// Smallest threshold that could trigger a throw or delay.
+        /// A zero parts_to_throw_insert means "throw on any part", so treat it as 1 to never skip.
+        UInt64 min_enabled_threshold = active_parts_to_throw_insert > 0 ? active_parts_to_throw_insert : 1;
+        if (active_parts_to_delay_insert > 0)
+            min_enabled_threshold = std::min(min_enabled_threshold, static_cast<UInt64>(active_parts_to_delay_insert));
+
+        /// parts_count_in_total is an O(1) upper bound on any single partition's part count,
+        /// so if it is below the threshold we can skip the O(N) per-partition scan.
+        if (parts_count_in_total >= min_enabled_threshold)
+            std::tie(parts_count_in_partition, size_of_partition) = getMaxPartsCountAndSizeForPartition();
+    }
     size_t average_part_size = parts_count_in_partition ? size_of_partition / parts_count_in_partition : 0;
     size_t active_parts_over_threshold = 0;
 
