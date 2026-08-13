@@ -14,7 +14,7 @@ Con la optimización de prewhere, primero solo se leen las columnas necesarias p
   ## Control de PREWHERE manualmente
 </div>
 
-La cláusula filtra la expresión de una única tabla a la que se aplica, normalmente mientras se lee esa tabla. Cuando se controla manualmente `PREWHERE` para condiciones de filtrado que se usan en una minoría de las columnas de la consulta, pero que ofrecen un filtrado de datos eficaz, se reduce el volumen de datos que se debe leer.
+La cláusula tiene el mismo significado que la cláusula `WHERE`. La diferencia está en qué datos se leen de la tabla. Cuando se controla manualmente `PREWHERE` para condiciones de filtrado que se usan en una minoría de las columnas de la consulta, pero que ofrecen un filtrado de datos eficaz, se reduce el volumen de datos que se debe leer.
 
 Una consulta puede especificar `PREWHERE` y `WHERE` simultáneamente. En este caso, `PREWHERE` precede a `WHERE`.
 
@@ -24,12 +24,6 @@ Si la consulta tiene el modificador [FINAL](/es/reference/statements/select/from
 
 <Note>
   La sección `PREWHERE` se ejecuta antes de `FINAL`, por lo que los resultados de las consultas `FROM ... FINAL` pueden verse sesgados al usar `PREWHERE` con campos que no están en la sección `ORDER BY` de una tabla.
-</Note>
-
-<Note>
-  `PREWHERE` pertenece a una expresión de tabla única, por lo que filtra esa entrada antes de realizar un [JOIN](/es/reference/statements/select/join). `WHERE` se evalúa sobre el resultado de la unión, y el optimizador puede moverlo debajo de la unión cuando devuelve las mismas filas. Por lo tanto, la misma condición puede dar resultados diferentes en las dos cláusulas.
-
-  Por ejemplo, `SELECT a.id FROM a LEFT JOIN b ON a.id = b.x PREWHERE b.y > 50` equivale a `SELECT a.id FROM a LEFT JOIN (SELECT * FROM b WHERE y > 50) AS b ON a.id = b.x`, y no a la misma consulta con `WHERE b.y > 50`: las filas de `b` se eliminan antes de que se ejecute la unión, por lo que las filas de `a` que pierden su coincidencia se devuelven en lugar de descartarse, con las columnas de `b` rellenadas según especifica [join&#95;use&#95;nulls](/es/reference/settings/session-settings/join#join_use_nulls).
 </Note>
 
 <div id="limitations">
