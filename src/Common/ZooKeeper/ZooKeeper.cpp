@@ -1462,9 +1462,9 @@ void ZooKeeper::deleteEphemeralNodeIfContentMatches(const std::string & path, st
         if (!eph_node_disappeared->tryWait(timeout_ms))
             throw DB::Exception(
                 DB::ErrorCodes::ABORTED,
-                "Ephemeral node {} still exists after {}s, probably it's owned by someone else. "
-                "Either session_timeout_ms in client's config is different from server's config or it's a bug. "
-                "Node data: '{}'",
+                "Ephemeral node {} still exists after {}s and is not owned by us: most likely another session "
+                "still holds it, or a previous session's node has not expired yet. It can also mean that "
+                "session_timeout_ms in the client's config differs from the server's. Node data: '{}'",
                 path,
                 timeout_ms / 1000,
                 content);
