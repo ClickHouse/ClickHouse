@@ -465,6 +465,9 @@ using NameToDataType = std::map<String, DataTypePtr>;
 NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
 {
     std::unordered_map<String, NamesAndTypesList> nested;
+    /// A subcolumn entry's `type_in_storage` is the type in metadata, while a plain entry carries the
+    /// type its caller resolved, which for a part being read is the part's own (possibly older) type.
+    std::unordered_map<String, NameSet> contributed_by_subcolumn;
     for (const auto & name_type : names_and_types)
     {
         /// Group by the column in storage so a subcolumn contributes its member and never itself:
@@ -478,9 +481,30 @@ NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
         if (!isNested(type_in_storage) && type_arr)
         {
             auto split = splitName(name_in_storage);
+            if (split.second.empty())
+                continue;
+
+            auto & elems = nested[split.first];
             /// A member is contributed once even if both it and its subcolumns are requested.
-            if (!split.second.empty() && !nested[split.first].contains(split.second))
-                nested[split.first].emplace_back(split.second, type_arr->getNestedType());
+            if (!elems.contains(split.second))
+            {
+                elems.emplace_back(split.second, type_arr->getNestedType());
+                if (name_type.isSubcolumn())
+                    contributed_by_subcolumn[split.first].insert(split.second);
+            }
+            /// A plain entry replaces a subcolumn entry's contribution, never the other way round, so
+            /// the element type describes the same data the columns in this list carry.
+            else if (!name_type.isSubcolumn() && contributed_by_subcolumn[split.first].erase(split.second))
+            {
+                for (auto & elem : elems)
+                {
+                    if (elem.name == split.second)
+                    {
+                        elem = NameAndTypePair{split.second, type_arr->getNestedType()};
+                        break;
+                    }
+                }
+            }
         }
     }
 

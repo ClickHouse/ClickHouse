@@ -12,7 +12,7 @@ $CLICKHOUSE_CLIENT -q "
 # so the refresh blocks in a nested pipeline that it does not own an executor for yet.
 $CLICKHOUSE_CLIENT -q "
     create materialized view rmv refresh every 1 second (k UInt64) engine MergeTree order by k as
-        select k from src where k in (select number from numbers(30) where sleepEachRow(1) = 0)
+        select k from src where k in (select number from numbers(120) where sleepEachRow(1) = 0)
         settings max_block_size = 1;"
 
 # Wait until the refresh is inside that nested pipeline. Fail hard on timeout: a drop that never
@@ -30,8 +30,10 @@ while [ "$($CLICKHOUSE_CLIENT -q "
     fi
 done
 
-# The drop must cancel the refresh, not wait for the blocked planning to finish.
-if timeout 10 $CLICKHOUSE_CLIENT -q "drop table rmv"; then
+# The drop must cancel the refresh, not wait for the blocked planning to finish. The timeout is
+# far above any scheduling delay on a loaded sanitizer runner, yet far below the time the blocked
+# planning would take to finish on its own.
+if timeout 60 $CLICKHOUSE_CLIENT -q "drop table rmv"; then
     echo "dropped"
 else
     echo "drop did not finish"
