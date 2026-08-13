@@ -34,19 +34,19 @@ const std::string & MetadataStorageFromMemory::getPath() const
 bool MetadataStorageFromMemory::existsFile(const std::string & path) const
 {
     std::shared_lock lock(metadata_mutex);
-    return tree.existsFile(path);
+    return tree.existsFile(normalizePath(path));
 }
 
 bool MetadataStorageFromMemory::existsDirectory(const std::string & path) const
 {
     std::shared_lock lock(metadata_mutex);
-    return tree.existsDirectory(path);
+    return tree.existsDirectory(normalizePath(path));
 }
 
 bool MetadataStorageFromMemory::existsFileOrDirectory(const std::string & path) const
 {
     std::shared_lock lock(metadata_mutex);
-    return tree.existsFileOrDirectory(path);
+    return tree.existsFileOrDirectory(normalizePath(path));
 }
 
 Poco::Timestamp MetadataStorageFromMemory::getLastModified(const std::string & path) const
@@ -63,7 +63,7 @@ time_t MetadataStorageFromMemory::getLastChanged(const std::string & path) const
 
 const DiskObjectStorageMetadata & MetadataStorageFromMemory::getRecordUnlocked(const std::string & path) const
 {
-    const auto * record = tree.getRecord(path);
+    const auto * record = tree.getRecord(normalizePath(path));
     if (!record)
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File `{}` doesn't exist", path);
     return *record;
@@ -90,13 +90,13 @@ StoredObjects MetadataStorageFromMemory::getStorageObjects(const std::string & p
 std::vector<std::string> MetadataStorageFromMemory::listDirectory(const std::string & path) const
 {
     std::shared_lock lock(metadata_mutex);
-    return tree.listDirectory(path);
+    return tree.listDirectory(normalizePath(path));
 }
 
 DirectoryIteratorPtr MetadataStorageFromMemory::iterateDirectory(const std::string & path) const
 {
     std::shared_lock lock(metadata_mutex);
-    auto children = tree.listDirectory(path);
+    auto children = tree.listDirectory(normalizePath(path));
     return std::make_unique<StaticDirectoryIterator>(std::vector<std::filesystem::path>{children.begin(), children.end()});
 }
 
@@ -170,14 +170,14 @@ void MetadataStorageFromMemory::putRecordUnlocked(const std::string & path, Disk
 {
     chassert(record.objects.empty() || record.inline_data.empty());
 
-    if (auto displaced = tree.putFile(path, std::move(record)))
+    if (auto displaced = tree.putFile(normalizePath(path), std::move(record)))
         releaseRecordUnlocked(*displaced);
 }
 
 DiskObjectStorageMetadata & MetadataStorageFromMemory::findRecordOfBlobUnlocked(const std::string & remote_path)
 {
     DiskObjectStorageMetadata * found = nullptr;
-    tree.forEachRecordUnder("", [&](const std::string &, DiskObjectStorageMetadata & record)
+    tree.forEachRecordUnder({}, [&](const std::string &, DiskObjectStorageMetadata & record)
     {
         for (const auto & object : record.objects)
         {
@@ -215,7 +215,7 @@ bool MetadataStorageFromMemory::hasTransientBuildState() const
         return true;
 
     bool found = false;
-    tree.forEachRecordUnder("", [&](const std::string &, DiskObjectStorageMetadata & record)
+    tree.forEachRecordUnder({}, [&](const std::string &, DiskObjectStorageMetadata & record)
     {
         found = found || record.ref_count > 0;
     });
@@ -262,14 +262,14 @@ void MetadataStorageFromMemoryTransaction::unlinkFile(const std::string & path, 
 {
     std::unique_lock lock(storage.metadata_mutex);
 
-    if (!storage.tree.existsFile(path))
+    if (!storage.tree.existsFile(normalizePath(path)))
     {
         if (if_exists)
             return;
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File `{}` doesn't exist", path);
     }
 
-    auto record = storage.tree.removeFile(path);
+    auto record = storage.tree.removeFile(normalizePath(path));
     if (should_remove_objects)
         storage.releaseRecordUnlocked(record);
 }
@@ -277,19 +277,19 @@ void MetadataStorageFromMemoryTransaction::unlinkFile(const std::string & path, 
 void MetadataStorageFromMemoryTransaction::createDirectory(const std::string & path)
 {
     std::unique_lock lock(storage.metadata_mutex);
-    storage.tree.createDirectory(path);
+    storage.tree.createDirectory(normalizePath(path));
 }
 
 void MetadataStorageFromMemoryTransaction::createDirectoryRecursive(const std::string & path)
 {
     std::unique_lock lock(storage.metadata_mutex);
-    storage.tree.createDirectoryRecursive(path);
+    storage.tree.createDirectoryRecursive(normalizePath(path));
 }
 
 void MetadataStorageFromMemoryTransaction::removeDirectory(const std::string & path)
 {
     std::unique_lock lock(storage.metadata_mutex);
-    storage.tree.removeDirectory(path);
+    storage.tree.removeDirectory(normalizePath(path));
 }
 
 void MetadataStorageFromMemoryTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects)
@@ -298,7 +298,7 @@ void MetadataStorageFromMemoryTransaction::removeRecursive(const std::string & p
 
     /// The predicate receives paths relative to the removed root, same as the on-disk backend
     /// (callers fill their keep-lists with relative names).
-    storage.tree.removeSubtree(path, [&](const std::string & relative_path, DiskObjectStorageMetadata & record)
+    storage.tree.removeSubtree(normalizePath(path), [&](const std::string & relative_path, DiskObjectStorageMetadata & record)
     {
         if (!should_remove_objects || should_remove_objects(relative_path))
             storage.releaseRecordUnlocked(record);
@@ -309,8 +309,8 @@ void MetadataStorageFromMemoryTransaction::moveFile(const std::string & path_fro
 {
     std::unique_lock lock(storage.metadata_mutex);
 
-    storage.tree.moveFile(path_from, path_to, /*replace=*/false);
-    for (auto & object : storage.tree.getRecord(path_to)->objects)
+    storage.tree.moveFile(normalizePath(path_from), normalizePath(path_to), /*replace=*/false);
+    for (auto & object : storage.tree.getRecord(normalizePath(path_to))->objects)
         object.local_path = path_to;
 }
 
@@ -320,9 +320,9 @@ void MetadataStorageFromMemoryTransaction::replaceFile(const std::string & path_
 
     /// Overwrite semantics: the displaced destination record's sole-owner blobs are queued
     /// for disposal.
-    if (auto displaced = storage.tree.moveFile(path_from, path_to, /*replace=*/true))
+    if (auto displaced = storage.tree.moveFile(normalizePath(path_from), normalizePath(path_to), /*replace=*/true))
         storage.releaseRecordUnlocked(*displaced);
-    for (auto & object : storage.tree.getRecord(path_to)->objects)
+    for (auto & object : storage.tree.getRecord(normalizePath(path_to))->objects)
         object.local_path = path_to;
 }
 
@@ -330,8 +330,8 @@ void MetadataStorageFromMemoryTransaction::moveDirectory(const std::string & pat
 {
     std::unique_lock lock(storage.metadata_mutex);
 
-    storage.tree.moveDirectory(path_from, path_to);
-    storage.tree.forEachRecordUnder(path_to, [](const std::string & full_path, DiskObjectStorageMetadata & record)
+    storage.tree.moveDirectory(normalizePath(path_from), normalizePath(path_to));
+    storage.tree.forEachRecordUnder(normalizePath(path_to), [](const std::string & full_path, DiskObjectStorageMetadata & record)
     {
         for (auto & object : record.objects)
             object.local_path = full_path;
