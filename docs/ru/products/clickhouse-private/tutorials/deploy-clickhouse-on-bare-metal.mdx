@@ -27,9 +27,7 @@ description: "В этом руководстве показано, как раз
 ***
 
 <Steps>
-  <Step>
-    ## Этап 1: Установите Terraform
-
+  <Step title="Этап 1: Установите Terraform" id="phase-1-install-terraform">
     ```text
     dnf install -y unzip git
     ```
@@ -62,9 +60,7 @@ description: "В этом руководстве показано, как раз
     ***
   </Step>
 
-  <Step>
-    ## Этап 2: Загрузка примеров скриптов
-
+  <Step title="Этап 2: Загрузка примеров скриптов" id="phase-2-download-example-scripts">
     Скачайте и распакуйте примеры скриптов, предоставленные ClickHouse:
 
     ```text
@@ -77,9 +73,7 @@ description: "В этом руководстве показано, как раз
     ***
   </Step>
 
-  <Step>
-    ## Этап 3: Настройка учетных данных AWS
-
+  <Step title="Этап 3: Настройка учетных данных AWS" id="phase-3-configure-aws-credentials">
     Создайте файл учетных данных, указав в нем ключ доступа и секретный ключ AWS IAM:
 
     ```bash
@@ -101,9 +95,7 @@ description: "В этом руководстве показано, как раз
     ***
   </Step>
 
-  <Step>
-    ## Этап 4: Инициализация и применение Terraform
-
+  <Step title="Этап 4: Инициализация и применение Terraform" id="phase-4-initialize-and-apply-terraform">
     Инициализируйте модуль Terraform для RKE2. Добавьте `-migrate-state`, если переносите состояние из локального хранилища в S3.
 
     ```text
@@ -129,9 +121,7 @@ description: "В этом руководстве показано, как раз
     ***
   </Step>
 
-  <Step>
-    ## Этап 5: Установите зависимости для Ansible
-
+  <Step title="Этап 5: Установите зависимости для Ansible" id="phase-5-install-ansible-dependencies">
     Перейдите в каталог Ansible и установите необходимые роли и коллекции из Galaxy:
 
     ```bash
@@ -149,9 +139,7 @@ description: "В этом руководстве показано, как раз
     ***
   </Step>
 
-  <Step>
-    ## Этап 6: Развертывание RKE2
-
+  <Step title="Этап 6: Развертывание RKE2" id="phase-6-provision-rke2">
     ### Убедитесь, что узлы готовы
 
     ```text
@@ -189,9 +177,7 @@ description: "В этом руководстве показано, как раз
     ***
   </Step>
 
-  <Step>
-    ## Этап 7: Настройка cert-manager и сертификатов
-
+  <Step title="Этап 7: Настройка cert-manager и сертификатов" id="phase-7-configure-cert-manager-and-certificates">
     Установите cert-manager и trust-manager, а затем сгенерируйте сертификаты для ClickHouse с помощью плейбука Ansible:
 
     ```bash
@@ -220,9 +206,7 @@ description: "В этом руководстве показано, как раз
     ***
   </Step>
 
-  <Step>
-    ## Этап 8: Установите локальное хранилище
-
+  <Step title="Этап 8: Установите локальное хранилище" id="phase-8-install-local-storage">
     ### Установите local-path-provisioner
 
     ```bash
@@ -268,9 +252,7 @@ description: "В этом руководстве показано, как раз
     ***
   </Step>
 
-  <Step>
-    ## Этап 9: Пометьте узлы
-
+  <Step title="Этап 9: Пометьте узлы" id="phase-9-label-nodes">
     Пометьте узлы метками группы ClickHouse и зоны топологии, требуемыми оператором:
 
     ```bash
@@ -286,9 +268,7 @@ description: "В этом руководстве показано, как раз
     ***
   </Step>
 
-  <Step>
-    ## Этап 10: Установка ClickHouse Operator и кластера
-
+  <Step title="Этап 10: Установка ClickHouse Operator и кластера" id="phase-10-install-clickhouse-operator-and-cluster">
     ### Установка переменных окружения
 
     Создайте и подключите скрипт переменных Helm. Замените все значения-заполнители:

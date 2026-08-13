@@ -46,6 +46,10 @@ Devuelve la fecha y hora actuales en el momento del análisis de la consulta. La
 
 Esta función da el mismo resultado que `now('UTC')`. Se añadió únicamente por compatibilidad con MySQL. Se recomienda usar [`now`](#now).
 
+<Note>
+  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
+</Note>
+
 **Sintaxis**
 
 ```sql
@@ -1631,7 +1635,7 @@ formatDateTimeInJodaSyntax(datetime, format[, timezone])
 **Argumentos**
 
 * `datetime` — Una fecha o una fecha y hora para formatear. [`DateTime`](/es/reference/data-types/datetime) o [`Date`](/es/reference/data-types/date) o [`Date32`](/es/reference/data-types/date32) o [`DateTime64`](/es/reference/data-types/datetime64)
-* `format` — Cadena de formato con campos de sustitución de estilo Joda. [`String`](/es/reference/data-types/string)
+* `format` — Cadena de formato con campos de reemplazo de estilo Joda. [`String`](/es/reference/data-types/string)
 * `timezone` — Opcional. Nombre de la zona horaria para la hora formateada. [`String`](/es/reference/data-types/string)
 
 **Valor devuelto**
@@ -1648,8 +1652,8 @@ SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd
 
 ```response title=Response
 ┌─formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')─┐
-│ 2010-01-04 12:34:56                                                                     │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+│ 2010-01-04 12:34:56                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="fromDaysSinceYearZero">
@@ -1843,9 +1847,9 @@ SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')
 ```
 
 ```response title=Response
-┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3), 'Asia/Shanghai')─┐
-│                                                 2023-03-16 18:00:00.000 │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')─┐
+│                                                   2023-03-16 18:00:00.000 │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="fromUnixTimestamp">
@@ -1960,6 +1964,10 @@ Introducido en: v26.7.0
 
 Devuelve la hora actual del día en la zona horaria del servidor (o la sesión) en el momento del análisis de la consulta.
 La función es una expresión constante. Corresponde al `LOCALTIME` estándar de SQL / PostgreSQL y equivale a `CAST(now() AS Time)`.
+
+<Note>
+  Esta función es no determinista: puede devolver resultados diferentes para los mismos argumentos.
+</Note>
 
 **Sintaxis**
 
@@ -2230,13 +2238,17 @@ Introducido en: v1.1.0
 
 Devuelve la fecha y hora actuales en el momento del análisis de la consulta. La función es una expresión constante.
 
+<Note>
+  Esta función no determinista: puede devolver resultados diferentes para los mismos argumentos.
+</Note>
+
 **Sintaxis**
 
 ```sql
 now([timezone])
 ```
 
-**Alias**: `localtimestamp`, `current_timestamp`
+**Alias**: `current_timestamp`, `localtimestamp`
 
 **Argumentos**
 
@@ -2292,6 +2304,10 @@ Introducido en: v20.1.0
 
 Devuelve la fecha y hora actuales con precisión de fracciones de segundo en el momento del análisis de la consulta. La función es una expresión constante.
 
+<Note>
+  Esta función no determinista: puede devolver resultados diferentes para los mismos argumentos.
+</Note>
+
 **Sintaxis**
 
 ```sql
@@ -2330,6 +2346,10 @@ Introducido en: v22.8.0
 Devuelve la fecha y hora actuales durante el procesamiento de cada bloque de datos. A diferencia de la función [`now`](#now), no es una expresión constante y el valor devuelto será diferente entre bloques en consultas de larga duración.
 
 Conviene usar esta función para generar la hora actual en consultas `INSERT SELECT` de larga duración.
+
+<Note>
+  Esta función es no determinista: puede devolver resultados diferentes para los mismos argumentos.
+</Note>
 
 **Sintaxis**
 
@@ -2377,6 +2397,10 @@ Devuelve la fecha y hora actuales en el momento en que se procesa cada bloque de
 
 Tiene sentido utilizar esta función para generar la hora actual en consultas INSERT SELECT de ejecución prolongada.
 
+<Note>
+  Esta función es no determinista: puede devolver resultados diferentes para los mismos argumentos.
+</Note>
+
 **Sintaxis**
 
 ```sql
@@ -2422,6 +2446,10 @@ Introducido en: v23.6.0
 
 Devuelve la zona horaria del servidor, es decir, el valor de la opción [`timezone`](/es/reference/settings/server-settings/settings#timezone).
 Si la función se ejecuta en el contexto de una tabla distribuida, genera una columna normal con valores correspondientes a cada segmento. De lo contrario, produce un valor constante.
+
+<Note>
+  Esta función no es determinista: puede devolver resultados distintos para los mismos argumentos.
+</Note>
 
 **Sintaxis**
 
@@ -2975,9 +3003,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 quarter)
 ```
 
 ```response title=Response
-┌─minus(CAST('1⋯Quarter(10))─┐
-│                1996-09-16 │
-└───────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalQuarter(10))─┐
+│                                               1995-12-16 │
+└──────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractSeconds">
@@ -3402,6 +3430,10 @@ SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
 Introducido en: v21.4.0
 
 Devuelve el nombre de la zona horaria de la sesión actual o convierte un desplazamiento o un nombre de zona horaria en un nombre canónico de zona horaria.
+
+<Note>
+  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
+</Note>
 
 **Sintaxis**
 
@@ -3931,15 +3963,15 @@ Devuelve la fecha del sábado o domingo más próximo, en esa fecha o después d
 
 ```sql title=Query
 SELECT
-    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')), /* un viernes */
-    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* un viernes */
-    toLastDayOfWeek(toDate('2023-04-23')), /* un domingo */
-    toLastDayOfWeek(toDate('2023-04-23'), 1) /* un domingo */
+    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')), /* a Friday */
+    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* a Friday */
+    toLastDayOfWeek(toDate('2023-04-23')), /* a Sunday */
+    toLastDayOfWeek(toDate('2023-04-23'), 1) /* a Sunday */
 FORMAT Vertical
 ```
 
 ```response title=Response
-Fila 1:
+Row 1:
 ──────
 toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')):      2023-04-23
 toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1):   2023-04-22
@@ -4169,8 +4201,8 @@ Devuelve la fecha del lunes de la misma semana correspondiente a la fecha o fech
 
 ```sql title=Query
 SELECT
-toMonday(toDateTime('2023-04-21 10:20:30')), -- Un viernes
-toMonday(toDate('2023-04-24'));              -- Ya es lunes
+toMonday(toDateTime('2023-04-21 10:20:30')), -- A Friday
+toMonday(toDate('2023-04-24'));              -- Already a Monday
 ```
 
 ```response title=Response
@@ -4675,7 +4707,7 @@ SELECT toSecond(toDateTime('2023-04-21 10:20:30'))
 
 Introducido en: v1.1.0
 
-Redondea una fecha con hora hacia abajo hasta el inicio del día.
+redondea hacia abajo una fecha con hora hasta el inicio del día.
 
 <Note>
   El tipo de retorno se puede configurar mediante la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
@@ -4748,7 +4780,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Fila 1:
+Row 1:
 ──────
 toStartOfFifteenMinutes(toDateTime('2023-04-21 10:17:00')): 2023-04-21 10:15:00
 toStartOfFifteenMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:15:00
@@ -4796,7 +4828,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Fila 1:
+Row 1:
 ──────
 toStartOfFiveMinutes(toDateTime('2023-04-21 10:17:00')): 2023-04-21 10:15:00
 toStartOfFiveMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:20:00
@@ -4809,7 +4841,7 @@ toStartOfFiveMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:20:00
 
 Introducido en: v1.1.0
 
-Redondea una fecha con hora hacia abajo hasta el inicio de la hora.
+redondea hacia abajo una fecha con hora hasta el inicio de la hora.
 
 <Note>
   El tipo de retorno se puede configurar con la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
@@ -4928,7 +4960,7 @@ toStartOfInterval(value, INTERVAL x unit[, time_zone])
 toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 ```
 
-**Alias**: `time_bucket`, `date_bin`
+**Alias**: `date_bin`, `time_bucket`
 
 **Argumentos**
 
@@ -5105,7 +5137,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Fila 1:
+Row 1:
 ──────
 toStartOfMinute(toDateTime('2023-04-21 10:20:30')):           2023-04-21 10:20:00
 toStartOfMinute(toDateTime64('2023-04-21 10:20:30.5300', 8)): 2023-04-21 10:20:00
@@ -5117,7 +5149,7 @@ toStartOfMinute(toDateTime64('2023-04-21 10:20:30.5300', 8)): 2023-04-21 10:20:0
 
 Introducido en: v1.1.0
 
-Redondea una fecha o una fecha con hora al primer día del mes.
+redondea hacia abajo una fecha o una fecha con hora al primer día del mes.
 
 <Note>
   El tipo de retorno se puede configurar mediante [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
@@ -5208,7 +5240,7 @@ SELECT toStartOfNanosecond(dt64, 'Asia/Istanbul');
 
 Introducido en: v1.1.0
 
-Redondea una fecha o fecha con hora hacia abajo hasta el primer día del trimestre. El primer día del trimestre es el 1 de enero, el 1 de abril, el 1 de julio o el 1 de octubre.
+redondea hacia abajo una fecha o fecha con hora hacia abajo hasta el primer día del trimestre. El primer día del trimestre es el 1 de enero, el 1 de abril, el 1 de julio o el 1 de octubre.
 
 <Note>
   El tipo de retorno se puede configurar mediante el ajuste [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
@@ -5373,10 +5405,10 @@ Devuelve la fecha del domingo o lunes más cercano que coincida con la fecha dad
 
 ```sql title=Query
 SELECT
-        toStartOfWeek(toDateTime('2023-04-21 10:20:30')), /* un viernes */
-        toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* un viernes */
-        toStartOfWeek(toDate('2023-04-24')), /* un lunes */
-        toStartOfWeek(toDate('2023-04-24'), 1) /* un lunes */
+        toStartOfWeek(toDateTime('2023-04-21 10:20:30')), /* a Friday */
+        toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* a Friday */
+        toStartOfWeek(toDate('2023-04-24')), /* a Monday */
+        toStartOfWeek(toDate('2023-04-24'), 1) /* a Monday */
     FORMAT Vertical
 ```
 
@@ -5564,8 +5596,8 @@ SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')
 
 ```response title=Response
 ┌─toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')─┐
-│                                     2023-03-15 16:00:00 │
-└─────────────────────────────────────────────────────────┘
+│                                       2023-03-15 16:00:00 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 <div id="toUnixTimestamp">
@@ -5927,13 +5959,17 @@ Introducido en: v1.1.0
 
 Devuelve la fecha actual en el momento del análisis de la consulta. Igual que `toDate(now())`.
 
+<Note>
+  Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
+</Note>
+
 **Sintaxis**
 
 ```sql
 today()
 ```
 
-**Alias**: `curdate`, `current_date`
+**Alias**: `current_date`, `curdate`
 
 **Argumentos**
 
@@ -5980,6 +6016,10 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 Introducido en: v1.1.0
 
 No acepta argumentos y devuelve la fecha de ayer en uno de los puntos del análisis de la consulta.
+
+<Note>
+  Esta función no es determinista: puede devolver resultados diferentes con los mismos argumentos.
+</Note>
 
 **Sintaxis**
 

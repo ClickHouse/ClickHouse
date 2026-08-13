@@ -58,9 +58,7 @@ doc_type: 'reference'
 في عمليات النشر المُدارة ذاتيًا، لاستخدام أداة تنميط الاستعلامات اتبع الخطوات التالية:
 
 <Steps>
-  <Step>
-    ### ثبّت ClickHouse مع معلومات تصحيح الأخطاء
-
+  <Step title="ثبّت ClickHouse مع معلومات تصحيح الأخطاء" id="debug-info">
     ثبّت الحزمة `clickhouse-common-static-dbg`:
 
     1. اتبع التعليمات في الخطوة [&quot;إعداد مستودع Debian&quot;](/ar/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository)
@@ -69,13 +67,11 @@ doc_type: 'reference'
     4. شغّل `clickhouse-client`. سيلتقط الخادم تلقائيًا رموز تصحيح الأخطاء من `clickhouse-common-static-dbg` — ولا تحتاج إلى القيام بأي إجراء خاص لتمكينها
   </Step>
 
-  <Step>
-    ### تحقّق من إعدادات الخادم
-
+  <Step title="تحقّق من إعدادات الخادم" id="server-config">
     تأكد من إعداد قسم [`trace_log`](/ar/reference/settings/server-settings/settings#trace_log) في [ملف إعدادات الخادم](/ar/concepts/features/configuration/server-config/configuration-files). وهو مُمكَّن افتراضيًا:
 
     ```xml
-    <!-- سجل التتبّع. يخزّن تتبعات المكدس التي تجمعها أدوات تحليل الاستعلامات.
+    <!-- سجل التتبّع. يخزّن تتبعات المكدس التي تجمعها أدوات تنميط الاستعلامات.
          راجع الإعدادين query_profiler_real_time_period_ns و query_profiler_cpu_time_period_ns. -->
     <trace_log>
         <database>system</database>
@@ -92,28 +88,24 @@ doc_type: 'reference'
     </trace_log>
     ```
 
-    يضبط هذا القسم الجدول النظامي [trace&#95;log](/ar/reference/system-tables/trace_log) الذي يحتوي على نتائج عمل أداة التحليل.
+    يضبط هذا القسم الجدول النظامي [trace&#95;log](/ar/reference/system-tables/trace_log) الذي يحتوي على نتائج عمل أداة التنميط.
     تذكّر أن البيانات في هذا الجدول تكون صالحة فقط أثناء تشغيل الخادم.
     بعد إعادة تشغيل الخادم، لا ينظّف ClickHouse هذا الجدول، وقد تصبح جميع عناوين الذاكرة الافتراضية المخزنة غير صالحة.
   </Step>
 
-  <Step>
-    ### اضبط مؤقتات التحليل
-
+  <Step title="اضبط مؤقتات التحليل" id="configure-profile-timers">
     أعِد الإعدادين [`query_profiler_cpu_time_period_ns`](/ar/reference/settings/session-settings#query_profiler_cpu_time_period_ns) أو [`query_profiler_real_time_period_ns`](/ar/reference/settings/session-settings#query_profiler_real_time_period_ns).
     يمكن استخدام كلا الإعدادين في الوقت نفسه.
 
     تتيح لك هذه الإعدادات ضبط مؤقتات أداة التحليل.
-    وبما أنها إعدادات جلسة، يمكنك استخدام تردد sampling مختلف للخادم بالكامل، أو للمستخدمين الأفراد أو ملفات تعريف المستخدمين، أو لجلسة العمل التفاعلية الخاصة بك، أو لكل query على حدة.
+    وبما أنها إعدادات جلسة، يمكنك استخدام تردد أخذ العينات مختلف للخادم بالكامل، أو للمستخدمين الأفراد أو ملفات تعريف المستخدمين، أو لجلسة العمل التفاعلية الخاصة بك، أو لكل query على حدة.
 
-    تردد sampling الافتراضي هو عينة واحدة في الثانية، كما أن مؤقتَي CPU والوقت الفعلي مُمكَّنان.
+    تردد أخذ العينات الافتراضي هو عينة واحدة في الثانية، كما أن مؤقتَي CPU والوقت الفعلي مُمكَّنان.
     ويتيح لك هذا التردد جمع معلومات كافية عن ClickHouse cluster لديك من دون التأثير في أداء الخادم.
-    إذا كنت بحاجة إلى تحليل كل query على حدة، فاستخدم تردد sampling أعلى.
+    إذا كنت بحاجة إلى تحليل كل query على حدة، فاستخدم تردد أخذ العينات أعلى.
   </Step>
 
-  <Step>
-    ### حلّل الجدول النظامي `trace_log`
-
+  <Step title={<>حلّل الجدول النظامي <code>trace_log</code></>} id="analyze-trace-log-system-table">
     لتحليل الجدول النظامي `trace_log`، اسمح باستخدام دوال الاستبطان عبر الإعداد [`allow_introspection_functions`](/ar/reference/settings/session-settings#allow_introspection_functions):
 
     ```sql

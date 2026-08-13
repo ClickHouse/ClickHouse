@@ -38,12 +38,12 @@ quantileExactWeighted(level)(expr, weight)
 
 **인수**
 
-* `expr` — 컬럼 값에 대한 표현식으로, 결과는 숫자 데이터 타입, Date 또는 DateTime이어야 합니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime)
+* `expr` — 컬럼 값에 대한 표현식으로, 결과는 숫자 데이터 타입, `Date`, `DateTime` 또는 `DateTime64`여야 합니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Int128`](/ko/reference/data-types/int-uint) 또는 [`UInt128`](/ko/reference/data-types/int-uint) 또는 [`Int256`](/ko/reference/data-types/int-uint) 또는 [`UInt256`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 * `weight` — 시퀀스 구성원의 가중치를 담은 컬럼입니다. 가중치는 값의 발생 횟수를 의미합니다. [`UInt*`](/ko/reference/data-types/int-uint)
 
 **반환 값**
 
-지정된 수준의 분위수입니다. [`Float64`](/ko/reference/data-types/float) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime)
+지정된 수준의 분위수입니다. 숫자 데이터 타입의 경우 출력 형식은 입력 형식과 일치합니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Int128`](/ko/reference/data-types/int-uint) 또는 [`UInt128`](/ko/reference/data-types/int-uint) 또는 [`Int256`](/ko/reference/data-types/int-uint) 또는 [`UInt256`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **예시**
 
@@ -55,7 +55,7 @@ CREATE TABLE t (
     val Int32
 ) ENGINE = Memory;
 
--- 샘플 데이터 삽입
+-- Insert the sample data
 INSERT INTO t VALUES
 (0, 3),
 (1, 2),

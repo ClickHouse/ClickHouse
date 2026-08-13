@@ -59,13 +59,13 @@ Notez que lorsque le partitionnement est activé, ClickHouse crée automatiqueme
   ### Fusions par partition
 </div>
 
-Lorsque le partitionnement est activé, ClickHouse ne [fusionne](/fr/concepts/core-concepts/merges) les parties de données qu&#39;au sein d&#39;une même partition, jamais entre partitions. Nous le schématisons pour notre table d&#39;exemple ci-dessus :
+Lorsque le partitionnement est activé, ClickHouse ne [fusionne](/fr/concepts/core-concepts/merges) les parts de données qu&#39;au sein d&#39;une même partition, jamais entre partitions. Nous le schématisons pour notre table d&#39;exemple ci-dessus :
 
 <Image img="/images/managing-data/core-concepts/merges_with_partitions.webp" size="lg" alt="FUSIONS DE PARTIES" />
 
 <br />
 
-Comme le montre le schéma ci-dessus, les parties appartenant à des partitions différentes ne sont jamais fusionnées. Si vous choisissez une clé de partition à cardinalité élevée, les parties réparties sur des milliers de partitions ne pourront jamais être candidates à une fusion, ce qui finit par dépasser les limites préconfigurées et provoquer la redoutable erreur `Too many parts`. La solution est simple : choisissez une clé de partition pertinente avec une [cardinalité inférieure à 1000..10000](https://github.com/ClickHouse/ClickHouse/blob/ffc5b2c56160b53cf9e5b16cfb73ba1d956f7ce4/src/Storages/MergeTree/MergeTreeDataWriter.cpp#L121).
+Comme le montre le schéma ci-dessus, les parts appartenant à des partitions différentes ne sont jamais fusionnées. Si vous choisissez une clé de partition à cardinalité élevée, les parts réparties sur des milliers de partitions ne pourront jamais être candidates à une fusion, ce qui finit par dépasser les limites préconfigurées et provoquer la redoutable erreur `Too many parts`. La solution est simple : choisissez une clé de partition pertinente avec une [cardinalité inférieure à 1000..10000](https://github.com/ClickHouse/ClickHouse/blob/ffc5b2c56160b53cf9e5b16cfb73ba1d956f7ce4/src/Storages/MergeTree/MergeTreeDataWriter.cpp#L121).
 
 <div id="monitoring-partitions">
   ## Surveillance des partitions
@@ -142,7 +142,7 @@ TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
   ### Optimisation des requêtes
 </div>
 
-Les partitions peuvent améliorer les performances des requêtes, mais cela dépend fortement des schémas d’accès. Si les requêtes ne ciblent qu’un petit nombre de partitions (idéalement une seule), les performances peuvent s’en trouver améliorées. En pratique, cela n’est utile que si la clé de partitionnement ne fait pas partie de la clé primaire et que vous filtrez dessus, comme dans l’exemple de requête ci-dessous.
+Les partitions peuvent améliorer les performances des requêtes, mais cela dépend fortement des schémas d’accès. Si les requêtes ne ciblent qu’un petit nombre de partitions (idéalement une seule), les performances peuvent s’en trouver améliorées. En pratique, cela n’est utile que si la clé de partition ne fait pas partie de la clé primaire et que vous filtrez dessus, comme dans l’exemple de requête ci-dessous.
 
 <RunnableCode>
   ```sql
@@ -154,7 +154,7 @@ Les partitions peuvent améliorer les performances des requêtes, mais cela dép
   ```
 </RunnableCode>
 
-Cette requête s’exécute sur notre table d’exemple ci-dessus et [calcule](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkCldIRVJFIGRhdGUgPj0gJzIwMjAtMTItMDEnCiAgQU5EIGRhdGUgPD0gJzIwMjAtMTItMzEnCiAgQU5EIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results) le prix le plus élevé de tous les biens vendus à Londres en décembre 2020, en filtrant à la fois sur une colonne (`date`) utilisée dans la clé de partitionnement de la table et sur une colonne (`town`) utilisée dans la clé primaire de la table (`date` ne faisant pas partie de la clé primaire).
+Cette requête s’exécute sur notre table d’exemple ci-dessus et [calcule](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkCldIRVJFIGRhdGUgPj0gJzIwMjAtMTItMDEnCiAgQU5EIGRhdGUgPD0gJzIwMjAtMTItMzEnCiAgQU5EIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results) le prix le plus élevé de tous les biens vendus à Londres en décembre 2020, en filtrant à la fois sur une colonne (`date`) utilisée dans la clé de partition de la table et sur une colonne (`town`) utilisée dans la clé primaire de la table (`date` ne faisant pas partie de la clé primaire).
 
 ClickHouse traite cette requête en appliquant une série de techniques d’exclusion pour éviter d’évaluer des données non pertinentes :
 
@@ -162,7 +162,7 @@ ClickHouse traite cette requête en appliquant une série de techniques d’excl
 
 <br />
 
-① **élagage des partitions** : les [index MinMax](/fr/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) servent à ignorer des partitions entières (ensembles de parts) qui, logiquement, ne peuvent pas correspondre au filter de la requête sur les colonnes utilisées dans la clé de partitionnement de la table.
+① **élagage des partitions** : les [index MinMax](/fr/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) servent à ignorer des partitions entières (ensembles de parts) qui, logiquement, ne peuvent pas correspondre au filter de la requête sur les colonnes utilisées dans la clé de partition de la table.
 
 ② **élagage des granules** : pour les data parts restantes après l’étape ①, leur [index primaire](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) sert à ignorer toutes les [granules](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (blocs de rows) qui, logiquement, ne peuvent pas correspondre au filter de la requête sur les colonnes utilisées dans la clé primaire de la table.
 

@@ -35,9 +35,7 @@ description: "رقِّ مكونات ClickHouse Private — المشغِّل وع
 </div>
 
 <Steps>
-  <Step>
-    ### 1. ترقية مخطط Helm للمُشغِّل
-
+  <Step title="1. ترقية مخطط Helm للمُشغِّل" id="1-upgrade-the-operator-helm-chart">
     أبقِ جميع قيم helm الحالية كما هي، مع تحديث إصدارات المُشغِّل فقط إلى الإصدارات المستهدفة الجديدة.
 
     ```bash
@@ -50,9 +48,7 @@ description: "رقِّ مكونات ClickHouse Private — المشغِّل وع
     > **ملاحظة:** قد تؤدي ترقية المُشغِّل إلى إعادة تشغيل متدرجة لجميع عناقيد ClickHouse التي يديرها. إذا كان لديك عدة عناقيد وتريد التحقق من الترقية على أحدها قبل السماح للمُشغِّل بمواءمة العناقيد الأخرى، فراجع [حماية العناقيد أثناء الترقية](#protecting-clusters-during-upgrade) أدناه.
   </Step>
 
-  <Step>
-    ### 2. التحقق من المُشغِّل بعد الترقية
-
+  <Step title="2. التحقق من المُشغِّل بعد الترقية" id="2-validate-the-upgraded-operator">
     تأكد من أن عملية نشر المُشغِّل قيد التشغيل وبحالة سليمة:
 
     ```bash
@@ -68,9 +64,7 @@ description: "رقِّ مكونات ClickHouse Private — المشغِّل وع
     ```
   </Step>
 
-  <Step>
-    ### 3. ترقية مخطط Helm لـ onprem-clickhouse-cluster
-
+  <Step title="3. ترقية مخطط Helm لـ onprem-clickhouse-cluster" id="3-upgrade-the-onprem-clickhouse-cluster-helm-chart">
     رقِّ مخطط helm `onprem-clickhouse-cluster` لكل عنقود. أبقِ جميع قيم helm الحالية كما هي، مع تحديث إصدارات صور ClickHouse server وKeeper فقط إلى الإصدارات المستهدفة الجديدة.
 
     ```bash
@@ -85,9 +79,7 @@ description: "رقِّ مكونات ClickHouse Private — المشغِّل وع
     سيؤدي ذلك إلى **إعادة تشغيل متدرجة لكبسولات Keeper والخادم** (كبسولة واحدة في كل مرة). كرر ذلك لكل عنقود.
   </Step>
 
-  <Step>
-    ### 4. التحقق من العنقود بعد الترقية
-
+  <Step title="4. التحقق من العنقود بعد الترقية" id="4-validate-the-upgraded-cluster">
     بعد اكتمال إعادة التشغيل المتدرجة، تأكد من أن العنقود بحالة سليمة:
 
     ```bash
@@ -95,7 +87,7 @@ description: "رقِّ مكونات ClickHouse Private — المشغِّل وع
     kubectl get pods -n <namespace>
     ```
 
-    يجب أن تكون جميع الكبسولات في حالة `Running`، وألا يُظهر المورد المخصص `ClickhouseCluster` أي أخطاء. ولمزيد من التحقق من الاتصال، نفِّذ port-forward لخدمة ClickHouse (راجع قسم Port-forward في [البرنامج التعليمي](/ar/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks) ذي الصلة) ثم شغِّل استعلامًا اختباريًا.
+    يجب أن تكون جميع الكبسولات في حالة `Running`، وألا يُظهر `ClickhouseCluster` CR أي أخطاء. ولمزيد من التحقق من الاتصال، نفِّذ port-forward لخدمة ClickHouse (راجع قسم Port-forward في [البرنامج التعليمي](/ar/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks) ذي الصلة) ثم شغِّل استعلامًا اختباريًا.
   </Step>
 </Steps>
 

@@ -324,7 +324,7 @@ SELECT base58Decode('JxF12TrwUP45BMd');
 
 도입 버전: v22.7.0
 
-문자열을 [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) 방식으로 인코딩합니다.
+문자열을 [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58-01) 방식으로 인코딩합니다.
 
 **구문**
 
@@ -361,6 +361,7 @@ SELECT base58Encode('ClickHouse');
 도입 버전: v18.16.0
 
 RFC 4648에 따라 [Base64](https://en.wikipedia.org/wiki/Base64) 형식의 문자열을 디코딩합니다.
+버전 26.7부터는 입력에 포함된 공백 문자(space), 탭(`\t`), 줄 바꿈(`\n`), 캐리지 리턴(`\r`), 폼 피드(`\f`)를 무시합니다(이전 버전에서는 이러한 문자가 포함된 입력을 거부했습니다). 수직 탭(`\v`)과 Base64 알파벳에 포함되지 않는 다른 모든 문자는 거부됩니다.
 오류가 발생할 경우 예외를 발생시킵니다.
 
 **구문**
@@ -437,7 +438,9 @@ SELECT base64Encode('clickhouse')
 
 도입 버전: v24.6.0
 
-RFC 4648에 따라 URL 안전 문자 집합을 사용한 [Base64](https://en.wikipedia.org/wiki/Base64) 표현으로 된 문자열을 디코딩합니다.
+RFC 4648에 따라 URL 안전 문자 집합을 사용한 [Base64](https://en.wikipedia.org/wiki/Base64) 형식의 문자열을 디코딩합니다.
+표준 문자 집합(`+` 및 `/`)도 디코딩할 때 허용됩니다.
+버전 26.7부터는 입력의 공백 문자 스페이스, tab (`\t`), line feed (`\n`), carriage return (`\r`), form feed (`\f`)를 무시합니다(이전 버전에서는 이러한 문자가 포함된 입력을 거부했습니다). Vertical tab (`\v`) 및 Base64 알파벳에 속하지 않는 그 밖의 모든 문자는 거부됩니다.
 오류가 발생하면 예외를 발생시킵니다.
 
 **구문**
@@ -639,8 +642,8 @@ SELECT caseFoldUTF8('Straße')
 
 ```response title=Response
 ┌─caseFoldUTF8('Straße')─┐
-│ strasse                 │
-└─────────────────────────┘
+│ strasse                │
+└────────────────────────┘
 ```
 
 <div id="compareSubstrings">
@@ -1165,13 +1168,13 @@ editDistanceUTF8(s1, s2)
 **사용 예시**
 
 ```sql title=Query
-SELECT editDistanceUTF8('我是谁', '我是我')
+SELECT editDistanceUTF8('我是谁', '我是我') AS distance
 ```
 
 ```response title=Response
-┌─editDistanceUTF8('我是谁', '我是我')──┐
-│                                   1 │
-└─────────────────────────────────────┘
+┌─distance─┐
+│        1 │
+└──────────┘
 ```
 
 <div id="encodeXMLComponent">
@@ -1595,12 +1598,12 @@ SELECT initcap('John''s cat won''t eat.');
 도입 버전: v23.7.0
 
 [`initcap`](#initcap)와 마찬가지로 `initcapUTF8`은 각 단어의 첫 글자를 대문자로, 나머지 글자를 소문자로 변환합니다.
-문자열이 유효한 UTF-8로 인코딩된 텍스트를 포함한다고 가정합니다.
+문자열에 유효한 UTF-8로 인코딩된 텍스트가 포함되어 있다고 가정합니다.
 이 가정이 충족되지 않아도 예외는 발생하지 않으며 결과는 정의되지 않습니다.
 
 <Note>
   이 함수는 언어를 감지하지 않습니다. 예를 들어 터키어에서는 결과가 완전히 정확하지 않을 수 있습니다(i/İ 대 i/I).
-  코드 포인트의 대문자와 소문자에서 UTF-8 바이트 시퀀스 길이가 서로 다르면 해당 코드 포인트의 결과가 올바르지 않을 수 있습니다.
+  코드 포인트의 대문자와 소문자에 대한 UTF-8 바이트 시퀀스 길이가 서로 다르면 해당 코드 포인트의 결과가 올바르지 않을 수 있습니다.
 </Note>
 
 **구문**
@@ -1659,9 +1662,6 @@ isValidASCII(str)
 
 ```sql title=Query
 SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii
-```
-
-```response title=Response
 ```
 
 <div id="isValidUTF8">
@@ -2100,7 +2100,7 @@ SELECT s FROM t ORDER BY naturalSortKey(s)
 ```response title=Response
 ┌─s───┐
 │ a1  │
-| a02 │
+│ a02 │
 └─────┘
 ```
 
@@ -2204,7 +2204,7 @@ normalizeUTF8NFKC(str)
 
 **반환 값**
 
-UTF-8 문자열을 NFKC로 정규화한 값을 반환합니다. [`String`](/ko/reference/data-types/string)
+UTF-8 문자열의 NFKC 정규화된 형태를 반환합니다. [`String`](/ko/reference/data-types/string)
 
 **예시**
 
@@ -2212,13 +2212,13 @@ UTF-8 문자열을 NFKC로 정규화한 값을 반환합니다. [`String`](/ko/r
 
 ```sql title=Query
 SELECT
-    '① ② ③' AS original,                            -- 원형 숫자 문자
-    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- 1 2 3으로 변환
+    '① ② ③' AS original,                           -- Circled number characters
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized  -- Converts to 1 2 3
 ```
 
 ```response title=Response
 ┌─original─┬─nfkc_normalized─┐
-│ ① ② ③  │ 1 2 3           │
+│ ① ② ③    │ 1 2 3           │
 └──────────┴─────────────────┘
 ```
 
@@ -2281,7 +2281,7 @@ normalizeUTF8NFKD(str)
 
 **반환 값**
 
-UTF-8 문자열의 NFKD 정규화된 형식을 반환합니다. [`String`](/ko/reference/data-types/string)
+UTF-8 문자열의 NFKD 정규화된 형태를 반환합니다. [`String`](/ko/reference/data-types/string)
 
 **예시**
 
@@ -2289,8 +2289,8 @@ UTF-8 문자열의 NFKD 정규화된 형식을 반환합니다. [`String`](/ko/r
 
 ```sql title=Query
 SELECT
-    'H₂O²' AS original,                            -- H + 아래 첨자 2 + O + 위 첨자 2
-    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- H 2 O 2로 변환
+    'H₂O²' AS original,                           -- H + subscript 2 + O + superscript 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized  -- Converts to H 2 O 2
 ```
 
 ```response title=Response
@@ -2510,8 +2510,8 @@ SELECT removeDiacriticsUTF8('café résumé naïve')
 
 ```response title=Response
 ┌─removeDiacriticsUTF8('café résumé naïve')─┐
-│ cafe resume naive                          │
-└────────────────────────────────────────────┘
+│ cafe resume naive                         │
+└───────────────────────────────────────────┘
 ```
 
 <div id="repeat">
@@ -3293,13 +3293,13 @@ stringJaccardIndexUTF8(s1, s2)
 **사용 예시**
 
 ```sql title=Query
-SELECT stringJaccardIndexUTF8('我爱你', '我也爱你')
+SELECT stringJaccardIndexUTF8('我爱你', '我也爱你') AS jaccard_index
 ```
 
 ```response title=Response
-┌─stringJaccardIndexUTF8('我爱你', '我也爱你')─┐
-│                                       0.75 │
-└─────────────────────────────────────────────┘
+┌─jaccard_index─┐
+│          0.75 │
+└───────────────┘
 ```
 
 <div id="substring">
@@ -3315,6 +3315,8 @@ SELECT stringJaccardIndexUTF8('我爱你', '我也爱你')
 * `offset`이 음수이면 부분 문자열은 문자열의 시작이 아니라 끝에서 `offset` 문자만큼 떨어진 위치에서 시작합니다.
 
 선택적 인수 `length`는 반환되는 부분 문자열이 가질 수 있는 최대 바이트 수를 지정합니다.
+
+숫자의 자릿수에 대해 유사한 작업을 수행하는 [`digits`](/ko/reference/functions/regular-functions/other-functions#digits) 함수도 참조하십시오.
 
 **구문**
 
@@ -3893,12 +3895,12 @@ SELECT upper('clickhouse')
 
 도입 버전: v1.1.0
 
-문자열이 유효한 UTF-8로 인코딩된 텍스트를 포함한다고 가정하고 문자열을 대문자로 변환합니다.
-이 가정이 성립하지 않아도 예외는 발생하지 않으며, 결과는 정의되지 않습니다.
+문자열에 유효한 UTF-8로 인코딩된 텍스트가 포함되어 있다고 가정하고, 문자열을 대문자로 변환합니다.
+이 가정이 충족되지 않더라도 예외는 발생하지 않으며, 결과는 정의되지 않습니다.
 
 <Note>
-  이 함수는 언어를 감지하지 않습니다. 예를 들어 터키어에서는 결과가 정확히 올바르지 않을 수 있습니다(i/İ 대 i/I).
-  코드 포인트의 대문자와 소문자에서 UTF-8 바이트 시퀀스의 길이가 다른 경우(`ẞ` 및 `ß` 등), 해당 코드 포인트에 대한 결과가 올바르지 않을 수 있습니다.
+  이 함수는 언어를 감지하지 않습니다. 예를 들어 터키어의 경우 결과가 완전히 정확하지 않을 수 있습니다(i/İ 대 i/I).
+  코드 포인트의 대문자와 소문자에서 UTF-8 바이트 시퀀스 길이가 다른 경우(`ẞ` 및 `ß` 등), 해당 코드 포인트의 결과가 올바르지 않을 수 있습니다.
 </Note>
 
 **구문**

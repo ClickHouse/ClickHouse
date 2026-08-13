@@ -2,6 +2,7 @@
 
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -21,7 +22,7 @@ namespace TimeSeriesSetting
 
 namespace ErrorCodes
 {
-    extern const int BAD_TYPE_OF_FIELD;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -63,32 +64,61 @@ ASTPtr TimeSeriesIDGenerator::getDefault(
         arguments_for_hash_function.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags));
     }
 
-    auto make_hash_function = [&](const String & function_name) -> boost::intrusive_ptr<ASTFunction>
+    auto make_hash_function = [](const String & function_name, ASTs arguments) -> boost::intrusive_ptr<ASTFunction>
     {
         auto function = make_intrusive<ASTFunction>();
         function->name = function_name;
         function->arguments = make_intrusive<ASTExpressionList>();
         function->children.push_back(function->arguments);
-        function->arguments->children = std::move(arguments_for_hash_function);
+        function->arguments->children = std::move(arguments);
         return function;
     };
 
-    WhichDataType id_which(*id_type);
+    /// Makes an expression calculating a hash of `arguments` represented as a value of type `type`,
+    /// returns null if `type` is not one of the plain identifier types supported by the generator.
+    auto make_hash_expression = [&](const IDataType & type, ASTs arguments) -> ASTPtr
+    {
+        WhichDataType which(type);
 
-    if (id_which.isUInt64())
-        return make_hash_function("sipHash64");
+        if (which.isUInt64())
+            return make_hash_function("sipHash64", std::move(arguments));
 
-    if (id_which.isFixedString() && typeid_cast<const DataTypeFixedString &>(*id_type).getN() == 16)
-        return make_hash_function("sipHash128");
+        if (which.isFixedString() && typeid_cast<const DataTypeFixedString &>(type).getN() == 16)
+            return make_hash_function("sipHash128", std::move(arguments));
 
-    if (id_which.isUUID())
-        return makeASTFunction("reinterpretAsUUID", make_hash_function("sipHash128"));
+        if (which.isUUID())
+            return makeASTFunction("reinterpretAsUUID", make_hash_function("sipHash128", std::move(arguments)));
 
-    if (id_which.isUInt128())
-        return makeASTFunction("reinterpretAsUInt128", make_hash_function("sipHash128"));
+        if (which.isUInt128())
+            return makeASTFunction("reinterpretAsUInt128", make_hash_function("sipHash128", std::move(arguments)));
 
-    throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "{}: Unexpected type {} of the {} column",
-        table_id.getNameForLogs(), id_type->getName(), TimeSeriesColumnNames::ID);
+        return nullptr;
+    };
+
+    /// An identifier of a plain type is a hash of the metric name and the tags.
+    if (auto expression = make_hash_expression(*id_type, arguments_for_hash_function))
+        return expression;
+
+    /// For a two-component identifier Tuple(F, S) the first component is a hash of the metric name only,
+    /// and the second component is a hash of the metric name and the tags.
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(id_type.get()))
+    {
+        const auto & element_types = tuple_type->getElements();
+        if (element_types.size() == 2)
+        {
+            ASTPtr first = make_hash_expression(*element_types[0], ASTs{make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName)});
+            ASTPtr second = first ? make_hash_expression(*element_types[1], arguments_for_hash_function) : nullptr;
+            if (first && second)
+                return makeASTFunction("tuple", std::move(first), std::move(second));
+        }
+    }
+
+    throw Exception(ErrorCodes::INCORRECT_QUERY,
+        "{}: An expression generating identifiers must be specified explicitly for the {} column of type {} - "
+        "either as a DEFAULT expression of that column or in the 'id_generator' setting. "
+        "An expression can be chosen automatically only for types UInt64, UInt128, UUID, FixedString(16), "
+        "and tuples of two of those types",
+        table_id.getNameForLogs(), TimeSeriesColumnNames::ID, id_type->getName());
 }
 
 

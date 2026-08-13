@@ -1,13 +1,13 @@
 ---
 title: 'Subir archivos a Cloud'
 slug: /cloud/migrate/upload-a-csv-file
-description: 'Aprenda a subir archivos a Cloud'
+description: 'Aprende a subir archivos a Cloud'
 doc_type: 'guide'
 ---
 
 import { Image } from "/snippets/es/components/Image.jsx";
 
-ClickHouse Cloud ofrece una forma sencilla de importar sus archivos y admite los
+ClickHouse Cloud ofrece una forma sencilla de importar tus archivos y admite los
 siguientes formatos:
 
 | Formato                         |
@@ -21,51 +21,47 @@ siguientes formatos:
 | `TabSeparatedWithNamesAndTypes` |
 
 <Steps>
-  <Step>
-    ## Subir un archivo
-
-    En la página principal de Cloud, seleccione su servicio como se muestra a continuación:
+  <Step title="Subir un archivo" id="upload-file">
+    En la página principal de Cloud, selecciona tu servicio como se muestra a continuación:
 
     <Image img="/images/cloud/migrate/csv_01.webp" alt="upload_file_02" />
 
-    Si su servicio está inactivo, tendrá que reactivarlo.
+    Si tu servicio está inactivo, tendrás que activarlo.
 
-    Seleccione `Data sources` en la pestaña de la izquierda, como se muestra a continuación:
+    Selecciona `Data sources` en la pestaña de la izquierda, como se muestra a continuación:
 
     <Image img="/images/cloud/migrate/csv_02.webp" alt="upload_file_03" />
 
-    A continuación, seleccione `Upload a file` en el lado derecho de la página de fuentes de datos:
+    A continuación, selecciona `Upload a file` en la parte derecha de la página de fuentes de datos:
 
     <Image img="/images/cloud/migrate/csv_03.webp" alt="upload_file_04" />
 
-    Se abrirá un cuadro de diálogo que le permitirá seleccionar el archivo que desea
-    usar para insertar datos en una tabla de su servicio en Cloud.
+    Se abrirá un cuadro de diálogo para que puedas seleccionar el archivo que deseas
+    usar para insertar datos en una tabla de tu servicio de Cloud.
 
     <Image img="/images/cloud/migrate/csv_04.webp" alt="upload_file_05" />
   </Step>
 
-  <Step>
-    ## Configurar la tabla
-
-    Una vez cargado el archivo, podrá configurar la tabla en la que desea
+  <Step title="Configurar la tabla" id="configure-table">
+    Una vez cargado el archivo, podrás configurar la tabla en la que quieres
     insertar los datos. Se muestra una vista previa de la tabla con las tres primeras filas.
 
     <Image img="/images/cloud/migrate/csv_08.webp" alt="upload_file_08" />
 
-    Ahora puede seleccionar una tabla de destino. Las opciones son:
+    Ahora puedes seleccionar una tabla de destino. Las opciones son:
 
     * una tabla nueva
     * una tabla existente
 
     <br />
 
-    Puede especificar en qué base de datos desea cargar los datos y, en el caso de
-    una tabla nueva, el nombre de la tabla que se creará. También podrá seleccionar la clave de ordenación:
+    Puedes especificar en qué base de datos deseas cargar los datos y, en el caso de
+    una tabla nueva, el nombre de la tabla que se creará. También podrás seleccionar la clave de ordenación:
 
     <Image img="/images/cloud/migrate/csv_05.webp" alt="upload_file_05" />
 
     Las columnas leídas del archivo se muestran como `Source field` y, para cada campo,
-    puede cambiar:
+    puedes cambiar:
 
     * el tipo inferido
     * el valor predeterminado
@@ -76,10 +72,10 @@ siguientes formatos:
     <Info>
       **Excluir campos**
 
-      También puede eliminar un campo si no desea incluirlo en la importación
+      También puedes quitar un campo si no deseas incluirlo en la importación
     </Info>
 
-    Puede especificar el tipo de motor de tabla que desea usar:
+    Puedes especificar el tipo de motor de tabla que deseas usar:
 
     * `MergeTree`
     * `ReplacingMergeTree`
@@ -88,21 +84,21 @@ siguientes formatos:
 
     <br />
 
-    Puede especificar una expresión de clave de partición y una
-    expresión de clave primaria.
+    Puedes especificar una expresión de clave de partición y una expresión
+    de clave primaria.
 
     <Image img="/images/cloud/migrate/csv_07.webp" alt="upload_file_07" />
 
-    Haga clic en `Import to ClickHouse` (mostrado arriba) para importar los datos. La importación de datos se pondrá en cola, como
-    indica la etiqueta de estado `queued` en la columna `Status`, como se muestra a continuación. También puede hacer clic en
+    Haz clic en `Import to ClickHouse` (mostrado arriba) para importar los datos. La importación se pondrá en cola, como
+    indica la insignia de estado `queued` en la columna `Status`, como se muestra a continuación. También puedes hacer clic en
     `Open as query` (mostrado arriba) para abrir la consulta de inserción en la consola SQL. La consulta insertará
     el archivo que se cargó en un bucket de S3 mediante la table function `URL`.
 
     <Image img="/images/cloud/migrate/csv_09.webp" alt="upload_file_09" />
 
-    Si la tarea falla, verá una etiqueta de estado `failed` en la columna `Status` de
-    la pestaña `Data upload history`. Puede hacer clic en `View Details` para obtener más información
-    sobre por qué falló la carga. Es posible que deba modificar la configuración de la tabla o limpiar
+    Si el trabajo falla, verás una insignia de estado `failed` en la columna `Status` de
+    la pestaña `Data upload history`. Puedes hacer clic en `View Details` para obtener más información
+    sobre por qué falló la carga. Es posible que debas modificar la configuración de la tabla o depurar
     los datos según el mensaje de error de la inserción fallida.
 
     <Image img="/images/cloud/migrate/csv_10.webp" alt="upload_file_11" />

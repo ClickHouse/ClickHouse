@@ -35,9 +35,7 @@ description: "В этом руководстве пошагово показан
 ***
 
 <Steps>
-  <Step>
-    ## Этап 1: Создайте роль IAM для доступа к ECR
-
+  <Step title="Этап 1: Создайте роль IAM для доступа к ECR" id="phase-1-create-iam-role-for-ecr-access">
     Создайте роль IAM, которая позволяет загружать образы из приватного ECR ClickHouse. Разверните этот шаблон CloudFormation в своем аккаунте AWS:
 
     ```yaml expandable
@@ -94,9 +92,7 @@ description: "В этом руководстве пошагово показан
     ***
   </Step>
 
-  <Step>
-    ## Этап 2: Скопируйте образы контейнеров
-
+  <Step title="Этап 2: Скопируйте образы контейнеров" id="phase-2-copy-container-images">
     Создайте в своём аккаунте репозитории ECR для каждого артефакта, затем с помощью skopeo скопируйте образы из ECR ClickHouse в свои репозитории. Флаг `--all` сохраняет все архитектуры (amd64, arm64).
 
     ```ini
@@ -125,9 +121,7 @@ description: "В этом руководстве пошагово показан
     ***
   </Step>
 
-  <Step>
-    ## Этап 3: Создание VPC
-
+  <Step title="Этап 3: Создание VPC" id="phase-3-create-vpc">
     Создайте VPC как минимум с 3 зонами доступности для обеспечения высокой доступности. Вот пример конфигурации:
 
     | Параметр           | Значение                            |
@@ -157,9 +151,7 @@ description: "В этом руководстве пошагово показан
     ***
   </Step>
 
-  <Step>
-    ## Этап 4: Создание кластера EKS
-
+  <Step title="Этап 4: Создание кластера EKS" id="phase-4-create-eks-cluster">
     Создайте кластер EKS, связанный с VPC из этапа 3. Для кластера требуется:
 
     * CNI-плагин с поддержкой IPv4 (например, [Amazon VPC CNI](https://github.com/aws/amazon-vpc-cni-k8s) с IRSA)
@@ -181,9 +173,7 @@ description: "В этом руководстве пошагово показан
     ***
   </Step>
 
-  <Step>
-    ## Этап 5: создание групп узлов
-
+  <Step title="Этап 5: создание групп узлов" id="phase-5-create-node-groups">
     Создайте три группы узлов. **Для всех узлов требуется [IMDS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html) для аутентификации.**
 
     Для групп узлов Keeper и server создайте по одной группе узлов на каждую зону доступности (AZ), если необходима поддержка cluster autoscaler в нескольких зонах доступности.
@@ -213,7 +203,7 @@ description: "В этом руководстве пошагово показан
         | Минимальное/целевое число узлов | Соответствует целевому числу реплик ClickHouse (если автомасштабирование не используется) |
         | Рекомендуемый тип инстанса      | `m7gd.16xlarge` (используйте инстансы серии &quot;d&quot; для кэша на NVMe SSD)           |
         | Метки Kubernetes                | x86: `clickhouseGroup: server` / arm64: `clickhouseGroup: server-arm64`                   |
-        | Taints в Kubernetes             | `clickhouse.com/do-not-schedule: true, NoSchedule`                                        |
+        | Тейнты Kubernetes               | `clickhouse.com/do-not-schedule: true, NoSchedule`                                        |
 
         **Важно:** Для инстансов с NVMe SSD используйте приведённый ниже шаблон запуска, чтобы автоматически смонтировать NVMe SSD в качестве RAID-массива для кэширования ClickHouse.
 
@@ -349,9 +339,7 @@ description: "В этом руководстве пошагово показан
     ***
   </Step>
 
-  <Step>
-    ## Этап 6: Создайте S3 бакет и роли IAM
-
+  <Step title="Этап 6: Создайте S3 бакет и роли IAM" id="phase-6-create-s3-bucket-and-iam-roles">
     ### S3 бакет
 
     Создайте S3 бакет (класс Standard) с включенным шифрованием в том же регионе, что и кластер EKS. Можно использовать отдельный бакет для каждого кластера ClickHouse или один общий бакет с уникальным префиксом для каждого кластера.
@@ -395,9 +383,7 @@ description: "В этом руководстве пошагово показан
     ***
   </Step>
 
-  <Step>
-    ## Этап 7: Установите необходимые компоненты Kubernetes
-
+  <Step title="Этап 7: Установите необходимые компоненты Kubernetes" id="phase-7-install-kubernetes-prerequisites">
     ### Установите VolumeSnapshot CRDs
 
     Эти CRD необходимы для ClickHouse Operator.
@@ -443,9 +429,7 @@ description: "В этом руководстве пошагово показан
     ***
   </Step>
 
-  <Step>
-    ## Этап 8: Установите оператор
-
+  <Step title="Этап 8: Установите оператор" id="phase-8-install-the-operator">
     При необходимости выполните вход в ECR через helm:
 
     ```ini
@@ -489,9 +473,7 @@ description: "В этом руководстве пошагово показан
     ***
   </Step>
 
-  <Step>
-    ## Этап 9: развёртывание кластера ClickHouse
-
+  <Step title="Этап 9: развёртывание кластера ClickHouse" id="phase-9-deploy-a-clickhouse-cluster">
     ### Название кластера
 
     Каждый кластер ClickHouse должен иметь **уникальное имя** в рамках кластера EKS. Используйте шаблон именования `$DESCRIPTOR-$LETTERS-$ORDINAL`:
@@ -579,9 +561,7 @@ description: "В этом руководстве пошагово показан
     ***
   </Step>
 
-  <Step>
-    ## Этап 10: Запустите предварительные проверки
-
+  <Step title="Этап 10: Запустите предварительные проверки" id="phase-10-run-preflight-checks">
     Чтобы проверить готовность вашего кластера, рекомендуем запустить предварительные проверки. Для этого используется [Troubleshoot](https://troubleshoot.sh/) — плагин Kubernetes для диагностики кластера.
 
     ### Установите плагин
@@ -621,9 +601,7 @@ description: "В этом руководстве пошагово показан
     ***
   </Step>
 
-  <Step>
-    ## Этап 11: Проверьте установку
-
+  <Step title="Этап 11: Проверьте установку" id="phase-11-verify-installation">
     ### Выполните проброс порта для сервиса ClickHouse
 
     ```bash

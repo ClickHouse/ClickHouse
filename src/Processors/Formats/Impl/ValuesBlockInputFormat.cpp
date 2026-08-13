@@ -13,6 +13,7 @@
 #include <base/find_symbols.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
@@ -124,6 +125,11 @@ Chunk ValuesBlockInputFormat::read()
     size_t rows_in_block = 0;
     for (; rows_in_block < params.max_block_size_rows; ++rows_in_block)
     {
+        /// A loop of its own, so it needs its own checkpoint; see `CANCELLATION_CHECK_PERIOD_ROWS`
+        /// and the equivalent one in `IRowInputFormat::read`.
+        if (rows_in_block != 0 && rows_in_block % CANCELLATION_CHECK_PERIOD_ROWS == 0)
+            CurrentThread::checkIfNotCancelled();
+
         try
         {
             skipWhitespaceAndSQLComments(*buf);
@@ -266,7 +272,18 @@ bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & 
 
     /// Try to parse expression using template if one was successfully deduced while parsing the first row
     const auto & settings = context->getSettingsRef();
-    if (templates[column_idx]->parseExpression(*buf, *token_iterator, format_settings, settings))
+    bool parsed = false;
+    try
+    {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
+        parsed = templates[column_idx]->parseExpression(*buf, *token_iterator, format_settings, settings);
+    }
+    catch (Exception & e)
+    {
+        e.recordToSystemErrors();
+        throw;
+    }
+    if (parsed)
     {
         ++rows_parsed_using_template[column_idx];
         return true;
@@ -298,6 +315,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     bool rollback_on_exception = false;
     try
     {
+        Exception::SuppressErrorCodesScope suppress_error_codes;
         bool read = true;
         if (checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf))
         {
@@ -320,12 +338,15 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
         assertDelimiterAfterValue(column_idx);
         return read;
     }
-    catch (const Exception & e)
+    catch (Exception & e)
     {
         /// Do not consider decimal overflow as parse error to avoid attempts to parse it as expression with float literal
         bool decimal_overflow = e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND;
         if (!isParseError(e.code()) || decimal_overflow)
+        {
+            e.recordToSystemErrors();
             throw;
+        }
         if (rollback_on_exception)
             column.popBack(1);
 
@@ -491,6 +512,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         bool ok = false;
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             const auto & serialization = serializations[column_idx];
             serialization->deserializeTextQuoted(column, *buf, format_settings);
             rollback_on_exception = true;
@@ -498,11 +520,14 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
             if (checkDelimiterAfterValue(column_idx))
                 ok = true;
         }
-        catch (const Exception & e)
+        catch (Exception & e)
         {
             bool decimal_overflow = e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND;
             if (!isParseError(e.code()) || decimal_overflow)
+            {
+                e.recordToSystemErrors();
                 throw;
+            }
         }
         if (ok)
         {
@@ -524,6 +549,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         std::exception_ptr exception;
         try
         {
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             bool found_in_cache = false;
             const auto & result_type = header.getByPosition(column_idx).type;
             const char * delimiter = (column_idx + 1 == num_columns) ? ")" : ",";
@@ -562,7 +588,17 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         if (!format_settings.values.interpret_expressions)
         {
             if (exception)
-                std::rethrow_exception(exception);
+            {
+                try
+                {
+                    std::rethrow_exception(exception);
+                }
+                catch (Exception & e)
+                {
+                    e.recordToSystemErrors();
+                    throw;
+                }
+            }
             else
             {
                 buf->rollbackToCheckpoint();
@@ -826,7 +862,7 @@ The `Values` format prints every row in brackets.
 - Numbers are output in a decimal format without quotes. 
 - Arrays are output in `[]`.
 - Strings, dates, and dates with times are output in quotes. 
-- Escaping rules and parsing are similar to the [TabSeparated](TabSeparated/TabSeparated.md) format.
+- Escaping rules and parsing are similar to the [TabSeparated](/reference/formats/TabSeparated/TabSeparated) format.
 
 During formatting, extra spaces aren't inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). 
 [`NULL`](/sql-reference/syntax.md) is represented as `NULL`.
@@ -903,9 +939,9 @@ SELECT 1 AS a, 'O''Reilly' AS b, NULL::Nullable(String) AS c FORMAT Values;
 
 | Setting                                                                                                                                                     | Description                                                                                                                                                                                   | Default |
 |-------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| [`input_format_values_interpret_expressions`](../../operations/settings/settings-formats.md/#input_format_values_interpret_expressions)                     | if the field could not be parsed by streaming parser, run SQL parser and try to interpret it as SQL expression.                                                                               | `true`  |
-| [`input_format_values_deduce_templates_of_expressions`](../../operations/settings/settings-formats.md/#input_format_values_deduce_templates_of_expressions) | if the field could not be parsed by streaming parser, run SQL parser, deduce template of the SQL expression, try to parse all rows using template and then interpret expression for all rows. | `true`  |
-| [`input_format_values_accurate_types_of_literals`](../../operations/settings/settings-formats.md/#input_format_values_accurate_types_of_literals)           | when parsing and interpreting expressions using template, check actual type of literal to avoid possible overflow and precision issues.                                                       | `true`  |
+| [`input_format_values_interpret_expressions`](/reference/settings/formats/input-format#input_format_values_interpret_expressions)                     | if the field could not be parsed by streaming parser, run SQL parser and try to interpret it as SQL expression.                                                                               | `true`  |
+| [`input_format_values_deduce_templates_of_expressions`](/reference/settings/formats/input-format#input_format_values_deduce_templates_of_expressions) | if the field could not be parsed by streaming parser, run SQL parser, deduce template of the SQL expression, try to parse all rows using template and then interpret expression for all rows. | `true`  |
+| [`input_format_values_accurate_types_of_literals`](/reference/settings/formats/input-format#input_format_values_accurate_types_of_literals)           | when parsing and interpreting expressions using template, check actual type of literal to avoid possible overflow and precision issues.                                                       | `true`  |
 )DOCS_MD"});
 }
 

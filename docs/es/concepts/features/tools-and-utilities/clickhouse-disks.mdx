@@ -57,6 +57,8 @@ En este archivo de documentación, todos los argumentos posicionales obligatorio
 * `current_disk_with_path (current, current_disk, current_path)`
   Imprime el estado actual con el formato:
   `Disk: "current_disk" Path: "current path on current disk"`
+* `du [--human-readable] [<path>]`
+  Imprime el tamaño total en bytes del archivo o directorio en `path` en el disco actual. En el caso de un directorio, el tamaño de todos los archivos que contiene se suma de forma recursiva. Si no se especifica `path`, se usa el directorio actual. Con `--human-readable` (`-h`), el tamaño se imprime en un formato legible para humanos (por ejemplo, `1.23 GiB`).
 * `help [<command>]`
   Imprime un mensaje de ayuda sobre el comando `command`. Si no se especifica `command`, imprime información sobre todos los comandos.
 * `move (mv) <path-from> <path-to>`.
@@ -75,9 +77,13 @@ En este archivo de documentación, todos los argumentos posicionales obligatorio
   Lee un archivo desde `path-from` hacia `path` (`stdout` si no se proporciona).
 * `read-bitmap <path-from> [--values]`
   Inspecciona un archivo sidecar de bitmap de eliminación (`.rbm`) en `path-from`. Imprime el valor mágico y la versión, la validez del CRC, la cardinalidad (número de filas eliminadas) y el rango de filas. Con `--values`, también vuelca todos los bits activados (los desplazamientos de las filas eliminadas) en orden ascendente.
-* `read-checksums <path>`
-  Lee un archivo `checksums.txt` de una parte de datos de `MergeTree` en el disco actual y lo imprime en `stdout` como una tabla legible para humanos, separada por tabulaciones, con las columnas `name`, `file_size`, `file_hash`, `uncompressed_size` y `uncompressed_hash`. Las dos últimas columnas solo están presentes para archivos comprimidos.
 * `switch-disk [--path path] <disk>`
   Cambia al disco `disk` en la ruta `path` (si no se especifica `path`, el valor predeterminado es la ruta anterior en el disco `disk`).
 * `write (w) [--path-from path] <path-to>`.
   Escribe un archivo desde `path` (`stdin` si no se proporciona `path`; la entrada debe finalizar con Ctrl+D) en `path-to`.
+* `wc <path> [--bytes] [--lines] [--words]`
+  Cuenta bytes, líneas y palabras en el archivo en `path` del disco actual (como Unix `wc`). Si no se indica ningún indicador, se imprimen los tres recuentos en este orden: líneas, palabras y bytes. Usa `--bytes` (`-c`), `--lines` (`-l`) y `--words` (`-w`) para seleccionar recuentos específicos.
+* `sed <expression> <path>`
+  Aplica la `expression` de `sed` al archivo en `path` del disco actual, modificándolo en el propio archivo. Requiere que `sed` esté instalado en el host. Solo se admite una única expresión de `sed` sin opciones (por ejemplo, `'s/foo/bar/g'`, `'/foo/d'`), no varias expresiones (`-e ... -e ...`) ni opciones combinadas con una dirección (por ejemplo, `-n` con `4,10p`).
+* `read-checksums <path>`
+  Lee un archivo `checksums.txt` de una parte de datos de `MergeTree` en el disco actual y lo imprime en `stdout` como una tabla legible para humanos, separada por tabulaciones, con las columnas `name`, `file_size`, `file_hash`, `uncompressed_size` y `uncompressed_hash`. Las dos últimas columnas solo están presentes para archivos comprimidos.

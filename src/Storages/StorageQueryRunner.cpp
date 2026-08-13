@@ -609,29 +609,29 @@ private:
 
         const auto event_time = std::chrono::system_clock::now();
 
-        QueryLogElement elem;
-        elem.type = type;
-        elem.event_time = timeInSeconds(event_time);
-        elem.event_time_microseconds = timeInMicroseconds(event_time);
-        elem.query_start_time = timeInSeconds(query_start_time);
-        elem.query_start_time_microseconds = timeInMicroseconds(query_start_time);
-        elem.query_duration_ms = duration_ms;
-        elem.query = job.query;
-        elem.current_database = job.database;
-        elem.log_comment = settings[Setting::log_comment];
-        elem.client_info = job_context->getClientInfo();
-        elem.is_internal = true;
-
-        if (settings[Setting::log_query_settings])
-            elem.query_settings = std::make_shared<Settings>(settings);
-
-        if (type == QueryLogElementType::EXCEPTION_WHILE_PROCESSING)
+        query_log->add([&](QueryLogElement & element)
         {
-            elem.exception_code = getCurrentExceptionCode();
-            elem.exception = getCurrentExceptionMessage(false);
-        }
+            element.type = type;
+            element.event_time = timeInSeconds(event_time);
+            element.event_time_microseconds = timeInMicroseconds(event_time);
+            element.query_start_time = timeInSeconds(query_start_time);
+            element.query_start_time_microseconds = timeInMicroseconds(query_start_time);
+            element.query_duration_ms = duration_ms;
+            element.query = job.query;
+            element.current_database = job.database;
+            element.log_comment = settings[Setting::log_comment];
+            element.client_info = job_context->getClientInfo();
+            element.is_internal = true;
 
-        query_log->add(std::move(elem));
+            if (settings[Setting::log_query_settings])
+                element.query_settings = settings.changedToMap();
+
+            if (type == QueryLogElementType::EXCEPTION_WHILE_PROCESSING)
+            {
+                element.exception_code = getCurrentExceptionCode();
+                element.exception = getCurrentExceptionMessage(false);
+            }
+        });
     }
 
     static constexpr std::string_view client_name = "QueryRunner";

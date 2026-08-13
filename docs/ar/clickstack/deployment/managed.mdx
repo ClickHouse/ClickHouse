@@ -55,31 +55,23 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
     <br />
 
     <Steps>
-      <Step>
-        ### أنشئ خدمة جديدة
-
+      <Step title="أنشئ خدمة جديدة" id="create-a-service">
         من الصفحة الرئيسية لـ ClickHouse Cloud، اختر `New service` لإنشاء خدمة جديدة.
 
         <Image img="/images/clickstack/getting-started/new_service.webp" size="lg" alt="الخدمة" border />
       </Step>
 
-      <Step>
-        ### حدّد المزوّد والمنطقة والموارد
-
+      <Step title="حدّد المزوّد والمنطقة والموارد" id="specify-your-region-and-resources">
         <ProviderSelection />
       </Step>
 
-      <Step>
-        ### إعداد الاستيعاب
-
+      <Step title="إعداد الاستيعاب" id="setup-ingestion-create-new">
         بعد تجهيز خدمتك، تأكد من تحديدها ثم انقر على &quot;ClickStack&quot; من القائمة اليمنى.
 
         <SetupManagedIngestion />
       </Step>
 
-      <Step>
-        ### انتقل إلى واجهة مستخدم ClickStack
-
+      <Step title="انتقل إلى واجهة مستخدم ClickStack" id="navigate-to-clickstack-ui-cloud-create-new">
         <NavigateClickStackUI />
 
         <br />
@@ -91,9 +83,7 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
     <br />
 
     <Steps>
-      <Step>
-        ### حدد خدمة
-
+      <Step title="حدد خدمة" id="select-service">
         من الصفحة الرئيسية لـ ClickHouse Cloud، حدد الخدمة التي تريد تمكين ClickStack المُدار لها.
 
         <Warning>
@@ -107,9 +97,7 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
         <Image img="/images/clickstack/select_service.webp" alt="حدد خدمة" size="lg" />
       </Step>
 
-      <Step>
-        ### انتقل إلى واجهة ClickStack
-
+      <Step title="انتقل إلى واجهة مستخدم ClickStack" id="navigate-to-the-clickstack-ui-existing">
         حدّد &#39;ClickStack&#39; من قائمة التنقل اليسرى. ستتم إعادة توجيهك إلى واجهة ClickStack وستتم مصادقتك تلقائيًا استنادًا إلى أذونات ClickHouse Cloud الخاصة بك.
 
         إذا كانت هناك أي جداول OpenTelemetry موجودة بالفعل في خدمتك، فسيتم اكتشافها تلقائيًا وإنشاء مصادر البيانات المقابلة لها.
@@ -127,9 +115,7 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
         إذا نجحت هذه الخطوة، فهذا كل ما في الأمر — أنت جاهز تمامًا 🎉، وإلا فانتقل إلى إعداد إدخال البيانات.
       </Step>
 
-      <Step>
-        ### إعداد الاستيعاب
-
+      <Step title="إعداد الاستيعاب" id="setup-ingestion-existing-service">
         إذا فشل الاكتشاف التلقائي، أو لم تكن لديك جداول موجودة، سيُطلب منك إعداد الاستيعاب.
 
         <Image img="/images/clickstack/clickstack-ui-setup-ingestion.webp" alt="إعداد الاستيعاب في واجهة ClickStack" size="lg" />
@@ -153,7 +139,7 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
 
             ### بدء تشغيل collector
 
-            يفترض ما يلي المسار الموصى به، وهو استخدام **توزيعة ClickStack من OpenTelemetry Collector**، التي تتضمن معالجة إضافية ومُحسّنة خصيصًا لـ ClickHouse Cloud. إذا كنت تريد استخدام OpenTelemetry Collector الخاص بك، فراجع [&quot;تهيئة collectors الموجودة.&quot;](#configure-existing-collectors)
+            يفترض ما يلي المسار الموصى به، وهو استخدام **توزيعة ClickStack من OpenTelemetry Collector**، التي تتضمن معالجة إضافية ومُحسّنة خصيصًا لـ ClickHouse Cloud. إذا كنت تريد استخدام OpenTelemetry Collector الخاص بك، فراجع [&quot;تهيئة collectors الموجودة.&quot;](#configure-existing-collectors-existing)
 
             للبدء بسرعة، انسخ أمر Docker الموضّح وشغّله.
 
@@ -260,9 +246,7 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
         </Tabs>
       </Step>
 
-      <Step>
-        ### الانتقال إلى واجهة مستخدم ClickStack
-
+      <Step title="انتقل إلى واجهة مستخدم ClickStack" id="navigate-to-clickstack-ui-existing-service">
         بعد إكمال إعداد إدخال البيانات والبدء في إرسالها، حدِّد &quot;التالي&quot;.
 
         <Tabs>
@@ -313,7 +297,7 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
 2. انتقل إلى **Settings** → **SQL Console Access**
 3. عيّن مستوى الأذونات المناسب لكل مستخدم:
    * **Service Admin → Full Access** - مطلوب لتمكين التنبيهات
-   * **Service Read Only → Read Only** - يمكنه عرض بيانات observability وإنشاء dashboards
+   * **Service Read Only → Read Only** - يمكنه عرض بيانات observability وإنشاء لوحات المعلومات
    * **No access** - لا يمكنه الوصول إلى HyperDX
 
 <Image img="/images/clickstack/read-only-access.webp" alt="ClickHouse Cloud للقراءة فقط" size="md" />

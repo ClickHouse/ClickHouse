@@ -16,194 +16,37 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     이 가이드는 [Managed ClickStack 시작하기 가이드](/ko/clickstack/deployment/managed)를 완료하고 [연결 자격 증명을 기록](/ko/clickstack/getting-started/managed#next-steps)해 두었음을 전제로 합니다.
 
     <Steps>
-      <Step>
-        ### 서비스 선택
-
+      <Step title="서비스 선택" id="select-your-service-managed">
         ClickHouse Cloud 메인 랜딩 페이지에서 Managed ClickStack 서비스가 표시된 항목을 선택합니다.
 
         <Image img="/images/clickstack/select_service.webp" alt="서비스 선택" size="lg" />
       </Step>
 
-      <Step>
-        ### ClickStack UI(HyperDX)로 이동
-
+      <Step title="ClickStack UI(HyperDX)로 이동" id="navigate-to-the-hyperdx-ui-managed">
         왼쪽 메뉴에서 `ClickStack`을 선택하면 ClickStack UI로 이동하며 자동으로 인증이 완료됩니다.
 
         <Image img="/images/use-cases/observability/hyperdx.webp" alt="ClickStack UI" size="lg" />
       </Step>
 
-      <Step>
-        ### 샘플 데이터 다운로드
-
+      <Step title="샘플 데이터 다운로드" id="download-sample-data-managed">
         UI에 샘플 데이터를 표시하려면 다음 파일을 다운로드하세요:
 
         [샘플 데이터](https://storage.googleapis.com/hyperdx/sample.tar.gz)
 
         ```shell
-        # curl 사용
+        # curl
         curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
-        # 또는
+        # or
         # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
         ```
 
         이 파일에는 공개 [OpenTelemetry demo](https://github.com/ClickHouse/opentelemetry-demo)의 예시 로그, 메트릭, 트레이스가 포함되어 있습니다. 이 데모는 마이크로서비스로 구성된 간단한 전자상거래 스토어입니다. 이 파일을 원하는 디렉터리로 복사하십시오.
       </Step>
 
-      <Step>
-        ### 샘플 데이터 로드
-
+      <Step title="샘플 데이터 로드" id="load-sample-data-managed">
         이 데이터를 로드하려면 배포된 OpenTelemetry (OTel) collector의 HTTP endpoint로 보내기만 하면 됩니다.
 
         다음 명령을 실행하여 데이터를 OTel collector로 전송하세요:
-
-        ```shell
-        for filename in $(tar -tf sample.tar.gz); do
-          endpoint="http://localhost:4318/v1/${filename%.json}"
-          echo "로딩 중: ${filename%.json}"
-          tar -xOf sample.tar.gz "$filename" | while read -r line; do
-            printf '%s\n' "$line" | curl -s -o /dev/null -X POST "$endpoint" \
-            -H "Content-Type: application/json" \
-            -H "authorization: ${CLICKSTACK_API_KEY}" \
-            --data-binary @-
-          done
-        done
-        ```
-
-        이 작업은 OTLP 로그, 트레이스, 메트릭 source가 OTel collector로 데이터를 전송하는 상황을 시뮬레이션합니다. 실제 운영 환경에서는 이러한 source가 언어별 클라이언트이거나 다른 OTel collector일 수도 있습니다.
-
-        `Search` 보기로 돌아가면 데이터가 로드되기 시작한 것을 확인할 수 있습니다(데이터가 표시되지 않으면 시간 범위를 `Last 1 hour`로 조정하십시오):
-
-        <Image img="/images/use-cases/observability/hyperdx-10.webp" alt="HyperDX 검색" size="lg" />
-
-        데이터가 로드되는 데는 몇 분 정도 걸립니다. 다음 단계로 진행하기 전에 로드가 완료될 때까지 기다리십시오.
-      </Step>
-
-      <Step>
-        ### 세션 살펴보기
-
-        사용자가 상품 결제 중 문제를 겪고 있다는 보고가 있다고 가정해 보겠습니다. HyperDX의 세션 리플레이 기능을 사용하면 사용자의 경험을 확인할 수 있습니다.
-
-        왼쪽 메뉴에서 `Client Sessions`를 선택합니다.
-
-        <Image img="/images/use-cases/observability/hyperdx-11.webp" alt="세션" size="lg" />
-
-        이 보기에서는 전자상거래 스토어의 프런트엔드 세션을 확인할 수 있습니다. 사용자가 체크아웃을 진행해 구매 완료를 시도하기 전까지 세션은 Anonymous 상태로 유지됩니다.
-
-        이메일이 있는 일부 세션에는 관련 오류가 표시되며, 이는 거래 실패 보고를 뒷받침할 수 있습니다.
-
-        실패와 연결된 이메일이 있는 trace를 선택합니다. 다음 보기에서는 사용자의 세션을 리플레이하고 문제를 검토할 수 있습니다. 세션을 보려면 실행을 누르십시오.
-
-        <Image img="/images/use-cases/observability/hyperdx-12.webp" alt="세션 리플레이" size="lg" />
-
-        리플레이를 보면 사용자가 사이트를 둘러보고 장바구니에 상품을 추가하는 과정을 확인할 수 있습니다. 세션 후반부로 이동해 결제를 완료하려고 시도하는 지점으로 가보십시오.
-
-        <Tip>
-          모든 오류는 타임라인에 빨간색으로 표시됩니다.
-        </Tip>
-
-        사용자는 뚜렷한 오류 없이 주문을 완료하지 못했습니다. 사용자의 브라우저에서 발생한 `Network` 및 `Console` 이벤트가 표시되는 왼쪽 패널 하단으로 스크롤하십시오. `/api/checkout` 호출 시 500 오류가 발생한 것을 확인할 수 있습니다.
-
-        <Image img="/images/use-cases/observability/hyperdx-13.webp" alt="세션의 오류" size="lg" />
-
-        이 `500` 오류를 선택합니다. `Overview`와 `Column Values` 모두 이 오류가 예기치 않은 `Internal Error`라는 점 외에는 문제의 원인을 보여주지 않습니다.
-      </Step>
-
-      <Step>
-        ### 트레이스 탐색
-
-        전체 분산 트레이스를 보려면 `Trace` 탭으로 이동하세요.
-
-        <Image img="/images/use-cases/observability/hyperdx-14.webp" alt="세션 트레이스" size="lg" />
-
-        트레이스를 아래로 스크롤하면 오류가 시작된 지점인 `checkout` 서비스 스팬을 확인할 수 있습니다. `Payment` 서비스 스팬을 선택하세요.
-
-        <Image img="/images/use-cases/observability/hyperdx-15.webp" alt="스팬" size="lg" />
-
-        `Column Values` 탭을 선택한 다음 아래로 스크롤하세요. 문제가 캐시가 가득 찬 상태와 관련되어 있음을 확인할 수 있습니다.
-
-        <Image img="/images/use-cases/observability/hyperdx-16.webp" alt="컬럼 값" size="lg" />
-
-        위로 스크롤해 트레이스로 돌아가면, 앞서 구성한 내용 덕분에 로그가 스팬과 연관되어 있음을 확인할 수 있습니다. 이를 통해 추가적인 맥락을 파악할 수 있습니다.
-
-        <Image img="/images/use-cases/observability/hyperdx-17.webp" alt="연관된 로그" size="lg" />
-
-        결제 서비스에서 캐시가 가득 차고 있으며, 이로 인해 결제가 완료되지 못하고 있음을 확인했습니다.
-      </Step>
-
-      <Step>
-        ### 로그 탐색
-
-        추가 세부 정보를 확인하려면 `Search`로 돌아갑니다.
-
-        소스에서 `Logs`를 선택하고 `payment` 서비스에 필터를 적용합니다.
-
-        <Image img="/images/use-cases/observability/hyperdx-18.webp" alt="로그" size="lg" />
-
-        문제가 최근에 발생한 것이지만 영향을 받은 결제 건수는 많다는 것을 확인할 수 있습니다. 또한 Visa 결제와 관련된 캐시가 문제를 일으키는 것으로 보입니다.
-      </Step>
-
-      <Step>
-        ### 메트릭 차트
-
-        코드에 오류가 분명히 추가되었지만, 메트릭을 사용해 캐시 크기를 확인할 수 있습니다. `Chart Explorer` 뷰로 이동합니다.
-
-        데이터 소스로 `Metrics`를 선택합니다. 차트 빌더에서 `visa_validation_cache.size (Gauge)`의 `Maximum`이 표시되도록 설정한 다음 실행 버튼을 누르십시오. 캐시는 최대 크기에 도달할 때까지 분명히 증가했으며, 그 이후 오류가 발생했습니다.
-
-        <Image img="/images/use-cases/observability/hyperdx-19.webp" alt="메트릭" size="lg" />
-      </Step>
-    </Steps>
-  </Tab>
-
-  <Tab title="ClickStack 오픈소스">
-    다음 예시는 [all-in-one 이미지 안내](/ko/clickstack/getting-started/oss)를 참고하여 Open Source ClickStack을 시작하고 [로컬 ClickHouse 인스턴스](/ko/clickstack/getting-started/oss#complete-connection-credentials)에 연결한 상태를 전제로 합니다.
-
-    <Steps>
-      <Step>
-        ### ClickStack UI(HyperDX)로 이동
-
-        ClickStack UI에 접속하려면 [http://localhost:8080](http://localhost:8080)을 방문하십시오.
-
-        <Image img="/images/use-cases/observability/hyperdx.webp" alt="ClickStack UI" size="lg" />
-      </Step>
-
-      <Step>
-        ### 수집 API key 복사
-
-        [`팀 설정`](http://localhost:8080/team)으로 이동한 다음 `API Keys` 섹션에서 `Ingestion API Key`를 복사합니다. 이 API key는 OpenTelemetry collector를 통한 데이터 수집을 안전하게 보호합니다.
-
-        <Image img="/images/use-cases/observability/copy_api_key.webp" alt="API key 복사" size="lg" />
-      </Step>
-
-      <Step>
-        ### 샘플 데이터 다운로드
-
-        UI에 샘플 데이터를 표시하려면 다음 파일을 다운로드하세요:
-
-        [샘플 데이터](https://storage.googleapis.com/hyperdx/sample.tar.gz)
-
-        ```shell
-        # curl 사용
-        curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
-        # 또는
-        # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
-        ```
-
-        이 파일에는 공개 [OpenTelemetry demo](https://github.com/ClickHouse/opentelemetry-demo)의 예시 로그, 메트릭, 트레이스가 포함되어 있습니다 - 이 데모는 마이크로서비스로 구성된 간단한 전자상거래 스토어입니다. 이 파일을 원하는 디렉터리로 복사하십시오.
-      </Step>
-
-      <Step>
-        ### 샘플 데이터 로드
-
-        이 데이터를 로드하려면 배포된 OpenTelemetry (OTel) collector의 HTTP endpoint로 전송하기만 하면 됩니다.
-
-        먼저 위에서 복사한 API Key를 export하십시오.
-
-        ```shell
-        # API Key 내보내기
-        export CLICKSTACK_API_KEY=<YOUR_INGESTION_API_KEY>
-        ```
-
-        데이터를 OTel collector로 보내려면 다음 명령을 실행하세요:
 
         ```shell
         for filename in $(tar -tf sample.tar.gz); do
@@ -227,9 +70,140 @@ import { Image } from "/snippets/ko/components/Image.jsx";
         데이터가 로드되는 데는 몇 분 정도 걸립니다. 다음 단계로 진행하기 전에 로드가 완료될 때까지 기다리십시오.
       </Step>
 
-      <Step>
-        ### 세션 살펴보기
+      <Step title="세션 살펴보기" id="explore-sessions-managed">
+        사용자가 상품 결제 과정에서 문제를 겪고 있다는 보고가 있다고 가정해 보겠습니다. HyperDX의 세션 리플레이 기능을 사용하면 사용자가 실제로 어떤 경험을 했는지 확인할 수 있습니다.
 
+        왼쪽 메뉴에서 `Client Sessions`를 선택합니다.
+
+        <Image img="/images/use-cases/observability/hyperdx-11.webp" alt="세션" size="lg" />
+
+        이 화면에서는 전자상거래 스토어의 프런트엔드 세션을 확인할 수 있습니다. 세션은 사용자가 체크아웃을 진행해 구매 완료를 시도하기 전까지 `Anonymous` 상태로 유지됩니다.
+
+        이메일이 있는 일부 세션에는 관련 오류가 연결되어 있어, 거래 실패 보고와 연관이 있을 가능성을 보여 줍니다.
+
+        실패와 관련 이메일이 있는 trace를 선택합니다. 다음 화면에서는 사용자의 세션을 다시 재생하며 문제를 검토할 수 있습니다. 세션을 보려면 `실행`을 누르십시오.
+
+        <Image img="/images/use-cases/observability/hyperdx-12.webp" alt="세션 리플레이" size="lg" />
+
+        리플레이를 보면 사용자가 사이트를 탐색하고 장바구니에 상품을 추가하는 과정을 확인할 수 있습니다. 결제를 완료하려고 시도하는 세션 후반부로 건너뛰어도 됩니다.
+
+        <Tip>
+          모든 오류는 타임라인에 빨간색으로 표시됩니다.
+        </Tip>
+
+        사용자는 눈에 띄는 오류 메시지 없이 주문을 완료하지 못했습니다. 사용자의 브라우저에서 발생한 네트워크 및 콘솔 이벤트가 있는 왼쪽 패널 하단으로 스크롤하십시오. `/api/checkout` 호출 시 500 오류가 발생한 것을 확인할 수 있습니다.
+
+        <Image img="/images/use-cases/observability/hyperdx-13.webp" alt="세션의 오류" size="lg" />
+
+        이 `500` 오류를 선택합니다. `Overview`와 `Column Values` 모두, 예상치 못한 오류로 인해 `Internal Error`가 발생했다는 점 외에는 문제의 원인을 보여 주지 않습니다.
+      </Step>
+
+      <Step title="트레이스 탐색" id="explore-traces-managed">
+        전체 분산 트레이스를 보려면 `Trace` 탭으로 이동합니다.
+
+        <Image img="/images/use-cases/observability/hyperdx-14.webp" alt="세션 트레이스" size="lg" />
+
+        트레이스를 아래로 스크롤하면 오류의 원인 지점인 `checkout` 서비스 스팬을 확인할 수 있습니다. `Payment` 서비스 스팬을 선택합니다.
+
+        <Image img="/images/use-cases/observability/hyperdx-15.webp" alt="스팬" size="lg" />
+
+        `Column Values` 탭을 선택한 다음 아래로 스크롤합니다. 문제는 캐시가 가득 찬 것과 관련이 있음을 확인할 수 있습니다.
+
+        <Image img="/images/use-cases/observability/hyperdx-16.webp" alt="컬럼 값" size="lg" />
+
+        위로 스크롤해 트레이스로 돌아가면, 앞서 수행한 구성 덕분에 로그가 스팬과 연관되어 있음을 확인할 수 있습니다. 이를 통해 추가적인 맥락을 파악할 수 있습니다.
+
+        <Image img="/images/use-cases/observability/hyperdx-17.webp" alt="연관된 로그" size="lg" />
+
+        이로써 결제 서비스에서 캐시가 가득 차고 있으며, 그로 인해 결제가 완료되지 못하고 있음을 확인했습니다.
+      </Step>
+
+      <Step title="로그 탐색" id="explore-logs-managed">
+        추가 세부 정보를 확인하려면 `Search`로 돌아갑니다.
+
+        소스에서 `Logs`를 선택하고 `payment` 서비스에 필터를 적용합니다.
+
+        <Image img="/images/use-cases/observability/hyperdx-18.webp" alt="로그" size="lg" />
+
+        문제가 최근에 발생한 것이지만 영향을 받은 결제 건수는 많다는 것을 확인할 수 있습니다. 또한 Visa 결제와 관련된 캐시가 문제를 일으키는 것으로 보입니다.
+      </Step>
+
+      <Step title="차트 메트릭" id="chart-metrics-managed">
+        코드에 분명 오류가 추가되었지만, 메트릭을 사용해 캐시 크기를 확인할 수 있습니다. `Chart Explorer` 뷰로 이동하세요.
+
+        데이터 소스로 `Metrics`를 선택합니다. 차트 빌더에서 `visa_validation_cache.size (Gauge)`의 `Maximum`을 표시하도록 설정한 다음 실행 버튼을 누르세요. 캐시는 최대 크기에 도달하기 전까지 분명히 증가했으며, 그 이후 오류가 발생했습니다.
+
+        <Image img="/images/use-cases/observability/hyperdx-19.webp" alt="메트릭" size="lg" />
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="ClickStack 오픈소스">
+    다음 예시는 [all-in-one 이미지 안내](/ko/clickstack/getting-started/oss)를 참고하여 Open Source ClickStack을 시작하고 [로컬 ClickHouse 인스턴스](/ko/clickstack/getting-started/oss#complete-connection-credentials)에 연결한 상태를 전제로 합니다.
+
+    <Steps>
+      <Step title="ClickStack UI(HyperDX)로 이동" id="navigate-to-the-hyperdx-ui">
+        ClickStack UI에 접속하려면 [http://localhost:8080](http://localhost:8080)을 방문하십시오.
+
+        <Image img="/images/use-cases/observability/hyperdx.webp" alt="ClickStack UI" size="lg" />
+      </Step>
+
+      <Step title="수집 API key 복사" id="copy-ingestion-api-key">
+        [`팀 설정`](http://localhost:8080/team)으로 이동한 다음 `API Keys` 섹션에서 `Ingestion API Key`를 복사합니다. 이 API key는 OpenTelemetry collector를 통한 데이터 수집을 안전하게 보호합니다.
+
+        <Image img="/images/use-cases/observability/copy_api_key.webp" alt="API key 복사" size="lg" />
+      </Step>
+
+      <Step title="샘플 데이터 다운로드" id="download-sample-data">
+        UI에 샘플 데이터를 표시하려면 다음 파일을 다운로드하세요:
+
+        [샘플 데이터](https://storage.googleapis.com/hyperdx/sample.tar.gz)
+
+        ```shell
+        # curl
+        curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
+        # or
+        # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
+        ```
+
+        이 파일에는 공개 [OpenTelemetry demo](https://github.com/ClickHouse/opentelemetry-demo)의 예시 로그, 메트릭, 트레이스가 포함되어 있습니다. 이 데모는 마이크로서비스로 구성된 간단한 전자상거래 스토어입니다. 이 파일을 원하는 디렉터리로 복사하십시오.
+      </Step>
+
+      <Step title="샘플 데이터 로드" id="load-sample-data">
+        이 데이터를 로드하려면 배포된 OpenTelemetry (OTel) collector의 HTTP endpoint로 전송하기만 하면 됩니다.
+
+        먼저 위에서 복사한 API Key를 export하십시오.
+
+        ```shell
+        # export API key
+        export CLICKSTACK_API_KEY=<YOUR_INGESTION_API_KEY>
+        ```
+
+        다음 명령을 실행하여 데이터를 OTel collector로 전송하세요:
+
+        ```shell
+        for filename in $(tar -tf sample.tar.gz); do
+          endpoint="http://localhost:4318/v1/${filename%.json}"
+          echo "loading ${filename%.json}"
+          tar -xOf sample.tar.gz "$filename" | while read -r line; do
+            printf '%s\n' "$line" | curl -s -o /dev/null -X POST "$endpoint" \
+            -H "Content-Type: application/json" \
+            -H "authorization: ${CLICKSTACK_API_KEY}" \
+            --data-binary @-
+          done
+        done
+        ```
+
+        이는 OTLP 로그, 트레이스 및 메트릭 소스가 OTel collector로 데이터를 전송하는 상황을 시뮬레이션합니다. 프로덕션 환경에서는 이러한 소스가 각 언어용 클라이언트이거나 다른 OTel collector일 수도 있습니다.
+
+        `Search` 뷰로 돌아가면 데이터가 로드되기 시작한 것을 확인할 수 있습니다(데이터가 표시되지 않으면 시간 범위를 `Last 1 hour`로 조정하십시오):
+
+        <Image img="/images/use-cases/observability/hyperdx-10.webp" alt="HyperDX 검색" size="lg" />
+
+        데이터가 로드되는 데는 몇 분 정도 걸립니다. 다음 단계로 진행하기 전에 로드가 완료될 때까지 기다리십시오.
+      </Step>
+
+      <Step title="세션 살펴보기" id="explore-sessions">
         사용자가 상품 결제 과정에서 문제를 겪고 있다는 보고가 있다고 가정해 보겠습니다. HyperDX의 세션 리플레이 기능을 사용하면 사용자가 실제로 어떤 경험을 했는지 확인할 수 있습니다.
 
         왼쪽 메뉴에서 [`Client Sessions`](http://localhost:8080/sessions?from=1747312320000\&to=1747312920000\&sessionSource=l1324572572)을 선택합니다.
@@ -257,9 +231,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
         이 `500` 오류를 선택합니다. `Overview`와 `Column Values` 모두, 예상치 못한 오류로 인해 `Internal Error`가 발생했다는 점 외에는 문제의 원인을 보여 주지 않습니다.
       </Step>
 
-      <Step>
-        ### 트레이스 탐색
-
+      <Step title="트레이스 탐색" id="explore-traces">
         전체 분산 트레이스를 보려면 `Trace` 탭으로 이동합니다.
 
         <Image img="/images/use-cases/observability/hyperdx-14.webp" alt="세션 트레이스" size="lg" />
@@ -279,9 +251,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
         이로써 결제 서비스에서 캐시가 가득 차고 있으며, 그로 인해 결제가 완료되지 못하고 있음을 확인했습니다.
       </Step>
 
-      <Step>
-        ### 로그 살펴보기
-
+      <Step title="로그 탐색" id="explore-logs">
         자세한 내용은 [`Search` 뷰](http://localhost:8080/search)로 돌아가 확인할 수 있습니다.
 
         소스에서 `Logs`를 선택하고 `payment` 서비스로 필터링합니다.
@@ -291,9 +261,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
         문제가 최근에 발생했음에도 영향을 받은 결제 건수는 많습니다. 또한 visa 결제와 관련된 캐시가 문제를 일으키는 것으로 보입니다.
       </Step>
 
-      <Step>
-        ### 차트 메트릭
-
+      <Step title="차트 메트릭" id="chart-metrics">
         코드에 분명 오류가 추가되었지만, 메트릭을 사용해 캐시 크기를 확인할 수 있습니다. `Chart Explorer` 뷰로 이동하세요.
 
         데이터 소스로 `Metrics`를 선택합니다. 차트 빌더에서 `visa_validation_cache.size (Gauge)`의 `Maximum`을 표시하도록 설정한 다음 실행 버튼을 누르세요. 캐시는 최대 크기에 도달하기 전까지 분명히 증가했으며, 그 이후 오류가 발생했습니다.

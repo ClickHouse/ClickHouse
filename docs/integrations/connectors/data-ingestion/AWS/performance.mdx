@@ -46,26 +46,26 @@ Go to ①
 
 In ①, the size depends on the insert block size, which can be controlled with two settings:
 
-- [`min_insert_block_size_rows`](/reference/settings/session-settings#min_insert_block_size_rows) (default: `1048545` rows)
-- [`min_insert_block_size_bytes`](/reference/settings/session-settings#min_insert_block_size_bytes) (default: `256 MiB`)
+- [`min_insert_block_size_rows`](/reference/settings/session-settings/min-insert#min_insert_block_size_rows) (default: `1048545` rows)
+- [`min_insert_block_size_bytes`](/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) (default: `256 MiB`)
 
 When either the specified number of rows is collected in the insert block, or the configured amount of data is reached (whichever happens first), then this will trigger the block being written into a new part. The insert loop continues at step ①.
 
-Note that the `min_insert_block_size_bytes` value denotes the uncompressed in-memory block size (and not the compressed on-disk part size). Also, note that the created blocks and parts rarely precisely contain the configured number of rows or bytes because ClickHouse streams and [processes](https://clickhouse.com/company/events/query-performance-introspection) data row-[block](/reference/settings/session-settings#max_block_size)-wise. Therefore, these settings specify minimum thresholds.
+Note that the `min_insert_block_size_bytes` value denotes the uncompressed in-memory block size (and not the compressed on-disk part size). Also, note that the created blocks and parts rarely precisely contain the configured number of rows or bytes because ClickHouse streams and [processes](https://clickhouse.com/company/events/query-performance-introspection) data row-[block](/reference/settings/session-settings/max#max_block_size)-wise. Therefore, these settings specify minimum thresholds.
 
 #### Be aware of merges {#be-aware-of-merges}
 
-The smaller the configured insert block size is, the more initial parts get created for a large data load, and the more background part merges are executed concurrently with the data ingestion. This can cause resource contention (CPU and memory) and require additional time (for reaching a [healthy](/reference/settings/merge-tree-settings#parts_to_throw_insert) (3000) number of parts) after the ingestion is finished. 
+The smaller the configured insert block size is, the more initial parts get created for a large data load, and the more background part merges are executed concurrently with the data ingestion. This can cause resource contention (CPU and memory) and require additional time (for reaching a [healthy](/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert) (3000) number of parts) after the ingestion is finished.
 
 <Warning>
-ClickHouse query performance will be negatively impacted if the part count exceeds the [recommended limits](/reference/settings/merge-tree-settings#parts_to_throw_insert).
+ClickHouse query performance will be negatively impacted if the part count exceeds the [recommended limits](/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert).
 </Warning>
 
-ClickHouse will continuously [merge parts](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance) into larger parts until they [reach](/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool) a compressed size of ~150 GiB. This diagram shows how a ClickHouse server merges parts:
+ClickHouse will continuously [merge parts](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance) into larger parts until they [reach](/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) a compressed size of ~150 GiB. This diagram shows how a ClickHouse server merges parts:
 
 <Image img="/images/integrations/data-ingestion/s3/merges.webp" size="lg" border alt="Background merges in ClickHouse" />
 
-A single ClickHouse server utilizes several [background merge threads](/reference/settings/server-settings/settings#background_pool_size) to execute concurrent [part merges](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes). Each thread executes a loop:
+A single ClickHouse server utilizes several [background merge threads](/reference/settings/server-settings/settings/background#background_pool_size) to execute concurrent [part merges](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes). Each thread executes a loop:
 
 ```bash
 ① Decide which parts to merge next, and load these parts as blocks into memory.
@@ -79,7 +79,7 @@ Go to ①
 
 Note that [increasing](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#hardware-size) the number of CPU cores and the size of RAM increases the background merge throughput.
 
-Parts that were merged into larger parts are marked as [inactive](/reference/system-tables/parts) and finally deleted after a [configurable](/reference/settings/merge-tree-settings#old_parts_lifetime) number of minutes. Over time, this creates a tree of merged parts (hence the name [`MergeTree`](/reference/engines/table-engines/mergetree-family/index) table).
+Parts that were merged into larger parts are marked as [inactive](/reference/system-tables/parts) and finally deleted after a [configurable](/reference/settings/merge-tree-settings/other#old_parts_lifetime) number of minutes. Over time, this creates a tree of merged parts (hence the name [`MergeTree`](/reference/engines/table-engines/mergetree-family/index) table).
 
 ### Insert parallelism {#insert-parallelism}
 
@@ -101,11 +101,11 @@ Until all data from all files is processed, each insert thread executes a loop:
 Go to ①. 
 ```
 
-The number of such parallel insert threads can be configured with the [`max_insert_threads`](/reference/settings/session-settings#max_insert_threads) setting. The default value is `1` for open-source ClickHouse and 4 for [ClickHouse Cloud](https://clickhouse.com/cloud).
+The number of such parallel insert threads can be configured with the [`max_insert_threads`](/reference/settings/session-settings/max-insert#max_insert_threads) setting. The default value is `1` for open-source ClickHouse and 4 for [ClickHouse Cloud](https://clickhouse.com/cloud).
 
 With a large number of files, the parallel processing by multiple insert threads works well. It can fully saturate both the available CPU cores and the network bandwidth (for parallel file downloads). In scenarios where just a few large files will be loaded into a table, ClickHouse automatically establishes a high level of data processing parallelism and optimizes network bandwidth usage by spawning additional reader threads per insert thread for reading (downloading) more distinct ranges within large files in parallel. 
 
-For the s3 function and table, parallel downloading of an individual file is determined by the values [max_download_threads](/operations/settings/settings#max_download_threads) and [max_download_buffer_size](/operations/settings/settings#max_download_buffer_size). Files will only be downloaded in parallel if their size is greater than `2 * max_download_buffer_size`. By default, the `max_download_buffer_size` default is set to 10MiB. In some cases, you can safely increase this buffer size to 50 MB (`max_download_buffer_size=52428800`), with the aim of ensuring each file was downloaded by a single thread. This can reduce the time each thread spends making S3 calls and thus also lower the S3 wait time. Furthermore, for files that are too small for parallel reading, to increase throughput, ClickHouse automatically prefetches data by pre-reading such files asynchronously.
+For the s3 function and table, parallel downloading of an individual file is determined by the values [max_download_threads](/reference/settings/session-settings/max-download#max_download_threads) and [max_download_buffer_size](/reference/settings/session-settings/max-download#max_download_buffer_size). Files will only be downloaded in parallel if their size is greater than `2 * max_download_buffer_size`. By default, the `max_download_buffer_size` default is set to 10MiB. In some cases, you can safely increase this buffer size to 50 MB (`max_download_buffer_size=52428800`), with the aim of ensuring each file was downloaded by a single thread. This can reduce the time each thread spends making S3 calls and thus also lower the S3 wait time. Furthermore, for files that are too small for parallel reading, to increase throughput, ClickHouse automatically prefetches data by pre-reading such files asynchronously.
 
 ## Measuring performance {#measuring-performance}
 
@@ -195,7 +195,7 @@ Read performance on S3 will scale linearly with the number of cores, provided yo
 * Usually, the default value of `max_threads` is sufficient, i.e., the number of cores. If the amount of memory used for a query is high, and this needs to be reduced, or the `LIMIT` on results is low, this value can be set lower. Users with plenty of memory may wish to experiment with increasing this value for possible higher read throughput from S3. Typically this is only beneficial on machines with lower core counts, i.e., &lt; 10. The benefit from further parallelization typically diminishes as other resources act as a bottleneck, e.g., network and CPU contention.
 * Versions of ClickHouse before 22.3.1 only parallelized reads across multiple files when using the `s3` function or `S3` table engine. This required the user to ensure files were split into chunks on S3 and read using a glob pattern to achieve optimal read performance. Later versions now parallelize downloads within a file.
 * In low thread count scenarios, you may benefit from setting `remote_filesystem_read_method` to "read" to cause the synchronous reading of files from S3.
-* For the s3 function and table, parallel downloading of an individual file is determined by the values [`max_download_threads`](/reference/settings/session-settings#max_download_threads) and [`max_download_buffer_size`](/reference/settings/session-settings#max_download_buffer_size). While [`max_download_threads`](/reference/settings/session-settings#max_download_threads) controls the number of threads used, files will only be downloaded in parallel if their size is greater than 2 * `max_download_buffer_size`. By default, the `max_download_buffer_size` default is set to 10MiB. In some cases, you can safely increase this buffer size to 50 MB (`max_download_buffer_size=52428800`), with the aim of ensuring smaller files are only downloaded by a single thread. This can reduce the time each thread spends making S3 calls and thus also lower the S3 wait time. See [this blog post](https://clickhouse.com/blog/clickhouse-1-trillion-row-challenge) for an example of this.
+* For the s3 function and table, parallel downloading of an individual file is determined by the values [`max_download_threads`](/reference/settings/session-settings/max-download#max_download_threads) and [`max_download_buffer_size`](/reference/settings/session-settings/max-download#max_download_buffer_size). While [`max_download_threads`](/reference/settings/session-settings/max-download#max_download_threads) controls the number of threads used, files will only be downloaded in parallel if their size is greater than 2 * `max_download_buffer_size`. By default, the `max_download_buffer_size` default is set to 10MiB. In some cases, you can safely increase this buffer size to 50 MB (`max_download_buffer_size=52428800`), with the aim of ensuring smaller files are only downloaded by a single thread. This can reduce the time each thread spends making S3 calls and thus also lower the S3 wait time. See [this blog post](https://clickhouse.com/blog/clickhouse-1-trillion-row-challenge) for an example of this.
 
 Before making any changes to improve performance, ensure you measure appropriately. As S3 API calls are sensitive to latency and may impact client timings, use the query log for performance metrics, i.e., `system.query_log`.
 

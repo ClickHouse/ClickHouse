@@ -461,14 +461,14 @@ client.query('SELECT device_id, dev_address, gw_address from devices', column_fo
   ## 외부 데이터
 </div>
 
-ClickHouse 쿼리는 모든 ClickHouse 포맷의 외부 데이터를 받을 수 있습니다. 이 바이너리 데이터는 쿌리 문자열과 함께 전송되어 데이터 처리에 사용됩니다. External Data 기능에 대한 자세한 내용은 [여기](/ko/reference/engines/table-engines/special/external-data)를 참조하십시오. 클라이언트 `query*` 메서드는 이 기능을 활용할 수 있도록 선택적 `external_data` 매개변수를 받습니다. `external_data` 매개변수의 값은 `clickhouse_connect.driver.external.ExternalData` 객체여야 합니다. 이 객체의 생성자는 다음 인수를 받습니다.
+ClickHouse 쿼리는 모든 ClickHouse 포맷의 외부 데이터를 받을 수 있습니다. 이 바이너리 데이터는 쿼리 문자열과 함께 전송되어 데이터 처리에 사용됩니다. External Data 기능에 대한 자세한 내용은 [여기](/ko/reference/engines/table-engines/special/external-data)를 참조하십시오. 클라이언트 `query*` 메서드는 이 기능을 활용할 수 있도록 선택적 `external_data` 매개변수를 받습니다. `external_data` 매개변수의 값은 `clickhouse_connect.driver.external.ExternalData` 객체여야 합니다. 이 객체의 생성자는 다음 인수를 받습니다.
 
 | Name          | Type              | Description                                                                           |
 | ------------- | ----------------- | ------------------------------------------------------------------------------------- |
 | file&#95;path | str               | 외부 데이터를 읽어올 로컬 시스템의 파일 경로입니다. `file_path` 또는 `data` 중 하나는 필수입니다                       |
 | file&#95;name | str               | 외부 데이터 &quot;file&quot;의 이름입니다. 지정하지 않으면 `file_path`에서(확장자 제외) 결정됩니다                  |
 | data          | bytes             | 바이너리 형식의 외부 데이터입니다(파일에서 읽는 대신 사용). `data` 또는 `file_path` 중 하나는 필수입니다                  |
-| fmt           | str               | 데이터의 ClickHouse [입력 형식](/ko/reference/formats/index)입니다. 기본값은 `TSV`입니다                   |
+| fmt           | str               | 데이터의 ClickHouse [입력 형식](/ko/reference/formats)입니다. 기본값은 `TSV`입니다                         |
 | types         | str or seq of str | 외부 데이터의 컬럼 데이터 타입 목록입니다. 문자열인 경우 타입은 쉼표로 구분해야 합니다. `types` 또는 `structure` 중 하나는 필수입니다 |
 | structure     | str or seq of str | 데이터의 컬럼 이름 + 데이터 타입 목록입니다(예시는 아래 참조). `structure` 또는 `types` 중 하나는 필수입니다              |
 | mime&#95;type | str               | 파일 데이터의 선택적 MIME 타입입니다. 현재 ClickHouse는 이 HTTP 하위 헤더를 무시합니다                            |

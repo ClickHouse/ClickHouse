@@ -15,7 +15,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 自备 Cloud (BYOC) 使您能够直接在自己的云账户中部署 ClickHouse 服务并存储数据，而无需依赖默认的 ClickHouse Cloud 基础设施。这种方式尤其适合那些具有严格安全策略或监管合规要求、需要对数据拥有完全控制权和主权的组织。
 
-总体而言，BYOC 将 ClickHouse 控制平面 (运行在 ClickHouse VPC 中并由 ClickHouse Cloud 管理) 与数据平面分离；数据平面则完全运行在您的云账户中，包含您的 ClickHouse 集群、数据和备份。有关所涉组件及其之间流量流向的详细说明，请参阅[架构](/zh/products/bring-your-own-cloud/overview/architecture)页面。
+总体而言，BYOC 将 ClickHouse 控制平面 (运行在 ClickHouse VPC 中并由 ClickHouse Cloud 管理) 与数据平面分离；数据平面则完全运行在您的云账户中，包含您的 ClickHouse 集群、数据和 Backup。有关所涉组件及其之间流量流向的详细说明，请参阅[架构](/zh/products/bring-your-own-cloud/overview/architecture)页面。
 
 > **如果您希望获得访问权限，请[联系我们](https://clickhouse.com/cloud/bring-your-own-cloud)。** 如需更多信息，请参阅我们的[服务条款](https://clickhouse.com/legal/agreements/terms-of-service)。
 
@@ -27,7 +27,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 * AWS (GA)
 * GCP (GA)
-* Azure (私有预览) 。如果您感兴趣，请在[这里](https://clickhouse.com/cloud/bring-your-own-cloud)加入等候名单。
+* Azure (GA)
 
 **支持的 Cloud 区域：**
 我们在[支持的区域](/zh/products/cloud/reference/supported-regions)文档中列出的所有**公共区域**均可用于 BYOC 部署。目前暂不支持私有区域。
@@ -56,6 +56,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * **S3 安全访问**
 * **[AWS PrivateLink](https://aws.amazon.com/privatelink/)**
 * **[GCP Private Service Connect](https://docs.cloud.google.com/vpc/docs/private-service-connect)**
+* **[Azure Private Link](https://learn.microsoft.com/en-us/azure/private-link/private-link-overview)**
 * **Integrations**：完整列表请参见[此页面](/zh/integrations/home)。
 
 <div id="planned-features-currently-unsupported">

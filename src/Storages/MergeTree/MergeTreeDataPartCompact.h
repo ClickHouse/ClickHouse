@@ -12,7 +12,8 @@ namespace DB
   * In compact format one mark is an array of marks for every column and a number of rows in granule.
   * Format of other data part files is not changed.
   * It's considered to store only small parts in compact format (up to 10M).
-  * NOTE: Compact parts aren't supported for tables with non-adaptive granularity.
+  * NOTE: New Compact parts aren't created for tables with non-adaptive granularity (a Compact
+  *       part is always adaptive), but an existing Compact part can still be loaded by such a table.
   * NOTE: In compact part compressed and uncompressed size of single column is unknown.
   */
 class MergeTreeDataPartCompact : public IMergeTreeDataPart
@@ -27,7 +28,10 @@ public:
         const String & name_,
         const MergeTreePartInfo & info_,
         const MutableDataPartStoragePtr & data_part_storage_,
-        const IMergeTreeDataPart * parent_part_ = nullptr);
+        const IMergeTreeDataPart * parent_part_,
+        PartDirIntent intent);
+
+    Strings getPreferredFileOrder() const override;
 
     bool isStoredOnReadonlyDisk() const override;
 

@@ -251,6 +251,8 @@ Counting starts from 1 with the following logic:
 An optional argument `length` uses the following logic:
 - If `length` is positive, it means number of digits to take from offset
 - If `length` is negative, it means number of digits from the right of the number to exclude
+
+See also the [`substring`](/sql-reference/functions/string-functions#substring) function, which performs the analogous operation on strings.
     )";
     FunctionDocumentation::Syntax syntax = "digits(n, offset[, length])";
     FunctionDocumentation::Arguments arguments

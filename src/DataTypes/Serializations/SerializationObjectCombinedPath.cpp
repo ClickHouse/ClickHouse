@@ -79,6 +79,14 @@ struct DeserializeBinaryBulkStateObjectCombinedPath : public ISerialization::Des
         new_state->sub_object_state = sub_object_state ? sub_object_state->clone() : nullptr;
         return new_state;
     }
+
+    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
+    {
+        if (literal_state)
+            callback(literal_state);
+        if (sub_object_state)
+            callback(sub_object_state);
+    }
 };
 
 void SerializationObjectCombinedPath::enumerateStreams(
