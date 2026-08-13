@@ -56,7 +56,7 @@ $CLICKHOUSE_CLIENT -q "
     FROM system.query_log
     WHERE event_date >= yesterday()
       AND type = 'QueryFinish'
-      AND current_database = '${CLICKHOUSE_DATABASE}'
+      AND current_database = currentDatabase()
       AND log_comment IN ('${TAG_GET}', '${TAG_POST}', '${TAG_PUT_READ}', '${TAG_ENGINE}', '${TAG_INFER}')
     GROUP BY log_comment
     ORDER BY log_comment"

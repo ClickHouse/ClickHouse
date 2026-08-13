@@ -1692,9 +1692,9 @@ size_t StorageURL::evalArgsAndCollectHeaders(
     bool has_headers_arg = false;
     bool has_http_method_arg = false;
 
-    for (auto arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
+    for (auto & url_function_arg : url_function_args)
     {
-        const auto * headers_ast_function = (*arg_it)->as<ASTFunction>();
+        const auto * headers_ast_function = url_function_arg->as<ASTFunction>();
         if (headers_ast_function && headers_ast_function->name == "headers")
         {
             if (has_headers_arg)
@@ -1735,7 +1735,7 @@ size_t StorageURL::evalArgsAndCollectHeaders(
             }
 
             has_headers_arg = true;
-            key_value_args.insert(arg_it->get());
+            key_value_args.insert(url_function_arg.get());
 
             continue;
         }
@@ -1779,7 +1779,7 @@ size_t StorageURL::evalArgsAndCollectHeaders(
                     validateHTTPMethod(*out_http_method);
 
                     has_http_method_arg = true;
-                    key_value_args.insert(arg_it->get());
+                    key_value_args.insert(url_function_arg.get());
                 }
             }
 
@@ -1787,7 +1787,7 @@ size_t StorageURL::evalArgsAndCollectHeaders(
         }
 
         if (evaluate_arguments)
-            (*arg_it) = evaluateConstantExpressionOrIdentifierAsLiteral((*arg_it), context);
+            url_function_arg = evaluateConstantExpressionOrIdentifierAsLiteral(url_function_arg, context);
     }
 
     if (key_value_args.empty())
