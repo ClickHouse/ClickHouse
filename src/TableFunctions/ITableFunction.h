@@ -83,29 +83,13 @@ public:
 
     virtual bool canBeUsedToCreateTable() const { return true; }
 
-    /// The name of the named collection the table function arguments were resolved from, or an empty
-    /// string. When a permanent table is created from the table function (`CREATE TABLE ... AS f(...)`),
-    /// the table is registered as a dependency of the collection so that `DROP NAMED COLLECTION` is
-    /// blocked while the table exists, matching the behavior of table engines that resolve named
-    /// collections (see `tryGetNamedCollectionWithOverrides`). Transient uses of the table function in a
-    /// query do not register anything.
-    virtual String getUsedNamedCollectionName() const { return {}; }
-
     // INSERT INTO TABLE FUNCTION ... PARTITION BY
     // Set partition by expression so `ITableFunctionObjectStorage` can construct a proper representation
     virtual void setPartitionBy(const ASTPtr &) {}
 
     /// Create storage according to the query.
-    /// `check_create_temporary_table` is passed as false by database engines that resolve their
-    /// tables through a table function (e.g. the `URL` database): the table is referenced in the
-    /// query by an identifier and governed by the grants on the database, so the
-    /// `CREATE TEMPORARY TABLE` privilege required for a table function call written in a query
-    /// does not apply.
-    /// `check_source_access` is passed as false by callers that cannot know the direction of the
-    /// access yet (the `URL` database resolves a table before knowing whether it is the source or
-    /// the target of the query) and therefore run their own source access checks around the call.
     StoragePtr
-    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false, bool check_create_temporary_table = true, bool check_source_access = true) const;
+    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false) const;
 
     /// Returns actual table structure after enforcing source access checks.
     /// Use this instead of getActualTableStructure() from outside execute().

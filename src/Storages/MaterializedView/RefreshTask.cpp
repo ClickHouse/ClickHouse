@@ -21,7 +21,6 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Storages/StorageMaterializedView.h>
-#include <base/EnumReflection.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/QueryScope.h>
@@ -83,56 +82,8 @@ namespace ErrorCodes
     extern const int TABLE_UUID_MISMATCH;
 }
 
-namespace FailPoints
-{
-    /// Simulates the Keeper feature-flag propagation race on attach: makes the constructor's
-    /// up-front MULTI_READ / CREATE_IF_NOT_EXISTS check behave as if the flags were present, even
-    /// when the Keeper actually lacks them. Used to test that doScheduling re-detects the missing
-    /// flags and stops the view gracefully instead of crashing the scheduling thread.
-    extern const char refresh_mv_skip_attach_feature_flag_check[];
-    /// Forces the doScheduling re-check to see the Keeper feature flags as missing, even on a Keeper
-    /// that has them. Used to test that a scheduling pass which discovers missing flags while a
-    /// refresh is already in flight cancels the local refresh before giving up coordination,
-    /// instead of leaving Keeper thinking the refresh is still running.
-    extern const char refresh_mv_force_scheduling_feature_flags_missing[];
-    /// Pauses the refresh thread after the insert pipeline finished but before the target-table
-    /// exchange, so a test can deterministically hit the post-insert window where the executor is
-    /// already gone and only the interrupt_execution flag can stop the exchange.
-    extern const char refresh_mv_pause_before_exchange[];
-    /// Pauses the refresh thread AFTER the pre-exchange interrupt re-check has already passed (the
-    /// executor_mutex was read and released) but BEFORE the exchange, so a test can deterministically
-    /// hit the window where a scheduling pass that gives up coordination must not still cause the
-    /// exchange to be lost / the view to be disabled mid-flight.
-    extern const char refresh_mv_pause_after_interrupt_check[];
-    /// Forces the feature-flags-missing give-up path to use a stale coordination version, so the
-    /// reconciling set() is rejected with ZBADVERSION. Simulates another replica advancing the
-    /// coordination znode after this replica lost its Keeper session mid-refresh. Used to test that
-    /// the lost-ownership conflict is treated as terminal (the view converges to Disabled) instead
-    /// of retrying with the same stale version and looping in Scheduling forever.
-    extern const char refresh_mv_force_coordination_version_conflict[];
-    /// Deletes the ephemeral '/running' znode just before the feature-flags-missing give-up path
-    /// reconciles, so the reconciling multi's `remove` gets a real `ZNONODE` back from Keeper. This is
-    /// the other shape of the same lost-ownership race (a Keeper session loss drops '/running'
-    /// without necessarily advancing the root znode version), used to test that it is terminal too.
-    extern const char refresh_mv_force_coordination_running_znode_lost[];
-    /// Makes the execution task return immediately without starting the refresh, so a test can hold
-    /// the "scheduled but never started" state (execution.state == Requested) that shutdown has to
-    /// normalize before giving up coordination.
-    extern const char refresh_mv_skip_execution[];
-}
-
 namespace
 {
-
-/// Whether the Keeper this view is coordinated through is missing a feature flag that coordination
-/// requires (MULTI_READ, CREATE_IF_NOT_EXISTS). readZnodesIfNeeded uses multi-read on the
-/// scheduling thread, where a throw aborts the whole server, so this must be detected up front and
-/// turned into a graceful permanent stop instead.
-bool coordinationFeatureFlagsMissing(const zkutil::ZooKeeper & zookeeper)
-{
-    return !zookeeper.isFeatureEnabled(KeeperFeatureFlag::MULTI_READ) ||
-        !zookeeper.isFeatureEnabled(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
-}
 
 /// Build the dependency StorageIDs, resolving unqualified names against the view's database.
 /// An empty database would later throw from StorageID::getFullTableName() during scheduling.
@@ -201,20 +152,21 @@ RefreshTask::RefreshTask(
         /// Coordination needs these Keeper feature flags on every path: readZnodesIfNeeded uses
         /// multi-read on the scheduling thread, where a throw aborts the whole server.
         /// (It would be possible to avoid using these features, if needed.)
-        bool feature_flags_missing = coordinationFeatureFlagsMissing(*zookeeper);
-        /// The flags are read once per Keeper connection, when the connection is established. Right
-        /// after a (re)start the freshly-attached view may read them before the connection settles
-        /// on the current Keeper, so this up-front check is not authoritative: doScheduling
-        /// re-checks before touching Keeper and stops the view gracefully if they turn out missing.
-        fiu_do_on(FailPoints::refresh_mv_skip_attach_feature_flag_check, { feature_flags_missing = false; });
-        if (feature_flags_missing)
+        if (!zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ) ||
+            !zookeeper->isFeatureEnabled(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS))
         {
             /// Fresh CREATE rejects. ATTACH/restore must not throw (it would fail server startup),
-            /// so enter a permanent non-resumable "coordination unavailable" state instead.
+            /// so enter a permanent non-resumable "coordination unavailable" state instead. We keep
+            /// `coordinated` true so the view never degrades into an uncoordinated local refresh
+            /// (that would corrupt the replicated target table); `unavailable` keeps it Disabled and
+            /// makes start()/finalizeRestoreFromBackup() refuse to resume it.
             if (!attach && !is_restore_from_backup)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS");
 
-            markCoordinationUnavailable();
+            LOG_ERROR(getLogger(), "Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS. The view is stopped.");
+            coordination.unavailable = true;
+            scheduling.stop_requested = true;
+            scheduling.unexpected_error = "Keeper server doesn't have all feature flags required by refreshable materialized view: MULTI_READ, CREATE_IF_NOT_EXISTS. The view is stopped.";
             return;
         }
 
@@ -256,18 +208,6 @@ RefreshTask::RefreshTask(
     }
 }
 
-void RefreshTask::markCoordinationUnavailable()
-{
-    /// Enter a permanent, non-resumable "coordination unavailable" state. `coordinated` is left
-    /// true so the view never degrades into an uncoordinated local refresh (that would corrupt the
-    /// replicated target table); `unavailable` keeps it Disabled and makes start() /
-    /// finalizeRestoreFromBackup() refuse to resume it.
-    LOG_ERROR(getLogger(), "Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS. The view is stopped.");
-    coordination.unavailable = true;
-    scheduling.stop_requested = true;
-    scheduling.unexpected_error = "Keeper server doesn't have all feature flags required by refreshable materialized view: MULTI_READ, CREATE_IF_NOT_EXISTS. The view is stopped.";
-}
-
 void RefreshTask::createLogger(const StorageID & storage_id)
 {
     std::lock_guard lock(logger_mutex);
@@ -294,9 +234,9 @@ OwnedRefreshTask RefreshTask::create(
 
     auto task = std::make_shared<RefreshTask>(view, context, strategy, std::move(deps), attach, coordinated, empty, start_paused, is_restore_from_backup);
 
-    task->scheduling_task = context->getSchedulePool()->createTask(view->getStorageID(), "RefreshSched",
+    task->scheduling_task = context->getSchedulePool().createTask(view->getStorageID(), "RefreshSched",
         [self = task.get()] { self->doScheduling(/*is_shutdown=*/ false); });
-    task->execution_task = context->getSchedulePool()->createTask(view->getStorageID(), "RefreshExec",
+    task->execution_task = context->getSchedulePool().createTask(view->getStorageID(), "RefreshExec",
         [self = task.get()] { self->executeRefresh(); });
 
     task->watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->scheduling_task->getWatchCallback()](const Coordination::WatchResponse & response)
@@ -326,10 +266,11 @@ void RefreshTask::startup()
 
 void RefreshTask::finalizeRestoreFromBackup()
 {
-    /// Both `start` and `startReplicated` refuse to resume a view whose coordination is permanently
-    /// unavailable, each checking under `mutex`. Checking it here too would only be a racy
-    /// duplicate: `unavailable` is also written by the scheduling thread
-    /// (markCoordinationUnavailable), so it can be set right after an unlocked read here.
+    if (coordination.unavailable)
+        /// Coordination is permanently unavailable (Keeper lacks required feature flags). Don't
+        /// resume: startReplicated() would access Keeper and start() would run an uncoordinated
+        /// local refresh. Leave the view Disabled.
+        return;
     if (coordination.coordinated)
         startReplicated();
     else
@@ -550,30 +491,13 @@ void RefreshTask::startReplicated()
     if (!coordination.coordinated)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Refreshable materialized view is not coordinated.");
 
-    const auto zookeeper = [this]() -> std::shared_ptr<zkutil::ZooKeeper>
+    const auto zookeeper = [this]()
     {
         std::lock_guard guard(mutex);
         if (!view)
             throw Exception(ErrorCodes::TABLE_IS_DROPPED, "The table was dropped or detached");
-        if (coordination.unavailable)
-            /// Coordination is permanently unavailable (Keeper lacks the required feature flags), so
-            /// this view can never refresh again. Removing '/paused' would unpause it on every
-            /// replica while this one stays Disabled. Refuse, like `start` does.
-            return nullptr;
         return view->getContext()->getZooKeeper();
     }();
-    if (!zookeeper)
-        return;
-
-    /// `coordination.unavailable` is only set once doScheduling has re-checked the flags, and that
-    /// pass is scheduled asynchronously - so on the restore path it can still be false here while
-    /// this connection already shows the flags missing. Removing `/paused` would unpause the view on
-    /// every replica moments before this one is disabled permanently, so check the connection too.
-    if (coordinationFeatureFlagsMissing(*zookeeper))
-    {
-        LOG_INFO(getLogger(), "Not unpausing the refreshable materialized view: this Keeper is missing feature flags required for coordination (MULTI_READ, CREATE_IF_NOT_EXISTS).");
-        return;
-    }
 
     String path = coordination.path + "/paused";
     auto code = zookeeper->tryRemove(path);
@@ -807,155 +731,7 @@ void RefreshTask::doScheduling(bool is_shutdown)
 
         std::shared_ptr<zkutil::ZooKeeper> zookeeper;
         if (coordination.coordinated)
-        {
             zookeeper = view->getContext()->getZooKeeper();
-
-            /// Re-check the Keeper feature flags the constructor checked on attach. The flags are
-            /// read once per Keeper connection, so a view attached during a (re)start can read them
-            /// before the connection settles on the current Keeper and miss that coordination is
-            /// actually unavailable. If we proceeded, readZnodesIfNeeded below would throw
-            /// NOT_IMPLEMENTED on this scheduling thread and the catch-all would abort the server.
-            /// Detect it here and stop the view gracefully, same as the constructor does on attach.
-            bool feature_flags_missing = coordinationFeatureFlagsMissing(*zookeeper);
-            fiu_do_on(FailPoints::refresh_mv_force_scheduling_feature_flags_missing, { feature_flags_missing = true; });
-            if (feature_flags_missing)
-            {
-                /// An in-flight refresh must NOT set coordination.unavailable yet: a later
-                /// `doScheduling` would then bail at the top before the attempt is reconciled, and
-                /// `interruptExecution` can lose the race against the exchange step (which runs with
-                /// `mutex` released). Only interrupt, and let the attempt reach Finished; the next
-                /// pass (Finished -> None below) gives up coordination. `executeRefresh` schedules
-                /// that pass when it sets Finished. Under shutdown there is no next pass, so the
-                /// give-up happens here.
-                if (!is_shutdown
-                    && (execution.state == ExecutionState::State::Requested
-                        || execution.state == ExecutionState::State::Running))
-                {
-                    interruptExecution();
-                    setState(RefreshState::Running, lock);
-                    return;
-                }
-
-                if (is_shutdown)
-                {
-                    /// execution_task is already deactivated, so a Requested attempt will never run
-                    /// and `interruptExecution` would only set a flag nobody reads. Normalize it to
-                    /// Finished (same as the is_shutdown block after readZnodesIfNeeded) so the
-                    /// reconciliation below actually clears `refresh_running` and `/running`.
-                    chassert(execution.state != ExecutionState::State::Running);
-                    if (execution.state == ExecutionState::State::Requested)
-                    {
-                        execution.znode.last_attempt_error = "shutdown";
-                        execution.znode.refresh_running = false;
-                        execution.state = ExecutionState::State::Finished;
-                    }
-                }
-
-                if (execution.state == ExecutionState::State::Finished)
-                {
-                    /// Reconcile the finished attempt in Keeper before giving up coordination, so
-                    /// '/running' and last_* do not keep claiming a refresh is in progress here.
-                    /// updateCoordinationState only does set + optional remove, so it needs neither
-                    /// MULTI_READ nor CREATE_IF_NOT_EXISTS and works on this downgraded Keeper.
-                    ///
-                    /// That is a multi of a version-checked `set` plus a `remove` of `/running`, so
-                    /// lost ownership surfaces as `ZBADVERSION` (someone advanced the znode) or `ZNONODE`
-                    /// (`/running` already gone). Neither can be retried here: this path returns
-                    /// before readZnodesIfNeeded, the only place a fresh version is read, so a retry
-                    /// reuses the same stale state and loops in Scheduling forever. Both are terminal
-                    /// anyway, so converge to Disabled.
-                    fiu_do_on(FailPoints::refresh_mv_force_coordination_version_conflict, {
-                        /// Make the cached version stale so the `set` below is rejected with
-                        /// `ZBADVERSION`. `max` keeps it a real version, never the -1 "any" sentinel.
-                        execution.znode.version = std::max(execution.znode.version - 1, 0);
-                        coordination.root_znode.version = std::max(coordination.root_znode.version - 1, 0);
-                    });
-                    fiu_do_on(FailPoints::refresh_mv_force_coordination_running_znode_lost, {
-                        /// Drop the real `/running` znode while `running_znode_exists` stays cached
-                        /// true, so the multi's `remove` gets a genuine `ZNONODE` back from Keeper.
-                        zookeeper->tryRemove(coordination.path + "/running");
-                    });
-
-                    /// Only reconcile while this replica still owns the coordination state - the same
-                    /// condition the normal path requires before touching it. A reconnect re-reads the
-                    /// root, so the cached copy can already belong to another replica that took the
-                    /// lock over while our execution was in flight; clearing `refresh_running` or
-                    /// removing `/running` would then cancel THEIR active refresh. Our own result is
-                    /// worthless in that case anyway.
-                    if (!coordination.root_znode.refresh_running
-                        || coordination.root_znode.last_attempt_replica != coordination.replica_name)
-                    {
-                        LOG_INFO(getLogger(), "Replica '{}' owns the refresh coordination state now, discarding the local result while giving up coordination on this Keeper.", coordination.root_znode.last_attempt_replica);
-                        execution.state = ExecutionState::State::None;
-                        markCoordinationUnavailable();
-                        setState(RefreshState::Disabled, lock);
-                        return;
-                    }
-
-                    try
-                    {
-                        if (execution.znode.version == coordination.root_znode.version)
-                        {
-                            if (!updateCoordinationState(execution.znode, /*running=*/ false, zookeeper, lock))
-                                return;
-                        }
-                        else
-                        {
-                            CoordinationZnode znode = coordination.root_znode;
-                            znode.refresh_running = false;
-                            updateCoordinationState(znode, /*running=*/ false, zookeeper, lock);
-                        }
-                    }
-                    catch (const Coordination::Exception & e)
-                    {
-                        if (e.code != Coordination::Error::ZBADVERSION && e.code != Coordination::Error::ZNONODE)
-                            throw;
-                        if (!lock.owns_lock())
-                            lock.lock();
-                        /// `magic_enum` gives the error's symbolic name (`ZBADVERSION` / `ZNONODE`); the
-                        /// `fmt` formatter for `Coordination::Error` would print `errorMessage`'s prose
-                        /// instead, which is harder to grep for and to match against Keeper docs.
-                        LOG_INFO(getLogger(), "Lost the refresh coordination lock ({}) while giving up coordination on this Keeper. Treating as terminal and stopping the view.", magic_enum::enum_name(e.code));
-
-                        /// A multi is atomic, so if only the `/running` removal failed (`ZNONODE`, the
-                        /// znode is already gone) the root update was rolled back even though its
-                        /// version check passed - which would silently discard this attempt's result
-                        /// (last_success_*/last_attempt_*) and leave persistent `refresh_running`
-                        /// set. `/running` being absent is the state we wanted anyway, so redo the
-                        /// root update alone. `ZBADVERSION` means someone else owns the state now, so
-                        /// there is nothing of ours left to write.
-                        const auto * multi = dynamic_cast<const zkutil::KeeperMultiException *>(&e);
-                        if (e.code == Coordination::Error::ZNONODE && multi != nullptr && multi->failed_op_index > 0)
-                        {
-                            coordination.running_znode_exists = false;
-                            try
-                            {
-                                CoordinationZnode znode = execution.znode.version == coordination.root_znode.version
-                                    ? execution.znode
-                                    : coordination.root_znode;
-                                znode.refresh_running = false;
-                                updateCoordinationState(znode, /*running=*/ false, zookeeper, lock);
-                            }
-                            catch (const Coordination::Exception & retry_error)
-                            {
-                                if (retry_error.code != Coordination::Error::ZBADVERSION)
-                                    throw;
-                                if (!lock.owns_lock())
-                                    lock.lock();
-                                LOG_INFO(getLogger(), "Lost the refresh coordination lock (ZBADVERSION) while recording the finished refresh. Treating as terminal and stopping the view.");
-                            }
-                        }
-                    }
-                    execution.state = ExecutionState::State::None;
-                }
-                else if (execution.state != ExecutionState::State::None)
-                    interruptExecution();
-
-                markCoordinationUnavailable();
-                setState(RefreshState::Disabled, lock);
-                return;
-            }
-        }
         readZnodesIfNeeded(zookeeper, lock);
         chassert(lock.owns_lock());
 
@@ -1201,13 +977,6 @@ void RefreshTask::doScheduling(bool is_shutdown)
 
 void RefreshTask::executeRefresh()
 {
-    /// Returns before touching `mutex` or execution.state, so the attempt stays Requested exactly as
-    /// if the execution task had never been dispatched. Lets a test hold the state the normal path
-    /// calls "execution_task was deactivated by shutdown before refresh started", which is otherwise
-    /// only reachable through a background-pool dispatch race. Returning (rather than pausing) also
-    /// keeps shutdown unblocked: execution_task->deactivate() waits for this callback to return.
-    fiu_do_on(FailPoints::refresh_mv_skip_execution, { return; });
-
     std::unique_lock lock(mutex);
 
     chassert(execution.state == ExecutionState::State::Requested);
@@ -1329,20 +1098,6 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                 query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart(), internal);
 
             refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
-
-            /// Publish the query status before interpreting the query, not just around the pipeline executor
-            /// below: planning runs nested pipelines for `IN (subquery)` sets, and only the status cancels those.
-            {
-                std::unique_lock exec_lock(execution.executor_mutex);
-                if (execution.interrupt_execution.load())
-                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
-                execution.executing_query_status = process_list_entry->getQueryStatus();
-            }
-            SCOPE_EXIT({
-                std::unique_lock exec_lock(execution.executor_mutex);
-                execution.executing_query_status = nullptr;
-            });
-
             /// Carry the refresh query's normalized hash so that `NORMALIZED_QUERY_HASH` quotas account
             /// the refresh write (`WRITTEN_BYTES` pre-check and `CountingTransform`) to the refresh
             /// pattern's bucket instead of the shared hash-0 bucket.
@@ -1384,10 +1139,12 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                     if (execution.interrupt_execution.load())
                         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
                     execution.executor = &executor;
+                    execution.executing_query_status = process_list_entry ? process_list_entry->getQueryStatus() : nullptr;
                 }
                 SCOPE_EXIT({
                     std::unique_lock exec_lock(execution.executor_mutex);
                     execution.executor = nullptr;
+                    execution.executing_query_status = nullptr;
                 });
 
                 executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
@@ -1412,24 +1169,6 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
         /// Exchange tables.
         if (!refresh_append)
         {
-            /// The executor is gone once its block above returns, so interruptExecution() is a no-op
-            /// past this point. The exchange is the destructive coordinated step, so re-check the
-            /// interrupt flag here: a cancellation that lands in this post-pipeline window must still
-            /// skip the exchange, not swap the target table after the refresh was cancelled.
-            FailPointInjection::pauseFailPoint(FailPoints::refresh_mv_pause_before_exchange);
-            {
-                std::unique_lock exec_lock(execution.executor_mutex);
-                if (execution.interrupt_execution.load())
-                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
-            }
-
-            /// The interrupt flag was just read and executor_mutex released, but the exchange has not
-            /// started. A scheduling pass that gives up coordination can land in exactly this window;
-            /// this pause lets a test reproduce it deterministically. It is safe for the exchange to
-            /// win this race: doScheduling only interrupts (does not disable) while the refresh is in
-            /// flight, so the attempt still reaches Finished and is reconciled by the next pass.
-            FailPointInjection::pauseFailPoint(FailPoints::refresh_mv_pause_after_interrupt_check);
-
             query_for_logging = "(exchange tables)";
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);
             table_to_drop = view->exchangeTargetTable(new_table_id, refresh_context);

@@ -4,6 +4,7 @@
 
 #include <Interpreters/DatabaseCatalog.h>
 
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/TableNode.h>
 
 namespace DB

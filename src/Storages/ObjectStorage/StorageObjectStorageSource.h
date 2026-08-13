@@ -18,9 +18,6 @@ namespace DB
 
 class SchemaCache;
 
-struct LazyObjectStorageFileRegistry;
-using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
-
 class StorageObjectStorageSource final : public ISource
 {
     friend class ObjectStorageQueueSource;
@@ -44,8 +41,7 @@ public:
         std::shared_ptr<IObjectIterator> file_iterator_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         FormatFilterInfoPtr format_filter_info_,
-        bool need_only_count_,
-        LazyObjectStorageFileRegistryPtr lazy_row_index_registry_ = nullptr);
+        bool need_only_count_);
 
     ~StorageObjectStorageSource() override;
 
@@ -131,13 +127,6 @@ protected:
     ReaderHolder reader;
     ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
-
-    /// Lazy materialization: when set, a `__global_row_index` column is appended to every chunk
-    /// (the header must contain it), and every file is registered in the registry so that the
-    /// lazy branch can find it by index. See LazilyReadFromObjectStorage.
-    LazyObjectStorageFileRegistryPtr lazy_row_index_registry;
-    /// The registry index of the file the current `reader` reads. Assigned on the first chunk.
-    std::optional<UInt64> current_file_index;
 
     /// Recreate ReadBuffer and Pipeline for each file.
     static ReaderHolder createReader(

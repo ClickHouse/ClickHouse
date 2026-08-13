@@ -25,9 +25,6 @@ from pyspark.sql.types import (
 from decimal import Decimal
 from pyspark.sql.window import Window
 
-# Imported for its fork-safe gateway launch: pyspark's own preexec_fn runs
-# Python in the forked child, which can deadlock in a threaded worker.
-from helpers import spark_tools  # noqa: F401
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_access_key, minio_secret_key

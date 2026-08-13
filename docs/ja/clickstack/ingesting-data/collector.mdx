@@ -626,9 +626,9 @@ OTel collector のリソース要件は、イベントのスループット、�
 | 10k/秒   | 1 CPU, 1GiB              |
 
 <div id="schema-choice">
-  ## スキーマの選択: Map と JSON
+  ## スキーマの選択: Map vs JSON
 </div>
 
-ClickStack collector はデフォルトで、属性を `Map(LowCardinality(String), String)` カラムに格納するテーブルを作成します。これはオブザーバビリティのワークロードに推奨されるスキーマです。`JSON` 型のスキーマは、属性キーのセットが小さく安定しているワークロードでの評価向けに、ベータとして利用できます。
+ClickStack collectorはデフォルトで、属性を `Map(LowCardinality(String), String)` カラムに格納するテーブルを作成します。これはオブザーバビリティのワークロードに推奨されるスキーマです。`JSON` 型のスキーマは、属性キーのセットが小さく安定しているワークロードで評価できるよう、ベータ版として提供されています。
 
-詳細な比較、各方式が適しているケース、JSON 型スキーマを有効にするために必要な環境変数、移行手順については、[Map と JSON 型](/ja/clickstack/ingesting-data/schema/map-vs-json)を参照してください。
+詳細な比較、各方式が適しているケース、JSON 型スキーマを有効にするために必要な env vars、ならびに移行手順については、[Map vs JSON type](/ja/clickstack/ingesting-data/schema/map-vs-json) を参照してください。

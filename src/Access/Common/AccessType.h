@@ -1,8 +1,9 @@
 #pragma once
 
-#include <Common/StringUtils.h>
 #include <Common/Exception.h>
 #include <base/types.h>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
 
 #include <map>
 
@@ -43,7 +44,6 @@ enum class Source : uint8_t
     M(RABBITMQ, "RabbitMQ") \
     M(YTSAURUS, "YTsaurus") \
     M(ARROW_FLIGHT, "ArrowFlight") \
-    M(BIGQUERY, "BigQuery") \
 
 #define DECLARE_ACCESS_TYPE_OBJECTS_ENUM_CONST(name, aliases) name,
 
@@ -99,16 +99,12 @@ private: \
         String str2{str}; \
         std::vector<String> type_aliases; \
         \
-        for (size_t begin = 0; begin <= str2.length();) \
-        { \
-            size_t end = str2.find(',', begin); \
-            if (end == String::npos) \
-                end = str2.length(); \
-            type_aliases.push_back(trim(str2.substr(begin, end - begin), isWhitespaceASCII)); \
-            begin = end + 1; \
-        } \
+        boost::split(type_aliases, str2, [](char c) { return c == ','; }); \
         for (auto & alias : type_aliases) \
+        { \
+            boost::trim(alias); \
             aliases[alias] = type; \
+        } \
         \
         aliases[String{toString(type)}] = type; \
     } \
@@ -436,7 +432,6 @@ enum class AccessType : uint8_t
     M(RABBITMQ, "", GLOBAL, ALL) \
     M(YTSAURUS, "", GLOBAL, ALL) \
     M(ARROW_FLIGHT, "", GLOBAL, ALL) \
-    M(BIGQUERY, "", GLOBAL, ALL) \
     M(SOURCES, "", GLOBAL, ALL) \
     \
     /* Consts */ \

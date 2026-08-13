@@ -449,7 +449,7 @@ public:
 
         /// Some parameters (default_format, everything used in the code above) do not belong to the
         /// Settings class.
-        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "lookback_delta", "database", "table"};
+        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "database", "table"};
         return !reserved_param_names.contains(name);
     }
 
@@ -484,11 +484,11 @@ public:
                 String start = params->get("start", "");
                 String end = params->get("end", "");
                 String step = params->get("step", "");
-                String lookback_delta = params->get("lookback_delta", "");
 
                 /// TODO: Support the following **optional** query parameters:
                 /// - timeout=<duration>: Evaluation timeout
                 /// - limit=<number>: Maximum number of returned series
+                /// - lookback_delta=<number>: Override for the lookback period for this query.
 
                 PrometheusHTTPProtocolAPI::Params params
                 {
@@ -498,7 +498,6 @@ public:
                     .start_param = start,
                     .end_param = end,
                     .step_param = step,
-                    .lookback_delta_param = lookback_delta,
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
@@ -507,7 +506,6 @@ public:
             {
                 String query = params->get("query", "");
                 String time = params->get("time", "");
-                String lookback_delta = params->get("lookback_delta", "");
 
                 /// TODO: Support optional parameters same as for the range query.
 
@@ -519,7 +517,6 @@ public:
                     .start_param = "",
                     .end_param = "",
                     .step_param = "",
-                    .lookback_delta_param = lookback_delta,
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);

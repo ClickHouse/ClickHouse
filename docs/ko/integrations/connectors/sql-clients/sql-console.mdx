@@ -10,7 +10,7 @@ integration:
    - category: 'sql_client'
 ---
 
-import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import ExperimentalBadge from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { Image } from "/snippets/ko/components/Image.jsx";
 
 SQL 콘솔은 ClickHouse Cloud에서 데이터베이스를 탐색하고 쿼리하는 가장 빠르고 쉬운 방법입니다. SQL 콘솔을 사용하면 다음 작업을 수행할 수 있습니다:
@@ -40,7 +40,7 @@ ClickHouse 인스턴스에 포함된 테이블의 개요는 왼쪽 사이드바�
   ### 테이블 데이터 탐색
 </div>
 
-목록에서 테이블을 클릭하면 새 탭에서 열립니다. Table View에서는 데이터를 쉽게 보고, 선택하고, 복사할 수 있습니다. Microsoft Excel 및 Google Sheets와 같은 스프레드시트 애플리케이션에 복사해 붙여넣을 때도 구조와 서식이 유지됩니다. 하단의 탐색 기능을 사용해 테이블 데이터 페이지(30행 단위로 나뉨)를 넘길 수 있습니다.
+목록에서 테이블을 클릭하면 새 탭에서 열립니다. Table View에서는 데이터를 쉽게 보고, 선택하고, 복사할 수 있습니다. Microsoft Excel 및 Google Sheets와 같은 스프레드시트 애플리케이션에 복사해 붙여넣을 때도 구조와 서식이 유지됩니다. 하단의 탐색 기능을 사용해 테이블 데이터 페이지(30행 단위로 구분됨)를 넘길 수 있습니다.
 
 <Image img="/images/cloud/sqlconsole/abc.webp" size="lg" border alt="선택하고 복사할 수 있는 데이터가 표시된 테이블 뷰" />
 
@@ -92,9 +92,9 @@ SQL 콘솔에서는 table에 필터와 정렬을 동시에 적용할 수 있습�
   ### 필터와 정렬에서 쿼리 만들기
 </div>
 
-SQL 콘솔에서는 클릭 한 번으로 정렬 및 필터를 바로 쿼리로 변환할 수 있습니다. 원하는 정렬 및 필터 매개변수를 선택한 다음, 도구 모음에서 &#39;Create Query&#39; 버튼을 클릭하세요. &#39;Create Query&#39;를 클릭하면 테이블 뷰에 포함된 데이터에 해당하는 SQL 명령이 미리 입력된 새 쿼리 탭이 열립니다.
+SQL 콘솔에서는 클릭 한 번으로 정렬 및 필터 설정을 바로 쿼리로 변환할 수 있습니다. 원하는 정렬 및 필터 매개변수를 선택한 다음, 도구 모음에서 &#39;Create Query&#39; 버튼을 클릭하세요. &#39;Create Query&#39;를 클릭하면 테이블 뷰에 표시된 데이터에 해당하는 SQL 명령이 미리 입력된 새 쿼리 탭이 열립니다.
 
-<Image img="/images/cloud/sqlconsole/create-a-query-from-sorts-and-filters.webp" size="lg" border alt="필터와 정렬에서 SQL을 생성하는 Create Query 버튼이 표시된 인터페이스" />
+<Image img="/images/cloud/sqlconsole/create-a-query-from-sorts-and-filters.webp" size="lg" border alt="필터와 정렬을 기반으로 SQL을 생성하는 Create Query 버튼이 표시된 인터페이스" />
 
 <Note>
   &#39;Create Query&#39; 기능을 사용할 때 필터와 정렬은 필수가 아닙니다.
@@ -314,7 +314,7 @@ GenAI는 실험적 기능이라는 점을 유념하세요. GenAI가 생성한 �
   ### 쿼리 결과 검색
 </div>
 
-쿼리가 실행된 후에는 결과 창의 검색 입력란을 사용해 반환된 결과 세트를 빠르게 검색할 수 있습니다. 이 기능은 추가 `WHERE` 절을 적용했을 때의 결과를 미리 확인하거나, 특정 데이터가 결과 세트에 포함되어 있는지 간단히 확인하는 데 도움이 됩니다. 검색 입력란에 값을 입력하면 결과 창이 업데이트되며, 입력한 값과 일치하는 항목이 포함된 레코드가 반환됩니다. 이 예시에서는 `hackernews` 테이블에서 `ClickHouse`를 포함하는 댓글 중 `breakfast`가 나타나는 모든 경우를 찾아보겠습니다(대소문자 구분 없음):
+쿼리가 실행된 후에는 결과 창의 검색 입력란을 사용해 반환된 결과 세트를 빠르게 검색할 수 있습니다. 이 기능은 추가 `WHERE` 절을 적용했을 때의 결과를 미리 확인하거나, 특정 데이터가 결과 세트에 포함되어 있는지 간단히 점검하는 데 도움이 됩니다. 검색 입력란에 값을 입력하면 결과 창이 업데이트되며, 입력한 값과 일치하는 항목이 포함된 레코드가 반환됩니다. 이 예시에서는 `hackernews` 테이블에서 `ClickHouse`를 포함하는 댓글 중 `breakfast`가 나타나는 모든 경우를 찾아보겠습니다(대소문자 구분 없음):
 
 <Image img="/images/cloud/sqlconsole/search-hn.webp" size="lg" border alt="Hacker News 데이터 검색" />
 

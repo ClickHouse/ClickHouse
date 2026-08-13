@@ -21,7 +21,9 @@ description: "使用 cert-manager 为 ClickHouse Server 和 Keeper 生成 TLS �
 </div>
 
 <Steps>
-  <Step title="1. 创建证书签发方" id="1-create-a-certificate-issuer">
+  <Step>
+    ### 1. 创建证书签发方
+
     创建一个自签名 `Issuer` 作为证书颁发机构：
 
     ```yaml
@@ -37,7 +39,9 @@ description: "使用 cert-manager 为 ClickHouse Server 和 Keeper 生成 TLS �
     > **注意：** `Issuer` 是命名空间级资源，必须与引用它的 `Certificate` 资源位于同一命名空间。自签名签发方适合用于测试。对于生产环境，请查看[签发方选项列表](https://cert-manager.io/docs/configuration/issuers/)。
   </Step>
 
-  <Step title="2. 创建证书资源" id="2-create-certificate-resources">
+  <Step>
+    ### 2. 创建证书资源
+
     为 ClickHouse Server 创建一个 `Certificate` 资源：
 
     ```yaml
@@ -60,7 +64,9 @@ description: "使用 cert-manager 为 ClickHouse Server 和 Keeper 生成 TLS �
     如有需要，也请为 Keeper 使用相应的 `dnsNames` 和 `secretName` 重复此操作。
   </Step>
 
-  <Step title="3. 配置 Helm 配置值以使用 cert-manager Secret 键名" id="3-configure-helm-values-to-use-cert-manager-secret-keys">
+  <Step>
+    ### 3. 配置 Helm 配置值以使用 cert-manager Secret 键名
+
     默认情况下，`onprem-clickhouse-cluster` Helm 图表期望 Secret 中的键名为 `ca.crt`、`server.crt` 和 `server.key`。cert-manager 生成的则是 `ca.crt`、`tls.crt` 和 `tls.key`。请在 Helm 配置值中覆盖这些键名：
 
     ```yaml

@@ -286,11 +286,6 @@ CatalogTables GlueCatalog::getTablesForDatabase(const std::string & db_name, siz
         }
         else
         {
-            /// The database is absent from Glue, so it contributes no tables. The error names the database, so
-            /// any pages already collected belong to a database that is gone and are dropped too.
-            if (outcome.GetError().GetErrorType() == Aws::Glue::GlueErrors::ENTITY_NOT_FOUND)
-                return {};
-
             throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Exception calling GetTables {}", outcome.GetError().GetMessage());
         }
         if (limit != 0 && result.size() >= limit)
@@ -326,8 +321,12 @@ CatalogTables GlueCatalog::listTablesInNamespaceDirect(const std::string & names
 
 bool GlueCatalog::existsTable(const std::string & database_name, const std::string & table_name) const
 {
-    TableMetadata metadata;
-    return tryGetTableMetadata(database_name, table_name, metadata);
+    Aws::Glue::Model::GetTableRequest request;
+    request.SetDatabaseName(database_name);
+    request.SetName(table_name);
+
+    auto outcome = glue_client->GetTable(request);
+    return outcome.IsSuccess();
 }
 
 bool GlueCatalog::tryGetTableMetadata(

@@ -36,7 +36,9 @@ ClickStack는 ClickHouse 서버 바이너리에 직접 포함되어 있습니다
 <Tabs>
   <Tab title="Docker">
     <Steps>
-      <Step title="ClickHouse 시작" id="start-clickhouse-docker">
+      <Step>
+        ### ClickHouse 시작
+
         비밀번호를 설정한 상태로 ClickHouse 서버 이미지를 가져와 실행합니다:
 
         ```shell
@@ -54,7 +56,9 @@ ClickStack는 ClickHouse 서버 바이너리에 직접 포함되어 있습니다
         </Tip>
       </Step>
 
-      <Step title="ClickStack UI 열기" id="open-clickstack-ui-docker">
+      <Step>
+        ### ClickStack UI 열기
+
         브라우저에서 [http://localhost:8123](http://localhost:8123)를 열고 **ClickStack**을 클릭합니다.
 
         로컬 인스턴스에 연결하려면 사용자 이름 `default`와 비밀번호 `password`를 입력합니다.
@@ -62,7 +66,9 @@ ClickStack는 ClickHouse 서버 바이너리에 직접 포함되어 있습니다
         <Image img="/images/clickstack/deployment/embedded/authenticate.webp" alt="인증" size="lg" />
       </Step>
 
-      <Step title="소스 생성" id="create-a-source-docker">
+      <Step>
+        ### 소스 생성
+
         기존 OpenTelemetry 테이블이 있으면 ClickStack이 이를 감지하여 소스를 자동으로 생성합니다.
 
         새로 설치한 경우 소스를 생성하라는 안내가 표시됩니다. **Table** 필드에 적절한 테이블 이름(예: `otel_logs`)을 입력하고 **Save New Source**를 클릭합니다.
@@ -76,7 +82,9 @@ ClickStack는 ClickHouse 서버 바이너리에 직접 포함되어 있습니다
 
   <Tab title="Binary">
     <Steps>
-      <Step title="ClickHouse 시작" id="start-clickhouse-binary">
+      <Step>
+        ### ClickHouse 시작
+
         ClickHouse를 다운로드하고 시작합니다:
 
         ```shell
@@ -131,11 +139,15 @@ ClickStack는 ClickHouse 서버 바이너리에 직접 포함되어 있습니다
         ```
       </Step>
 
-      <Step title="ClickStack UI 열기" id="open-clickstack-ui-binary">
+      <Step>
+        ### ClickStack UI 열기
+
         브라우저에서 [http://localhost:8123](http://localhost:8123)를 열고 **ClickStack**을 클릭합니다. 로컬 인스턴스 연결은 자동으로 생성됩니다.
       </Step>
 
-      <Step title="소스 생성" id="create-a-source-binary">
+      <Step>
+        ### 소스 생성
+
         기존 OpenTelemetry 테이블이 있으면 ClickStack이 이를 감지하여 소스를 자동으로 생성합니다.
 
         아직 데이터가 없다면 [데이터 수집](/ko/clickstack/ingesting-data/index)에서 사용 가능한 옵션을 확인하십시오.
@@ -150,9 +162,9 @@ ClickStack는 ClickHouse 서버 바이너리에 직접 포함되어 있습니다
   ## 다음 단계
 </div>
 
-평가 단계를 넘어 프로덕션 환경에 적합한 배포를 고려하고 있다면, 다음 옵션을 검토하십시오:
+평가 단계를 넘어 실제 도입을 준비하고 있다면, 프로덕션용 배포를 고려하십시오:
 
-* [All-in-One](/ko/clickstack/deployment/all-in-one) — 영속성과 authentication을 포함한 모든 구성 요소를 단일 컨테이너로 제공
+* [All-in-One](/ko/clickstack/deployment/all-in-one) — 영속성과 인증을 포함한 모든 구성 요소를 담은 단일 컨테이너
 * [Docker Compose](/ko/clickstack/deployment/docker-compose) — 더 세밀한 제어를 위한 개별 구성 요소
 * [Helm](/ko/clickstack/deployment/helm) — 프로덕션 Kubernetes 배포에 권장
-* [Managed ClickStack](/ko/clickstack/getting-started/managed) — ClickHouse Cloud에서 제공되는 완전 관리형
+* [Managed ClickStack](/ko/clickstack/getting-started/managed) — ClickHouse Cloud에서 완전 관리형으로 제공

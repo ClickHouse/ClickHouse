@@ -26,7 +26,9 @@ keywords: ['예시 데이터셋', 'youtube', '샘플 데이터', '동영상 분�
 </div>
 
 <Steps>
-  <Step title="데이터 탐색" id="data-exploration">
+  <Step>
+    ### 데이터 탐색
+
     데이터가 어떤 형태인지 살펴보겠습니다. `s3cluster` 테이블 함수는 테이블을 반환하므로 결과를 `DESCRIBE`할 수 있습니다:
 
     ```sql
@@ -65,7 +67,9 @@ keywords: ['예시 데이터셋', 'youtube', '샘플 데이터', '동영상 분�
     ```
   </Step>
 
-  <Step title="테이블 생성" id="create-the-table">
+  <Step>
+    ### 테이블 생성
+
     추론한 스키마를 바탕으로 데이터 타입을 정리하고 기본 키(primary key)를 추가했습니다.
     다음 테이블을 정의하세요:
 
@@ -99,7 +103,9 @@ keywords: ['예시 데이터셋', 'youtube', '샘플 데이터', '동영상 분�
     ```
   </Step>
 
-  <Step title="데이터 삽입" id="insert-data">
+  <Step>
+    ### 데이터 삽입
+
     다음 명령은 S3 파일의 레코드를 `youtube` 테이블로 스트리밍합니다.
 
     <Warning>
@@ -144,7 +150,9 @@ keywords: ['예시 데이터셋', 'youtube', '샘플 데이터', '동영상 분�
     * 테이블에 `NULL` 값이 들어가지 않도록 `ifNull`을 사용했습니다. 들어오는 값이 `NULL`이면 `ifNull` 함수가 값을 빈 문자열로 설정합니다
   </Step>
 
-  <Step title="행 수 세기" id="count-row-numbers">
+  <Step>
+    ### 행 수 세기
+
     ClickHouse Cloud의 SQL 콘솔에서 새 탭을 열거나 새 `clickhouse-client` 창을 열고, 개수가 증가하는 것을 확인하세요.
     서버 리소스에 따라 45.6억 개의 행을 삽입하는 데는 다소 시간이 걸립니다. (설정을 별도로 조정하지 않으면 약 4.5시간이 걸립니다.)
 
@@ -160,7 +168,9 @@ keywords: ['예시 데이터셋', 'youtube', '샘플 데이터', '동영상 분�
     ```
   </Step>
 
-  <Step title="데이터 탐색" id="explore-the-data">
+  <Step>
+    ### 데이터 탐색
+
     데이터를 삽입한 후, 좋아하는 동영상이나 채널의 싫어요 개수를 세어 보세요. ClickHouse가 업로드한 동영상이 몇 개인지 확인해 보겠습니다:
 
     ```sql

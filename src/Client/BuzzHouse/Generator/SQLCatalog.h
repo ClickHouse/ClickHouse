@@ -377,10 +377,6 @@ public:
 
     bool isDistributedEngine(bool as_alias = false) const;
 
-    bool isRemoteSecureEngine(bool as_alias = false) const;
-
-    bool isAnyRemoteEngine(bool as_alias = false) const;
-
     bool isDictionaryEngine(bool as_alias = false) const;
 
     bool isGenerateRandomEngine(bool as_alias = false) const;

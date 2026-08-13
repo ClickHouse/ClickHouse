@@ -23,8 +23,6 @@
 #include <Coordination/KeeperRequestDispatcherOld.h>
 #include <Coordination/KeeperRequestDispatcher.h>
 
-#include <future>
-
 namespace DB
 {
 

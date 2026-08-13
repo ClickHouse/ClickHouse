@@ -120,7 +120,6 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int S3_ERROR;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
-extern const int FILE_ALREADY_EXISTS;
 }
 
 namespace Setting
@@ -248,7 +247,7 @@ IcebergMetadata::IcebergMetadata(
     /// TODO: for now it's okay to start/stop the task via constructor/destructor. Once refactored, we'd need to plumb startup/shutdown and schedule the task from there
     if (persistent_components.metadata_cache && data_lake_settings[DataLakeStorageSetting::iceberg_metadata_async_prefetch_period_ms] != 0)
     {
-        background_metadata_prefetch_task = context_->getIcebergSchedulePool()->createTask(
+        background_metadata_prefetch_task = context_->getIcebergSchedulePool().createTask(
             StorageID("", persistent_components.table_uuid ? *persistent_components.table_uuid : persistent_components.table_path),
             "backgroundMetadataPrefetcherThread",
             [this]
@@ -604,7 +603,7 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
 
     insertRowToLogTable(
         local_context,
-        [&] { return dumpMetadataObjectToString(metadata_object); },
+        dumpMetadataObjectToString(metadata_object),
         DB::IcebergMetadataLogLevel::Metadata,
         persistent_components.path_resolver.getTableRoot(),
         Iceberg::IcebergPathFromMetadata::deserialize(metadata_path),
@@ -810,7 +809,7 @@ void IcebergMetadata::createInitial(
     }
 
     String location_path = configuration_ptr->getRawPath().path;
-    if (!location_path.contains("://") && !location_path.starts_with('/'))
+    if (location_path.find("://") == String::npos && !location_path.starts_with('/'))
         location_path = "/" + location_path;
     if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
         location_path
@@ -836,10 +835,8 @@ void IcebergMetadata::createInitial(
         /// The write uses `If-None-Match: *`, so S3 returns PreconditionFailed when the metadata file
         /// already exists (e.g. leftover data after `DROP TABLE` with `iceberg_delete_data_on_drop` off,
         /// or a concurrent creation). When `IF NOT EXISTS` was specified, this is expected.
-        const bool precondition_failed
-            = (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"))
-            || e.code() == ErrorCodes::FILE_ALREADY_EXISTS;
-        if (if_not_exists && precondition_failed)
+        if (if_not_exists && e.code() == ErrorCodes::S3_ERROR
+            && e.message().find("PreconditionFailed") != String::npos)
             return;
         throw;
     }
@@ -1131,37 +1128,6 @@ bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metada
     return true;
 }
 
-bool IcebergMetadata::supportsLazyMaterialization(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const
-{
-    auto table_state_snapshot = extractIcebergSnapshotIdFromMetadataObject(storage_metadata_snapshot);
-    if (table_state_snapshot == nullptr)
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Can't extract iceberg table state from storage snapshot for table location {}",
-            persistent_components.table_location);
-    }
-
-    /// An empty table trivially satisfies the requirements.
-    auto data_snapshot = getRelevantDataSnapshotFromTableStateSnapshot(*table_state_snapshot, context);
-    if (!data_snapshot)
-        return true;
-
-    /// The lazy branch re-reads the surviving rows by their physical row numbers, and the main
-    /// read must be able to prune the deferred columns. Prove that for every file of the snapshot:
-    /// all data files are Parquet, none needs schema evolution, and there are no equality deletes.
-    /// The manifest files are cached, and the read itself traverses them anyway.
-    for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
-    {
-        auto files_handle = getManifestFileEntriesHandle(
-            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id);
-
-        if (!files_handle.areAllDataFilesEligibleForLazyMaterialization(table_state_snapshot->schema_id))
-            return false;
-    }
-    return true;
-}
-
 std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
 {
     auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
@@ -1173,58 +1139,26 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     }
 
 
-    /// Row counts stored in the metadata layers above the manifest files are not used as
-    /// data sources, because writers derive them instead of measuring them against the data:
-    /// - the snapshot summary's `total-records` is maintained incrementally (parent total
-    ///   plus this commit's delta), so a single corrupted commit anywhere in the table
-    ///   history silently poisons every later snapshot -- observed in the wild, making
-    ///   SELECT count() disagree with a full scan of the very same table;
-    /// - the manifest-list per-entry `added_rows_count`/`existing_rows_count` are stamped
-    ///   from snapshot summary fields by some writers (ClickHouse itself among them): a
-    ///   rewritten manifest list can list every manifest with `added_rows_count = 0` taken
-    ///   from a compaction snapshot's `added-records = 0`, so trusting these counts turned
-    ///   count() into 0 on a perfectly healthy table.
-    /// The manifest files are the ground truth: the per-data-file `record_count` is a
-    /// required field in every format version, so summing it over the live data files is
-    /// exact, at the cost of opening the manifest files (served from the Iceberg metadata
-    /// cache on repeated queries).
-    UInt64 result = 0;
+    /// All these "hints" with total rows or bytes are optional both in
+    /// metadata files and in manifest files, so we try all of them one by one
+    if (auto total_rows = actual_data_snapshot->getTotalRows(); total_rows.has_value())
+    {
+        ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
+        return total_rows;
+    }
+
+    Int64 result = 0;
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
         auto manifest_file_ptr = getManifestFileEntriesHandle(
             object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id);
-
-        /// Live delete files make an exact metadata-only count impossible:
-        /// - the record count of an equality delete file is the number of delete predicates,
-        ///   not the number of data rows they match;
-        /// - position delete records may be duplicated across delete files (the scan
-        ///   deduplicates matching (file_path, pos) pairs) and may reference data files that
-        ///   are no longer part of the snapshot, so subtracting their raw record count can
-        ///   miscount in both directions.
-        /// Bail out to a real scan, which applies the delete transformers and counts the
-        /// surviving rows exactly.
-        if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty()
-            || !manifest_file_ptr.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty())
+        auto data_count = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
+        auto position_deletes_count = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::POSITION_DELETE);
+        if (!data_count.has_value() || !position_deletes_count.has_value())
             return {};
 
-        /// nullopt means a corrupted manifest file with a negative `record_count`: fail
-        /// closed to a real scan instead of returning a wrong count.
-        auto manifest_rows = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
-        if (!manifest_rows.has_value())
-            return {};
-        result += *manifest_rows;
+        result += data_count.value() - position_deletes_count.value();
     }
-
-    const auto summary_total_rows = actual_data_snapshot->getTotalRows();
-    if (summary_total_rows.has_value() && *summary_total_rows != static_cast<size_t>(result))
-        LOG_WARNING(
-            log,
-            "Iceberg snapshot summary of table {} claims {} total rows, but its manifest files describe {} rows. "
-            "The snapshot summary is inconsistent with the table data (possibly a corrupted commit in the table "
-            "history), using the row count from the manifest files",
-            persistent_components.table_location,
-            *summary_total_rows,
-            result);
 
     ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
     return result;
@@ -1443,15 +1377,7 @@ void IcebergMetadata::addDeleteTransformers(
             const auto & not_in_node = dag.addFunction(func_not_in, {in_lhs_arg, in_rhs_arg}, "notInResult");
             dag.getOutputs().push_back(&not_in_node);
             LOG_DEBUG(log, "Use expression {} in equality deletes", dag.dumpDAG());
-            /// update_row_numbers_info = true: every transform that can precede this one (the
-            /// position-delete transform, an earlier equality-delete filter) maintains
-            /// `ChunkInfoRowNumbers`, so it still describes the chunk here. Keeping the physical row
-            /// numbers consistent after rows are removed is what makes the `_row_number` virtual
-            /// column and lazy materialization correct on top of equality deletes.
-            return std::make_shared<FilterTransform>(
-                header, std::make_shared<ExpressionActions>(std::move(dag)), "notInResult", true,
-                /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
-                /*update_row_numbers_info=*/true);
+            return std::make_shared<FilterTransform>(header, std::make_shared<ExpressionActions>(std::move(dag)), "notInResult", true);
         };
         builder.addSimpleTransform(simple_transform_adder);
     }

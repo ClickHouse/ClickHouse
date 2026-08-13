@@ -20,31 +20,41 @@ Les clients de ClickHouse Cloud peuvent choisir parmi des rôles système préd�
 Les rôles personnalisés peuvent inclure une combinaison de permissions d’organisation, de service et de base de données. Ces permissions peuvent s’appliquer à l’ensemble des services et des bases de données, ou seulement à un sous-ensemble.
 
 <Steps>
-  <Step title="Accéder aux paramètres de l’organisation et sélectionner Users and roles" id="users-and-roles-1">
+  <Step>
+    ### Accéder aux paramètres de l’organisation et sélectionner Users and roles
+
     Depuis la page des services, sélectionnez le nom de votre organisation. Dans le menu contextuel, sélectionnez l’élément `Users and roles`.
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step title={<>Sélectionner l’onglet <code>Roles</code></>} id="roles-tab">
+  <Step>
+    ### Sélectionner l’onglet `Roles`
+
     Sélectionnez l’onglet `Roles` en haut, au centre de l’écran.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp" size="lg" />
   </Step>
 
-  <Step title={<>Sélectionner <code>Create new role</code> en haut à droite</>} id="create-new-role">
+  <Step>
+    ### Sélectionner `Create new role` en haut à droite
+
     Sélectionnez le bouton `Create new role` en haut à droite de l’écran.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp" size="lg" />
   </Step>
 
-  <Step title="Nommer le rôle" id="name-the-role">
+  <Step>
+    ### Nommer le rôle
+
     Saisissez un nom de rôle descriptif. C’est ce nom qui s’affichera lorsque vous attribuerez des rôles à des utilisateurs et à des clés API.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp" size="md" />
   </Step>
 
-  <Step title={<>Cliquer sur <code>Allow</code> et sélectionner la portée des permissions</>} id="scope-permissions">
+  <Step>
+    ### Cliquer sur `Allow` et sélectionner la portée des permissions
+
     Cliquez sur le bouton `Allow`, puis sélectionnez des permissions d’organisation, de service et/ou de base de données. Pour obtenir la description de toutes les permissions, consultez [Console roles and permissions](/fr/products/cloud/reference/security/console-roles).
 
     <Tip>
@@ -60,7 +70,9 @@ Les rôles personnalisés peuvent inclure une combinaison de permissions d’org
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md" />
   </Step>
 
-  <Step title="Vérifier votre nouveau rôle" id="review-role">
+  <Step>
+    ### Vérifier votre nouveau rôle
+
     Vérifiez les permissions attribuées à votre nouveau rôle avant de finaliser. Cliquez sur `Create role` lorsque vous avez terminé.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md" />

@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-distributed-cache, no-encrypted-storage, no-parallel-replicas
+-- Tags: no-fasttest, no-distributed-cache, no-encrypted-storage
 -- The experimental ReaderExecutor's long-connection reuse: on a sequential scan of an
 -- object-storage table (storage_policy='s3_no_cache', so the executor actually engages), a held
 -- source connection is opened and reused across windows -- emitting the ReaderExecutorLongConnection* metrics --

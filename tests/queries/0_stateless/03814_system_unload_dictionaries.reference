@@ -1,6 +1,0 @@
-1. Load, then unload all dictionaries server-wide; ours must be NOT_LOADED
-one
-test_unload_dict	NOT_LOADED
-2. Reload, unload all again, then unload the single dict too; still NOT_LOADED
-test_unload_dict	NOT_LOADED
-test_unload_dict	NOT_LOADED

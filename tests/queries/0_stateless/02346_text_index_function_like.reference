@@ -116,23 +116,3 @@ Granules: 1024/4096
 Description: text GRANULARITY 100000000
 Parts: 2/4
 Granules: 2048/4096
-The optimization is only a hint for an index built on a container
--- Index on mapValues
-[1]
-[1]
-[1]
-[1]
-1	1
--- Index on mapValues with the array tokenizer
-[1]
-[1]
-[1]
-[1]
--- Index on JSONAllValues
-[1]
-[1]
-[1]
-[1]
-[1]
-[1]
-1	1

@@ -74,7 +74,7 @@ CREATE DATABASE IF NOT EXISTS helloworld
 
 * ClickHouse の主キーは、テーブル内の各行に対して ***一意ではありません***
 
-ClickHouse テーブルの主キーは、データがディスクに書き込まれる際のソート順を決定します。8,192 行ごと、または 10MB の
+ClickHouseテーブルの主キーは、データがディスクに書き込まれる際のソート順を決定します。8,192 行ごと、または 10MB の
 データごと (これを **インデックス粒度** と呼びます) に、主キーの索引ファイルに 1 つのエントリが作成されます。この粒度の概念によって、
 メモリに容易に収まる **スパースインデックス** が作られます。また、グラニュールは `SELECT` クエリの実行時に処理される
 最小単位のカラムデータのストライプを表します。
@@ -86,7 +86,7 @@ ClickHouse テーブルの主キーは、データがディスクに書き込ま
 カラムファイルに格納されるデータは、まず `user_id`、次に `timestamp` の順にソートされます。
 
 <Tip>
-  For more details, check out the [Modeling Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328860/?utm_source=clickhouse\&utm_medium=docs) in ClickHouse Academy.
+  詳細については、ClickHouse Academy の [Modeling Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328860/?utm_source=clickhouse\&utm_medium=docs) をご覧ください。
 </Tip>
 
 <div className="mt-8">

@@ -118,7 +118,7 @@ New projects should probably use [`sipHash128ReferenceKeyed`](#sipHash128Referen
         {"(k0, k1)", "A tuple of two UInt64 values representing the key.", {"Tuple(UInt64, UInt64)"}},
         {"arg1[, arg2, ...]", "A variable number of input arguments for which to compute the hash.", {"Any"}}
     };
-    FunctionDocumentation::ReturnedValue sipHash128Keyed_returned_value = {"A 128-bit `SipHash` hash value of type [FixedString(16)](/reference/data-types/fixedstring).", {"FixedString(16)"}};
+    FunctionDocumentation::ReturnedValue sipHash128Keyed_returned_value = {"A 128-bit `SipHash` hash value of type [FixedString(16)](../data-types/fixedstring.md).", {"FixedString(16)"}};
     FunctionDocumentation::Examples sipHash128Keyed_examples = {
         {
             "Usage example",

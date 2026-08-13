@@ -7,7 +7,7 @@ doc_type: 'guide'
 keywords: ['função definida pelo usuário', 'UDF']
 ---
 
-import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 Funções Definidas pelo Usuário (UDF) permitem que os usuários ampliem o comportamento do ClickHouse para além do que é oferecido por mais de mil [funções](/pt-BR/reference/functions/regular-functions/regular-functions-index) nativas.
 
@@ -76,7 +76,9 @@ Neste exemplo, vamos criar a mesma função definida pelo usuário executável s
 Anteriormente, nós a criamos usando SQL, mas desta vez vamos criá-la em Python e configurá-la pela UI.
 
 <Steps>
-  <Step title="Crie o arquivo Python" id="create-python-file">
+  <Step>
+    ### Crie o arquivo Python
+
     Crie localmente um novo arquivo `main.py`:
 
     ```python
@@ -105,7 +107,9 @@ Anteriormente, nós a criamos usando SQL, mas desta vez vamos criá-la em Python
     </Note>
   </Step>
 
-  <Step title="Empacote as dependências e os arquivos locais" id="bundle-dependencies">
+  <Step>
+    ### Empacote as dependências e os arquivos locais
+
     Para incluir pacotes de dependência e quaisquer arquivos locais adicionais (como arquivos wheel, arquivos de configuração ou arquivos de dados), coloque-os no mesmo diretório que `main.py` e `requirements.txt`. Ao criar o arquivo ZIP, inclua todos os arquivos:
 
     ```bash
@@ -141,7 +145,9 @@ Anteriormente, nós a criamos usando SQL, mas desta vez vamos criá-la em Python
     </Warning>
   </Step>
 
-  <Step title="Criar uma UDF pela UI" id="create-udf-via-ui">
+  <Step>
+    ### Criar uma UDF pela UI
+
     1. Na página inicial do Cloud Console, clique no nome da sua organização no menu no canto inferior esquerdo.
     2. Selecione **Funções Definidas pelo Usuário** no menu.
     3. Na página de funções definidas pelo usuário, clique em **Set up a UDF**. Um painel de configuração é aberto no lado direito da tela.
@@ -159,7 +165,9 @@ Anteriormente, nós a criamos usando SQL, mas desta vez vamos criá-la em Python
         * Quando a implantação for concluída, o status muda para **deployed**.
   </Step>
 
-  <Step title="Teste sua UDF" id="test-your-udf">
+  <Step>
+    ### Teste sua UDF
+
     1. volte à página inicial do SQL Console clicando em **Settings - voltar para a visão do seu serviço** no canto superior esquerdo da página
     2. clique em **SQL Console** no menu à esquerda
     3. escreva a seguinte consulta:
@@ -175,7 +183,9 @@ Anteriormente, nós a criamos usando SQL, mas desta vez vamos criá-la em Python
     ```
   </Step>
 
-  <Step title="Criar uma nova versão" id="create-new-version">
+  <Step>
+    ### Criar uma nova versão
+
     Para alterar o código de uma UDF, crie uma nova versão. O painel **Edit** gerencia apenas a quais serviços uma UDF está atribuída; fazer upload de um arquivo ali não substituirá o código implantado.
 
     1. Na página inicial do Cloud Console, clique no nome da sua organização no menu no canto inferior esquerdo.

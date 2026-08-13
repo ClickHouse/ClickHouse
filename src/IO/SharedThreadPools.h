@@ -69,7 +69,6 @@ private:
     M(DatabaseReplicatedCreateTables, "CreateTablesThreadPool", DatabaseReplicatedCreateTables) \
     M(DatabaseCatalogDropTables, "DropTablesThreadPool", DatabaseCatalog) \
     M(MergeTreePrefixesDeserialization, "MergeTreePrefixesDeserializationThreadPool", MergeTreeSubcolumnsReader) \
-    M(DropDistributedCache, "DropDistributedCacheThreadPool", DropDistributedCache) \
     M(FormatParsing, "FormatParsingThreadPool", FormatParsing)
 
 #define DECLARE_STATIC_THREAD_POOL_GETTER(SUFFIX, NAME, METRIC) StaticThreadPool & get##SUFFIX##ThreadPool();

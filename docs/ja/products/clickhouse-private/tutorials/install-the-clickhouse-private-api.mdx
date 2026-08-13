@@ -25,7 +25,9 @@ description: "このチュートリアルでは、バックアップや垂直ス
 ***
 
 <Steps>
-  <Step title="Step 1: コンテナーイメージをコピーする" id="step-1-copy-container-images">
+  <Step>
+    ## Step 1: コンテナーイメージをコピーする
+
     skopeo を使用して、Private API のイメージと Helm チャートを ECR にコピーします。
 
     ```ini
@@ -51,7 +53,9 @@ description: "このチュートリアルでは、バックアップや垂直ス
     ***
   </Step>
 
-  <Step title="Step 2: Helm でインストールする" id="step-2-install-via-helm">
+  <Step>
+    ## Step 2: Helm でインストールする
+
     Private API は専用のネームスペースにインストールされます。
 
     ```text
@@ -76,7 +80,9 @@ description: "このチュートリアルでは、バックアップや垂直ス
     ***
   </Step>
 
-  <Step title="Step 3: 認証を設定する" id="step-3-configure-authentication">
+  <Step>
+    ## Step 3: 認証を設定する
+
     デフォルトでは、基本認証は無効になっています。本番環境では、Helm の values を設定して有効にしてください。
 
     * `api.basicAuth.enabled=true`
@@ -88,7 +94,9 @@ description: "このチュートリアルでは、バックアップや垂直ス
     ***
   </Step>
 
-  <Step title="Step 4: インストールを確認する" id="step-4-verify-installation">
+  <Step>
+    ## Step 4: インストールを確認する
+
     ### ポッドを確認する
 
     ```bash

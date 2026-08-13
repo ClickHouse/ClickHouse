@@ -316,7 +316,7 @@ Generates a range of timestamps [start_timestamp, start_timestamp + step, start_
 
 If `start_timestamp` is equal to `end_timestamp`, the function returns a 1-element array containing `[start_timestamp]`.
 
-Function `timeSeriesRange()` is similar to function [range](/reference/functions/regular-functions/array-functions#range).
+Function `timeSeriesRange()` is similar to function [range](../functions/array-functions.md#range).
 )";
     FunctionDocumentation::Syntax syntax = "timeSeriesRange(start_timestamp, end_timestamp, step)";
     FunctionDocumentation::Arguments arguments = {{"start_timestamp", "Start of the range.", {"DateTime64", "DateTime", "UInt32"}},

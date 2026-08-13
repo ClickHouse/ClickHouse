@@ -275,19 +275,6 @@ void SpillingHashJoin::onBuildPhaseFinish()
     chosen_join->onBuildPhaseFinish();
 }
 
-bool SpillingHashJoin::hasPostBuildPhase() const
-{
-    /// `FillingRightJoinSideTransform` asks this right after `onBuildPhaseFinish`, so `chosen_join`
-    /// is already set. Stay defensive anyway: with no chosen join there is nothing to post-process.
-    return chosen_join && chosen_join->hasPostBuildPhase();
-}
-
-void SpillingHashJoin::runPostBuildPhase()
-{
-    if (chosen_join)
-        chosen_join->runPostBuildPhase();
-}
-
 void SpillingHashJoin::setEnableLazyColumnsIndexing(bool value)
 {
     if (hash_join)

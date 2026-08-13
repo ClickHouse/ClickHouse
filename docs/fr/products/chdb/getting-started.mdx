@@ -1,0 +1,393 @@
+---
+title: 'Premiers pas avec chDB'
+sidebarTitle: 'Premiers pas'
+slug: /chdb/getting-started
+description: 'chDB est un moteur SQL OLAP in-process alimenté par ClickHouse'
+keywords: ['chdb', 'embarqué', 'clickhouse-lite', 'in-process', 'dans le processus']
+doc_type: 'guide'
+---
+
+Dans ce guide, nous allons prendre en main la variante Python de chDB.
+Nous commencerons par interroger un fichier JSON sur S3, puis nous créerons une table dans chDB à partir de ce fichier JSON et exécuterons quelques requêtes sur les données.
+Nous verrons également comment faire en sorte que les requêtes renvoient des données dans différents formats, notamment Apache Arrow et Pandas, et enfin nous apprendrons à interroger des DataFrame Pandas.
+
+<div id="setup">
+  ## Préparation
+</div>
+
+Commençons par créer un environnement virtuel :
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+Nous allons maintenant installer chDB.
+Assurez-vous d&#39;utiliser la version 2.0.3 ou une version ultérieure :
+
+```bash
+pip install "chdb>=2.0.2"
+```
+
+Nous allons maintenant installer [ipython](https://ipython.org/) :
+
+```bash
+pip install ipython
+```
+
+Nous allons utiliser `ipython` pour exécuter les commandes dans la suite de ce guide. Vous pouvez le lancer avec :
+
+```bash
+ipython
+```
+
+Nous utiliserons également Pandas et Apache Arrow dans ce guide, installons donc aussi ces bibliothèques :
+
+```bash
+pip install pandas pyarrow
+```
+
+<div id="querying-a-json-file-in-s3">
+  ## Interroger un fichier JSON dans S3
+</div>
+
+Voyons maintenant comment interroger un fichier JSON stocké dans un bucket S3.
+Le [jeu de données des dislikes YouTube](/fr/get-started/sample-datasets/youtube-dislikes) contient plus de 4 milliards de lignes correspondant aux dislikes de vidéos YouTube jusqu&#39;en 2021.
+Nous allons travailler avec l&#39;un des fichiers JSON de ce jeu de données.
+
+Importez chdb :
+
+```python
+import chdb
+```
+
+La requête suivante permet de décrire la structure de l’un des fichiers JSON :
+
+```python
+chdb.query(
+  """
+  DESCRIBE s3(
+    's3://clickhouse-public-datasets/youtube/original/files/' ||
+    'youtubedislikes_20211127161229_18654868.1637897329_vid.json.zst',
+    'JSONLines'
+  )
+  SETTINGS describe_compact_output=1
+  """
+)
+```
+
+```text
+"id","Nullable(String)"
+"fetch_date","Nullable(String)"
+"upload_date","Nullable(String)"
+"title","Nullable(String)"
+"uploader_id","Nullable(String)"
+"uploader","Nullable(String)"
+"uploader_sub_count","Nullable(Int64)"
+"is_age_limit","Nullable(Bool)"
+"view_count","Nullable(Int64)"
+"like_count","Nullable(Int64)"
+"dislike_count","Nullable(Int64)"
+"is_crawlable","Nullable(Bool)"
+"is_live_content","Nullable(Bool)"
+"has_subtitles","Nullable(Bool)"
+"is_ads_enabled","Nullable(Bool)"
+"is_comments_enabled","Nullable(Bool)"
+"description","Nullable(String)"
+"rich_metadata","Array(Tuple(
+    call Nullable(String),
+    content Nullable(String),
+    subtitle Nullable(String),
+    title Nullable(String),
+    url Nullable(String)))"
+"super_titles","Array(Tuple(
+    text Nullable(String),
+    url Nullable(String)))"
+"uploader_badges","Nullable(String)"
+"video_badges","Nullable(String)"
+```
+
+Nous pouvons également compter le nombre de lignes de ce fichier :
+
+```python
+chdb.query(
+  """
+  SELECT count()
+  FROM s3(
+    's3://clickhouse-public-datasets/youtube/original/files/' ||
+    'youtubedislikes_20211127161229_18654868.1637897329_vid.json.zst',
+    'JSONLines'
+  )"""
+)
+```
+
+```text
+336432
+```
+
+Ce fichier contient un peu plus de 300 000 enregistrements.
+
+chdb ne prend pas encore en charge la transmission de paramètres de requête, mais nous pouvons extraire le chemin et le lui passer à l’aide d’une f-string.
+
+```python
+path = 's3://clickhouse-public-datasets/youtube/original/files/youtubedislikes_20211127161229_18654868.1637897329_vid.json.zst'
+```
+
+```python
+chdb.query(
+  f"""
+  SELECT count()
+  FROM s3('{path}','JSONLines')
+  """
+)
+```
+
+<Warning>
+  Vous pouvez le faire avec des variables définies dans votre programme, mais ne le faites pas avec des données fournies par l’utilisateur, sinon votre requête sera vulnérable à une injection SQL.
+</Warning>
+
+<div id="configuring-the-output-format">
+  ## Configurer le format de sortie
+</div>
+
+Le format de sortie par défaut est `CSV`, mais vous pouvez le modifier via le paramètre `output_format`.
+chDB prend en charge les formats de données de ClickHouse, ainsi que [certains formats qui lui sont propres](/fr/products/chdb/reference/data-formats), notamment `DataFrame`, qui renvoie un Pandas DataFrame :
+
+```python
+result = chdb.query(
+  f"""
+  SELECT is_ads_enabled, count()
+  FROM s3('{path}','JSONLines')
+  GROUP BY ALL
+  """,
+  output_format="DataFrame"
+)
+
+print(type(result))
+print(result)
+```
+
+```text
+<class 'pandas.core.frame.DataFrame'>
+   is_ads_enabled  count()
+0           False   301125
+1            True    35307
+```
+
+Ou, si nous voulons obtenir une table Apache Arrow :
+
+```python
+result = chdb.query(
+  f"""
+  SELECT is_live_content, count()
+  FROM s3('{path}','JSONLines')
+  GROUP BY ALL
+  """,
+  output_format="ArrowTable"
+)
+
+print(type(result))
+print(result)
+```
+
+```text
+<class 'pyarrow.lib.Table'>
+pyarrow.Table
+is_live_content: bool
+count(): uint64 not null
+----
+is_live_content: [[false,true]]
+count(): [[315746,20686]]
+```
+
+<div id="creating-a-table-from-json-file">
+  ## Création d’une table à partir d’un fichier JSON
+</div>
+
+Ensuite, voyons comment créer une table dans chDB.
+Pour cela, nous devons utiliser une autre API, commençons donc par l’importer :
+
+```python
+from chdb import session as chs
+```
+
+Ensuite, nous allons initialiser une session.
+Si nous voulons que la session soit persistée sur le disque, nous devons fournir un nom de répertoire.
+Si nous le laissons vide, la base de données restera en mémoire et sera perdue dès que nous arrêterons le processus Python.
+
+```python
+sess = chs.Session("gettingStarted.chdb")
+```
+
+Ensuite, nous allons créer une base de données :
+
+```python
+sess.query("CREATE DATABASE IF NOT EXISTS youtube")
+```
+
+Nous pouvons maintenant créer une table `dislikes` à partir du schéma du fichier JSON, à l’aide de la technique `CREATE...EMPTY AS`.
+Nous utiliserons le paramètre [`schema_inference_make_columns_nullable`](/fr/reference/settings/formats#schema_inference_make_columns_nullable) afin que les types de colonnes ne soient pas tous convertis en `Nullable`.
+
+```python
+sess.query(f"""
+  CREATE TABLE youtube.dislikes
+  ORDER BY fetch_date 
+  EMPTY AS 
+  SELECT * 
+  FROM s3('{path}','JSONLines')
+  SETTINGS schema_inference_make_columns_nullable=0
+  """
+)
+```
+
+Nous pouvons ensuite utiliser la clause `DESCRIBE` pour examiner le schéma :
+
+```python
+sess.query(f"""
+   DESCRIBE youtube.dislikes
+   SETTINGS describe_compact_output=1
+   """
+)
+```
+
+```text
+"id","String"
+"fetch_date","String"
+"upload_date","String"
+"title","String"
+"uploader_id","String"
+"uploader","String"
+"uploader_sub_count","Int64"
+"is_age_limit","Bool"
+"view_count","Int64"
+"like_count","Int64"
+"dislike_count","Int64"
+"is_crawlable","Bool"
+"is_live_content","Bool"
+"has_subtitles","Bool"
+"is_ads_enabled","Bool"
+"is_comments_enabled","Bool"
+"description","String"
+"rich_metadata","Array(Tuple(
+    call String,
+    content String,
+    subtitle String,
+    title String,
+    url String))"
+"super_titles","Array(Tuple(
+    text String,
+    url String))"
+"uploader_badges","String"
+"video_badges","String"
+```
+
+Ensuite, alimentons cette table :
+
+```python
+sess.query(f"""
+  INSERT INTO youtube.dislikes
+  SELECT * 
+  FROM s3('{path}','JSONLines')
+  SETTINGS schema_inference_make_columns_nullable=0
+  """
+)
+```
+
+Nous pourrions également effectuer ces deux étapes d’un seul coup, à l’aide de la technique `CREATE...AS`.
+Créons une autre table à l’aide de cette technique :
+
+```python
+sess.query(f"""
+  CREATE TABLE youtube.dislikes2
+  ORDER BY fetch_date 
+  AS 
+  SELECT * 
+  FROM s3('{path}','JSONLines')
+  SETTINGS schema_inference_make_columns_nullable=0
+  """
+)
+```
+
+<div id="querying-a-table">
+  ## Interroger une table
+</div>
+
+Enfin, interrogeons la table :
+
+```sql
+df = sess.query("""
+  SELECT uploader, sum(view_count) AS viewCount, sum(like_count) AS likeCount, sum(dislike_count) AS dislikeCount
+  FROM youtube.dislikes
+  GROUP BY ALL
+  ORDER BY viewCount DESC
+  LIMIT 10
+  """,
+  "DataFrame"
+)
+df
+```
+
+```text
+                             uploader  viewCount  likeCount  dislikeCount
+0                             Jeremih  139066569     812602         37842
+1                     TheKillersMusic  109313116     529361         11931
+2  LetsGoMartin- Canciones Infantiles  104747788     236615        141467
+3                    Xiaoying Cuisine   54458335    1031525         37049
+4                                Adri   47404537     279033         36583
+5                  Diana and Roma IND   43829341     182334        148740
+6                      ChuChuTV Tamil   39244854     244614        213772
+7                            Cheez-It   35342270        108            27
+8                            Anime Uz   33375618    1270673         60013
+9                    RC Cars OFF Road   31952962     101503         49489
+```
+
+Supposons que nous ajoutions ensuite une colonne supplémentaire au DataFrame pour calculer le ratio entre les mentions J&#39;aime et Je n&#39;aime pas.
+Nous pourrions écrire le code suivant :
+
+```python
+df["likeDislikeRatio"] = df["likeCount"] / df["dislikeCount"]
+```
+
+<div id="querying-a-pandas-dataframe">
+  ## Interroger un DataFrame Pandas
+</div>
+
+On peut ensuite interroger ce DataFrame avec chDB :
+
+```python
+chdb.query(
+  """
+  SELECT uploader, likeDislikeRatio
+  FROM Python(df)
+  """,
+  output_format="DataFrame"
+)
+```
+
+```text
+                             uploader  likeDislikeRatio
+0                             Jeremih         21.473548
+1                     TheKillersMusic         44.368536
+2  LetsGoMartin- Canciones Infantiles          1.672581
+3                    Xiaoying Cuisine         27.842182
+4                                Adri          7.627395
+5                  Diana and Roma IND          1.225857
+6                      ChuChuTV Tamil          1.144275
+7                            Cheez-It          4.000000
+8                            Anime Uz         21.173296
+9                    RC Cars OFF Road          2.051021
+```
+
+Vous pouvez également en savoir plus sur l’interrogation de DataFrames Pandas dans le [guide du développeur « Interroger des DataFrames Pandas »](/fr/products/chdb/guides/querying-pandas).
+
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
+
+Nous espérons que ce guide vous a offert un bon aperçu de chDB.
+Pour en savoir plus sur son utilisation, consultez les guides de développement suivants :
+
+* [Interroger des DataFrames Pandas](/fr/products/chdb/guides/querying-pandas)
+* [Interroger Apache Arrow](/fr/products/chdb/guides/querying-apache-arrow)
+* [Utiliser chDB dans JupySQL](/fr/products/chdb/guides/jupysql)
+* [Utiliser chDB avec une base de données clickhouse-local existante](/fr/products/chdb/guides/clickhouse-local)

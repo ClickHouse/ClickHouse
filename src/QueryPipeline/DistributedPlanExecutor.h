@@ -1,9 +1,5 @@
 #pragma once
 
-#include <atomic>
-#include <exception>
-#include <mutex>
-
 #include <Processors/Chunk.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
@@ -62,40 +58,6 @@ struct DistributedQueryPlan;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
-/// Cancellation state shared by the distributed plan executor, the threads tracking its tasks and
-/// the pipeline source driving them. Carries the first failure alongside the flag, so a waiter
-/// reports why the query stopped instead of a bare `Query was cancelled`.
-class DistributedQueryCancellation
-{
-public:
-    /// The pipeline cancelled the source: stop, with no failure to report. Deliberately lock-free,
-    /// so a cancelling thread never waits on a waiter that holds `mutex`.
-    void cancel() { cancelled = true; }
-
-    /// Store the in-flight exception as the query's first failure and cancel.
-    void recordCurrentException();
-
-    bool isCancelled() const { return cancelled; }
-
-    /// The first recorded failure; null if the query was cancelled without one (or not at all).
-    std::exception_ptr getFailure() const;
-
-    /// Rethrow the first recorded failure, if there is one.
-    void rethrowIfFailed() const;
-
-    /// Rethrow the first recorded failure. Without one, throw `QUERY_WAS_CANCELLED` if cancelled.
-    void throwIfCancelled() const;
-
-private:
-    void rethrowIfFailedLocked() const TSA_REQUIRES(mutex);
-
-    std::atomic<bool> cancelled = false;
-    mutable std::mutex mutex;
-    std::exception_ptr first_exception TSA_GUARDED_BY(mutex);
-};
-
-using DistributedQueryCancellationPtr = std::shared_ptr<DistributedQueryCancellation>;
-
 /// Implements distributed query plan execution logic by executing stages according to dependencies between them.
 class DistributedQueryPlanExecutor
 {
@@ -111,7 +73,7 @@ private:
     void startStageWithDependencies(const String & stage_name, UnorderedSetWithMemoryTracking<String> & executed_stages);
 
 protected:
-    DistributedQueryPlanExecutor(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, DistributedQueryCancellationPtr cancellation_);
+    DistributedQueryPlanExecutor(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, std::shared_ptr<std::atomic<bool>> is_cancelled_);
 
     virtual void startStage(const String & stage_name, const DistributedQueryStage & stage) = 0;
     virtual bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) = 0;
@@ -122,7 +84,7 @@ protected:
     const DistributedQueryPlan & distributed_query_plan;
     ContextPtr context;
     QueryStatusPtr query_status;
-    DistributedQueryCancellationPtr cancellation;
+    std::shared_ptr<std::atomic<bool>> is_cancelled;
     DequeWithMemoryTracking<String> running_stages;
     LoggerPtr logger;
 };
@@ -132,13 +94,11 @@ std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
     const DistributedQueryPlan & distributed_query_plan,
     TaskToHostMapPtr task_to_host_map,
     ContextPtr context,
-    DistributedQueryCancellationPtr cancellation);
+    std::shared_ptr<std::atomic<bool>> is_cancelled);
 
-/// Wake every in-memory exchange waiter of the query; the waiters rethrow `failure` (or a
-/// generic cancellation error when it is null) instead of treating the stream as complete.
-/// Idempotent and lock-free with respect to the executor lifecycle, so cancellation paths can call
-/// it without waiting for the executor mutex.
-void cancelDistributedQueryInMemoryExchanges(const UUID & unique_query_id, std::exception_ptr failure);
+/// Wake every in-memory exchange waiter of the query. Idempotent and lock-free with respect to the
+/// executor lifecycle, so cancellation paths can call it without waiting for the executor mutex.
+void cancelDistributedQueryInMemoryExchanges(const UUID & unique_query_id);
 
 /// Contains info about hosts assigned to exchange buckets
 struct ExchangeStreamSources
@@ -194,12 +154,6 @@ ExchangeLookupPtr createExchangeLookup(
     const ExchangeStreamSources & exchange_stream_sources,
     TemporaryFileLookupPtr temporary_files_,
     ContextPtr context);
-
-class IProcessor;
-
-/// Transform that drops zero-row chunks emitted as scheduling ticks by in-memory exchange
-/// sources, so they do not escape the exchange path (e.g. to the client as empty `Data` packets).
-std::shared_ptr<IProcessor> makeSkipZeroRowChunksTransform(SharedHeader header);
 
 class ICustomResourceHolder;
 

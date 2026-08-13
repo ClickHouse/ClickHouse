@@ -53,8 +53,10 @@ ClickHouse Cloud는 여러 인증 방법을 사용해 Azure Blob Storage에 연�
 </Warning>
 
 <Steps>
-  <Step title="ClickHouse Cloud egress IP 찾기" id="find-egress-ips">
-    IP 기반 방화벽 규칙을 구성하려면 ClickHouse Cloud 리전의 egress IP 주소를 허용 목록에 추가해야 합니다.
+  <Step>
+    ### ClickHouse Cloud egress IP 찾기
+
+    IP 기반 firewall 규칙을 구성하려면 ClickHouse Cloud 리전의 egress IP 주소를 허용 목록에 추가해야 합니다.
 
     다음 명령을 실행하여 리전별 egress 및 ingress IP 목록을 가져오십시오.
     아래의 `eastus`를 사용 중인 리전으로 바꿔 다른 리전은 제외하십시오:
@@ -88,7 +90,9 @@ ClickHouse Cloud는 여러 인증 방법을 사용해 Azure Blob Storage에 연�
     자세한 내용은 [&quot;Cloud IP addresses&quot;](/ko/products/cloud/guides/data-sources/cloud-endpoints-api)를 참조하십시오.
   </Step>
 
-  <Step title="Azure 스토리지 방화벽 구성" id="configure-firewall">
+  <Step>
+    ### Azure 스토리지 firewall 구성
+
     Azure Portal에서 스토리지 계정으로 이동합니다
 
     1. **Networking** → **Firewalls and virtual networks**로 이동합니다

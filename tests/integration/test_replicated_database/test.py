@@ -425,17 +425,10 @@ def test_alter_drop_part(started_cluster, engine):
         dummy_node.query(f"INSERT INTO {database}.alter_drop_part VALUES (456)")
     else:
         main_node.query(f"SYSTEM SYNC REPLICA {database}.alter_drop_part PULL")
-        # A part covered by a pending drop is never fetched, so sync before dropping.
-        dummy_node.query(f"SYSTEM SYNC REPLICA {database}.alter_drop_part LIGHTWEIGHT")
-        assert (
-            dummy_node.query(f"SELECT CounterID FROM {database}.alter_drop_part")
-            == "123\n"
-        )
     main_node.query(f"ALTER TABLE {database}.alter_drop_part DROP PART '{part_name}'")
     assert main_node.query(f"SELECT CounterID FROM {database}.alter_drop_part") == ""
     if engine == "ReplicatedMergeTree":
         # The DROP operation is still replicated at the table engine level
-        dummy_node.query(f"SYSTEM SYNC REPLICA {database}.alter_drop_part LIGHTWEIGHT")
         assert (
             dummy_node.query(f"SELECT CounterID FROM {database}.alter_drop_part") == ""
         )
@@ -467,14 +460,11 @@ def test_alter_detach_part(started_cluster, engine):
         dummy_node.query(f"INSERT INTO {database}.alter_detach VALUES (456)")
     else:
         main_node.query(f"SYSTEM SYNC REPLICA {database}.alter_detach PULL")
-        # A part covered by a pending detach is never fetched, so sync before detaching.
-        dummy_node.query(f"SYSTEM SYNC REPLICA {database}.alter_detach LIGHTWEIGHT")
     main_node.query(f"ALTER TABLE {database}.alter_detach DETACH PART '{part_name}'")
     detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='{database}' AND table='alter_detach'"
     assert main_node.query(detached_parts_query) == f"{part_name}\n"
     if engine == "ReplicatedMergeTree":
         # The detach operation is still replicated at the table engine level
-        dummy_node.query(f"SYSTEM SYNC REPLICA {database}.alter_detach LIGHTWEIGHT")
         assert dummy_node.query(detached_parts_query) == f"{part_name}\n"
     else:
         assert dummy_node.query(detached_parts_query) == ""
@@ -497,11 +487,6 @@ def test_alter_drop_detached_part(started_cluster, engine):
         f"CREATE TABLE {database}.alter_drop_detached (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)"
     )
     main_node.query(f"INSERT INTO {database}.alter_drop_detached VALUES (123)")
-    if engine == "ReplicatedMergeTree":
-        # A part covered by a pending detach is never fetched, so sync before detaching.
-        dummy_node.query(
-            f"SYSTEM SYNC REPLICA {database}.alter_drop_detached LIGHTWEIGHT"
-        )
     main_node.query(
         f"ALTER TABLE {database}.alter_drop_detached DETACH PART '{part_name}'"
     )
@@ -515,10 +500,6 @@ def test_alter_drop_detached_part(started_cluster, engine):
     )
     detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='{database}' AND table='alter_drop_detached'"
     assert main_node.query(detached_parts_query) == ""
-    if engine == "ReplicatedMergeTree":
-        dummy_node.query(
-            f"SYSTEM SYNC REPLICA {database}.alter_drop_detached LIGHTWEIGHT"
-        )
     assert dummy_node.query(detached_parts_query) == f"{part_name}\n"
 
     main_node.query(f"DROP DATABASE {database} SYNC")
@@ -1706,60 +1687,66 @@ def test_lag_after_recovery(started_cluster):
         "create table lag_after_recovery.t (n int) engine=ReplicatedMergeTree order by n"
     )
 
-    # Delay recovery so t1..t9 below are enqueued while replica2 is still
-    # recovering -> it ends up unsynced-after-recovery (REPLICA_UNSYNCED_MARKER).
     dummy_node.query("system enable failpoint database_replicated_delay_recovery")
-    # Freeze replica2's worker before the check that clears the marker, so the
-    # marker stays set for the whole window deterministically (the old random
-    # delay failpoint raced it and cleared the marker before t10 ~1 run in N).
-    # Same pauseable idiom as test_sync_database_replica_strict.
     dummy_node.query(
-        "system enable failpoint database_replicated_stop_entry_execution"
+        "system enable failpoint database_replicated_delay_entry_execution"
     )
-    try:
+    dummy_node.query(
+        "create database lag_after_recovery engine=Replicated('/clickhouse/databases/lag_after_recovery', 'shard1', 'replica2') settings max_replication_lag_to_enqueue=1"
+    )
+
+    settings = {"distributed_ddl_task_timeout": 0}
+    main_node.query(
+        "create table lag_after_recovery.t1 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t2 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t3 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t4 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t5 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t6 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t7 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t8 (n int) engine=Memory", settings=settings
+    )
+    main_node.query(
+        "create table lag_after_recovery.t9 (n int) engine=Memory", settings=settings
+    )
+
+    assert_eq_with_retry(
+        dummy_node,
+        "select is_active from system.clusters where name='lag_after_recovery' and database_replica_name='replica2'",
+        "1\n",
+    )
+
+    settings = {
+        "distributed_ddl_task_timeout": 1,
+        "distributed_ddl_output_mode": "none_only_active",
+    }
+    main_node.query(
+        "create table lag_after_recovery.t10 (n int) engine=Memory", settings=settings
+    )
+    assert (
         dummy_node.query(
-            "create database lag_after_recovery engine=Replicated('/clickhouse/databases/lag_after_recovery', 'shard1', 'replica2') settings max_replication_lag_to_enqueue=1"
+            "select replication_lag=0 from system.clusters where name='lag_after_recovery' and database_replica_name='replica2'"
         )
+        == "0\n"
+    )
 
-        settings = {"distributed_ddl_task_timeout": 0}
-        for i in range(1, 10):
-            main_node.query(
-                f"create table lag_after_recovery.t{i} (n int) engine=Memory",
-                settings=settings,
-            )
-
-        assert_eq_with_retry(
-            dummy_node,
-            "select is_active from system.clusters where name='lag_after_recovery' and database_replica_name='replica2'",
-            "1\n",
-        )
-
-        settings = {
-            "distributed_ddl_task_timeout": 1,
-            "distributed_ddl_output_mode": "none_only_active",
-        }
-        # unsynced replica2 is treated as offline, so the coordinator does not
-        # wait for it and the create returns quickly instead of timing out.
-        main_node.query(
-            "create table lag_after_recovery.t10 (n int) engine=Memory",
-            settings=settings,
-        )
-        # replication_lag is still nonzero (replica2 is frozen and behind).
-        assert (
-            dummy_node.query(
-                "select replication_lag=0 from system.clusters where name='lag_after_recovery' and database_replica_name='replica2'"
-            )
-            == "0\n"
-        )
-    finally:
-        dummy_node.query(
-            "system disable failpoint database_replicated_stop_entry_execution"
-        )
-        dummy_node.query(
-            "system disable failpoint database_replicated_delay_recovery"
-        )
-
-    # With the worker unfrozen, replica2 catches up and clears the unsynced marker.
+    dummy_node.query(
+        "system disable failpoint database_replicated_delay_entry_execution"
+    )
     dummy_node.query("system sync database replica lag_after_recovery strict")
     assert (
         dummy_node.query(

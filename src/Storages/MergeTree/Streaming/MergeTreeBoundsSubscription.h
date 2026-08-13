@@ -26,12 +26,6 @@ public:
     bool isDisabled() const;
     void disable();
 
-    /// Record that one enrichment round finished (an empty round counts too) and wake readers.
-    void onEnrichmentRound();
-
-    /// How many enrichment rounds have been applied to this subscription (a bounded source compares this with 0).
-    size_t updatesCount() const;
-
     /// Read end of the wakeup pipe;
     int fd() const { return wake.fd(); }
     void drain() { wake.drain(); }
@@ -43,7 +37,6 @@ private:
     mutable std::mutex mutex;
     std::map<String, Int64> safe_block_numbers TSA_GUARDED_BY(mutex);
     bool is_disabled TSA_GUARDED_BY(mutex) = false;
-    size_t updates_count TSA_GUARDED_BY(mutex) = 0;
 
     WakeupFd wake;
 };

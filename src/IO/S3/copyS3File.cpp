@@ -72,10 +72,6 @@ namespace S3RequestSetting
 
 namespace
 {
-    /// S3 accepts `x-amz-copy-source-range` only if the source object is greater than 5 MB, and answers
-    /// InvalidRequest otherwise -- so a range of a smaller source cannot be server-side copied at all.
-    constexpr size_t MIN_SOURCE_SIZE_FOR_RANGE_COPY = 5 * 1024 * 1024;
-
     class UploadHelper
     {
     public:
@@ -617,7 +613,6 @@ namespace
             const String & src_key_,
             size_t src_offset_,
             size_t src_size_,
-            size_t src_object_size_,
             const String & dest_bucket_,
             const String & dest_key_,
             const S3::S3RequestSettings & request_settings_,
@@ -625,8 +620,7 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
-            std::function<void()> fallback_method_,
-            bool is_ranged_copy_)
+            std::function<void()> fallback_method_)
             : UploadHelper(
                 client_ptr_,
                 dest_bucket_,
@@ -640,9 +634,7 @@ namespace
             , src_key(src_key_)
             , offset(src_offset_)
             , size(src_size_)
-            , src_object_size(src_object_size_)
             , supports_multipart_copy(client_ptr_->supportsMultiPartCopy())
-            , is_ranged_copy(is_ranged_copy_)
             , read_settings(read_settings_)
             , fallback_method(std::move(fallback_method_))
         {
@@ -651,25 +643,8 @@ namespace
         void performCopy()
         {
             LOG_TEST(log, "Copy object {} to {} using native copy", src_key, dest_key);
-
-            /// A ranged copy carries a byte range that whole-object CopyObject ignores, so it must not take
-            /// the single-operation path -- doing so would copy the entire source object. It can only use
-            /// UploadPartCopy (which sets a CopySourceRange per part), and only when both multipart copy is
-            /// available and the source is large enough for S3 to accept a byte-range copy source; otherwise
-            /// it falls back to the buffered ranged read, which reads exactly [offset, offset + size).
-            bool multipart_copy_available = supports_multipart_copy && request_settings[S3RequestSetting::allow_multipart_copy];
-            bool source_allows_range_copy = src_object_size > MIN_SOURCE_SIZE_FOR_RANGE_COPY;
-            if (is_ranged_copy && (!multipart_copy_available || !source_allows_range_copy))
-            {
-                fallback_method();
-                return;
-            }
-
-            bool use_single_operation_copy = !is_ranged_copy
-                && (!multipart_copy_available || (size <= request_settings[S3RequestSetting::max_single_operation_copy_size]));
-
-            /// A ranged copy must never reach whole-object CopyObject (it would copy the entire source).
-            chassert(!(is_ranged_copy && use_single_operation_copy));
+            bool use_single_operation_copy = !supports_multipart_copy || !request_settings[S3RequestSetting::allow_multipart_copy]
+                || (size <= request_settings[S3RequestSetting::max_single_operation_copy_size]);
 
             if (use_single_operation_copy)
                 performSingleOperationCopy();
@@ -685,9 +660,7 @@ namespace
         const String & src_key;
         size_t offset;
         size_t size;
-        size_t src_object_size;
         bool supports_multipart_copy;
-        bool is_ranged_copy;
         const ReadSettings read_settings;
         std::function<void()> fallback_method;
 
@@ -893,114 +866,12 @@ void copyDataToS3File(
 }
 
 
-namespace
-{
-    /// Shared by both public entry points. `is_ranged_copy` says whether only [src_offset, src_offset +
-    /// src_size) of a larger source is wanted; it is internal, so no caller can leave it at a wrong default.
-    void copyS3FileImpl(
-        std::shared_ptr<const S3::Client> src_s3_client,
-        const String & src_bucket,
-        const String & src_key,
-        size_t src_offset,
-        size_t src_size,
-        size_t src_object_size,
-        std::shared_ptr<const S3::Client> dest_s3_client,
-        const String & dest_bucket,
-        const String & dest_key,
-        const S3::S3RequestSettings & settings,
-        const ReadSettings & read_settings,
-        BlobStorageLogWriterPtr blob_storage_log,
-        ThreadPoolCallbackRunnerUnsafe<void> schedule,
-        const CreateReadBuffer & fallback_file_reader,
-        const std::optional<ObjectAttributes> & object_metadata,
-        bool is_ranged_copy)
-    {
-        if (!dest_s3_client)
-            dest_s3_client = src_s3_client;
-
-        std::function<void()> fallback_method = [&] mutable
-        {
-            copyDataToS3File(
-                fallback_file_reader,
-                src_offset,
-                src_size,
-                dest_s3_client,
-                dest_bucket,
-                dest_key,
-                settings,
-                blob_storage_log,
-                schedule,
-                object_metadata);
-        };
-
-        if (!settings[S3RequestSetting::allow_native_copy])
-        {
-            LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_key);
-            fallback_method();
-            return;
-        }
-
-        CopyFileHelper helper{
-            src_s3_client,
-            src_bucket,
-            src_key,
-            src_offset,
-            src_size,
-            src_object_size,
-            dest_bucket,
-            dest_key,
-            settings,
-            read_settings,
-            object_metadata,
-            schedule,
-            blob_storage_log,
-            std::move(fallback_method),
-            is_ranged_copy};
-        helper.performCopy();
-    }
-}
-
 void copyS3File(
-    std::shared_ptr<const S3::Client> src_s3_client,
-    const String & src_bucket,
-    const String & src_key,
-    size_t src_size,
-    std::shared_ptr<const S3::Client> dest_s3_client,
-    const String & dest_bucket,
-    const String & dest_key,
-    const S3::S3RequestSettings & settings,
-    const ReadSettings & read_settings,
-    BlobStorageLogWriterPtr blob_storage_log,
-    ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata)
-{
-    copyS3FileImpl(
-        std::move(src_s3_client),
-        src_bucket,
-        src_key,
-        /* src_offset= */ 0,
-        src_size,
-        /* src_object_size= */ src_size,
-        std::move(dest_s3_client),
-        dest_bucket,
-        dest_key,
-        settings,
-        read_settings,
-        std::move(blob_storage_log),
-        std::move(schedule),
-        fallback_file_reader,
-        object_metadata,
-        /* is_ranged_copy= */ false);
-}
-
-void copyS3FileRange(
     std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
     size_t src_offset,
     size_t src_size,
-    size_t src_object_size,
     std::shared_ptr<const S3::Client> dest_s3_client,
     const String & dest_bucket,
     const String & dest_key,
@@ -1008,26 +879,49 @@ void copyS3FileRange(
     const ReadSettings & read_settings,
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    const CreateReadBuffer & fallback_file_reader,
+    const CreateReadBuffer& fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata)
 {
-    copyS3FileImpl(
-        std::move(src_s3_client),
+    if (!dest_s3_client)
+        dest_s3_client = src_s3_client;
+
+    std::function<void()> fallback_method = [&] mutable
+    {
+        copyDataToS3File(
+            fallback_file_reader,
+            src_offset,
+            src_size,
+            dest_s3_client,
+            dest_bucket,
+            dest_key,
+            settings,
+            blob_storage_log,
+            schedule,
+            object_metadata);
+    };
+
+    if (!settings[S3RequestSetting::allow_native_copy])
+    {
+        LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_key);
+        fallback_method();
+        return;
+    }
+
+    CopyFileHelper helper{
+        src_s3_client,
         src_bucket,
         src_key,
         src_offset,
         src_size,
-        src_object_size,
-        std::move(dest_s3_client),
         dest_bucket,
         dest_key,
         settings,
         read_settings,
-        std::move(blob_storage_log),
-        std::move(schedule),
-        fallback_file_reader,
         object_metadata,
-        /* is_ranged_copy= */ true);
+        schedule,
+        blob_storage_log,
+        std::move(fallback_method)};
+    helper.performCopy();
 }
 
 }

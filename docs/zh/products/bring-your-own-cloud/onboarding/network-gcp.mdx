@@ -27,7 +27,7 @@ VPC 对等互连 和 Private Service Connect 共同需要执行的步骤。
   ## 设置 VPC 对等互连
 </div>
 
-请先了解 [GCP VPC 对等互连 功能](https://docs.cloud.google.com/vpc/docs/vpc-peering)，并注意 VPC 对等互连的限制 (例如，已对等互连的 VPC 网络之间，子网 IP 范围不能重叠) 。ClickHouse BYOC 使用私有负载均衡器，通过对等互连为 ClickHouse 服务提供网络连通性。
+请先了解 [GCP VPC peering 功能](https://docs.cloud.google.com/vpc/docs/vpc-peering)，并注意 VPC 对等互连的限制 (例如，已对等互连的 VPC 网络之间，子网 IP 范围不能重叠) 。ClickHouse BYOC 使用私有负载均衡器，通过对等互连为 ClickHouse 服务提供网络连通性。
 
 如需为 ClickHouse BYOC 创建或删除 VPC 对等互连，请按照以下步骤操作：
 
@@ -36,7 +36,9 @@ VPC 对等互连 和 Private Service Connect 共同需要执行的步骤。
 </Note>
 
 <Steps>
-  <Step title="创建对等连接" id="step-1-create-a-peering-connection">
+  <Step>
+    ### 创建对等连接
+
     在本示例中，我们将在 BYOC VPC 网络与另一个现有的 VPC 网络之间建立对等互连。
 
     1. 在 ClickHouse BYOC Google Cloud 项目中，进入 “VPC Network”。
@@ -57,7 +59,9 @@ VPC 对等互连 和 Private Service Connect 共同需要执行的步骤。
     此时，应可从已对等互连的 VPC 访问 ClickHouse 服务。
   </Step>
 
-  <Step title="通过对等连接访问 ClickHouse 服务" id="step-2-access-ch-service-via-peering">
+  <Step>
+    ### 通过对等连接访问 ClickHouse 服务
+
     如需私有访问 ClickHouse，系统会预配私有负载均衡器和端点，以便从用户已对等互连的 VPC 安全连接。专用终结点遵循公共端点的格式，并带有 `-private` 后缀。例如：
 
     * **公共端点**：`h5ju65kv87.mhp0y4dmph.us-east1.gcp.byoc.clickhouse.cloud`
@@ -72,13 +76,17 @@ VPC 对等互连 和 Private Service Connect 共同需要执行的步骤。
 GCP PSC (Private Service Connect) 可为您的 ClickHouse BYOC 服务提供安全的私有连接，无需进行 VPC 对等互连，也无需使用互联网网关。
 
 <Steps>
-  <Step title="申请配置 PSC 服务" id="step-1-request-psc-setup">
+  <Step>
+    ### 申请配置 PSC 服务
+
     请联系 [ClickHouse 支持团队](https://clickhouse.com/cloud/bring-your-own-cloud)，为您的 BYOC 部署申请配置 PSC 服务。此阶段无需提供具体信息——只需说明您希望开通 PSC 连接即可。
 
     ClickHouse 支持团队将启用所需的基础设施组件，包括**私有负载均衡器**和**PSC Service**。
   </Step>
 
-  <Step title="获取 GCP PSC 服务名称和 DNS 名称" id="step-2-obtain-gcp-service-attachment-and-dns-name-for-private-service-connect">
+  <Step>
+    ### 获取 GCP PSC 服务名称和 DNS 名称
+
     ClickHouse 支持团队会向您提供 PSC 服务名称。您也可以在 ClickHouse Cloud 控制台的 &quot;Organization&quot; -&gt; &quot;Infrastructure&quot; 下获取：点击基础设施名称即可查看详细信息。
 
     <Image img="/images/cloud/reference/byoc-privatelink-gcp-1.webp" size="lg" alt="BYOC PSC 端点" border />
@@ -92,7 +100,9 @@ GCP PSC (Private Service Connect) 可为您的 ClickHouse BYOC 服务提供安�
     <Image img="/images/cloud/reference/byoc-privatelink-gcp-4.webp" size="lg" alt="BYOC PSC 端点" border />
   </Step>
 
-  <Step title="在您的网络中创建 PSC 端点" id="step-3-create-endpoint">
+  <Step>
+    ### 在您的网络中创建 PSC 端点
+
     在 ClickHouse 支持团队已在其侧启用 PSC 服务后，您需要在客户端应用所在的网络中创建一个 PSC 端点，以连接到 ClickHouse PSC 服务。
 
     1. **创建 PSC 端点**：
@@ -114,7 +124,9 @@ GCP PSC (Private Service Connect) 可为您的 ClickHouse BYOC 服务提供安�
     <Image img="/images/cloud/reference/byoc-privatelink-gcp-6.webp" size="lg" alt="BYOC PSC 端点详情" border />
   </Step>
 
-  <Step title="为端点设置私有 DNS 名称" id="step-4-set-private-dns-name-for-endpoint">
+  <Step>
+    ### 为端点设置私有 DNS 名称
+
     <Note>
       DNS 有多种配置方式。请根据您的具体使用场景进行设置。
     </Note>
@@ -122,7 +134,9 @@ GCP PSC (Private Service Connect) 可为您的 ClickHouse BYOC 服务提供安�
     您需要将“DNS 名称”的所有子域名 (通配符) 都指向 GCP PSC 端点 IP 地址；该“DNS 名称”来自 [获取 GCP PSC 服务名称和 DNS 名称](#step-2-obtain-gcp-service-attachment-and-dns-name-for-private-service-connect) 这一步。这样可确保您的 VPC/Network 中的服务/组件能够正确解析它。
   </Step>
 
-  <Step title="将端点的 PSC Connection ID 添加到服务允许名单中" id="step-5-add-endpoint-id-allowlist">
+  <Step>
+    ### 将端点的 PSC Connection ID 添加到服务允许名单中
+
     创建 PSC 端点且状态为 &quot;Accepted&quot; 后，你需要将该端点的 PSC Connection ID 添加到你希望通过 PSC 访问的**每个 ClickHouse 服务**的允许名单中。
 
     **联系 ClickHouse 支持团队**：
@@ -132,7 +146,9 @@ GCP PSC (Private Service Connect) 可为您的 ClickHouse BYOC 服务提供安�
     * ClickHouse 支持团队会将该端点的 PSC Connection ID 添加到服务允许名单中
   </Step>
 
-  <Step title="通过 PSC 连接到 ClickHouse" id="step-6-connect-via-psc-endpoint">
+  <Step>
+    ### 通过 PSC 连接到 ClickHouse
+
     将 Endpoint Connection IDs 添加到允许列表后，您就可以通过 PSC 端点连接到您的 ClickHouse 服务。
 
     PSC 端点的格式与公共端点类似，但会包含一个 `p` 子域名。例如：

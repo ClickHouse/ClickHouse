@@ -28,7 +28,9 @@ doc_type: 'guide'
 Чтобы создать приложение Streamlit, выполните следующие шаги.
 
 <Steps>
-  <Step title="Установка библиотек" id="install-libraries">
+  <Step>
+    ## Установка библиотек
+
     Установите необходимые библиотеки, выполнив следующие команды:
 
     ```bash
@@ -36,7 +38,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="Создайте файл утилит" id="create-utilities">
+  <Step>
+    ## Создайте файл утилит
+
     Создайте файл `utils.py` с двумя вспомогательными функциями. Первая —
     это асинхронная функция-генератор для обработки потоковых ответов от
     агента Agno. Вторая — функция для применения стилей к приложению
@@ -64,7 +68,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="Настройка учетных данных" id="setup-credentials">
+  <Step>
+    ## Настройка учетных данных
+
     Задайте API-ключ Anthropic в переменной окружения:
 
     ```bash
@@ -79,7 +85,9 @@ doc_type: 'guide'
     </Info>
   </Step>
 
-  <Step title="Импортируйте необходимые библиотеки" id="import-libraries">
+  <Step>
+    ## Импортируйте необходимые библиотеки
+
     Начните с создания основного файла приложения Streamlit (например, `app.py`) и добавьте необходимые импорты:
 
     ```python
@@ -103,7 +111,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="Определите функцию потоковой передачи агента" id="define-agent-function">
+  <Step>
+    ## Определите функцию потоковой передачи агента
+
     Добавьте основную функцию агента, которая подключается к [Песочнице ClickHouse](https://sql.clickhouse.com/) и передаёт ответы в потоковом режиме:
 
     ```python
@@ -153,7 +163,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="Добавьте синхронные функции-обёртки" id="add-wrapper-functions">
+  <Step>
+    ## Добавьте синхронные функции-обёртки
+
     Добавьте вспомогательные функции для работы с асинхронным стримингом в Streamlit:
 
     ```python
@@ -161,7 +173,7 @@ doc_type: 'guide'
         queue = Queue()
         def run():
             asyncio.run(_agent_stream_to_queue(message, queue))
-            queue.put(None)  # Sentinel to end stream
+            queue.put(None)  # Сигнал завершения потока
         threading.Thread(target=run, daemon=True).start()
         while True:
             chunk = queue.get()
@@ -175,7 +187,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="Создайте интерфейс Streamlit" id="create-interface">
+  <Step>
+    ## Создайте интерфейс Streamlit
+
     Добавьте компоненты интерфейса Streamlit и функцию чата:
 
     ```python
@@ -204,7 +218,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="Запустите приложение" id="run-application">
+  <Step>
+    ## Запустите приложение
+
     Чтобы запустить веб-приложение вашего ClickHouse AI-агента, выполните в терминале
     следующую команду:
 

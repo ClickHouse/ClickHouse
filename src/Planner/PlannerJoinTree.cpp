@@ -1,6 +1,4 @@
-#include <Columns/IColumn.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/convertColumnToType.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Planner/PlannerJoinTree.h>
 
 #include <Core/Settings.h>
@@ -24,7 +22,6 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 
-#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/IStorageCluster.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -82,6 +79,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/QueryPlan/ParallelReplicasSplitStep.h>
 
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
@@ -172,10 +170,10 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ACCESS_DENIED;
-    extern const int ILLEGAL_PREWHERE;
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_MANY_COLUMNS;
     extern const int UNSUPPORTED_METHOD;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -184,11 +182,14 @@ namespace
 /// Check if current user has privileges to SELECT columns from table
 /// Throws an exception if access to any column from `column_names` is not granted
 /// If `column_names` is empty, check access to any columns and return names of accessible columns
-NameSet checkAccessRights(const StoragePtr & storage, const StorageID & storage_id, const StorageSnapshotPtr & storage_snapshot, const Names & column_names, const ContextPtr & query_context)
+NameSet checkAccessRights(const TableNode & table_node, const Names & column_names, const ContextPtr & query_context)
 {
     /// StorageDummy is created on preliminary stage, ignore access check for it.
-    if (typeid_cast<const StorageDummy *>(storage.get()))
+    if (typeid_cast<const StorageDummy *>(table_node.getStorage().get()))
         return {};
+
+    const auto & storage_id = table_node.getStorageID();
+    const auto & storage_snapshot = table_node.getStorageSnapshot();
 
     if (column_names.empty())
     {
@@ -624,22 +625,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
     if (table_node)
     {
         const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
-        columns_names_allowed_to_select = checkAccessRights(
-            table_node->getStorage(), table_node->getStorageID(), table_node->getStorageSnapshot(), column_names_with_aliases, query_context);
-    }
-    else if (table_function_node)
-    {
-        /// A parameterized view is resolved as a `TableFunctionNode` that wraps a real `StorageView`, but no
-        /// `ITableFunction::execute` runs for it, so the access check skipped above for regular table functions
-        /// would let the query read the view without any `SELECT` grant. Enforce the same column-aware `SELECT`
-        /// check the underlying view would receive as a `TableNode`.
-        const auto & storage = table_function_node->getStorage();
-        if (const auto * storage_view = storage ? storage->as<StorageView>() : nullptr; storage_view && storage_view->isParameterizedView())
-        {
-            const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
-            columns_names_allowed_to_select = checkAccessRights(
-                storage, table_function_node->getStorageID(), table_function_node->getStorageSnapshot(), column_names_with_aliases, query_context);
-        }
+        columns_names_allowed_to_select = checkAccessRights(*table_node, column_names_with_aliases, query_context);
     }
     else if ((query_node || union_node) && select_query_options.check_subquery_table_access)
     {
@@ -764,8 +750,7 @@ void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info
 std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
     SelectQueryInfo & table_expression_query_info,
     PlannerContextPtr & planner_context,
-    std::set<std::string> & used_row_policies,
-    NameSet required_names_without_filter = {})
+    std::set<std::string> & used_row_policies)
 {
     const auto & query_context = planner_context->getQueryContext();
 
@@ -781,11 +766,7 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
         used_row_policies.emplace(std::move(name));
     }
 
-    return buildFilterInfo(
-        row_policy_filter->expression,
-        table_expression_query_info.table_expression,
-        planner_context,
-        std::move(required_names_without_filter));
+    return buildFilterInfo(row_policy_filter->expression, table_expression_query_info.table_expression, planner_context);
 }
 
 std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
@@ -795,16 +776,16 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
-    if (settings[Setting::parallel_replicas_count] <= 1)
+    if (settings[Setting::parallel_replicas_count] <= 1 || settings[Setting::parallel_replicas_custom_key].value.empty())
         return {};
 
-    /// An empty custom key is not skipped silently on purpose: the caller has already checked that the custom key
-    /// filtering is requested, and this replica has been given an offset to read only its own part of the data.
-    /// `parseCustomKeyForTable` fails on it, the same way it does on the initiator when the initiator builds the
-    /// filter itself for a cluster with a single shard.
     auto custom_key_ast = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *query_context);
-    /// `parseCustomKeyForTable` either parses the key or throws, it never returns nothing.
-    chassert(custom_key_ast);
+    if (!custom_key_ast)
+        throw DB::Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Parallel replicas processing with custom_key has been requested "
+                "(setting 'max_parallel_replicas'), but the table does not have custom_key defined for it "
+                " or it's invalid (setting 'parallel_replicas_custom_key')");
 
     LOG_TRACE(getLogger("Planner"), "Processing query on a replica using custom_key '{}'", settings[Setting::parallel_replicas_custom_key].value);
 
@@ -895,27 +876,28 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
     UInt64 limit_length = 0;
     if (main_query_node.hasLimit())
     {
-        const auto & limit_node = main_query_node.getLimit()->as<ConstantNode &>();
-        ColumnPtr limit_uint = convertColumnToTypeOrNull(*limit_node.getColumn(), limit_node.getResultType(), std::make_shared<DataTypeUInt64>());
+        const auto & field = main_query_node.getLimit()->as<ConstantNode &>().getValue();
+
+        const bool is_uint64 = !convertFieldToType(field, DataTypeUInt64()).isNull();
 
         // Negative LIMIT, skip optimization
-        if (!limit_uint)
+        if (!is_uint64)
             return 0;
 
-        limit_length = limit_uint->getUInt(0);
+        limit_length = field.safeGet<UInt64>();
     }
 
     UInt64 limit_offset = 0;
     if (main_query_node.hasOffset())
     {
-        const auto & offset_node = main_query_node.getOffset()->as<ConstantNode &>();
-        ColumnPtr offset_uint = convertColumnToTypeOrNull(*offset_node.getColumn(), offset_node.getResultType(), std::make_shared<DataTypeUInt64>());
+        const auto & field = main_query_node.getOffset()->as<ConstantNode &>().getValue();
+        const bool is_uint64 = !convertFieldToType(field, DataTypeUInt64()).isNull();
 
         // Negative OFFSET, skip optimization
-        if (!offset_uint)
+        if (!is_uint64)
             return 0;
 
-        limit_offset = offset_uint->getUInt(0);
+        limit_offset = field.safeGet<UInt64>();
     }
 
     /// `arrayJoin` in the projection expands one input row into several output rows after the
@@ -1187,7 +1169,7 @@ void pushOrderByIntoView(
     /// too few rows. Negative LIMIT values are rejected for the same reason
     /// (they are not representable as a plain `UInt64`).
     const auto * limit_node = outer->getLimit()->as<ConstantNode>();
-    if (!limit_node || !convertColumnToTypeOrNull(*limit_node->getColumn(), limit_node->getResultType(), std::make_shared<DataTypeUInt64>()))
+    if (!limit_node || convertFieldToType(limit_node->getValue(), DataTypeUInt64()).isNull())
         return;
 
     /// Validate ORDER BY: must be simple columns from this view, and must not
@@ -1409,7 +1391,7 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
     if (!join_node)
         return true;
 
-    const auto & left_table_expr = join_node->getLeftTableExpressionNode();
+    const auto & left_table_expr = join_node->getLeftTableExpression();
     const auto * left_table = typeid_cast<const TableNode *>(left_table_expr.get());
     if (left_table && left_table->getStorage()->isView())
         return false;
@@ -1441,7 +1423,7 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
             && left_table_expr->getNodeType() != QueryTreeNodeType::TABLE_FUNCTION)
             return false;
 
-        const auto & right_table_expr = join_node->getRightTableExpressionNode();
+        const auto & right_table_expr = join_node->getRightTableExpression();
         const auto * right_table = right_table_expr->as<TableNode>();
         const auto * right_table_function = right_table_expr->as<TableFunctionNode>();
         if (!right_table && !right_table_function)
@@ -1463,7 +1445,7 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
     return false;
 }
 
-JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_expression,
+JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
     const QueryTreeNodePtr & parent_join_tree,
     const SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
@@ -1684,7 +1666,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 const auto & columns_names = table_expression_data.getColumnNames();
 
                 std::vector<std::pair<FilterDAGInfo, DescriptionHolderPtr>> where_filters;
-                bool row_policy_filter_not_pushed = false;
 
                 if (prewhere_actions && select_query_options.build_logical_plan)
                 {
@@ -1746,66 +1727,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
                 updatePrewhereOutputsIfNeeded(table_expression_query_info, table_expression_data.getColumnNames(), storage_snapshot);
 
-                /// The row-level filter runs inside the reading step and must keep any column a later
-                /// additional_table_filters step (applied on top) still needs, else that column is dropped
-                /// from the block (#111077). Mirror the columns_needed_by_other_filters pre-collect used for
-                /// PREWHERE above.
-                NameSet row_policy_required_names;
-                if (table_expression_query_info.additional_filter_ast)
-                {
-                    if (auto additional_filters_info_temp
-                        = buildAdditionalFiltersIfNeeded(table_expression_query_info, prewhere_info, planner_context))
-                    {
-                        for (const auto * input : additional_filters_info_temp->actions.getInputs())
-                            row_policy_required_names.insert(input->result_name);
-                    }
-                    /// buildFilterInfo treats an empty set as "keep all table columns", so seed it with the
-                    /// columns the query already needs before adding the additional-filter columns.
-                    if (!row_policy_required_names.empty())
-                    {
-                        const auto & current_column_names = table_expression_data.getColumnNames();
-                        row_policy_required_names.insert(current_column_names.begin(), current_column_names.end());
-                    }
-                }
-
-                auto row_policy_filter_info = buildRowPolicyFilterIfNeeded(
-                    storage, table_expression_query_info, planner_context, used_row_policies, std::move(row_policy_required_names));
+                auto row_policy_filter_info
+                    = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context, used_row_policies);
                 if (row_policy_filter_info)
                 {
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());
-
-                    /// The filter is built against this table's schema, but read() hands it to wrapper
-                    /// storages' children (Merge, Buffer), which re-derive it against their own types.
-                    /// Push it down only if every column it consumes is in the PREWHERE contract.
-                    /// A remote storage cannot carry it at all: read() only ships query text to the
-                    /// remote servers and never lowers the filter into it, so pushing would silently
-                    /// drop an access-control filter. Refuse, and let the stage check fail closed.
-                    bool can_push_down_filter = storage->supportsPrewhere() && !storage->isRemote();
-                    if (can_push_down_filter)
-                    {
-                        if (const auto supported_prewhere_columns = storage->supportedPrewhereColumns())
-                        {
-                            const auto & table_columns = storage_snapshot->metadata->getColumns();
-                            const bool include_subcolumns = storage->supportedPrewhereColumnsIncludeSubcolumns();
-                            for (const auto & column_name : row_policy_filter_info->actions.getRequiredColumnsNames())
-                            {
-                                if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, include_subcolumns, table_columns, column_name))
-                                {
-                                    can_push_down_filter = false;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
                     /// TODO: Never put row-level security filter in WHERE clause for storages that do not support PREWHERE to avoid merging of filters.
-                    if (can_push_down_filter)
+                    if (storage->supportsPrewhere())
                         row_level_filter = std::make_shared<FilterDAGInfo>(std::move(*row_policy_filter_info));
                     else
-                    {
                         where_filters.emplace_back(std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
-                        row_policy_filter_not_pushed = true;
-                    }
                 }
 
                 if (query_context->canUseParallelReplicasCustomKey())
@@ -1834,22 +1765,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 }
 
                 if (!select_query_options.build_logical_plan)
-                {
                     till_stage = storage->getQueryProcessingStage(
                         query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
-
-                    /// A row-level filter refused for push-down runs as a filter step right
-                    /// above the read, but that step is only appended while the storage stops at
-                    /// FetchColumns. A storage processing further (e.g. Distributed or a wrapper
-                    /// over it) would silently skip the policy, so fail closed instead.
-                    if (row_policy_filter_not_pushed && till_stage > QueryProcessingStage::FetchColumns)
-                        throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
-                            "Row policy filter for {} cannot be pushed into the storage read, and the storage processes "
-                            "the query remotely, so the filter cannot be applied. Define the policy on the underlying "
-                            "tables instead; note that such a policy is not applied to reads shipped with "
-                            "`serialize_query_plan = 1`",
-                            storage->getStorageID().getNameForLogs());
-                }
 
                 if (select_query_options.build_logical_plan)
                 {
@@ -1957,17 +1874,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 if (query_plan.isInitialized() && !select_query_options.build_logical_plan
                     && parallelReplicasEnabledForStorage(storage, query_context, settings))
                 {
-                    /// The custom-key read below replaces the plan with a remote read at the fixed stage
-                    /// `WithMergeableStateAfterAggregationAndLimit`, so it is only allowed when the requested
-                    /// stage is not below that: a plan built up to a partial stage - e.g. a `Merge` table plans
-                    /// its children up to `WithMergeableState` when one of the underlying tables is read through
-                    /// an interpreter - must not receive finalized (post-aggregation, post-LIMIT) data instead
-                    /// of the partial aggregation states its consumer expects.
-                    const bool to_stage_supports_custom_key = select_query_options.to_stage == QueryProcessingStage::Complete
-                        || select_query_options.to_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
-
-                    if (query_context->canUseParallelReplicasCustomKey() && to_stage_supports_custom_key
-                        && query_context->getClientInfo().distributed_depth == 0)
+                    if (query_context->canUseParallelReplicasCustomKey() && query_context->getClientInfo().distributed_depth == 0)
                     {
                         if (auto cluster = query_context->getClusterForParallelReplicas();
                             query_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
@@ -2068,10 +1975,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             }
                             else
                             {
-                                /// With `parallel_replicas_plan_based` the planner builds only the plain local
-                                /// plan. Deciding whether to use parallel replicas and where to place the
-                                /// local/remote boundary is done later, as an analysis of the whole plan
-                                /// (QueryPlanOptimizations::applyParallelReplicas), which inserts the split step.
                                 QueryPlan query_plan_parallel_replicas;
                                 storage->read(
                                     query_plan_parallel_replicas,
@@ -2082,6 +1985,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                     till_stage,
                                     max_block_size,
                                     max_streams);
+                                QueryPlanStepPtr split_step = std::make_unique<DB::ParallelReplicasSplitStep>(
+                                    query_plan_parallel_replicas.getRootNode()->step->getOutputHeader(), query_context);
+                                query_plan_parallel_replicas.addStep(std::move(split_step));
                                 query_plan = std::move(query_plan_parallel_replicas);
                             }
                         }
@@ -2494,6 +2400,8 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
         lookup_reading_step->setAnalyzedResult(nullptr);
         /// Hand-constructed filter dag has same hash key each time, so disable cache
         lookup_reading_step->disableQueryConditionCache();
+        /// initializePipeline is done multiple times concurrently, so not to remove parts snapshot
+        lookup_reading_step->disableMergeTreePartsSnapshotRemoval();
     }
 
     for (const auto & column_name : lookup_plan.getCurrentHeader()->getNames())
@@ -2538,7 +2446,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         && right_join_tree_query_plan.stage == QueryProcessingStage::FetchColumns
         && right_join_tree_query_plan.useful_sets.empty();
     if (allow_storage_join)
-        prepared_join = tryGetStorageInTableJoin(join_node.getRightTableExpressionNode(), planner_context);
+        prepared_join = tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context);
     if (prepared_join)
     {
         bool use_nulls = settings[Setting::join_use_nulls] && isLeftOrFull(join_node.getKind());
@@ -2663,7 +2571,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context)
 {
-    const QueryTreeNodePtr & join_tree_node = query_node->as<QueryNode &>().getJoinTreeNode();
+    const QueryTreeNodePtr & join_tree_node = query_node->as<QueryNode &>().getJoinTree();
     auto table_expressions_stack = buildTableExpressionsStack(join_tree_node);
     size_t table_expressions_stack_size = table_expressions_stack.size();
     bool is_single_table_expression = table_expressions_stack_size == 1;
@@ -2727,7 +2635,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             /// Each replica would then independently read the full distributed table, resulting in duplicate data.
             if (join_kind == JoinKind::Right)
             {
-                const auto & right_expression_data = planner_context->getTableExpressionDataOrThrow(join_node.getRightTableExpressionNode());
+                const auto & right_expression_data = planner_context->getTableExpressionDataOrThrow(join_node.getRightTableExpression());
                 is_right_join_with_remote_table = right_expression_data.isRemote();
             }
 

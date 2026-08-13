@@ -15,7 +15,9 @@ Ajusta los recursos de CPU y memoria de un clúster de ClickHouse mediante la AP
 * Al menos un clúster de ClickHouse desplegado (esta guía usa `default-xx-01`)
 
 <Steps>
-  <Step title="1. Crear la solicitud de escalado" id="1-create-the-scale-request">
+  <Step>
+    ## 1. Crear la solicitud de escalado
+
     Cree un archivo JSON con la asignación de recursos deseada:
 
     ```json
@@ -32,7 +34,9 @@ Ajusta los recursos de CPU y memoria de un clúster de ClickHouse mediante la AP
     Guárdelo como `scale.json`.
   </Step>
 
-  <Step title="2. Enviar la solicitud" id="2-send-the-request">
+  <Step>
+    ## 2. Enviar la solicitud
+
     ```bash
     curl -X POST "http://localhost:8080/api/v1/instances/default-xx-01/scale" \
         -H "Content-Type: application/json" \
@@ -40,7 +44,9 @@ Ajusta los recursos de CPU y memoria de un clúster de ClickHouse mediante la AP
     ```
   </Step>
 
-  <Step title="3. Aplicación de la relación CPU:memoria" id="3-cpumemory-ratio-enforcement">
+  <Step>
+    ## 3. Aplicación de la relación CPU:memoria
+
     La API aplica una **relación CPU:memoria de 1:4** (1 núcleo de CPU por cada 4 GiB de memoria) con un margen del 5%.
 
     Si proporciona solo un tipo de recurso, la API calcula automáticamente el otro. Por ejemplo, si especifica solo `"memory": "16Gi"`, la CPU se establece en 4 núcleos.
@@ -55,7 +61,9 @@ Ajusta los recursos de CPU y memoria de un clúster de ClickHouse mediante la AP
     Se recomiendan unidades binarias (Ki, Mi, Gi) para la memoria.
   </Step>
 
-  <Step title="4. Supervisar el progreso del escalado" id="4-monitor-scaling-progress">
+  <Step>
+    ## 4. Supervisar el progreso del escalado
+
     Compruebe el estado del clúster para seguir la operación de escalado:
 
     ```bash

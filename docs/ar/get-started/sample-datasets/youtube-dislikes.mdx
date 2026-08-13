@@ -26,7 +26,9 @@ keywords: ['example dataset', 'youtube', 'sample data', 'video analytics', 'disl
 </div>
 
 <Steps>
-  <Step title="استكشاف البيانات" id="data-exploration">
+  <Step>
+    ### استكشاف البيانات
+
     لنرَ شكل البيانات. تُرجِع دالة الجدول `s3cluster` جدولًا، لذا يمكننا `DESCRIBE` النتيجة:
 
     ```sql
@@ -65,7 +67,9 @@ keywords: ['example dataset', 'youtube', 'sample data', 'video analytics', 'disl
     ```
   </Step>
 
-  <Step title="أنشئ الجدول" id="create-the-table">
+  <Step>
+    ### أنشئ الجدول
+
     استنادًا إلى المخطط المُستنتَج، نقّحنا أنواع البيانات وأضفنا مفتاحًا أساسيًا.
     عرّف الجدول التالي:
 
@@ -99,7 +103,9 @@ keywords: ['example dataset', 'youtube', 'sample data', 'video analytics', 'disl
     ```
   </Step>
 
-  <Step title="إدراج البيانات" id="insert-data">
+  <Step>
+    ### إدراج البيانات
+
     يقوم الأمر التالي بتمرير السجلات من ملفات S3 إلى الجدول `youtube`.
 
     <Warning>
@@ -144,7 +150,9 @@ keywords: ['example dataset', 'youtube', 'sample data', 'video analytics', 'disl
     * استخدمنا `ifNull` لتجنّب ظهور قيم `NULL` في جدولنا. وإذا كانت القيمة الواردة هي `NULL`، فستضبط الدالة `ifNull` القيمة على سلسلة نصية فارغة
   </Step>
 
-  <Step title="احسب عدد الصفوف" id="count-row-numbers">
+  <Step>
+    ### احسب عدد الصفوف
+
     افتح علامة تبويب جديدة في SQL Console ضمن ClickHouse Cloud (أو نافذة `clickhouse-client` جديدة) وراقب ازدياد العدد.
     سيستغرق insert ‏4.56B صفًا بعض الوقت، وذلك بحسب موارد الخادم المتاحة لديك. (من دون أي تعديل على الإعدادات، يستغرق الأمر نحو 4.5 ساعات.)
 
@@ -160,7 +168,9 @@ keywords: ['example dataset', 'youtube', 'sample data', 'video analytics', 'disl
     ```
   </Step>
 
-  <Step title="استكشاف البيانات" id="explore-the-data">
+  <Step>
+    ### استكشاف البيانات
+
     بمجرد إدخال البيانات، يمكنك الآن حساب عدد مرات عدم الإعجاب بمقاطع الفيديو أو القنوات المفضلة لديك. لنرَ كم عدد مقاطع الفيديو التي رفعها ClickHouse:
 
     ```sql

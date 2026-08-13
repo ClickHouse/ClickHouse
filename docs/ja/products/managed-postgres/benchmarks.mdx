@@ -7,7 +7,7 @@ keywords: ['Postgres ベンチマーク', 'パフォーマンス', 'pgbench', 'a
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge />
@@ -122,7 +122,7 @@ pgbench -c 256 -j 16 -T 600 -M prepared -P 30 -S
 
 * **RDS PostgreSQL と比べて TPS が 12.3% 高い**
 
-**分析**: ディスク I/O がほとんど発生しない CPU-bound のシナリオでも、**ClickHouse が管理する Postgres は 36.5K TPS を記録し、最も高い性能を示しました**。両サービスとも CPU 使用率は 100% に達しましたが、ClickHouse の NVMe ストレージは、より高い cache ヒット率により優れたパフォーマンスを発揮しました。RDS に対する 12% の優位性は、ワークロードが主に CPU-bound となる場合でも、基盤となるインフラストラクチャが高効率であることを示しています。
+**分析**: ディスク I/O がほとんど発生しない CPU ボトルネックのシナリオでも、**ClickHouse が管理する Postgres は 36.5K TPS を記録し、最も高い性能を示しました**。両サービスとも CPU 使用率は 100% に達しましたが、ClickHouse の NVMe ストレージは、より高い cache ヒット率により優れたパフォーマンスを発揮しました。RDS に対する 12% の優位性は、ワークロードが主に CPU ボトルネックとなる場合でも、基盤となるインフラストラクチャが高効率であることを示しています。
 
 <div id="test1-setup">
   #### セットアップ
@@ -212,11 +212,11 @@ NVMe ストレージ の性能上の利点の詳細については、[NVMe に�
 
 ベンチマークの完全なデータ、構成、詳細なメトリクスは、[ベンチマーク結果のスプレッドシート](https://docs.google.com/spreadsheets/d/17TLWmwNKZb3Ie1vSQqvjtqByHskvoX6CF2eQ_FRx1cA/edit?gid=845104392#gid=845104392)で確認できます。
 
-<div id="resources">
+<div id="references">
   ## 参考資料
 </div>
 
 * [PeerDB: Postgresのマネージドサービス比較](https://blog.peerdb.io/comparing-postgres-managed-services-aws-azure-gcp-and-supabase)
-* [pgbench ドキュメント](https://www.postgresql.org/docs/current/pgbench.html)
+* [pgbenchのドキュメント](https://www.postgresql.org/docs/current/pgbench.html)
 * [Managed Postgres の概要](/ja/products/managed-postgres/overview)
 * [Postgres インスタンスのスケーリング](/ja/products/managed-postgres/scaling)

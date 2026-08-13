@@ -74,11 +74,6 @@ String getNameWithoutAliases(const ActionsDAG::Node * node)
         return result_name;
     }
 
-    /// Render a constant by value: its result_name can differ between the query and preprocessor DAGs,
-    /// so comparing by value keeps the haystack and preprocessor names consistent.
-    if (node->type == ActionsDAG::ActionType::COLUMN && node->column)
-        return applyVisitor(FieldVisitorToString(), node->column->getField());
-
     return node->result_name;
 }
 
@@ -210,7 +205,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         /// Index may be not materialized in some parts, e.g. after ALTER ADD INDEX query.
         size_t num_materialized_parts = std::ranges::count_if(unique_parts, [&](const auto & part)
         {
-            return !!index.index->getDeserializedFormat(*part, index.index->getFileName());
+            return !!index.index->getDeserializedFormat(part->checksums, index.index->getFileName(), &part->getDataPartStorage());
         });
 
         text_index_read_infos[index.index->index.name] =
@@ -834,20 +829,6 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     if (result.added_columns.empty())
         return result.filter_node;
 
-    /// Keep columns the PREWHERE or row-level filter still read, so this filter DAG's removal does not drop them from the shared read set.
-    {
-        NameSet required_columns_by_readers;
-        if (auto prewhere = read_from_merge_tree_step.getPrewhereInfo())
-            for (const auto & name : prewhere->prewhere_actions.getRequiredColumnsNames())
-                required_columns_by_readers.insert(name);
-
-        if (auto row_level_filter = read_from_merge_tree_step.getRowLevelFilter())
-            for (const auto & name : row_level_filter->actions.getRequiredColumnsNames())
-                required_columns_by_readers.insert(name);
-
-        std::erase_if(result.removed_columns, [&](const String & column) { return required_columns_by_readers.contains(column); });
-    }
-
     auto logger = getLogger("processAndOptimizeTextIndexFunctions");
     LOG_DEBUG(logger, "{}", optimizationInfoToString(result.added_columns, result.removed_columns));
 
@@ -922,11 +903,7 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
 
     bool optimized = false;
     if (auto prewhere_info = read_from_merge_tree_step->getPrewhereInfo())
-    {
-        /// virtual-column/direct-read rewrite is pointless for a deferred PREWHERE (the filter never runs during reading)
-        bool direct_read_allowed = direct_read_from_text_index && !already_has_direct_read && !read_from_merge_tree_step->isPrewhereDeferredAfterFinal();
-        optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_read_infos, direct_read_allowed);
-    }
+        optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_read_infos, direct_read_from_text_index && !already_has_direct_read);
 
     if (stack.size() < 2)
         return;

@@ -741,30 +741,24 @@ def test_long_disconnection_stops_backup():
         with PartitionManager() as pm:
             random_sleep(3)
 
+            time_before_disconnection = time.monotonic()
+
             node_to_drop_zk_connection = random_node()
             print(
                 f"Dropping connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper at {format_current_time()}"
             )
-            # `now64` is evaluated on the server, so this clickhouse-client's launch cost
-            # falls outside the interval. Issued last before the drop, so the interval
-            # still covers the whole abort.
-            time_before_disconnection = initiator.query("SELECT now64(6)").strip()
             pm.drop_instance_zk_connections(node_to_drop_zk_connection)
 
             # Being disconnected from ZooKeeper a backup is expected to fail.
-            end_time = wait_status(initiator, "BACKUP_FAILED", backup_id=backup_id)
+            wait_status(initiator, "BACKUP_FAILED", backup_id=backup_id)
 
-            # Both endpoints are server-recorded, so the clickhouse-client wait_status
-            # launches on every poll iteration is no longer charged to the abort.
-            time_to_fail = seconds_between(time_before_disconnection, end_time)
+            time_to_fail = time.monotonic() - time_before_disconnection
             error = get_error(initiator, backup_id=backup_id)
             print(f"error={error}")
             assert "Lost connection" in error
 
             # A backup is expected to fail, but it isn't expected to fail too soon.
-            print(
-                f"Backup failed after {time_to_fail} seconds disconnection (server-side)"
-            )
+            print(f"Backup failed after {time_to_fail} seconds disconnection")
             assert time_to_fail > 3
             assert time_to_fail < 45
 

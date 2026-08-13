@@ -449,15 +449,13 @@ protected:
 
             if constexpr (has_mapped)
             {
-                /// The cache stores the internal key type; the parameterless `getKey` may return
-                /// a converted external representation (e.g. `std::string_view` for `PackedStringRef`).
-                cache.value.first = it->getKey(it->getValue());
+                cache.value.first = it->getKey();
                 cache.value.second = it->getMapped();
                 cached = &cache.value.second;
             }
             else
             {
-                cache.value = it->getValue();
+                cache.value = it->getKey();
             }
         }
 

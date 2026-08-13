@@ -3,7 +3,9 @@ title: إضافة الرصد إلى التطبيق
 ---
 
 <Steps>
-  <Step title="استنساخ التطبيق وتشغيله" id="clone-and-run-the-application">
+  <Step>
+    ## استنساخ التطبيق وتشغيله
+
     استنسخ المستودع، وثبّت التبعيات، وأنشئ ملف `.env`:
 
     ```bash
@@ -21,14 +23,14 @@ title: إضافة الرصد إلى التطبيق
 
     افتح [http://localhost:5001](http://localhost:5001). سترى محدِّد السنة، وإحصاءات موجزة، ومخططًا للنشاط، وجدولي أهم المستخدمين والنطاقات، ومربع بحث. جرّب التنقّل: بدّل بين السنوات، وتعمّق في القصص.
 
-    <Frame>
-      <img src="/images/clickstack/getting-started/hackernews_main.webp" alt="تطبيق HackerNews Analyzer قيد التشغيل محليًا" />
-    </Frame>
+    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="تطبيق HackerNews Analyzer قيد التشغيل محليًا" />
 
     في هذه المرحلة، يكون التطبيق قيد التشغيل لكنه غير مُهيّأ لجمع بيانات الرصد. لا يعرض ClickStack أي بيانات، إذ إنه ينتظر بيانات القياس عن بُعد. هذه هي حالة &quot;قبل&quot;.
   </Step>
 
-  <Step title="احصل على تفاصيل الاتصال" id="get-connection-details">
+  <Step>
+    ## احصل على تفاصيل الاتصال
+
     يحتاج التطبيق إلى قيمتين للوصول إلى المجمّع:
 
     * `OTEL_EXPORTER_OTLP_ENDPOINT`: نقطة نهاية OTLP التي يتيحها المجمّع لديك (وغالبًا ما تكون على المنفذ `4318` لـ OTLP عبر HTTP).
@@ -45,7 +47,9 @@ title: إضافة الرصد إلى التطبيق
     تستخدم حزمة SDK المتغير `OTEL_EXPORTER_OTLP_HEADERS` لضبط ترويسة التفويض لجميع الإشارات الثلاث: التتبعات والمقاييس والسجلات. إذا كان المُجمِّع يعمل محليًا ولا يفرض المصادقة، فيمكنك ترك القيمة فارغة (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`)، لكن يجب أن يكون المتغير موجودًا؛ إذ تتجاوز حزمة SDK التهيئة بالكامل إذا لم يكن مضبوطًا أو كان فارغًا تمامًا.
   </Step>
 
-  <Step title="أضِف أدوات القياس عن بُعد إلى التطبيق" id="instrument-the-application">
+  <Step>
+    ## أضِف أدوات القياس عن بُعد إلى التطبيق
+
     تتضمن عملية إضافة القياس عن بُعد ثلاثة أجزاء: تثبيت SDKs، وتبديل أمر التشغيل، وتمكين Browser SDK. ولا يغيّر أيٌّ من ذلك منطق العمل في التطبيق.
 
     ### تثبيت SDKs
@@ -98,7 +102,9 @@ title: إضافة الرصد إلى التطبيق
     </Warning>
   </Step>
 
-  <Step title="أنشئ حركة مرور واعرض بيانات القياس عن بُعد" id="generate-traffic-and-view-telemetry">
+  <Step>
+    ## أنشئ حركة مرور واعرض بيانات القياس عن بُعد
+
     أعِد تشغيل التطبيق حتى يدخل أمر التشغيل الجديد وحزمة المتصفح المنشأة حديثًا حيّز التنفيذ:
 
     ```bash
@@ -106,27 +112,21 @@ title: إضافة الرصد إلى التطبيق
     ./run.sh
     ```
 
-    أعِد تحميل علامة تبويب المتصفح لكي يقدّم Vite الحزمة المحدَّثة، ثم حدِّث التطبيق بضع مرات، وبدّل بين السنوات، وانقر للدخول إلى القصص لتوليد بعض الزيارات.
+    أعِد تحميل علامة تبويب المتصفح لكي يقدّم Vite الحزمة المحدَّثة، ثم حدِّث التطبيق بضع مرات، وبدّل بين السنوات، وانقر للدخول إلى المشاركات لتوليد بعض الزيارات.
 
     افتح واجهة ClickStack:
 
     1. انتقل إلى **Search** وصفِّ النتائج لآخر 5 دقائق. ستبدأ سجلات `hn-analyzer-api` بالظهور تباعًا.
 
-    <Frame>
-      <img src="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="سجلات ClickStack" />
-    </Frame>
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="سجلات ClickStack" />
 
     2. انقر على أحد الطلبات ثم تنقّل صعودًا عبر التتبّع. سترى مقطع التتبّع (span) الخاص بمعالج Express، ومقطع HTTP فرعيًا يشير إلى عنقود ClickHouse مع مدة الشبكة الفعلية، وسجلات `console.log` مرتبطة على التتبّع نفسه.
 
-    <Frame>
-      <img src="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="تتبعات ClickStack" />
-    </Frame>
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="تتبعات ClickStack" />
 
     3. افتح **Session Replay** لتشغيل فيديو يمكنك التنقّل خلاله لجلسة في المتصفح، متزامنًا مع المخطط الزمني للتتبّع.
 
-    <Frame>
-      <img src="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="جلسات ClickStack" />
-    </Frame>
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="جلسات ClickStack" />
 
     تظهر السجلات والمقاييس والتتبعات وإعادات تشغيل الجلسات كلها في الواجهة نفسها، وتستخدم لغة الاستعلام نفسها، وترتبط تلقائيًا ببعضها بعضًا.
   </Step>
