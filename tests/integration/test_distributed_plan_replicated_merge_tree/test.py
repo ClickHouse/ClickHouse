@@ -492,10 +492,11 @@ def test_distributed_sort(started_cluster, exchange_kind):
             Expression (Project names)
               Limit (preliminary LIMIT)
                 GatherExchange (sorted by (__table1.id DESC, __table1.group_key ASC))
-                  Sorting (Sorting for ORDER BY)
-                    Expression ((Before ORDER BY + Projection))
-                      Expression ((WHERE + Change column names to column identifiers))
-                        ReadFromMergeTree (default.big)
+                  Limit (local top-N)
+                    Sorting (Sorting for ORDER BY)
+                      Expression ((Before ORDER BY + Projection))
+                        Expression ((WHERE + Change column names to column identifiers))
+                          ReadFromMergeTree (default.big)
         """,
     )
     assert distributed == baseline
