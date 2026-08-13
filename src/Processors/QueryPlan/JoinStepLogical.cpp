@@ -1997,17 +1997,37 @@ void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & setting
     /// full-sorting-merge join or an IEJoin (`addSortingForMergeJoin`, `constructIEJoinStep`), so they must
     /// not put the spill-codec opt-in on the wire for a join that can only be executed by an in-memory
     /// algorithm. An enabled sorting-based algorithm counts only when this join's shape lets the planner
-    /// pick it: a full-sorting-merge join needs a kind/strictness pair `MergeJoinAlgorithm` implements, an
-    /// IEJoin additionally needs two cross-side inequalities in the ON expression
-    /// (`tryExtractIEJoinDescription`). The parts of those tests unavailable here (a single disjunct,
-    /// comparable key types) conservatively count as satisfied.
-    bool join_can_use_sorting =
-        ((TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::FULL_SORTING_MERGE)
-          || TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE))
-         && FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(join_operator.kind, join_operator.strictness))
-        || (TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::IE_JOIN)
-            && IEJoinStep::isSupportedJoinType(join_operator.kind, join_operator.strictness)
-            && join_operator.hasCrossSideInequalityPair());
+    /// pick it. A full-sorting-merge join needs a kind/strictness pair `MergeJoinAlgorithm` implements and
+    /// the single-clause join shape (`FullSortingMergeJoin::isSupported` requires `TableJoin::oneDisjunct`,
+    /// and a top-level disjunction never plans into a single clause); since `chooseJoinAlgorithm` walks the
+    /// `join_algorithm` list in first-buildable-wins order, it must also be listed before any entry that
+    /// always builds an in-memory hash join (e.g. under `hash,full_sorting_merge` the sorts are never
+    /// added). An IEJoin needs two cross-side inequalities in the ON expression
+    /// (`tryExtractIEJoinDescription`), and is planned only when `ie_join` heads the list
+    /// (`isIEJoinPreferred`) or no condition provides an equality join key (the no-keys fallback). The
+    /// parts of those tests unavailable here (no mixed expression, comparable key types) conservatively
+    /// count as satisfied.
+    bool full_sorting_merge_join_is_reachable = false;
+    if (FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(join_operator.kind, join_operator.strictness)
+        && !join_operator.expressionIsTopLevelDisjunction())
+    {
+        for (auto algorithm : join_settings.join_algorithms)
+        {
+            if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
+            {
+                full_sorting_merge_join_is_reachable = true;
+                break;
+            }
+            if (JoinSettings::joinAlgorithmAlwaysBuildsSomeJoin(algorithm))
+                break;
+        }
+    }
+    bool ie_join_is_reachable = TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::IE_JOIN)
+        && IEJoinStep::isSupportedJoinType(join_operator.kind, join_operator.strictness)
+        && join_operator.hasCrossSideInequalityPair()
+        && (join_settings.join_algorithms.front() == JoinAlgorithm::IE_JOIN
+            || !join_operator.hasCrossSideEqualityCondition());
+    bool join_can_use_sorting = full_sorting_merge_join_is_reachable || ie_join_is_reachable;
     sorting_settings.updatePlanSettings(settings, /*sorting_is_reachable=*/join_can_use_sorting);
 }
 

@@ -322,6 +322,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     const char * getMethodName() const;
     bool isTwoLevel() const;
     bool isConvertibleToTwoLevel() const;
+    static bool isConvertibleToTwoLevel(Type type);
     void convertToTwoLevel();
     bool isLowCardinality() const;
     static ColumnsHashing::HashMethodContextPtr createCache(Type type, const ColumnsHashing::HashMethodContextSettings & settings);

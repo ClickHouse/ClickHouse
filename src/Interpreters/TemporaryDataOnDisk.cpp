@@ -108,7 +108,25 @@ bool temporaryFilesCodecIsExperimental(const String & compression_codec)
 {
     if (compression_codec.empty())
         return false;
-    return CompressionCodecFactory::instance().get(compression_codec)->isExperimental();
+
+    const auto & factory = CompressionCodecFactory::instance();
+
+    /// This can run while a plan is being serialized, for a query that may never spill, so it must
+    /// classify rather than throw. A codec that cannot compress untyped data at all (`SZ3`, `PCO`, ...)
+    /// makes the spill itself fail with the same `getCodec` error on every peer, with and without the
+    /// experimental opt-in - there is nothing to communicate, and resolving it via `get` below would throw
+    /// right here. The same goes for a codec string `get` cannot resolve at all: the spill fails with the
+    /// identical error wherever the plan runs.
+    try
+    {
+        if (!factory.getReasonUnsafeForUntypedData(compression_codec).empty())
+            return false;
+        return factory.get(compression_codec)->isExperimental();
+    }
+    catch (const Exception &)
+    {
+        return false;
+    }
 }
 
 bool spillCodecNeedsExperimentalCodecsOptIn(bool spill_is_reachable, bool allow_experimental_codecs, const String & compression_codec)

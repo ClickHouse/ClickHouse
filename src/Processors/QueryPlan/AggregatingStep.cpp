@@ -126,6 +126,33 @@ bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys,
     return false;
 }
 
+static bool keysCanGoTwoLevel(const Block & header, const Names & keys)
+{
+    for (const auto & key : keys)
+    {
+        if (!header.has(key))
+            return true;
+    }
+
+    Sizes key_sizes;
+    return AggregatedDataVariants::isConvertibleToTwoLevel(AggregatedDataVariants::chooseMethod(header, keys, key_sizes));
+}
+
+bool aggregationCanGoTwoLevel(const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params)
+{
+    if (grouping_sets_params.empty())
+        return keysCanGoTwoLevel(header, keys);
+
+    /// Every grouping set gets its own `Aggregator` over its own subset of the keys, so the method is chosen per set.
+    for (const auto & grouping_set : grouping_sets_params)
+    {
+        if (keysCanGoTwoLevel(header, grouping_set.used_keys))
+            return true;
+    }
+
+    return false;
+}
+
 Block appendGroupingSetColumn(Block header)
 {
     Block res;
@@ -1040,18 +1067,24 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     /// `QueryPlanSerializationSettings::readBinary` throws on an unknown name, so it goes on the wire only
     /// when the spill behavior of this step actually depends on it (see
     /// `spillCodecNeedsExperimentalCodecsOptIn`): `Aggregator::executeOnBlock` reaches
-    /// `writeToTemporaryFile` only when `max_bytes_before_external_group_by` is set, so an aggregation that
-    /// stays in memory never resolves the codec and must not carry the opt-in. A reader that does not
-    /// receive it keeps the default (`false`), which for such a plan encodes the identical spill behavior,
-    /// and a peer too old to know the name rejects only the plans that can actually spill with an
-    /// experimental codec, instead of every plan with this step.
+    /// `writeToTemporaryFile` only when `max_bytes_before_external_group_by` is set, only from a two-level
+    /// hash-table state (which additionally needs a nonzero two-level threshold - both go to the receiver
+    /// in the settings written above - and a method that can convert at all, see
+    /// `aggregationCanGoTwoLevel`), so an aggregation that must stay in memory never resolves the codec
+    /// and must not carry the opt-in. A reader that does not receive it keeps the default (`false`), which
+    /// for such a plan encodes the identical spill behavior, and a peer too old to know the name rejects
+    /// only the plans that can actually spill with an experimental codec, instead of every plan with this
+    /// step.
     if (params.tmp_data_scope)
     {
         const auto & tmp_data_settings = params.tmp_data_scope->getSettings();
         settings[QueryPlanSerializationSetting::temporary_files_codec] = tmp_data_settings.compression_codec;
         settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = tmp_data_settings.buffer_size;
+        const bool external_aggregation_is_reachable = params.max_bytes_before_external_group_by != 0
+            && (params.group_by_two_level_threshold != 0 || params.group_by_two_level_threshold_bytes != 0)
+            && aggregationCanGoTwoLevel(*input_headers.front(), params.keys, grouping_sets_params);
         if (spillCodecNeedsExperimentalCodecsOptIn(
-                params.max_bytes_before_external_group_by != 0,
+                external_aggregation_is_reachable,
                 tmp_data_settings.allow_experimental_codecs,
                 tmp_data_settings.compression_codec))
             settings[QueryPlanSerializationSetting::allow_experimental_codecs] = true;

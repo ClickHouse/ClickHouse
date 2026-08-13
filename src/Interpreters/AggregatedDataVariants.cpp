@@ -146,6 +146,11 @@ bool AggregatedDataVariants::isTwoLevel() const
 
 bool AggregatedDataVariants::isConvertibleToTwoLevel() const
 {
+    return isConvertibleToTwoLevel(type);
+}
+
+bool AggregatedDataVariants::isConvertibleToTwoLevel(Type type)
+{
     switch (type)
     {
     #define M(NAME) \

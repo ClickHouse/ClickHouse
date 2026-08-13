@@ -4,11 +4,13 @@
 #include <Common/tests/gtest_global_register.h>
 #include <Core/Defines.h>
 #include <Core/Joins.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/SortingStep.h>
 
@@ -25,8 +27,10 @@ using namespace DB;
 namespace
 {
 
-/// `ALP` is experimental and, unlike `PCO`, always compiled in.
-const String experimental_codec = "ALP";
+/// `ZXC` is experimental, usable on untyped spill data (unlike `PCO` and `ALP`, which require a column
+/// type and so cannot compress temporary files at all - see `temporaryFilesCodecIsExperimental`), and,
+/// unlike `PCO`, always compiled in.
+const String experimental_codec = "ZXC";
 const String plain_codec = "LZ4";
 
 /// The name as it appears in the binary settings stream written by `writeChangedBinary`.
@@ -109,6 +113,14 @@ TEST(ExperimentalSpillCodecPlanSetting, EmittedOnlyWhenSpillingCanReachTheCodec)
     EXPECT_FALSE(spillCodecNeedsExperimentalCodecsOptIn(true, true, plain_codec));
     EXPECT_FALSE(spillCodecNeedsExperimentalCodecsOptIn(true, true, /*compression_codec=*/""));
     EXPECT_FALSE(spillCodecNeedsExperimentalCodecsOptIn(true, false, experimental_codec));
+
+    /// A codec that cannot compress untyped data at all makes the spill itself fail with the same error
+    /// on every peer, with and without the opt-in, so there is nothing to communicate - and classifying
+    /// it must not throw at plan-serialization time, because the query may never actually spill. The same
+    /// goes for a codec string that does not resolve at all.
+    EXPECT_FALSE(spillCodecNeedsExperimentalCodecsOptIn(true, true, "ALP"));
+    EXPECT_FALSE(spillCodecNeedsExperimentalCodecsOptIn(true, true, "T64('bit')"));
+    EXPECT_FALSE(spillCodecNeedsExperimentalCodecsOptIn(true, true, "NO_SUCH_CODEC"));
 }
 
 TEST(ExperimentalSpillCodecPlanSetting, SortingStepEmitsItOnlyForAnExternalSort)
@@ -187,6 +199,28 @@ TEST(ExperimentalSpillCodecPlanSetting, JoinEmitsItOnlyForASpillingJoin)
     right_any_external.max_bytes_before_external_join = 1_MiB;
     EXPECT_TRUE(joinCarriesSetting(right_any_external, right_any.join_operator));
 
+    /// `chooseJoinAlgorithm` walks the algorithm list in order and the first algorithm that builds a join
+    /// wins, so a spill-capable algorithm listed after `hash` (whose branch always builds an in-memory
+    /// join when no external-join threshold is set) is never consulted.
+    EXPECT_FALSE(joinCarriesSetting(
+        makeJoinSettings(experimental_codec, true, {JoinAlgorithm::HASH, JoinAlgorithm::GRACE_HASH}), keyed_inner.join_operator));
+    EXPECT_TRUE(joinCarriesSetting(
+        makeJoinSettings(experimental_codec, true, {JoinAlgorithm::GRACE_HASH, JoinAlgorithm::HASH}), keyed_inner.join_operator));
+    EXPECT_FALSE(joinCarriesSetting(
+        makeJoinSettings(experimental_codec, true, {JoinAlgorithm::HASH, JoinAlgorithm::PARTIAL_MERGE}), keyed_inner.join_operator));
+    EXPECT_TRUE(joinCarriesSetting(
+        makeJoinSettings(experimental_codec, true, {JoinAlgorithm::PARTIAL_MERGE, JoinAlgorithm::HASH}), keyed_inner.join_operator));
+
+    /// ... while an external-join threshold makes the leading `hash` entry itself the spilling one.
+    auto ordered_spilling = makeJoinSettings(experimental_codec, true, {JoinAlgorithm::HASH, JoinAlgorithm::GRACE_HASH});
+    ordered_spilling.max_bytes_before_external_join = 1_MiB;
+    EXPECT_TRUE(joinCarriesSetting(ordered_spilling, keyed_inner.join_operator));
+
+    /// An entry that builds a join only for the shapes its algorithm supports (`partial_merge` for a keyed
+    /// `RIGHT ANY` join) lets the selection move on, so it does not cut off a later spilling entry.
+    EXPECT_TRUE(joinCarriesSetting(
+        makeJoinSettings(experimental_codec, true, {JoinAlgorithm::PARTIAL_MERGE, JoinAlgorithm::GRACE_HASH}), right_any.join_operator));
+
     /// `ConstantJoin` (`CROSS`, comma and constant-predicate joins) spills once the in-memory size limits
     /// would be exceeded, whatever the algorithm is - but only a join whose shape admits a `ConstantJoin`
     /// can reach it. A join keyed by a genuine equality never does, so for it the size limits alone must
@@ -244,6 +278,121 @@ TEST(ExperimentalSpillCodecPlanSetting, ConstantJoinIsRuledOutByACrossSideEquali
     JoinOperator same_side_join(JoinKind::Inner);
     same_side_join.expression.push_back(make_equality("l.k", "l.v"));
     EXPECT_TRUE(same_side_join.canBecomeConstantJoin());
+}
+
+TEST(ExperimentalSpillCodecPlanSetting, ExternalAggregationNeedsATwoLevelConvertibleMethod)
+{
+    auto number_type = std::make_shared<DataTypeUInt64>();
+    auto tiny_type = std::make_shared<DataTypeUInt8>();
+    auto string_type = std::make_shared<DataTypeString>();
+    Block header({
+        ColumnWithTypeAndName(number_type->createColumn(), number_type, "n"),
+        ColumnWithTypeAndName(tiny_type->createColumn(), tiny_type, "t"),
+        ColumnWithTypeAndName(string_type->createColumn(), string_type, "s")});
+
+    /// `count()` with no keys aggregates into a single value (`without_key`), and a tiny fixed map
+    /// (`GROUP BY` over a `UInt8` - `key8`) never converts to two-level either, so neither can ever reach
+    /// `writeToTemporaryFile`.
+    EXPECT_FALSE(aggregationCanGoTwoLevel(header, {}, {}));
+    EXPECT_FALSE(aggregationCanGoTwoLevel(header, {"t"}, {}));
+
+    EXPECT_TRUE(aggregationCanGoTwoLevel(header, {"n"}, {}));
+    EXPECT_TRUE(aggregationCanGoTwoLevel(header, {"s"}, {}));
+
+    /// Every grouping set gets its own hash table; one convertible set is enough.
+    const GroupingSetsParamsList tiny_and_number = {GroupingSetsParams({"t"}, {"n"}), GroupingSetsParams({"n"}, {"t"})};
+    EXPECT_TRUE(aggregationCanGoTwoLevel(header, {"t", "n"}, tiny_and_number));
+    const GroupingSetsParamsList tiny_only = {GroupingSetsParams({"t"}, {})};
+    EXPECT_FALSE(aggregationCanGoTwoLevel(header, {"t"}, tiny_only));
+
+    /// Fail closed: an unresolvable key counts as convertible, so the opt-in is communicated.
+    EXPECT_TRUE(aggregationCanGoTwoLevel(header, {"absent"}, {}));
+}
+
+TEST(ExperimentalSpillCodecPlanSetting, ADisjunctiveJoinSpillsOnlyThroughConstantJoin)
+{
+    tryRegisterFunctions();
+
+    auto type = std::make_shared<DataTypeUInt64>();
+    ColumnsWithTypeAndName left_header{{type, "l.k"}, {type, "l.v"}};
+    ColumnsWithTypeAndName right_header{{type, "r.k"}, {type, "r.v"}};
+    JoinExpressionActions expression_actions(left_header, right_header);
+    auto actions_dag = expression_actions.getActionsDAG();
+    actions_dag->getOutputs() = actions_dag->getInputs();
+
+    auto make_condition = [&](JoinConditionOperator op, const String & lhs, const String & rhs)
+    {
+        return JoinActionRef::transform({
+            JoinActionRef(actions_dag->tryFindInOutputs(lhs), expression_actions),
+            JoinActionRef(actions_dag->tryFindInOutputs(rhs), expression_actions),
+        }, JoinActionRef::AddFunction(op));
+    };
+    auto combine = [&](JoinConditionOperator op, const std::vector<JoinActionRef> & args)
+    {
+        return JoinActionRef::transform(args, JoinActionRef::AddFunction(op));
+    };
+
+    /// `l.k = r.k OR l.v = r.v`: every disjunct carries its own key, so the planning splits the join into
+    /// one `TableJoin` clause per disjunct. Every spilling implementation requires the single-clause shape
+    /// (`TableJoin::oneDisjunct`), so only an in-memory hash join can execute this join: neither an
+    /// external-join threshold nor a merge-based algorithm nor the in-memory size limits may put the
+    /// opt-in on the wire.
+    JoinOperator keyed_disjunction(JoinKind::Inner);
+    keyed_disjunction.expression.push_back(combine(JoinConditionOperator::Or, {
+        make_condition(JoinConditionOperator::Equals, "l.k", "r.k"),
+        make_condition(JoinConditionOperator::Equals, "l.v", "r.v"),
+    }));
+    EXPECT_TRUE(keyed_disjunction.expressionIsTopLevelDisjunction());
+    EXPECT_FALSE(keyed_disjunction.canBecomeConstantJoin());
+
+    auto spilling_hash = makeJoinSettings(experimental_codec, true, {JoinAlgorithm::HASH});
+    spilling_hash.max_bytes_before_external_join = 1_MiB;
+    EXPECT_FALSE(joinCarriesSetting(spilling_hash, keyed_disjunction));
+
+    for (auto algorithm : {JoinAlgorithm::GRACE_HASH, JoinAlgorithm::PARTIAL_MERGE,
+                           JoinAlgorithm::PREFER_PARTIAL_MERGE, JoinAlgorithm::AUTO})
+        EXPECT_FALSE(joinCarriesSetting(makeJoinSettings(experimental_codec, true, {algorithm}), keyed_disjunction));
+
+    auto hash_with_size_limit = makeJoinSettings(experimental_codec, true, {JoinAlgorithm::HASH});
+    hash_with_size_limit.max_bytes_in_join = 1_MiB;
+    EXPECT_FALSE(joinCarriesSetting(hash_with_size_limit, keyed_disjunction));
+
+    /// `l.k = r.k OR l.v > r.v`: the keyless disjunct makes the planning fall back to the conversion to
+    /// CROSS, so the join can reach `ConstantJoin`, which spills on the in-memory size limits - but still
+    /// never consults the external-join threshold.
+    JoinOperator keyless_disjunct(JoinKind::Inner);
+    keyless_disjunct.expression.push_back(combine(JoinConditionOperator::Or, {
+        make_condition(JoinConditionOperator::Equals, "l.k", "r.k"),
+        make_condition(JoinConditionOperator::Greater, "l.v", "r.v"),
+    }));
+    EXPECT_TRUE(keyless_disjunct.canBecomeConstantJoin());
+    EXPECT_TRUE(joinCarriesSetting(hash_with_size_limit, keyless_disjunct));
+    EXPECT_FALSE(joinCarriesSetting(spilling_hash, keyless_disjunct));
+
+    /// A key inside an AND-nested disjunct still keys its clause:
+    /// `(l.k = r.k AND l.v < r.v) OR l.v = r.v` splits into two keyed clauses.
+    JoinOperator and_nested_disjunction(JoinKind::Inner);
+    and_nested_disjunction.expression.push_back(combine(JoinConditionOperator::Or, {
+        combine(JoinConditionOperator::And, {
+            make_condition(JoinConditionOperator::Equals, "l.k", "r.k"),
+            make_condition(JoinConditionOperator::Less, "l.v", "r.v"),
+        }),
+        make_condition(JoinConditionOperator::Equals, "l.v", "r.v"),
+    }));
+    EXPECT_FALSE(and_nested_disjunction.canBecomeConstantJoin());
+    EXPECT_FALSE(joinCarriesSetting(spilling_hash, and_nested_disjunction));
+
+    /// A disjunction that is one of several top-level conjuncts does not split the join: the other
+    /// conjunct provides the key of a single clause, and the join converts to a spilling hash join under
+    /// an external-join threshold as usual.
+    JoinOperator conjunct_with_disjunction(JoinKind::Inner);
+    conjunct_with_disjunction.expression.push_back(make_condition(JoinConditionOperator::Equals, "l.k", "r.k"));
+    conjunct_with_disjunction.expression.push_back(combine(JoinConditionOperator::Or, {
+        make_condition(JoinConditionOperator::Less, "l.v", "r.v"),
+        make_condition(JoinConditionOperator::Greater, "l.v", "r.v"),
+    }));
+    EXPECT_FALSE(conjunct_with_disjunction.expressionIsTopLevelDisjunction());
+    EXPECT_TRUE(joinCarriesSetting(spilling_hash, conjunct_with_disjunction));
 }
 
 TEST(ExperimentalSpillCodecPlanSetting, IEJoinNeedsTwoCrossSideInequalities)

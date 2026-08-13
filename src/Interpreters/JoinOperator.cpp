@@ -313,50 +313,76 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table] = join_runtime_filter_from_fixed_hash_table;
 }
 
+bool JoinSettings::joinAlgorithmAlwaysBuildsSomeJoin(JoinAlgorithm algorithm)
+{
+    /// The branches of `PlannerJoins::tryCreateJoin` for these entries end in an unconditional in-memory
+    /// hash join, so `chooseJoinAlgorithm`'s first-buildable-wins loop never consults anything listed after
+    /// them. The other entries build a join only when the shape admits their algorithm and otherwise let
+    /// the loop move on (`direct` additionally needs a key-value storage, which is unknown here, so it
+    /// conservatively does not terminate the loop).
+    return algorithm == JoinAlgorithm::HASH || algorithm == JoinAlgorithm::PARALLEL_HASH
+        || algorithm == JoinAlgorithm::DEFAULT || algorithm == JoinAlgorithm::AUTO
+        || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE;
+}
+
 bool JoinSettings::canSpillToTemporaryFiles(const JoinOperator & join_operator) const
 {
-    /// Both spilling implementations accept only some kind/strictness pairs; a join the implementation
-    /// rejects falls back to an in-memory algorithm (or fails to plan) instead of spilling. The remaining
-    /// parts of the planners' `isSupported` tests (a single disjunct, no mixed expression) need the full
-    /// `TableJoin` and conservatively count as satisfied here.
-    const bool spilling_hash_join_is_possible = GraceHashJoin::isSupported(join_operator.kind, join_operator.strictness);
-    const bool merge_join_is_possible = MergeJoin::isSupported(join_operator.kind, join_operator.strictness);
+    /// `ConstantJoin` (`CROSS`, comma and constant-predicate joins) is chosen before the algorithm list is
+    /// consulted at all and streams the right table to disk as soon as the in-memory size limits would be
+    /// exceeded — but only when the join shape admits a `ConstantJoin`: a join keyed by a genuine equality
+    /// never reaches it, so for such a join the size limits alone cannot cause a spill.
+    if (join_operator.canBecomeConstantJoin() && (max_rows_in_join != 0 || max_bytes_in_join != 0))
+        return true;
 
+    /// Both spilling implementations accept only some kind/strictness pairs, and both require the
+    /// single-clause join shape (`TableJoin::oneDisjunct`), which a top-level disjunction never plans
+    /// into; a join the implementation rejects falls back to an in-memory algorithm (or fails to plan)
+    /// instead of spilling. The remaining part of the planners' `isSupported` tests (no mixed expression)
+    /// needs the full `TableJoin` and conservatively counts as satisfied here.
+    const bool single_clause_join = !join_operator.expressionIsTopLevelDisjunction();
+    const bool spilling_hash_join_is_possible = single_clause_join && GraceHashJoin::isSupported(join_operator.kind, join_operator.strictness);
+    const bool merge_join_is_possible = single_clause_join && MergeJoin::isSupported(join_operator.kind, join_operator.strictness);
+    const bool external_join_threshold_is_set = max_bytes_before_external_join != 0 || max_bytes_ratio_before_external_join != 0.;
+
+    /// `chooseJoinAlgorithm` walks the algorithm list in order and the first algorithm that builds a join
+    /// wins, so this walks the same list the same way: a spill-capable candidate that may be chosen makes
+    /// the answer true, while an entry that always builds an in-memory join makes everything after it
+    /// unreachable. Where this cannot decide exactly what the planner does (the `TableJoin`-only parts of
+    /// the `isSupported` tests), it errs towards true: under-emitting the opt-in would make a shard reject
+    /// the codec at its first spill.
     for (auto algorithm : join_algorithms)
     {
-        /// An external-join threshold converts a join into a spilling hash join, but only the branches that
-        /// build a hash join consult it (`PlannerJoins::tryCreateJoin` and `ExpressionAnalyzer::createJoin`
-        /// test `max_bytes_before_external_join > 0` for `hash` / `parallel_hash` / `default` / `auto`, and
-        /// `prefer_partial_merge` falls back to the same hash branch); `direct`, `full_sorting_merge`,
-        /// `parallel_full_sorting_merge` and `ie_join` never look at it. The raw settings are tested rather
-        /// than the effective threshold so the answer does not depend on the local memory limits of whoever
-        /// asks.
-        if ((max_bytes_before_external_join != 0 || max_bytes_ratio_before_external_join != 0.)
+        /// `prefer_partial_merge` tries `MergeJoin` (which writes the right table through
+        /// `SortedBlocksWriter` once the in-memory size limits are hit) before falling back to the hash
+        /// branch; `partial_merge` has no fallback; `auto` tries the hash branch first and otherwise wraps
+        /// `MergeJoin` in `JoinSwitcher` (an in-memory hash join that converts to `MergeJoin` on the same
+        /// limits). Only the kind/strictness pairs `MergeJoin` supports can end up there; e.g. a keyed
+        /// `RIGHT ANY` join under `auto` falls back to an in-memory hash join.
+        if ((algorithm == JoinAlgorithm::PARTIAL_MERGE || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE
+             || algorithm == JoinAlgorithm::AUTO)
+            && merge_join_is_possible)
+            return true;
+
+        /// An external-join threshold converts the hash branch into a spilling hash join
+        /// (`PlannerJoins::tryCreateJoin` and `ExpressionAnalyzer::createJoin` consult
+        /// `max_bytes_before_external_join` for `hash` / `parallel_hash` / `default` / `auto`, and
+        /// `prefer_partial_merge` falls back to the same branch); the other algorithms never look at it.
+        /// The raw settings are tested rather than the effective threshold so the answer does not depend on
+        /// the local memory limits of whoever asks.
+        if (external_join_threshold_is_set
             && spilling_hash_join_is_possible
-            && (algorithm == JoinAlgorithm::HASH || algorithm == JoinAlgorithm::PARALLEL_HASH
-                || algorithm == JoinAlgorithm::DEFAULT || algorithm == JoinAlgorithm::AUTO
-                || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE))
+            && joinAlgorithmAlwaysBuildsSomeJoin(algorithm))
             return true;
 
         /// `grace_hash` always spills - when the join is one it can be built for at all.
         if (algorithm == JoinAlgorithm::GRACE_HASH && spilling_hash_join_is_possible)
             return true;
 
-        /// `partial_merge` / `prefer_partial_merge` / `auto` can end up in `MergeJoin` (directly or through
-        /// `JoinSwitcher`), which writes the right table through `SortedBlocksWriter` once the in-memory
-        /// size limits are hit - but only for the kind/strictness pairs `MergeJoin` supports; e.g. a keyed
-        /// `RIGHT ANY` join under `auto` falls back to an in-memory hash join.
-        if ((algorithm == JoinAlgorithm::PARTIAL_MERGE || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE
-             || algorithm == JoinAlgorithm::AUTO)
-            && merge_join_is_possible)
-            return true;
+        if (joinAlgorithmAlwaysBuildsSomeJoin(algorithm))
+            return false;
     }
 
-    /// `ConstantJoin` (`CROSS`, comma and constant-predicate joins, used for every algorithm) streams the
-    /// right table to disk as soon as the in-memory size limits would be exceeded — but only when the join
-    /// shape admits a `ConstantJoin` at all: a join keyed by a genuine equality never reaches it, so for
-    /// such a join the size limits alone cannot cause a spill.
-    return join_operator.canBecomeConstantJoin() && (max_rows_in_join != 0 || max_bytes_in_join != 0);
+    return false;
 }
 
 UInt64 JoinSettings::getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join)
@@ -419,26 +445,65 @@ static void serializeNodeList(WriteBuffer & out, const std::unordered_map<const 
     }
 }
 
+/// The test `addJoinPredicatesToTableJoin` (`JoinStepLogical.cpp`) uses to claim a condition as a
+/// hash-join key: an equality whose operands come from the two different inputs.
+static bool hasCrossSideEquality(const std::vector<JoinActionRef> & conditions)
+{
+    for (const auto & condition : conditions)
+    {
+        auto [op, lhs, rhs] = condition.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+            continue;
+        if ((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft()))
+            return true;
+    }
+
+    return false;
+}
+
 bool JoinOperator::canBecomeConstantJoin() const
 {
     if (isCrossOrComma(kind))
         return true;
 
     /// A cross-side equality is claimed as a hash-join key (`addJoinPredicatesToTableJoin` in
-    /// `JoinStepLogical.cpp`, same operator and sides test), so with one present the planning keeps at
-    /// least one key clause: the predicate is not constant and the no-keys conversion to CROSS never
-    /// fires, ruling `ConstantJoin` out. Any other expression shape may still degenerate to a constant
-    /// or convert to CROSS, so it conservatively keeps the answer true.
-    for (const auto & condition : expression)
+    /// `JoinStepLogical.cpp`), so with one present the planning keeps at least one key clause: the
+    /// predicate is not constant and the no-keys conversion to CROSS never fires, ruling `ConstantJoin`
+    /// out.
+    if (hasCrossSideEquality(expression))
+        return false;
+
+    /// A top-level disjunction splits into one clause per disjunct (`tryAddDisjunctiveConditions` in
+    /// `JoinStepLogical.cpp`) when every disjunct carries its own key, keeping the join keyed; only a
+    /// keyless disjunct makes the planning fall back to the conversion to CROSS.
+    if (expressionIsTopLevelDisjunction())
     {
-        auto [op, lhs, rhs] = condition.asBinaryPredicate();
-        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
-            continue;
-        if ((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft()))
-            return false;
+        for (const auto & disjunct : expression.front().getArguments())
+        {
+            auto conjuncts = disjunct.isFunction(JoinConditionOperator::And) ? disjunct.getArguments() : std::vector<JoinActionRef>{disjunct};
+            if (!hasCrossSideEquality(conjuncts))
+                return true;
+        }
+
+        return false;
     }
 
+    /// Any other expression shape may still degenerate to a constant or convert to CROSS, so it
+    /// conservatively keeps the answer true.
     return true;
+}
+
+bool JoinOperator::expressionIsTopLevelDisjunction() const
+{
+    /// The shape test of `tryAddDisjunctiveConditions` (`JoinStepLogical.cpp`). A disjunction that is one
+    /// of several top-level conjuncts does not split the join: the other conjuncts still provide the keys
+    /// of a single clause, and the disjunction becomes a filter or a residual condition.
+    return expression.size() == 1 && expression.front().isFunction(JoinConditionOperator::Or);
+}
+
+bool JoinOperator::hasCrossSideEqualityCondition() const
+{
+    return hasCrossSideEquality(expression);
 }
 
 bool JoinOperator::hasCrossSideInequalityPair() const

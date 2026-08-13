@@ -58,6 +58,19 @@ struct JoinOperator
     /// that test is not repeated here, so true does not guarantee an IEJoin, but false rules it out.
     bool hasCrossSideInequalityPair() const;
 
+    /// Whether the ON expression is a single top-level disjunction (`... OR ...`). The planning never
+    /// keeps such a join as a single-clause keyed join: it either splits the disjuncts into one `TableJoin`
+    /// clause each (`tryAddDisjunctiveConditions` in `JoinStepLogical.cpp`) or converts the join to CROSS.
+    /// Every spilling join implementation requires the single-clause shape (`TableJoin::oneDisjunct`), so a
+    /// disjunctive join can reach temporary files only through `ConstantJoin`.
+    bool expressionIsTopLevelDisjunction() const;
+
+    /// Whether a top-level conjunct of the ON expression is an equality between the two inputs - the
+    /// condition `addJoinPredicatesToTableJoin` (`JoinStepLogical.cpp`) claims as a hash-join key. With
+    /// none present the planning takes its no-keys paths (an IEJoin when the shape allows one, the
+    /// disjunctive split, or the conversion to CROSS).
+    bool hasCrossSideEqualityCondition() const;
+
     String dump() const;
 };
 
@@ -145,10 +158,17 @@ struct JoinSettings
     /// `partial_merge` / `auto` spill through `MergeJoin` only for the kind/strictness pairs it supports,
     /// and the in-memory size limits (`max_rows_in_join` / `max_bytes_in_join`) trigger spilling only in
     /// `ConstantJoin`, so they count only when the join shape admits one
-    /// (`JoinOperator::canBecomeConstantJoin`). Conservative: the parts of the planners' tests that need
-    /// the full `TableJoin` (a single disjunct, no mixed expression) are unknowable here and count as
-    /// satisfied, since under-reporting would make a shard reject the codec at its first spill.
+    /// (`JoinOperator::canBecomeConstantJoin`). The `join_algorithm` list is walked in the planner's
+    /// first-buildable-wins order, so a spill-capable algorithm listed after one that always builds an
+    /// in-memory join does not count either. Conservative: the parts of the planners' tests that need the
+    /// full `TableJoin` (no mixed expression) are unknowable here and count as satisfied, since
+    /// under-reporting would make a shard reject the codec at its first spill.
     bool canSpillToTemporaryFiles(const JoinOperator & join_operator) const;
+
+    /// Whether `chooseJoinAlgorithm`'s first-buildable-wins walk over the `join_algorithm` list always
+    /// stops at this entry (its `tryCreateJoin` branch ends in an unconditional in-memory hash join), which
+    /// makes every entry after it unreachable.
+    static bool joinAlgorithmAlwaysBuildsSomeJoin(JoinAlgorithm algorithm);
 
     /// Combines the stored raw absolute and ratio settings using local memory limits.
     /// Recomputed on every executor so distributed queries pick up per-node memory.
