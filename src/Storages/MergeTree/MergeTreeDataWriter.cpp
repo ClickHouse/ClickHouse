@@ -7,6 +7,7 @@
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeObject.h>
 #include <Disks/createVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -25,6 +26,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Common/ColumnsHashing.h>
@@ -1087,6 +1089,42 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     return temp_part;
 }
 
+namespace MutationHelpers
+{
+/// Defined in MutateTask.cpp; reused here so a projection materialized from a lightweight-update
+/// patch keeps the same provenance protection APPLY PATCHES already gives the main part.
+DataTypePtr mergeJSONSharedDataPathRulesFromPatchParts(
+    DataTypePtr type, const String & column_name, const PatchPartsForReader & patch_parts, bool & inputs_saturated);
+}
+
+/// Mirrors applyJSONSharedDataPathPoliciesForMutation (MutateTask.cpp) for a projection's own declared
+/// columns: prefer each source's own projection part, else fall back to that source's main columns.
+static void applyJSONSharedDataPathPoliciesForProjection(
+    NamesAndTypesList & result_columns,
+    const String & projection_name,
+    const MergeTreeData::DataPartsVector & source_parts,
+    const PatchPartsForReader & patch_parts)
+{
+    for (auto & result_column : result_columns)
+    {
+        for (const auto & source_part : source_parts)
+        {
+            const auto & source_projection_parts = source_part->getProjectionParts();
+            if (auto it = source_projection_parts.find(projection_name); it != source_projection_parts.end())
+            {
+                if (auto source_column = it->second->tryGetColumn(result_column.name))
+                    result_column.type = mergeJSONSharedDataPathRules(result_column.type, source_column->type);
+            }
+            else if (auto source_column = source_part->tryGetColumn(result_column.name))
+                result_column.type = mergeJSONSharedDataPathRules(result_column.type, source_column->type);
+        }
+
+        bool inputs_saturated = false;
+        result_column.type = MutationHelpers::mergeJSONSharedDataPathRulesFromPatchParts(
+            result_column.type, result_column.name, patch_parts, inputs_saturated);
+    }
+}
+
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     const String & part_name,
     bool is_temp,
@@ -1096,7 +1134,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     const ProjectionDescription & projection,
     MergeTreeIndices indices,
     bool merge_is_needed,
-    bool try_adaptive_codec)
+    bool try_adaptive_codec,
+    const MergeTreeData::DataPartsVector & source_parts,
+    const PatchPartsForReader & patch_parts)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     const auto & metadata_snapshot = projection.metadata;
@@ -1118,6 +1158,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     new_data_part->is_temp = is_temp;
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+
+    /// A merge/mutation-driven rewrite must not silently re-promote paths a retired SHARED REGEXP
+    /// rule once forced into shared data; a fresh insert (merge_is_needed=false) has no such history.
+    if (merge_is_needed && !(*data_settings)[MergeTreeSetting::allow_json_shared_data_paths_repromotion])
+        applyJSONSharedDataPathPoliciesForProjection(columns, projection.name, source_parts, patch_parts);
+
     SerializationInfo::Settings settings
     {
         static_cast<double>((*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
@@ -1259,7 +1305,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         projection,
         std::move(indices),
         merge_is_needed,
-        /*try_adaptive_codec=*/ false);
+        /*try_adaptive_codec=*/ false,
+        /// A fresh insert's projection block has no prior projection, main part, or patch to read provenance from.
+        /*source_parts=*/ {},
+        /*patch_parts=*/ {});
 }
 
 /// This is used for projection materialization process which may contain multiple stages of
@@ -1270,7 +1319,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part,
     size_t block_num,
-    ContextPtr context)
+    ContextPtr context,
+    const MergeTreeData::DataPartsVector & source_parts,
+    const PatchPartsForReader & patch_parts)
 {
     const auto & table_settings = data.getSettings();
     auto indices = collectSkipIndicesToMaterialize(
@@ -1290,7 +1341,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         projection,
         std::move(indices),
         /*merge_is_needed=*/ true,
-        /*try_adaptive_codec=*/ true);
+        /*try_adaptive_codec=*/ true,
+        source_parts,
+        patch_parts);
 
     new_part->part->temp_projection_block_number = block_num;
     return new_part;

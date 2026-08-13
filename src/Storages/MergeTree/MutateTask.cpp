@@ -698,7 +698,11 @@ static bool isDeletedMaskUpdated(const MutationCommand & command, const NameSet 
     return false;
 }
 
-static DataTypePtr mergeJSONSharedDataPathRulesFromPatchParts(
+/// Not static: also called from MergeTreeDataWriter.cpp for projection provenance.
+DataTypePtr mergeJSONSharedDataPathRulesFromPatchParts(
+    DataTypePtr type, const String & column_name, const PatchPartsForReader & patch_parts, bool & inputs_saturated);
+
+DataTypePtr mergeJSONSharedDataPathRulesFromPatchParts(
     DataTypePtr type,
     const String & column_name,
     const PatchPartsForReader & patch_parts,
@@ -1812,6 +1816,9 @@ struct MutationContext
 
     LoggerPtr log{getLogger("MutateTask")};
 
+    /// Set once computed in prepare(); read later by PartMergerWriter for projection provenance.
+    PatchPartsForReader patch_parts;
+
     FutureMergedMutatedPartPtr future_part;
     MergeTreeData::DataPartPtr source_part;
     StorageMetadataPtr metadata_snapshot;
@@ -2249,7 +2256,9 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         projection,
         ctx->new_data_part.get(),
         ++projection_block_num,
-        ctx->context);
+        ctx->context,
+        MergeTreeData::DataPartsVector{ctx->source_part},
+        ctx->patch_parts);
 
     tmp_part->finalize();
     tmp_part->part->getDataPartStorage().commitTransaction();
@@ -3855,6 +3864,7 @@ bool MutateTask::prepare()
 #endif
     );
     const auto patch_parts = alter_conversions->getAllPatches();
+    ctx->patch_parts = patch_parts;
     auto context_for_reading = Context::createCopy(ctx->context);
 
     /// Allow mutations to work when force_index_by_date or force_primary_key is on.
