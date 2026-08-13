@@ -27,6 +27,11 @@ SET send_logs_level = 'fatal';
 -- then becomes a TRUNCATE, so fuzz_events would survive its own DROP and the next CREATE would fail.
 SET ignore_drop_queries_probability = 0;
 
+-- A materialized view does not disappear with its source table, and a run that fails is retried
+-- against the same database, so every object the file creates is dropped up front rather than
+-- relying only on the unconditional drops at the end of each section.
+DROP TABLE IF EXISTS fuzz_mv;
+DROP TABLE IF EXISTS fuzz_mv_mt;
 DROP TABLE IF EXISTS fuzz_src;
 DROP TABLE IF EXISTS fuzz_log;
 DROP TABLE IF EXISTS fuzz_mt;
@@ -151,6 +156,8 @@ DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- An undecided answer is counted rather than silently read as safe: the dependent view's own
 -- target is detached, so that branch cannot be resolved, and the query is still fuzzed.
+DROP TABLE IF EXISTS und_mv;
+DROP TABLE IF EXISTS und_mv_gone;
 DROP TABLE IF EXISTS und_src;
 DROP TABLE IF EXISTS und_mt;
 DROP TABLE IF EXISTS und_gone;
@@ -168,6 +175,11 @@ SELECT 'before_undecided',
        toInt64(sumIf(value, event = 'ASTFuzzerQueries'))
 FROM system.events;
 
+-- Microsecond boundary, taken from the SERVER and stored in the fixture's `executed` slot. Every
+-- clone this section logs starts after it, and every row an earlier run of this file left behind
+-- starts before it.
+INSERT INTO fuzz_events SELECT 'undecided_boundary', 0, 0, toUnixTimestamp64Micro(now64(6));
+
 CREATE MATERIALIZED VIEW und_mv TO und_mt AS SELECT k FROM und_src
 SETTINGS ast_fuzzer_runs = 30, ast_fuzzer_any_query = 1, log_comment = '04876_undecided';
 
@@ -183,12 +195,17 @@ FROM system.events;
 -- server-global counter: a withdrawn clone never reaches execution and so is never logged, while an
 -- executed one always is. A foreign fuzzing process can therefore only raise the left side, which
 -- makes the inequality one-sided in the safe direction rather than same-window.
+-- The database and log_comment predicates separate a foreign process; the boundary timestamp is
+-- what separates an earlier run of this same file, whose rows carry the same constant comment and,
+-- when the runner is given a fixed --database, the same database too.
 SYSTEM FLUSH LOGS query_log;
 
 INSERT INTO fuzz_events
 SELECT 'undecided_own_clones', 0, 0, count(DISTINCT query_id)
 FROM system.query_log
 WHERE event_date >= today() - 1
+  AND toUnixTimestamp64Micro(event_time_microseconds)
+      >= (SELECT executed FROM fuzz_events WHERE label = 'undecided_boundary')
   AND current_database = currentDatabase()
   AND log_comment = '04876_undecided'
   AND query LIKE '%und\_mv\_\_fuzz%'
@@ -217,6 +234,8 @@ DROP TABLE und_src;
 -- clone sharing the TinyLog target has to be skipped. Kafka is used because it is the queue
 -- carrier constructible without a live broker; the same override is on Kafka2, FileLog, NATS and
 -- RabbitMQ. The skip is decided at CREATE time, so no broker is needed here.
+DROP TABLE IF EXISTS q_mv;
+DROP TABLE IF EXISTS q_mv_mt;
 DROP TABLE IF EXISTS q_src;
 DROP TABLE IF EXISTS q_log;
 DROP TABLE IF EXISTS q_mt;
