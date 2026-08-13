@@ -179,6 +179,33 @@ PrometheusQueryTree(INSTANT_VECTOR):
         instance NE 'demo.promlabs.com:10000'
 )");
 
+    /// `start` and `end` are also valid metric and label names, even though they are used by the @ modifier.
+    EXPECT_EQ(parse("start"), R"(
+start
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ EQ 'start'
+)");
+
+    EXPECT_EQ(parse("end"), R"(
+end
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ EQ 'end'
+)");
+
+    EXPECT_EQ(parse(R"(http_requests_total{start="x", end="y"})"), R"(
+http_requests_total{start="x",end="y"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ EQ 'http_requests_total'
+        start EQ 'x'
+        end EQ 'y'
+)");
+
     EXPECT_EQ(parse(R"(
         {__name__=~".*"}
         )"), R"(

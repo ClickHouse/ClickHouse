@@ -706,6 +706,15 @@ def test_at_start_and_end_modifiers():
         eps=1e-9,
     )
 
+    # Symbolic timestamps must keep the same offset semantics as numeric timestamps.
+    do_query_test(
+        "rate(test[5m:1m] @ end() offset 10s)",
+        250,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [250, "0.043333333333333335"]}]}',
+        [["[]", "1970-01-01 00:04:10.000", 0.043333333333333335]],
+        eps=1e-9,
+    )
+
     # A fixed range with too few samples should produce an empty result, not an invalid aggregate element.
     do_query_test(
         "rate(test[5m:1m] @ 120)",
