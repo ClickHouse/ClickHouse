@@ -1,3 +1,4 @@
+#include <limits>
 #include <memory>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ActionsDAG.h>
@@ -46,8 +47,17 @@ static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
     return true;
 }
 
+/// A DAG input that has no counterpart in the step's input header. A step can legitimately carry
+/// such a dangling input when no output depends on it — e.g. `optimizePrewhere` moves a filter
+/// into a reading step whose header shrinks after applying a row-level filter, while the remaining
+/// `ExpressionStep`'s DAG keeps the now-unused input. Execution tolerates it (`ExpressionActions`
+/// only requires inputs its outputs depend on), so the mapping must tolerate it as well; it is an
+/// error only if such an input turns out to be required.
+static constexpr size_t POSITION_NOT_FOUND = std::numeric_limits<size_t>::max();
+
 /// Returns two vectors of total size equal to the number of columns in the header.
-/// The first vector (size of `inputs.size()`) contains positions of the inputs in the header.
+/// The first vector (size of `inputs.size()`) contains positions of the inputs in the header
+/// (or POSITION_NOT_FOUND for a dangling input).
 /// The second vector contains other positions (sorted).
 static std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPositions(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
 {
@@ -61,7 +71,10 @@ static std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPosi
     {
         auto & lst = name_to_position[input->result_name];
         if (lst.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown identifier: '{}'", input->result_name);
+        {
+            positions.push_back(POSITION_NOT_FOUND);
+            continue;
+        }
 
         positions.push_back(lst.front());
         lst.pop_front();
@@ -117,8 +130,15 @@ static std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, cons
     const auto & inputs = dag.getInputs();
     const auto [header_positions, non_mapped] = mapInputsToHeaderPositions(inputs, header);
     for (size_t i = 0; i < inputs.size(); ++i)
-        if (required_nodes.contains(inputs[i]))
-            required_input_positions[header_positions[i]] = true;
+    {
+        if (!required_nodes.contains(inputs[i]))
+            continue;
+
+        if (header_positions[i] == POSITION_NOT_FOUND)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Required input '{}' is missing from the header", inputs[i]->result_name);
+
+        required_input_positions[header_positions[i]] = true;
+    }
 
     /// Used columns which are not DAG outputs should be forwarded to the input header.
     size_t num_outputs = dag.getOutputs().size();
@@ -261,7 +281,7 @@ static SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expr
     std::unordered_set<const ActionsDAG::Node *> split_nodes;
     for (size_t i = 0; i < inputs.size(); ++i)
     {
-        if (required_inputs[header_positions[i]])
+        if (header_positions[i] != POSITION_NOT_FOUND && required_inputs[header_positions[i]])
             split_nodes.insert(inputs[i]);
     }
 
@@ -318,7 +338,7 @@ static SplitFilterResult splitFilterStep(const FilterStep & filter_step, const s
 
     std::unordered_set<const ActionsDAG::Node *> split_nodes;
     for (size_t i = 0; i < inputs.size(); ++i)
-        if (required_inputs[header_positions[i]])
+        if (header_positions[i] != POSITION_NOT_FOUND && required_inputs[header_positions[i]])
             split_nodes.insert(inputs[i]);
 
     for (size_t i = 0; i < outputs.size(); ++i)
