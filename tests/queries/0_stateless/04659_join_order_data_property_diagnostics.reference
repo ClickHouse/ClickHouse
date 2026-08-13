@@ -1,0 +1,12 @@
+both settings off ordinary trace: OK
+both settings off property diagnostics: OK
+unique keys only ordinary trace: OK
+unique keys only property diagnostics: OK
+diagnostics only ordinary trace: OK
+diagnostics only property diagnostics: OK
+both settings on ordinary trace: OK
+both settings on property diagnostics: OK
+legacy plan diagnostics parity: OK
+capped plan diagnostics parity: OK
+unique-key capped estimate: OK
+canonical group diagnostics: OK

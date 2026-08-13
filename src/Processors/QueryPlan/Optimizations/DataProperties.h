@@ -219,6 +219,17 @@ inline bool isProvenStrongBagKey(const UniqueKeyFact & fact)
     return isProvenStrongBagKey(fact.provenance, fact.equality_mode);
 }
 
+/// Independent consumers of join-order data properties. Collection is required when
+/// either costing or diagnostics is enabled; keeping both intentions avoids collapsing
+/// the valid state where both consumers are active.
+struct DataPropertyCollectionPolicy
+{
+    bool costing_enabled = false;
+    bool diagnostics_enabled = false;
+
+    constexpr bool collectsDataProperties() const { return costing_enabled || diagnostics_enabled; }
+};
+
 String dataPropertyOriginToString(DataPropertyOrigin origin);
 String dataPropertyConfidenceToString(DataPropertyConfidence confidence);
 String dataPropertyEqualityModeToString(DataPropertyEqualityMode mode);

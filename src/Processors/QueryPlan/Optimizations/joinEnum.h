@@ -3,7 +3,6 @@
 #include <bit>
 #include <concepts>
 #include <vector>
-#include <Common/logger_useful.h>
 #include <base/types.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 
@@ -194,7 +193,10 @@ void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::enumerate(TConsumer & consume
                 consumer.accept(lhs | rhs, lhs, rhs);
                 LOG_TEST(log, "accepted lhs-rhs connected.");
             }
-            else if (query_graph.areTransitivelyConnected(BitSet::fromUInt(lhs), BitSet::fromUInt(rhs)))
+            /// A predicate-free transitively-connected pair is admitted by the consumer, which
+            /// embodies the setting/proof gate. The check must run before `setTableNeighbor`:
+            /// a rejected pair must not mark subset connectivity or consume enumeration budget.
+            else if (consumer.canAcceptTransitivePair(query_graph, lhs, rhs))
             {
                 setTableNeighbor(dp_table, lhs, rhs);
                 consumer.accept(lhs | rhs, lhs, rhs);

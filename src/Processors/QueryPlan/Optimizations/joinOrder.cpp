@@ -5,8 +5,10 @@
 #include <algorithm>
 #include <bit>
 #include <deque>
+#include <expected>
 #include <functional>
 #include <limits>
+#include <map>
 #include <Common/typeid_cast.h>
 #include <Core/Joins.h>
 #include <IO/Operators.h>
@@ -20,6 +22,7 @@
 #include <base/defines.h>
 #include <ranges>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 #include <Processors/QueryPlan/Optimizations/dpTable.h>
 #include <Processors/QueryPlan/Optimizations/enumeratorChecker.h>
@@ -37,6 +40,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int EXPERIMENTAL_FEATURE_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NO_COMMON_TYPE;
 }
 
 /// Pack a `BitSet` (boost::dynamic_bitset) of relation ids into a native 32-bit mask.
@@ -128,15 +133,27 @@ static std::optional<JoinActionRef> resolveInput(const JoinActionRef & ref)
     return resolved;
 }
 
+/// A comparison function may resolve even when composing it transitively is unsafe
+/// (for example, when it converts one side into a counterpart-dependent domain).
+/// Only a valid comparison order domain is an optimizer contract that equality can
+/// participate in a transitive equivalence class.
+static bool hasTransitiveComparisonDomain(const JoinActionRef & predicate)
+{
+    const auto * node = predicate.getNode();
+    return node && node->function_base && node->function_base->getComparisonOrderDomain().isValid();
+}
+
 void QueryGraph::buildColumnEquivalences()
 {
+    column_equivalences = {};
+
     for (const auto & edge : edges)
     {
         if (!edge)
             continue;
 
         auto [op, lhs, rhs] = edge.asBinaryPredicate();
-        if (op != JoinConditionOperator::Equals)
+        if (op != JoinConditionOperator::Equals || !hasTransitiveComparisonDomain(edge))
             continue;
 
         auto lhs_resolved = resolveInput(lhs);
@@ -197,11 +214,15 @@ bool QueryGraph::areTransitivelyConnected(const BitSet & left, const BitSet & ri
 ///   1. Remove predicates whose endpoints are already equivalent from child joins.
 ///      Non-redundant predicates are added to the equivalence classes immediately,
 ///      so later predicates at the same step can also be detected as redundant.
-///   2. If no predicates remain (transitive-only join), synthesize one per equivalence
-///      class spanning the left and right subtrees.
-static void cleanupJoinPredicates(
-    const DPJoinEntryPtr & root,
-    const EquivalenceClasses<JoinActionRef> & column_equivalences)
+///   2. Synthesize one predicate for every region-wide equality class spanning
+///      the left and right subtrees that is not already enforced at or below this
+///      join. Canonical costing may use every such class, so the selected physical
+///      join must enforce the same cut even when it also has residual predicates.
+///      In a region whose original joins are all `INNER ALL` (`region_all_inner`),
+///      a `Cross` entry can only be the greedy solver's disconnected-pair fallback,
+///      so it is synthesized into as well and becomes `Inner` when a class spans it.
+static void
+cleanupJoinPredicates(const DPJoinEntryPtr & root, const EquivalenceClasses<JoinActionRef> & column_equivalences, bool region_all_inner)
 {
     using EquivClasses = EquivalenceClasses<JoinActionRef>;
 
@@ -222,7 +243,7 @@ static void cleanupJoinPredicates(
         std::erase_if(expressions, [&](const JoinActionRef & predicate)
         {
             auto [op, lhs, rhs] = predicate.asBinaryPredicate();
-            if (op != JoinConditionOperator::Equals)
+            if (op != JoinConditionOperator::Equals || !hasTransitiveComparisonDomain(predicate))
                 return false;
 
             auto lhs_resolved = resolveInput(lhs);
@@ -251,43 +272,130 @@ static void cleanupJoinPredicates(
             return false;
         });
 
-        /// Phase 2: Synthesize predicates for transitive-only joins.
-        if (expressions.empty() && isInner(entry->join_operator.kind))
+        /// Phase 2: Materialize the full canonical equality cut. A residual
+        /// predicate or an equality from another class must not prevent this.
+        ///
+        /// Every projected member of a region-wide class must be connected, not
+        /// merely one representative from each side. Otherwise a cut such as
+        /// {A.x, A.y} = {C.z}, where A.y is a key but A.x is not, could be costed
+        /// as unique on (A.x, A.y) while the physical join enforces only A.x=C.z.
+        ///
+        /// A `Cross` entry in an all-inner region is the greedy solver's
+        /// disconnected-pair fallback, not query syntax. A canonical cap may have
+        /// assumed a spanning class equality is enforced at this join, so synthesize
+        /// there too; the predicate is implied by the region's predicates, and the
+        /// cross product becomes an equijoin.
+        const bool convertible_cross = region_all_inner && isCrossOrComma(entry->join_operator.kind);
+        if (isInner(entry->join_operator.kind) || convertible_cross)
         {
+            const size_t expressions_before_synthesis = expressions.size();
             const auto & left_rels = entry->left->relations;
             const auto & right_rels = entry->right->relations;
 
             using ConstClassPtr = EquivClasses::ConstClassPtr;
             std::unordered_set<ConstClassPtr> visited;
 
+            auto connect_members = [&](const JoinActionRef & lhs, const JoinActionRef & rhs)
+            {
+                const auto lhs_class = equiv.getClass(lhs);
+                const auto rhs_class = equiv.getClass(rhs);
+                if (lhs_class && rhs_class && lhs_class == rhs_class)
+                    return;
+
+                try
+                {
+                    expressions.push_back(JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+                }
+                catch (const Exception & e)
+                {
+                    /// Class members equated only through a common third column need not be
+                    /// directly comparable (e.g. a `UUID` and an `Enum` each compared against
+                    /// one `FixedString` column), so `equals` may not resolve for the pair.
+                    /// Skip the synthesized predicate instead of failing a query that ran
+                    /// before join reordering: the equality stays implied by the original
+                    /// predicates enforced elsewhere in the tree, so the result is unchanged,
+                    /// though a canonical cap that assumed this cut may overstate how
+                    /// selective the executed join is.
+                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                        throw;
+                    LOG_TRACE(
+                        &Poco::Logger::get("JoinOrderOptimizer"),
+                        "Skipped synthesizing transitive predicate `{}` = `{}`: {}",
+                        lhs.getColumnName(),
+                        rhs.getColumnName(),
+                        e.message());
+                    return;
+                }
+                equiv.add(lhs, rhs);
+
+                const auto lhs_relation = lhs.getSourceRelations().getSingleBit();
+                const auto rhs_relation = rhs.getSourceRelations().getSingleBit();
+                LOG_TRACE(
+                    &Poco::Logger::get("JoinOrderOptimizer"),
+                    "Synthesized transitive predicate: relation {} `{}` = relation {} `{}`",
+                    lhs_relation.value_or(0),
+                    lhs.getColumnName(),
+                    rhs_relation.value_or(0),
+                    rhs.getColumnName());
+            };
+
+            /// `getMemberToClassMap` is an `unordered_map` hashed on node pointers, so its
+            /// iteration order is address-dependent. Collect the candidate classes first and
+            /// order them by their minimal (relation, column) member, so the synthesized
+            /// predicate order — and therefore `EXPLAIN` output and the join fingerprints
+            /// hashed by `calculateJoinFingerprint` — is stable across runs.
+            std::vector<std::pair<std::pair<UInt64, std::string_view>, ConstClassPtr>> candidate_classes;
             for (const auto & [member, _] : column_equivalences.getMemberToClassMap())
             {
-                auto member_rel = member.getSourceRelations().getSingleBit();
-                if (!member_rel || !left_rels.test(*member_rel))
+                const auto member_relation = member.getSourceRelations().getSingleBit();
+                if (!member_relation || !left_rels.test(*member_relation))
                     continue;
 
-                auto equiv_class = column_equivalences.getClass(member);
+                const auto equiv_class = column_equivalences.getClass(member);
                 if (!equiv_class || !visited.insert(equiv_class).second)
                     continue;
 
-                for (const auto & other : *equiv_class)
+                std::pair<UInt64, std::string_view> key{std::numeric_limits<UInt64>::max(), {}};
+                for (const auto & class_member : *equiv_class)
                 {
-                    auto other_rel = other.getSourceRelations().getSingleBit();
-                    if (!other_rel || !right_rels.test(*other_rel))
-                        continue;
-
-                    expressions.push_back(JoinActionRef::transform(
-                        {member, other},
-                        JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
-                    equiv.add(member, other);
-
-                    LOG_TRACE(&Poco::Logger::get("JoinOrderOptimizer"),
-                        "Synthesized transitive predicate: relation {} `{}` = relation {} `{}`",
-                        *member_rel, member.getColumnName(), *other_rel, other.getColumnName());
-                    /// One predicate per equivalence class is enough for connectivity.
-                    break;
+                    const auto relation = class_member.getSourceRelations().getSingleBit();
+                    key = std::min(
+                        key,
+                        std::pair<UInt64, std::string_view>{
+                            relation.value_or(std::numeric_limits<UInt64>::max()), class_member.getColumnName()});
                 }
+                candidate_classes.emplace_back(key, equiv_class);
             }
+            std::ranges::sort(candidate_classes, {}, [](const auto & candidate) { return candidate.first; });
+
+            for (const auto & [_, equiv_class] : candidate_classes)
+            {
+                std::vector<JoinActionRef> left_members;
+                std::vector<JoinActionRef> right_members;
+                for (const auto & class_member : *equiv_class)
+                {
+                    const auto relation = class_member.getSourceRelations().getSingleBit();
+                    if (!relation)
+                        continue;
+                    if (left_rels.test(*relation))
+                        left_members.push_back(class_member);
+                    else if (right_rels.test(*relation))
+                        right_members.push_back(class_member);
+                }
+                if (left_members.empty() || right_members.empty())
+                    continue;
+
+                const auto & left_anchor = left_members.front();
+                const auto & right_anchor = right_members.front();
+                connect_members(left_anchor, right_anchor);
+                for (const auto & left_member : left_members)
+                    connect_members(left_member, right_anchor);
+                for (const auto & right_member : right_members)
+                    connect_members(left_anchor, right_member);
+            }
+
+            if (convertible_cross && expressions.size() != expressions_before_synthesis)
+                entry->join_operator.kind = JoinKind::Inner;
         }
 
         return equiv;
@@ -303,25 +411,280 @@ String DPJoinEntry::dump() const
     return fmt::format("Join({})", fmt::join(relations, ","));
 }
 
+namespace
+{
+
+/// Why one side of an ordinary equality could not be bound to a catalog column.
+enum class JoinKeyBindingFailure : UInt8
+{
+    /// The action has no singleton source relation, so the predicate cannot be an equality
+    /// between two leaf columns; the pair stays a residual predicate.
+    NoSingletonSource,
+    /// A name-matching catalog column has a different type, or the relation/type/alias shape
+    /// is outside what the catalog can represent; the region must fail closed.
+    UnsupportedType,
+    /// No unambiguous identity-preserving catalog column matches; the binding is ambiguous.
+    Unresolved,
+};
+
+using JoinKeyColumnBinding = std::expected<JoinOrderColumnId, JoinKeyBindingFailure>;
+
+/// Resolve one equality side to exactly one identity-preserving catalog column in a single
+/// pass, tracking on the way whether any name-matching column has a mismatched type.
+/// Successful resolution wins over a stray type mismatch on another column; a failed
+/// resolution reports the strongest failure observed.
+JoinKeyColumnBinding resolveJoinKeyColumn(const JoinActionRef & action, const JoinOrderDataPropertyCatalog & catalog)
+{
+    const auto relation = action.getSourceRelations().getSingleBit();
+    if (!relation)
+        return std::unexpected(JoinKeyBindingFailure::NoSingletonSource);
+    if (*relation >= catalog.relationCount() || !action.getType())
+        return std::unexpected(JoinKeyBindingFailure::UnsupportedType);
+
+    const auto resolved = action.resolveAliases();
+    if (resolved.getNode()->type != ActionsDAG::ActionType::INPUT)
+        return std::unexpected(JoinKeyBindingFailure::UnsupportedType);
+
+    const String type_name = action.getType()->getName();
+    std::optional<JoinOrderColumnId> result;
+    bool ambiguous = false;
+    bool type_mismatch = false;
+    for (const auto column_id : catalog.columnsForRelation(safe_cast<UInt32>(*relation)))
+    {
+        const auto & column = catalog.column(column_id);
+        const auto & catalog_name = catalog.name(column.display_name);
+        const bool name_matches = catalog_name == action.getColumnName();
+        if ((name_matches || catalog_name == resolved.getColumnName()) && catalog.typeName(column_id) != type_name)
+        {
+            type_mismatch = true;
+            continue;
+        }
+        if (!name_matches)
+            continue;
+        if (result && *result != column_id)
+            ambiguous = true;
+        result = column_id;
+    }
+
+    auto failure = [&] { return type_mismatch ? JoinKeyBindingFailure::UnsupportedType : JoinKeyBindingFailure::Unresolved; };
+    if (!result || ambiguous)
+        return std::unexpected(failure());
+
+    const auto & result_column = catalog.column(*result);
+    if (resolved.getColumnName() == catalog.name(result_column.display_name))
+        return *result;
+
+    const bool has_identity_lineage = std::ranges::any_of(
+        catalog.lineageForRelation(safe_cast<UInt32>(*relation)),
+        [&](JoinOrderLineageId lineage_id)
+        {
+            const auto & fact = catalog.lineage(lineage_id);
+            const bool preserves_identity = fact.kind == QueryPlanOptimizations::ColumnLineageKind::Identity
+                || fact.kind == QueryPlanOptimizations::ColumnLineageKind::ValuePreserving;
+            return preserves_identity && fact.output == *result && fact.relation == *relation
+                && catalog.name(fact.input_name) == resolved.getColumnName();
+        });
+    if (!has_identity_lineage)
+        return std::unexpected(failure());
+    return *result;
+}
+
+bool isDeterministicExpression(const ActionsDAG::Node * root)
+{
+    if (!root)
+        return false;
+    std::vector<const ActionsDAG::Node *> stack{root};
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.insert(node).second)
+            continue;
+        if (!node->isDeterministic())
+            return false;
+        stack.append_range(node->children);
+    }
+    return true;
+}
+
+}
+
+JoinOrderPredicatePropertyBinding bindJoinOrderPredicate(const JoinActionRef & predicate, const JoinOrderDataPropertyCatalog & catalog)
+{
+    auto [op, lhs, rhs] = predicate.asBinaryPredicate();
+    if (op == JoinConditionOperator::NullSafeEquals)
+        return JoinOrderPropertyUnsupportedReason::NullSafeEquality;
+    if (op != JoinConditionOperator::Equals || !lhs || !rhs || !hasTransitiveComparisonDomain(predicate))
+        return JoinOrderResidualPredicateBinding{};
+
+    const auto lhs_column = resolveJoinKeyColumn(lhs, catalog);
+    const auto rhs_column = resolveJoinKeyColumn(rhs, catalog);
+    if (lhs_column && rhs_column)
+        return JoinOrderOrdinaryEqualityBinding{*lhs_column, *rhs_column};
+
+    auto failed = [](const JoinKeyColumnBinding & binding, JoinKeyBindingFailure kind) { return !binding && binding.error() == kind; };
+    if (failed(lhs_column, JoinKeyBindingFailure::NoSingletonSource) || failed(rhs_column, JoinKeyBindingFailure::NoSingletonSource))
+        return JoinOrderResidualPredicateBinding{};
+    if (failed(lhs_column, JoinKeyBindingFailure::UnsupportedType) || failed(rhs_column, JoinKeyBindingFailure::UnsupportedType))
+        return JoinOrderPropertyUnsupportedReason::UnsupportedEqualityType;
+    return JoinOrderPropertyUnsupportedReason::AmbiguousEqualityBinding;
+}
+
+/// Whether `equals` resolves for the two column types, using the same resolution that
+/// `cleanupJoinPredicates` performs when it synthesizes transitive predicates.
+static bool comparableForEquality(const JoinActionRef & lhs, const JoinActionRef & rhs)
+{
+    if (!lhs.getType() || !rhs.getType())
+        return false;
+
+    ActionsDAG probe;
+    const auto & lhs_input = probe.addInput("lhs", lhs.getType());
+    const auto & rhs_input = probe.addInput("rhs", rhs.getType());
+    try
+    {
+        JoinActionRef::AddFunction add_equals(JoinConditionOperator::Equals);
+        add_equals(probe, {&lhs_input, &rhs_input});
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::NO_COMMON_TYPE)
+            throw;
+        return false;
+    }
+    return true;
+}
+
+/// Classes with a member pair that cannot be physically equated. A canonical proof may rely
+/// on any two members of an equality class being equal within a candidate: the members need
+/// not have been directly compared in the query (e.g. a `UUID` and an `Enum` each compared
+/// against one `FixedString` column), and then no `equals` predicate can enforce the pair.
+static std::unordered_set<EquivalenceClasses<JoinActionRef>::ConstClassPtr>
+findClassesWithIncomparableMembers(const EquivalenceClasses<JoinActionRef> & column_equivalences)
+{
+    std::unordered_set<EquivalenceClasses<JoinActionRef>::ConstClassPtr> result;
+    std::unordered_set<EquivalenceClasses<JoinActionRef>::ConstClassPtr> visited;
+
+    /// `equals` resolution depends only on the two types, so memoize probes by canonical
+    /// type name: classes with repeated types do not rebuild the probe DAG per member pair.
+    std::map<std::pair<String, String>, bool> comparability_by_type_names;
+    auto comparable = [&](const JoinActionRef & lhs, const JoinActionRef & rhs)
+    {
+        if (!lhs.getType() || !rhs.getType())
+            return false;
+        std::pair<String, String> key{lhs.getType()->getName(), rhs.getType()->getName()};
+        if (key.second < key.first)
+            std::swap(key.first, key.second);
+        const auto [it, inserted] = comparability_by_type_names.try_emplace(key, false);
+        if (inserted)
+            it->second = comparableForEquality(lhs, rhs);
+        return it->second;
+    };
+
+    for (const auto & [member, _] : column_equivalences.getMemberToClassMap())
+    {
+        const auto equiv_class = column_equivalences.getClass(member);
+        if (!equiv_class || !visited.insert(equiv_class).second)
+            continue;
+
+        for (auto lhs = equiv_class->begin(); lhs != equiv_class->end() && !result.contains(equiv_class); ++lhs)
+        {
+            auto rhs = lhs;
+            for (++rhs; rhs != equiv_class->end(); ++rhs)
+            {
+                if (!comparable(*lhs, *rhs))
+                {
+                    result.insert(equiv_class);
+                    break;
+                }
+            }
+        }
+    }
+    return result;
+}
+
 class JoinOrderOptimizer
 {
 public:
-    JoinOrderOptimizer(QueryGraph query_graph_, const std::vector<JoinOrderAlgorithm> & enabled_algorithms_, UInt64 max_searched_plans_)
+    JoinOrderOptimizer(
+        QueryGraph query_graph_,
+        const std::vector<JoinOrderAlgorithm> & enabled_algorithms_,
+        UInt64 max_searched_plans_,
+        bool proven_uniqueness_enabled_,
+        bool transitive_predicates_enabled_,
+        bool data_property_diagnostics_enabled_,
+        JoinOrderOptimizationDebugInfo * debug_info_)
         : query_graph(std::move(query_graph_))
         , max_searched_plans(max_searched_plans_)
         , enabled_algorithms(enabled_algorithms_)
+        , proven_uniqueness_enabled(proven_uniqueness_enabled_)
+        , transitive_predicates_enabled(transitive_predicates_enabled_)
+        , data_property_diagnostics_enabled(data_property_diagnostics_enabled_)
+        , debug_info(debug_info_)
     {
+        if (query_graph.data_property_catalog && query_graph.data_property_catalog->relationCount() != query_graph.relation_stats.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Join-order data property catalog has {} relations, expected {}",
+                query_graph.data_property_catalog->relationCount(),
+                query_graph.relation_stats.size());
+
         auto context = CurrentThread::tryGetQueryContext();
         if (context)
         {
             query_status = context->getProcessListElementSafe();
             interactive_cancel_callback = context->getInteractiveCancelCallback();
         }
+        if ((proven_uniqueness_enabled || data_property_diagnostics_enabled) && query_graph.data_property_catalog)
+        {
+            /// Mark the predicates of equality classes containing an incomparable member
+            /// pair, so the provider refuses exactly the cuts and proofs that would rely on
+            /// synthesizing such a link, while unrelated caps stay available. The check uses
+            /// the materialized `column_equivalences`; in diagnostics-only mode they may be
+            /// absent, but then no costing consumes the proofs.
+            const auto incomparable_classes = findClassesWithIncomparableMembers(query_graph.column_equivalences);
+            std::vector<JoinOrderCanonicalPredicate> predicates;
+            predicates.reserve(query_graph.edges.size());
+            for (size_t index = 0; index < query_graph.edges.size(); ++index)
+            {
+                const auto & edge = query_graph.edges[index];
+                if (!edge)
+                    continue;
+                auto binding = bindJoinOrderPredicate(edge, *query_graph.data_property_catalog);
+                if (auto * equality = std::get_if<JoinOrderOrdinaryEqualityBinding>(&binding); equality && !incomparable_classes.empty())
+                {
+                    const auto [op, lhs, rhs] = edge.asBinaryPredicate();
+                    if (op == JoinConditionOperator::Equals && lhs)
+                        if (const auto resolved = resolveInput(lhs))
+                            equality->members_incomparable
+                                = incomparable_classes.contains(query_graph.column_equivalences.getClass(*resolved));
+                }
+                predicates.push_back(
+                    {.stable_id = safe_cast<UInt32>(index + 1),
+                     .applicability = edge.getSourceRelations(),
+                     .deterministic = isDeterministicExpression(edge.getNode()),
+                     .binding = std::move(binding)});
+            }
+            canonical_properties = std::make_unique<JoinOrderCanonicalProperties>(
+                query_graph.data_property_catalog,
+                query_graph.relation_stats.size(),
+                std::move(predicates),
+                query_graph.canonical_property_region_rejection);
+        }
     }
 
     std::shared_ptr<DPJoinEntry> solve();
+
+    /// Post-processing of the plan returned by `solve`: materialize the canonical equality
+    /// cuts the costing assumed (`cleanupJoinPredicates`), audit the cap postconditions, and
+    /// emit/collect diagnostics. Encapsulates the whole protocol so callers cannot reorder or
+    /// skip a step.
+    void finalizeSelectedPlan(const DPJoinEntryPtr & selected_plan);
+
 private:
-    void buildQueryGraph();
+    void finalizeSelectedPlanProperties(const DPJoinEntryPtr & selected_plan);
+    bool selectedPlanUsedCanonicalCardinalityCap(const DPJoinEntryPtr & selected_plan) const;
+    void verifySelectedPlanCapRequirements(const DPJoinEntryPtr & selected_plan) const;
 
     template <typename DPTable, std::unsigned_integral Tuint>
     std::shared_ptr<DPJoinEntry> buildPhysicalPlan(const DPTable & dptable, const Tuint & S) const;
@@ -341,6 +704,46 @@ private:
     double computeSelectivity(const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right);
     std::optional<UInt64> estimateCardinality(
         std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind) const;
+    JoinOrderCardinalityEstimate estimateCardinality(
+        std::optional<UInt64> left_rows,
+        std::optional<UInt64> right_rows,
+        double selectivity,
+        JoinKind join_kind,
+        const JoinOrderCardinalityCap & canonical_cap) const;
+
+    struct JoinCandidateConnectivity
+    {
+        bool legacy_connected = false;
+        bool has_cross_split_predicate = false;
+    };
+
+    struct JoinCandidateAssessment
+    {
+        bool legacy_connected = false;
+        bool has_cross_split_predicate = false;
+        bool independently_transitive_connected = false;
+        bool proof_gated_transitive_connected = false;
+        bool equivalence_selectivity_allowed = false;
+        JoinOrderCardinalityCap canonical_cap;
+
+        bool connected() const { return legacy_connected || independently_transitive_connected || proof_gated_transitive_connected; }
+    };
+
+    JoinCandidateAssessment assessCandidate(
+        const BitSet & left_relations,
+        const BitSet & right_relations,
+        std::optional<UInt64> left_rows,
+        std::optional<UInt64> right_rows,
+        JoinKind join_kind,
+        JoinCandidateConnectivity connectivity) const;
+    bool costingPropertiesEnabled() const;
+    void resetCandidateState();
+    void recordCanonicalCapAssessment(const JoinOrderCardinalityCap & cap) const;
+    JoinOrderCardinalityCap getCanonicalCap(
+        const BitSet & left_relations,
+        const BitSet & right_relations,
+        std::optional<UInt64> left_rows,
+        std::optional<UInt64> right_rows) const;
     size_t getColumnStats(const BitSet & rels, const String & column_name);
 
     /// Native-mask counterparts of the helpers above, used exclusively by the DPsub acceptor.
@@ -392,6 +795,7 @@ private:
     std::unordered_map<JoinActionRef, bool> applied;
     std::unordered_map<JoinActionRef, double> expression_selectivity;
     std::unordered_map<BitSet, DPJoinEntryPtr> dp_table;
+    std::unique_ptr<JoinOrderCanonicalProperties> canonical_properties;
 
     /** Precomputed native-mask view of the query graph for the DPsub hot path. Populated once per
     * `solveDPsub` run by `initDPsubScratch`. Each `BitSet` is packed into a `UInt` type, the outer-join
@@ -452,6 +856,10 @@ private:
     const UInt64 max_searched_plans;
 
     const std::vector<JoinOrderAlgorithm> enabled_algorithms;
+    const bool proven_uniqueness_enabled;
+    const bool transitive_predicates_enabled;
+    const bool data_property_diagnostics_enabled;
+    JoinOrderOptimizationDebugInfo * debug_info;
     LoggerPtr log = getLogger("JoinOrderOptimizer");
 
     QueryStatusPtr query_status;
@@ -639,6 +1047,256 @@ std::optional<UInt64> JoinOrderOptimizer::estimateCardinality(
     return estimateJoinCardinality(left_rows, right_rows, selectivity, join_kind);
 }
 
+bool JoinOrderOptimizer::costingPropertiesEnabled() const
+{
+    return proven_uniqueness_enabled && canonical_properties;
+}
+
+void JoinOrderOptimizer::resetCandidateState()
+{
+    /// Reset both the DP table and the per-edge selectivity cache together, so an earlier
+    /// algorithm in the fallback chain can neither leak partial `dp_table` entries nor
+    /// cached `1.0` selectivity defaults into this run.
+    dp_table.clear();
+    expression_selectivity.clear();
+}
+
+bool JoinOrderOptimizer::selectedPlanUsedCanonicalCardinalityCap(const DPJoinEntryPtr & selected_plan) const
+{
+    if (!selected_plan)
+        return false;
+    return selected_plan->used_canonical_cap || selectedPlanUsedCanonicalCardinalityCap(selected_plan->left)
+        || selectedPlanUsedCanonicalCardinalityCap(selected_plan->right);
+}
+
+/// Audit the costing-to-physical postcondition after `cleanupJoinPredicates`:
+/// intra-group obligations must hold strictly below the capped join, and every
+/// equality class in the cap's cut must be enforced at or below that join.
+/// A violation cannot make the selected plan incorrect - every original predicate is still
+/// enforced somewhere in the tree - it only means a canonical cap overstated how selective
+/// the executed join is. Abort debug builds; log an error and keep the plan in release.
+void JoinOrderOptimizer::verifySelectedPlanCapRequirements(const DPJoinEntryPtr & selected_plan) const
+{
+    if (!canonical_properties || !query_graph.data_property_catalog || !selected_plan)
+        return;
+    const auto & catalog = *query_graph.data_property_catalog;
+
+    auto report_violation = [&](String message)
+    {
+        LOG_ERROR(log, "Canonical join-order cap postcondition violated: {}", message);
+        chassert(false);
+    };
+
+    /// Union-find over catalog columns, built bottom-up from the bound equality predicates of
+    /// the selected tree. Predicates never connect columns across a join's two subtrees, so
+    /// components are scoped to subtrees and membership checks below stay sound.
+    std::vector<UInt32> parent(catalog.columnCount());
+    for (UInt32 column = 0; column < parent.size(); ++column)
+        parent[column] = column;
+    auto find = [&](UInt32 column)
+    {
+        while (parent[column] != column)
+            column = parent[column] = parent[parent[column]];
+        return column;
+    };
+
+    auto class_enforced_within = [&](size_t class_index, const DPJoinEntryPtr & subtree)
+    {
+        std::optional<UInt32> root;
+        for (const auto member : canonical_properties->equalityClassMembers(class_index))
+        {
+            const auto relation = catalog.column(member).relation;
+            if (!subtree->relations.test(relation))
+                continue;
+            const UInt32 member_root = find(member.value);
+            if (root && *root != member_root)
+                return false;
+            root = member_root;
+        }
+        return true;
+    };
+
+    auto class_crosses_join = [&](size_t class_index, const DPJoinEntryPtr & entry)
+    {
+        bool touches_left = false;
+        bool touches_right = false;
+        for (const auto member : canonical_properties->equalityClassMembers(class_index))
+        {
+            const auto relation = catalog.column(member).relation;
+            touches_left |= entry->left->relations.test(relation);
+            touches_right |= entry->right->relations.test(relation);
+        }
+        return touches_left && touches_right;
+    };
+
+    std::function<void(const DPJoinEntryPtr &)> process = [&](const DPJoinEntryPtr & entry)
+    {
+        if (!entry || entry->isLeaf())
+            return;
+        process(entry->left);
+        process(entry->right);
+
+        if (entry->used_canonical_cap && entry->canonical_cap_obligations)
+        {
+            /// The obligation ledger is exact: the provider fails closed instead of minting a
+            /// proof whose obligation class index would not fit into 64 bits.
+            const size_t checked_classes = std::min<size_t>(canonical_properties->equalityClassCount(), 64);
+            for (size_t class_index = 0; class_index < checked_classes; ++class_index)
+            {
+                if (!(entry->canonical_cap_obligations & (UInt64{1} << class_index)))
+                    continue;
+                for (const auto & child : {entry->left, entry->right})
+                {
+                    if (class_enforced_within(class_index, child))
+                        continue;
+                    report_violation(
+                        fmt::format(
+                            "equality class {} is not enforced below join {} (child {})", class_index, entry->dump(), child->dump()));
+                }
+            }
+        }
+
+        for (const auto & predicate : entry->join_operator.expression)
+        {
+            const auto [op, lhs, rhs] = predicate.asBinaryPredicate();
+            if (op != JoinConditionOperator::Equals)
+                continue;
+            const auto binding = bindJoinOrderPredicate(predicate, catalog);
+            const auto * equality = std::get_if<JoinOrderOrdinaryEqualityBinding>(&binding);
+            if (!equality)
+                continue;
+            parent[find(equality->lhs.value)] = find(equality->rhs.value);
+        }
+
+        if (!entry->used_canonical_cap)
+            return;
+        for (size_t class_index = 0; class_index < canonical_properties->equalityClassCount(); ++class_index)
+        {
+            if (!class_crosses_join(class_index, entry) || class_enforced_within(class_index, entry))
+                continue;
+            report_violation(fmt::format("equality class {} of the cut is not enforced at join {}", class_index, entry->dump()));
+        }
+    };
+    process(selected_plan);
+}
+
+/// `Disabled` is intentionally silent so feature-off performs no canonical diagnostic work.
+/// Every other outcome is retained only when a query-local debug sink was requested.
+void JoinOrderOptimizer::recordCanonicalCapAssessment(const JoinOrderCardinalityCap & cap) const
+{
+    if (const auto * no_cap = std::get_if<JoinOrderNoCardinalityCapReason>(&cap))
+    {
+        switch (*no_cap)
+        {
+            case JoinOrderNoCardinalityCapReason::Disabled: return;
+            case JoinOrderNoCardinalityCapReason::MissingInputRows:
+                if (debug_info)
+                    ++debug_info->cap_assessments.missing_input_rows;
+                if (data_property_diagnostics_enabled)
+                    LOG_TRACE(log, "Canonical join-order cap not applied: missing input row estimate");
+                return;
+            case JoinOrderNoCardinalityCapReason::NoEqualityCut:
+                if (debug_info)
+                    ++debug_info->cap_assessments.not_proven;
+                if (data_property_diagnostics_enabled)
+                    LOG_TRACE(log, "Canonical join-order cap not applied: no equality cut");
+                return;
+            case JoinOrderNoCardinalityCapReason::NotProven:
+                if (debug_info)
+                    ++debug_info->cap_assessments.not_proven;
+                if (data_property_diagnostics_enabled)
+                    LOG_TRACE(log, "Canonical join-order cap not applied: uniqueness not proven");
+                return;
+        }
+    }
+    if (const auto * unsupported = std::get_if<JoinOrderPropertyUnsupportedReason>(&cap))
+    {
+        if (debug_info)
+            ++debug_info->cap_assessments.unsupported;
+        if (data_property_diagnostics_enabled)
+            LOG_TRACE(
+                log, "Canonical join-order cap not applied: unsupported ({})", joinOrderPropertyUnsupportedReasonToString(*unsupported));
+        return;
+    }
+    const auto & proof = std::get<JoinOrderCardinalityCapProof>(cap);
+    if (debug_info)
+        ++debug_info->cap_assessments.proven;
+    if (data_property_diagnostics_enabled)
+        LOG_TRACE(log, "Canonical join-order cap proven: upper bound {}", proof.upper_bound);
+}
+
+JoinOrderCardinalityCap JoinOrderOptimizer::getCanonicalCap(
+    const BitSet & left_relations, const BitSet & right_relations, std::optional<UInt64> left_rows, std::optional<UInt64> right_rows) const
+{
+    if (!costingPropertiesEnabled())
+        return JoinOrderNoCardinalityCapReason::Disabled;
+    return canonical_properties->inferInnerAllCardinalityCap(left_relations, right_relations, left_rows, right_rows);
+}
+
+JoinOrderCardinalityEstimate JoinOrderOptimizer::estimateCardinality(
+    std::optional<UInt64> left_rows,
+    std::optional<UInt64> right_rows,
+    double selectivity,
+    JoinKind join_kind,
+    const JoinOrderCardinalityCap & canonical_cap) const
+{
+    JoinOrderCardinalityEstimate result{estimateJoinCardinality(left_rows, right_rows, selectivity, join_kind), {}};
+    const auto * cap = getProvenCap(canonical_cap);
+    if (join_kind != JoinKind::Inner || !cap)
+        return result;
+    result.upper_bound = cap->upper_bound;
+    if (result.rows)
+        result.rows = std::min(*result.rows, cap->upper_bound);
+    return result;
+}
+
+JoinOrderOptimizer::JoinCandidateAssessment JoinOrderOptimizer::assessCandidate(
+    const BitSet & left_relations,
+    const BitSet & right_relations,
+    std::optional<UInt64> left_rows,
+    std::optional<UInt64> right_rows,
+    JoinKind join_kind,
+    JoinCandidateConnectivity connectivity) const
+{
+    const auto [legacy_connected, has_cross_split_predicate] = connectivity;
+    JoinCandidateAssessment result{
+        .legacy_connected = legacy_connected,
+        .has_cross_split_predicate = has_cross_split_predicate,
+        .canonical_cap = {},
+    };
+
+    const bool transitively_connected = query_graph.areTransitivelyConnected(left_relations, right_relations);
+    result.independently_transitive_connected = transitive_predicates_enabled && transitively_connected;
+
+    /// A disconnected `Inner` candidate can become an equijoin through equivalences, but only a
+    /// canonical `Proven` result may authorize that when the independent transitive setting is off.
+    /// Legacy-connected candidates are assessed too because their ordinary estimate may still be capped.
+    if (join_kind == JoinKind::Inner && (legacy_connected || transitively_connected))
+    {
+        result.canonical_cap = getCanonicalCap(left_relations, right_relations, left_rows, right_rows);
+        recordCanonicalCapAssessment(result.canonical_cap);
+    }
+
+    const bool canonical_transitive_cut_proven = transitively_connected && getProvenCap(result.canonical_cap);
+    result.proof_gated_transitive_connected
+        = !legacy_connected && !has_cross_split_predicate && !transitive_predicates_enabled && canonical_transitive_cut_proven;
+    result.equivalence_selectivity_allowed = result.independently_transitive_connected || canonical_transitive_cut_proven;
+    return result;
+}
+
+static double computeJoinCost(
+    const std::shared_ptr<DPJoinEntry> & left,
+    const std::shared_ptr<DPJoinEntry> & right,
+    double selectivity,
+    std::optional<UInt64> upper_bound)
+{
+    double local_cost
+        = selectivity * static_cast<double>(left->estimated_rows.value_or(1)) * static_cast<double>(right->estimated_rows.value_or(1));
+    if (upper_bound)
+        local_cost = std::min(local_cost, static_cast<double>(*upper_bound));
+    return left->cost + right->cost + local_cost;
+}
+
 static double computeJoinCost(const std::shared_ptr<DPJoinEntry> & left,
                               const std::shared_ptr<DPJoinEntry> & right,
                               double selectivity)
@@ -679,8 +1337,11 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
     }
 
     if (!best_plan)
+    {
+        dp_table.clear();
         throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR,
             "Failed to find a valid join order, try adding 'greedy' algorithm as fallback to query_plan_optimize_join_order_algorithm setting.");
+    }
 
     LOG_TRACE(log, "Optimized join order in {:.2f} ms, best plan cost: {}, estimated cardinality: {}",
         static_cast<double>(watch.elapsed()) / 1000.0, best_plan->cost, best_plan->estimated_rows ? toString(*best_plan->estimated_rows) : "unknown");
@@ -875,6 +1536,13 @@ const std::vector<JoinActionRef *> & JoinOrderOptimizer::collectJoinEdgesMask(UI
     return out;
 }
 
+/// Checks if predicate has sources from both left and right sets.
+static bool connects(const JoinActionRef * predicate, const BitSet & left, const BitSet & right)
+{
+    const auto & participating = predicate->getSourceRelations();
+    return areIntersecting(participating, left) && areIntersecting(participating, right);
+}
+
 double JoinOrderOptimizer::computeSelectivityMask(
     const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask)
 {
@@ -927,10 +1595,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
 {
     /// Discard any partial state left by an earlier algorithm in the fallback chain
     /// (e.g. `dphyp,greedy`) so cost-model lookups via `getColumnStats` only see
-    /// entries built by this run. `expression_selectivity` is cleared along with
-    /// `dp_table` because multi-relation predicates resolve NDV through it.
-    dp_table.clear();
-    expression_selectivity.clear();
+    /// entries built by this run.
+    resetCandidateState();
 
     std::deque<std::shared_ptr<DPJoinEntry>> components;
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
@@ -960,19 +1626,29 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                     continue;
 
                 auto edges = getApplicableExpressions(left->relations, right->relations);
-                bool connected = !edges.empty()
-                    || query_graph.areTransitivelyConnected(left->relations, right->relations);
+                const bool legacy_connected = !edges.empty();
+                const bool has_cross_split_predicate
+                    = std::ranges::any_of(edges, [&](const auto * edge) { return connects(edge, left->relations, right->relations); });
+                const auto assessment = assessCandidate(
+                    left->relations,
+                    right->relations,
+                    left->estimated_rows,
+                    right->estimated_rows,
+                    *join_kind,
+                    {.legacy_connected = legacy_connected, .has_cross_split_predicate = has_cross_split_predicate});
+                const bool connected = assessment.connected();
                 if (!connected && best_plan)
                     continue;
 
-                auto selectivity = computeSelectivity(edges, left->relations, right->relations);
-                auto current_cost = computeJoinCost(left, right, selectivity);
+                auto selectivity = assessment.equivalence_selectivity_allowed ? computeSelectivity(edges, left->relations, right->relations)
+                                                                              : computeSelectivity(edges);
+                const auto effective_kind = (*join_kind == JoinKind::Inner && !connected) ? JoinKind::Cross : *join_kind;
+                auto estimate = estimateCardinality(
+                    left->estimated_rows, right->estimated_rows, selectivity, effective_kind, assessment.canonical_cap);
+                auto current_cost = computeJoinCost(left, right, selectivity, estimate.upper_bound);
                 if (!best_plan || current_cost < best_plan->cost)
                 {
-                    if (join_kind == JoinKind::Inner && !connected)
-                        join_kind = JoinKind::Cross;
-                    auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
-                    JoinOperator join_operator(join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified);
+                    JoinOperator join_operator(effective_kind, JoinStrictness::All, JoinLocality::Unspecified);
                     bool is_inner_step = isInner(join_kind.value()) || isCrossOrComma(join_kind.value());
                     for (const auto * e : edges)
                     {
@@ -985,8 +1661,11 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                         else
                             join_operator.residual_filter.push_back(*e);
                     }
-                    applied_edges = std::move(edges);
-                    best_plan = std::make_shared<DPJoinEntry>(left, right, current_cost, cardinality, std::move(join_operator));
+                    applied_edges.swap(edges);
+                    best_plan = std::make_shared<DPJoinEntry>(left, right, current_cost, estimate.rows, std::move(join_operator));
+                    best_plan->used_canonical_cap = estimate.upper_bound.has_value();
+                    const auto * proven_cap = getProvenCap(assessment.canonical_cap);
+                    best_plan->canonical_cap_obligations = proven_cap ? proven_cap->obligation_classes : 0;
                     best_i = i;
                     best_j = j;
                 }
@@ -1030,13 +1709,6 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
     return components.at(0);
 }
 
-
-/// Checks if predicate has sources from both left and right sets
-static bool connects(const JoinActionRef * predicate, const BitSet & left, const BitSet & right)
-{
-    const auto & participating = predicate->getSourceRelations();
-    return areIntersecting(participating, left) && areIntersecting(participating, right);
-}
 
 template <typename DPTable, std::unsigned_integral TUInt>
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable & dptable, const TUInt & S) const
@@ -1216,8 +1888,11 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                         }
                     }
 
+                    /// Materialized column equivalences must not admit transitive pairs here
+                    /// without the independent transitive setting; canonical proofs are consumed
+                    /// by the greedy solver only for now.
                     bool connected = !edge.empty()
-                        || query_graph.areTransitivelyConnected(left->relations, right->relations);
+                        || (transitive_predicates_enabled && query_graph.areTransitivelyConnected(left->relations, right->relations));
 
                     LOG_TEST(log, "Considering join between {} and {}, predicates count: {}, connected: {}",
                         left->dump(), right->dump(), edge.size(), connected);
@@ -1300,7 +1975,11 @@ DPJoinEntryPtr JoinOrderOptimizer::evaluateJoin(
     JoinKind join_kind,
     std::vector<JoinActionRef *> & predicates)
 {
-    auto selectivity = computeSelectivity(predicates, left->relations, right->relations);
+    /// Equivalence-derived selectivity requires the independent transitive setting;
+    /// otherwise a candidate must receive the exact feature-off selectivity even when
+    /// column equivalences were materialized for canonical proof lookup.
+    auto selectivity = transitive_predicates_enabled ? computeSelectivity(predicates, left->relations, right->relations)
+                                                     : computeSelectivity(predicates);
     auto new_cost = computeJoinCost(left, right, selectivity);
 
     const BitSet combined_rels = left->relations | right->relations;
@@ -1309,8 +1988,8 @@ DPJoinEntryPtr JoinOrderOptimizer::evaluateJoin(
         return nullptr;
 
     /// Transitively connected pairs are inner joins; their predicate is synthesized later.
-    bool connected = !predicates.empty()
-        || query_graph.areTransitivelyConnected(left->relations, right->relations);
+    bool connected
+        = !predicates.empty() || (transitive_predicates_enabled && query_graph.areTransitivelyConnected(left->relations, right->relations));
     auto effective_kind = (connected && join_kind == JoinKind::Cross) ? JoinKind::Inner : join_kind;
     auto cardinality = estimateJoinCardinality(left, right, selectivity, effective_kind);
     JoinOperator join_operator(
@@ -1329,7 +2008,8 @@ DPJoinEntryPtr JoinOrderOptimizer::evaluateJoin(
 
 /// Build the hyperedge representation of the join graph used by DPhyp.
 /// Each join predicate becomes a hyperedge (left_rels, right_rels).
-/// Column equivalence classes add synthetic edges for transitively-connected pairs.
+/// When the independent transitive-predicate setting is enabled, column equivalence classes
+/// add synthetic edges for transitively-connected pairs.
 /// The adjacency index `node_to_edge_ids` maps each relation to the hyperedges that touch it.
 void JoinOrderOptimizer::buildHyperedges()
 {
@@ -1381,7 +2061,20 @@ void JoinOrderOptimizer::buildHyperedges()
         add_hyperedge(left_rels, right_rels);
     }
 
-    /// Phase 2: add synthetic hyperedges for transitively-connected relation pairs.
+    /// Phase 2 adds synthetic hyperedges for transitively-connected relation pairs and is
+    /// authorized only by the independent transitive-predicate setting. Column equivalence
+    /// classes may be materialized solely for canonical proof lookup
+    /// (`query_plan_optimize_join_order_use_proven_uniqueness`); their existence alone must not
+    /// enlarge the search topology, its budget consumption, or the fallback behavior.
+    /// Unique-key proofs cannot authorize static topology either: they are specific to an
+    /// exact subset pair and its row estimates, neither of which exists before enumeration,
+    /// and a proven composite-key cut does not imply any proven singleton cut that a
+    /// relation-pair edge could represent. Canonical cardinality caps therefore apply only
+    /// to candidates reachable through explicit predicates when the transitive setting is
+    /// off.
+    if (!transitive_predicates_enabled)
+        return;
+
     /// Column equivalence classes (e.g. A.key=B.key AND B.key=C.key implies A.key=C.key)
     /// connect relations that have no direct predicate. Without these edges DPhyp's
     /// neighborhood traversal would never discover the pair.
@@ -1782,29 +2475,78 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & left
     return {};
 }
 
-DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings)
+void JoinOrderOptimizer::finalizeSelectedPlanProperties(const DPJoinEntryPtr & selected_plan)
 {
-    if (query_graph.relation_stats.size() <= 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinOrderOptimizer: number of relations must be greater than 1");
+    if (!selected_plan)
+        return;
 
-    EquivalenceClasses<JoinActionRef> column_equivalences;
-    if (optimization_settings.enable_join_transitive_predicates)
+    if (data_property_diagnostics_enabled && canonical_properties)
     {
-        query_graph.buildColumnEquivalences();
-        column_equivalences = query_graph.column_equivalences;
+        if (const auto reason = canonical_properties->regionUnsupportedReason())
+        {
+            LOG_TRACE(log, "Canonical join-order data properties: unsupported={}", joinOrderPropertyUnsupportedReasonToString(*reason));
+        }
+        else if (const auto group = canonical_properties->getGroup(selected_plan->relations); group)
+        {
+            const auto group_dump = canonical_properties->dumpGroup(*group);
+            const auto metrics_dump = canonical_properties->dumpMetrics();
+            LOG_TRACE(log, "Canonical join-order data properties: {}; {}", group_dump, metrics_dump);
+        }
     }
 
+    if (debug_info && canonical_properties)
+        debug_info->canonical_metrics = canonical_properties->getMetrics();
+
+    if (data_property_diagnostics_enabled && debug_info)
+        LOG_TRACE(
+            log,
+            "Canonical join-order cap assessments: proven={}, missing_input_rows={}, not_proven={}, unsupported={}",
+            debug_info->cap_assessments.proven,
+            debug_info->cap_assessments.missing_input_rows,
+            debug_info->cap_assessments.not_proven,
+            debug_info->cap_assessments.unsupported);
+
+    dp_table.clear();
+}
+
+void JoinOrderOptimizer::finalizeSelectedPlan(const DPJoinEntryPtr & selected_plan)
+{
+    /// `join_kinds` records only non-`INNER ALL` restrictions, so an empty map means an
+    /// all-inner region where any `Cross` entry in the selected tree is optimizer-created.
+    const bool region_all_inner = query_graph.join_kinds.empty();
+
+    /// Canonical cardinality caps may use every ordinary equality consequence crossing a
+    /// candidate cut. Materialize the same consequences in the selected physical tree even
+    /// when the independent selectivity setting is disabled; otherwise a hard cap could
+    /// describe a stricter join than the one that is executed.
+    if (transitive_predicates_enabled || selectedPlanUsedCanonicalCardinalityCap(selected_plan))
+        cleanupJoinPredicates(selected_plan, query_graph.column_equivalences, region_all_inner);
+    verifySelectedPlanCapRequirements(selected_plan);
+    finalizeSelectedPlanProperties(selected_plan);
+}
+
+DPJoinEntryPtr optimizeJoinOrder(
+    QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings, JoinOrderOptimizationDebugInfo * debug_info)
+{
+    if (debug_info)
+        *debug_info = {};
+    if (query_graph.relation_stats.size() <= 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinOrderOptimizer: number of relations must be greater than 1");
+    if (optimization_settings.enable_join_transitive_predicates
+        || optimization_settings.query_plan_optimize_join_order_use_proven_uniqueness)
+        query_graph.buildColumnEquivalences();
     JoinOrderOptimizer reorderer(
         std::move(query_graph),
         optimization_settings.query_plan_optimize_join_order_algorithm,
-        optimization_settings.query_plan_optimize_join_order_max_searched_plans);
+        optimization_settings.query_plan_optimize_join_order_max_searched_plans,
+        optimization_settings.query_plan_optimize_join_order_use_proven_uniqueness,
+        optimization_settings.enable_join_transitive_predicates,
+        optimization_settings.query_plan_optimize_join_order_data_property_diagnostics,
+        debug_info);
     auto best_plan = reorderer.solve();
     if (!best_plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order");
-
-    if (optimization_settings.enable_join_transitive_predicates)
-        cleanupJoinPredicates(best_plan, column_equivalences);
+    reorderer.finalizeSelectedPlan(best_plan);
     return best_plan;
 }
-
 }

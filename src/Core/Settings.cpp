@@ -2720,6 +2720,14 @@ Maximum number of partial plans the join order optimizer may enumerate before gi
 This bounds optimization time deterministically (independent of wall-clock) on dense join graphs such as cliques or stars, where the search space grows exponentially.
 Set to 0 to disable the limit. Has no effect on the default `query_plan_optimize_join_order_limit`, where the search always stays well below this bound.
 )", EXPERIMENTAL) \
+DECLARE(Bool, query_plan_optimize_join_order_use_proven_uniqueness, false, R"(
+Use proven aggregation grouping facts (`GROUP BY` keys) to cap cardinality estimates during join-order optimization. Storage-declared `UNIQUE KEY` facts are not trusted for costing; they feed diagnostics only.
+The setting is disabled by default. Besides tightening cardinality and cost estimates, a proven cap lets the `greedy` algorithm consider a transitively-implied join between relations that have no direct predicate; the required equality predicate is then synthesized in the selected plan. The `dpsize`, `dpsub`, and `dphyp` algorithms do not consume the caps yet. Join legality is not affected, and without a proven fact the join order, estimates, and plan are identical to the setting being disabled.
+)", EXPERIMENTAL) \
+DECLARE(Bool, query_plan_optimize_join_order_data_property_diagnostics, false, R"(
+Enable potentially allocation-heavy data-property derivation, propagation, and trace/test-level dumps during join-order optimization.
+This setting does not change cardinality estimates, costs, join legality, or the selected plan. Ordinary trace logging alone does not enable data-property collection; logger settings still determine whether diagnostic messages are delivered.
+)", EXPERIMENTAL) \
 DECLARE(UInt64, query_plan_optimize_join_order_randomize, 0, R"(
 When non-zero, the join order optimizer uses randomly generated cardinalities and NDVs instead of real statistics.
 When set to 1, a random seed is generated, when set to a value > 1, that value is used as the seed directly.
@@ -2730,6 +2738,8 @@ This is intended for testing to find errors caused by different join orderings.
 Infer transitive equi-join predicates from existing join conditions.
 For example, given `A.x = B.x` and `B.x = C.x`, a synthetic `A.x = C.x` predicate
 is added so the join order optimizer can consider direct (A JOIN C) plans.
+Only equalities with a valid transitive comparison domain participate: chains through incompatible comparison domains (e.g. a `UUID` and an `Enum` each compared against one `FixedString` column) are not composed.
+At every inner join of the reordered region, the full equality cut of each spanning equivalence class is materialized in the ON clause, and an optimizer-created cross product in an all-inner region becomes an inner join when a class spans it.
 )", BETA) \
     \
     DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(

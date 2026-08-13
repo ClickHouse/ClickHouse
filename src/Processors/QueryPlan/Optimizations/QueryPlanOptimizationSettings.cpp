@@ -138,6 +138,8 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
     extern const SettingsUInt64 query_plan_optimize_join_order_limit;
     extern const SettingsUInt64 query_plan_optimize_join_order_max_searched_plans;
+    extern const SettingsBool query_plan_optimize_join_order_use_proven_uniqueness;
+    extern const SettingsBool query_plan_optimize_join_order_data_property_diagnostics;
     extern const SettingsUInt64 query_plan_optimize_join_order_randomize;
     extern const SettingsUInt64 query_plan_max_set_size_for_projection_match;
     extern const SettingsBool enable_join_transitive_predicates;
@@ -208,6 +210,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
             "The value of the setting `query_plan_optimize_join_order_limit` is too large: {}, "
             "maximum allowed value is 64", query_plan_optimize_join_order_limit);
     query_plan_optimize_join_order_max_searched_plans = from[Setting::query_plan_optimize_join_order_max_searched_plans];
+    query_plan_optimize_join_order_use_proven_uniqueness = from[Setting::query_plan_optimize_join_order_use_proven_uniqueness];
+    query_plan_optimize_join_order_data_property_diagnostics = from[Setting::query_plan_optimize_join_order_data_property_diagnostics];
     query_plan_optimize_join_order_randomize = from[Setting::query_plan_optimize_join_order_randomize];
     if (query_plan_optimize_join_order_randomize == 1)
     {

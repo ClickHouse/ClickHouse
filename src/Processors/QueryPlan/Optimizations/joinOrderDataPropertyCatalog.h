@@ -137,6 +137,13 @@ enum class JoinOrderDataPropertyCatalogMode : UInt8
     Diagnostics,
 };
 
+/// Canonical mapping from the collection policy to the catalog mode, so callers cannot
+/// drift on the conversion. Callers must first gate on `policy.collectsDataProperties()`.
+constexpr JoinOrderDataPropertyCatalogMode
+joinOrderDataPropertyCatalogMode(const QueryPlanOptimizations::DataPropertyCollectionPolicy & policy)
+{
+    return policy.diagnostics_enabled ? JoinOrderDataPropertyCatalogMode::Diagnostics : JoinOrderDataPropertyCatalogMode::Costing;
+}
 
 class JoinOrderDataPropertyCatalogBuilder
 {

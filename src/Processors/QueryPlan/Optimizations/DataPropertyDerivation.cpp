@@ -508,7 +508,8 @@ DataPropertySet deriveDataPropertiesForStep(const IQueryPlanStep & step, std::sp
     {
         /// `arrayJoin` multiplies rows, so a pass-through column keeps its lineage but not its
         /// uniqueness: a proven unique key would produce a false cardinality cap. Fail closed,
-        /// mirroring `preserves_number_of_rows` in `ExpressionStep`.
+        /// mirroring `preserves_number_of_rows` in `ExpressionStep` and the graph-builder guard
+        /// in `optimizeJoin.cpp`.
         if (expression->getExpression().hasArrayJoin())
             return {};
         return mapThroughActionsDAG(

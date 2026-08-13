@@ -1,6 +1,10 @@
 #pragma once
 
 #include <concepts>
+#include <memory>
+#include <optional>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 #include <Core/Joins.h>
 #include <Common/EquivalenceClasses.h>
@@ -8,6 +12,9 @@
 #include <base/types.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Processors/QueryPlan/Optimizations/DataProperties.h>
+#include <Processors/QueryPlan/Optimizations/joinOrderCanonicalProperties.h>
+#include <Processors/QueryPlan/Optimizations/joinOrderDataPropertyCatalog.h>
 #include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
@@ -23,6 +30,14 @@ enum class JoinMethod : UInt8
     Hash,
     Merge,
 };
+
+struct JoinOrderCardinalityEstimate
+{
+    std::optional<UInt64> rows;
+    std::optional<UInt64> upper_bound;
+};
+
+JoinOrderPredicatePropertyBinding bindJoinOrderPredicate(const JoinActionRef & predicate, const JoinOrderDataPropertyCatalog & catalog);
 
 template <std::unsigned_integral T>
 inline String toBinaryString(T value)
@@ -44,6 +59,13 @@ struct DPJoinEntry
     /// For join nodes
     JoinOperator join_operator;
     JoinMethod join_method = JoinMethod::None;
+
+    /// Whether this join's estimate was clamped by a proven canonical cardinality cap.
+    /// `cleanupJoinPredicates` must then materialize the equality cut the cap assumed.
+    bool used_canonical_cap = false;
+    /// Obligations of the cap's proofs (`JoinOrderCardinalityCapProof::obligation_classes`):
+    /// equality classes whose links must be enforced below this join by synthesis.
+    UInt64 canonical_cap_obligations = 0;
 
     /// For leaf nodes
     int relation_id = -1;
@@ -82,6 +104,8 @@ struct RelationStats
 struct QueryGraph
 {
     std::vector<RelationStats> relation_stats;
+    std::shared_ptr<const JoinOrderDataPropertyCatalog> data_property_catalog;
+    std::optional<JoinOrderPropertyUnsupportedReason> canonical_property_region_rejection;
 
     std::vector<JoinActionRef> edges;
 
@@ -89,6 +113,7 @@ struct QueryGraph
     /// Maps (relation id) -> (set of relations referenced by the outer join's ON clause, join kind).
     /// The relation may be joined (as a singleton side) only against a set that contains all
     /// relations its ON clause depends on; the remaining relations may be joined outside.
+    /// Only non-`INNER ALL` joins are recorded, so an empty map means an all-inner region.
     std::unordered_map<size_t, std::pair<BitSet, JoinKind>> join_kinds;
 
     /// Predicates from the ON clause of an outer join, mapped to the id of the null-supplying
@@ -116,7 +141,24 @@ struct QueryGraph
 
 struct QueryPlanOptimizationSettings;
 
-DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings);
+struct JoinOrderCanonicalCapAssessmentMetrics
+{
+    UInt64 proven = 0;
+    UInt64 missing_input_rows = 0;
+    UInt64 not_proven = 0;
+    UInt64 unsupported = 0;
+};
+
+struct JoinOrderOptimizationDebugInfo
+{
+    std::optional<JoinOrderCanonicalMetrics> canonical_metrics;
+    JoinOrderCanonicalCapAssessmentMetrics cap_assessments;
+};
+
+DPJoinEntryPtr optimizeJoinOrder(
+    QueryGraph query_graph,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    JoinOrderOptimizationDebugInfo * debug_info = nullptr);
 
 namespace QueryPlanOptimizations
 {

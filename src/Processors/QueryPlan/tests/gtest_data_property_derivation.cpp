@@ -162,6 +162,29 @@ std::unique_ptr<JoinStepLogical> makeLogicalJoinStep(
 }
 }
 
+TEST(DataPropertyDerivation, CollectionPolicyUsesOnlyExplicitSettings)
+{
+    struct TestCase
+    {
+        bool costing_enabled;
+        bool diagnostics_enabled;
+        bool expected_collection;
+    };
+
+    constexpr std::array cases{
+        TestCase{false, false, false},
+        TestCase{false, true, true},
+        TestCase{true, false, true},
+        TestCase{true, true, true},
+    };
+    for (const auto & test_case : cases)
+    {
+        const DataPropertyCollectionPolicy policy{
+            .costing_enabled = test_case.costing_enabled, .diagnostics_enabled = test_case.diagnostics_enabled};
+        EXPECT_EQ(policy.collectsDataProperties(), test_case.expected_collection);
+    }
+}
+
 TEST(DataPropertyDerivation, DeclaredUniqueKeyMapsToOutputPositions)
 {
     Block header;

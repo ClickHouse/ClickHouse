@@ -1,0 +1,23 @@
+-- unique-key cardinality caps disabled --
+Join: first[random~3737918] ⋈ data_properties_third[random~8733440] ⋈ second[random~5286435]
+ResultRows: ~~8028993
+Join: first[random~3737918] ⋈ data_properties_third[random~8733440]
+ResultRows: ~~4012482
+-- unique-key cardinality caps enabled: greedy --
+Join: first[random~3737918] ⋈ second[random~5286435] ⋈ data_properties_third[random~8733440]
+ResultRows: ~~4012482
+Join: first[random~3737918] ⋈ second[random~5286435]
+ResultRows: ~~3737918
+-- one-to-many lower join drops the key --
+Join: first[random~3737918] ⋈ second[random~5286435] ⋈ third[random~9039482]
+ResultRows: ~~11438853
+Join: first[random~3737918] ⋈ second[random~5286435]
+ResultRows: ~~5286435
+-- identity aliases preserve the key --
+Join: first[random~3737918] ⋈ second[random~5286435] ⋈ data_properties_third[random~8733440]
+ResultRows: ~~4012482
+Join: first[random~3737918] ⋈ second[random~5286435]
+ResultRows: ~~3737918
+-- populated result equivalence --
+feature-off	2	4	4	4
+greedy	2	4	4	4

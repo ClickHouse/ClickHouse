@@ -20,6 +20,13 @@ public:
 
     void accept(UInt result_subset_, UInt lhs_subset_, UInt rhs_subset_) { dp_table.insert(result_subset_, lhs_subset_, rhs_subset_); }
 
+    /// The plain checker performs no costing, so it admits every transitively-connected pair.
+    template <class TQueryGraph>
+    bool canAcceptTransitivePair(const TQueryGraph & query_graph, UInt lhs, UInt rhs) const
+    {
+        return query_graph.areTransitivelyConnected(BitSet::fromUInt(lhs), BitSet::fromUInt(rhs));
+    }
+
     DPTable & getDPTable() { return dp_table; }
     const DPTable & getDPTable() const { return dp_table; }
 
@@ -45,6 +52,13 @@ public:
     double computeJoinCost(UInt lhs, UInt rhs, double selectivity) const;
 
     void accept(UInt result_subset_, UInt lhs_subset_, UInt rhs_subset_);
+
+    /// Gate for a predicate-free transitively-connected pair, invoked by the enumerator before
+    /// `setTableNeighbor`: a rejected pair must not mark subset connectivity, consume budget, or
+    /// change fallback. Only the independent transitive setting admits such pairs; column
+    /// equivalences materialized for canonical proof lookup must not change DPsub behavior.
+    template <class TQueryGraph>
+    bool canAcceptTransitivePair(const TQueryGraph & query_graph, UInt lhs, UInt rhs) const;
 
     DPTable & getDPTable() { return dp_table; }
     const DPTable & getDPTable() const { return dp_table; }
@@ -107,7 +121,10 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
     if (kind == JoinKind::Cross)
         kind = JoinKind::Inner;
 
-    auto selectivity = optimizer.computeSelectivityMask(edge, left_mask, right_mask);
+    /// Equivalence-derived selectivity requires the independent transitive setting;
+    /// a candidate must otherwise receive the exact feature-off selectivity.
+    auto selectivity = optimizer.transitive_predicates_enabled ? optimizer.computeSelectivityMask(edge, left_mask, right_mask)
+                                                               : optimizer.computeSelectivity(edge);
     auto plan_cost = computeJoinCost(lhs_subset, rhs_subset, selectivity);
 
     LOG_TEST(logger, "selectivity: {} costs: {}, lhs est. rows: {}, rhs est. rows: {}",
@@ -127,5 +144,13 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         entry.estimated_rows = optimizer.estimateCardinality(dp_table[lhs_subset].estimated_rows, dp_table[rhs_subset].estimated_rows, selectivity, kind);
         entry.edges.assign(edge.begin(), edge.end());
     }
+}
+
+template <class TDPTable, class TOptimizer>
+template <class TQueryGraph>
+bool EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::canAcceptTransitivePair(
+    const TQueryGraph & query_graph, const UInt lhs, const UInt rhs) const
+{
+    return optimizer.transitive_predicates_enabled && query_graph.areTransitivelyConnected(BitSet::fromUInt(lhs), BitSet::fromUInt(rhs));
 }
 }
