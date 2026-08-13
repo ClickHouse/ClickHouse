@@ -197,7 +197,7 @@ String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
 /// user-written query - e.g. a `(SELECT ...)` argument - that no rewrite could represent faithfully.
 static void writeQuotedStringStandardSQL(std::string_view ref, WriteBuffer & buf)
 {
-    if (ref.find('\0') != std::string_view::npos)
+    if (ref.contains('\0'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "A string literal with an embedded NUL byte cannot be represented as standard SQL text");
 

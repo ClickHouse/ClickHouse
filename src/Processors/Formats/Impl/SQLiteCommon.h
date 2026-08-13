@@ -417,7 +417,7 @@ inline bool isPushdownSafeColumn(sqlite3 * db, const String & table_name, const 
 
     /// `sqlite3_table_column_metadata` takes NUL-terminated names; a name with an embedded NUL byte would be
     /// silently truncated and could report another column's metadata.
-    if (table_name.find('\0') != String::npos || column_name.find('\0') != String::npos)
+    if (table_name.contains('\0') || column_name.contains('\0'))
         return false;
 
     if (!isStrictTable(db, table_name))

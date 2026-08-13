@@ -176,7 +176,7 @@ bool fieldCannotBeRepresentedWithStandardSQLLiteralStyle(const Field & field)
     switch (field.getType())
     {
         case Field::Types::String:
-            return field.safeGet<String>().find('\0') != String::npos;
+            return field.safeGet<String>().contains('\0');
         case Field::Types::Float64:
             return !std::isfinite(field.safeGet<Float64>());
         case Field::Types::Tuple:
