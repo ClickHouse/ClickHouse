@@ -708,12 +708,14 @@ DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_
     /// aggregate across all databases (e.g. `ServerAsynchronousMetrics`) must
     /// deduplicate by `IStorage *` to avoid double-counting.
     Tables tables;
+    std::unordered_map<String, String> table_sources;
     collectFromSourceDatabases(context_, [&](const DatabasePtr & db)
     {
         for (auto table_it = db->getTablesIterator(context_, filter_by_table_name, skip_not_loaded); table_it->isValid(); table_it->next())
-            tables.insert({table_it->name(), table_it->table()});
+            if (tables.insert({table_it->name(), table_it->table()}).second)
+                table_sources.emplace(table_it->name(), db->getDatabaseName());
     });
-    return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
+    return std::make_unique<TablesSnapshotIterator>(std::move(tables), getDatabaseName(), std::move(table_sources));
 }
 
 DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIteratorWithHint(
@@ -724,14 +726,16 @@ DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIteratorWithHint(
     /// unresolvable tables (a null storage) instead of aborting the listing still does. The facade
     /// must not degrade a source's own listing semantics.
     Tables tables;
+    std::unordered_map<String, String> table_sources;
     collectFromSourceDatabases(context_, [&](const DatabasePtr & db)
     {
         for (auto table_it = db->getTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, tables_filter);
              table_it->isValid();
              table_it->next())
-            tables.insert({table_it->name(), table_it->table()});
+            if (tables.insert({table_it->name(), table_it->table()}).second)
+                table_sources.emplace(table_it->name(), db->getDatabaseName());
     });
-    return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
+    return std::make_unique<TablesSnapshotIterator>(std::move(tables), getDatabaseName(), std::move(table_sources));
 }
 
 std::vector<LightWeightTableDetails> DatabaseOverlay::getLightweightTablesIterator(

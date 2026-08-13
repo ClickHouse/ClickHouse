@@ -739,12 +739,26 @@ protected:
                 if (need_to_check_access_for_overlay_sources)
                 {
                     /// The storage returned by the facade's iterator belongs to the underlying
-                    /// source database; require `SHOW_TABLES` on it too. When the storage cannot
-                    /// be resolved the owning source is unknown, so fail close and skip the row.
-                    if (!table)
-                        continue;
-                    const auto source_id = table->getStorageID();
-                    if (!access->isGranted(AccessType::SHOW_TABLES, source_id.database_name, source_id.table_name))
+                    /// source database; require `SHOW_TABLES` on it too. A name-only row (null
+                    /// storage: a source such as `DataLakeCatalog` keeps a table whose metadata
+                    /// is unresolvable in the listing) carries no storage to recover the owner
+                    /// from, so ask the facade's iterator, which remembers the contributing
+                    /// source; a direct source listing keeps such rows, and the facade must not
+                    /// drop them for an authorized caller. When the owner cannot be named at
+                    /// all, fail close and skip the row.
+                    String source_database_name;
+                    String source_table_name = table_name;
+                    if (table)
+                    {
+                        const auto source_id = table->getStorageID();
+                        source_database_name = source_id.database_name;
+                        source_table_name = source_id.table_name;
+                    }
+                    else if (const auto * facade_snapshot = dynamic_cast<const DatabaseOverlay::TablesSnapshotIterator *>(&tables_it))
+                        source_database_name = facade_snapshot->getSourceDatabaseName(table_name);
+
+                    if (source_database_name.empty()
+                        || !access->isGranted(AccessType::SHOW_TABLES, source_database_name, source_table_name))
                         continue;
                 }
 

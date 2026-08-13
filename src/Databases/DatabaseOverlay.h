@@ -5,6 +5,8 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/StorageID.h>
 
+#include <unordered_map>
+
 namespace DB
 {
 
@@ -73,6 +75,31 @@ public:
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const override;
 
     void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr local_context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms) override;
+
+    /// Snapshot iterator of an `Overlay` that remembers, for every collected name, the source
+    /// database that contributed it. A reader that must authorize a row against the underlying
+    /// source (`system.tables` behind a read-only facade) recovers the owner from the row's
+    /// storage object, but a hint-aware source (`DataLakeCatalog`) can legitimately keep an
+    /// unresolvable table as a name-only row with a null storage; the owner of such a row can
+    /// only be answered by the facade itself.
+    class TablesSnapshotIterator : public DatabaseTablesSnapshotIterator
+    {
+    public:
+        TablesSnapshotIterator(Tables && tables_, String && database_name_, std::unordered_map<String, String> && table_sources_)
+            : DatabaseTablesSnapshotIterator(std::move(tables_), std::move(database_name_)), table_sources(std::move(table_sources_))
+        {
+        }
+
+        /// Name of the source database that contributed `table_name`; empty when unknown.
+        String getSourceDatabaseName(const String & table_name) const
+        {
+            auto it = table_sources.find(table_name);
+            return it == table_sources.end() ? String{} : it->second;
+        }
+
+    private:
+        std::unordered_map<String, String> table_sources;
+    };
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
