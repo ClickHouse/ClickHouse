@@ -340,6 +340,30 @@ ALWAYS_INLINE inline unsigned __int128 divmod_1e18(unsigned __int128 n, uint64_t
     return q;
 }
 
+/// Divides a 256-bit unsigned integer by 10^18, one limb per step. Returns the quotient and stores
+/// the remainder in `remainder`.
+///
+/// Every step is a 128 / 64 division by a constant, which `divmod_1e18` does with multiplications
+/// only. The quotient of a step fits in a limb because the remainder carried in from the previous
+/// step is below 10^18.
+///
+/// This is why the digit blocks are not stripped off with _BitInt(256) division: for that the
+/// compiler emits a generic bignum sequence, while here the divisor is a known constant spanning a
+/// single limb. It also produces the quotient and the remainder at once, so a block costs one
+/// division instead of two.
+ALWAYS_INLINE inline UInt256 divmod_1e18_256(UInt256 x, uint64_t & remainder)
+{
+    UInt256 quotient{};
+    uint64_t r = 0;
+    for (int i = 3; i >= 0; --i)
+    {
+        const unsigned __int128 current = (static_cast<unsigned __int128>(r) << 64) | x.items[UInt256::_impl::little(i)];
+        quotient.items[UInt256::_impl::little(i)] = static_cast<uint64_t>(divmod_1e18(current, r));
+    }
+    remainder = r;
+    return quotient;
+}
+
 /// Extract up to 9 digit pairs from a u64 value into the provided output buffer.
 ALWAYS_INLINE inline void extractDigitPairs(uint64_t remainder, uint8_t * two_values)
 {
@@ -414,47 +438,23 @@ ALWAYS_INLINE inline char * writeUIntText(UInt256 _x, char * p)
     if (likely(_x.items[UInt256::_impl::little(3)] == 0 && _x.items[UInt256::_impl::little(2)] == 0))
         return writeUIntText(UInt128{_x.items[UInt256::_impl::little(0)], _x.items[UInt256::_impl::little(1)]}, p);
 
-    /// If available (x86) we transform from our custom class to _BitInt(256) which has better support in the compiler
-    /// and produces better code
-    using T =
-#if defined(__x86_64__)
-#    pragma clang diagnostic push
-#    pragma clang diagnostic ignored "-Wbit-int-extension"
-        unsigned _BitInt(256)
-#    pragma clang diagnostic pop
-#else
-        UInt256
-#endif
-        ;
-
-#if defined(__x86_64__)
-    T x = (T(_x.items[UInt256::_impl::little(3)]) << 192) + (T(_x.items[UInt256::_impl::little(2)]) << 128)
-        + (T(_x.items[UInt256::_impl::little(1)]) << 64) + T(_x.items[UInt256::_impl::little(0)]);
-#else
-    T x = _x;
-#endif
-
     /// Similar to writeUIntText(UInt128) only that in this case we will stop as soon as we reach the largest u128
-    /// and switch to that function
+    /// and switch to that function.
     uint8_t two_values[39] = {0}; // 78 Max characters / 2
     int current_pos = 0;
 
-    constexpr T large_divisor = max_multiple_of_hundred_that_fits_in_64_bits;
-    constexpr T largest_uint128 = T(std::numeric_limits<uint64_t>::max()) << 64 | T(std::numeric_limits<uint64_t>::max());
-
-    while (x > largest_uint128)
+    UInt256 x = _x;
+    /// The loop condition is `x > std::numeric_limits<UInt128>::max()`, spelled out on the limbs
+    /// to avoid a full 256-bit comparison.
+    while (x.items[UInt256::_impl::little(3)] != 0 || x.items[UInt256::_impl::little(2)] != 0)
     {
-        uint64_t u64_remainder = uint64_t(x % large_divisor);
-        x /= large_divisor;
-        extractDigitPairs(u64_remainder, two_values + current_pos);
+        uint64_t block = 0;
+        x = divmod_1e18_256(x, block);
+        extractDigitPairs(block, two_values + current_pos);
         current_pos += max_multiple_of_hundred_blocks;
     }
 
-#if defined(__x86_64__)
-    UInt128 pending{uint64_t(x), uint64_t(x >> 64)};
-#else
     UInt128 pending{x.items[UInt256::_impl::little(0)], x.items[UInt256::_impl::little(1)]};
-#endif
 
     char * out = writeUIntText(pending, p);
     return writeDigitPairs(out, two_values, current_pos);
@@ -547,7 +547,8 @@ char * itoa(Int256 i, char * p)
 
 FOR_MISSING_INTEGER_TYPES(DEFAULT_ITOA)
 
-#if defined(OS_DARWIN)
+/// `long` is not covered by the list above where it is a distinct type.
+#if defined(LONG_IS_A_DISTINCT_TYPE)
 DEFAULT_ITOA(unsigned long)
 DEFAULT_ITOA(long)
 #endif

@@ -15,6 +15,14 @@ node = cluster.add_instance(
     ],
     stay_alive=True,
 )
+node_ttl = cluster.add_instance(
+    "node_ttl",
+    main_configs=[
+        "configs/keeper_config_ttl.xml",
+        "configs/keeper_dynamic_ttl.xml",
+    ],
+    stay_alive=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -138,3 +146,113 @@ def test_max_request_size_hot_reload(started_cluster):
                 "SELECT number::String, '/test_max_req', repeat('x', 3000) "
                 "FROM numbers(100)"
             )
+
+
+SNAPSHOT_DIR = "/var/lib/clickhouse/coordination/snapshots"
+
+UPDATED_SNAPSHOT_VERSION_CONFIG = """
+<clickhouse>
+    <keeper_server>
+        <coordination_settings>
+            <snapshot_distance>75</snapshot_distance>
+            <max_requests_batch_size>100</max_requests_batch_size>
+            <quorum_reads>false</quorum_reads>
+            <write_snapshot_version>9</write_snapshot_version>
+        </coordination_settings>
+    </keeper_server>
+</clickhouse>
+"""
+
+
+def create_snapshot_and_get_version(marker):
+    """Advance the log, force a snapshot via 'csnp' and return the version
+    byte (the first byte of the decompressed snapshot file)."""
+
+    # Write something so the log advances and 'csnp' produces a new snapshot.
+    node.query(
+        "INSERT INTO system.zookeeper (name, path, value) "
+        f"VALUES ('{marker}', '/test_snapshot_version', 'somedata')"
+    )
+
+    snapshot_idx = keeper_utils.send_4lw_cmd(cluster, node, cmd="csnp").strip()
+    assert snapshot_idx.isdigit(), f"csnp did not return a log index: {snapshot_idx!r}"
+    node.wait_for_log_line(f"Created persistent snapshot {snapshot_idx} with path")
+
+    version_byte = node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f'zstd -dc "$(ls -t {SNAPSHOT_DIR}/*.bin.zstd | head -n1)" | od -An -tu1 -N1',
+        ]
+    )
+    return int(version_byte)
+
+
+def test_write_snapshot_version_hot_reload(started_cluster):
+    """Bump write_snapshot_version via config reload (no restart) and verify
+    that newly created snapshots are written in the new format version."""
+
+    keeper_utils.wait_until_connected(cluster, node)
+
+    # 1. Initially snapshots are written with version 6.
+    settings = get_coordination_settings(node)
+    assert settings["write_snapshot_version"] == "6"
+    assert create_snapshot_and_get_version("before_reload") == 6
+
+    # 2. Push a new config with write_snapshot_version=9 without restart.
+    with node.with_replace_config(
+        DYNAMIC_CONFIG_PATH, UPDATED_SNAPSHOT_VERSION_CONFIG, reload_after=True
+    ):
+        for _ in range(30):
+            time.sleep(1)
+            settings = get_coordination_settings(node)
+            if settings.get("write_snapshot_version") == "9":
+                break
+        else:
+            assert False, (
+                "write_snapshot_version did not change to 9 after config reload; "
+                f"current value: {settings.get('write_snapshot_version')}"
+            )
+
+        # 3. The next snapshot must be written with the new version.
+        assert create_snapshot_and_get_version("after_reload") == 9
+
+
+DYNAMIC_TTL_CONFIG_PATH = "/etc/clickhouse-server/config.d/keeper_dynamic_ttl.xml"
+
+DOWNGRADED_SNAPSHOT_VERSION_CONFIG = """
+<clickhouse>
+    <keeper_server>
+        <coordination_settings>
+            <write_snapshot_version>6</write_snapshot_version>
+        </coordination_settings>
+    </keeper_server>
+</clickhouse>
+"""
+
+
+def test_write_snapshot_version_reload_rejected(started_cluster):
+    """write_snapshot_version must not be hot-reloadable below what the enabled
+    feature flags require: node_ttl has CREATE_TTL enabled, which needs snapshot
+    version >= 8, so a reload lowering it to 6 must be rejected and the old
+    value kept."""
+
+    keeper_utils.wait_until_connected(cluster, node_ttl)
+
+    settings = get_coordination_settings(node_ttl)
+    assert settings["write_snapshot_version"] == "8"
+
+    with node_ttl.with_replace_config(
+        DYNAMIC_TTL_CONFIG_PATH, DOWNGRADED_SNAPSHOT_VERSION_CONFIG, reload_after=True
+    ):
+        # The config reloader picks up the change, the validation throws and the
+        # new settings are discarded.
+        node_ttl.wait_for_log_line(
+            "Feature flag CREATE_TTL requires write_snapshot_version"
+        )
+
+        settings = get_coordination_settings(node_ttl)
+        assert settings["write_snapshot_version"] == "8", (
+            "write_snapshot_version incompatible with CREATE_TTL was accepted "
+            f"on reload: {settings['write_snapshot_version']}"
+        )
