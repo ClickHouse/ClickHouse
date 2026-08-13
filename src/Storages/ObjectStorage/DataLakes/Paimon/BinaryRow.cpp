@@ -1,5 +1,6 @@
 #include <bit>
 #include <cstdint>
+#include <limits>
 #include <type_traits>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context_fwd.h>
@@ -218,7 +219,27 @@ Timestamp BinaryRow::getTimestamp(Int32 pos, Int32 precision)
             precision,
             nano_of_millisecond);
 
-    const Int64 millisecond = getFixedSizeDataAt<Int64>(offset() + sub_offset);
+    if (sub_offset < 0)
+        throw DB::Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Paimon timestamp of precision {} has negative variable-length offset {}",
+            precision,
+            sub_offset);
+
+    const auto absolute_offset = static_cast<size_t>(offset()) + static_cast<size_t>(sub_offset);
+    const auto row_size = reader.length();
+    if (absolute_offset > static_cast<size_t>(std::numeric_limits<Int32>::max())
+        || absolute_offset > row_size
+        || row_size - absolute_offset < sizeof(Int64))
+        throw DB::Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Paimon timestamp of precision {} requires {} bytes at variable-length offset {}, but the row has {} bytes",
+            precision,
+            sizeof(Int64),
+            sub_offset,
+            row_size);
+
+    const Int64 millisecond = getFixedSizeDataAt<Int64>(static_cast<Int32>(absolute_offset));
     LOG_TEST(log, "sub_offset: {}, millisecond: {}, nano_of_millisecond: {}", sub_offset, millisecond, nano_of_millisecond);
     return Timestamp{.millisecond = millisecond, .nano_of_millisecond = nano_of_millisecond};
 }
