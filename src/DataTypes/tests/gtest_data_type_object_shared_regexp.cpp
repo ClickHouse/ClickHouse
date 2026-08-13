@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Common/assert_cast.h>
 #include <Common/FailPoint.h>
@@ -185,6 +186,25 @@ TEST(DataTypeObjectSharedRegexp, HasSaturatedPolicyDetectsTopThroughNestedContai
     /// A join that saturates must be detected the same way the merge and mutation warnings detect it.
     EXPECT_TRUE(hasSaturatedJSONSharedDataPathPolicy(*mergeJSONSharedDataPathRules(
         makeJSONType({{"^a", MatchMode::Full}}, "left."), makeJSONType({{"^b", MatchMode::Full}}, "right."))));
+}
+
+TEST(DataTypeObjectSharedRegexp, MergeLooksThroughNullableMismatchOnEitherSide)
+{
+    /// A projection expression can add or remove Nullable relative to its source column
+    /// (assumeNotNull(j) strips it, toNullable(j)/if(cond, j, NULL) add it); the JSON structure
+    /// underneath is otherwise unrelated to that wrapper, so the policy must still be found and
+    /// merged regardless of which side carries the extra Nullable.
+    const auto rule_bearing = makeJSONType({{"^tag_", MatchMode::Partial}});
+
+    const auto merged_from_nullable_source = mergeJSONSharedDataPathRules(
+        makeJSONType({}), std::make_shared<DataTypeNullable>(rule_bearing));
+    EXPECT_EQ(asJSON(merged_from_nullable_source).getSharedDataPathRules().size(), 1);
+
+    const auto merged_from_bare_source = mergeJSONSharedDataPathRules(
+        std::make_shared<DataTypeNullable>(makeJSONType({})), rule_bearing);
+    const auto * result_nullable = typeid_cast<const DataTypeNullable *>(merged_from_bare_source.get());
+    ASSERT_TRUE(result_nullable);
+    EXPECT_EQ(asJSON(result_nullable->getNestedType()).getSharedDataPathRules().size(), 1);
 }
 
 }
