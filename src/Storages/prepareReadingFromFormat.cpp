@@ -31,11 +31,7 @@ namespace Setting
 
 namespace
 {
-/// Columns with a `DEFAULT` / `MATERIALIZED` / `ALIAS` expression may be missing from the data
-/// file and are filled by `AddingDefaultsTransform`. That transform needs every input of those
-/// expressions present in the block, so when the query (or a row policy / PREWHERE) requests such
-/// a column we must also read the expression's inputs — otherwise the source fails with
-/// `UNKNOWN_IDENTIFIER` (or, historically, silently evaluated the policy against type defaults).
+/// Also read inputs of DEFAULT expressions so AddingDefaultsTransform can evaluate them.
 void appendColumnsRequiredForDefaults(Strings & columns_to_read, const ColumnsDescription & all_columns)
 {
     std::unordered_set<std::string> present(columns_to_read.begin(), columns_to_read.end());
@@ -62,10 +58,7 @@ void appendColumnsRequiredForDefaults(Strings & columns_to_read, const ColumnsDe
     }
 }
 
-/// After `applyPrewhereActions` the format header only keeps filter DAG outputs, which drops
-/// inputs that are still needed to compute `DEFAULT` expressions of columns that remain (or of
-/// columns the filters themselves reference). Collect those inputs so they can be retained in
-/// `format_header` for `AddingDefaultsTransform`.
+/// Columns that must stay in format_header after prewhere pruning for AddingDefaultsTransform.
 NameSet collectColumnsRequiredForDefaults(
     const Block & columns_that_may_need_defaults,
     const ColumnsDescription & columns_description,
@@ -113,8 +106,6 @@ NameSet collectColumnsRequiredForDefaults(
         }
     }
 
-    /// The defaulted columns themselves must stay readable too when a filter references them but
-    /// `applyPrewhereActions` dropped them from the pruned header.
     required_inputs.insert(defaulted.begin(), defaulted.end());
     return required_inputs;
 }
@@ -194,9 +185,6 @@ ReadFromFormatInfo prepareReadingFromFormat(
             columns_to_read.push_back(ExpressionActions::getSmallestColumn(columns_in_data_file).name);
         }
 
-        /// Pull in inputs of DEFAULT expressions for requested columns missing from the file
-        /// (see appendColumnsRequiredForDefaults). Done after subcolumn canonicalization so we
-        /// only expand real storage columns the format will read.
         appendColumnsRequiredForDefaults(columns_to_read, storage_snapshot->metadata->getColumns());
 
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
@@ -379,11 +367,7 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
     Block pruned_header = SourceStepWithFilter::applyPrewhereActions(
         info.format_header, info.row_level_filter ? nullptr : row_level_filter, prewhere_info);
 
-    /// Retain columns that `AddingDefaultsTransform` still needs after pruning. The format reader
-    /// emits `format_header`; defaults are filled on that block before `ExtractColumnsTransform`
-    /// narrows it to `requested_columns` / `source_header`. Without this, a `DEFAULT` such as
-    /// `d DEFAULT a * 2` fails with `UNKNOWN_IDENTIFIER` when PREWHERE/row-policy pruning drops `a`.
-    /// Related: https://github.com/ClickHouse/ClickHouse/issues/114616
+    /// Keep DEFAULT dependencies in format_header; source_header stays pruned for ExtractColumns.
     const FilterDAGInfoPtr effective_row_level_filter = info.row_level_filter ? info.row_level_filter : row_level_filter;
     const NameSet columns_for_defaults = collectColumnsRequiredForDefaults(
         pruned_header, info.columns_description, effective_row_level_filter, prewhere_info);
@@ -395,9 +379,6 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
             new_info.format_header.insert(column);
     }
 
-    /// Source output follows the pruned header (plus hive/virtual columns below). Default-only
-    /// dependency columns stay in `format_header` for `AddingDefaultsTransform` and are dropped
-    /// again by `ExtractColumnsTransform` via `requested_columns`.
     new_info.source_header = pruned_header;
 
     /// Hive partition columns come from the file path, not the data file, so prewhere column
@@ -421,7 +402,7 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
     {
         if (info.format_header.has(col.name))
         {
-            /// Column read from file (or retained as a DEFAULT dependency).
+            /// Column read from file.
             new_info.columns_description.add(info.columns_description.get(col.name));
         }
         else

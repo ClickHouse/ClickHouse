@@ -1851,9 +1851,7 @@ Chunk StorageFileSource::generate()
                 }
             }
 
-            /// If a row policy / PREWHERE references a column filled by DEFAULT, do not push those
-            /// filters into the format reader: it would see missing/type-default values. Strip them
-            /// here and apply FilterTransforms after AddingDefaultsTransform below.
+            /// Defer filters that need DEFAULT columns until after AddingDefaultsTransform.
             FilterDAGInfoPtr deferred_row_level_filter;
             PrewhereInfoPtr deferred_prewhere_info;
             FormatFilterInfoPtr reader_format_filter_info = format_filter_info;
@@ -1953,11 +1951,6 @@ Chunk StorageFileSource::generate()
             QueryPipelineBuilder builder;
             builder.init(Pipe(input_format));
 
-            /// Fill DEFAULT columns before row-policy / PREWHERE filters that may reference them.
-            /// The format reader would otherwise evaluate those filters against missing/type-default
-            /// values (silently wrong results), or AddingDefaultsTransform would fail with
-            /// UNKNOWN_IDENTIFIER when a dependency was pruned from the read set.
-            /// Related: https://github.com/ClickHouse/ClickHouse/issues/114616
             if (columns_description.hasDefaults())
             {
                 builder.addSimpleTransform([&](const SharedHeader & header)
