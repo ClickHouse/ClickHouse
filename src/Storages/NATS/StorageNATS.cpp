@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -888,6 +889,8 @@ void registerStorageNATS(StorageFactory & factory)
         /// Whether a credential source comes from the named collection itself rather than from a query override.
         bool credential_file_from_collection = false;
         bool credentials_from_collection = false;
+        /// Whether the named collection is defined in the server configuration file rather than created by SQL.
+        bool collection_defined_in_config = false;
         if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
         {
             nats_settings->loadFromNamedCollection(named_collection);
@@ -896,6 +899,7 @@ void registerStorageNATS(StorageFactory & factory)
                 && !named_collection->isQueryOverridden("nats_credential_file");
             credentials_from_collection = !(*nats_settings)[NATSSetting::nats_credentials].value.empty()
                 && !named_collection->isQueryOverridden("nats_credentials");
+            collection_defined_in_config = named_collection->getSourceId() == NamedCollection::SourceId::CONFIG;
         }
         else if (!args.storage_def->settings)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "NATS engine must have settings");
@@ -926,6 +930,22 @@ void registerStorageNATS(StorageFactory & factory)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_subjects` setting");
 
         resolveCredentialSource(*nats_settings, credential_file_from_collection, credentials_from_collection);
+
+        /// A path to a credentials file is only accepted from the server configuration file: the server opens
+        /// the file with its own privileges, and during authentication the credentials are sent to `nats_url`,
+        /// which comes from the same query. So taking a path from SQL would let anyone who can define a `NATS`
+        /// source probe the local filesystem and exfiltrate files the server can read to a NATS server they
+        /// control. Loading from previously-validated metadata (server startup, force-restore, and short-syntax
+        /// `ATTACH`) is exempt, so tables created before this restriction keep working after an upgrade.
+        if (!(*nats_settings)[NATSSetting::nats_credential_file].value.empty()
+            && !(credential_file_from_collection && collection_defined_in_config)
+            && !isLoadingFromExistingMetadata(args.mode)
+            && !args.query.attach_short_syntax)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`nats_credential_file` can only be specified in a named collection defined in the server configuration file, "
+                "or as `nats.credential_file` in the server configuration itself. "
+                "Pass the contents of the file in `nats_credentials` instead");
 
         if ((*nats_settings)[NATSSetting::nats_consumer_name].changed && !(*nats_settings)[NATSSetting::nats_stream].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "To use NATS jet stream, you must specify `nats_stream` setting");
@@ -975,7 +995,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_username = 'user',]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
-    [nats_credential_file = '/var/nats_credentials',]
     [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
@@ -1006,7 +1025,7 @@ Optional parameters:
 - `nats_username` - NATS username.
 - `nats_password` - NATS password.
 - `nats_token` - NATS auth token.
-- `nats_credential_file` - Path to a NATS credentials file.
+- `nats_credential_file` - Path to a NATS credentials file. It is accepted only from a named collection defined in the server configuration file, or as `nats.credential_file` in the server configuration itself, because the server opens the path with its own privileges. In a query, pass the contents of the file in `nats_credentials` instead.
 - `nats_credentials` - NATS credentials content (the same payload as in a `.creds` file with user JWT and seed).
 - `nats_startup_connect_tries` - Number of connect tries at startup. Default: `5`.
 - `nats_max_rows_per_message` — The maximum number of rows written in one NATS message for row-based formats. (default : `1`).

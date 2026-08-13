@@ -9,7 +9,9 @@
 -- `nats_credential_file` and `nats_credentials` are two ways to provide the same credentials,
 -- so only one of them may be specified. A source specified in the query replaces a source coming
 -- from the named collection instead of conflicting with it, otherwise a named collection with one
--- of the sources could not be reused by a table which provides the other one.
+-- of the sources could not be reused by a table which provides the other one. Only `nats_credentials`
+-- can replace the collection source from a query: `nats_credential_file` is a path on the server
+-- filesystem and is not accepted from SQL at all (see 04891_nats_credential_file_path_restriction).
 -- The tables never connect to a NATS server: `127.0.0.1:1` refuses the connection immediately,
 -- so a successful validation surfaces as `CANNOT_CONNECT_NATS`.
 
@@ -42,12 +44,13 @@ ENGINE = NATS(04665_nats_credential_file, nats_credential_file = '/var/other.cre
 -- Both sources stored in the named collection: ambiguous as well.
 CREATE TABLE nats_both_in_collection (key UInt64) ENGINE = NATS(04665_nats_both); -- { serverError BAD_ARGUMENTS }
 
--- A query override replaces the credential source of the named collection, in both directions.
+-- A `nats_credentials` query override replaces the credential source of the named collection.
 CREATE TABLE nats_credentials_override (key UInt64)
 ENGINE = NATS(04665_nats_credential_file, nats_credentials = 'user JWT and seed'); -- { serverError CANNOT_CONNECT_NATS }
 
+-- The other direction is rejected: a `nats_credential_file` query override is a path taken from SQL.
 CREATE TABLE nats_credential_file_override (key UInt64)
-ENGINE = NATS(04665_nats_credentials, nats_credential_file = '/var/nats.creds'); -- { serverError CANNOT_CONNECT_NATS }
+ENGINE = NATS(04665_nats_credentials, nats_credential_file = '/var/nats.creds'); -- { serverError BAD_ARGUMENTS }
 
 -- The `SETTINGS` clause is a query-level source too, so it also replaces the collection source.
 CREATE TABLE nats_credentials_in_settings (key UInt64) ENGINE = NATS(04665_nats_credential_file)

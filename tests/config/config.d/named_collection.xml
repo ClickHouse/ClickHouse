@@ -49,5 +49,16 @@
             <url>http://127.0.0.1:8123?query=select+1</url>
             <format>RawBLOB</format>
         </url_override2>
+        <!-- `nats_credential_file` is accepted only from a collection defined here,
+             see 04891_nats_credential_file_path_restriction. Nothing listens on the port:
+             the tests expect the validation to pass and the connection attempt to fail. -->
+        <nats_config_credentials>
+            <nats_url>127.0.0.1:1</nats_url>
+            <nats_subjects>subject</nats_subjects>
+            <nats_format>JSONEachRow</nats_format>
+            <nats_startup_connect_tries>1</nats_startup_connect_tries>
+            <nats_reconnect_wait>1</nats_reconnect_wait>
+            <nats_credential_file>/var/nats.creds</nats_credential_file>
+        </nats_config_credentials>
     </named_collections>
 </clickhouse>
