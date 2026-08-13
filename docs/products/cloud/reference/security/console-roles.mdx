@@ -17,7 +17,7 @@ ClickHouse has four organization level roles available for user management. Only
 | Admin          | Perform all administrative activities for an organization and control all settings. This role is assigned to the first user in the organization by default and automatically has Service Admin permissions on all services. |
 | Billing        | View usage and invoices, and manage payment methods.                                         |
 | Org API reader | API permissions to manage organization level settings and users, no service access. |
-| Member         | Sign-in only with the ability to manage personal profile settings. Assigned to SAML SSO users by default. |
+| Member         | Sign-in only with the ability to manage personal profile settings. Assigned to SAML SSO users by default, unless the organization has configured a different default role. |
 
 ## Service roles {#service-roles}
 Refer to [Manage cloud users](/products/cloud/guides/security/cloud-access-management/manage-cloud-users) for instructions on assigning service roles.

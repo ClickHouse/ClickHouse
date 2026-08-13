@@ -86,6 +86,21 @@ struct PipeWithResources
     QueryPlanResourceHolder resources;
 };
 
+SelectQueryInfo makeSelectQueryInfoForPartitionRead(const SelectQueryInfo & initial)
+{
+    SelectQueryInfo info = initial;
+
+    if (info.row_level_filter)
+    {
+        info.row_level_filter = std::make_shared<FilterDAGInfo>();
+        info.row_level_filter->actions = initial.row_level_filter->actions.clone();
+        info.row_level_filter->column_name = initial.row_level_filter->column_name;
+        info.row_level_filter->do_remove_column = initial.row_level_filter->do_remove_column;
+    }
+
+    return info;
+}
+
 /// Returns safe snapshot reading plan from the specified partition.
 QueryPlanPtr buildPartitionReadingPlan(
     const String & partition_id,
@@ -101,10 +116,11 @@ QueryPlanPtr buildPartitionReadingPlan(
     const UInt64 & max_block_size,
     const SharedHeader & output_header)
 {
+    auto partition_query_info = makeSelectQueryInfoForPartitionRead(query_info);
     auto plan = MergeTreeDataSelectExecutor(storage).read(
         inner_columns,
         storage_snapshot,
-        query_info,
+        partition_query_info,
         context,
         max_block_size,
         requested_num_streams,
@@ -481,6 +497,10 @@ IProcessor::PipelineUpdate MergeTreeCommitOrderSequentialSource::updatePipeline(
 
         auto * sub_output = sub_pipe->getOutputPort(0);
         auto sub_processors = Pipe::detachProcessors(std::move(sub_pipe.value()));
+
+        /// We need to retag the processors in order to track their execution time correctly in EXPLAIN ANALYZE
+        for (auto & processor : sub_processors)
+            processor->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
 
         auto & input = inputs.front();
         connect(*sub_output, input);

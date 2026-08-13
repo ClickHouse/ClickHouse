@@ -59,7 +59,8 @@ void TTLDeleteAlgorithm::execute(Block & block)
 void TTLDeleteAlgorithm::finalize(const MutableDataPartPtr & data_part) const
 {
     if (ttl_expressions.where_expression)
-        data_part->ttl_infos.rows_where_ttl[description.result_column] = new_ttl_info;
+        /// Rules sharing a time expression share this slot, so merge instead of overwriting.
+        data_part->ttl_infos.rows_where_ttl[description.result_column].update(new_ttl_info);
     else
         data_part->ttl_infos.table_ttl = new_ttl_info;
 

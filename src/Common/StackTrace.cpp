@@ -21,7 +21,10 @@
 #include <mutex>
 #include <shared_mutex>
 #include <unordered_map>
+/// WebAssembly cannot walk its own call stack from user code, and there is no libunwind for it.
+#if !defined(OS_WASM)
 #include <libunwind.h>
+#endif
 #include <fmt/format.h>
 
 #include <boost/algorithm/string/split.hpp>
@@ -287,7 +290,7 @@ std::string getSignalCodeDescription(int sig, int si_code)
     }
 }
 
-static void * getCallerAddress(const ucontext_t & context)
+static void * getCallerAddress([[maybe_unused]] const ucontext_t & context)
 {
 #if defined(__x86_64__)
     /// Get the address at the time the signal was raised from the RIP (x86-64)
@@ -537,7 +540,9 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
     asynchronous_stack_unwinding = true;
     if (0 == sigsetjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1))
     {
-#if defined(OS_DARWIN)
+#if defined(OS_WASM)
+        size = 0;
+#elif defined(OS_DARWIN)
         size = backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
 #else
         size = unw_backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
@@ -583,7 +588,10 @@ StackTrace::StackTrace(FramePointers frame_pointers_, size_t size_, size_t offse
 
 void StackTrace::tryCapture()
 {
-#if defined(OS_DARWIN)
+#if defined(OS_WASM)
+    /// No way to walk the stack; every trace is empty.
+    size = 0;
+#elif defined(OS_DARWIN)
     /// backtrace()/__thread_stack_pcs walks the frame-pointer chain. Safe across boost::context fibers
     /// thanks to the make_fcontext null frame-pointer terminator (issue #111579); malloc-free, so it is
     /// also usable from allocator hooks (e.g. jemalloc sample tracking) that run under DENY_ALLOCATIONS.
@@ -601,8 +609,6 @@ void StackTrace::tryCapture()
     __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 }
 
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
-
 /// ClickHouse uses bundled libc++ so type names will be the same on every system thus it's safe to hardcode them
 constexpr std::pair<std::string_view, std::string_view> replacements[]
     = {{"::__1", ""}, {"std::basic_string<char, std::char_traits<char>, std::allocator<char>>", "String"}};
@@ -610,7 +616,7 @@ constexpr std::pair<std::string_view, std::string_view> replacements[]
 // Demangle @c symbol_name if it's not from __functional header (as such functions don't provide any useful
 // information but pollute stack traces).
 // Replace parts from @c replacements with shorter aliases
-static String collapseDemangledNames(std::optional<std::string_view> file, String symbol_name)
+String StackTrace::collapseDemangledNames(std::optional<std::string_view> file, String symbol_name)
 {
     if (symbol_name.empty())
         return "?";
@@ -637,8 +643,6 @@ static String collapseDemangledNames(std::optional<std::string_view> file, Strin
 
     return symbol_name;
 }
-
-#endif
 
 struct StackTraceRefTriple
 {
@@ -695,7 +699,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         }
 
         if (frame.symbol.has_value())
-            out << collapseDemangledNames(frame.file, frame.symbol.value());
+            out << StackTrace::collapseDemangledNames(frame.file, frame.symbol.value());
         else
             out << "?";
 
