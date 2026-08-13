@@ -1204,6 +1204,120 @@ def test_mysql_geometry(started_cluster):
     conn.close()
 
 
+def test_mysql_nullable_geometry(started_cluster):
+    # Regression test for #110933: a nullable MySQL spatial column must infer as Nullable(String)
+    # instead of throwing ILLEGAL_TYPE_OF_ARGUMENT (the geometric types cannot be inside Nullable).
+    table_name = "test_mysql_nullable_geometry"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            CREATE TABLE `clickhouse`.`{table_name}` (
+            `id` int NOT NULL,
+            `ls` linestring,
+            `pg` polygon,
+            `mls` multilinestring,
+            `mpg` multipolygon,
+            `mpt` multipoint,
+            `pt` point,
+            `geo` geometry,
+            PRIMARY KEY (`id`)) ENGINE=InnoDB;
+        """
+        )
+        # One row with values and one row leaving every spatial column NULL.
+        cursor.execute(
+            f"""
+            INSERT INTO `clickhouse`.`{table_name}` SET
+                id = 1,
+                ls = ST_GeomFromText('LINESTRING(0 0, 1 1, 2 2)'),
+                pg = ST_GeomFromText('POLYGON((0 0, 4 0, 4 4, 0 4, 0 0))'),
+                mls = ST_GeomFromText('MULTILINESTRING((0 0, 1 1), (2 2, 3 3))'),
+                mpg = ST_GeomFromText('MULTIPOLYGON(((0 0, 2 0, 2 2, 0 2, 0 0)))'),
+                mpt = ST_GeomFromText('MULTIPOINT(0 0, 1 1)'),
+                pt = ST_GeomFromText('POINT(1 2)'),
+                geo = ST_GeomFromText('LINESTRING(5 5, 6 6)')
+        """
+        )
+        cursor.execute(f"INSERT INTO `clickhouse`.`{table_name}` SET id = 2")
+        cursor.execute(f"SELECT count(*) FROM `clickhouse`.`{table_name}`")
+        assert cursor.fetchone()[0] == 2
+
+    conn.commit()
+
+    table_function = (
+        f"mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    )
+
+    # Schema inference must succeed: every nullable spatial type falls back to `Nullable(String)`.
+    # Before the fix this DESCRIBE threw ILLEGAL_TYPE_OF_ARGUMENT.
+    assert (
+        node1.query(
+            "SELECT toTypeName(ls), toTypeName(pg), toTypeName(mls), toTypeName(mpg), toTypeName(mpt), toTypeName(geo) "
+            f"FROM {table_function} LIMIT 1"
+        ).strip()
+        == "\t".join(["Nullable(String)"] * 6)
+    )
+
+    # `Point` is a Tuple and CAN be inside Nullable, so it must keep mapping to `Nullable(Point)`
+    # and read back as a point value: the fallback must not be over-broad.
+    assert (
+        node1.query(f"SELECT toTypeName(pt) FROM {table_function} LIMIT 1").strip()
+        == "Nullable(Point)"
+    )
+    assert (
+        node1.query(f"SELECT pt FROM {table_function} ORDER BY id").strip()
+        == "(1,2)\n\\N"
+    )
+
+    # The non-null row reads back the exact raw WKB of the stored geometry (leading SRID 0, then
+    # the little-endian WKB body), not a formatted geometry and not corrupted bytes.
+    assert (
+        node1.query(f"SELECT hex(ls) FROM {table_function} WHERE id = 1").strip()
+        == "0000000001020000000300000000000000000000000000000000000000000000000000F03F"
+        "000000000000F03F00000000000000400000000000000040"
+    )
+
+    # The all-NULL row must read back as NULL for every spatial column (not a silently-defaulted
+    # empty geometry): the nullable fallback preserves the MySQL NULL.
+    assert (
+        node1.query(
+            f"SELECT ls, pg, mls, mpg, mpt, geo FROM {table_function} WHERE id = 2"
+        ).strip()
+        == "\t".join(["\\N"] * 6)
+    )
+    assert (
+        node1.query(
+            f"SELECT count() FROM {table_function} WHERE ls IS NULL AND geo IS NULL"
+        ).strip()
+        == "1"
+    )
+
+    # The MySQL table engine with inferred columns (the CREATE path) must also succeed and read back.
+    node1.query("DROP TABLE IF EXISTS test_nullable_geometry_inferred")
+    node1.query(
+        f"CREATE TABLE test_nullable_geometry_inferred Engine=MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    )
+    assert (
+        node1.query(
+            "SELECT toTypeName(ls), toTypeName(geo) FROM test_nullable_geometry_inferred LIMIT 1"
+        ).strip()
+        == "Nullable(String)\tNullable(String)"
+    )
+    assert (
+        node1.query(
+            "SELECT count() FROM test_nullable_geometry_inferred WHERE id = 2 AND ls IS NULL"
+        ).strip()
+        == "1"
+    )
+    node1.query("DROP TABLE IF EXISTS test_nullable_geometry_inferred")
+
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
 def test_joins(started_cluster):
     conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
     drop_mysql_table(conn, "test_joins_mysql_users")
