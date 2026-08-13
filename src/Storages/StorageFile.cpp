@@ -2196,7 +2196,16 @@ bool ReadFromFile::canUseLazyMaterialization() const
 
 std::unique_ptr<LazilyReadFromFile> ReadFromFile::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_names)
 {
-    auto lazy_info = splitLazilyReadColumnsFromFormatInfo(info, required_names);
+    /// A bare row policy (no PREWHERE) is not propagated into `info` — `updateFormatPrewhereInfo`
+    /// would prune its input columns from the format header and break `DEFAULT` expressions that
+    /// the source computes from them — but the source still evaluates it in the main pass via
+    /// `FormatFilterInfo`, so its input columns must not be deferred to the lazy branch.
+    NameSet names_to_keep = required_names;
+    if (!info.row_level_filter && query_info.row_level_filter)
+        for (const auto & column : query_info.row_level_filter->actions.getRequiredColumns())
+            names_to_keep.insert(column.name);
+
+    auto lazy_info = splitLazilyReadColumnsFromFormatInfo(info, names_to_keep);
     if (!lazy_info)
         return {};
 
