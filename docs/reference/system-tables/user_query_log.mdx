@@ -55,7 +55,7 @@ If a table named `system.user_query_log` was created before upgrading to a Click
 - `exception_code` ([Int32](/reference/data-types/int-uint)) — Code of an exception.
 - `exception` ([String](/reference/data-types/string)) — Exception message.
 - `stack_trace` ([String](/reference/data-types/string)) — Stack trace. An empty string, if the query was completed successfully.
-- `is_initial_query` ([UInt8](/reference/data-types/int-uint)) — Query type. Possible values: 1 — query was initiated by the client, 0 — query was initiated by another query as part of distributed query execution.
+- `is_initial_query` ([UInt8](/reference/data-types/int-uint)) — Whether the query is initial. Possible values: 1 — an initial (top-level) query, 0 — a child query initiated by another query, including queries for distributed execution and internal subqueries.
 - `connection_address` ([IPv6](/reference/data-types/ipv6)) — The client IP address from which the connection was made. When connected through a proxy, this will be the address of the proxy.
 - `connection_port` ([UInt16](/reference/data-types/int-uint)) — The client port from which the connection was made. When connected through a proxy, this will be the port of the proxy.
 - `user` ([String](/reference/data-types/string)) — Name of the user who initiated the current query.

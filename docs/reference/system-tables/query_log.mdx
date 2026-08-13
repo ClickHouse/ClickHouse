@@ -25,15 +25,15 @@ ClickHouse does not delete data from the table automatically. See [Introduction]
 
 The `system.query_log` table registers two kinds of queries:
 
-1.  Initial (top-level) queries that were not initiated by another query as part of distributed query execution.
-2.  Child queries that were initiated by other queries (for distributed query execution). For these types of queries, information about the original initial query is shown in the `initial_*` columns.
+1.  Initial (top-level) queries.
+2.  Child queries that were initiated by other queries, including queries for distributed execution and internal subqueries such as view evaluation. For these queries, information about the original initial query is shown in the `initial_*` columns.
 
 <Tip>
-**Filter top-level queries with `is_initial_query`**
+**Filter initial queries by default**
 
-When analyzing top-level queries, add `is_initial_query = 1`. This excludes child queries created during distributed query execution, so they are not counted separately from the top-level query. This filter does not imply that a query was submitted by a client, because server-internal work can also be an initial query.
+Generally, add `is_initial_query = 1` whenever you query `system.query_log`. This excludes child queries so individual processing steps are not counted separately from the initial query. This filter does not imply that a query was submitted by a client, because server-internal work can also be an initial query.
 
-Use `initial_query_id` instead when you need to trace the complete execution cascade of a distributed query. The initial query has the same value for `initial_query_id` and `query_id`, while its child queries keep the initial query's `initial_query_id` and have their own `query_id`:
+Use `initial_query_id` instead when you specifically need to trace the complete execution cascade of an initial query, including its child queries. The initial query has the same value for `initial_query_id` and `query_id`, while its child queries keep the initial query's `initial_query_id` and have their own `query_id`:
 
 ```sql
 SELECT
@@ -93,7 +93,7 @@ You can use the [log_formatted_queries](/reference/settings/session-settings/log
 - `exception_code` ([Int32](/reference/data-types/int-uint)) — Code of an exception.
 - `exception` ([String](/reference/data-types/string)) — Exception message.
 - `stack_trace` ([String](/reference/data-types/string)) — Stack trace. An empty string, if the query was completed successfully.
-- `is_initial_query` ([UInt8](/reference/data-types/int-uint)) — Query type. Possible values: 1 — query was initiated by the client, 0 — query was initiated by another query as part of distributed query execution.
+- `is_initial_query` ([UInt8](/reference/data-types/int-uint)) — Whether the query is initial. Possible values: 1 — an initial (top-level) query, 0 — a child query initiated by another query, including queries for distributed execution and internal subqueries.
 - `connection_address` ([IPv6](/reference/data-types/ipv6)) — The client IP address from which the connection was made. When connected through a proxy, this will be the address of the proxy.
 - `connection_port` ([UInt16](/reference/data-types/int-uint)) — The client port from which the connection was made. When connected through a proxy, this will be the port of the proxy.
 - `user` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Name of the user who initiated the current query.
