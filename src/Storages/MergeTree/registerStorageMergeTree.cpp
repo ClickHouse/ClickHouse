@@ -1600,6 +1600,7 @@ see ["Understanding ClickHouse data skipping indexes"](/optimize/skipping-indexe
 - [`tokenbf_v1`](#token-bloom-filter) index *(Deprecated)*
 - [`text`](#text) index
 - [`vector_similarity`](#vector-similarity) index
+- [`spatial_bbox`](#spatial-bbox) index
 
 #### MinMax skip index {#minmax}
 
@@ -1750,6 +1751,18 @@ Builds an inverted index over tokenized string data, enabling efficient and dete
 #### Vector similarity {#vector-similarity}
 
 Supports approximate nearest neighbor search, see [here](/engines/table-engines/mergetree-family/annindexes) for details.
+
+#### spatial_bbox {#spatial-bbox}
+
+For each index granule, stores the bounding box of a geometry column, allowing granules to be skipped when a query's spatial predicate cannot match.
+
+```text title="Syntax"
+INDEX name column TYPE spatial_bbox GRANULARITY n
+```
+
+The index must be defined on a single plain column (not a computed expression) of type `Point` (`Tuple(Float64, Float64)`), `Ring`, `Polygon`, `MultiPolygon`, or any column whose innermost element type is `Tuple(Float64, Float64)`.
+
+It is used to skip granules for `pointInPolygon` and other spatial predicate functions, including [WebAssembly user-defined functions](/sql-reference/functions/wasm_udf) marked with the `is_spatial_predicate` setting.
 
 ### Functions support {#functions-support}
 

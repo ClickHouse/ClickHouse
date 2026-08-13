@@ -267,7 +267,7 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
 
     registerCreator("spatial_bbox", spatialBboxIndexCreator, Documentation{
         .description = "Stores the bounding box of a geometry column (Point, Ring, Polygon, or MultiPolygon) for each granule, allowing granules to be skipped when a query's spatial predicate cannot match.",
-        .syntax = "INDEX name expr TYPE spatial_bbox GRANULARITY n",
+        .syntax = "INDEX name column TYPE spatial_bbox GRANULARITY n",
         .related = {}});
     registerValidator("spatial_bbox", spatialBboxIndexValidator);
 
