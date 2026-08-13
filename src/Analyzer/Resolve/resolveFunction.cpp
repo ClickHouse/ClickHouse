@@ -1007,7 +1007,29 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// comparison - or be folded away entirely - instead of the analysis-time
                 /// `NUMBER_OF_COLUMNS_DOESNT_MATCH` the regular IN path reports.
                 validateInColumnsCountMatch(in_first_argument, in_second_argument);
+            }
 
+            /// When the right side is a single column and the left side is a top-level `Tuple`,
+            /// regular IN does not unpack the tuple: the whole left value is one set key, and
+            /// `Set::execute` accurately casts it to the right column type before probing (so
+            /// e.g. `(toUInt16(256), x) IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)'))` throws
+            /// when `256` does not fit into `Int8`). The `equals` predicate built by this rewrite
+            /// compares element-wise over a common supertype instead and cannot reproduce those
+            /// semantics, so skip the rewrite for this shape and fall through to the regular IN
+            /// handling below - the observable behavior must not depend on `rewrite_in_to_join`.
+            /// The mutated clones are discarded; the regular path re-resolves the original
+            /// arguments and flattens/validates them again itself.
+            bool left_tuple_compared_as_single_key = false;
+            if (const auto * rhs_query_node = in_second_argument->as<QueryNode>())
+            {
+                const auto & left_result_type = in_first_argument->getResultType();
+                left_tuple_compared_as_single_key = rhs_query_node->getProjectionColumns().size() == 1
+                    && left_result_type
+                    && typeid_cast<const DataTypeTuple *>(left_result_type.get());
+            }
+
+            if (in_second_argument->as<QueryNode>() && !left_tuple_compared_as_single_key)
+            {
                 /// Rewrite 'x IN subquery' to 'EXISTS (SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE x = _unique_name_ LIMIT 1)'
 
                 /// Rename subquery projection to a unique name to avoid collisions with names from outer scope

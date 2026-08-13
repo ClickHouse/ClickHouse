@@ -1,0 +1,27 @@
+-- The `rewrite_in_to_join` rewrite must preserve regular IN semantics when the right side is a
+-- single column and the left side is a top-level tuple: regular IN compares the whole left tuple
+-- against that column as a single set key, and `Set::execute` accurately casts the left value to
+-- the right column type before probing. The `equals` predicate built by the rewrite compares
+-- element-wise over a common supertype instead, so the rewrite is skipped for this shape and the
+-- regular IN handling keeps its semantics. Regression test for the review finding in PR #97540.
+
+SET enable_analyzer = 1;
+SET allow_experimental_correlated_subqueries = 1;
+SET rewrite_in_to_join = 1;
+
+-- Regular IN throws when the one-key cast of the left tuple to the right column type fails
+-- (`256` does not fit into `Int8`). The rewritten path must throw the same error, not return 0.
+SELECT count() FROM numbers(1) WHERE (toUInt16(256), number) IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)')); -- { serverError CANNOT_CONVERT_TYPE }
+
+-- NOT IN takes the same code path.
+SELECT count() FROM numbers(1) WHERE (toUInt16(256), number) NOT IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)')); -- { serverError CANNOT_CONVERT_TYPE }
+
+-- The same one-key comparison with values that do fit keeps returning regular IN results.
+SELECT (1, number) IN (SELECT CAST((1, 0), 'Tuple(UInt8, UInt64)')) FROM numbers(2);
+
+-- A multi-column right side of the same arity is unpacked element-wise by regular IN, so the
+-- rewrite still applies there and must keep working.
+SELECT number, (number, number + 1) IN (SELECT number, number + 1 FROM numbers(3)) FROM numbers(5) ORDER BY number;
+
+-- The plain single-column rewrite (a scalar left side) must keep working as well.
+SELECT number, number IN (SELECT number FROM numbers(3)) FROM numbers(5) ORDER BY number;
