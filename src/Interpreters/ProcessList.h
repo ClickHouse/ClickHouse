@@ -365,9 +365,12 @@ struct ProcessListForUser
         /// NOTE: we should not reset user_throttler here because TokenBucket throttling MUST account periods of inactivity for correct work
     }
 
+    /// Drops the lingering query groups that no live async-callback companion charges anymore.
+    /// Defined out of line: it needs the complete `ThreadGroup`.
+    void pruneLingeringQueryGroups();
+
     /// Resets the trackers unless a lingering query group can still charge them (see above).
     /// A reset skipped here is retried when the user's next query is inserted or removed.
-    /// Defined out of line: it needs the complete `ThreadGroup`.
     void resetTrackersIfUnreferenced();
 };
 

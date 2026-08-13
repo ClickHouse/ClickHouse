@@ -125,6 +125,104 @@ TEST(BorrowedThreadGroupLifetime, AsyncWorkAfterLastQueryOfUserObeysUserMemoryLi
     t.join();
 }
 
+/// The user's queries may leave the process list in any order. When the query with pending
+/// borrowed-scope async work leaves first, while an ordinary query of the same user is still
+/// running, the user tracker reset performed at the *last* query's exit must still see the
+/// pending work and defer - otherwise exactly that work runs with `max_memory_usage_for_user`
+/// already cleared.
+TEST(BorrowedThreadGroupLifetime, UserTrackerResetDeferredWhenQueryWithAsyncWorkLeavesFirst)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+
+        auto make_context = [](const String & query_id)
+        {
+            auto context = Context::createCopy(getContext().context);
+            context->makeQueryContext();
+            ClientInfo client_info = context->getClientInfo();
+            client_info.current_user = "borrowed_scope_two_queries_user";
+            context->setClientInfo(client_info);
+            context->setCurrentQueryId(query_id);
+            /// Small enough for the async allocation below to exceed it.
+            context->setSetting("max_memory_usage_for_user", UInt64(16 << 20));
+            /// Disable memory overcommit so exceeding the hard limit throws right away.
+            context->setSetting("memory_overcommit_ratio_denominator_for_user", UInt64(0));
+            context->setSetting("memory_usage_overcommit_max_wait_microseconds", UInt64(0));
+            return context;
+        };
+        auto context_q1 = make_context("borrowed_scope_two_queries_first");
+        auto context_q2 = make_context("borrowed_scope_two_queries_second");
+
+        auto pool = std::make_unique<ThreadPool>(
+            CurrentMetrics::LocalThread,
+            CurrentMetrics::LocalThreadActive,
+            CurrentMetrics::LocalThreadScheduled,
+            /*max_threads=*/ 1,
+            /*max_free_threads=*/ 1,
+            /*queue_size=*/ 10);
+
+        ProcessList process_list;
+
+        /// Q1: the query the borrowed-scope async work is scheduled from.
+        auto root_q1 = std::make_shared<ThreadGroup>(context_q1, 0);
+        CurrentThread::attachToGroupIfDetached(root_q1);
+        auto entry_q1 = process_list.insert(
+            "SELECT 1", /*normalized_query_hash*/ 0, /*ast*/ nullptr, context_q1,
+            /*watch_start_nanoseconds*/ 0, /*is_internal*/ true);
+
+        auto borrowed = ThreadGroup::createForFlushAsyncInsertQueue(context_q1, root_q1);
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        /// The async work is gated so that it allocates only after both queries left the
+        /// process list.
+        std::promise<void> queries_finished;
+        std::shared_future<void> queries_finished_future = queries_finished.get_future().share();
+
+        CurrentThread::attachToGroupIfDetached(borrowed);
+        auto runner = threadPoolCallbackRunnerUnsafe<bool>(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        auto allocation_threw = runner([queries_finished_future]
+        {
+            queries_finished_future.wait();
+
+            constexpr Int64 allocation = 64 << 20;
+            try
+            {
+                std::ignore = CurrentMemoryTracker::alloc(allocation);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+                    throw;
+                return true;
+            }
+            std::ignore = CurrentMemoryTracker::free(allocation);
+            return false;
+        }, Priority{});
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        /// Q2: an ordinary query of the same user, without any async work.
+        auto root_q2 = std::make_shared<ThreadGroup>(context_q2, 0);
+        CurrentThread::attachToGroupIfDetached(root_q2);
+        auto entry_q2 = process_list.insert(
+            "SELECT 2", /*normalized_query_hash*/ 0, /*ast*/ nullptr, context_q2,
+            /*watch_start_nanoseconds*/ 0, /*is_internal*/ true);
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        /// Q1 leaves first, while Q2 is still in the process list; then Q2 leaves last.
+        entry_q1.reset();
+        entry_q2.reset();
+        queries_finished.set_value();
+
+        EXPECT_TRUE(allocation_threw.get())
+            << "async allocation from a borrowed scope must still obey `max_memory_usage_for_user` "
+               "when the query it was scheduled from left the process list before another query of "
+               "the same user";
+        pool->wait();
+    });
+    t.join();
+}
+
 /// A flush of the async-insert queue runs under its own process-list entry, which may belong to a
 /// different user than the caller that triggered the flush (`SYSTEM FLUSH ASYNC INSERT QUEUE` by
 /// user A flushing inserts of user B). From `ProcessList::insert` on, the flush scope charges user

@@ -494,24 +494,30 @@ ProcessListEntry::~ProcessListEntry()
 
     parent.have_space.notify_all();
 
+    /// If an async-callback companion of a borrowed group still charges the query's `ThreadGroup`
+    /// (see `ThreadGroup::getAsyncCallbackGroup`), late async work may still charge it - and,
+    /// through its `memory_tracker` parent, `user_memory_tracker`. Remember the group then - even
+    /// when other queries of the user are still running: whichever of the user's queries leaves the
+    /// process list last must see it and defer the tracker reset (resetting would clear the
+    /// `max_memory_usage_for_user` limits for exactly that work).
+    /// The condition is deliberately narrow (a live companion, not just any extra `shared_ptr`):
+    /// on the ordinary server path this entry is destroyed while the query thread is still attached
+    /// to the group (`BlockIO::~BlockIO` clears `process_list_entries` before the handler's
+    /// `QueryScope` detaches), so counting references would defer the reset after every query and
+    /// leave `system.user_processes` and the per-user peak memory stale.
+    if (process_list_element_ptr->thread_group && process_list_element_ptr->thread_group->hasLiveAsyncCallbackCompanions())
+    {
+        /// Drop groups whose companions have finished, so the list cannot grow unboundedly for a
+        /// user whose query count never drains to zero.
+        user_process_list.pruneLingeringQueryGroups();
+        user_process_list.lingering_query_groups.emplace_back(process_list_element_ptr->thread_group);
+    }
+
     /// If there are no more queries for the user, then we will reset memory tracker.
     /// The `user_to_queries` entry is intentionally kept (do not erase it here): `getUserInfo`
     /// reads entries lock-free via raw pointers and relies on them never being erased.
     if (user_process_list.queries.empty())
-    {
-        /// If an async-callback companion of a borrowed group still charges the query's `ThreadGroup`
-        /// (see `ThreadGroup::getAsyncCallbackGroup`), late async work may still charge it - and,
-        /// through its `memory_tracker` parent, `user_memory_tracker`. Defer the reset then: resetting
-        /// would clear the `max_memory_usage_for_user` limits for exactly that work.
-        /// The condition is deliberately narrow (a live companion, not just any extra `shared_ptr`):
-        /// on the ordinary server path this entry is destroyed while the query thread is still attached
-        /// to the group (`BlockIO::~BlockIO` clears `process_list_entries` before the handler's
-        /// `QueryScope` detaches), so counting references would defer the reset after every query and
-        /// leave `system.user_processes` and the per-user peak memory stale.
-        if (process_list_element_ptr->thread_group && process_list_element_ptr->thread_group->hasLiveAsyncCallbackCompanions())
-            user_process_list.lingering_query_groups.emplace_back(process_list_element_ptr->thread_group);
         user_process_list.resetTrackersIfUnreferenced();
-    }
 }
 
 
@@ -991,13 +997,18 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
 }
 
 
-void ProcessListForUser::resetTrackersIfUnreferenced()
+void ProcessListForUser::pruneLingeringQueryGroups()
 {
     std::erase_if(lingering_query_groups, [](const auto & weak_group)
     {
         auto group = weak_group.lock();
         return !group || !group->hasLiveAsyncCallbackCompanions();
     });
+}
+
+void ProcessListForUser::resetTrackersIfUnreferenced()
+{
+    pruneLingeringQueryGroups();
     if (lingering_query_groups.empty())
         resetTrackers();
 }
