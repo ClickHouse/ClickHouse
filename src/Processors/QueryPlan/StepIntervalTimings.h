@@ -1,7 +1,7 @@
 #pragma once
 
 #include <unordered_map>
-#include <vector>
+#include <Processors/QueryPlan/StepStatsModel.h>
 #include <Processors/Executors/WorkInterval.h>
 #include <Processors/QueryPlan/ConcurrencyProfile.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -21,34 +21,24 @@ class StepIntervalTimings
 public:
     StepIntervalTimings(const WorkIntervalsPerThread & intervals_per_thread, const QueryPlan & plan);
 
-    UInt64 getStepTime(const IQueryPlanStep * step) const;
-    UInt64 getBranchTime(const IQueryPlanStep * step) const;
-    double getStepConcurrency(const IQueryPlanStep * step) const;
-    double getBranchConcurrency(const IQueryPlanStep * step) const;
+    const StepTimeAndConcurrency * findTiming(const IQueryPlanStep * step) const;
 
 private:
-    struct StepTiming
-    {
-        UInt64 step_time_ns = 0;
-        UInt64 branch_time_ns = 0;
-        double step_concurrency = 0.0;
-        double branch_concurrency = 0.0;
-    };
 
-    /// Give every step of the plan tree a unique number,
-    /// so that it is easier to access
-    void indexPlanSteps(const QueryPlan & plan);
+    using TimeIntervalsByStep = std::unordered_map<const IQueryPlanStep *, TimeIntervals>;
+
+    /// Traverse the plan to get all the steps
+    void collectPlanSteps(const QueryPlan &);
 
     /// One sorted, non-overlapping sequence per step, merged from the per-thread runs.
-    std::vector<TimeIntervals> collectStepIntervals(const WorkIntervalsPerThread & intervals_per_thread) const;
+    TimeIntervalsByStep collectStepIntervals(const WorkIntervalsPerThread & intervals_per_thread) const;
 
     /// Post-order walk that records the metrics of every node from its own and its subtree's intervals.
-    void computeBranchTime(const QueryPlan & plan, std::vector<TimeIntervals> step_intervals);
+    void computeBranchTime(const QueryPlan & plan, TimeIntervalsByStep time_intervals_by_step);
 
-    const StepTiming * findTiming(const IQueryPlanStep * step) const;
+    std::vector<TimeIntervals> collectLowerBranchIntervals(TimeIntervals && current_step_intervals, const std::vector<QueryPlan::Node *> & children, const std::vector<QueryPlan *> & child_plans, TimeIntervalsByStep & branch_intervals_by_step) const;
 
-    std::unordered_map<const IQueryPlanStep *, size_t> index_by_step;
-    std::vector<StepTiming> timings;
+    std::unordered_map<const IQueryPlanStep *, StepTimeAndConcurrency> timing_by_step;
     ConcurrencyProfile concurrency_profile;
 };
 

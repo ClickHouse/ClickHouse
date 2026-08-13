@@ -1,6 +1,8 @@
 #include <Processors/QueryPlan/ConcurrencyProfile.h>
+#include <base/defines.h>
 
 #include <algorithm>
+#include <queue>
 
 namespace DB
 {
@@ -36,36 +38,38 @@ ConcurrencyProfile::ConcurrencyProfile(const WorkIntervalsPerThread & intervals_
     };
 
     size_t total_events = 0;
-    std::vector<Cursor> heads;
-    heads.reserve(intervals_per_thread.size());
+    std::vector<Cursor> initial;
     for (size_t thread = 0; thread < intervals_per_thread.size(); ++thread)
     {
         if (intervals_per_thread[thread].empty())
             continue;
 
-        heads.push_back({thread, 0, false});
+        initial.push_back({thread, 0, false});
         total_events += 2 * intervals_per_thread[thread].size();
     }
-    std::make_heap(heads.begin(), heads.end(), later_event);
+
+    std::priority_queue<Cursor, std::vector<Cursor>, decltype(later_event)> heads(later_event, std::move(initial));
+
+    if (heads.empty())
+        return;
 
     times.reserve(total_events);
     concurrency.reserve(total_events);
     busy_integral.reserve(total_events);
 
+    times.push_back(event_time(heads.top()));
+    concurrency.push_back(0);
+    busy_integral.push_back(0);
+
     UInt64 running = 0;
     while (!heads.empty())
     {
-        std::pop_heap(heads.begin(), heads.end(), later_event);
-        Cursor cursor = heads.back();
+        Cursor cursor = heads.top();
+        heads.pop();
+
         const UInt64 time = event_time(cursor);
 
-        if (times.empty())
-        {
-            times.push_back(time);
-            concurrency.push_back(0);
-            busy_integral.push_back(0);
-        }
-        else if (time != times.back())
+        if (time != times.back())
         {
             busy_integral.push_back(busy_integral.back() + concurrency.back() * (time - times.back()));
             times.push_back(time);
@@ -76,24 +80,16 @@ ConcurrencyProfile::ConcurrencyProfile(const WorkIntervalsPerThread & intervals_
             --running;
         else
             ++running;
+
         concurrency.back() = running;
 
-        if (!cursor.is_end)
-        {
-            cursor.is_end = true;
-            heads.back() = cursor;
-            std::push_heap(heads.begin(), heads.end(), later_event);
-        }
-        else if (++cursor.position < intervals_per_thread[cursor.thread].size())
-        {
-            cursor.is_end = false;
-            heads.back() = cursor;
-            std::push_heap(heads.begin(), heads.end(), later_event);
-        }
-        else
-        {
-            heads.pop_back();
-        }
+        if (cursor.is_end)
+            ++cursor.position;
+
+        cursor.is_end = !cursor.is_end;
+
+        if (cursor.position < intervals_per_thread[cursor.thread].size())
+            heads.push(cursor);
     }
 }
 
@@ -109,6 +105,7 @@ UInt64 ConcurrencyProfile::integralAt(UInt64 time) const
 {
     if (times.empty() || time <= times.front())
         return 0;
+
     if (time >= times.back())
         return busy_integral.back();
 

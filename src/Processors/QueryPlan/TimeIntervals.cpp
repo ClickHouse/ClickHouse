@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/TimeIntervals.h>
-
+#include <functional>
+#include <queue>
 #include <algorithm>
 
 namespace DB
@@ -39,25 +40,25 @@ TimeIntervals mergeSortedIntervals(const std::vector<TimeIntervals> & sorted_seq
              > sorted_sequences[rhs.sequence][rhs.position].start;
     };
 
-    std::vector<Cursor> heads;
-    heads.reserve(sorted_sequences.size());
+    std::vector<Cursor> initial;
+
     for (size_t i = 0; i < sorted_sequences.size(); ++i)
         if (!sorted_sequences[i].empty())
-            heads.push_back({i, 0});
-    std::make_heap(heads.begin(), heads.end(), later_start);
+        initial.push_back({i, 0});
+
+    std::priority_queue<Cursor, std::vector<Cursor>, decltype(later_start)> heads(later_start, std::move(initial));
+
 
     TimeIntervals merged;
     merged.reserve(total);
     while (!heads.empty())
     {
-        std::pop_heap(heads.begin(), heads.end(), later_start);
-        Cursor & head = heads.back();
-        merged.push_back(sorted_sequences[head.sequence][head.position]);
+        Cursor current = heads.top();
+        heads.pop();
+        merged.push_back(sorted_sequences[current.sequence][current.position]);
 
-        if (++head.position < sorted_sequences[head.sequence].size())
-            std::push_heap(heads.begin(), heads.end(), later_start);
-        else
-            heads.pop_back();
+        if (++current.position < sorted_sequences[current.sequence].size())
+            heads.push(current);
     }
 
     return merged;

@@ -661,7 +661,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     /// to the full ceiling so the growth check in the block becomes a no-op.
     desired_threads = lazy_allocation ? 1 : num_threads;
 
-    query_start_ns = clock_gettime_ns(CLOCK_MONOTONIC);
+    query_start_ns = clock_gettime_ns();
 
     Queue queue;
     Queue async_queue;

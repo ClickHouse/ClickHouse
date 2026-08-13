@@ -54,10 +54,14 @@ struct AnalyzedStepData
     StepAnalysisReport step_metric_groups;
     AnalyzedStages stage_reports;
     bool label_stages = false;
-    UInt64 step_wall_time_ns = 0;
-    UInt64 branch_wall_time_ns = 0;
-    double step_concurrency = 0.0;
-    double branch_concurrency = 0.0;
+};
+
+struct StepTimeAndConcurrency
+{
+    UInt64 step_time_ns = 0;
+    UInt64 branch_time_ns = 0;
+    double step_concurrency = 0;
+    double branch_concurrency = 0;
 };
 
 struct StepStatsContext
@@ -66,6 +70,7 @@ struct StepStatsContext
     StepIOStats io;
     UInt64 execution_query_time_ns = 0;
     UInt64 max_num_threads_per_query = 0;
+    const StepTimeAndConcurrency * time_and_conc_stats = nullptr;
     StepGroupStatsByGroupId group_stats;
 };
 

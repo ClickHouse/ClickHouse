@@ -8,16 +8,22 @@
 namespace DB
 {
 
-/// The number of work intervals covering each instant, as a piecewise-constant function of time,
-/// with its running integral so that the busy time over any range costs a binary search.
-/// Since an executor thread runs one job at a time, that number is also the number of busy threads.
+/// A prefix sum of squares of intervals, which is built using:
+///  - concurrency (y-axis) -- number of threads running simultaniously at the moment of time
+///  - times (x-axis) -- time slots related to the beginning of interval
+///  - busy_integral -- prefix sum where busy_integral[x + 1] = busy_integral[x] + concurrency[x + 1] * times[x + 1]
+/// c(t)
+/// 2 |         ┌─────┐
+/// 1 |  ┌──────┘     └───────────┐
+/// 0 | ─┘                        └────
+/// ──┴──────┴────────┴───────────┴─────→ t
+///   0      5       10         20
 class ConcurrencyProfile
 {
 public:
     explicit ConcurrencyProfile(const WorkIntervalsPerThread & intervals_per_thread);
 
-    /// Time-weighted number of busy threads over the given non-overlapping sequence, i.e. the
-    /// integral of the concurrency function restricted to it.
+    /// Time-weighted number of busy threads over the given non-overlapping sequence
     UInt64 busyTimeIn(const TimeIntervals & intervals) const;
 
 private:

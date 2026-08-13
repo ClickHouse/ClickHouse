@@ -498,9 +498,6 @@ struct QueryAnalyzeSettings
 
     constexpr static char name[] = "ANALYZE";
 
-    /// Collect per-processor work intervals during execution to report per-step and per-branch wall time.
-    bool branch_time = false;
-
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
         {"actions", query_plan_options.actions},
@@ -515,7 +512,7 @@ struct QueryAnalyzeSettings
         {"column_structure", query_plan_options.column_structure},
         {"processors", query_plan_options.processors_profile},
         {"matches", query_plan_options.matches},
-        {"branch_time", branch_time},
+        {"time", query_plan_options.time},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -826,7 +823,7 @@ struct InterpreterExplainQuery::AnalyzedInnerQuery
     bool ignore_limits = false;
     UInt64 planning_ns = 0;
     ExplainPlanOptions query_plan_options;
-    bool branch_time = false;
+    bool time = false;
 };
 
 InterpreterExplainQuery::InterpreterExplainQuery(const ASTPtr & query_, ContextPtr context_, const SelectQueryOptions & options_)
@@ -876,7 +873,7 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
 
     const auto analyze_settings = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings());
     result->query_plan_options = analyze_settings.query_plan_options;
-    result->branch_time = analyze_settings.branch_time;
+    result->time = analyze_settings.query_plan_options.time;
 
     Stopwatch watch;
     QueryTreeNodePtr query_tree;
@@ -1321,7 +1318,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             step_wall_clock_registry->populateFromPlan(plan);
             pipeline.setStepWallClockRegistry(std::move(step_wall_clock_registry));
 
-            pipeline.setCollectWorkIntervals(analyzed.branch_time);
+            pipeline.setCollectWorkIntervals(analyzed.time);
 
             CompletedPipelineExecutor executor(pipeline);
 
