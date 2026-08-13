@@ -27,8 +27,10 @@ SELECT id, ts FROM paimonS3(s3_conn, filename='paimon_timestamp_partition/ts9') 
 
 SELECT '=== ts9 pruning ===';
 
+-- The bound falls between the microsecond truncation of row 5 and its actual value, so the row
+-- survives pruning only if the partition value keeps all nine digits.
 SELECT id, ts FROM paimonS3(s3_conn, filename='paimon_timestamp_partition/ts9')
-WHERE ts > '2025-07-31 16:40:00.123'
+WHERE ts > '2025-07-31 16:40:00.123456500'
 ORDER BY id SETTINGS use_paimon_partition_pruning = 1;
 
 SELECT '=== ltz ===';
