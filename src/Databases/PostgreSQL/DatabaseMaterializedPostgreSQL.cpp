@@ -633,8 +633,17 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
     }
 }
 
-StoragePtr DatabaseMaterializedPostgreSQL::detachTable(ContextPtr, const String &)
+StoragePtr DatabaseMaterializedPostgreSQL::detachTable(ContextPtr local_context, const String & table_name)
 {
+    /// The table walk of `DETACH DATABASE` (InterpreterDropQuery::executeToDatabaseImpl) runs with an internal
+    /// context and detaches every nested table before the database itself is detached; replication has already
+    /// been stopped by then, and nothing here must throw - otherwise the database is left mounted but no longer
+    /// replicating. Only a user-issued `DETACH TABLE` is rejected: it would remove the local nested table while
+    /// the publication, the consumer and the persisted tables list keep feeding it, unlike
+    /// `DETACH TABLE ... PERMANENTLY`, which removes the table from replication.
+    if (local_context->isInternalQuery())
+        return DatabaseAtomic::detachTable(local_context, table_name);
+
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH TABLE not allowed, use DETACH PERMANENTLY");
 }
 
@@ -680,6 +689,17 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             tables_to_replicate = getFormattedTablesList(table_name);
         }
 
+        /// Refuse to detach the last replicated table: the empty tables list it would persist does not mean
+        /// "replicate no tables" - an empty `materialized_postgresql_tables_list` makes the table set be
+        /// re-derived from the current PostgreSQL schema on the next startup (or whenever the publication has
+        /// to be recreated), so the detach would not stick: every current source table would be re-imported,
+        /// or the startup would fail if the source schema is empty.
+        if (tables_to_replicate.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot detach table `{}`: it is the last replicated table, and an empty "
+                "materialized_postgresql_tables_list means the whole PostgreSQL database is replicated, "
+                "so the detach would not survive a restart. Drop the database instead", table_name);
+
         auto * materialized_storage = table_to_delete->as<StorageMaterializedPostgreSQL>();
         if (!materialized_storage->getNested())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Inner table `{}` does not exist", table_name);
@@ -710,7 +730,6 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             }
         };
 
-        /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
         SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate);
         auto alter_query = createAlterSettingsQuery(new_setting);
 
@@ -1418,6 +1437,8 @@ DETACH TABLE postgres_database.table_to_remove PERMANENTLY;
 ```
 
 `DROP TABLE` of an individual table is not supported for a `MaterializedPostgreSQL` database: it would remove only the local nested table, while the table remains in the persisted [`materialized_postgresql_tables_list`](#materialized-postgresql-tables-list) and in the PostgreSQL publication, so its replication would silently stop. Use `DETACH TABLE ... PERMANENTLY` as shown above, which also removes the table from the tables list and the publication.
+
+Detaching the last replicated table is rejected: it would persist an empty [`materialized_postgresql_tables_list`](#materialized-postgresql-tables-list), and an empty list does not mean "replicate no tables" - it makes the table set be re-derived from the current PostgreSQL schema on the next startup, so the detach would not stick. Drop the database instead.
 
 `RENAME TABLE` and `EXCHANGE TABLES` are not supported for a `MaterializedPostgreSQL` database: the name of a replicated table mirrors the name of the PostgreSQL table it replicates, and renaming only the local table would leave the replication state (including the persisted [`materialized_postgresql_tables_list`](#materialized-postgresql-tables-list)) pointing at the original name. A database-wide truncate (`TRUNCATE DATABASE` / `TRUNCATE ALL TABLES FROM`) is not supported either: it would delete the local copy of the replicated data while replication continues from the current position in PostgreSQL, so the deleted rows would never be reloaded. Recreate the database to reload it from a fresh snapshot instead.
 

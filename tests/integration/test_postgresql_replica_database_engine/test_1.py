@@ -1085,6 +1085,85 @@ def test_drop_database_while_enumerating_tables(started_cluster):
     assert instance.query("SELECT 1") == "1\n"
 
 
+def test_detach_database_and_reattach(started_cluster):
+    # DETACH DATABASE used to fail half-way: the generic detach path had already stopped replication
+    # when the per-table walk hit the unconditional "DETACH TABLE not allowed" guard of the database
+    # engine, leaving the database mounted but no longer replicating. The internal walk must be allowed
+    # through, so that DETACH DATABASE unmounts the database cleanly and ATTACH DATABASE resumes
+    # replication from the persisted metadata.
+    table_name = "postgresql_replica_detach_db"
+    pg_manager.create_postgres_table(table_name)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(50)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    instance.query("DETACH DATABASE test_database")
+    assert (
+        instance.query(
+            "SELECT count() FROM system.databases WHERE name = 'test_database'"
+        ).strip()
+        == "0"
+    )
+
+    # Changes made while the database is detached are picked up after the re-attach.
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(50, 50)"
+    )
+
+    instance.query("ATTACH DATABASE test_database")
+    check_tables_are_synchronized(instance, table_name)
+    assert int(instance.query(f"SELECT count() FROM test_database.{table_name}")) == 100
+
+    # And the re-attached database keeps consuming ongoing changes.
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(100, 50)"
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    pg_manager.drop_materialized_db()
+
+
+def test_detach_permanently_of_last_table_is_rejected(started_cluster):
+    # Detaching the last replicated table would persist an empty tables list, but an empty
+    # `materialized_postgresql_tables_list` does not mean "replicate no tables": on the next startup
+    # the table set is re-derived from the current PostgreSQL schema, so the detach would not stick.
+    # It must be refused up front, leaving the table replicating.
+    table_name = "postgresql_replica_last_detach"
+    pg_manager.create_postgres_table(table_name)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(50)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    error = instance.query_and_get_error(
+        f"DETACH TABLE test_database.{table_name} PERMANENTLY"
+    )
+    assert "it is the last replicated table" in error
+
+    # The refusal left the table in place and replicating.
+    assert table_name in instance.query("SHOW TABLES FROM test_database").split()
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(50, 50)"
+    )
+    check_tables_are_synchronized(instance, table_name)
+    assert int(instance.query(f"SELECT count() FROM test_database.{table_name}")) == 100
+
+    pg_manager.drop_materialized_db()
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
