@@ -199,10 +199,10 @@ CREATE TABLE t_win_date (d Date) ENGINE = Memory;
 INSERT INTO t_win_date VALUES ('2020-01-01'), ('2020-01-02'), ('2020-01-03');
 CREATE TABLE t_win_time (t Time) ENGINE = Memory;
 INSERT INTO t_win_time VALUES (-200000), (0), (3599999);
--- Date32 day numbers spanning the extended day-number boundary (DATE_LUT_MAX_EXTEND_DAY_NUM = 120530),
+-- Date32 day numbers spanning the extended day-number boundary (DATE_LUT_MAX_EXTEND_DAY_NUM = 2932896),
 -- so an offset above it discriminates the storage-type arm from the timestamp reinterpretation.
 CREATE TABLE t_win_date32 (d Date32) ENGINE = Memory;
-INSERT INTO t_win_date32 VALUES (toDate32(-25567)), (toDate32(0)), (toDate32(120000));
+INSERT INTO t_win_date32 VALUES (toDate32(-25567)), (toDate32(0)), (toDate32(2932000));
 CREATE TABLE t_win_datetime (d DateTime) ENGINE = Memory;
 INSERT INTO t_win_datetime VALUES (toDateTime(0)), (toDateTime(100)), (toDateTime(4294967295));
 
@@ -214,10 +214,10 @@ SELECT d, count() OVER (ORDER BY d RANGE BETWEEN 65536 PRECEDING AND CURRENT ROW
 -- Asserted through frame membership: verbatim reaches -400001 from the last row and includes -200000
 -- (3 rows), while clamping the offset to 3599999 would reach 0 and exclude it (2 rows).
 SELECT toInt32(t), count() OVER (ORDER BY t RANGE BETWEEN 4000000 PRECEDING AND CURRENT ROW) FROM t_win_time ORDER BY t;
--- A Date32 offset of 150000 days is a legitimate distance and fits Int32, so it must be taken verbatim.
--- 150000 is above DATE_LUT_MAX_EXTEND_DAY_NUM, so reading it as a unix timestamp instead would turn it
--- into ~1 day and shrink the frame to 1 row on every row; verbatim it reaches every earlier row (1/2/3).
-SELECT toInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 150000 PRECEDING AND CURRENT ROW) FROM t_win_date32 ORDER BY d;
+-- A Date32 offset of 4000000 days is a legitimate distance and fits Int32, so it must be taken verbatim.
+-- 4000000 is above DATE_LUT_MAX_EXTEND_DAY_NUM, so reading it as a unix timestamp instead would turn it
+-- into ~46 days and shrink the frame to 1 row on every row; verbatim it reaches every earlier row (1/2/3).
+SELECT toInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 4000000 PRECEDING AND CURRENT ROW) FROM t_win_date32 ORDER BY d;
 -- DateTime is a CONTROL rather than a witness here: its storage range [0, 4294967295] is the same as the
 -- coerce helper's, and WindowFrame::checkValid rejects any offset at or above INT_MAX before the coercion
 -- runs, so no reachable offset distinguishes the two arms. Date32 above is the witness for this change.
@@ -232,7 +232,7 @@ SELECT '-- window frame offset: saturate mode';
 SET date_time_overflow_behavior = 'saturate';
 SELECT d, count() OVER (ORDER BY d RANGE BETWEEN 65536 PRECEDING AND CURRENT ROW) FROM t_win_date ORDER BY d; -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT toInt32(t), count() OVER (ORDER BY t RANGE BETWEEN 4000000 PRECEDING AND CURRENT ROW) FROM t_win_time ORDER BY t;
-SELECT toInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 150000 PRECEDING AND CURRENT ROW) FROM t_win_date32 ORDER BY d;
+SELECT toInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 4000000 PRECEDING AND CURRENT ROW) FROM t_win_date32 ORDER BY d;
 SELECT toUInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 2147483646 PRECEDING AND CURRENT ROW) FROM t_win_datetime ORDER BY d;
 SELECT d, count() OVER (ORDER BY d RANGE BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t_win_date ORDER BY d;
 SELECT toInt32(t), count() OVER (ORDER BY t RANGE BETWEEN 200000 PRECEDING AND CURRENT ROW) FROM t_win_time ORDER BY t;
@@ -243,7 +243,7 @@ SELECT '-- window frame offset: throw mode';
 SET date_time_overflow_behavior = 'throw';
 SELECT d, count() OVER (ORDER BY d RANGE BETWEEN 65536 PRECEDING AND CURRENT ROW) FROM t_win_date ORDER BY d; -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT toInt32(t), count() OVER (ORDER BY t RANGE BETWEEN 4000000 PRECEDING AND CURRENT ROW) FROM t_win_time ORDER BY t;
-SELECT toInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 150000 PRECEDING AND CURRENT ROW) FROM t_win_date32 ORDER BY d;
+SELECT toInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 4000000 PRECEDING AND CURRENT ROW) FROM t_win_date32 ORDER BY d;
 SELECT toUInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 2147483646 PRECEDING AND CURRENT ROW) FROM t_win_datetime ORDER BY d;
 SELECT d, count() OVER (ORDER BY d RANGE BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t_win_date ORDER BY d;
 SELECT toInt32(t), count() OVER (ORDER BY t RANGE BETWEEN 200000 PRECEDING AND CURRENT ROW) FROM t_win_time ORDER BY t;

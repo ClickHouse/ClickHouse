@@ -644,7 +644,20 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (which_type.isDate32() && isNumericFieldForTemporalCoercion(src))
         {
             if (ignore_exact_target)
-                return convertNumericType<Int32>(src, type, strict, convert_inexact_floats);
+            {
+                Field converted = convertNumericType<Int32>(src, type, strict, convert_inexact_floats);
+                /// A frame offset is a distance, so the whole `Int32` storage range is meaningful. A temporal
+                /// point is not: only `[0000-01-01, 9999-12-31]` is representable, and an out-of-window day
+                /// number must stay Null so the constant matches nothing instead of reaching a raw numeric
+                /// consumer as an impossible date.
+                if (!temporal_numeric_is_offset && !converted.isNull())
+                {
+                    const Int64 day_num = converted.safeGet<Int64>();
+                    if (day_num < DATE32_DAY_NUM_MIN_FIELD || day_num > DATE32_DAY_NUM_MAX_FIELD)
+                        return {};
+                }
+                return converted;
+            }
             return coerceNumericFieldToDateOrDate32(src, /*is_date32=*/true, format_settings.date_time_overflow_behavior, exact);
         }
 
