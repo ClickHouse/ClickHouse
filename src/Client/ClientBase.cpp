@@ -1556,6 +1556,16 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
         /// Get new query after substitutions.
         if (visitor.getNumberOfReplacedParameters())
         {
+            /// An INSERT in a foreign SQL dialect is sent to the server verbatim: its inline data exists
+            /// only in the original query text, and serializing the substituted AST back to SQL would
+            /// silently drop it (`ASTInsertQuery`'s formatter prints only the header, never the data).
+            /// Fail close instead of sending a payload-less INSERT.
+            const auto * insert_ast = getInsertAST(parsed_query);
+            if (current_query_sent_verbatim && insert_ast && !insert_ast->select)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Substituting query parameters on the client (the server is too old to receive them) "
+                    "is not supported for an INSERT query in a foreign SQL dialect: the query is sent to "
+                    "the server verbatim and must carry all its data inline");
             query = parsed_query->formatWithSecretsOneLine();
             outbound_text_is_serialized_ast = true;
         }
