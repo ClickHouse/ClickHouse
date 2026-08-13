@@ -14,6 +14,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 ProjectionTokenInfoPtr ProjectionTokenInfo::buildFromPostingStream(
     const PostingListStream & stream,
     LargePostingListReaderStream * pidx_stream,
@@ -162,6 +167,27 @@ bool ProjectionTokenInfo::hasDocInRange(
             else
                 std::ignore = abpfor::b256::decodeTailDelta1(ptr, count, entry->doc_ids, delta_base);
             dbuf.advance(bytes);
+
+            /// Validate the decoded doc ids: they must be strictly monotonically increasing and
+            /// within `[delta_base + 1, lb.lastDocIdOf(lo)]`. A corrupted `.pidx` can point this
+            /// decode at the wrong bytes, and the `lower_bound` below would then silently miss a
+            /// real hit and prune a mark that does contain the token. Report `INCORRECT_DATA`
+            /// rather than returning wrong query results. Mirrors the same check in
+            /// `ProjectionPostingListCursor::ensureBlockDecoded`.
+            if (count > 1)
+            {
+                bool monotonic = true;
+                for (UInt32 vi = 1; vi < count && monotonic; ++vi)
+                    monotonic = (entry->doc_ids[vi] > entry->doc_ids[vi - 1]);
+                if (!monotonic || entry->doc_ids[0] <= delta_base || entry->doc_ids[count - 1] > lb.lastDocIdOf(lo))
+                {
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Corrupted projection text index: decoded posting block has invalid doc ids "
+                        "(block_idx={} count={} delta_base={} expected_max={} first={} last={} monotonic={})",
+                        lo, count, delta_base, lb.lastDocIdOf(lo), entry->doc_ids[0], entry->doc_ids[count - 1], monotonic);
+                }
+            }
 
             if (!cache)
                 cache = std::make_unique<DecodedBlockCache>();
