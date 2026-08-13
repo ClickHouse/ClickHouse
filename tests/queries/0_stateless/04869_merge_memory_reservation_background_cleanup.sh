@@ -43,7 +43,7 @@ for _ in $(seq 1 60)
 do
     parts=$(${CLICKHOUSE_LOCAL} --path "$DATA_DIR" -q "
         SELECT sleepEachRow(1) FROM numbers(3) FORMAT Null;
-        SELECT count() FROM system.parts WHERE table = 't_merge_mem_background_cleanup' AND active;
+        SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_merge_mem_background_cleanup' AND active;
     " -- --merges_mutations_memory_usage_soft_limit=1 < /dev/null)
     if [ "$parts" = "1" ]; then
         break
@@ -51,10 +51,10 @@ do
 done
 
 ${CLICKHOUSE_LOCAL} --path "$DATA_DIR" -q "
-    SELECT count() FROM system.parts WHERE table = 't_merge_mem_background_cleanup' AND active;
+    SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_merge_mem_background_cleanup' AND active;
     -- The merge ran with CLEANUP: the rows marked is_deleted are physically removed, not merely collapsed.
     SELECT count() FROM t_merge_mem_background_cleanup;
-    SELECT name, rows FROM system.projection_parts WHERE table = 't_merge_mem_background_cleanup' AND active;
+    SELECT name, rows FROM system.projection_parts WHERE database = currentDatabase() AND table = 't_merge_mem_background_cleanup' AND active;
 " -- --merges_mutations_memory_usage_soft_limit=1 < /dev/null
 
 rm -rf "$DATA_DIR"
