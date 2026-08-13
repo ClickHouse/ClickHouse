@@ -361,6 +361,19 @@ mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_coll
                 key, contents_key);
         }
 
+        /// An empty contents override never replaces the stored credential with another one - it can
+        /// only silently drop whatever form of it the collection carries, a path or the contents
+        /// alike. Checked before the empty fast path below so a credential the collection stores in
+        /// the contents form is protected too. When the collection stores no credential at all
+        /// (neither the path - a query cannot override it, so `value` is the collection's own - nor
+        /// the contents, read in its pre-override form), there is nothing to drop and the empty
+        /// override stays the no-op it is for the direct arguments.
+        if (named_collection.isQueryOverridden(contents_key) && named_collection.getOrDefault<String>(contents_key, "").empty()
+            && (!value.empty() || !named_collection.getValueBeforeQueryOverride(contents_key).value_or("").empty()))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`{}` cannot be overridden with an empty `{}`", key, contents_key);
+
         if (value.empty())
             return value;
 
@@ -380,13 +393,6 @@ mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_coll
             /// replaced through the contents form either.
             if (!named_collection.isOverridable(key, /* default_value= */ true))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
-
-            /// Empty contents would not replace the configured path with another credential but
-            /// silently drop it, which is the same as overriding the path itself with ''.
-            if (named_collection.getOrDefault<String>(contents_key, "").empty())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "`{}` cannot be overridden with an empty `{}`", key, contents_key);
 
             return String{};
         }
