@@ -40,3 +40,13 @@ wrapper nullable	10
 wrapper lowcardinality	10
 wrapper lc nullable	10
 wrapper float	10
+flip pw deferred	2
+flip pw before final	3
+flip pw deferred keys	5
+flip pw before final keys	6
+flip pw values	2	7
+flip pw values	3	1
+flip policy deferred	2
+flip policy before final	3
+flip policy values	2	7
+flip policy values	3	1

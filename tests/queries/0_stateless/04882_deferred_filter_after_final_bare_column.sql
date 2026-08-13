@@ -122,3 +122,37 @@ SELECT 'wrapper lc nullable', count() FROM t_wrap FINAL PREWHERE lcn SETTINGS ap
 SELECT 'wrapper float', count() FROM t_wrap FINAL PREWHERE f SETTINGS apply_prewhere_after_final = 1;
 
 DROP TABLE t_wrap;
+
+-- The filter must run after FINAL, on the surviving row, and read the real source column.
+-- Key 1 passes only before deduplication, key 2 only after, so the two orders must disagree.
+-- Merges are stopped per table because a merge would collapse the versions and remove the flip.
+DROP TABLE IF EXISTS t_ver;
+CREATE TABLE t_ver (k UInt64, b UInt8, other UInt8, ver UInt64) ENGINE = ReplacingMergeTree(ver) ORDER BY k;
+SYSTEM STOP MERGES t_ver;
+INSERT INTO t_ver VALUES (1, 1, 1, 1), (2, 0, 1, 1), (3, 1, 1, 1);
+INSERT INTO t_ver VALUES (1, 0, 1, 2), (2, 7, 1, 2), (3, 1, 1, 2);
+
+SELECT 'flip pw deferred', count() FROM t_ver FINAL PREWHERE b SETTINGS apply_prewhere_after_final = 1;
+SELECT 'flip pw before final', count() FROM t_ver FINAL PREWHERE b SETTINGS apply_prewhere_after_final = 0;
+SELECT 'flip pw deferred keys', sum(k) FROM (SELECT k FROM t_ver FINAL PREWHERE b SETTINGS apply_prewhere_after_final = 1);
+SELECT 'flip pw before final keys', sum(k) FROM (SELECT k FROM t_ver FINAL PREWHERE b SETTINGS apply_prewhere_after_final = 0);
+-- b = 7 is the surviving source value, so a synthesized truth column would be visible here.
+SELECT 'flip pw values', k, b FROM t_ver FINAL PREWHERE b ORDER BY k SETTINGS apply_prewhere_after_final = 1;
+
+DROP TABLE t_ver;
+
+-- Same flip for a bare-column row policy, on the shape that needs no SETTINGS clause.
+DROP TABLE IF EXISTS t_ver_rp;
+CREATE TABLE t_ver_rp (k UInt64, b UInt8, other UInt8, ver UInt64) ENGINE = ReplacingMergeTree(ver) ORDER BY k;
+SYSTEM STOP MERGES t_ver_rp;
+INSERT INTO t_ver_rp VALUES (1, 1, 1, 1), (2, 0, 1, 1), (3, 1, 1, 1);
+INSERT INTO t_ver_rp VALUES (1, 0, 1, 2), (2, 7, 1, 2), (3, 1, 1, 2);
+DROP ROW POLICY IF EXISTS 04882_policy_flip ON t_ver_rp;
+CREATE ROW POLICY 04882_policy_flip ON t_ver_rp USING b TO ALL;
+
+SELECT 'flip policy deferred', count() FROM t_ver_rp FINAL;
+SELECT 'flip policy before final', count() FROM t_ver_rp FINAL SETTINGS apply_row_policy_after_final = 0;
+SELECT 'flip policy values', k, b FROM t_ver_rp FINAL ORDER BY k;
+
+DROP ROW POLICY 04882_policy_flip ON t_ver_rp;
+DROP TABLE t_ver_rp;
