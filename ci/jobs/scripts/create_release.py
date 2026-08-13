@@ -420,15 +420,15 @@ class ReleaseInfo:
                         f"so the only commit since the previous release is the "
                         f"automated version bump — there is nothing to release."
                     )
-                # A tag already on this X.Y.P line means the post-release bump was lost; refuse rather than re-release the line.
+                # This X.Y.P line already has a release tag; creating it again would duplicate an existing release.
                 line_tags = Shell.get_output(
                     f"git tag --list 'v{version.major}.{version.minor}.{version.patch}.*'"
                 )
                 assert not line_tags, (
-                    f"refusing to create [{release_tag}]: line "
-                    f"{version.major}.{version.minor}.{version.patch} was already "
-                    f"released as [{line_tags.split()[0]}]; the post-release version "
-                    f"bump was lost — bump the branch before releasing"
+                    f"release {version.major}.{version.minor}.{version.patch} has "
+                    f"already been created (tag [{line_tags.split()[0]}]); either the "
+                    f"workflow was triggered for a commit with a superseded release, "
+                    f"or there is a bug in the release/versioning logic"
                 )
             self.is_recovery = False
         self.release_type = release_type
