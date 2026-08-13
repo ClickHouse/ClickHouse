@@ -508,7 +508,7 @@ POLYGON((0 0,0 1,1 1,1 0,0 0))
     /// all-NULL group returns an empty `Ring` either way, consistent with the empty-group result. But with true,
     /// a literal NULL argument would be replaced by `AggregateFunctionNothingUInt64`, i.e. `groupConvexHull(NULL)`
     /// would return `0 :: UInt64` instead of `NULL`.
-    AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = false};
+    AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
     factory.registerFunction("groupConvexHull", {createAggregateFunctionGroupConvexHull, documentation, properties});
 }
 
