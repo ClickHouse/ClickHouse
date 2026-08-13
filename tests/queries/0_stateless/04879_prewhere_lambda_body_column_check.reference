@@ -45,7 +45,19 @@ nested arrayFilter over the right column
 three lambdas deep over the right column
 1
 2
+left join with join_use_nulls, inner lambda capturing the outer parameter
+1
+2
+inner lambda capturing the outer parameter, without join_use_nulls
+1
+2
+outer parameter captured two lambdas down
+1
+2
 nested lambda over a column of a single table
+10
+20
+capture of the outer parameter over a column of a single table
 10
 20
 lambda body reading both join inputs

@@ -135,9 +135,30 @@ SELECT a.id FROM pw_lam_lj_a AS a LEFT JOIN pw_lam_lj_b AS b ON a.id = b.x
 PREWHERE arrayExists(w -> arrayExists(z -> arrayExists(y -> y != 0, [b.y]), [1]), [1])
 ORDER BY a.id SETTINGS join_use_nulls = 1;
 
+-- An inner lambda that only captures an outer parameter keeps its own parameter types, so its
+-- cached return type is the single stale part and has to be recomputed on its own.
+SELECT 'left join with join_use_nulls, inner lambda capturing the outer parameter';
+SELECT a.id FROM pw_lam_lj_a AS a LEFT JOIN pw_lam_lj_b AS b ON a.id = b.x
+PREWHERE arrayExists(x -> arrayExists(y -> (y = 1) AND (x != 0), [1]), [b.y])
+ORDER BY a.id SETTINGS join_use_nulls = 1;
+
+SELECT 'inner lambda capturing the outer parameter, without join_use_nulls';
+SELECT a.id FROM pw_lam_lj_a AS a LEFT JOIN pw_lam_lj_b AS b ON a.id = b.x
+PREWHERE arrayExists(x -> arrayExists(y -> (y = 1) AND (x != 0), [1]), [b.y])
+ORDER BY a.id SETTINGS join_use_nulls = 0;
+
+SELECT 'outer parameter captured two lambdas down';
+SELECT a.id FROM pw_lam_lj_a AS a LEFT JOIN pw_lam_lj_b AS b ON a.id = b.x
+PREWHERE arrayExists(x -> arrayExists(w -> arrayExists(y -> (y = 1) AND (x != 0), [1]), [1]), [b.y])
+ORDER BY a.id SETTINGS join_use_nulls = 1;
+
 -- Nothing is restored without a join, so the same nesting reads the column unchanged.
 SELECT 'nested lambda over a column of a single table';
 SELECT v FROM pw_lam_lj_a PREWHERE arrayExists(z -> arrayExists(y -> y != 0, [pw_lam_lj_a.v]), [1]) ORDER BY v;
+
+SELECT 'capture of the outer parameter over a column of a single table';
+SELECT v FROM pw_lam_lj_a
+PREWHERE arrayExists(x -> arrayExists(y -> (y = 1) AND (x != 0), [1]), [pw_lam_lj_a.v]) ORDER BY v;
 
 -- PREWHERE reads a single table expression, so a lambda body spanning both join inputs is
 -- refused like the non-lambda spelling instead of reaching the reader.

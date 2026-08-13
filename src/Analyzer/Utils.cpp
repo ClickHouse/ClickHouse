@@ -973,6 +973,20 @@ public:
             rerunLambdaArgumentsResolve(function_node, context);
             rerunFunctionResolve(function_node, context);
         }
+        else if (auto * lambda_node = node->as<LambdaNode>())
+        {
+            /// A nested lambda whose own array argument did not change keeps its parameter types,
+            /// so re-resolving its higher-order function leaves the cached return type stale.
+            /// Recompute it from the body, which the bottom-up traversal has already settled.
+            const auto * lambda_type = typeid_cast<const DataTypeFunction *>(lambda_node->getResultType().get());
+            if (!lambda_type)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Lambda node {} result type is not a function type",
+                    lambda_node->formatASTForErrorMessage());
+
+            lambda_node->resolve(std::make_shared<DataTypeFunction>(
+                lambda_type->getArgumentTypes(), lambda_node->getExpression()->getResultType()));
+        }
     }
 
     /// Rebuild a function only after its arguments settled.
