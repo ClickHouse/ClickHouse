@@ -207,5 +207,19 @@ TEST(DataTypeObjectSharedRegexp, MergeLooksThroughNullableMismatchOnEitherSide)
     EXPECT_EQ(asJSON(result_nullable->getNestedType()).getSharedDataPathRules().size(), 1);
 }
 
+TEST(DataTypeObjectSharedRegexp, MergeLooksThroughArrayMismatchOnTargetSide)
+{
+    /// A projection expression like `array(j)` wraps its argument in a single-element array; the
+    /// element itself is the same JSON value j always was, so the policy should still transfer
+    /// even though the source column was never itself an Array.
+    const auto rule_bearing = makeJSONType({{"^tag_", MatchMode::Partial}});
+
+    const auto merged = mergeJSONSharedDataPathRules(
+        std::make_shared<DataTypeArray>(makeJSONType({})), rule_bearing);
+    const auto * result_array = typeid_cast<const DataTypeArray *>(merged.get());
+    ASSERT_TRUE(result_array);
+    EXPECT_EQ(asJSON(result_array->getNestedType()).getSharedDataPathRules().size(), 1);
+}
+
 }
 }
