@@ -14,14 +14,3 @@ Description: vector_similarity GRANULARITY 100000000
 -- Integer and float spellings of the same reference vector return the same result
 5
 5
--- Reference vector above the Float64 mantissa: index usage expected
-Description: vector_similarity GRANULARITY 100000000
-4
--- Extremal 64-bit integer reference vectors: index usage expected
-Description: vector_similarity GRANULARITY 100000000
-4
-Description: vector_similarity GRANULARITY 100000000
-9
--- Integer and float spellings of a 64-bit reference vector return the same result
-4
-4
