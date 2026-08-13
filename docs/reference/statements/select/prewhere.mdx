@@ -24,11 +24,11 @@ If query has [FINAL](/reference/statements/select/from#final-modifier) modifier,
 The `PREWHERE` section is executed before `FINAL`, so the results of `FROM ... FINAL` queries may be skewed when using `PREWHERE` with fields not in the `ORDER BY` section of a table.
 </Note>
 
-## PREWHERE with JOIN {#prewhere-with-join}
+## `PREWHERE` with `JOIN` {#prewhere-with-join}
 
-With the analyzer enabled (the default), a `PREWHERE` condition can directly reference columns from only one of the tables in a [JOIN](/reference/statements/select/join). The condition is associated with that table and is applied to its rows before they reach the join.
+With the analyzer enabled, a `PREWHERE` condition can directly reference columns from no more than one table in a [`JOIN`](/reference/statements/select/join). ClickHouse applies the condition to that table's rows before they reach the join.
 
-The following example attaches the `PREWHERE` condition to `table_2`:
+In the following example, the `PREWHERE` condition filters `table_2` before it is joined with `table_1`:
 
 ```sql
 CREATE TABLE table_1
