@@ -20,7 +20,7 @@ ln -s /repo/tests/ci/get_previous_release_tag.py /usr/bin/get_previous_release_t
 source /repo/tests/docker_scripts/stress_tests.lib
 
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_azurite || { echo "Failed to start azurite"; exit 1; }
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 ) # to have a proper environment
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_seaweedfs stateless || ( echo "Failed to start seaweedfs" && exit 1 ) # to have a proper environment
 
 bash /repo/ci/jobs/scripts/functional_tests/setup_kafka.sh || { echo "Failed to start Kafka (Redpanda)"; exit 1; }
 
@@ -135,6 +135,13 @@ stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_reposit
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 
+# The full server stacktrace dumps must survive the removal of the phase
+# output folder below.
+for stacktrace_log in tmp_stress_output/sql_stacktraces.log tmp_stress_output/c_stacktraces.log; do
+    if [ -f "$stacktrace_log" ]; then
+        mv "$stacktrace_log" /test_output/
+    fi
+done
 rm -rf tmp_stress_output
 
 # We experienced deadlocks in this command in very rare cases. Let's debug it:

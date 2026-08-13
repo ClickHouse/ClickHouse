@@ -128,6 +128,7 @@ enum class JoinAlgorithm : uint8_t
     GRACE_HASH,
     DIRECT,
     FULL_SORTING_MERGE,
+    IE_JOIN,
     PARALLEL_FULL_SORTING_MERGE,
 };
 
@@ -157,8 +158,4 @@ enum class JoinAnalyzeMode : uint8_t
     Derived,
     Exact,
 };
-
-constexpr bool collectsAnalyzeStats(JoinAnalyzeMode mode) { return mode != JoinAnalyzeMode::None; }
-constexpr bool collectsExactMatches(JoinAnalyzeMode mode) { return mode == JoinAnalyzeMode::Exact; }
-
 }

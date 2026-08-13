@@ -766,7 +766,7 @@ The maximum number in `parallelism` is computed as a minimum between:
 
 #### Join steps {#explain-analyze-join-steps}
 
-For a join step `EXPLAIN ANALYZE` prints per-side *participation* lines — `Left:` for the probe side (the left table) and `Right:` for the build side (the right table) — followed by any lines specific to the join implementation. Every value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is covered (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `direct`), and so are the two implementations that setting cannot select: a `CROSS` or `COMMA` join and any `ON` section without a key equality, and the [`Join`](/reference/engines/table-engines/special/join) table engine. Most of them report both sides; some report only the side they materialize (for example `direct` prints only `Left:`).
+For a join step `EXPLAIN ANALYZE` prints per-side *participation* lines — `Left` and `Right` — followed by any lines specific to the join implementation. `Left` and `Right` correspond to logical SQL sides. In most of the cases `Left` would also be the probe side of the join, and `Right` would be the build side of the join. However this is not always the case due to the swap that can happen during execution of the join. Every value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is covered (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), and so are the two implementations that setting cannot select: a `CROSS` or `COMMA` join and any `ON` section without a key equality, and the [`Join`](/reference/engines/table-engines/special/join) table engine. Most of them report both sides; some report only the side they materialize (for example `direct` prints only `Left:`).
 
 The per-side lines share the same shape:
 
@@ -793,7 +793,7 @@ matched output rows = <output_rows> - <NULL-padded rows of both sides>
 fanout              = <matched output rows> / <matched_rows of that side>
 ```
 
-An outer join emits one `NULL`-padded output row for every row of a preserved side that found no partner. Those rows are subtracted so that they do not dilute the ratio:
+An outer join emits one `NULL`-padded output row for every row of a preserved side that found no partner. Those rows are subtracted so that they do not dilute the ratio. Only a preserved side has them — the right side for `RIGHT` and `FULL`, the left one for `LEFT` and `FULL`:
 
 - `fanout = 0` — the matched rows produced no output row at all, which is what an `ANTI` join does: it emits only the rows that found no partner.
 - `fanout = 1` — a clean 1:1 join; every matched row produced exactly one output row.
@@ -801,13 +801,17 @@ An outer join emits one `NULL`-padded output row for every row of a preserved si
 
 #### When the numbers require `matches = 1` {#explain-analyze-matches}
 
-Most of these numbers fall out of data the join builds anyway and are reported by a plain `EXPLAIN ANALYZE`. Two cases need bookkeeping the join would otherwise not do, so they are only reported with `EXPLAIN ANALYZE matches = 1`:
+Most of these numbers fall out of data the join builds anyway and are reported by a plain `EXPLAIN ANALYZE`. The rest need bookkeeping the join would otherwise not do, so they are only reported with `EXPLAIN ANALYZE matches = 1`. Which ones those are depends on the algorithm; in the hash family they are two cases:
 
 - the **right** side of `ALL INNER` and `ALL LEFT`, which requires marking every matched right row;
 - the **left** side of `ALL LEFT` and `ALL FULL`, but only when the query selects nothing from the
   right table and the `ON` section is a plain key equality. Otherwise the probe already records
   which left rows matched — either to materialize the right columns or to evaluate the residual
   condition — and the count is exact without the option.
+
+`partial_merge` needs it for the **right** side of the four `ALL` kinds, for the same reason.
+`full_sorting_merge` and `parallel_full_sorting_merge` need it for **both** sides of the `ANY` kinds. The
+`ALL` kinds need nothing.
 
 <Note>
 The option is off by default because the extra bookkeeping is not free, and what it costs is measurement fidelity. The work is done inside the probe loop and grows with the number of output rows. Use `matches = 1` when you need to know the exact matches that left and right rows found on the other side.
@@ -834,7 +838,9 @@ Enabling [`any_join_distinct_right_table_keys`](/reference/settings/session-sett
 
 The [`Join`](/reference/engines/table-engines/special/join) table engine follows the same table, using the kind and strictness declared in the engine: `Join(ALL, INNER, …)` reports both sides, `Join(ANY, LEFT, …)` neither.
 
-**Merge algorithms.** `partial_merge` and `full_sorting_merge` report **both** sides for every combination they accept — they walk the two sorted inputs and see every row of an equal range, so nothing has to be reconstructed afterwards. `partial_merge` accepts `ALL INNER`, `ALL LEFT`, `ALL RIGHT`, `ALL FULL`, `ANY INNER`, `ANY LEFT` and `SEMI LEFT`; `full_sorting_merge` accepts the four `ALL` kinds, `ANY INNER`, `ANY LEFT`, `ANY RIGHT`, `ASOF` and `ASOF LEFT`.
+**Merge algorithms.** `full_sorting_merge` and `parallel_full_sorting_merge` accept the four `ALL` kinds, `ANY INNER`, `ANY LEFT`, `ANY RIGHT`, `ASOF` and `ASOF LEFT`. They report **both** sides for every kind except `ASOF` and `ASOF LEFT`, where the right side is `not collected`, and without `matches = 1` — they walk the two sorted inputs and see every row of an equal range as they consume it, so nothing has to be reconstructed afterwards.
+
+`partial_merge` accepts `ALL INNER`, `ALL LEFT`, `ALL RIGHT`, `ALL FULL`, `ANY INNER`, `ANY LEFT` and `SEMI LEFT`. It reports both sides for the four `ALL` kinds, the right one with `matches = 1`; for `ANY INNER`, `ANY LEFT` and `SEMI LEFT` the right side is `not collected`.
 
 **`direct`.** The left side only. The right side is a key-value store that is never materialized into rows, so it has no `Right:` line at all.
 
@@ -874,7 +880,7 @@ Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> ·
   Stage (probe): time <t> (<share>%) · parallelism <avg>/<max> · sort time <probe_sort_time> · sort share <probe_sort_share>%
 ```
 
-- `size <right_size>` — the in-memory size of the buffered right table.
+- `size <right_size>` — the memory size of the blocks of right table.
 - `blocks <right_blocks>` — the number of blocks the right table was buffered into.
 - `storage <in-memory|external>` — whether the right table fit into memory (`in-memory`) or had to be spilled to disk (`external`). When it is `external`, an extra `spilled <spilled_bytes>` reports the compressed bytes written to disk.
 - `sort time <sort_time>` — the time spent sorting the right table (on the build stage) and each incoming left block (on the probe stage).

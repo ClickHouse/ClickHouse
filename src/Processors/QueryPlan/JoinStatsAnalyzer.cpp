@@ -38,11 +38,26 @@ void swapReportSides(StepAnalysisReport & report)
     }
 }
 
-std::optional<UInt64> unpairedOutputRows(std::optional<UInt64> input_rows, std::optional<UInt64> matched_rows)
+struct JoinSideRows
 {
-    if (!input_rows || !matched_rows)
+    std::optional<UInt64> input_rows;
+    std::optional<UInt64> matched_rows;
+};
+
+JoinSideRows readSideRows(const MetricGroup * group)
+{
+    if (!group)
+        return {};
+    return {findQuantity(*group, MetricKey::Rows), findQuantity(*group, MetricKey::Matched)};
+}
+
+std::optional<UInt64> unpairedOutputRows(const JoinSideRows & side, bool preserved_with_nulls)
+{
+    if (!preserved_with_nulls)
+        return 0;
+    if (!side.input_rows || !side.matched_rows)
         return std::nullopt;
-    return *input_rows > *matched_rows ? *input_rows - *matched_rows : 0;
+    return *side.input_rows > *side.matched_rows ? *side.input_rows - *side.matched_rows : 0;
 }
 
 double matchRate(UInt64 matched_rows, UInt64 input_rows)
@@ -59,24 +74,20 @@ std::optional<double> computeFanout(UInt64 matched_output_rows, UInt64 matched_r
     return static_cast<double>(matched_output_rows) / static_cast<double>(matched_rows);
 }
 
-void appendSideMetrics(
-    MetricGroup & group,
-    std::optional<UInt64> input_rows,
-    std::optional<UInt64> matched_rows,
-    std::optional<UInt64> matched_output_rows)
+void appendSideMetrics(MetricGroup & group, const JoinSideRows & side, std::optional<UInt64> matched_output_rows)
 {
-    if (!input_rows || !matched_rows)
+    if (!side.input_rows || !side.matched_rows)
     {
         group.metrics.emplace_back(MetricKey::MatchRate, std::monostate{});
         group.metrics.emplace_back(MetricKey::Fanout, std::monostate{});
         return;
     }
 
-    group.metrics.emplace_back(MetricKey::MatchRate, matchRate(*matched_rows, *input_rows));
+    group.metrics.emplace_back(MetricKey::MatchRate, matchRate(*side.matched_rows, *side.input_rows));
 
     std::optional<double> fanout_value;
     if (matched_output_rows)
-        fanout_value = computeFanout(*matched_output_rows, *matched_rows);
+        fanout_value = computeFanout(*matched_output_rows, *side.matched_rows);
 
     if (fanout_value.has_value())
         group.metrics.emplace_back(MetricKey::Fanout, *fanout_value);
@@ -88,24 +99,17 @@ void enrichJoinSides(StepAnalysisReport & report, UInt64 output_rows, JoinKind k
 {
     auto * left_group = findGroup(report, MetricGroupKey::Left);
     auto * right_group = findGroup(report, MetricGroupKey::Right);
-    if (!left_group || !right_group)
+    if (!left_group && !right_group)
         return;
 
-    const auto left_input_rows = findQuantity(*left_group, MetricKey::Rows);
-    const auto right_input_rows = findQuantity(*right_group, MetricKey::Rows);
-    const auto left_matched_rows = findQuantity(*left_group, MetricKey::Matched);
-    const auto right_matched_rows = findQuantity(*right_group, MetricKey::Matched);
+    const JoinSideRows left_side = readSideRows(left_group);
+    const JoinSideRows right_side = readSideRows(right_group);
 
     const bool left_side_preserved_with_nulls = isLeftOrFull(kind) && strictness != JoinStrictness::Semi;
     const bool right_side_preserved_with_nulls = isRightOrFull(kind) && strictness != JoinStrictness::Semi;
 
-    std::optional<UInt64> left_unpaired_rows = 0;
-    if (left_side_preserved_with_nulls)
-        left_unpaired_rows = unpairedOutputRows(left_input_rows, left_matched_rows);
-
-    std::optional<UInt64> right_unpaired_rows = 0;
-    if (right_side_preserved_with_nulls)
-        right_unpaired_rows = unpairedOutputRows(right_input_rows, right_matched_rows);
+    const auto left_unpaired_rows = unpairedOutputRows(left_side, left_side_preserved_with_nulls);
+    const auto right_unpaired_rows = unpairedOutputRows(right_side, right_side_preserved_with_nulls);
 
     std::optional<UInt64> matched_output_rows;
     if (left_unpaired_rows.has_value() && right_unpaired_rows.has_value())
@@ -114,11 +118,13 @@ void enrichJoinSides(StepAnalysisReport & report, UInt64 output_rows, JoinKind k
         matched_output_rows = output_rows > unpaired_rows ? output_rows - unpaired_rows : 0;
     }
 
-    appendSideMetrics(*left_group, left_input_rows, left_matched_rows, matched_output_rows);
-    appendSideMetrics(*right_group, right_input_rows, right_matched_rows, matched_output_rows);
+    if (left_group)
+        appendSideMetrics(*left_group, left_side, matched_output_rows);
+    if (right_group)
+        appendSideMetrics(*right_group, right_side, matched_output_rows);
 }
 
-/// `sort time` is the time a merge join spent sorting the blocks of one side. Relate it to the
+/// sort time is the time a merge join spent sorting the blocks of one side. Relate it to the
 /// processor time of the corresponding stage to show whether sorting dominated that stage.
 void appendSortShare(StepAnalysisReport & report, const StepStatsContext & context, MetricGroupKey group_key, JoinStep::JoinStage stage)
 {
@@ -193,13 +199,17 @@ AnalyzedStepData analyzeJoinStep(const StepStatsContext & context, StepAnalysisR
     if (!join_step && !filled_join_step)
         return buildAnalyzedStepData(context, std::move(report));
 
-    /// Only `JoinStep` can swap its inputs; a filled join always keeps the storage on the right.
-    if (join_step && join_step->swap_streams)
-        swapReportSides(report);
-
+    /// Only JoinStep can swap its inputs; a filled join always keeps the storage on the right.
+    bool swapped = join_step && join_step->swap_streams;
     const auto & join = join_step ? join_step->getJoin() : filled_join_step->getJoin();
     const auto & table_join = join->getTableJoin();
-    enrichJoinSides(report, context.io.output_rows, table_join.kind(), table_join.strictness());
+
+    const JoinKind logical_kind = swapped ? reverseJoinKind(table_join.kind()) : table_join.kind();
+
+    if (swapped)
+        swapReportSides(report);
+
+    enrichJoinSides(report, context.io.output_rows, logical_kind, table_join.strictness());
 
     appendSortShare(report, context, MetricGroupKey::Build, JoinStep::JoinStage::Build);
     appendSortShare(report, context, MetricGroupKey::Probe, JoinStep::JoinStage::Probe);

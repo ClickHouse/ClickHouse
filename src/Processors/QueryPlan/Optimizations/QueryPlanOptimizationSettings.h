@@ -142,6 +142,7 @@ struct QueryPlanOptimizationSettings
 
     /// If lazy materialization optimisation is enabled
     bool optimize_lazy_materialization = false;
+    bool optimize_lazy_materialization_for_object_storage = false;
     size_t max_limit_for_lazy_materialization = 0;
 
     /// If lazy FINAL optimization for ReplacingMergeTree is enabled
@@ -216,8 +217,6 @@ struct QueryPlanOptimizationSettings
     bool keep_logical_steps;
 
     bool is_explain;
-
-    JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;
 
     std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
 

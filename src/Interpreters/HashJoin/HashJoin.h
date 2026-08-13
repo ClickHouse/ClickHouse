@@ -199,7 +199,7 @@ public:
     size_t getTotalByteCount() const final;
     /// Number of right-side rows ingested into the build.
     size_t getRightTableRowCount() const { return getJoinedData()->rows_to_join; }
-    /// Peak bytes the build occupied, captured during the build phase so it survives `data` release.
+    /// Peak bytes the build occupied
     size_t getPeakBuildBytes() const { return peak_build_bytes; }
 
     StepAnalysisReport getAnalysisReport() const override;
@@ -251,6 +251,8 @@ public:
     /// Used for reading from StorageJoin and applying joinGet function. The single-LowCardinality-key
     /// maps store key values in maps physically identical to their non-LowCardinality counterparts, so
     /// they are read back the same way (the output key column is the parent LowCardinality type).
+    /// The keysN maps hold the key columns packed into one fixed-width blob, so each key column is
+    /// recovered from its own byte range. `hashed` is absent: its map key is a hash of the values.
     #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
         M(key8)                                \
         M(key16)                               \
@@ -258,6 +260,10 @@ public:
         M(key64)                               \
         M(key_string)                          \
         M(key_fixed_string)                    \
+        M(keys32)                              \
+        M(keys64)                              \
+        M(keys128)                             \
+        M(keys256)                             \
         M(low_cardinality_key_string)          \
         M(low_cardinality_key_fixed_string)
 
@@ -592,9 +598,7 @@ private:
     bool shrink_blocks = false;
     Int64 memory_usage_before_adding_blocks = 0;
 
-    /// Peak of `getTotalByteCount()` observed during the build phase. Stored separately so it
-    /// survives `data.reset()` (the maps are released after the query, before EXPLAIN ANALYZE reads
-    /// stats). Updated only during build, which is serialized per `HashJoin`, so no atomic is needed.
+    /// Peak of bytes observed in the hash table during the build phase
     size_t peak_build_bytes = 0;
 
     /// Track if conversion to fixed hash map was already attempted to prevent repeated checks.
@@ -620,8 +624,6 @@ private:
 
     void initRightBlockStructure(Block & saved_block_sample);
 
-    /// Shared probe path for `joinBlock` and `joinScatteredBlock`: runs the join dispatch on an
-    /// already-prepared block
     JoinResultPtr runJoinDispatch(ScatteredBlock block);
 
     bool preferUseMapsAll() const;

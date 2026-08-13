@@ -121,64 +121,6 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
     }
 }
 
-template <JoinKind KIND, JoinStrictness STRICTNESS, typename AddedColumns>
-static std::optional<UInt64> countMatchedLeftRows(const AddedColumns & added_columns, size_t probed_rows)
-{
-    constexpr auto source = leftMatchedSource(KIND, STRICTNESS);
-
-    if constexpr (source == LeftMatchedSource::ReplicationOffsets)
-    {
-        const auto & offsets = added_columns.offsets_to_replicate;
-        UInt64 matched = 0;
-        for (size_t i = 0; i < probed_rows; ++i)
-            matched += offsets[i] > offsets[i - 1];
-        return matched;
-    }
-    else if constexpr (source == LeftMatchedSource::DefaultRowMarkers)
-    {
-        if (added_columns.additional_filter_expression)
-            return added_columns.matched_left_rows;
-
-        /// The markers live in `LazyOutput::row_refs`, which the probe fills only when there is
-        /// something to materialize lazily, or when `matches = 1` asks it to
-        if (!added_columns.record_row_refs)
-            return std::nullopt;
-
-        UInt64 not_matched = 0;
-        for (const UInt64 ref_word : added_columns.lazy_output.getRowRefs())
-            not_matched += ref_word == 0;
-        return probed_rows - not_matched;
-    }
-    else if constexpr (source == LeftMatchedSource::OutputFilter)
-    {
-        chassert(added_columns.need_filter);
-        return countBytesInFilter(added_columns.filter);
-    }
-    else if constexpr (source == LeftMatchedSource::OutputFilterComplement)
-    {
-        chassert(added_columns.need_filter);
-        return probed_rows - countBytesInFilter(added_columns.filter);
-    }
-    else
-    {
-        return std::nullopt;
-    }
-}
-
-template <typename AddedColumns>
-static void markRightMatchedFromRowRefs(MatchedRowsStats & stats, const AddedColumns & added_columns)
-{
-    UInt64 prev = 0;
-    for (const UInt64 ref_word : added_columns.lazy_output.getRowRefs())
-    {
-        if (ref_word == 0 || ref_word == prev)
-            continue;
-
-        stats.markRightMatched(ref_word);
-        prev = ref_word;
-    }
-}
-
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     const HashJoin & join, Block block, const Block & block_with_columns_to_add, const MapsTemplateVector & maps_, bool is_join_get)
@@ -207,9 +149,9 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
             HashJoin::isLowCardinalityType(join.data->type));
     }
 
-    /// Only `MapsAll` keeps every right row of a key, so only there do the recorded words resolve to
+    /// Only MapsAll keeps every right row of a key, so only there do the recorded words resolve to
     /// exact rows. The residual path is excluded: its words count output rows rather than left rows,
-    /// and both metrics come from elsewhere there.
+    /// and both metrics come from elsewhere there
     constexpr bool refs_can_carry_stats = join_features.is_maps_all
         && (join_features.inner || join_features.left || join_features.full);
     const bool record_refs_for_stats = refs_can_carry_stats && join.recordsRowRefsForStats();
