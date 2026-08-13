@@ -22,7 +22,7 @@ ${CLICKHOUSE_CLIENT} --query="create materialized view mv_02572 to copy_02572 as
 start=$(date +%s)
 ${CLICKHOUSE_CLIENT} --query="insert into buffer_02572 values (1);"
 
-if [ $(( $(date +%s) - start )) -gt 6 ]; then  # clickhouse test cluster is overloaded, will skip
+if [ $(( $(date +%s) - start )) -le 6 ]; then  # if the insert was slow (overloaded runner), the background flush may already be done, so skip the check
     # ensure that the flush was not direct
     ${CLICKHOUSE_CLIENT} --ignore-error --query "select * from data_02572; select * from copy_02572;"
 fi
