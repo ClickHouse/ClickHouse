@@ -640,7 +640,7 @@ OPTIMIZE FINAL query.
 )", 0) \
     DECLARE(Bool, materialize_statistics_on_merge, true, R"(When enabled, merges will build and store statistics for new parts.
     Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md)
-    or [during INSERTs](/reference/settings/session-settings/materialize#materialize_statistics_on_insert))", 0) \
+    or [during INSERTs](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert))", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
 When enabled, merges build and store skip indices for new parts.
 Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index)
@@ -2080,7 +2080,12 @@ Maximum time between runs of merge coordinator thread
 Time changing factor for delay of coordinator thread
 )", 0) \
     DECLARE(MergeCoordinatorDistributionAlgorithm, shared_merge_tree_merge_coordinator_distribution_algorithm, MergeCoordinatorDistributionAlgorithm::SAINTE_LAGUE, R"(
-What algorithm will be used by merge coordinator thread to distribute merges between replicas
+The algorithm used by the merge coordinator thread to distribute merges between replicas.
+
+Possible values:
+
+- `water_filling`
+- `sainte_lague`
 )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
 Timeout that merge worker thread will use if it is needed to update it's state after immediate action

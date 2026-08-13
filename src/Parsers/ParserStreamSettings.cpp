@@ -126,10 +126,18 @@ std::optional<WatermarkSettings> parseWatermarkClause(IParser::Pos & pos, Expect
 
 bool ParserStreamSettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    ParserKeyword s_bounded{Keyword::BOUNDED};
+    ParserKeyword s_unordered{Keyword::UNORDERED};
     ParserKeyword s_cursor{Keyword::CURSOR};
     ParserKeyword s_watermark{Keyword::WATERMARK};
 
     auto stream_settings = make_intrusive<ASTStreamSettings>();
+
+    if (s_bounded.ignore(pos, expected))
+        stream_settings->setSubscribeForUpdates(false);
+
+    if (s_unordered.ignore(pos, expected))
+        stream_settings->setUnordered(true);
 
     if (s_cursor.ignore(pos, expected))
     {
