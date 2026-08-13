@@ -40,12 +40,12 @@ MATERIALIZED a + 3
 1
 -- a wrong number of arguments is rejected (prints 1 if the expected error is raised)
 1
--- a database that refers to itself is rejected instead of recursing (prints 1 if the expected error is raised)
+-- a database that refers to itself is rejected at CREATE instead of recursing (prints 1 if the expected error is raised)
+1
+-- a CREATE that would complete a cycle through a Remote database is rejected (prints 1 if the expected error is raised)
 1
 1
--- a cycle through a Remote database terminates instead of recursing
-1
-1
+0
 -- a shard that is unavailable fails the SELECT with the real error, while the metadata is served by the available shard
 t
 1

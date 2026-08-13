@@ -156,7 +156,7 @@ void registerDatabaseCluster(DatabaseFactory & factory)
         if (args.mode == LoadingStrictnessLevel::CREATE)
             args.context->getCluster(args.context->getMacros()->expand(cluster_name));
 
-        return std::make_shared<DatabaseCluster>(
+        auto database = std::make_shared<DatabaseCluster>(
             args.context,
             args.metadata_path,
             engine_define,
@@ -164,6 +164,15 @@ void registerDatabaseCluster(DatabaseFactory & factory)
             cluster_name,
             remote_database,
             args.uuid);
+
+        /// A chain of proxy databases on this server that refers back to itself is rejected
+        /// eagerly (see `throwIfLocalChainRefersBack`), but only on CREATE: a server that
+        /// persisted such a chain must still start, and the metadata loading of server startup
+        /// attaches the databases with the same `ATTACH` mode as the explicit query.
+        if (args.mode == LoadingStrictnessLevel::CREATE)
+            database->throwIfLocalChainRefersBack();
+
+        return database;
     };
 
     factory.registerDatabase(

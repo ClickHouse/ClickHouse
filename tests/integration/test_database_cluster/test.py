@@ -48,6 +48,20 @@ RELOADABLE_TWO_SHARDS = """<clickhouse>
 </clickhouse>
 """
 
+RELOADABLE_NODE2_ONLY = """<clickhouse>
+    <remote_servers>
+        <reloadable>
+            <shard>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </reloadable>
+    </remote_servers>
+</clickhouse>
+"""
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -105,6 +119,22 @@ def test_replica_fallback(started_cluster):
     assert node1.query("EXISTS TABLE fb_proxy.t") == "1\n"
     assert node1.query("SELECT count(), sum(x) FROM fb_proxy.t") == "3\t6\n"
 
+    # In this state the live proxy is bound to the remote-only fallback cluster, and a
+    # `Distributed` table over the whole named cluster would recreate a different object (it
+    # performs no such fallback on the metadata lookup), so there is no equivalent re-executable
+    # definition, and SHOW CREATE TABLE reports that instead of emitting a misleading one.
+    assert "THERE_IS_NO_QUERY" in node1.query_and_get_error(
+        "SHOW CREATE TABLE fb_proxy.t"
+    )
+    # The best-effort paths (e.g. the `create_table_query` column of `system.tables`) must not
+    # fail because of it.
+    assert (
+        node1.query(
+            "SELECT create_table_query FROM system.tables WHERE database = 'fb_proxy' AND name = 't'"
+        )
+        == "\n"
+    )
+
     node1.query("DROP DATABASE fb_proxy")
     node2.query("DROP DATABASE fb_src")
 
@@ -158,6 +188,46 @@ def test_follows_config_reload(started_cluster):
     node1.query("DROP DATABASE rel_proxy")
     for node in (node1, node2):
         node.query("DROP DATABASE rel_src")
+
+
+def test_cycle_formed_by_config_reload(started_cluster):
+    # A chain of proxy databases that refers back to itself is rejected at CREATE, but the check is
+    # inherently racy against the configuration: a reload can turn a shard of a `Cluster` database
+    # into a local one after the databases were created. Such a live cycle must not recurse and,
+    # crucially, must not fail whole-server scans (`system.tables` and the like) for unrelated
+    # queries; only resolution against the cyclic databases themselves reports the cycle.
+    node1.query("CREATE DATABASE cyc_a ENGINE = Cluster('reloadable', 'cyc_b')")
+    try:
+        node1.replace_config(RELOADABLE_CLUSTER_CONFIG_PATH, RELOADABLE_NODE2_ONLY)
+        node1.query("SYSTEM RELOAD CONFIG")
+
+        # No shard of `reloadable` is local now, so the chain does not pass through this server
+        # and completing it is allowed.
+        node1.query("CREATE DATABASE cyc_b ENGINE = Cluster('reloadable', 'cyc_a')")
+
+        # The reload makes the shard local again: the cycle is now live.
+        node1.replace_config(RELOADABLE_CLUSTER_CONFIG_PATH, RELOADABLE_ONE_SHARD)
+        node1.query("SYSTEM RELOAD CONFIG")
+
+        # A whole-server scan is unaffected, and the listing of the cyclic databases terminates
+        # with an empty result instead of an error or an infinite recursion.
+        node1.query("SELECT name FROM system.tables FORMAT Null")
+        assert node1.query("SHOW TABLES FROM cyc_a") == ""
+
+        # Resolution against a database of the cycle reports it.
+        assert "INFINITE_LOOP" in node1.query_and_get_error("SELECT * FROM cyc_a.t")
+
+        # Completing yet another chain into the cycle is rejected eagerly again.
+        assert "INFINITE_LOOP" in node1.query_and_get_error(
+            "CREATE DATABASE cyc_c ENGINE = Cluster('reloadable', 'cyc_a')"
+        )
+
+        node1.query("DROP DATABASE cyc_b")
+    finally:
+        node1.replace_config(RELOADABLE_CLUSTER_CONFIG_PATH, RELOADABLE_ONE_SHARD)
+        node1.query("SYSTEM RELOAD CONFIG")
+        node1.query("DROP DATABASE IF EXISTS cyc_b")
+        node1.query("DROP DATABASE cyc_a")
 
 
 def test_missing_cluster(started_cluster):

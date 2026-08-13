@@ -108,6 +108,16 @@ public:
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 
+    /// Reject a chain of `Remote`/`Cluster` databases on this server that refers back to itself
+    /// (e.g. `a` -> `b` -> `a`, or a direct self-reference): following it through the local shard
+    /// would recurse forever. Called eagerly from `CREATE DATABASE` — a lazily-reported cycle
+    /// would fail every whole-server scan (`system.tables` and the like) for every user, not just
+    /// the queries that name the database. Deliberately not called on any form of attach: a server
+    /// that persisted such a chain must still start, and the metadata loading of server startup
+    /// attaches the databases with the same `ATTACH` mode as the explicit query, so the two cannot
+    /// be told apart here; `LocalTraversalGuard` breaks the recursion lazily instead.
+    void throwIfLocalChainRefersBack() const;
+
 protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
@@ -160,9 +170,15 @@ private:
     DatabaseTablesIteratorPtr getTablesIteratorImpl(
         ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool keep_unresolved_tables, bool throw_on_error) const;
 
-    /// Resolve `remote_database` as a database of this server when the cluster has a local shard,
-    /// rejecting a database that refers to itself.
+    /// Resolve `remote_database` as a database of this server when the cluster has a local shard.
     DatabasePtr tryGetLocalDatabase() const;
+
+    /// One step of the local proxy chain (see `throwIfLocalChainRefersBack`): when the cluster of
+    /// this database currently has a local shard, sets `next_database` to the database it proxies
+    /// on this server and returns true. Returns false when the chain leaves this server, or when
+    /// the clusters cannot be resolved right now (e.g. the named cluster of a `Cluster` database
+    /// is absent from the configuration).
+    bool tryGetLocalChainNext(String & next_database) const;
 
     /// Fetch the names of the tables of `remote_database` from the remote server. When `only_table`
     /// is set, fetches only that name (the cheap existence check of `isTableExist`, which must not

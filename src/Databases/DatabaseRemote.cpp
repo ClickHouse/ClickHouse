@@ -91,29 +91,35 @@ namespace
 {
 
 /// Several `Remote`/`Cluster` databases on this server may refer to each other in a cycle (e.g.
-/// `a` -> `b` -> `a`), in which case following the local shard would recurse forever. The
-/// pointer-equality check of `tryGetLocalDatabase` only catches the direct self-reference, so
-/// additionally track the databases being traversed and reject re-entry. The traversal is
-/// synchronous, so a thread-local set suffices.
+/// `a` -> `b` -> `a`, or a direct self-reference), in which case following the local shard would
+/// recurse forever. Such a chain is rejected when it is being created (see
+/// `throwIfLocalChainRefersBack`), but it can still come into existence later — e.g. a
+/// configuration reload can turn a shard of a `Cluster` database into a local one — so the
+/// databases being traversed are additionally tracked, and re-entry breaks the recursion. The
+/// traversal is synchronous, so a thread-local set suffices.
 thread_local std::unordered_set<const IDatabase *> local_databases_in_traversal;
 
 struct LocalTraversalGuard
 {
     const IDatabase * database;
 
-    explicit LocalTraversalGuard(const IDatabase * database_) : database(database_)
+    /// The database is already being traversed by an outer frame, i.e. a chain of proxy databases
+    /// refers back to itself. The caller decides how to break the recursion: the listing path
+    /// skips the re-entered database, because it also serves whole-server scans (`system.tables`,
+    /// `system.columns`, name hints), which must not fail for every user because of one
+    /// misconfigured database; table resolution reports the cycle, because it only affects
+    /// queries that name a database of the cycle.
+    const bool reentered;
+
+    explicit LocalTraversalGuard(const IDatabase * database_)
+        : database(database_), reentered(!local_databases_in_traversal.emplace(database_).second)
     {
-        if (!local_databases_in_traversal.emplace(database).second)
-            throw Exception(
-                ErrorCodes::INFINITE_LOOP,
-                "A chain of `{}` databases containing {} refers to itself",
-                database->getEngineName(),
-                backQuoteIfNeed(database->getDatabaseName()));
     }
 
     ~LocalTraversalGuard()
     {
-        local_databases_in_traversal.erase(database);
+        if (!reentered)
+            local_databases_in_traversal.erase(database);
     }
 };
 
@@ -122,14 +128,67 @@ struct LocalTraversalGuard
 
 DatabasePtr DatabaseRemote::tryGetLocalDatabase() const
 {
-    auto local_database = DatabaseCatalog::instance().tryGetDatabase(remote_database);
+    /// A database that refers back to itself (directly or through a chain) is handled by
+    /// `LocalTraversalGuard` at the call sites, so no self-reference check is needed here.
+    return DatabaseCatalog::instance().tryGetDatabase(remote_database);
+}
 
-    /// A database that refers to itself on the same server would recurse forever when its
-    /// tables are listed, so reject it instead of hanging.
-    if (local_database.get() == this)
-        throw Exception(ErrorCodes::INFINITE_LOOP, "Database {} refers to itself", backQuoteIfNeed(getDatabaseName()));
 
-    return local_database;
+bool DatabaseRemote::tryGetLocalChainNext(String & next_database) const
+{
+    try
+    {
+        const ProxyClusters clusters = getProxyClusters();
+        for (const auto & shard_info : clusters.cluster->getShardsInfo())
+        {
+            if (shard_info.isLocal())
+            {
+                next_database = remote_database;
+                return true;
+            }
+        }
+    }
+    catch (...) /// NOLINT(bugprone-empty-catch)
+    {
+        /// The clusters cannot be resolved right now (e.g. the named cluster of a `Cluster`
+        /// database is currently absent from the configuration), so the chain cannot be followed
+        /// through this server either.
+    }
+
+    return false;
+}
+
+
+void DatabaseRemote::throwIfLocalChainRefersBack() const
+{
+    String target;
+    if (!tryGetLocalChainNext(target))
+        return;
+
+    /// The walk starts at this database, so any cycle that its creation completes passes through
+    /// the visited set; the set also bounds the walk on a pre-existing cycle among other databases
+    /// (which could only appear while the eager checks were bypassed, e.g. on server startup).
+    NameSet visited{getDatabaseName()};
+    while (true)
+    {
+        if (visited.contains(target))
+            throw Exception(
+                ErrorCodes::INFINITE_LOOP,
+                "A chain of `{}` databases containing {} would refer to itself (through database {}). "
+                "Following the chain on this server would recurse forever",
+                getEngineName(),
+                backQuoteIfNeed(getDatabaseName()),
+                backQuoteIfNeed(target));
+
+        auto database = DatabaseCatalog::instance().tryGetDatabase(target);
+        const auto * remote = dynamic_cast<const DatabaseRemote *>(database.get());
+        if (!remote)
+            return;
+
+        visited.insert(target);
+        if (!remote->tryGetLocalChainNext(target))
+            return;
+    }
 }
 
 
@@ -214,9 +273,22 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
 
         if (auto local_database = tryGetLocalDatabase())
         {
-            /// The local database may be another `Remote` database that (indirectly) refers back
-            /// to this one; the guard rejects such a cycle instead of recursing forever.
+            /// The local database may be another `Remote`/`Cluster` database that (directly or
+            /// indirectly) refers back to this one; the guard breaks such a cycle instead of
+            /// recursing forever. The re-entered database is skipped rather than reported as an
+            /// error: the listing also serves whole-server scans (`system.tables`,
+            /// `system.columns`), which must not fail for every user because of one misconfigured
+            /// database.
             LocalTraversalGuard guard(this);
+            if (guard.reentered)
+            {
+                LOG_WARNING(
+                    log,
+                    "A chain of `{}` databases containing {} refers to itself; it lists no tables until the cycle is removed",
+                    getEngineName(),
+                    backQuoteIfNeed(getDatabaseName()));
+                return {};
+            }
             /// The underlying tables are enumerated regardless of the caller's grants, so filter by
             /// the caller's own `SHOW TABLES` right on the underlying local table, exactly like
             /// `system.tables` does. Otherwise a user with `SHOW TABLES` on the proxy database but
@@ -382,9 +454,18 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(const String & table_name
 
         if (auto local_database = tryGetLocalDatabase())
         {
-            /// The local database may be another `Remote` database that (indirectly) refers back to
-            /// this one; the guard rejects such a cycle instead of recursing forever.
+            /// The local database may be another `Remote`/`Cluster` database that (directly or
+            /// indirectly) refers back to this one; the guard rejects such a cycle instead of
+            /// recursing forever. Unlike the listing of `fetchTablesList`, resolution reports the
+            /// cycle as an error: it only affects queries that name a database of the cycle, not
+            /// whole-server scans.
             LocalTraversalGuard guard(this);
+            if (guard.reentered)
+                throw Exception(
+                    ErrorCodes::INFINITE_LOOP,
+                    "A chain of `{}` databases containing {} refers to itself",
+                    getEngineName(),
+                    backQuoteIfNeed(getDatabaseName()));
             /// The underlying database may itself be a `Remote` database: `tryGetTable` below has then
             /// already validated the caller's `SHOW_COLUMNS` right on the objects that it proxies in
             /// turn, which live under a different database name, so checking the name of the
@@ -1065,7 +1146,7 @@ void registerDatabaseRemote(DatabaseFactory & factory)
 
         auto clusters = buildClusters(addresses_expr, username, password, secure, args.context);
 
-        return std::make_shared<DatabaseRemote>(
+        auto database = std::make_shared<DatabaseRemote>(
             args.context,
             args.metadata_path,
             engine_define,
@@ -1077,6 +1158,15 @@ void registerDatabaseRemote(DatabaseFactory & factory)
             std::move(clusters.remote_only_cluster),
             secure,
             args.uuid);
+
+        /// A chain of proxy databases on this server that refers back to itself is rejected
+        /// eagerly (see `throwIfLocalChainRefersBack`), but only on CREATE: a server that
+        /// persisted such a chain must still start, and the metadata loading of server startup
+        /// attaches the databases with the same `ATTACH` mode as the explicit query.
+        if (args.mode == LoadingStrictnessLevel::CREATE)
+            database->throwIfLocalChainRefersBack();
+
+        return database;
     };
 
     const auto features = DatabaseFactory::EngineFeatures{

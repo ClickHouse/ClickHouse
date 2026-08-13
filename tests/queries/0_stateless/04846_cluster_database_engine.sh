@@ -87,19 +87,19 @@ ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLUSTER_DB}_unknown ENGINE = Clu
 echo '-- a wrong number of arguments is rejected (prints 1 if the expected error is raised)'
 ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLUSTER_DB}_bad ENGINE = Cluster('test_shard_localhost')" 2>&1 | grep -c -m1 "BAD_ARGUMENTS"
 
-echo '-- a database that refers to itself is rejected instead of recursing (prints 1 if the expected error is raised)'
-${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLUSTER_DB}_loop ENGINE = Cluster('test_shard_localhost', '${CLUSTER_DB}_loop')"
-${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE ${CLUSTER_DB}_loop.t" 2>&1 | grep -c -m1 "INFINITE_LOOP"
-${CLICKHOUSE_CLIENT} --query "SHOW TABLES FROM ${CLUSTER_DB}_loop" 2>&1 | grep -c -m1 "INFINITE_LOOP"
-${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${CLUSTER_DB}_loop"
+echo '-- a database that refers to itself is rejected at CREATE instead of recursing (prints 1 if the expected error is raised)'
+# A lazily-reported cycle would fail every whole-server scan (e.g. `system.tables`) for every user
+# while the database exists, so the chain is rejected when it is being created.
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLUSTER_DB}_loop ENGINE = Cluster('test_shard_localhost', '${CLUSTER_DB}_loop')" 2>&1 | grep -c -m1 "INFINITE_LOOP"
 
-echo '-- a cycle through a Remote database terminates instead of recursing'
+echo '-- a CREATE that would complete a cycle through a Remote database is rejected (prints 1 if the expected error is raised)'
 ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLUSTER_DB}_cycle_a ENGINE = Cluster('test_shard_localhost', '${CLUSTER_DB}_cycle_b')"
-${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLUSTER_DB}_cycle_b ENGINE = Remote('127.0.0.1', '${CLUSTER_DB}_cycle_a', 'default', '')"
-${CLICKHOUSE_CLIENT} --query "SHOW TABLES FROM ${CLUSTER_DB}_cycle_a" 2>&1 | grep -c -m1 "INFINITE_LOOP"
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${CLUSTER_DB}_cycle_a.t" 2>&1 | grep -c -m1 "INFINITE_LOOP"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLUSTER_DB}_cycle_b ENGINE = Remote('127.0.0.1', '${CLUSTER_DB}_cycle_a', 'default', '')" 2>&1 | grep -c -m1 "INFINITE_LOOP"
+# The half-open chain (its target database does not exist) must not affect whole-server scans, and
+# it lists no tables.
+${CLICKHOUSE_CLIENT} --query "SELECT count() > 0 FROM system.tables"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${CLUSTER_DB}_cycle_a'"
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${CLUSTER_DB}_cycle_a"
-${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${CLUSTER_DB}_cycle_b"
 
 echo '-- a shard that is unavailable fails the SELECT with the real error, while the metadata is served by the available shard'
 # The first shard of `test_unavailable_shard` is this server, the second one points to a port that
