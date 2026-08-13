@@ -12,3 +12,9 @@ fast projection_parts_columns 1
 fast parts_columns_wide 1
 fast projection_parts_columns_wide 1
 fast dropped_tables_parts 1
+fast parts_snap 1
+fast parts_snap_state 1
+fast projection_parts_snap 1
+fast projection_parts_snap_state 1
+fast parts_columns_meta 1
+fast projection_parts_columns_meta 1

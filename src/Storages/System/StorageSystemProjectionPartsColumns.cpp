@@ -100,6 +100,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
             /// The prepass alone can take a long time on a table with many projections or many columns.
             /// A partially filled `projection_columns_info` would report wrong defaults, so give up the whole storage instead.
             ++metadata_column_number;
+            slowDownSystemPartsMetadataEnumeration(info.table, metadata_column_number);
             if (query_status && metadata_column_number % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && !query_status->checkTimeLimit())
                 return;
 

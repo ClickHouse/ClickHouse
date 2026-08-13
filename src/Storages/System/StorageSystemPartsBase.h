@@ -25,6 +25,12 @@ void slowDownSystemPartsEnumeration(const String & table_name);
 /// `COLUMNS_CANCELLATION_CHECK_PERIOD` enumerated columns of a part.
 void slowDownSystemPartsColumnsEnumeration(const String & table_name, size_t column_position);
 
+/// The same, but for the column-metadata prepass of the column-oriented tables. It is scoped to
+/// a narrower table-name prefix than the loops above, so that the tests can exercise the prepass
+/// checkpoints and the later per-part / per-column checkpoints independently: a query over a
+/// table slowed down in the prepass never reaches the later loops within its time limit.
+void slowDownSystemPartsMetadataEnumeration(const String & table_name, size_t column_position);
+
 struct StoragesInfo
 {
     StoragePtr storage = nullptr;

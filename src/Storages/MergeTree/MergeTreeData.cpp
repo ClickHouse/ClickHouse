@@ -125,6 +125,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
 #include <Common/Increment.h>
+#include <base/sleep.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/ProfileEventsScope.h>
@@ -370,6 +371,7 @@ namespace ServerSetting
 namespace FailPoints
 {
     extern const char claim_inject_stale_part_dir[];
+    extern const char slowdown_system_parts_enumeration[];
 }
 
 namespace ErrorCodes
@@ -9187,11 +9189,34 @@ std::unordered_set<String> MergeTreeData::getAllPartitionIds() const
     return res;
 }
 
+namespace
+{
+
+/// Test-only instrumentation, a no-op unless the `slowdown_system_parts_enumeration` failpoint
+/// is enabled, and even then it only affects the tables with a special name prefix, so that the
+/// tests using the failpoint do not affect concurrent queries over the tables of other tests.
+/// When active, the parts-snapshot walks below sleep on every enumerated element and poll
+/// `need_stop` on every element instead of every 8192, so a test with a fixture of a reasonable
+/// size can prove with a timed assertion that the walk itself honors `need_stop` (reaching the
+/// regular polling cadence would require a fixture with many thousands of parts).
+bool isPartsSnapshotSlowdownActive(const StorageID & storage_id)
+{
+    bool active = false;
+    fiu_do_on(FailPoints::slowdown_system_parts_enumeration,
+    {
+        active = storage_id.table_name.starts_with("t_slowdown_system_parts_snap");
+    });
+    return active;
+}
+
+}
+
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & /*lock*/, DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
 {
     DataPartsVector res;
     DataPartsVector buf;
     bool stopped = false;
+    const bool slowdown = isPartsSnapshotSlowdownActive(getStorageID());
 
     for (auto state : affordable_states)
     {
@@ -9201,7 +9226,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage
             std::swap(buf, res);
             res.clear();
 
-            if (need_stop)
+            if (need_stop || slowdown)
             {
                 /// Merge manually instead of std::merge to be able to check `need_stop`
                 /// periodically during the walk (the ranges can be arbitrarily large).
@@ -9210,7 +9235,10 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage
                 size_t counter = 0;
                 while (it != range.end() || buf_it != buf.end())
                 {
-                    if (0 == ++counter % 8192 && need_stop())
+                    ++counter;
+                    if (slowdown)
+                        sleepForMilliseconds(500);
+                    if (need_stop && (slowdown || 0 == counter % 8192) && need_stop())
                     {
                         stopped = true;
                         break;
@@ -9307,12 +9335,16 @@ MergeTreeData::ProjectionPartsVector MergeTreeData::getProjectionPartsVectorForI
     ProjectionPartsVector res;
     size_t counter = 0;
     bool stopped = false;
+    const bool slowdown = isPartsSnapshotSlowdownActive(getStorageID());
     for (auto state : affordable_states)
     {
         auto range = getDataPartsStateRange(state);
         for (const auto & part : range)
         {
-            if (need_stop && 0 == ++counter % 8192 && need_stop())
+            ++counter;
+            if (slowdown)
+                sleepForMilliseconds(500);
+            if (need_stop && (slowdown || 0 == counter % 8192) && need_stop())
             {
                 stopped = true;
                 break;
@@ -9341,13 +9373,17 @@ MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeDat
 {
     DataPartsVector res;
     auto lock = readLockParts();
-    if (need_stop)
+    const bool slowdown = isPartsSnapshotSlowdownActive(getStorageID());
+    if (need_stop || slowdown)
     {
         res.reserve(data_parts_by_info.size());
         size_t counter = 0;
         for (const auto & part : data_parts_by_info)
         {
-            if (0 == ++counter % 8192 && need_stop())
+            ++counter;
+            if (slowdown)
+                sleepForMilliseconds(500);
+            if (need_stop && (slowdown || 0 == counter % 8192) && need_stop())
                 break;
             res.push_back(part);
         }
@@ -9423,9 +9459,13 @@ MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(
     ProjectionPartsVector res;
     auto lock = readLockParts();
     size_t counter = 0;
+    const bool slowdown = isPartsSnapshotSlowdownActive(getStorageID());
     for (const auto & part : data_parts_by_info)
     {
-        if (need_stop && 0 == ++counter % 8192 && need_stop())
+        ++counter;
+        if (slowdown)
+            sleepForMilliseconds(500);
+        if (need_stop && (slowdown || 0 == counter % 8192) && need_stop())
             break;
 
         res.data_parts.push_back(part);
