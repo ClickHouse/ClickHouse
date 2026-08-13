@@ -598,6 +598,20 @@ SELECT has(['a', 'b'], 'b'), indexOf(['a', 'b'], 'a'), countEqual(['a', 'a'], 'a
 SELECT has([1, NULL, 3], NULL), has([1, 2, 3], NULL), has([toNullable(1), 2], 1);
 SELECT has(map('a', 1, 'b', 2), 'b'), mapContainsKey(map('a', 1), 'a'), mapContainsValue(map('a', 1), 1);
 
+SELECT '-- constant array, varying needle: the rows are paired against the array in batches, so the answer must not depend on where a batch ends';
+
+DROP TABLE IF EXISTS t_const_batched;
+CREATE TABLE t_const_batched (n UInt64) ENGINE = Memory;
+INSERT INTO t_const_batched SELECT number FROM numbers(300);
+
+-- 250 elements over 300 rows: more rows than one batch holds, so several batches run per block.
+SELECT
+    countIf(has(a, n) != arrayExists(x -> x = n, a)) AS has_mismatches,
+    countIf(indexOf(a, n) != arrayFirstIndex(x -> x = n, a)) AS index_of_mismatches,
+    countIf(countEqual(a, n) != arrayCount(x -> x = n, a)) AS count_equal_mismatches,
+    sum(has(a, n)) AS matched_rows
+FROM (SELECT n, arrayMap(x -> x::UInt64::Dynamic, range(0, 1000, 4)) AS a FROM t_const_batched);
+
 DROP TABLE IF EXISTS t_dyn_num;
 DROP TABLE IF EXISTS t_lc_dyn;
 DROP TABLE IF EXISTS t_lc_sparse;

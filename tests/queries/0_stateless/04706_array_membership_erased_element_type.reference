@@ -129,3 +129,5 @@ no conversion	0
 1	1	2
 1	0	1
 1	1	1
+-- constant array, varying needle: the rows are paired against the array in batches, so the answer must not depend on where a batch ends
+0	0	0	75

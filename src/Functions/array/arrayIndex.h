@@ -5,6 +5,7 @@
 #include <optional>
 #include <type_traits>
 
+#include <Core/Defines.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -1280,6 +1281,10 @@ private:
             return result_type->createColumnConst(arguments[0].column->size(), current);
         }
 
+        if (col_array_const)
+            if (auto res = executeErasedEqualityConstArray(arguments, *col_array, element_type, needle_type))
+                return res;
+
         auto full_array = arguments[0].column->convertToFullColumnIfConst();
         const auto & array = assert_cast<const ColumnArray &>(*full_array);
         auto full_needle = arguments[1].column->convertToFullColumnIfConst();
@@ -1290,6 +1295,64 @@ private:
             return foldMatchesPerRow((*matches)->getData(), array.getOffsets());
 
         return executeErasedEqualityPerRowGroup(arguments, result_type, array, full_needle, element_type, needle_type);
+    }
+
+    /// Pairs the needles against a constant array in batches, so the temporary stays proportional to a
+    /// batch rather than to the row count. Nothing when a batch declines: its operands are a subset of
+    /// the whole block's, so a block-wide attempt would decline too.
+    ColumnPtr executeErasedEqualityConstArray(
+        const ColumnsWithTypeAndName & arguments,
+        const ColumnArray & col_array,
+        const DataTypePtr & element_type,
+        const DataTypePtr & needle_type) const
+    {
+        const auto & elements = col_array.getDataPtr();
+        const size_t elements_count = elements->size();
+        const size_t rows = arguments[0].column->size();
+
+        if (elements_count == 0 || rows == 0)
+            return nullptr;
+
+        const size_t rows_per_batch = std::max<size_t>(1, DEFAULT_BLOCK_SIZE / elements_count);
+        if (rows_per_batch >= rows)
+            return nullptr;
+
+        auto full_needle = arguments[1].column->convertToFullColumnIfConst();
+
+        auto col_result = ResultColumnType::create(rows);
+        auto & result_data = col_result->getData();
+
+        ColumnArray::Offsets batch_offsets;
+        batch_offsets.reserve(rows_per_batch);
+
+        for (size_t first_row = 0; first_row < rows; first_row += rows_per_batch)
+        {
+            const size_t batch_rows = std::min(rows_per_batch, rows - first_row);
+
+            /// One array's worth of elements per row, so these offsets both replicate the needles and
+            /// describe the row boundaries the matches are folded over.
+            batch_offsets.resize(batch_rows);
+            for (size_t row = 0; row < batch_rows; ++row)
+                batch_offsets[row] = (row + 1) * elements_count;
+
+            auto batch_elements = elements->cloneEmpty();
+            batch_elements->reserve(elements_count * batch_rows);
+            for (size_t row = 0; row < batch_rows; ++row)
+                batch_elements->insertRangeFrom(*elements, 0, elements_count);
+
+            auto batch_needles = full_needle->cut(first_row, batch_rows)->replicate(batch_offsets);
+
+            auto matches = evaluateElementwiseEquality(
+                {std::move(batch_elements), element_type, "elements"}, {batch_needles, needle_type, "needle"});
+            if (!matches)
+                return nullptr;
+
+            auto batch_result = foldMatchesPerRow((*matches)->getData(), batch_offsets);
+            for (size_t row = 0; row < batch_rows; ++row)
+                result_data[first_row + row] = batch_result->getData()[row];
+        }
+
+        return col_result;
     }
 
     /// Second attempt after a whole-block evaluation declined. A block shares one flattened element
