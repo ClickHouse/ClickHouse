@@ -141,3 +141,89 @@ ALTER TABLE t_mat_source_chain MODIFY COLUMN x Int32 SETTINGS mutations_sync = 2
 SELECT m1 = x, m2 = m1 * 2 FROM t_mat_source_chain;
 
 DROP TABLE t_mat_source_chain;
+
+-- Case 10: the source column can be reached through an ALIAS column, including a chain of them. The
+-- expression is resolved to the columns it is stored in, so the mutation still recalculates it.
+DROP TABLE IF EXISTS t_mat_source_alias;
+
+CREATE TABLE t_mat_source_alias (x Int64, a Int64 ALIAS x, b Int64 ALIAS a, m Int64 MATERIALIZED b)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_mat_source_alias VALUES (5000000000);
+
+ALTER TABLE t_mat_source_alias MODIFY COLUMN x Int32 SETTINGS mutations_sync = 2;
+
+SELECT x, m, m = x FROM t_mat_source_alias;
+
+-- ALTER UPDATE of the source column recalculates it through the same alias chain.
+ALTER TABLE t_mat_source_alias UPDATE x = 42 WHERE 1 SETTINGS mutations_sync = 2;
+
+SELECT x, m, m = x FROM t_mat_source_alias;
+
+DROP TABLE t_mat_source_alias;
+
+-- Case 11: a MATERIALIZED column in the sorting key that reads the altered column through an ALIAS is
+-- rejected as well.
+DROP TABLE IF EXISTS t_mat_source_alias_key;
+
+CREATE TABLE t_mat_source_alias_key (x Int64, a Int64 ALIAS x, m Int64 MATERIALIZED a)
+ENGINE = MergeTree ORDER BY m SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_mat_source_alias_key SELECT 2147483640 + number FROM numbers(10);
+
+ALTER TABLE t_mat_source_alias_key MODIFY COLUMN x Int32; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+SELECT countIf(m = x) FROM t_mat_source_alias_key;
+
+DROP TABLE t_mat_source_alias_key;
+
+-- Case 12: a projection whose WHERE reads the altered column through an ALIAS must be rebuilt too.
+DROP TABLE IF EXISTS t_projection_where_alias;
+
+CREATE TABLE t_projection_where_alias (id UInt64, x Int64, neg UInt8 ALIAS x < 0, PROJECTION p (SELECT sum(id) WHERE neg))
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_projection_where_alias SELECT number, toInt64(3000000000) + number FROM numbers(100);
+
+ALTER TABLE t_projection_where_alias MODIFY COLUMN x Int32 SETTINGS mutations_sync = 2;
+
+SELECT sum(id) FROM t_projection_where_alias WHERE x < 0 SETTINGS optimize_use_projections = 1;
+SELECT sum(id) FROM t_projection_where_alias WHERE x < 0 SETTINGS optimize_use_projections = 0;
+
+DROP TABLE t_projection_where_alias;
+
+-- Case 13: changing a JSON type hint changes the type of a path, so a MATERIALIZED column reading that
+-- path is recalculated as well. Reading `007` as Int64 and back as String gives `7`.
+DROP TABLE IF EXISTS t_mat_source_json;
+
+CREATE TABLE t_mat_source_json (json JSON(a String), m String MATERIALIZED json.a::String)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_mat_source_json VALUES ('{"a" : "007"}');
+
+SELECT m FROM t_mat_source_json;
+
+ALTER TABLE t_mat_source_json MODIFY COLUMN json JSON(a Int64) SETTINGS mutations_sync = 2;
+
+SELECT m, json.a::String, m = json.a::String FROM t_mat_source_json;
+
+DROP TABLE t_mat_source_json;
+
+-- Case 14: the same change applied as metadata only (a lazy type hint) runs no mutation, so it cannot
+-- recalculate the MATERIALIZED column and must be rejected instead of leaving it stale.
+DROP TABLE IF EXISTS t_mat_source_json_lazy;
+
+CREATE TABLE t_mat_source_json_lazy (json JSON(a String), m String MATERIALIZED json.a::String)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_mat_source_json_lazy VALUES ('{"a" : "007"}');
+
+SET allow_experimental_json_lazy_type_hints = 1;
+
+ALTER TABLE t_mat_source_json_lazy MODIFY COLUMN json JSON(a Int64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+SET allow_experimental_json_lazy_type_hints = 0;
+
+SELECT m FROM t_mat_source_json_lazy;
+
+DROP TABLE t_mat_source_json_lazy;
