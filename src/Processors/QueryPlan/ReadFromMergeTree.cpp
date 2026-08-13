@@ -147,31 +147,7 @@ bool isNodeDeterministic(const ActionsDAG::Node * node)
     return true;
 }
 
-/// Like `VirtualColumnUtils::isDeterministic`, but treats `__topKFilter` as deterministic.
-/// Mirrors `isDeterministicAllowingTopKFilter` in `updateQueryConditionCache.cpp` — both
-/// gates must agree, otherwise QCC writes and reads diverge on TopK plans.
-///
-/// Unlike `isNodeDeterministic`, this also rejects non-deterministic `COLUMN` nodes (such
-/// as query-time constants `now()` / `today()`). Without that check, queries whose filter
-/// captures such constants could write QCC entries and reuse them later when the constant's
-/// value has changed.
-bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node)
-{
-    for (const auto * child : node->children)
-        if (!isDeterministicAllowingTopKFilter(child))
-            return false;
-
-    if (node->type == ActionsDAG::ActionType::COLUMN)
-        return node->isDeterministic();
-
-    if (node->type != ActionsDAG::ActionType::FUNCTION)
-        return true;
-
-    if (!node->function_base->isDeterministic())
-        return node->function_base->getName() == "__topKFilter";
-
-    return true;
-}
+using VirtualColumnUtils::isDeterministicAllowingTopKFilter;
 
 bool restoreDAGInputs(ActionsDAG & dag, const NameSet & inputs)
 {
@@ -4334,6 +4310,15 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// Avoid that SAMPLE-narrowed entries poison the cache (later non-SAMPLE-ing queries would return wrong results).
     if (result.sampling.use_sampling)
         reader_settings.use_query_condition_cache = false;
+
+    /// For a TopK read, granules fully filtered by the dynamic `__topKFilter` PREWHERE may be
+    /// recorded in the query condition cache under a key salted with the TopK plan parameters
+    /// and part set (see `MergeTreeSelectProcessor::read` for the write and
+    /// `MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache` for the consult).
+    /// `allow_query_condition_cache` is already false here when `use_query_condition_cache_for_top_k`
+    /// is off (see `setTopKColumn`), so reaching this point with the cache on means the salt applies.
+    if (top_k_filter_info && reader_settings.use_query_condition_cache)
+        reader_settings.query_condition_cache_top_k_salt = top_k_filter_info->condition_hash;
 
     /// Initializing parallel replicas coordinator with empty ranges to read in case of
     /// local plan for initiator to prevent coordinator initialization by other replicas
