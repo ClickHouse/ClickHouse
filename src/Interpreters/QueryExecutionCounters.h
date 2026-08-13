@@ -15,8 +15,7 @@
 namespace DB
 {
 
-/// Metrics about the execution of a query, dumped into `system.query_log`: the joins it ran and
-/// the operators that spilled to disk.
+/// Metrics about the execution of a query, dumped into `system.query_log`.
 struct QueryExecutionCounters
 {
     void addJoin(JoinKind kind, JoinStrictness strictness, std::string_view algorithm);
