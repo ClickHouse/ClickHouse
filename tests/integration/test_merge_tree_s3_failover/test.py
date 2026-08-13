@@ -126,7 +126,9 @@ def test_write_failover(
         ) ENGINE=MergeTree()
         ORDER BY id
         PARTITION BY dt
-        SETTINGS storage_policy='s3', min_bytes_for_wide_part={}, write_marks_for_substreams_in_compact_parts=1, add_minmax_index_for_numeric_columns=0
+        -- auto_statistics_types='': otherwise the new materialize_statistics_on_insert default writes an
+        -- extra statistics.packed object per part, shifting the S3 request numbering this test injects into.
+        SETTINGS storage_policy='s3', min_bytes_for_wide_part={}, write_marks_for_substreams_in_compact_parts=1, auto_statistics_types='', add_minmax_index_for_numeric_columns=0
         """.format(
             min_bytes_for_wide_part
         )
